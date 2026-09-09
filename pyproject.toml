@@ -40,10 +40,8 @@ models = [
 server = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
-    "sse-starlette>=2.0",
     "python-multipart>=0.0.9",
     "psutil>=5.9",
-    "aiosqlite>=0.20",
 ]
 # CUDA-only accelerators; never imported unconditionally.
 cuda = [
@@ -76,6 +74,8 @@ include = ["ypuddin*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.ruff]
