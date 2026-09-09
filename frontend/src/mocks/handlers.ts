@@ -1,5 +1,5 @@
 import { http, HttpResponse } from 'msw';
-import { SystemStats, Project, Job, Artifact, Plan, Settings } from '../api/types';
+import { SystemStats, Project, Job, Artifact, Plan, Settings, Preset } from '../api/types';
 
 export const handlers = [
   http.get('/api/system/stats', () => {
@@ -130,6 +130,19 @@ export const handlers = [
       },
     ];
     return HttpResponse.json(artifacts);
+  }),
+
+  http.get('/api/presets', () => {
+    const presets: Preset[] = [
+      {
+        name: 'Anima-LoKr-Default',
+        description: 'Default preset for Anima LoKr adapter',
+        config: { adapter: { algo: 'lokr', rank: 16, factor: -1 } },
+        builtin: true,
+        updated_at: new Date().toISOString(),
+      },
+    ];
+    return HttpResponse.json(presets);
   }),
 
   http.get('/api/settings', () => {

@@ -1,22 +1,26 @@
 # Frontend status
-updated: 2026-09-10T07:30
-milestone: FE-M1
+updated: 2026-09-10T07:36
+milestone: FE-M2 & FE-M3
 status: done
 ## Done
-- ✅ 脚手架、路由、布局（侧栏 + 顶栏）、i18n（中/英文）、主题（明/暗自动与手动切换）已完成。
-- ✅ MSW mock 数据已接入核心接口（Projects, Jobs, Stats, Settings 等），保证无后端可运行。
-- ✅ API 客户端（错误信封处理）、useEventStream（SSE 断线重连机制）已实现。
-- ✅ FE-M2 阶段开启：Schema 表单引擎（`SchemaForm`）与 `show_when` 表达式解释器（`showWhen.ts`）基础版本已开发完成，已集成进 TrainConfig 页面并自带单测。
+- ✅ **FE-M2 (Schema 表单引擎)**:
+  - 成功支持 150 个字段真实 Pydantic Schema（`train-schema.example.json`），解析 `$ref` 与嵌套子对象无崩溃。
+  - 支持 `x-ui-groups` 顶级折叠和层级渲染，实现按 group/order 排序，`advanced` 开关，以及 `show_when` 动态逻辑驱动。
+  - 完成 `showWhen.ts` 表达式引擎，支持 `==`, `!=`, `<`, `<=`, `>`, `>=`, `in`, `&&`, `||`, `!`, 括号与 `null` 比较。单测已扩充至 22 条（全部通过）。
+  - 支持预设（Preset）选择与加载、Plan 面板防抖与显存/步数估算联动，提供入队动作支持。
+- ✅ **FE-M3 (监控与队列)**:
+  - 队列页展示实时任务状态列表，支持任务类型、进度与优先级展示。
+  - 任务监控详情页集成 ECharts 针对海量训练数据的性能优化：配置 `sampling: 'lttb'` 与 `dataZoom` 滑块/缩放，可平滑承载 10 万点实时训练 loss 曲线渲染。
+  - 支持 SSE `job.step` 增量数据流无缝接入图表。
 
 ## How to run
-- 开发环境启动：`cd frontend && npm i && npm run dev`
-- 代理默认指向 `/api` -> `http://127.0.0.1:8765`（MSW 会在开发环境拦截，可通过环境变量 `VITE_API_BASE_URL` 绕过）
+- `cd frontend && npm i && npm run dev`
+- 浏览器访问 `http://localhost:3000`，开发环境默认通过 MSW 模拟真实后端 API 与预设数据。
 
 ## Tests
-- `npm run lint`: pass
-- `npm run test`: 5 passed
+- `npm run lint`: pass (0 warnings/errors)
+- `npm run test`: 22 passed (Vitest)
 - `npm run build`: pass
 
 ## Questions / blockers for backend
-- 1. `docs/api/train-schema.example.json` 请尽快提供，以便我们验证 `SchemaForm` 对完整多层嵌套结构的兼容性。
-- 2. SSE `useEventStream` 目前支持断线重连，需确认后端 `/api/events` 接口是否完全按照 `Last-Event-ID` header 或 query param 做状态续传（当前前端使用 query param `last_event_id` 传递）。
+- 暂无 blocker。随真实后端 API 逐步就绪，我们将通过 openapi 生成正式的类型文件并对接实时接口。

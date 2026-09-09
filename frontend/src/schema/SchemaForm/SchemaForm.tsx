@@ -231,7 +231,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
             try {
               const val = JSON.parse(e.target.value);
               onChange(setNestedValue(value, path, val));
-            } catch {}
+            } catch (err) {
+              // Ignore invalid JSON while typing
+            }
           }}
         />
       );
