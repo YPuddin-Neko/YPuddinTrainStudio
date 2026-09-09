@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+node_modules/
+
+# Runtime data (projects, caches, checkpoints, logs, models)
+data/
+models/
+outputs/
+runs/
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.npz
+*.log
+studio_data/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Local secrets
+.env
+secrets.json
