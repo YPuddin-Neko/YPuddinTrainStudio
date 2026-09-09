@@ -1,0 +1,46 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "projects": "Projects",
+    "queue": "Queue",
+    "artifacts": "Artifacts",
+    "models": "Models",
+    "settings": "Settings"
+  },
+  "system": {
+    "gpu": "GPU",
+    "vram": "VRAM",
+    "cpu": "CPU",
+    "ram": "RAM",
+    "disk": "Disk",
+    "status": "System Status"
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "Error occurred",
+    "empty": "No data",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "create": "Create",
+    "refresh": "Refresh",
+    "details": "Details",
+    "actions": "Actions",
+    "status": "Status"
+  },
+  "groups": {
+    "model": "Base Model",
+    "dataset": "Dataset Config",
+    "adapter": "Adapter (LoRA/LoKr)",
+    "objective": "Objective & Timestep",
+    "optimizer": "Optimizer",
+    "scheduler": "LR Scheduler",
+    "memory": "Memory Optimization",
+    "loop": "Training Loop",
+    "checkpoint": "Checkpoints",
+    "sampling": "Sampling Preview",
+    "validation": "Validation",
+    "logging": "Logging & Monitoring"
+  }
+}
