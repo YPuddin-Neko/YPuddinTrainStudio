@@ -622,7 +622,14 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const ui = prop['x-ui'] || {};
 
     if (ui.advanced && !showAdvanced) return null;
-    if (ui.show_when && !evaluateShowWhen(ui.show_when, value)) return null;
+    if (ui.show_when) {
+      try {
+        if (!evaluateShowWhen(ui.show_when, value)) return null;
+      } catch (err) {
+        console.error(`[SchemaForm] Failed to evaluate show_when for ${fullPathKey}: "${ui.show_when}"`, err);
+        // On evaluation error, default to showing the field
+      }
+    }
 
     const errorItem = errors.find((e) => e.loc === fullPathKey || e.loc?.endsWith(`.${key}`));
     const fieldValue = getNestedValue(value, path) !== undefined ? getNestedValue(value, path) : prop.default;

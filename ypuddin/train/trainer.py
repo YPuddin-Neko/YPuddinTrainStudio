@@ -557,6 +557,7 @@ def _load_prompts_file(path: str) -> list[Any]:
 
 
 def train(cfg: TrainConfig, *, device: str | None = None, emitter: Emitter | None = None, listeners: list[Callable[[dict[str, Any]], None]] | None = None) -> str:
+    Path(cfg.checkpoint.output_dir).mkdir(parents=True, exist_ok=True)
     em = emitter or Emitter(path=cfg.logging.events_path or (Path(cfg.checkpoint.output_dir) / "events.jsonl"), fd=int(os.environ["YPUDDIN_EVENTS_FD"]) if os.environ.get("YPUDDIN_EVENTS_FD") else None)
     for fn in listeners or []:
         em.add_listener(fn)

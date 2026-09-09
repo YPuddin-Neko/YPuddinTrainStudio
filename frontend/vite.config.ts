@@ -18,5 +18,13 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          echarts: ['echarts', 'echarts-for-react'],
+          vendor: ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query', 'i18next', 'react-i18next', 'lucide-react'],
+        },
+      },
+    },
   },
 });
