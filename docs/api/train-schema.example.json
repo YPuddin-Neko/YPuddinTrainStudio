@@ -675,6 +675,25 @@
             "order": 30
           }
         },
+        "bucket_step": {
+          "anyOf": [
+            {
+              "minimum": 8,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "分桶网格步长（默认 64；必须是模型对齐值的倍数）",
+          "title": "Bucket Step",
+          "x-ui": {
+            "advanced": true,
+            "group": "dataset",
+            "order": 35
+          }
+        },
         "bucket_no_upscale": {
           "default": false,
           "description": "不放大小图（按原尺寸就近分桶）",

@@ -65,6 +65,7 @@ class DatasetConfig(_Strict):
     resolutions: list[int] = F([1024], help="训练分辩率（基准边长，可多个）", ui_=ui("dataset", order=10, control="tags"))
     aspect_ratio_limit: float = F(2.0, ge=1.0, help="分桶允许的最大长宽比", ui_=ui("dataset", order=20))
     area_tolerance: float = F(0.10, ge=0, le=0.5, help="分桶面积容差（相对基准面积）", ui_=ui("dataset", order=30, advanced=True))
+    bucket_step: int | None = F(None, ge=8, help="分桶网格步长（默认 64；必须是模型对齐值的倍数）", ui_=ui("dataset", order=35, advanced=True))
     bucket_no_upscale: bool = F(False, help="不放大小图（按原尺寸就近分桶）", ui_=ui("dataset", order=40, control="switch"))
     batch_size: int = F(1, ge=1, help="每个微批的图片数", ui_=ui("dataset", order=50))
     caption: CaptionConfig = F(default_factory=CaptionConfig, help="caption 处理", ui_=ui("dataset", order=60))
@@ -86,8 +87,8 @@ class DatasetConfig(_Strict):
             raise ValueError("resolutions must not be empty")
         out = sorted({int(r) for r in v}, reverse=True)
         for r in out:
-            if r < 128 or r > 8192:
-                raise ValueError(f"resolution {r} out of range [128, 8192]")
+            if r < 32 or r > 8192:
+                raise ValueError(f"resolution {r} out of range [32, 8192]")
         return out
 
 
