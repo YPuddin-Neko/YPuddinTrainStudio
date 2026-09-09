@@ -113,4 +113,25 @@ export const apiClient = {
     });
     return handleResponse<T>(response);
   },
+
+  patch: async <T>(endpoint: string, body: any, options: RequestOptions = {}): Promise<T> => {
+    const { params, ...init } = options;
+    const url = new URL(`${getBaseUrl()}${endpoint}`, window.location.origin);
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          url.searchParams.append(key, String(value));
+        }
+      });
+    }
+    const response = await fetch(url.toString(), {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      ...init,
+    });
+    return handleResponse<T>(response);
+  },
 };

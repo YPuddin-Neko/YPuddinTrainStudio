@@ -52,7 +52,7 @@ def sha256_of_tensors(tensors: dict[str, Tensor]) -> str:
     h = hashlib.sha256()
     for k in sorted(tensors):
         h.update(k.encode())
-        h.update(tensors[k].contiguous().cpu().numpy().tobytes())
+        h.update(tensors[k].detach().cpu().contiguous().reshape(-1).view(torch.uint8).numpy().tobytes())
     return h.hexdigest()
 
 
