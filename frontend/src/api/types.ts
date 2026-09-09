@@ -92,6 +92,70 @@ export interface Job {
   artifact_ids: string[];
 }
 
+export interface JobMetrics {
+  steps: number[];
+  loss: number[];
+  loss_ema: number[];
+  lr: Record<string, number[]>;
+  grad_norm: number[];
+  vram_mb: number[];
+  it_s: number[];
+  validation: Array<{
+    step: number;
+    per_t: Record<string, number>;
+    mean: number;
+  }>;
+}
+
+export interface JobSample {
+  step: number;
+  prompt_index: number;
+  prompt: string;
+  seed: number;
+  url: string;
+  width: number;
+  height: number;
+  created_at: string;
+}
+
+export interface JobCheckpoint {
+  step: number;
+  kind: 'weights' | 'full';
+  path: string;
+  size: number;
+  created_at: string;
+  artifact_id?: string;
+}
+
+export interface JobLogLine {
+  ts: string;
+  level: 'info' | 'warn' | 'error' | 'debug';
+  msg: string;
+}
+
+export interface JobLogResponse {
+  lines: JobLogLine[];
+  next_offset: number;
+}
+
+export interface QueueSettings {
+  held: boolean;
+  max_concurrent: number;
+}
+
+export interface FsListEntry {
+  name: string;
+  is_dir: boolean;
+  size: number;
+  mtime: string;
+}
+
+export interface FsListResponse {
+  path: string;
+  parent: string | null;
+  entries: FsListEntry[];
+}
+
 export interface Artifact {
   id: string;
   project_id: string;
