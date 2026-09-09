@@ -1,0 +1,2212 @@
+{
+  "$defs": {
+    "AdapterConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "algo": {
+          "default": "lokr",
+          "description": "适配器算法",
+          "enum": [
+            "lora",
+            "lokr",
+            "loha",
+            "full"
+          ],
+          "title": "Algo",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "adapter",
+            "order": 0
+          }
+        },
+        "rank": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "const": "full",
+              "type": "string"
+            }
+          ],
+          "default": 16,
+          "description": "秩（LoKr 中为 W2 的低秩；'full' 表示 W2 满矩阵）",
+          "title": "Rank",
+          "x-ui": {
+            "group": "adapter",
+            "order": 10
+          }
+        },
+        "alpha": {
+          "default": 16.0,
+          "description": "缩放 alpha（scale = alpha / rank）",
+          "exclusiveMinimum": 0,
+          "title": "Alpha",
+          "type": "number",
+          "x-ui": {
+            "group": "adapter",
+            "order": 20
+          }
+        },
+        "factor": {
+          "default": -1,
+          "description": "LoKr 因子：-1 平衡分解；f>0 时小因子 W1 的边长为 f",
+          "title": "Factor",
+          "type": "integer",
+          "x-ui": {
+            "group": "adapter",
+            "order": 30,
+            "show_when": "adapter.algo == 'lokr'"
+          }
+        },
+        "decompose_both": {
+          "default": false,
+          "description": "LoKr：W1 也做低秩分解",
+          "title": "Decompose Both",
+          "type": "boolean",
+          "x-ui": {
+            "advanced": true,
+            "control": "switch",
+            "group": "adapter",
+            "order": 40,
+            "show_when": "adapter.algo == 'lokr'"
+          }
+        },
+        "rs_lora": {
+          "default": false,
+          "description": "rsLoRA：scale = alpha / sqrt(rank)",
+          "title": "Rs Lora",
+          "type": "boolean",
+          "x-ui": {
+            "advanced": true,
+            "control": "switch",
+            "group": "adapter",
+            "order": 50
+          }
+        },
+        "dora": {
+          "default": false,
+          "description": "DoRA 权重分解（幅度/方向）",
+          "title": "Dora",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "adapter",
+            "order": 60
+          }
+        },
+        "init": {
+          "default": "default",
+          "description": "初始化：default（一侧置零）/ scalar（全随机 + 可训练标量从 0 起）",
+          "enum": [
+            "default",
+            "scalar"
+          ],
+          "title": "Init",
+          "type": "string",
+          "x-ui": {
+            "advanced": true,
+            "control": "select",
+            "group": "adapter",
+            "order": 70
+          }
+        },
+        "dropout": {
+          "default": 0.0,
+          "description": "对适配器输出的 dropout",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Dropout",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "adapter",
+            "order": 80
+          }
+        },
+        "rank_dropout": {
+          "default": 0.0,
+          "description": "秩轴 dropout",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Rank Dropout",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "adapter",
+            "order": 90
+          }
+        },
+        "module_dropout": {
+          "default": 0.0,
+          "description": "整模块跳过概率",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Module Dropout",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "adapter",
+            "order": 100
+          }
+        },
+        "preset": {
+          "default": "attn-mlp",
+          "description": "族内目标预设（attn-mlp / attn-only / full-linear / ...）",
+          "title": "Preset",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "adapter",
+            "order": 110
+          }
+        },
+        "rules": {
+          "description": "按序匹配的覆盖规则",
+          "items": {
+            "$ref": "#/$defs/AdapterRule"
+          },
+          "title": "Rules",
+          "type": "array",
+          "x-ui": {
+            "control": "rules",
+            "group": "adapter",
+            "order": 120
+          }
+        },
+        "mode": {
+          "default": "auto",
+          "description": "执行路径（auto 按算法与底模精度选择）",
+          "enum": [
+            "auto",
+            "bypass",
+            "merged"
+          ],
+          "title": "Mode",
+          "type": "string",
+          "x-ui": {
+            "advanced": true,
+            "control": "select",
+            "group": "adapter",
+            "order": 130
+          }
+        },
+        "param_dtype": {
+          "default": "fp32",
+          "description": "适配器参数精度（主权重）",
+          "enum": [
+            "fp32",
+            "bf16"
+          ],
+          "title": "Param Dtype",
+          "type": "string",
+          "x-ui": {
+            "advanced": true,
+            "control": "select",
+            "group": "adapter",
+            "order": 140
+          }
+        },
+        "lr_scale": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "按参数类别的学习率倍率，如 {'up': 16}（LoRA+）或 {'w1': 0.5}",
+          "title": "Lr Scale",
+          "type": "object",
+          "x-ui": {
+            "advanced": true,
+            "group": "adapter",
+            "order": 150
+          }
+        },
+        "resume_weights": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "从已有适配器权重热启动",
+          "title": "Resume Weights",
+          "x-ui": {
+            "advanced": true,
+            "control": "path",
+            "group": "adapter",
+            "order": 160
+          }
+        }
+      },
+      "title": "AdapterConfig",
+      "type": "object"
+    },
+    "AdapterRule": {
+      "additionalProperties": false,
+      "properties": {
+        "match": {
+          "description": "模块名匹配：glob，或 're:' 前缀正则",
+          "title": "Match",
+          "type": "string"
+        },
+        "algo": {
+          "anyOf": [
+            {
+              "enum": [
+                "lora",
+                "lokr",
+                "loha",
+                "full",
+                "none"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "覆盖算法；none 表示排除",
+          "title": "Algo"
+        },
+        "rank": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "const": "full",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rank"
+        },
+        "alpha": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Alpha"
+        },
+        "factor": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Factor"
+        },
+        "lr": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "该组参数的学习率（覆盖 optimizer.lr）",
+          "title": "Lr"
+        },
+        "dropout": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dropout"
+        },
+        "rank_dropout": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rank Dropout"
+        }
+      },
+      "required": [
+        "match"
+      ],
+      "title": "AdapterRule",
+      "type": "object"
+    },
+    "CaptionConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "prefix": {
+          "default": "",
+          "description": "加在 caption 前的文本",
+          "title": "Prefix",
+          "type": "string",
+          "x-ui": {
+            "group": "caption",
+            "order": 0
+          }
+        },
+        "suffix": {
+          "default": "",
+          "description": "加在 caption 后的文本",
+          "title": "Suffix",
+          "type": "string",
+          "x-ui": {
+            "group": "caption",
+            "order": 10
+          }
+        },
+        "trigger_word": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "触发词：放在最前且不参与洗牌/丢弃",
+          "title": "Trigger Word",
+          "x-ui": {
+            "group": "caption",
+            "order": 20
+          }
+        },
+        "keep_tokens": {
+          "default": 0,
+          "description": "前 N 个 tag 固定不洗牌",
+          "minimum": 0,
+          "title": "Keep Tokens",
+          "type": "integer",
+          "x-ui": {
+            "group": "caption",
+            "order": 30
+          }
+        },
+        "shuffle": {
+          "default": false,
+          "description": "随机打乱 tag 顺序",
+          "title": "Shuffle",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "caption",
+            "order": 40
+          }
+        },
+        "tag_dropout": {
+          "default": 0.0,
+          "description": "每个 tag 被丢弃的概率",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Tag Dropout",
+          "type": "number",
+          "x-ui": {
+            "control": "slider",
+            "group": "caption",
+            "order": 50,
+            "step": 0.01
+          }
+        },
+        "caption_dropout": {
+          "default": 0.0,
+          "description": "整条 caption 置空的概率（无条件训练，服务于 CFG）",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Caption Dropout",
+          "type": "number",
+          "x-ui": {
+            "control": "slider",
+            "group": "caption",
+            "order": 60,
+            "step": 0.01
+          }
+        },
+        "separator": {
+          "default": ",",
+          "description": "tag 分隔符",
+          "title": "Separator",
+          "type": "string",
+          "x-ui": {
+            "advanced": true,
+            "group": "caption",
+            "order": 70
+          }
+        },
+        "wildcard": {
+          "default": false,
+          "description": "支持 {a|b} 通配符随机选择",
+          "title": "Wildcard",
+          "type": "boolean",
+          "x-ui": {
+            "advanced": true,
+            "control": "switch",
+            "group": "caption",
+            "order": 80
+          }
+        }
+      },
+      "title": "CaptionConfig",
+      "type": "object"
+    },
+    "CheckpointConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "output_dir": {
+          "default": "outputs/run",
+          "description": "输出目录",
+          "title": "Output Dir",
+          "type": "string",
+          "x-ui": {
+            "control": "path",
+            "group": "checkpoint",
+            "order": 0
+          }
+        },
+        "name": {
+          "default": "lora",
+          "description": "产物文件名前缀",
+          "title": "Name",
+          "type": "string",
+          "x-ui": {
+            "group": "checkpoint",
+            "order": 10
+          }
+        },
+        "save_every_steps": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "每 N 步保存权重",
+          "title": "Save Every Steps",
+          "x-ui": {
+            "group": "checkpoint",
+            "order": 20
+          }
+        },
+        "save_every_epochs": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 1,
+          "description": "每 N 轮保存权重",
+          "title": "Save Every Epochs",
+          "x-ui": {
+            "group": "checkpoint",
+            "order": 30
+          }
+        },
+        "save_state_every_steps": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "每 N 步保存完整可恢复状态",
+          "title": "Save State Every Steps",
+          "x-ui": {
+            "advanced": true,
+            "group": "checkpoint",
+            "order": 40
+          }
+        },
+        "keep_last_n": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "只保留最近 N 个权重文件",
+          "title": "Keep Last N",
+          "x-ui": {
+            "advanced": true,
+            "group": "checkpoint",
+            "order": 50
+          }
+        },
+        "save_dtype": {
+          "default": "bf16",
+          "description": "保存精度",
+          "enum": [
+            "bf16",
+            "fp16",
+            "fp32"
+          ],
+          "title": "Save Dtype",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "checkpoint",
+            "order": 60
+          }
+        },
+        "save_on_finish": {
+          "default": true,
+          "description": "结束时保存最终权重",
+          "title": "Save On Finish",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "checkpoint",
+            "order": 70
+          }
+        },
+        "resume": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "从完整状态目录恢复",
+          "title": "Resume",
+          "x-ui": {
+            "control": "path",
+            "group": "checkpoint",
+            "order": 80
+          }
+        }
+      },
+      "title": "CheckpointConfig",
+      "type": "object"
+    },
+    "DatasetConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "sources": {
+          "description": "数据源列表",
+          "items": {
+            "$ref": "#/$defs/DatasetSourceConfig"
+          },
+          "title": "Sources",
+          "type": "array",
+          "x-ui": {
+            "group": "dataset",
+            "order": 0
+          }
+        },
+        "resolutions": {
+          "default": [
+            1024
+          ],
+          "description": "训练分辩率（基准边长，可多个）",
+          "items": {
+            "type": "integer"
+          },
+          "title": "Resolutions",
+          "type": "array",
+          "x-ui": {
+            "control": "tags",
+            "group": "dataset",
+            "order": 10
+          }
+        },
+        "aspect_ratio_limit": {
+          "default": 2.0,
+          "description": "分桶允许的最大长宽比",
+          "minimum": 1.0,
+          "title": "Aspect Ratio Limit",
+          "type": "number",
+          "x-ui": {
+            "group": "dataset",
+            "order": 20
+          }
+        },
+        "area_tolerance": {
+          "default": 0.1,
+          "description": "分桶面积容差（相对基准面积）",
+          "maximum": 0.5,
+          "minimum": 0,
+          "title": "Area Tolerance",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "dataset",
+            "order": 30
+          }
+        },
+        "bucket_no_upscale": {
+          "default": false,
+          "description": "不放大小图（按原尺寸就近分桶）",
+          "title": "Bucket No Upscale",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "dataset",
+            "order": 40
+          }
+        },
+        "batch_size": {
+          "default": 1,
+          "description": "每个微批的图片数",
+          "minimum": 1,
+          "title": "Batch Size",
+          "type": "integer",
+          "x-ui": {
+            "group": "dataset",
+            "order": 50
+          }
+        },
+        "caption": {
+          "$ref": "#/$defs/CaptionConfig",
+          "description": "caption 处理",
+          "x-ui": {
+            "group": "dataset",
+            "order": 60
+          }
+        },
+        "flip": {
+          "default": false,
+          "description": "随机水平翻转（缓存双份 latent）",
+          "title": "Flip",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "dataset",
+            "order": 70
+          }
+        },
+        "masked_loss": {
+          "default": false,
+          "description": "用 .mask.png 或 alpha 通道加权损失",
+          "title": "Masked Loss",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "dataset",
+            "order": 80
+          }
+        },
+        "num_workers": {
+          "default": 2,
+          "description": "DataLoader 进程数（Windows 建议 0）",
+          "minimum": 0,
+          "title": "Num Workers",
+          "type": "integer",
+          "x-ui": {
+            "advanced": true,
+            "group": "dataset",
+            "order": 90
+          }
+        },
+        "cache_dir": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "缓存目录（默认 <output_dir>/cache）",
+          "title": "Cache Dir",
+          "x-ui": {
+            "advanced": true,
+            "control": "path",
+            "group": "dataset",
+            "order": 100
+          }
+        },
+        "cache_latents": {
+          "default": true,
+          "description": "预编码并缓存 latents",
+          "title": "Cache Latents",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "dataset",
+            "order": 110
+          }
+        },
+        "text_encoding": {
+          "default": "auto",
+          "description": "文本编码：online 每步在线编码（支持 caption 增强），cached 预缓存后卸载编码器",
+          "enum": [
+            "auto",
+            "online",
+            "cached"
+          ],
+          "title": "Text Encoding",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "dataset",
+            "order": 120
+          }
+        }
+      },
+      "title": "DatasetConfig",
+      "type": "object"
+    },
+    "DatasetSourceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "图片目录（递归）",
+          "title": "Path",
+          "type": "string",
+          "x-ui": {
+            "control": "path",
+            "order": 0
+          }
+        },
+        "repeats": {
+          "default": 1,
+          "description": "重复次数",
+          "minimum": 1,
+          "title": "Repeats",
+          "type": "integer"
+        },
+        "caption_ext": {
+          "default": ".txt",
+          "description": "caption 文件扩展名",
+          "title": "Caption Ext",
+          "type": "string"
+        },
+        "is_reg": {
+          "default": false,
+          "description": "正则集（先验保持）",
+          "title": "Is Reg",
+          "type": "boolean"
+        },
+        "prior_weight": {
+          "default": 1.0,
+          "description": "正则集损失权重",
+          "minimum": 0,
+          "title": "Prior Weight",
+          "type": "number"
+        },
+        "class_prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "缺少 caption 文件时使用的默认 caption",
+          "title": "Class Prompt"
+        },
+        "caption": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CaptionConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "覆盖数据集级 caption 设置"
+        },
+        "resolutions": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "覆盖数据集级分辩率列表",
+          "title": "Resolutions"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "DatasetSourceConfig",
+      "type": "object"
+    },
+    "LoggingConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "tensorboard": {
+          "default": false,
+          "description": "写 TensorBoard 日志",
+          "title": "Tensorboard",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "logging",
+            "order": 0
+          }
+        },
+        "wandb": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WandbConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Weights & Biases",
+          "x-ui": {
+            "advanced": true,
+            "group": "logging",
+            "order": 10
+          }
+        },
+        "events_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "事件 JSONL 文件（默认 <output_dir>/events.jsonl）",
+          "title": "Events Path",
+          "x-ui": {
+            "advanced": true,
+            "control": "path",
+            "group": "logging",
+            "order": 20
+          }
+        },
+        "level": {
+          "default": "info",
+          "description": "日志级别",
+          "enum": [
+            "debug",
+            "info",
+            "warning"
+          ],
+          "title": "Level",
+          "type": "string",
+          "x-ui": {
+            "advanced": true,
+            "control": "select",
+            "group": "logging",
+            "order": 30
+          }
+        }
+      },
+      "title": "LoggingConfig",
+      "type": "object"
+    },
+    "LoopConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "max_steps": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "最大优化步数（与 epochs 至少填一个，先到者停止）",
+          "title": "Max Steps",
+          "x-ui": {
+            "group": "loop",
+            "order": 0
+          }
+        },
+        "epochs": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 10,
+          "description": "训练轮数",
+          "title": "Epochs",
+          "x-ui": {
+            "group": "loop",
+            "order": 10
+          }
+        },
+        "grad_accum": {
+          "default": 1,
+          "description": "梯度累积微批数",
+          "minimum": 1,
+          "title": "Grad Accum",
+          "type": "integer",
+          "x-ui": {
+            "group": "loop",
+            "order": 20
+          }
+        },
+        "mixed_precision": {
+          "default": "bf16",
+          "description": "混合精度",
+          "enum": [
+            "bf16",
+            "fp16",
+            "no"
+          ],
+          "title": "Mixed Precision",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "loop",
+            "order": 30
+          }
+        },
+        "seed": {
+          "default": 42,
+          "description": "随机种子",
+          "title": "Seed",
+          "type": "integer",
+          "x-ui": {
+            "group": "loop",
+            "order": 40
+          }
+        },
+        "ema": {
+          "default": false,
+          "description": "维护适配器权重的 EMA（CPU）",
+          "title": "Ema",
+          "type": "boolean",
+          "x-ui": {
+            "advanced": true,
+            "control": "switch",
+            "group": "loop",
+            "order": 50
+          }
+        },
+        "ema_decay": {
+          "default": 0.999,
+          "description": "EMA 衰减",
+          "exclusiveMaximum": 1,
+          "exclusiveMinimum": 0,
+          "title": "Ema Decay",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "loop",
+            "order": 60,
+            "show_when": "loop.ema == true"
+          }
+        },
+        "nan_skip_limit": {
+          "default": 50,
+          "description": "连续非有限损失跳过次数上限，超过报错",
+          "minimum": 1,
+          "title": "Nan Skip Limit",
+          "type": "integer",
+          "x-ui": {
+            "advanced": true,
+            "group": "loop",
+            "order": 70
+          }
+        },
+        "log_every": {
+          "default": 1,
+          "description": "每 N 步发一次 step 事件",
+          "minimum": 1,
+          "title": "Log Every",
+          "type": "integer",
+          "x-ui": {
+            "advanced": true,
+            "group": "loop",
+            "order": 80
+          }
+        }
+      },
+      "title": "LoopConfig",
+      "type": "object"
+    },
+    "MemoryConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "base_precision": {
+          "default": "auto",
+          "description": "冻结底模的存储精度（fp8 带逐张量缩放，需 CUDA）",
+          "enum": [
+            "auto",
+            "bf16",
+            "fp16",
+            "fp32",
+            "fp8_e4m3",
+            "fp8_e5m2"
+          ],
+          "title": "Base Precision",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "memory",
+            "order": 0
+          }
+        },
+        "blocks_to_swap": {
+          "default": 0,
+          "description": "换出到 CPU pinned 内存的 block 数",
+          "minimum": 0,
+          "title": "Blocks To Swap",
+          "type": "integer",
+          "x-ui": {
+            "group": "memory",
+            "order": 10
+          }
+        },
+        "activation_checkpointing": {
+          "default": "none",
+          "description": "激活检查点：block 逐块重算；unsloth 额外把块输入卸载到 CPU",
+          "enum": [
+            "none",
+            "block",
+            "unsloth"
+          ],
+          "title": "Activation Checkpointing",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "memory",
+            "order": 20
+          }
+        },
+        "offload_text_encoder": {
+          "default": false,
+          "description": "不用时把文本编码器放到 CPU",
+          "title": "Offload Text Encoder",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "memory",
+            "order": 30
+          }
+        },
+        "compile": {
+          "default": false,
+          "description": "逐 block torch.compile",
+          "title": "Compile",
+          "type": "boolean",
+          "x-ui": {
+            "advanced": true,
+            "control": "switch",
+            "group": "memory",
+            "order": 40
+          }
+        },
+        "allow_tf32": {
+          "default": true,
+          "description": "允许 TF32 matmul",
+          "title": "Allow Tf32",
+          "type": "boolean",
+          "x-ui": {
+            "advanced": true,
+            "control": "switch",
+            "group": "memory",
+            "order": 50
+          }
+        }
+      },
+      "title": "MemoryConfig",
+      "type": "object"
+    },
+    "ModelConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "family": {
+          "default": "anima",
+          "description": "模型族（anima / toy）",
+          "title": "Family",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "model",
+            "order": 0
+          }
+        },
+        "dit_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "DiT 主干权重（safetensors）",
+          "title": "Dit Path",
+          "x-ui": {
+            "control": "path",
+            "group": "model",
+            "order": 10
+          }
+        },
+        "text_encoder_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "文本编码器（HF 目录或单文件 safetensors）",
+          "title": "Text Encoder Path",
+          "x-ui": {
+            "control": "path",
+            "group": "model",
+            "order": 20
+          }
+        },
+        "vae_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "VAE 权重",
+          "title": "Vae Path",
+          "x-ui": {
+            "control": "path",
+            "group": "model",
+            "order": 30
+          }
+        },
+        "tokenizer_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "附加分词器目录（Anima: 旧版 T5 spiece；留空用内置）",
+          "title": "Tokenizer Path",
+          "x-ui": {
+            "advanced": true,
+            "control": "path",
+            "group": "model",
+            "order": 40
+          }
+        },
+        "dtype": {
+          "default": "bf16",
+          "description": "计算精度（autocast）",
+          "enum": [
+            "bf16",
+            "fp16",
+            "fp32"
+          ],
+          "title": "Dtype",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "model",
+            "order": 50
+          }
+        },
+        "attention": {
+          "default": "auto",
+          "description": "注意力后端",
+          "enum": [
+            "auto",
+            "sdpa",
+            "flash",
+            "xformers",
+            "sage"
+          ],
+          "title": "Attention",
+          "type": "string",
+          "x-ui": {
+            "advanced": true,
+            "control": "select",
+            "group": "model",
+            "order": 60
+          }
+        }
+      },
+      "title": "ModelConfig",
+      "type": "object"
+    },
+    "ObjectiveConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "timestep_sampling": {
+          "default": "logit_normal",
+          "description": "时间步采样分布",
+          "enum": [
+            "uniform",
+            "logit_normal",
+            "shift",
+            "resolution_shift",
+            "mode",
+            "cosmap"
+          ],
+          "title": "Timestep Sampling",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "objective",
+            "order": 0
+          }
+        },
+        "logit_mean": {
+          "default": 0.0,
+          "description": "logit-normal 均值",
+          "title": "Logit Mean",
+          "type": "number",
+          "x-ui": {
+            "group": "objective",
+            "order": 10,
+            "show_when": "objective.timestep_sampling in ['logit_normal','shift','resolution_shift']"
+          }
+        },
+        "logit_std": {
+          "default": 1.0,
+          "description": "logit-normal 标准差",
+          "exclusiveMinimum": 0,
+          "title": "Logit Std",
+          "type": "number",
+          "x-ui": {
+            "group": "objective",
+            "order": 20,
+            "show_when": "objective.timestep_sampling in ['logit_normal','shift','resolution_shift']"
+          }
+        },
+        "shift": {
+          "default": 3.0,
+          "description": "常数 shift：t' = s·t / (1 + (s-1)·t)",
+          "exclusiveMinimum": 0,
+          "title": "Shift",
+          "type": "number",
+          "x-ui": {
+            "group": "objective",
+            "order": 30,
+            "show_when": "objective.timestep_sampling == 'shift'"
+          }
+        },
+        "mode_scale": {
+          "default": 1.29,
+          "description": "SD3 mode 采样的 scale",
+          "title": "Mode Scale",
+          "type": "number",
+          "x-ui": {
+            "group": "objective",
+            "order": 40,
+            "show_when": "objective.timestep_sampling == 'mode'"
+          }
+        },
+        "stratified": {
+          "default": true,
+          "description": "批内分层抽样（降低梯度方差）",
+          "title": "Stratified",
+          "type": "boolean",
+          "x-ui": {
+            "advanced": true,
+            "control": "switch",
+            "group": "objective",
+            "order": 50
+          }
+        },
+        "t_min": {
+          "default": 0.0,
+          "description": "时间步下限",
+          "exclusiveMaximum": 1,
+          "minimum": 0,
+          "title": "T Min",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "objective",
+            "order": 60
+          }
+        },
+        "t_max": {
+          "default": 1.0,
+          "description": "时间步上限",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "T Max",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "objective",
+            "order": 70
+          }
+        },
+        "loss": {
+          "default": "mse",
+          "description": "损失函数",
+          "enum": [
+            "mse",
+            "huber",
+            "pseudo_huber"
+          ],
+          "title": "Loss",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "objective",
+            "order": 80
+          }
+        },
+        "huber_c": {
+          "default": 0.1,
+          "description": "Huber delta / pseudo-Huber c",
+          "exclusiveMinimum": 0,
+          "title": "Huber C",
+          "type": "number",
+          "x-ui": {
+            "group": "objective",
+            "order": 90,
+            "show_when": "objective.loss != 'mse'"
+          }
+        },
+        "weighting": {
+          "default": "none",
+          "description": "按时间步的损失加权",
+          "enum": [
+            "none",
+            "sigma_sqrt",
+            "cosmap",
+            "snr_like",
+            "cosmos"
+          ],
+          "title": "Weighting",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "objective",
+            "order": 100
+          }
+        },
+        "snr_gamma": {
+          "default": 5.0,
+          "description": "snr_like 加权的上限 γ",
+          "exclusiveMinimum": 0,
+          "title": "Snr Gamma",
+          "type": "number",
+          "x-ui": {
+            "group": "objective",
+            "order": 110,
+            "show_when": "objective.weighting == 'snr_like'"
+          }
+        },
+        "ip_noise_gamma": {
+          "default": 0.0,
+          "description": "输入扰动噪声强度",
+          "minimum": 0,
+          "title": "Ip Noise Gamma",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "objective",
+            "order": 120
+          }
+        }
+      },
+      "title": "ObjectiveConfig",
+      "type": "object"
+    },
+    "OptimizerConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "default": "adamw",
+          "description": "adamw / adamw8bit / lion / prodigy / prodigy_plus_sf / adafactor / came，或 'module.Class'",
+          "title": "Type",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "optimizer",
+            "order": 0
+          }
+        },
+        "lr": {
+          "default": 0.0001,
+          "description": "学习率",
+          "exclusiveMinimum": 0,
+          "title": "Lr",
+          "type": "number",
+          "x-ui": {
+            "group": "optimizer",
+            "order": 10
+          }
+        },
+        "weight_decay": {
+          "default": 0.01,
+          "description": "权重衰减",
+          "minimum": 0,
+          "title": "Weight Decay",
+          "type": "number",
+          "x-ui": {
+            "group": "optimizer",
+            "order": 20
+          }
+        },
+        "betas": {
+          "default": [
+            0.9,
+            0.99
+          ],
+          "description": "Adam betas",
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Betas",
+          "type": "array",
+          "x-ui": {
+            "advanced": true,
+            "group": "optimizer",
+            "order": 30
+          }
+        },
+        "eps": {
+          "default": 1e-08,
+          "description": "Adam eps",
+          "exclusiveMinimum": 0,
+          "title": "Eps",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "optimizer",
+            "order": 40
+          }
+        },
+        "args": {
+          "additionalProperties": true,
+          "description": "透传给优化器的额外参数",
+          "title": "Args",
+          "type": "object",
+          "x-ui": {
+            "advanced": true,
+            "group": "optimizer",
+            "order": 50
+          }
+        },
+        "grad_clip_norm": {
+          "default": 1.0,
+          "description": "梯度范数裁剪（0 关闭）",
+          "minimum": 0,
+          "title": "Grad Clip Norm",
+          "type": "number",
+          "x-ui": {
+            "group": "optimizer",
+            "order": 60
+          }
+        },
+        "kahan": {
+          "default": false,
+          "description": "bf16 参数的 Kahan 补偿累加",
+          "title": "Kahan",
+          "type": "boolean",
+          "x-ui": {
+            "advanced": true,
+            "control": "switch",
+            "group": "optimizer",
+            "order": 70
+          }
+        },
+        "fused_backward": {
+          "default": false,
+          "description": "逐参数在反向中即时更新并释放梯度（需 grad_accum=1）",
+          "title": "Fused Backward",
+          "type": "boolean",
+          "x-ui": {
+            "advanced": true,
+            "control": "switch",
+            "group": "optimizer",
+            "order": 80
+          }
+        },
+        "group_lr": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "按模块分组的学习率，如 {'llm_adapter': 5e-5, 'te': 2e-5}",
+          "title": "Group Lr",
+          "type": "object",
+          "x-ui": {
+            "advanced": true,
+            "group": "optimizer",
+            "order": 90
+          }
+        }
+      },
+      "title": "OptimizerConfig",
+      "type": "object"
+    },
+    "SamplePrompt": {
+      "additionalProperties": false,
+      "properties": {
+        "prompt": {
+          "title": "Prompt",
+          "type": "string"
+        },
+        "negative": {
+          "default": "",
+          "title": "Negative",
+          "type": "string"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height"
+        },
+        "steps": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Steps"
+        },
+        "cfg": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cfg"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "title": "SamplePrompt",
+      "type": "object"
+    },
+    "SamplingConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "训练期间生成预览图",
+          "title": "Enabled",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "sampling",
+            "order": 0
+          }
+        },
+        "every_steps": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "每 N 步",
+          "title": "Every Steps",
+          "x-ui": {
+            "group": "sampling",
+            "order": 10,
+            "show_when": "sampling.enabled == true"
+          }
+        },
+        "every_epochs": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 1,
+          "description": "每 N 轮",
+          "title": "Every Epochs",
+          "x-ui": {
+            "group": "sampling",
+            "order": 20,
+            "show_when": "sampling.enabled == true"
+          }
+        },
+        "at_start": {
+          "default": false,
+          "description": "训练前先出一组基线图",
+          "title": "At Start",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "sampling",
+            "order": 30,
+            "show_when": "sampling.enabled == true"
+          }
+        },
+        "prompts": {
+          "description": "提示词列表",
+          "items": {
+            "$ref": "#/$defs/SamplePrompt"
+          },
+          "title": "Prompts",
+          "type": "array",
+          "x-ui": {
+            "control": "prompts",
+            "group": "sampling",
+            "order": 40,
+            "show_when": "sampling.enabled == true"
+          }
+        },
+        "prompts_file": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "提示词文件（.txt 每行一条 / .toml）",
+          "title": "Prompts File",
+          "x-ui": {
+            "control": "path",
+            "group": "sampling",
+            "order": 50,
+            "show_when": "sampling.enabled == true"
+          }
+        },
+        "steps": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "采样步数（空用族默认）",
+          "title": "Steps",
+          "x-ui": {
+            "group": "sampling",
+            "order": 60,
+            "show_when": "sampling.enabled == true"
+          }
+        },
+        "cfg": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "CFG 强度（空用族默认）",
+          "title": "Cfg",
+          "x-ui": {
+            "group": "sampling",
+            "order": 70,
+            "show_when": "sampling.enabled == true"
+          }
+        },
+        "shift": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "采样 shift（空用族默认）",
+          "title": "Shift",
+          "x-ui": {
+            "group": "sampling",
+            "order": 80,
+            "show_when": "sampling.enabled == true"
+          }
+        },
+        "width": {
+          "default": 1024,
+          "description": "宽",
+          "minimum": 64,
+          "title": "Width",
+          "type": "integer",
+          "x-ui": {
+            "group": "sampling",
+            "order": 90,
+            "show_when": "sampling.enabled == true"
+          }
+        },
+        "height": {
+          "default": 1024,
+          "description": "高",
+          "minimum": 64,
+          "title": "Height",
+          "type": "integer",
+          "x-ui": {
+            "group": "sampling",
+            "order": 100,
+            "show_when": "sampling.enabled == true"
+          }
+        },
+        "seed": {
+          "default": 0,
+          "description": "基础种子",
+          "title": "Seed",
+          "type": "integer",
+          "x-ui": {
+            "group": "sampling",
+            "order": 110,
+            "show_when": "sampling.enabled == true"
+          }
+        },
+        "sampler": {
+          "const": "euler",
+          "default": "euler",
+          "description": "采样器",
+          "title": "Sampler",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "sampling",
+            "order": 120,
+            "show_when": "sampling.enabled == true"
+          }
+        }
+      },
+      "title": "SamplingConfig",
+      "type": "object"
+    },
+    "SchedulerConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "default": "cosine",
+          "description": "学习率调度",
+          "enum": [
+            "constant",
+            "linear",
+            "cosine",
+            "cosine_restarts",
+            "polynomial",
+            "warmup_stable_decay",
+            "rex"
+          ],
+          "title": "Type",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "scheduler",
+            "order": 0
+          }
+        },
+        "warmup_steps": {
+          "default": 0,
+          "description": "预热步数（<1 视为总步数比例）",
+          "minimum": 0,
+          "title": "Warmup Steps",
+          "type": "number",
+          "x-ui": {
+            "group": "scheduler",
+            "order": 10
+          }
+        },
+        "min_lr_ratio": {
+          "default": 0.0,
+          "description": "最终学习率相对初始的比例",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Min Lr Ratio",
+          "type": "number",
+          "x-ui": {
+            "group": "scheduler",
+            "order": 20
+          }
+        },
+        "num_cycles": {
+          "default": 1,
+          "description": "cosine_restarts 周期数",
+          "minimum": 1,
+          "title": "Num Cycles",
+          "type": "integer",
+          "x-ui": {
+            "group": "scheduler",
+            "order": 30,
+            "show_when": "scheduler.type == 'cosine_restarts'"
+          }
+        },
+        "power": {
+          "default": 1.0,
+          "description": "polynomial 幂",
+          "exclusiveMinimum": 0,
+          "title": "Power",
+          "type": "number",
+          "x-ui": {
+            "group": "scheduler",
+            "order": 40,
+            "show_when": "scheduler.type == 'polynomial'"
+          }
+        },
+        "decay_steps": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "warmup_stable_decay 的衰减步数（<1 视为比例）",
+          "title": "Decay Steps",
+          "x-ui": {
+            "group": "scheduler",
+            "order": 50,
+            "show_when": "scheduler.type == 'warmup_stable_decay'"
+          }
+        }
+      },
+      "title": "SchedulerConfig",
+      "type": "object"
+    },
+    "ValidationConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "确定性验证损失",
+          "title": "Enabled",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "validation",
+            "order": 0
+          }
+        },
+        "split_ratio": {
+          "default": 0.0,
+          "description": "从训练集按内容哈希切出的比例",
+          "exclusiveMaximum": 1,
+          "minimum": 0,
+          "title": "Split Ratio",
+          "type": "number",
+          "x-ui": {
+            "group": "validation",
+            "order": 10,
+            "show_when": "validation.enabled == true"
+          }
+        },
+        "sources": {
+          "description": "显式验证数据源",
+          "items": {
+            "$ref": "#/$defs/DatasetSourceConfig"
+          },
+          "title": "Sources",
+          "type": "array",
+          "x-ui": {
+            "group": "validation",
+            "order": 20,
+            "show_when": "validation.enabled == true"
+          }
+        },
+        "every_steps": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "每 N 步验证",
+          "title": "Every Steps",
+          "x-ui": {
+            "group": "validation",
+            "order": 30,
+            "show_when": "validation.enabled == true"
+          }
+        },
+        "every_epochs": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 1,
+          "description": "每 N 轮验证",
+          "title": "Every Epochs",
+          "x-ui": {
+            "group": "validation",
+            "order": 40,
+            "show_when": "validation.enabled == true"
+          }
+        },
+        "timesteps": {
+          "default": [
+            0.1,
+            0.3,
+            0.5,
+            0.7,
+            0.9
+          ],
+          "description": "固定验证时间步（分位数）",
+          "items": {
+            "type": "number"
+          },
+          "title": "Timesteps",
+          "type": "array",
+          "x-ui": {
+            "control": "tags",
+            "group": "validation",
+            "order": 50,
+            "show_when": "validation.enabled == true"
+          }
+        },
+        "max_images": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 64,
+          "description": "最多使用的验证图数",
+          "title": "Max Images",
+          "x-ui": {
+            "group": "validation",
+            "order": 60,
+            "show_when": "validation.enabled == true"
+          }
+        },
+        "seed": {
+          "default": 1234,
+          "description": "验证噪声种子",
+          "title": "Seed",
+          "type": "integer",
+          "x-ui": {
+            "advanced": true,
+            "group": "validation",
+            "order": 70,
+            "show_when": "validation.enabled == true"
+          }
+        }
+      },
+      "title": "ValidationConfig",
+      "type": "object"
+    },
+    "WandbConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "default": "ypuddin",
+          "title": "Project",
+          "type": "string"
+        },
+        "run_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Name"
+        },
+        "entity": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Entity"
+        }
+      },
+      "title": "WandbConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "model": {
+      "$ref": "#/$defs/ModelConfig"
+    },
+    "dataset": {
+      "$ref": "#/$defs/DatasetConfig"
+    },
+    "adapter": {
+      "$ref": "#/$defs/AdapterConfig"
+    },
+    "objective": {
+      "$ref": "#/$defs/ObjectiveConfig"
+    },
+    "optimizer": {
+      "$ref": "#/$defs/OptimizerConfig"
+    },
+    "scheduler": {
+      "$ref": "#/$defs/SchedulerConfig"
+    },
+    "memory": {
+      "$ref": "#/$defs/MemoryConfig"
+    },
+    "loop": {
+      "$ref": "#/$defs/LoopConfig"
+    },
+    "checkpoint": {
+      "$ref": "#/$defs/CheckpointConfig"
+    },
+    "sampling": {
+      "$ref": "#/$defs/SamplingConfig"
+    },
+    "validation": {
+      "$ref": "#/$defs/ValidationConfig"
+    },
+    "logging": {
+      "$ref": "#/$defs/LoggingConfig"
+    }
+  },
+  "title": "TrainConfig",
+  "type": "object",
+  "x-ui-groups": [
+    "model",
+    "dataset",
+    "caption",
+    "adapter",
+    "objective",
+    "optimizer",
+    "scheduler",
+    "memory",
+    "loop",
+    "checkpoint",
+    "sampling",
+    "validation",
+    "logging"
+  ]
+}
