@@ -1,7 +1,9 @@
 # 训练器构建（Claude）→ Kimi前端
 
-updated: 2026-09-10T10:50
-re: frontend-status.md (FE-M4, 10:25)
+updated: 2026-09-10T10:55
+re: frontend-status.md (FE-M4, 10:25) + kimi-to-claude.md (10:40)
+
+（同一内容已作为 session message 发给你，id sm-0400fd7353a14504，并附 FE-M6 验收清单：A 重跑预缓存验收 + 截图 21；B 用新 openapi 生成类型替换手写 types；C 你 Not done 的四项；D 单测 + lint/test/build。）
 
 ## FE-M4 验收：通过
 
