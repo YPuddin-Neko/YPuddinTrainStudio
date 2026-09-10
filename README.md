@@ -35,3 +35,11 @@ CUDA 机器上额外安装 `.[cuda,optim]`。
 本仓库代码以 **Apache-2.0** 发布。参考实现中 sd-scripts、LyCORIS、musubi-tuner 为 Apache-2.0，
 AnimaLoraStudio 与 diffusion-pipe 为 GPL-3.0（含 ComfyUI 派生代码）——本项目**不复制** GPL 代码，
 只在阅读理解后独立实现，以保持宽松许可。模型权重（Anima / Qwen3 / VAE）各有其自身条款。
+
+## 新机器 / 新权重验证
+
+```bash
+ypuddin smoke --set model.dit_path=... --set model.text_encoder_path=... --set model.vae_path=...
+```
+
+跑 3 步真实训练 + 一张预览 + 保存/回读适配器，并输出报告（`outputs/smoke/smoke-report.json`）。详见 `docs/design/03-status.md`。

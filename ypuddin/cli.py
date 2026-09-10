@@ -164,6 +164,24 @@ def cmd_extract(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_smoke(args: argparse.Namespace) -> int:
+    from ypuddin.tools.smoke import format_report, run_smoke
+
+    cfg = _load(args)
+    report = run_smoke(
+        cfg,
+        out=Path(args.out),
+        steps=args.steps,
+        resolution=args.resolution,
+        sample_size=args.sample_size,
+        sample_steps=args.sample_steps,
+        device=args.device,
+    )
+    print(format_report(report))
+    print(f"report: {Path(args.out) / 'smoke-report.json'}")
+    return 0 if report["ok"] else 1
+
+
 def cmd_merge(args: argparse.Namespace) -> int:
     from safetensors.torch import load_file, save_file
 
@@ -257,6 +275,22 @@ def build_parser() -> argparse.ArgumentParser:
     ex.add_argument("--family", default="anima")
     ex.add_argument("-o", "--output", required=True)
     ex.set_defaults(fn=cmd_extract)
+
+    sm = sub.add_parser(
+        "smoke", help="run a few real training steps + one preview + save/reload and print a report"
+    )
+    sm.add_argument(
+        "config", nargs="?", help="config file; only model/adapter/memory sections matter, defaults otherwise"
+    )
+    sm.add_argument("--preset", action="append", default=[])
+    sm.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
+    sm.add_argument("--out", default="outputs/smoke")
+    sm.add_argument("--steps", type=int, default=3)
+    sm.add_argument("--resolution", type=int, default=512, help="training resolution for the smoke dataset")
+    sm.add_argument("--sample-size", type=int, default=512)
+    sm.add_argument("--sample-steps", type=int, default=8)
+    sm.add_argument("--device", default=None, help="cuda / cuda:1 / cpu (default: auto)")
+    sm.set_defaults(fn=cmd_smoke)
 
     mg = sub.add_parser("merge", help="merge an adapter into base weights")
     mg.add_argument("--base", required=True)

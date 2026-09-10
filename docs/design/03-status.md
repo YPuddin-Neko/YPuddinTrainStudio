@@ -44,6 +44,20 @@ uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -e ".[de
 .venv/bin/ypuddin serve --port 8765 --data-root ./studio_data   # 服务（前端 dist 存在时同域托管）
 ```
 
+**GPU 机器首次验证（一条命令）**：真实跑 3 步 + 出一张 512 预览 + 保存/回读适配器，输出时序 / 峰值显存 / loss / 键格式，报告写到 `outputs/smoke/smoke-report.json`（失败时含完整 traceback，直接贴给我即可）：
+
+```bash
+.venv/bin/ypuddin smoke \
+  --set model.family=anima \
+  --set model.dit_path=/models/anima-base-v1.0.safetensors \
+  --set model.text_encoder_path=/models/Qwen3-0.6B-Base \
+  --set model.vae_path=/models/qwen_image_vae.safetensors \
+  --set adapter.algo=lokr --set adapter.rank=full --set adapter.factor=8 \
+  --set memory.activation_checkpointing=block
+# 显存紧张时追加：--set memory.blocks_to_swap=10 --set dataset.text_encoding=cached --resolution 512
+# 也可直接给配置文件：ypuddin smoke my.toml --steps 5
+```
+
 Anima 配置最小示例：
 
 ```toml
