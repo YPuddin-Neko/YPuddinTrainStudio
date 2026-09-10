@@ -1,0 +1,4 @@
+# 文本文件按内容规范化；Windows 脚本必须 CRLF，否则 cmd.exe 会解析错误
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.sh  text eol=lf
