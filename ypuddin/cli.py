@@ -119,6 +119,47 @@ def cmd_convert(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_extract(args: argparse.Namespace) -> int:
+    from safetensors.torch import load_file, save_file
+
+    from ypuddin.adapters import build_metadata
+    from ypuddin.tools import extract_from_state_dicts
+
+    base, tuned = load_file(args.base), load_file(args.tuned)
+    rank = "full" if args.rank == "full" else int(args.rank)
+    tensors, report = extract_from_state_dicts(base, tuned, algo=args.algo, rank=rank, factor=args.factor, prefix=args.prefix, progress=lambda d, t: print(f"\r{d}/{t}", end="", flush=True))
+    print()
+    worst = sorted(report.items(), key=lambda kv: -kv[1]["residual"])[:5]
+    for name, rep in worst:
+        print(f"  residual {rep['residual']:.4f}  {name}")
+    meta = build_metadata(targets=report, adapter_cfg={"algo": args.algo, "rank": rank, "alpha": None, "factor": args.factor}, family=args.family, architecture=f"{args.family}/{args.algo}", title=Path(args.output).stem)
+    save_file({k: v.contiguous() for k, v in tensors.items()}, args.output, metadata=meta)
+    print(f"wrote {args.output}: {len(report)} modules")
+    return 0
+
+
+def cmd_merge(args: argparse.Namespace) -> int:
+    from safetensors.torch import load_file, save_file
+
+    from ypuddin.adapters import load_adapter_file
+    from ypuddin.tools import merge_into_state_dict
+
+    base = load_file(args.base)
+    tensors, meta = load_adapter_file(args.adapter)
+    names = None
+    if args.family:
+        from ypuddin.models import get_family
+
+        fam = get_family(args.family)
+        names = fam.linear_module_names() if hasattr(fam, "linear_module_names") else None
+    merged, unmatched = merge_into_state_dict(base, tensors, meta, prefix=args.prefix, strength=args.strength, module_names=names, requantize_fp8=args.fp8)
+    if unmatched:
+        print(f"warning: {len(unmatched)} adapter modules did not match the base model, e.g. {unmatched[:3]}")
+    save_file({k: v.contiguous() for k, v in merged.items()}, args.output)
+    print(f"wrote {args.output}")
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     try:
         import uvicorn
@@ -171,6 +212,27 @@ def build_parser() -> argparse.ArgumentParser:
     cv.add_argument("--family", default="anima")
     cv.add_argument("-o", "--output", required=True)
     cv.set_defaults(fn=cmd_convert)
+
+    ex = sub.add_parser("extract", help="extract a LoRA/LoKr from the difference of two full models")
+    ex.add_argument("--base", required=True)
+    ex.add_argument("--tuned", required=True)
+    ex.add_argument("--algo", choices=["lora", "lokr"], default="lokr")
+    ex.add_argument("--rank", default="full")
+    ex.add_argument("--factor", type=int, default=-1)
+    ex.add_argument("--prefix", default="lora_unet")
+    ex.add_argument("--family", default="anima")
+    ex.add_argument("-o", "--output", required=True)
+    ex.set_defaults(fn=cmd_extract)
+
+    mg = sub.add_parser("merge", help="merge an adapter into base weights")
+    mg.add_argument("--base", required=True)
+    mg.add_argument("--adapter", required=True)
+    mg.add_argument("--strength", type=float, default=1.0)
+    mg.add_argument("--prefix", default="lora_unet")
+    mg.add_argument("--family", default=None, help="model family used to resolve module names (e.g. anima)")
+    mg.add_argument("--fp8", choices=["fp8_e4m3", "fp8_e5m2"], default=None, help="re-quantize merged weights to fp8")
+    mg.add_argument("-o", "--output", required=True)
+    mg.set_defaults(fn=cmd_merge)
 
     sv = sub.add_parser("serve", help="run the HTTP service for the web UI")
     sv.add_argument("--host", default="127.0.0.1")
