@@ -182,6 +182,50 @@ class Preset(_Out):
     updated_at: float | None
 
 
+class FamilyPreset(_Out):
+    name: str
+    description: str
+    include: list[str]
+    exclude: list[str]
+    layers: int  # Linear modules matched on the official geometry (0 when the family has no meta backbone)
+
+
+class FamilyWeight(_Out):
+    field: str  # ModelConfig field name, e.g. "dit_path"
+    label: str
+    hint: str
+
+
+class FamilySampling(_Out):
+    steps: int
+    cfg: float
+    shift: float | None  # None: resolution dependent (Krea 2), the trainer derives it per preview size
+    sampler: str
+
+
+class FamilyLatent(_Out):
+    channels: int
+    stride: int
+    patch: int
+    align: int  # image side lengths must be multiples of this
+
+
+class FamilyInfo(_Out):
+    name: str
+    label: str
+    architecture: str
+    adapter_prefix: str
+    capabilities: list[str]
+    text_modes: list[str]  # valid values of dataset.text_encoding for this family
+    presets: list[FamilyPreset]
+    default_preset: str
+    sampling: FamilySampling
+    latent: FamilyLatent
+    text_max_len: int
+    weights: list[FamilyWeight]
+    linear_modules: int  # total Linear modules of the official geometry (0 if unknown)
+
+
 class ModelAsset(_Out):
     id: str
     family: str

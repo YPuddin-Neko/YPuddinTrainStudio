@@ -221,6 +221,7 @@ class ToyFamily(ModelFamily):
             {"activation_checkpointing", "online_text", "masked_loss", "block_swap", "compile"}
         ),
         architecture="toy-dit",
+        label="Toy DiT（CPU 自检）",
     )
 
     def load(

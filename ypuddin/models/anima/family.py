@@ -206,6 +206,16 @@ class AnimaFamily(ModelFamily):
         ),
         architecture="anima",
         adapter_prefix="lora_unet",
+        label="Anima 2B",
+        weights=(
+            (
+                "dit_path",
+                "DiT",
+                "anima-base / anima-preview.safetensors（键名 net.* 或 model.diffusion_model.*）",
+            ),
+            ("text_encoder_path", "Qwen3-0.6B", "HF 目录或单文件 safetensors"),
+            ("vae_path", "Qwen-Image VAE", "qwen_image_vae.safetensors"),
+        ),
     )
 
     # ----------------------------------------------------------------- loading

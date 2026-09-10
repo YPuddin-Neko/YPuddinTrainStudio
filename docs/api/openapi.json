@@ -59,6 +59,67 @@
         }
       }
     },
+    "/api/families": {
+      "get": {
+        "summary": "List Families",
+        "operationId": "list_families_api_families_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FamilyInfo"
+                  },
+                  "type": "array",
+                  "title": "Response List Families Api Families Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/families/{name}": {
+      "get": {
+        "summary": "Get Family Info",
+        "operationId": "get_family_info_api_families__name__get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FamilyInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings": {
       "get": {
         "summary": "Get Settings",
@@ -2939,6 +3000,219 @@
           "total_gb"
         ],
         "title": "DiskStats"
+      },
+      "FamilyInfo": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "architecture": {
+            "type": "string",
+            "title": "Architecture"
+          },
+          "adapter_prefix": {
+            "type": "string",
+            "title": "Adapter Prefix"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Capabilities"
+          },
+          "text_modes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Text Modes"
+          },
+          "presets": {
+            "items": {
+              "$ref": "#/components/schemas/FamilyPreset"
+            },
+            "type": "array",
+            "title": "Presets"
+          },
+          "default_preset": {
+            "type": "string",
+            "title": "Default Preset"
+          },
+          "sampling": {
+            "$ref": "#/components/schemas/FamilySampling"
+          },
+          "latent": {
+            "$ref": "#/components/schemas/FamilyLatent"
+          },
+          "text_max_len": {
+            "type": "integer",
+            "title": "Text Max Len"
+          },
+          "weights": {
+            "items": {
+              "$ref": "#/components/schemas/FamilyWeight"
+            },
+            "type": "array",
+            "title": "Weights"
+          },
+          "linear_modules": {
+            "type": "integer",
+            "title": "Linear Modules"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "name",
+          "label",
+          "architecture",
+          "adapter_prefix",
+          "capabilities",
+          "text_modes",
+          "presets",
+          "default_preset",
+          "sampling",
+          "latent",
+          "text_max_len",
+          "weights",
+          "linear_modules"
+        ],
+        "title": "FamilyInfo"
+      },
+      "FamilyLatent": {
+        "properties": {
+          "channels": {
+            "type": "integer",
+            "title": "Channels"
+          },
+          "stride": {
+            "type": "integer",
+            "title": "Stride"
+          },
+          "patch": {
+            "type": "integer",
+            "title": "Patch"
+          },
+          "align": {
+            "type": "integer",
+            "title": "Align"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "channels",
+          "stride",
+          "patch",
+          "align"
+        ],
+        "title": "FamilyLatent"
+      },
+      "FamilyPreset": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "include": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Include"
+          },
+          "exclude": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Exclude"
+          },
+          "layers": {
+            "type": "integer",
+            "title": "Layers"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "include",
+          "exclude",
+          "layers"
+        ],
+        "title": "FamilyPreset"
+      },
+      "FamilySampling": {
+        "properties": {
+          "steps": {
+            "type": "integer",
+            "title": "Steps"
+          },
+          "cfg": {
+            "type": "number",
+            "title": "Cfg"
+          },
+          "shift": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shift"
+          },
+          "sampler": {
+            "type": "string",
+            "title": "Sampler"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "steps",
+          "cfg",
+          "shift",
+          "sampler"
+        ],
+        "title": "FamilySampling"
+      },
+      "FamilyWeight": {
+        "properties": {
+          "field": {
+            "type": "string",
+            "title": "Field"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "hint": {
+            "type": "string",
+            "title": "Hint"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "field",
+          "label",
+          "hint"
+        ],
+        "title": "FamilyWeight"
       },
       "FsEntry": {
         "properties": {

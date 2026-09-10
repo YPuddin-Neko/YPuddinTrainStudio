@@ -171,7 +171,8 @@ frontend/
 | `GET /artifacts?project_id=` · `GET /artifacts/{id}` · `DELETE` | `Artifact {id, project_id, job_id, name, path, size, algo, rank, alpha, factor, family, created_at, metadata}` |
 | `POST /artifacts/{id}/convert` | `{format: "comfyui|peft|kohya"}` → 新 `Artifact` |
 | `GET /artifacts/{id}/download` | 文件 |
-| `GET /models` · `POST /models` · `DELETE /models/{id}` · `POST /models/scan` | `ModelAsset {id, family, kind, path, size, dtype, exists, is_default, created_at}`；`scan` body `{path?: 目录（默认 settings.paths.models_dir），family?: 新注册文件的族（默认 anima）}`，递归找 `*.safetensors`，按文件名猜 kind，返回新注册的列表 |
+| `GET /models` · `POST /models` · `DELETE /models/{id}` · `POST /models/scan` | `ModelAsset {id, family, kind, path, size, dtype, exists, is_default, created_at}`；`scan` body `{path?: 目录（默认 settings.paths.models_dir），family?: 新注册文件的族（默认 anima）}`，递归找 `*.safetensors`，按文件名猜 kind，**文件名含 `krea` / `anima` 时按名字判族**，返回新注册的列表 |
+| `GET /families` · `GET /families/{name}` | `FamilyInfo {name, label, architecture, adapter_prefix, capabilities[], text_modes[], presets: [{name, description, include[], exclude[], layers}], default_preset, sampling: {steps, cfg, shift|null, sampler}, latent: {channels, stride, patch, align}, text_max_len, weights: [{field, label, hint}], linear_modules}`。**族列表、`adapter.preset` 的下拉选项、`dataset.text_encoding` 的可选值、模型页需要的权重文件、采样默认值都从这里取，不要在前端写死 `['anima','toy']`**。`layers` 是该预设在官方几何上命中的 Linear 层数（toy 为 0）；`sampling.shift` 为 `null` 表示随分辨率自动推导（Krea 2） |
 | `GET /events` | SSE（§7） |
 
 ## 6. 关键数据形状

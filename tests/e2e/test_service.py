@@ -287,6 +287,21 @@ async def test_response_models_cover_every_json_endpoint(live_server, image_data
             await client.post("/api/config/import-toml", json={"toml": "[model]\nfamily = 'toy'\n"})
         ).json()
         assert imp["ok"] is True and imp["config"]["model"]["family"] == "toy"
+        fams = {f["name"]: f for f in (await client.get("/api/families")).json()}
+        assert set(fams) >= {"anima", "krea2", "toy"}
+        krea = fams["krea2"]
+        assert krea["label"] == "Krea 2 Raw 12.9B" and krea["text_modes"] == ["auto", "cached"]
+        assert krea["sampling"]["shift"] is None and krea["sampling"]["cfg"] == 5.5
+        assert {p["name"]: p["layers"] for p in krea["presets"]} == {
+            "all-linear": 264,
+            "attn-mlp": 224,
+            "attn-only": 140,
+            "attn-mlp-text": 259,
+        }
+        assert [w["field"] for w in krea["weights"]] == ["dit_path", "text_encoder_path", "vae_path"]
+        assert "online" in fams["anima"]["text_modes"] and fams["anima"]["latent"]["align"] == 16
+        assert (await client.get("/api/families/anima")).json()["default_preset"] == "attn-mlp"
+        assert (await client.get("/api/families/flux")).status_code == 404
         weights = tmp_path / "w.safetensors"
         weights.write_bytes(b"\0" * 16)
         mdl = (

@@ -54,6 +54,8 @@ class ModelSpec:
     t_convention: str = "unit"  # backbone receives t in (0, 1)
     architecture: str = "unknown"  # modelspec.architecture base tag
     adapter_prefix: str = "lora_unet"
+    label: str = ""  # human-readable name for UIs ("Krea 2 Raw 12.9B"); falls back to ``name``
+    weights: tuple[tuple[str, str, str], ...] = ()  # (ModelConfig field, label, hint) the family needs
 
 
 KNOWN_CAPABILITIES = frozenset(

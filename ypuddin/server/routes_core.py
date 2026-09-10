@@ -129,6 +129,82 @@ def info() -> dict[str, Any]:
     }
 
 
+# --------------------------------------------------------------------------- families
+_FAMILY_INFO: dict[str, dict[str, Any]] = {}
+
+
+def family_info(name: str) -> dict[str, Any]:
+    """Everything a UI needs to render a family: presets (with matched-layer counts on the official geometry),
+    capabilities, valid text modes, sampling defaults, latent alignment and the weight files it expects."""
+    if name in _FAMILY_INFO:
+        return _FAMILY_INFO[name]
+    from ypuddin.adapters.rules import resolve_targets
+    from ypuddin.config import AdapterConfig
+    from ypuddin.models import get_family
+
+    fam = get_family(name)
+    spec = fam.spec
+    names: list[str] = []
+    if hasattr(fam, "linear_module_names"):
+        try:
+            names = fam.linear_module_names()
+        except Exception:  # noqa: BLE001
+            names = []
+    probe = AdapterConfig(algo="lora", rank=4, alpha=4)
+    presets = []
+    for pname, preset in fam.presets().items():
+        layers = len(resolve_targets(names, probe, preset)) if names else 0
+        presets.append(
+            {
+                "name": pname,
+                "description": preset.description,
+                "include": list(preset.include),
+                "exclude": list(preset.exclude),
+                "layers": layers,
+            }
+        )
+    text_modes = ["auto", "cached"] + (["online"] if "online_text" in spec.capabilities else [])
+    info = {
+        "name": spec.name,
+        "label": spec.label or spec.name,
+        "architecture": spec.architecture,
+        "adapter_prefix": spec.adapter_prefix,
+        "capabilities": sorted(spec.capabilities),
+        "text_modes": text_modes,
+        "presets": presets,
+        "default_preset": fam.default_preset(),
+        "sampling": {
+            "steps": spec.sampling.steps,
+            "cfg": spec.sampling.cfg,
+            "shift": spec.sampling.shift,
+            "sampler": spec.sampling.sampler,
+        },
+        "latent": {
+            "channels": spec.latent.channels,
+            "stride": spec.latent.stride,
+            "patch": spec.latent.patch,
+            "align": spec.latent.align,
+        },
+        "text_max_len": spec.text.max_len,
+        "weights": [{"field": f, "label": lbl, "hint": hint} for f, lbl, hint in spec.weights],
+        "linear_modules": len(names),
+    }
+    _FAMILY_INFO[name] = info
+    return info
+
+
+@router.get("/families", response_model=list[m.FamilyInfo], response_model_exclude_unset=True)
+def list_families() -> list[dict[str, Any]]:
+    return [family_info(n) for n in available_families()]
+
+
+@router.get("/families/{name}", response_model=m.FamilyInfo, response_model_exclude_unset=True)
+def get_family_info(name: str) -> dict[str, Any]:
+    if name not in available_families():
+        raise NotFound(f"unknown model family {name!r}")
+    return family_info(name)
+
+
 # --------------------------------------------------------------------------- settings / fs
 @router.get("/settings", response_model=m.Settings, response_model_exclude_unset=True)
 def get_settings(c: ServiceContext = Depends(ctx)) -> dict[str, Any]:

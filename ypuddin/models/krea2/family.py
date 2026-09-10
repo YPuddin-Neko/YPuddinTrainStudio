@@ -145,6 +145,20 @@ class Krea2Family(ModelFamily):
         ),
         architecture="krea2",
         adapter_prefix="lora_unet",
+        label="Krea 2 Raw 12.9B",
+        weights=(
+            (
+                "dit_path",
+                "DiT",
+                "krea2_raw_bf16.safetensors（约 26 GB）或 Comfy-Org krea2_fp8_scaled.safetensors（约 13 GB，按 fp8 加载）",
+            ),
+            (
+                "text_encoder_path",
+                "Qwen3-VL-4B-Instruct",
+                "HF 目录（推荐）或 ComfyUI 单文件 qwen_3vl_4b*.safetensors（bf16 / fp8_scaled）",
+            ),
+            ("vae_path", "Qwen-Image VAE", "qwen_image_vae.safetensors（与 Anima 共用）"),
+        ),
     )
 
     # ----------------------------------------------------------------- loading
