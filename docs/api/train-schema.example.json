@@ -1329,8 +1329,8 @@
       "additionalProperties": false,
       "properties": {
         "timestep_sampling": {
-          "default": "logit_normal",
-          "description": "时间步采样分布",
+          "default": "shift",
+          "description": "时间步采样分布：shift = logit-normal 再做 Möbius shift（默认 3.0，与 Anima 推理的 shift 及 AnimaLoraStudio 默认一致）；logit_normal 不做 shift（sd-scripts 示例的 sigmoid）；resolution_shift 按图像 token 数动态 shift（Flux 式）",
           "enum": [
             "uniform",
             "logit_normal",

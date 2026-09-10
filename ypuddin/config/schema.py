@@ -217,7 +217,9 @@ class AdapterConfig(_Strict):
 # --------------------------------------------------------------------------- objective
 class ObjectiveConfig(_Strict):
     timestep_sampling: Literal["uniform", "logit_normal", "shift", "resolution_shift", "mode", "cosmap"] = F(
-        "logit_normal", help="时间步采样分布", ui_=ui("objective", order=0, control="select")
+        "shift",
+        help="时间步采样分布：shift = logit-normal 再做 Möbius shift（默认 3.0，与 Anima 推理的 shift 及 AnimaLoraStudio 默认一致）；logit_normal 不做 shift（sd-scripts 示例的 sigmoid）；resolution_shift 按图像 token 数动态 shift（Flux 式）",
+        ui_=ui("objective", order=0, control="select"),
     )
     logit_mean: float = F(
         0.0,
