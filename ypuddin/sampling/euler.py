@@ -31,8 +31,12 @@ def euler_sample(
     generator: torch.Generator | None = None,
     device: torch.device | str = "cpu",
     dtype: torch.dtype = torch.float32,
+    on_step: Callable[[int, int], None] | None = None,
 ) -> Tensor:
-    """``predict(x_t, t) -> v``; integrates ``dx/dt = v`` from ``t=1`` (noise) down to ``t=0``."""
+    """``predict(x_t, t) -> v``; integrates ``dx/dt = v`` from ``t=1`` (noise) down to ``t=0``.
+
+    ``on_step(done, total)`` is called after every integration step (progress reporting).
+    """
     x = torch.randn(shape, generator=generator, device="cpu").to(device=device, dtype=dtype)
     ts = flow_schedule(steps, shift, device=device)
     for i in range(steps):
@@ -43,4 +47,6 @@ def euler_sample(
             v_u = predict_uncond(x, tb)
             v = v_u + cfg * (v - v_u)
         x = x + (t_next - t_cur).to(x.dtype) * v.to(x.dtype)
+        if on_step is not None:
+            on_step(i + 1, steps)
     return x

@@ -135,7 +135,8 @@ frontend/
 
 ## 5. REST 契约（v1）
 
-基址 `/api`，JSON；时间为 ISO-8601 UTC；ID 为字符串；分页 `?page=1&page_size=50` → `{items, total, page, page_size}`。
+基址 `/api`，JSON；**所有时间字段（`*_at`、`ts`、`mtime`）都是 Unix 时间戳（秒，浮点，UTC）**；ID 为字符串；分页 `?page=1&page_size=50` → `{items, total, page, page_size}`。
+以 `docs/api/openapi.json`（由 `scripts/export_api.py` 从代码导出）为准；本节是给人读的摘要，若有出入以 openapi 为准并提 issue。
 错误信封：`{"error": {"code": "job.not_found", "message": "…", "trace_id": "…", "details": {}}}`；请求头可带 `X-Trace-Id`，响应总是回传。
 
 | 方法 & 路径 | 说明 / 响应 |
@@ -175,22 +176,28 @@ frontend/
 
 ## 6. 关键数据形状
 
-### 6.1 Plan
+### 6.1 Plan（`POST /config/plan`，与实现一致）
 ```json
 {
   "ok": true,
-  "errors": [], "warnings": [{"code": "vram.tight", "msg": "…"}],
+  "errors": [{"loc": "adapter.rank", "msg": "…"}], "warnings": [{"code": "vram.tight", "msg": "…"}],
+  "images": 80, "items": 160, "captioned": 78,
   "steps_per_epoch": 120, "total_steps": 2400, "epochs": 20,
-  "buckets": [{"w": 1024, "h": 1024, "images": 80, "batches": 40}],
-  "params": {"trainable": 12345678, "base": 2000000000},
+  "buckets": [{"w": 1024, "h": 1024, "items": 80, "batches": 40}],
+  "params": {"base": 2000000000, "trainable": 12345678, "adapted_layers": 280, "by_algo": {"lokr": 280}},
   "memory": {"weights_mb": 4200, "adapter_mb": 48, "optimizer_mb": 96,
              "activations_mb_by_bucket": [{"w":1024,"h":1024,"mb":6100}],
              "peak_mb_estimate": 11800, "gpu_total_mb": 24576,
              "suggestions": ["enable memory.block_swap=8", "…"]},
-  "text_encoding": "online|cached",
-  "eta_estimate_s": null
+  "text_encoding": "online|cached"
 }
 ```
+- `items` = 图片 × repeats × 分辩率数（一个 epoch 的样本数）；`images` 是去重后的图片数。bucket 里同样是 `items`。
+- `gpu_total_mb` 在无 CUDA 的机器上为 `null`，此时 `suggestions` 不含显存建议。
+- 没有 `eta_estimate_s`：训练速度只能在真实运行后由 `job.step.it_s` 得到，Plan 不猜。
+
+`progress` 在排队态为 `{}`；`latest` 同理。`progress.phase` 的完整取值（按时间顺序）：
+`starting`（监督器已拉起进程）→ `loading`（加载权重）→ `indexing`（扫描数据集）→ `caching_latents` → `caching_text`（仅 cached 文本模式）→ `injecting`（注入适配器）→ `prepared`（`run.prepared`，此时 `total_steps` 已知）→ `training` → `finalizing`。未知取值请按"进行中"兜底渲染。
 
 ### 6.2 Job
 ```json
@@ -198,8 +205,8 @@ frontend/
   "id": "j_01H…", "type": "train", "name": "chara-v1", "project_id": "p_…",
   "status": "running", "priority": 0, "scheduled_at": null,
   "created_at": "…", "started_at": "…", "finished_at": null,
-  "progress": {"phase": "training", "step": 310, "total_steps": 2400, "epoch": 2, "eta_s": 5400,
-               "it_s": 1.7, "vram_peak_mb": 11200},
+  "progress": {"phase": "training", "step": 310, "total_steps": 2400, "steps_per_epoch": 120, "epoch": 2,
+               "eta_s": 5400, "it_s": 1.7, "vram_peak_mb": 11200},
   "latest": {"loss": 0.123, "loss_ema": 0.131, "lr": {"default": 1e-4}},
   "error": null,
   "resume_from": null,
@@ -216,7 +223,8 @@ frontend/
 | `system.stats` | 同 `GET /system/stats` |
 | `job.state` | `{job_id, status, progress?, error?}` |
 | `job.phase` | `{job_id, phase, message?}` |
-| `job.cache_progress` | `{job_id, kind: "latents|text|index", done, total}` |
+| `job.cache_progress` | `{job_id, kind: "latents|text|index", done, total}`；`kind=index` 时 `job_id` 实为 **dataset_id**（数据集异步索引进度） |
+| `job.sample_progress` | `{job_id, step, prompt_index, prompts, done, total}`：采样每一步都会发，用于让预览生成阶段有进度而不是"卡住" |
 | `job.step` | `{job_id, step, epoch, loss, loss_ema, lr: {group: v}, grad_norm, it_s, vram_mb, eta_s}` |
 | `job.validation` | `{job_id, step, per_t: {"0.1": 0.2, …}, mean}` |
 | `job.sample` | `{job_id, step, prompt_index, prompt, seed, url, width, height}` |
@@ -224,7 +232,7 @@ frontend/
 | `job.warning` | `{job_id, code, msg}` |
 | `job.log` | `{job_id, lines: [{ts, level, msg}], next_offset}` |
 | `queue.changed` | `{}`（提示刷新队列列表） |
-| `dataset.changed` | `{dataset_id}` |
+| `dataset.changed` | `{dataset_id}`：数据集索引完成（`index_status` 变为 `ready` 或 `failed`）、rescan 完成、caption 被修改时触发；收到后重新 `GET /datasets/{id}` |
 
 ## 8. 里程碑与验收
 

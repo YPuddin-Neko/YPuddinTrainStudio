@@ -60,6 +60,8 @@ def test_full_run_produces_artifacts_and_events(image_dataset, tmp_path):
         and "validation" in types
         and "sample.saved" in types
     )
+    prog = [e for e in events if e["type"] == "sample.progress"]
+    assert prog and prog[-1]["done"] == prog[-1]["total"] == 3 and prog[-1]["prompts"] == 1
     steps = [e for e in events if e["type"] == "step"]
     assert steps and steps[-1]["step"] == trainer.progress.total_steps
     assert all("loss" in s and "lr" in s and "grad_norm" in s for s in steps)

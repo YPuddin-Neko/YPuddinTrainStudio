@@ -720,6 +720,16 @@ class Trainer:
             def predict_uncond(x: Tensor, t: Tensor, c: TextCond = uncond) -> Tensor:
                 return predict(x, t, c)
 
+            def on_step(done: int, n: int, idx: int = i, prompts_total: int = len(prompts)) -> None:
+                self.emit(
+                    "sample.progress",
+                    step=self.progress.step,
+                    prompt_index=idx,
+                    prompts=prompts_total,
+                    done=done,
+                    total=n,
+                )
+
             latents = euler_sample(
                 predict,
                 shape,
@@ -730,6 +740,7 @@ class Trainer:
                 generator=torch.Generator().manual_seed(seed),
                 device=self.device,
                 dtype=torch.float32,
+                on_step=on_step,
             )
             self.loaded.latent.to(self.device)
             pixels = self.loaded.latent.decode(latents).clamp(-1, 1)

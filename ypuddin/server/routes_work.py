@@ -285,6 +285,7 @@ def delete_dataset(did: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]
     _get_dataset(c, did)
     c.db.delete("datasets", did)
     _records_path(c, did).unlink(missing_ok=True)
+    c.bus.publish("dataset.changed", {"dataset_id": did, "reason": "deleted"})
     return {"ok": True}
 
 
@@ -378,6 +379,7 @@ def put_caption(did: str, h: str, body: CaptionBody, c: ServiceContext = Depends
             if rec["content_hash"] == h:
                 rec["caption_path"] = str(cap_path)
         _records_path(c, did).write_text(json.dumps(recs), encoding="utf-8")
+    c.bus.publish("dataset.changed", {"dataset_id": did, "reason": "caption"})
     return {"caption": body.caption.strip()}
 
 
@@ -393,8 +395,10 @@ def tags_batch(did: str, body: TagBatch, c: ServiceContext = Depends(ctx)) -> di
 
     row = _get_dataset(c, did)
     changed = 0
+    created = 0
     wanted = set(body.hashes)
-    for r in _records(c, did):
+    recs = _records(c, did)
+    for r in recs:
         if r["content_hash"] not in wanted:
             continue
         cap_path = (
@@ -408,7 +412,14 @@ def tags_batch(did: str, body: TagBatch, c: ServiceContext = Depends(ctx)) -> di
             if t not in tags:
                 tags.append(t)
         cap_path.write_text(", ".join(tags) + "\n", encoding="utf-8")
+        if not r["caption_path"]:
+            r["caption_path"] = str(cap_path)  # a freshly created caption file must be found on the next read
+            created += 1
         changed += 1
+    if created:
+        _records_path(c, did).write_text(json.dumps(recs), encoding="utf-8")
+    if changed:
+        c.bus.publish("dataset.changed", {"dataset_id": did, "reason": "tags"})
     return {"changed": changed}
 
 

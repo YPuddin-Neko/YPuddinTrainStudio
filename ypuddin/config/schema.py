@@ -137,8 +137,8 @@ class DatasetConfig(_Strict):
             raise ValueError("resolutions must not be empty")
         out = sorted({int(r) for r in v}, reverse=True)
         for r in out:
-            if r < 32 or r > 8192:
-                raise ValueError(f"resolution {r} out of range [32, 8192]")
+            if r < 32 or r > MAX_SIDE:
+                raise ValueError(f"resolution {r} out of range [32, {MAX_SIDE}]")
         return out
 
 
@@ -421,14 +421,17 @@ class CheckpointConfig(_Strict):
 
 
 # --------------------------------------------------------------------------- sampling / validation / logging
+MAX_SIDE = 8192  # pixels; also the ceiling for dataset resolutions
+
+
 class SamplePrompt(_Strict):
     prompt: str
     negative: str = ""
     seed: int | None = None
-    width: int | None = None
-    height: int | None = None
-    steps: int | None = None
-    cfg: float | None = None
+    width: int | None = F(None, ge=32, le=MAX_SIDE)
+    height: int | None = F(None, ge=32, le=MAX_SIDE)
+    steps: int | None = F(None, ge=1, le=1000)
+    cfg: float | None = F(None, ge=0)
 
 
 class SamplingConfig(_Strict):
@@ -457,6 +460,7 @@ class SamplingConfig(_Strict):
     steps: int | None = F(
         None,
         ge=1,
+        le=1000,
         help="采样步数（空用族默认）",
         ui_=ui("sampling", order=60, show_when="sampling.enabled == true"),
     )
@@ -472,9 +476,19 @@ class SamplingConfig(_Strict):
         help="采样 shift（空用族默认）",
         ui_=ui("sampling", order=80, show_when="sampling.enabled == true"),
     )
-    width: int = F(1024, ge=64, help="宽", ui_=ui("sampling", order=90, show_when="sampling.enabled == true"))
+    width: int = F(
+        1024,
+        ge=32,
+        le=MAX_SIDE,
+        help="宽",
+        ui_=ui("sampling", order=90, show_when="sampling.enabled == true"),
+    )
     height: int = F(
-        1024, ge=64, help="高", ui_=ui("sampling", order=100, show_when="sampling.enabled == true")
+        1024,
+        ge=32,
+        le=MAX_SIDE,
+        help="高",
+        ui_=ui("sampling", order=100, show_when="sampling.enabled == true"),
     )
     seed: int = F(0, help="基础种子", ui_=ui("sampling", order=110, show_when="sampling.enabled == true"))
     sampler: Literal["euler"] = F(

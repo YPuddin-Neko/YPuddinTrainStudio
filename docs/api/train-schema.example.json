@@ -1667,6 +1667,8 @@
         "width": {
           "anyOf": [
             {
+              "maximum": 8192,
+              "minimum": 32,
               "type": "integer"
             },
             {
@@ -1679,6 +1681,8 @@
         "height": {
           "anyOf": [
             {
+              "maximum": 8192,
+              "minimum": 32,
               "type": "integer"
             },
             {
@@ -1691,6 +1695,8 @@
         "steps": {
           "anyOf": [
             {
+              "maximum": 1000,
+              "minimum": 1,
               "type": "integer"
             },
             {
@@ -1703,6 +1709,7 @@
         "cfg": {
           "anyOf": [
             {
+              "minimum": 0,
               "type": "number"
             },
             {
@@ -1819,6 +1826,7 @@
         "steps": {
           "anyOf": [
             {
+              "maximum": 1000,
               "minimum": 1,
               "type": "integer"
             },
@@ -1876,7 +1884,8 @@
         "width": {
           "default": 1024,
           "description": "宽",
-          "minimum": 64,
+          "maximum": 8192,
+          "minimum": 32,
           "title": "Width",
           "type": "integer",
           "x-ui": {
@@ -1888,7 +1897,8 @@
         "height": {
           "default": 1024,
           "description": "高",
-          "minimum": 64,
+          "maximum": 8192,
+          "minimum": 32,
           "title": "Height",
           "type": "integer",
           "x-ui": {

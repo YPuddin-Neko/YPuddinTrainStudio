@@ -198,6 +198,8 @@ class JobSupervisor:
             self.bus.publish("job.phase", data)
         elif t == "cache.progress":
             self.bus.publish("job.cache_progress", data)
+        elif t == "sample.progress":
+            self.bus.publish("job.sample_progress", data)
         elif t == "validation":
             self.bus.publish("job.validation", data)
         elif t == "sample.saved":
