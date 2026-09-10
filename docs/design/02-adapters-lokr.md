@@ -71,11 +71,13 @@ class AdapterModule(nn.Module):
 
 ```python
 def forward(self, x):
-    if self.module_dropout and self.training and rand() < p: return self.base(x)
+    if self.module_dropout and self.training and rand() < p:
+        return self.base(x)
     if self.mode == "bypass":
-        return self.base(x) + self.multiplier * self.adapter.delta_apply(x)   # dropout 施加在 delta_apply 内
+        return self.base(x) + self.multiplier * self.adapter.delta_apply(x)  # dropout 施加在 delta_apply 内
     W = self.base.dequant() + self.multiplier * self.adapter.delta_weight()
-    if self.dora is not None: W = self.dora.rescale(W)                          # m · W / ||W||_row
+    if self.dora is not None:
+        W = self.dora.rescale(W)  # m · W / ||W||_row
     return F.linear(x, W.to(x.dtype), self.base.bias)
 ```
 
@@ -151,3 +153,11 @@ algo = "none"                        # 排除
 | `test_init_zero_delta` | 所有算法初始输出 ≡ 底模 |
 | `test_extract_lokr` | 对随机 `W1⊗W2` 构造的差分能精确恢复（残差 < 1e-6） |
 | `test_convert_comfyui` | kohya ⇄ ComfyUI 键往返 |
+| `test_lycoris_compat`（需 `pip install lycoris-lora`，否则跳过） | 用 LyCORIS 官方 `create_network_from_weights` 加载我们写出的低秩 w2、`alpha≠rank` 的 LoKr 文件，其 LokrModule 前向与我们逐位一致 |
+
+## 7. 与 LyCORIS 4.0.0 的实测对照（2026-09-10，用户提供的源码树）
+
+在装有 lycoris-lora 4.0.0 的环境中实测（低秩 w2、`rank=4, alpha=2` ⇒ `scale=0.5`）：
+
+- **兼容性成立**：LyCORIS 官方加载器全部匹配我们的目标模块（`LokrModule`），前向输出与我们一致（max diff 4.8e-07）。
+- **§2 第 1 条属实**：`LycorisNetworkKohya.merge_to`（sd-scripts 风格合并）写入的 ΔW 为正确值的 0.5 倍（scale 被乘两次），合并并 `restore()` 后模型输出与训练时的适配器效果不一致；`get_diff_weight` 相对误差恰为 `scale`。因此合并 / 提取不能委托给 LyCORIS，必须由我们的 `merge` / `extract` 完成。
