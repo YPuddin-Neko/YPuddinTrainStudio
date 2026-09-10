@@ -20,3 +20,12 @@ def test_tokenizers_and_padding_conventions():
     assert cond["attn_mask"].sum(1).tolist() == [7, 3]
     assert cond["t5_ids"].shape == (2, PAD_FLOOR) and cond["t5_mask"].sum(1).tolist()[1] == 1
     assert torch.all(cond["embeds"][0, 7:] == 0)  # padded positions are zero vectors
+
+
+def test_empty_caption_keeps_one_valid_token_per_encoder():
+    tp = AnimaText(ASSETS / "qwen3_06b")
+    q_ids, q_mask, t5_ids, t5_mask = tp._tokenize(["", ""])  # all-empty batch
+    assert q_mask.shape[1] >= 1 and q_mask[:, 0].all() and (q_ids[:, 0] == tp.tokenizer.eos_token_id).all()
+    assert t5_mask[:, 0].all() and (t5_ids[:, 0] == 1).all()
+    q_ids, q_mask, _, _ = tp._tokenize(["1girl, smile", ""])
+    assert q_mask.sum(1).tolist()[1] == 1  # the empty row has exactly one (EOS) token

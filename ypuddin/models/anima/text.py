@@ -52,6 +52,25 @@ def _load_qwen3(path: str | Path, dtype: torch.dtype, device: torch.device | str
     return encoder.to(device)
 
 
+def _ensure_one_token(ids: Tensor, mask: Tensor, fill_id: int) -> tuple[Tensor, Tensor]:
+    """Empty captions (unconditional samples) keep exactly one valid token (EOS).
+
+    A fully masked attention row is undefined for fused SDPA kernels (NaN on some backends), so the
+    adapter's cross-attention must always see at least one key.
+    """
+    if ids.shape[1] == 0:
+        ids = torch.full((ids.shape[0], 1), fill_id, dtype=torch.long)
+        mask = torch.ones_like(ids, dtype=torch.bool)
+        return ids, mask
+    empty = mask.sum(1) == 0
+    if empty.any():
+        ids = ids.clone()
+        mask = mask.clone()
+        ids[empty, 0] = fill_id
+        mask[empty, 0] = True
+    return ids, mask
+
+
 class AnimaText(TextPipeline):
     fingerprint = "anima-qwen3-0.6b-last-hidden+t5old-v1"
 
@@ -89,7 +108,9 @@ class AnimaText(TextPipeline):
     def _tokenize(self, captions: list[str]) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         q = self.tokenizer(captions, padding="longest", truncation=True, max_length=self.max_len, return_tensors="pt")
         t5 = self.t5_tokenizer(captions, padding="longest", truncation=True, max_length=self.max_len, return_tensors="pt")
-        return q["input_ids"], q["attention_mask"].bool(), t5["input_ids"], t5["attention_mask"].bool()
+        q_ids, q_mask = _ensure_one_token(q["input_ids"], q["attention_mask"].bool(), int(self.tokenizer.eos_token_id))
+        t5_ids, t5_mask = _ensure_one_token(t5["input_ids"], t5["attention_mask"].bool(), T5_EOS_ID)
+        return q_ids, q_mask, t5_ids, t5_mask
 
     @torch.no_grad()
     def encode_for_cache(self, captions: list[str]) -> list[dict[str, Tensor]]:
