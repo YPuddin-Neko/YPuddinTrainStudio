@@ -202,6 +202,7 @@ git pull
 
 | 现象 | 处理 |
 |---|---|
+| Windows 双击 `studio.bat` 后窗口一直没有任何输出 | 该文件必须是 CRLF 换行：编辑器另存过或 `core.autocrlf=false` 的克隆会把换行变成 LF，cmd.exe 会解析错乱。仓库 `.gitattributes` 已强制 `*.bat` 为 CRLF——`git pull` 后 `git checkout -- studio.bat`（或删掉重新 `git checkout`）即可；不要用手动保存的副本。也可以先开一个 `cmd` 窗口，手动运行 `python scripts\bootstrap.py doctor` 看真实报错 |
 | `doctor` 显示 `cuda_available: false` 但机器有 NVIDIA 卡 | 驱动太旧或装了 CPU 版 torch：`nvidia-smi` 看驱动版本，`./studio.sh --reinstall --torch=cu124`（驱动 ≥550）或 `cu118` |
 | Windows 上 `ModuleNotFoundError: bitsandbytes` / 训练启动就失败 | 配置里 `optimizer.type` 改回 `adamw`，或 `.\venv\Scripts\pip install bitsandbytes>=0.43` |
 | 页面能开但任务列表 / 数据集为空、控制台 404 | 前端是旧构建：`./studio.sh build`；开发态的 mock 数据请用 `dev` 模式而不是 `run` |
