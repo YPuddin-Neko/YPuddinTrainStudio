@@ -1198,6 +1198,10 @@ class Anima(nn.Module):
         use_llm_adapter: bool = False,
         attn_mode: str = "torch",
         split_attn: bool = False,
+        llm_adapter_source_dim: int = 1024,
+        llm_adapter_dim: int = 1024,
+        llm_adapter_layers: int = 6,
+        llm_adapter_heads: int = 16,
     ) -> None:
         super().__init__()
         self.max_img_h = max_img_h
@@ -1239,11 +1243,15 @@ class Anima(nn.Module):
         )
 
         if self.use_llm_adapter:
+            # official Anima: source (Qwen3 hidden) = target (T5 space) = model = 1024, 6 layers, 16 heads;
+            # the sizes are constructor arguments (inferred from the checkpoint by infer_dit_config) so that
+            # reduced test models can be built -- ypuddin local modification
             self.llm_adapter = LLMAdapter(
-                source_dim=1024,
-                target_dim=1024,
-                model_dim=1024,
-                num_layers=6,
+                source_dim=llm_adapter_source_dim,
+                target_dim=llm_adapter_dim,
+                model_dim=llm_adapter_dim,
+                num_layers=llm_adapter_layers,
+                num_heads=llm_adapter_heads,
                 self_attn=True,
             )
 
@@ -1733,6 +1741,10 @@ ANIMA_2B_CONFIG: Dict[str, Any] = {
     "extra_t_extrapolation_ratio": 1.0,
     "rope_enable_fps_modulation": False,
     "use_llm_adapter": True,
+    "llm_adapter_source_dim": 1024,
+    "llm_adapter_dim": 1024,
+    "llm_adapter_layers": 6,
+    "llm_adapter_heads": 16,
     "attn_mode": "torch",
     "split_attn": False,
 }
@@ -1781,7 +1793,8 @@ def infer_dit_config(state_dict: Mapping[str, Any], key_prefix: Optional[str] = 
       else ``ANIMA_NUM_HEADS_BY_WIDTH`` ({2048: 16, 5120: 40}), else ``model_channels // 128``
     * ``use_llm_adapter``= any key starts with ``llm_adapter.``
     * also derived when present: ``out_channels``, ``crossattn_emb_channels``, ``mlp_ratio``, ``use_adaln_lora``,
-      ``adaln_lora_dim``, ``extra_per_block_abs_pos_emb``.
+      ``adaln_lora_dim``, ``extra_per_block_abs_pos_emb``, and the LLM adapter geometry
+      (``llm_adapter_source_dim`` / ``llm_adapter_dim`` / ``llm_adapter_layers`` / ``llm_adapter_heads``).
 
     Everything else (``max_img_h/w = 1024``, RoPE ratios, patch sizes, ...) comes from :data:`ANIMA_2B_CONFIG`.
     """
@@ -1824,6 +1837,17 @@ def infer_dit_config(state_dict: Mapping[str, Any], key_prefix: Optional[str] = 
         cfg["num_heads"] = ANIMA_NUM_HEADS_BY_WIDTH.get(model_channels, model_channels // 128)
 
     cfg["use_llm_adapter"] = any(k.startswith(f"{prefix}llm_adapter.") for k in state_dict)
+    if cfg["use_llm_adapter"] and has("llm_adapter.blocks.0.cross_attn.k_proj.weight"):
+        k_shape = shape("llm_adapter.blocks.0.cross_attn.k_proj.weight")  # (model_dim, source_dim)
+        cfg["llm_adapter_source_dim"] = k_shape[1]
+        cfg["llm_adapter_dim"] = shape("llm_adapter.embed.weight")[1] if has("llm_adapter.embed.weight") else k_shape[0]
+        adapter_blocks = set()
+        for k in state_dict:
+            if k.startswith(f"{prefix}llm_adapter.blocks."):
+                adapter_blocks.add(int(k[len(prefix) + len("llm_adapter.blocks.") :].split(".")[0]))
+        cfg["llm_adapter_layers"] = max(adapter_blocks) + 1 if adapter_blocks else cfg["llm_adapter_layers"]
+        if has("llm_adapter.blocks.0.cross_attn.q_norm.weight"):
+            cfg["llm_adapter_heads"] = k_shape[0] // shape("llm_adapter.blocks.0.cross_attn.q_norm.weight")[0]
 
     if has("final_layer.linear.weight"):
         cfg["out_channels"] = shape("final_layer.linear.weight")[0] // patch_elems

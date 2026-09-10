@@ -7,7 +7,7 @@
 | M0 骨架 / 配置 / 事件 / toy 族 / 最小循环 | ✅ | `tests/unit/test_config.py`（19）、`tests/e2e/test_toy_training.py`：暂停恢复**逐位一致** |
 | M1 适配器引擎（LoRA / LoKr / LoHa / Full / DoRA）+ 存取转换 + 工具 | ✅ merge / extract（SVD→LoRA、最近 Kronecker 积→LoKr）/ resize，`tests/unit/test_tools.py` | `tests/unit/test_adapters.py`（62）：factorization 表与 LyCORIS 一致、ΔW≡kron、bypass≡merged、第三方 alpha 约定、fp8 冻结层、注入/还原、存取往返 |
 | M2 数据流水线（索引 / 分桶 / 缓存 / caption / 可恢复采样器）+ 验证集 | ✅ | `tests/unit/test_data.py`；e2e 中验证损失确实下降 |
-| M3 Anima 族 | 🟡 代码完成并通过 CPU 随机权重测试，**待 GPU 机器上用官方权重验证** | `ypuddin/models/anima/`：vendored Cosmos-Predict2 DiT + Qwen-Image VAE（Apache-2.0，见 `vendor/NOTICE.md`）、Qwen3+T5 文本管线、族封装；`tests/unit/test_anima_vendor.py`（20）、`test_anima_family.py`（7）：两种前缀加载、几何推断、与 sd-scripts 式调用逐位接近、预设命中数、LoKr 前反向、2B 参数量 |
+| M3 Anima 族 | 🟡 代码完成；**整条训练链路已在 CPU 上用缩小版组件跑通**（真实 transformers Qwen3 → LLM adapter → DiT → VAE → 缓存 → LoKr → 验证 → 采样 → 导出 → ComfyUI 键转换），**待 GPU 机器上用官方权重验证**（`ypuddin smoke`） | `ypuddin/models/anima/`：vendored Cosmos-Predict2 DiT + Qwen-Image VAE（Apache-2.0，见 `vendor/NOTICE.md`）、Qwen3+T5 文本管线、族封装；`tests/unit/test_anima_vendor.py`（21）、`test_anima_family.py`（10）、`tests/e2e/test_anima_pipeline.py`（3：online/cached 文本模式全流程 + 转换往返） |
 | M4 显存子系统 | 🟡 Block Swap ✅（CPU/MPS 逐位一致）；fp8 冻结底模 ✅（CPU 反量化路径）；激活检查点由族实现；Kahan ✅；8-bit 需 CUDA | `tests/unit/test_block_swap.py`、`test_optim.py` |
 | M5 服务 API + 队列 + SSE + 前端对接 | ✅ 后端；✅ 前端 FE-M1~M5（真实后端全流程走通，见 `frontend/screenshots/01~11`）；🟡 FE-M4 数据集/项目/模型/设置页进行中 | `tests/e2e/test_service.py`（真实 uvicorn + 子进程训练 + SSE + API 暂停/恢复，连续 5 次通过） |
 | M6 文档 / 预设 / 基准对比 | 🟡 | 本目录 + `docs/reference/`；基准待 GPU |

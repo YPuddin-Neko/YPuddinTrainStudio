@@ -103,3 +103,9 @@ and with sd-scripts / ComfyUI / diffusion-pipe LoRA key conventions.
 `transformers`), `library/anima_train_utils.py`, `library/strategy_anima.py`, `library/custom_offloading_utils.py`
 and `library/safetensors_utils.py` were **not** copied; their relevant behaviour is documented in the module
 docstrings of the vendored files and re-implemented natively in `ypuddin`.
+
+- `cosmos_dit.py` (additional local modification): the LLM adapter geometry (`llm_adapter_source_dim`,
+  `llm_adapter_dim`, `llm_adapter_layers`, `llm_adapter_heads`) became constructor arguments, inferred from the
+  checkpoint by `infer_dit_config`; defaults reproduce the official 1024/1024/6/16 adapter exactly.
+- `attention.py` (additional local modification): `attn_mode="sage"` dispatches unmasked, dropout-free calls to
+  `sageattention.sageattn` when installed and falls back to PyTorch SDPA otherwise.

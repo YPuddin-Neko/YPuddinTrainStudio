@@ -31,12 +31,12 @@ def _load_qwen3(path: str | Path, dtype: torch.dtype, device: torch.device | str
 
     p = Path(path)
     if p.is_dir():
-        model = AutoModelForCausalLM.from_pretrained(str(p), torch_dtype=dtype)
+        model = AutoModelForCausalLM.from_pretrained(str(p), dtype=dtype)
     else:
         from safetensors.torch import load_file
 
         config = AutoConfig.from_pretrained(str(ASSETS / "qwen3_06b"))
-        model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
+        model = AutoModelForCausalLM.from_config(config, dtype=dtype)
         sd = load_file(str(p))
         if not any(k.startswith("model.") for k in sd):
             # bare decoder-stack keys (layers.0...., embed_tokens.weight) -> HF causal-LM layout
@@ -155,7 +155,8 @@ class AnimaText(TextPipeline):
         lq = max(PAD_FLOOR, max(e["embeds"].shape[0] for e in entries))
         lt = max(PAD_FLOOR, max(e["t5_ids"].shape[0] for e in entries))
         b = len(entries)
-        embeds = torch.zeros(b, lq, QWEN_HIDDEN, dtype=torch.float32)
+        hidden = entries[0]["embeds"].shape[1] if entries else QWEN_HIDDEN
+        embeds = torch.zeros(b, lq, hidden, dtype=torch.float32)
         q_mask = torch.zeros(b, lq, dtype=torch.bool)
         t5_ids = torch.full((b, lt), T5_PAD_ID, dtype=torch.long)
         t5_mask = torch.zeros(b, lt, dtype=torch.bool)

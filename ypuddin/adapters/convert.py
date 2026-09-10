@@ -30,10 +30,17 @@ def kohya_to_comfy(
     """LoRA keys become PEFT-style ``diffusion_model.<dotted>.lora_A/B.weight``; other algorithms
     keep kohya keys (ComfyUI resolves ``lora_unet_*`` LoKr/LoHa keys natively)."""
     names = list(module_names)
+    # only modules that actually carry LoRA tensors move; their alpha must travel with them, while a
+    # LoKr/LoHa module's alpha has to stay next to its kohya-keyed weights
+    lora_modules = {k.partition(".")[0] for k in tensors if k.partition(".")[2] in _KOHYA_TO_PEFT}
     out: dict[str, Tensor] = {}
     for key, t in tensors.items():
         module, _, suffix = key.partition(".")
-        if not module.startswith(prefix + "_") or suffix not in _KOHYA_TO_PEFT and suffix != "alpha":
+        if (
+            not module.startswith(prefix + "_")
+            or module not in lora_modules
+            or (suffix not in _KOHYA_TO_PEFT and suffix != "alpha")
+        ):
             out[key] = t
             continue
         dotted = underscored_to_dotted(module[len(prefix) + 1 :], names)
