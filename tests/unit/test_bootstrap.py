@@ -133,3 +133,13 @@ def test_flat_listing_success_installs_wheel_then_dependencies(monkeypatch, tmp_
     assert (
         "--upgrade" not in torch_calls[1] and "--index-url" in torch_calls[1]
     )  # deps only, keep the cu126 wheel
+    assert (
+        "--upgrade" not in torch_calls[1] and "--index-url" in torch_calls[1]
+    )  # deps only, keep the cu126 wheel
+
+
+def test_needs_copy_link_mode():
+    assert boot.needs_copy_link_mode(100, 200) is True  # uv cache and project on different filesystems
+    assert boot.needs_copy_link_mode(100, 100) is False
+    assert boot.needs_copy_link_mode(None, 100) is False  # unknown -> leave uv's default behaviour
+    assert boot.needs_copy_link_mode(100, None) is False

@@ -92,6 +92,31 @@ def uv_path() -> str | None:
     return shutil.which("uv")
 
 
+def uv_cache_dir(uv: str) -> Path | None:
+    try:
+        out = subprocess.run([uv, "cache", "dir"], capture_output=True, text=True, timeout=15).stdout.strip()
+        return Path(out) if out else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def st_dev_of(path: Path) -> int | None:
+    """st_dev of the nearest existing ancestor (the path itself may not exist yet)."""
+    p = Path(path)
+    while True:
+        try:
+            return os.stat(p).st_dev
+        except OSError:
+            if p.parent == p:
+                return None
+            p = p.parent
+
+
+def needs_copy_link_mode(cache_dev: int | None, root_dev: int | None) -> bool:
+    """uv hard-links packages from its cache; across filesystems it warns and falls back to copying."""
+    return cache_dev is not None and root_dev is not None and cache_dev != root_dev
+
+
 def _nvidia_smi(query: str) -> list[str]:
     smi = shutil.which("nvidia-smi")
     if not smi:
@@ -241,9 +266,15 @@ def ensure_venv(torch_tag: str, *, index_mode: str, reinstall: bool, extras: str
     py = str(venv_python())
     pypi_chain, torch_sources = index_chains(index_mode, torch_tag)
 
+    env = dict(os.environ)
+    if uv and needs_copy_link_mode(st_dev_of(uv_cache_dir(uv) or VENV), st_dev_of(ROOT)):
+        # uv cache and project are on different filesystems: copy instead of hardlinking, no warning
+        env["UV_LINK_MODE"] = "copy"
+        log("  uv 缓存与项目不在同一文件系统，用复制模式安装（UV_LINK_MODE=copy）")
+
     def attempt(cmd: list[str]) -> bool:
         log("  执行: " + " ".join(cmd))
-        return subprocess.run(cmd).returncode == 0
+        return subprocess.run(cmd, env=env).returncode == 0
 
     def pip_cmd(
         args: list[str], index_url: str | None, *, upgrade: bool = True, extra: list[str] | None = None
