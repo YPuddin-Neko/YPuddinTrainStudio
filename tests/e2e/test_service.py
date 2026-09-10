@@ -4,6 +4,7 @@ import asyncio
 import socket
 import threading
 import time
+from pathlib import Path
 
 import httpx
 import pytest
@@ -293,8 +294,16 @@ async def test_response_models_cover_every_json_endpoint(live_server, image_data
         ).json()
         assert mdl["exists"] is True and mdl["is_default"] is False and mdl["size"] == 16
         assert any(x["id"] == mdl["id"] for x in (await client.get("/api/models")).json())
+        for n in ("krea2_fp8_scaled.safetensors", "anima-base-v1.safetensors", "qwen_image_vae.safetensors"):
+            (tmp_path / n).write_bytes(b"\0" * 8)
         scanned = (await client.post("/api/models/scan", json={"path": str(tmp_path)})).json()
         assert isinstance(scanned, list)
+        by_name = {Path(x["path"]).name: x for x in scanned}
+        assert by_name["krea2_fp8_scaled.safetensors"]["family"] == "krea2"
+        assert by_name["krea2_fp8_scaled.safetensors"]["kind"] == "dit"
+        assert by_name["krea2_fp8_scaled.safetensors"]["dtype"] == "fp8"
+        assert by_name["anima-base-v1.safetensors"]["family"] == "anima"
+        assert by_name["qwen_image_vae.safetensors"]["kind"] == "vae"
         assert (await client.delete(f"/api/models/{mdl['id']}")).json()["ok"] is True
         assert (await client.get("/api/queue/settings")).json()["held"] in (True, False)
         page = (await client.get("/api/jobs?page=1&page_size=5")).json()

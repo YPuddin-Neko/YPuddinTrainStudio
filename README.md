@@ -1,6 +1,6 @@
 # YPuddin Train Studio
 
-一个面向扩散模型（首发支持 **Anima**：Cosmos-Predict2 风格 DiT + Qwen3-0.6B + Qwen-Image VAE）的
+一个面向扩散模型（已支持 **Anima**：Cosmos-Predict2 风格 DiT + Qwen3-0.6B + Qwen-Image VAE；**Krea 2**：12.9B 单流 MMDiT + Qwen3-VL-4B + Qwen-Image VAE）的
 **模块化 LoRA / LoKr 训练器**，附带供 Web 前端调用的服务 API。
 
 它不是现有训练脚本的 GUI 套壳：训练核心、适配器（LoRA / LoKr / LoHa / DoRA）、数据流水线、

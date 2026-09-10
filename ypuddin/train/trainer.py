@@ -230,6 +230,11 @@ class Trainer:
             problems.append("fp8 base precision requires CUDA")
         if cfg.dataset.masked_loss and "masked_loss" not in caps:
             problems.append("dataset.masked_loss is not supported by this family")
+        if cfg.dataset.text_encoding == "online" and "online_text" not in caps:
+            problems.append(
+                "dataset.text_encoding='online' is not supported by this family (its text encoder is too large to "
+                "stay resident); use 'cached' or 'auto'"
+            )
         if cfg.memory.activation_checkpointing != "none" and "activation_checkpointing" not in caps:
             problems.append("memory.activation_checkpointing is not supported by this family")
         if cfg.memory.compile and "compile" not in caps:
@@ -708,12 +713,15 @@ class Trainer:
         out_dir.mkdir(exist_ok=True)
         paths: list[Path] = []
         stride = self.family.spec.latent.stride
+        patch = self.family.spec.latent.patch
         for i, p in enumerate(prompts):
             w = (p.width or scfg.width) // self.family.spec.latent.align * self.family.spec.latent.align
             h = (p.height or scfg.height) // self.family.spec.latent.align * self.family.spec.latent.align
             steps = p.steps or scfg.steps or defaults.steps
             cfg_scale = p.cfg if p.cfg is not None else (scfg.cfg if scfg.cfg is not None else defaults.cfg)
-            shift = scfg.shift or defaults.shift
+            shift = scfg.shift or self.family.sampling_shift(
+                (h // stride // patch) * (w // stride // patch), self.cfg.objective
+            )
             seed = p.seed if p.seed is not None else scfg.seed + i
             cond = self._text_cond([p.prompt])
             uncond = self._text_cond([p.negative])

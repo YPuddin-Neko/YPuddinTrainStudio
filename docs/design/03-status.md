@@ -8,9 +8,10 @@
 | M1 适配器引擎（LoRA / LoKr / LoHa / Full / DoRA）+ 存取转换 + 工具 | ✅ merge / extract（SVD→LoRA、最近 Kronecker 积→LoKr）/ resize，`tests/unit/test_tools.py` | `tests/unit/test_adapters.py`（62）：factorization 表与 LyCORIS 一致、ΔW≡kron、bypass≡merged、第三方 alpha 约定、fp8 冻结层、注入/还原、存取往返 |
 | M2 数据流水线（索引 / 分桶 / 缓存 / caption / 可恢复采样器）+ 验证集 | ✅ | `tests/unit/test_data.py`；e2e 中验证损失确实下降 |
 | M3 Anima 族 | 🟡 代码完成；**整条训练链路已在 CPU 上用缩小版组件跑通**（真实 transformers Qwen3 → LLM adapter → DiT → VAE → 缓存 → LoKr → 验证 → 采样 → 导出 → ComfyUI 键转换），**待 GPU 机器上用官方权重验证**（`ypuddin smoke`） | `ypuddin/models/anima/`：vendored Cosmos-Predict2 DiT + Qwen-Image VAE（Apache-2.0，见 `vendor/NOTICE.md`）、Qwen3+T5 文本管线、族封装；`tests/unit/test_anima_vendor.py`（21）、`test_anima_family.py`（10）、`tests/e2e/test_anima_pipeline.py`（3：online/cached 文本模式全流程 + 转换往返） |
+| M3b Krea 2 族 | 🟡 代码完成；**整条训练链路已在 CPU 上用缩小版组件跑通**（真实 transformers Qwen3-VL 解码器 → 12 层隐状态堆叠 → SingleStreamDiT → VAE → 缓存 → LoKr → 验证 → 分辨率自适应 shift 采样 → 导出 → 合并回 fp8_scaled 底模），**待 GPU 机器上用官方权重验证** | `ypuddin/models/krea2/`：vendored musubi-tuner `SingleStreamDiT`（Apache-2.0，见 `vendor/NOTICE.md`；GQA 由共享 attention 处理）、Qwen3-VL 文本管线（官方提示词模板 / 层选择 / 去前缀 / 去 padding 缓存）、族封装（bare / `model.diffusion_model.` / Comfy-Org **fp8_scaled** 三种检查点，fp8 层带文件 scale 直接冻结）、4 个目标预设、planner 几何推断；`tests/unit/test_krea2_family.py`（17）、`tests/e2e/test_krea2_pipeline.py`（3） |
 | M4 显存子系统 | 🟡 Block Swap ✅（CPU/MPS 逐位一致）；fp8 冻结底模 ✅（CPU 反量化路径）；激活检查点由族实现；Kahan ✅；8-bit 需 CUDA | `tests/unit/test_block_swap.py`、`test_optim.py` |
 | M5 服务 API + 队列 + SSE + 前端对接 | ✅ 后端（全部 JSON 端点带响应模型）；✅ 前端 FE-M1~M6 全部验收（真实后端全流程、数据集页、项目/模型/设置页、图表拆分、类型由 openapi 生成；截图 `frontend/screenshots/01~24`；Vitest 46） | `tests/e2e/test_service.py`（真实 uvicorn + 子进程训练 / 预缓存任务 + SSE + API 暂停/恢复 + 端点扫描） |
-| M6 文档 / 预设 / 基准对比 | 🟡 | 本目录 + `docs/reference/`；基准待 GPU |
+| M6 文档 / 预设 / 基准对比 | 🟡 内置预设 anima×2 / krea2×2 / toy；部署文档 `docs/deploy.md` | 本目录 + `docs/reference/`；基准待 GPU |
 
 ## 与参考项目的差异（已落地的"更好"）
 
@@ -30,7 +31,7 @@
 
 ## 待办（按优先级）
 
-1. GPU 机器上用官方 Anima 权重验证：加载、bf16 训练一次、采样出图、LoRA/LoKr 载入 ComfyUI。
+1. GPU 机器上用官方 Anima / Krea 2 权重验证：加载、bf16 / fp8 训练一次、采样出图、LoRA/LoKr 载入 ComfyUI。
 2. fp8 `_scaled_mm` 路径；bitsandbytes 8-bit 优化器验证；unsloth 卸载 / sage / compile 在 CUDA 上的实测。
 3. 多 GPU（torchrun DDP）：采样器已按 rank 切分，训练器还需 DDP 包装与 rank 0 保存。
 4. 前端：按 GPU 实测反馈打磨（显存曲线、ETA、错误提示），i18n 文案补全。

@@ -39,7 +39,7 @@ class TextSpec:
 class SamplingDefaults:
     steps: int = 25
     cfg: float = 4.0
-    shift: float = 3.0
+    shift: float | None = 3.0  # None: resolution dependent, see ``ModelFamily.sampling_shift``
     sampler: str = "euler"
 
 
@@ -189,6 +189,18 @@ class ModelFamily(ABC):
 
     def blocks(self, loaded: LoadedModel) -> Iterator[nn.Module]:
         return iter(self.memory_layout(loaded).blocks)
+
+    def sampling_shift(self, num_tokens: int, objective: Any | None = None) -> float:
+        """Timestep shift used for previews of an image with ``num_tokens`` DiT tokens.
+
+        Families with a fixed inference shift return ``spec.sampling.shift``; resolution-aware ones
+        (Flux / Krea 2 style ``mu`` interpolation) override this.
+        """
+        if self.spec.sampling.shift is None:
+            raise NotImplementedError(
+                f"{self.spec.name}: sampling shift is resolution dependent, override sampling_shift()"
+            )
+        return float(self.spec.sampling.shift)
 
     def validate_config(self, cfg: ModelConfig) -> list[str]:
         """Return human-readable problems (missing paths etc.) without loading weights."""

@@ -81,7 +81,7 @@ filterwarnings = ["ignore::DeprecationWarning"]
 [tool.ruff]
 line-length = 110
 target-version = "py310"
-extend-exclude = ["ypuddin/models/anima/vendor"]  # vendored upstream code: keep diffs against sd-scripts readable
+extend-exclude = ["ypuddin/models/anima/vendor", "ypuddin/models/krea2/vendor"]  # vendored upstream code: keep diffs against sd-scripts readable
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP"]

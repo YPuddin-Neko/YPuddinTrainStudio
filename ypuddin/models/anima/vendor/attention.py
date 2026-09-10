@@ -11,6 +11,7 @@
 #   * ``attn_mode="sage"`` is accepted again through a tiny dispatch shim (``_sdpa``): unmasked, dropout-free calls go
 #     to ``sageattention.sageattn`` when the package is installed; masked calls (text cross-attention) and dropout fall
 #     back to PyTorch SDPA, which is exactly what upstream's sage branch did.
+#   * ``_sdpa`` expands grouped-query k/v heads (Krea 2) so q/k/v head counts always match.
 """Minimal SDPA attention helper used by :mod:`ypuddin.models.anima.vendor.cosmos_dit`.
 
 Call pattern (identical to sd-scripts ``library.attention``)::
@@ -52,7 +53,12 @@ def _sdpa(
     attn_mask: Optional[torch.Tensor] = None,
     dropout_p: float = 0.0,
 ) -> torch.Tensor:
-    """SDPA-compatible dispatch: [B, H, L, D] in, [B, H, L, D] out."""
+    """SDPA-compatible dispatch: [B, H, L, D] in, [B, H, L, D] out. Grouped-query attention (fewer k/v heads
+    than q heads, e.g. Krea 2's 48:12) is expanded here so every backend sees matching head counts."""
+    if k.shape[1] != q.shape[1]:
+        rep = q.shape[1] // k.shape[1]
+        k = k.repeat_interleave(rep, dim=1)
+        v = v.repeat_interleave(rep, dim=1)
     if attn_mode in _SAGE_MODES and attn_mask is None and dropout_p == 0.0 and q.is_cuda:
         if _sageattn is None:
             raise RuntimeError("attn_mode='sage' requires the sageattention package (pip install sageattention)")

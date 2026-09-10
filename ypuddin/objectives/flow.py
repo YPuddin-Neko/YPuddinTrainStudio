@@ -65,7 +65,8 @@ class TimestepSampler:
         if mode == "shift":
             t = mobius_shift(t, self.cfg.shift)
         elif mode == "resolution_shift":
-            t = mobius_shift(t, resolution_shift_value(num_tokens or 1024))
+            (lo_tok, hi_tok), (lo_mu, hi_mu) = self.cfg.res_shift_tokens, self.cfg.res_shift_mu
+            t = mobius_shift(t, resolution_shift_value(num_tokens or 1024, lo_tok, hi_tok, lo_mu, hi_mu))
         lo, hi = self.cfg.t_min, self.cfg.t_max
         return t.clamp(max(lo, 1e-5), min(hi, 1 - 1e-5))
 

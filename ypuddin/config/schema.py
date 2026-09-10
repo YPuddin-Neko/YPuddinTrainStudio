@@ -19,12 +19,20 @@ class _Strict(BaseModel):
 
 # --------------------------------------------------------------------------- model
 class ModelConfig(_Strict):
-    family: Literal["anima", "toy"] = F("anima", help="模型族", ui_=ui("model", order=0, control="select"))
+    family: Literal["anima", "krea2", "toy"] = F(
+        "anima",
+        help="模型族（anima：Anima 2B；krea2：Krea 2 Raw 12.9B）",
+        ui_=ui("model", order=0, control="select"),
+    )
     dit_path: str | None = F(
-        None, help="DiT 主干权重（safetensors）", ui_=ui("model", order=10, control="path")
+        None,
+        help="DiT 主干权重（safetensors；支持官方 bf16 与 ComfyUI fp8_scaled 文件）",
+        ui_=ui("model", order=10, control="path"),
     )
     text_encoder_path: str | None = F(
-        None, help="文本编码器（HF 目录或单文件 safetensors）", ui_=ui("model", order=20, control="path")
+        None,
+        help="文本编码器（Anima：Qwen3-0.6B；Krea 2：Qwen3-VL-4B-Instruct）——HF 目录或单文件 safetensors",
+        ui_=ui("model", order=20, control="path"),
     )
     vae_path: str | None = F(None, help="VAE 权重", ui_=ui("model", order=30, control="path"))
     tokenizer_path: str | None = F(
@@ -238,6 +246,26 @@ class ObjectiveConfig(_Strict):
             "objective",
             order=20,
             show_when="objective.timestep_sampling in ['logit_normal','shift','resolution_shift']",
+        ),
+    )
+    res_shift_tokens: tuple[int, int] = F(
+        (256, 4096),
+        help="resolution_shift 的 token 数端点 (最小, 最大)；Flux 为 (256, 4096)，Krea 2 为 (256, 6400)",
+        ui_=ui(
+            "objective",
+            order=25,
+            advanced=True,
+            show_when="objective.timestep_sampling == 'resolution_shift'",
+        ),
+    )
+    res_shift_mu: tuple[float, float] = F(
+        (0.5, 1.15),
+        help="resolution_shift 的 mu 端点 (最小 token 数处, 最大 token 数处)；实际 shift = exp(mu)",
+        ui_=ui(
+            "objective",
+            order=26,
+            advanced=True,
+            show_when="objective.timestep_sampling == 'resolution_shift'",
         ),
     )
     shift: float = F(

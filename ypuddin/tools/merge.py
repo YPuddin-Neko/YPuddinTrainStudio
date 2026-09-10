@@ -55,7 +55,10 @@ def merge_into_state_dict(
             continue
         wkey = f"{dotted}.weight"
         w = base[wkey]
-        scale = base.get(f"{dotted}.weight_scale")
+        # ComfyUI ``fp8_scaled`` files store the per-tensor scale as ``scale_weight`` (+ a ``scaled_fp8`` marker);
+        # ypuddin's own fp8 exports use ``weight_scale``. Read either, write back to the same key.
+        scale_key = next((k for k in (f"{dotted}.scale_weight", f"{dotted}.weight_scale") if k in base), None)
+        scale = base.get(scale_key) if scale_key else None
         if w.dtype in FP8_DTYPES.values():
             w32 = w.float() * (scale.float() if scale is not None else 1.0)
         else:
@@ -69,7 +72,7 @@ def merge_into_state_dict(
             kind = requantize_fp8 or next(k for k, v in FP8_DTYPES.items() if v == w.dtype)
             q, s = quantize_fp8(new, kind)
             merged[wkey] = q
-            merged[f"{dotted}.weight_scale"] = s
+            merged[scale_key or f"{dotted}.weight_scale"] = s
         else:
             merged[wkey] = new.to(w.dtype)
         if progress:

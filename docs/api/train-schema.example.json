@@ -1202,9 +1202,10 @@
       "properties": {
         "family": {
           "default": "anima",
-          "description": "模型族",
+          "description": "模型族（anima：Anima 2B；krea2：Krea 2 Raw 12.9B）",
           "enum": [
             "anima",
+            "krea2",
             "toy"
           ],
           "title": "Family",
@@ -1225,7 +1226,7 @@
             }
           ],
           "default": null,
-          "description": "DiT 主干权重（safetensors）",
+          "description": "DiT 主干权重（safetensors；支持官方 bf16 与 ComfyUI fp8_scaled 文件）",
           "title": "Dit Path",
           "x-ui": {
             "control": "path",
@@ -1243,7 +1244,7 @@
             }
           ],
           "default": null,
-          "description": "文本编码器（HF 目录或单文件 safetensors）",
+          "description": "文本编码器（Anima：Qwen3-0.6B；Krea 2：Qwen3-VL-4B-Instruct）——HF 目录或单文件 safetensors",
           "title": "Text Encoder Path",
           "x-ui": {
             "control": "path",
@@ -1368,6 +1369,56 @@
             "group": "objective",
             "order": 20,
             "show_when": "objective.timestep_sampling in ['logit_normal','shift','resolution_shift']"
+          }
+        },
+        "res_shift_tokens": {
+          "default": [
+            256,
+            4096
+          ],
+          "description": "resolution_shift 的 token 数端点 (最小, 最大)；Flux 为 (256, 4096)，Krea 2 为 (256, 6400)",
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "title": "Res Shift Tokens",
+          "type": "array",
+          "x-ui": {
+            "advanced": true,
+            "group": "objective",
+            "order": 25,
+            "show_when": "objective.timestep_sampling == 'resolution_shift'"
+          }
+        },
+        "res_shift_mu": {
+          "default": [
+            0.5,
+            1.15
+          ],
+          "description": "resolution_shift 的 mu 端点 (最小 token 数处, 最大 token 数处)；实际 shift = exp(mu)",
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Res Shift Mu",
+          "type": "array",
+          "x-ui": {
+            "advanced": true,
+            "group": "objective",
+            "order": 26,
+            "show_when": "objective.timestep_sampling == 'resolution_shift'"
           }
         },
         "shift": {

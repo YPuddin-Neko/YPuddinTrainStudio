@@ -110,6 +110,28 @@ xiangmuyuanma/
 
 训练得到的 `.safetensors` 用 kohya 键名（`lora_unet_*`），ComfyUI 的 LoRA 加载器可直接读；`ypuddin convert --to comfyui` 可转成 PEFT 键名。
 
+### 5.1 Krea 2 权重（`model.family = "krea2"`）
+
+Krea 2 是 12.9B 参数的单流 MMDiT，文本编码器是 Qwen3-VL-4B-Instruct，VAE 与 Anima 相同（Qwen-Image VAE）：
+
+| 字段 | 文件 | 说明 |
+|---|---|---|
+| `model.dit_path` | `krea2_raw_bf16.safetensors`（官方 raw 权重，约 26 GB）或 Comfy-Org 的 `krea2_fp8_scaled.safetensors`（约 13 GB） | 键名可带或不带 `model.diffusion_model.` 前缀；**fp8_scaled 文件直接按 fp8 加载并沿用文件里的 scale**，不再占用 bf16 的显存 |
+| `model.text_encoder_path` | `Qwen/Qwen3-VL-4B-Instruct` HF 目录（推荐），或 ComfyUI 的单文件 `qwen_3vl_4b*.safetensors`（bf16 或 fp8_scaled 均可） | 只加载语言模型部分（视觉塔不参与）；单文件时把模型的 `config.json` 放在同一目录（没有则按 4B 几何假定），分词器缺失时用内置的 Qwen3 分词器 |
+| `model.vae_path` | `qwen_image_vae.safetensors` | 与 Anima 共用，latent 缓存可以互通 |
+
+Krea 2 的文本编码只支持 **cached 模式**（`dataset.text_encoding = "auto"` 会自动选 cached）：训练前先把 4B 编码器载入、编码所有 caption 变体、存成 bf16 缓存再释放，训练时显存只属于 DiT。显存参考（1024², batch 1，LoKr attn-mlp，分块重计算）：fp8 底模 ≈ 16 GB；再加 `memory.blocks_to_swap = 20` ≈ 7–8 GB（速度会下降）；bf16 底模不换出需要 ≥ 28 GB。内置预设 `krea2-lokr-default` / `krea2-lora-32` 已带这些设置。
+
+```bash
+./studio.sh smoke \
+  --set model.family=krea2 \
+  --set model.dit_path=/models/krea2_fp8_scaled.safetensors \
+  --set model.text_encoder_path=/models/Qwen3-VL-4B-Instruct \
+  --set model.vae_path=/models/qwen_image_vae.safetensors \
+  --set memory.base_precision=fp8_e4m3 --set memory.activation_checkpointing=block \
+  --set objective.timestep_sampling=resolution_shift --resolution 512
+```
+
 ## 6. 第一次在 GPU 机器上验证
 
 ```bash

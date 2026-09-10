@@ -184,7 +184,8 @@ def inject(
 
     ``base_precision`` controls the storage of frozen base weights (``keep``/``bf16``/``fp8_e4m3``...).
     """
-    linear_names = [n for n, m in model.named_modules() if isinstance(m, nn.Linear)]
+    # plain Linears plus layers a loader already froze (e.g. fp8_scaled checkpoints keep their own scales)
+    linear_names = [n for n, m in model.named_modules() if isinstance(m, (nn.Linear, FrozenLinear))]
     targets = resolve_targets(linear_names, cfg, preset, extra_exclude=extra_exclude)
     if not targets:
         raise ValueError(f"no modules matched preset {preset.name!r} and rules")
@@ -193,8 +194,11 @@ def inject(
     originals: dict[str, nn.Linear] = {}
     for t in targets:
         parent, attr = _locate(model, t.name)
-        linear: nn.Linear = getattr(parent, attr)
-        frozen = FrozenLinear.from_linear(linear, precision=base_precision)
+        linear = getattr(parent, attr)
+        if isinstance(linear, FrozenLinear):
+            frozen = linear  # already frozen (fp8 weight + scale from the checkpoint): keep as-is
+        else:
+            frozen = FrozenLinear.from_linear(linear, precision=base_precision)
         adapter = build_adapter(t.algo, linear.out_features, linear.in_features, t.params, dtype)
         adapter.to(linear.weight.device)
         layer = AdaptedLinear(

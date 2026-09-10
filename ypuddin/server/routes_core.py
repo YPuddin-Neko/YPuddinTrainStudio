@@ -221,6 +221,39 @@ BUILTIN_PRESETS: dict[str, dict[str, Any]] = {
             "optimizer": {"type": "adamw", "lr": 2e-4},
         },
     },
+    "krea2-lokr-default": {
+        "description": "Krea 2 LoKr：fp8 底模 + 分块重计算 + 分辨率自适应时间步，注意力+SwiGLU",
+        "config": {
+            "model": {"family": "krea2", "dtype": "bf16"},
+            "dataset": {"resolutions": [1024], "text_encoding": "cached", "batch_size": 1},
+            "adapter": {"algo": "lokr", "rank": "full", "alpha": 1.0, "factor": 8, "preset": "attn-mlp"},
+            "objective": {
+                "timestep_sampling": "resolution_shift",
+                "res_shift_tokens": [256, 6400],
+                "res_shift_mu": [0.5, 1.15],
+            },
+            "memory": {
+                "base_precision": "fp8_e4m3",
+                "activation_checkpointing": "block",
+                "blocks_to_swap": 0,
+            },
+            "optimizer": {"type": "adamw", "lr": 1e-4},
+            "scheduler": {"type": "cosine", "warmup_steps": 0.05},
+            "sampling": {"steps": 28, "cfg": 5.5, "width": 1024, "height": 1024},
+        },
+    },
+    "krea2-lora-32": {
+        "description": "Krea 2 LoRA rank 32 / alpha 32（官方默认：全部 Linear）",
+        "config": {
+            "model": {"family": "krea2", "dtype": "bf16"},
+            "dataset": {"resolutions": [1024], "text_encoding": "cached", "batch_size": 1},
+            "adapter": {"algo": "lora", "rank": 32, "alpha": 32.0, "preset": "all-linear"},
+            "objective": {"timestep_sampling": "resolution_shift", "res_shift_tokens": [256, 6400]},
+            "memory": {"base_precision": "fp8_e4m3", "activation_checkpointing": "block"},
+            "optimizer": {"type": "adamw", "lr": 1e-4},
+            "sampling": {"steps": 28, "cfg": 5.5, "width": 1024, "height": 1024},
+        },
+    },
     "toy-smoke": {
         "description": "CPU 玩具模型冒烟测试",
         "config": {
@@ -413,7 +446,8 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
             if any(k in name for k in ("qwen", "t5", "clip", "text"))
             else "dit"
         )
-        family = body.family
+        # DiT files name their family (``krea2_fp8_scaled``, ``anima-base``); shared parts (VAE) fall back to the body
+        family = "krea2" if "krea" in name else "anima" if "anima" in name else body.family
         mid = new_id("m")
         c.db.insert(
             "models",
