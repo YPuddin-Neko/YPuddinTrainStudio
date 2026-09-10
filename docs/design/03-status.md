@@ -9,7 +9,7 @@
 | M2 数据流水线（索引 / 分桶 / 缓存 / caption / 可恢复采样器）+ 验证集 | ✅ | `tests/unit/test_data.py`；e2e 中验证损失确实下降 |
 | M3 Anima 族 | 🟡 代码完成并通过 CPU 随机权重测试，**待 GPU 机器上用官方权重验证** | `ypuddin/models/anima/`：vendored Cosmos-Predict2 DiT + Qwen-Image VAE（Apache-2.0，见 `vendor/NOTICE.md`）、Qwen3+T5 文本管线、族封装；`tests/unit/test_anima_vendor.py`（20）、`test_anima_family.py`（7）：两种前缀加载、几何推断、与 sd-scripts 式调用逐位接近、预设命中数、LoKr 前反向、2B 参数量 |
 | M4 显存子系统 | 🟡 Block Swap ✅（CPU/MPS 逐位一致）；fp8 冻结底模 ✅（CPU 反量化路径）；激活检查点由族实现；Kahan ✅；8-bit 需 CUDA | `tests/unit/test_block_swap.py`、`test_optim.py` |
-| M5 服务 API + 队列 + SSE + 前端对接 | ✅ 后端；🟡 前端对接中 | `tests/e2e/test_service.py`（真实 uvicorn + 子进程训练 + SSE + API 暂停/恢复） |
+| M5 服务 API + 队列 + SSE + 前端对接 | ✅ 后端；✅ 前端 FE-M1~M5（真实后端全流程走通，见 `frontend/screenshots/01~11`）；🟡 FE-M4 数据集/项目/模型/设置页进行中 | `tests/e2e/test_service.py`（真实 uvicorn + 子进程训练 + SSE + API 暂停/恢复，连续 5 次通过） |
 | M6 文档 / 预设 / 基准对比 | 🟡 | 本目录 + `docs/reference/`；基准待 GPU |
 
 ## 与参考项目的差异（已落地的"更好"）
@@ -21,14 +21,16 @@
 5. **结构化事件流**：训练进程写 `events.jsonl`，监督器尾读并推 SSE；stdout 只是日志，永不解析。
 6. **内容哈希缓存**：latent 键 = (内容哈希, 桶尺寸, 编码器指纹, 翻转)；改 caption / 重命名文件不失效；文本缓存去 padding 存储。
 7. **类型化配置 + Schema 驱动表单**：150 字段的 pydantic 模型导出 JSON Schema（带 `x-ui`），前端零手写表单；`show_when` 前后端同构解析器。
-8. **CPU 可测的端到端**：toy 族让 112+ 个测试在几十秒内跑完，包括完整训练与服务流程。
+8. **CPU 可测的端到端**：toy 族让 170 个测试在几十秒内跑完，包括完整训练与服务流程。
+9. **cached 文本模式支持 caption 增强**：预缓存每张图有界、确定性的 caption 变体（`caption.cache_variants`），shuffle / tag_dropout / wildcard 在卸载文本编码器后仍可用（sd-scripts 在缓存 TE 输出时直接禁止这些选项）；caption_dropout 在采样时按概率精确生效；采样提示词与负面词一并预缓存。
+10. **激活卸载可选**：`memory.activation_checkpointing = "unsloth"` 走非阻塞 CPU 卸载的检查点（与逐块重算在 CPU 上梯度一致）；`model.attention = "sage"` 可选 SageAttention（仅图像自注意力，掩码交叉注意力回落 SDPA）。
 
 ## 待办（按优先级）
 
 1. GPU 机器上用官方 Anima 权重验证：加载、bf16 训练一次、采样出图、LoRA/LoKr 载入 ComfyUI。
-2. 激活检查点的 unsloth 式 CPU 卸载；fp8 `_scaled_mm` 路径；bitsandbytes 8-bit 优化器验证。
+2. fp8 `_scaled_mm` 路径；bitsandbytes 8-bit 优化器验证；unsloth 卸载 / sage / compile 在 CUDA 上的实测。
 3. 多 GPU（torchrun DDP）：采样器已按 rank 切分，训练器还需 DDP 包装与 rank 0 保存。
-4. 前端：真实后端对接收尾、数据集页图片网格与 caption 编辑体验。
+4. 前端 FE-M4：数据集页（图片网格 / caption 编辑 / 批量 tag / 分桶预览）、项目详情 tabs、模型权重页、设置页。
 5. 基准：同一数据集/配置下与 sd-scripts、diffusion-pipe 的速度、显存、验证损失对比。
 
 ## 运行方式
