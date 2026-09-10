@@ -23,7 +23,10 @@
 7. **类型化配置 + Schema 驱动表单**：150 字段的 pydantic 模型导出 JSON Schema（带 `x-ui`），前端零手写表单；`show_when` 前后端同构解析器。
 8. **CPU 可测的端到端**：toy 族让 170 个测试在几十秒内跑完，包括完整训练与服务流程。
 9. **cached 文本模式支持 caption 增强**：预缓存每张图有界、确定性的 caption 变体（`caption.cache_variants`），shuffle / tag_dropout / wildcard 在卸载文本编码器后仍可用（sd-scripts 在缓存 TE 输出时直接禁止这些选项）；caption_dropout 在采样时按概率精确生效；采样提示词与负面词一并预缓存。
-10. **激活卸载可选**：`memory.activation_checkpointing = "unsloth"` 走非阻塞 CPU 卸载的检查点（与逐块重算在 CPU 上梯度一致）；`model.attention = "sage"` 可选 SageAttention（仅图像自注意力，掩码交叉注意力回落 SDPA）。
+10. **工具链对官方权重文件格式友好**：`extract` / `merge` 直接吃 `net.`（anima-base）或 `model.diffusion_model.`（ComfyUI）前缀的整模型文件，适配器键始终是 kohya 裸模块名；`convert` 转 ComfyUI 时 LoKr/LoHa 模块的 alpha 与权重同留（LoRA 走 PEFT 键）。
+11. **一条命令自检**：`ypuddin smoke` 用真实 trainer 跑几步 + 出图 + 保存/回读 + 报告（含峰值显存与 traceback），新机器/新权重排障不用来回猜。
+12. **服务契约有类型**：全部 JSON 端点带 pydantic 响应模型，OpenAPI 直接生成前端 TS 类型；`ypuddin serve` 托管前端时支持深链接刷新。
+13. **激活卸载可选**：`memory.activation_checkpointing = "unsloth"` 走非阻塞 CPU 卸载的检查点（与逐块重算在 CPU 上梯度一致）；`model.attention = "sage"` 可选 SageAttention（仅图像自注意力，掩码交叉注意力回落 SDPA）。
 
 ## 待办（按优先级）
 
