@@ -50,8 +50,8 @@ export interface Project {
   id: string;
   name: string;
   note?: string;
-  created_at: string;
-  updated_at: string;
+  created_at: string | number;
+  updated_at: string | number;
   archived: boolean;
   dataset_ids: string[];
   stats: {
@@ -64,6 +64,7 @@ export interface JobProgress {
   phase: string;
   step: number;
   total_steps: number;
+  steps_per_epoch: number;
   epoch: number;
   eta_s: number | null;
   it_s: number;
@@ -133,7 +134,7 @@ export interface JobSample {
   url: string;
   width: number;
   height: number;
-  created_at: string;
+  created_at: string | number;
 }
 
 export interface JobCheckpoint {
@@ -141,7 +142,7 @@ export interface JobCheckpoint {
   kind: 'weights' | 'full';
   path: string;
   size: number;
-  created_at: string;
+  created_at: string | number;
   artifact_id?: string;
 }
 
@@ -224,22 +225,25 @@ export interface Plan {
   ok: boolean;
   errors: Array<{ loc?: string; msg: string }>;
   warnings: Array<{ code?: string; msg: string }>;
+  images?: number;
+  items?: number;
+  captioned?: number;
   steps_per_epoch: number;
   total_steps: number;
   epochs: number;
-  buckets: Array<{ w: number; h: number; images: number; batches: number }>;
-  params: { trainable: number; base: number };
+  buckets: Array<{ w: number; h: number; items?: number; images?: number; batches: number }>;
+  params: { trainable: number; base: number; adapted_layers?: number; by_algo?: Record<string, number> };
   memory: {
     weights_mb: number;
     adapter_mb: number;
     optimizer_mb: number;
     activations_mb_by_bucket: Array<{ w: number; h: number; mb: number }>;
     peak_mb_estimate: number;
-    gpu_total_mb: number;
+    gpu_total_mb: number | null;
     suggestions: string[];
   };
   text_encoding: 'online' | 'cached';
-  eta_estimate_s: number | null;
+  eta_estimate_s?: number | null;
 }
 
 export interface Preset {
@@ -247,5 +251,63 @@ export interface Preset {
   description: string;
   config: Record<string, any>;
   builtin: boolean;
-  updated_at: string;
+  updated_at: string | number | null;
+}
+
+// ---- Datasets ----
+
+export interface DatasetSource {
+  id: string;
+  project_id: string;
+  path: string;
+  repeats: number;
+  caption_ext: string;
+  is_reg: boolean;
+  prior_weight: number;
+  class_prompt: string | null;
+  created_at: number;
+}
+
+export interface DatasetStats {
+  images?: number;
+  captioned?: number;
+  avg_tags?: number;
+  resolutions?: Array<{ w: number; h: number; count: number }>;
+  ar_hist?: Array<{ ar: string; count: number }>;
+  masks?: number;
+}
+
+export interface DatasetInfo {
+  source: DatasetSource;
+  stats: DatasetStats;
+  index_status: 'ready' | 'indexing' | 'stale' | 'failed';
+  cache: {
+    latents?: { cached: number; total: number };
+    text?: { cached: number; total: number };
+  };
+}
+
+export interface DatasetImage {
+  hash: string;
+  rel_path: string;
+  width: number;
+  height: number;
+  caption: string;
+  has_mask: boolean;
+}
+
+export interface DatasetImagesPage {
+  items: DatasetImage[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface SampleProgressEvent {
+  job_id: string;
+  step: number;
+  prompt_index: number;
+  prompts: number;
+  done: number;
+  total: number;
 }

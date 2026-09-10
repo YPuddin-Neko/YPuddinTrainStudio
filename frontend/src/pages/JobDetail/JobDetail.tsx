@@ -24,6 +24,7 @@ export default function JobDetail() {
   const [checkpoints, setCheckpoints] = React.useState<JobCheckpoint[]>([]);
   const [logs, setLogs] = React.useState<JobLogLine[]>([]);
   const [configSnapshot, setConfigSnapshot] = React.useState<any>(null);
+  const [sampleProgress, setSampleProgress] = React.useState<{ step: number; promptIndex: number; prompts: number; done: number; total: number } | null>(null);
 
   const [activeTab, setActiveTab] = React.useState<'metrics' | 'samples' | 'checkpoints' | 'logs' | 'config'>('metrics');
   const [xAxisMode, setXAxisMode] = React.useState<'step' | 'epoch'>('step');
@@ -81,6 +82,23 @@ export default function JobDetail() {
       if (exists) return prev;
       return [...prev, sample];
     });
+  });
+
+  // 采样进度：让预览生成阶段有明确进度，不再像"卡死"
+  useEventStream(EVENT_TYPES.JOB_SAMPLE_PROGRESS, (data: any) => {
+    if (data.job_id !== id) return;
+    if (data.done >= data.total && data.prompt_index + 1 >= (data.prompts || 1)) {
+      // 最后一 prompt 完成 → 清除进度显示
+      setSampleProgress(null);
+    } else {
+      setSampleProgress({
+        step: data.step,
+        promptIndex: data.prompt_index,
+        prompts: data.prompts,
+        done: data.done,
+        total: data.total,
+      });
+    }
   });
 
   useEventStream(EVENT_TYPES.JOB_LOG, (data: any) => {
@@ -216,6 +234,21 @@ export default function JobDetail() {
             );
           })}
         </div>
+
+        {/* 采样预览进度（job.sample_progress SSE） */}
+        {sampleProgress && (
+          <div className="flex items-center space-x-3 pt-3 mt-1 border-t dark:border-slate-700" data-testid="sample-progress">
+            <span className="text-xs font-medium text-indigo-500">
+              生成预览 第 {sampleProgress.promptIndex + 1}/{sampleProgress.prompts} 张 · 步 {sampleProgress.done}/{sampleProgress.total}
+            </span>
+            <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-1.5">
+              <div
+                className="bg-indigo-500 h-1.5 rounded-full transition-all"
+                style={{ width: `${sampleProgress.total > 0 ? (sampleProgress.done / sampleProgress.total) * 100 : 0}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 2. Tabs 切换导航 */}

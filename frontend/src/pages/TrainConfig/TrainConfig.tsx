@@ -23,10 +23,53 @@ export default function TrainConfig() {
   const [validationErrors, setValidationErrors] = React.useState<ValidationError[]>([]);
   const [isEnqueuing, setIsEnqueuing] = React.useState(false);
   const [enqueueSuccess, setEnqueueSuccess] = React.useState(false);
+  const draftLoadedRef = React.useRef(false);
 
   React.useEffect(() => {
     apiClient.get<Preset[]>('/presets').then(setPresets).catch(console.error);
   }, []);
+
+  // 加载项目配置草稿（GET /projects/{id}/config），无草稿则用默认值
+  React.useEffect(() => {
+    if (!projectId) {
+      draftLoadedRef.current = true;
+      return;
+    }
+    apiClient.get<Record<string, any>>(`/projects/${projectId}/config`)
+      .then((draft) => {
+        if (draft && typeof draft === 'object' && Object.keys(draft).length > 0) {
+          setConfig((prev) => {
+            const deepMerge = (target: any, source: any): any => {
+              if (typeof target !== 'object' || target === null) return source;
+              if (typeof source !== 'object' || source === null) return source;
+              const result = { ...target };
+              for (const key of Object.keys(source)) {
+                if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+                  result[key] = deepMerge(result[key], source[key]);
+                } else {
+                  result[key] = source[key];
+                }
+              }
+              return result;
+            };
+            return deepMerge(prev, draft);
+          });
+        }
+      })
+      .catch(console.error)
+      .finally(() => {
+        draftLoadedRef.current = true;
+      });
+  }, [projectId]);
+
+  // 草稿自动保存（防抖 1s，初次加载完成后才生效）
+  React.useEffect(() => {
+    if (!projectId || !draftLoadedRef.current) return;
+    const timer = setTimeout(() => {
+      apiClient.put(`/projects/${projectId}/config`, config).catch(console.error);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [config, projectId]);
 
   React.useEffect(() => {
     // 500ms 防抖更新 Plan & 触发 Validate

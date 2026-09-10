@@ -1,9 +1,9 @@
 import React from 'react';
 import { evaluateShowWhen } from '../showWhen';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, ChevronRight, Plus, Trash2, FolderOpen, ArrowUp, ArrowDown } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Trash2, ArrowUp, ArrowDown, FolderOpen } from 'lucide-react';
+import { PathInput, PathPickerModal } from '../../components/PathBrowser';
 import { apiClient } from '../../api/client';
-import { FsListResponse } from '../../api/types';
 
 interface SchemaProperty {
   type?: string;
@@ -74,80 +74,6 @@ const setNestedValue = (obj: any, path: string[], value: any): any => {
   }
   current[path[path.length - 1]] = value;
   return newObj;
-};
-
-// 1. Path 浏览弹窗组件
-const PathPickerModal: React.FC<{
-  isOpen: boolean;
-  initialPath?: string;
-  onSelect: (path: string) => void;
-  onClose: () => void;
-}> = ({ isOpen, initialPath = '/', onSelect, onClose }) => {
-  const [currentPath, setCurrentPath] = React.useState(initialPath);
-  const [data, setData] = React.useState<FsListResponse | null>(null);
-
-  React.useEffect(() => {
-    if (isOpen) {
-      apiClient.get<FsListResponse>('/fs/list', { params: { path: currentPath } })
-        .then(setData)
-        .catch(console.error);
-    }
-  }, [isOpen, currentPath]);
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-slate-800 rounded-xl max-w-lg w-full p-6 space-y-4 shadow-xl border border-slate-200 dark:border-slate-700">
-        <div className="flex justify-between items-center border-b pb-2 dark:border-slate-700">
-          <h3 className="font-semibold text-lg">Browse Server Path</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
-        </div>
-        <div className="text-xs font-mono bg-slate-100 dark:bg-slate-900 p-2 rounded truncate">
-          Current: {data?.path || currentPath}
-        </div>
-        <div className="max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700">
-          {data?.parent && (
-            <div
-              onClick={() => setCurrentPath(data.parent!)}
-              className="p-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer font-medium text-blue-500"
-            >
-              📁 .. (Parent Directory)
-            </div>
-          )}
-          {data?.entries.map((entry) => (
-            <div
-              key={entry.name}
-              onClick={() => {
-                if (entry.is_dir) {
-                  setCurrentPath(`${data.path === '/' ? '' : data.path}/${entry.name}`);
-                } else {
-                  onSelect(`${data.path === '/' ? '' : data.path}/${entry.name}`);
-                  onClose();
-                }
-              }}
-              className="p-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 flex justify-between items-center cursor-pointer"
-            >
-              <span>{entry.is_dir ? '📁' : '📄'} {entry.name}</span>
-              <span className="text-xs text-slate-400">{entry.is_dir ? 'dir' : `${entry.size} B`}</span>
-            </div>
-          ))}
-        </div>
-        <div className="flex justify-end space-x-2 pt-2 border-t dark:border-slate-700">
-          <button onClick={onClose} className="px-3 py-1.5 text-sm rounded bg-slate-200 dark:bg-slate-700">Cancel</button>
-          <button
-            onClick={() => {
-              onSelect(currentPath);
-              onClose();
-            }}
-            className="px-3 py-1.5 text-sm rounded bg-blue-600 text-white"
-          >
-            Select Current Dir
-          </button>
-        </div>
-      </div>
-    </div>
-  );
 };
 
 // 2. Rules 专用组件 (AdapterRule 列表)
@@ -559,35 +485,44 @@ const BetasEditor: React.FC<{
   );
 };
 
-// 7. Path 控件 (输入框 + 浏览按钮)
-const PathInput: React.FC<{
+// 模型路径输入：PathInput + 从已注册模型权重快速选择
+const ModelPathInput: React.FC<{
   value: string;
+  kind: string | null;
   onChange: (val: string) => void;
-}> = ({ value = '', onChange }) => {
-  const [modalOpen, setModalOpen] = React.useState(false);
+}> = ({ value, kind, onChange }) => {
+  const [models, setModels] = React.useState<Array<{ id: string; path: string; kind: string; family: string }>>([]);
+
+  React.useEffect(() => {
+    if (!kind) return;
+    apiClient
+      .get<Array<{ id: string; path: string; kind: string; family: string }>>('/models')
+      .then((list) => setModels(Array.isArray(list) ? list : []))
+      .catch(() => setModels([]));
+  }, [kind]);
+
+  const matched = kind ? models.filter((m) => m.kind === kind) : [];
 
   return (
-    <div className="flex space-x-2">
-      <input
-        type="text"
-        value={value || ''}
-        onChange={(e) => onChange(e.target.value)}
-        className="flex-1 px-3 py-2 border rounded-md text-sm dark:bg-slate-900 dark:border-slate-600 font-mono"
-      />
-      <button
-        type="button"
-        onClick={() => setModalOpen(true)}
-        className="px-3 py-2 bg-slate-200 dark:bg-slate-700 rounded-md hover:bg-slate-300 dark:hover:bg-slate-600 text-sm flex items-center space-x-1"
-      >
-        <FolderOpen className="w-4 h-4" />
-        <span>Browse</span>
-      </button>
-      <PathPickerModal
-        isOpen={modalOpen}
-        initialPath={value || '/'}
-        onSelect={onChange}
-        onClose={() => setModalOpen(false)}
-      />
+    <div className="space-y-1.5">
+      <PathInput value={value} onChange={onChange} />
+      {matched.length > 0 && (
+        <select
+          className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs dark:bg-slate-900 dark:border-slate-600 text-slate-500"
+          value=""
+          onChange={(e) => {
+            if (e.target.value) onChange(e.target.value);
+          }}
+          data-testid="model-registry-select"
+        >
+          <option value="">— 从已注册模型选择 —</option>
+          {matched.map((m) => (
+            <option key={m.id} value={m.path}>
+              [{m.family}] {m.path}
+            </option>
+          ))}
+        </select>
+      )}
     </div>
   );
 };
@@ -596,8 +531,7 @@ const PathInput: React.FC<{
 const FieldGroup: React.FC<{
   title: string;
   children: React.ReactNode;
-}> = ({ title, children }) => {
-  const [isOpen, setIsOpen] = React.useState(true);
+}> = ({ title, children }) => {  const [isOpen, setIsOpen] = React.useState(true);
   return (
     <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-slate-800">
       <button
@@ -706,9 +640,16 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         />
       );
     } else if (ui.control === 'path' || prop.type === 'string' && key.endsWith('path')) {
+      // 模型权重字段（dit_path / text_encoder_path / vae_path / tokenizer_path）支持从注册表快速选择
+      const modelKind = key === 'dit_path' ? 'dit'
+        : key === 'text_encoder_path' ? 'text_encoder'
+        : key === 'vae_path' ? 'vae'
+        : key === 'tokenizer_path' ? 'tokenizer'
+        : null;
       control = (
-        <PathInput
+        <ModelPathInput
           value={fieldValue || ''}
+          kind={modelKind}
           onChange={(val) => onChange(setNestedValue(value, path, val))}
         />
       );
