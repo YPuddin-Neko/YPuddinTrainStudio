@@ -38,6 +38,8 @@
 
 ## 运行方式
 
+部署与日常使用见 `docs/deploy.md`（`studio.sh` / `studio.bat` 一键安装启动）。以下是开发者视角的命令：
+
 ```bash
 cd xiangmuyuanma
 uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -e ".[dev,models,server]"
