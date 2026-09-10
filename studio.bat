@@ -1,28 +1,41 @@
 @echo off
-chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
 set PYTHONUTF8=1
 set PYTHONIOENCODING=utf-8
 
-echo [studio] YPuddin Train Studio
-
-REM 用法：
-REM   studio.bat                    首次运行：创建 venv、按显卡安装 CUDA 版 PyTorch、装依赖、构建前端、启动服务
-REM   studio.bat --port 8800        换端口（默认 8765；还有 --host、--data-root）
-REM   studio.bat --torch=cu126      强制 PyTorch 版本：cu128 cu126 cu124 cu118 cpu（默认按显卡/驱动自动选）
-REM   studio.bat --index=cn         强制国内镜像优先（中科大 - 清华 - 阿里 - 官方；默认自动探测）
-REM   studio.bat --reinstall        删掉 venv 重装（studio_data\ 里的项目和权重不受影响）
-REM   studio.bat dev                后端 + Vite 热更新前端（前端开发用）
+REM ============================================================================
+REM YPuddin Train Studio - Windows launcher
+REM
+REM This file must stay PURE ASCII and use CRLF line endings (enforced by
+REM .gitattributes). Do not add Chinese characters here and do not use
+REM "chcp 65001": switching the codepage mid-script makes cmd.exe resume
+REM reading the file at a wrong byte offset (garbled "is not recognized"
+REM errors). All Chinese output is printed by scripts\bootstrap.py, which
+REM writes Unicode to the console correctly on its own.
+REM
+REM Usage:
+REM   studio.bat                 first run: create venv, install the CUDA PyTorch
+REM                              matching your GPU, install deps, build frontend,
+REM                              start the server and open the browser
+REM   studio.bat --port 8800     change port (default 8765; also --host, --data-root)
+REM   studio.bat --torch=cu126   force PyTorch flavour: cu128 cu126 cu124 cu118 cpu
+REM                              (default: auto by GPU compute capability + driver)
+REM   studio.bat --index=official  packages: official PyPI first (default: China
+REM                              mirrors first - USTC, Tsinghua, Aliyun, official last)
+REM   studio.bat --reinstall     delete venv and reinstall (studio_data\ is kept)
+REM   studio.bat dev             backend + Vite dev server (frontend development)
 REM   studio.bat build / test / doctor / shell
 REM   studio.bat smoke --set model.dit_path=... --set model.text_encoder_path=... --set model.vae_path=...
 REM
-REM 所有逻辑都在 scripts\bootstrap.py；本文件只负责找到一个可用的 Python。
-REM 本文件必须是 UTF-8（无 BOM）+ CRLF 换行（仓库 .gitattributes 已强制），请勿改动前两行顺序。
+REM All logic lives in scripts\bootstrap.py; this file only finds a usable Python.
+REM ============================================================================
+
+echo [studio] YPuddin Train Studio
 
 if exist "venv\Scripts\python.exe" goto :run_venv
 
-echo [studio] 首次运行：正在查找 Python 3.10 - 3.12 ...
+echo [studio] First run: looking for Python 3.10 - 3.12 ...
 
 py -3.12 -c "import sys" >nul 2>&1
 if %errorlevel%==0 (set "PY=py -3.12" & goto :run_py)
@@ -37,7 +50,7 @@ if %errorlevel%==0 (set "PY=python" & goto :run_py)
 where uv >nul 2>&1
 if not errorlevel 1 goto :run_uv
 
-echo [studio] 错误：需要 Python 3.10 - 3.12。请到 https://www.python.org 安装（勾选 Add python.exe to PATH）后重新运行。
+echo [studio] ERROR: Python 3.10 - 3.12 not found. Install it from https://www.python.org (tick "Add python.exe to PATH") and run this again.
 goto :fail
 
 :run_venv
@@ -45,12 +58,12 @@ goto :fail
 goto :done
 
 :run_py
-echo [studio] 使用 %PY%
+echo [studio] Using %PY%
 %PY% scripts\bootstrap.py %*
 goto :done
 
 :run_uv
-echo [studio] 系统里没有 Python 3.10 - 3.12，用 uv 下载安装 Python 3.12 ...
+echo [studio] No Python 3.10 - 3.12 found; installing Python 3.12 via uv ...
 uv python install 3.12
 if errorlevel 1 goto :fail
 for /f "delims=" %%P in ('uv python find 3.12') do "%%P" scripts\bootstrap.py %*
@@ -65,7 +78,7 @@ set "RC=%errorlevel%"
 
 :pause
 if not "%RC%"=="0" (
-  echo [studio] 脚本以错误码 %RC% 结束（上面有原因）
+  echo [studio] Exited with code %RC% - scroll up for the reason.
   pause
 )
 endlocal & exit /b %RC%
