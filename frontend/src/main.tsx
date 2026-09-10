@@ -8,7 +8,8 @@ import './i18n';
 const queryClient = new QueryClient();
 
 async function enableMocking() {
-  if (import.meta.env.DEV) {
+  // 仅当明确开启或未关闭时启用 MSW；支持 VITE_USE_MOCK=false 关闭 mock 连接真实后端
+  if (import.meta.env.DEV && import.meta.env.VITE_USE_MOCK !== 'false') {
     const { worker } = await import('./mocks/browser');
     await worker.start({
       onUnhandledRequest: 'bypass',

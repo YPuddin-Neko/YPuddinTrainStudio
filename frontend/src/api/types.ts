@@ -70,12 +70,23 @@ export interface JobProgress {
   vram_peak_mb: number;
 }
 
+export type JobStatus =
+  | 'queued'
+  | 'scheduled'
+  | 'running'
+  | 'pausing'
+  | 'cancelling'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
 export interface Job {
   id: string;
   type: 'train' | 'cache' | 'sample' | 'convert';
   name: string;
   project_id?: string;
-  status: 'queued' | 'scheduled' | 'running' | 'paused' | 'pausing' | 'cancelling' | 'completed' | 'failed' | 'cancelled';
+  status: JobStatus;
   priority: number;
   scheduled_at: string | null;
   created_at: string;
@@ -90,6 +101,13 @@ export interface Job {
   error: string | null;
   resume_from: string | null;
   artifact_ids: string[];
+}
+
+export interface JobListResponse {
+  items: Job[];
+  total: number;
+  page: number;
+  page_size: number;
 }
 
 export interface JobMetrics {

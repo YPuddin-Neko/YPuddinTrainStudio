@@ -18,11 +18,11 @@ frontend/dist/
 frontend/.vite/
 node_modules/
 
-# Runtime data (projects, caches, checkpoints, logs, models)
-data/
-models/
-outputs/
-runs/
+# Runtime data at the repo root (projects, caches, checkpoints, logs, weights)
+/data/
+/models/
+/outputs/
+/runs/
 *.safetensors
 *.ckpt
 *.pt

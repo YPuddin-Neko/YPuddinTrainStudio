@@ -1,6 +1,6 @@
 import React from 'react';
 import { apiClient } from '../../api/client';
-import { Job, QueueSettings } from '../../api/types';
+import { Job, JobListResponse, QueueSettings } from '../../api/types';
 import { Link } from 'react-router-dom';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
@@ -12,8 +12,13 @@ export default function Queue() {
   const [optimisticStates, setOptimisticStates] = React.useState<Record<string, string>>({});
 
   const fetchJobs = () => {
-    apiClient.get<Job[]>('/jobs').then((data) => {
-      setJobs(Array.isArray(data) ? data : []);
+    apiClient.get<JobListResponse | Job[]>('/jobs').then((data) => {
+      // 兼容分页响应 {items, total, page, page_size} 与简单数组
+      if (Array.isArray(data)) {
+        setJobs(data);
+      } else if (data && Array.isArray(data.items)) {
+        setJobs(data.items);
+      }
     }).catch(console.error);
   };
 

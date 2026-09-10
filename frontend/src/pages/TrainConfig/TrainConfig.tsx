@@ -43,7 +43,21 @@ export default function TrainConfig() {
   }, [config]);
 
   const handleApplyPreset = (preset: Preset) => {
-    setConfig({ ...config, ...preset.config });
+    // Deep merge the preset config into the existing config
+    const deepMerge = (target: any, source: any): any => {
+      if (typeof target !== 'object' || target === null) return source;
+      if (typeof source !== 'object' || source === null) return source;
+      const result = { ...target };
+      for (const key of Object.keys(source)) {
+        if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+          result[key] = deepMerge(result[key], source[key]);
+        } else {
+          result[key] = source[key];
+        }
+      }
+      return result;
+    };
+    setConfig((prev) => deepMerge(prev, preset.config));
   };
 
   const handleEnqueue = () => {

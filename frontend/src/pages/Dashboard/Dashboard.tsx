@@ -1,6 +1,6 @@
 import React from 'react';
 import { apiClient } from '../../api/client';
-import { SystemStats, Job, Artifact } from '../../api/types';
+import { SystemStats, Job, JobListResponse, Artifact } from '../../api/types';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
 import { Activity, Layers, Box, Cpu, HardDrive, Zap } from 'lucide-react';
@@ -13,7 +13,13 @@ export default function Dashboard() {
 
   React.useEffect(() => {
     apiClient.get<SystemStats>('/system/stats').then(setStats).catch(console.error);
-    apiClient.get<Job[]>('/jobs').then((res) => setJobs(Array.isArray(res) ? res : [])).catch(console.error);
+    apiClient.get<JobListResponse | Job[]>('/jobs').then((res) => {
+      if (Array.isArray(res)) {
+        setJobs(res);
+      } else if (res && Array.isArray(res.items)) {
+        setJobs(res.items);
+      }
+    }).catch(console.error);
     apiClient.get<Artifact[]>('/artifacts').then((res) => setArtifacts(Array.isArray(res) ? res : [])).catch(console.error);
   }, []);
 
@@ -22,7 +28,13 @@ export default function Dashboard() {
   });
 
   useEventStream(EVENT_TYPES.JOB_STATE, () => {
-    apiClient.get<Job[]>('/jobs').then((res) => setJobs(Array.isArray(res) ? res : [])).catch(console.error);
+    apiClient.get<JobListResponse | Job[]>('/jobs').then((res) => {
+      if (Array.isArray(res)) {
+        setJobs(res);
+      } else if (res && Array.isArray(res.items)) {
+        setJobs(res.items);
+      }
+    }).catch(console.error);
   });
 
   const runningJob = jobs.find((j) => j.status === 'running');

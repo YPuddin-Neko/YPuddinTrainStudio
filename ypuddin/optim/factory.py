@@ -172,7 +172,7 @@ def build_scheduler(cfg: SchedulerConfig, optimizer: Optimizer, total_steps: int
             s = step - warmup
             if s < stable_end:
                 return 1.0
-            q = min(1.0, (s - stable_end) / max(1, decay_steps))
+            q = min(1.0, (s - stable_end + 1) / max(1, decay_steps))
             return floor + (1 - floor) * (1 - q)
         raise ValueError(cfg.type)
 
