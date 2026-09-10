@@ -35,6 +35,8 @@ export type DatasetInfo = S['DatasetInfo'] & { cache: DatasetCacheInfo };
 export type DatasetImage = S['DatasetImage'];
 export type DatasetImagesPage = S['ImagePage'];
 export type ValidationPoint = S['ValidationPoint'];
+export type FamilyInfo = S['FamilyInfo'];
+export type FamilyPreset = S['FamilyPreset'];
 
 // ---- openapi 未覆盖（或形状不便引用）的本地类型：手写保留 ----
 

@@ -42,5 +42,22 @@
     "sampling": "采样预览",
     "validation": "验证集评估",
     "logging": "日志与监控"
+  },
+  "family": {
+    "anima": "Anima 2B",
+    "krea2": "Krea 2 Raw 12.9B",
+    "toy": "Toy (CPU 测试)"
+  },
+  "textMode": {
+    "auto": "自动",
+    "cached": "预缓存",
+    "online": "在线编码",
+    "autoOnly": "该模型族仅支持 自动/预缓存（不支持在线编码）"
+  },
+  "sampling": {
+    "shiftAuto": "自动（按分辨率）"
+  },
+  "preset": {
+    "layers": "{n} 层"
   }
 }

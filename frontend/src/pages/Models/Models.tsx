@@ -2,10 +2,15 @@ import React from 'react';
 import { apiClient } from '../../api/client';
 import { ModelAsset } from '../../api/types';
 import { PathInput } from '../../components/PathBrowser';
+import { useFamilies, familyByName } from '../../api/hooks/useFamilies';
 import { HardDrive, Plus, Trash2, FolderSearch, Star } from 'lucide-react';
 
-const KINDS = ['dit', 'text_encoder', 'vae', 'tokenizer'] as const;
-const FAMILIES = ['anima', 'toy'] as const;
+const KIND_BY_FIELD: Record<string, string> = {
+  dit_path: 'dit',
+  text_encoder_path: 'text_encoder',
+  vae_path: 'vae',
+  tokenizer_path: 'tokenizer',
+};
 
 function formatSize(bytes: number): string {
   if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
@@ -15,17 +20,38 @@ function formatSize(bytes: number): string {
 }
 
 export default function Models() {
+  const { data: families } = useFamilies();
   const [models, setModels] = React.useState<ModelAsset[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [addOpen, setAddOpen] = React.useState(false);
   const [scanning, setScanning] = React.useState(false);
 
-  const [family, setFamily] = React.useState<string>('anima');
+  const [family, setFamily] = React.useState<string>('');
   const [kind, setKind] = React.useState<string>('dit');
   const [path, setPath] = React.useState('');
   const [dtype, setDtype] = React.useState('bf16');
   const [isDefault, setIsDefault] = React.useState(false);
   const [adding, setAdding] = React.useState(false);
+
+  // 族列表就绪后默认选中第一个
+  React.useEffect(() => {
+    if (!family && families && families.length > 0) {
+      setFamily(families[0].name);
+    }
+  }, [families, family]);
+
+  // kind 选项按当前族的 weights[].field 映射
+  const currentFamily = familyByName(families, family);
+  const kindOptions = React.useMemo(() => {
+    const fields = (currentFamily?.weights || []).map((w) => KIND_BY_FIELD[w.field]).filter(Boolean);
+    return fields.length > 0 ? fields : ['dit', 'text_encoder', 'vae', 'tokenizer'];
+  }, [currentFamily]);
+
+  React.useEffect(() => {
+    if (kindOptions.length > 0 && !kindOptions.includes(kind)) {
+      setKind(kindOptions[0]);
+    }
+  }, [kindOptions, kind]);
 
   const fetchModels = () => {
     apiClient.get<ModelAsset[]>('/models')
@@ -124,14 +150,24 @@ export default function Models() {
             <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
               {models.map((m) => (
                 <tr key={m.id} className="hover:bg-slate-50 dark:hover:bg-slate-750" data-testid={`model-row-${m.id}`}>
-                  <td className="p-4 capitalize font-medium">{m.family}</td>
+                  <td className="p-4 capitalize font-medium">
+                    {familyByName(families, m.family)?.label || m.family}
+                  </td>
                   <td className="p-4">{m.kind}</td>
                   <td className="p-4 font-mono text-xs text-slate-500 break-all">
                     {m.is_default && <Star className="w-3.5 h-3.5 inline text-amber-500 mr-1" />}
                     {m.path}
                   </td>
                   <td className="p-4 text-xs">{formatSize(m.size)}</td>
-                  <td className="p-4 text-xs font-mono">{m.dtype || '--'}</td>
+                  <td className="p-4 text-xs font-mono">
+                    {m.dtype === 'fp8' ? (
+                      <span className="px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 font-semibold" data-testid="fp8-tag">
+                        fp8
+                      </span>
+                    ) : (
+                      m.dtype || '--'
+                    )}
+                  </td>
                   <td className="p-4">
                     <span className={`px-2 py-0.5 rounded text-xs ${
                       m.exists
@@ -173,8 +209,11 @@ export default function Models() {
                     value={family}
                     onChange={(e) => setFamily(e.target.value)}
                     className="w-full px-2 py-1.5 border rounded dark:bg-slate-900 dark:border-slate-600"
+                    data-testid="model-family-select"
                   >
-                    {FAMILIES.map((f) => <option key={f} value={f}>{f}</option>)}
+                    {(families || []).map((f) => (
+                      <option key={f.name} value={f.name}>{f.label}</option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -183,8 +222,9 @@ export default function Models() {
                     value={kind}
                     onChange={(e) => setKind(e.target.value)}
                     className="w-full px-2 py-1.5 border rounded dark:bg-slate-900 dark:border-slate-600"
+                    data-testid="model-kind-select"
                   >
-                    {KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+                    {kindOptions.map((k) => <option key={k} value={k}>{k}</option>)}
                   </select>
                 </div>
               </div>

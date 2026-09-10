@@ -94,6 +94,84 @@ const mockModels: ModelAsset[] = [
     is_default: true,
     created_at: 1789000000,
   },
+  {
+    id: 'm_03',
+    family: 'krea2',
+    kind: 'dit',
+    path: '/models/krea2_fp8_scaled.safetensors',
+    size: 13000000000,
+    dtype: 'fp8',
+    exists: true,
+    is_default: true,
+    created_at: 1789000000,
+  },
+];
+
+const mockFamilies = [
+  {
+    name: 'anima',
+    label: 'Anima 2B',
+    architecture: 'anima',
+    adapter_prefix: 'lora_unet',
+    capabilities: ['activation_checkpointing', 'block_swap', 'compile', 'fp8_base', 'llm_adapter', 'masked_loss', 'online_text'],
+    text_modes: ['auto', 'cached', 'online'],
+    presets: [
+      { name: 'attn-mlp', description: 'DiT 注意力 + MLP（默认）', include: ['blocks.*.self_attn.{q_proj,k_proj,v_proj,output_proj}', 'blocks.*.mlp.layer1', 'blocks.*.mlp.layer2'], exclude: [], layers: 280 },
+      { name: 'attn-only', description: '仅 DiT 注意力投影', include: ['blocks.*.self_attn.{q_proj,k_proj,v_proj,output_proj}'], exclude: [], layers: 224 },
+      { name: 'full-linear', description: 'DiT 内全部 Linear（含 AdaLN 调制）', include: ['blocks.*.self_attn.{q_proj,k_proj,v_proj,output_proj}', 'blocks.*.mlp.layer1', 'blocks.*.mlp.layer2', 'blocks.*.adaln_modulation_*.*'], exclude: [], layers: 448 },
+    ],
+    default_preset: 'attn-mlp',
+    sampling: { steps: 25, cfg: 4.0, shift: 3.0, sampler: 'euler' },
+    latent: { channels: 16, stride: 8, patch: 2, align: 16 },
+    text_max_len: 512,
+    weights: [
+      { field: 'dit_path', label: 'DiT', hint: 'anima-dit.safetensors（bf16 / fp8_scaled）' },
+      { field: 'text_encoder_path', label: 'Qwen3-0.6B', hint: 'HF 目录或单文件 safetensors' },
+      { field: 'vae_path', label: 'Qwen-Image VAE', hint: 'qwen_image_vae.safetensors' },
+    ],
+    linear_modules: 448,
+  },
+  {
+    name: 'krea2',
+    label: 'Krea 2 Raw 12.9B',
+    architecture: 'krea2',
+    adapter_prefix: 'lora_unet',
+    capabilities: ['activation_checkpointing', 'block_swap', 'compile', 'fp8_base', 'masked_loss'],
+    text_modes: ['auto', 'cached'],
+    presets: [
+      { name: 'all-linear', description: '全部 264 个 Linear（Krea 官方默认：rank 32 / alpha 32）', include: ['*'], exclude: [], layers: 264 },
+      { name: 'attn-mlp', description: '28 个主 block 的注意力 + SwiGLU', include: ['blocks.*.attn.{wq,wk,wv,gate,wo}', 'blocks.*.mlp.{gate,up,down}'], exclude: [], layers: 224 },
+      { name: 'attn-only', description: '仅主 block 注意力投影', include: ['blocks.*.attn.{wq,wk,wv,gate,wo}'], exclude: [], layers: 140 },
+      { name: 'attn-mlp-text', description: '主 block + 文本融合 transformer + 文本 MLP', include: ['blocks.*.attn.{wq,wk,wv,gate,wo}', 'txtfusion.*_blocks.*.attn.{wq,wk,wv,gate,wo}'], exclude: [], layers: 259 },
+    ],
+    default_preset: 'attn-mlp',
+    sampling: { steps: 28, cfg: 5.5, shift: null, sampler: 'euler' },
+    latent: { channels: 16, stride: 8, patch: 2, align: 16 },
+    text_max_len: 512,
+    weights: [
+      { field: 'dit_path', label: 'DiT', hint: 'krea2_raw_bf16.safetensors（约 26 GB）或 Comfy-Org krea2_fp8_scaled.safetensors（约 13 GB，按 fp8 加载）' },
+      { field: 'text_encoder_path', label: 'Qwen3-VL-4B-Instruct', hint: 'HF 目录（推荐）或 ComfyUI 单文件 qwen_3vl_4b*.safetensors（bf16 / fp8_scaled）' },
+      { field: 'vae_path', label: 'Qwen-Image VAE', hint: 'qwen_image_vae.safetensors（与 Anima 共用）' },
+    ],
+    linear_modules: 264,
+  },
+  {
+    name: 'toy',
+    label: 'Toy DiT',
+    architecture: 'toy',
+    adapter_prefix: 'lora_unet',
+    capabilities: ['online_text'],
+    text_modes: ['auto', 'cached', 'online'],
+    presets: [
+      { name: 'attn-mlp', description: '注意力 + MLP', include: ['blocks.*.attn.*', 'blocks.*.mlp.*'], exclude: [], layers: 20 },
+    ],
+    default_preset: 'attn-mlp',
+    sampling: { steps: 8, cfg: 1.0, shift: 1.0, sampler: 'euler' },
+    latent: { channels: 4, stride: 4, patch: 1, align: 8 },
+    text_max_len: 128,
+    weights: [],
+    linear_modules: 20,
+  },
 ];
 
 const mockDatasetInfo: DatasetInfo = {
@@ -495,11 +573,36 @@ export const handlers = [
         config: { model: { family: 'toy', dtype: 'fp32' }, dataset: { resolutions: [64], bucket_step: 16, batch_size: 2 }, loop: { epochs: 1, mixed_precision: 'no' } },
         builtin: true, updated_at: null,
       },
+      {
+        name: 'krea2-lokr-default', description: 'Krea 2 LoKr 默认（all-linear，rank 32 / alpha 32）',
+        config: {
+          model: { family: 'krea2', dtype: 'bf16' },
+          adapter: { algo: 'lokr', rank: 32, alpha: 32, preset: 'all-linear' },
+          optimizer: { type: 'adamw', lr: 0.0001 },
+        },
+        builtin: true, updated_at: null,
+      },
+      {
+        name: 'krea2-lora-32', description: 'Krea 2 LoRA rank 32',
+        config: {
+          model: { family: 'krea2', dtype: 'bf16' },
+          adapter: { algo: 'lora', rank: 32, alpha: 32, preset: 'attn-mlp' },
+          optimizer: { type: 'adamw', lr: 0.0002 },
+        },
+        builtin: true, updated_at: null,
+      },
     ];
     return HttpResponse.json(presets);
   }),
 
   // ---- Models ----
+  http.get('/api/families', () => HttpResponse.json(mockFamilies)),
+
+  http.get('/api/families/:name', ({ params }) => {
+    const fam = mockFamilies.find((f) => f.name === params.name);
+    return fam ? HttpResponse.json(fam) : new HttpResponse(null, { status: 404 });
+  }),
+
   http.get('/api/models', () => HttpResponse.json(mockModels)),
 
   http.post('/api/models', async ({ request }) => {

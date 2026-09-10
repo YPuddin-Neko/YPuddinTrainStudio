@@ -42,5 +42,22 @@
     "sampling": "Sampling Preview",
     "validation": "Validation",
     "logging": "Logging & Monitoring"
+  },
+  "family": {
+    "anima": "Anima 2B",
+    "krea2": "Krea 2 Raw 12.9B",
+    "toy": "Toy (CPU test)"
+  },
+  "textMode": {
+    "auto": "Auto",
+    "cached": "Cached",
+    "online": "Online",
+    "autoOnly": "This family only supports auto/cached (online not available)"
+  },
+  "sampling": {
+    "shiftAuto": "Auto (per resolution)"
+  },
+  "preset": {
+    "layers": "{n} layers"
   }
 }

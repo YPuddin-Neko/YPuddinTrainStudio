@@ -10,13 +10,15 @@ const resources = {
   en: { translation: en },
 };
 
+const savedLng = typeof localStorage !== 'undefined' ? localStorage.getItem('i18nextLng') : null;
+
 i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
     resources,
     fallbackLng: 'zh-CN',
-    lng: localStorage.getItem('i18nextLng') || 'zh-CN',
+    lng: savedLng || 'zh-CN',
     interpolation: {
       escapeValue: false,
     },

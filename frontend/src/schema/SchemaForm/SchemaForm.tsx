@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronRight, Plus, Trash2, ArrowUp, ArrowDown, FolderOpen } from 'lucide-react';
 import { PathInput, PathPickerModal } from '../../components/PathBrowser';
 import { apiClient } from '../../api/client';
+import { FamilyInfo } from '../../api/types';
 
 interface SchemaProperty {
   type?: string;
@@ -42,6 +43,8 @@ interface SchemaFormProps {
   onChange: (newValue: Record<string, any>) => void;
   showAdvanced?: boolean;
   errors?: ValidationError[];
+  /** 当前模型族信息（GET /api/families），驱动 preset 下拉 / text_modes / weights 提示 / sampling 默认值 */
+  family?: FamilyInfo;
 }
 
 const resolveRef = (rootSchema: any, refPath: string) => {
@@ -553,6 +556,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   onChange,
   showAdvanced = false,
   errors = [],
+  family,
 }) => {
   const { t } = useTranslation();
   const groups: Record<string, { order: number; fields: React.ReactNode[] }> = {};
@@ -657,6 +661,13 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       const stringConst = prop.anyOf.find((p) => p.const !== undefined);
       const isConstSelected = fieldValue === stringConst?.const;
 
+      // sampling.shift 的 anyOf[number, null] 也要带族默认占位
+      let anyOfPlaceholder: string | undefined;
+      if (family && fullPathKey === 'sampling.shift') {
+        anyOfPlaceholder =
+          family.sampling?.shift != null ? String(family.sampling.shift) : t('sampling.shiftAuto');
+      }
+
       control = (
         <div className="flex space-x-2 items-center">
           <input
@@ -667,6 +678,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
             min={ui.min}
             max={ui.max}
             step={ui.step}
+            placeholder={anyOfPlaceholder}
             onChange={(e) => {
               const val = e.target.value === '' ? undefined : Number(e.target.value);
               onChange(setNestedValue(value, path, val));
@@ -683,6 +695,41 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
               />
               <span>{String(stringConst.const)}</span>
             </label>
+          )}
+        </div>
+      );
+    } else if (fullPathKey === 'adapter.preset' && family) {
+      // 族内预设下拉：name — description（N 层）
+      control = (
+        <select
+          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:bg-slate-900 dark:border-slate-600"
+          value={fieldValue || family.default_preset || ''}
+          onChange={(e) => onChange(setNestedValue(value, path, e.target.value))}
+          data-testid="adapter-preset-select"
+        >
+          {(family.presets || []).map((p) => (
+            <option key={p.name} value={p.name}>
+              {p.name} — {p.description}（{t('preset.layers', { n: p.layers })}）
+            </option>
+          ))}
+        </select>
+      );
+    } else if (fullPathKey === 'dataset.text_encoding' && family) {
+      // 文本编码选项受族 text_modes 约束（krea2 无 online）
+      control = (
+        <div className="space-y-1">
+          <select
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:bg-slate-900 dark:border-slate-600"
+            value={fieldValue || 'auto'}
+            onChange={(e) => onChange(setNestedValue(value, path, e.target.value))}
+            data-testid="text-encoding-select"
+          >
+            {(family.text_modes || []).map((m) => (
+              <option key={m} value={m}>{t(`textMode.${m}`, m)}</option>
+            ))}
+          </select>
+          {(family.text_modes || []).length === 2 && !family.text_modes.includes('online') && (
+            <p className="text-[11px] text-slate-400">{t('textMode.autoOnly')}</p>
           )}
         </div>
       );
@@ -721,6 +768,16 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           />
         );
       } else {
+        // sampling.steps / cfg / shift 用族默认做 placeholder（shift=null 时显示"自动（按分辨率）"）
+        let placeholder: string | undefined;
+        if (family && fullPathKey === 'sampling.steps' && family.sampling?.steps != null) {
+          placeholder = String(family.sampling.steps);
+        } else if (family && fullPathKey === 'sampling.cfg' && family.sampling?.cfg != null) {
+          placeholder = String(family.sampling.cfg);
+        } else if (family && fullPathKey === 'sampling.shift') {
+          placeholder =
+            family.sampling?.shift != null ? String(family.sampling.shift) : t('sampling.shiftAuto');
+        }
         control = (
           <input
             type="number"
@@ -729,6 +786,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
             min={ui.min}
             max={ui.max}
             step={ui.step}
+            placeholder={placeholder}
             onChange={(e) => {
               const val = e.target.value === '' ? undefined : Number(e.target.value);
               onChange(setNestedValue(value, path, val));
@@ -763,15 +821,26 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       );
     }
 
+    // 模型族 weights 提示（dit_path / text_encoder_path / vae_path 等）
+    const weightMeta =
+      family && parentPath[0] === 'model'
+        ? (family.weights || []).find((w) => w.field === key)
+        : undefined;
+
     const label = (
       <div key={fullPathKey} data-testid={`field-${fullPathKey}`} className={`flex flex-col space-y-1 p-2 rounded ${errorItem ? 'bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800' : ''}`}>
         <div className="flex justify-between items-center">
           <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-            {prop.title || t(`fields.${key}`, key)}
+            {weightMeta?.label || prop.title || t(`fields.${key}`, key)}
             {ui.unit && <span className="ml-1 text-xs text-slate-500">({ui.unit})</span>}
           </label>
         </div>
         {prop.description && <p className="text-xs text-slate-500 dark:text-slate-400">{prop.description}</p>}
+        {weightMeta?.hint && (
+          <p className="text-[11px] text-slate-400 dark:text-slate-500" data-testid={`weight-hint-${key}`}>
+            {weightMeta.hint}
+          </p>
+        )}
         {errorItem && <p className="text-xs font-semibold text-red-600 dark:text-red-400">{errorItem.msg}</p>}
         <div className="mt-1">{control}</div>
       </div>

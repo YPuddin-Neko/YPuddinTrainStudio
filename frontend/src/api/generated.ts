@@ -55,6 +55,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/families": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Families */
+        get: operations["list_families_api_families_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/families/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Family Info */
+        get: operations["get_family_info_api_families__name__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings": {
         parameters: {
             query?: never;
@@ -932,6 +966,87 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** FamilyInfo */
+        FamilyInfo: {
+            /** Name */
+            name: string;
+            /** Label */
+            label: string;
+            /** Architecture */
+            architecture: string;
+            /** Adapter Prefix */
+            adapter_prefix: string;
+            /** Capabilities */
+            capabilities: string[];
+            /** Text Modes */
+            text_modes: string[];
+            /** Presets */
+            presets: components["schemas"]["FamilyPreset"][];
+            /** Default Preset */
+            default_preset: string;
+            sampling: components["schemas"]["FamilySampling"];
+            latent: components["schemas"]["FamilyLatent"];
+            /** Text Max Len */
+            text_max_len: number;
+            /** Weights */
+            weights: components["schemas"]["FamilyWeight"][];
+            /** Linear Modules */
+            linear_modules: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** FamilyLatent */
+        FamilyLatent: {
+            /** Channels */
+            channels: number;
+            /** Stride */
+            stride: number;
+            /** Patch */
+            patch: number;
+            /** Align */
+            align: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** FamilyPreset */
+        FamilyPreset: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Include */
+            include: string[];
+            /** Exclude */
+            exclude: string[];
+            /** Layers */
+            layers: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** FamilySampling */
+        FamilySampling: {
+            /** Steps */
+            steps: number;
+            /** Cfg */
+            cfg: number;
+            /** Shift */
+            shift: number | null;
+            /** Sampler */
+            sampler: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** FamilyWeight */
+        FamilyWeight: {
+            /** Field */
+            field: string;
+            /** Label */
+            label: string;
+            /** Hint */
+            hint: string;
+        } & {
+            [key: string]: unknown;
+        };
         /** FsEntry */
         FsEntry: {
             /** Name */
@@ -1714,6 +1829,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SystemInfo"];
+                };
+            };
+        };
+    };
+    list_families_api_families_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FamilyInfo"][];
+                };
+            };
+        };
+    };
+    get_family_info_api_families__name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FamilyInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

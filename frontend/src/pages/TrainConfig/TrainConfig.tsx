@@ -3,12 +3,14 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { SchemaForm, ValidationError } from '../../schema/SchemaForm/SchemaForm';
 import { apiClient } from '../../api/client';
 import { Job, Plan, Preset } from '../../api/types';
+import { useFamilies, familyByName } from '../../api/hooks/useFamilies';
 import trainSchema from '../../schema/train-schema.json';
 import { AlertCircle, CheckCircle, Info } from 'lucide-react';
 
 export default function TrainConfig() {
   const { id: projectId } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { data: families } = useFamilies();
   const [config, setConfig] = React.useState<Record<string, any>>({
     model: { family: 'anima', dtype: 'bf16' },
     adapter: { algo: 'lokr', rank: 16, alpha: 16, factor: -1 },
@@ -70,6 +72,32 @@ export default function TrainConfig() {
     }, 1000);
     return () => clearTimeout(timer);
   }, [config, projectId]);
+
+  // 族联动副作用：切换 model.family 后，adapter.preset 与 dataset.text_encoding 不合法时自动回退
+  React.useEffect(() => {
+    const family = familyByName(families, config?.model?.family);
+    if (!family) return;
+    setConfig((prev) => {
+      let changed = false;
+      const next = { ...prev, adapter: { ...(prev.adapter || {}) }, dataset: { ...(prev.dataset || {}) } };
+      // adapter.preset 不在新族列表 → 回到该族 default_preset
+      const presets = (family.presets || []).map((p) => p.name);
+      if (next.adapter.preset != null && presets.length > 0 && !presets.includes(next.adapter.preset)) {
+        next.adapter.preset = family.default_preset || presets[0];
+        changed = true;
+      }
+      // dataset.text_encoding 不在族 text_modes → 回退 auto（krea2 无 online，后端会 400）
+      if (
+        next.dataset.text_encoding != null &&
+        (family.text_modes || []).length > 0 &&
+        !family.text_modes.includes(next.dataset.text_encoding)
+      ) {
+        next.dataset.text_encoding = 'auto';
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [families, config?.model?.family]);
 
   React.useEffect(() => {
     // 500ms 防抖更新 Plan & 触发 Validate
@@ -164,6 +192,7 @@ export default function TrainConfig() {
             onChange={setConfig}
             showAdvanced={showAdvanced}
             errors={validationErrors}
+            family={familyByName(families, config?.model?.family)}
           />
         </div>
       </div>
