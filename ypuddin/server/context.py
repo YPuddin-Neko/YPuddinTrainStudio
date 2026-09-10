@@ -61,6 +61,10 @@ class ServiceContext:
     def runs_dir(self, project_id: str | None) -> Path:
         return self.project_dir(project_id) / "runs" if project_id else self.data_root / "runs"
 
+    def cache_dir(self, project_id: str | None) -> Path:
+        """Latent / text cache shared by every job of a project (content-hash keys make sharing safe)."""
+        return self.project_dir(project_id) / "cache" if project_id else self.data_root / "cache" / "shared"
+
     def is_allowed(self, path: Path) -> bool:
         p = path.resolve()
         roots = [self.data_root.resolve(), *[r.resolve() for r in self.allowed_roots]]

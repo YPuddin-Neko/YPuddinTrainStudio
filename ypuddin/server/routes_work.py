@@ -221,8 +221,62 @@ def _dataset_row(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
         "source": source,
         "stats": json.loads(r["stats_json"] or "{}"),
         "index_status": r["index_status"],
-        "cache": {},
+        "cache": _cache_stats(c, r),
     }
+
+
+def _cache_stats(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
+    """Latent-cache coverage of this dataset under the project's current draft config.
+
+    Keys depend on the training resolutions, bucketing and the family's latent fingerprint, so the
+    project draft (or defaults) decides what counts as cached. Text encodings are keyed by the
+    transformed caption variants and are only knowable at train time, so they are not reported.
+    """
+    if not r.get("project_id"):
+        return {}
+    try:
+        from ypuddin.data import BucketManager, LatentCache
+        from ypuddin.data.dataset import expand_items
+        from ypuddin.data.index import ImageRecord
+        from ypuddin.models import get_family
+
+        raw = get_project_config(r["project_id"], c)
+        raw.setdefault("dataset", {})["sources"] = [{"path": r["path"]}]
+        cfg = TrainConfig.model_validate(raw)
+        family = get_family(cfg.model.family)
+        recs = [
+            ImageRecord(**{k: v for k, v in rec.items() if k in ImageRecord.__dataclass_fields__})
+            for rec in _records(c, r["id"])
+        ]
+        if not recs:
+            return {}
+        ds = cfg.dataset
+        bm = BucketManager(
+            ds.resolutions,
+            align=family.spec.latent.align,
+            step=ds.bucket_step,
+            aspect_ratio_limit=ds.aspect_ratio_limit,
+            area_tolerance=ds.area_tolerance,
+            no_upscale=ds.bucket_no_upscale,
+        )
+        items = expand_items(recs, ds.sources, ds, bm)
+        cache_root = Path(ds.cache_dir) if ds.cache_dir else c.cache_dir(r["project_id"])
+        lc = LatentCache(cache_root / "latents")
+        keys = {
+            LatentCache.key(
+                it.record.content_hash,
+                it.bucket.width,
+                it.bucket.height,
+                family.spec.latent.fingerprint,
+                flip,
+            )
+            for it in items
+            for flip in ((False, True) if ds.flip else (False,))
+        }
+        cached = sum(1 for k in keys if lc.has(k))
+        return {"latents": {"cached": cached, "total": len(keys)}, "cache_dir": str(cache_root)}
+    except Exception as e:  # noqa: BLE001 - statistics must never break the dataset endpoint
+        return {"error": str(e)}
 
 
 @router.get("/projects/{pid}/datasets", response_model=list[m.DatasetInfo], response_model_exclude_unset=True)
@@ -489,6 +543,9 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
     jid = new_id("j")
     run_dir = c.runs_dir(body.project_id) / jid
     config = deep_merge(config, {"checkpoint": {"output_dir": str(run_dir)}})
+    if not (config.get("dataset") or {}).get("cache_dir"):
+        # a pre-cache job and the training jobs after it must hit the same cache
+        config = deep_merge(config, {"dataset": {"cache_dir": str(c.cache_dir(body.project_id))}})
     from pydantic import ValidationError
 
     try:

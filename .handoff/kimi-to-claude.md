@@ -1,21 +1,18 @@
 # Kimi前端 → 训练器构建（Claude）
 
-updated: 2026-09-10T09:20
+updated: 2026-09-10T10:40
 from: kimi-frontend
 to: claude:69921a61-6c4d-44c0-9595-2e480fb40ab8
+ref: 请先读 .handoff/frontend-status.md（FE-M4 已交付）
 
-## 问题
+## 问询
 
-用户让我问你下一步意见。当前状态：
+用户让我来问进展。当前卡点都记录在我的 status 文件 "Questions / blockers for backend"：
 
-1. **FE-M5 真实对接已完成**：toy 全流程（建项目 → 注册数据集 → toy-smoke 预设 → plan → 入队 → 完成 → 产物转换）端到端走通，lint/test/build 全绿，截图 11 张在 `frontend/screenshots/`。详见 `frontend-status.md`。
-2. **两个服务已停**：用户退出应用后后端（8765）与前端 dev（3000）都终止了。
-3. **我留给你的 5 个问题**在 `frontend-status.md` 的 "Questions / blockers for backend"（plan 契约差异、时间字段类型、phase 列表、分辨率上限建议、dataset.changed 事件时机）。
+1. **【阻塞】cache 任务 exit_code=0 被误标 failed**（`j_6bfa29ad695c`：run.log 正常、无 events.jsonl、error 取到了最后一行 "}"）。另外 `GET /datasets/{id}` 的 cache 字段在缓存后仍是 `{}`。修复后请通知我，我重跑 FE-M4 的预缓存步骤验收。
+2. 【契约】`GET /projects/{id}/datasets` 返回 DatasetInfo[]（我已在 ProjectDetail 按 `.source` 兼容）——spec §5 表格请同步，或确认以后端为准。
+3. 【契约】`POST /models/scan` 请求体语义（自由 map，传什么键）——目前我前端发的是空 body `{}`。
 
-## 需要你决策/确认的
+另外请确认 FE-M4 验收结果是否通过（测试 37 / lint / build 全绿，截图 12~20 在 `frontend/screenshots/`）。如果通过，下一轮是否进 FE-M5 收尾（openapi 类型替换手写 types 的最终切换 + 剩余打磨项：队列拖拽优先级、validation 曲线拆分、日志环形裁剪、mock SSE 推送器）？
 
-- A. 是否先重启双端服务（我可以立刻拉起），还是直接进 FE-M4（数据集 UI：图片网格 / caption 编辑 / 批量 tag / 分桶预览）？
-- B. `frontend-status.md` 里 5 个契约问题的答复优先级 —— 其中「时间字段类型」和「plan 响应形状」会影响我下一轮是否重写 types 生成。
-- C. FE-M4 是否按 frontend-spec §3.3 直接开工，还是等你的契约修订先落地？
-
-请回复到本会话（session message）或在 `.handoff/` 下留文件。
+请回复到本会话或 `.handoff/`。

@@ -34,30 +34,12 @@ def cmd_train(args: argparse.Namespace) -> int:
 
 
 def cmd_cache(args: argparse.Namespace) -> int:
-    import torch
-
-    from ypuddin.data import build_data, cache_latents
-    from ypuddin.models import get_family
+    from ypuddin.train import cache
 
     cfg = _load(args)
-    fam = get_family(cfg.model.family)
-    device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
-    loaded = fam.load(
-        cfg.model, cfg.memory, device=device, dtype=torch.float32 if device == "cpu" else torch.bfloat16
-    )
-    cache_root = (
-        Path(cfg.dataset.cache_dir) if cfg.dataset.cache_dir else Path(cfg.checkpoint.output_dir) / "cache"
-    )
-    bundle = build_data(cfg, fam.spec.latent, cache_root=cache_root)
-    n = cache_latents(
-        bundle,
-        loaded.latent.encode,
-        device=device,
-        batch_size=max(1, cfg.dataset.batch_size),
-        dtype=torch.float32 if device == "cpu" else torch.bfloat16,
-    )
-    print(json.dumps({"written": n, **bundle.plan.to_dict()}, indent=2, ensure_ascii=False))
-    return 0
+    outcome = cache(cfg, device=args.device)
+    print(f"caching {outcome}")
+    return 0 if outcome == "finished" else 1
 
 
 def cmd_plan(args: argparse.Namespace) -> int:

@@ -325,3 +325,52 @@ async def test_spa_fallback_serves_index_for_deep_links(tmp_path):
         assert (await client.get("/api/nope")).status_code == 404
         traversal = await client.get("/..%2F..%2Fetc%2Fpasswd")
         assert "root:" not in traversal.text  # outside dist -> index.html, never the file
+
+
+@pytest.mark.asyncio
+async def test_cache_job_completes_and_is_shared_with_training(live_server, image_dataset):
+    """Kimi's report: a type=cache job exited 0 but was marked failed. It must complete through the
+    event stream, fill the project-wide cache, and the training job afterwards must find it."""
+    async with httpx.AsyncClient(base_url=live_server, timeout=60) as client:
+        pid = (await client.post("/api/projects", json={"name": "cache"})).json()["id"]
+        d = (await client.post(f"/api/projects/{pid}/datasets", json={"path": str(image_dataset)})).json()
+        did = d["source"]["id"]
+        for _ in range(100):
+            info = (await client.get(f"/api/datasets/{did}")).json()
+            if info["index_status"] == "ready":
+                break
+            await asyncio.sleep(0.1)
+        config = {
+            "model": {"family": "toy", "dtype": "fp32"},
+            "dataset": {
+                "sources": [{"path": str(image_dataset)}],
+                "resolutions": [64],
+                "bucket_step": 16,
+                "batch_size": 2,
+                "num_workers": 0,
+            },
+            "adapter": {"algo": "lokr", "rank": 4, "alpha": 4},
+            "loop": {"epochs": 1, "mixed_precision": "no"},
+            "checkpoint": {"save_every_epochs": None, "name": "c"},
+        }
+        r = await client.put(f"/api/projects/{pid}/config", json=config)
+        assert r.status_code == 200
+        before = (await client.get(f"/api/datasets/{did}")).json()["cache"]
+        assert before["latents"]["cached"] == 0 and before["latents"]["total"] == 12
+        job = (
+            await client.post("/api/jobs", json={"type": "cache", "name": "pre", "project_id": pid})
+        ).json()
+        j = await _wait_status(client, job["id"], {"completed", "failed", "cancelled"})
+        assert j["status"] == "completed", j.get("error")
+        after = (await client.get(f"/api/datasets/{did}")).json()["cache"]
+        assert after["latents"] == {"cached": 12, "total": 12}
+        # the training job of the same project reuses the cache (no latents re-encoded)
+        train = (
+            await client.post("/api/jobs", json={"type": "train", "name": "t", "project_id": pid})
+        ).json()
+        j2 = await _wait_status(client, train["id"], {"completed", "failed", "cancelled"})
+        assert j2["status"] == "completed", j2.get("error")
+        cfg = (await client.get(f"/api/jobs/{train['id']}/config")).json()
+        assert cfg["dataset"]["cache_dir"] == after["cache_dir"]
+        events = [e for e in (await client.get(f"/api/jobs/{train['id']}/metrics")).json()["steps"]]
+        assert events

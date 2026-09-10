@@ -100,6 +100,11 @@ class Trainer:
         self.emitter.emit(type_, **data)
 
     def prepare(self) -> None:
+        self.prepare_data()
+        self._prepare_training()
+
+    def prepare_data(self) -> None:
+        """Load the model, index the dataset and fill the latent / text caches (what a cache job does)."""
         cfg = self.cfg
         self._seed_all()
         write_config(cfg, self.run_dir / "config.toml")
@@ -146,6 +151,8 @@ class Trainer:
             self.emit("phase.changed", phase="caching_text")
             self._build_text_cache(cache_root)
 
+    def _prepare_training(self) -> None:
+        cfg = self.cfg
         self.emit("phase.changed", phase="injecting")
         presets = self.family.presets()
         if cfg.adapter.preset not in presets:
@@ -785,6 +792,27 @@ def _load_prompts_file(path: str) -> list[Any]:
     ]
 
 
+def cache(cfg: TrainConfig, *, device: str | None = None, emitter: Emitter | None = None) -> str:
+    """A cache-only job: same lifecycle events as ``train`` so the supervisor treats it uniformly."""
+    Path(cfg.checkpoint.output_dir).mkdir(parents=True, exist_ok=True)
+    em = emitter or Emitter(
+        path=cfg.logging.events_path or (Path(cfg.checkpoint.output_dir) / "events.jsonl")
+    )
+    trainer = Trainer(cfg, device=device, emitter=em)
+    try:
+        trainer.prepare_data()
+        trainer.emit("phase.changed", phase="finalizing")
+        trainer.emit(
+            "run.finished", step=0, epoch=0, samples_seen=0, cache_only=True, **trainer.bundle.plan.to_dict()
+        )
+        return "finished"
+    except Exception as e:  # noqa: BLE001
+        trainer.emit("run.failed", error=f"{type(e).__name__}: {e}")
+        raise
+    finally:
+        em.close()
+
+
 def train(
     cfg: TrainConfig,
     *,
@@ -804,4 +832,4 @@ def train(
     return trainer.run()
 
 
-__all__ = ["Trainer", "train", "NullEmitter"]
+__all__ = ["Trainer", "train", "cache", "NullEmitter"]

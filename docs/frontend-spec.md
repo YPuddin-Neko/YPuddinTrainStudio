@@ -152,14 +152,14 @@ frontend/
 | `GET /presets` · `POST /presets` · `GET/PUT/DELETE /presets/{name}` | `Preset {name, description, config(partial), builtin, updated_at}` |
 | `GET /projects` · `POST /projects` · `GET/PATCH/DELETE /projects/{id}` | `Project {id, name, note, created_at, updated_at, archived, dataset_ids, stats: {jobs, artifacts}}` |
 | `GET /projects/{id}/config` · `PUT /projects/{id}/config` | 项目当前训练配置草稿（完整 config） |
-| `GET /projects/{id}/datasets` · `POST /projects/{id}/datasets` | 注册数据源 `DatasetSource {id, project_id, path, repeats, caption_ext, is_reg, prior_weight, class_prompt, created_at}` |
-| `GET /datasets/{id}` | `DatasetInfo {source, stats: {images, captioned, avg_tags, resolutions: [{w,h,count}], ar_hist: [...]}, cache: {latents: {cached,total}, text: {cached,total}}, index_status: "ready|indexing|stale"}` |
+| `GET /projects/{id}/datasets` · `POST /projects/{id}/datasets` | 两者都返回 **`DatasetInfo`**（列表 / 单个，见下一行）；数据源字段在 `.source` 里：`DatasetSource {id, project_id, path, repeats, caption_ext, is_reg, prior_weight, class_prompt, created_at}` |
+| `GET /datasets/{id}` | `DatasetInfo {source, stats: {images, captioned, masks, resolutions: [{w,h,count}], ar_hist: [{ar,count}]}, cache: {latents: {cached,total}, cache_dir} \| {}, index_status: "indexing|ready|failed"}`。`cache` 按**项目当前配置草稿**（分辩率/分桶/模型族）计算 latent 缓存覆盖率；无项目或草稿无效时为 `{}`；文本缓存键取决于训练时的 caption 变体，不在此报告 |
 | `POST /datasets/{id}/rescan` · `DELETE /datasets/{id}` | |
 | `GET /datasets/{id}/images?page=&q=` | `{items: [{hash, rel_path, width, height, caption, has_mask}], total,…}` |
 | `GET /datasets/{id}/images/{hash}/thumb?size=256` · `GET .../file` | 图片 |
 | `GET/PUT /datasets/{id}/images/{hash}/caption` | `{caption}` |
 | `POST /datasets/{id}/tags/batch` | `{hashes: [...], add: [...], remove: [...]}` |
-| `GET /jobs?status=&project_id=&page=` · `POST /jobs` | `Job`（§6.2）；创建 body `{type: "train|cache|sample|convert", project_id?, name, config?, priority?, scheduled_at?}` |
+| `GET /jobs?status=&project_id=&page=` · `POST /jobs` | `Job`（§6.2）；创建 body `{type: "train|cache", project_id?, name, config?, priority?, scheduled_at?}`；`config` 省略时用项目草稿。服务端会把 `checkpoint.output_dir` 设为该任务的 run 目录，并在未指定时把 `dataset.cache_dir` 设为**项目共享缓存目录**，因此 `cache` 任务预编的 latents 会被之后的训练任务直接复用。`cache` 任务与训练任务走同一条事件流（phase.changed / cache.progress / run.finished） |
 | `GET /jobs/{id}` · `PATCH /jobs/{id}` (priority, name) · `DELETE /jobs/{id}` | |
 | `POST /jobs/{id}/pause|resume|cancel|save|retry` | 返回更新后的 `Job` |
 | `GET /jobs/{id}/metrics?since_step=` | `{steps: [], loss: [], loss_ema: [], lr: {group: []}, grad_norm: [], vram_mb: [], it_s: [], validation: [{step, per_t: {t: loss}, mean}]}` |
@@ -171,7 +171,7 @@ frontend/
 | `GET /artifacts?project_id=` · `GET /artifacts/{id}` · `DELETE` | `Artifact {id, project_id, job_id, name, path, size, algo, rank, alpha, factor, family, created_at, metadata}` |
 | `POST /artifacts/{id}/convert` | `{format: "comfyui|peft|kohya"}` → 新 `Artifact` |
 | `GET /artifacts/{id}/download` | 文件 |
-| `GET /models` · `POST /models` · `DELETE /models/{id}` · `POST /models/scan` | `ModelAsset {id, family, kind, path, size, dtype, exists, is_default}` |
+| `GET /models` · `POST /models` · `DELETE /models/{id}` · `POST /models/scan` | `ModelAsset {id, family, kind, path, size, dtype, exists, is_default, created_at}`；`scan` body `{path?: 目录（默认 settings.paths.models_dir），family?: 新注册文件的族（默认 anima）}`，递归找 `*.safetensors`，按文件名猜 kind，返回新注册的列表 |
 | `GET /events` | SSE（§7） |
 
 ## 6. 关键数据形状

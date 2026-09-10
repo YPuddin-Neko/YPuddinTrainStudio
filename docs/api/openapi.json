@@ -631,11 +631,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "type": "object",
-                "title": "Body"
+                "$ref": "#/components/schemas/ScanBody"
               }
             }
           },
@@ -4521,6 +4517,30 @@
           "count"
         ],
         "title": "ResolutionCount"
+      },
+      "ScanBody": {
+        "properties": {
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path",
+            "description": "directory to scan recursively for *.safetensors; default settings.paths.models_dir"
+          },
+          "family": {
+            "type": "string",
+            "title": "Family",
+            "description": "family assigned to newly registered files",
+            "default": "anima"
+          }
+        },
+        "type": "object",
+        "title": "ScanBody"
       },
       "Settings": {
         "properties": {

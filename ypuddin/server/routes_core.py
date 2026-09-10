@@ -13,7 +13,7 @@ from typing import Any
 import psutil
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import ypuddin
 from ypuddin.config import TrainConfig, deep_merge, dump_toml, read_config_file
@@ -388,9 +388,16 @@ def delete_model(model_id: str, c: ServiceContext = Depends(ctx)) -> dict[str, A
     return {"ok": True}
 
 
+class ScanBody(BaseModel):
+    path: str | None = Field(
+        None, description="directory to scan recursively for *.safetensors; default settings.paths.models_dir"
+    )
+    family: str = Field("anima", description="family assigned to newly registered files")
+
+
 @router.post("/models/scan", response_model=list[m.ModelAsset], response_model_exclude_unset=True)
-def scan_models(body: dict[str, str], c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
-    root = Path(body.get("path", str(c.data_root / "models"))).expanduser()
+def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
+    root = Path(body.path or str(c.data_root / "models")).expanduser()
     if not root.is_dir():
         raise NotFound(f"directory not found: {root}", code="fs.not_found")
     found = []
@@ -406,7 +413,7 @@ def scan_models(body: dict[str, str], c: ServiceContext = Depends(ctx)) -> list[
             if any(k in name for k in ("qwen", "t5", "clip", "text"))
             else "dit"
         )
-        family = body.get("family", "anima")
+        family = body.family
         mid = new_id("m")
         c.db.insert(
             "models",
