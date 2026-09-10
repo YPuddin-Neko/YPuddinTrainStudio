@@ -146,3 +146,17 @@ def test_online_latents_without_cache(image_dataset, tmp_path):
     trainer = Trainer(cfg, device="cpu", emitter=Emitter())
     assert trainer.run() == "finished"
     assert trainer.progress.step == trainer.progress.total_steps
+
+
+def test_block_swap_training_matches_reference(image_dataset, tmp_path):
+    """Training with blocks_to_swap must produce exactly the same weights as without."""
+    outs = []
+    for swap in (0, 2):
+        out = tmp_path / f"run{swap}"
+        cfg = _cfg(image_dataset, out, memory={"blocks_to_swap": swap}, loop={"epochs": 1, "grad_accum": 1, "mixed_precision": "no", "seed": 5}, sampling={"enabled": False}, validation={"enabled": False})
+        cfg = cfg.model_copy(update={"dataset": cfg.dataset.model_copy(update={"cache_dir": str(tmp_path / "cache")})})
+        tr = Trainer(cfg, device="cpu")
+        assert tr.run() == "finished"
+        outs.append(tr.adapters.export_state()[0])
+    for k in outs[0]:
+        torch.testing.assert_close(outs[1][k], outs[0][k], rtol=0, atol=0)

@@ -20,6 +20,7 @@ from torch.utils.data import DataLoader
 from ypuddin.adapters import AdapterSet, build_metadata, inject, save_adapter_file
 from ypuddin.config import TrainConfig, config_hash, write_config
 from ypuddin.data import BucketBatchSampler, DataBundle, TextCache, build_data, build_text_cache, cache_latents, collate
+from ypuddin.memory import BlockSwapper
 from ypuddin.models import LoadedModel, ModelFamily, TextCond, get_family
 from ypuddin.objectives import Objective
 from ypuddin.optim import build_optimizer, build_scheduler, is_schedule_free
@@ -60,6 +61,7 @@ class Trainer:
         self.loader: DataLoader
         self.text_cache: TextCache | None = None
         self.ema: dict[str, Tensor] | None = None
+        self.swapper: BlockSwapper | None = None
         self.gen = torch.Generator().manual_seed(cfg.loop.seed)  # noise / timestep RNG (checkpointed)
         self._stop: str | None = None
         self._loss_ema: float | None = None
@@ -136,6 +138,10 @@ class Trainer:
             tensors, _ = load_adapter_file(cfg.adapter.resume_weights)
             self.adapters.load_state(tensors, strict=False)
         self.emit("adapters.injected", **self.adapters.summary())
+        if cfg.memory.blocks_to_swap > 0:
+            blocks = self.family.memory_layout(self.loaded).blocks
+            self.swapper = BlockSwapper(blocks, cfg.memory.blocks_to_swap, self.device)
+            self.emit("memory.block_swap", **self.swapper.summary())
 
         self.objective = Objective(cfg.objective)
         groups = self.adapters.param_groups(cfg.optimizer.lr, cfg.optimizer.weight_decay, cfg.optimizer.group_lr)
@@ -302,8 +308,11 @@ class Trainer:
         mask = batch.get("mask")
         if mask is not None:
             mask = torch.nn.functional.interpolate(mask[:, None].to(self.device), size=x0.shape[-2:], mode="area")[:, 0]
+        x_in = x_t.to(self.loaded.dtype if self.device.type != "cpu" else torch.float32)
+        if self.swapper is not None and torch.is_grad_enabled():
+            x_in.requires_grad_(True)  # gives every block an input grad so backward hooks fire in order
         with self._autocast():
-            pred = self.family.forward(self.loaded, x_t.to(self.loaded.dtype if self.device.type != "cpu" else torch.float32), t.to(self.device), cond)
+            pred = self.family.forward(self.loaded, x_in, t.to(self.device), cond)
         loss, per_sample = self.objective.loss(pred.float(), target, t, mask=mask, sample_weight=batch["weight"])
         return loss, per_sample, t
 
@@ -358,6 +367,8 @@ class Trainer:
                     raise RuntimeError(f"{self.progress.nan_skips} consecutive non-finite losses")
                 continue
             (loss / accum).backward()
+            if self.swapper is not None:
+                self.swapper.release_all()
             group_loss += loss.item() / accum
             micro += 1
             if micro < accum:
@@ -472,6 +483,8 @@ class Trainer:
             return {}
         self.adapters.train(False)
         self.loaded.backbone.eval()
+        if self.swapper is not None:
+            self.swapper.set_forward_only(True)
         ds.set_epoch(0)
         ts = self.objective.sampler.icdf(vcfg.timesteps)
         per_t: dict[float, list[float]] = {q: [] for q in vcfg.timesteps}
@@ -490,6 +503,8 @@ class Trainer:
         result = {str(q): float(np.mean(v)) for q, v in per_t.items() if v}
         mean = float(np.mean(list(result.values()))) if result else float("nan")
         self.emit("validation", step=self.progress.step, per_t=result, mean=mean)
+        if self.swapper is not None:
+            self.swapper.set_forward_only(False)
         self.adapters.train(True)
         self.loaded.backbone.train()
         return result
@@ -507,6 +522,8 @@ class Trainer:
         defaults = self.family.spec.sampling
         self.adapters.train(False)
         self.loaded.backbone.eval()
+        if self.swapper is not None:
+            self.swapper.set_forward_only(True)
         out_dir = self.run_dir / "samples"
         out_dir.mkdir(exist_ok=True)
         paths: list[Path] = []
@@ -535,6 +552,8 @@ class Trainer:
             Image.fromarray(arr).save(path)
             paths.append(path)
             self.emit("sample.saved", step=self.progress.step, prompt_index=i, prompt=p.prompt, seed=seed, path=str(path), width=w, height=h)
+        if self.swapper is not None:
+            self.swapper.set_forward_only(False)
         self.adapters.train(True)
         self.loaded.backbone.train()
         return paths
