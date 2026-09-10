@@ -19,7 +19,7 @@ class _Strict(BaseModel):
 
 # --------------------------------------------------------------------------- model
 class ModelConfig(_Strict):
-    family: str = F("anima", help="模型族（anima / toy）", ui_=ui("model", order=0, control="select"))
+    family: Literal["anima", "toy"] = F("anima", help="模型族", ui_=ui("model", order=0, control="select"))
     dit_path: str | None = F(None, help="DiT 主干权重（safetensors）", ui_=ui("model", order=10, control="path"))
     text_encoder_path: str | None = F(
         None, help="文本编码器（HF 目录或单文件 safetensors）", ui_=ui("model", order=20, control="path")
