@@ -59,7 +59,9 @@ and with sd-scripts / ComfyUI / diffusion-pipe LoRA key conventions.
    as diffusion-pipe commit `b0aa4f1`. `llm_adapter.rotary_emb.inv_freq` was already non-persistent upstream.
 5. **Config helpers added** (not in upstream, which only had a commented-out `get_dit_config`):
    `ANIMA_2B_CONFIG` (the hard-coded dict from `library/anima_utils.py:load_anima_model`, with
-   `max_img_h = max_img_w = 1024` instead of 512), `ANIMA_NUM_HEADS_BY_WIDTH`, `ANIMA_KEY_PREFIXES`,
+   `max_img_h = max_img_w = 1024` instead of 512, `attn_mode="torch"`, `split_attn=False`, and the constructor
+   default `mlp_ratio=4.0` spelled out so `infer_dit_config(official_2B_state_dict) == ANIMA_2B_CONFIG`),
+   `ANIMA_NUM_HEADS_BY_WIDTH`, `ANIMA_KEY_PREFIXES`,
    `detect_key_prefix`, `strip_key_prefix`, `infer_dit_config` (+ alias `get_dit_config`).
    *Why 1024 is safe*: `max_img_h/w` feed only `len_h/len_w = max_img // patch_spatial`, which size the
    `seq = arange(...)` position table and the `H <= max_h` assertion in `generate_embeddings`. The rotary
