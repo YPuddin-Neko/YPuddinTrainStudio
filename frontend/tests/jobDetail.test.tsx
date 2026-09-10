@@ -37,7 +37,8 @@ describe('JobDetail Page (B1, B2, B3, B4)', () => {
     expect(screen.getByText('preparing')).toBeInTheDocument();
     expect(screen.getByText('training')).toBeInTheDocument();
     
-    // 检查 mock 图表是否正常注入
-    expect(screen.getByTestId('echarts-mock')).toBeInTheDocument();
+    // 检查 mock 图表是否正常注入（loss + validation + throughput 三张图）
+    const charts = screen.getAllByTestId('echarts-mock');
+    expect(charts.length).toBeGreaterThanOrEqual(3);
   });
 });

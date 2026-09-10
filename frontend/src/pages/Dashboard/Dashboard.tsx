@@ -56,7 +56,7 @@ export default function Dashboard() {
             </div>
             <div className="text-xl font-bold mt-1">{gpu.util_pct}%</div>
             <div className="text-xs text-slate-400 mt-1">
-              VRAM: {Math.round(gpu.mem_used_mb / 1024)} / {Math.round(gpu.mem_total_mb / 1024)} GB
+              VRAM: {Math.round((gpu.mem_used_mb ?? 0) / 1024)} / {Math.round((gpu.mem_total_mb ?? 0) / 1024)} GB
             </div>
           </div>
         ))}

@@ -725,6 +725,59 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Artifact */
+        Artifact: {
+            /** Id */
+            id: string;
+            /** Project Id */
+            project_id: string | null;
+            /** Job Id */
+            job_id: string | null;
+            /** Name */
+            name: string;
+            /** Path */
+            path: string;
+            /** Size */
+            size: number;
+            /** Kind */
+            kind: string;
+            /** Step */
+            step: number | null;
+            /** Created At */
+            created_at: number;
+            /** Algo */
+            algo?: string | null;
+            /** Rank */
+            rank?: number | string | null;
+            /** Alpha */
+            alpha?: number | null;
+            /** Factor */
+            factor?: number | null;
+            /** Family */
+            family?: string | null;
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+        } & {
+            [key: string]: unknown;
+        };
+        /** AspectCount */
+        AspectCount: {
+            /** Ar */
+            ar: string;
+            /** Count */
+            count: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** Caption */
+        Caption: {
+            /** Caption */
+            caption: string;
+        } & {
+            [key: string]: unknown;
+        };
         /** CaptionBody */
         CaptionBody: {
             /** Caption */
@@ -738,6 +791,24 @@ export interface components {
             };
             /** Dataset Ids */
             dataset_ids?: string[] | null;
+        };
+        /** ConfigError */
+        ConfigError: {
+            /** Loc */
+            loc: string;
+            /** Msg */
+            msg: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ConfigWarning */
+        ConfigWarning: {
+            /** Code */
+            code: string;
+            /** Msg */
+            msg: string;
+        } & {
+            [key: string]: unknown;
         };
         /** ConvertBody */
         ConvertBody: {
@@ -771,10 +842,219 @@ export interface components {
             /** Class Prompt */
             class_prompt?: string | null;
         };
+        /** DatasetImage */
+        DatasetImage: {
+            /** Hash */
+            hash: string;
+            /** Rel Path */
+            rel_path: string;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+            /** Caption */
+            caption: string;
+            /** Has Mask */
+            has_mask: boolean;
+        } & {
+            [key: string]: unknown;
+        };
+        /** DatasetInfo */
+        DatasetInfo: {
+            source: components["schemas"]["DatasetSource"];
+            stats: components["schemas"]["DatasetStats"];
+            /** Index Status */
+            index_status: ("indexing" | "ready" | "failed" | "stale") | string;
+            /** Cache */
+            cache: {
+                [key: string]: unknown;
+            };
+        } & {
+            [key: string]: unknown;
+        };
+        /** DatasetSource */
+        DatasetSource: {
+            /** Id */
+            id: string;
+            /** Project Id */
+            project_id: string | null;
+            /** Path */
+            path: string;
+            /** Repeats */
+            repeats: number;
+            /** Caption Ext */
+            caption_ext: string;
+            /** Is Reg */
+            is_reg: boolean;
+            /** Prior Weight */
+            prior_weight: number;
+            /** Class Prompt */
+            class_prompt: string | null;
+            /** Created At */
+            created_at: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** DatasetStats */
+        DatasetStats: {
+            /**
+             * Images
+             * @default 0
+             */
+            images: number;
+            /**
+             * Captioned
+             * @default 0
+             */
+            captioned: number;
+            /** Resolutions */
+            resolutions?: components["schemas"]["ResolutionCount"][];
+            /** Ar Hist */
+            ar_hist?: components["schemas"]["AspectCount"][];
+            /**
+             * Masks
+             * @default 0
+             */
+            masks: number;
+            /** Error */
+            error?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** DiskStats */
+        DiskStats: {
+            /** Path */
+            path: string;
+            /** Used Gb */
+            used_gb: number;
+            /** Total Gb */
+            total_gb: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** FsEntry */
+        FsEntry: {
+            /** Name */
+            name: string;
+            /** Is Dir */
+            is_dir: boolean;
+            /** Size */
+            size: number | null;
+            /** Mtime */
+            mtime: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** FsList */
+        FsList: {
+            /** Path */
+            path: string;
+            /** Parent */
+            parent: string | null;
+            /** Entries */
+            entries: components["schemas"]["FsEntry"][];
+        } & {
+            [key: string]: unknown;
+        };
+        /** GpuInfo */
+        GpuInfo: {
+            /** Index */
+            index: number;
+            /** Name */
+            name: string;
+            /** Total Mb */
+            total_mb?: number | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** GpuStats */
+        GpuStats: {
+            /** Index */
+            index: number;
+            /** Name */
+            name: string;
+            /** Util Pct */
+            util_pct?: number | null;
+            /** Mem Used Mb */
+            mem_used_mb?: number | null;
+            /** Mem Total Mb */
+            mem_total_mb?: number | null;
+            /** Temp C */
+            temp_c?: number | null;
+        } & {
+            [key: string]: unknown;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** Health */
+        Health: {
+            /** Version */
+            version: string;
+            /** Api Version */
+            api_version: number;
+            /** Torch */
+            torch: string | null;
+            /** Cuda */
+            cuda: string | null;
+            /** Gpus */
+            gpus: components["schemas"]["GpuInfo"][];
+            /** Families */
+            families: string[];
+        } & {
+            [key: string]: unknown;
+        };
+        /** ImagePage */
+        ImagePage: {
+            /** Items */
+            items: components["schemas"]["DatasetImage"][];
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** Job */
+        Job: {
+            /** Id */
+            id: string;
+            /** Type */
+            type: string;
+            /** Name */
+            name: string;
+            /** Project Id */
+            project_id: string | null;
+            /** Status */
+            status: ("queued" | "scheduled" | "running" | "pausing" | "cancelling" | "paused" | "completed" | "failed" | "cancelled") | string;
+            /** Priority */
+            priority: number;
+            /** Scheduled At */
+            scheduled_at: number | null;
+            /** Created At */
+            created_at: number;
+            /** Started At */
+            started_at: number | null;
+            /** Finished At */
+            finished_at: number | null;
+            /** Run Dir */
+            run_dir: string | null;
+            progress: components["schemas"]["JobProgress"];
+            latest: components["schemas"]["JobLatest"];
+            /** Error */
+            error: string | null;
+            /** Resume From */
+            resume_from: string | null;
+            /** Pid */
+            pid: number | null;
+            /** Exit Code */
+            exit_code: number | null;
+        } & {
+            [key: string]: unknown;
         };
         /** JobBody */
         JobBody: {
@@ -799,12 +1079,150 @@ export interface components {
             /** Scheduled At */
             scheduled_at?: number | null;
         };
+        /** JobCheckpoint */
+        JobCheckpoint: {
+            /** Step */
+            step: number;
+            /** Kind */
+            kind: ("weights" | "full") | string;
+            /** Path */
+            path: string;
+            /** Size */
+            size: number | null;
+            /** Created At */
+            created_at: number;
+            /** Artifact Id */
+            artifact_id?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** JobLatest */
+        JobLatest: {
+            /** Loss */
+            loss?: number | null;
+            /** Loss Ema */
+            loss_ema?: number | null;
+            /** Lr */
+            lr?: {
+                [key: string]: number;
+            } | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** JobLog */
+        JobLog: {
+            /** Lines */
+            lines: components["schemas"]["LogLine"][];
+            /** Next Offset */
+            next_offset: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** JobMetrics */
+        JobMetrics: {
+            /** Steps */
+            steps: number[];
+            /** Loss */
+            loss: (number | null)[];
+            /** Loss Ema */
+            loss_ema: (number | null)[];
+            /** Lr */
+            lr: {
+                [key: string]: number[];
+            };
+            /** Grad Norm */
+            grad_norm: (number | null)[];
+            /** Vram Mb */
+            vram_mb: (number | null)[];
+            /** It S */
+            it_s: (number | null)[];
+            /** Validation */
+            validation: components["schemas"]["ValidationPoint"][];
+        } & {
+            [key: string]: unknown;
+        };
         /** JobPatch */
         JobPatch: {
             /** Priority */
             priority?: number | null;
             /** Name */
             name?: string | null;
+        };
+        /** JobProgress */
+        JobProgress: {
+            /** Phase */
+            phase?: string | null;
+            /** Step */
+            step?: number | null;
+            /** Total Steps */
+            total_steps?: number | null;
+            /** Steps Per Epoch */
+            steps_per_epoch?: number | null;
+            /** Epoch */
+            epoch?: number | null;
+            /** Eta S */
+            eta_s?: number | null;
+            /** It S */
+            it_s?: number | null;
+            /** Vram Peak Mb */
+            vram_peak_mb?: number | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** JobSample */
+        JobSample: {
+            /** Step */
+            step: number;
+            /** Prompt Index */
+            prompt_index: number;
+            /** Prompt */
+            prompt: string;
+            /** Seed */
+            seed: number;
+            /** Url */
+            url: string;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+            /** Created At */
+            created_at: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** LogLine */
+        LogLine: {
+            /** Ts */
+            ts: number | null;
+            /** Level */
+            level: string;
+            /** Msg */
+            msg: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ModelAsset */
+        ModelAsset: {
+            /** Id */
+            id: string;
+            /** Family */
+            family: string;
+            /** Kind */
+            kind: string;
+            /** Path */
+            path: string;
+            /** Size */
+            size: number;
+            /** Dtype */
+            dtype: string | null;
+            /** Is Default */
+            is_default: boolean;
+            /** Exists */
+            exists: boolean;
+            /** Created At */
+            created_at: number;
+        } & {
+            [key: string]: unknown;
         };
         /** ModelBody */
         ModelBody: {
@@ -822,6 +1240,156 @@ export interface components {
              */
             is_default: boolean;
         };
+        /** Ok */
+        Ok: {
+            /**
+             * Ok
+             * @default true
+             */
+            ok: boolean;
+        } & {
+            [key: string]: unknown;
+        };
+        /** Plan */
+        Plan: {
+            /** Ok */
+            ok: boolean;
+            /** Errors */
+            errors: components["schemas"]["ConfigError"][];
+            /** Warnings */
+            warnings: components["schemas"]["ConfigWarning"][];
+            /**
+             * Images
+             * @default 0
+             */
+            images: number;
+            /**
+             * Items
+             * @default 0
+             */
+            items: number;
+            /**
+             * Captioned
+             * @default 0
+             */
+            captioned: number;
+            /** Buckets */
+            buckets?: components["schemas"]["PlanBucket"][];
+            /**
+             * Steps Per Epoch
+             * @default 0
+             */
+            steps_per_epoch: number;
+            /**
+             * Total Steps
+             * @default 0
+             */
+            total_steps: number;
+            /** Epochs */
+            epochs?: number | null;
+            /** Params */
+            params?: components["schemas"]["PlanParams"] | {
+                [key: string]: unknown;
+            };
+            /** Memory */
+            memory?: components["schemas"]["PlanMemory"] | {
+                [key: string]: unknown;
+            };
+            /** Text Encoding */
+            text_encoding?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** PlanActivation */
+        PlanActivation: {
+            /** W */
+            w: number;
+            /** H */
+            h: number;
+            /** Mb */
+            mb: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** PlanBucket */
+        PlanBucket: {
+            /** W */
+            w: number;
+            /** H */
+            h: number;
+            /** Items */
+            items: number;
+            /** Batches */
+            batches: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** PlanMemory */
+        PlanMemory: {
+            /** Weights Mb */
+            weights_mb: number;
+            /**
+             * Swapped Mb
+             * @default 0
+             */
+            swapped_mb: number;
+            /**
+             * Text Encoder Mb
+             * @default 0
+             */
+            text_encoder_mb: number;
+            /** Adapter Mb */
+            adapter_mb: number;
+            /** Optimizer Mb */
+            optimizer_mb: number;
+            /**
+             * Heuristic
+             * @default true
+             */
+            heuristic: boolean;
+            /** Activations Mb By Bucket */
+            activations_mb_by_bucket?: components["schemas"]["PlanActivation"][];
+            /** Peak Mb Estimate */
+            peak_mb_estimate?: number | null;
+            /** Gpu Total Mb */
+            gpu_total_mb?: number | null;
+            /** Suggestions */
+            suggestions?: string[];
+        } & {
+            [key: string]: unknown;
+        };
+        /** PlanParams */
+        PlanParams: {
+            /** Base */
+            base: number;
+            /** Trainable */
+            trainable: number;
+            /** Adapted Layers */
+            adapted_layers: number;
+            /** By Algo */
+            by_algo: {
+                [key: string]: number;
+            };
+        } & {
+            [key: string]: unknown;
+        };
+        /** Preset */
+        Preset: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Config */
+            config: {
+                [key: string]: unknown;
+            };
+            /** Builtin */
+            builtin: boolean;
+            /** Updated At */
+            updated_at: number | null;
+        } & {
+            [key: string]: unknown;
+        };
         /** PresetBody */
         PresetBody: {
             /** Name */
@@ -835,6 +1403,26 @@ export interface components {
             config: {
                 [key: string]: unknown;
             };
+        };
+        /** Project */
+        Project: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Note */
+            note: string;
+            /** Archived */
+            archived: boolean;
+            /** Created At */
+            created_at: number;
+            /** Updated At */
+            updated_at: number;
+            /** Dataset Ids */
+            dataset_ids: string[];
+            stats: components["schemas"]["ProjectStats"];
+        } & {
+            [key: string]: unknown;
         };
         /** ProjectBody */
         ProjectBody: {
@@ -855,6 +1443,124 @@ export interface components {
             /** Archived */
             archived?: boolean | null;
         };
+        /** ProjectStats */
+        ProjectStats: {
+            /** Jobs */
+            jobs: number;
+            /** Artifacts */
+            artifacts: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** QueueSettings */
+        QueueSettings: {
+            /** Held */
+            held: boolean;
+            /** Max Concurrent */
+            max_concurrent: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** RamStats */
+        RamStats: {
+            /** Used Mb */
+            used_mb: number;
+            /** Total Mb */
+            total_mb: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ResolutionCount */
+        ResolutionCount: {
+            /** W */
+            w: number;
+            /** H */
+            h: number;
+            /** Count */
+            count: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ScanBody */
+        ScanBody: {
+            /**
+             * Path
+             * @description directory to scan recursively for *.safetensors; default settings.paths.models_dir
+             */
+            path?: string | null;
+            /**
+             * Family
+             * @description family assigned to newly registered files
+             * @default anima
+             */
+            family: string;
+        };
+        /** Settings */
+        Settings: {
+            paths: components["schemas"]["SettingsPaths"];
+            server: components["schemas"]["SettingsServer"];
+            ui: components["schemas"]["SettingsUi"];
+        } & {
+            [key: string]: unknown;
+        };
+        /** SettingsPaths */
+        SettingsPaths: {
+            /** Data Root */
+            data_root: string;
+            /** Cache Dir */
+            cache_dir: string;
+            /** Models Dir */
+            models_dir: string;
+            /** Output Dir */
+            output_dir: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** SettingsServer */
+        SettingsServer: {
+            /** Host */
+            host: string;
+            /** Port */
+            port: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** SettingsUi */
+        SettingsUi: {
+            /** Language */
+            language: string;
+            /** Theme */
+            theme: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** SystemInfo */
+        SystemInfo: {
+            /** Python */
+            python: string;
+            /** Platform */
+            platform: string;
+            /** Packages */
+            packages: {
+                [key: string]: string | null;
+            };
+            /** Ypuddin */
+            ypuddin: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** SystemStats */
+        SystemStats: {
+            /** Cpu Pct */
+            cpu_pct: number;
+            ram: components["schemas"]["RamStats"];
+            /** Disks */
+            disks: components["schemas"]["DiskStats"][];
+            /** Gpus */
+            gpus: components["schemas"]["GpuStats"][];
+        } & {
+            [key: string]: unknown;
+        };
         /** TagBatch */
         TagBatch: {
             /** Hashes */
@@ -863,6 +1569,28 @@ export interface components {
             add?: string[];
             /** Remove */
             remove?: string[];
+        };
+        /** TagBatchResult */
+        TagBatchResult: {
+            /** Changed */
+            changed: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ValidateResult */
+        ValidateResult: {
+            /** Ok */
+            ok: boolean;
+            /** Errors */
+            errors: components["schemas"]["ConfigError"][];
+            /** Warnings */
+            warnings: components["schemas"]["ConfigWarning"][];
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            } | null;
+        } & {
+            [key: string]: unknown;
         };
         /** ValidationError */
         ValidationError: {
@@ -876,6 +1604,19 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** ValidationPoint */
+        ValidationPoint: {
+            /** Step */
+            step: number;
+            /** Per T */
+            per_t: {
+                [key: string]: number;
+            };
+            /** Mean */
+            mean: number;
+        } & {
+            [key: string]: unknown;
         };
     };
     responses: never;
@@ -901,9 +1642,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Health"];
                 };
             };
         };
@@ -923,9 +1662,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SystemStats"];
                 };
             };
         };
@@ -945,9 +1682,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SystemInfo"];
                 };
             };
         };
@@ -967,9 +1702,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Settings"];
                 };
             };
         };
@@ -995,9 +1728,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Settings"];
                 };
             };
             /** @description Validation Error */
@@ -1028,9 +1759,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["FsList"];
                 };
             };
             /** @description Validation Error */
@@ -1085,9 +1814,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ValidateResult"];
                 };
             };
             /** @description Validation Error */
@@ -1120,9 +1847,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Plan"];
                 };
             };
             /** @description Validation Error */
@@ -1151,9 +1876,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["Preset"][];
                 };
             };
         };
@@ -1177,9 +1900,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Preset"];
                 };
             };
             /** @description Validation Error */
@@ -1210,9 +1931,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Preset"];
                 };
             };
             /** @description Validation Error */
@@ -1247,9 +1966,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Preset"];
                 };
             };
             /** @description Validation Error */
@@ -1280,9 +1997,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Ok"];
                 };
             };
             /** @description Validation Error */
@@ -1354,9 +2069,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ValidateResult"];
                 };
             };
             /** @description Validation Error */
@@ -1385,9 +2098,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["ModelAsset"][];
                 };
             };
         };
@@ -1411,9 +2122,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ModelAsset"];
                 };
             };
             /** @description Validation Error */
@@ -1444,9 +2153,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Ok"];
                 };
             };
             /** @description Validation Error */
@@ -1469,9 +2176,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    [key: string]: string;
-                };
+                "application/json": components["schemas"]["ScanBody"];
             };
         };
         responses: {
@@ -1481,9 +2186,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["ModelAsset"][];
                 };
             };
             /** @description Validation Error */
@@ -1545,9 +2248,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["Project"][];
                 };
             };
             /** @description Validation Error */
@@ -1580,9 +2281,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Project"];
                 };
             };
             /** @description Validation Error */
@@ -1613,9 +2312,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Project"];
                 };
             };
             /** @description Validation Error */
@@ -1648,9 +2345,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Ok"];
                 };
             };
             /** @description Validation Error */
@@ -1685,9 +2380,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Project"];
                 };
             };
             /** @description Validation Error */
@@ -1790,9 +2483,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["DatasetInfo"][];
                 };
             };
             /** @description Validation Error */
@@ -1827,9 +2518,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["DatasetInfo"];
                 };
             };
             /** @description Validation Error */
@@ -1860,9 +2549,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["DatasetInfo"];
                 };
             };
             /** @description Validation Error */
@@ -1893,9 +2580,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Ok"];
                 };
             };
             /** @description Validation Error */
@@ -1926,9 +2611,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Ok"];
                 };
             };
             /** @description Validation Error */
@@ -1963,9 +2646,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ImagePage"];
                 };
             };
             /** @description Validation Error */
@@ -2063,9 +2744,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["Caption"];
                 };
             };
             /** @description Validation Error */
@@ -2101,9 +2780,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["Caption"];
                 };
             };
             /** @description Validation Error */
@@ -2138,9 +2815,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: number;
-                    };
+                    "application/json": components["schemas"]["TagBatchResult"];
                 };
             };
             /** @description Validation Error */
@@ -2174,9 +2849,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Job"][];
                 };
             };
             /** @description Validation Error */
@@ -2209,9 +2882,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Job"];
                 };
             };
             /** @description Validation Error */
@@ -2242,9 +2913,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Job"];
                 };
             };
             /** @description Validation Error */
@@ -2277,9 +2946,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Ok"];
                 };
             };
             /** @description Validation Error */
@@ -2314,9 +2981,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Job"];
                 };
             };
             /** @description Validation Error */
@@ -2348,9 +3013,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Job"];
                 };
             };
             /** @description Validation Error */
@@ -2416,9 +3079,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["JobMetrics"];
                 };
             };
             /** @description Validation Error */
@@ -2449,9 +3110,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["JobSample"][];
                 };
             };
             /** @description Validation Error */
@@ -2482,9 +3141,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["JobCheckpoint"][];
                 };
             };
             /** @description Validation Error */
@@ -2552,9 +3209,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["JobLog"];
                 };
             };
             /** @description Validation Error */
@@ -2583,9 +3238,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["QueueSettings"];
                 };
             };
         };
@@ -2611,9 +3264,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["QueueSettings"];
                 };
             };
             /** @description Validation Error */
@@ -2644,9 +3295,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["Artifact"][];
                 };
             };
             /** @description Validation Error */
@@ -2677,9 +3326,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Artifact"];
                 };
             };
             /** @description Validation Error */
@@ -2712,9 +3359,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Ok"];
                 };
             };
             /** @description Validation Error */
@@ -2780,9 +3425,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Artifact"];
                 };
             };
             /** @description Validation Error */

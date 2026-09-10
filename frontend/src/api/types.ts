@@ -1,3 +1,65 @@
+import type { components } from './generated';
+
+type S = components['schemas'];
+
+// ---- openapi 覆盖的核心实体：直接从 generated 导出别名 ----
+export type SystemStats = S['SystemStats'];
+export type GpuStats = S['GpuStats'];
+export type Project = S['Project'];
+export type Job = S['Job'];
+export type JobProgress = S['JobProgress'];
+export type JobMetrics = S['JobMetrics'];
+export type JobSample = S['JobSample'];
+export type JobCheckpoint = S['JobCheckpoint'];
+export type JobLogResponse = S['JobLog'];
+export type JobLogLine = S['LogLine'];
+export type QueueSettings = S['QueueSettings'];
+export type FsListResponse = S['FsList'];
+export type FsListEntry = S['FsEntry'];
+export type Artifact = S['Artifact'];
+export type ModelAsset = S['ModelAsset'];
+export type Settings = S['Settings'];
+// Plan.params / memory 在后端导出为与宽松 map 的联合，收窄为具体类型
+export type Plan = S['Plan'] & {
+  params?: S['PlanParams'];
+  memory?: S['PlanMemory'];
+};
+export type Preset = S['Preset'];
+export type DatasetSource = S['DatasetSource'];
+export type DatasetStats = S['DatasetStats'];
+
+// DatasetInfo.cache 在 openapi 中是宽松 map，收窄为已知形状
+export interface DatasetCacheInfo {
+  latents?: { cached: number; total: number };
+  text?: { cached: number; total: number };
+  cache_dir?: string;
+}
+export type DatasetInfo = S['DatasetInfo'] & { cache: DatasetCacheInfo };
+
+export type DatasetImage = S['DatasetImage'];
+export type DatasetImagesPage = S['ImagePage'];
+export type ValidationPoint = S['ValidationPoint'];
+
+// ---- openapi 未覆盖（或形状不便引用）的本地类型：手写保留 ----
+
+export type JobStatus =
+  | 'queued'
+  | 'scheduled'
+  | 'running'
+  | 'pausing'
+  | 'cancelling'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
+export interface JobListResponse {
+  items: Job[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 export interface ApiErrorPayload {
   error: {
     code: string;
@@ -23,291 +85,47 @@ export class ApiError extends Error {
   }
 }
 
-export interface GpuStats {
-  index: number;
-  name?: string;
-  util_pct: number;
-  mem_used_mb: number;
-  mem_total_mb: number;
-  temp_c: number;
-}
-
-export interface SystemStats {
-  cpu_pct: number;
-  ram: {
-    used_mb: number;
-    total_mb: number;
-  };
-  disks: Array<{
-    path: string;
-    used_gb: number;
-    total_gb: number;
-  }>;
-  gpus: GpuStats[];
-}
-
-export interface Project {
-  id: string;
-  name: string;
-  note?: string;
-  created_at: string | number;
-  updated_at: string | number;
-  archived: boolean;
-  dataset_ids: string[];
-  stats: {
-    jobs: number;
-    artifacts: number;
-  };
-}
-
-export interface JobProgress {
-  phase: string;
-  step: number;
-  total_steps: number;
-  steps_per_epoch: number;
-  epoch: number;
-  eta_s: number | null;
-  it_s: number;
-  vram_peak_mb: number | null;
-}
-
-export type JobStatus =
-  | 'queued'
-  | 'scheduled'
-  | 'running'
-  | 'pausing'
-  | 'cancelling'
-  | 'paused'
-  | 'completed'
-  | 'failed'
-  | 'cancelled';
-
-export interface Job {
-  id: string;
-  type: 'train' | 'cache' | 'sample' | 'convert';
-  name: string;
-  project_id?: string | null;
-  status: JobStatus;
-  priority: number;
-  scheduled_at: string | number | null;
-  created_at: string | number;
-  started_at: string | number | null;
-  finished_at: string | number | null;
-  progress: Partial<JobProgress>;
-  latest: {
-    loss?: number;
-    loss_ema?: number;
-    lr?: Record<string, number>;
-  };
-  error: string | null;
-  resume_from: string | null;
-  artifact_ids?: string[];
-}
-
-export interface JobListResponse {
-  items: Job[];
-  total: number;
-  page: number;
-  page_size: number;
-}
-
-export interface JobMetrics {
-  steps: number[];
-  loss: number[];
-  loss_ema: number[];
-  lr: Record<string, number[]>;
-  grad_norm: number[];
-  vram_mb: number[];
-  it_s: number[];
-  validation: Array<{
-    step: number;
-    per_t: Record<string, number>;
-    mean: number;
-  }>;
-}
-
-export interface JobSample {
-  step: number;
-  prompt_index: number;
-  prompt: string;
-  seed: number;
-  url: string;
-  width: number;
-  height: number;
-  created_at: string | number;
-}
-
-export interface JobCheckpoint {
-  step: number;
-  kind: 'weights' | 'full';
-  path: string;
-  size: number;
-  created_at: string | number;
-  artifact_id?: string;
-}
-
-export interface JobLogLine {
-  ts: string;
-  level: 'info' | 'warn' | 'error' | 'debug';
-  msg: string;
-}
-
-export interface JobLogResponse {
-  lines: JobLogLine[];
-  next_offset: number;
-}
-
-export interface QueueSettings {
-  held: boolean;
-  max_concurrent: number;
-}
-
-export interface FsListEntry {
-  name: string;
-  is_dir: boolean;
-  size: number;
-  mtime: string;
-}
-
-export interface FsListResponse {
-  path: string;
-  parent: string | null;
-  entries: FsListEntry[];
-}
-
-export interface Artifact {
-  id: string;
-  project_id: string | null;
-  job_id: string;
-  name: string;
-  path: string;
-  size: number;
-  kind?: string;
-  step?: number;
-  algo: string;
-  rank: number | string;
-  alpha: number;
-  factor: number;
-  family: string;
-  created_at: string | number;
-  metadata: Record<string, any>;
-}
-
-export interface ModelAsset {
-  id: string;
-  family: string;
-  kind: 'dit' | 'text_encoder' | 'vae' | 'tokenizer';
-  path: string;
-  size: number;
-  dtype: string;
-  exists: boolean;
-  is_default: boolean;
-}
-
-export interface Settings {
-  paths: {
-    data_root: string;
-    cache_dir: string;
-    models_dir: string;
-    output_dir: string;
-  };
-  server: {
-    host: string;
-    port: number;
-  };
-  ui: {
-    language: string;
-    theme: string;
-  };
-}
-
-export interface Plan {
-  ok: boolean;
-  errors: Array<{ loc?: string; msg: string }>;
-  warnings: Array<{ code?: string; msg: string }>;
-  images?: number;
-  items?: number;
-  captioned?: number;
-  steps_per_epoch: number;
-  total_steps: number;
-  epochs: number;
-  buckets: Array<{ w: number; h: number; items?: number; images?: number; batches: number }>;
-  params: { trainable: number; base: number; adapted_layers?: number; by_algo?: Record<string, number> };
-  memory: {
-    weights_mb: number;
-    adapter_mb: number;
-    optimizer_mb: number;
-    activations_mb_by_bucket: Array<{ w: number; h: number; mb: number }>;
-    peak_mb_estimate: number;
-    gpu_total_mb: number | null;
-    suggestions: string[];
-  };
-  text_encoding: 'online' | 'cached';
-  eta_estimate_s?: number | null;
-}
-
-export interface Preset {
-  name: string;
-  description: string;
-  config: Record<string, any>;
-  builtin: boolean;
-  updated_at: string | number | null;
-}
-
-// ---- Datasets ----
-
-export interface DatasetSource {
-  id: string;
-  project_id: string;
-  path: string;
-  repeats: number;
-  caption_ext: string;
-  is_reg: boolean;
-  prior_weight: number;
-  class_prompt: string | null;
-  created_at: number;
-}
-
-export interface DatasetStats {
-  images?: number;
-  captioned?: number;
-  avg_tags?: number;
-  resolutions?: Array<{ w: number; h: number; count: number }>;
-  ar_hist?: Array<{ ar: string; count: number }>;
-  masks?: number;
-}
-
-export interface DatasetInfo {
-  source: DatasetSource;
-  stats: DatasetStats;
-  index_status: 'ready' | 'indexing' | 'stale' | 'failed';
-  cache: {
-    latents?: { cached: number; total: number };
-    text?: { cached: number; total: number };
-  };
-}
-
-export interface DatasetImage {
-  hash: string;
-  rel_path: string;
-  width: number;
-  height: number;
-  caption: string;
-  has_mask: boolean;
-}
-
-export interface DatasetImagesPage {
-  items: DatasetImage[];
-  total: number;
-  page: number;
-  page_size: number;
-}
+// ---- SSE 事件 payload（openapi 未覆盖） ----
 
 export interface SampleProgressEvent {
   job_id: string;
   step: number;
   prompt_index: number;
   prompts: number;
+  done: number;
+  total: number;
+}
+
+export interface JobStepEvent {
+  job_id: string;
+  step: number;
+  epoch: number;
+  loss: number;
+  loss_ema: number;
+  lr: Record<string, number>;
+  grad_norm: number;
+  it_s: number;
+  vram_mb: number | null;
+  eta_s: number | null;
+}
+
+export interface JobStateEvent {
+  job_id: string;
+  status: JobStatus;
+  progress?: Partial<JobProgress>;
+  error?: string | null;
+}
+
+export interface JobValidationEvent {
+  job_id: string;
+  step: number;
+  per_t: Record<string, number>;
+  mean: number;
+}
+
+export interface CacheProgressEvent {
+  job_id: string;
+  kind: 'latents' | 'text' | 'index';
   done: number;
   total: number;
 }

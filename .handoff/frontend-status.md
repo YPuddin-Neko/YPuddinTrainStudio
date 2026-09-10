@@ -1,40 +1,31 @@
 # Frontend status
-updated: 2026-09-10T10:25
-milestone: FE-M4（数据集 + 项目详情 + 模型 + 设置）
+updated: 2026-09-10T11:55
+milestone: FE-M6（收尾 + 类型切换）
 status: done
 
 ## Done
-- ✅ **契约对齐**：时间字段统一按 Unix 秒处理；新增 `job.sample_progress` / `job.event` / `artifact.created` 事件类型；`Plan` 类型按真实形状更新（buckets.items、顶层 images/items/captioned、gpu_total_mb 可空）。
-- ✅ **A. 数据集页 `/datasets/:id`**（`pages/Dataset/Dataset.tsx`）：
-  - A1 概览卡：images/覆盖率/masks/缓存命中、resolutions 与 ar_hist 直方图；`index_status=indexing` 显示进度条（监听 `job.cache_progress` kind=index、按 dataset_id 匹配）；`dataset.changed` 后自动刷新（`13-dataset-overview.png`）。
-  - A2 虚拟滚动图片网格（自实现窗口化渲染，不依赖额外库；缩略图 `GET /datasets/{id}/images/{hash}/thumb?size=256`，懒加载 + 滚动近底自动翻页）。
-  - A3 caption 编辑器：TagChips（解析/序列化/去重/增删改/HTML5 拖拽排序，逻辑在 `utils/tags.ts` 全部独立可测），保存 `PUT caption`（`14-caption-editor.png`）；多选后批量 `POST tags/batch`（`15-batch-tags.png`）；`q=` 服务端过滤（`16-search-filter.png`）。
-  - A4 顶部动作：Rescan / Remove（二次确认，不删磁盘文件）/ Pre-cache（POST /jobs type=cache，使用项目草稿配置）。
-  - A5 分桶预览：用 `GET /projects/{pid}/config` 草稿调 `POST /plan` 展示 buckets（w×h、items、batches）。
-- ✅ **B. 项目详情 `/projects/:id`**：四个 tabs——数据集（卡片列表 + 注册表单：path 浏览/repeats/caption_ext/is_reg/prior_weight/class_prompt，已适配后端返回 `DatasetInfo[]` 形状取 `.source`）、训练配置（跳转）、任务（`GET /jobs?project_id=`）、产物（`GET /artifacts?project_id=`）（`12`, `18`）。
-- ✅ **C. 模型权重页 `/models`**：列表（family/kind/path/size/dtype/exists/is_default）+ 添加（路径浏览 PathBrowser）+ 扫描目录 + 删除；SchemaForm 的 `dit_path/text_encoder_path/vae_path/tokenizer_path` 控件带"从已注册模型选择"下拉（`19-models.png`）。
-- ✅ **D. 设置页 `/settings`**：paths/server/ui 完整表单，`PUT /settings` 保存后语言/主题即时生效（`20-settings.png` 英文界面实证）。
-- ✅ **JobDetail 采样进度**：订阅 `job.sample_progress`，header 区显示"生成预览 第 k/n 张 · 步 done/total"进度条，预览阶段不再像卡死。
-- ✅ **项目配置草稿**：TrainConfig 加载 `GET /projects/{id}/config` 并 1s 防抖 `PUT` 自动保存（预缓存/Plan 与草稿一致）。
-- ✅ **MSW handlers 补齐**：datasets（info/images/thumb/caption/tags/batch/rescan/delete）、models（CRUD+scan）、settings PUT、jobs 分页+创建+project_id 过滤、artifacts 过滤/convert。
-- ✅ **测试**：`tests/tags.test.ts`（9 例：解析/序列化/去重/拖拽/批量合并）、`tests/useDatasetImages.test.tsx`（5 例：分页/loadMore/q 过滤/多选/caption 更新，MSW 驱动）。
+- ✅ **A. 预缓存回归（后端 commit b23c87f 验证通过）**：cache 任务 exit 0 → `completed`（`j_22ad61934655`，phase finalizing 正常）；`GET /datasets/{id}.cache` 返回 `{latents: {cached: 12, total: 12}, cache_dir}`（项目共享缓存目录生效）。数据集页概览卡显示 "Latents: 12/12"（截图 `21-cache-coverage.png`）。
+- ✅ **B. openapi 类型切换**：`src/api/generated.ts` 用新 openapi.json（60 schemas）重新生成；`src/api/types.ts` 重构——Job/Project/DatasetInfo/Plan/Artifact/ModelAsset/Settings 等核心实体全部改为 generated 别名；手写部分只保留：SSE 事件 payload（`SampleProgressEvent`/`JobStepEvent`/`JobStateEvent`/`JobValidationEvent`/`CacheProgressEvent`）、`JobStatus` 联合、`JobListResponse` 分页包装、`ApiError`；对 generated 中两处过宽类型做了本地收窄（`DatasetInfo.cache`、`Plan.params/memory` 的 loose-map 联合）。
+- ✅ **C1. Queue 拖拽调优先级**：表格行可拖拽，拖到目标行上方/下方（含蓝色插入指示线）后计算新 priority（target±1），乐观更新 + `PATCH /jobs/{id}`，失败回滚刷新。
+- ✅ **C2. 任务详情图表重构**：三张图分离——① Loss（原始 + EMA + Grad Norm + 各参数组 lr 虚线右轴）；② Validation（每个固定时间步 t 一条线 + 红色均值线，数据来自 `metrics.validation` + SSE `job.validation` 按 step 去重合并）；③ Throughput & VRAM（it/s + VRAM GB 双轴）。全部 value 轴 + lttb + dataZoom。截图 `22-jobdetail-charts.png`（真实任务）。
+- ✅ **C3. 日志环形缓存**：`utils/metrics.ts` 的 `appendCapped`（cap=50000，超出丢弃最旧行），JobDetail 的 `job.log` SSE 合入处已接入。
+- ✅ **C4. 开发态 mock SSE**：`events/mockEventSource.ts`（system.stats 2s / job.step 1s / job.validation 5s / job.log 2s 自增推送）；`useEventStream` 在 `DEV && VITE_USE_MOCK !== 'false'` 时自动切换本地事件源（MSW 无法拦截 EventSource，这是唯一可行方案）。双时点截图 `23-mock-sse-t0/t6.png` 证明曲线自增、validation 点累积。
+- ✅ **测试**：新增 `tests/metrics.test.ts`（shapeValidationSeries 4 例：每 t 一条+均值、乱序去重、缺 t 跳过、空输入；mergeValidationPoint 1 例；appendCapped 4 例含 5 万行边界语义）。`jobDetail.test.tsx` 适配三图表（getAllByTestId ≥3）。
 
 ## In progress / Not done
-- Queue 拖拽调优先级（目前是数字输入框 onBlur PATCH）、任务详情 validation 曲线图与 throughput 图分离、日志 5 万行环形缓存裁剪（目前是纯追加）。
-- Mock SSE 推送生成器（开发态看曲线自增）；FE-M4 要求的真实验证里用的是真后端，未受影响。
+- 无新增未完成项。遗留观察项：Queue 拖拽优先级目前是"target±1"语义（未做全局重排 normalize）；mock SSE 只模拟 job_01。
 
 ## How to run
 - 后端：`cd xiangmuyuanma && .venv/bin/ypuddin serve --port 8765 --data-root /tmp/ypuddin_data`
-- 前端真实后端：`cd frontend && VITE_USE_MOCK=false npm run dev`；MSW：`npm run dev`
-- E2E：`node test-real-flow.js`（FE-M5 训练流）、`node test-fe-m4.js`（FE-M4 数据集/模型/设置流）
+- 前端真实后端：`cd frontend && VITE_USE_MOCK=false npm run dev`；MSW+mock SSE（纯前端活曲线）：`npm run dev`
+- E2E 脚本：`test-real-flow.js`（训练流）/ `test-fe-m4.js`（数据集流）/ `test-cache-verify.js` / `test-jobdetail-verify.js` / `test-mock-sse.js`
 
 ## Tests
 - `npm run lint`: pass (0 warnings)
-- `npm run test`: 37 passed (7 files)
-- `npm run build`: pass（各页面独立 chunk + echarts 独立 chunk）
-- 真实后端 E2E：`12~20` 共 9 张新截图（注册→索引 ready→caption chips 编辑保存→批量 tag（验证 q=batch_m4_tag 命中 2 张）→预缓存发起→模型添加→设置语言切换英文即时生效）
+- `npm run test`: 46 passed (8 files)
+- `npm run build`: pass（页面独立 chunk + echarts 独立 chunk）
 
 ## Questions / blockers for backend
-1. **【Bug 需修】cache 类型任务退出码 0 被标记 failed**：`j_6bfa29ad695c`（type=cache）进程 exit_code=0、run.log 正常输出 bucket 摘要结尾，但 job 被置为 `failed`，error 显示 `process exited with code 0: }`（取到 run.log 最后一行"}"当错误）。现象：该 run 未产生 events.jsonl。推测监督器对 cache 任务的完成判定不依赖 exit code 而是等 `run.*` 事件流，cache 任务没走事件管道导致误判。另 `GET /datasets/{id}` 的 `cache` 字段在缓存完成后仍是 `{}`。
-2. `GET /projects/{id}/datasets` 返回的是 `DatasetInfo[]`（含 stats/index_status），与 spec §5 表格里写的 `DatasetSource` 列表不一致——前端已按 `.source` 取值兼容，请同步 spec 或改回。
-3. `POST /models/scan` 的请求体是自由 map（openapi 里 `additionalProperties: string`），请文档化其语义（传什么键值？目录路径还是无参扫 settings.models_dir）。
+- 无阻塞。两个小建议（非必需）：
+  1. openapi 中 `Plan.params` / `Plan.memory` 目前是 `Model | dict` 联合，导致生成类型过宽（我前端本地收窄了）；若后端能把这两个字段声明为确定模型，生成类型会更干净。
+  2. `JobDetail` 无 CUDA 时 `vram_peak_mb: null`、`gpu_total_mb: null` 前端均按 `--` 渲染，符合预期，无需改动。

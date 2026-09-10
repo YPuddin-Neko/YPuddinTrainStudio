@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { EventType, EVENT_TYPES } from './eventTypes';
+import { createMockEventSource, shouldUseMockEvents } from './mockEventSource';
 
 type EventCallback<T = any> = (data: T) => void;
 
@@ -43,6 +44,25 @@ class EventStreamManager {
     if (this.eventSource || this.isConnecting || typeof window === 'undefined') return;
 
     this.isConnecting = true;
+
+    // 开发态 mock 模式：用本地事件生成器代替真实 EventSource（MSW 无法拦截 SSE）
+    if (shouldUseMockEvents()) {
+      const mock = createMockEventSource();
+      this.eventSource = mock as any;
+      Object.values(EVENT_TYPES).forEach((eventType) => {
+        mock.addEventListener(eventType, (e: { data: string; lastEventId: string }) => {
+          this.lastEventId = e.lastEventId;
+          try {
+            this.dispatch(eventType, JSON.parse(e.data));
+          } catch (err) {
+            console.error(`Failed to parse mock SSE event data for ${eventType}:`, err);
+          }
+        });
+      });
+      this.isConnecting = false;
+      return;
+    }
+
     const url = new URL('/api/events', window.location.origin);
     if (this.lastEventId) {
       url.searchParams.set('last_event_id', this.lastEventId);

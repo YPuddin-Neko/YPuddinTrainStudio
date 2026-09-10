@@ -90,6 +90,47 @@ export default function Queue() {
       .catch(console.error);
   };
 
+  // ---- 拖拽调整优先级：拖到目标行上方 → priority = target+1；下方 → target-1，PATCH 后刷新 ----
+  const dragJobIdRef = React.useRef<string | null>(null);
+  const [dropTarget, setDropTarget] = React.useState<{ id: string; position: 'above' | 'below' } | null>(null);
+
+  const handleRowDragStart = (jobId: string) => {
+    dragJobIdRef.current = jobId;
+  };
+
+  const handleRowDragOver = (e: React.DragEvent<HTMLTableRowElement>, jobId: string) => {
+    if (!dragJobIdRef.current || dragJobIdRef.current === jobId) return;
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const position = e.clientY < rect.top + rect.height / 2 ? 'above' : 'below';
+    setDropTarget({ id: jobId, position });
+  };
+
+  const handleRowDrop = (e: React.DragEvent<HTMLTableRowElement>, targetJob: Job) => {
+    e.preventDefault();
+    const draggedId = dragJobIdRef.current;
+    dragJobIdRef.current = null;
+    setDropTarget(null);
+    if (!draggedId || draggedId === targetJob.id) return;
+    const newPriority =
+      dropTarget?.position === 'above' ? targetJob.priority + 1 : targetJob.priority - 1;
+    // 乐观更新
+    setJobs((prev) =>
+      prev.map((j) => (j.id === draggedId ? { ...j, priority: newPriority } : j))
+    );
+    apiClient.patch(`/jobs/${draggedId}`, { priority: newPriority })
+      .then(fetchJobs)
+      .catch((err) => {
+        console.error(err);
+        fetchJobs();
+      });
+  };
+
+  const handleDragEnd = () => {
+    dragJobIdRef.current = null;
+    setDropTarget(null);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -125,8 +166,24 @@ export default function Queue() {
           <tbody className="divide-y divide-slate-200 dark:divide-slate-700 text-sm">
             {jobs.map((job) => {
               const displayStatus = optimisticStates[job.id] || job.status;
+              const isDropTarget = dropTarget?.id === job.id;
               return (
-                <tr key={job.id} className="hover:bg-slate-50 dark:hover:bg-slate-750" data-testid={`job-row-${job.id}`}>
+                <tr
+                  key={job.id}
+                  className={`hover:bg-slate-50 dark:hover:bg-slate-750 ${
+                    isDropTarget
+                      ? dropTarget?.position === 'above'
+                        ? 'border-t-2 border-t-blue-500'
+                        : 'border-b-2 border-b-blue-500'
+                      : ''
+                  }`}
+                  data-testid={`job-row-${job.id}`}
+                  draggable
+                  onDragStart={() => handleRowDragStart(job.id)}
+                  onDragOver={(e) => handleRowDragOver(e, job.id)}
+                  onDrop={(e) => handleRowDrop(e, job)}
+                  onDragEnd={handleDragEnd}
+                >
                   <td className="p-4 font-mono text-xs">{job.id}</td>
                   <td className="p-4 font-medium">
                     <Link to={`/jobs/${job.id}`} className="hover:underline text-blue-500">

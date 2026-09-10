@@ -73,6 +73,9 @@ let mockJobs: Job[] = [
     error: null,
     resume_from: null,
     artifact_ids: ['art_01'],
+    run_dir: null,
+    pid: null,
+    exit_code: null,
   },
   {
     id: 'job_02',
@@ -98,6 +101,9 @@ let mockJobs: Job[] = [
     error: null,
     resume_from: null,
     artifact_ids: [],
+    run_dir: null,
+    pid: null,
+    exit_code: 0,
   },
 ];
 
@@ -114,6 +120,8 @@ const mockArtifacts: Artifact[] = [
     alpha: 16,
     factor: 8,
     family: 'anima',
+    kind: 'weights',
+    step: 200,
     created_at: 1789000000,
     metadata: {},
   },
@@ -129,6 +137,7 @@ const mockModels: ModelAsset[] = [
     dtype: 'bf16',
     exists: true,
     is_default: true,
+    created_at: 1789000000,
   },
   {
     id: 'm_02',
@@ -139,6 +148,7 @@ const mockModels: ModelAsset[] = [
     dtype: 'bf16',
     exists: true,
     is_default: true,
+    created_at: 1789000000,
   },
 ];
 
@@ -217,9 +227,9 @@ export const handlers = [
       path,
       parent: path === '/' ? null : path.substring(0, path.lastIndexOf('/')) || '/',
       entries: [
-        { name: 'datasets', is_dir: true, size: 4096, mtime: '2026-09-01T10:00:00Z' },
-        { name: 'models', is_dir: true, size: 4096, mtime: '2026-09-01T10:00:00Z' },
-        { name: 'config.toml', is_dir: false, size: 1024, mtime: '2026-09-05T12:00:00Z' },
+        { name: 'datasets', is_dir: true, size: 4096, mtime: 1788996000 },
+        { name: 'models', is_dir: true, size: 4096, mtime: 1788996000 },
+        { name: 'config.toml', is_dir: false, size: 1024, mtime: 1789118400 },
       ],
     };
     return HttpResponse.json(resp);
@@ -362,6 +372,9 @@ export const handlers = [
       error: null,
       resume_from: null,
       artifact_ids: [],
+      run_dir: null,
+      pid: null,
+      exit_code: null,
     };
     mockJobs = [job, ...mockJobs];
     return HttpResponse.json(job);
@@ -462,9 +475,9 @@ export const handlers = [
     const url = new URL(request.url);
     const offset = Number(url.searchParams.get('offset') || '0');
     const lines = [
-      { ts: '12:00:01', level: 'info' as const, msg: 'Initializing trainer...' },
-      { ts: '12:00:05', level: 'info' as const, msg: 'Starting training loop at epoch 1...' },
-      { ts: '12:00:10', level: 'warn' as const, msg: 'VRAM usage close to peak threshold.' },
+      { ts: 1789000001, level: 'info' as const, msg: 'Initializing trainer...' },
+      { ts: 1789000005, level: 'info' as const, msg: 'Starting training loop at epoch 1...' },
+      { ts: 1789000010, level: 'warn' as const, msg: 'VRAM usage close to peak threshold.' },
     ];
     const resp: JobLogResponse = { lines: lines.slice(offset), next_offset: lines.length };
     return HttpResponse.json(resp);
@@ -492,13 +505,16 @@ export const handlers = [
       ok: true,
       errors: [],
       warnings: [{ code: 'vram.tight', msg: 'VRAM usage is close to 24GB peak.' }],
+      images: 240,
+      items: 480,
+      captioned: 228,
       steps_per_epoch: 500,
       total_steps: 2000,
       epochs: 4,
-      buckets: [{ w: 1024, h: 1024, images: 100, batches: 50 }],
-      params: { trainable: 14500000, base: 2000000000 },
+      buckets: [{ w: 1024, h: 1024, items: 100, batches: 50 }],
+      params: { trainable: 14500000, base: 2000000000, adapted_layers: 280, by_algo: { lokr: 280 } },
       memory: {
-        weights_mb: 4200, adapter_mb: 64, optimizer_mb: 128,
+        weights_mb: 4200, swapped_mb: 0, text_encoder_mb: 0, adapter_mb: 64, optimizer_mb: 128, heuristic: true,
         activations_mb_by_bucket: [{ w: 1024, h: 1024, mb: 6100 }],
         peak_mb_estimate: 18400, gpu_total_mb: 24576,
         suggestions: ['Enable memory.block_swap=4 to reduce peak VRAM.'],
@@ -554,6 +570,7 @@ export const handlers = [
       dtype: body.dtype ?? null,
       exists: true,
       is_default: body.is_default ?? false,
+      created_at: Date.now() / 1000,
     } as ModelAsset;
     mockModels.push(asset);
     return HttpResponse.json(asset);

@@ -14,6 +14,9 @@ import {
   Code,
   CheckCircle2,
 } from 'lucide-react';
+import { shapeValidationSeries, mergeValidationPoint, appendCapped } from '../../utils/metrics';
+
+const LR_COLORS = ['#a78bfa', '#f59e0b', '#22d3ee', '#fb7185', '#84cc16', '#e879f9'];
 
 export default function JobDetail() {
   const { id } = useParams<{ id: string }>();
@@ -103,8 +106,25 @@ export default function JobDetail() {
 
   useEventStream(EVENT_TYPES.JOB_LOG, (data: any) => {
     if (data.job_id === id && data.lines) {
-      setLogs((prev) => [...prev, ...data.lines]);
+      // 环形缓存：最多保留最近 5 万行，旧行丢弃
+      setLogs((prev) => appendCapped(prev, data.lines, 50000));
     }
+  });
+
+  // validation 增量：按 step 去重合并
+  useEventStream(EVENT_TYPES.JOB_VALIDATION, (data: any) => {
+    if (data.job_id !== id) return;
+    setMetrics((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        validation: mergeValidationPoint(prev.validation || [], {
+          step: data.step,
+          per_t: data.per_t || {},
+          mean: data.mean,
+        }),
+      };
+    });
   });
 
   // 日志自动触底
@@ -114,61 +134,97 @@ export default function JobDetail() {
     }
   }, [logs, autoScrollLog]);
 
-  // ECharts 图表配置 (原始+EMA+多指标)
-  const chartOption = React.useMemo(() => {
+  // 图 1：Loss（原始 + EMA + Grad Norm + 各参数组 lr）
+  const lossChartOption = React.useMemo(() => {
     if (!metrics || metrics.steps.length === 0) return {};
-
     const steps = metrics.steps;
+    const lrSeries = Object.entries(metrics.lr || {}).map(([group, values], i) => ({
+      name: `lr:${group}`,
+      type: 'line' as const,
+      yAxisIndex: 1,
+      showSymbol: false,
+      sampling: 'lttb' as const,
+      data: (values as number[]).map((v, idx) => [steps[idx], v] as [number, number]),
+      lineStyle: { width: 1, type: 'dashed' as const, color: LR_COLORS[i % LR_COLORS.length] },
+    }));
     return {
       tooltip: { trigger: 'axis' },
-      legend: { data: ['Loss', 'Loss (EMA)', 'Grad Norm', 'VRAM (GB)', 'Speed (it/s)'], textStyle: { color: '#888' } },
+      legend: { textStyle: { color: '#888' } },
       grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
-      xAxis: {
-        type: 'category',
-        data: steps.map((s) => (xAxisMode === 'step' ? `Step ${s}` : `Epoch ${(s / 500).toFixed(1)}`)),
-        splitLine: { show: false },
-      },
+      xAxis: { type: 'value', name: xAxisMode, splitLine: { show: false } },
       yAxis: [
         { type: 'value', name: 'Loss', scale: true, splitLine: { lineStyle: { color: '#33333320' } } },
-        { type: 'value', name: 'VRAM / Speed', scale: true, splitLine: { show: false } },
+        { type: 'value', name: 'LR', scale: true, splitLine: { show: false } },
       ],
-      dataZoom: [
-        { type: 'inside', start: 0, end: 100 },
-        { type: 'slider', start: 0, end: 100 },
-      ],
+      dataZoom: [{ type: 'inside' }, { type: 'slider' }],
       series: [
         {
-          name: 'Loss',
-          type: 'line',
-          showSymbol: false,
-          sampling: 'lttb',
-          data: metrics.loss,
+          name: 'Loss', type: 'line', showSymbol: false, sampling: 'lttb',
+          data: steps.map((s, i) => [s, metrics.loss[i]] as [number, number | null]),
           lineStyle: { width: 1.2, color: '#93c5fd' },
         },
         {
-          name: 'Loss (EMA)',
-          type: 'line',
-          showSymbol: false,
-          sampling: 'lttb',
-          data: metrics.loss_ema,
+          name: 'Loss (EMA)', type: 'line', showSymbol: false, sampling: 'lttb',
+          data: steps.map((s, i) => [s, metrics.loss_ema[i]] as [number, number | null]),
           lineStyle: { width: 2, color: '#2563eb' },
         },
         {
-          name: 'Grad Norm',
-          type: 'line',
-          showSymbol: false,
-          sampling: 'lttb',
-          data: metrics.grad_norm,
+          name: 'Grad Norm', type: 'line', showSymbol: false, sampling: 'lttb',
+          data: steps.map((s, i) => [s, metrics.grad_norm[i]] as [number, number | null]),
           lineStyle: { width: 1, color: '#eab308' },
         },
+        ...lrSeries,
+      ],
+    };
+  }, [metrics, xAxisMode]);
+
+  // 图 2：Validation（每个固定时间步一条线 + 均值）
+  const validationChartOption = React.useMemo(() => {
+    if (!metrics || !metrics.validation || metrics.validation.length === 0) return null;
+    const { series } = shapeValidationSeries(metrics.validation);
+    return {
+      tooltip: { trigger: 'axis' },
+      legend: { textStyle: { color: '#888' } },
+      grid: { left: '3%', right: '4%', bottom: '12%', containLabel: true },
+      xAxis: { type: 'value', name: 'step', splitLine: { show: false } },
+      yAxis: { type: 'value', name: 'val loss', scale: true, splitLine: { lineStyle: { color: '#33333320' } } },
+      series: series.map((s, i) => ({
+        name: s.name,
+        type: 'line' as const,
+        showSymbol: true,
+        data: s.data,
+        lineStyle: {
+          width: s.name === 'mean' ? 2.5 : 1.2,
+          color: s.name === 'mean' ? '#f43f5e' : LR_COLORS[i % LR_COLORS.length],
+        },
+      })),
+    };
+  }, [metrics]);
+
+  // 图 3：吞吐与显存（it/s + VRAM）
+  const perfChartOption = React.useMemo(() => {
+    if (!metrics || metrics.steps.length === 0) return {};
+    const steps = metrics.steps;
+    return {
+      tooltip: { trigger: 'axis' },
+      legend: { textStyle: { color: '#888' } },
+      grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
+      xAxis: { type: 'value', name: xAxisMode, splitLine: { show: false } },
+      yAxis: [
+        { type: 'value', name: 'it/s', scale: true, splitLine: { lineStyle: { color: '#33333320' } } },
+        { type: 'value', name: 'VRAM (GB)', scale: true, splitLine: { show: false } },
+      ],
+      dataZoom: [{ type: 'inside' }, { type: 'slider' }],
+      series: [
         {
-          name: 'VRAM (GB)',
-          type: 'line',
-          yAxisIndex: 1,
-          showSymbol: false,
-          sampling: 'lttb',
-          data: metrics.vram_mb.map((mb) => (mb / 1024).toFixed(1)),
-          lineStyle: { width: 1, color: '#ec4899' },
+          name: 'Speed (it/s)', type: 'line', showSymbol: false, sampling: 'lttb',
+          data: steps.map((s, i) => [s, metrics.it_s[i]] as [number, number | null]),
+          lineStyle: { width: 1.5, color: '#10b981' },
+        },
+        {
+          name: 'VRAM (GB)', type: 'line', yAxisIndex: 1, showSymbol: false, sampling: 'lttb',
+          data: steps.map((s, i) => [s, Number(((metrics.vram_mb[i] ?? 0) / 1024).toFixed(2))] as [number, number]),
+          lineStyle: { width: 1.2, color: '#ec4899' },
         },
       ],
     };
@@ -323,7 +379,19 @@ export default function JobDetail() {
               <span>{emaAlpha}</span>
             </div>
           </div>
-          <ReactECharts option={chartOption} style={{ height: 420 }} notMerge={false} lazyUpdate={true} />
+          <ReactECharts option={lossChartOption} style={{ height: 400 }} notMerge={false} lazyUpdate={true} />
+
+          {validationChartOption && (
+            <div className="pt-4 border-t dark:border-slate-700">
+              <div className="text-xs text-slate-400 mb-2">Validation loss (per fixed timestep + mean)</div>
+              <ReactECharts option={validationChartOption} style={{ height: 260 }} notMerge={false} lazyUpdate={true} />
+            </div>
+          )}
+
+          <div className="pt-4 border-t dark:border-slate-700">
+            <div className="text-xs text-slate-400 mb-2">Throughput & VRAM</div>
+            <ReactECharts option={perfChartOption} style={{ height: 280 }} notMerge={false} lazyUpdate={true} />
+          </div>
         </div>
       )}
 
@@ -362,7 +430,7 @@ export default function JobDetail() {
                   <td className="p-4 font-semibold">{cp.step}</td>
                   <td className="p-4 capitalize">{cp.kind}</td>
                   <td className="p-4 font-mono text-xs text-slate-500">{cp.path}</td>
-                  <td className="p-4">{Math.round(cp.size / (1024 * 1024))} MB</td>
+                  <td className="p-4">{Math.round((cp.size ?? 0) / (1024 * 1024))} MB</td>
                   <td className="p-4 text-right space-x-2">
                     <button className="px-2.5 py-1 text-xs bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 rounded inline-flex items-center space-x-1">
                       <Download className="w-3.5 h-3.5" />
@@ -406,7 +474,9 @@ export default function JobDetail() {
           >
             {filteredLogs.map((l, idx) => (
               <div key={idx} className="flex space-x-2">
-                <span className="text-slate-500">[{l.ts}]</span>
+                <span className="text-slate-500">
+                  [{l.ts == null ? '--' : typeof l.ts === 'number' ? new Date(l.ts * 1000).toLocaleTimeString() : l.ts}]
+                </span>
                 <span className={`uppercase font-bold ${l.level === 'warn' ? 'text-yellow-400' : l.level === 'error' ? 'text-red-400' : 'text-blue-400'}`}>
                   [{l.level}]
                 </span>
