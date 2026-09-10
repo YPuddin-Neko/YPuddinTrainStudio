@@ -129,10 +129,12 @@ class PlanBucket(_Out):
 
 
 class PlanParams(_Out):
-    base: int
-    trainable: int
-    adapted_layers: int
-    by_algo: dict[str, int]
+    """Empty (all zeros) when the family cannot build a meta backbone for the config."""
+
+    base: int = 0
+    trainable: int = 0
+    adapted_layers: int = 0
+    by_algo: dict[str, int] = Field(default_factory=dict)
 
 
 class PlanActivation(_Out):
@@ -142,11 +144,13 @@ class PlanActivation(_Out):
 
 
 class PlanMemory(_Out):
-    weights_mb: float
+    """Empty (all zeros, no estimate) when the family cannot build a meta backbone for the config."""
+
+    weights_mb: float = 0
     swapped_mb: float = 0
     text_encoder_mb: float = 0
-    adapter_mb: float
-    optimizer_mb: float
+    adapter_mb: float = 0
+    optimizer_mb: float = 0
     heuristic: bool = True
     activations_mb_by_bucket: list[PlanActivation] = Field(default_factory=list)
     peak_mb_estimate: float | None = None
@@ -165,8 +169,8 @@ class Plan(_Out):
     steps_per_epoch: int = 0
     total_steps: int = 0
     epochs: int | None = None
-    params: PlanParams | dict[str, Any] = Field(default_factory=dict)
-    memory: PlanMemory | dict[str, Any] = Field(default_factory=dict)
+    params: PlanParams = Field(default_factory=PlanParams)
+    memory: PlanMemory = Field(default_factory=PlanMemory)
     text_encoding: str | None = None
 
 
@@ -311,6 +315,13 @@ class Job(_Out):
     resume_from: str | None
     pid: int | None
     exit_code: int | None
+
+
+class JobPage(_Out):
+    items: list[Job]
+    total: int
+    page: int
+    page_size: int
 
 
 class ValidationPoint(_Out):

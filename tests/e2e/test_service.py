@@ -297,6 +297,10 @@ async def test_response_models_cover_every_json_endpoint(live_server, image_data
         assert isinstance(scanned, list)
         assert (await client.delete(f"/api/models/{mdl['id']}")).json()["ok"] is True
         assert (await client.get("/api/queue/settings")).json()["held"] in (True, False)
+        page = (await client.get("/api/jobs?page=1&page_size=5")).json()
+        assert set(page) >= {"items", "total", "page", "page_size"} and page["page_size"] == 5
+        assert (await client.get("/api/jobs?status=running,queued")).status_code == 200
+        assert (await client.get("/api/artifacts")).status_code == 200
         p = (await client.post("/api/projects", json={"name": "sweep", "note": "n"})).json()
         assert p["stats"] == {"jobs": 0, "artifacts": 0} and p["dataset_ids"] == []
         p2 = (await client.patch(f"/api/projects/{p['id']}", json={"name": "sweep2"})).json()

@@ -508,7 +508,7 @@ def _job_row(r: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-@router.get("/jobs", response_model=list[m.Job], response_model_exclude_unset=True)
+@router.get("/jobs", response_model=m.JobPage, response_model_exclude_unset=True)
 def list_jobs(
     status: str | None = None,
     project_id: str | None = None,

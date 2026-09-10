@@ -1607,11 +1607,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Job"
-                  },
-                  "title": "Response List Jobs Api Jobs Get"
+                  "$ref": "#/components/schemas/JobPage"
                 }
               }
             }
@@ -3680,6 +3676,38 @@
         ],
         "title": "JobMetrics"
       },
+      "JobPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Job"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "JobPage"
+      },
       "JobPatch": {
         "properties": {
           "priority": {
@@ -4059,28 +4087,10 @@
             "title": "Epochs"
           },
           "params": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PlanParams"
-              },
-              {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            ],
-            "title": "Params"
+            "$ref": "#/components/schemas/PlanParams"
           },
           "memory": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PlanMemory"
-              },
-              {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            ],
-            "title": "Memory"
+            "$ref": "#/components/schemas/PlanMemory"
           },
           "text_encoding": {
             "anyOf": [
@@ -4160,7 +4170,8 @@
         "properties": {
           "weights_mb": {
             "type": "number",
-            "title": "Weights Mb"
+            "title": "Weights Mb",
+            "default": 0
           },
           "swapped_mb": {
             "type": "number",
@@ -4174,11 +4185,13 @@
           },
           "adapter_mb": {
             "type": "number",
-            "title": "Adapter Mb"
+            "title": "Adapter Mb",
+            "default": 0
           },
           "optimizer_mb": {
             "type": "number",
-            "title": "Optimizer Mb"
+            "title": "Optimizer Mb",
+            "default": 0
           },
           "heuristic": {
             "type": "boolean",
@@ -4224,26 +4237,25 @@
         },
         "additionalProperties": true,
         "type": "object",
-        "required": [
-          "weights_mb",
-          "adapter_mb",
-          "optimizer_mb"
-        ],
-        "title": "PlanMemory"
+        "title": "PlanMemory",
+        "description": "Empty (all zeros, no estimate) when the family cannot build a meta backbone for the config."
       },
       "PlanParams": {
         "properties": {
           "base": {
             "type": "integer",
-            "title": "Base"
+            "title": "Base",
+            "default": 0
           },
           "trainable": {
             "type": "integer",
-            "title": "Trainable"
+            "title": "Trainable",
+            "default": 0
           },
           "adapted_layers": {
             "type": "integer",
-            "title": "Adapted Layers"
+            "title": "Adapted Layers",
+            "default": 0
           },
           "by_algo": {
             "additionalProperties": {
@@ -4255,13 +4267,8 @@
         },
         "additionalProperties": true,
         "type": "object",
-        "required": [
-          "base",
-          "trainable",
-          "adapted_layers",
-          "by_algo"
-        ],
-        "title": "PlanParams"
+        "title": "PlanParams",
+        "description": "Empty (all zeros) when the family cannot build a meta backbone for the config."
       },
       "Preset": {
         "properties": {
