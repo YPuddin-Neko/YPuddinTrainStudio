@@ -43,7 +43,9 @@ def test_load_dit_infers_geometry_and_matches_reference(tmp_path, prefix):
     fam = get_family("anima")
     from ypuddin.models.base import LoadedModel
 
-    loaded = LoadedModel(backbone=dit, text=None, latent=None, device=torch.device("cpu"), dtype=torch.float32)
+    loaded = LoadedModel(
+        backbone=dit, text=None, latent=None, device=torch.device("cpu"), dtype=torch.float32
+    )
     x = torch.randn(1, 16, 8, 8)
     t = torch.tensor([0.4])
     cond = _cond()
@@ -71,9 +73,13 @@ def test_presets_match_expected_module_counts(tmp_path):
     counts = {}
     for name in presets:
         dit, _ = load_dit(path, device="cpu", dtype=torch.float32)
-        aset = inject(dit, AdapterConfig(algo="lokr", rank=2, alpha=2.0, preset=name), presets[name], prefix="lora_unet")
+        aset = inject(
+            dit, AdapterConfig(algo="lokr", rank=2, alpha=2.0, preset=name), presets[name], prefix="lora_unet"
+        )
         counts[name] = len(aset.layers)
-        assert all(n.startswith("lora_unet_") for n in [f"lora_unet_{k.replace('.', '_')}" for k in aset.layers])
+        assert all(
+            n.startswith("lora_unet_") for n in [f"lora_unet_{k.replace('.', '_')}" for k in aset.layers]
+        )
     blocks = TINY_CFG["num_blocks"]
     assert counts["attn-only"] == blocks * 8  # self+cross × (q,k,v,out)
     assert counts["attn-mlp"] == blocks * 10
@@ -86,10 +92,16 @@ def test_adapted_forward_and_backward(tmp_path):
     _, path = _tiny_checkpoint(tmp_path)
     fam = get_family("anima")
     dit, _ = load_dit(path, device="cpu", dtype=torch.float32)
-    aset = inject(dit, AdapterConfig(algo="lokr", rank="full", alpha=1.0, factor=4, preset="attn-mlp"), fam.presets()["attn-mlp"])
+    aset = inject(
+        dit,
+        AdapterConfig(algo="lokr", rank="full", alpha=1.0, factor=4, preset="attn-mlp"),
+        fam.presets()["attn-mlp"],
+    )
     from ypuddin.models.base import LoadedModel
 
-    loaded = LoadedModel(backbone=dit, text=None, latent=None, device=torch.device("cpu"), dtype=torch.float32)
+    loaded = LoadedModel(
+        backbone=dit, text=None, latent=None, device=torch.device("cpu"), dtype=torch.float32
+    )
     dit.train()
     out = fam.forward(loaded, torch.randn(2, 16, 8, 8), torch.tensor([0.2, 0.9]), _cond(b=2))
     out.square().mean().backward()

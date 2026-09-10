@@ -9,7 +9,9 @@ from torch import Tensor, nn
 class DoRA(nn.Module):
     def __init__(self, base_weight: Tensor, dtype: torch.dtype = torch.float32):
         super().__init__()
-        norm = base_weight.detach().to(torch.float32).reshape(base_weight.shape[0], -1).norm(dim=1, keepdim=True)
+        norm = (
+            base_weight.detach().to(torch.float32).reshape(base_weight.shape[0], -1).norm(dim=1, keepdim=True)
+        )
         self.dora_scale = nn.Parameter(norm.to(dtype))
 
     def rescale(self, weight: Tensor) -> Tensor:

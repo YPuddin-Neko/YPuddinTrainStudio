@@ -36,7 +36,14 @@ class FrozenLinear(nn.Module):
     matching how ComfyUI consumes ``fp8_scaled`` checkpoints.
     """
 
-    def __init__(self, weight: Tensor, bias: Tensor | None = None, *, precision: str = "keep", scale: Tensor | None = None):
+    def __init__(
+        self,
+        weight: Tensor,
+        bias: Tensor | None = None,
+        *,
+        precision: str = "keep",
+        scale: Tensor | None = None,
+    ):
         super().__init__()
         self.out_features, self.in_features = int(weight.shape[0]), int(weight.shape[1])
         self.precision = precision

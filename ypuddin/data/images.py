@@ -23,9 +23,11 @@ def load_rgb(path: str) -> tuple[Image.Image, Image.Image | None]:
     return im.convert("RGB"), alpha
 
 
-def to_bucket(im: Image.Image, width: int, height: int, *, flip: bool = False, resample=Image.LANCZOS) -> Image.Image:
-    rw, rh, l, t, r, b = fit_crop(im.width, im.height, width, height)
-    out = im.resize((rw, rh), resample=resample).crop((l, t, r, b))
+def to_bucket(
+    im: Image.Image, width: int, height: int, *, flip: bool = False, resample=Image.LANCZOS
+) -> Image.Image:
+    rw, rh, left, top, right, bottom = fit_crop(im.width, im.height, width, height)
+    out = im.resize((rw, rh), resample=resample).crop((left, top, right, bottom))
     if flip:
         out = ImageOps.mirror(out)
     return out
@@ -37,7 +39,9 @@ def pil_to_tensor(im: Image.Image) -> Tensor:
     return torch.from_numpy(arr).permute(2, 0, 1).contiguous()
 
 
-def load_mask(path: str | None, alpha: Image.Image | None, width: int, height: int, *, flip: bool = False) -> Tensor | None:
+def load_mask(
+    path: str | None, alpha: Image.Image | None, width: int, height: int, *, flip: bool = False
+) -> Tensor | None:
     """Loss mask ``(H, W)`` in ``[0, 1]`` from a sidecar (grayscale) or the alpha channel."""
     src: Image.Image | None = None
     if path:

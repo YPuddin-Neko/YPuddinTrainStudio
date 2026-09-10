@@ -43,7 +43,7 @@ def _tokenize(src: str) -> list[_Tok]:
     while pos < len(src):
         m = _TOKEN_RE.match(src, pos)
         if not m or m.end() == pos:
-            raise ShowWhenError(f"bad token at {pos}: {src[pos:pos + 10]!r}")
+            raise ShowWhenError(f"bad token at {pos}: {src[pos : pos + 10]!r}")
         pos = m.end()
         if m.group("num") is not None:
             text = m.group("num")
@@ -84,7 +84,7 @@ class _Parser:
     def parse(self) -> tuple:
         node = self.p_or()
         if self.peek() is not None:
-            raise ShowWhenError(f"trailing tokens: {self.toks[self.i:]}")
+            raise ShowWhenError(f"trailing tokens: {self.toks[self.i :]}")
         return node
 
     def p_or(self) -> tuple:

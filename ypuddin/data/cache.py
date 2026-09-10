@@ -87,7 +87,7 @@ def build_latent_cache(
         pixels = torch.stack([it[1]["pixels"] for it in items]).to(device)
         with torch.no_grad():
             latents = encode(pixels).to(dtype).cpu()
-        for (key, extra), lat in zip(items, latents):
+        for (key, extra), lat in zip(items, latents, strict=True):
             entry = {"latents": lat}
             if "mask" in extra and extra["mask"] is not None:
                 entry["mask"] = extra["mask"].to(torch.float16)
@@ -129,7 +129,7 @@ def build_text_cache(
         nonlocal written
         if not batch:
             return
-        for cap, entry in zip(batch, encode_for_cache(batch)):
+        for cap, entry in zip(batch, encode_for_cache(batch), strict=True):
             cache.put(TextCache.key(cap, fingerprint), entry)
             written += 1
         batch.clear()

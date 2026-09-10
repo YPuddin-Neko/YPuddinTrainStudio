@@ -22,7 +22,12 @@ from .supervisor import JobSupervisor
 log = logging.getLogger(__name__)
 
 
-def create_app(data_root: str | Path = "studio_data", *, frontend_dist: str | Path | None = None, poll_interval: float = 0.5) -> FastAPI:
+def create_app(
+    data_root: str | Path = "studio_data",
+    *,
+    frontend_dist: str | Path | None = None,
+    poll_interval: float = 0.5,
+) -> FastAPI:
     root = Path(data_root).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
     db = Database(root / "studio.db")
@@ -42,10 +47,22 @@ def create_app(data_root: str | Path = "studio_data", *, frontend_dist: str | Pa
             await supervisor.stop()
             db.close()
 
-    app = FastAPI(title="YPuddin Train Studio", version=ypuddin.__version__, lifespan=lifespan, openapi_url="/api/openapi.json", docs_url="/api/docs")
+    app = FastAPI(
+        title="YPuddin Train Studio",
+        version=ypuddin.__version__,
+        lifespan=lifespan,
+        openapi_url="/api/openapi.json",
+        docs_url="/api/docs",
+    )
     app.state.ctx = context
     errors.install(app)
-    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"], expose_headers=["X-Trace-Id"])
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["X-Trace-Id"],
+    )
     app.include_router(routes_core.router, prefix="/api")
     app.include_router(routes_work.router, prefix="/api")
 

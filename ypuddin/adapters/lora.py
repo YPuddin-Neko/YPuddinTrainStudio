@@ -27,7 +27,9 @@ class LoRA(AdapterModule):
         init: str = "default",
         dtype: torch.dtype = torch.float32,
     ) -> None:
-        super().__init__(out_features, in_features, dropout=dropout, rank_dropout=rank_dropout, init=init, dtype=dtype)
+        super().__init__(
+            out_features, in_features, dropout=dropout, rank_dropout=rank_dropout, init=init, dtype=dtype
+        )
         self.rank = int(rank)
         if self.rank <= 0:
             raise ValueError("rank must be positive")
@@ -88,14 +90,24 @@ class LoRA(AdapterModule):
         }
 
     @classmethod
-    def from_tensors(cls, tensors: dict[str, Tensor], meta: dict[str, Any] | None = None, **kwargs: Any) -> LoRA:
+    def from_tensors(
+        cls, tensors: dict[str, Tensor], meta: dict[str, Any] | None = None, **kwargs: Any
+    ) -> LoRA:
         down, up = tensors["lora_down.weight"], tensors["lora_up.weight"]
         if down.dim() > 2:  # conv-style 1x1 kernels from other trainers
             down, up = down.flatten(1), up.flatten(1)
         rank = int(down.shape[0])
         alpha_file = float(tensors["alpha"].item()) if "alpha" in tensors else float(rank)
         dtype = kwargs.pop("dtype", torch.float32)
-        mod = cls(int(up.shape[0]), int(down.shape[1]), rank=rank, alpha=alpha_file, rs_lora=False, dtype=dtype, **kwargs)
+        mod = cls(
+            int(up.shape[0]),
+            int(down.shape[1]),
+            rank=rank,
+            alpha=alpha_file,
+            rs_lora=False,
+            dtype=dtype,
+            **kwargs,
+        )
         with torch.no_grad():
             mod.down.copy_(down.to(dtype))
             mod.up.copy_(up.to(dtype))

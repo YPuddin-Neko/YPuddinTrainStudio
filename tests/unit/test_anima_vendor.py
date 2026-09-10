@@ -110,9 +110,24 @@ def test_tiny_dit_batched_2d_timesteps_and_none_padding_mask(tiny_dit: Anima):
     model = tiny_dit.eval()
     x, t, qwen, qwen_mask, t5_ids, t5_mask, padding_mask = _tiny_batch(b=2, hw=16, l_q=20, l_t=12)
     with torch.no_grad():
-        ref = model(x, t, qwen, padding_mask=padding_mask, target_input_ids=t5_ids, target_attention_mask=t5_mask, source_attention_mask=qwen_mask)
+        ref = model(
+            x,
+            t,
+            qwen,
+            padding_mask=padding_mask,
+            target_input_ids=t5_ids,
+            target_attention_mask=t5_mask,
+            source_attention_mask=qwen_mask,
+        )
         # (B, T) timesteps and an omitted padding mask (defaults to zeros) must give the same result
-        out = model(x, t[:, None], qwen, target_input_ids=t5_ids, target_attention_mask=t5_mask, source_attention_mask=qwen_mask)
+        out = model(
+            x,
+            t[:, None],
+            qwen,
+            target_input_ids=t5_ids,
+            target_attention_mask=t5_mask,
+            source_attention_mask=qwen_mask,
+        )
     assert ref.shape == (2, 16, 1, 16, 16)
     torch.testing.assert_close(out, ref)
 
@@ -123,12 +138,23 @@ def test_sampling_path_matches_training_path(tiny_dit: Anima):
     x, t, qwen, qwen_mask, t5_ids, t5_mask, padding_mask = _tiny_batch(seed=1)
     with torch.no_grad():
         ctx = model.llm_adapter(
-            source_hidden_states=qwen, target_input_ids=t5_ids, target_attention_mask=t5_mask, source_attention_mask=qwen_mask
+            source_hidden_states=qwen,
+            target_input_ids=t5_ids,
+            target_attention_mask=t5_mask,
+            source_attention_mask=qwen_mask,
         )
         ctx[~t5_mask] = 0
         assert ctx.shape == (1, 16, 1024)
         sampled = model(x, t, ctx, padding_mask=padding_mask)  # no target_input_ids -> context used as-is
-        trained = model(x, t, qwen, padding_mask=padding_mask, target_input_ids=t5_ids, target_attention_mask=t5_mask, source_attention_mask=qwen_mask)
+        trained = model(
+            x,
+            t,
+            qwen,
+            padding_mask=padding_mask,
+            target_input_ids=t5_ids,
+            target_attention_mask=t5_mask,
+            source_attention_mask=qwen_mask,
+        )
     torch.testing.assert_close(sampled, trained)
 
 
@@ -164,13 +190,29 @@ def test_bf16_weights_and_autocast_paths(tiny_dit: Anima):
     model = tiny_dit.eval()
     x, t, qwen, qwen_mask, t5_ids, t5_mask, padding_mask = _tiny_batch(seed=3)
     with torch.no_grad(), torch.autocast("cpu", dtype=torch.bfloat16):
-        out = model(x, t, qwen, padding_mask=padding_mask, target_input_ids=t5_ids, target_attention_mask=t5_mask, source_attention_mask=qwen_mask)
+        out = model(
+            x,
+            t,
+            qwen,
+            padding_mask=padding_mask,
+            target_input_ids=t5_ids,
+            target_attention_mask=t5_mask,
+            source_attention_mask=qwen_mask,
+        )
     assert out.dtype == torch.bfloat16 and torch.isfinite(out).all()
 
     bf16 = Anima(**TINY_CFG).to(torch.bfloat16)
     bf16.load_state_dict(model.state_dict())
     with torch.no_grad():
-        out = bf16(x.bfloat16(), t.bfloat16(), qwen.bfloat16(), padding_mask=padding_mask.bfloat16(), target_input_ids=t5_ids, target_attention_mask=t5_mask, source_attention_mask=qwen_mask)
+        out = bf16(
+            x.bfloat16(),
+            t.bfloat16(),
+            qwen.bfloat16(),
+            padding_mask=padding_mask.bfloat16(),
+            target_input_ids=t5_ids,
+            target_attention_mask=t5_mask,
+            source_attention_mask=qwen_mask,
+        )
     assert out.dtype == torch.bfloat16 and torch.isfinite(out).all()
 
 
@@ -273,7 +315,11 @@ def test_infer_dit_config_without_adapter_and_heads_fallback_table():
             self.shape = torch.Size(shape)
 
     for width, heads in [(2048, 16), (5120, 40), (1280, 10), (128, 1)]:
-        fake = {"x_embedder.proj.1.weight": _Shape(width, 68), "blocks.0.mlp.layer1.weight": _Shape(width * 4, width), "blocks.1.mlp.layer1.weight": _Shape(width * 4, width)}
+        fake = {
+            "x_embedder.proj.1.weight": _Shape(width, 68),
+            "blocks.0.mlp.layer1.weight": _Shape(width * 4, width),
+            "blocks.1.mlp.layer1.weight": _Shape(width * 4, width),
+        }
         cfg = infer_dit_config(fake)
         assert cfg["num_heads"] == heads == ANIMA_NUM_HEADS_BY_WIDTH.get(width, width // 128)
         assert cfg["num_blocks"] == 2 and cfg["in_channels"] == 16 and cfg["model_channels"] == width
@@ -292,7 +338,9 @@ def test_official_2b_config_matches_inferred_from_meta_model():
     assert "blocks.28.self_attn.q_proj.weight" not in sd
     assert infer_dit_config(sd) == ANIMA_2B_CONFIG
     assert ANIMA_2B_CONFIG["max_img_h"] == ANIMA_2B_CONFIG["max_img_w"] == 1024
-    assert ANIMA_2B_CONFIG["rope_h_extrapolation_ratio"] == ANIMA_2B_CONFIG["rope_w_extrapolation_ratio"] == 4.0
+    assert (
+        ANIMA_2B_CONFIG["rope_h_extrapolation_ratio"] == ANIMA_2B_CONFIG["rope_w_extrapolation_ratio"] == 4.0
+    )
 
 
 def test_max_img_size_is_pure_extrapolation(tiny_dit: Anima):
@@ -302,7 +350,9 @@ def test_max_img_size_is_pure_extrapolation(tiny_dit: Anima):
     large = Anima(**dict(TINY_CFG, max_frames=2, max_img_h=256, max_img_w=256)).eval()
     for m in (small, large):
         missing, unexpected = m.load_state_dict(tiny_dit.state_dict(), strict=True)
-        assert not missing and not unexpected  # non-persistent RoPE buffers -> no shape clash on pos_embedder.seq
+        assert (
+            not missing and not unexpected
+        )  # non-persistent RoPE buffers -> no shape clash on pos_embedder.seq
     assert small.pos_embedder.max_h == 32 and large.pos_embedder.max_h == 128  # max_img // patch_spatial
     assert small.pos_embedder.seq.numel() == 32 and large.pos_embedder.seq.numel() == 128
     torch.testing.assert_close(large.pos_embedder.seq[:32], small.pos_embedder.seq)
@@ -311,20 +361,53 @@ def test_max_img_size_is_pure_extrapolation(tiny_dit: Anima):
 
     x, t, qwen, qwen_mask, t5_ids, t5_mask, padding_mask = _tiny_batch(seed=5, hw=16)
     with torch.no_grad():
-        a = small(x, t, qwen, padding_mask=padding_mask, target_input_ids=t5_ids, target_attention_mask=t5_mask, source_attention_mask=qwen_mask)
-        b = large(x, t, qwen, padding_mask=padding_mask, target_input_ids=t5_ids, target_attention_mask=t5_mask, source_attention_mask=qwen_mask)
+        a = small(
+            x,
+            t,
+            qwen,
+            padding_mask=padding_mask,
+            target_input_ids=t5_ids,
+            target_attention_mask=t5_mask,
+            source_attention_mask=qwen_mask,
+        )
+        b = large(
+            x,
+            t,
+            qwen,
+            padding_mask=padding_mask,
+            target_input_ids=t5_ids,
+            target_attention_mask=t5_mask,
+            source_attention_mask=qwen_mask,
+        )
     assert torch.equal(a, b)
 
     # ... and the small table really is the binding constraint: 64 latent px -> 32 patches fits, 80 does not.
     with torch.no_grad():
-        small(torch.randn(1, 16, 1, 64, 64), t, qwen, padding_mask=torch.zeros(1, 1, 64, 64), target_input_ids=t5_ids, target_attention_mask=t5_mask, source_attention_mask=qwen_mask)
+        small(
+            torch.randn(1, 16, 1, 64, 64),
+            t,
+            qwen,
+            padding_mask=torch.zeros(1, 1, 64, 64),
+            target_input_ids=t5_ids,
+            target_attention_mask=t5_mask,
+            source_attention_mask=qwen_mask,
+        )
         with pytest.raises(AssertionError, match="exceed the maximum"):
-            small(torch.randn(1, 16, 1, 80, 80), t, qwen, target_input_ids=t5_ids, target_attention_mask=t5_mask, source_attention_mask=qwen_mask)
+            small(
+                torch.randn(1, 16, 1, 80, 80),
+                t,
+                qwen,
+                target_input_ids=t5_ids,
+                target_attention_mask=t5_mask,
+                source_attention_mask=qwen_mask,
+            )
 
 
 def test_llm_adapter_standalone_shapes_and_masking():
     torch.manual_seed(0)
-    adapter = LLMAdapter(source_dim=1024, target_dim=1024, model_dim=1024, num_layers=1, self_attn=True).eval()
+    adapter = LLMAdapter(
+        source_dim=1024, target_dim=1024, model_dim=1024, num_layers=1, self_attn=True
+    ).eval()
     qwen = torch.randn(2, 10, 1024)
     qwen_mask = torch.ones(2, 10, dtype=torch.long)
     qwen_mask[1, 7:] = 0
@@ -348,7 +431,9 @@ def test_dump_dit_key_list(tiny_dit: Anima):
 
     def fmt(sd):
         w = max(len(k) for k in sd)
-        return "\n".join(f"{k.ljust(w)}  {tuple(v.shape)}  {str(v.dtype).replace('torch.', '')}" for k, v in sd.items())
+        return "\n".join(
+            f"{k.ljust(w)}  {tuple(v.shape)}  {str(v.dtype).replace('torch.', '')}" for k, v in sd.items()
+        )
 
     lines = [
         "# Anima DiT state_dict keys (ypuddin.models.anima.vendor.cosmos_dit.Anima)",
@@ -361,7 +446,21 @@ def test_dump_dit_key_list(tiny_dit: Anima):
         "# The DiT trunk has no biases; only the LLM adapter (llm_adapter.*) has bias tensors.",
         "",
         f"## Section 1: tiny test model ({len(tiny_sd)} tensors) -- config: "
-        + ", ".join(f"{k}={TINY_CFG[k]}" for k in ("model_channels", "num_blocks", "num_heads", "in_channels", "out_channels", "crossattn_emb_channels", "adaln_lora_dim", "use_llm_adapter", "max_img_h", "max_img_w")),
+        + ", ".join(
+            f"{k}={TINY_CFG[k]}"
+            for k in (
+                "model_channels",
+                "num_blocks",
+                "num_heads",
+                "in_channels",
+                "out_channels",
+                "crossattn_emb_channels",
+                "adaln_lora_dim",
+                "use_llm_adapter",
+                "max_img_h",
+                "max_img_w",
+            )
+        ),
         "",
         fmt(tiny_sd),
         "",
@@ -385,13 +484,25 @@ def test_attention_helper_split_and_masked_paths_match_sdpa():
     q = torch.randn(2, 5, 3, 8)  # (B, L_q, H, D)
     k = torch.randn(2, 9, 3, 8)  # cross-attention: L_kv != L_q
     v = torch.randn(2, 9, 3, 8)
-    ref = torch.nn.functional.scaled_dot_product_attention(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)).transpose(1, 2).reshape(2, 5, 24)
+    ref = (
+        torch.nn.functional.scaled_dot_product_attention(
+            q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
+        )
+        .transpose(1, 2)
+        .reshape(2, 5, 24)
+    )
 
     p = vendored_attention.AttentionParams.create_attention_params("torch", False)
-    torch.testing.assert_close(vendored_attention.attention([q.clone(), k.clone(), v.clone()], attn_params=p), ref)
-    torch.testing.assert_close(vendored_attention.attention(q, k, v), ref)  # default params == torch, no split
+    torch.testing.assert_close(
+        vendored_attention.attention([q.clone(), k.clone(), v.clone()], attn_params=p), ref
+    )
+    torch.testing.assert_close(
+        vendored_attention.attention(q, k, v), ref
+    )  # default params == torch, no split
     p_split = vendored_attention.AttentionParams.create_attention_params("torch", True)
-    torch.testing.assert_close(vendored_attention.attention([q.clone(), k.clone(), v.clone()], attn_params=p_split), ref)
+    torch.testing.assert_close(
+        vendored_attention.attention([q.clone(), k.clone(), v.clone()], attn_params=p_split), ref
+    )
     assert p.supports_fp32 and not p.requires_same_dtype
 
     # masked path (img tokens + padded text tokens): equal seqlens -> trimmed and zero-padded back
@@ -399,18 +510,29 @@ def test_attention_helper_split_and_masked_paths_match_sdpa():
     x = torch.randn(2, img_len + txt_len, 3, 8)
     txt_mask = torch.ones(2, txt_len, dtype=torch.long)
     txt_mask[:, 4:] = 0
-    pm = vendored_attention.AttentionParams.create_attention_params_from_mask("torch", False, img_len, txt_mask)
+    pm = vendored_attention.AttentionParams.create_attention_params_from_mask(
+        "torch", False, img_len, txt_mask
+    )
     out = vendored_attention.attention([x.clone(), x.clone(), x.clone()], attn_params=pm)
     assert out.shape == (2, img_len + txt_len, 24)
     assert torch.all(out[:, img_len + 4 :] == 0)
     valid = img_len + 4
-    ref = torch.nn.functional.scaled_dot_product_attention(*(x[:, :valid].transpose(1, 2),) * 3).transpose(1, 2).reshape(2, valid, 24)
+    ref = (
+        torch.nn.functional.scaled_dot_product_attention(*(x[:, :valid].transpose(1, 2),) * 3)
+        .transpose(1, 2)
+        .reshape(2, valid, 24)
+    )
     torch.testing.assert_close(out[:, :valid], ref)
 
     with pytest.raises(NotImplementedError):
-        vendored_attention.attention([q.clone(), k.clone(), v.clone()], attn_params=vendored_attention.AttentionParams.create_attention_params("xformers", False))
+        vendored_attention.attention(
+            [q.clone(), k.clone(), v.clone()],
+            attn_params=vendored_attention.AttentionParams.create_attention_params("xformers", False),
+        )
     with pytest.raises(NotImplementedError):
-        Anima(**dict(TINY_CFG, num_blocks=1, use_llm_adapter=False, attn_mode="flash"))(torch.randn(1, 16, 1, 8, 8), torch.rand(1), torch.randn(1, 4, 1024))
+        Anima(**dict(TINY_CFG, num_blocks=1, use_llm_adapter=False, attn_mode="flash"))(
+            torch.randn(1, 16, 1, 8, 8), torch.rand(1), torch.randn(1, 4, 1024)
+        )
 
 
 # --------------------------------------------------------------------------------------------------------- VAE
@@ -478,9 +600,17 @@ def test_official_vae_key_layout_and_defaults():
         vae = AutoencoderKLQwenImage()
     sd = vae.state_dict()
     assert vae.encoder.dim == 96 and vae.z_dim == 16 and vae.temperal_downsample == [False, True, True]
-    for key in ("encoder.conv_in.weight", "encoder.down_blocks.0.conv1.weight", "encoder.mid_block.attentions.0.to_qkv.weight",
-                "quant_conv.weight", "post_quant_conv.weight", "decoder.up_blocks.0.upsamplers.0.time_conv.weight",
-                "decoder.up_blocks.3.resnets.2.conv2.weight", "decoder.norm_out.gamma", "decoder.conv_out.bias"):
+    for key in (
+        "encoder.conv_in.weight",
+        "encoder.down_blocks.0.conv1.weight",
+        "encoder.mid_block.attentions.0.to_qkv.weight",
+        "quant_conv.weight",
+        "post_quant_conv.weight",
+        "decoder.up_blocks.0.upsamplers.0.time_conv.weight",
+        "decoder.up_blocks.3.resnets.2.conv2.weight",
+        "decoder.norm_out.gamma",
+        "decoder.conv_out.bias",
+    ):
         assert key in sd, key
     assert sd["encoder.conv_in.weight"].shape == (96, 3, 3, 3, 3)
     assert sd["quant_conv.weight"].shape == (32, 32, 1, 1, 1)
@@ -510,18 +640,45 @@ def test_load_safetensors_helper(tmp_path):
 def test_vendored_files_have_no_sd_scripts_dependency():
     vendor_dir = REPO_ROOT / "ypuddin" / "models" / "anima" / "vendor"
     files = sorted(vendor_dir.glob("*.py"))
-    assert {f.name for f in files} >= {"__init__.py", "attention.py", "cosmos_dit.py", "qwen_image_vae.py", "qwen_image_vae_2d.py"}
-    banned = re.compile(r"^\s*(from|import)\s+(library|torchvision|transformers|accelerate|diffusers)\b", re.M)
+    assert {f.name for f in files} >= {
+        "__init__.py",
+        "attention.py",
+        "cosmos_dit.py",
+        "qwen_image_vae.py",
+        "qwen_image_vae_2d.py",
+    }
+    banned = re.compile(
+        r"^\s*(from|import)\s+(library|torchvision|transformers|accelerate|diffusers)\b", re.M
+    )
     for f in files:
         text = f.read_text(encoding="utf-8")
         assert not banned.search(text), f"{f.name} imports a non-vendored dependency"
         if f.name != "__init__.py":
-            assert text.splitlines()[0].startswith("# Vendored from kohya-ss/sd-scripts (Apache-2.0) at commit 4e62430"), f.name
+            assert text.splitlines()[0].startswith(
+                "# Vendored from kohya-ss/sd-scripts (Apache-2.0) at commit 4e62430"
+            ), f.name
     notice = (vendor_dir / "NOTICE.md").read_text(encoding="utf-8")
-    for name in ("cosmos_dit.py", "attention.py", "qwen_image_vae.py", "qwen_image_vae_2d.py", "qwen3_06b", "t5_old", "Apache"):
+    for name in (
+        "cosmos_dit.py",
+        "attention.py",
+        "qwen_image_vae.py",
+        "qwen_image_vae_2d.py",
+        "qwen3_06b",
+        "t5_old",
+        "Apache",
+    ):
         assert name in notice
     assets = REPO_ROOT / "ypuddin" / "models" / "anima" / "assets"
-    for rel in ("qwen3_06b/config.json", "qwen3_06b/tokenizer.json", "qwen3_06b/tokenizer_config.json", "qwen3_06b/vocab.json", "qwen3_06b/merges.txt", "t5_old/config.json", "t5_old/spiece.model", "t5_old/tokenizer.json"):
+    for rel in (
+        "qwen3_06b/config.json",
+        "qwen3_06b/tokenizer.json",
+        "qwen3_06b/tokenizer_config.json",
+        "qwen3_06b/vocab.json",
+        "qwen3_06b/merges.txt",
+        "t5_old/config.json",
+        "t5_old/spiece.model",
+        "t5_old/tokenizer.json",
+    ):
         assert (assets / rel).is_file(), rel
 
 

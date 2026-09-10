@@ -56,7 +56,16 @@ class ModelSpec:
 
 
 KNOWN_CAPABILITIES = frozenset(
-    {"block_swap", "fp8_base", "activation_checkpointing", "text_encoder_train", "masked_loss", "online_text", "llm_adapter", "compile"}
+    {
+        "block_swap",
+        "fp8_base",
+        "activation_checkpointing",
+        "text_encoder_train",
+        "masked_loss",
+        "online_text",
+        "llm_adapter",
+        "compile",
+    }
 )
 
 
@@ -160,7 +169,9 @@ class ModelFamily(ABC):
     spec: ModelSpec
 
     @abstractmethod
-    def load(self, cfg: ModelConfig, memory: MemoryConfig, *, device: torch.device | str, dtype: torch.dtype) -> LoadedModel: ...
+    def load(
+        self, cfg: ModelConfig, memory: MemoryConfig, *, device: torch.device | str, dtype: torch.dtype
+    ) -> LoadedModel: ...
 
     @abstractmethod
     def forward(self, loaded: LoadedModel, x_t: Tensor, t: Tensor, cond: TextCond, **extra: Any) -> Tensor:

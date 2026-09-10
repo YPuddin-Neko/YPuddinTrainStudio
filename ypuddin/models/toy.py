@@ -189,7 +189,11 @@ class ToyDiT(nn.Module):
     def unpatchify(self, x: Tensor, hw: tuple[int, int]) -> Tensor:
         B = x.shape[0]
         h, w = hw
-        x = x.view(B, h, w, LATENT_CH, PATCH, PATCH).permute(0, 3, 1, 4, 2, 5).reshape(B, LATENT_CH, h * PATCH, w * PATCH)
+        x = (
+            x.view(B, h, w, LATENT_CH, PATCH, PATCH)
+            .permute(0, 3, 1, 4, 2, 5)
+            .reshape(B, LATENT_CH, h * PATCH, w * PATCH)
+        )
         return x
 
     def forward(self, x: Tensor, t: Tensor, ctx: Tensor, ctx_mask: Tensor) -> Tensor:
@@ -213,11 +217,15 @@ class ToyFamily(ModelFamily):
         latent=LatentSpec(channels=LATENT_CH, stride=STRIDE, patch=PATCH, fingerprint=ToyLatent.fingerprint),
         text=TextSpec(max_len=MAX_LEN, fingerprint=ToyText.fingerprint, pad_floor=False),
         sampling=SamplingDefaults(steps=8, cfg=2.0, shift=1.0),
-        capabilities=frozenset({"activation_checkpointing", "online_text", "masked_loss", "block_swap", "compile"}),
+        capabilities=frozenset(
+            {"activation_checkpointing", "online_text", "masked_loss", "block_swap", "compile"}
+        ),
         architecture="toy-dit",
     )
 
-    def load(self, cfg: ModelConfig, memory: MemoryConfig, *, device: torch.device | str, dtype: torch.dtype) -> LoadedModel:
+    def load(
+        self, cfg: ModelConfig, memory: MemoryConfig, *, device: torch.device | str, dtype: torch.dtype
+    ) -> LoadedModel:
         torch.manual_seed(0)
         backbone = ToyDiT()
         if cfg.dit_path:
@@ -226,7 +234,9 @@ class ToyFamily(ModelFamily):
             backbone.load_state_dict(load_file(cfg.dit_path))
         backbone.to(device=device, dtype=dtype)
         backbone.grad_checkpointing = memory.activation_checkpointing != "none"
-        return LoadedModel(backbone=backbone, text=ToyText(), latent=ToyLatent(), device=torch.device(device), dtype=dtype)
+        return LoadedModel(
+            backbone=backbone, text=ToyText(), latent=ToyLatent(), device=torch.device(device), dtype=dtype
+        )
 
     def forward(self, loaded: LoadedModel, x_t: Tensor, t: Tensor, cond: TextCond, **extra: Any) -> Tensor:
         return loaded.backbone(x_t, t, cond["embeds"].to(x_t.dtype), cond["mask"])
@@ -234,9 +244,13 @@ class ToyFamily(ModelFamily):
     def presets(self) -> dict[str, TargetPreset]:
         return {
             "attn-mlp": TargetPreset(
-                "attn-mlp", include=("blocks.*.self_attn.*_proj", "blocks.*.cross_attn.*_proj", "blocks.*.mlp.layer*"), description="注意力 + MLP"
+                "attn-mlp",
+                include=("blocks.*.self_attn.*_proj", "blocks.*.cross_attn.*_proj", "blocks.*.mlp.layer*"),
+                description="注意力 + MLP",
             ),
-            "attn-only": TargetPreset("attn-only", include=("blocks.*.self_attn.*_proj", "blocks.*.cross_attn.*_proj")),
+            "attn-only": TargetPreset(
+                "attn-only", include=("blocks.*.self_attn.*_proj", "blocks.*.cross_attn.*_proj")
+            ),
             "full-linear": TargetPreset("full-linear", include=("blocks.*",)),
         }
 
@@ -249,7 +263,11 @@ class ToyFamily(ModelFamily):
     def memory_layout(self, loaded: LoadedModel) -> MemoryLayout:
         blocks = list(loaded.backbone.blocks)
         nbytes = sum(p.numel() * p.element_size() for p in blocks[0].parameters()) if blocks else 0
-        return MemoryLayout(blocks=blocks, keep_high_precision=("x_embedder", "t_embedder*", "final_layer"), block_param_bytes=nbytes)
+        return MemoryLayout(
+            blocks=blocks,
+            keep_high_precision=("x_embedder", "t_embedder*", "final_layer"),
+            block_param_bytes=nbytes,
+        )
 
 
 register("toy", ToyFamily)

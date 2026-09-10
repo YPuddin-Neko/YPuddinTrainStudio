@@ -50,7 +50,9 @@ def test_scan_sources_and_index_cache(image_dataset, tmp_path):
 
 
 def test_transform_caption_rules():
-    cfg = CaptionConfig(trigger_word="ypd", keep_tokens=1, shuffle=True, tag_dropout=0.5, prefix="masterpiece")
+    cfg = CaptionConfig(
+        trigger_word="ypd", keep_tokens=1, shuffle=True, tag_dropout=0.5, prefix="masterpiece"
+    )
     rng = random.Random(0)
     out = transform_caption("a, b, c, d, e, f", cfg, rng)
     tags = [t.strip() for t in out.split(",")]
@@ -60,6 +62,28 @@ def test_transform_caption_rules():
     assert transform_caption("x, y", drop, rng) is None
     wc = CaptionConfig(wildcard=True)
     assert transform_caption("{red|blue} hair", wc, random.Random(1)) in ("red hair", "blue hair")
+
+
+def test_caption_variants_for_cache_are_bounded_and_deterministic():
+    from ypuddin.data.captions import (
+        caption_variants_for_cache,
+        is_stochastic,
+        transform_caption_deterministic,
+    )
+
+    fixed = CaptionConfig(trigger_word="ypd", prefix="masterpiece", caption_dropout=0.5)
+    assert not is_stochastic(fixed)
+    assert caption_variants_for_cache("a, b, c", fixed, 8, seed=1) == ["masterpiece, ypd, a, b, c"]
+    assert (
+        transform_caption_deterministic("a, b, c", fixed) == "masterpiece, ypd, a, b, c"
+    )  # dropout never applies here
+    stoch = CaptionConfig(trigger_word="ypd", shuffle=True, tag_dropout=0.3, caption_dropout=0.9)
+    assert is_stochastic(stoch)
+    v1 = caption_variants_for_cache("a, b, c, d, e", stoch, 16, seed=5)
+    v2 = caption_variants_for_cache("a, b, c, d, e", stoch, 16, seed=5)
+    assert v1 == v2 and 1 < len(v1) <= 16
+    assert all(v.startswith("ypd") for v in v1)  # caption dropout is excluded: no "" variant
+    assert caption_variants_for_cache("a, b, c, d, e", stoch, 16, seed=6) != v1
 
 
 def test_sampler_deterministic_resumable_no_double_train():
@@ -86,7 +110,13 @@ def test_build_data_and_cache_latents(image_dataset, tmp_path):
     cfg = TrainConfig.model_validate(
         {
             "model": {"family": "toy"},
-            "dataset": {"sources": [{"path": str(image_dataset), "repeats": 2}], "resolutions": [64], "bucket_step": 16, "flip": True, "masked_loss": True},
+            "dataset": {
+                "sources": [{"path": str(image_dataset), "repeats": 2}],
+                "resolutions": [64],
+                "bucket_step": 16,
+                "flip": True,
+                "masked_loss": True,
+            },
             "validation": {"enabled": True, "split_ratio": 0.25},
         }
     )
@@ -102,8 +132,70 @@ def test_build_data_and_cache_latents(image_dataset, tmp_path):
     bundle.train.set_epoch(0)
     sample = bundle.train[0]
     assert "latents" in sample and sample["latents"].shape[0] == 4
-    batch = collate([bundle.train[i] for i in range(2) if bundle.train.items[i].bucket.key == bundle.train.items[0].bucket.key][:1] * 2)
+    batch = collate(
+        [
+            bundle.train[i]
+            for i in range(2)
+            if bundle.train.items[i].bucket.key == bundle.train.items[0].bucket.key
+        ][:1]
+        * 2
+    )
     assert batch["latents"].shape[0] == 2 and len(batch["caption"]) == 2
     # masks: alpha images produce a mask; sidecar-less RGB images have none unless alpha
     keys = [bundle.train.cache_key(it, False) for it in bundle.train.items]
     assert all(LatentCache(tmp_path / "cache" / "latents").has(k) for k in keys)
+
+
+def test_dataset_cached_captions_cover_everything_it_emits(image_dataset, tmp_path):
+    cfg = TrainConfig.model_validate(
+        {
+            "model": {"family": "toy"},
+            "dataset": {
+                "sources": [{"path": str(image_dataset)}],
+                "resolutions": [64],
+                "bucket_step": 16,
+                "cache_latents": False,
+                "caption": {
+                    "trigger_word": "ypd",
+                    "shuffle": True,
+                    "tag_dropout": 0.25,
+                    "caption_dropout": 0.3,
+                    "cache_variants": 6,
+                },
+            },
+            "validation": {"enabled": True, "split_ratio": 0.25},
+        }
+    )
+    bundle = build_data(cfg, get_family("toy").spec.latent, cache_root=tmp_path / "cache")
+    train, val = bundle.train, bundle.validation
+    # online mode: unbounded variants, trigger word always first
+    train.set_epoch(0)
+    online = train[0]["caption"]
+    assert online == "" or online.startswith("ypd")
+    cached_train = set(train.use_cached_captions())
+    cached_val = set(val.use_cached_captions())
+    assert cached_train and all(
+        c.startswith("ypd") for c in cached_train
+    )  # "" is cached by the trainer separately
+    assert len(cached_train) <= 6 * len(train.items)
+    seen: set[str] = set()
+    n_uncond = 0
+    for epoch in range(6):
+        train.set_epoch(epoch)
+        for i in range(len(train)):
+            s = train[i]
+            if s["uncond"]:
+                n_uncond += 1
+                assert s["caption"] == ""
+            else:
+                seen.add(s["caption"])
+    assert (
+        seen <= cached_train and n_uncond > 0
+    )  # every emitted caption was pre-cached; dropout still happens
+    # validation: deterministic transform (trigger word applied, no shuffle / dropout), one variant per item
+    for epoch in range(3):
+        val.set_epoch(epoch)
+        caps = [val[i]["caption"] for i in range(len(val))]
+        assert set(caps) <= cached_val and all(c.startswith("ypd") for c in caps)
+        assert not any(val[i]["uncond"] for i in range(len(val)))
+    assert caps == [val[i]["caption"] for i in range(len(val))]  # identical across epochs

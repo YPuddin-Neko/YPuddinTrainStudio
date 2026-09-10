@@ -36,7 +36,9 @@ def _expand_braces(pattern: str) -> list[str]:
     if not m:
         return [pattern]
     head, tail = pattern[: m.start()], pattern[m.end() :]
-    return list(itertools.chain.from_iterable(_expand_braces(head + opt + tail) for opt in m.group(1).split(",")))
+    return list(
+        itertools.chain.from_iterable(_expand_braces(head + opt + tail) for opt in m.group(1).split(","))
+    )
 
 
 def match_name(pattern: str, name: str) -> bool:

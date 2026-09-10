@@ -41,7 +41,11 @@ def gpu_info() -> list[dict[str, Any]]:
         out = []
         for i in range(torch.cuda.device_count()):
             props = torch.cuda.get_device_properties(i)
-            entry: dict[str, Any] = {"index": i, "name": props.name, "mem_total_mb": round(props.total_memory / 2**20)}
+            entry: dict[str, Any] = {
+                "index": i,
+                "name": props.name,
+                "mem_total_mb": round(props.total_memory / 2**20),
+            }
             try:
                 free, total = torch.cuda.mem_get_info(i)
                 entry["mem_used_mb"] = round((total - free) / 2**20)
@@ -68,10 +72,21 @@ def system_stats(data_root: Path) -> dict[str, Any]:
     disks = []
     try:
         du = psutil.disk_usage(str(data_root))
-        disks.append({"path": str(data_root), "used_gb": round(du.used / 2**30, 1), "total_gb": round(du.total / 2**30, 1)})
+        disks.append(
+            {
+                "path": str(data_root),
+                "used_gb": round(du.used / 2**30, 1),
+                "total_gb": round(du.total / 2**30, 1),
+            }
+        )
     except Exception:  # noqa: BLE001
         pass
-    return {"cpu_pct": psutil.cpu_percent(interval=None), "ram": {"used_mb": round(vm.used / 2**20), "total_mb": round(vm.total / 2**20)}, "disks": disks, "gpus": gpu_info()}
+    return {
+        "cpu_pct": psutil.cpu_percent(interval=None),
+        "ram": {"used_mb": round(vm.used / 2**20), "total_mb": round(vm.total / 2**20)},
+        "disks": disks,
+        "gpus": gpu_info(),
+    }
 
 
 @router.get("/health")
@@ -82,7 +97,14 @@ def health(c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
         torch_v, cuda = torch.__version__, torch.version.cuda
     except Exception:  # noqa: BLE001
         torch_v, cuda = None, None
-    return {"version": ypuddin.__version__, "api_version": ypuddin.API_VERSION, "torch": torch_v, "cuda": cuda, "gpus": [{"index": g["index"], "name": g["name"], "total_mb": g["mem_total_mb"]} for g in gpu_info()], "families": available_families()}
+    return {
+        "version": ypuddin.__version__,
+        "api_version": ypuddin.API_VERSION,
+        "torch": torch_v,
+        "cuda": cuda,
+        "gpus": [{"index": g["index"], "name": g["name"], "total_mb": g["mem_total_mb"]} for g in gpu_info()],
+        "families": available_families(),
+    }
 
 
 @router.get("/system/stats")
@@ -98,7 +120,12 @@ def info() -> dict[str, Any]:
             mods[name] = __import__(name).__version__
         except Exception:  # noqa: BLE001
             mods[name] = None
-    return {"python": sys.version.split()[0], "platform": platform.platform(), "packages": mods, "ypuddin": ypuddin.__version__}
+    return {
+        "python": sys.version.split()[0],
+        "platform": platform.platform(),
+        "packages": mods,
+        "ypuddin": ypuddin.__version__,
+    }
 
 
 # --------------------------------------------------------------------------- settings / fs
@@ -126,7 +153,14 @@ def fs_list(path: str = "", c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
                 st = child.stat()
             except OSError:
                 continue
-            entries.append({"name": child.name, "is_dir": child.is_dir(), "size": st.st_size if child.is_file() else None, "mtime": st.st_mtime})
+            entries.append(
+                {
+                    "name": child.name,
+                    "is_dir": child.is_dir(),
+                    "size": st.st_size if child.is_file() else None,
+                    "mtime": st.st_mtime,
+                }
+            )
     except PermissionError as e:
         raise ApiError(str(e), code="fs.permission", status=403) from e
     return {"path": str(p), "parent": str(p.parent) if p.parent != p else None, "entries": entries[:2000]}
@@ -171,15 +205,28 @@ def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str,
 BUILTIN_PRESETS: dict[str, dict[str, Any]] = {
     "anima-lokr-default": {
         "description": "Anima LoKr：全矩阵 W2、factor 8、注意力+MLP",
-        "config": {"model": {"family": "anima"}, "adapter": {"algo": "lokr", "rank": "full", "alpha": 1.0, "factor": 8, "preset": "attn-mlp"}, "optimizer": {"type": "adamw", "lr": 1e-4}, "scheduler": {"type": "cosine", "warmup_steps": 0.05}},
+        "config": {
+            "model": {"family": "anima"},
+            "adapter": {"algo": "lokr", "rank": "full", "alpha": 1.0, "factor": 8, "preset": "attn-mlp"},
+            "optimizer": {"type": "adamw", "lr": 1e-4},
+            "scheduler": {"type": "cosine", "warmup_steps": 0.05},
+        },
     },
     "anima-lora-16": {
         "description": "Anima LoRA rank 16 / alpha 16",
-        "config": {"model": {"family": "anima"}, "adapter": {"algo": "lora", "rank": 16, "alpha": 16.0, "preset": "attn-mlp"}, "optimizer": {"type": "adamw", "lr": 2e-4}},
+        "config": {
+            "model": {"family": "anima"},
+            "adapter": {"algo": "lora", "rank": 16, "alpha": 16.0, "preset": "attn-mlp"},
+            "optimizer": {"type": "adamw", "lr": 2e-4},
+        },
     },
     "toy-smoke": {
         "description": "CPU 玩具模型冒烟测试",
-        "config": {"model": {"family": "toy", "dtype": "fp32"}, "dataset": {"resolutions": [64], "bucket_step": 16, "batch_size": 2, "num_workers": 0}, "loop": {"epochs": 1, "mixed_precision": "no"}},
+        "config": {
+            "model": {"family": "toy", "dtype": "fp32"},
+            "dataset": {"resolutions": [64], "bucket_step": 16, "batch_size": 2, "num_workers": 0},
+            "loop": {"epochs": 1, "mixed_precision": "no"},
+        },
     },
 }
 
@@ -191,7 +238,13 @@ def _preset_dir(c: ServiceContext) -> Path:
 
 
 def _preset_row(name: str, data: dict[str, Any], builtin: bool, updated_at: float | None) -> dict[str, Any]:
-    return {"name": name, "description": data.get("description", ""), "config": data.get("config", {}), "builtin": builtin, "updated_at": updated_at}
+    return {
+        "name": name,
+        "description": data.get("description", ""),
+        "config": data.get("config", {}),
+        "builtin": builtin,
+        "updated_at": updated_at,
+    }
 
 
 @router.get("/presets")
@@ -214,8 +267,13 @@ def create_preset(body: PresetBody, c: ServiceContext = Depends(ctx)) -> dict[st
     if not body.name.replace("-", "").replace("_", "").isalnum():
         raise ApiError("preset name must be alphanumeric with - or _", code="preset.bad_name")
     f = _preset_dir(c) / f"{body.name}.json"
-    f.write_text(json.dumps({"description": body.description, "config": body.config}, indent=2, ensure_ascii=False), encoding="utf-8")
-    return _preset_row(body.name, {"description": body.description, "config": body.config}, False, f.stat().st_mtime)
+    f.write_text(
+        json.dumps({"description": body.description, "config": body.config}, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return _preset_row(
+        body.name, {"description": body.description, "config": body.config}, False, f.stat().st_mtime
+    )
 
 
 @router.get("/presets/{name}")
@@ -252,7 +310,12 @@ def resolve_preset(name: str, body: ConfigBody, c: ServiceContext = Depends(ctx)
     preset = get_preset(name, c)
     merged = deep_merge(TrainConfig().to_dict(), deep_merge(preset["config"], body.config))
     cfg, errors = _validate(merged)
-    return {"ok": cfg is not None, "errors": errors, "config": cfg.to_dict() if cfg else merged, "toml": dump_toml(cfg) if cfg else None}
+    return {
+        "ok": cfg is not None,
+        "errors": errors,
+        "config": cfg.to_dict() if cfg else merged,
+        "toml": dump_toml(cfg) if cfg else None,
+    }
 
 
 @router.post("/config/import-toml")
@@ -292,11 +355,29 @@ def list_models(c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
 @router.post("/models")
 def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     p = Path(body.path).expanduser()
-    size = p.stat().st_size if p.is_file() else sum(f.stat().st_size for f in p.rglob("*") if f.is_file()) if p.is_dir() else 0
+    size = (
+        p.stat().st_size
+        if p.is_file()
+        else sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+        if p.is_dir()
+        else 0
+    )
     mid = new_id("m")
     if body.is_default:
         c.db.execute("UPDATE models SET is_default=0 WHERE family=? AND kind=?", (body.family, body.kind))
-    c.db.insert("models", {"id": mid, "family": body.family, "kind": body.kind, "path": str(p), "size": size, "dtype": body.dtype, "is_default": int(body.is_default), "created_at": now()})
+    c.db.insert(
+        "models",
+        {
+            "id": mid,
+            "family": body.family,
+            "kind": body.kind,
+            "path": str(p),
+            "size": size,
+            "dtype": body.dtype,
+            "is_default": int(body.is_default),
+            "created_at": now(),
+        },
+    )
     return _model_row(c.db.fetchone("SELECT * FROM models WHERE id=?", (mid,)))
 
 
@@ -317,17 +398,37 @@ def scan_models(body: dict[str, str], c: ServiceContext = Depends(ctx)) -> list[
         if str(f) in known:
             continue
         name = f.name.lower()
-        kind = "vae" if "vae" in name else "text_encoder" if any(k in name for k in ("qwen", "t5", "clip", "text")) else "dit"
+        kind = (
+            "vae"
+            if "vae" in name
+            else "text_encoder"
+            if any(k in name for k in ("qwen", "t5", "clip", "text"))
+            else "dit"
+        )
         family = body.get("family", "anima")
         mid = new_id("m")
-        c.db.insert("models", {"id": mid, "family": family, "kind": kind, "path": str(f), "size": f.stat().st_size, "dtype": "fp8" if "fp8" in name else None, "is_default": 0, "created_at": now()})
+        c.db.insert(
+            "models",
+            {
+                "id": mid,
+                "family": family,
+                "kind": kind,
+                "path": str(f),
+                "size": f.stat().st_size,
+                "dtype": "fp8" if "fp8" in name else None,
+                "is_default": 0,
+                "created_at": now(),
+            },
+        )
         found.append(_model_row(c.db.fetchone("SELECT * FROM models WHERE id=?", (mid,))))
     return found
 
 
 # --------------------------------------------------------------------------- events (SSE)
 @router.get("/events")
-async def events(request: Request, last_event_id: int | None = None, c: ServiceContext = Depends(ctx)) -> StreamingResponse:
+async def events(
+    request: Request, last_event_id: int | None = None, c: ServiceContext = Depends(ctx)
+) -> StreamingResponse:
     header = request.headers.get("Last-Event-ID")
     after = int(header) if header and header.isdigit() else (last_event_id or 0)
     bus = c.bus
@@ -348,7 +449,11 @@ async def events(request: Request, last_event_id: int | None = None, c: ServiceC
         finally:
             bus.unsubscribe(queue)
 
-    return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 async def stats_publisher(c: ServiceContext, interval: float = 2.5) -> None:

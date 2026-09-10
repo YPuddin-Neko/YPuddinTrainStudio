@@ -1,9 +1,16 @@
 import torch
 from torch import nn
 
-from ypuddin.adapters import LoKr, LoRA, inject, TargetPreset
+from ypuddin.adapters import LoKr, LoRA, TargetPreset, inject
 from ypuddin.config import AdapterConfig
-from ypuddin.tools import extract_from_state_dicts, extract_lokr, extract_lora, merge_into_state_dict, nearest_kronecker, resize_lora
+from ypuddin.tools import (
+    extract_from_state_dicts,
+    extract_lokr,
+    extract_lora,
+    merge_into_state_dict,
+    nearest_kronecker,
+    resize_lora,
+)
 
 torch.manual_seed(0)
 
@@ -52,7 +59,17 @@ def test_resize_lora_reduces_rank_with_bounded_error():
 class _M(nn.Module):
     def __init__(self):
         super().__init__()
-        self.blocks = nn.ModuleList([nn.ModuleDict({"attn": nn.ModuleDict({"q": nn.Linear(16, 16, bias=False)}), "mlp": nn.Linear(16, 32, bias=False)}) for _ in range(2)])
+        self.blocks = nn.ModuleList(
+            [
+                nn.ModuleDict(
+                    {
+                        "attn": nn.ModuleDict({"q": nn.Linear(16, 16, bias=False)}),
+                        "mlp": nn.Linear(16, 32, bias=False),
+                    }
+                )
+                for _ in range(2)
+            ]
+        )
 
 
 def test_extract_from_state_dicts_and_merge_roundtrip():
@@ -65,11 +82,15 @@ def test_extract_from_state_dicts_and_merge_roundtrip():
     tensors, report = extract_from_state_dicts(base.state_dict(), tuned.state_dict(), algo="lora", rank=16)
     assert set(report) == {"blocks.0.attn.q"} and report["blocks.0.attn.q"]["residual"] < 1e-5
     # a generic delta is not a Kronecker product: the LoKr extraction must report a real residual
-    _, rep_lokr = extract_from_state_dicts(base.state_dict(), tuned.state_dict(), algo="lokr", rank="full", factor=-1)
+    _, rep_lokr = extract_from_state_dicts(
+        base.state_dict(), tuned.state_dict(), algo="lokr", rank="full", factor=-1
+    )
     assert 0 < rep_lokr["blocks.0.attn.q"]["residual"] < 1
     merged, unmatched = merge_into_state_dict(base.state_dict(), tensors, module_names=names)
     assert not unmatched
-    torch.testing.assert_close(merged["blocks.0.attn.q.weight"], tuned.blocks[0].attn.q.weight, rtol=1e-3, atol=1e-4)
+    torch.testing.assert_close(
+        merged["blocks.0.attn.q.weight"], tuned.blocks[0].attn.q.weight, rtol=1e-3, atol=1e-4
+    )
     torch.testing.assert_close(merged["blocks.1.attn.q.weight"], base.blocks[1].attn.q.weight)
 
 

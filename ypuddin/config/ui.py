@@ -61,7 +61,9 @@ def ui(
     return {"x-ui": payload}
 
 
-def F(default: Any = ..., *, help: str | None = None, ui_: dict[str, Any] | None = None, **kwargs: Any) -> Any:  # noqa: N802
+def F(
+    default: Any = ..., *, help: str | None = None, ui_: dict[str, Any] | None = None, **kwargs: Any
+) -> Any:  # noqa: N802
     """``pydantic.Field`` shorthand: ``help`` becomes the description, ``ui_`` the x-ui extra."""
     if ui_ is not None:
         kwargs["json_schema_extra"] = ui_

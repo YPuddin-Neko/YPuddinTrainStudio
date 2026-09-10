@@ -6,11 +6,30 @@ import pytest
 from PIL import Image
 
 
-def make_image_dataset(root: Path, n: int = 12, *, seed: int = 0, sizes=((96, 64), (64, 96), (80, 80), (128, 48)), captions=True, mask_every: int = 0) -> Path:
+def make_image_dataset(
+    root: Path,
+    n: int = 12,
+    *,
+    seed: int = 0,
+    sizes=((96, 64), (64, 96), (80, 80), (128, 48)),
+    captions=True,
+    mask_every: int = 0,
+) -> Path:
     """Synthetic RGB images (some RGBA) with tag captions; deterministic."""
     root.mkdir(parents=True, exist_ok=True)
     rng = random.Random(seed)
-    tags = ["1girl", "solo", "smile", "red_hair", "blue_eyes", "outdoors", "night", "cat_ears", "school_uniform", "sword"]
+    tags = [
+        "1girl",
+        "solo",
+        "smile",
+        "red_hair",
+        "blue_eyes",
+        "outdoors",
+        "night",
+        "cat_ears",
+        "school_uniform",
+        "sword",
+    ]
     for i in range(n):
         w, h = sizes[i % len(sizes)]
         arr = np.zeros((h, w, 3), dtype=np.uint8)

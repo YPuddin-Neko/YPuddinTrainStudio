@@ -29,7 +29,9 @@ def factorization(dimension: int, factor: int = -1) -> tuple[int, int]:
 
     limit = dimension if factor < 0 else factor
     if factor > 0:
-        log.warning("factor %d does not divide %d; using the largest divisor <= %d", factor, dimension, factor)
+        log.warning(
+            "factor %d does not divide %d; using the largest divisor <= %d", factor, dimension, factor
+        )
     m, n = 1, dimension
     length = m + n
     while m < n:
@@ -43,7 +45,9 @@ def factorization(dimension: int, factor: int = -1) -> tuple[int, int]:
     if m > n:
         m, n = n, m
     if m == 1 and dimension > 1:
-        log.warning("dimension %d has no useful factorization (prime?); LoKr degenerates to a scaled LoRA", dimension)
+        log.warning(
+            "dimension %d has no useful factorization (prime?); LoKr degenerates to a scaled LoRA", dimension
+        )
     return m, n
 
 

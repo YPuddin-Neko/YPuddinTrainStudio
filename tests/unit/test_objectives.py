@@ -4,7 +4,13 @@ import pytest
 import torch
 
 from ypuddin.config import ObjectiveConfig
-from ypuddin.objectives import Objective, TimestepSampler, mobius_shift, noisy_input_and_target, timestep_weight
+from ypuddin.objectives import (
+    Objective,
+    TimestepSampler,
+    mobius_shift,
+    noisy_input_and_target,
+    timestep_weight,
+)
 
 
 @pytest.mark.parametrize("mode", ["uniform", "logit_normal", "shift", "resolution_shift", "mode", "cosmap"])
@@ -83,7 +89,7 @@ def test_objective_loss_masked(loss):
     mask = torch.zeros(2, 8, 8)
     mask[:, :4] = 1
     masked, per_m = obj.loss(pred, target, t, mask=mask)
-    ref = ((pred - target) ** 2 if loss == "mse" else None)
+    ref = (pred - target) ** 2 if loss == "mse" else None
     if ref is not None:
         torch.testing.assert_close(per_m, ref[:, :, :4].flatten(1).mean(1))
     assert torch.isfinite(masked)

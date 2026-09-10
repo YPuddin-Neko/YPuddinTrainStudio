@@ -61,11 +61,16 @@ class Database:
             return self.conn.execute(sql, params)
 
     def fetchone(self, sql: str, params: tuple | dict = ()) -> dict[str, Any] | None:
-        row = self.execute(sql, params).fetchone()
+        # the cursor must be drained under the lock: another thread's statement on the shared
+        # connection would reset it and fetchone() would silently return None
+        with self.lock:
+            row = self.conn.execute(sql, params).fetchone()
         return dict(row) if row else None
 
     def fetchall(self, sql: str, params: tuple | dict = ()) -> list[dict[str, Any]]:
-        return [dict(r) for r in self.execute(sql, params).fetchall()]
+        with self.lock:
+            rows = self.conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
 
     def insert(self, table: str, row: dict[str, Any]) -> None:
         cols = ", ".join(row)

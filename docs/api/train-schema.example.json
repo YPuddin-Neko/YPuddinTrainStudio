@@ -468,6 +468,20 @@
             "group": "caption",
             "order": 80
           }
+        },
+        "cache_variants": {
+          "default": 8,
+          "description": "文本编码为 cached 时，每张图预缓存的 caption 随机变体数（仅 shuffle / tag_dropout / wildcard 生效时有意义）",
+          "maximum": 256,
+          "minimum": 1,
+          "title": "Cache Variants",
+          "type": "integer",
+          "x-ui": {
+            "advanced": true,
+            "group": "caption",
+            "order": 90,
+            "show_when": "dataset.text_encoding != 'online'"
+          }
         }
       },
       "title": "CaptionConfig",

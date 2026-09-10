@@ -48,7 +48,9 @@ class LoHa(AdapterModule):
         init: str = "default",
         dtype: torch.dtype = torch.float32,
     ) -> None:
-        super().__init__(out_features, in_features, dropout=dropout, rank_dropout=rank_dropout, init=init, dtype=dtype)
+        super().__init__(
+            out_features, in_features, dropout=dropout, rank_dropout=rank_dropout, init=init, dtype=dtype
+        )
         self.rank = int(rank)
         self.alpha = float(alpha)
         self.rs_lora = bool(rs_lora)
@@ -102,12 +104,22 @@ class LoHa(AdapterModule):
         }
 
     @classmethod
-    def from_tensors(cls, tensors: dict[str, Tensor], meta: dict[str, Any] | None = None, **kwargs: Any) -> LoHa:
+    def from_tensors(
+        cls, tensors: dict[str, Tensor], meta: dict[str, Any] | None = None, **kwargs: Any
+    ) -> LoHa:
         w1_a, w1_b = tensors["hada_w1_a"], tensors["hada_w1_b"]
         rank = int(w1_a.shape[1])
         alpha_file = float(tensors["alpha"].item()) if "alpha" in tensors else float(rank)
         dtype = kwargs.pop("dtype", torch.float32)
-        mod = cls(int(w1_a.shape[0]), int(w1_b.shape[1]), rank=rank, alpha=alpha_file, rs_lora=False, dtype=dtype, **kwargs)
+        mod = cls(
+            int(w1_a.shape[0]),
+            int(w1_b.shape[1]),
+            rank=rank,
+            alpha=alpha_file,
+            rs_lora=False,
+            dtype=dtype,
+            **kwargs,
+        )
         with torch.no_grad():
             for name in ("w1_a", "w1_b", "w2_a", "w2_b"):
                 getattr(mod, name).copy_(tensors[f"hada_{name}"].to(dtype))

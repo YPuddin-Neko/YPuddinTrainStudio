@@ -8,7 +8,9 @@ from ypuddin.config import OptimizerConfig, SchedulerConfig
 from ypuddin.optim import KahanWrapper, build_optimizer, build_scheduler
 
 
-@pytest.mark.parametrize("kind", ["constant", "linear", "cosine", "cosine_restarts", "polynomial", "warmup_stable_decay", "rex"])
+@pytest.mark.parametrize(
+    "kind", ["constant", "linear", "cosine", "cosine_restarts", "polynomial", "warmup_stable_decay", "rex"]
+)
 def test_scheduler_shapes(kind):
     p = nn.Parameter(torch.zeros(2))
     opt = torch.optim.SGD([p], lr=1.0)
@@ -30,7 +32,10 @@ def test_scheduler_shapes(kind):
 
 def test_build_optimizer_groups_and_kahan():
     lin = nn.Linear(8, 8).to(torch.bfloat16)
-    groups = [{"params": [lin.weight], "lr": 1e-2, "weight_decay": 0.0, "name": "w"}, {"params": [lin.bias], "lr": 1e-3, "weight_decay": 0.0, "name": "b"}]
+    groups = [
+        {"params": [lin.weight], "lr": 1e-2, "weight_decay": 0.0, "name": "w"},
+        {"params": [lin.bias], "lr": 1e-3, "weight_decay": 0.0, "name": "b"},
+    ]
     opt = build_optimizer(OptimizerConfig(type="adamw", lr=5e-3, kahan=True), groups)
     assert isinstance(opt, KahanWrapper)
     assert [g["lr"] for g in opt.param_groups] == [1e-2, 1e-3]

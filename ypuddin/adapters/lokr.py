@@ -41,7 +41,9 @@ class LoKr(AdapterModule):
         init: str = "default",
         dtype: torch.dtype = torch.float32,
     ) -> None:
-        super().__init__(out_features, in_features, dropout=dropout, rank_dropout=rank_dropout, init=init, dtype=dtype)
+        super().__init__(
+            out_features, in_features, dropout=dropout, rank_dropout=rank_dropout, init=init, dtype=dtype
+        )
         if shape is None:
             (a, b) = factorization(out_features, factor)
             (c, d) = factorization(in_features, factor)
@@ -56,7 +58,11 @@ class LoKr(AdapterModule):
         if r is not None and r <= 0:
             raise ValueError("rank must be positive or 'full'")
         self.w2_lowrank = (r is not None and r < max(b, d) / 2) if w2_lowrank is None else bool(w2_lowrank)
-        self.w1_lowrank = (decompose_both and r is not None and r < max(a, c) / 2) if w1_lowrank is None else bool(w1_lowrank)
+        self.w1_lowrank = (
+            (decompose_both and r is not None and r < max(a, c) / 2)
+            if w1_lowrank is None
+            else bool(w1_lowrank)
+        )
         if (self.w1_lowrank or self.w2_lowrank) and r is None:
             raise ValueError("low-rank factors require an integer rank")
         self.rank = r if (self.w1_lowrank or self.w2_lowrank) else None
@@ -176,7 +182,9 @@ class LoKr(AdapterModule):
         }
 
     @classmethod
-    def from_tensors(cls, tensors: dict[str, Tensor], meta: dict[str, Any] | None = None, **kwargs: Any) -> LoKr:
+    def from_tensors(
+        cls, tensors: dict[str, Tensor], meta: dict[str, Any] | None = None, **kwargs: Any
+    ) -> LoKr:
         w1_lowrank = "lokr_w1_a" in tensors
         w2_lowrank = "lokr_w2_a" in tensors
         if meta and "shape" in meta:

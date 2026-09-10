@@ -25,7 +25,9 @@ class Full(AdapterModule):
     ) -> None:
         super().__init__(out_features, in_features, dtype=dtype)
         self.weight = nn.Parameter(torch.zeros(out_features, in_features, dtype=dtype))
-        self.register_buffer("base_weight", torch.zeros(out_features, in_features, dtype=dtype), persistent=False)
+        self.register_buffer(
+            "base_weight", torch.zeros(out_features, in_features, dtype=dtype), persistent=False
+        )
         self._pending_diff = False
         if base_weight is not None:
             self.bind_base(base_weight)
@@ -52,7 +54,9 @@ class Full(AdapterModule):
         return {"algo": "full", "out_features": self.out_features, "in_features": self.in_features}
 
     @classmethod
-    def from_tensors(cls, tensors: dict[str, Tensor], meta: dict[str, Any] | None = None, **kwargs: Any) -> Full:
+    def from_tensors(
+        cls, tensors: dict[str, Tensor], meta: dict[str, Any] | None = None, **kwargs: Any
+    ) -> Full:
         diff = tensors["diff"]
         dtype = kwargs.pop("dtype", torch.float32)
         mod = cls(int(diff.shape[0]), int(diff.shape[1]), dtype=dtype)

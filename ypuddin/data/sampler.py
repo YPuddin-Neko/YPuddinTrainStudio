@@ -10,7 +10,16 @@ from torch.utils.data import Sampler
 
 
 class BucketBatchSampler(Sampler[list[int]]):
-    def __init__(self, bucket_of: list[tuple[int, int]], batch_size: int, *, seed: int = 0, drop_last: bool = False, world_size: int = 1, rank: int = 0):
+    def __init__(
+        self,
+        bucket_of: list[tuple[int, int]],
+        batch_size: int,
+        *,
+        seed: int = 0,
+        drop_last: bool = False,
+        world_size: int = 1,
+        rank: int = 0,
+    ):
         self.bucket_of = list(bucket_of)
         self.batch_size = int(batch_size)
         self.seed = int(seed)

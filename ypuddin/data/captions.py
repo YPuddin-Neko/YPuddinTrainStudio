@@ -50,11 +50,31 @@ def transform_caption(raw: str, cfg: CaptionConfig, rng: random.Random) -> str |
     return (sep + " ").join(parts) if cfg.prefix or cfg.suffix else joined
 
 
+def is_stochastic(cfg: CaptionConfig) -> bool:
+    """True when the same raw caption can transform into more than one text (ignoring caption dropout)."""
+    return cfg.shuffle or cfg.tag_dropout > 0 or cfg.wildcard
+
+
+def deterministic_config(cfg: CaptionConfig) -> CaptionConfig:
+    """The same transform with every random element disabled (trigger word / prefix / keep_tokens still apply)."""
+    return cfg.model_copy(update={"shuffle": False, "tag_dropout": 0.0, "caption_dropout": 0.0})
+
+
+def transform_caption_deterministic(raw: str, cfg: CaptionConfig) -> str:
+    """Validation / cache-friendly variant: no shuffle, no dropout; wildcards resolve to a fixed choice."""
+    return transform_caption(raw, deterministic_config(cfg), random.Random(0)) or ""
+
+
 def caption_variants_for_cache(raw: str, cfg: CaptionConfig, n: int, seed: int) -> list[str]:
-    """Deterministic set of transformed captions used when text encodings must be pre-cached."""
+    """Deterministic, bounded set of transformed captions for a sample whose text encodings are pre-cached.
+
+    Caption dropout is excluded on purpose: the dataset applies it at sampling time (the empty caption
+    is always cached separately), so the configured dropout probability is honoured exactly instead
+    of depending on how many of the ``n`` draws happened to be dropped.
+    """
+    if not is_stochastic(cfg):
+        return [transform_caption_deterministic(raw, cfg)]
     rng = random.Random(seed)
-    out: list[str] = []
-    for _ in range(n):
-        c = transform_caption(raw, cfg, rng)
-        out.append("" if c is None else c)
-    return sorted(set(out))
+    cfg_nd = cfg.model_copy(update={"caption_dropout": 0.0})
+    out = {transform_caption(raw, cfg_nd, rng) or "" for _ in range(n)}
+    return sorted(out)

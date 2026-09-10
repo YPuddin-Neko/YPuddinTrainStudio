@@ -44,7 +44,13 @@ def _load_qwen3(path: str | Path, dtype: torch.dtype, device: torch.device | str
         missing, unexpected = model.load_state_dict(sd, strict=False)
         missing = [m for m in missing if not m.startswith("lm_head")]
         if missing or unexpected:
-            log.warning("Qwen3 load: %d missing, %d unexpected keys (e.g. %s / %s)", len(missing), len(unexpected), missing[:2], unexpected[:2])
+            log.warning(
+                "Qwen3 load: %d missing, %d unexpected keys (e.g. %s / %s)",
+                len(missing),
+                len(unexpected),
+                missing[:2],
+                unexpected[:2],
+            )
     encoder = model.model  # decoder stack without the LM head
     encoder.config.use_cache = False
     encoder.requires_grad_(False)
@@ -74,10 +80,22 @@ def _ensure_one_token(ids: Tensor, mask: Tensor, fill_id: int) -> tuple[Tensor, 
 class AnimaText(TextPipeline):
     fingerprint = "anima-qwen3-0.6b-last-hidden+t5old-v1"
 
-    def __init__(self, text_encoder_path: str | Path, *, tokenizer_path: str | Path | None = None, dtype: torch.dtype = torch.bfloat16, device: torch.device | str = "cpu", max_len: int = 1024):
+    def __init__(
+        self,
+        text_encoder_path: str | Path,
+        *,
+        tokenizer_path: str | Path | None = None,
+        dtype: torch.dtype = torch.bfloat16,
+        device: torch.device | str = "cpu",
+        max_len: int = 1024,
+    ):
         from transformers import AutoTokenizer, T5TokenizerFast
 
-        qwen_tok_dir = Path(text_encoder_path) if Path(text_encoder_path).is_dir() and (Path(text_encoder_path) / "tokenizer.json").exists() else ASSETS / "qwen3_06b"
+        qwen_tok_dir = (
+            Path(text_encoder_path)
+            if Path(text_encoder_path).is_dir() and (Path(text_encoder_path) / "tokenizer.json").exists()
+            else ASSETS / "qwen3_06b"
+        )
         self.tokenizer = AutoTokenizer.from_pretrained(str(qwen_tok_dir))
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -106,9 +124,15 @@ class AnimaText(TextPipeline):
 
     # ----------------------------------------------------------------- tokenize / encode
     def _tokenize(self, captions: list[str]) -> tuple[Tensor, Tensor, Tensor, Tensor]:
-        q = self.tokenizer(captions, padding="longest", truncation=True, max_length=self.max_len, return_tensors="pt")
-        t5 = self.t5_tokenizer(captions, padding="longest", truncation=True, max_length=self.max_len, return_tensors="pt")
-        q_ids, q_mask = _ensure_one_token(q["input_ids"], q["attention_mask"].bool(), int(self.tokenizer.eos_token_id))
+        q = self.tokenizer(
+            captions, padding="longest", truncation=True, max_length=self.max_len, return_tensors="pt"
+        )
+        t5 = self.t5_tokenizer(
+            captions, padding="longest", truncation=True, max_length=self.max_len, return_tensors="pt"
+        )
+        q_ids, q_mask = _ensure_one_token(
+            q["input_ids"], q["attention_mask"].bool(), int(self.tokenizer.eos_token_id)
+        )
         t5_ids, t5_mask = _ensure_one_token(t5["input_ids"], t5["attention_mask"].bool(), T5_EOS_ID)
         return q_ids, q_mask, t5_ids, t5_mask
 
@@ -116,7 +140,9 @@ class AnimaText(TextPipeline):
     def encode_for_cache(self, captions: list[str]) -> list[dict[str, Tensor]]:
         enc = self._ensure_loaded()
         q_ids, q_mask, t5_ids, t5_mask = self._tokenize(captions)
-        out = enc(input_ids=q_ids.to(self.device), attention_mask=q_mask.to(self.device), output_hidden_states=False)
+        out = enc(
+            input_ids=q_ids.to(self.device), attention_mask=q_mask.to(self.device), output_hidden_states=False
+        )
         hidden = out.last_hidden_state.float().cpu()
         entries = []
         for i in range(len(captions)):
@@ -139,7 +165,9 @@ class AnimaText(TextPipeline):
             q_mask[i, :n] = True
             t5_ids[i, :m] = e["t5_ids"]
             t5_mask[i, :m] = True
-        return TextCond({"embeds": embeds, "attn_mask": q_mask, "t5_ids": t5_ids, "t5_mask": t5_mask}).to(device)
+        return TextCond({"embeds": embeds, "attn_mask": q_mask, "t5_ids": t5_ids, "t5_mask": t5_mask}).to(
+            device
+        )
 
     def encode(self, captions: list[str], device: torch.device | str) -> TextCond:
         return self.cond_from_cache(self.encode_for_cache(captions), device)

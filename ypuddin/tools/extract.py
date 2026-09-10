@@ -39,10 +39,14 @@ def extract_lora(delta: Tensor, rank: int, *, alpha: float | None = None) -> Ext
     down = s[:, None] * Vh[:r]
     alpha = float(alpha if alpha is not None else r)
     scale = alpha / r
-    approx = (up @ down)
+    approx = up @ down
     # exported weights must reproduce ΔW under scale = alpha / rank
     up = up / scale
-    return ExtractResult({"lora_down.weight": down, "lora_up.weight": up, "alpha": torch.tensor(alpha)}, _rel_residual(d, approx), {"algo": "lora", "rank": r, "alpha": alpha})
+    return ExtractResult(
+        {"lora_down.weight": down, "lora_up.weight": up, "alpha": torch.tensor(alpha)},
+        _rel_residual(d, approx),
+        {"algo": "lora", "rank": r, "alpha": alpha},
+    )
 
 
 def nearest_kronecker(delta: Tensor, a: int, b: int, c: int, d: int) -> tuple[Tensor, Tensor, float]:
@@ -59,7 +63,9 @@ def nearest_kronecker(delta: Tensor, a: int, b: int, c: int, d: int) -> tuple[Te
     return w1, w2, _rel_residual(delta.float(), approx)
 
 
-def extract_lokr(delta: Tensor, *, factor: int = -1, rank: int | str | None = "full", alpha: float | None = None) -> ExtractResult:
+def extract_lokr(
+    delta: Tensor, *, factor: int = -1, rank: int | str | None = "full", alpha: float | None = None
+) -> ExtractResult:
     out_f, in_f = delta.shape
     a, b = factorization(out_f, factor)
     c, d = factorization(in_f, factor)
@@ -107,7 +113,11 @@ def extract_from_state_dicts(
     progress: Callable[[int, int], None] | None = None,
 ) -> tuple[dict[str, Tensor], dict[str, dict]]:
     """Diff two full models (same architecture) into a kohya-format adapter."""
-    keys = [k for k in tuned if k in base and k.endswith(".weight") and tuned[k].dim() == 2 and (include is None or include(k))]
+    keys = [
+        k
+        for k in tuned
+        if k in base and k.endswith(".weight") and tuned[k].dim() == 2 and (include is None or include(k))
+    ]
     out: dict[str, Tensor] = {}
     report: dict[str, dict] = {}
     for i, k in enumerate(keys):

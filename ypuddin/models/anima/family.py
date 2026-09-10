@@ -75,7 +75,9 @@ def default_config() -> dict[str, Any]:
     return dict(ANIMA_2B_CONFIG)
 
 
-def load_dit(path: str | Path, *, device: torch.device | str, dtype: torch.dtype) -> tuple[nn.Module, dict[str, Any]]:
+def load_dit(
+    path: str | Path, *, device: torch.device | str, dtype: torch.dtype
+) -> tuple[nn.Module, dict[str, Any]]:
     """Build the DiT on the meta device (no 8 GB fp32 CPU allocation), then assign checkpoint tensors."""
     sd = _read_state_dict(path, dtype)
     config = infer_config(sd)
@@ -85,7 +87,9 @@ def load_dit(path: str | Path, *, device: torch.device | str, dtype: torch.dtype
     if missing:
         raise RuntimeError(f"Anima checkpoint is missing {len(missing)} tensors, e.g. {missing[:5]}")
     if unexpected:
-        log.warning("ignoring %d unexpected tensors in Anima checkpoint, e.g. %s", len(unexpected), unexpected[:5])
+        log.warning(
+            "ignoring %d unexpected tensors in Anima checkpoint, e.g. %s", len(unexpected), unexpected[:5]
+        )
     model = _materialize_meta_buffers(model, device)
     model.to(device)
     model.requires_grad_(False)
@@ -105,12 +109,21 @@ def _materialize_meta_buffers(model: nn.Module, device: torch.device | str) -> n
     for module in model.modules():
         if isinstance(module, VideoRopePosition3DEmb):
             dim_h, dim_t = module._dim_h, module._dim_t
-            module.seq = torch.arange(max(module.max_h, module.max_w, module.max_t), dtype=torch.float, device=device)
-            module.dim_spatial_range = torch.arange(0, dim_h, 2, device=device)[: (dim_h // 2)].float() / dim_h
-            module.dim_temporal_range = torch.arange(0, dim_t, 2, device=device)[: (dim_t // 2)].float() / dim_t
+            module.seq = torch.arange(
+                max(module.max_h, module.max_w, module.max_t), dtype=torch.float, device=device
+            )
+            module.dim_spatial_range = (
+                torch.arange(0, dim_h, 2, device=device)[: (dim_h // 2)].float() / dim_h
+            )
+            module.dim_temporal_range = (
+                torch.arange(0, dim_t, 2, device=device)[: (dim_t // 2)].float() / dim_t
+            )
         elif isinstance(module, AdapterRotaryEmbedding):
             head_dim = module.inv_freq.shape[0] * 2
-            module.inv_freq = 1.0 / (module.rope_theta ** (torch.arange(0, head_dim, 2, dtype=torch.int64, device=device).float() / head_dim))
+            module.inv_freq = 1.0 / (
+                module.rope_theta
+                ** (torch.arange(0, head_dim, 2, dtype=torch.int64, device=device).float() / head_dim)
+            )
     leftover = [n for n, b in model.named_buffers() if b.device.type == "meta"]
     if leftover:
         raise RuntimeError(f"buffers still on meta after load: {leftover[:5]}")
@@ -123,7 +136,14 @@ class AnimaLatent(LatentPipeline):
     channels = 16
     stride = 8
 
-    def __init__(self, vae_path: str | Path, *, device: torch.device | str = "cpu", dtype: torch.dtype = torch.float32, use_2d: bool = True):
+    def __init__(
+        self,
+        vae_path: str | Path,
+        *,
+        device: torch.device | str = "cpu",
+        dtype: torch.dtype = torch.float32,
+        use_2d: bool = True,
+    ):
         self.path = Path(vae_path)
         self.device = torch.device(device)
         self.dtype = dtype
@@ -171,7 +191,17 @@ class AnimaFamily(ModelFamily):
         latent=LatentSpec(channels=16, stride=8, patch=2, fingerprint=AnimaLatent.fingerprint),
         text=TextSpec(max_len=512, fingerprint=AnimaText.fingerprint, pad_floor=True),
         sampling=SamplingDefaults(steps=25, cfg=4.0, shift=3.0, sampler="euler"),
-        capabilities=frozenset({"block_swap", "fp8_base", "activation_checkpointing", "online_text", "llm_adapter", "masked_loss", "compile"}),
+        capabilities=frozenset(
+            {
+                "block_swap",
+                "fp8_base",
+                "activation_checkpointing",
+                "online_text",
+                "llm_adapter",
+                "masked_loss",
+                "compile",
+            }
+        ),
         architecture="anima",
         adapter_prefix="lora_unet",
     )
@@ -187,7 +217,9 @@ class AnimaFamily(ModelFamily):
                 problems.append(f"model.{field} does not exist: {value}")
         return problems
 
-    def load(self, cfg: ModelConfig, memory: MemoryConfig, *, device: torch.device | str, dtype: torch.dtype) -> LoadedModel:
+    def load(
+        self, cfg: ModelConfig, memory: MemoryConfig, *, device: torch.device | str, dtype: torch.dtype
+    ) -> LoadedModel:
         problems = self.validate_config(cfg)
         if problems:
             raise FileNotFoundError("; ".join(problems))
@@ -195,9 +227,23 @@ class AnimaFamily(ModelFamily):
         if memory.activation_checkpointing != "none" and hasattr(dit, "enable_gradient_checkpointing"):
             dit.enable_gradient_checkpointing()
         text = AnimaText(cfg.text_encoder_path, tokenizer_path=cfg.tokenizer_path, dtype=dtype, device=device)
-        latent = AnimaLatent(cfg.vae_path, device=device, dtype=torch.float32 if torch.device(device).type == "cpu" else dtype)
-        log.info("loaded Anima DiT: width=%s blocks=%s heads=%s", config.get("model_channels"), config.get("num_blocks"), config.get("num_heads"))
-        return LoadedModel(backbone=dit, text=text, latent=latent, device=torch.device(device), dtype=dtype, extra={"dit_config": config})
+        latent = AnimaLatent(
+            cfg.vae_path, device=device, dtype=torch.float32 if torch.device(device).type == "cpu" else dtype
+        )
+        log.info(
+            "loaded Anima DiT: width=%s blocks=%s heads=%s",
+            config.get("model_channels"),
+            config.get("num_blocks"),
+            config.get("num_heads"),
+        )
+        return LoadedModel(
+            backbone=dit,
+            text=text,
+            latent=latent,
+            device=torch.device(device),
+            dtype=dtype,
+            extra={"dit_config": config},
+        )
 
     # ----------------------------------------------------------------- forward
     def forward(self, loaded: LoadedModel, x_t: Tensor, t: Tensor, cond: TextCond, **extra: Any) -> Tensor:
@@ -218,15 +264,30 @@ class AnimaFamily(ModelFamily):
 
     # ----------------------------------------------------------------- adapters / memory
     def presets(self) -> dict[str, TargetPreset]:
-        attn = ("blocks.*.self_attn.{q_proj,k_proj,v_proj,output_proj}", "blocks.*.cross_attn.{q_proj,k_proj,v_proj,output_proj}")
+        attn = (
+            "blocks.*.self_attn.{q_proj,k_proj,v_proj,output_proj}",
+            "blocks.*.cross_attn.{q_proj,k_proj,v_proj,output_proj}",
+        )
         mlp = ("blocks.*.mlp.layer1", "blocks.*.mlp.layer2")
         adaln = ("blocks.*.adaln_modulation_*.*",)
-        adapter = ("llm_adapter.blocks.*.self_attn.*_proj", "llm_adapter.blocks.*.cross_attn.*_proj", "llm_adapter.blocks.*.mlp.*")
+        adapter = (
+            "llm_adapter.blocks.*.self_attn.*_proj",
+            "llm_adapter.blocks.*.cross_attn.*_proj",
+            "llm_adapter.blocks.*.mlp.*",
+        )
         return {
-            "attn-mlp": TargetPreset("attn-mlp", include=attn + mlp, description="DiT 注意力 + MLP（默认，与 AnimaLoraStudio 一致）"),
+            "attn-mlp": TargetPreset(
+                "attn-mlp",
+                include=attn + mlp,
+                description="DiT 注意力 + MLP（默认，与 AnimaLoraStudio 一致）",
+            ),
             "attn-only": TargetPreset("attn-only", include=attn, description="仅 DiT 注意力投影"),
-            "full-linear": TargetPreset("full-linear", include=attn + mlp + adaln, description="DiT 内全部 Linear（含 AdaLN 调制）"),
-            "with-adapter": TargetPreset("with-adapter", include=attn + mlp + adapter, description="DiT 注意力 + MLP + LLM Adapter"),
+            "full-linear": TargetPreset(
+                "full-linear", include=attn + mlp + adaln, description="DiT 内全部 Linear（含 AdaLN 调制）"
+            ),
+            "with-adapter": TargetPreset(
+                "with-adapter", include=attn + mlp + adapter, description="DiT 注意力 + MLP + LLM Adapter"
+            ),
             "adapter-only": TargetPreset("adapter-only", include=adapter, description="仅 LLM Adapter"),
         }
 
@@ -236,7 +297,18 @@ class AnimaFamily(ModelFamily):
     def memory_layout_meta(self, backbone: nn.Module) -> MemoryLayout:
         blocks = list(backbone.blocks)
         nbytes = sum(p.numel() * p.element_size() for p in blocks[0].parameters()) if blocks else 0
-        return MemoryLayout(blocks=blocks, keep_high_precision=("x_embedder*", "t_embedder*", "t_embedding_norm*", "final_layer*", "llm_adapter.embed*", "*norm*"), block_param_bytes=nbytes)
+        return MemoryLayout(
+            blocks=blocks,
+            keep_high_precision=(
+                "x_embedder*",
+                "t_embedder*",
+                "t_embedding_norm*",
+                "final_layer*",
+                "llm_adapter.embed*",
+                "*norm*",
+            ),
+            block_param_bytes=nbytes,
+        )
 
     def meta_backbone(self, cfg: ModelConfig) -> nn.Module:
         """Backbone on the meta device for planning: real geometry if the checkpoint is readable."""
@@ -283,7 +355,9 @@ def _infer_from_shapes(shapes: dict[str, Any], base: dict[str, Any]) -> dict[str
     if n_blocks:
         cfg["num_blocks"] = n_blocks
     heads = {2048: 16, 5120: 40}
-    cfg["num_heads"] = heads.get(cfg.get("model_channels", 2048), max(1, cfg.get("model_channels", 2048) // 128))
+    cfg["num_heads"] = heads.get(
+        cfg.get("model_channels", 2048), max(1, cfg.get("model_channels", 2048) // 128)
+    )
     cfg["use_llm_adapter"] = any(k.startswith("llm_adapter.") for k in shapes)
     return cfg
 

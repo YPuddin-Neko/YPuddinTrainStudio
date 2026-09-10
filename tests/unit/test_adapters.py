@@ -7,7 +7,6 @@ from torch import nn
 
 from ypuddin.adapters import (
     AdaptedLinear,
-    AdapterSet,
     FrozenLinear,
     Full,
     LoHa,
@@ -111,7 +110,9 @@ def test_lokr_shapes_and_param_count_3072():
 @pytest.mark.parametrize("algo", ["lora", "lokr", "loha", "full"])
 def test_initial_delta_is_zero(algo):
     base = nn.Linear(40, 32)
-    mod = {"lora": LoRA, "lokr": LoKr, "loha": LoHa, "full": Full}[algo](32, 40, **({} if algo == "full" else {"rank": 4}))
+    mod = {"lora": LoRA, "lokr": LoKr, "loha": LoHa, "full": Full}[algo](
+        32, 40, **({} if algo == "full" else {"rank": 4})
+    )
     layer = AdaptedLinear(FrozenLinear.from_linear(base), mod, name="t")
     x = torch.randn(2, 40)
     torch.testing.assert_close(layer(x), base(x), rtol=1e-5, atol=1e-6)
@@ -168,7 +169,7 @@ def test_loha_delta_and_grad():
     for p in loha2.parameters():
         p.grad = None
     (((loha2.w1_a @ loha2.w1_b) * (loha2.w2_a @ loha2.w2_b)) * loha2.scale).square().sum().backward()
-    for p1, p2 in zip(loha.parameters(), loha2.parameters()):
+    for p1, p2 in zip(loha.parameters(), loha2.parameters(), strict=True):
         torch.testing.assert_close(p1.grad, p2.grad, rtol=1e-5, atol=1e-6)
 
 
@@ -229,7 +230,9 @@ def test_match_name(pattern, name, expected):
 
 
 def _preset() -> TargetPreset:
-    return TargetPreset("attn-mlp", include=("blocks.*.attn.{q,k,v,o}", "blocks.*.mlp.*"), exclude=("*adaln*",))
+    return TargetPreset(
+        "attn-mlp", include=("blocks.*.attn.{q,k,v,o}", "blocks.*.mlp.*"), exclude=("*adaln*",)
+    )
 
 
 def test_resolve_targets_precedence():
@@ -245,7 +248,9 @@ def test_resolve_targets_precedence():
     )
     targets = {t.name: t for t in resolve_targets(names, cfg, _preset())}
     assert set(targets) == {"blocks.0.attn.q", "blocks.0.mlp.fc1", "embed.proj"}
-    assert targets["blocks.0.mlp.fc1"].params["rank"] == 4 and targets["blocks.0.mlp.fc1"].params["alpha"] == 2.0
+    assert (
+        targets["blocks.0.mlp.fc1"].params["rank"] == 4 and targets["blocks.0.mlp.fc1"].params["alpha"] == 2.0
+    )
     assert targets["blocks.0.attn.q"].params["rank"] == 8
     assert targets["embed.proj"].algo == "lora" and targets["embed.proj"].params["rank"] == 2
 
@@ -254,7 +259,9 @@ def test_resolve_targets_precedence():
 class _Block(nn.Module):
     def __init__(self):
         super().__init__()
-        self.attn = nn.ModuleDict({"q": nn.Linear(32, 32), "k": nn.Linear(32, 32), "v": nn.Linear(32, 32), "o": nn.Linear(32, 32)})
+        self.attn = nn.ModuleDict(
+            {"q": nn.Linear(32, 32), "k": nn.Linear(32, 32), "v": nn.Linear(32, 32), "o": nn.Linear(32, 32)}
+        )
         self.mlp = nn.Sequential(nn.Linear(32, 64), nn.GELU(), nn.Linear(64, 32))
         self.adaln = nn.ModuleDict({"lin": nn.Linear(32, 96)})
 
@@ -300,14 +307,26 @@ def test_inject_eject_roundtrip():
 def test_save_load_roundtrip_and_third_party_alpha_convention(tmp_path):
     model = _Toy()
     preset = TargetPreset("attn-mlp", include=("blocks.*.attn.*", "blocks.*.mlp.*"))
-    cfg = AdapterConfig(algo="lokr", rank=4, alpha=1.0, factor=-1, rules=[AdapterRule(match="blocks.*.mlp.*", algo="lora", rank=2, alpha=1.0)])
+    cfg = AdapterConfig(
+        algo="lokr",
+        rank=4,
+        alpha=1.0,
+        factor=-1,
+        rules=[AdapterRule(match="blocks.*.mlp.*", algo="lora", rank=2, alpha=1.0)],
+    )
     aset = inject(model, cfg, preset)
     for layer in aset.layers.values():
         _randomize(layer.adapter)
     x = torch.randn(2, 16)
     y_ref = model(x)
     tensors, targets = aset.export_state()
-    meta = build_metadata(targets=targets, adapter_cfg=cfg.model_dump(mode="json"), family="toy", architecture="toy/lora", title="t")
+    meta = build_metadata(
+        targets=targets,
+        adapter_cfg=cfg.model_dump(mode="json"),
+        family="toy",
+        architecture="toy/lora",
+        title="t",
+    )
     path = save_adapter_file(tmp_path / "a.safetensors", tensors, meta, dtype="fp32")
     loaded, meta2 = load_adapter_file(path)
     assert meta2["ypuddin.family"] == "toy" and "modelspec.hash_sha256" in meta2

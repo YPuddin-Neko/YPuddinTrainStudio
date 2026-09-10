@@ -89,7 +89,10 @@ class BucketManager:
         return best
 
     def describe(self) -> list[dict]:
-        return [{"base": b.base, "w": b.width, "h": b.height, "aspect": round(b.aspect, 4)} for b in self.all_buckets()]
+        return [
+            {"base": b.base, "w": b.width, "h": b.height, "aspect": round(b.aspect, 4)}
+            for b in self.all_buckets()
+        ]
 
 
 def fit_crop(src_w: int, src_h: int, dst_w: int, dst_h: int) -> tuple[int, int, int, int, int, int]:

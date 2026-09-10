@@ -23,7 +23,13 @@ def mobius_shift(t: Tensor, shift: float) -> Tensor:
     return shift * t / (1 + (shift - 1) * t)
 
 
-def resolution_shift_value(num_tokens: int, base_tokens: int = 256, max_tokens: int = 4096, base_shift: float = 0.5, max_shift: float = 1.15) -> float:
+def resolution_shift_value(
+    num_tokens: int,
+    base_tokens: int = 256,
+    max_tokens: int = 4096,
+    base_shift: float = 0.5,
+    max_shift: float = 1.15,
+) -> float:
     """Flux-style ``mu`` interpolated on the image token count; returned as a multiplicative shift ``exp(mu)``."""
     m = (max_shift - base_shift) / (max_tokens - base_tokens)
     mu = m * num_tokens + (base_shift - m * base_tokens)
@@ -63,9 +69,18 @@ class TimestepSampler:
         lo, hi = self.cfg.t_min, self.cfg.t_max
         return t.clamp(max(lo, 1e-5), min(hi, 1 - 1e-5))
 
-    def sample(self, batch_size: int, *, generator: torch.Generator | None = None, num_tokens: int | None = None, device: torch.device | str = "cpu") -> Tensor:
+    def sample(
+        self,
+        batch_size: int,
+        *,
+        generator: torch.Generator | None = None,
+        num_tokens: int | None = None,
+        device: torch.device | str = "cpu",
+    ) -> Tensor:
         if self.cfg.stratified and batch_size > 1:
-            u = (torch.arange(batch_size, dtype=torch.float32) + torch.rand(batch_size, generator=generator)) / batch_size
+            u = (
+                torch.arange(batch_size, dtype=torch.float32) + torch.rand(batch_size, generator=generator)
+            ) / batch_size
             u = u[torch.randperm(batch_size, generator=generator)]
         else:
             u = torch.rand(batch_size, generator=generator)
@@ -80,12 +95,21 @@ class TimestepSampler:
 # --------------------------------------------------------------------------- noising / target
 
 
-def noisy_input_and_target(x0: Tensor, noise: Tensor, t: Tensor, *, ip_noise_gamma: float = 0.0, generator: torch.Generator | None = None) -> tuple[Tensor, Tensor]:
+def noisy_input_and_target(
+    x0: Tensor,
+    noise: Tensor,
+    t: Tensor,
+    *,
+    ip_noise_gamma: float = 0.0,
+    generator: torch.Generator | None = None,
+) -> tuple[Tensor, Tensor]:
     """Returns ``(x_t, target)`` with ``t`` broadcast over non-batch dims."""
     tb = t.to(x0.dtype).view(-1, *([1] * (x0.dim() - 1)))
     eps = noise
     if ip_noise_gamma > 0:
-        eps = eps + ip_noise_gamma * torch.randn(noise.shape, generator=generator, device=noise.device, dtype=noise.dtype)
+        eps = eps + ip_noise_gamma * torch.randn(
+            noise.shape, generator=generator, device=noise.device, dtype=noise.dtype
+        )
     x_t = (1 - tb) * x0 + tb * eps
     target = noise - x0
     return x_t, target
@@ -123,7 +147,14 @@ def timestep_weight(t: Tensor, scheme: str, snr_gamma: float = 5.0) -> Tensor:
     raise ValueError(scheme)
 
 
-def reduce_loss(per_elem: Tensor, t: Tensor, cfg: ObjectiveConfig, *, mask: Tensor | None = None, sample_weight: Tensor | None = None) -> tuple[Tensor, Tensor]:
+def reduce_loss(
+    per_elem: Tensor,
+    t: Tensor,
+    cfg: ObjectiveConfig,
+    *,
+    mask: Tensor | None = None,
+    sample_weight: Tensor | None = None,
+) -> tuple[Tensor, Tensor]:
     """Mean over non-batch dims (mask-aware), times timestep and per-sample weights.
 
     Returns ``(loss_scalar, per_sample_unweighted)``; the latter feeds validation / diagnostics.
@@ -149,15 +180,34 @@ class Objective:
         self.cfg = cfg
         self.sampler = TimestepSampler(cfg)
 
-    def sample_t(self, batch_size: int, *, generator: torch.Generator | None = None, num_tokens: int | None = None, device: torch.device | str = "cpu") -> Tensor:
+    def sample_t(
+        self,
+        batch_size: int,
+        *,
+        generator: torch.Generator | None = None,
+        num_tokens: int | None = None,
+        device: torch.device | str = "cpu",
+    ) -> Tensor:
         return self.sampler.sample(batch_size, generator=generator, num_tokens=num_tokens, device=device)
 
-    def prepare(self, x0: Tensor, t: Tensor, *, generator: torch.Generator | None = None) -> tuple[Tensor, Tensor, Tensor]:
+    def prepare(
+        self, x0: Tensor, t: Tensor, *, generator: torch.Generator | None = None
+    ) -> tuple[Tensor, Tensor, Tensor]:
         noise = torch.randn(x0.shape, generator=generator, device=x0.device, dtype=x0.dtype)
-        x_t, target = noisy_input_and_target(x0, noise, t, ip_noise_gamma=self.cfg.ip_noise_gamma, generator=generator)
+        x_t, target = noisy_input_and_target(
+            x0, noise, t, ip_noise_gamma=self.cfg.ip_noise_gamma, generator=generator
+        )
         return x_t, target, noise
 
-    def loss(self, pred: Tensor, target: Tensor, t: Tensor, *, mask: Tensor | None = None, sample_weight: Tensor | None = None) -> tuple[Tensor, Tensor]:
+    def loss(
+        self,
+        pred: Tensor,
+        target: Tensor,
+        t: Tensor,
+        *,
+        mask: Tensor | None = None,
+        sample_weight: Tensor | None = None,
+    ) -> tuple[Tensor, Tensor]:
         per_elem = elementwise_loss(pred, target, self.cfg.loss, self.cfg.huber_c)
         return reduce_loss(per_elem, t, self.cfg, mask=mask, sample_weight=sample_weight)
 

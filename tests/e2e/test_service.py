@@ -59,7 +59,11 @@ async def test_rest_contract_and_training_job(live_server, image_dataset):
             presets = (await client.get("/api/presets")).json()
             assert any(p["name"] == "toy-smoke" for p in presets)
             r = await client.get("/api/presets/nope")
-            assert r.status_code == 404 and r.json()["error"]["code"] == "preset.not_found" and "trace_id" in r.json()["error"]
+            assert (
+                r.status_code == 404
+                and r.json()["error"]["code"] == "preset.not_found"
+                and "trace_id" in r.json()["error"]
+            )
             s = (await client.get("/api/settings")).json()
             assert s["ui"]["language"] == "zh-CN"
             r = await client.put("/api/settings", json={"ui": {"language": "en"}})
@@ -81,20 +85,41 @@ async def test_rest_contract_and_training_job(live_server, image_dataset):
             h0 = imgs["items"][0]["hash"]
             th = await client.get(f"/api/datasets/{did}/images/{h0}/thumb?size=64")
             assert th.status_code == 200 and th.headers["content-type"] == "image/jpeg"
-            r = await client.put(f"/api/datasets/{did}/images/{h0}/caption", json={"caption": "1girl, edited"})
-            assert (await client.get(f"/api/datasets/{did}/images/{h0}/caption")).json()["caption"] == "1girl, edited"
-            r = await client.post(f"/api/datasets/{did}/tags/batch", json={"hashes": [h0], "add": ["newtag"], "remove": ["edited"]})
+            r = await client.put(
+                f"/api/datasets/{did}/images/{h0}/caption", json={"caption": "1girl, edited"}
+            )
+            assert (await client.get(f"/api/datasets/{did}/images/{h0}/caption")).json()[
+                "caption"
+            ] == "1girl, edited"
+            r = await client.post(
+                f"/api/datasets/{did}/tags/batch",
+                json={"hashes": [h0], "add": ["newtag"], "remove": ["edited"]},
+            )
             assert r.json()["changed"] == 1
-            assert "newtag" in (await client.get(f"/api/datasets/{did}/images/{h0}/caption")).json()["caption"]
+            assert (
+                "newtag" in (await client.get(f"/api/datasets/{did}/images/{h0}/caption")).json()["caption"]
+            )
 
             # plan + validate
             config = {
                 "model": {"family": "toy", "dtype": "fp32"},
-                "dataset": {"sources": [{"path": str(image_dataset)}], "resolutions": [64], "bucket_step": 16, "batch_size": 2, "num_workers": 0},
+                "dataset": {
+                    "sources": [{"path": str(image_dataset)}],
+                    "resolutions": [64],
+                    "bucket_step": 16,
+                    "batch_size": 2,
+                    "num_workers": 0,
+                },
                 "adapter": {"algo": "lokr", "rank": 4, "alpha": 4},
                 "loop": {"epochs": 1, "mixed_precision": "no"},
                 "checkpoint": {"save_every_epochs": 1, "name": "demo"},
-                "sampling": {"enabled": True, "every_epochs": 1, "prompts": [{"prompt": "1girl", "steps": 2}], "width": 64, "height": 64},
+                "sampling": {
+                    "enabled": True,
+                    "every_epochs": 1,
+                    "prompts": [{"prompt": "1girl", "steps": 2}],
+                    "width": 64,
+                    "height": 64,
+                },
             }
             bad = await client.post("/api/config/validate", json={"config": {"adapter": {"algo": "nope"}}})
             assert bad.json()["ok"] is False and bad.json()["errors"][0]["loc"].startswith("adapter.algo")
@@ -114,13 +139,23 @@ async def test_rest_contract_and_training_job(live_server, image_dataset):
             consumer = asyncio.create_task(consume())
             await asyncio.sleep(0.1)
 
-            job = (await client.post("/api/jobs", json={"type": "train", "name": "demo-run", "project_id": pid, "config": config})).json()
+            job = (
+                await client.post(
+                    "/api/jobs",
+                    json={"type": "train", "name": "demo-run", "project_id": pid, "config": config},
+                )
+            ).json()
             jid = job["id"]
             assert job["status"] == "queued"
             job = await _wait_status(client, jid, {"completed", "failed"})
             if job["status"] != "completed":
                 log = (await client.get(f"/api/jobs/{jid}/log")).json()
-                raise AssertionError("job failed: " + job.get("error", "") + "\n" + "\n".join(l["msg"] for l in log["lines"][-30:]))
+                raise AssertionError(
+                    "job failed: "
+                    + job.get("error", "")
+                    + "\n"
+                    + "\n".join(line["msg"] for line in log["lines"][-30:])
+                )
             assert job["progress"]["step"] == job["progress"]["total_steps"]
             metrics = (await client.get(f"/api/jobs/{jid}/metrics")).json()
             assert len(metrics["steps"]) == job["progress"]["total_steps"] and metrics["loss"]
@@ -132,7 +167,9 @@ async def test_rest_contract_and_training_job(live_server, image_dataset):
             assert any(c["kind"] == "weights" for c in cks)
             arts = (await client.get(f"/api/artifacts?project_id={pid}")).json()
             assert arts and arts[0]["algo"] == "lokr"
-            conv = (await client.post(f"/api/artifacts/{arts[0]['id']}/convert", json={"format": "kohya"})).json()
+            conv = (
+                await client.post(f"/api/artifacts/{arts[0]['id']}/convert", json={"format": "kohya"})
+            ).json()
             assert conv["kind"] == "kohya"
             log = (await client.get(f"/api/jobs/{jid}/log")).json()
             assert isinstance(log["lines"], list)
@@ -162,12 +199,20 @@ async def test_pause_resume_via_api(live_server, image_dataset):
         async with httpx.AsyncClient(base_url=live_server, timeout=30) as client:
             config = {
                 "model": {"family": "toy", "dtype": "fp32"},
-                "dataset": {"sources": [{"path": str(image_dataset)}], "resolutions": [64], "bucket_step": 16, "batch_size": 1, "num_workers": 0},
+                "dataset": {
+                    "sources": [{"path": str(image_dataset)}],
+                    "resolutions": [64],
+                    "bucket_step": 16,
+                    "batch_size": 1,
+                    "num_workers": 0,
+                },
                 "adapter": {"algo": "lora", "rank": 4, "alpha": 4},
                 "loop": {"epochs": 40, "mixed_precision": "no"},
                 "checkpoint": {"save_every_epochs": None, "name": "pr"},
             }
-            job = (await client.post("/api/jobs", json={"type": "train", "name": "pr", "config": config})).json()
+            job = (
+                await client.post("/api/jobs", json={"type": "train", "name": "pr", "config": config})
+            ).json()
             jid = job["id"]
             # wait for a few steps then pause
             for _ in range(300):

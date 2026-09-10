@@ -14,7 +14,13 @@ Listener = Callable[[dict[str, Any]], None]
 
 
 class Emitter:
-    def __init__(self, *, path: str | Path | None = None, fd: int | None = None, listeners: list[Listener] | None = None):
+    def __init__(
+        self,
+        *,
+        path: str | Path | None = None,
+        fd: int | None = None,
+        listeners: list[Listener] | None = None,
+    ):
         self._file = open(path, "a", encoding="utf-8", buffering=1) if path else None  # noqa: SIM115
         self._fd = fd
         self._listeners: list[Listener] = list(listeners or [])

@@ -1,4 +1,12 @@
-from .io import config_hash, deep_merge, dump_toml, load_config, parse_overrides, read_config_file, write_config
+from .io import (
+    config_hash,
+    deep_merge,
+    dump_toml,
+    load_config,
+    parse_overrides,
+    read_config_file,
+    write_config,
+)
 from .schema import (
     AdapterConfig,
     AdapterRule,

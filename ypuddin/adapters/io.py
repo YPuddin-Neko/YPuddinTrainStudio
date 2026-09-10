@@ -77,7 +77,10 @@ def build_metadata(
         "ss_network_dim": str(rank),
         "ss_network_alpha": str(adapter_cfg.get("alpha")),
         "ss_network_args": json.dumps(
-            {k: adapter_cfg.get(k) for k in ("algo", "factor", "decompose_both", "rs_lora", "dora", "preset", "init")},
+            {
+                k: adapter_cfg.get(k)
+                for k in ("algo", "factor", "decompose_both", "rs_lora", "dora", "preset", "init")
+            },
             ensure_ascii=False,
         ),
         "ss_base_model_version": family,
@@ -109,7 +112,9 @@ def build_metadata(
     return meta
 
 
-def save_adapter_file(path: str | Path, tensors: dict[str, Tensor], metadata: dict[str, str], *, dtype: str = "bf16") -> Path:
+def save_adapter_file(
+    path: str | Path, tensors: dict[str, Tensor], metadata: dict[str, str], *, dtype: str = "bf16"
+) -> Path:
     """Atomically write tensors (cast to ``dtype``, ``alpha``/``dora_scale`` kept fp32) with metadata."""
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)

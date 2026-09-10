@@ -87,7 +87,9 @@ class IndexDB:
         self.conn.commit()
 
     def lookup(self, path: str, mtime: float, size: int) -> tuple[str, int, int, bool] | None:
-        row = self.conn.execute("SELECT hash, width, height, has_alpha, mtime, size FROM files WHERE path=?", (path,)).fetchone()
+        row = self.conn.execute(
+            "SELECT hash, width, height, has_alpha, mtime, size FROM files WHERE path=?", (path,)
+        ).fetchone()
         if row and abs(row[4] - mtime) < 1e-6 and row[5] == size:
             return row[0], row[1], row[2], bool(row[3])
         return None
@@ -106,7 +108,11 @@ class IndexDB:
 
 def probe_image(path: Path) -> tuple[int, int, bool]:
     with Image.open(path) as im:
-        return im.width, im.height, im.mode in ("RGBA", "LA", "P") and ("transparency" in im.info or im.mode != "P")
+        return (
+            im.width,
+            im.height,
+            im.mode in ("RGBA", "LA", "P") and ("transparency" in im.info or im.mode != "P"),
+        )
 
 
 def scan_sources(

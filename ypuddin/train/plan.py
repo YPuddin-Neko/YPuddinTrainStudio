@@ -21,7 +21,9 @@ def _count_params(module: nn.Module) -> int:
     return sum(p.numel() for p in module.parameters())
 
 
-def plan(cfg: TrainConfig, *, gpu_total_mb: float | None = None, index_db_path: str | Path | None = None) -> dict[str, Any]:
+def plan(
+    cfg: TrainConfig, *, gpu_total_mb: float | None = None, index_db_path: str | Path | None = None
+) -> dict[str, Any]:
     out: dict[str, Any] = {"ok": True, "errors": [], "warnings": []}
     try:
         family = get_family(cfg.model.family)
@@ -39,7 +41,14 @@ def plan(cfg: TrainConfig, *, gpu_total_mb: float | None = None, index_db_path: 
             out["errors"].append({"loc": "dataset.sources", "msg": str(e)})
     if not records and ds.sources:
         out["errors"].append({"loc": "dataset.sources", "msg": "no images found"})
-    bm = BucketManager(ds.resolutions, align=family.spec.latent.align, step=ds.bucket_step, aspect_ratio_limit=ds.aspect_ratio_limit, area_tolerance=ds.area_tolerance, no_upscale=ds.bucket_no_upscale)
+    bm = BucketManager(
+        ds.resolutions,
+        align=family.spec.latent.align,
+        step=ds.bucket_step,
+        aspect_ratio_limit=ds.aspect_ratio_limit,
+        area_tolerance=ds.area_tolerance,
+        no_upscale=ds.bucket_no_upscale,
+    )
     items = expand_items(records, ds.sources, ds, bm) if records else []
     counts: dict[tuple[int, int], int] = {}
     for it in items:
@@ -53,7 +62,10 @@ def plan(cfg: TrainConfig, *, gpu_total_mb: float | None = None, index_db_path: 
             "images": len(records),
             "items": len(items),
             "captioned": sum(1 for r in records if r.caption_path),
-            "buckets": [{"w": w, "h": h, "items": n, "batches": math.ceil(n / ds.batch_size)} for (w, h), n in sorted(counts.items())],
+            "buckets": [
+                {"w": w, "h": h, "items": n, "batches": math.ceil(n / ds.batch_size)}
+                for (w, h), n in sorted(counts.items())
+            ],
             "steps_per_epoch": steps_per_epoch,
             "total_steps": total_steps,
             "epochs": cfg.loop.epochs,
@@ -61,9 +73,19 @@ def plan(cfg: TrainConfig, *, gpu_total_mb: float | None = None, index_db_path: 
     )
     uncaptioned = len(records) - out["captioned"]
     if uncaptioned and not any(s.class_prompt for s in ds.sources):
-        out["warnings"].append({"code": "captions.missing", "msg": f"{uncaptioned} images have no caption file and no class_prompt"})
+        out["warnings"].append(
+            {
+                "code": "captions.missing",
+                "msg": f"{uncaptioned} images have no caption file and no class_prompt",
+            }
+        )
     if any(n < ds.batch_size for n in counts.values()):
-        out["warnings"].append({"code": "buckets.small", "msg": "some buckets have fewer images than batch_size (tail batches will be smaller)"})
+        out["warnings"].append(
+            {
+                "code": "buckets.small",
+                "msg": "some buckets have fewer images than batch_size (tail batches will be smaller)",
+            }
+        )
 
     # ---- parameters (meta device, no weights)
     params: dict[str, Any] = {}
@@ -76,15 +98,28 @@ def plan(cfg: TrainConfig, *, gpu_total_mb: float | None = None, index_db_path: 
             base_params = _count_params(backbone)
             presets = family.presets()
             if cfg.adapter.preset not in presets:
-                out["errors"].append({"loc": "adapter.preset", "msg": f"unknown preset; available: {sorted(presets)}"})
+                out["errors"].append(
+                    {"loc": "adapter.preset", "msg": f"unknown preset; available: {sorted(presets)}"}
+                )
             else:
-                aset = inject(backbone, cfg.adapter, presets[cfg.adapter.preset], prefix=family.spec.adapter_prefix)
-                params = {"base": base_params, "trainable": aset.num_params(), "adapted_layers": len(aset.layers), "by_algo": aset.summary()["by_algo"]}
-                base_bytes = DTYPE_BYTES[cfg.memory.base_precision if cfg.memory.base_precision != "auto" else cfg.model.dtype]
+                aset = inject(
+                    backbone, cfg.adapter, presets[cfg.adapter.preset], prefix=family.spec.adapter_prefix
+                )
+                params = {
+                    "base": base_params,
+                    "trainable": aset.num_params(),
+                    "adapted_layers": len(aset.layers),
+                    "by_algo": aset.summary()["by_algo"],
+                }
+                base_bytes = DTYPE_BYTES[
+                    cfg.memory.base_precision if cfg.memory.base_precision != "auto" else cfg.model.dtype
+                ]
                 weights_mb = base_params * base_bytes / 2**20
                 adapter_mb = aset.num_params() * (4 if cfg.adapter.param_dtype == "fp32" else 2) / 2**20
                 optimizer_mb = aset.num_params() * 4 * (0.5 if "8bit" in cfg.optimizer.type else 2) / 2**20
-                layout = family.memory_layout_meta(backbone) if hasattr(family, "memory_layout_meta") else None
+                layout = (
+                    family.memory_layout_meta(backbone) if hasattr(family, "memory_layout_meta") else None
+                )
                 act_by_bucket = []
                 for (w, h), _n in sorted(counts.items()) or [((r, r), 0) for r in ds.resolutions]:
                     tokens = (w // family.spec.latent.align) * (h // family.spec.latent.align)
@@ -96,8 +131,17 @@ def plan(cfg: TrainConfig, *, gpu_total_mb: float | None = None, index_db_path: 
                     act_by_bucket.append({"w": w, "h": h, "mb": round(act)})
                 swapped_mb = 0.0
                 if layout and cfg.memory.blocks_to_swap and layout.blocks:
-                    swapped_mb = weights_mb * min(cfg.memory.blocks_to_swap, len(layout.blocks)) / len(layout.blocks)
-                peak = weights_mb - swapped_mb + adapter_mb + optimizer_mb + (max(a["mb"] for a in act_by_bucket) if act_by_bucket else 0) + 512
+                    swapped_mb = (
+                        weights_mb * min(cfg.memory.blocks_to_swap, len(layout.blocks)) / len(layout.blocks)
+                    )
+                peak = (
+                    weights_mb
+                    - swapped_mb
+                    + adapter_mb
+                    + optimizer_mb
+                    + (max(a["mb"] for a in act_by_bucket) if act_by_bucket else 0)
+                    + 512
+                )
                 memory = {
                     "weights_mb": round(weights_mb),
                     "swapped_mb": round(swapped_mb),
@@ -116,11 +160,23 @@ def plan(cfg: TrainConfig, *, gpu_total_mb: float | None = None, index_db_path: 
                         memory["suggestions"].append("enable memory.blocks_to_swap")
                     if "8bit" not in cfg.optimizer.type:
                         memory["suggestions"].append("use optimizer.type = 'adamw8bit'")
-                    out["warnings"].append({"code": "vram.tight", "msg": f"estimated peak {peak:.0f} MB vs {gpu_total_mb:.0f} MB available"})
+                    out["warnings"].append(
+                        {
+                            "code": "vram.tight",
+                            "msg": f"estimated peak {peak:.0f} MB vs {gpu_total_mb:.0f} MB available",
+                        }
+                    )
         except Exception as e:  # noqa: BLE001
-            out["warnings"].append({"code": "plan.params_failed", "msg": f"could not estimate parameters: {e}"})
+            out["warnings"].append(
+                {"code": "plan.params_failed", "msg": f"could not estimate parameters: {e}"}
+            )
     out["params"] = params
     out["memory"] = memory
-    out["text_encoding"] = "online" if (cfg.dataset.text_encoding == "auto" and "online_text" in family.spec.capabilities) or cfg.dataset.text_encoding == "online" else "cached"
+    out["text_encoding"] = (
+        "online"
+        if (cfg.dataset.text_encoding == "auto" and "online_text" in family.spec.capabilities)
+        or cfg.dataset.text_encoding == "online"
+        else "cached"
+    )
     out["ok"] = not out["errors"]
     return out

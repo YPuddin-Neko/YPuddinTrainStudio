@@ -34,7 +34,9 @@ def test_unknown_key_rejected():
 def test_overrides_and_presets(tmp_path):
     preset = tmp_path / "p.toml"
     preset.write_text('[adapter]\nalgo = "lora"\nrank = 8\n', encoding="utf-8")
-    cfg = load_config(presets=[preset], overrides=["loop.epochs=3", "adapter.alpha=4", "dataset.resolutions=[512,768]"])
+    cfg = load_config(
+        presets=[preset], overrides=["loop.epochs=3", "adapter.alpha=4", "dataset.resolutions=[512,768]"]
+    )
     assert cfg.adapter.algo == "lora" and cfg.adapter.rank == 8 and cfg.adapter.alpha == 4
     assert cfg.loop.epochs == 3
     assert cfg.dataset.resolutions == [768, 512]

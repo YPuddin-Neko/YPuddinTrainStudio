@@ -119,16 +119,19 @@ class KahanWrapper(Optimizer):
 
     def state_dict(self) -> dict[str, Any]:
         sd = self.inner.state_dict()
-        sd["kahan"] = {"shadow": [s.clone() for s in self._shadow.values()], "comp": [c.clone() for c in self._comp.values()]}
+        sd["kahan"] = {
+            "shadow": [s.clone() for s in self._shadow.values()],
+            "comp": [c.clone() for c in self._comp.values()],
+        }
         return sd
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         kahan = state_dict.pop("kahan", None)
         self.inner.load_state_dict(state_dict)
         if kahan:
-            for s, saved in zip(self._shadow.values(), kahan["shadow"]):
+            for s, saved in zip(self._shadow.values(), kahan["shadow"], strict=True):
                 s.copy_(saved)
-            for c, saved in zip(self._comp.values(), kahan["comp"]):
+            for c, saved in zip(self._comp.values(), kahan["comp"], strict=True):
                 c.copy_(saved)
 
     def __getattr__(self, name: str) -> Any:
@@ -147,7 +150,11 @@ def _resolve_steps(value: float | None, total: int) -> int:
 def build_scheduler(cfg: SchedulerConfig, optimizer: Optimizer, total_steps: int) -> LambdaLR:
     warmup = _resolve_steps(cfg.warmup_steps, total_steps)
     floor = cfg.min_lr_ratio
-    decay_steps = _resolve_steps(cfg.decay_steps, total_steps) if cfg.decay_steps is not None else max(1, total_steps // 10)
+    decay_steps = (
+        _resolve_steps(cfg.decay_steps, total_steps)
+        if cfg.decay_steps is not None
+        else max(1, total_steps // 10)
+    )
     main = max(1, total_steps - warmup)
 
     def lam(step: int) -> float:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-import torch
 from torch import Tensor
 
 from ypuddin.adapters import modules_from_tensors
@@ -29,7 +28,9 @@ def merge_into_state_dict(
     weights are dequantized, merged in fp32 and re-quantized with a fresh per-tensor scale.
     """
     mods = modules_from_tensors(adapter_tensors, metadata or {}, prefix=prefix)
-    names = module_names or [k[: -len(".weight")] for k in base if k.endswith(".weight") and base[k].dim() == 2]
+    names = module_names or [
+        k[: -len(".weight")] for k in base if k.endswith(".weight") and base[k].dim() == 2
+    ]
     table = {n.replace(".", "_"): n for n in names}
     merged = dict(base)
     unmatched: list[str] = []

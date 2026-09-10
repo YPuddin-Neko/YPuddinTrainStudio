@@ -1,11 +1,12 @@
 """Extract the final assistant text message from a Claude agent JSONL transcript."""
+
 import json
 import sys
 
 
 def extract(path: str) -> str:
     last_text = ""
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:

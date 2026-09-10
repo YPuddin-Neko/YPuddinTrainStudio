@@ -74,12 +74,18 @@ def save_checkpoint(
     if tmp.exists():
         shutil.rmtree(tmp)
     tmp.mkdir(parents=True)
-    save_file({k: v.detach().cpu().contiguous() for k, v in adapter_tensors.items()}, str(tmp / "adapter.safetensors"), metadata=adapter_metadata)
+    save_file(
+        {k: v.detach().cpu().contiguous() for k, v in adapter_tensors.items()},
+        str(tmp / "adapter.safetensors"),
+        metadata=adapter_metadata,
+    )
     torch.save(optimizer.state_dict(), tmp / "optimizer.pt")
     torch.save(scheduler.state_dict() if scheduler is not None else {}, tmp / "scheduler.pt")
     torch.save(rng, tmp / "rng.pt")
     if ema_tensors:
-        save_file({k: v.detach().cpu().contiguous() for k, v in ema_tensors.items()}, str(tmp / "ema.safetensors"))
+        save_file(
+            {k: v.detach().cpu().contiguous() for k, v in ema_tensors.items()}, str(tmp / "ema.safetensors")
+        )
     meta = {
         "progress": progress.to_dict(),
         "sampler": sampler_state,

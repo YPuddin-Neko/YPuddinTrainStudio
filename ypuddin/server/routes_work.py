@@ -29,7 +29,12 @@ def ctx(request: Request) -> ServiceContext:
 
 def _page(items: list[Any], page: int, page_size: int) -> dict[str, Any]:
     start = (page - 1) * page_size
-    return {"items": items[start : start + page_size], "total": len(items), "page": page, "page_size": page_size}
+    return {
+        "items": items[start : start + page_size],
+        "total": len(items),
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 # --------------------------------------------------------------------------- projects
@@ -48,12 +53,21 @@ def _project_row(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
     ds = c.db.fetchall("SELECT id FROM datasets WHERE project_id=?", (r["id"],))
     jobs = c.db.fetchone("SELECT COUNT(*) AS n FROM jobs WHERE project_id=?", (r["id"],))["n"]
     arts = c.db.fetchone("SELECT COUNT(*) AS n FROM artifacts WHERE project_id=?", (r["id"],))["n"]
-    return {**r, "archived": bool(r["archived"]), "dataset_ids": [d["id"] for d in ds], "stats": {"jobs": jobs, "artifacts": arts}}
+    return {
+        **r,
+        "archived": bool(r["archived"]),
+        "dataset_ids": [d["id"] for d in ds],
+        "stats": {"jobs": jobs, "artifacts": arts},
+    }
 
 
 @router.get("/projects")
 def list_projects(include_archived: bool = False, c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
-    rows = c.db.fetchall("SELECT * FROM projects" + ("" if include_archived else " WHERE archived=0") + " ORDER BY created_at DESC")
+    rows = c.db.fetchall(
+        "SELECT * FROM projects"
+        + ("" if include_archived else " WHERE archived=0")
+        + " ORDER BY created_at DESC"
+    )
     return [_project_row(c, r) for r in rows]
 
 
@@ -61,7 +75,10 @@ def list_projects(include_archived: bool = False, c: ServiceContext = Depends(ct
 def create_project(body: ProjectBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     pid = new_id("p")
     t = now()
-    c.db.insert("projects", {"id": pid, "name": body.name, "note": body.note, "archived": 0, "created_at": t, "updated_at": t})
+    c.db.insert(
+        "projects",
+        {"id": pid, "name": body.name, "note": body.note, "archived": 0, "created_at": t, "updated_at": t},
+    )
     c.project_dir(pid).mkdir(parents=True, exist_ok=True)
     return _project_row(c, c.db.fetchone("SELECT * FROM projects WHERE id=?", (pid,)))
 
@@ -81,7 +98,9 @@ def get_project(pid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
 @router.patch("/projects/{pid}")
 def patch_project(pid: str, body: ProjectPatch, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     _get_project(c, pid)
-    fields = {k: (int(v) if isinstance(v, bool) else v) for k, v in body.model_dump().items() if v is not None}
+    fields = {
+        k: (int(v) if isinstance(v, bool) else v) for k, v in body.model_dump().items() if v is not None
+    }
     fields["updated_at"] = now()
     c.db.update("projects", pid, fields)
     return _project_row(c, _get_project(c, pid))
@@ -90,7 +109,9 @@ def patch_project(pid: str, body: ProjectPatch, c: ServiceContext = Depends(ctx)
 @router.delete("/projects/{pid}")
 def delete_project(pid: str, delete_files: bool = False, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     _get_project(c, pid)
-    if c.db.fetchone("SELECT id FROM jobs WHERE project_id=? AND status IN ('running','pausing','cancelling')", (pid,)):
+    if c.db.fetchone(
+        "SELECT id FROM jobs WHERE project_id=? AND status IN ('running','pausing','cancelling')", (pid,)
+    ):
         raise ApiError("project has running jobs", code="project.busy", status=409)
     c.db.execute("DELETE FROM jobs WHERE project_id=?", (pid,))
     c.db.execute("DELETE FROM artifacts WHERE project_id=?", (pid,))
@@ -138,11 +159,24 @@ def _index_dataset(c: ServiceContext, did: str) -> None:
     row = c.db.fetchone("SELECT * FROM datasets WHERE id=?", (did,))
     if not row:
         return
-    src = DatasetSourceConfig(path=row["path"], repeats=row["repeats"], caption_ext=row["caption_ext"], is_reg=bool(row["is_reg"]), prior_weight=row["prior_weight"], class_prompt=row["class_prompt"])
+    src = DatasetSourceConfig(
+        path=row["path"],
+        repeats=row["repeats"],
+        caption_ext=row["caption_ext"],
+        is_reg=bool(row["is_reg"]),
+        prior_weight=row["prior_weight"],
+        class_prompt=row["class_prompt"],
+    )
     try:
         db = IndexDB(c.data_root / "cache" / "index.sqlite")
         try:
-            records = scan_sources([src], index_db=db, progress=lambda d, t: c.bus.publish("job.cache_progress", {"job_id": did, "kind": "index", "done": d, "total": t}))
+            records = scan_sources(
+                [src],
+                index_db=db,
+                progress=lambda d, t: c.bus.publish(
+                    "job.cache_progress", {"job_id": did, "kind": "index", "done": d, "total": t}
+                ),
+            )
         finally:
             db.close()
     except Exception as e:  # noqa: BLE001
@@ -158,7 +192,9 @@ def _index_dataset(c: ServiceContext, did: str) -> None:
     stats = {
         "images": len(records),
         "captioned": sum(1 for r in records if r.caption_path),
-        "resolutions": [{"w": w, "h": h, "count": n} for (w, h), n in sorted(res.items(), key=lambda x: -x[1])[:50]],
+        "resolutions": [
+            {"w": w, "h": h, "count": n} for (w, h), n in sorted(res.items(), key=lambda x: -x[1])[:50]
+        ],
         "ar_hist": [{"ar": k, "count": v} for k, v in sorted(ars.items(), key=lambda x: float(x[0]))],
         "masks": sum(1 for r in records if r.mask_path),
     }
@@ -169,14 +205,32 @@ def _index_dataset(c: ServiceContext, did: str) -> None:
 
 
 def _dataset_row(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
-    source = {"id": r["id"], "project_id": r["project_id"], "path": r["path"], "repeats": r["repeats"], "caption_ext": r["caption_ext"], "is_reg": bool(r["is_reg"]), "prior_weight": r["prior_weight"], "class_prompt": r["class_prompt"], "created_at": r["created_at"]}
-    return {"source": source, "stats": json.loads(r["stats_json"] or "{}"), "index_status": r["index_status"], "cache": {}}
+    source = {
+        "id": r["id"],
+        "project_id": r["project_id"],
+        "path": r["path"],
+        "repeats": r["repeats"],
+        "caption_ext": r["caption_ext"],
+        "is_reg": bool(r["is_reg"]),
+        "prior_weight": r["prior_weight"],
+        "class_prompt": r["class_prompt"],
+        "created_at": r["created_at"],
+    }
+    return {
+        "source": source,
+        "stats": json.loads(r["stats_json"] or "{}"),
+        "index_status": r["index_status"],
+        "cache": {},
+    }
 
 
 @router.get("/projects/{pid}/datasets")
 def list_datasets(pid: str, c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
     _get_project(c, pid)
-    return [_dataset_row(c, r) for r in c.db.fetchall("SELECT * FROM datasets WHERE project_id=? ORDER BY created_at", (pid,))]
+    return [
+        _dataset_row(c, r)
+        for r in c.db.fetchall("SELECT * FROM datasets WHERE project_id=? ORDER BY created_at", (pid,))
+    ]
 
 
 @router.post("/projects/{pid}/datasets", status_code=201)
@@ -186,7 +240,22 @@ async def add_dataset(pid: str, body: DatasetBody, c: ServiceContext = Depends(c
     if not p.is_dir():
         raise NotFound(f"directory not found: {p}", code="fs.not_found")
     did = new_id("d")
-    c.db.insert("datasets", {"id": did, "project_id": pid, "path": str(p), "repeats": body.repeats, "caption_ext": body.caption_ext, "is_reg": int(body.is_reg), "prior_weight": body.prior_weight, "class_prompt": body.class_prompt, "created_at": now(), "index_status": "indexing", "stats_json": "{}"})
+    c.db.insert(
+        "datasets",
+        {
+            "id": did,
+            "project_id": pid,
+            "path": str(p),
+            "repeats": body.repeats,
+            "caption_ext": body.caption_ext,
+            "is_reg": int(body.is_reg),
+            "prior_weight": body.prior_weight,
+            "class_prompt": body.class_prompt,
+            "created_at": now(),
+            "index_status": "indexing",
+            "stats_json": "{}",
+        },
+    )
     asyncio.get_running_loop().run_in_executor(None, _index_dataset, c, did)
     return _dataset_row(c, c.db.fetchone("SELECT * FROM datasets WHERE id=?", (did,)))
 
@@ -225,7 +294,9 @@ def _records(c: ServiceContext, did: str) -> list[dict[str, Any]]:
 
 
 @router.get("/datasets/{did}/images")
-def list_images(did: str, page: int = 1, page_size: int = 50, q: str = "", c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+def list_images(
+    did: str, page: int = 1, page_size: int = 50, q: str = "", c: ServiceContext = Depends(ctx)
+) -> dict[str, Any]:
     from ypuddin.data import read_caption
 
     row = _get_dataset(c, did)
@@ -235,7 +306,18 @@ def list_images(did: str, page: int = 1, page_size: int = 50, q: str = "", c: Se
         cap = read_caption(r["caption_path"], row["class_prompt"])
         if q and q.lower() not in cap.lower() and q.lower() not in r["path"].lower():
             continue
-        items.append({"hash": r["content_hash"], "rel_path": str(Path(r["path"]).relative_to(root)) if r["path"].startswith(str(root)) else r["path"], "width": r["width"], "height": r["height"], "caption": cap, "has_mask": bool(r["mask_path"])})
+        items.append(
+            {
+                "hash": r["content_hash"],
+                "rel_path": str(Path(r["path"]).relative_to(root))
+                if r["path"].startswith(str(root))
+                else r["path"],
+                "width": r["width"],
+                "height": r["height"],
+                "caption": cap,
+                "has_mask": bool(r["mask_path"]),
+            }
+        )
     return _page(items, page, page_size)
 
 
@@ -258,7 +340,9 @@ def thumb(did: str, h: str, size: int = 256, c: ServiceContext = Depends(ctx)) -
             im = im.convert("RGB")
             im.thumbnail((size, size))
             im.save(cache, "JPEG", quality=85)
-    return FileResponse(str(cache), media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
+    return FileResponse(
+        str(cache), media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"}
+    )
 
 
 @router.get("/datasets/{did}/images/{h}/file")
@@ -284,7 +368,9 @@ def get_caption(did: str, h: str, c: ServiceContext = Depends(ctx)) -> dict[str,
 def put_caption(did: str, h: str, body: CaptionBody, c: ServiceContext = Depends(ctx)) -> dict[str, str]:
     row = _get_dataset(c, did)
     r = _record_by_hash(c, did, h)
-    cap_path = Path(r["caption_path"]) if r["caption_path"] else Path(r["path"]).with_suffix(row["caption_ext"])
+    cap_path = (
+        Path(r["caption_path"]) if r["caption_path"] else Path(r["path"]).with_suffix(row["caption_ext"])
+    )
     cap_path.write_text(body.caption.strip() + "\n", encoding="utf-8")
     if not r["caption_path"]:
         recs = _records(c, did)
@@ -311,8 +397,12 @@ def tags_batch(did: str, body: TagBatch, c: ServiceContext = Depends(ctx)) -> di
     for r in _records(c, did):
         if r["content_hash"] not in wanted:
             continue
-        cap_path = Path(r["caption_path"]) if r["caption_path"] else Path(r["path"]).with_suffix(row["caption_ext"])
-        tags = [t.strip() for t in read_caption(r["caption_path"], row["class_prompt"]).split(",") if t.strip()]
+        cap_path = (
+            Path(r["caption_path"]) if r["caption_path"] else Path(r["path"]).with_suffix(row["caption_ext"])
+        )
+        tags = [
+            t.strip() for t in read_caption(r["caption_path"], row["class_prompt"]).split(",") if t.strip()
+        ]
         tags = [t for t in tags if t not in body.remove]
         for t in body.add:
             if t not in tags:
@@ -348,11 +438,17 @@ def _job_row(r: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.get("/jobs")
-def list_jobs(status: str | None = None, project_id: str | None = None, page: int = 1, page_size: int = 50, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+def list_jobs(
+    status: str | None = None,
+    project_id: str | None = None,
+    page: int = 1,
+    page_size: int = 50,
+    c: ServiceContext = Depends(ctx),
+) -> dict[str, Any]:
     sql, params = "SELECT * FROM jobs", []
     conds = []
     if status:
-        conds.append("status IN (%s)" % ",".join("?" for _ in status.split(",")))
+        conds.append("status IN ({})".format(",".join("?" for _ in status.split(","))))
         params += status.split(",")
     if project_id:
         conds.append("project_id=?")
@@ -381,9 +477,33 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
     try:
         cfg = TrainConfig.model_validate(config)
     except ValidationError as e:
-        raise ApiError("invalid config", code="config.invalid", details={"errors": [{"loc": ".".join(str(x) for x in err["loc"]), "msg": err["msg"]} for err in e.errors()]}) from e
+        raise ApiError(
+            "invalid config",
+            code="config.invalid",
+            details={
+                "errors": [
+                    {"loc": ".".join(str(x) for x in err["loc"]), "msg": err["msg"]} for err in e.errors()
+                ]
+            },
+        ) from e
     status = "scheduled" if body.scheduled_at and body.scheduled_at > now() else "queued"
-    c.db.insert("jobs", {"id": jid, "type": body.type, "name": body.name, "project_id": body.project_id, "status": status, "priority": body.priority, "scheduled_at": body.scheduled_at, "created_at": now(), "run_dir": str(run_dir), "config_json": json.dumps(cfg.to_dict()), "progress_json": "{}", "latest_json": "{}"})
+    c.db.insert(
+        "jobs",
+        {
+            "id": jid,
+            "type": body.type,
+            "name": body.name,
+            "project_id": body.project_id,
+            "status": status,
+            "priority": body.priority,
+            "scheduled_at": body.scheduled_at,
+            "created_at": now(),
+            "run_dir": str(run_dir),
+            "config_json": json.dumps(cfg.to_dict()),
+            "progress_json": "{}",
+            "latest_json": "{}",
+        },
+    )
     c.bus.publish("queue.changed", {})
     row = c.db.fetchone("SELECT * FROM jobs WHERE id=?", (jid,))
     c.bus.publish("job.state", {"job_id": jid, "status": status})
@@ -470,7 +590,16 @@ def job_metrics(jid: str, since_step: int = 0, c: ServiceContext = Depends(ctx))
                 lr.setdefault(g, []).append(v)
         elif ev.get("type") == "validation":
             validation.append({"step": ev["step"], "per_t": ev["per_t"], "mean": ev["mean"]})
-    return {"steps": steps, "loss": loss, "loss_ema": loss_ema, "lr": lr, "grad_norm": grad, "vram_mb": vram, "it_s": its, "validation": validation}
+    return {
+        "steps": steps,
+        "loss": loss,
+        "loss_ema": loss_ema,
+        "lr": lr,
+        "grad_norm": grad,
+        "vram_mb": vram,
+        "it_s": its,
+        "validation": validation,
+    }
 
 
 @router.get("/jobs/{jid}/samples")
@@ -479,19 +608,47 @@ def job_samples(jid: str, c: ServiceContext = Depends(ctx)) -> list[dict[str, An
     for ev in _events_file(c, jid):
         if ev.get("type") == "sample.saved":
             name = Path(ev["path"]).name
-            out.append({"step": ev["step"], "prompt_index": ev["prompt_index"], "prompt": ev["prompt"], "seed": ev["seed"], "url": f"/api/jobs/{jid}/files?path={name}&kind=sample", "width": ev["width"], "height": ev["height"], "created_at": ev["ts"]})
+            out.append(
+                {
+                    "step": ev["step"],
+                    "prompt_index": ev["prompt_index"],
+                    "prompt": ev["prompt"],
+                    "seed": ev["seed"],
+                    "url": f"/api/jobs/{jid}/files?path={name}&kind=sample",
+                    "width": ev["width"],
+                    "height": ev["height"],
+                    "created_at": ev["ts"],
+                }
+            )
     return out
 
 
 @router.get("/jobs/{jid}/checkpoints")
 def job_checkpoints(jid: str, c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
     out = []
-    arts = {a["path"]: a["id"] for a in c.db.fetchall("SELECT id, path FROM artifacts WHERE job_id=?", (jid,))}
+    arts = {
+        a["path"]: a["id"] for a in c.db.fetchall("SELECT id, path FROM artifacts WHERE job_id=?", (jid,))
+    }
     for ev in _events_file(c, jid):
         if ev.get("type") == "checkpoint.saved":
             p = Path(ev["path"])
-            size = p.stat().st_size if p.is_file() else sum(f.stat().st_size for f in p.rglob("*") if f.is_file()) if p.is_dir() else 0
-            out.append({"step": ev["step"], "kind": ev["kind"], "path": str(p), "size": size, "created_at": ev["ts"], "artifact_id": arts.get(str(p))})
+            size = (
+                p.stat().st_size
+                if p.is_file()
+                else sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+                if p.is_dir()
+                else 0
+            )
+            out.append(
+                {
+                    "step": ev["step"],
+                    "kind": ev["kind"],
+                    "path": str(p),
+                    "size": size,
+                    "created_at": ev["ts"],
+                    "artifact_id": arts.get(str(p)),
+                }
+            )
     return out
 
 
@@ -556,7 +713,15 @@ def _artifact_row(r: dict[str, Any]) -> dict[str, Any]:
             _, m = load_adapter_file(r["path"])
             meta = m
             args = json.loads(m.get("ypuddin.adapter", "{}"))
-            out.update({"algo": args.get("algo"), "rank": args.get("rank"), "alpha": args.get("alpha"), "factor": args.get("factor"), "family": m.get("ypuddin.family")})
+            out.update(
+                {
+                    "algo": args.get("algo"),
+                    "rank": args.get("rank"),
+                    "alpha": args.get("alpha"),
+                    "factor": args.get("factor"),
+                    "family": m.get("ypuddin.family"),
+                }
+            )
         except Exception:  # noqa: BLE001
             pass
     out["metadata"] = {k: v for k, v in meta.items() if k != "ypuddin.targets"}
@@ -624,7 +789,21 @@ def convert_artifact(aid: str, body: ConvertBody, c: ServiceContext = Depends(ct
     dst = Path(r["path"]).with_name(Path(r["path"]).stem + f"-{body.format}.safetensors")
     save_file({k: v.contiguous() for k, v in out.items()}, str(dst), metadata=meta)
     nid = new_id("a")
-    c.db.insert("artifacts", {"id": nid, "project_id": r["project_id"], "job_id": r["job_id"], "name": dst.name, "path": str(dst), "size": dst.stat().st_size, "kind": body.format, "step": r["step"], "created_at": now(), "meta_json": "{}"})
+    c.db.insert(
+        "artifacts",
+        {
+            "id": nid,
+            "project_id": r["project_id"],
+            "job_id": r["job_id"],
+            "name": dst.name,
+            "path": str(dst),
+            "size": dst.stat().st_size,
+            "kind": body.format,
+            "step": r["step"],
+            "created_at": now(),
+            "meta_json": "{}",
+        },
+    )
     return _artifact_row(c.db.fetchone("SELECT * FROM artifacts WHERE id=?", (nid,)))
 
 

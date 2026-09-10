@@ -3,12 +3,16 @@ import copy
 import pytest
 import torch
 
-from ypuddin.adapters import TargetPreset, inject
+from ypuddin.adapters import inject
 from ypuddin.config import AdapterConfig
 from ypuddin.memory import BlockSwapper
 from ypuddin.models import get_family
 
-DEVICES = ["cpu"] + (["mps"] if torch.backends.mps.is_available() else []) + (["cuda"] if torch.cuda.is_available() else [])
+DEVICES = (
+    ["cpu"]
+    + (["mps"] if torch.backends.mps.is_available() else [])
+    + (["cuda"] if torch.cuda.is_available() else [])
+)
 
 
 @pytest.mark.parametrize("device", DEVICES)
@@ -47,7 +51,7 @@ def test_block_swap_matches_unswapped_forward_and_grads(device):
     g = [p.grad for p in model.parameters() if p.requires_grad]
     g_ref = [p.grad for p in ref.parameters() if p.requires_grad]
     assert len(g) == len(g_ref) > 0
-    for a, b in zip(g, g_ref):
+    for a, b in zip(g, g_ref, strict=True):
         torch.testing.assert_close(a, b, rtol=1e-5, atol=1e-5)
     # after backward the blocks are released back to the host
     assert model.blocks[1].self_attn.q_proj.base.weight.device.type == "cpu"

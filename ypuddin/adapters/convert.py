@@ -7,7 +7,7 @@ the list of real module names of the target model.
 
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
 from torch import Tensor
 
@@ -20,7 +20,13 @@ def underscored_to_dotted(underscored: str, module_names: Iterable[str]) -> str 
     return table.get(underscored)
 
 
-def kohya_to_comfy(tensors: dict[str, Tensor], module_names: Iterable[str], *, prefix: str = "lora_unet", comfy_prefix: str = "diffusion_model") -> dict[str, Tensor]:
+def kohya_to_comfy(
+    tensors: dict[str, Tensor],
+    module_names: Iterable[str],
+    *,
+    prefix: str = "lora_unet",
+    comfy_prefix: str = "diffusion_model",
+) -> dict[str, Tensor]:
     """LoRA keys become PEFT-style ``diffusion_model.<dotted>.lora_A/B.weight``; other algorithms
     keep kohya keys (ComfyUI resolves ``lora_unet_*`` LoKr/LoHa keys natively)."""
     names = list(module_names)
@@ -41,7 +47,12 @@ def kohya_to_comfy(tensors: dict[str, Tensor], module_names: Iterable[str], *, p
     return out
 
 
-def comfy_to_kohya(tensors: dict[str, Tensor], *, prefix: str = "lora_unet", comfy_prefixes: tuple[str, ...] = ("diffusion_model.", "transformer.", "net.")) -> dict[str, Tensor]:
+def comfy_to_kohya(
+    tensors: dict[str, Tensor],
+    *,
+    prefix: str = "lora_unet",
+    comfy_prefixes: tuple[str, ...] = ("diffusion_model.", "transformer.", "net."),
+) -> dict[str, Tensor]:
     out: dict[str, Tensor] = {}
     for key, t in tensors.items():
         stripped = key
@@ -62,7 +73,9 @@ def comfy_to_kohya(tensors: dict[str, Tensor], *, prefix: str = "lora_unet", com
     return out
 
 
-def lycoris_to_kohya(tensors: dict[str, Tensor], *, lycoris_prefix: str = "lycoris", prefix: str = "lora_unet") -> dict[str, Tensor]:
+def lycoris_to_kohya(
+    tensors: dict[str, Tensor], *, lycoris_prefix: str = "lycoris", prefix: str = "lora_unet"
+) -> dict[str, Tensor]:
     out = {}
     for key, t in tensors.items():
         if key.startswith(lycoris_prefix + "_"):

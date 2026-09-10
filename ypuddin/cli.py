@@ -15,7 +15,9 @@ from ypuddin.config import TrainConfig, dump_toml, load_config
 def _add_config_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("config", nargs="?", help="config .toml/.json (optional when using --preset/--set only)")
     p.add_argument("--preset", action="append", default=[], help="preset file(s) applied before the config")
-    p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE", help="override, e.g. loop.epochs=5")
+    p.add_argument(
+        "--set", action="append", default=[], metavar="KEY=VALUE", help="override, e.g. loop.epochs=5"
+    )
 
 
 def _load(args: argparse.Namespace) -> TrainConfig:
@@ -40,10 +42,20 @@ def cmd_cache(args: argparse.Namespace) -> int:
     cfg = _load(args)
     fam = get_family(cfg.model.family)
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
-    loaded = fam.load(cfg.model, cfg.memory, device=device, dtype=torch.float32 if device == "cpu" else torch.bfloat16)
-    cache_root = Path(cfg.dataset.cache_dir) if cfg.dataset.cache_dir else Path(cfg.checkpoint.output_dir) / "cache"
+    loaded = fam.load(
+        cfg.model, cfg.memory, device=device, dtype=torch.float32 if device == "cpu" else torch.bfloat16
+    )
+    cache_root = (
+        Path(cfg.dataset.cache_dir) if cfg.dataset.cache_dir else Path(cfg.checkpoint.output_dir) / "cache"
+    )
     bundle = build_data(cfg, fam.spec.latent, cache_root=cache_root)
-    n = cache_latents(bundle, loaded.latent.encode, device=device, batch_size=max(1, cfg.dataset.batch_size), dtype=torch.float32 if device == "cpu" else torch.bfloat16)
+    n = cache_latents(
+        bundle,
+        loaded.latent.encode,
+        device=device,
+        batch_size=max(1, cfg.dataset.batch_size),
+        dtype=torch.float32 if device == "cpu" else torch.bfloat16,
+    )
     print(json.dumps({"written": n, **bundle.plan.to_dict()}, indent=2, ensure_ascii=False))
     return 0
 
@@ -81,7 +93,7 @@ def cmd_schema(args: argparse.Namespace) -> int:
 
 
 def cmd_inspect(args: argparse.Namespace) -> int:
-    from ypuddin.adapters import group_by_module, load_adapter_file, detect_algo
+    from ypuddin.adapters import detect_algo, group_by_module, load_adapter_file
 
     tensors, meta = load_adapter_file(args.file)
     groups = group_by_module(tensors)
@@ -127,12 +139,26 @@ def cmd_extract(args: argparse.Namespace) -> int:
 
     base, tuned = load_file(args.base), load_file(args.tuned)
     rank = "full" if args.rank == "full" else int(args.rank)
-    tensors, report = extract_from_state_dicts(base, tuned, algo=args.algo, rank=rank, factor=args.factor, prefix=args.prefix, progress=lambda d, t: print(f"\r{d}/{t}", end="", flush=True))
+    tensors, report = extract_from_state_dicts(
+        base,
+        tuned,
+        algo=args.algo,
+        rank=rank,
+        factor=args.factor,
+        prefix=args.prefix,
+        progress=lambda d, t: print(f"\r{d}/{t}", end="", flush=True),
+    )
     print()
     worst = sorted(report.items(), key=lambda kv: -kv[1]["residual"])[:5]
     for name, rep in worst:
         print(f"  residual {rep['residual']:.4f}  {name}")
-    meta = build_metadata(targets=report, adapter_cfg={"algo": args.algo, "rank": rank, "alpha": None, "factor": args.factor}, family=args.family, architecture=f"{args.family}/{args.algo}", title=Path(args.output).stem)
+    meta = build_metadata(
+        targets=report,
+        adapter_cfg={"algo": args.algo, "rank": rank, "alpha": None, "factor": args.factor},
+        family=args.family,
+        architecture=f"{args.family}/{args.algo}",
+        title=Path(args.output).stem,
+    )
     save_file({k: v.contiguous() for k, v in tensors.items()}, args.output, metadata=meta)
     print(f"wrote {args.output}: {len(report)} modules")
     return 0
@@ -152,7 +178,15 @@ def cmd_merge(args: argparse.Namespace) -> int:
 
         fam = get_family(args.family)
         names = fam.linear_module_names() if hasattr(fam, "linear_module_names") else None
-    merged, unmatched = merge_into_state_dict(base, tensors, meta, prefix=args.prefix, strength=args.strength, module_names=names, requantize_fp8=args.fp8)
+    merged, unmatched = merge_into_state_dict(
+        base,
+        tensors,
+        meta,
+        prefix=args.prefix,
+        strength=args.strength,
+        module_names=names,
+        requantize_fp8=args.fp8,
+    )
     if unmatched:
         print(f"warning: {len(unmatched)} adapter modules did not match the base model, e.g. {unmatched[:3]}")
     save_file({k: v.contiguous() for k, v in merged.items()}, args.output)
@@ -230,7 +264,9 @@ def build_parser() -> argparse.ArgumentParser:
     mg.add_argument("--strength", type=float, default=1.0)
     mg.add_argument("--prefix", default="lora_unet")
     mg.add_argument("--family", default=None, help="model family used to resolve module names (e.g. anima)")
-    mg.add_argument("--fp8", choices=["fp8_e4m3", "fp8_e5m2"], default=None, help="re-quantize merged weights to fp8")
+    mg.add_argument(
+        "--fp8", choices=["fp8_e4m3", "fp8_e5m2"], default=None, help="re-quantize merged weights to fp8"
+    )
     mg.add_argument("-o", "--output", required=True)
     mg.set_defaults(fn=cmd_merge)
 
@@ -244,7 +280,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     return int(args.fn(args))
 
 

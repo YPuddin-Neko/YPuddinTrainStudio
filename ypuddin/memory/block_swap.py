@@ -33,7 +33,15 @@ def _swappable_tensors(block: nn.Module) -> list[Tensor]:
 
 
 class BlockSwapper:
-    def __init__(self, blocks: Iterable[nn.Module], num_swap: int, device: torch.device | str, *, pin_memory: bool = True, prefetch: bool = True):
+    def __init__(
+        self,
+        blocks: Iterable[nn.Module],
+        num_swap: int,
+        device: torch.device | str,
+        *,
+        pin_memory: bool = True,
+        prefetch: bool = True,
+    ):
         self.blocks = list(blocks)
         self.device = torch.device(device)
         n = min(int(num_swap), len(self.blocks))
@@ -59,7 +67,11 @@ class BlockSwapper:
                 t.data = host  # block lives on the host until fetched
             self._tensors[i] = tensors
             self._masters[i] = masters
-        self.bytes_per_block = sum(t.numel() * t.element_size() for t in self._masters[self.swapped_idx[0]]) if self.swapped_idx else 0
+        self.bytes_per_block = (
+            sum(t.numel() * t.element_size() for t in self._masters[self.swapped_idx[0]])
+            if self.swapped_idx
+            else 0
+        )
         self._install()
 
     # ----------------------------------------------------------------- moves
@@ -68,13 +80,13 @@ class BlockSwapper:
             return
         if self._stream is not None:
             with torch.cuda.stream(self._stream):
-                for t, host in zip(self._tensors[i], self._masters[i]):
+                for t, host in zip(self._tensors[i], self._masters[i], strict=True):
                     t.data = host.to(self.device, non_blocking=True)
                 ev = torch.cuda.Event()
                 ev.record(self._stream)
                 self._events[i] = ev
         else:
-            for t, host in zip(self._tensors[i], self._masters[i]):
+            for t, host in zip(self._tensors[i], self._masters[i], strict=True):
                 t.data = host.to(self.device)
         self._resident.add(i)
 
@@ -89,7 +101,7 @@ class BlockSwapper:
         if self._stream is not None:
             # make sure compute on the current stream finished before the device copies are dropped
             self._stream.wait_stream(torch.cuda.current_stream(self.device))
-        for t, host in zip(self._tensors[i], self._masters[i]):
+        for t, host in zip(self._tensors[i], self._masters[i], strict=True):
             t.data = host
         self._resident.discard(i)
 
@@ -162,10 +174,15 @@ class BlockSwapper:
             h.remove()
         self._handles.clear()
         for i in self.swapped_idx:
-            for t, host in zip(self._tensors[i], self._masters[i]):
+            for t, host in zip(self._tensors[i], self._masters[i], strict=True):
                 t.data = host.to(self.device)
         self._resident.clear()
         self._masters.clear()
 
     def summary(self) -> dict:
-        return {"swapped_blocks": len(self.swapped_idx), "bytes_per_block": self.bytes_per_block, "pinned": self.pin, "device": str(self.device)}
+        return {
+            "swapped_blocks": len(self.swapped_idx),
+            "bytes_per_block": self.bytes_per_block,
+            "pinned": self.pin,
+            "device": str(self.device),
+        }

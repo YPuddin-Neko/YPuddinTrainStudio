@@ -14,7 +14,10 @@ def test_tokenizers_and_padding_conventions():
     assert q_ids.shape[0] == 2 and t5_ids.shape[0] == 2
     assert t5_ids[0, int(t5_mask[0].sum()) - 1].item() == 1  # T5 EOS terminates the sequence
     assert t5_ids[1].tolist()[0] == 1  # empty caption -> just </s>
-    entries = [{"embeds": torch.randn(7, 1024), "t5_ids": t5_ids[0][: int(t5_mask[0].sum())]}, {"embeds": torch.randn(3, 1024), "t5_ids": torch.tensor([1])}]
+    entries = [
+        {"embeds": torch.randn(7, 1024), "t5_ids": t5_ids[0][: int(t5_mask[0].sum())]},
+        {"embeds": torch.randn(3, 1024), "t5_ids": torch.tensor([1])},
+    ]
     cond = tp.cond_from_cache(entries, "cpu")
     assert cond["embeds"].shape == (2, PAD_FLOOR, 1024)
     assert cond["attn_mask"].sum(1).tolist() == [7, 3]

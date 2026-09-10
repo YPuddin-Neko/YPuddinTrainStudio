@@ -26,7 +26,9 @@ ALGOS: dict[str, type[AdapterModule]] = {"lora": LoRA, "lokr": LoKr, "loha": LoH
 PARAM_DTYPES = {"fp32": torch.float32, "bf16": torch.bfloat16}
 
 
-def build_adapter(algo: str, out_features: int, in_features: int, params: dict[str, Any], dtype: torch.dtype) -> AdapterModule:
+def build_adapter(
+    algo: str, out_features: int, in_features: int, params: dict[str, Any], dtype: torch.dtype
+) -> AdapterModule:
     cls = ALGOS[algo]
     kw = dict(params)
     lr = kw.pop("lr", None)  # consumed by param groups, not by the module
@@ -64,7 +66,9 @@ class AdapterSet:
     def num_params(self) -> int:
         return sum(p.numel() for p in self.parameters())
 
-    def param_groups(self, base_lr: float, weight_decay: float, group_lr: dict[str, float] | None = None) -> list[dict[str, Any]]:
+    def param_groups(
+        self, base_lr: float, weight_decay: float, group_lr: dict[str, float] | None = None
+    ) -> list[dict[str, Any]]:
         """Group parameters by (lr, weight_decay). Priority: rule ``lr`` > ``group_lr`` by name
         substring > ``base_lr``; then ``adapter.lr_scale`` by parameter kind. ``w1`` (LoKr) and
         DoRA magnitudes are excluded from weight decay."""
@@ -87,7 +91,10 @@ class AdapterSet:
                 buckets.setdefault((lr * scale, wd, kind), []).append(p)
             if layer.dora is not None:
                 buckets.setdefault((lr, 0.0, "dora"), []).append(layer.dora.dora_scale)
-        groups = [{"params": ps, "lr": lr, "weight_decay": wd, "name": kind} for (lr, wd, kind), ps in buckets.items()]
+        groups = [
+            {"params": ps, "lr": lr, "weight_decay": wd, "name": kind}
+            for (lr, wd, kind), ps in buckets.items()
+        ]
         groups.sort(key=lambda g: (g["name"], -g["lr"]))
         return groups
 
@@ -109,7 +116,10 @@ class AdapterSet:
                 tensors[f"{key}.{suffix}"] = t
             if layer.dora is not None:
                 tensors[f"{key}.dora_scale"] = layer.dora.export_tensor()
-            targets_meta[name] = layer.adapter.extra_metadata() | {"dora": layer.dora is not None, "mode": layer.mode}
+            targets_meta[name] = layer.adapter.extra_metadata() | {
+                "dora": layer.dora is not None,
+                "mode": layer.mode,
+            }
         return tensors, targets_meta
 
     def load_state(self, tensors: dict[str, Tensor], *, strict: bool = True) -> list[str]:
@@ -122,7 +132,9 @@ class AdapterSet:
                 missing.append(name)
                 continue
             dora = sub.pop("dora_scale", None)
-            rebuilt = type(layer.adapter).from_tensors(sub, layer.adapter.extra_metadata(), dtype=layer.adapter.param_dtype)
+            rebuilt = type(layer.adapter).from_tensors(
+                sub, layer.adapter.extra_metadata(), dtype=layer.adapter.param_dtype
+            )
             if isinstance(rebuilt, Full):
                 rebuilt.bind_base(layer.base.dequant(torch.float32))
             layer.adapter.load_state_dict(rebuilt.state_dict(), strict=False)
@@ -185,7 +197,9 @@ def inject(
         frozen = FrozenLinear.from_linear(linear, precision=base_precision)
         adapter = build_adapter(t.algo, linear.out_features, linear.in_features, t.params, dtype)
         adapter.to(linear.weight.device)
-        layer = AdaptedLinear(frozen, adapter, mode=cfg.mode, dora=cfg.dora, module_dropout=cfg.module_dropout, name=t.name)
+        layer = AdaptedLinear(
+            frozen, adapter, mode=cfg.mode, dora=cfg.dora, module_dropout=cfg.module_dropout, name=t.name
+        )
         setattr(parent, attr, layer)
         layers[t.name] = layer
         if keep_originals:
@@ -197,6 +211,8 @@ def inject(
             p.requires_grad_(True)
         if layer.dora is not None:
             layer.dora.dora_scale.requires_grad_(True)
-    aset = AdapterSet(model, layers, targets, cfg, prefix=prefix, _originals=originals if keep_originals else None)
+    aset = AdapterSet(
+        model, layers, targets, cfg, prefix=prefix, _originals=originals if keep_originals else None
+    )
     log.info("injected adapters: %s", aset.summary())
     return aset

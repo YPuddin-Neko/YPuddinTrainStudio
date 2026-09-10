@@ -90,7 +90,9 @@ class AdapterModule(nn.Module, ABC):
 
     @classmethod
     @abstractmethod
-    def from_tensors(cls, tensors: dict[str, Tensor], meta: dict[str, Any] | None = None, **kwargs: Any) -> AdapterModule:
+    def from_tensors(
+        cls, tensors: dict[str, Tensor], meta: dict[str, Any] | None = None, **kwargs: Any
+    ) -> AdapterModule:
         """Rebuild a module from exported tensors (+ optional explicit metadata)."""
 
     def param_kinds(self) -> dict[str, str]:

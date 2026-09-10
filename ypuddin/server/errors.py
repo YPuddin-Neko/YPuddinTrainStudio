@@ -18,7 +18,14 @@ class ApiError(Exception):
     status = 400
     code = "api.error"
 
-    def __init__(self, message: str, *, code: str | None = None, status: int | None = None, details: dict[str, Any] | None = None):
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str | None = None,
+        status: int | None = None,
+        details: dict[str, Any] | None = None,
+    ):
         super().__init__(message)
         self.message = message
         if code:
@@ -39,7 +46,9 @@ class Conflict(ApiError):
 
 
 def envelope(code: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
-    return {"error": {"code": code, "message": message, "trace_id": trace_id_var.get(), "details": details or {}}}
+    return {
+        "error": {"code": code, "message": message, "trace_id": trace_id_var.get(), "details": details or {}}
+    }
 
 
 class TraceMiddleware(BaseHTTPMiddleware):
@@ -63,7 +72,10 @@ def install(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def _validation(_req: Request, exc: RequestValidationError):
-        return JSONResponse(status_code=422, content=envelope("validation", "request validation failed", {"errors": exc.errors()}))
+        return JSONResponse(
+            status_code=422,
+            content=envelope("validation", "request validation failed", {"errors": exc.errors()}),
+        )
 
     @app.exception_handler(Exception)
     async def _unhandled(_req: Request, exc: Exception):

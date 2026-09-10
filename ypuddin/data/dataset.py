@@ -18,7 +18,12 @@ from ypuddin.models import LatentSpec
 
 from .buckets import Bucket, BucketManager
 from .cache import LatentCache, build_latent_cache
-from .captions import read_caption, transform_caption
+from .captions import (
+    caption_variants_for_cache,
+    read_caption,
+    transform_caption,
+    transform_caption_deterministic,
+)
 from .images import load_mask, load_rgb, pil_to_tensor, to_bucket
 from .index import ImageRecord, IndexDB, dataset_fingerprint, scan_sources
 
@@ -65,7 +70,9 @@ def _split_by_hash(records: list[ImageRecord], ratio: float) -> tuple[list[Image
     return train, val
 
 
-def expand_items(records: list[ImageRecord], sources: list[DatasetSourceConfig], ds: DatasetConfig, bm: BucketManager) -> list[Item]:
+def expand_items(
+    records: list[ImageRecord], sources: list[DatasetSourceConfig], ds: DatasetConfig, bm: BucketManager
+) -> list[Item]:
     items: list[Item] = []
     for r in records:
         src = sources[r.source_index]
@@ -74,7 +81,9 @@ def expand_items(records: list[ImageRecord], sources: list[DatasetSourceConfig],
         for base in resolutions:
             bucket = bm.assign(r.width, r.height, base)
             for _ in range(src.repeats):
-                items.append(Item(r, bucket, src, cap_cfg, src.is_reg, src.prior_weight if src.is_reg else 1.0))
+                items.append(
+                    Item(r, bucket, src, cap_cfg, src.is_reg, src.prior_weight if src.is_reg else 1.0)
+                )
     return items
 
 
@@ -100,9 +109,52 @@ class TrainDataset(Dataset):
         self.seed = seed
         self.deterministic = deterministic_captions
         self.epoch = 0
+        # per-item caption variants when text encodings are pre-cached (None = transform online)
+        self.caption_variants: list[list[str]] | None = None
 
     def set_epoch(self, epoch: int) -> None:
         self.epoch = epoch
+
+    def raw_caption(self, item: Item) -> str:
+        return read_caption(item.record.caption_path, item.source.class_prompt)
+
+    def use_cached_captions(self) -> list[str]:
+        """Restrict every item to a bounded, deterministic set of caption variants and return them all.
+
+        Needed when text encodings are cached up front: shuffle / tag dropout / wildcards would
+        otherwise produce captions that were never encoded. The variant set only depends on the
+        seed, the item index and its raw caption, so a resumed run sees exactly the same captions.
+        """
+        variants: list[list[str]] = []
+        for index, item in enumerate(self.items):
+            raw = self.raw_caption(item)
+            if self.deterministic:
+                variants.append([transform_caption_deterministic(raw, item.caption_cfg)])
+            else:
+                variants.append(
+                    caption_variants_for_cache(
+                        raw,
+                        item.caption_cfg,
+                        item.caption_cfg.cache_variants,
+                        seed=self.seed * 1_000_003 + index,
+                    )
+                )
+        self.caption_variants = variants
+        return sorted({c for vs in variants for c in vs})
+
+    def _caption(self, index: int, item: Item, rng: random.Random) -> str | None:
+        if self.caption_variants is not None:
+            if (
+                not self.deterministic
+                and item.caption_cfg.caption_dropout > 0
+                and rng.random() < item.caption_cfg.caption_dropout
+            ):
+                return None
+            return rng.choice(self.caption_variants[index])
+        raw = self.raw_caption(item)
+        if self.deterministic:
+            return transform_caption_deterministic(raw, item.caption_cfg)
+        return transform_caption(raw, item.caption_cfg, rng)
 
     def __len__(self) -> int:
         return len(self.items)
@@ -114,7 +166,13 @@ class TrainDataset(Dataset):
         return random.Random((self.seed * 7_919 + self.epoch) * 1_000_003 + index)
 
     def cache_key(self, item: Item, flip: bool) -> str:
-        return LatentCache.key(item.record.content_hash, item.bucket.width, item.bucket.height, self.latent_spec.fingerprint, flip)
+        return LatentCache.key(
+            item.record.content_hash,
+            item.bucket.width,
+            item.bucket.height,
+            self.latent_spec.fingerprint,
+            flip,
+        )
 
     def load_pixels(self, item: Item, flip: bool) -> tuple[Tensor, Tensor | None]:
         im, alpha = load_rgb(item.record.path)
@@ -135,11 +193,7 @@ class TrainDataset(Dataset):
             "weight": item.weight,
             "path": item.record.path,
         }
-        raw = read_caption(item.record.caption_path, item.source.class_prompt)
-        if self.deterministic:
-            cap: str | None = raw
-        else:
-            cap = transform_caption(raw, item.caption_cfg, rng)
+        cap = self._caption(index, item, rng)
         out["caption"] = "" if cap is None else cap
         out["uncond"] = cap is None
         key = self.cache_key(item, flip)
@@ -185,11 +239,21 @@ class DataBundle:
     latent_cache: LatentCache | None
 
 
-def build_data(cfg: TrainConfig, latent_spec: LatentSpec, *, cache_root: str | Path, progress: Callable[[str, int, int], None] | None = None) -> DataBundle:
+def build_data(
+    cfg: TrainConfig,
+    latent_spec: LatentSpec,
+    *,
+    cache_root: str | Path,
+    progress: Callable[[str, int, int], None] | None = None,
+) -> DataBundle:
     ds = cfg.dataset
     index_db = IndexDB(Path(cache_root) / "index.sqlite")
     try:
-        records = scan_sources(ds.sources, index_db=index_db, progress=(lambda d, t: progress("index", d, t)) if progress else None)
+        records = scan_sources(
+            ds.sources,
+            index_db=index_db,
+            progress=(lambda d, t: progress("index", d, t)) if progress else None,
+        )
     finally:
         index_db.close()
     if not records:
@@ -211,7 +275,14 @@ def build_data(cfg: TrainConfig, latent_spec: LatentSpec, *, cache_root: str | P
     )
     items = expand_items(records, ds.sources, ds, bm)
     cache = LatentCache(Path(cache_root) / "latents") if ds.cache_latents else None
-    train = TrainDataset(items, latent_spec=latent_spec, latent_cache=cache, flip=ds.flip, masked_loss=ds.masked_loss, seed=cfg.loop.seed)
+    train = TrainDataset(
+        items,
+        latent_spec=latent_spec,
+        latent_cache=cache,
+        flip=ds.flip,
+        masked_loss=ds.masked_loss,
+        seed=cfg.loop.seed,
+    )
     val = None
     if val_records:
         vsources = list(ds.sources) + list(cfg.validation.sources)
@@ -226,7 +297,15 @@ def build_data(cfg: TrainConfig, latent_spec: LatentSpec, *, cache_root: str | P
             uniq.append(it)
         if cfg.validation.max_images:
             uniq = uniq[: cfg.validation.max_images]
-        val = TrainDataset(uniq, latent_spec=latent_spec, latent_cache=cache, flip=False, masked_loss=ds.masked_loss, seed=cfg.validation.seed, deterministic_captions=True)
+        val = TrainDataset(
+            uniq,
+            latent_spec=latent_spec,
+            latent_cache=cache,
+            flip=False,
+            masked_loss=ds.masked_loss,
+            seed=cfg.validation.seed,
+            deterministic_captions=True,
+        )
     counts: dict[tuple[int, int, int], int] = {}
     for it in items:
         k = (it.bucket.base, it.bucket.width, it.bucket.height)
@@ -242,7 +321,15 @@ def build_data(cfg: TrainConfig, latent_spec: LatentSpec, *, cache_root: str | P
     return DataBundle(train, val, plan, records, bm, cache)
 
 
-def cache_latents(bundle: DataBundle, encode: Callable[[Tensor], Tensor], *, device: torch.device | str, batch_size: int = 4, dtype: torch.dtype = torch.bfloat16, progress: Callable[[int, int], None] | None = None) -> int:
+def cache_latents(
+    bundle: DataBundle,
+    encode: Callable[[Tensor], Tensor],
+    *,
+    device: torch.device | str,
+    batch_size: int = 4,
+    dtype: torch.dtype = torch.bfloat16,
+    progress: Callable[[int, int], None] | None = None,
+) -> int:
     """Encode every (item, flip) combination missing from the cache."""
     assert bundle.latent_cache is not None
     datasets = [bundle.train] + ([bundle.validation] if bundle.validation else [])
@@ -251,7 +338,7 @@ def cache_latents(bundle: DataBundle, encode: Callable[[Tensor], Tensor], *, dev
         seen: set[str] = set()
         for ds in datasets:
             for item in ds.items:
-                for flip in ((False, True) if ds.flip else (False,)):
+                for flip in (False, True) if ds.flip else (False,):
                     key = ds.cache_key(item, flip)
                     if key in seen:
                         continue
@@ -263,4 +350,13 @@ def cache_latents(bundle: DataBundle, encode: Callable[[Tensor], Tensor], *, dev
                     yield key, {"pixels": px, "mask": mask}
 
     total = sum(len(ds.items) * (2 if ds.flip else 1) for ds in datasets)
-    return build_latent_cache(jobs(), bundle.latent_cache, encode, batch_size=batch_size, device=device, dtype=dtype, progress=progress, total=total)
+    return build_latent_cache(
+        jobs(),
+        bundle.latent_cache,
+        encode,
+        batch_size=batch_size,
+        device=device,
+        dtype=dtype,
+        progress=progress,
+        total=total,
+    )
