@@ -10,7 +10,7 @@
 | M3 Anima 族 | 🟡 代码完成；**整条训练链路已在 CPU 上用缩小版组件跑通**（真实 transformers Qwen3 → LLM adapter → DiT → VAE → 缓存 → LoKr → 验证 → 采样 → 导出 → ComfyUI 键转换），**待 GPU 机器上用官方权重验证**（`ypuddin smoke`） | `ypuddin/models/anima/`：vendored Cosmos-Predict2 DiT + Qwen-Image VAE（Apache-2.0，见 `vendor/NOTICE.md`）、Qwen3+T5 文本管线、族封装；`tests/unit/test_anima_vendor.py`（21）、`test_anima_family.py`（10）、`tests/e2e/test_anima_pipeline.py`（3：online/cached 文本模式全流程 + 转换往返） |
 | M3b Krea 2 族 | 🟡 代码完成；**整条训练链路已在 CPU 上用缩小版组件跑通**（真实 transformers Qwen3-VL 解码器 → 12 层隐状态堆叠 → SingleStreamDiT → VAE → 缓存 → LoKr → 验证 → 分辨率自适应 shift 采样 → 导出 → 合并回 fp8_scaled 底模），**待 GPU 机器上用官方权重验证** | `ypuddin/models/krea2/`：vendored musubi-tuner `SingleStreamDiT`（Apache-2.0，见 `vendor/NOTICE.md`；GQA 由共享 attention 处理）、Qwen3-VL 文本管线（官方提示词模板 / 层选择 / 去前缀 / 去 padding 缓存）、族封装（bare / `model.diffusion_model.` / Comfy-Org **fp8_scaled** 三种检查点，fp8 层带文件 scale 直接冻结）、4 个目标预设、planner 几何推断；`tests/unit/test_krea2_family.py`（17）、`tests/e2e/test_krea2_pipeline.py`（3） |
 | M4 显存子系统 | 🟡 Block Swap ✅（CPU/MPS 逐位一致）；fp8 冻结底模 ✅（CPU 反量化路径）；激活检查点由族实现；Kahan ✅；8-bit 需 CUDA | `tests/unit/test_block_swap.py`、`test_optim.py` |
-| M5 服务 API + 队列 + SSE + 前端对接 | ✅ 后端（全部 JSON 端点带响应模型）；✅ 前端 FE-M1~M6 全部验收（真实后端全流程、数据集页、项目/模型/设置页、图表拆分、类型由 openapi 生成；截图 `frontend/screenshots/01~24`；Vitest 46） | `tests/e2e/test_service.py`（真实 uvicorn + 子进程训练 / 预缓存任务 + SSE + API 暂停/恢复 + 端点扫描） |
+| M5 服务 API + 队列 + SSE + 前端对接 | ✅ 后端（全部 JSON 端点带响应模型；`GET /families` 让族/预设/文本模式数据驱动）；✅ 前端 FE-M1~M6 全部验收（真实后端全流程、数据集页、项目/模型/设置页、图表拆分、类型由 openapi 生成；截图 `frontend/screenshots/01~24`；Vitest 46）；🟡 FE-M7（Krea 2 接入前端）已下发 Kimi | `tests/e2e/test_service.py`（真实 uvicorn + 子进程训练 / 预缓存任务 + SSE + API 暂停/恢复 + 端点扫描） |
 | M6 文档 / 预设 / 基准对比 | 🟡 内置预设 anima×2 / krea2×2 / toy；部署文档 `docs/deploy.md` | 本目录 + `docs/reference/`；基准待 GPU |
 
 ## 与参考项目的差异（已落地的"更好"）
@@ -26,8 +26,9 @@
 9. **cached 文本模式支持 caption 增强**：预缓存每张图有界、确定性的 caption 变体（`caption.cache_variants`），shuffle / tag_dropout / wildcard 在卸载文本编码器后仍可用（sd-scripts 在缓存 TE 输出时直接禁止这些选项）；caption_dropout 在采样时按概率精确生效；采样提示词与负面词一并预缓存。
 10. **工具链对官方权重文件格式友好**：`extract` / `merge` 直接吃 `net.`（anima-base）或 `model.diffusion_model.`（ComfyUI）前缀的整模型文件，适配器键始终是 kohya 裸模块名；`convert` 转 ComfyUI 时 LoKr/LoHa 模块的 alpha 与权重同留（LoRA 走 PEFT 键）。
 11. **一条命令自检**：`ypuddin smoke` 用真实 trainer 跑几步 + 出图 + 保存/回读 + 报告（含峰值显存与 traceback），新机器/新权重排障不用来回猜。
-12. **服务契约有类型**：全部 JSON 端点带 pydantic 响应模型，OpenAPI 直接生成前端 TS 类型；`ypuddin serve` 托管前端时支持深链接刷新。
-13. **激活卸载可选**：`memory.activation_checkpointing = "unsloth"` 走非阻塞 CPU 卸载的检查点（与逐块重算在 CPU 上梯度一致）；`model.attention = "sage"` 可选 SageAttention（仅图像自注意力，掩码交叉注意力回落 SDPA）。
+12. **多族同一套代码路径**：Krea 2（12.9B fp8_scaled 底模 + 4B 文本编码器）与 Anima 共用 trainer / 缓存 / 适配器 / 服务，族只描述“加载、前向、预设、显存布局、采样 shift”；ComfyUI 的 fp8_scaled 文件按 fp8 直接冻结（沿用文件 scale，不回 bf16），`merge` 合并回去仍是 ComfyUI 可读的 fp8_scaled；musubi-tuner 对同一模型需要单独的 `krea2_*` 脚本与缓存流程。
+13. **服务契约有类型**：全部 JSON 端点带 pydantic 响应模型，OpenAPI 直接生成前端 TS 类型；`ypuddin serve` 托管前端时支持深链接刷新。
+14. **激活卸载可选**：`memory.activation_checkpointing = "unsloth"` 走非阻塞 CPU 卸载的检查点（与逐块重算在 CPU 上梯度一致）；`model.attention = "sage"` 可选 SageAttention（仅图像自注意力，掩码交叉注意力回落 SDPA）。
 
 ## 待办（按优先级）
 
