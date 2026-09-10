@@ -1,15 +1,56 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../api/client';
 import { Job, JobListResponse, QueueSettings } from '../../api/types';
 import { Link } from 'react-router-dom';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
-import { Play, Pause, XCircle, Save, RefreshCcw, Trash2, PauseCircle } from 'lucide-react';
+import { formatTime } from '../../utils/format';
+import { Play, Pause, XCircle, Save, RefreshCcw, Trash2, PauseCircle, Inbox } from 'lucide-react';
+
+// 状态徽标：running 绿 / paused·pausing 琥珀 / cancelling·failed 红 / completed 蓝 / 其余 slate
+function statusBadgeClass(status: string): string {
+  if (status === 'running') {
+    return 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400';
+  }
+  if (status === 'paused' || status === 'pausing' || status === 'pauseing') {
+    return 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400';
+  }
+  if (status === 'cancelling' || status === 'canceling' || status === 'failed') {
+    return 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400';
+  }
+  if (status === 'completed') {
+    return 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400';
+  }
+  return 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300';
+}
+
+// locales 尚无 queue.status.* 键，经 defaultValue 提供中文（含乐观状态 *ing 变体）
+const STATUS_DEFAULTS: Record<string, string> = {
+  queued: '排队中',
+  scheduled: '已排期',
+  running: '运行中',
+  pausing: '暂停中',
+  pauseing: '暂停中',
+  paused: '已暂停',
+  resumeing: '恢复中',
+  saveing: '保存中',
+  retrying: '重试中',
+  cancelling: '取消中',
+  canceling: '取消中',
+  cancelled: '已取消',
+  completed: '已完成',
+  failed: '失败',
+};
 
 export default function Queue() {
+  const { t } = useTranslation();
   const [jobs, setJobs] = React.useState<Job[]>([]);
   const [settings, setSettings] = React.useState<QueueSettings>({ held: false, max_concurrent: 1 });
   const [optimisticStates, setOptimisticStates] = React.useState<Record<string, string>>({});
+
+  const statusLabel = (status: string): string =>
+    t(`queue.status.${status}`, STATUS_DEFAULTS[status] ?? status);
 
   const fetchJobs = () => {
     apiClient.get<JobListResponse | Job[]>('/jobs').then((data) => {
@@ -78,7 +119,7 @@ export default function Queue() {
   };
 
   const handleDelete = (jobId: string) => {
-    if (window.confirm('Are you sure you want to delete this job record?')) {
+    if (window.confirm(t('queue.deleteConfirm'))) {
       apiClient.delete(`/jobs/${jobId}`).then(fetchJobs).catch(console.error);
     }
   };
@@ -145,9 +186,10 @@ export default function Queue() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">Job Queue</h2>
+        <h2 className="text-2xl font-bold" data-testid="queue-title">{t('queue.title')}</h2>
         <button
           onClick={handleToggleHeld}
+          data-testid="toggle-held"
           className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium ${
             settings.held
               ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
@@ -155,7 +197,7 @@ export default function Queue() {
           }`}
         >
           <PauseCircle className="w-4 h-4" />
-          <span>{settings.held ? 'Scheduling Held' : 'Pause Scheduling'}</span>
+          <span>{settings.held ? t('queue.schedulingHeld') : t('queue.pauseScheduling')}</span>
         </button>
       </div>
 
@@ -163,18 +205,31 @@ export default function Queue() {
         <table className="w-full text-left border-collapse" data-testid="jobs-table">
           <thead>
             <tr className="border-b border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-400">
-              <th className="p-4">ID</th>
-              <th className="p-4">Name</th>
-              <th className="p-4">Type</th>
-              <th className="p-4">Project</th>
-              <th className="p-4">Status</th>
-              <th className="p-4">Progress</th>
-              <th className="p-4">Priority</th>
-              <th className="p-4">Created</th>
-              <th className="p-4 text-right">Actions</th>
+              <th className="p-4">{t('queue.id')}</th>
+              <th className="p-4">{t('queue.name')}</th>
+              <th className="p-4">{t('queue.type')}</th>
+              <th className="p-4">{t('queue.project')}</th>
+              <th className="p-4">{t('common.status')}</th>
+              <th className="p-4">{t('queue.progress')}</th>
+              <th className="p-4">{t('queue.priority')}</th>
+              <th className="p-4">{t('queue.created')}</th>
+              <th className="p-4 text-right">{t('queue.actions')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200 dark:divide-slate-700 text-sm">
+            {jobs.length === 0 && (
+              <tr>
+                <td colSpan={9} className="p-12">
+                  <div className="flex flex-col items-center justify-center text-center space-y-2" data-testid="queue-empty">
+                    <Inbox className="w-10 h-10 text-slate-300 dark:text-slate-600" />
+                    <div className="text-sm font-medium text-slate-500 dark:text-slate-400">{t('queue.empty')}</div>
+                    <div className="text-xs text-slate-400 dark:text-slate-500">
+                      {t('queue.emptyHint', '从项目详情页发起训练任务后，会显示在这里。')}
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            )}
             {jobs.map((job) => {
               const displayStatus = optimisticStates[job.id] || job.status;
               const isDropTarget = dropTarget?.id === job.id;
@@ -204,22 +259,14 @@ export default function Queue() {
                   <td className="p-4 capitalize text-slate-500">{job.type}</td>
                   <td className="p-4 text-slate-500">{job.project_id || '-'}</td>
                   <td className="p-4">
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${
-                      displayStatus === 'running'
-                        ? 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400'
-                        : displayStatus === 'paused'
-                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
-                        : displayStatus.includes('ing')
-                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400'
-                        : 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
-                    }`}>
-                      {displayStatus}
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${statusBadgeClass(displayStatus)}`}>
+                      {statusLabel(displayStatus)}
                     </span>
                   </td>
                   <td className="p-4">
                     {job.progress && job.progress.step != null && job.progress.total_steps != null && job.progress.total_steps > 0 ? (
                       <div className="space-y-1">
-                        <div className="text-xs text-slate-500">{job.progress.step} / {job.progress.total_steps}</div>
+                        <div className="text-xs text-slate-500 font-mono">{job.progress.step} / {job.progress.total_steps}</div>
                         <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5">
                           <div
                             className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
@@ -233,6 +280,7 @@ export default function Queue() {
                     <input
                       type="number"
                       defaultValue={job.priority}
+                      aria-label={t('queue.priority')}
                       onBlur={(e) => {
                         const val = Number(e.target.value);
                         if (val !== job.priority) {
@@ -243,38 +291,64 @@ export default function Queue() {
                     />
                   </td>
                   <td className="p-4 text-xs text-slate-400">
-                    {(() => {
-                      const t = job.created_at;
-                      if (typeof t === 'number') return new Date(t * 1000).toLocaleString();
-                      return new Date(t).toLocaleString();
-                    })()}
+                    {formatTime(job.created_at)}
                   </td>
                   <td className="p-4 text-right">
                     <div className="flex items-center justify-end space-x-2">
                       {job.status === 'running' && (
-                        <button onClick={() => handleAction(job.id, 'pause')} className="p-1 text-slate-500 hover:text-amber-600" title="Pause">
+                        <button
+                          onClick={() => handleAction(job.id, 'pause')}
+                          className="p-1 text-slate-500 hover:text-amber-600"
+                          title={t('queue.pause')}
+                          data-testid={`job-pause-${job.id}`}
+                        >
                           <Pause className="w-4 h-4" />
                         </button>
                       )}
                       {job.status === 'paused' && (
-                        <button onClick={() => handleAction(job.id, 'resume')} className="p-1 text-slate-500 hover:text-green-600" title="Resume">
+                        <button
+                          onClick={() => handleAction(job.id, 'resume')}
+                          className="p-1 text-slate-500 hover:text-green-600"
+                          title={t('queue.resume')}
+                          data-testid={`job-resume-${job.id}`}
+                        >
                           <Play className="w-4 h-4" />
                         </button>
                       )}
                       {job.status === 'running' && (
-                        <button onClick={() => handleAction(job.id, 'save')} className="p-1 text-slate-500 hover:text-blue-600" title="Save Checkpoint">
+                        <button
+                          onClick={() => handleAction(job.id, 'save')}
+                          className="p-1 text-slate-500 hover:text-blue-600"
+                          title={t('queue.save')}
+                          data-testid={`job-save-${job.id}`}
+                        >
                           <Save className="w-4 h-4" />
                         </button>
                       )}
-                      <button onClick={() => handleAction(job.id, 'retry')} className="p-1 text-slate-500 hover:text-indigo-600" title="Retry">
+                      <button
+                        onClick={() => handleAction(job.id, 'retry')}
+                        className="p-1 text-slate-500 hover:text-indigo-600"
+                        title={t('queue.retry')}
+                        data-testid={`job-retry-${job.id}`}
+                      >
                         <RefreshCcw className="w-4 h-4" />
                       </button>
                       {(job.status === 'running' || job.status === 'queued') && (
-                        <button onClick={() => handleAction(job.id, 'cancel')} className="p-1 text-slate-500 hover:text-red-600" title="Cancel">
+                        <button
+                          onClick={() => handleAction(job.id, 'cancel')}
+                          className="p-1 text-slate-500 hover:text-red-600"
+                          title={t('queue.cancel')}
+                          data-testid={`job-cancel-${job.id}`}
+                        >
                           <XCircle className="w-4 h-4" />
                         </button>
                       )}
-                      <button onClick={() => handleDelete(job.id)} className="p-1 text-slate-500 hover:text-red-700" title="Delete">
+                      <button
+                        onClick={() => handleDelete(job.id)}
+                        className="p-1 text-slate-500 hover:text-red-700"
+                        title={t('queue.deleteRecord')}
+                        data-testid={`job-delete-${job.id}`}
+                      >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>

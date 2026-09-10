@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { addTag, moveTag, parseTags, removeTag, serializeTags, updateTag } from '../utils/tags';
 
@@ -13,6 +14,7 @@ interface TagChipsProps {
  * 所有变更通过 serializeTags 序列化回逗号分隔字符串。
  */
 export const TagChips: React.FC<TagChipsProps> = ({ caption, onChange, readOnly = false }) => {
+  const { t } = useTranslation();
   const tags = React.useMemo(() => parseTags(caption), [caption]);
   const [draft, setDraft] = React.useState('');
   const [editIndex, setEditIndex] = React.useState<number | null>(null);
@@ -70,7 +72,7 @@ export const TagChips: React.FC<TagChipsProps> = ({ caption, onChange, readOnly 
                 : 'border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800'
             } ${readOnly ? '' : 'cursor-grab active:cursor-grabbing'}`}
             onDoubleClick={() => !readOnly && startEdit(idx)}
-            title={readOnly ? tag : 'Double-click to edit, drag to reorder'}
+            title={readOnly ? tag : t('dataset.tagChipsHint', '双击编辑，拖拽排序')}
           >
             {editIndex === idx ? (
               <input
@@ -113,7 +115,7 @@ export const TagChips: React.FC<TagChipsProps> = ({ caption, onChange, readOnly 
                 handleAdd();
               }
             }}
-            placeholder="Add tag… (Enter)"
+            placeholder={t('dataset.addTagPlaceholder')}
             className="flex-1 px-2 py-1.5 text-xs border rounded dark:bg-slate-900 dark:border-slate-600 font-mono"
             data-testid="tag-add-input"
           />
@@ -122,7 +124,7 @@ export const TagChips: React.FC<TagChipsProps> = ({ caption, onChange, readOnly 
             onClick={handleAdd}
             className="px-2.5 py-1.5 text-xs bg-slate-200 dark:bg-slate-700 rounded hover:bg-slate-300 dark:hover:bg-slate-600"
           >
-            Add
+            {t('dataset.addTag')}
           </button>
         </div>
       )}

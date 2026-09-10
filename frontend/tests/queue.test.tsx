@@ -21,15 +21,15 @@ describe('Queue Page (C1, C3)', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('jobs-table')).toBeInTheDocument();
-      expect(screen.getByText('Job Queue')).toBeInTheDocument();
+      expect(screen.getByTestId('queue-title')).toBeInTheDocument();
     });
 
     // 检查暂停调度按钮
-    const heldBtn = screen.getByText(/Scheduling Held|Pause Scheduling/i);
+    const heldBtn = screen.getByTestId('toggle-held');
     fireEvent.click(heldBtn);
 
     // 触发 POST pause 动作
-    const pauseBtn = await screen.findByTitle('Pause');
+    const pauseBtn = await screen.findByTestId('job-pause-job_01');
     fireEvent.click(pauseBtn);
   });
 });

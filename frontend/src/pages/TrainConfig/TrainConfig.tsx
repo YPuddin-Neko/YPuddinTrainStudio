@@ -1,13 +1,16 @@
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { SchemaForm, ValidationError } from '../../schema/SchemaForm/SchemaForm';
 import { apiClient } from '../../api/client';
 import { Job, Plan, Preset } from '../../api/types';
 import { useFamilies, familyByName } from '../../api/hooks/useFamilies';
+import { formatBytesMB, formatParams } from '../../utils/format';
 import trainSchema from '../../schema/train-schema.json';
 import { AlertCircle, CheckCircle, Info } from 'lucide-react';
 
 export default function TrainConfig() {
+  const { t } = useTranslation();
   const { id: projectId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { data: families } = useFamilies();
@@ -25,6 +28,7 @@ export default function TrainConfig() {
   const [validationErrors, setValidationErrors] = React.useState<ValidationError[]>([]);
   const [isEnqueuing, setIsEnqueuing] = React.useState(false);
   const [enqueueSuccess, setEnqueueSuccess] = React.useState(false);
+  const [savedAt, setSavedAt] = React.useState<string | null>(null);
   const draftLoadedRef = React.useRef(false);
 
   React.useEffect(() => {
@@ -64,11 +68,13 @@ export default function TrainConfig() {
       });
   }, [projectId]);
 
-  // 草稿自动保存（防抖 1s，初次加载完成后才生效）
+  // 草稿自动保存（防抖 1s，初次加载完成后才生效）；PUT 成功回执后更新保存指示时间
   React.useEffect(() => {
     if (!projectId || !draftLoadedRef.current) return;
     const timer = setTimeout(() => {
-      apiClient.put(`/projects/${projectId}/config`, config).catch(console.error);
+      apiClient.put(`/projects/${projectId}/config`, config)
+        .then(() => setSavedAt(new Date().toLocaleTimeString(undefined, { hour12: false })))
+        .catch(console.error);
     }, 1000);
     return () => clearTimeout(timer);
   }, [config, projectId]);
@@ -157,7 +163,7 @@ export default function TrainConfig() {
       {/* 左侧 Schema 表单 */}
       <div className="lg:col-span-2 space-y-6">
         <div className="flex flex-wrap justify-between items-center gap-4">
-          <h2 className="text-2xl font-bold">Training Configuration</h2>
+          <h2 className="text-2xl font-bold">{t('train.title')}</h2>
           <div className="flex items-center space-x-3">
             <label className="flex items-center space-x-2 text-sm text-slate-600 dark:text-slate-300">
               <input
@@ -166,7 +172,7 @@ export default function TrainConfig() {
                 onChange={(e) => setShowAdvanced(e.target.checked)}
                 className="rounded text-blue-600"
               />
-              <span>Advanced Options</span>
+              <span>{t('train.advanced')}</span>
             </label>
             <select
               className="rounded-md border border-slate-300 px-3 py-1.5 text-sm dark:bg-slate-800 dark:border-slate-700"
@@ -175,7 +181,7 @@ export default function TrainConfig() {
                 if (selected) handleApplyPreset(selected);
               }}
             >
-              <option value="">-- Load Preset --</option>
+              <option value="">{t('train.loadPreset')}</option>
               {presets.map((p) => (
                 <option key={p.name} value={p.name}>
                   {p.name}
@@ -195,45 +201,78 @@ export default function TrainConfig() {
             family={familyByName(families, config?.model?.family)}
           />
         </div>
+
+        {savedAt && (
+          <div className="flex items-center justify-end space-x-1.5 text-xs text-slate-400" data-testid="draft-saved">
+            <CheckCircle className="w-3.5 h-3.5 text-green-500" />
+            <span>{t('train.draftSaved', { time: savedAt, defaultValue: '草稿已自动保存 {{time}}' })}</span>
+          </div>
+        )}
       </div>
 
-      {/* 右侧 Plan 面板 */}
-      <div className="space-y-6">
-        <h2 className="text-2xl font-bold">Execution Plan</h2>
+      {/* 右侧 Plan 面板（吸顶） */}
+      <div className="space-y-6 sticky top-6 self-start">
+        <h2 className="text-2xl font-bold">{t('train.plan')}</h2>
         <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 space-y-5">
           <div className="grid grid-cols-2 gap-4 border-b pb-4 dark:border-slate-700">
             <div>
-              <div className="text-xs text-slate-400">Total Steps</div>
-              <div className="text-xl font-bold">{plan?.total_steps ?? '--'}</div>
+              <div className="text-xs text-slate-400">{t('train.totalSteps')}</div>
+              <div className="text-xl font-bold font-mono">{plan?.total_steps ?? '--'}</div>
             </div>
             <div>
-              <div className="text-xs text-slate-400">Steps / Epoch</div>
-              <div className="text-xl font-bold">{plan?.steps_per_epoch ?? '--'}</div>
+              <div className="text-xs text-slate-400">{t('train.stepsPerEpoch')}</div>
+              <div className="text-xl font-bold font-mono">{plan?.steps_per_epoch ?? '--'}</div>
             </div>
             <div>
-              <div className="text-xs text-slate-400">Trainable Params</div>
-              <div className="text-sm font-semibold mt-1">
-                {plan?.params?.trainable != null
-                  ? plan.params.trainable >= 1e6
-                    ? `${(plan.params.trainable / 1e6).toFixed(2)} M`
-                    : `${(plan.params.trainable / 1e3).toFixed(1)} K`
-                  : '--'}
-              </div>
+              <div className="text-xs text-slate-400">{t('train.epochs', '训练轮数')}</div>
+              <div className="text-xl font-bold font-mono">{plan?.epochs ?? '--'}</div>
             </div>
             <div>
-              <div className="text-xs text-slate-400">VRAM Peak (Est.)</div>
-              <div className="text-sm font-semibold mt-1">
-                {plan?.memory?.peak_mb_estimate ? `${Math.round(plan.memory.peak_mb_estimate / 1024)} GB` : '--'}
-              </div>
+              <div className="text-xs text-slate-400">{t('train.trainableParams')}</div>
+              <div className="text-sm font-semibold font-mono mt-1">{formatParams(plan?.params?.trainable)}</div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-400">{t('train.vramPeak')}</div>
+              <div className="text-sm font-semibold font-mono mt-1">{formatBytesMB(plan?.memory?.peak_mb_estimate)}</div>
             </div>
           </div>
+
+          {/* 分桶小表（items 优先） */}
+          {plan?.buckets && plan.buckets.length > 0 && (
+            <div className="border-b pb-4 dark:border-slate-700" data-testid="plan-buckets">
+              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">
+                {t('train.bucketsTitle', '分桶分布')}
+              </div>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-slate-400">
+                    <th className="text-left font-medium pb-1">{t('train.bucketSize', '分辨率 (W×H)')}</th>
+                    <th className="text-right font-medium pb-1">{t('train.bucketItems', '样本数')}</th>
+                    <th className="text-right font-medium pb-1">{t('train.batches', '批次数')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {plan.buckets.map((b, idx) => {
+                    const itemCount = b.items ?? (b as { count?: number }).count;
+                    return (
+                      <tr key={idx} className="border-t border-slate-100 dark:border-slate-700/60">
+                        <td className="py-1 font-mono">{b.w}×{b.h}</td>
+                        <td className="py-1 text-right font-mono">{itemCount ?? '--'}</td>
+                        <td className="py-1 text-right font-mono">{b.batches ?? '--'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {/* Warnings & Suggestions */}
           {plan?.warnings && plan.warnings.length > 0 && (
             <div className="space-y-2">
               <div className="text-xs font-semibold text-amber-500 flex items-center space-x-1">
                 <AlertCircle className="w-3.5 h-3.5" />
-                <span>Warnings & Suggestions</span>
+                <span>{t('train.warningsTitle')}</span>
               </div>
               {plan.warnings.map((w, idx) => (
                 <div key={idx} className="text-xs p-2 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded text-amber-700 dark:text-amber-300">
@@ -262,10 +301,10 @@ export default function TrainConfig() {
             {enqueueSuccess ? (
               <>
                 <CheckCircle className="w-4 h-4 text-green-300" />
-                <span>Enqueued Successfully!</span>
+                <span>{t('train.enqueued')}</span>
               </>
             ) : (
-              <span>{isEnqueuing ? 'Enqueuing...' : 'Enqueue Training Job'}</span>
+              <span>{isEnqueuing ? t('train.enqueuing') : t('train.enqueue')}</span>
             )}
           </button>
         </div>

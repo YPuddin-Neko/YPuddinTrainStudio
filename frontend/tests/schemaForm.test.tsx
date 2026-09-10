@@ -51,7 +51,7 @@ describe('SchemaForm advanced controls rendering & logic', () => {
     expect(rulesEditor).toBeInTheDocument();
 
     // 增加规则行
-    fireEvent.click(screen.getByText('Add Rule'));
+    fireEvent.click(screen.getByTestId('add-rule'));
     // 增加后应有 2 个 select (algo)
     const selects = screen.getAllByRole('combobox');
     expect(selects.length).toBeGreaterThan(0);
@@ -74,7 +74,7 @@ describe('SchemaForm advanced controls rendering & logic', () => {
     render(<SchemaForm schema={trainSchema as any} value={sampleConfig} onChange={() => {}} />);
 
     expect(screen.getByTestId('sources-editor')).toBeInTheDocument();
-    expect(screen.getByText('Add Dataset Source')).toBeInTheDocument();
+    expect(screen.getByTestId('add-source')).toBeInTheDocument();
   });
 
   it('toggles advanced fields and applies show_when logic', () => {

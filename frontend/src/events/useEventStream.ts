@@ -106,7 +106,7 @@ class EventStreamManager {
           }, 3000);
         }
       };
-    } catch (e) {
+    } catch {
       this.isConnecting = false;
     }
   }

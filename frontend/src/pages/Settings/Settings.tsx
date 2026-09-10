@@ -3,10 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../api/client';
 import { Settings as SettingsType } from '../../api/types';
 import { PathInput } from '../../components/PathBrowser';
-import { Save, Settings as SettingsIcon } from 'lucide-react';
+import { FolderCog, Loader2, Palette, Save, Server, Settings as SettingsIcon } from 'lucide-react';
 
 export default function Settings() {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [settings, setSettings] = React.useState<SettingsType | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
@@ -40,23 +40,39 @@ export default function Settings() {
       .finally(() => setSaving(false));
   };
 
-  if (!settings) return <div className="text-slate-500">Loading…</div>;
+  if (!settings) {
+    return (
+      <div className="flex items-center space-x-2 text-slate-500" data-testid="settings-loading">
+        <Loader2 className="w-4 h-4 animate-spin" />
+        <span>{t('common.loading')}</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-3xl" data-testid="settings-page">
-      <h2 className="text-2xl font-bold flex items-center space-x-2">
-        <SettingsIcon className="w-6 h-6 text-slate-500" />
-        <span>Settings</span>
-      </h2>
+      <div>
+        <h2 className="text-2xl font-bold flex items-center space-x-2">
+          <SettingsIcon className="w-6 h-6 text-slate-500" />
+          <span>{t('settings.title')}</span>
+        </h2>
+        <p className="mt-1 text-sm text-slate-500">{t('settings.subtitle', '数据目录、服务监听与界面偏好。')}</p>
+      </div>
 
       <section className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 space-y-4">
-        <h3 className="font-semibold">Paths</h3>
+        <div>
+          <h3 className="font-semibold flex items-center space-x-2">
+            <FolderCog className="w-4 h-4 text-slate-400" />
+            <span>{t('settings.paths')}</span>
+          </h3>
+          <p className="mt-0.5 text-xs text-slate-400">{t('settings.pathsDesc', '训练数据、缓存、模型与产物的存储位置。')}</p>
+        </div>
         {(
           [
-            ['data_root', 'Data root'],
-            ['cache_dir', 'Cache directory'],
-            ['models_dir', 'Models directory'],
-            ['output_dir', 'Output directory'],
+            ['data_root', t('settings.dataRoot')],
+            ['cache_dir', t('settings.cacheDir')],
+            ['models_dir', t('settings.modelsDir')],
+            ['output_dir', t('settings.outputDir')],
           ] as const
         ).map(([key, label]) => (
           <div key={key}>
@@ -70,10 +86,16 @@ export default function Settings() {
       </section>
 
       <section className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 space-y-4">
-        <h3 className="font-semibold">Server</h3>
+        <div>
+          <h3 className="font-semibold flex items-center space-x-2">
+            <Server className="w-4 h-4 text-slate-400" />
+            <span>{t('settings.server')}</span>
+          </h3>
+          <p className="mt-0.5 text-xs text-slate-400">{t('settings.serverDesc', '内置 API 服务的监听配置。')}</p>
+        </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="text-xs text-slate-400">Host</label>
+            <label className="text-xs text-slate-400">{t('settings.host')}</label>
             <input
               type="text"
               value={settings.server.host}
@@ -82,7 +104,7 @@ export default function Settings() {
             />
           </div>
           <div>
-            <label className="text-xs text-slate-400">Port</label>
+            <label className="text-xs text-slate-400">{t('settings.port')}</label>
             <input
               type="number"
               value={settings.server.port}
@@ -91,14 +113,20 @@ export default function Settings() {
             />
           </div>
         </div>
-        <p className="text-xs text-slate-400">Server changes take effect after restart.</p>
+        <p className="text-xs text-slate-400">{t('settings.serverNote')}</p>
       </section>
 
       <section className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 space-y-4">
-        <h3 className="font-semibold">Interface</h3>
+        <div>
+          <h3 className="font-semibold flex items-center space-x-2">
+            <Palette className="w-4 h-4 text-slate-400" />
+            <span>{t('settings.ui')}</span>
+          </h3>
+          <p className="mt-0.5 text-xs text-slate-400">{t('settings.uiDesc', '语言与主题在保存后立即生效。')}</p>
+        </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="text-xs text-slate-400">Language</label>
+            <label className="text-xs text-slate-400">{t('settings.language')}</label>
             <select
               value={settings.ui.language}
               onChange={(e) => update((s) => ({ ...s, ui: { ...s.ui, language: e.target.value } }))}
@@ -110,16 +138,16 @@ export default function Settings() {
             </select>
           </div>
           <div>
-            <label className="text-xs text-slate-400">Theme</label>
+            <label className="text-xs text-slate-400">{t('settings.theme')}</label>
             <select
               value={settings.ui.theme}
               onChange={(e) => update((s) => ({ ...s, ui: { ...s.ui, theme: e.target.value } }))}
               className="w-full px-3 py-2 border rounded-md text-sm dark:bg-slate-900 dark:border-slate-600"
               data-testid="settings-theme"
             >
-              <option value="system">System</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
+              <option value="system">{t('settings.themeSystem')}</option>
+              <option value="light">{t('settings.themeLight')}</option>
+              <option value="dark">{t('settings.themeDark')}</option>
             </select>
           </div>
         </div>
@@ -133,7 +161,7 @@ export default function Settings() {
           data-testid="settings-save-btn"
         >
           <Save className="w-4 h-4" />
-          <span>{saved ? 'Saved!' : saving ? 'Saving…' : 'Save Settings'}</span>
+          <span>{saved ? t('settings.saved') : saving ? t('settings.saving') : t('settings.save')}</span>
         </button>
       </div>
     </div>

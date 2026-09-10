@@ -84,6 +84,7 @@ const RulesEditor: React.FC<{
   value: any[];
   onChange: (val: any[]) => void;
 }> = ({ value = [], onChange }) => {
+  const { t } = useTranslation();
   const addRule = () => {
     onChange([
       ...value,
@@ -117,7 +118,7 @@ const RulesEditor: React.FC<{
         <div key={idx} className="flex flex-wrap items-center gap-2 p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
           <input
             type="text"
-            placeholder="Match regex/glob"
+            placeholder={t('train.matchPlaceholder', 'Match 正则 / glob')}
             value={rule.match || ''}
             onChange={(e) => updateRule(idx, 'match', e.target.value)}
             className="flex-1 min-w-[140px] px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
@@ -181,10 +182,11 @@ const RulesEditor: React.FC<{
       <button
         type="button"
         onClick={addRule}
+        data-testid="add-rule"
         className="flex items-center space-x-1 px-3 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded border border-slate-300 dark:border-slate-600"
       >
         <Plus className="w-3.5 h-3.5" />
-        <span>Add Rule</span>
+        <span>{t('train.addRule', '添加规则')}</span>
       </button>
     </div>
   );
@@ -195,6 +197,7 @@ const KeyValueEditor: React.FC<{
   value: Record<string, any>;
   onChange: (val: Record<string, any>) => void;
 }> = ({ value = {}, onChange }) => {
+  const { t } = useTranslation();
   const entries = Object.entries(value);
 
   const addEntry = () => {
@@ -233,7 +236,7 @@ const KeyValueEditor: React.FC<{
             value={k}
             onBlur={(e) => updateKey(k, e.target.value)}
             className="flex-1 px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600 font-mono"
-            placeholder="Key"
+            placeholder={t('train.keyPlaceholder', '键')}
           />
           <input
             type="text"
@@ -243,7 +246,7 @@ const KeyValueEditor: React.FC<{
               updateVal(k, isNaN(num) || e.target.value === '' ? e.target.value : num);
             }}
             className="flex-1 px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600 font-mono"
-            placeholder="Value"
+            placeholder={t('train.valuePlaceholder', '值')}
           />
           <button type="button" onClick={() => removeEntry(k)} className="text-red-500 hover:text-red-700 p-1">
             <Trash2 className="w-3.5 h-3.5" />
@@ -253,10 +256,11 @@ const KeyValueEditor: React.FC<{
       <button
         type="button"
         onClick={addEntry}
+        data-testid="add-property"
         className="flex items-center space-x-1 px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded border border-slate-300 dark:border-slate-600"
       >
         <Plus className="w-3.5 h-3.5" />
-        <span>Add Property</span>
+        <span>{t('train.addProperty', '添加属性')}</span>
       </button>
     </div>
   );
@@ -267,6 +271,7 @@ const SourcesEditor: React.FC<{
   value: any[];
   onChange: (val: any[]) => void;
 }> = ({ value = [], onChange }) => {
+  const { t } = useTranslation();
   const [modalIndex, setModalIndex] = React.useState<number | null>(null);
 
   const addSource = () => {
@@ -291,7 +296,9 @@ const SourcesEditor: React.FC<{
       {value.map((src, idx) => (
         <div key={idx} className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
           <div className="flex justify-between items-center">
-            <span className="font-semibold text-slate-700 dark:text-slate-300">Source #{idx + 1}</span>
+            <span className="font-semibold text-slate-700 dark:text-slate-300">
+              {t('train.sourceN', { n: idx + 1, defaultValue: '数据源 #{{n}}' })}
+            </span>
             <button type="button" onClick={() => removeSource(idx)} className="text-red-500 hover:text-red-700">
               <Trash2 className="w-3.5 h-3.5" />
             </button>
@@ -310,12 +317,12 @@ const SourcesEditor: React.FC<{
               className="px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded hover:bg-slate-300 dark:hover:bg-slate-600 flex items-center space-x-1"
             >
               <FolderOpen className="w-3.5 h-3.5" />
-              <span>Browse</span>
+              <span>{t('common.browse')}</span>
             </button>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <div>
-              <label className="text-[10px] text-slate-400">Repeats</label>
+              <label className="text-[10px] text-slate-400">{t('dataset.repeats')}</label>
               <input
                 type="number"
                 value={src.repeats ?? 1}
@@ -324,7 +331,7 @@ const SourcesEditor: React.FC<{
               />
             </div>
             <div>
-              <label className="text-[10px] text-slate-400">Caption Ext</label>
+              <label className="text-[10px] text-slate-400">{t('projectDetail.captionExt')}</label>
               <input
                 type="text"
                 value={src.caption_ext || '.txt'}
@@ -333,7 +340,7 @@ const SourcesEditor: React.FC<{
               />
             </div>
             <div>
-              <label className="text-[10px] text-slate-400">Prior Weight</label>
+              <label className="text-[10px] text-slate-400">{t('projectDetail.priorWeight')}</label>
               <input
                 type="number"
                 step="0.1"
@@ -349,7 +356,7 @@ const SourcesEditor: React.FC<{
                 onChange={(e) => updateSource(idx, 'is_reg', e.target.checked)}
                 className="rounded text-blue-600"
               />
-              <span className="text-[11px]">Regularization</span>
+              <span className="text-[11px]">{t('projectDetail.regularization')}</span>
             </div>
           </div>
         </div>
@@ -357,10 +364,11 @@ const SourcesEditor: React.FC<{
       <button
         type="button"
         onClick={addSource}
+        data-testid="add-source"
         className="flex items-center space-x-1 px-3 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded border border-slate-300 dark:border-slate-600"
       >
         <Plus className="w-3.5 h-3.5" />
-        <span>Add Dataset Source</span>
+        <span>{t('train.addSource', '添加数据集源')}</span>
       </button>
 
       {modalIndex !== null && (
@@ -380,6 +388,7 @@ const PromptsEditor: React.FC<{
   value: any[];
   onChange: (val: any[]) => void;
 }> = ({ value = [], onChange }) => {
+  const { t } = useTranslation();
   const addPrompt = () => {
     onChange([...value, { prompt: '', negative: '', seed: 42, width: 1024, height: 1024 }]);
   };
@@ -399,28 +408,30 @@ const PromptsEditor: React.FC<{
       {value.map((p, idx) => (
         <div key={idx} className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
           <div className="flex justify-between items-center">
-            <span className="font-semibold text-slate-700 dark:text-slate-300">Prompt #{idx + 1}</span>
+            <span className="font-semibold text-slate-700 dark:text-slate-300">
+              {t('train.promptN', { n: idx + 1, defaultValue: '提示词 #{{n}}' })}
+            </span>
             <button type="button" onClick={() => removePrompt(idx)} className="text-red-500 hover:text-red-700">
               <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>
           <textarea
             rows={2}
-            placeholder="Prompt text"
+            placeholder={t('train.promptPlaceholder', '提示词文本')}
             value={p.prompt || ''}
             onChange={(e) => updatePrompt(idx, 'prompt', e.target.value)}
             className="w-full px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
           />
           <textarea
             rows={1}
-            placeholder="Negative prompt (optional)"
+            placeholder={t('train.negativePromptPlaceholder', '负面提示词（可选）')}
             value={p.negative || ''}
             onChange={(e) => updatePrompt(idx, 'negative', e.target.value)}
             className="w-full px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
           />
           <div className="grid grid-cols-3 gap-2">
             <div>
-              <label className="text-[10px] text-slate-400">Seed</label>
+              <label className="text-[10px] text-slate-400">{t('job.seed')}</label>
               <input
                 type="number"
                 value={p.seed ?? 42}
@@ -429,7 +440,7 @@ const PromptsEditor: React.FC<{
               />
             </div>
             <div>
-              <label className="text-[10px] text-slate-400">Width</label>
+              <label className="text-[10px] text-slate-400">{t('train.width', '宽度')}</label>
               <input
                 type="number"
                 value={p.width ?? 1024}
@@ -438,7 +449,7 @@ const PromptsEditor: React.FC<{
               />
             </div>
             <div>
-              <label className="text-[10px] text-slate-400">Height</label>
+              <label className="text-[10px] text-slate-400">{t('train.height', '高度')}</label>
               <input
                 type="number"
                 value={p.height ?? 1024}
@@ -452,10 +463,11 @@ const PromptsEditor: React.FC<{
       <button
         type="button"
         onClick={addPrompt}
+        data-testid="add-prompt"
         className="flex items-center space-x-1 px-3 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded border border-slate-300 dark:border-slate-600"
       >
         <Plus className="w-3.5 h-3.5" />
-        <span>Add Sample Prompt</span>
+        <span>{t('train.addPrompt', '添加采样提示词')}</span>
       </button>
     </div>
   );
@@ -494,6 +506,7 @@ const ModelPathInput: React.FC<{
   kind: string | null;
   onChange: (val: string) => void;
 }> = ({ value, kind, onChange }) => {
+  const { t } = useTranslation();
   const [models, setModels] = React.useState<Array<{ id: string; path: string; kind: string; family: string }>>([]);
 
   React.useEffect(() => {
@@ -518,7 +531,7 @@ const ModelPathInput: React.FC<{
           }}
           data-testid="model-registry-select"
         >
-          <option value="">— 从已注册模型选择 —</option>
+          <option value="">{t('models.fromRegistry')}</option>
           {matched.map((m) => (
             <option key={m.id} value={m.path}>
               [{m.family}] {m.path}
@@ -530,11 +543,14 @@ const ModelPathInput: React.FC<{
   );
 };
 
-// 分组组件
+// 分组组件（header 右侧显示该组当前可见字段数）
 const FieldGroup: React.FC<{
   title: string;
+  count?: number;
   children: React.ReactNode;
-}> = ({ title, children }) => {  const [isOpen, setIsOpen] = React.useState(true);
+}> = ({ title, count, children }) => {
+  const { t } = useTranslation();
+  const [isOpen, setIsOpen] = React.useState(true);
   return (
     <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-slate-800">
       <button
@@ -543,7 +559,14 @@ const FieldGroup: React.FC<{
         className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
       >
         <span className="font-medium text-slate-700 dark:text-slate-200">{title}</span>
-        {isOpen ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+        <span className="flex items-center space-x-2">
+          {typeof count === 'number' && (
+            <span className="text-xs text-slate-400 font-mono" data-testid="group-count">
+              {t('groups.fieldCount', { count, defaultValue: '{{count}} 项' })}
+            </span>
+          )}
+          {isOpen ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+        </span>
       </button>
       {isOpen && <div className="p-4 space-y-4">{children}</div>}
     </div>
@@ -881,7 +904,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   return (
     <div className="space-y-6" data-testid="schema-form">
       {sortedGroups.map(([groupName, groupData]) => (
-        <FieldGroup key={groupName} title={t(`groups.${groupName}`, groupName)}>
+        <FieldGroup key={groupName} title={t(`groups.${groupName}`, groupName)} count={groupData.fields.length}>
           {groupData.fields}
         </FieldGroup>
       ))}

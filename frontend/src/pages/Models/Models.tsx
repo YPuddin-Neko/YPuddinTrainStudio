@@ -1,8 +1,10 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../api/client';
 import { ModelAsset } from '../../api/types';
 import { PathInput } from '../../components/PathBrowser';
 import { useFamilies, familyByName } from '../../api/hooks/useFamilies';
+import { formatBytes } from '../../utils/format';
 import { HardDrive, Plus, Trash2, FolderSearch, Star } from 'lucide-react';
 
 const KIND_BY_FIELD: Record<string, string> = {
@@ -12,14 +14,11 @@ const KIND_BY_FIELD: Record<string, string> = {
   tokenizer_path: 'tokenizer',
 };
 
-function formatSize(bytes: number): string {
-  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
-  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`;
-  if (bytes >= 1e3) return `${(bytes / 1e3).toFixed(1)} KB`;
-  return `${bytes} B`;
-}
+// locales 统一使用 {var} 单花括号插值，此处按调用覆盖 i18next 默认的 {{var}} 格式
+const SINGLE_BRACE = { prefix: '{', suffix: '}' } as const;
 
 export default function Models() {
+  const { t } = useTranslation();
   const { data: families } = useFamilies();
   const [models, setModels] = React.useState<ModelAsset[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -89,7 +88,7 @@ export default function Models() {
       .then((res: any) => {
         fetchModels();
         if (res && typeof res.added === 'number') {
-          alert(`Scan complete: ${res.added} new model(s) found.`);
+          alert(t('models.scanResult', { n: res.added, interpolation: SINGLE_BRACE }));
         }
       })
       .catch(console.error)
@@ -97,7 +96,7 @@ export default function Models() {
   };
 
   const handleDelete = (id: string, p: string) => {
-    if (window.confirm(`Remove model registration "${p}"? Files on disk will NOT be deleted.`)) {
+    if (window.confirm(t('models.deleteConfirm', { path: p, interpolation: SINGLE_BRACE }))) {
       apiClient.delete(`/models/${id}`).then(fetchModels).catch(console.error);
     }
   };
@@ -107,7 +106,7 @@ export default function Models() {
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold flex items-center space-x-2">
           <HardDrive className="w-6 h-6 text-purple-500" />
-          <span>Model Weights</span>
+          <span>{t('models.title')}</span>
         </h2>
         <div className="flex space-x-2">
           <button
@@ -116,7 +115,7 @@ export default function Models() {
             className="flex items-center space-x-1.5 px-3 py-2 text-sm bg-slate-100 dark:bg-slate-800 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50"
           >
             <FolderSearch className="w-4 h-4" />
-            <span>{scanning ? 'Scanning…' : 'Scan Directory'}</span>
+            <span>{scanning ? t('models.scanning') : t('models.scanDirectory')}</span>
           </button>
           <button
             onClick={() => setAddOpen(true)}
@@ -124,27 +123,31 @@ export default function Models() {
             data-testid="add-model-btn"
           >
             <Plus className="w-4 h-4" />
-            <span>Add Model</span>
+            <span>{t('models.addModel')}</span>
           </button>
         </div>
       </div>
 
       <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
         {loading ? (
-          <p className="p-6 text-slate-500">Loading…</p>
+          <p className="p-6 text-slate-500">{t('common.loading')}</p>
         ) : models.length === 0 ? (
-          <p className="p-10 text-center text-slate-400">No model weights registered. Add one or scan a directory.</p>
+          <div className="p-10 flex flex-col items-center justify-center text-center space-y-2">
+            <HardDrive className="w-10 h-10 text-slate-300 dark:text-slate-600" />
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{t('common.empty')}</p>
+            <p className="text-xs text-slate-400">{t('models.empty')}</p>
+          </div>
         ) : (
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 dark:bg-slate-800/50 text-xs text-slate-400 border-b dark:border-slate-700">
               <tr>
-                <th className="p-4">Family</th>
-                <th className="p-4">Kind</th>
-                <th className="p-4">Path</th>
-                <th className="p-4">Size</th>
-                <th className="p-4">Dtype</th>
-                <th className="p-4">Status</th>
-                <th className="p-4 text-right">Actions</th>
+                <th className="p-4">{t('models.family')}</th>
+                <th className="p-4">{t('models.kind')}</th>
+                <th className="p-4">{t('models.path')}</th>
+                <th className="p-4">{t('models.size')}</th>
+                <th className="p-4">{t('models.dtype')}</th>
+                <th className="p-4">{t('models.status')}</th>
+                <th className="p-4 text-right">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -158,7 +161,7 @@ export default function Models() {
                     {m.is_default && <Star className="w-3.5 h-3.5 inline text-amber-500 mr-1" />}
                     {m.path}
                   </td>
-                  <td className="p-4 text-xs">{formatSize(m.size)}</td>
+                  <td className="p-4 text-xs font-mono">{formatBytes(m.size)}</td>
                   <td className="p-4 text-xs font-mono">
                     {m.dtype === 'fp8' ? (
                       <span className="px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 font-semibold" data-testid="fp8-tag">
@@ -174,14 +177,14 @@ export default function Models() {
                         ? 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400'
                         : 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400'
                     }`}>
-                      {m.exists ? 'exists' : 'missing'}
+                      {m.exists ? t('models.exists') : t('models.missing')}
                     </span>
                   </td>
                   <td className="p-4 text-right">
                     <button
                       onClick={() => handleDelete(m.id, m.path)}
                       className="p-1.5 text-slate-400 hover:text-red-500"
-                      title="Remove"
+                      title={t('common.remove')}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -200,11 +203,11 @@ export default function Models() {
             onClick={(e) => e.stopPropagation()}
             data-testid="add-model-modal"
           >
-            <h3 className="font-semibold text-lg">Add Model Weight</h3>
+            <h3 className="font-semibold text-lg">{t('models.addModel')}</h3>
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400">Family</label>
+                  <label className="text-xs text-slate-400">{t('models.family')}</label>
                   <select
                     value={family}
                     onChange={(e) => setFamily(e.target.value)}
@@ -217,7 +220,7 @@ export default function Models() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400">Kind</label>
+                  <label className="text-xs text-slate-400">{t('models.kind')}</label>
                   <select
                     value={kind}
                     onChange={(e) => setKind(e.target.value)}
@@ -229,12 +232,12 @@ export default function Models() {
                 </div>
               </div>
               <div>
-                <label className="text-xs text-slate-400">Path (file or HF directory)</label>
-                <PathInput value={path} onChange={setPath} placeholder="/models/xxx.safetensors" />
+                <label className="text-xs text-slate-400">{t('models.pathLabel')}</label>
+                <PathInput value={path} onChange={setPath} placeholder={t('models.pathPlaceholder')} />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400">Dtype</label>
+                  <label className="text-xs text-slate-400">{t('models.dtype')}</label>
                   <select
                     value={dtype}
                     onChange={(e) => setDtype(e.target.value)}
@@ -244,7 +247,7 @@ export default function Models() {
                     <option value="fp16">fp16</option>
                     <option value="fp32">fp32</option>
                     <option value="fp8">fp8</option>
-                    <option value="">unknown</option>
+                    <option value="">{t('models.dtypeUnknown', '未知')}</option>
                   </select>
                 </div>
                 <div className="flex items-center space-x-2 pt-5">
@@ -254,19 +257,19 @@ export default function Models() {
                     onChange={(e) => setIsDefault(e.target.checked)}
                     className="rounded text-blue-600"
                   />
-                  <span className="text-xs">Set as default for this family+kind</span>
+                  <span className="text-xs">{t('models.setDefault')}</span>
                 </div>
               </div>
             </div>
             <div className="flex justify-end space-x-2 pt-2">
-              <button onClick={() => setAddOpen(false)} className="px-4 py-2 text-sm rounded bg-slate-200 dark:bg-slate-700">Cancel</button>
+              <button onClick={() => setAddOpen(false)} className="px-4 py-2 text-sm rounded bg-slate-200 dark:bg-slate-700">{t('common.cancel')}</button>
               <button
                 onClick={handleAdd}
                 disabled={adding || !path.trim()}
                 className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
                 data-testid="add-model-submit"
               >
-                {adding ? 'Adding…' : 'Add'}
+                {adding ? t('models.adding') : t('models.add')}
               </button>
             </div>
           </div>

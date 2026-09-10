@@ -16,7 +16,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
       if (data && data.error) {
         payload = data.error;
       }
-    } catch (e) {
+    } catch {
       // Ignore json parse error if not json
     }
 

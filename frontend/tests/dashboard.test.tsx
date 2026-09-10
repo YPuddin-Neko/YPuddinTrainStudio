@@ -4,10 +4,15 @@ import { setupServer } from 'msw/node';
 import { handlers } from '../src/mocks/handlers';
 import Dashboard from '../src/pages/Dashboard/Dashboard';
 import { MemoryRouter } from 'react-router-dom';
+import '../src/i18n';
+import i18n from '../src/i18n';
 
 const server = setupServer(...handlers);
 
-beforeAll(() => server.listen());
+beforeAll(async () => {
+  server.listen();
+  await i18n.changeLanguage('zh-CN'); // 页面文案已 i18n 化，固定默认中文再按文本断言
+});
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
@@ -21,8 +26,8 @@ describe('Dashboard Page (C2)', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('dashboard-page')).toBeInTheDocument();
-      expect(screen.getByText('Queue Summary')).toBeInTheDocument();
-      expect(screen.getByText('Recent Artifacts')).toBeInTheDocument();
+      expect(screen.getByText('队列摘要')).toBeInTheDocument();
+      expect(screen.getByText('最近产物')).toBeInTheDocument();
     });
   });
 });

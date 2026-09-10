@@ -1,4 +1,13 @@
-import '@testing-library/jest-dom';
+import '@testing-library/jest-dom/vitest';
+
+// jsdom 无 ResizeObserver：EChart 容器尺寸监听降级为空实现
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}
 
 // Mock Canvas getContext for JSDOM ECharts rendering
 if (typeof HTMLCanvasElement !== 'undefined') {
@@ -22,6 +31,13 @@ if (typeof HTMLCanvasElement !== 'undefined') {
     scale: () => {},
     rotate: () => {},
     arc: () => {},
+    ellipse: () => {},
+    bezierCurveTo: () => {},
+    quadraticCurveTo: () => {},
+    setLineDash: () => {},
+    createLinearGradient: () => ({ addColorStop: () => {} }),
+    createRadialGradient: () => ({ addColorStop: () => {} }),
+    createPattern: () => null,
     fill: () => {},
     measureText: () => ({ width: 0 }),
     transform: () => {},

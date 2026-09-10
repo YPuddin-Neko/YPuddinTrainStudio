@@ -17,11 +17,17 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    // echarts 按需引入后仍 ~550 kB（图表引擎本体），已单独分块且仅 JobDetail 懒加载时拉取，放宽该块的告警线
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
-        manualChunks: {
-          echarts: ['echarts', 'echarts-for-react'],
-          vendor: ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query', 'i18next', 'react-i18next', 'lucide-react'],
+        manualChunks(id: string) {
+          if (id.includes('node_modules/echarts') || id.includes('node_modules/zrender')) return 'echarts';
+          if (
+            /node_modules\/(react|react-dom|react-router|@tanstack|i18next|lucide-react|scheduler)\//.test(id)
+          ) {
+            return 'vendor';
+          }
         },
       },
     },

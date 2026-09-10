@@ -28,6 +28,13 @@ async function setInputValue(input, page, value) {
   if (actual !== String(value)) throw new Error(`setInputValue failed: expected ${value}, got ${actual}`);
 }
 
+async function clickByTestId(page, testId) {
+  const el = await page.$(`[data-testid="${testId}"]`);
+  if (!el) return false;
+  await el.click();
+  return true;
+}
+
 async function clickButtonByText(page, text, exact = false) {
   const buttons = await page.$$('button');
   for (const btn of buttons) {
@@ -74,11 +81,11 @@ async function run() {
   console.log('STEP 2: Register dataset via UI (project detail)');
   await page.goto(`${FRONTEND}/projects/${pid}`, { waitUntil: 'domcontentloaded' });
   await sleep(2000);
-  await clickButtonByText(page, 'Register Dataset');
+  await clickByTestId(page, 'register-dataset-btn');
   await page.waitForSelector('[data-testid="register-dataset-modal"]');
   const pathInput = await page.$('[data-testid="register-dataset-modal"] input[placeholder="/path/to/images"]');
   await pathInput.type(DATASET_PATH);
-  await clickButtonByText(page, 'Register', true);
+  await clickByTestId(page, 'register-submit-btn');
   await sleep(2000);
   await page.screenshot({ path: 'screenshots/12-project-datasets.png' });
 
@@ -179,7 +186,7 @@ async function run() {
   console.log('STEP 7: Project detail tabs');
   await page.goto(`${FRONTEND}/projects/${pid}`, { waitUntil: 'domcontentloaded' });
   await sleep(2000);
-  await clickButtonByText(page, 'Jobs');
+  await clickByTestId(page, 'tab-jobs');
   await sleep(1000);
   await page.screenshot({ path: 'screenshots/18-project-jobs.png' });
 
