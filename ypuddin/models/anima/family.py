@@ -76,17 +76,16 @@ def default_config() -> dict[str, Any]:
 
 
 def load_dit(path: str | Path, *, device: torch.device | str, dtype: torch.dtype) -> tuple[nn.Module, dict[str, Any]]:
+    """Build the DiT on the meta device (no 8 GB fp32 CPU allocation), then assign checkpoint tensors."""
     sd = _read_state_dict(path, dtype)
     config = infer_config(sd)
     with torch.device("meta"):
         model = build_dit(config)
     missing, unexpected = model.load_state_dict(sd, strict=False, assign=True)
-    missing = [m for m in missing if "pos_emb" not in m and "freqs" not in m and "rope" not in m.lower()]
     if missing:
         raise RuntimeError(f"Anima checkpoint is missing {len(missing)} tensors, e.g. {missing[:5]}")
     if unexpected:
         log.warning("ignoring %d unexpected tensors in Anima checkpoint, e.g. %s", len(unexpected), unexpected[:5])
-    # non-persistent buffers (RoPE tables) are still on meta -> re-materialize them on the target device
     model = _materialize_meta_buffers(model, device)
     model.to(device)
     model.requires_grad_(False)
@@ -95,13 +94,26 @@ def load_dit(path: str | Path, *, device: torch.device | str, dtype: torch.dtype
 
 
 def _materialize_meta_buffers(model: nn.Module, device: torch.device | str) -> nn.Module:
+    """Recreate the non-persistent RoPE tables that stay on ``meta`` after ``load_state_dict(assign=True)``.
+
+    Both buffer families are deterministic functions of constructor arguments, so recomputing them
+    here is exactly what ``__init__`` would have produced on a real device.
+    """
+    from .vendor.cosmos_dit import AdapterRotaryEmbedding, VideoRopePosition3DEmb
+
+    device = torch.device(device)
     for module in model.modules():
-        for name, buf in list(module.named_buffers(recurse=False)):
-            if buf.device.type == "meta":
-                if hasattr(module, "reset_buffers"):
-                    module.reset_buffers()
-                else:
-                    module._buffers[name] = torch.zeros(buf.shape, dtype=buf.dtype, device=device)
+        if isinstance(module, VideoRopePosition3DEmb):
+            dim_h, dim_t = module._dim_h, module._dim_t
+            module.seq = torch.arange(max(module.max_h, module.max_w, module.max_t), dtype=torch.float, device=device)
+            module.dim_spatial_range = torch.arange(0, dim_h, 2, device=device)[: (dim_h // 2)].float() / dim_h
+            module.dim_temporal_range = torch.arange(0, dim_t, 2, device=device)[: (dim_t // 2)].float() / dim_t
+        elif isinstance(module, AdapterRotaryEmbedding):
+            head_dim = module.inv_freq.shape[0] * 2
+            module.inv_freq = 1.0 / (module.rope_theta ** (torch.arange(0, head_dim, 2, dtype=torch.int64, device=device).float() / head_dim))
+    leftover = [n for n, b in model.named_buffers() if b.device.type == "meta"]
+    if leftover:
+        raise RuntimeError(f"buffers still on meta after load: {leftover[:5]}")
     return model
 
 
@@ -120,21 +132,15 @@ class AnimaLatent(LatentPipeline):
 
     def _ensure(self) -> nn.Module:
         if self.vae is None:
-            from .vendor import qwen_image_vae as vae3d
-
-            loader = getattr(vae3d, "load_qwen_image_vae", None)
             if self.use_2d:
-                try:
-                    from .vendor import qwen_image_vae_2d as vae2d
-
-                    loader = getattr(vae2d, "load_qwen_image_vae_2d", None) or loader
-                except ImportError:
-                    pass
-            if loader is None:
-                raise RuntimeError("vendored VAE module lacks a loader function")
-            self.vae = loader(str(self.path), device=self.device, dtype=self.dtype)
-            self.vae.requires_grad_(False)
-            self.vae.eval()
+                from .vendor.qwen_image_vae_2d import load_vae
+            else:
+                from .vendor.qwen_image_vae import load_vae
+            vae = load_vae(str(self.path), device="cpu")
+            vae = vae.to(device=self.device, dtype=self.dtype)
+            vae.requires_grad_(False)
+            vae.eval()
+            self.vae = vae
         return self.vae
 
     def to(self, device: torch.device | str) -> None:

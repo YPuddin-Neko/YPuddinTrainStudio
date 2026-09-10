@@ -1,5 +1,6 @@
 # Vendored from kohya-ss/sd-scripts (Apache-2.0) at commit 4e62430; local modifications: import paths only + noted changes.
 # Unified attention function supporting various implementations
+# ruff: noqa  -- vendored third-party code, kept byte-close to upstream; not linted to project style
 #
 # Local modifications (see NOTICE.md):
 #   * Only the PyTorch SDPA backend ("torch", alias "sdpa") is kept. The xformers / flash-attn / sageattention
