@@ -108,6 +108,9 @@ class Trainer:
         )
         self.family = get_family(cfg.model.family)
         self._check_capabilities()
+        if self.device.type == "cuda":
+            torch.backends.cuda.matmul.allow_tf32 = cfg.memory.allow_tf32
+            torch.backends.cudnn.allow_tf32 = cfg.memory.allow_tf32
         model_dtype = DTYPES[cfg.model.dtype] if self.device.type != "cpu" else torch.float32
 
         self.emit("phase.changed", phase="loading")
@@ -167,6 +170,8 @@ class Trainer:
             blocks = self.family.memory_layout(self.loaded).blocks
             self.swapper = BlockSwapper(blocks, cfg.memory.blocks_to_swap, self.device)
             self.emit("memory.block_swap", **self.swapper.summary())
+        if cfg.memory.compile:
+            self.compile_blocks()
 
         self.objective = Objective(cfg.objective)
         groups = self.adapters.param_groups(
@@ -220,9 +225,40 @@ class Trainer:
             problems.append("dataset.masked_loss is not supported by this family")
         if cfg.memory.activation_checkpointing != "none" and "activation_checkpointing" not in caps:
             problems.append("memory.activation_checkpointing is not supported by this family")
+        if cfg.memory.compile and "compile" not in caps:
+            problems.append("memory.compile is not supported by this family")
+        if cfg.memory.compile and cfg.memory.blocks_to_swap > 0:
+            problems.append(
+                "memory.compile cannot be combined with memory.blocks_to_swap (swap hooks break the graph)"
+            )
         problems += self.family.validate_config(cfg.model)
         if problems:
             raise ValueError("; ".join(problems))
+
+    def compile_blocks(self, compile_fn: Callable[[torch.nn.Module], torch.nn.Module] | None = None) -> int:
+        """Replace every transformer block by its ``torch.compile``d wrapper (after adapter injection).
+
+        Adapters are referenced directly by the ``AdapterSet``, so export / checkpointing are unaffected by
+        the ``_orig_mod`` wrapper. Only CUDA gets the real compiler: inductor has no MPS backend and CPU
+        compilation costs more than it saves for the toy family.
+        """
+        if compile_fn is None:
+            if self.device.type != "cuda":
+                self.emit("warning", message="memory.compile is only applied on CUDA; running eagerly")
+                return 0
+            compile_fn = torch.compile
+        blocks = self.family.memory_layout(self.loaded).blocks
+        by_id = {id(m): n for n, m in self.loaded.backbone.named_modules()}
+        n = 0
+        for block in blocks:
+            name = by_id.get(id(block))
+            if name is None:
+                continue
+            parent_name, _, attr = name.rpartition(".")
+            parent = self.loaded.backbone.get_submodule(parent_name) if parent_name else self.loaded.backbone
+            setattr(parent, attr, compile_fn(block))
+            n += 1
+        return n
 
     def _resolve_text_mode(self) -> str:
         mode = self.cfg.dataset.text_encoding
@@ -364,7 +400,13 @@ class Trainer:
                     )
                 entries.append(self.text_cache.get(key))
             return self.loaded.text.cond_from_cache(entries, self.device)
-        return self.loaded.text.encode(captions, self.device)
+        if not self.cfg.memory.offload_text_encoder or self.device.type == "cpu":
+            return self.loaded.text.encode(captions, self.device)
+        self.loaded.text.to(self.device)
+        try:
+            return self.loaded.text.encode(captions, self.device)
+        finally:
+            self.loaded.text.to("cpu")
 
     def _latents(self, batch: dict[str, Any]) -> Tensor:
         if "latents" in batch:
@@ -405,8 +447,13 @@ class Trainer:
                 mask[:, None].to(self.device), size=x0.shape[-2:], mode="area"
             )[:, 0]
         x_in = x_t.to(self.loaded.dtype if self.device.type != "cpu" else torch.float32)
-        if self.swapper is not None and torch.is_grad_enabled():
-            x_in.requires_grad_(True)  # gives every block an input grad so backward hooks fire in order
+        if torch.is_grad_enabled() and (
+            self.swapper is not None or self.cfg.memory.activation_checkpointing != "none"
+        ):
+            # block swap: every block needs an input grad so backward hooks fire in order;
+            # offloaded checkpointing (custom autograd.Function) only records a graph when an *input* requires
+            # grad -- adapter parameters alone are invisible to it
+            x_in.requires_grad_(True)
         with self._autocast():
             pred = self.family.forward(self.loaded, x_in, t.to(self.device), cond)
         loss, per_sample = self.objective.loss(

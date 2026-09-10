@@ -224,8 +224,9 @@ class AnimaFamily(ModelFamily):
         if problems:
             raise FileNotFoundError("; ".join(problems))
         dit, config = load_dit(cfg.dit_path, device=device, dtype=dtype)
-        if memory.activation_checkpointing != "none" and hasattr(dit, "enable_gradient_checkpointing"):
-            dit.enable_gradient_checkpointing()
+        if memory.activation_checkpointing != "none":
+            dit.enable_gradient_checkpointing(unsloth_offload=memory.activation_checkpointing == "unsloth")
+        dit.attn_mode = self.resolve_attention(cfg.attention, device)
         text = AnimaText(cfg.text_encoder_path, tokenizer_path=cfg.tokenizer_path, dtype=dtype, device=device)
         latent = AnimaLatent(
             cfg.vae_path, device=device, dtype=torch.float32 if torch.device(device).type == "cpu" else dtype
@@ -244,6 +245,19 @@ class AnimaFamily(ModelFamily):
             dtype=dtype,
             extra={"dit_config": config},
         )
+
+    @staticmethod
+    def resolve_attention(requested: str, device: torch.device | str) -> str:
+        """Map the config value onto the vendored backend names; ``auto`` never picks an optional package."""
+        if requested == "sage":
+            from .vendor.attention import sage_available
+
+            if torch.device(device).type != "cuda":
+                raise ValueError("model.attention='sage' requires CUDA")
+            if not sage_available():
+                raise ValueError("model.attention='sage' requires the sageattention package")
+            return "sage"
+        return "torch"
 
     # ----------------------------------------------------------------- forward
     def forward(self, loaded: LoadedModel, x_t: Tensor, t: Tensor, cond: TextCond, **extra: Any) -> Tensor:

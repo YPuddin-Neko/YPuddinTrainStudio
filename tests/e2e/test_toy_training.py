@@ -271,3 +271,63 @@ def test_cached_text_mode_with_caption_augmentation(image_dataset, tmp_path):
     assert [e for e in events if e["type"] == "sample.saved"]
     cached_files = list((out / "cache" / "text").rglob("*.safetensors"))
     assert len(cached_files) == text_progress[-1]["total"]
+
+
+def test_compile_blocks_wiring_keeps_training_and_export_intact(image_dataset, tmp_path):
+    """memory.compile swaps every block for a wrapper after injection; adapters/export must not notice."""
+    out = tmp_path / "run"
+    cfg = _cfg(
+        image_dataset,
+        out,
+        loop={"epochs": 1, "grad_accum": 1, "mixed_precision": "no"},
+        sampling={"enabled": False},
+        validation={"enabled": False},
+    )
+    trainer = Trainer(cfg, device="cpu")
+    trainer.prepare()
+    wrapped = []
+
+    class Wrapper(torch.nn.Module):
+        def __init__(self, inner):
+            super().__init__()
+            self._orig_mod = inner
+            wrapped.append(inner)
+
+        def forward(self, *a, **kw):
+            return self._orig_mod(*a, **kw)
+
+    n = trainer.compile_blocks(compile_fn=Wrapper)
+    blocks = trainer.family.memory_layout(trainer.loaded).blocks
+    assert n == len(wrapped) == len(blocks) > 0
+    assert all(isinstance(b, Wrapper) for b in blocks)
+    before = {k: v.clone() for k, v in trainer.adapters.export_state()[0].items()}
+    assert trainer.run() == "finished"
+    after = trainer.adapters.export_state()[0]
+    assert set(after) == set(before) and any(not torch.equal(after[k], before[k]) for k in after)
+    assert not any("_orig_mod" in k for k in after)
+
+
+def test_compile_is_ignored_off_cuda_and_rejected_with_block_swap(image_dataset, tmp_path):
+    out = tmp_path / "run"
+    cfg = _cfg(
+        image_dataset,
+        out,
+        memory={"compile": True},
+        loop={"epochs": 1, "grad_accum": 1, "mixed_precision": "no"},
+        sampling={"enabled": False},
+        validation={"enabled": False},
+    )
+    trainer = Trainer(cfg, device="cpu")
+    trainer.prepare()
+    assert any(e["type"] == "warning" and "compile" in e["message"] for e in _events(out / "events.jsonl"))
+    bad = _cfg(
+        image_dataset,
+        tmp_path / "bad",
+        memory={"compile": True, "blocks_to_swap": 1},
+        sampling={"enabled": False},
+        validation={"enabled": False},
+    )
+    import pytest
+
+    with pytest.raises(ValueError, match="compile"):
+        Trainer(bad, device="cpu").prepare()

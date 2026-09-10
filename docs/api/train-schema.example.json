@@ -1306,12 +1306,10 @@
         },
         "attention": {
           "default": "auto",
-          "description": "注意力后端",
+          "description": "注意力后端：sdpa（PyTorch 内置，自动选 flash/高效内核）；sage 需安装 sageattention，仅用于无掩码的图像自注意力",
           "enum": [
             "auto",
             "sdpa",
-            "flash",
-            "xformers",
             "sage"
           ],
           "title": "Attention",

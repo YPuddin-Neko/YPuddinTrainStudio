@@ -8,6 +8,9 @@
 #   * In ``split_attn`` mode with no explicit ``seqlens`` the key/value tensors are no longer sliced to the *query*
 #     length. Upstream did ``k[i:i+1, :q_len]`` which is a no-op for self-attention but silently truncated the text
 #     context in cross-attention whenever the image token count was smaller than the text token count.
+#   * ``attn_mode="sage"`` is accepted again through a tiny dispatch shim (``_sdpa``): unmasked, dropout-free calls go
+#     to ``sageattention.sageattn`` when the package is installed; masked calls (text cross-attention) and dropout fall
+#     back to PyTorch SDPA, which is exactly what upstream's sage branch did.
 """Minimal SDPA attention helper used by :mod:`ypuddin.models.anima.vendor.cosmos_dit`.
 
 Call pattern (identical to sd-scripts ``library.attention``)::
@@ -25,10 +28,36 @@ from typing import Optional, Union
 import torch
 
 _TORCH_MODES = ("torch", "sdpa", None)
+_SAGE_MODES = ("sage", "sageattn")
+
+try:  # optional, CUDA-only accelerator (int8 QK^T); never required
+    from sageattention import sageattn as _sageattn  # type: ignore
+except Exception:  # noqa: BLE001  (ImportError or a CUDA-less install failing at import time)
+    _sageattn = None
+
+
+def sage_available() -> bool:
+    return _sageattn is not None
 
 
 def _is_torch_mode(attn_mode: Optional[str]) -> bool:
-    return attn_mode in _TORCH_MODES
+    return attn_mode in _TORCH_MODES or attn_mode in _SAGE_MODES
+
+
+def _sdpa(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    attn_mode: Optional[str],
+    attn_mask: Optional[torch.Tensor] = None,
+    dropout_p: float = 0.0,
+) -> torch.Tensor:
+    """SDPA-compatible dispatch: [B, H, L, D] in, [B, H, L, D] out."""
+    if attn_mode in _SAGE_MODES and attn_mask is None and dropout_p == 0.0 and q.is_cuda:
+        if _sageattn is None:
+            raise RuntimeError("attn_mode='sage' requires the sageattention package (pip install sageattention)")
+        return _sageattn(q, k, v, tensor_layout="HND", is_causal=False)
+    return torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=dropout_p)
 
 
 @dataclass
@@ -118,8 +147,8 @@ def attention(
 
     if not _is_torch_mode(attn_params.attn_mode):
         raise NotImplementedError(
-            f"Only the 'torch' (SDPA) attention backend is vendored; got attn_mode={attn_params.attn_mode!r}. "
-            "xformers / flash-attn / sageattention were removed from this copy."
+            f"Only the 'torch' (SDPA) and 'sage' attention backends are vendored; got attn_mode={attn_params.attn_mode!r}. "
+            "xformers / flash-attn were removed from this copy (PyTorch SDPA already dispatches to flash kernels)."
         )
 
     # If split attn is False, attention mask is provided and all sequence lengths are same, we can trim the sequence
@@ -156,7 +185,7 @@ def attention(
 
         x = []
         for i in range(len(q)):
-            x_i = torch.nn.functional.scaled_dot_product_attention(q[i], k[i], v[i], dropout_p=drop_rate)
+            x_i = _sdpa(q[i], k[i], v[i], attn_params.attn_mode, dropout_p=drop_rate)
             q[i] = None
             k[i] = None
             v[i] = None
@@ -167,7 +196,7 @@ def attention(
         q = transpose_fn(q)
         k = transpose_fn(k)
         v = transpose_fn(v)
-        x = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=attn_params.attention_mask, dropout_p=drop_rate)
+        x = _sdpa(q, k, v, attn_params.attn_mode, attn_mask=attn_params.attention_mask, dropout_p=drop_rate)
         del q, k, v
 
     x = transpose_fn(x)  # [B, L, H, D]
@@ -179,4 +208,4 @@ def attention(
     return x
 
 
-__all__ = ["AttentionParams", "attention"]
+__all__ = ["AttentionParams", "attention", "sage_available"]

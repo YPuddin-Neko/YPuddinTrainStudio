@@ -690,3 +690,23 @@ def test_no_unexpected_warnings_from_import():
         import ypuddin.models.anima.vendor.cosmos_dit as m
 
         importlib.reload(m)
+
+
+def test_sage_mode_falls_back_to_sdpa_off_cuda():
+    """attn_mode='sage' must produce SDPA results wherever sageattention cannot run (CPU, masks, dropout)."""
+    from ypuddin.models.anima.vendor.attention import AttentionParams, attention
+
+    torch.manual_seed(0)
+    q, k, v = (torch.randn(2, 6, 4, 8) for _ in range(3))
+    ref = attention([q, k, v], attn_params=AttentionParams.create_attention_params("torch", False))
+    out = attention([q, k, v], attn_params=AttentionParams.create_attention_params("sage", False))
+    torch.testing.assert_close(out, ref)
+    mask = torch.ones(2, 6, dtype=torch.bool)
+    mask[1, 4:] = False
+    ref_m = attention(
+        [q, k, v], attn_params=AttentionParams.create_attention_params_from_mask("torch", False, 0, mask)
+    )
+    out_m = attention(
+        [q, k, v], attn_params=AttentionParams.create_attention_params_from_mask("sage", False, 0, mask)
+    )
+    torch.testing.assert_close(out_m, ref_m)

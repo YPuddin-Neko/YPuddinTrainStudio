@@ -139,3 +139,46 @@ def test_validate_config_reports_missing_paths():
     fam = get_family("anima")
     problems = fam.validate_config(ModelConfig(family="anima", dit_path="/nope.safetensors"))
     assert len(problems) == 3 and any("does not exist" in p for p in problems)
+
+
+@pytest.mark.parametrize("mode", ["block", "unsloth"])
+def test_activation_checkpointing_modes_match_plain_gradients(tmp_path, mode):
+    _, path = _tiny_checkpoint(tmp_path)
+    fam = get_family("anima")
+    from ypuddin.models.base import LoadedModel
+
+    grads = {}
+    for variant in ("plain", mode):
+        torch.manual_seed(1)
+        dit, _ = load_dit(path, device="cpu", dtype=torch.float32)
+        if variant != "plain":
+            dit.enable_gradient_checkpointing(unsloth_offload=variant == "unsloth")
+            assert all(b.gradient_checkpointing for b in dit.blocks)
+            assert all(b.unsloth_offload_checkpointing == (variant == "unsloth") for b in dit.blocks)
+        aset = inject(
+            dit,
+            AdapterConfig(algo="lokr", rank=2, alpha=2.0, factor=4, preset="attn-mlp"),
+            fam.presets()["attn-mlp"],
+        )
+        loaded = LoadedModel(
+            backbone=dit, text=None, latent=None, device=torch.device("cpu"), dtype=torch.float32
+        )
+        dit.train()
+        x = torch.randn(2, 16, 8, 8, generator=torch.Generator().manual_seed(3))
+        x.requires_grad_(True)  # the trainer does this whenever checkpointing is on (offload path needs it)
+        cond = _cond(b=2)
+        out = fam.forward(loaded, x, torch.tensor([0.3, 0.7]), cond)
+        out.square().mean().backward()
+        grads[variant] = [p.grad.clone() for p in aset.parameters()]
+    assert any(g.abs().sum() > 0 for g in grads[mode])  # w1 grads are zero at init (w2 starts at zero)
+    for g_ref, g in zip(grads["plain"], grads[mode], strict=True):
+        torch.testing.assert_close(g, g_ref, rtol=1e-4, atol=1e-5)
+
+
+def test_resolve_attention_backend():
+    from ypuddin.models.anima.family import AnimaFamily
+
+    assert AnimaFamily.resolve_attention("auto", "cpu") == "torch"
+    assert AnimaFamily.resolve_attention("sdpa", "cpu") == "torch"
+    with pytest.raises(ValueError, match="requires CUDA"):
+        AnimaFamily.resolve_attention("sage", "cpu")
