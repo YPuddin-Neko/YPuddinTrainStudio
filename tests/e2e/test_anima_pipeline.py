@@ -209,3 +209,40 @@ def test_anima_convert_roundtrip_comfyui(tiny_models, tiny_vae_loader, image_dat
     back = comfy_to_kohya(comfy)
     assert set(back) == set(tensors)
     assert all(torch.equal(back[k], tensors[k]) for k in tensors)
+
+
+def test_anima_merge_into_prefixed_base_checkpoint(tiny_models, tiny_vae_loader, image_dataset, tmp_path):
+    """`ypuddin merge` must resolve kohya keys against the official ``net.``-prefixed base file."""
+    from ypuddin.models import get_family
+    from ypuddin.models.anima.family import load_dit
+    from ypuddin.tools import merge_into_state_dict
+
+    out = tmp_path / "run"
+    cfg = _cfg(
+        tiny_models,
+        image_dataset,
+        out,
+        checkpoint={"save_dtype": "fp32"},  # compare merge against the in-memory adapters exactly
+        sampling={"enabled": False},
+        validation={"enabled": False},
+    )
+    trainer = Trainer(cfg, device="cpu")
+    assert trainer.run() == "finished"
+    tensors = load_file(str(out / "anima-final.safetensors"))
+    base = load_file(str(tiny_models["dit"]))
+    assert all(k.startswith("net.") for k in base)
+    for names in (None, get_family("anima").linear_module_names()):
+        merged, unmatched = merge_into_state_dict(base, tensors, module_names=names)
+        assert not unmatched, unmatched[:3]
+        assert set(merged) == set(base)
+        layer = trainer.adapters.layers["blocks.0.self_attn.q_proj"]
+        expected = base["net.blocks.0.self_attn.q_proj.weight"].float() + layer.adapter.delta_weight().float()
+        torch.testing.assert_close(
+            merged["net.blocks.0.self_attn.q_proj.weight"].float(), expected, rtol=1e-5, atol=1e-6
+        )
+        changed = [k for k in base if not torch.equal(base[k], merged[k])]
+        assert len(changed) == len(trainer.adapters.layers)
+    merged_path = tmp_path / "merged.safetensors"
+    save_file({k: v.contiguous() for k, v in merged.items()}, str(merged_path))
+    dit, _ = load_dit(merged_path, device="cpu", dtype=torch.float32)  # still a valid Anima checkpoint
+    assert sum(p.numel() for p in dit.parameters()) == sum(v.numel() for v in base.values())

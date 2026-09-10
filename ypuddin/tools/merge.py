@@ -9,6 +9,15 @@ from torch import Tensor
 from ypuddin.adapters import modules_from_tensors
 from ypuddin.adapters.frozen import FP8_DTYPES, quantize_fp8
 
+CONTAINER_PREFIXES = ("net.", "model.diffusion_model.", "diffusion_model.", "transformer.")
+
+
+def _strip_container_prefix(key: str) -> str:
+    for p in CONTAINER_PREFIXES:
+        if key.startswith(p):
+            return key[len(p) :]
+    return key
+
 
 def merge_into_state_dict(
     base: dict[str, Tensor],
@@ -28,14 +37,19 @@ def merge_into_state_dict(
     weights are dequantized, merged in fp32 and re-quantized with a fresh per-tensor scale.
     """
     mods = modules_from_tensors(adapter_tensors, metadata or {}, prefix=prefix)
-    names = module_names or [
-        k[: -len(".weight")] for k in base if k.endswith(".weight") and base[k].dim() == 2
-    ]
+    # base checkpoints may carry a container prefix (anima-base: ``net.``, ComfyUI: ``model.diffusion_model.``);
+    # adapter keys never do, so match on the stripped name and write back to the real key
+    stripped_to_key = {}
+    for k in base:
+        if k.endswith(".weight") and base[k].dim() == 2:
+            stripped_to_key.setdefault(_strip_container_prefix(k)[: -len(".weight")], k[: -len(".weight")])
+    names = module_names or list(stripped_to_key)
     table = {n.replace(".", "_"): n for n in names}
     merged = dict(base)
     unmatched: list[str] = []
     for i, (key, (mod, dora)) in enumerate(mods.items()):
-        dotted = table.get(key[len(prefix) + 1 :])
+        dotted_stripped = table.get(key[len(prefix) + 1 :])
+        dotted = stripped_to_key.get(dotted_stripped) if dotted_stripped is not None else None
         if dotted is None or f"{dotted}.weight" not in base:
             unmatched.append(key)
             continue
