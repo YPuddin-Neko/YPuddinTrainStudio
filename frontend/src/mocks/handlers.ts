@@ -1,4 +1,5 @@
 import { http, HttpResponse } from 'msw';
+import { mockJobs, updateMockJob, removeMockJob } from './mockStore';
 import {
   SystemStats,
   Project,
@@ -48,64 +49,7 @@ const mockProjects: Project[] = [
   },
 ];
 
-let mockJobs: Job[] = [
-  {
-    id: 'job_01',
-    type: 'train',
-    name: 'chara-v1',
-    project_id: 'proj_01',
-    status: 'running',
-    priority: 10,
-    scheduled_at: null,
-    created_at: 1789000000,
-    started_at: 1789000000,
-    finished_at: null,
-    progress: {
-      phase: 'training',
-      step: 450,
-      total_steps: 2000,
-      epoch: 1,
-      eta_s: 3600,
-      it_s: 2.1,
-      vram_peak_mb: 18400,
-    },
-    latest: { loss: 0.085, loss_ema: 0.089, lr: { default: 0.0001 } },
-    error: null,
-    resume_from: null,
-    artifact_ids: ['art_01'],
-    run_dir: null,
-    pid: null,
-    exit_code: null,
-  },
-  {
-    id: 'job_02',
-    type: 'cache',
-    name: 'dataset-cache',
-    project_id: 'proj_01',
-    status: 'completed',
-    priority: 5,
-    scheduled_at: null,
-    created_at: 1788996400,
-    started_at: 1788996400,
-    finished_at: 1788996500,
-    progress: {
-      phase: 'finalizing',
-      step: 100,
-      total_steps: 100,
-      epoch: 1,
-      eta_s: 0,
-      it_s: 15.0,
-      vram_peak_mb: 4200,
-    },
-    latest: { loss: 0, loss_ema: 0, lr: {} },
-    error: null,
-    resume_from: null,
-    artifact_ids: [],
-    run_dir: null,
-    pid: null,
-    exit_code: 0,
-  },
-];
+
 
 const mockArtifacts: Artifact[] = [
   {
@@ -376,7 +320,7 @@ export const handlers = [
       pid: null,
       exit_code: null,
     };
-    mockJobs = [job, ...mockJobs];
+    mockJobs.unshift(job);
     return HttpResponse.json(job);
   }),
 
@@ -387,12 +331,11 @@ export const handlers = [
 
   http.patch('/api/jobs/:id', async ({ params, request }) => {
     const body = (await request.json()) as any;
-    mockJobs = mockJobs.map((j) => (j.id === params.id ? { ...j, ...body } : j));
-    return HttpResponse.json(mockJobs.find((j) => j.id === params.id));
+    return HttpResponse.json(updateMockJob(String(params.id), body));
   }),
 
   http.delete('/api/jobs/:id', ({ params }) => {
-    mockJobs = mockJobs.filter((j) => j.id !== params.id);
+    removeMockJob(String(params.id));
     return HttpResponse.json({ ok: true });
   }),
 

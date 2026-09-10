@@ -90,7 +90,7 @@ export default function Queue() {
       .catch(console.error);
   };
 
-  // ---- 拖拽调整优先级：拖到目标行上方 → priority = target+1；下方 → target-1，PATCH 后刷新 ----
+  // ---- 拖拽调整优先级：拖到目标行插入并全局 normalize（自上而下 10 递减步进），逐个 PATCH 变更项 ----
   const dragJobIdRef = React.useRef<string | null>(null);
   const [dropTarget, setDropTarget] = React.useState<{ id: string; position: 'above' | 'below' } | null>(null);
 
@@ -109,16 +109,27 @@ export default function Queue() {
   const handleRowDrop = (e: React.DragEvent<HTMLTableRowElement>, targetJob: Job) => {
     e.preventDefault();
     const draggedId = dragJobIdRef.current;
+    const position = dropTarget?.position || 'below';
     dragJobIdRef.current = null;
     setDropTarget(null);
     if (!draggedId || draggedId === targetJob.id) return;
-    const newPriority =
-      dropTarget?.position === 'above' ? targetJob.priority + 1 : targetJob.priority - 1;
-    // 乐观更新
-    setJobs((prev) =>
-      prev.map((j) => (j.id === draggedId ? { ...j, priority: newPriority } : j))
-    );
-    apiClient.patch(`/jobs/${draggedId}`, { priority: newPriority })
+
+    // 1) 计算新顺序：把被拖行插入目标行上方/下方
+    const rest = jobs.filter((j) => j.id !== draggedId);
+    const dragged = jobs.find((j) => j.id === draggedId);
+    if (!dragged) return;
+    const targetIdx = rest.findIndex((j) => j.id === targetJob.id);
+    if (targetIdx === -1) return;
+    const insertAt = position === 'above' ? targetIdx : targetIdx + 1;
+    rest.splice(insertAt, 0, dragged);
+
+    // 2) 全局 normalize：按显示顺序自上而下分配 10 步进递减优先级
+    const normalized = rest.map((j, idx) => ({ ...j, priority: (rest.length - idx) * 10 }));
+    setJobs(normalized);
+
+    // 3) 仅 PATCH 优先级发生变化的项
+    const changed = normalized.filter((j, idx) => jobs.find((o) => o.id === j.id)?.priority !== (rest.length - idx) * 10);
+    Promise.all(changed.map((c) => apiClient.patch(`/jobs/${c.id}`, { priority: c.priority })))
       .then(fetchJobs)
       .catch((err) => {
         console.error(err);

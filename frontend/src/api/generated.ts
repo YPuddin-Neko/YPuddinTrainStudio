@@ -1141,6 +1141,19 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** JobPage */
+        JobPage: {
+            /** Items */
+            items: components["schemas"]["Job"][];
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+        } & {
+            [key: string]: unknown;
+        };
         /** JobPatch */
         JobPatch: {
             /** Priority */
@@ -1287,14 +1300,8 @@ export interface components {
             total_steps: number;
             /** Epochs */
             epochs?: number | null;
-            /** Params */
-            params?: components["schemas"]["PlanParams"] | {
-                [key: string]: unknown;
-            };
-            /** Memory */
-            memory?: components["schemas"]["PlanMemory"] | {
-                [key: string]: unknown;
-            };
+            params?: components["schemas"]["PlanParams"];
+            memory?: components["schemas"]["PlanMemory"];
             /** Text Encoding */
             text_encoding?: string | null;
         } & {
@@ -1324,9 +1331,15 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
-        /** PlanMemory */
+        /**
+         * PlanMemory
+         * @description Empty (all zeros, no estimate) when the family cannot build a meta backbone for the config.
+         */
         PlanMemory: {
-            /** Weights Mb */
+            /**
+             * Weights Mb
+             * @default 0
+             */
             weights_mb: number;
             /**
              * Swapped Mb
@@ -1338,9 +1351,15 @@ export interface components {
              * @default 0
              */
             text_encoder_mb: number;
-            /** Adapter Mb */
+            /**
+             * Adapter Mb
+             * @default 0
+             */
             adapter_mb: number;
-            /** Optimizer Mb */
+            /**
+             * Optimizer Mb
+             * @default 0
+             */
             optimizer_mb: number;
             /**
              * Heuristic
@@ -1358,16 +1377,28 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
-        /** PlanParams */
+        /**
+         * PlanParams
+         * @description Empty (all zeros) when the family cannot build a meta backbone for the config.
+         */
         PlanParams: {
-            /** Base */
+            /**
+             * Base
+             * @default 0
+             */
             base: number;
-            /** Trainable */
+            /**
+             * Trainable
+             * @default 0
+             */
             trainable: number;
-            /** Adapted Layers */
+            /**
+             * Adapted Layers
+             * @default 0
+             */
             adapted_layers: number;
             /** By Algo */
-            by_algo: {
+            by_algo?: {
                 [key: string]: number;
             };
         } & {
@@ -2849,7 +2880,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Job"][];
+                    "application/json": components["schemas"]["JobPage"];
                 };
             };
             /** @description Validation Error */

@@ -19,11 +19,7 @@ export type FsListEntry = S['FsEntry'];
 export type Artifact = S['Artifact'];
 export type ModelAsset = S['ModelAsset'];
 export type Settings = S['Settings'];
-// Plan.params / memory 在后端导出为与宽松 map 的联合，收窄为具体类型
-export type Plan = S['Plan'] & {
-  params?: S['PlanParams'];
-  memory?: S['PlanMemory'];
-};
+export type Plan = S['Plan'];
 export type Preset = S['Preset'];
 export type DatasetSource = S['DatasetSource'];
 export type DatasetStats = S['DatasetStats'];
@@ -53,12 +49,7 @@ export type JobStatus =
   | 'failed'
   | 'cancelled';
 
-export interface JobListResponse {
-  items: Job[];
-  total: number;
-  page: number;
-  page_size: number;
-}
+export type JobListResponse = S['JobPage'];
 
 export interface ApiErrorPayload {
   error: {

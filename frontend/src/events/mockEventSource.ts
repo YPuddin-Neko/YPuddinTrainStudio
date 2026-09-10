@@ -1,4 +1,5 @@
 import { EVENT_TYPES } from './eventTypes';
+import { runningMockJobs } from '../mocks/mockStore';
 
 /**
  * 开发态 mock SSE 事件源。
@@ -13,8 +14,12 @@ export function createMockEventSource() {
   const listeners = new Map<string, Set<RawListener>>();
   const timers: ReturnType<typeof setInterval>[] = [];
   let seq = 0;
-  let step = 500;
-  let loss = 0.42;
+  // 每个 job 独立的步进状态，支持任意 job_id（含 POST /jobs 新建的）
+  const perJob = new Map<string, { step: number; loss: number }>();
+  const stateOf = (jobId: string) => {
+    if (!perJob.has(jobId)) perJob.set(jobId, { step: 0, loss: 0.42 });
+    return perJob.get(jobId)!;
+  };
 
   const emit = (type: string, data: any) => {
     const set = listeners.get(type);
@@ -42,51 +47,61 @@ export function createMockEventSource() {
     }, 2000)
   );
 
-  // job.step 每 1s（模拟 job_01 训练中）
+  // job.step 每 1s（遍历所有 running 状态的 mock 任务，支持任意 job_id）
   timers.push(
     setInterval(() => {
-      step += 1;
-      loss = Math.max(0.02, loss * 0.998 + (Math.random() - 0.5) * 0.01);
-      emit(EVENT_TYPES.JOB_STEP, {
-        job_id: 'job_01',
-        step,
-        epoch: Math.floor(step / 500),
-        loss,
-        loss_ema: loss * 0.99,
-        lr: { default: 0.0001 },
-        grad_norm: 0.4 + Math.random() * 0.3,
-        it_s: 2.0 + (Math.random() - 0.5) * 0.2,
-        vram_mb: 16000 + Math.random() * 2000,
-        eta_s: 2000 - step,
-      });
+      for (const job of runningMockJobs()) {
+        const st = stateOf(job.id);
+        st.step += 1;
+        st.loss = Math.max(0.02, st.loss * 0.998 + (Math.random() - 0.5) * 0.01);
+        const total = job.progress?.total_steps || 2000;
+        emit(EVENT_TYPES.JOB_STEP, {
+          job_id: job.id,
+          step: st.step,
+          epoch: Math.floor(st.step / 500),
+          loss: st.loss,
+          loss_ema: st.loss * 0.99,
+          lr: { default: 0.0001 },
+          grad_norm: 0.4 + Math.random() * 0.3,
+          it_s: 2.0 + (Math.random() - 0.5) * 0.2,
+          vram_mb: 16000 + Math.random() * 2000,
+          eta_s: Math.max(0, total - st.step),
+        });
+      }
     }, 1000)
   );
 
   // job.validation 每 5s
   timers.push(
     setInterval(() => {
-      const mean = 0.2 * Math.exp(-step / 3000) + 0.05;
-      emit(EVENT_TYPES.JOB_VALIDATION, {
-        job_id: 'job_01',
-        step,
-        per_t: { '0.1': mean * 1.4, '0.5': mean, '0.9': mean * 0.7 },
-        mean,
-      });
+      for (const job of runningMockJobs()) {
+        const st = stateOf(job.id);
+        const mean = 0.2 * Math.exp(-st.step / 3000) + 0.05;
+        emit(EVENT_TYPES.JOB_VALIDATION, {
+          job_id: job.id,
+          step: st.step,
+          per_t: { '0.1': mean * 1.4, '0.5': mean, '0.9': mean * 0.7 },
+          mean,
+        });
+      }
     }, 5000)
   );
 
   // job.log 每 2s
   timers.push(
     setInterval(() => {
-      emit(EVENT_TYPES.JOB_LOG, {
-        job_id: 'job_01',
-        lines: [{ ts: Date.now() / 1000, level: 'info', msg: `mock step ${step} loss=${loss.toFixed(4)}` }],
-        next_offset: step,
-      });
+      for (const job of runningMockJobs()) {
+        const st = stateOf(job.id);
+        emit(EVENT_TYPES.JOB_LOG, {
+          job_id: job.id,
+          lines: [{ ts: Date.now() / 1000, level: 'info', msg: `mock step ${st.step} loss=${st.loss.toFixed(4)}` }],
+          next_offset: st.step,
+        });
+      }
     }, 2000)
   );
 
-  // job.sample_progress 每 800ms：2 张 prompt × 20 步循环自增，走完一轮歇 3s 再开始
+  // job.sample_progress 每 800ms：2 张 prompt × 20 步循环自增，走完一轮歇 3s 再开始（对每个 running 任务）
   let spDone = 0;
   let spPromptIndex = 0;
   let spPause = 0;
@@ -98,14 +113,17 @@ export function createMockEventSource() {
         spPause -= 1;
         return;
       }
-      emit(EVENT_TYPES.JOB_SAMPLE_PROGRESS, {
-        job_id: 'job_01',
-        step,
-        prompt_index: spPromptIndex,
-        prompts: SP_PROMPTS,
-        done: spDone,
-        total: SP_TOTAL,
-      });
+      for (const job of runningMockJobs()) {
+        const st = stateOf(job.id);
+        emit(EVENT_TYPES.JOB_SAMPLE_PROGRESS, {
+          job_id: job.id,
+          step: st.step,
+          prompt_index: spPromptIndex,
+          prompts: SP_PROMPTS,
+          done: spDone,
+          total: SP_TOTAL,
+        });
+      }
       spDone += 1;
       if (spDone > SP_TOTAL) {
         spDone = 0;
