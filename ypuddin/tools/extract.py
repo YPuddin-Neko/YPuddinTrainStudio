@@ -100,6 +100,15 @@ def resize_lora(down: Tensor, up: Tensor, alpha: float, new_rank: int) -> Extrac
     return extract_lora(delta, new_rank)
 
 
+def _strip_container_prefix(key: str) -> str:
+    from .merge import CONTAINER_PREFIXES
+
+    for p in CONTAINER_PREFIXES:
+        if key.startswith(p):
+            return key[len(p) :]
+    return key
+
+
 def extract_from_state_dicts(
     base: dict[str, Tensor],
     tuned: dict[str, Tensor],
@@ -124,7 +133,7 @@ def extract_from_state_dicts(
         delta = tuned[k].float() - base[k].float()
         if delta.abs().max() == 0:
             continue
-        module = k[: -len(".weight")]
+        module = _strip_container_prefix(k[: -len(".weight")])  # adapter keys never carry 'net.' etc.
         kohya = f"{prefix}_{module.replace('.', '_')}"
         if algo == "lokr":
             res = extract_lokr(delta, factor=factor, rank=rank)

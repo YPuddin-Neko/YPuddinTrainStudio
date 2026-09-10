@@ -108,3 +108,23 @@ def test_merge_matches_adapter_forward():
     base_sd = {"blocks.0.attn.q.weight": model.blocks[0]["attn"]["q"].base.weight.clone()}
     merged, _ = merge_into_state_dict(base_sd, tensors, module_names=["blocks.0.attn.q"])
     torch.testing.assert_close(x @ merged["blocks.0.attn.q.weight"].T, y_adapted, rtol=1e-4, atol=1e-4)
+
+
+def test_extract_and_merge_with_container_prefixed_checkpoints():
+    """Official checkpoints wrap keys in 'net.' / 'model.diffusion_model.'; adapter keys must not."""
+    base = _M()
+    tuned = _M()
+    tuned.load_state_dict(base.state_dict())
+    with torch.no_grad():
+        tuned.blocks[1].attn.q.weight.add_(torch.randn(16, 16) * 0.01)
+    for prefix in ("net.", "model.diffusion_model."):
+        sd_base = {prefix + k: v for k, v in base.state_dict().items()}
+        sd_tuned = {prefix + k: v for k, v in tuned.state_dict().items()}
+        tensors, report = extract_from_state_dicts(sd_base, sd_tuned, algo="lora", rank=16)
+        assert set(report) == {"blocks.1.attn.q"}
+        assert all(k.startswith("lora_unet_blocks_1_attn_q.") for k in tensors)
+        merged, unmatched = merge_into_state_dict(sd_base, tensors)
+        assert not unmatched and set(merged) == set(sd_base)
+        torch.testing.assert_close(
+            merged[prefix + "blocks.1.attn.q.weight"], tuned.blocks[1].attn.q.weight, rtol=1e-3, atol=1e-4
+        )
