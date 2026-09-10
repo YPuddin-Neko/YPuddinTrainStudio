@@ -44,3 +44,6 @@ secrets.json
 
 # TypeScript incremental build cache
 frontend/tsconfig.tsbuildinfo
+
+# Agent 协作交接文件（本机工作区状态，不分发）
+.handoff/
