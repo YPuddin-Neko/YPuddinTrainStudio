@@ -21,7 +21,7 @@ git clone <本仓库> YPuddinTrainStudio && cd YPuddinTrainStudio/xiangmuyuanma
 studio.bat             # Windows（双击或在 PowerShell 里 .\studio.bat）
 ```
 
-第一次运行会依次：创建 `.venv` → 按 NVIDIA 驱动版本安装对应 CUDA 的 PyTorch → 安装 `ypuddin[models,server]`（Linux+GPU 再加 `cuda,optim`：bitsandbytes 8-bit 优化器、Prodigy 等）→ 有 Node 则构建前端 → 启动服务 → 打开浏览器 `http://127.0.0.1:8765/`。之后再运行只做增量检查（依赖签名不变就跳过安装，前端源码没变就不重新构建），几秒内起服务。
+第一次运行会依次：创建 `venv` → 按 NVIDIA 驱动版本安装对应 CUDA 的 PyTorch → 安装 `ypuddin[models,server]`（Linux+GPU 再加 `cuda,optim`：bitsandbytes 8-bit 优化器、Prodigy 等）→ 有 Node 则构建前端 → 启动服务 → 打开浏览器 `http://127.0.0.1:8765/`。之后再运行只做增量检查（依赖签名不变就跳过安装，前端源码没变就不重新构建），几秒内起服务。
 
 常用参数（`.sh` 与 `.bat` 一致）：
 
@@ -30,7 +30,7 @@ studio.bat             # Windows（双击或在 PowerShell 里 .\studio.bat）
 | `--port 8800` / `--host 0.0.0.0` / `--data-root /data/studio` | 服务端口 / 绑定地址 / 数据目录（默认 `127.0.0.1` `8765` `./studio_data`） |
 | `--torch=cu128` | 强制 PyTorch 版本：`cu128` `cu126` `cu124` `cu118` `cpu`。默认 `auto`：**RTX 50 系（Blackwell，计算能力 12.x）一律 cu128**（旧 CUDA 构建没有它的内核，会报 "no kernel image is available"），其余按驱动版本：≥570→cu128，≥560→cu126，≥550→cu124，否则 cu118；无 NVIDIA 驱动→cpu。RTX 40 系（Ada）任何一档都支持 |
 | `--index=auto\|cn\|official` | 包源。`auto`（默认）：先探测 pypi.org，连不上就用国内镜像链；`cn`：强制镜像链优先；`official`：只用 pypi.org 与 download.pytorch.org。镜像链 = 中科大 → 清华 → 阿里 → 官方，某个源缺包或报错就自动换下一个；探测不通的源先排到后面。PyTorch CUDA 轮子走 阿里 pytorch-wheels → 上交 pytorch-wheels → 官方。`--mirror` 等价于 `--index=cn` |
-| `--reinstall` | 删掉 `.venv` 重装（`studio_data/` 不受影响） |
+| `--reinstall` | 删掉 `venv` 重装（`studio_data/` 不受影响） |
 | `--no-browser` / `--no-frontend` | 不自动开浏览器 / 不构建前端（只要 API） |
 
 子命令：
@@ -43,28 +43,28 @@ studio.bat             # Windows（双击或在 PowerShell 里 .\studio.bat）
 | `./studio.sh build` | 只构建前端 |
 | `./studio.sh dev` | 后端 + Vite 热更新前端（前端开发用，浏览器开 `http://127.0.0.1:3000/`） |
 | `./studio.sh test` | 跑后端 pytest（有 Node 时再跑前端 vitest） |
-| `./studio.sh shell` | 打印如何激活 `.venv`（之后可直接用 `ypuddin …` 命令） |
+| `./studio.sh shell` | 打印如何激活 `venv`（之后可直接用 `ypuddin …` 命令） |
 
 ## 3. 手动安装（不用脚本时）
 
 ```bash
 cd xiangmuyuanma
-uv venv --python 3.12 .venv                    # 或 python3.12 -m venv .venv
+uv venv --python 3.12 venv                    # 或 python3.12 -m venv venv
 # PyTorch：Windows 必须从 CUDA 索引装；Linux 的 PyPI 轮子已带 CUDA，但显式指定更稳。RTX 50 系必须 cu128
-uv pip install --python .venv/bin/python torch --index-url https://download.pytorch.org/whl/cu128
+uv pip install --python venv/bin/python torch --index-url https://download.pytorch.org/whl/cu128
 #   国内镜像（任选其一）：
-#   uv pip install --python .venv/bin/python torch --index-url https://mirror.sjtu.edu.cn/pytorch-wheels/cu128
-#   uv pip install --python .venv/bin/python --no-index --no-deps --find-links https://mirrors.aliyun.com/pytorch-wheels/cu128 torch \
-#     && uv pip install --python .venv/bin/python torch --index-url https://mirrors.ustc.edu.cn/pypi/simple   # 再补依赖
+#   uv pip install --python venv/bin/python torch --index-url https://mirror.sjtu.edu.cn/pytorch-wheels/cu128
+#   uv pip install --python venv/bin/python --no-index --no-deps --find-links https://mirrors.aliyun.com/pytorch-wheels/cu128 torch \
+#     && uv pip install --python venv/bin/python torch --index-url https://mirrors.ustc.edu.cn/pypi/simple   # 再补依赖
 #   其余依赖可加 --index-url https://mirrors.ustc.edu.cn/pypi/simple（或 pypi.tuna.tsinghua.edu.cn/simple、mirrors.aliyun.com/pypi/simple）
-uv pip install --python .venv/bin/python -e ".[models,server]"           # 训练 + 服务
-uv pip install --python .venv/bin/python -e ".[cuda,optim]"              # 可选：bitsandbytes 8-bit、Prodigy 等（Windows 上 bitsandbytes 需 ≥0.43 的官方 wheel）
-uv pip install --python .venv/bin/python sageattention                   # 可选：model.attention = "sage"
+uv pip install --python venv/bin/python -e ".[models,server]"           # 训练 + 服务
+uv pip install --python venv/bin/python -e ".[cuda,optim]"              # 可选：bitsandbytes 8-bit、Prodigy 等（Windows 上 bitsandbytes 需 ≥0.43 的官方 wheel）
+uv pip install --python venv/bin/python sageattention                   # 可选：model.attention = "sage"
 cd frontend && npm ci && npm run build && cd ..                          # 可选：Web 界面
-.venv/bin/ypuddin serve --host 127.0.0.1 --port 8765 --data-root studio_data
+venv/bin/ypuddin serve --host 127.0.0.1 --port 8765 --data-root studio_data
 ```
 
-pip 用户把 `uv pip install --python .venv/bin/python` 换成 `.venv/bin/pip install` 即可。extras 含义：
+pip 用户把 `uv pip install --python venv/bin/python` 换成 `venv/bin/pip install` 即可。extras 含义：
 
 | extra | 内容 |
 |---|---|
@@ -79,7 +79,7 @@ pip 用户把 `uv pip install --python .venv/bin/python` 换成 `.venv/bin/pip i
 
 ```
 xiangmuyuanma/
-├── .venv/                Python 环境（可随时 --reinstall 重建）
+├── venv/                Python 环境（可随时 --reinstall 重建）
 ├── studio_data/          服务数据目录（--data-root 可改），包含：
 │   ├── studio.db         SQLite：项目 / 数据集 / 任务 / 产物 / 模型注册表 的元数据
 │   ├── settings.json     「系统设置」页保存的设置
@@ -139,7 +139,7 @@ After=network.target
 User=trainer
 WorkingDirectory=/opt/YPuddinTrainStudio/xiangmuyuanma
 Environment=PYTHONUTF8=1
-ExecStart=/opt/YPuddinTrainStudio/xiangmuyuanma/.venv/bin/ypuddin serve --host 127.0.0.1 --port 8765 --data-root /data/studio
+ExecStart=/opt/YPuddinTrainStudio/xiangmuyuanma/venv/bin/ypuddin serve --host 127.0.0.1 --port 8765 --data-root /data/studio
 Restart=on-failure
 RestartSec=5
 
@@ -156,7 +156,7 @@ journalctl -u ypuddin -f
 
 ### Windows
 
-「任务计划程序」→ 创建任务 → 触发器「登录时」→ 操作：程序 `C:\...\xiangmuyuanma\.venv\Scripts\ypuddin.exe`，参数 `serve --host 127.0.0.1 --port 8765 --data-root D:\studio_data`，起始于 `C:\...\xiangmuyuanma`。或者直接把 `studio.bat --no-browser` 的快捷方式放进启动文件夹。
+「任务计划程序」→ 创建任务 → 触发器「登录时」→ 操作：程序 `C:\...\xiangmuyuanma\venv\Scripts\ypuddin.exe`，参数 `serve --host 127.0.0.1 --port 8765 --data-root D:\studio_data`，起始于 `C:\...\xiangmuyuanma`。或者直接把 `studio.bat --no-browser` 的快捷方式放进启动文件夹。
 
 ### 远程访问与安全
 
@@ -181,7 +181,7 @@ git pull
 | 现象 | 处理 |
 |---|---|
 | `doctor` 显示 `cuda_available: false` 但机器有 NVIDIA 卡 | 驱动太旧或装了 CPU 版 torch：`nvidia-smi` 看驱动版本，`./studio.sh --reinstall --torch=cu124`（驱动 ≥550）或 `cu118` |
-| Windows 上 `ModuleNotFoundError: bitsandbytes` / 训练启动就失败 | 配置里 `optimizer.type` 改回 `adamw`，或 `.\.venv\Scripts\pip install bitsandbytes>=0.43` |
+| Windows 上 `ModuleNotFoundError: bitsandbytes` / 训练启动就失败 | 配置里 `optimizer.type` 改回 `adamw`，或 `.\venv\Scripts\pip install bitsandbytes>=0.43` |
 | 页面能开但任务列表 / 数据集为空、控制台 404 | 前端是旧构建：`./studio.sh build`；开发态的 mock 数据请用 `dev` 模式而不是 `run` |
 | 端口被占用 | `--port 8800`，或找出占用者：`lsof -i :8765`（Linux/macOS）、`netstat -ano \| findstr 8765`（Windows） |
 | 首次安装很慢 / 超时 | 默认会自动探测并切国内镜像；想强制就 `--index=cn`。PyTorch 轮子约 2.5 GB；某个镜像缺最新版会自动回退到下一个源，日志里有 `source … failed, trying the next one` |
@@ -190,9 +190,9 @@ git pull
 | 训练 OOM | 依次：`memory.activation_checkpointing = "block"` → `dataset.text_encoding = "cached"` → `memory.blocks_to_swap = 8…20` → 降分辩率 / batch 1 → `optimizer.type = "adamw8bit"`；界面的 Plan 面板会给出估算与建议 |
 | 采样阶段看起来"卡住" | 任务详情页 header 有「生成预览 第 k/n 张 · 步 x/y」进度；分辩率填错（如 10240）会被配置校验拒绝 |
 | 任务状态 `failed`，error 是 `process exited with code …` | 打开任务详情「Logs」看最后几行；`studio_data/projects/<pid>/runs/<jid>/run.log` 是完整日志 |
-| 想彻底重来 | 删除 `.venv/`（`--reinstall`）；数据只在 `studio_data/`，删它才会丢项目 |
+| 想彻底重来 | 删除 `venv/`（`--reinstall`）；数据只在 `studio_data/`，删它才会丢项目 |
 
-## 10. CLI 速查（激活 `.venv` 后）
+## 10. CLI 速查（激活 `venv` 后）
 
 ```bash
 ypuddin plan     config.toml                 # 不加载权重：校验 + 步数 / 分桶 / 显存估算

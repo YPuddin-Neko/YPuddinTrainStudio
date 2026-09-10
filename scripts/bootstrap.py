@@ -1,28 +1,27 @@
-"""One-click bootstrap for YPuddin Train Studio (no third-party imports: runs on a bare system Python).
+"""YPuddin Train Studio 一键引导脚本（只用标准库，裸系统 Python 即可运行）。
 
-Called by ``studio.sh`` / ``studio.bat``::
+由 ``studio.sh`` / ``studio.bat`` 调用::
 
-    python scripts/bootstrap.py [global flags] [command] [command flags]
+    python scripts/bootstrap.py [全局参数] [命令] [命令参数]
 
-Commands
-  run     (default) create/refresh the venv, build the frontend if needed, start the service, open the browser
-  dev     start the backend and the Vite dev server (hot reload) side by side
-  build   build the frontend only
-  test    run pytest (+ vitest when node is available)
-  smoke   forward to ``ypuddin smoke`` (real training steps on this machine, see docs/deploy.md)
-  doctor  print what this machine has: python, torch, CUDA, GPUs, node, frontend build state
-  shell   print how to activate the venv
+命令
+  run     （默认）创建/更新 venv、按需构建前端、启动服务、打开浏览器
+  dev     同时启动后端与 Vite 热更新前端
+  build   只构建前端
+  test    跑 pytest（有 Node 时再跑 vitest）
+  smoke   转发到 ``ypuddin smoke``（在本机用真实权重跑几步训练自检，见 docs/deploy.md）
+  doctor  打印本机情况：Python、torch/CUDA/显卡、可选依赖、Node、前端构建状态
+  shell   打印如何激活 venv
 
-Global flags
-  --torch=<cu128|cu126|cu124|cu118|cpu|auto>   PyTorch wheel flavour (default auto: from the NVIDIA driver)
-  --index=<auto|cn|official>  package sources. auto (default): probe pypi.org; unreachable/slow -> mainland-China
-                  mirror chain USTC -> Tsinghua -> Aliyun -> official, each tried in turn until one succeeds.
-                  cn: mirror chain first even if pypi.org answers. official: pypi.org / download.pytorch.org only.
-  --mirror        alias for --index=cn
-  --reinstall     delete .venv and start over (studio_data/ is never touched)
-  --no-browser    do not open the browser after the service is up
-  --no-frontend   skip the frontend build (API only)
-  --host/--port/--data-root are forwarded to ``ypuddin serve``
+全局参数
+  --torch=<cu128|cu126|cu124|cu118|cpu|auto>  PyTorch 版本（默认 auto：按显卡计算能力与驱动版本选）
+  --index=<auto|cn|official>  包源。auto（默认）：探测 pypi.org，连不上就走国内镜像链
+                  中科大 -> 清华 -> 阿里 -> 官方，逐个尝试直到成功；cn：镜像链优先；official：只用官方源
+  --mirror        等价于 --index=cn
+  --reinstall     删掉 venv 重装（studio_data/ 不受影响）
+  --no-browser    服务起来后不自动打开浏览器
+  --no-frontend   跳过前端构建（只要 API）
+  --host/--port/--data-root 原样传给 ``ypuddin serve``
 """
 
 from __future__ import annotations
@@ -41,7 +40,7 @@ import webbrowser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VENV = ROOT / ".venv"
+VENV = ROOT / "venv"
 FRONTEND = ROOT / "frontend"
 MARKER = VENV / ".ypuddin-install.json"
 WIN = os.name == "nt"
@@ -71,12 +70,12 @@ def log(msg: str) -> None:
 
 
 def die(msg: str, code: int = 1) -> None:
-    print(f"[studio] ERROR: {msg}", file=sys.stderr, flush=True)
+    print(f"[studio] 错误：{msg}", file=sys.stderr, flush=True)
     sys.exit(code)
 
 
 def run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
-    log("$ " + " ".join(str(c) for c in cmd))
+    log("  执行: " + " ".join(str(c) for c in cmd))
     return subprocess.run([str(c) for c in cmd], check=True, **kw)
 
 
@@ -139,7 +138,7 @@ def pick_torch_tag(requested: str) -> str:
         # RTX 50 series: older CUDA builds fail with "no kernel image is available for execution on the device"
         if driver < 570:
             log(
-                f"WARNING: driver {driver} is too old for an RTX 50-series GPU; update to >= 570 or CUDA will not work"
+                f"警告：检测到 RTX 50 系显卡，但驱动版本 {driver} 过旧（需要 >= 570），请先升级显卡驱动，否则 CUDA 无法使用"
             )
         return "cu128"
     for tag, min_driver in CUDA_TAGS:
@@ -166,7 +165,7 @@ def order_by_reachability(indexes: list[str]) -> list[str]:
     alive = [u for u in indexes if url_ok(u.rstrip("/") + "/pip/")]
     dead = [u for u in indexes if u not in alive]
     if dead:
-        log("unreachable package sources skipped for now: " + ", ".join(dead))
+        log("以下包源探测不通，排到最后再试: " + ", ".join(dead))
     return alive + dead
 
 
@@ -175,7 +174,12 @@ def index_chains(mode: str, torch_tag: str) -> tuple[list[str], list[tuple[str, 
     if mode == "auto":
         mode = "official" if pypi_reachable() else "cn"
         log(
-            f"package sources: {mode} ({'pypi.org answered' if mode == 'official' else 'pypi.org unreachable -> mirrors first'})"
+            "包源选择: "
+            + (
+                "pypi.org 可达，官方源优先（镜像兜底）"
+                if mode == "official"
+                else "pypi.org 连不上，改用国内镜像链（中科大 → 清华 → 阿里 → 官方）"
+            )
         )
     if mode == "official":
         pypi = [PYPI_OFFICIAL, *PYPI_MIRRORS_CN]  # mirrors still serve as a fallback
@@ -209,7 +213,7 @@ def find_base_python() -> str:
     for exe in candidates:
         if python_ok(exe):
             return exe
-    die("no Python 3.10–3.12 found. Install one (python.org, or `uv python install 3.12`) and re-run.")
+    die("没有找到 Python 3.10 - 3.12。请先安装（python.org，或 `uv python install 3.12`）再运行。")
     return ""  # unreachable
 
 
@@ -222,28 +226,31 @@ def install_signature(torch_tag: str, extras: str) -> str:
 
 def ensure_venv(torch_tag: str, *, index_mode: str, reinstall: bool, extras: str) -> None:
     if reinstall and VENV.exists():
-        log(f"--reinstall: removing {VENV} (studio_data/ is kept)")
+        log(f"--reinstall：删除旧的虚拟环境 {VENV}（studio_data/ 不受影响）")
         shutil.rmtree(VENV)
     sig = install_signature(torch_tag, extras)
     if venv_python().exists() and MARKER.exists():
         try:
             if json.loads(MARKER.read_text()).get("signature") == sig:
-                log("dependencies up to date")
+                log("[2/5] 依赖已是最新（pyproject.toml 未变化），跳过安装")
                 return
         except Exception:  # noqa: BLE001
             pass
     uv = uv_path()
     if not venv_python().exists():
         base = find_base_python()
+        log(f"[2/5] 创建虚拟环境 {VENV.name}/（基于 {base}，用 {'uv' if uv else 'python -m venv'}）")
         if uv:
             run([uv, "venv", "--python", base, str(VENV)])
         else:
             run([base, "-m", "venv", str(VENV)])
+    else:
+        log(f"[2/5] 虚拟环境 {VENV.name}/ 已存在，更新依赖")
     py = str(venv_python())
     pypi_chain, torch_sources = index_chains(index_mode, torch_tag)
 
     def attempt(cmd: list[str]) -> bool:
-        log("$ " + " ".join(cmd))
+        log("  执行: " + " ".join(cmd))
         return subprocess.run(cmd).returncode == 0
 
     def pip_cmd(
@@ -263,10 +270,10 @@ def ensure_venv(torch_tag: str, *, index_mode: str, reinstall: bool, extras: str
             if attempt(pip_cmd(args, index_url)):
                 return
             log(
-                f"{what}: source {index_url} failed"
-                + (", trying the next one" if i + 1 < len(pypi_chain) else "")
+                f"  {what}：包源 {index_url} 失败（缺包或网络错误）"
+                + ("，换下一个源重试" if i + 1 < len(pypi_chain) else "")
             )
-        die(f"could not install {what} from any package source")
+        die(f"所有包源都无法安装 {what}，请检查网络后重试（可加 --index=cn 或 --index=official）")
 
     def torch_install() -> None:
         for i, (kind, url) in enumerate(torch_sources):
@@ -280,21 +287,19 @@ def ensure_venv(torch_tag: str, *, index_mode: str, reinstall: bool, extras: str
                 ) and attempt(pip_cmd(["torch>=2.4"], pypi_chain[0], upgrade=False))
             if ok:
                 return
-            log(
-                f"torch: source {url} failed"
-                + (", trying the next one" if i + 1 < len(torch_sources) else "")
-            )
-        die("could not install PyTorch from any source")
+            log(f"  PyTorch：来源 {url} 失败" + ("，换下一个来源重试" if i + 1 < len(torch_sources) else ""))
+        die("所有来源都无法安装 PyTorch，请检查网络或用 --torch= 指定版本后重试")
 
     if not uv:
+        log("[3/5] 升级 pip / wheel")
         pip_install(["pip", "wheel"], "pip/wheel")
     if torch_tag != "cpu":
-        log(f"installing PyTorch ({torch_tag})")
+        log(f"[3/5] 安装 PyTorch（CUDA 版本 {torch_tag}，约 2.5 GB，耐心等待）")
         torch_install()
     else:
-        log("installing PyTorch (cpu / mps)")
+        log("[3/5] 安装 PyTorch（CPU / Apple MPS 版）")
         pip_install(["torch>=2.4"], "torch")
-    log(f"installing ypuddin[{extras}]")
+    log(f"[4/5] 安装训练器 ypuddin 及其依赖 [{extras}]")
     pip_install(["-e", f"{ROOT}[{extras}]"], f"ypuddin[{extras}]")
     MARKER.write_text(
         json.dumps({"signature": sig, "torch": torch_tag, "extras": extras, "time": time.time()})
@@ -328,14 +333,16 @@ def build_frontend(force: bool = False) -> bool:
     npm = shutil.which("npm") or shutil.which("npm.cmd")
     if not npm:
         log(
-            "node/npm not found: skipping the frontend build (the API still works; install Node.js >= 18 for the UI)"
+            "[5/5] 没有找到 Node.js / npm，跳过前端构建（API 仍可用；要用网页界面请安装 Node.js >= 18 后重跑）"
         )
         return False
     if not force and not frontend_stale():
-        log("frontend build is up to date")
+        log("[5/5] 前端构建已是最新，跳过")
         return True
     lock = FRONTEND / "package-lock.json"
+    log("[5/5] 构建前端：安装 npm 依赖 ...")
     run([npm, "ci" if lock.exists() else "install"], cwd=FRONTEND)
+    log("[5/5] 构建前端：编译打包（tsc + vite build）...")
     run([npm, "run", "build"], cwd=FRONTEND)
     return True
 
@@ -356,17 +363,19 @@ def wait_for(url: str, timeout: float = 60) -> bool:
 def serve(host: str, port: int, data_root: str, open_browser: bool) -> int:
     ypuddin = venv_bin("ypuddin")
     cmd = [str(ypuddin), "serve", "--host", host, "--port", str(port), "--data-root", data_root]
-    log("$ " + " ".join(cmd))
+    log(f"启动服务（数据目录 {data_root}）...")
+    log("  执行: " + " ".join(cmd))
     proc = subprocess.Popen(cmd, cwd=ROOT, env=_env())
     url = f"http://{'127.0.0.1' if host in ('0.0.0.0', '::') else host}:{port}/"
     if wait_for(url + "api/health"):
-        log(f"service is up: {url}  (API docs: {url}api/docs)")
+        log(f"服务已就绪：{url}   （API 文档：{url}api/docs；按 Ctrl+C 停止）")
         if not (FRONTEND / "dist" / "index.html").exists():
-            log("no frontend build: only the API is served")
+            log("提示：前端未构建，当前只提供 API")
         if open_browser:
+            log("正在打开浏览器 ...")
             webbrowser.open(url)
     else:
-        log("service did not answer within 60 s; see the output above")
+        log("服务 60 秒内没有响应，请查看上面的输出")
     try:
         return proc.wait()
     except KeyboardInterrupt:
@@ -377,7 +386,7 @@ def serve(host: str, port: int, data_root: str, open_browser: bool) -> int:
 def dev(host: str, port: int, data_root: str, fe_port: int, open_browser: bool) -> int:
     npm = shutil.which("npm") or shutil.which("npm.cmd")
     if not npm:
-        die("dev mode needs Node.js/npm")
+        die("dev 模式需要 Node.js / npm")
     if not (FRONTEND / "node_modules").exists():
         run([npm, "ci"], cwd=FRONTEND)
     backend = subprocess.Popen(
@@ -386,9 +395,7 @@ def dev(host: str, port: int, data_root: str, fe_port: int, open_browser: bool) 
         env=_env(),
     )
     if port != 8765:
-        log(
-            "note: the Vite proxy targets 127.0.0.1:8765 (frontend/vite.config.ts); dev mode expects the default port"
-        )
+        log("提示：Vite 代理固定指向 127.0.0.1:8765（frontend/vite.config.ts），dev 模式请用默认端口")
     env = dict(_env(), VITE_USE_MOCK="false")
     fe = subprocess.Popen([npm, "run", "dev", "--", "--port", str(fe_port)], cwd=FRONTEND, env=env)
     if open_browser and wait_for(f"http://127.0.0.1:{fe_port}/", 60):
@@ -413,18 +420,18 @@ def _env() -> dict[str, str]:
 
 def doctor() -> int:
     py = venv_python()
-    print(f"root      : {ROOT}")
-    print(f"platform  : {platform.platform()}")
-    print(f"venv      : {'present' if py.exists() else 'missing'} ({VENV})")
+    print(f"项目目录   : {ROOT}")
+    print(f"系统       : {platform.platform()}")
+    print(f"虚拟环境   : {'已创建' if py.exists() else '未创建'} ({VENV})")
     if MARKER.exists():
-        print(f"install   : {MARKER.read_text().strip()}")
+        print(f"上次安装   : {MARKER.read_text().strip()}")
     driver = nvidia_driver_major()
     gpus = nvidia_gpus()
     print(
-        f"nvidia    : {'driver ' + str(driver) if driver else 'no nvidia-smi'} -> torch tag {pick_torch_tag('auto')}"
+        f"NVIDIA     : {'驱动 ' + str(driver) if driver else '未找到 nvidia-smi'} -> 自动选择的 PyTorch 版本 {pick_torch_tag('auto')}"
     )
     for name, cc in gpus:
-        print(f"  gpu         : {name} (compute capability {cc})")
+        print(f"  显卡       : {name}（计算能力 {cc}）")
     if py.exists():
         code = (
             "import torch,json;print(json.dumps({'torch':torch.__version__,'cuda':torch.version.cuda,"
@@ -434,14 +441,14 @@ def doctor() -> int:
             "'mps':bool(getattr(torch.backends,'mps',None) and torch.backends.mps.is_available())}))"
         )
         r = subprocess.run([str(py), "-c", code], capture_output=True, text=True)
-        print(f"torch     : {r.stdout.strip() or r.stderr.strip()[-300:]}")
+        print(f"PyTorch    : {r.stdout.strip() or r.stderr.strip()[-300:]}")
         try:
             archs = set(json.loads(r.stdout).get("arch_list", []))
             for name, cc in gpus:
                 if cc is not None and archs and f"sm_{int(round(cc * 10))}" not in archs:
                     print(
-                        f"  WARNING     : the installed torch has no kernels for {name} (sm_{int(round(cc * 10))});"
-                        " run ./studio.sh --reinstall --torch=cu128"
+                        f"  警告       : 已安装的 PyTorch 不含 {name}（sm_{int(round(cc * 10))}）的内核，"
+                        "请运行 ./studio.sh --reinstall --torch=cu128"
                     )
         except Exception:  # noqa: BLE001
             pass
@@ -451,12 +458,16 @@ def doctor() -> int:
                 capture_output=True,
                 text=True,
             )
-            print(f"  {mod:<14}: {r.stdout.strip() or 'not installed'}")
+            print(f"  {mod:<14}: {r.stdout.strip() or '未安装'}")
     npm = shutil.which("npm") or shutil.which("npm.cmd")
-    print(f"node/npm  : {shutil.which('node') or 'missing'} / {npm or 'missing'}")
+    print(f"Node/npm   : {shutil.which('node') or '未安装'} / {npm or '未安装'}")
     print(
-        f"frontend  : {'built' if (FRONTEND / 'dist' / 'index.html').exists() else 'not built'}"
-        + (" (stale)" if (FRONTEND / "dist" / "index.html").exists() and frontend_stale() else "")
+        f"前端构建   : {'已构建' if (FRONTEND / 'dist' / 'index.html').exists() else '未构建'}"
+        + (
+            "（源码有更新，下次 run 会重建）"
+            if (FRONTEND / "dist" / "index.html").exists() and frontend_stale()
+            else ""
+        )
     )
     return 0
 
@@ -496,17 +507,19 @@ def main(argv: list[str]) -> int:
     command = rest[0] if rest and not rest[0].startswith("-") else "run"
     passthrough = rest[1:] if rest and not rest[0].startswith("-") else rest
     if opts["torch"] not in ("auto", "cpu", *[t for t, _ in CUDA_TAGS]):
-        die(f"unknown --torch value {opts['torch']!r}")
+        die(f"--torch 取值无效：{opts['torch']!r}（可选 auto/cpu/cu128/cu126/cu124/cu118）")
     if opts["index"] not in ("auto", "cn", "official"):
-        die(f"unknown --index value {opts['index']!r}")
+        die(f"--index 取值无效：{opts['index']!r}（可选 auto/cn/official）")
 
     if command == "doctor":
         return doctor()
 
     torch_tag = pick_torch_tag(opts["torch"])
     extras = choose_extras(torch_tag) + (",dev" if command == "test" else "")
+    gpus = nvidia_gpus()
+    gpu_desc = "、".join(n for n, _ in gpus) if gpus else "未检测到 NVIDIA 显卡"
     log(
-        f"python {platform.python_version()} · torch flavour {torch_tag} · {'uv' if uv_path() else 'pip'} · extras [{extras}]"
+        f"[1/5] 环境检查：Python {platform.python_version()} · 显卡：{gpu_desc} · PyTorch 版本：{torch_tag} · 安装工具：{'uv' if uv_path() else 'pip'}"
     )
     ensure_venv(torch_tag, index_mode=opts["index"], reinstall=opts["reinstall"], extras=extras)
 
@@ -524,7 +537,7 @@ def main(argv: list[str]) -> int:
         ).returncode
     if command == "shell":
         act = VENV / ("Scripts/activate" if WIN else "bin/activate")
-        print(f"activate with: {act}" if WIN else f"source {act}")
+        print(f"激活虚拟环境：{act}" if WIN else f"激活虚拟环境：source {act}")
         return 0
     if command == "dev":
         return dev(opts["host"], int(opts["port"]), opts["data_root"], int(opts["fe_port"]), opts["browser"])
@@ -532,7 +545,7 @@ def main(argv: list[str]) -> int:
         if opts["frontend"]:
             build_frontend()
         return serve(opts["host"], int(opts["port"]), opts["data_root"], opts["browser"])
-    die(f"unknown command {command!r}")
+    die(f"未知命令 {command!r}（可选 run/dev/build/test/smoke/doctor/shell）")
     return 1
 
 

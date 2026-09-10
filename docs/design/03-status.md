@@ -42,17 +42,17 @@
 
 ```bash
 cd xiangmuyuanma
-uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -e ".[dev,models,server]"
-.venv/bin/pytest -q                         # 全部 CPU 测试
-.venv/bin/ypuddin plan config.toml          # 不加载权重的预检
-.venv/bin/ypuddin train config.toml         # 训练（事件写到 <output_dir>/events.jsonl）
-.venv/bin/ypuddin serve --port 8765 --data-root ./studio_data   # 服务（前端 dist 存在时同域托管）
+uv venv --python 3.12 venv && uv pip install --python venv/bin/python -e ".[dev,models,server]"
+venv/bin/pytest -q                         # 全部 CPU 测试
+venv/bin/ypuddin plan config.toml          # 不加载权重的预检
+venv/bin/ypuddin train config.toml         # 训练（事件写到 <output_dir>/events.jsonl）
+venv/bin/ypuddin serve --port 8765 --data-root ./studio_data   # 服务（前端 dist 存在时同域托管）
 ```
 
 **GPU 机器首次验证（一条命令）**：真实跑 3 步 + 出一张 512 预览 + 保存/回读适配器，输出时序 / 峰值显存 / loss / 键格式，报告写到 `outputs/smoke/smoke-report.json`（失败时含完整 traceback，直接贴给我即可）：
 
 ```bash
-.venv/bin/ypuddin smoke \
+venv/bin/ypuddin smoke \
   --set model.family=anima \
   --set model.dit_path=/models/anima-base-v1.0.safetensors \
   --set model.text_encoder_path=/models/Qwen3-0.6B-Base \

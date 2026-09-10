@@ -29,16 +29,16 @@ scripts/          bootstrap.py（studio.sh/.bat 的实现）与开发辅助脚�
 studio.bat         # Windows
 ```
 
-第一次运行自动创建 `.venv`、按显卡驱动安装对应 CUDA 版 PyTorch、构建前端并启动服务，浏览器打开 `http://127.0.0.1:8765/`。
+第一次运行自动创建 `venv`、按显卡驱动安装对应 CUDA 版 PyTorch、构建前端并启动服务，浏览器打开 `http://127.0.0.1:8765/`。
 `./studio.sh doctor` 查看本机环境；`./studio.sh smoke --set model.dit_path=… --set model.text_encoder_path=… --set model.vae_path=…`
 用真实权重自检整条训练链路。完整说明（参数、手动安装、目录结构、常驻服务、远程访问、排障）见 [`docs/deploy.md`](docs/deploy.md)。
 
 ## 开发环境
 
 ```bash
-uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python -e ".[dev,models,server]"
-.venv/bin/pytest                      # 全部 CPU 测试
+uv venv --python 3.12 venv
+uv pip install --python venv/bin/python -e ".[dev,models,server]"
+venv/bin/pytest                      # 全部 CPU 测试
 ./studio.sh dev                       # 后端 + Vite 热更新前端
 ```
 
