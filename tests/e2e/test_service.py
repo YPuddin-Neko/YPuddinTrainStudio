@@ -306,3 +306,22 @@ async def test_response_models_cover_every_json_endpoint(live_server, image_data
         assert (await client.post(f"/api/datasets/{d['source']['id']}/rescan")).json()["ok"] is True
         assert (await client.delete(f"/api/datasets/{d['source']['id']}")).json()["ok"] is True
         assert (await client.delete(f"/api/projects/{p['id']}")).json()["ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_spa_fallback_serves_index_for_deep_links(tmp_path):
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<!doctype html><title>studio</title>", encoding="utf-8")
+    (dist / "assets" / "app.js").write_text("console.log(1)", encoding="utf-8")
+    (dist / "favicon.svg").write_text("<svg/>", encoding="utf-8")
+    app = create_app(tmp_path / "data", frontend_dist=dist, poll_interval=1)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as client:
+        assert (await client.get("/")).text.startswith("<!doctype html>")
+        assert (await client.get("/jobs/j_123")).text.startswith("<!doctype html>")  # history-API route
+        assert (await client.get("/assets/app.js")).text == "console.log(1)"
+        assert (await client.get("/favicon.svg")).text == "<svg/>"
+        assert (await client.get("/api/health")).json()["api_version"] == 1  # API untouched
+        assert (await client.get("/api/nope")).status_code == 404
+        traversal = await client.get("/..%2F..%2Fetc%2Fpasswd")
+        assert "root:" not in traversal.text  # outside dist -> index.html, never the file

@@ -67,6 +67,26 @@ def create_app(
     app.include_router(routes_work.router, prefix="/api")
 
     dist = Path(frontend_dist) if frontend_dist else Path(__file__).resolve().parents[2] / "frontend" / "dist"
-    if dist.exists():
-        app.mount("/", StaticFiles(directory=str(dist), html=True), name="frontend")
+    if (dist / "index.html").exists():
+        _mount_spa(app, dist)
     return app
+
+
+def _mount_spa(app: FastAPI, dist: Path) -> None:
+    """Serve the built frontend with history-API fallback: real files as-is, every other non-API
+    path gets ``index.html`` so deep links (``/jobs/j_123``) survive a refresh."""
+    from fastapi import HTTPException
+    from fastapi.responses import FileResponse
+
+    index = dist / "index.html"
+    if (dist / "assets").is_dir():
+        app.mount("/assets", StaticFiles(directory=str(dist / "assets")), name="frontend-assets")
+
+    @app.get("/{path:path}", include_in_schema=False)
+    async def spa(path: str):  # noqa: ANN202
+        if path.startswith("api/"):
+            raise HTTPException(status_code=404)
+        candidate = (dist / path).resolve() if path else index
+        if path and candidate.is_file() and dist.resolve() in candidate.parents:
+            return FileResponse(str(candidate))
+        return FileResponse(str(index))
