@@ -26,11 +26,11 @@ def test_index_chains_orders_mirrors_then_official(monkeypatch):
     pypi_off, torch_off = boot.index_chains("official", "cu126")
     assert pypi_off[0] == boot.PYPI_OFFICIAL and len(pypi_off) == 4  # mirrors remain as fallback
     assert torch_off == [("index-url", "https://download.pytorch.org/whl/cu126")]
-    # auto: pypi.org unreachable -> mirrors first; reachable -> official first
+    # auto: mirrors first regardless of whether pypi.org is reachable (official is the last resort)
+    monkeypatch.setattr(boot, "url_ok", lambda url, timeout=4.0: True)
+    assert boot.index_chains("auto", "cu128")[0][0].startswith("https://mirrors.ustc.edu.cn")
     monkeypatch.setattr(boot, "url_ok", lambda url, timeout=4.0: "pypi.org" not in url)
     assert boot.index_chains("auto", "cu128")[0][0].startswith("https://mirrors.ustc.edu.cn")
-    monkeypatch.setattr(boot, "url_ok", lambda url, timeout=4.0: True)
-    assert boot.index_chains("auto", "cu128")[0][0] == boot.PYPI_OFFICIAL
     # dead mirrors are moved behind the live ones instead of costing a pip timeout each
     monkeypatch.setattr(boot, "url_ok", lambda url, timeout=4.0: "ustc" not in url and "tuna" not in url)
     chain = boot.index_chains("cn", "cu128")[0]

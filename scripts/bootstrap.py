@@ -15,8 +15,8 @@
 
 全局参数
   --torch=<cu128|cu126|cu124|cu118|cpu|auto>  PyTorch 版本（默认 auto：按显卡计算能力与驱动版本选）
-  --index=<auto|cn|official>  包源。auto（默认）：探测 pypi.org，连不上就走国内镜像链
-                  中科大 -> 清华 -> 阿里 -> 官方，逐个尝试直到成功；cn：镜像链优先；official：只用官方源
+  --index=<auto|cn|official>  包源。auto / cn（默认）：国内镜像优先，中科大 -> 清华 -> 阿里 -> 官方兜底，
+                  探测不通的源自动排后，逐个尝试直到成功；official：官方源优先（镜像兜底）
   --mirror        等价于 --index=cn
   --reinstall     删掉 venv 重装（studio_data/ 不受影响）
   --no-browser    服务起来后不自动打开浏览器
@@ -155,10 +155,6 @@ def url_ok(url: str, timeout: float = 4.0) -> bool:
         return False
 
 
-def pypi_reachable(timeout: float = 4.0) -> bool:
-    return url_ok(PYPI_OFFICIAL + "/pip/", timeout)
-
-
 def order_by_reachability(indexes: list[str]) -> list[str]:
     """Indexes that answer a quick probe first (original order kept within each group), so a dead
     mirror costs one 4 s probe instead of a full pip timeout per package."""
@@ -170,17 +166,11 @@ def order_by_reachability(indexes: list[str]) -> list[str]:
 
 
 def index_chains(mode: str, torch_tag: str) -> tuple[list[str], list[tuple[str, str]]]:
-    """(PyPI index urls in order, torch sources as (kind, url) with kind in {find-links, index-url})."""
-    if mode == "auto":
-        mode = "official" if pypi_reachable() else "cn"
-        log(
-            "包源选择: "
-            + (
-                "pypi.org 可达，官方源优先（镜像兜底）"
-                if mode == "official"
-                else "pypi.org 连不上，改用国内镜像链（中科大 → 清华 → 阿里 → 官方）"
-            )
-        )
+    """(PyPI index urls in order, torch sources as (kind, url) with kind in {find-links, index-url}).
+
+    auto/cn: mirrors first (USTC -> Tsinghua -> Aliyun), official PyPI as the last resort.
+    official: official first, mirrors as the fallback.
+    """
     if mode == "official":
         pypi = [PYPI_OFFICIAL, *PYPI_MIRRORS_CN]  # mirrors still serve as a fallback
         torch_src = [("index-url", TORCH_OFFICIAL.format(tag=torch_tag))]
@@ -189,6 +179,8 @@ def index_chains(mode: str, torch_tag: str) -> tuple[list[str], list[tuple[str, 
         torch_src = [(kind, url.format(tag=torch_tag)) for kind, url in TORCH_MIRRORS_CN] + [
             ("index-url", TORCH_OFFICIAL.format(tag=torch_tag))
         ]
+    if mode == "auto":
+        log("包源选择: 国内镜像优先（中科大 → 清华 → 阿里 → 官方兜底；探测不通的自动排后）")
     return pypi, torch_src
 
 

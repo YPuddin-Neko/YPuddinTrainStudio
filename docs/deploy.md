@@ -11,7 +11,7 @@
 | GPU | 训练 Anima 2B：NVIDIA 显卡 ≥ 12 GB（开 block swap + cached 文本可在 8 GB 上尝试）；驱动 ≥ 550 建议（决定安装哪个 CUDA 版本的 PyTorch，见 §3） |
 | Node.js | ≥ 18，仅在需要**构建 Web 界面**时需要（没有 Node 也能用 CLI 和 API） |
 | 磁盘 | 依赖约 6 GB（含 PyTorch）；Anima 权重约 4 GB（DiT）+ 1.2 GB（Qwen3-0.6B）+ 0.25 GB（VAE）；每张训练图的 latent 缓存几十 KB |
-| 网络 | 首次安装需要下载依赖（PyTorch 约 2.5 GB）。脚本会自动探测：pypi.org 连不上就走国内镜像链（中科大 → 清华 → 阿里 → 官方，逐个回退）；也可用 `--index=cn` 强制 |
+| 网络 | 首次安装需要下载依赖（PyTorch 约 2.5 GB）。默认镜像优先：中科大 → 清华 → 阿里 → 官方兜底（某个源缺包/报错/探测不通就自动换下一个）；境外网络可用 `--index=official` 官方优先 |
 
 ## 2. 一键启动（推荐）
 
@@ -29,7 +29,7 @@ studio.bat             # Windows（双击或在 PowerShell 里 .\studio.bat）
 |---|---|
 | `--port 8800` / `--host 0.0.0.0` / `--data-root /data/studio` | 服务端口 / 绑定地址 / 数据目录（默认 `127.0.0.1` `8765` `./studio_data`） |
 | `--torch=cu128` | 强制 PyTorch 版本：`cu128` `cu126` `cu124` `cu118` `cpu`。默认 `auto`：**RTX 50 系（Blackwell，计算能力 12.x）一律 cu128**（旧 CUDA 构建没有它的内核，会报 "no kernel image is available"），其余按驱动版本：≥570→cu128，≥560→cu126，≥550→cu124，否则 cu118；无 NVIDIA 驱动→cpu。RTX 40 系（Ada）任何一档都支持 |
-| `--index=auto\|cn\|official` | 包源。`auto`（默认）：先探测 pypi.org，连不上就用国内镜像链；`cn`：强制镜像链优先；`official`：只用 pypi.org 与 download.pytorch.org。镜像链 = 中科大 → 清华 → 阿里 → 官方，某个源缺包或报错就自动换下一个；探测不通的源先排到后面。PyTorch CUDA 轮子走 阿里 pytorch-wheels → 上交 pytorch-wheels → 官方。`--mirror` 等价于 `--index=cn` |
+| `--index=auto\|cn\|official` | 包源。`auto` / `cn`（默认）：镜像优先——中科大 → 清华 → 阿里 → 官方兜底，某个源缺包或报错就自动换下一个，探测不通的源先排到后面；`official`：官方源优先（镜像兜底）。PyTorch CUDA 轮子走 阿里 pytorch-wheels → 上交 pytorch-wheels → 官方。`--mirror` 等价于 `--index=cn` |
 | `--reinstall` | 删掉 `venv` 重装（`studio_data/` 不受影响） |
 | `--no-browser` / `--no-frontend` | 不自动开浏览器 / 不构建前端（只要 API） |
 
@@ -207,7 +207,7 @@ git pull
 | Windows 上 `ModuleNotFoundError: bitsandbytes` / 训练启动就失败 | 配置里 `optimizer.type` 改回 `adamw`，或 `.\venv\Scripts\pip install bitsandbytes>=0.43` |
 | 页面能开但任务列表 / 数据集为空、控制台 404 | 前端是旧构建：`./studio.sh build`；开发态的 mock 数据请用 `dev` 模式而不是 `run` |
 | 端口被占用 | `--port 8800`，或找出占用者：`lsof -i :8765`（Linux/macOS）、`netstat -ano \| findstr 8765`（Windows） |
-| 首次安装很慢 / 超时 | 默认会自动探测并切国内镜像；想强制就 `--index=cn`。PyTorch 轮子约 2.5 GB；某个镜像缺最新版会自动回退到下一个源，日志里有 `source … failed, trying the next one` |
+| 首次安装很慢 / 超时 | 默认镜像优先（中科大 → 清华 → 阿里 → 官方兜底）；境外网络用 `--index=official` 官方优先。PyTorch 轮子约 2.5 GB；某个镜像缺最新版会自动回退到下一个源，日志里有 `source … failed, trying the next one` |
 | RTX 50 系报 `no kernel image is available for execution on the device` / `sm_120 is not compatible` | 装到了旧 CUDA 构建：`./studio.sh --reinstall --torch=cu128`；驱动需 ≥ 570。`./studio.sh doctor` 会对比显卡计算能力与 torch 内核列表并直接给出警告 |
 | RTX 40 系 | 无特殊要求：bf16 / TF32 / SDPA flash 内核都支持；`optimizer.type = "adamw8bit"`（bitsandbytes）与 `model.attention = "sage"`（sageattention）均可用 |
 | 训练 OOM | 依次：`memory.activation_checkpointing = "block"` → `dataset.text_encoding = "cached"` → `memory.blocks_to_swap = 8…20` → 降分辩率 / batch 1 → `optimizer.type = "adamw8bit"`；界面的 Plan 面板会给出估算与建议 |
