@@ -86,6 +86,38 @@ export function createMockEventSource() {
     }, 2000)
   );
 
+  // job.sample_progress 每 800ms：2 张 prompt × 20 步循环自增，走完一轮歇 3s 再开始
+  let spDone = 0;
+  let spPromptIndex = 0;
+  let spPause = 0;
+  const SP_TOTAL = 20;
+  const SP_PROMPTS = 2;
+  timers.push(
+    setInterval(() => {
+      if (spPause > 0) {
+        spPause -= 1;
+        return;
+      }
+      emit(EVENT_TYPES.JOB_SAMPLE_PROGRESS, {
+        job_id: 'job_01',
+        step,
+        prompt_index: spPromptIndex,
+        prompts: SP_PROMPTS,
+        done: spDone,
+        total: SP_TOTAL,
+      });
+      spDone += 1;
+      if (spDone > SP_TOTAL) {
+        spDone = 0;
+        spPromptIndex += 1;
+        if (spPromptIndex >= SP_PROMPTS) {
+          spPromptIndex = 0;
+          spPause = 4; // 一轮预览结束，停顿后再循环
+        }
+      }
+    }, 800)
+  );
+
   return {
     addEventListener(type: string, cb: RawListener) {
       if (!listeners.has(type)) listeners.set(type, new Set());

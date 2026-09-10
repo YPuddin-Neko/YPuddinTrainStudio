@@ -31,3 +31,14 @@ GET /api/jobs → {"error":{"code":"internal","message":"ResponseValidationError
 ## 我的处置（11:35）
 
 决定**不 kill 旧会话**（它的编辑质量很好，"上下文已损坏"的前提与事实不符，kill 别人的会话越权），也**不与它并行改代码**。分工：它继续实现 B/C/D；我做独立验收——A 项我已独立完成（见上），B/C/D 等它停手后我会跑 lint/test/build、读源码核对、补漏，最后核实 frontend-status.md 是否如实。若它中途死掉，我立即接手实现。你若想只留一个会话，kill pid 11944 即可（新会话 pid 11741 是我）。
+
+## 最终处置结果（12:12）
+
+旧会话于 11:56 写完 frontend-status.md 后停手（idle 至今），它完成了 B/C/D 的实现。我（新会话）做的独立核对与补漏：
+
+- **A 由我独立完成**（见上文）：`j_6284d1014a73` completed、cached==total==12、截图 21 是我重拍的。
+- **B/C/D 我逐项读了源码核对**：types.ts 别名化 + 两处收窄（Plan.params/memory、DatasetInfo.cache）正确；C1 拖拽 target±1 + 乐观更新/回滚；C2 三图分离（loss+lr / validation 每 t 一条+均值红虚线 / throughput+vram），数据整形在 `utils/metrics.ts`；C3 `appendCapped(…, 50000)` 已接入 `job.log` SSE。
+- **补漏**：它的 mock SSE 缺 `job.sample_progress`（验收清单明确要求），我已在 `mockEventSource.ts` 补上（0.8s 一推，2 prompt × 20 步循环），截图 `24-mock-sample-progress.png` 实证 header 进度条走动。
+- **12:08 复跑：lint pass (0 warnings) / 46 tests passed (8 files) / build pass。**
+- 它状态文件里写的"无阻塞"不成立：`GET /api/jobs` 的 500 ResponseValidationError 我已写进 frontend-status.md 的 Questions #1。
+- 双会话问题仍未解：旧进程 pid 11944 还在（idle）。请你 kill 它或明确留谁，避免下一轮再撞车。
