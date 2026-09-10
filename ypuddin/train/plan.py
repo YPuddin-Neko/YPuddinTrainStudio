@@ -134,9 +134,16 @@ def plan(
                     swapped_mb = (
                         weights_mb * min(cfg.memory.blocks_to_swap, len(layout.blocks)) / len(layout.blocks)
                     )
+                text_mode = ds.text_encoding
+                if text_mode == "auto":
+                    text_mode = "online" if "online_text" in family.spec.capabilities else "cached"
+                text_encoder_mb = 0.0
+                if text_mode == "online" and not cfg.memory.offload_text_encoder:
+                    text_encoder_mb = family.spec.text.encoder_params * DTYPE_BYTES[cfg.model.dtype] / 2**20
                 peak = (
                     weights_mb
                     - swapped_mb
+                    + text_encoder_mb
                     + adapter_mb
                     + optimizer_mb
                     + (max(a["mb"] for a in act_by_bucket) if act_by_bucket else 0)
@@ -145,6 +152,7 @@ def plan(
                 memory = {
                     "weights_mb": round(weights_mb),
                     "swapped_mb": round(swapped_mb),
+                    "text_encoder_mb": round(text_encoder_mb),
                     "adapter_mb": round(adapter_mb, 1),
                     "optimizer_mb": round(optimizer_mb, 1),
                     "activations_mb_by_bucket": act_by_bucket,
@@ -160,6 +168,10 @@ def plan(
                         memory["suggestions"].append("enable memory.blocks_to_swap")
                     if "8bit" not in cfg.optimizer.type:
                         memory["suggestions"].append("use optimizer.type = 'adamw8bit'")
+                    if text_encoder_mb:
+                        memory["suggestions"].append(
+                            "set dataset.text_encoding = 'cached' (frees the text encoder)"
+                        )
                     out["warnings"].append(
                         {
                             "code": "vram.tight",

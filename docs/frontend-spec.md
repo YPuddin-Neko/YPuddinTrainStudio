@@ -185,10 +185,10 @@ frontend/
   "steps_per_epoch": 120, "total_steps": 2400, "epochs": 20,
   "buckets": [{"w": 1024, "h": 1024, "items": 80, "batches": 40}],
   "params": {"base": 2000000000, "trainable": 12345678, "adapted_layers": 280, "by_algo": {"lokr": 280}},
-  "memory": {"weights_mb": 4200, "adapter_mb": 48, "optimizer_mb": 96,
-             "activations_mb_by_bucket": [{"w":1024,"h":1024,"mb":6100}],
-             "peak_mb_estimate": 11800, "gpu_total_mb": 24576,
-             "suggestions": ["enable memory.block_swap=8", "…"]},
+  "memory": {"weights_mb": 3988, "swapped_mb": 0, "text_encoder_mb": 1137, "adapter_mb": 105, "optimizer_mb": 210,
+             "activations_mb_by_bucket": [{"w":1024,"h":1024,"mb":896}],
+             "peak_mb_estimate": 6848, "gpu_total_mb": 24576, "heuristic": true,
+             "suggestions": ["enable memory.blocks_to_swap", "…"]},
   "text_encoding": "online|cached"
 }
 ```

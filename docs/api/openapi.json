@@ -4166,6 +4166,16 @@
             "type": "number",
             "title": "Weights Mb"
           },
+          "swapped_mb": {
+            "type": "number",
+            "title": "Swapped Mb",
+            "default": 0
+          },
+          "text_encoder_mb": {
+            "type": "number",
+            "title": "Text Encoder Mb",
+            "default": 0
+          },
           "adapter_mb": {
             "type": "number",
             "title": "Adapter Mb"
@@ -4173,6 +4183,11 @@
           "optimizer_mb": {
             "type": "number",
             "title": "Optimizer Mb"
+          },
+          "heuristic": {
+            "type": "boolean",
+            "title": "Heuristic",
+            "default": true
           },
           "activations_mb_by_bucket": {
             "items": {

@@ -143,8 +143,11 @@ class PlanActivation(_Out):
 
 class PlanMemory(_Out):
     weights_mb: float
+    swapped_mb: float = 0
+    text_encoder_mb: float = 0
     adapter_mb: float
     optimizer_mb: float
+    heuristic: bool = True
     activations_mb_by_bucket: list[PlanActivation] = Field(default_factory=list)
     peak_mb_estimate: float | None = None
     gpu_total_mb: float | None = None

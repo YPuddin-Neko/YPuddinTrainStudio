@@ -32,6 +32,7 @@ class TextSpec:
     max_len: int
     fingerprint: str
     pad_floor: bool = True  # pad every batch up to max_len (model expects fixed length)
+    encoder_params: int = 0  # resident on the accelerator in online text mode (planner VRAM estimate)
 
 
 @dataclass(frozen=True)

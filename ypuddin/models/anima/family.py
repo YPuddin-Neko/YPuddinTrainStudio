@@ -189,7 +189,9 @@ class AnimaFamily(ModelFamily):
     spec = ModelSpec(
         name="anima",
         latent=LatentSpec(channels=16, stride=8, patch=2, fingerprint=AnimaLatent.fingerprint),
-        text=TextSpec(max_len=512, fingerprint=AnimaText.fingerprint, pad_floor=True),
+        text=TextSpec(
+            max_len=512, fingerprint=AnimaText.fingerprint, pad_floor=True, encoder_params=596_049_920
+        ),
         sampling=SamplingDefaults(steps=25, cfg=4.0, shift=3.0, sampler="euler"),
         capabilities=frozenset(
             {
