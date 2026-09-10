@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from ypuddin.config import DatasetSourceConfig, TrainConfig, deep_merge
 from ypuddin.data import IndexDB, scan_sources
 
+from . import models as m
 from .context import ServiceContext
 from .db import new_id, now
 from .errors import ApiError, NotFound
@@ -61,7 +62,7 @@ def _project_row(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@router.get("/projects")
+@router.get("/projects", response_model=list[m.Project], response_model_exclude_unset=True)
 def list_projects(include_archived: bool = False, c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
     rows = c.db.fetchall(
         "SELECT * FROM projects"
@@ -71,7 +72,7 @@ def list_projects(include_archived: bool = False, c: ServiceContext = Depends(ct
     return [_project_row(c, r) for r in rows]
 
 
-@router.post("/projects", status_code=201)
+@router.post("/projects", status_code=201, response_model=m.Project, response_model_exclude_unset=True)
 def create_project(body: ProjectBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     pid = new_id("p")
     t = now()
@@ -90,12 +91,12 @@ def _get_project(c: ServiceContext, pid: str) -> dict[str, Any]:
     return r
 
 
-@router.get("/projects/{pid}")
+@router.get("/projects/{pid}", response_model=m.Project, response_model_exclude_unset=True)
 def get_project(pid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     return _project_row(c, _get_project(c, pid))
 
 
-@router.patch("/projects/{pid}")
+@router.patch("/projects/{pid}", response_model=m.Project, response_model_exclude_unset=True)
 def patch_project(pid: str, body: ProjectPatch, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     _get_project(c, pid)
     fields = {
@@ -106,7 +107,7 @@ def patch_project(pid: str, body: ProjectPatch, c: ServiceContext = Depends(ctx)
     return _project_row(c, _get_project(c, pid))
 
 
-@router.delete("/projects/{pid}")
+@router.delete("/projects/{pid}", response_model=m.Ok, response_model_exclude_unset=True)
 def delete_project(pid: str, delete_files: bool = False, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     _get_project(c, pid)
     if c.db.fetchone(
@@ -224,7 +225,7 @@ def _dataset_row(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@router.get("/projects/{pid}/datasets")
+@router.get("/projects/{pid}/datasets", response_model=list[m.DatasetInfo], response_model_exclude_unset=True)
 def list_datasets(pid: str, c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
     _get_project(c, pid)
     return [
@@ -233,7 +234,12 @@ def list_datasets(pid: str, c: ServiceContext = Depends(ctx)) -> list[dict[str, 
     ]
 
 
-@router.post("/projects/{pid}/datasets", status_code=201)
+@router.post(
+    "/projects/{pid}/datasets",
+    status_code=201,
+    response_model=m.DatasetInfo,
+    response_model_exclude_unset=True,
+)
 async def add_dataset(pid: str, body: DatasetBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     _get_project(c, pid)
     p = Path(body.path).expanduser()
@@ -267,12 +273,12 @@ def _get_dataset(c: ServiceContext, did: str) -> dict[str, Any]:
     return r
 
 
-@router.get("/datasets/{did}")
+@router.get("/datasets/{did}", response_model=m.DatasetInfo, response_model_exclude_unset=True)
 def get_dataset(did: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     return _dataset_row(c, _get_dataset(c, did))
 
 
-@router.post("/datasets/{did}/rescan")
+@router.post("/datasets/{did}/rescan", response_model=m.Ok, response_model_exclude_unset=True)
 async def rescan_dataset(did: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     _get_dataset(c, did)
     c.db.update("datasets", did, {"index_status": "indexing"})
@@ -280,7 +286,7 @@ async def rescan_dataset(did: str, c: ServiceContext = Depends(ctx)) -> dict[str
     return {"ok": True}
 
 
-@router.delete("/datasets/{did}")
+@router.delete("/datasets/{did}", response_model=m.Ok, response_model_exclude_unset=True)
 def delete_dataset(did: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     _get_dataset(c, did)
     c.db.delete("datasets", did)
@@ -294,7 +300,7 @@ def _records(c: ServiceContext, did: str) -> list[dict[str, Any]]:
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
 
 
-@router.get("/datasets/{did}/images")
+@router.get("/datasets/{did}/images", response_model=m.ImagePage, response_model_exclude_unset=True)
 def list_images(
     did: str, page: int = 1, page_size: int = 50, q: str = "", c: ServiceContext = Depends(ctx)
 ) -> dict[str, Any]:
@@ -356,7 +362,7 @@ class CaptionBody(BaseModel):
     caption: str
 
 
-@router.get("/datasets/{did}/images/{h}/caption")
+@router.get("/datasets/{did}/images/{h}/caption", response_model=m.Caption, response_model_exclude_unset=True)
 def get_caption(did: str, h: str, c: ServiceContext = Depends(ctx)) -> dict[str, str]:
     from ypuddin.data import read_caption
 
@@ -365,7 +371,7 @@ def get_caption(did: str, h: str, c: ServiceContext = Depends(ctx)) -> dict[str,
     return {"caption": read_caption(r["caption_path"], row["class_prompt"])}
 
 
-@router.put("/datasets/{did}/images/{h}/caption")
+@router.put("/datasets/{did}/images/{h}/caption", response_model=m.Caption, response_model_exclude_unset=True)
 def put_caption(did: str, h: str, body: CaptionBody, c: ServiceContext = Depends(ctx)) -> dict[str, str]:
     row = _get_dataset(c, did)
     r = _record_by_hash(c, did, h)
@@ -389,7 +395,7 @@ class TagBatch(BaseModel):
     remove: list[str] = Field(default_factory=list)
 
 
-@router.post("/datasets/{did}/tags/batch")
+@router.post("/datasets/{did}/tags/batch", response_model=m.TagBatchResult, response_model_exclude_unset=True)
 def tags_batch(did: str, body: TagBatch, c: ServiceContext = Depends(ctx)) -> dict[str, int]:
     from ypuddin.data import read_caption
 
@@ -448,7 +454,7 @@ def _job_row(r: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-@router.get("/jobs")
+@router.get("/jobs", response_model=list[m.Job], response_model_exclude_unset=True)
 def list_jobs(
     status: str | None = None,
     project_id: str | None = None,
@@ -471,7 +477,7 @@ def list_jobs(
     return _page(rows, page, page_size)
 
 
-@router.post("/jobs", status_code=201)
+@router.post("/jobs", status_code=201, response_model=m.Job, response_model_exclude_unset=True)
 def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     if body.type not in ("train", "cache"):
         raise ApiError(f"unsupported job type {body.type}", code="job.bad_type")
@@ -528,12 +534,12 @@ def _get_job(c: ServiceContext, jid: str) -> dict[str, Any]:
     return r
 
 
-@router.get("/jobs/{jid}")
+@router.get("/jobs/{jid}", response_model=m.Job, response_model_exclude_unset=True)
 def get_job(jid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     return _job_row(_get_job(c, jid))
 
 
-@router.patch("/jobs/{jid}")
+@router.patch("/jobs/{jid}", response_model=m.Job, response_model_exclude_unset=True)
 def patch_job(jid: str, body: JobPatch, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     _get_job(c, jid)
     c.db.update("jobs", jid, {k: v for k, v in body.model_dump().items() if v is not None})
@@ -541,7 +547,7 @@ def patch_job(jid: str, body: JobPatch, c: ServiceContext = Depends(ctx)) -> dic
     return _job_row(_get_job(c, jid))
 
 
-@router.delete("/jobs/{jid}")
+@router.delete("/jobs/{jid}", response_model=m.Ok, response_model_exclude_unset=True)
 def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     r = _get_job(c, jid)
     if r["status"] in ("running", "pausing", "cancelling"):
@@ -553,7 +559,7 @@ def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends
     return {"ok": True}
 
 
-@router.post("/jobs/{jid}/{command}")
+@router.post("/jobs/{jid}/{command}", response_model=m.Job, response_model_exclude_unset=True)
 def job_command(jid: str, command: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     if command not in ("pause", "resume", "cancel", "save", "retry"):
         raise NotFound("unknown command", code="job.bad_command")
@@ -584,7 +590,7 @@ def _events_file(c: ServiceContext, jid: str) -> list[dict[str, Any]]:
     return out
 
 
-@router.get("/jobs/{jid}/metrics")
+@router.get("/jobs/{jid}/metrics", response_model=m.JobMetrics, response_model_exclude_unset=True)
 def job_metrics(jid: str, since_step: int = 0, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     steps, loss, loss_ema, grad, vram, its = [], [], [], [], [], []
     lr: dict[str, list[float]] = {}
@@ -613,7 +619,7 @@ def job_metrics(jid: str, since_step: int = 0, c: ServiceContext = Depends(ctx))
     }
 
 
-@router.get("/jobs/{jid}/samples")
+@router.get("/jobs/{jid}/samples", response_model=list[m.JobSample], response_model_exclude_unset=True)
 def job_samples(jid: str, c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
     out = []
     for ev in _events_file(c, jid):
@@ -634,7 +640,9 @@ def job_samples(jid: str, c: ServiceContext = Depends(ctx)) -> list[dict[str, An
     return out
 
 
-@router.get("/jobs/{jid}/checkpoints")
+@router.get(
+    "/jobs/{jid}/checkpoints", response_model=list[m.JobCheckpoint], response_model_exclude_unset=True
+)
 def job_checkpoints(jid: str, c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
     out = []
     arts = {
@@ -673,7 +681,7 @@ def job_file(jid: str, path: str, kind: str = "sample", c: ServiceContext = Depe
     return FileResponse(str(target))
 
 
-@router.get("/jobs/{jid}/log")
+@router.get("/jobs/{jid}/log", response_model=m.JobLog, response_model_exclude_unset=True)
 def job_log(jid: str, offset: int = 0, limit: int = 2000, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     r = _get_job(c, jid)
     p = Path(r["run_dir"]) / "run.log"
@@ -698,12 +706,12 @@ def job_log(jid: str, offset: int = 0, limit: int = 2000, c: ServiceContext = De
 
 
 # --------------------------------------------------------------------------- queue settings
-@router.get("/queue/settings")
+@router.get("/queue/settings", response_model=m.QueueSettings, response_model_exclude_unset=True)
 def queue_settings(c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     return c.db.get_kv("queue.settings", {"held": False, "max_concurrent": 1})
 
 
-@router.put("/queue/settings")
+@router.put("/queue/settings", response_model=m.QueueSettings, response_model_exclude_unset=True)
 def put_queue_settings(body: dict[str, Any], c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     cur = queue_settings(c)
     cur.update({k: v for k, v in body.items() if k in ("held", "max_concurrent")})
@@ -739,7 +747,7 @@ def _artifact_row(r: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-@router.get("/artifacts")
+@router.get("/artifacts", response_model=list[m.Artifact], response_model_exclude_unset=True)
 def list_artifacts(project_id: str | None = None, c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
     sql, params = "SELECT * FROM artifacts", ()
     if project_id:
@@ -754,12 +762,12 @@ def _get_artifact(c: ServiceContext, aid: str) -> dict[str, Any]:
     return r
 
 
-@router.get("/artifacts/{aid}")
+@router.get("/artifacts/{aid}", response_model=m.Artifact, response_model_exclude_unset=True)
 def get_artifact(aid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     return _artifact_row(_get_artifact(c, aid))
 
 
-@router.delete("/artifacts/{aid}")
+@router.delete("/artifacts/{aid}", response_model=m.Ok, response_model_exclude_unset=True)
 def delete_artifact(aid: str, delete_file: bool = False, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     r = _get_artifact(c, aid)
     c.db.delete("artifacts", aid)
@@ -778,7 +786,7 @@ class ConvertBody(BaseModel):
     format: str
 
 
-@router.post("/artifacts/{aid}/convert")
+@router.post("/artifacts/{aid}/convert", response_model=m.Artifact, response_model_exclude_unset=True)
 def convert_artifact(aid: str, body: ConvertBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     from safetensors.torch import save_file
 

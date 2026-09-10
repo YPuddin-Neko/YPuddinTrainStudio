@@ -163,7 +163,9 @@ def test_anima_trainer_end_to_end_on_cpu(tiny_models, tiny_vae_loader, image_dat
 
     with safe_open(str(final), framework="pt") as f:
         meta = f.metadata()
-    assert meta["modelspec.architecture"].startswith("anima") and meta["ss_network_module"] == "ypuddin.adapters"
+    assert (
+        meta["modelspec.architecture"].startswith("anima") and meta["ss_network_module"] == "ypuddin.adapters"
+    )
     # samples decode to real 64x64 PNGs through the (tiny) VAE
     from PIL import Image
 

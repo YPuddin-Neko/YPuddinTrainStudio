@@ -20,6 +20,7 @@ from ypuddin.config import TrainConfig, deep_merge, dump_toml, read_config_file
 from ypuddin.models import available as available_families
 from ypuddin.train.plan import plan as make_plan
 
+from . import models as m
 from .context import ServiceContext
 from .db import new_id, now
 from .errors import ApiError, NotFound
@@ -89,7 +90,7 @@ def system_stats(data_root: Path) -> dict[str, Any]:
     }
 
 
-@router.get("/health")
+@router.get("/health", response_model=m.Health, response_model_exclude_unset=True)
 def health(c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     try:
         import torch
@@ -107,12 +108,12 @@ def health(c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     }
 
 
-@router.get("/system/stats")
+@router.get("/system/stats", response_model=m.SystemStats, response_model_exclude_unset=True)
 def stats(c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     return system_stats(c.data_root)
 
 
-@router.get("/system/info")
+@router.get("/system/info", response_model=m.SystemInfo, response_model_exclude_unset=True)
 def info() -> dict[str, Any]:
     mods = {}
     for name in ("torch", "transformers", "safetensors", "pydantic", "fastapi"):
@@ -129,17 +130,17 @@ def info() -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- settings / fs
-@router.get("/settings")
+@router.get("/settings", response_model=m.Settings, response_model_exclude_unset=True)
 def get_settings(c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     return c.settings()
 
 
-@router.put("/settings")
+@router.put("/settings", response_model=m.Settings, response_model_exclude_unset=True)
 def put_settings(patch: dict[str, Any], c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     return c.save_settings(patch)
 
 
-@router.get("/fs/list")
+@router.get("/fs/list", response_model=m.FsList, response_model_exclude_unset=True)
 def fs_list(path: str = "", c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     p = Path(path).expanduser() if path else c.data_root
     if not p.exists() or not p.is_dir():
@@ -186,13 +187,13 @@ def _validate(config: dict[str, Any]) -> tuple[TrainConfig | None, list[dict[str
         return None, [{"loc": ".".join(str(x) for x in err["loc"]), "msg": err["msg"]} for err in e.errors()]
 
 
-@router.post("/config/validate")
+@router.post("/config/validate", response_model=m.ValidateResult, response_model_exclude_unset=True)
 def config_validate(body: ConfigBody) -> dict[str, Any]:
     cfg, errors = _validate(body.config)
     return {"ok": cfg is not None, "errors": errors, "warnings": []}
 
 
-@router.post("/plan")
+@router.post("/plan", response_model=m.Plan, response_model_exclude_unset=True)
 def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     cfg, errors = _validate(body.config)
     if cfg is None:
@@ -247,7 +248,7 @@ def _preset_row(name: str, data: dict[str, Any], builtin: bool, updated_at: floa
     }
 
 
-@router.get("/presets")
+@router.get("/presets", response_model=list[m.Preset], response_model_exclude_unset=True)
 def list_presets(c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
     out = [_preset_row(n, d, True, None) for n, d in BUILTIN_PRESETS.items()]
     for f in sorted(_preset_dir(c).glob("*.json")):
@@ -262,7 +263,7 @@ class PresetBody(BaseModel):
     config: dict[str, Any]
 
 
-@router.post("/presets")
+@router.post("/presets", response_model=m.Preset, response_model_exclude_unset=True)
 def create_preset(body: PresetBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     if not body.name.replace("-", "").replace("_", "").isalnum():
         raise ApiError("preset name must be alphanumeric with - or _", code="preset.bad_name")
@@ -276,7 +277,7 @@ def create_preset(body: PresetBody, c: ServiceContext = Depends(ctx)) -> dict[st
     )
 
 
-@router.get("/presets/{name}")
+@router.get("/presets/{name}", response_model=m.Preset, response_model_exclude_unset=True)
 def get_preset(name: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     if name in BUILTIN_PRESETS:
         return _preset_row(name, BUILTIN_PRESETS[name], True, None)
@@ -286,14 +287,14 @@ def get_preset(name: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     return _preset_row(name, json.loads(f.read_text(encoding="utf-8")), False, f.stat().st_mtime)
 
 
-@router.put("/presets/{name}")
+@router.put("/presets/{name}", response_model=m.Preset, response_model_exclude_unset=True)
 def put_preset(name: str, body: PresetBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     if name in BUILTIN_PRESETS:
         raise ApiError("builtin presets are read-only", code="preset.readonly", status=403)
     return create_preset(PresetBody(name=name, description=body.description, config=body.config), c)
 
 
-@router.delete("/presets/{name}")
+@router.delete("/presets/{name}", response_model=m.Ok, response_model_exclude_unset=True)
 def delete_preset(name: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     if name in BUILTIN_PRESETS:
         raise ApiError("builtin presets are read-only", code="preset.readonly", status=403)
@@ -318,7 +319,7 @@ def resolve_preset(name: str, body: ConfigBody, c: ServiceContext = Depends(ctx)
     }
 
 
-@router.post("/config/import-toml")
+@router.post("/config/import-toml", response_model=m.ValidateResult, response_model_exclude_unset=True)
 def import_toml(body: dict[str, str]) -> dict[str, Any]:
     import tempfile
 
@@ -330,7 +331,7 @@ def import_toml(body: dict[str, str]) -> dict[str, Any]:
     finally:
         Path(path).unlink(missing_ok=True)
     cfg, errors = _validate(data)
-    return {"ok": cfg is not None, "errors": errors, "config": cfg.to_dict() if cfg else data}
+    return {"ok": cfg is not None, "errors": errors, "warnings": [], "config": cfg.to_dict() if cfg else data}
 
 
 # --------------------------------------------------------------------------- models
@@ -347,12 +348,12 @@ def _model_row(r: dict[str, Any]) -> dict[str, Any]:
     return {**r, "exists": p.exists(), "is_default": bool(r["is_default"])}
 
 
-@router.get("/models")
+@router.get("/models", response_model=list[m.ModelAsset], response_model_exclude_unset=True)
 def list_models(c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
     return [_model_row(r) for r in c.db.fetchall("SELECT * FROM models ORDER BY family, kind, created_at")]
 
 
-@router.post("/models")
+@router.post("/models", response_model=m.ModelAsset, response_model_exclude_unset=True)
 def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     p = Path(body.path).expanduser()
     size = (
@@ -381,13 +382,13 @@ def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, An
     return _model_row(c.db.fetchone("SELECT * FROM models WHERE id=?", (mid,)))
 
 
-@router.delete("/models/{model_id}")
+@router.delete("/models/{model_id}", response_model=m.Ok, response_model_exclude_unset=True)
 def delete_model(model_id: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     c.db.delete("models", model_id)
     return {"ok": True}
 
 
-@router.post("/models/scan")
+@router.post("/models/scan", response_model=list[m.ModelAsset], response_model_exclude_unset=True)
 def scan_models(body: dict[str, str], c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
     root = Path(body.get("path", str(c.data_root / "models"))).expanduser()
     if not root.is_dir():

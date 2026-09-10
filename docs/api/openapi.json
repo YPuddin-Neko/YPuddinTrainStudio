@@ -15,9 +15,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Health Api Health Get"
+                  "$ref": "#/components/schemas/Health"
                 }
               }
             }
@@ -35,9 +33,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Stats Api System Stats Get"
+                  "$ref": "#/components/schemas/SystemStats"
                 }
               }
             }
@@ -55,9 +51,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Info Api System Info Get"
+                  "$ref": "#/components/schemas/SystemInfo"
                 }
               }
             }
@@ -75,9 +69,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Get Settings Api Settings Get"
+                  "$ref": "#/components/schemas/Settings"
                 }
               }
             }
@@ -105,9 +97,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Put Settings Api Settings Put"
+                  "$ref": "#/components/schemas/Settings"
                 }
               }
             }
@@ -147,9 +137,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Fs List Api Fs List Get"
+                  "$ref": "#/components/schemas/FsList"
                 }
               }
             }
@@ -207,9 +195,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Config Validate Api Config Validate Post"
+                  "$ref": "#/components/schemas/ValidateResult"
                 }
               }
             }
@@ -247,9 +233,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Config Plan Api Plan Post"
+                  "$ref": "#/components/schemas/Plan"
                 }
               }
             }
@@ -278,8 +262,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/Preset"
                   },
                   "type": "array",
                   "title": "Response List Presets Api Presets Get"
@@ -308,9 +291,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Create Preset Api Presets Post"
+                  "$ref": "#/components/schemas/Preset"
                 }
               }
             }
@@ -349,9 +330,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Preset Api Presets  Name  Get"
+                  "$ref": "#/components/schemas/Preset"
                 }
               }
             }
@@ -398,9 +377,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Put Preset Api Presets  Name  Put"
+                  "$ref": "#/components/schemas/Preset"
                 }
               }
             }
@@ -437,9 +414,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Delete Preset Api Presets  Name  Delete"
+                  "$ref": "#/components/schemas/Ok"
                 }
               }
             }
@@ -533,9 +508,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Import Toml Api Config Import Toml Post"
+                  "$ref": "#/components/schemas/ValidateResult"
                 }
               }
             }
@@ -564,8 +537,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/ModelAsset"
                   },
                   "type": "array",
                   "title": "Response List Models Api Models Get"
@@ -594,9 +566,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Add Model Api Models Post"
+                  "$ref": "#/components/schemas/ModelAsset"
                 }
               }
             }
@@ -635,9 +605,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Delete Model Api Models  Model Id  Delete"
+                  "$ref": "#/components/schemas/Ok"
                 }
               }
             }
@@ -680,8 +648,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/ModelAsset"
                   },
                   "type": "array",
                   "title": "Response Scan Models Api Models Scan Post"
@@ -770,8 +737,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "object",
-                    "additionalProperties": true
+                    "$ref": "#/components/schemas/Project"
                   },
                   "title": "Response List Projects Api Projects Get"
                 }
@@ -809,9 +775,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Create Project Api Projects Post"
+                  "$ref": "#/components/schemas/Project"
                 }
               }
             }
@@ -850,9 +814,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Project Api Projects  Pid  Get"
+                  "$ref": "#/components/schemas/Project"
                 }
               }
             }
@@ -899,9 +861,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Patch Project Api Projects  Pid  Patch"
+                  "$ref": "#/components/schemas/Project"
                 }
               }
             }
@@ -948,9 +908,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Delete Project Api Projects  Pid  Delete"
+                  "$ref": "#/components/schemas/Ok"
                 }
               }
             }
@@ -1083,8 +1041,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "object",
-                    "additionalProperties": true
+                    "$ref": "#/components/schemas/DatasetInfo"
                   },
                   "title": "Response List Datasets Api Projects  Pid  Datasets Get"
                 }
@@ -1133,9 +1090,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Add Dataset Api Projects  Pid  Datasets Post"
+                  "$ref": "#/components/schemas/DatasetInfo"
                 }
               }
             }
@@ -1174,9 +1129,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Dataset Api Datasets  Did  Get"
+                  "$ref": "#/components/schemas/DatasetInfo"
                 }
               }
             }
@@ -1213,9 +1166,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Delete Dataset Api Datasets  Did  Delete"
+                  "$ref": "#/components/schemas/Ok"
                 }
               }
             }
@@ -1254,9 +1205,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Rescan Dataset Api Datasets  Did  Rescan Post"
+                  "$ref": "#/components/schemas/Ok"
                 }
               }
             }
@@ -1325,9 +1274,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response List Images Api Datasets  Did  Images Get"
+                  "$ref": "#/components/schemas/ImagePage"
                 }
               }
             }
@@ -1477,11 +1424,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Get Caption Api Datasets  Did  Images  H  Caption Get"
+                  "$ref": "#/components/schemas/Caption"
                 }
               }
             }
@@ -1537,11 +1480,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Put Caption Api Datasets  Did  Images  H  Caption Put"
+                  "$ref": "#/components/schemas/Caption"
                 }
               }
             }
@@ -1590,11 +1529,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "integer"
-                  },
-                  "title": "Response Tags Batch Api Datasets  Did  Tags Batch Post"
+                  "$ref": "#/components/schemas/TagBatchResult"
                 }
               }
             }
@@ -1676,8 +1611,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Job"
+                  },
                   "title": "Response List Jobs Api Jobs Get"
                 }
               }
@@ -1714,9 +1651,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Create Job Api Jobs Post"
+                  "$ref": "#/components/schemas/Job"
                 }
               }
             }
@@ -1755,9 +1690,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Job Api Jobs  Jid  Get"
+                  "$ref": "#/components/schemas/Job"
                 }
               }
             }
@@ -1804,9 +1737,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Patch Job Api Jobs  Jid  Patch"
+                  "$ref": "#/components/schemas/Job"
                 }
               }
             }
@@ -1853,9 +1784,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Delete Job Api Jobs  Jid  Delete"
+                  "$ref": "#/components/schemas/Ok"
                 }
               }
             }
@@ -1903,9 +1832,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Job Command Api Jobs  Jid   Command  Post"
+                  "$ref": "#/components/schemas/Job"
                 }
               }
             }
@@ -1995,9 +1922,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Job Metrics Api Jobs  Jid  Metrics Get"
+                  "$ref": "#/components/schemas/JobMetrics"
                 }
               }
             }
@@ -2038,8 +1963,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "object",
-                    "additionalProperties": true
+                    "$ref": "#/components/schemas/JobSample"
                   },
                   "title": "Response Job Samples Api Jobs  Jid  Samples Get"
                 }
@@ -2082,8 +2006,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "object",
-                    "additionalProperties": true
+                    "$ref": "#/components/schemas/JobCheckpoint"
                   },
                   "title": "Response Job Checkpoints Api Jobs  Jid  Checkpoints Get"
                 }
@@ -2200,9 +2123,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Job Log Api Jobs  Jid  Log Get"
+                  "$ref": "#/components/schemas/JobLog"
                 }
               }
             }
@@ -2230,9 +2151,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Queue Settings Api Queue Settings Get"
+                  "$ref": "#/components/schemas/QueueSettings"
                 }
               }
             }
@@ -2260,9 +2179,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Put Queue Settings Api Queue Settings Put"
+                  "$ref": "#/components/schemas/QueueSettings"
                 }
               }
             }
@@ -2310,8 +2227,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "object",
-                    "additionalProperties": true
+                    "$ref": "#/components/schemas/Artifact"
                   },
                   "title": "Response List Artifacts Api Artifacts Get"
                 }
@@ -2352,9 +2268,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Artifact Api Artifacts  Aid  Get"
+                  "$ref": "#/components/schemas/Artifact"
                 }
               }
             }
@@ -2401,9 +2315,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Delete Artifact Api Artifacts  Aid  Delete"
+                  "$ref": "#/components/schemas/Ok"
                 }
               }
             }
@@ -2489,9 +2401,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Convert Artifact Api Artifacts  Aid  Convert Post"
+                  "$ref": "#/components/schemas/Artifact"
                 }
               }
             }
@@ -2512,6 +2422,177 @@
   },
   "components": {
     "schemas": {
+      "Artifact": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At"
+          },
+          "algo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Algo"
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank"
+          },
+          "alpha": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alpha"
+          },
+          "factor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Factor"
+          },
+          "family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "job_id",
+          "name",
+          "path",
+          "size",
+          "kind",
+          "step",
+          "created_at"
+        ],
+        "title": "Artifact"
+      },
+      "AspectCount": {
+        "properties": {
+          "ar": {
+            "type": "string",
+            "title": "Ar"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "ar",
+          "count"
+        ],
+        "title": "AspectCount"
+      },
+      "Caption": {
+        "properties": {
+          "caption": {
+            "type": "string",
+            "title": "Caption"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "caption"
+        ],
+        "title": "Caption"
+      },
       "CaptionBody": {
         "properties": {
           "caption": {
@@ -2552,6 +2633,44 @@
           "config"
         ],
         "title": "ConfigBody"
+      },
+      "ConfigError": {
+        "properties": {
+          "loc": {
+            "type": "string",
+            "title": "Loc"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "loc",
+          "msg"
+        ],
+        "title": "ConfigError"
+      },
+      "ConfigWarning": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "code",
+          "msg"
+        ],
+        "title": "ConfigWarning"
       },
       "ConvertBody": {
         "properties": {
@@ -2610,6 +2729,388 @@
         ],
         "title": "DatasetBody"
       },
+      "DatasetImage": {
+        "properties": {
+          "hash": {
+            "type": "string",
+            "title": "Hash"
+          },
+          "rel_path": {
+            "type": "string",
+            "title": "Rel Path"
+          },
+          "width": {
+            "type": "integer",
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height"
+          },
+          "caption": {
+            "type": "string",
+            "title": "Caption"
+          },
+          "has_mask": {
+            "type": "boolean",
+            "title": "Has Mask"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "hash",
+          "rel_path",
+          "width",
+          "height",
+          "caption",
+          "has_mask"
+        ],
+        "title": "DatasetImage"
+      },
+      "DatasetInfo": {
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/DatasetSource"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/DatasetStats"
+          },
+          "index_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "indexing",
+                  "ready",
+                  "failed",
+                  "stale"
+                ]
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Index Status"
+          },
+          "cache": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Cache"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "source",
+          "stats",
+          "index_status",
+          "cache"
+        ],
+        "title": "DatasetInfo"
+      },
+      "DatasetSource": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "repeats": {
+            "type": "integer",
+            "title": "Repeats"
+          },
+          "caption_ext": {
+            "type": "string",
+            "title": "Caption Ext"
+          },
+          "is_reg": {
+            "type": "boolean",
+            "title": "Is Reg"
+          },
+          "prior_weight": {
+            "type": "number",
+            "title": "Prior Weight"
+          },
+          "class_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Class Prompt"
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "path",
+          "repeats",
+          "caption_ext",
+          "is_reg",
+          "prior_weight",
+          "class_prompt",
+          "created_at"
+        ],
+        "title": "DatasetSource"
+      },
+      "DatasetStats": {
+        "properties": {
+          "images": {
+            "type": "integer",
+            "title": "Images",
+            "default": 0
+          },
+          "captioned": {
+            "type": "integer",
+            "title": "Captioned",
+            "default": 0
+          },
+          "resolutions": {
+            "items": {
+              "$ref": "#/components/schemas/ResolutionCount"
+            },
+            "type": "array",
+            "title": "Resolutions"
+          },
+          "ar_hist": {
+            "items": {
+              "$ref": "#/components/schemas/AspectCount"
+            },
+            "type": "array",
+            "title": "Ar Hist"
+          },
+          "masks": {
+            "type": "integer",
+            "title": "Masks",
+            "default": 0
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "DatasetStats"
+      },
+      "DiskStats": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "used_gb": {
+            "type": "number",
+            "title": "Used Gb"
+          },
+          "total_gb": {
+            "type": "number",
+            "title": "Total Gb"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "path",
+          "used_gb",
+          "total_gb"
+        ],
+        "title": "DiskStats"
+      },
+      "FsEntry": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "is_dir": {
+            "type": "boolean",
+            "title": "Is Dir"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "mtime": {
+            "type": "number",
+            "title": "Mtime"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "name",
+          "is_dir",
+          "size",
+          "mtime"
+        ],
+        "title": "FsEntry"
+      },
+      "FsList": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/FsEntry"
+            },
+            "type": "array",
+            "title": "Entries"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "path",
+          "parent",
+          "entries"
+        ],
+        "title": "FsList"
+      },
+      "GpuInfo": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "total_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Mb"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "index",
+          "name"
+        ],
+        "title": "GpuInfo"
+      },
+      "GpuStats": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "util_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Util Pct"
+          },
+          "mem_used_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mem Used Mb"
+          },
+          "mem_total_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mem Total Mb"
+          },
+          "temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temp C"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "index",
+          "name"
+        ],
+        "title": "GpuStats"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2622,6 +3123,270 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "Health": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "api_version": {
+            "type": "integer",
+            "title": "Api Version"
+          },
+          "torch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Torch"
+          },
+          "cuda": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cuda"
+          },
+          "gpus": {
+            "items": {
+              "$ref": "#/components/schemas/GpuInfo"
+            },
+            "type": "array",
+            "title": "Gpus"
+          },
+          "families": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Families"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "version",
+          "api_version",
+          "torch",
+          "cuda",
+          "gpus",
+          "families"
+        ],
+        "title": "Health"
+      },
+      "ImagePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DatasetImage"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "ImagePage"
+      },
+      "Job": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "queued",
+                  "scheduled",
+                  "running",
+                  "pausing",
+                  "cancelling",
+                  "paused",
+                  "completed",
+                  "failed",
+                  "cancelled"
+                ]
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Status"
+          },
+          "priority": {
+            "type": "integer",
+            "title": "Priority"
+          },
+          "scheduled_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled At"
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "run_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Dir"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/JobProgress"
+          },
+          "latest": {
+            "$ref": "#/components/schemas/JobLatest"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "resume_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume From"
+          },
+          "pid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pid"
+          },
+          "exit_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Code"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "name",
+          "project_id",
+          "status",
+          "priority",
+          "scheduled_at",
+          "created_at",
+          "started_at",
+          "finished_at",
+          "run_dir",
+          "progress",
+          "latest",
+          "error",
+          "resume_from",
+          "pid",
+          "exit_code"
+        ],
+        "title": "Job"
       },
       "JobBody": {
         "properties": {
@@ -2680,6 +3445,245 @@
         ],
         "title": "JobBody"
       },
+      "JobCheckpoint": {
+        "properties": {
+          "step": {
+            "type": "integer",
+            "title": "Step"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "weights",
+                  "full"
+                ]
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Kind"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At"
+          },
+          "artifact_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Id"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "step",
+          "kind",
+          "path",
+          "size",
+          "created_at"
+        ],
+        "title": "JobCheckpoint"
+      },
+      "JobLatest": {
+        "properties": {
+          "loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loss"
+          },
+          "loss_ema": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loss Ema"
+          },
+          "lr": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lr"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "JobLatest"
+      },
+      "JobLog": {
+        "properties": {
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/LogLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "next_offset": {
+            "type": "integer",
+            "title": "Next Offset"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "lines",
+          "next_offset"
+        ],
+        "title": "JobLog"
+      },
+      "JobMetrics": {
+        "properties": {
+          "steps": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Steps"
+          },
+          "loss": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Loss"
+          },
+          "loss_ema": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Loss Ema"
+          },
+          "lr": {
+            "additionalProperties": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Lr"
+          },
+          "grad_norm": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Grad Norm"
+          },
+          "vram_mb": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Vram Mb"
+          },
+          "it_s": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "It S"
+          },
+          "validation": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationPoint"
+            },
+            "type": "array",
+            "title": "Validation"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "steps",
+          "loss",
+          "loss_ema",
+          "lr",
+          "grad_norm",
+          "vram_mb",
+          "it_s",
+          "validation"
+        ],
+        "title": "JobMetrics"
+      },
       "JobPatch": {
         "properties": {
           "priority": {
@@ -2707,6 +3711,242 @@
         },
         "type": "object",
         "title": "JobPatch"
+      },
+      "JobProgress": {
+        "properties": {
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          },
+          "total_steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Steps"
+          },
+          "steps_per_epoch": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steps Per Epoch"
+          },
+          "epoch": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epoch"
+          },
+          "eta_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta S"
+          },
+          "it_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "It S"
+          },
+          "vram_peak_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vram Peak Mb"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "JobProgress"
+      },
+      "JobSample": {
+        "properties": {
+          "step": {
+            "type": "integer",
+            "title": "Step"
+          },
+          "prompt_index": {
+            "type": "integer",
+            "title": "Prompt Index"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "seed": {
+            "type": "integer",
+            "title": "Seed"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "width": {
+            "type": "integer",
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height"
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "step",
+          "prompt_index",
+          "prompt",
+          "seed",
+          "url",
+          "width",
+          "height",
+          "created_at"
+        ],
+        "title": "JobSample"
+      },
+      "LogLine": {
+        "properties": {
+          "ts": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ts"
+          },
+          "level": {
+            "type": "string",
+            "title": "Level"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "ts",
+          "level",
+          "msg"
+        ],
+        "title": "LogLine"
+      },
+      "ModelAsset": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "family": {
+            "type": "string",
+            "title": "Family"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "dtype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dtype"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default"
+          },
+          "exists": {
+            "type": "boolean",
+            "title": "Exists"
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "family",
+          "kind",
+          "path",
+          "size",
+          "dtype",
+          "is_default",
+          "exists",
+          "created_at"
+        ],
+        "title": "ModelAsset"
       },
       "ModelBody": {
         "properties": {
@@ -2747,6 +3987,313 @@
         ],
         "title": "ModelBody"
       },
+      "Ok": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "Ok"
+      },
+      "Plan": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigError"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "images": {
+            "type": "integer",
+            "title": "Images",
+            "default": 0
+          },
+          "items": {
+            "type": "integer",
+            "title": "Items",
+            "default": 0
+          },
+          "captioned": {
+            "type": "integer",
+            "title": "Captioned",
+            "default": 0
+          },
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/PlanBucket"
+            },
+            "type": "array",
+            "title": "Buckets"
+          },
+          "steps_per_epoch": {
+            "type": "integer",
+            "title": "Steps Per Epoch",
+            "default": 0
+          },
+          "total_steps": {
+            "type": "integer",
+            "title": "Total Steps",
+            "default": 0
+          },
+          "epochs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epochs"
+          },
+          "params": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanParams"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ],
+            "title": "Params"
+          },
+          "memory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanMemory"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ],
+            "title": "Memory"
+          },
+          "text_encoding": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Encoding"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "ok",
+          "errors",
+          "warnings"
+        ],
+        "title": "Plan"
+      },
+      "PlanActivation": {
+        "properties": {
+          "w": {
+            "type": "integer",
+            "title": "W"
+          },
+          "h": {
+            "type": "integer",
+            "title": "H"
+          },
+          "mb": {
+            "type": "number",
+            "title": "Mb"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "w",
+          "h",
+          "mb"
+        ],
+        "title": "PlanActivation"
+      },
+      "PlanBucket": {
+        "properties": {
+          "w": {
+            "type": "integer",
+            "title": "W"
+          },
+          "h": {
+            "type": "integer",
+            "title": "H"
+          },
+          "items": {
+            "type": "integer",
+            "title": "Items"
+          },
+          "batches": {
+            "type": "integer",
+            "title": "Batches"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "w",
+          "h",
+          "items",
+          "batches"
+        ],
+        "title": "PlanBucket"
+      },
+      "PlanMemory": {
+        "properties": {
+          "weights_mb": {
+            "type": "number",
+            "title": "Weights Mb"
+          },
+          "adapter_mb": {
+            "type": "number",
+            "title": "Adapter Mb"
+          },
+          "optimizer_mb": {
+            "type": "number",
+            "title": "Optimizer Mb"
+          },
+          "activations_mb_by_bucket": {
+            "items": {
+              "$ref": "#/components/schemas/PlanActivation"
+            },
+            "type": "array",
+            "title": "Activations Mb By Bucket"
+          },
+          "peak_mb_estimate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Mb Estimate"
+          },
+          "gpu_total_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Total Mb"
+          },
+          "suggestions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Suggestions"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "weights_mb",
+          "adapter_mb",
+          "optimizer_mb"
+        ],
+        "title": "PlanMemory"
+      },
+      "PlanParams": {
+        "properties": {
+          "base": {
+            "type": "integer",
+            "title": "Base"
+          },
+          "trainable": {
+            "type": "integer",
+            "title": "Trainable"
+          },
+          "adapted_layers": {
+            "type": "integer",
+            "title": "Adapted Layers"
+          },
+          "by_algo": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Algo"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "base",
+          "trainable",
+          "adapted_layers",
+          "by_algo"
+        ],
+        "title": "PlanParams"
+      },
+      "Preset": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config"
+          },
+          "builtin": {
+            "type": "boolean",
+            "title": "Builtin"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "config",
+          "builtin",
+          "updated_at"
+        ],
+        "title": "Preset"
+      },
       "PresetBody": {
         "properties": {
           "name": {
@@ -2770,6 +4317,57 @@
           "config"
         ],
         "title": "PresetBody"
+      },
+      "Project": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          },
+          "archived": {
+            "type": "boolean",
+            "title": "Archived"
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "number",
+            "title": "Updated At"
+          },
+          "dataset_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dataset Ids"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/ProjectStats"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "note",
+          "archived",
+          "created_at",
+          "updated_at",
+          "dataset_ids",
+          "stats"
+        ],
+        "title": "Project"
       },
       "ProjectBody": {
         "properties": {
@@ -2828,6 +4426,248 @@
         "type": "object",
         "title": "ProjectPatch"
       },
+      "ProjectStats": {
+        "properties": {
+          "jobs": {
+            "type": "integer",
+            "title": "Jobs"
+          },
+          "artifacts": {
+            "type": "integer",
+            "title": "Artifacts"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "jobs",
+          "artifacts"
+        ],
+        "title": "ProjectStats"
+      },
+      "QueueSettings": {
+        "properties": {
+          "held": {
+            "type": "boolean",
+            "title": "Held"
+          },
+          "max_concurrent": {
+            "type": "integer",
+            "title": "Max Concurrent"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "held",
+          "max_concurrent"
+        ],
+        "title": "QueueSettings"
+      },
+      "RamStats": {
+        "properties": {
+          "used_mb": {
+            "type": "integer",
+            "title": "Used Mb"
+          },
+          "total_mb": {
+            "type": "integer",
+            "title": "Total Mb"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "used_mb",
+          "total_mb"
+        ],
+        "title": "RamStats"
+      },
+      "ResolutionCount": {
+        "properties": {
+          "w": {
+            "type": "integer",
+            "title": "W"
+          },
+          "h": {
+            "type": "integer",
+            "title": "H"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "w",
+          "h",
+          "count"
+        ],
+        "title": "ResolutionCount"
+      },
+      "Settings": {
+        "properties": {
+          "paths": {
+            "$ref": "#/components/schemas/SettingsPaths"
+          },
+          "server": {
+            "$ref": "#/components/schemas/SettingsServer"
+          },
+          "ui": {
+            "$ref": "#/components/schemas/SettingsUi"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "paths",
+          "server",
+          "ui"
+        ],
+        "title": "Settings"
+      },
+      "SettingsPaths": {
+        "properties": {
+          "data_root": {
+            "type": "string",
+            "title": "Data Root"
+          },
+          "cache_dir": {
+            "type": "string",
+            "title": "Cache Dir"
+          },
+          "models_dir": {
+            "type": "string",
+            "title": "Models Dir"
+          },
+          "output_dir": {
+            "type": "string",
+            "title": "Output Dir"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "data_root",
+          "cache_dir",
+          "models_dir",
+          "output_dir"
+        ],
+        "title": "SettingsPaths"
+      },
+      "SettingsServer": {
+        "properties": {
+          "host": {
+            "type": "string",
+            "title": "Host"
+          },
+          "port": {
+            "type": "integer",
+            "title": "Port"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "host",
+          "port"
+        ],
+        "title": "SettingsServer"
+      },
+      "SettingsUi": {
+        "properties": {
+          "language": {
+            "type": "string",
+            "title": "Language"
+          },
+          "theme": {
+            "type": "string",
+            "title": "Theme"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "language",
+          "theme"
+        ],
+        "title": "SettingsUi"
+      },
+      "SystemInfo": {
+        "properties": {
+          "python": {
+            "type": "string",
+            "title": "Python"
+          },
+          "platform": {
+            "type": "string",
+            "title": "Platform"
+          },
+          "packages": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Packages"
+          },
+          "ypuddin": {
+            "type": "string",
+            "title": "Ypuddin"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "python",
+          "platform",
+          "packages",
+          "ypuddin"
+        ],
+        "title": "SystemInfo"
+      },
+      "SystemStats": {
+        "properties": {
+          "cpu_pct": {
+            "type": "number",
+            "title": "Cpu Pct"
+          },
+          "ram": {
+            "$ref": "#/components/schemas/RamStats"
+          },
+          "disks": {
+            "items": {
+              "$ref": "#/components/schemas/DiskStats"
+            },
+            "type": "array",
+            "title": "Disks"
+          },
+          "gpus": {
+            "items": {
+              "$ref": "#/components/schemas/GpuStats"
+            },
+            "type": "array",
+            "title": "Gpus"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "cpu_pct",
+          "ram",
+          "disks",
+          "gpus"
+        ],
+        "title": "SystemStats"
+      },
       "TagBatch": {
         "properties": {
           "hashes": {
@@ -2857,6 +4697,62 @@
           "hashes"
         ],
         "title": "TagBatch"
+      },
+      "TagBatchResult": {
+        "properties": {
+          "changed": {
+            "type": "integer",
+            "title": "Changed"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "changed"
+        ],
+        "title": "TagBatchResult"
+      },
+      "ValidateResult": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigError"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "ok",
+          "errors",
+          "warnings"
+        ],
+        "title": "ValidateResult"
       },
       "ValidationError": {
         "properties": {
@@ -2897,6 +4793,33 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "ValidationPoint": {
+        "properties": {
+          "step": {
+            "type": "integer",
+            "title": "Step"
+          },
+          "per_t": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Per T"
+          },
+          "mean": {
+            "type": "number",
+            "title": "Mean"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "step",
+          "per_t",
+          "mean"
+        ],
+        "title": "ValidationPoint"
       }
     }
   }

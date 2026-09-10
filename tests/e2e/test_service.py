@@ -231,3 +231,78 @@ async def test_pause_resume_via_api(live_server, image_dataset):
             j = await _wait_status(client, jid, {"completed", "failed"})
             assert j["status"] == "completed", j.get("error")
             assert j["progress"]["step"] == j["progress"]["total_steps"] > paused_step
+
+
+@pytest.mark.asyncio
+async def test_response_models_cover_every_json_endpoint(live_server, image_dataset, tmp_path):
+    """Every JSON route declares a response model; the live handlers must validate against them."""
+    async with httpx.AsyncClient(base_url=live_server, timeout=30) as client:
+        spec = (await client.get("/api/openapi.json")).json()
+        untyped = []
+        for path, ops in spec["paths"].items():
+            for method, op in ops.items():
+                content = op.get("responses", {}).get("200", {}).get("content", {})
+                schema = content.get("application/json", {}).get("schema")
+                if schema is None:
+                    continue  # files / SSE
+                if schema == {} or (
+                    schema.get("type") == "object" and "properties" not in schema and "$ref" not in schema
+                ):
+                    untyped.append(f"{method.upper()} {path}")
+        allowed_untyped = {
+            # free-form JSON (schema / config documents)
+            "GET /api/schema/train",
+            "GET /api/projects/{pid}/config",
+            "PUT /api/projects/{pid}/config",
+            "GET /api/jobs/{jid}/config",
+            "POST /api/presets/{name}/resolve",
+            # binary / streaming responses
+            "GET /api/events",
+            "GET /api/datasets/{did}/images/{h}/thumb",
+            "GET /api/datasets/{did}/images/{h}/file",
+            "GET /api/jobs/{jid}/files",
+            "GET /api/artifacts/{aid}/download",
+        }
+        assert set(untyped) <= allowed_untyped, untyped
+        # endpoints not touched by the training-flow test
+        assert (await client.get("/api/system/stats")).status_code == 200
+        assert (await client.get("/api/system/info")).json()["ypuddin"]
+        fs = (await client.get(f"/api/fs/list?path={image_dataset}")).json()
+        assert fs["entries"] and all({"name", "is_dir", "size", "mtime"} <= set(e) for e in fs["entries"])
+        r = await client.post(
+            "/api/presets", json={"name": "sweep", "description": "d", "config": {"adapter": {"rank": 8}}}
+        )
+        assert r.status_code in (200, 201) and r.json()["name"] == "sweep" and r.json()["builtin"] is False
+        assert (
+            await client.put("/api/presets/sweep", json={"name": "sweep", "config": {"adapter": {"rank": 4}}})
+        ).json()["config"]["adapter"]["rank"] == 4
+        assert (await client.get("/api/presets/sweep")).json()["config"]["adapter"]["rank"] == 4
+        res = (
+            await client.post("/api/presets/sweep/resolve", json={"config": {"model": {"family": "toy"}}})
+        ).json()
+        assert res["config"]["adapter"]["rank"] == 4
+        assert (await client.delete("/api/presets/sweep")).json()["ok"] is True
+        imp = (
+            await client.post("/api/config/import-toml", json={"toml": "[model]\nfamily = 'toy'\n"})
+        ).json()
+        assert imp["ok"] is True and imp["config"]["model"]["family"] == "toy"
+        weights = tmp_path / "w.safetensors"
+        weights.write_bytes(b"\0" * 16)
+        mdl = (
+            await client.post("/api/models", json={"family": "toy", "kind": "dit", "path": str(weights)})
+        ).json()
+        assert mdl["exists"] is True and mdl["is_default"] is False and mdl["size"] == 16
+        assert any(x["id"] == mdl["id"] for x in (await client.get("/api/models")).json())
+        scanned = (await client.post("/api/models/scan", json={"path": str(tmp_path)})).json()
+        assert isinstance(scanned, list)
+        assert (await client.delete(f"/api/models/{mdl['id']}")).json()["ok"] is True
+        assert (await client.get("/api/queue/settings")).json()["held"] in (True, False)
+        p = (await client.post("/api/projects", json={"name": "sweep", "note": "n"})).json()
+        assert p["stats"] == {"jobs": 0, "artifacts": 0} and p["dataset_ids"] == []
+        p2 = (await client.patch(f"/api/projects/{p['id']}", json={"name": "sweep2"})).json()
+        assert p2["name"] == "sweep2"
+        d = (await client.post(f"/api/projects/{p['id']}/datasets", json={"path": str(image_dataset)})).json()
+        assert d["source"]["project_id"] == p["id"] and d["index_status"] in ("indexing", "ready")
+        assert (await client.post(f"/api/datasets/{d['source']['id']}/rescan")).json()["ok"] is True
+        assert (await client.delete(f"/api/datasets/{d['source']['id']}")).json()["ok"] is True
+        assert (await client.delete(f"/api/projects/{p['id']}")).json()["ok"] is True

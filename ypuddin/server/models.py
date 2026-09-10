@@ -1,0 +1,386 @@
+"""Response models: the documented shape of every JSON the service returns.
+
+They exist for the OpenAPI document (the frontend generates its TypeScript types from it), so every
+model allows extra keys -- a field added by the implementation is never silently dropped from a
+response, it just shows up in the schema on the next export. All ``*_at`` / ``ts`` values are Unix
+seconds (float, UTC).
+"""
+
+from __future__ import annotations
+
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class _Out(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+
+# --------------------------------------------------------------------------- system
+class GpuInfo(_Out):
+    index: int
+    name: str
+    total_mb: int | None = None
+
+
+class Health(_Out):
+    version: str
+    api_version: int
+    torch: str | None
+    cuda: str | None
+    gpus: list[GpuInfo]
+    families: list[str]
+
+
+class GpuStats(_Out):
+    index: int
+    name: str
+    util_pct: float | None = None
+    mem_used_mb: int | None = None
+    mem_total_mb: int | None = None
+    temp_c: float | None = None
+
+
+class RamStats(_Out):
+    used_mb: int
+    total_mb: int
+
+
+class DiskStats(_Out):
+    path: str
+    used_gb: float
+    total_gb: float
+
+
+class SystemStats(_Out):
+    cpu_pct: float
+    ram: RamStats
+    disks: list[DiskStats]
+    gpus: list[GpuStats]
+
+
+class SystemInfo(_Out):
+    python: str
+    platform: str
+    packages: dict[str, str | None]
+    ypuddin: str
+
+
+class SettingsPaths(_Out):
+    data_root: str
+    cache_dir: str
+    models_dir: str
+    output_dir: str
+
+
+class SettingsServer(_Out):
+    host: str
+    port: int
+
+
+class SettingsUi(_Out):
+    language: str
+    theme: str
+
+
+class Settings(_Out):
+    paths: SettingsPaths
+    server: SettingsServer
+    ui: SettingsUi
+
+
+class FsEntry(_Out):
+    name: str
+    is_dir: bool
+    size: int | None
+    mtime: float
+
+
+class FsList(_Out):
+    path: str
+    parent: str | None
+    entries: list[FsEntry]
+
+
+# --------------------------------------------------------------------------- config / plan / presets
+class ConfigError(_Out):
+    loc: str
+    msg: str
+
+
+class ConfigWarning(_Out):
+    code: str
+    msg: str
+
+
+class ValidateResult(_Out):
+    ok: bool
+    errors: list[ConfigError]
+    warnings: list[ConfigWarning]
+    config: dict[str, Any] | None = None
+
+
+class PlanBucket(_Out):
+    w: int
+    h: int
+    items: int
+    batches: int
+
+
+class PlanParams(_Out):
+    base: int
+    trainable: int
+    adapted_layers: int
+    by_algo: dict[str, int]
+
+
+class PlanActivation(_Out):
+    w: int
+    h: int
+    mb: float
+
+
+class PlanMemory(_Out):
+    weights_mb: float
+    adapter_mb: float
+    optimizer_mb: float
+    activations_mb_by_bucket: list[PlanActivation] = Field(default_factory=list)
+    peak_mb_estimate: float | None = None
+    gpu_total_mb: float | None = None
+    suggestions: list[str] = Field(default_factory=list)
+
+
+class Plan(_Out):
+    ok: bool
+    errors: list[ConfigError]
+    warnings: list[ConfigWarning]
+    images: int = 0
+    items: int = 0
+    captioned: int = 0
+    buckets: list[PlanBucket] = Field(default_factory=list)
+    steps_per_epoch: int = 0
+    total_steps: int = 0
+    epochs: int | None = None
+    params: PlanParams | dict[str, Any] = Field(default_factory=dict)
+    memory: PlanMemory | dict[str, Any] = Field(default_factory=dict)
+    text_encoding: str | None = None
+
+
+class Preset(_Out):
+    name: str
+    description: str
+    config: dict[str, Any]
+    builtin: bool
+    updated_at: float | None
+
+
+class ModelAsset(_Out):
+    id: str
+    family: str
+    kind: str
+    path: str
+    size: int
+    dtype: str | None
+    is_default: bool
+    exists: bool
+    created_at: float
+
+
+# --------------------------------------------------------------------------- projects / datasets
+class ProjectStats(_Out):
+    jobs: int
+    artifacts: int
+
+
+class Project(_Out):
+    id: str
+    name: str
+    note: str
+    archived: bool
+    created_at: float
+    updated_at: float
+    dataset_ids: list[str]
+    stats: ProjectStats
+
+
+class DatasetSource(_Out):
+    id: str
+    project_id: str | None
+    path: str
+    repeats: int
+    caption_ext: str
+    is_reg: bool
+    prior_weight: float
+    class_prompt: str | None
+    created_at: float
+
+
+class ResolutionCount(_Out):
+    w: int
+    h: int
+    count: int
+
+
+class AspectCount(_Out):
+    ar: str
+    count: int
+
+
+class DatasetStats(_Out):
+    images: int = 0
+    captioned: int = 0
+    resolutions: list[ResolutionCount] = Field(default_factory=list)
+    ar_hist: list[AspectCount] = Field(default_factory=list)
+    masks: int = 0
+    error: str | None = None
+
+
+class DatasetInfo(_Out):
+    source: DatasetSource
+    stats: DatasetStats
+    index_status: Literal["indexing", "ready", "failed", "stale"] | str
+    cache: dict[str, Any]
+
+
+class DatasetImage(_Out):
+    hash: str
+    rel_path: str
+    width: int
+    height: int
+    caption: str
+    has_mask: bool
+
+
+class ImagePage(_Out):
+    items: list[DatasetImage]
+    total: int
+    page: int
+    page_size: int
+
+
+class Caption(_Out):
+    caption: str
+
+
+class TagBatchResult(_Out):
+    changed: int
+
+
+# --------------------------------------------------------------------------- jobs
+JobStatus = Literal[
+    "queued", "scheduled", "running", "pausing", "cancelling", "paused", "completed", "failed", "cancelled"
+]
+
+
+class JobProgress(_Out):
+    phase: str | None = None
+    step: int | None = None
+    total_steps: int | None = None
+    steps_per_epoch: int | None = None
+    epoch: int | None = None
+    eta_s: float | None = None
+    it_s: float | None = None
+    vram_peak_mb: float | None = None
+
+
+class JobLatest(_Out):
+    loss: float | None = None
+    loss_ema: float | None = None
+    lr: dict[str, float] | None = None
+
+
+class Job(_Out):
+    id: str
+    type: str
+    name: str
+    project_id: str | None
+    status: JobStatus | str
+    priority: int
+    scheduled_at: float | None
+    created_at: float
+    started_at: float | None
+    finished_at: float | None
+    run_dir: str | None
+    progress: JobProgress
+    latest: JobLatest
+    error: str | None
+    resume_from: str | None
+    pid: int | None
+    exit_code: int | None
+
+
+class ValidationPoint(_Out):
+    step: int
+    per_t: dict[str, float]
+    mean: float
+
+
+class JobMetrics(_Out):
+    steps: list[int]
+    loss: list[float | None]
+    loss_ema: list[float | None]
+    lr: dict[str, list[float]]
+    grad_norm: list[float | None]
+    vram_mb: list[float | None]
+    it_s: list[float | None]
+    validation: list[ValidationPoint]
+
+
+class JobSample(_Out):
+    step: int
+    prompt_index: int
+    prompt: str
+    seed: int
+    url: str
+    width: int
+    height: int
+    created_at: float
+
+
+class JobCheckpoint(_Out):
+    step: int
+    kind: Literal["weights", "full"] | str
+    path: str
+    size: int | None
+    created_at: float
+    artifact_id: str | None = None
+
+
+class LogLine(_Out):
+    ts: float | None
+    level: str
+    msg: str
+
+
+class JobLog(_Out):
+    lines: list[LogLine]
+    next_offset: int
+
+
+class QueueSettings(_Out):
+    held: bool
+    max_concurrent: int
+
+
+# --------------------------------------------------------------------------- artifacts
+class Artifact(_Out):
+    id: str
+    project_id: str | None
+    job_id: str | None
+    name: str
+    path: str
+    size: int
+    kind: str
+    step: int | None
+    created_at: float
+    algo: str | None = None
+    rank: int | str | None = None
+    alpha: float | None = None
+    factor: int | None = None
+    family: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class Ok(_Out):
+    ok: bool = True
