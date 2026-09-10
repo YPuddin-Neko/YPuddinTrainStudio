@@ -1,17 +1,20 @@
 import React from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { SchemaForm, ValidationError } from '../../schema/SchemaForm/SchemaForm';
 import { apiClient } from '../../api/client';
-import { Plan, Preset } from '../../api/types';
+import { Job, Plan, Preset } from '../../api/types';
 import trainSchema from '../../schema/train-schema.json';
 import { AlertCircle, CheckCircle, Info } from 'lucide-react';
 
 export default function TrainConfig() {
+  const { id: projectId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [config, setConfig] = React.useState<Record<string, any>>({
-    model: { family: 'anima', dit_path: '', text_encoder_path: '', vae_path: '', dtype: 'bf16' },
-    adapter: { algo: 'lokr', rank: 16, alpha: 16, factor: -1, rules: [] },
+    model: { family: 'anima', dtype: 'bf16' },
+    adapter: { algo: 'lokr', rank: 16, alpha: 16, factor: -1 },
     dataset: { batch_size: 4, sources: [] },
-    optimizer: { type: 'adamw8bit', lr: 0.0001, betas: [0.9, 0.999] },
-    sampling: { enabled: true, prompts: [] },
+    optimizer: { type: 'adamw', lr: 0.0001 },
+    sampling: { enabled: false, prompts: [] },
   });
 
   const [showAdvanced, setShowAdvanced] = React.useState(false);
@@ -62,14 +65,17 @@ export default function TrainConfig() {
 
   const handleEnqueue = () => {
     setIsEnqueuing(true);
-    apiClient.post('/jobs', {
+    apiClient.post<Job>('/jobs', {
       type: 'train',
       name: `train-${Date.now()}`,
+      project_id: projectId || null,
       config,
     })
-      .then(() => {
+      .then((job) => {
         setEnqueueSuccess(true);
-        setTimeout(() => setEnqueueSuccess(false), 3000);
+        setTimeout(() => {
+          if (job?.id) navigate(`/jobs/${job.id}`);
+        }, 800);
       })
       .catch(console.error)
       .finally(() => setIsEnqueuing(false));
@@ -135,7 +141,11 @@ export default function TrainConfig() {
             <div>
               <div className="text-xs text-slate-400">Trainable Params</div>
               <div className="text-sm font-semibold mt-1">
-                {plan?.params?.trainable ? `${(plan.params.trainable / 1e6).toFixed(2)} M` : '--'}
+                {plan?.params?.trainable != null
+                  ? plan.params.trainable >= 1e6
+                    ? `${(plan.params.trainable / 1e6).toFixed(2)} M`
+                    : `${(plan.params.trainable / 1e3).toFixed(1)} K`
+                  : '--'}
               </div>
             </div>
             <div>

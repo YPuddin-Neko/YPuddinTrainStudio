@@ -125,18 +125,18 @@ export default function Dashboard() {
             <div>
               <div className="text-xs text-slate-400">Phase / Step</div>
               <div className="font-semibold text-sm capitalize">
-                {runningJob.progress.phase} ({runningJob.progress.step}/{runningJob.progress.total_steps})
+                {runningJob.progress.phase || '--'} ({runningJob.progress.step ?? 0}/{runningJob.progress.total_steps ?? 0})
               </div>
             </div>
             <div>
               <div className="text-xs text-slate-400">Loss / EMA</div>
               <div className="font-semibold text-sm">
-                {runningJob.latest.loss.toFixed(4)} / {runningJob.latest.loss_ema.toFixed(4)}
+                {runningJob.latest.loss?.toFixed(4) ?? '--'} / {runningJob.latest.loss_ema?.toFixed(4) ?? '--'}
               </div>
             </div>
             <div>
               <div className="text-xs text-slate-400">Speed</div>
-              <div className="font-semibold text-sm">{runningJob.progress.it_s} it/s</div>
+              <div className="font-semibold text-sm">{runningJob.progress.it_s ?? '--'} it/s</div>
             </div>
             <div>
               <div className="text-xs text-slate-400">ETA</div>

@@ -452,7 +452,7 @@ const PromptsEditor: React.FC<{
   onChange: (val: any[]) => void;
 }> = ({ value = [], onChange }) => {
   const addPrompt = () => {
-    onChange([...value, { prompt: '', negative_prompt: '', seed: 42, width: 1024, height: 1024 }]);
+    onChange([...value, { prompt: '', negative: '', seed: 42, width: 1024, height: 1024 }]);
   };
 
   const removePrompt = (idx: number) => {
@@ -480,6 +480,13 @@ const PromptsEditor: React.FC<{
             placeholder="Prompt text"
             value={p.prompt || ''}
             onChange={(e) => updatePrompt(idx, 'prompt', e.target.value)}
+            className="w-full px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
+          />
+          <textarea
+            rows={1}
+            placeholder="Negative prompt (optional)"
+            value={p.negative || ''}
+            onChange={(e) => updatePrompt(idx, 'negative', e.target.value)}
             className="w-full px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
           />
           <div className="grid grid-cols-3 gap-2">

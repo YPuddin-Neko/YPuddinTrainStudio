@@ -149,13 +149,13 @@ export default function Queue() {
                     </span>
                   </td>
                   <td className="p-4">
-                    {job.progress ? (
+                    {job.progress && job.progress.step != null && job.progress.total_steps != null && job.progress.total_steps > 0 ? (
                       <div className="space-y-1">
                         <div className="text-xs text-slate-500">{job.progress.step} / {job.progress.total_steps}</div>
                         <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5">
                           <div
                             className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
-                            style={{ width: `${(job.progress.step / job.progress.total_steps) * 100}%` }}
+                            style={{ width: `${Math.min(100, (job.progress.step / job.progress.total_steps) * 100)}%` }}
                           />
                         </div>
                       </div>
@@ -175,7 +175,11 @@ export default function Queue() {
                     />
                   </td>
                   <td className="p-4 text-xs text-slate-400">
-                    {new Date(job.created_at).toLocaleDateString()}
+                    {(() => {
+                      const t = job.created_at;
+                      if (typeof t === 'number') return new Date(t * 1000).toLocaleString();
+                      return new Date(t).toLocaleString();
+                    })()}
                   </td>
                   <td className="p-4 text-right">
                     <div className="flex items-center justify-end space-x-2">

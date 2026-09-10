@@ -55,6 +55,9 @@ export default function JobDetail() {
     if (data.job_id === id) {
       setMetrics((prev) => {
         if (!prev) return prev;
+        // 去重：SSE 重放/重连可能带来历史 step，仅追加更新的 step
+        const lastStep = prev.steps.length > 0 ? prev.steps[prev.steps.length - 1] : -1;
+        if (typeof data.step !== 'number' || data.step <= lastStep) return prev;
         return {
           ...prev,
           steps: [...prev.steps, data.step],
@@ -68,8 +71,16 @@ export default function JobDetail() {
     }
   });
 
-  useEventStream(EVENT_TYPES.JOB_SAMPLE, (sample: JobSample) => {
-    setSamples((prev) => [...prev, sample]);
+  useEventStream(EVENT_TYPES.JOB_SAMPLE, (sample: JobSample & { job_id?: string }) => {
+    if (sample.job_id && sample.job_id !== id) return;
+    setSamples((prev) => {
+      // 去重：同一 step + prompt_index + seed 的 SSE 重放不重复添加
+      const exists = prev.some(
+        (s) => s.step === sample.step && s.prompt_index === sample.prompt_index && s.seed === sample.seed
+      );
+      if (exists) return prev;
+      return [...prev, sample];
+    });
   });
 
   useEventStream(EVENT_TYPES.JOB_LOG, (data: any) => {
@@ -174,11 +185,11 @@ export default function JobDetail() {
             </div>
             <div>
               <span className="text-xs text-slate-400 block">Speed</span>
-              <span className="font-semibold">{job?.progress?.it_s || 0} it/s</span>
+              <span className="font-semibold">{job?.progress?.it_s != null ? Number(job.progress.it_s).toFixed(2) : '--'} it/s</span>
             </div>
             <div>
               <span className="text-xs text-slate-400 block">VRAM Peak</span>
-              <span className="font-semibold">{Math.round((job?.progress?.vram_peak_mb || 0) / 1024)} GB</span>
+              <span className="font-semibold">{job?.progress?.vram_peak_mb != null ? `${(job.progress.vram_peak_mb / 1024).toFixed(1)} GB` : '--'}</span>
             </div>
             <div>
               <span className="text-xs text-slate-400 block">ETA</span>

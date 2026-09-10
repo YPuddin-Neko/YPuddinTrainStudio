@@ -61,13 +61,13 @@ export interface Project {
 }
 
 export interface JobProgress {
-  phase: 'preparing' | 'caching' | 'training' | 'finalizing';
+  phase: string;
   step: number;
   total_steps: number;
   epoch: number;
   eta_s: number | null;
   it_s: number;
-  vram_peak_mb: number;
+  vram_peak_mb: number | null;
 }
 
 export type JobStatus =
@@ -85,22 +85,22 @@ export interface Job {
   id: string;
   type: 'train' | 'cache' | 'sample' | 'convert';
   name: string;
-  project_id?: string;
+  project_id?: string | null;
   status: JobStatus;
   priority: number;
-  scheduled_at: string | null;
-  created_at: string;
-  started_at: string | null;
-  finished_at: string | null;
-  progress: JobProgress;
+  scheduled_at: string | number | null;
+  created_at: string | number;
+  started_at: string | number | null;
+  finished_at: string | number | null;
+  progress: Partial<JobProgress>;
   latest: {
-    loss: number;
-    loss_ema: number;
-    lr: Record<string, number>;
+    loss?: number;
+    loss_ema?: number;
+    lr?: Record<string, number>;
   };
   error: string | null;
   resume_from: string | null;
-  artifact_ids: string[];
+  artifact_ids?: string[];
 }
 
 export interface JobListResponse {
@@ -176,17 +176,19 @@ export interface FsListResponse {
 
 export interface Artifact {
   id: string;
-  project_id: string;
+  project_id: string | null;
   job_id: string;
   name: string;
   path: string;
   size: number;
+  kind?: string;
+  step?: number;
   algo: string;
-  rank: number;
+  rank: number | string;
   alpha: number;
   factor: number;
   family: string;
-  created_at: string;
+  created_at: string | number;
   metadata: Record<string, any>;
 }
 
