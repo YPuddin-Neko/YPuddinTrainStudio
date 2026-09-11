@@ -6,16 +6,17 @@ import asyncio
 import json
 import logging
 import os
-import signal
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 from ypuddin.config import TrainConfig, write_config
+from ypuddin.config.io import absolute_paths
 
 from .bus import EventBus
 from .db import Database, new_id, now
+from .hardware import gpu_info
 
 log = logging.getLogger(__name__)
 
@@ -47,15 +48,18 @@ class JobSupervisor:
         self.max_concurrent = max_concurrent
         self.python = python or sys.executable
         self._procs: dict[str, subprocess.Popen] = {}
+        self._devices: dict[str, str] = {}
         self._offsets: dict[str, int] = {}
         # jobs whose current process already reported its outcome through the event stream; the
         # later process-exit notification must not touch their status (the user may have resumed)
         self._outcome_seen: set[str] = set()
         self._task: asyncio.Task | None = None
+        self._event_loop: asyncio.AbstractEventLoop | None = None
         self._stopping = False
 
     # ----------------------------------------------------------------- lifecycle
     async def start(self) -> None:
+        self._event_loop = asyncio.get_running_loop()
         # Jobs that were running when the service died cannot be trusted; mark them failed.
         for job in self.db.fetchall("SELECT id FROM jobs WHERE status IN ('running','pausing','cancelling')"):
             self._set_status(job["id"], "failed", error="service restarted while the job was running")
@@ -69,10 +73,33 @@ class JobSupervisor:
                 await self._task
             except asyncio.CancelledError:
                 pass
+        # Request a recoverable pause before closing SQLite. Preparation/cache pauses
+        # retain their cache and can restart without a training checkpoint.
         for job_id, proc in list(self._procs.items()):
             if proc.poll() is None:
-                proc.terminate()
-                self._set_status(job_id, "failed", error="service shutdown")
+                self._pump_events(job_id)
+                job = self.db.fetchone("SELECT * FROM jobs WHERE id=?", (job_id,))
+                if job and job["status"] in ("running", "pausing") and job_id not in self._outcome_seen:
+                    self._control_file(job, "pause")
+                    self._set_status(job_id, "pausing")
+        deadline = asyncio.get_running_loop().time() + 20
+        while self._procs and asyncio.get_running_loop().time() < deadline:
+            for job_id, proc in list(self._procs.items()):
+                self._pump_events(job_id)
+                if proc.poll() is not None:
+                    self._pump_events(job_id)
+                    self._on_exit(job_id, proc.returncode)
+                    del self._procs[job_id]
+                    self._devices.pop(job_id, None)
+            if self._procs:
+                await asyncio.sleep(0.1)
+        for job_id, proc in list(self._procs.items()):
+            proc.kill()
+            await asyncio.to_thread(proc.wait, 5)
+            self._pump_events(job_id)
+            self._on_exit(job_id, proc.returncode)
+        self._procs.clear()
+        self._devices.clear()
 
     async def _loop(self) -> None:
         while not self._stopping:
@@ -91,6 +118,7 @@ class JobSupervisor:
                 self._pump_events(job_id)
                 self._on_exit(job_id, proc.returncode)
                 del self._procs[job_id]
+                self._devices.pop(job_id, None)
         settings = self.db.get_kv("queue.settings", {"held": False, "max_concurrent": self.max_concurrent})
         if settings.get("held"):
             return
@@ -99,40 +127,80 @@ class JobSupervisor:
             "UPDATE jobs SET status='queued' WHERE status='scheduled' AND scheduled_at IS NOT NULL AND scheduled_at <= ?",
             (t,),
         )
-        while len(self._procs) < int(settings.get("max_concurrent", 1)):
-            nxt = self.db.fetchone(
-                "SELECT * FROM jobs WHERE status='queued' ORDER BY priority DESC, created_at ASC LIMIT 1"
-            )
-            if not nxt or nxt["id"] in self._procs:
-                break  # a resumed job waits until its previous process has been reaped
-            self._launch(nxt)
+        slots = max(1, min(64, int(settings.get("max_concurrent", 1))))
+        for nxt in self.db.fetchall(
+            "SELECT * FROM jobs WHERE status='queued' ORDER BY priority DESC, created_at ASC"
+        ):
+            if len(self._procs) >= slots:
+                break
+            if nxt["id"] in self._procs:
+                continue
+            device = self._choose_device(nxt, check_memory=settings.get("memory_admission", True))
+            if device is None:
+                continue
+            try:
+                self._launch(nxt, device=device)
+            except Exception as exc:
+                log.exception("could not launch job %s", nxt["id"])
+                self._set_status(nxt["id"], "failed", error=str(exc), finished_at=now())
 
-    def _launch(self, job: dict[str, Any]) -> None:
+    def _choose_device(self, job: dict[str, Any], *, check_memory: bool = True) -> str | None:
+        inventory = gpu_info()
+        if not inventory:
+            return "cpu"
+        used = set(self._devices.values())
+        estimate = json.loads(job.get("progress_json") or "{}").get("estimated_peak_mb") or 0
+        for gpu in sorted(inventory, key=lambda g: g.get("mem_free_mb", 0), reverse=True):
+            device = gpu["device"]
+            if device in used:
+                continue  # exclusive accelerator ownership; max_concurrent is an upper bound
+            available = gpu.get("mem_free_mb")
+            if check_memory and estimate and available is not None and estimate > available * 0.95:
+                continue
+            return device
+        patch = {
+            "phase": "waiting_for_device",
+            "wait_reason": "waiting for a free accelerator with enough memory",
+        }
+        current = json.loads(job.get("progress_json") or "{}")
+        if any(current.get(k) != v for k, v in patch.items()):
+            self._merge_progress(job["id"], patch)
+            self.bus.publish("job.phase", {"job_id": job["id"], **patch})
+        return None
+
+    def _launch(self, job: dict[str, Any], *, device: str | None = None) -> None:
         job_id = job["id"]
         run_dir = Path(job["run_dir"])
         run_dir.mkdir(parents=True, exist_ok=True)
-        cfg = TrainConfig.model_validate(json.loads(job["config_json"]))
+        cfg = absolute_paths(TrainConfig.model_validate(json.loads(job["config_json"])))
         if job.get("resume_from"):
             cfg = cfg.model_copy(
                 update={"checkpoint": cfg.checkpoint.model_copy(update={"resume": job["resume_from"]})}
             )
+        cfg.logging.events_path = str(run_dir / "events.jsonl")
+        for command in ("pause", "stop", "save"):
+            (run_dir / "control" / command).unlink(missing_ok=True)
         cfg_path = run_dir / "job-config.toml"
         write_config(cfg, cfg_path)
         events_path = run_dir / "events.jsonl"
         self._offsets[job_id] = events_path.stat().st_size if events_path.exists() else 0
         sub = {"train": "train", "cache": "cache"}[job["type"]]
         cmd = [self.python, "-m", "ypuddin.cli", sub, str(cfg_path)]
-        log_fp = open(run_dir / "run.log", "ab")  # noqa: SIM115
+        if device:
+            cmd += ["--device", device]
         env = dict(os.environ, PYTHONUNBUFFERED="1")
         kwargs: dict[str, Any] = {}
         if os.name == "nt":  # pragma: no cover
             kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-        proc = subprocess.Popen(
-            cmd, stdout=log_fp, stderr=subprocess.STDOUT, cwd=str(run_dir), env=env, **kwargs
-        )
+        with open(run_dir / "run.log", "ab") as log_fp:
+            proc = subprocess.Popen(
+                cmd, stdout=log_fp, stderr=subprocess.STDOUT, cwd=str(run_dir), env=env, **kwargs
+            )
         self._procs[job_id] = proc
+        self._devices[job_id] = device or "cpu"
+        self._merge_progress(job_id, {"device": device or "cpu", "phase": "starting", "wait_reason": ""})
         self._outcome_seen.discard(job_id)
-        self._set_status(job_id, "running", started_at=now(), pid=proc.pid, resume_from=None)
+        self._set_status(job_id, "running", started_at=now(), pid=proc.pid, resume_from=cfg.checkpoint.resume)
         self.bus.publish("job.phase", {"job_id": job_id, "phase": "starting"})
 
     # ----------------------------------------------------------------- events
@@ -173,11 +241,13 @@ class JobSupervisor:
             progress.update(
                 {
                     "phase": "training",
+                    "preparing": False,
                     "step": ev["step"],
                     "epoch": ev["epoch"],
                     "eta_s": ev.get("eta_s"),
                     "it_s": ev.get("it_s"),
                     "vram_peak_mb": ev.get("vram_mb"),
+                    "vram_metric": ev.get("vram_metric"),
                 }
             )
             latest = {"loss": ev.get("loss"), "loss_ema": ev.get("loss_ema"), "lr": ev.get("lr")}
@@ -186,8 +256,14 @@ class JobSupervisor:
             )
             self.bus.publish("job.step", data)
         elif t == "run.prepared":
+            self.db.update("jobs", job_id, {"resume_from": None})
             self._merge_progress(
-                job_id, {"total_steps": ev.get("total_steps"), "steps_per_epoch": ev.get("steps_per_epoch")}
+                job_id,
+                {
+                    "total_steps": ev.get("total_steps"),
+                    "steps_per_epoch": ev.get("steps_per_epoch"),
+                    "preparing": False,
+                },
             )
             self.bus.publish(
                 "job.phase",
@@ -214,7 +290,7 @@ class JobSupervisor:
         elif t == "warning":
             self.bus.publish("job.warning", data)
         elif t in ("run.finished", "run.paused", "run.stopped", "run.failed"):
-            self._set_terminal(job_id, t)
+            self._set_terminal(job_id, t, ev)
         else:
             self.bus.publish("job.event", data)
 
@@ -247,7 +323,7 @@ class JobSupervisor:
         )
         self.bus.publish("artifact.created", {"job_id": job_id, "artifact_id": aid, "path": str(path)})
 
-    def _set_terminal(self, job_id: str, event_type: str) -> None:
+    def _set_terminal(self, job_id: str, event_type: str, event: dict[str, Any] | None = None) -> None:
         status = {
             "run.finished": "completed",
             "run.paused": "paused",
@@ -255,11 +331,22 @@ class JobSupervisor:
             "run.failed": "failed",
         }[event_type]
         fields: dict[str, Any] = {"finished_at": now()}
+        event = event or {}
+        if status == "failed":
+            fields["error"] = str(
+                event.get("error") or event.get("message") or "training failed; see run.log"
+            )
         self._outcome_seen.add(job_id)
         if status == "paused":
-            run_dir = Path(self.db.fetchone("SELECT run_dir FROM jobs WHERE id=?", (job_id,))["run_dir"])
+            job = self.db.fetchone("SELECT run_dir, resume_from FROM jobs WHERE id=?", (job_id,))
+            run_dir = Path(job["run_dir"])
             state = run_dir / "state-paused"
-            fields["resume_from"] = str(state) if state.exists() else None
+            fields["resume_from"] = (
+                job["resume_from"]
+                if event.get("preparing")
+                else (str(state) if (state / "state.json").exists() else None)
+            )
+            self._merge_progress(job_id, {"preparing": bool(event.get("preparing"))})
         self._set_status(job_id, status, **fields)
 
     def _on_exit(self, job_id: str, code: int | None) -> None:
@@ -312,8 +399,11 @@ class JobSupervisor:
         elif command == "resume":
             if status not in ("paused", "failed", "cancelled"):
                 raise ValueError(f"cannot resume a job in status {status}")
-            resume_from = job.get("resume_from") or self._latest_state(Path(job["run_dir"]))
-            if status != "paused" and not resume_from:
+            progress = json.loads(job.get("progress_json") or "{}")
+            resume_from = job.get("resume_from")
+            if not progress.get("preparing"):
+                resume_from = resume_from or self._latest_state(Path(job["run_dir"]))
+            if status != "paused" and job["type"] != "cache" and not resume_from:
                 raise ValueError("no checkpoint to resume from")
             self._set_status(job_id, "queued", resume_from=resume_from, error=None, finished_at=None)
         elif command == "cancel":
@@ -323,8 +413,10 @@ class JobSupervisor:
                 self._control_file(job, "stop")
                 self._set_status(job_id, "cancelling")
                 proc = self._procs.get(job_id)
-                if proc is not None:
-                    asyncio.get_event_loop().call_later(30, self._force_kill, job_id)
+                if proc is not None and self._event_loop is not None:
+                    self._event_loop.call_soon_threadsafe(
+                        self._event_loop.call_later, 30, self._force_kill, job_id, proc
+                    )
             else:
                 raise ValueError(f"cannot cancel a job in status {status}")
         elif command == "save":
@@ -338,23 +430,22 @@ class JobSupervisor:
         return self.db.fetchone("SELECT * FROM jobs WHERE id=?", (job_id,))
 
     def _latest_state(self, run_dir: Path) -> str | None:
-        states = sorted(run_dir.glob("state-*"), key=lambda p: p.stat().st_mtime)
+        states = sorted(
+            (p for p in run_dir.glob("state-*") if (p / "state.json").is_file()),
+            key=lambda p: p.stat().st_mtime,
+        )
         return str(states[-1]) if states else None
 
     def _control_file(self, job: dict[str, Any], name: str) -> None:
         ctl = Path(job["run_dir"]) / "control"
         ctl.mkdir(parents=True, exist_ok=True)
         (ctl / name).touch()
-        proc = self._procs.get(job["id"])
-        if proc is not None and proc.poll() is None and os.name != "nt" and name in ("pause", "stop"):
-            try:
-                proc.send_signal(signal.SIGINT if name == "pause" else signal.SIGTERM)
-            except OSError:
-                pass
+        # File control works on Windows and cannot SIGINT a child before its
+        # handlers are installed. The trainer polls it during preparation too.
 
-    def _force_kill(self, job_id: str) -> None:
+    def _force_kill(self, job_id: str, expected: subprocess.Popen | None = None) -> None:
         proc = self._procs.get(job_id)
-        if proc is not None and proc.poll() is None:
+        if proc is not None and (expected is None or proc is expected) and proc.poll() is None:
             proc.kill()
 
     def clone(self, job: dict[str, Any]) -> dict[str, Any]:
@@ -362,6 +453,8 @@ class JobSupervisor:
         run_dir = Path(job["run_dir"]).parent / new
         cfg = json.loads(job["config_json"])
         cfg.setdefault("checkpoint", {})["output_dir"] = str(run_dir)
+        cfg["checkpoint"]["resume"] = None
+        cfg.setdefault("logging", {})["events_path"] = str(run_dir / "events.jsonl")
         self.db.insert(
             "jobs",
             {
@@ -374,7 +467,13 @@ class JobSupervisor:
                 "created_at": now(),
                 "run_dir": str(run_dir),
                 "config_json": json.dumps(cfg),
-                "progress_json": "{}",
+                "progress_json": json.dumps(
+                    {
+                        "estimated_peak_mb": json.loads(job.get("progress_json") or "{}").get(
+                            "estimated_peak_mb"
+                        )
+                    }
+                ),
                 "latest_json": "{}",
             },
         )

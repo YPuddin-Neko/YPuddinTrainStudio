@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import math
 import os
@@ -9,6 +11,9 @@ import random
 import signal
 import time
 from collections.abc import Callable
+from contextlib import contextmanager
+from dataclasses import replace
+from functools import wraps
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +40,7 @@ from ypuddin.optim import build_optimizer, build_scheduler, is_schedule_free
 from ypuddin.sampling import euler_sample
 
 from .events import Emitter, NullEmitter
+from .logging import TrainingLogs
 from .state import Progress, capture_rng, load_checkpoint, restore_rng, save_checkpoint
 
 log = logging.getLogger(__name__)
@@ -48,6 +54,15 @@ class StopRequested(Exception):
         self.kind = kind  # "pause" | "stop"
 
 
+def evaluation(method):
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self._evaluation(unload_latent=method.__name__ == "sample_images"):
+            return method(self, *args, **kwargs)
+
+    return wrapped
+
+
 class Trainer:
     def __init__(
         self, cfg: TrainConfig, *, device: str | torch.device | None = None, emitter: Emitter | None = None
@@ -59,6 +74,7 @@ class Trainer:
         events_path = cfg.logging.events_path or (self.run_dir / "events.jsonl")
         self.emitter = emitter or Emitter(path=events_path)
         self.config_hash = config_hash(cfg)
+        self.model_identity = ""
         self.progress = Progress()
         self.family: ModelFamily
         self.loaded: LoadedModel
@@ -73,19 +89,26 @@ class Trainer:
         self.ema: dict[str, Tensor] | None = None
         self.swapper: BlockSwapper | None = None
         self.gen = torch.Generator().manual_seed(cfg.loop.seed)  # noise / timestep RNG (checkpointed)
+        self.loader_gen = torch.Generator().manual_seed(cfg.loop.seed + 1)
         self._stop: str | None = None
         self._loss_ema: float | None = None
         self._prepared = False
+        self._preparing = False
+        self._logs: TrainingLogs | None = None
 
     # ----------------------------------------------------------------- setup
     @staticmethod
     def _pick_device() -> torch.device:
         if torch.cuda.is_available():
             return torch.device("cuda")
+        if torch.backends.mps.is_available():
+            return torch.device("mps")
         return torch.device("cpu")
 
     @property
     def compute_dtype(self) -> torch.dtype:
+        if self.device.type == "mps":
+            return torch.float32  # conservative MPS path: no autocast or unsupported low-precision kernels
         if self.device.type == "cpu" and self.cfg.loop.mixed_precision != "no":
             return torch.bfloat16 if self.cfg.loop.mixed_precision == "bf16" else torch.float32
         return DTYPES[self.cfg.loop.mixed_precision]
@@ -98,14 +121,36 @@ class Trainer:
 
     def emit(self, type_: str, **data: Any) -> None:
         self.emitter.emit(type_, **data)
+        if self._logs is not None:
+            try:
+                self._logs.emit(type_, data)
+            except Exception:
+                log.exception("training log sink failed; continuing with JSONL events")
+                self._logs.close(failed=True)
+                self._logs = None
+        if self._preparing and type_ in ("phase.changed", "cache.progress"):
+            req = self._control_request()
+            if req in ("pause", "stop"):
+                raise StopRequested(req)
+            if req == "save":
+                self.emit(
+                    "warning",
+                    message="training state is not available during preparation; cached items are preserved",
+                )
 
     def prepare(self) -> None:
-        self.prepare_data()
-        self._prepare_training()
+        try:
+            self.prepare_data()
+            self._prepare_training()
+        finally:
+            self._preparing = False
 
     def prepare_data(self) -> None:
         """Load the model, index the dataset and fill the latent / text caches (what a cache job does)."""
         cfg = self.cfg
+        self._preparing = True
+        self._install_signal_handlers()
+        self._logs = TrainingLogs(cfg, self.run_dir)
         self._seed_all()
         write_config(cfg, self.run_dir / "config.toml")
         self.emit(
@@ -116,18 +161,28 @@ class Trainer:
         if self.device.type == "cuda":
             torch.backends.cuda.matmul.allow_tf32 = cfg.memory.allow_tf32
             torch.backends.cudnn.allow_tf32 = cfg.memory.allow_tf32
-        model_dtype = DTYPES[cfg.model.dtype] if self.device.type != "cpu" else torch.float32
+        model_dtype = DTYPES[cfg.model.dtype] if self.device.type == "cuda" else torch.float32
+        if self.device.type == "mps" and (cfg.model.dtype != "fp32" or cfg.loop.mixed_precision != "no"):
+            self.emit(
+                "warning", message="MPS training uses fp32 without autocast for numerical compatibility"
+            )
 
         self.emit("phase.changed", phase="loading")
-        self.loaded = self.family.load(cfg.model, cfg.memory, device=self.device, dtype=model_dtype)
+        from ypuddin.models.fingerprints import fingerprint_cache
+
+        cache_root = Path(cfg.dataset.cache_dir) if cfg.dataset.cache_dir else self.run_dir / "cache"
+        with fingerprint_cache(cache_root / "fingerprints"):
+            self.loaded = self.family.load(
+                cfg.model, cfg.memory, device=self.device, dtype=model_dtype, backbone_device="cpu"
+            )
+            self.model_identity = self._model_identity()
         self.loaded.text.to(self.device)
         self.loaded.latent.to(self.device)
 
         self.emit("phase.changed", phase="indexing")
-        cache_root = Path(cfg.dataset.cache_dir) if cfg.dataset.cache_dir else self.run_dir / "cache"
         self.bundle = build_data(
             cfg,
-            self.family.spec.latent,
+            replace(self.family.spec.latent, fingerprint=self.loaded.latent.fingerprint),
             cache_root=cache_root,
             progress=lambda k, d, t: self.emit("cache.progress", kind=k, done=d, total=t),
         )
@@ -140,7 +195,7 @@ class Trainer:
                 self.loaded.latent.encode,
                 device=self.device,
                 batch_size=max(1, cfg.dataset.batch_size),
-                dtype=torch.float32 if self.device.type == "cpu" else torch.bfloat16,
+                dtype=model_dtype,
                 progress=lambda d, t: self.emit("cache.progress", kind="latents", done=d, total=t),
             )
             log.info("cached %d latents", n)
@@ -150,6 +205,32 @@ class Trainer:
         if self.text_mode == "cached":
             self.emit("phase.changed", phase="caching_text")
             self._build_text_cache(cache_root)
+
+    def _model_identity(self) -> str:
+        """Bind full-state resume to actual model assets, independently of their absolute paths."""
+        from ypuddin.adapters.io import sha256_of_tensors
+        from ypuddin.models.fingerprints import content_fingerprint
+
+        if self.cfg.model.dit_path:
+            backbone = content_fingerprint([self.cfg.model.dit_path], namespace="training-backbone-v1")
+        else:
+            # The built-in toy has no file: its deterministic initial weights are the base model.
+            backbone = sha256_of_tensors(self.loaded.backbone.state_dict())
+        payload = {
+            "version": 1,
+            "family": self.family.spec.name,
+            "architecture": self.family.spec.architecture,
+            "backbone": backbone,
+            "latent": self.loaded.latent.fingerprint,
+            "text": self.loaded.text.fingerprint,
+            "dtype": str(self.loaded.dtype),
+            "base_precision": self.cfg.memory.base_precision,
+            "model": self.cfg.model.model_dump(
+                mode="json", exclude={"dit_path", "text_encoder_path", "vae_path", "tokenizer_path"}
+            ),
+            "dit_config": self.loaded.extra.get("dit_config", {}),
+        }
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
 
     def _prepare_training(self) -> None:
         cfg = self.cfg
@@ -176,7 +257,10 @@ class Trainer:
         if cfg.memory.blocks_to_swap > 0:
             blocks = self.family.memory_layout(self.loaded).blocks
             self.swapper = BlockSwapper(blocks, cfg.memory.blocks_to_swap, self.device)
+            self.swapper.move_model_to_device(self.loaded.backbone)
             self.emit("memory.block_swap", **self.swapper.summary())
+        else:
+            self.loaded.backbone.to(self.device)
         if cfg.memory.compile:
             self.compile_blocks()
 
@@ -185,6 +269,8 @@ class Trainer:
             cfg.optimizer.lr, cfg.optimizer.weight_decay, cfg.optimizer.group_lr
         )
         self.optimizer = build_optimizer(cfg.optimizer, groups)
+        if is_schedule_free(cfg.optimizer):
+            self.optimizer.train()
         self.sampler = BucketBatchSampler(
             self.bundle.train.bucket_keys(), cfg.dataset.batch_size, seed=cfg.loop.seed
         )
@@ -194,6 +280,7 @@ class Trainer:
             collate_fn=collate,
             num_workers=cfg.dataset.num_workers,
             pin_memory=self.device.type == "cuda",
+            generator=self.loader_gen,
         )
         batches = self.sampler.batches_per_epoch()
         self.progress.steps_per_epoch = math.ceil(batches / cfg.loop.grad_accum)
@@ -316,16 +403,44 @@ class Trainer:
     def _resume(self, path: str) -> None:
         ck = load_checkpoint(path)
         if ck["dataset_fingerprint"] and ck["dataset_fingerprint"] != self.bundle.plan.fingerprint:
+            if ck["format"] == 1:
+                raise ValueError(
+                    "legacy checkpoint dataset fingerprint/order is incompatible with the current index; "
+                    "start a new run using adapter.resume_weights with its adapter.safetensors"
+                )
             raise ValueError("checkpoint was trained on a different dataset (fingerprint mismatch)")
+        if ck["model_identity"]:
+            if ck["model_identity"] != self.model_identity:
+                raise ValueError(
+                    "checkpoint model assets or model configuration differ from the current model; "
+                    "exact resume requires the same backbone, latent encoder and text encoder"
+                )
+        else:
+            self.emit(
+                "warning",
+                message="checkpoint has no model asset identity; the original backbone and encoders "
+                "cannot be verified, so exact resume is not guaranteed",
+            )
         if ck["config_hash"] and ck["config_hash"] != self.config_hash:
             log.warning("config changed since the checkpoint was written; resuming anyway")
-        self.adapters.load_state(ck["adapter"])
+        if "training" in ck:
+            self.adapters.load_training_state(ck["training"])
+        elif any(layer.adapter.scalar is not None for layer in self.adapters.layers.values()):
+            raise ValueError(
+                "legacy checkpoints did not save scalar training parameters; exact resume is unavailable. "
+                "Use adapter.resume_weights with adapter.safetensors to start a new optimizer instead"
+            )
+        else:
+            self.adapters.load_state(ck["adapter"])
+            self.emit(
+                "warning", message="resuming a legacy checkpoint; exact RNG compatibility is not guaranteed"
+            )
         self.optimizer.load_state_dict(ck["optimizer"])
         if self.scheduler is not None and ck["scheduler"]:
             self.scheduler.load_state_dict(ck["scheduler"])
         self.progress = ck["progress"]
         self.sampler.load_state_dict(ck["sampler"])
-        restore_rng(ck["rng"], {"main": self.gen})
+        restore_rng(ck["rng"], {"main": self.gen, "loader": self.loader_gen})
         if "ema" in ck and self.ema is not None:
             self.ema = {k: v.float() for k, v in ck["ema"].items()}
         self._loss_ema = self.progress.extra.get("loss_ema")
@@ -351,6 +466,7 @@ class Trainer:
             epoch=self.progress.epoch,
         )
 
+    @evaluation
     def save_weights(self, tag: str) -> Path:
         tensors, _ = self.adapters.export_state()
         path = save_adapter_file(
@@ -359,14 +475,17 @@ class Trainer:
             self._adapter_metadata(),
             dtype=self.cfg.checkpoint.save_dtype,
         )
+        self.emit("checkpoint.saved", kind="weights", step=self.progress.step, path=str(path), ema=False)
         if self.ema is not None:
-            save_adapter_file(
+            ema_path = save_adapter_file(
                 self.run_dir / f"{self.cfg.checkpoint.name}-{tag}-ema.safetensors",
                 self.ema,
                 self._adapter_metadata(),
                 dtype=self.cfg.checkpoint.save_dtype,
             )
-        self.emit("checkpoint.saved", kind="weights", step=self.progress.step, path=str(path))
+            self.emit(
+                "checkpoint.saved", kind="weights", step=self.progress.step, path=str(ema_path), ema=True
+            )
         self._rotate_weights()
         return path
 
@@ -374,33 +493,69 @@ class Trainer:
         keep = self.cfg.checkpoint.keep_last_n
         if not keep:
             return
-        files = sorted(
-            self.run_dir.glob(f"{self.cfg.checkpoint.name}-step*.safetensors"),
-            key=lambda p: p.stat().st_mtime,
-        )
-        for p in files[:-keep]:
-            p.unlink(missing_ok=True)
+        prefix = f"{self.cfg.checkpoint.name}-step"
+        groups: dict[int, list[Path]] = {}
+        for path in self.run_dir.glob(f"{prefix}*.safetensors"):
+            step = path.stem.removeprefix(prefix).removesuffix("-ema")
+            if step.isdecimal():
+                groups.setdefault(int(step), []).append(path)
+        for step in sorted(groups)[:-keep]:
+            for path in groups[step]:
+                path.unlink(missing_ok=True)
 
     def save_state(self, tag: str | None = None) -> Path:
-        tensors, _ = self.adapters.export_state()
+        with self._evaluation():
+            tensors, _ = self.adapters.export_state()
         self.progress.extra["loss_ema"] = self._loss_ema
         path = save_checkpoint(
             self.run_dir / f"state-{tag or self.progress.step}",
             adapter_tensors=tensors,
+            training_tensors=self.adapters.training_state_dict(),
             adapter_metadata=self._adapter_metadata(),
             optimizer=self.optimizer,
             scheduler=self.scheduler,
             sampler_state=self.sampler.state_dict(),
             progress=self.progress,
-            rng=capture_rng({"main": self.gen}),
+            rng=capture_rng({"main": self.gen, "loader": self.loader_gen}),
             ema_tensors=self.ema,
             config_hash=self.config_hash,
             dataset_fingerprint=self.bundle.plan.fingerprint,
+            model_identity=self.model_identity,
         )
         self.emit("checkpoint.saved", kind="full", step=self.progress.step, path=str(path))
         return path
 
     # ----------------------------------------------------------------- batch processing
+    @contextmanager
+    def _evaluation(self, *, unload_latent: bool = False):
+        """Evaluate schedule-free parameters and restore both training weights and RNG on every exit."""
+        rng = capture_rng({"main": self.gen, "loader": self.loader_gen})
+        mode = self.loaded.backbone.training
+        swap_mode = self.swapper.forward_only if self.swapper is not None else False
+        schedule_free = hasattr(self, "optimizer") and is_schedule_free(self.cfg.optimizer)
+        raw = self.adapters.training_state_dict() if schedule_free else None
+        try:
+            if schedule_free:
+                self.optimizer.eval()
+            self.adapters.train(False)
+            self.loaded.backbone.eval()
+            if self.swapper is not None:
+                self.swapper.set_forward_only(True)
+            yield
+        finally:
+            if self.swapper is not None:
+                self.swapper.release_all()
+                self.swapper.set_forward_only(swap_mode)
+            if unload_latent and self.cfg.dataset.cache_latents:
+                self.loaded.latent.unload()
+            if schedule_free:
+                self.optimizer.train()
+                # Mode switches can round low precision tensors; restore the exact pre-eval training values.
+                self.adapters.load_training_state(raw)
+            self.loaded.backbone.train(mode)
+            self.adapters.train(mode)
+            restore_rng(rng, {"main": self.gen, "loader": self.loader_gen})
+
     def _text_cond(self, captions: list[str]) -> TextCond:
         if self.text_mode == "cached" and self.text_cache is not None:
             entries = []
@@ -475,22 +630,45 @@ class Trainer:
 
     # ----------------------------------------------------------------- loop
     def run(self) -> str:
-        if not self._prepared:
-            self.prepare()
-        cfg = self.cfg
-        self.adapters.train(True)
-        self.loaded.backbone.train()
         outcome = "finished"
-        self.emit("phase.changed", phase="training")
         try:
-            while self.progress.step < self.progress.total_steps:
-                if cfg.loop.epochs is not None and self.progress.epoch >= cfg.loop.epochs:
-                    break
-                self._run_epoch()
-        except StopRequested as e:
-            outcome = "paused" if e.kind == "pause" else "stopped"
-        self._finish(outcome)
-        return outcome
+            try:
+                if not self._prepared:
+                    self.prepare()
+                cfg = self.cfg
+                self.adapters.train(True)
+                self.loaded.backbone.train()
+                if (
+                    cfg.sampling.enabled
+                    and cfg.sampling.at_start
+                    and self.progress.step == 0
+                    and not self.progress.extra.get("initial_sample_done")
+                ):
+                    self.sample_images("initial")
+                    self.progress.extra["initial_sample_done"] = True
+                self.emit("phase.changed", phase="training")
+                while self.progress.step < self.progress.total_steps:
+                    if cfg.loop.epochs is not None and self.progress.epoch >= cfg.loop.epochs:
+                        break
+                    self._run_epoch()
+            except StopRequested as e:
+                outcome = "paused" if e.kind == "pause" else "stopped"
+            self._preparing = False
+            self._finish(outcome)
+            return outcome
+        except Exception as e:
+            outcome = "failed"
+            self.emit("run.failed", error=f"{type(e).__name__}: {e}", step=self.progress.step)
+            raise
+        finally:
+            self._preparing = False
+            self._close_logs(failed=outcome == "failed")
+            self.emitter.close()
+
+    def _close_logs(self, *, failed: bool = False) -> None:
+        if self._logs is not None:
+            self._logs.close(failed=failed)
+            self._logs = None
 
     def _control_request(self) -> str | None:
         ctl = self.run_dir / "control"
@@ -599,7 +777,12 @@ class Trainer:
                 grad_norm=grad_norm,
                 it_s=it_s,
                 eta_s=(remaining * elapsed) if it_s else None,
-                vram_mb=(torch.cuda.max_memory_allocated() / 2**20) if self.device.type == "cuda" else None,
+                vram_mb=(torch.cuda.max_memory_allocated(self.device) / 2**20)
+                if self.device.type == "cuda"
+                else (torch.mps.current_allocated_memory() / 2**20 if self.device.type == "mps" else None),
+                vram_metric="peak_allocated"
+                if self.device.type == "cuda"
+                else ("current_allocated" if self.device.type == "mps" else None),
             )
         self._step_hooks(step)
 
@@ -607,7 +790,8 @@ class Trainer:
         if self.ema is None:
             return
         d = self.cfg.loop.ema_decay
-        tensors, _ = self.adapters.export_state()
+        with self._evaluation():
+            tensors, _ = self.adapters.export_state()
         for k, v in tensors.items():
             self.ema[k].mul_(d).add_(v.detach().float().cpu(), alpha=1 - d)
 
@@ -647,27 +831,24 @@ class Trainer:
 
     def _finish(self, outcome: str) -> None:
         self.emit("phase.changed", phase="finalizing")
-        if outcome == "finished" and self.cfg.checkpoint.save_on_finish:
+        if outcome == "finished" and self._prepared and self.cfg.checkpoint.save_on_finish:
             self.save_weights("final")
         self.emit(
             f"run.{outcome}",
             step=self.progress.step,
             epoch=self.progress.epoch,
             samples_seen=self.progress.samples_seen,
+            preparing=not self._prepared,
         )
-        self.emitter.close()
 
     # ----------------------------------------------------------------- validation & previews
     @torch.no_grad()
+    @evaluation
     def validate(self) -> dict[str, float]:
         vcfg = self.cfg.validation
         ds = self.bundle.validation
         if ds is None:
             return {}
-        self.adapters.train(False)
-        self.loaded.backbone.eval()
-        if self.swapper is not None:
-            self.swapper.set_forward_only(True)
         ds.set_epoch(0)
         ts = self.objective.sampler.icdf(vcfg.timesteps)
         per_t: dict[float, list[float]] = {q: [] for q in vcfg.timesteps}
@@ -688,13 +869,10 @@ class Trainer:
         result = {str(q): float(np.mean(v)) for q, v in per_t.items() if v}
         mean = float(np.mean(list(result.values()))) if result else float("nan")
         self.emit("validation", step=self.progress.step, per_t=result, mean=mean)
-        if self.swapper is not None:
-            self.swapper.set_forward_only(False)
-        self.adapters.train(True)
-        self.loaded.backbone.train()
         return result
 
     @torch.no_grad()
+    @evaluation
     def sample_images(self, tag: str) -> list[Path]:
         from PIL import Image
 
@@ -705,10 +883,6 @@ class Trainer:
         if not prompts:
             return []
         defaults = self.family.spec.sampling
-        self.adapters.train(False)
-        self.loaded.backbone.eval()
-        if self.swapper is not None:
-            self.swapper.set_forward_only(True)
         out_dir = self.run_dir / "samples"
         out_dir.mkdir(exist_ok=True)
         paths: list[Path] = []
@@ -773,10 +947,6 @@ class Trainer:
                 width=w,
                 height=h,
             )
-        if self.swapper is not None:
-            self.swapper.set_forward_only(False)
-        self.adapters.train(True)
-        self.loaded.backbone.train()
         return paths
 
 
@@ -807,17 +977,27 @@ def cache(cfg: TrainConfig, *, device: str | None = None, emitter: Emitter | Non
         path=cfg.logging.events_path or (Path(cfg.checkpoint.output_dir) / "events.jsonl")
     )
     trainer = Trainer(cfg, device=device, emitter=em)
+    failed = False
     try:
         trainer.prepare_data()
+        trainer._preparing = False
         trainer.emit("phase.changed", phase="finalizing")
         trainer.emit(
             "run.finished", step=0, epoch=0, samples_seen=0, cache_only=True, **trainer.bundle.plan.to_dict()
         )
         return "finished"
+    except StopRequested as e:
+        trainer._preparing = False
+        outcome = "paused" if e.kind == "pause" else "stopped"
+        trainer.emit(f"run.{outcome}", step=0, epoch=0, samples_seen=0, preparing=True, cache_only=True)
+        return outcome
     except Exception as e:  # noqa: BLE001
+        failed = True
         trainer.emit("run.failed", error=f"{type(e).__name__}: {e}")
         raise
     finally:
+        trainer._preparing = False
+        trainer._close_logs(failed=failed)
         em.close()
 
 
@@ -836,7 +1016,6 @@ def train(
     for fn in listeners or []:
         em.add_listener(fn)
     trainer = Trainer(cfg, device=device, emitter=em)
-    trainer.prepare()
     return trainer.run()
 
 

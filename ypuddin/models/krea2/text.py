@@ -20,6 +20,7 @@ import torch
 from torch import Tensor, nn
 
 from ypuddin.models.anima.text import ASSETS as ANIMA_ASSETS
+from ypuddin.models.anima.text import tokenizer_assets
 from ypuddin.models.base import TextCond, TextPipeline
 
 log = logging.getLogger(__name__)
@@ -200,6 +201,15 @@ class Krea2Text(TextPipeline):
         self.encoder: nn.Module | None = None
         self.prefix_len = len(self.tokenizer(PREFIX)["input_ids"])
         self.suffix_ids = torch.tensor(self.tokenizer(SUFFIX)["input_ids"], dtype=torch.long)
+        from ypuddin.models.fingerprints import content_fingerprint
+
+        assets = [p, *tokenizer_assets(tok_dir)]
+        if p.is_file() and (p.parent / "config.json").exists():
+            assets.append(p.parent / "config.json")
+        self.fingerprint = content_fingerprint(
+            assets,
+            namespace=f"{Krea2Text.fingerprint}:{self.select_layers}:{max_len}:{dtype}:{PREFIX}:{SUFFIX}:{text_cfg.to_json_string()}",
+        )
 
     # ----------------------------------------------------------------- weights
     def _ensure_loaded(self) -> nn.Module:

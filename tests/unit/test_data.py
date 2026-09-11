@@ -1,6 +1,13 @@
+import os
 import random
+import shutil
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
+from threading import Barrier
 
+import pytest
 import torch
+from PIL import Image
 
 from ypuddin.config import CaptionConfig, DatasetSourceConfig, TrainConfig
 from ypuddin.data import (
@@ -199,3 +206,182 @@ def test_dataset_cached_captions_cover_everything_it_emits(image_dataset, tmp_pa
         assert set(caps) <= cached_val and all(c.startswith("ypd") for c in caps)
         assert not any(val[i]["uncond"] for i in range(len(val)))
     assert caps == [val[i]["caption"] for i in range(len(val))]  # identical across epochs
+
+
+def _data_config(path, **dataset):
+    return TrainConfig.model_validate(
+        {
+            "model": {"family": "toy"},
+            "dataset": {"sources": [{"path": str(path)}], "resolutions": [64], "bucket_step": 16, **dataset},
+        }
+    )
+
+
+def test_masks_are_current_and_independent_of_latent_cache(tmp_path):
+    source = tmp_path / "images"
+    source.mkdir()
+    Image.new("RGB", (64, 64), "blue").save(source / "image.png")
+    cfg = _data_config(source)
+    spec = get_family("toy").spec.latent
+    bundle = build_data(cfg, spec, cache_root=tmp_path / "cache")
+    calls = []
+
+    def encode(pixels):
+        calls.append(len(pixels))
+        return torch.full((len(pixels), 4, 8, 8), 0.5)
+
+    assert cache_latents(bundle, encode, device="cpu") == 1
+    key = bundle.train.cache_key(bundle.train.items[0], False)
+    assert set(bundle.latent_cache.get(key)) == {"latents"}
+    # Enable masks after pre-caching; add a new sidecar without changing the latent key.
+    cfg.dataset.masked_loss = True
+    masked = build_data(cfg, spec, cache_root=tmp_path / "cache")
+    Image.new("L", (64, 64), 255).save(source / "image.mask.png")
+    assert cache_latents(masked, encode, device="cpu") == 0
+    sample = masked.train[0]
+    assert sample["mask"].eq(1).all() and "pixels" not in sample
+    # Old caches may contain a stale mask; it is never reused.
+    masked.latent_cache.put(key, {"latents": sample["latents"], "mask": torch.zeros(64, 64)})
+    assert masked.train[0]["mask"].eq(1).all()
+    Image.new("L", (64, 64), 0).save(source / "image.mask.png")
+    assert masked.train[0]["mask"].eq(0).all()
+    (source / "image.mask.png").unlink()
+    assert "mask" not in masked.train[0]
+    assert calls == [1]
+
+
+def test_collate_preserves_masks_in_mixed_batch(tmp_path):
+    source = tmp_path / "images"
+    source.mkdir()
+    for name, color in (("a", "red"), ("b", "blue")):
+        Image.new("RGB", (64, 64), color).save(source / f"{name}.png")
+    Image.new("L", (64, 64), 0).save(source / "a.mask.png")
+    bundle = build_data(
+        _data_config(source, masked_loss=True, cache_latents=False),
+        get_family("toy").spec.latent,
+        cache_root=tmp_path / "cache",
+    )
+    samples = [bundle.train[index] for index in range(2)]
+    batch = collate(samples)
+    for index, sample in enumerate(samples):
+        assert batch["mask"][index].eq(0 if "mask" in sample else 1).all()
+
+
+def test_source_resolution_union_and_explicit_validation_are_disjoint(image_dataset, tmp_path):
+    validation = tmp_path / "validation"
+    validation.mkdir()
+    shutil.copy(image_dataset / "img_000.jpg", validation / "held.jpg")
+    (validation / "held.txt").write_text("held out")
+    cfg = _data_config(image_dataset)
+    cfg.dataset.sources[0].resolutions = [80]
+    cfg.validation.enabled = True
+    cfg.validation.split_ratio = 0
+    cfg.validation.sources = [
+        DatasetSourceConfig(
+            path=str(validation), resolutions=[96], repeats=7, caption=CaptionConfig(prefix="validation")
+        )
+    ]
+    bundle = build_data(cfg, get_family("toy").spec.latent, cache_root=tmp_path / "cache")
+    assert set(bundle.bucket_manager.resolutions) == {64, 80, 96}
+    assert len(bundle.train) == 11 and len(bundle.validation) == 1
+    assert all(item.bucket.base == 80 for item in bundle.train.items)
+    held = bundle.validation.items[0]
+    assert held.record.source_index == 1 and held.source.path == str(validation)
+    assert held.bucket.base == 96
+    assert bundle.validation[0]["caption"] == "validation, held out"
+    assert held.record.content_hash not in {item.record.content_hash for item in bundle.train.items}
+
+
+def test_data_fingerprint_tracks_sidecars_but_not_locations(image_dataset, tmp_path):
+    cfg = _data_config(image_dataset)
+    spec = get_family("toy").spec.latent
+    original = build_data(cfg, spec, cache_root=tmp_path / "cache")
+    moved = tmp_path / "moved"
+    shutil.copytree(image_dataset, moved)
+    (moved / "img_000.jpg").rename(moved / "renamed.jpg")
+    (moved / "img_000.txt").rename(moved / "renamed.txt")
+    moved_cfg = _data_config(moved)
+    copied = build_data(moved_cfg, spec, cache_root=tmp_path / "cache")
+    assert copied.plan.fingerprint == original.plan.fingerprint
+    assert [item.record.content_hash for item in copied.train.items] == [
+        item.record.content_hash for item in original.train.items
+    ]
+    (moved / "renamed.txt").write_text("changed caption")
+    caption_changed = build_data(moved_cfg, spec, cache_root=tmp_path / "cache")
+    assert caption_changed.plan.fingerprint != copied.plan.fingerprint
+    Image.new("L", (96, 64), 0).save(moved / "renamed.mask.png")
+    mask_added = build_data(moved_cfg, spec, cache_root=tmp_path / "cache")
+    assert mask_added.plan.fingerprint != caption_changed.plan.fingerprint
+    Image.new("L", (96, 64), 255).save(moved / "renamed.mask.png")
+    assert (
+        build_data(moved_cfg, spec, cache_root=tmp_path / "cache").plan.fingerprint
+        != mask_added.plan.fingerprint
+    )
+
+
+def test_actual_vae_fingerprint_invalidates_only_latents(image_dataset, tmp_path):
+    cfg = _data_config(image_dataset)
+    spec = get_family("toy").spec.latent
+    first = build_data(cfg, replace(spec, fingerprint="vae-one"), cache_root=tmp_path / "cache")
+    second = build_data(cfg, replace(spec, fingerprint="vae-two"), cache_root=tmp_path / "cache")
+    assert first.plan.fingerprint == second.plan.fingerprint
+    assert first.train.cache_key(first.train.items[0], False) != second.train.cache_key(
+        second.train.items[0], False
+    )
+
+
+def test_tensor_cache_concurrent_same_key_is_atomic(tmp_path, monkeypatch):
+    import ypuddin.data.cache as cache_module
+
+    cache = LatentCache(tmp_path / "latents")
+    original_save = cache_module.save_file
+    barrier = Barrier(4)
+
+    def synchronized_save(tensors, filename):
+        original_save(tensors, filename)
+        barrier.wait(timeout=10)
+
+    monkeypatch.setattr(cache_module, "save_file", synchronized_save)
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        list(
+            executor.map(
+                lambda value: cache.put("same-key", {"latents": torch.full((4, 8, 8), float(value))}),
+                range(4),
+            )
+        )
+    values = cache.get("same-key")["latents"].unique().tolist()
+    assert len(values) == 1 and values[0] in range(4)
+    assert not list(cache.root.rglob("*.tmp"))
+
+
+def test_tensor_cache_failed_write_preserves_previous_entry(tmp_path, monkeypatch):
+    import ypuddin.data.cache as cache_module
+
+    cache = LatentCache(tmp_path / "latents")
+    cache.put("entry", {"latents": torch.ones(2)})
+
+    def fail(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(cache_module, "save_file", fail)
+    with pytest.raises(OSError, match="disk full"):
+        cache.put("entry", {"latents": torch.zeros(2)})
+    assert cache.get("entry")["latents"].eq(1).all()
+    assert not list(cache.root.rglob("*.tmp"))
+
+
+def test_image_index_detects_replacement_even_with_same_size_and_mtime(tmp_path):
+    image = tmp_path / "image.bmp"
+    Image.new("RGB", (64, 64), "red").save(image)
+    source = DatasetSourceConfig(path=str(tmp_path))
+    db = IndexDB(tmp_path / "index.sqlite")
+    try:
+        first = scan_sources([source], index_db=db)[0]
+        original = image.stat()
+        Image.new("RGB", (64, 64), "blue").save(image)
+        assert image.stat().st_size == original.st_size
+        os.utime(image, ns=(original.st_atime_ns, original.st_mtime_ns))
+        second = scan_sources([source], index_db=db)[0]
+        assert first.content_hash != second.content_hash
+    finally:
+        db.close()

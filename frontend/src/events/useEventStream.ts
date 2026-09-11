@@ -1,6 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { apiUrl } from '../api/client';
 import { EventType, EVENT_TYPES } from './eventTypes';
 import { createMockEventSource, shouldUseMockEvents } from './mockEventSource';
+
+export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 
 type EventCallback<T = any> = (data: T) => void;
 
@@ -11,6 +14,31 @@ class EventStreamManager {
   private lastEventId: string = '';
   private reconnectTimer: any = null;
   private isConnecting: boolean = false;
+
+  private status: ConnectionStatus = 'connecting';
+  private statusListeners = new Set<(status: ConnectionStatus) => void>();
+
+  public subscribeStatus(callback: (status: ConnectionStatus) => void) {
+    this.statusListeners.add(callback);
+    callback(this.status);
+    this.ensureConnection();
+    return () => { this.statusListeners.delete(callback); this.releaseIfUnused(); };
+  }
+
+  private setStatus(status: ConnectionStatus) {
+    this.status = status;
+    this.statusListeners.forEach((callback) => callback(status));
+  }
+
+  private releaseIfUnused() {
+    if (this.listeners.size || this.statusListeners.size) return;
+    this.eventSource?.close();
+    this.eventSource = null;
+    this.isConnecting = false;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.status = 'disconnected';
+  }
 
   private constructor() {}
 
@@ -37,6 +65,7 @@ class EventStreamManager {
           this.listeners.delete(type);
         }
       }
+      this.releaseIfUnused();
     };
   }
 
@@ -44,6 +73,7 @@ class EventStreamManager {
     if (this.eventSource || this.isConnecting || typeof window === 'undefined') return;
 
     this.isConnecting = true;
+    this.setStatus('connecting');
 
     // 开发态 mock 模式：用本地事件生成器代替真实 EventSource（MSW 无法拦截 SSE）
     if (shouldUseMockEvents()) {
@@ -60,10 +90,11 @@ class EventStreamManager {
         });
       });
       this.isConnecting = false;
+      this.setStatus('connected');
       return;
     }
 
-    const url = new URL('/api/events', window.location.origin);
+    const url = new URL(apiUrl('/events'));
     if (this.lastEventId) {
       url.searchParams.set('last_event_id', this.lastEventId);
     }
@@ -73,6 +104,7 @@ class EventStreamManager {
 
       this.eventSource.onopen = () => {
         this.isConnecting = false;
+        this.setStatus('connected');
         if (this.reconnectTimer) {
           clearTimeout(this.reconnectTimer);
           this.reconnectTimer = null;
@@ -96,6 +128,7 @@ class EventStreamManager {
 
       this.eventSource.onerror = () => {
         this.isConnecting = false;
+        this.setStatus('disconnected');
         this.eventSource?.close();
         this.eventSource = null;
         // 断线 3 秒重连
@@ -108,6 +141,7 @@ class EventStreamManager {
       };
     } catch {
       this.isConnecting = false;
+      this.setStatus('disconnected');
     }
   }
 
@@ -153,4 +187,10 @@ export function useEventStream<T = any>(
       unsubscribe();
     };
   }, [eventType]);
+}
+
+export function useEventStreamStatus() {
+  const [status, setStatus] = useState<ConnectionStatus>('connecting');
+  useEffect(() => EventStreamManager.getInstance().subscribeStatus(setStatus), []);
+  return status;
 }

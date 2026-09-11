@@ -96,6 +96,12 @@ class TimestepSampler:
 # --------------------------------------------------------------------------- noising / target
 
 
+def random_normal_like(tensor: Tensor, generator: torch.Generator | None) -> Tensor:
+    """Generate on the RNG's device, then transfer; the trainer's CPU RNG works on CUDA/MPS too."""
+    device = generator.device if generator is not None else tensor.device
+    return torch.randn(tensor.shape, generator=generator, device=device, dtype=tensor.dtype).to(tensor.device)
+
+
 def noisy_input_and_target(
     x0: Tensor,
     noise: Tensor,
@@ -108,9 +114,7 @@ def noisy_input_and_target(
     tb = t.to(x0.dtype).view(-1, *([1] * (x0.dim() - 1)))
     eps = noise
     if ip_noise_gamma > 0:
-        eps = eps + ip_noise_gamma * torch.randn(
-            noise.shape, generator=generator, device=noise.device, dtype=noise.dtype
-        )
+        eps = eps + ip_noise_gamma * random_normal_like(noise, generator)
     x_t = (1 - tb) * x0 + tb * eps
     target = noise - x0
     return x_t, target
@@ -194,7 +198,7 @@ class Objective:
     def prepare(
         self, x0: Tensor, t: Tensor, *, generator: torch.Generator | None = None
     ) -> tuple[Tensor, Tensor, Tensor]:
-        noise = torch.randn(x0.shape, generator=generator, device=x0.device, dtype=x0.dtype)
+        noise = random_normal_like(x0, generator)
         x_t, target = noisy_input_and_target(
             x0, noise, t, ip_noise_gamma=self.cfg.ip_noise_gamma, generator=generator
         )

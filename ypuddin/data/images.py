@@ -23,6 +23,15 @@ def load_rgb(path: str) -> tuple[Image.Image, Image.Image | None]:
     return im.convert("RGB"), alpha
 
 
+def load_alpha(path: str) -> Image.Image | None:
+    """Load just the current alpha channel, without compositing or constructing RGB tensors."""
+    with Image.open(path) as image:
+        im = ImageOps.exif_transpose(image)
+        if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
+            return im.convert("RGBA").getchannel("A")
+    return None
+
+
 def to_bucket(
     im: Image.Image, width: int, height: int, *, flip: bool = False, resample=Image.LANCZOS
 ) -> Image.Image:
@@ -45,7 +54,8 @@ def load_mask(
     """Loss mask ``(H, W)`` in ``[0, 1]`` from a sidecar (grayscale) or the alpha channel."""
     src: Image.Image | None = None
     if path:
-        src = Image.open(path).convert("L")
+        with Image.open(path) as image:
+            src = ImageOps.exif_transpose(image).convert("L")
     elif alpha is not None:
         src = alpha
     if src is None:

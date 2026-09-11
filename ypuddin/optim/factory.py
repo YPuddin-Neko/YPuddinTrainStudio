@@ -42,6 +42,10 @@ def _import_class(path: str) -> type:
 
 
 def build_optimizer(cfg: OptimizerConfig, param_groups: list[dict[str, Any]]) -> Optimizer:
+    if cfg.fused_backward:
+        raise ValueError("optimizer.fused_backward is not implemented; use the normal optimizer step")
+    if cfg.kahan and is_schedule_free(cfg):
+        raise ValueError("optimizer.kahan cannot be combined with a schedule-free optimizer")
     key = cfg.type.lower()
     path = _BUILTIN.get(key, cfg.type)
     cls = _import_class(path)
@@ -57,8 +61,6 @@ def build_optimizer(cfg: OptimizerConfig, param_groups: list[dict[str, Any]]) ->
         kwargs["weight_decay"] = cfg.weight_decay
     kwargs.update(cfg.args)
     groups = [dict(g) for g in param_groups]
-    for g in groups:
-        g.pop("name", None)
     opt = cls(groups, **kwargs)
     if cfg.kahan:
         opt = KahanWrapper(opt)
@@ -126,8 +128,21 @@ class KahanWrapper(Optimizer):
         return sd
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
+        state_dict = dict(state_dict)
         kahan = state_dict.pop("kahan", None)
-        self.inner.load_state_dict(state_dict)
+        # Optimizer.load_state_dict casts moments to the current parameter dtype. Our optimizer
+        # actually updates fp32 shadows, so loading against bf16 parameters would destroy precision
+        # and fail the following Adam step with mixed moment/gradient dtypes.
+        originals = [(p, p.data) for p in self._shadow]
+        try:
+            for p, _low in originals:
+                p.data = self._shadow[p]
+            self.inner.load_state_dict(state_dict)
+        finally:
+            for p, low in originals:
+                p.data = low
+        self.param_groups = self.inner.param_groups
+        self.state = self.inner.state
         if kahan:
             for s, saved in zip(self._shadow.values(), kahan["shadow"], strict=True):
                 s.copy_(saved)

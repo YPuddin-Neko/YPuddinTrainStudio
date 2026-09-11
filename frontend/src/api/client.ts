@@ -1,137 +1,50 @@
 import { ApiError, ApiErrorPayload } from './types';
+import { formatApiError } from '../utils/errors';
 
 interface RequestOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined>;
+  silent?: boolean;
 }
 
-function getBaseUrl() {
-  return import.meta.env.VITE_API_BASE_URL || '/api';
+export function apiUrl(endpoint: string): string {
+  const base = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
+  return new URL(`${base}${endpoint}`, window.location.origin).toString();
 }
 
-async function handleResponse<T>(response: Response): Promise<T> {
-  if (!response.ok) {
-    let payload: ApiErrorPayload['error'] | undefined;
-    try {
-      const data = await response.json();
-      if (data && data.error) {
-        payload = data.error;
-      }
-    } catch {
-      // Ignore json parse error if not json
-    }
-
-    if (payload) {
-      throw new ApiError(response.status, payload);
-    }
-    throw new ApiError(response.status, {
-      code: `http_${response.status}`,
-      message: response.statusText || 'Request failed',
+async function request<T>(method: string, endpoint: string, body?: unknown, options: RequestOptions = {}): Promise<T> {
+  const { params, silent, ...init } = options;
+  const url = new URL(apiUrl(endpoint));
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) url.searchParams.set(key, String(value));
+  });
+  const isFormData = body instanceof FormData;
+  try {
+    const response = await fetch(url, {
+      ...init,
+      method,
+      headers: { ...(isFormData ? {} : { 'Content-Type': 'application/json' }), ...init.headers },
+      ...(body === undefined ? {} : { body: isFormData ? body : JSON.stringify(body) }),
     });
+    if (!response.ok) {
+      let payload: ApiErrorPayload['error'] | undefined;
+      try { payload = (await response.json())?.error; } catch { /* Non-JSON error. */ }
+      throw new ApiError(response.status, payload || {
+        code: `http_${response.status}`, message: response.statusText || `HTTP ${response.status}`,
+      });
+    }
+    return response.status === 204 ? undefined as T : await response.json() as T;
+  } catch (error) {
+    if (!silent && !(error instanceof Error && error.name === 'AbortError')) {
+      window.dispatchEvent(new CustomEvent('api.error', { detail: formatApiError(error) }));
+    }
+    throw error;
   }
-  return response.json() as Promise<T>;
 }
 
 export const apiClient = {
-  get: async <T>(endpoint: string, options: RequestOptions = {}): Promise<T> => {
-    const { params, ...init } = options;
-    const url = new URL(`${getBaseUrl()}${endpoint}`, window.location.origin);
-    if (params) {
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined) {
-          url.searchParams.append(key, String(value));
-        }
-      });
-    }
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      ...init,
-    });
-    return handleResponse<T>(response);
-  },
-
-  post: async <T>(endpoint: string, body: any, options: RequestOptions = {}): Promise<T> => {
-    const { params, ...init } = options;
-    const url = new URL(`${getBaseUrl()}${endpoint}`, window.location.origin);
-    if (params) {
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined) {
-          url.searchParams.append(key, String(value));
-        }
-      });
-    }
-    const response = await fetch(url.toString(), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-      ...init,
-    });
-    return handleResponse<T>(response);
-  },
-
-  put: async <T>(endpoint: string, body: any, options: RequestOptions = {}): Promise<T> => {
-    const { params, ...init } = options;
-    const url = new URL(`${getBaseUrl()}${endpoint}`, window.location.origin);
-    if (params) {
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined) {
-          url.searchParams.append(key, String(value));
-        }
-      });
-    }
-    const response = await fetch(url.toString(), {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-      ...init,
-    });
-    return handleResponse<T>(response);
-  },
-
-  delete: async <T>(endpoint: string, options: RequestOptions = {}): Promise<T> => {
-    const { params, ...init } = options;
-    const url = new URL(`${getBaseUrl()}${endpoint}`, window.location.origin);
-    if (params) {
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined) {
-          url.searchParams.append(key, String(value));
-        }
-      });
-    }
-    const response = await fetch(url.toString(), {
-      method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      ...init,
-    });
-    return handleResponse<T>(response);
-  },
-
-  patch: async <T>(endpoint: string, body: any, options: RequestOptions = {}): Promise<T> => {
-    const { params, ...init } = options;
-    const url = new URL(`${getBaseUrl()}${endpoint}`, window.location.origin);
-    if (params) {
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined) {
-          url.searchParams.append(key, String(value));
-        }
-      });
-    }
-    const response = await fetch(url.toString(), {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-      ...init,
-    });
-    return handleResponse<T>(response);
-  },
+  get: <T>(endpoint: string, options?: RequestOptions) => request<T>('GET', endpoint, undefined, options),
+  post: <T>(endpoint: string, body: unknown, options?: RequestOptions) => request<T>('POST', endpoint, body, options),
+  put: <T>(endpoint: string, body: unknown, options?: RequestOptions) => request<T>('PUT', endpoint, body, options),
+  patch: <T>(endpoint: string, body: unknown, options?: RequestOptions) => request<T>('PATCH', endpoint, body, options),
+  delete: <T>(endpoint: string, options?: RequestOptions) => request<T>('DELETE', endpoint, undefined, options),
 };

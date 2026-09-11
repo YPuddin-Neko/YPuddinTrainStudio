@@ -208,18 +208,23 @@ def configure_adapter(self, target_model, adapter_config):
 ### 3.5 Flow-matching inputs, timestep sampling, loss (`cosmos_predict2.py:372-422, 506-544`)
 ```python
 def prepare_inputs(self, inputs, timestep_quantile=None):
-    latents = inputs['latents'].float(); mask = inputs['mask']
+    latents = inputs["latents"].float()
+    mask = inputs["mask"]
     ...  # mask -> (bs,1,1,h,w) nearest-exact resize to latent size
-    timestep_sample_method = self.model_config.get('timestep_sample_method', 'logit_normal')
-    dist = Normal(0,1) if logit_normal else Uniform(0,1)
+    timestep_sample_method = self.model_config.get("timestep_sample_method", "logit_normal")
+    dist = Normal(0, 1) if logit_normal else Uniform(0, 1)
     t = dist.icdf(full((bs,), timestep_quantile)) if timestep_quantile is not None else dist.sample((bs,))
-    if logit_normal: t = torch.sigmoid(t * self.model_config.get('sigmoid_scale', 1.0))
-    if shift := self.model_config.get('shift'):      t = (t*shift) / (1 + (shift-1)*t)
-    elif self.model_config.get('flux_shift'):        t = time_shift(get_lin_function(y1=0.5,y2=1.15)((h//2)*(w//2)), 1.0, t)
-    noise = torch.randn_like(latents); t_expanded = t.view(-1,1,1,1,1)
-    noisy_latents = (1 - t_expanded)*latents + t_expanded*noise
+    if logit_normal:
+        t = torch.sigmoid(t * self.model_config.get("sigmoid_scale", 1.0))
+    if shift := self.model_config.get("shift"):
+        t = (t * shift) / (1 + (shift - 1) * t)
+    elif self.model_config.get("flux_shift"):
+        t = time_shift(get_lin_function(y1=0.5, y2=1.15)((h // 2) * (w // 2)), 1.0, t)
+    noise = torch.randn_like(latents)
+    t_expanded = t.view(-1, 1, 1, 1, 1)
+    noisy_latents = (1 - t_expanded) * latents + t_expanded * noise
     target = noise - latents
-    return (noisy_latents, t.view(-1,1), *prompt_embeds_or_batch_encoding), (target, mask)
+    return (noisy_latents, t.view(-1, 1), *prompt_embeds_or_batch_encoding), (target, mask)
 ```
 - t ∈ (0,1) with t=1 pure noise; the DiT receives **raw t** (not ×1000, unlike Wan `wan.py:370`). Author's note (365-371): NVIDIA's formulation is equivalent to rectified flow with an implicit `t² + (1-t)²` loss weight, which was **deliberately dropped**; the raw `final_layer` output is trained directly as velocity `noise - x`. No `min_t`/`max_t` here (only Wan has it).
 - Loss (`get_loss_fn` 506-544): fp32 MSE (or huber/smooth-L1) × mask, mean; optional `multiscale_loss_weight`: for side length ≥ 0.9·1024 px adds avg-pooled 2x MSE terms (weights normalised).
@@ -293,12 +298,16 @@ Dispatch is in `train.py:650-815` (`get_optimizer`): `type` lower-cased → `ada
 ```python
 def init_state(self, group, p, gindex, pindex):
     super().init_state(group, p, gindex, pindex)
-    self.state[p]['shift'] = self.get_state_buffer(p, dtype=p.dtype)   # compensation buffer
+    self.state[p]["shift"] = self.get_state_buffer(p, dtype=p.dtype)  # compensation buffer
+
+
 ...
 # bitsandbytes kernel writes the update INTO `shift` (passed where `p` normally goes), then:
 buffer = p.clone()
-p.add_(shift)                 # apply accumulated update (rounded to bf16)
-shift.add_(buffer.sub_(p))    # shift = shift + (old_p - new_p) = the part of the update that was lost to rounding
+p.add_(shift)  # apply accumulated update (rounded to bf16)
+shift.add_(
+    buffer.sub_(p)
+)  # shift = shift + (old_p - new_p) = the part of the update that was lost to rounding
 ```
 Same pattern in `automagic.py:308-318` and `generic_optim.py:486-497` (there `p.grad` is reused as the temp buffer and the shift can live on CPU). This substitutes for fp32 master weights.
 

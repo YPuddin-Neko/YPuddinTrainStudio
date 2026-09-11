@@ -341,33 +341,82 @@ def frontend_stale() -> bool:
     dist = FRONTEND / "dist" / "index.html"
     if not dist.exists():
         return True
-    built = dist.stat().st_mtime
-    for p in (FRONTEND / "src").rglob("*"):
-        if p.is_file() and p.stat().st_mtime > built:
+    try:
+        manifest = json.loads((dist.parent / ".source-manifest.json").read_text(encoding="utf-8"))
+        inputs = [
+            p for directory in ("src", "public") for p in (FRONTEND / directory).rglob("*") if p.is_file()
+        ]
+        pattern = r"^(package(?:-lock)?\.json|index\.html|buildFingerprint\.ts|(?:vite|tailwind|postcss)\.config\.[^/]+|tsconfig[^/]*\.json|\.env(?:\..*)?)$"
+        inputs.extend(p for p in FRONTEND.iterdir() if p.is_file() and re.match(pattern, p.name))
+        current = {
+            p.relative_to(FRONTEND).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs
+        }
+        if (
+            not isinstance(manifest, dict)
+            or manifest.get("version") != 1
+            or current != manifest.get("inputs")
+        ):
             return True
-    for name in ("package.json", "vite.config.ts", "index.html", "tailwind.config.js"):
-        f = FRONTEND / name
-        if f.exists() and f.stat().st_mtime > built:
+        outputs = manifest.get("outputs", {})
+        if not isinstance(outputs, dict) or "index.html" not in outputs:
             return True
-    return False
+        for name, digest in outputs.items():
+            output = (dist.parent / name).resolve()
+            if (
+                dist.parent.resolve() not in output.parents
+                or hashlib.sha256(output.read_bytes()).hexdigest() != digest
+            ):
+                return True
+        return False
+    except (OSError, ValueError, TypeError):
+        return True
 
 
 def build_frontend(force: bool = False) -> bool:
-    npm = shutil.which("npm") or shutil.which("npm.cmd")
-    if not npm:
-        log(
-            "[5/5] 没有找到 Node.js / npm，跳过前端构建（API 仍可用；要用网页界面请安装 Node.js >= 18 后重跑）"
-        )
-        return False
     if not force and not frontend_stale():
         log("[5/5] 前端构建已是最新，跳过")
         return True
+    npm = shutil.which("npm") or shutil.which("npm.cmd")
+    if not npm:
+        if (FRONTEND / "dist" / "index.html").exists():
+            die(
+                "前端与当前源码不一致。请安装 Node.js 20.19+ / 22.12+ 后重启，或使用包含最新前端的完整发布包。"
+            )
+        log("[5/5] 没有找到 Node.js / npm，跳过前端构建（需要 Node.js 20.19+ 或 22.12+）")
+        return False
+    node = shutil.which("node")
+    if not node:
+        die("前端构建需要 Node.js 20.19+ 或 22.12+，请安装后重试")
+    version = subprocess.run([node, "--version"], capture_output=True, text=True, check=True).stdout.strip()
+    if not node_supported(version):
+        die(f"Node.js {version} 不支持当前前端；需要 20.19+ 或 22.12+")
     lock = FRONTEND / "package-lock.json"
     log("[5/5] 构建前端：安装 npm 依赖 ...")
     run([npm, "ci" if lock.exists() else "install"], cwd=FRONTEND)
     log("[5/5] 构建前端：编译打包（tsc + vite build）...")
     run([npm, "run", "build"], cwd=FRONTEND)
     return True
+
+
+def node_supported(version: str) -> bool:
+    match = re.match(r"v?(\d+)\.(\d+)", version)
+    if not match:
+        return False
+    major, minor = map(int, match.groups())
+    return (major == 20 and minor >= 19) or (major == 22 and minor >= 12) or major >= 23
+
+
+def server_address(host: str | None, port: int | None, data_root: str) -> tuple[str, int]:
+    """Explicit flags win; otherwise use the settings saved by the UI."""
+    saved = {}
+    path = Path(data_root).expanduser()
+    if not path.is_absolute():
+        path = ROOT / path
+    try:
+        saved = json.loads((path / "settings.json").read_text(encoding="utf-8")).get("server", {})
+    except (OSError, ValueError):
+        pass
+    return host or saved.get("host", "127.0.0.1"), int(port or saved.get("port", 8765))
 
 
 # --------------------------------------------------------------------------- service
@@ -383,7 +432,8 @@ def wait_for(url: str, timeout: float = 60) -> bool:
     return False
 
 
-def serve(host: str, port: int, data_root: str, open_browser: bool) -> int:
+def serve(host: str | None, port: int | None, data_root: str, open_browser: bool) -> int:
+    host, port = server_address(host, port, data_root)
     ypuddin = venv_bin("ypuddin")
     cmd = [str(ypuddin), "serve", "--host", host, "--port", str(port), "--data-root", data_root]
     log(f"启动服务（数据目录 {data_root}）...")
@@ -406,7 +456,8 @@ def serve(host: str, port: int, data_root: str, open_browser: bool) -> int:
         return proc.wait()
 
 
-def dev(host: str, port: int, data_root: str, fe_port: int, open_browser: bool) -> int:
+def dev(host: str | None, port: int | None, data_root: str, fe_port: int, open_browser: bool) -> int:
+    host, port = server_address(host, port, data_root)
     npm = shutil.which("npm") or shutil.which("npm.cmd")
     if not npm:
         die("dev 模式需要 Node.js / npm")
@@ -417,9 +468,7 @@ def dev(host: str, port: int, data_root: str, fe_port: int, open_browser: bool) 
         cwd=ROOT,
         env=_env(),
     )
-    if port != 8765:
-        log("提示：Vite 代理固定指向 127.0.0.1:8765（frontend/vite.config.ts），dev 模式请用默认端口")
-    env = dict(_env(), VITE_USE_MOCK="false")
+    env = dict(_env(), VITE_USE_MOCK="false", VITE_BACKEND_URL=f"http://127.0.0.1:{port}")
     fe = subprocess.Popen([npm, "run", "dev", "--", "--port", str(fe_port)], cwd=FRONTEND, env=env)
     if open_browser and wait_for(f"http://127.0.0.1:{fe_port}/", 60):
         webbrowser.open(f"http://127.0.0.1:{fe_port}/")
@@ -503,8 +552,8 @@ def main(argv: list[str]) -> int:
         "reinstall": False,
         "browser": True,
         "frontend": True,
-        "host": "127.0.0.1",
-        "port": "8765",
+        "host": None,
+        "port": None,
         "data_root": "studio_data",
         "fe_port": "3000",
     }
@@ -563,11 +612,19 @@ def main(argv: list[str]) -> int:
         print(f"激活虚拟环境：{act}" if WIN else f"激活虚拟环境：source {act}")
         return 0
     if command == "dev":
-        return dev(opts["host"], int(opts["port"]), opts["data_root"], int(opts["fe_port"]), opts["browser"])
+        return dev(
+            opts["host"],
+            int(opts["port"]) if opts["port"] else None,
+            opts["data_root"],
+            int(opts["fe_port"]),
+            opts["browser"],
+        )
     if command == "run":
         if opts["frontend"]:
             build_frontend()
-        return serve(opts["host"], int(opts["port"]), opts["data_root"], opts["browser"])
+        return serve(
+            opts["host"], int(opts["port"]) if opts["port"] else None, opts["data_root"], opts["browser"]
+        )
     die(f"未知命令 {command!r}（可选 run/dev/build/test/smoke/doctor/shell）")
     return 1
 

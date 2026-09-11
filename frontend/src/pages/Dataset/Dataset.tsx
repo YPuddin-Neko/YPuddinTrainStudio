@@ -1,13 +1,15 @@
 import React from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { apiClient } from '../../api/client';
+import { apiClient, apiUrl } from '../../api/client';
 import { DatasetInfo, Job, Plan } from '../../api/types';
 import { useDatasetImages } from '../../api/hooks/useDatasetImages';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
 import { TagChips } from '../../components/TagChips';
 import { formatBytes, formatParams, formatPercent } from '../../utils/format';
+import { ProjectWorkflow, NextStepLink } from '../../components/ProjectWorkflow';
+import { useWorkspaceText } from '../../utils/workspaceText';
 import {
   RefreshCcw,
   Trash2,
@@ -48,6 +50,7 @@ export default function Dataset() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const text = useWorkspaceText();
 
   // locales 占位符为单花括号（{n}），i18next 默认插值（{{}}）不处理，需手工替换
   const tt = React.useCallback(
@@ -229,6 +232,7 @@ export default function Dataset() {
 
   return (
     <div className="space-y-6" data-testid="dataset-page">
+      {info?.source.project_id && <div className="space-y-4"><Link to={`/projects/${info.source.project_id}`} className="text-sm text-blue-500">← {text('返回项目，继续添加训练数据', 'Back to project and add more data')}</Link><ProjectWorkflow projectId={info.source.project_id} active="data" /><div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-slate-500">{text('点击图片检查并编辑标签；也可以多选图片批量增删标签。', 'Click an image to review and edit its caption, or select images to edit tags in bulk.')}</p><NextStepLink to={`/projects/${info.source.project_id}?step=models`}>{text('下一步：模型准备', 'Next: model setup')}</NextStepLink></div></div>}
       {/* 顶部标题与动作 */}
       <div className="flex flex-wrap justify-between items-center gap-3">
         <div>
@@ -448,7 +452,7 @@ export default function Dataset() {
                   data-testid={`image-card-${img.hash}`}
                 >
                   <img
-                    src={`/api/datasets/${id}/images/${img.hash}/thumb?size=${THUMB_SIZE}`}
+                    src={apiUrl(`/datasets/${id}/images/${img.hash}/thumb?size=${THUMB_SIZE}`)}
                     alt={img.rel_path}
                     loading="lazy"
                     className="w-full h-[170px] object-cover bg-slate-100 dark:bg-slate-900"
@@ -492,7 +496,7 @@ export default function Dataset() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <img
-                  src={`/api/datasets/${id}/images/${activeImage}/file`}
+                  src={apiUrl(`/datasets/${id}/images/${activeImage}/file`)}
                   alt={activeImg?.rel_path || ''}
                   className="w-full max-h-[50vh] object-contain rounded-lg bg-slate-100 dark:bg-slate-900"
                 />

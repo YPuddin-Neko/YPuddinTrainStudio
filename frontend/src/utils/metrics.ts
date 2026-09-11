@@ -1,4 +1,25 @@
-import { ValidationPoint } from '../api/types';
+import { JobMetrics, ValidationPoint } from '../api/types';
+
+export function smoothLoss(values: Array<number | null>, alpha: number): Array<number | null> {
+  let ema: number | null = null;
+  return values.map((value) => {
+    if (value == null || !Number.isFinite(value)) return null;
+    ema = ema == null ? value : alpha * ema + (1 - alpha) * value;
+    return ema;
+  });
+}
+
+export function appendMetricStep(previous: JobMetrics, event: Record<string, any>): JobMetrics {
+  if (typeof event.step !== 'number' || event.step <= (previous.steps[previous.steps.length - 1] ?? -1)) return previous;
+  const lr = Object.fromEntries([...new Set([...Object.keys(previous.lr), ...Object.keys(event.lr || {})])].map((group) => [
+    group, [...(previous.lr[group] || Array(previous.steps.length).fill(null)), event.lr?.[group] ?? null],
+  ]));
+  return { ...previous, lr, steps: [...previous.steps, event.step], loss: [...previous.loss, event.loss ?? null],
+    loss_ema: [...previous.loss_ema, event.loss_ema ?? null], grad_norm: [...previous.grad_norm, event.grad_norm ?? null],
+    vram_mb: [...previous.vram_mb, event.vram_mb ?? null],
+    vram_metric: event.vram_metric ?? previous.vram_metric,
+    it_s: [...previous.it_s, event.it_s ?? null] };
+}
 
 export interface NamedSeries {
   name: string;

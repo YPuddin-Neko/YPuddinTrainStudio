@@ -45,6 +45,7 @@ interface SchemaFormProps {
   errors?: ValidationError[];
   /** 当前模型族信息（GET /api/families），驱动 preset 下拉 / text_modes / weights 提示 / sampling 默认值 */
   family?: FamilyInfo;
+  families?: FamilyInfo[];
 }
 
 const resolveRef = (rootSchema: any, refPath: string) => {
@@ -124,10 +125,11 @@ const RulesEditor: React.FC<{
             className="flex-1 min-w-[140px] px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
           />
           <select
-            value={rule.algo || 'none'}
-            onChange={(e) => updateRule(idx, 'algo', e.target.value)}
+            value={rule.algo ?? ''}
+            onChange={(e) => updateRule(idx, 'algo', e.target.value || null)}
             className="px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
           >
+            <option value="">{t('train.inherit')}</option>
             <option value="none">none</option>
             <option value="lora">lora</option>
             <option value="lokr">lokr</option>
@@ -139,7 +141,7 @@ const RulesEditor: React.FC<{
             placeholder="Rank / full"
             value={rule.rank ?? ''}
             onChange={(e) => {
-              const val = e.target.value === 'full' ? 'full' : Number(e.target.value) || 0;
+              const val = e.target.value === '' ? null : e.target.value === 'full' ? 'full' : Number(e.target.value);
               updateRule(idx, 'rank', val);
             }}
             className="w-16 px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
@@ -148,14 +150,14 @@ const RulesEditor: React.FC<{
             type="number"
             placeholder="Alpha"
             value={rule.alpha ?? ''}
-            onChange={(e) => updateRule(idx, 'alpha', Number(e.target.value))}
+            onChange={(e) => updateRule(idx, 'alpha', e.target.value === '' ? null : Number(e.target.value))}
             className="w-16 px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
           />
           <input
             type="number"
             placeholder="Factor"
             value={rule.factor ?? ''}
-            onChange={(e) => updateRule(idx, 'factor', Number(e.target.value))}
+            onChange={(e) => updateRule(idx, 'factor', e.target.value === '' ? null : Number(e.target.value))}
             className="w-16 px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
           />
           <input
@@ -297,7 +299,7 @@ const SourcesEditor: React.FC<{
         <div key={idx} className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
           <div className="flex justify-between items-center">
             <span className="font-semibold text-slate-700 dark:text-slate-300">
-              {t('train.sourceN', { n: idx + 1, defaultValue: '数据源 #{{n}}' })}
+              {t('train.sourceN', { n: idx + 1, defaultValue: '数据源 #{n}' })}
             </span>
             <button type="button" onClick={() => removeSource(idx)} className="text-red-500 hover:text-red-700">
               <Trash2 className="w-3.5 h-3.5" />
@@ -320,6 +322,9 @@ const SourcesEditor: React.FC<{
               <span>{t('common.browse')}</span>
             </button>
           </div>
+          <label className="block space-y-1"><span className="text-[10px] text-slate-400">{t('projectDetail.classPrompt')}</span>
+            <input type="text" value={src.class_prompt ?? ''} onChange={(e) => updateSource(idx, 'class_prompt', e.target.value || null)} className="w-full px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600" />
+          </label>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <div>
               <label className="text-[10px] text-slate-400">{t('dataset.repeats')}</label>
@@ -386,11 +391,12 @@ const SourcesEditor: React.FC<{
 // 5. Prompts 专用组件 (SamplePrompt 列表)
 const PromptsEditor: React.FC<{
   value: any[];
+  inheritedValues?: Record<string, number | null | undefined>;
   onChange: (val: any[]) => void;
-}> = ({ value = [], onChange }) => {
+}> = ({ value = [], inheritedValues = {}, onChange }) => {
   const { t } = useTranslation();
   const addPrompt = () => {
-    onChange([...value, { prompt: '', negative: '', seed: 42, width: 1024, height: 1024 }]);
+    onChange([...value, { prompt: '', negative: '', seed: null, width: null, height: null, steps: null, cfg: null }]);
   };
 
   const removePrompt = (idx: number) => {
@@ -409,7 +415,7 @@ const PromptsEditor: React.FC<{
         <div key={idx} className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
           <div className="flex justify-between items-center">
             <span className="font-semibold text-slate-700 dark:text-slate-300">
-              {t('train.promptN', { n: idx + 1, defaultValue: '提示词 #{{n}}' })}
+              {t('train.promptN', { n: idx + 1, defaultValue: '提示词 #{n}' })}
             </span>
             <button type="button" onClick={() => removePrompt(idx)} className="text-red-500 hover:text-red-700">
               <Trash2 className="w-3.5 h-3.5" />
@@ -429,35 +435,28 @@ const PromptsEditor: React.FC<{
             onChange={(e) => updatePrompt(idx, 'negative', e.target.value)}
             className="w-full px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
           />
-          <div className="grid grid-cols-3 gap-2">
-            <div>
-              <label className="text-[10px] text-slate-400">{t('job.seed')}</label>
-              <input
-                type="number"
-                value={p.seed ?? 42}
-                onChange={(e) => updatePrompt(idx, 'seed', Number(e.target.value))}
-                className="w-full px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] text-slate-400">{t('train.width', '宽度')}</label>
-              <input
-                type="number"
-                value={p.width ?? 1024}
-                onChange={(e) => updatePrompt(idx, 'width', Number(e.target.value))}
-                className="w-full px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] text-slate-400">{t('train.height', '高度')}</label>
-              <input
-                type="number"
-                value={p.height ?? 1024}
-                onChange={(e) => updatePrompt(idx, 'height', Number(e.target.value))}
-                className="w-full px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
-              />
-            </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {[
+              { key: 'seed', label: t('job.seed'), step: 1 },
+              { key: 'width', label: t('train.width'), step: 1, min: 32, max: 8192 },
+              { key: 'height', label: t('train.height'), step: 1, min: 32, max: 8192 },
+              { key: 'steps', label: t('train.sampleSteps'), step: 1, min: 1, max: 1000 },
+              { key: 'cfg', label: 'CFG', step: 'any', min: 0 },
+            ].map(({ key, label, step, min, max }) => (
+              <label key={key} className="min-w-0 text-[10px] text-slate-400">
+                {label}
+                <input
+                  aria-label={`sampling.prompts.${idx}.${key}`}
+                  type="number" step={step} min={min} max={max}
+                  value={p[key] ?? ''}
+                  placeholder={inheritedValues[key] == null ? t('train.inherit') : `${t('train.inherit')} (${inheritedValues[key]})`}
+                  onChange={(e) => updatePrompt(idx, key, e.target.value === '' ? null : Number(e.target.value))}
+                  className="w-full px-2 py-1 border rounded text-xs dark:bg-slate-800 dark:border-slate-600"
+                />
+              </label>
+            ))}
           </div>
+          <p className="text-[10px] text-slate-500">{t('train.promptInheritHint')}</p>
         </div>
       ))}
       <button
@@ -543,6 +542,57 @@ const ModelPathInput: React.FC<{
   );
 };
 
+/** Nullable unions retain their actual scalar/object type and explicit null value. */
+const SchemaValueInput: React.FC<{
+  schema: any; property: SchemaProperty; value: any; name: string; placeholder?: string; onChange: (value: any) => void;
+}> = ({ schema, property, value, name, placeholder, onChange }) => {
+  const { t } = useTranslation();
+  const alternatives = property.anyOf || [property];
+  const nullable = alternatives.some((p) => p.type === 'null');
+  const constant = alternatives.find((p) => p.const !== undefined);
+  const branch = alternatives.find((p) => p.type !== 'null' && p.const === undefined) || alternatives[0];
+  const resolved = branch.$ref ? { ...resolveRef(schema, branch.$ref), ...branch } : branch;
+  const prop: SchemaProperty = { ...property, ...resolved };
+  const cls = 'w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:bg-slate-900 dark:border-slate-600';
+  const initialValue = () => prop.default ?? (prop.type === 'object' ? {} : prop.type === 'boolean' ? false : prop.type === 'string' ? '' : prop.type === 'array' ? [] : 0);
+  let input: React.ReactNode;
+  if (prop.type === 'object' && prop.properties) {
+    input = value == null ? null : <div className="space-y-3 border-l pl-3 dark:border-slate-600">
+      {Object.entries(prop.properties).map(([key, child]) => <label key={key} className="block space-y-1 text-xs">
+        <span>{t(`fields.${key}`, child.title || key)}</span>
+        <SchemaValueInput schema={schema} property={child} value={value[key] === undefined ? child.default : value[key]}
+          name={`${name}.${key}`} onChange={(next) => onChange({ ...value, [key]: next })} />
+      </label>)}
+    </div>;
+  } else if (prop.enum) {
+    input = <select className={cls} aria-label={name} value={value ?? ''} onChange={(e) => onChange(e.target.value === '' && nullable ? null : e.target.value)}>
+      {nullable && <option value="">{t('train.unset')}</option>}
+      {prop.enum.map((item) => <option key={String(item)} value={item}>{String(item)}</option>)}
+    </select>;
+  } else if (prop.type === 'boolean') {
+    input = <input type="checkbox" aria-label={name} checked={!!value} onChange={(e) => onChange(e.target.checked)} />;
+  } else if (prop.type === 'array') {
+    input = <textarea className={cls} aria-label={name} value={typeof value === 'string' ? value : JSON.stringify(value ?? [])}
+      onChange={(e) => { try { onChange(JSON.parse(e.target.value)); } catch { onChange(e.target.value); } }} />;
+  } else {
+    const numeric = prop.type === 'integer' || prop.type === 'number';
+    input = <input className={cls} aria-label={name} type={numeric ? 'number' : 'text'}
+      value={constant && value === constant.const ? '' : value ?? ''} disabled={!!constant && value === constant.const}
+      min={(prop as any).minimum ?? prop['x-ui']?.min} max={(prop as any).maximum ?? prop['x-ui']?.max}
+      step={prop['x-ui']?.step ?? (prop.type === 'integer' ? 1 : 'any')} placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value === '' && nullable ? null : numeric ? Number(e.target.value) : e.target.value)} />;
+  }
+  return <div className="space-y-2">
+    {nullable && <label className="flex items-center gap-2 text-xs text-slate-500">
+      <input type="checkbox" aria-label={`${name}.unset`} checked={value == null}
+        onChange={(e) => onChange(e.target.checked ? null : initialValue())} />{t('train.unset')}
+    </label>}
+    {input}
+    {constant && <label className="flex items-center gap-2 text-xs"><input type="checkbox" aria-label={`${name}.${constant.const}`}
+      checked={value === constant.const} onChange={(e) => onChange(e.target.checked ? constant.const : property.default ?? 16)} />{String(constant.const)}</label>}
+  </div>;
+};
+
 // 分组组件（header 右侧显示该组当前可见字段数）
 const FieldGroup: React.FC<{
   title: string;
@@ -562,7 +612,7 @@ const FieldGroup: React.FC<{
         <span className="flex items-center space-x-2">
           {typeof count === 'number' && (
             <span className="text-xs text-slate-400 font-mono" data-testid="group-count">
-              {t('groups.fieldCount', { count, defaultValue: '{{count}} 项' })}
+              {t('groups.fieldCount', { count, defaultValue: '{count} 项' })}
             </span>
           )}
           {isOpen ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
@@ -580,6 +630,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   showAdvanced = false,
   errors = [],
   family,
+  families,
 }) => {
   const { t } = useTranslation();
   const groups: Record<string, { order: number; fields: React.ReactNode[] }> = {};
@@ -599,7 +650,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       }
     }
 
-    const errorItem = errors.find((e) => e.loc === fullPathKey || e.loc?.endsWith(`.${key}`));
+    const errorItem = errors.find((e) => e.loc === fullPathKey || e.loc?.startsWith(`${fullPathKey}.`));
     const fieldValue = getNestedValue(value, path) !== undefined ? getNestedValue(value, path) : prop.default;
     const groupName = ui.group || (parentPath.length > 0 ? parentPath[0] : 'default');
 
@@ -638,6 +689,11 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       control = (
         <PromptsEditor
           value={fieldValue || []}
+          inheritedValues={{
+            ...value.sampling,
+            steps: value.sampling?.steps ?? family?.sampling?.steps,
+            cfg: value.sampling?.cfg ?? family?.sampling?.cfg,
+          }}
           onChange={(val) => onChange(setNestedValue(value, path, val))}
         />
       );
@@ -677,50 +733,19 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         <ModelPathInput
           value={fieldValue || ''}
           kind={modelKind}
-          onChange={(val) => onChange(setNestedValue(value, path, val))}
+          onChange={(val) => onChange(setNestedValue(value, path, val === '' && prop.anyOf?.some((p) => p.type === 'null') ? null : val))}
         />
       );
     } else if (prop.anyOf) {
-      const stringConst = prop.anyOf.find((p) => p.const !== undefined);
-      const isConstSelected = fieldValue === stringConst?.const;
-
-      // sampling.shift 的 anyOf[number, null] 也要带族默认占位
-      let anyOfPlaceholder: string | undefined;
-      if (family && fullPathKey === 'sampling.shift') {
-        anyOfPlaceholder =
-          family.sampling?.shift != null ? String(family.sampling.shift) : t('sampling.shiftAuto');
-      }
-
-      control = (
-        <div className="flex space-x-2 items-center">
-          <input
-            type="number"
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:bg-slate-900 dark:border-slate-600 disabled:opacity-50"
-            value={isConstSelected ? '' : fieldValue ?? ''}
-            disabled={isConstSelected}
-            min={ui.min}
-            max={ui.max}
-            step={ui.step}
-            placeholder={anyOfPlaceholder}
-            onChange={(e) => {
-              const val = e.target.value === '' ? undefined : Number(e.target.value);
-              onChange(setNestedValue(value, path, val));
-            }}
-          />
-          {stringConst && (
-            <label className="flex items-center space-x-1 text-sm whitespace-nowrap">
-              <input
-                type="checkbox"
-                checked={isConstSelected}
-                onChange={(e) => {
-                  onChange(setNestedValue(value, path, e.target.checked ? stringConst.const : 16));
-                }}
-              />
-              <span>{String(stringConst.const)}</span>
-            </label>
-          )}
-        </div>
-      );
+      control = <SchemaValueInput schema={schema} property={prop} value={fieldValue} name={fullPathKey}
+        placeholder={family && fullPathKey === 'sampling.shift' ? (family.sampling?.shift != null ? String(family.sampling.shift) : t('sampling.shiftAuto')) : undefined}
+        onChange={(val) => onChange(setNestedValue(value, path, val))} />;
+    } else if (fullPathKey === 'model.family' && families?.length) {
+      control = <select aria-label="model.family" value={fieldValue || families[0].name}
+        className="w-full rounded-md border px-3 py-2 text-sm dark:bg-slate-900 dark:border-slate-600"
+        onChange={(e) => onChange(setNestedValue(value, path, e.target.value))}>
+        {families.map((item) => <option key={item.name} value={item.name}>{item.label || item.name}</option>)}
+      </select>;
     } else if (fullPathKey === 'adapter.preset' && family) {
       // 族内预设下拉：name — description（N 层）
       control = (
@@ -854,7 +879,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       <div key={fullPathKey} data-testid={`field-${fullPathKey}`} className={`flex flex-col space-y-1 p-2 rounded ${errorItem ? 'bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800' : ''}`}>
         <div className="flex justify-between items-center">
           <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-            {weightMeta?.label || prop.title || t(`fields.${key}`, key)}
+            {weightMeta?.label || t(`fields.${key}`, prop.title || key)}
             {ui.unit && <span className="ml-1 text-xs text-slate-500">({ui.unit})</span>}
           </label>
         </div>
@@ -891,7 +916,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     });
   }
 
-  const groupOrder = schema['x-ui-groups'] || [];
+  const groupOrder = schema?.['x-ui-groups'] || [];
   const sortedGroups = Object.entries(groups).sort(([keyA, groupA], [keyB, groupB]) => {
     const indexA = groupOrder.indexOf(keyA);
     const indexB = groupOrder.indexOf(keyB);

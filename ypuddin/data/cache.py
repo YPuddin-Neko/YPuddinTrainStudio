@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
+import tempfile
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
@@ -39,9 +41,16 @@ class TensorCache:
     def put(self, key: str, tensors: dict[str, Tensor]) -> None:
         p = self._path(key)
         p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".tmp")
-        save_file({k: v.detach().cpu().contiguous() for k, v in tensors.items()}, str(tmp))
-        tmp.replace(p)
+        # Jobs can populate the same content-addressed entry concurrently. Each writer owns a
+        # temporary file; replace exposes only a complete safetensors file to readers.
+        fd, name = tempfile.mkstemp(prefix=f".{p.stem}-", suffix=".tmp", dir=p.parent)
+        os.close(fd)
+        tmp = Path(name)
+        try:
+            save_file({k: v.detach().cpu().contiguous() for k, v in tensors.items()}, str(tmp))
+            tmp.replace(p)
+        finally:
+            tmp.unlink(missing_ok=True)
 
     def count(self) -> int:
         return sum(1 for _ in self.root.rglob("*.safetensors"))
@@ -74,7 +83,11 @@ def build_latent_cache(
     progress: Callable[[int, int], None] | None = None,
     total: int | None = None,
 ) -> int:
-    """Encode ``(key, {"pixels": (3,H,W), "mask"?: (H,W)})`` items grouped by shape; returns #written."""
+    """Encode ``(key, {"pixels": (3,H,W)})`` items grouped by shape; returns #written.
+
+    Masks are deliberately not cached with VAE outputs: changing a sidecar or enabling masked
+    loss must not require another VAE pass, nor reuse a mask from an earlier training run.
+    """
     pending: dict[tuple[int, int], list[tuple[str, dict[str, Tensor]]]] = {}
     written = 0
     done = 0
@@ -87,11 +100,8 @@ def build_latent_cache(
         pixels = torch.stack([it[1]["pixels"] for it in items]).to(device)
         with torch.no_grad():
             latents = encode(pixels).to(dtype).cpu()
-        for (key, extra), lat in zip(items, latents, strict=True):
-            entry = {"latents": lat}
-            if "mask" in extra and extra["mask"] is not None:
-                entry["mask"] = extra["mask"].to(torch.float16)
-            cache.put(key, entry)
+        for (key, _extra), lat in zip(items, latents, strict=True):
+            cache.put(key, {"latents": lat})
             written += 1
 
     for key, item in jobs:

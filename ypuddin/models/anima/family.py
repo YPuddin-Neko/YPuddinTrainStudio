@@ -149,6 +149,11 @@ class AnimaLatent(LatentPipeline):
         self.dtype = dtype
         self.use_2d = use_2d
         self.vae: nn.Module | None = None
+        from ypuddin.models.fingerprints import content_fingerprint
+
+        self.fingerprint = content_fingerprint(
+            [self.path], namespace=f"{AnimaLatent.fingerprint}:2d={use_2d}:dtype={dtype}"
+        )
 
     def _ensure(self) -> nn.Module:
         if self.vae is None:
@@ -229,13 +234,24 @@ class AnimaFamily(ModelFamily):
                 problems.append(f"model.{field} does not exist: {value}")
         return problems
 
+    def latent_fingerprint(self, cfg: ModelConfig, *, dtype: torch.dtype) -> str:
+        return AnimaLatent(cfg.vae_path, dtype=dtype).fingerprint
+
     def load(
-        self, cfg: ModelConfig, memory: MemoryConfig, *, device: torch.device | str, dtype: torch.dtype
+        self,
+        cfg: ModelConfig,
+        memory: MemoryConfig,
+        *,
+        device: torch.device | str,
+        dtype: torch.dtype,
+        backbone_device: torch.device | str | None = None,
     ) -> LoadedModel:
         problems = self.validate_config(cfg)
         if problems:
             raise FileNotFoundError("; ".join(problems))
-        dit, config = load_dit(cfg.dit_path, device=device, dtype=dtype)
+        # The trainer stages the backbone on CPU while VAE/text caches are built.
+        # Direct family callers retain the usual load-on-device behaviour.
+        dit, config = load_dit(cfg.dit_path, device=backbone_device or device, dtype=dtype)
         if memory.activation_checkpointing != "none":
             dit.enable_gradient_checkpointing(unsloth_offload=memory.activation_checkpointing == "unsloth")
         dit.attn_mode = self.resolve_attention(cfg.attention, device)

@@ -19,6 +19,7 @@ export const mockJobs: Job[] = [
     finished_at: null,
     progress: {
       phase: 'training',
+      steps_per_epoch: 500,
       step: 450,
       total_steps: 2000,
       epoch: 1,

@@ -157,7 +157,7 @@ def run_smoke(
     emitter = Emitter(path=out / "events.jsonl", listeners=[on_event])
     cuda = torch.cuda.is_available() and (device is None or device.startswith("cuda"))
     if cuda:
-        torch.cuda.reset_peak_memory_stats()
+        torch.cuda.reset_peak_memory_stats(device)
 
     trainer = Trainer(scfg, device=device, emitter=emitter)
     try:
@@ -165,7 +165,7 @@ def run_smoke(
         trainer.prepare()
         report["timings_s"]["prepare"] = round(time.perf_counter() - t0, 2)
         if cuda:
-            report["memory_mb"]["after_load"] = round(torch.cuda.memory_allocated() / 2**20)
+            report["memory_mb"]["after_load"] = round(torch.cuda.memory_allocated(trainer.device) / 2**20)
         loaded = trainer.loaded
         report["device"] = str(trainer.device)
         report["family"] = trainer.family.spec.name
@@ -222,7 +222,7 @@ def run_smoke(
         tensors, meta = load_adapter_file(path)
         prefix = trainer.family.spec.adapter_prefix + "_"
         bad = [k for k in tensors if not k.startswith(prefix)]
-        modules = {k.rsplit(".", 1)[0] for k in tensors}
+        modules = {k.partition(".")[0] for k in tensors}
         report["export"] = {
             "path": str(path),
             "tensors": len(tensors),
@@ -241,8 +241,10 @@ def run_smoke(
             f"{len(modules)} modules on disk vs {len(trainer.adapters.layers)} injected",
         )
         if cuda:
-            report["memory_mb"]["peak"] = round(torch.cuda.max_memory_allocated() / 2**20)
-            report["memory_mb"]["peak_reserved"] = round(torch.cuda.max_memory_reserved() / 2**20)
+            report["memory_mb"]["peak"] = round(torch.cuda.max_memory_allocated(trainer.device) / 2**20)
+            report["memory_mb"]["peak_reserved"] = round(
+                torch.cuda.max_memory_reserved(trainer.device) / 2**20
+            )
         report["ok"] = all(c["ok"] for c in report["checks"])
     except Exception as e:  # noqa: BLE001
         import traceback

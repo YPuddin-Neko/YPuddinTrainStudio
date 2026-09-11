@@ -1,14 +1,15 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { buildFingerprint } from './buildFingerprint.ts';
 
 // https://vitejs.dev/config/
-export default defineConfig({
-  plugins: [react()],
+export default defineConfig(({ mode }) => ({
+  plugins: [react(), buildFingerprint()],
   server: {
     port: 3000,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8765',
+        target: loadEnv(mode, '.', '').VITE_BACKEND_URL || 'http://127.0.0.1:8765',
         changeOrigin: true,
         ws: true,
       },
@@ -32,4 +33,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

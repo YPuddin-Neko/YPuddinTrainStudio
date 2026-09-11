@@ -1,8 +1,9 @@
+import { mergeJobEvent } from '../../utils/jobs';
 import React from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { EChart } from '../../components/EChart';
-import { apiClient } from '../../api/client';
+import { apiClient, apiUrl } from '../../api/client';
 import { Job, JobMetrics, JobSample, JobCheckpoint, JobLogLine } from '../../api/types';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
@@ -16,8 +17,9 @@ import {
   CheckCircle2,
   Loader2,
 } from 'lucide-react';
-import { shapeValidationSeries, mergeValidationPoint, appendCapped } from '../../utils/metrics';
+import { shapeValidationSeries, mergeValidationPoint, appendCapped, smoothLoss, appendMetricStep } from '../../utils/metrics';
 import { formatBytes, formatBytesMB, formatEta, formatTime } from '../../utils/format';
+import { formatApiError } from '../../utils/errors';
 
 const LR_COLORS = ['#a78bfa', '#f59e0b', '#22d3ee', '#fb7185', '#84cc16', '#e879f9'];
 
@@ -56,6 +58,9 @@ function logLevelColor(level: string): string {
 export default function JobDetail() {
   const { id } = useParams<{ id: string }>();
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const [actionError, setActionError] = React.useState('');
+  const [resuming, setResuming] = React.useState(false);
 
   const [job, setJob] = React.useState<Job | null>(null);
   const [metrics, setMetrics] = React.useState<JobMetrics | null>(null);
@@ -73,42 +78,41 @@ export default function JobDetail() {
 
   const logContainerRef = React.useRef<HTMLDivElement>(null);
 
-  // 1. 初始化数据加载
+  // Reset route-specific state and ignore responses from a previous task.
   React.useEffect(() => {
     if (!id) return;
-    apiClient.get<Job>(`/jobs/${id}`).then(setJob).catch(console.error);
-    apiClient.get<JobMetrics>(`/jobs/${id}/metrics`).then(setMetrics).catch(console.error);
-    apiClient.get<JobSample[]>(`/jobs/${id}/samples`).then(setSamples).catch(console.error);
-    apiClient.get<JobCheckpoint[]>(`/jobs/${id}/checkpoints`).then(setCheckpoints).catch(console.error);
-    apiClient.get<{ lines: JobLogLine[] }>(`/jobs/${id}/log`).then((r) => setLogs(r.lines || [])).catch(console.error);
-    apiClient.get<any>(`/jobs/${id}/config`).then(setConfigSnapshot).catch(console.error);
+    const controller = new AbortController();
+    const options = { signal: controller.signal };
+    const ignoreAbort = (error: Error) => { if (error.name !== 'AbortError') console.error(error); };
+    setJob(null); setMetrics(null); setSamples([]); setCheckpoints([]); setLogs([]); setConfigSnapshot(null); setSampleProgress(null);
+    apiClient.get<Job>(`/jobs/${id}`, options).then(setJob).catch(ignoreAbort);
+    apiClient.get<JobMetrics>(`/jobs/${id}/metrics`, options).then(setMetrics).catch(ignoreAbort);
+    apiClient.get<JobSample[]>(`/jobs/${id}/samples`, options).then(setSamples).catch(ignoreAbort);
+    apiClient.get<JobCheckpoint[]>(`/jobs/${id}/checkpoints`, options).then(setCheckpoints).catch(ignoreAbort);
+    apiClient.get<{ lines: JobLogLine[] }>(`/jobs/${id}/log`, options).then((r) => setLogs(r.lines || [])).catch(ignoreAbort);
+    apiClient.get<any>(`/jobs/${id}/config`, options).then(setConfigSnapshot).catch(ignoreAbort);
+    return () => controller.abort();
   }, [id]);
 
   // 2. SSE 增量监听
   useEventStream(EVENT_TYPES.JOB_STATE, (data: any) => {
     if (data.job_id === id) {
-      setJob((prev) => (prev ? { ...prev, status: data.status, progress: data.progress || prev.progress } : null));
+      setJob((prev) => prev ? mergeJobEvent(prev, data) : null);
     }
   });
 
   useEventStream(EVENT_TYPES.JOB_STEP, (data: any) => {
     if (data.job_id === id) {
-      setMetrics((prev) => {
-        if (!prev) return prev;
-        // 去重：SSE 重放/重连可能带来历史 step，仅追加更新的 step
-        const lastStep = prev.steps.length > 0 ? prev.steps[prev.steps.length - 1] : -1;
-        if (typeof data.step !== 'number' || data.step <= lastStep) return prev;
-        return {
-          ...prev,
-          steps: [...prev.steps, data.step],
-          loss: [...prev.loss, data.loss],
-          loss_ema: [...prev.loss_ema, data.loss_ema],
-          grad_norm: [...prev.grad_norm, data.grad_norm || 0],
-          vram_mb: [...prev.vram_mb, data.vram_mb || 0],
-          it_s: [...prev.it_s, data.it_s || 0],
-        };
-      });
+      setJob((prev) => prev ? mergeJobEvent(prev, data) : null);
+      setMetrics((prev) => prev ? appendMetricStep(prev, data) : prev);
     }
+  });
+
+  useEventStream(EVENT_TYPES.JOB_PHASE, (data: any) => {
+    if (data.job_id === id) setJob((prev) => prev ? mergeJobEvent(prev, data) : null);
+  });
+  useEventStream(EVENT_TYPES.JOB_CHECKPOINT, (data: any) => {
+    if (data.job_id === id) apiClient.get<JobCheckpoint[]>(`/jobs/${id}/checkpoints`).then(setCheckpoints).catch(console.error);
   });
 
   useEventStream(EVENT_TYPES.JOB_SAMPLE, (sample: JobSample & { job_id?: string }) => {
@@ -172,19 +176,22 @@ export default function JobDetail() {
 
   const stepLabel = t('job.step');
   const epochLabel = t('job.epoch');
-  const xAxisName = xAxisMode === 'step' ? stepLabel : epochLabel;
+  const stepsPerEpoch = job?.progress?.steps_per_epoch;
+  const useEpoch = xAxisMode === 'epoch' && !!stepsPerEpoch;
+  const xAxisName = useEpoch ? epochLabel : stepLabel;
 
   // 图 1：Loss（原始 + EMA + Grad Norm + 各参数组 lr）
   const lossChartOption = React.useMemo(() => {
     if (!metrics || metrics.steps.length === 0) return {};
-    const steps = metrics.steps;
+    const steps = useEpoch && stepsPerEpoch ? metrics.steps.map((step) => step / stepsPerEpoch) : metrics.steps;
+    const smoothed = smoothLoss(metrics.loss, emaAlpha);
     const lrSeries = Object.entries(metrics.lr || {}).map(([group, values], i) => ({
       name: `lr:${group}`,
       type: 'line' as const,
       yAxisIndex: 1,
       showSymbol: false,
       sampling: 'lttb' as const,
-      data: (values as number[]).map((v, idx) => [steps[idx], v] as [number, number]),
+      data: values.map((v, idx) => [steps[idx], v] as [number, number]),
       lineStyle: { width: 1, type: 'dashed' as const, color: LR_COLORS[i % LR_COLORS.length] },
     }));
     return {
@@ -205,7 +212,7 @@ export default function JobDetail() {
         },
         {
           name: 'Loss (EMA)', type: 'line', showSymbol: false, sampling: 'lttb',
-          data: steps.map((s, i) => [s, metrics.loss_ema[i]] as [number, number | null]),
+          data: steps.map((s, i) => [s, smoothed[i]] as [number, number | null]),
           lineStyle: { width: 2, color: '#2563eb' },
         },
         {
@@ -216,7 +223,7 @@ export default function JobDetail() {
         ...lrSeries,
       ],
     };
-  }, [metrics, xAxisName]);
+  }, [metrics, xAxisName, useEpoch, stepsPerEpoch, emaAlpha]);
 
   // 图 2：Validation（每个固定时间步一条线 + 均值）
   const validationChartOption = React.useMemo(() => {
@@ -241,10 +248,17 @@ export default function JobDetail() {
     };
   }, [metrics, stepLabel]);
 
-  // 图 3：吞吐与显存（it/s + VRAM）
+  const vramMetric = job?.progress?.vram_metric ?? metrics?.vram_metric;
+  const currentAllocated = vramMetric === 'current_allocated';
+  const chartVramMetric = metrics?.vram_metric ?? vramMetric;
+  const memorySeriesLabel = chartVramMetric === 'current_allocated'
+    ? `${t('job.currentTrainingAllocated')} (GB)`
+    : chartVramMetric === 'peak_allocated' ? `${t('job.vramPeak')} (GB)` : 'VRAM (GB)';
+
+  // Memory values retain the backend metric: current MPS allocation or CUDA peak.
   const perfChartOption = React.useMemo(() => {
     if (!metrics || metrics.steps.length === 0) return {};
-    const steps = metrics.steps;
+    const steps = useEpoch && stepsPerEpoch ? metrics.steps.map((step) => step / stepsPerEpoch) : metrics.steps;
     return {
       tooltip: { trigger: 'axis' },
       legend: { textStyle: { color: '#888' } },
@@ -252,7 +266,7 @@ export default function JobDetail() {
       xAxis: { type: 'value', name: xAxisName, splitLine: { show: false } },
       yAxis: [
         { type: 'value', name: 'it/s', scale: true, splitLine: { lineStyle: { color: '#33333320' } } },
-        { type: 'value', name: 'VRAM (GB)', scale: true, splitLine: { show: false } },
+        { type: 'value', name: memorySeriesLabel, scale: true, splitLine: { show: false } },
       ],
       dataZoom: [{ type: 'inside' }, { type: 'slider' }],
       series: [
@@ -262,13 +276,13 @@ export default function JobDetail() {
           lineStyle: { width: 1.5, color: '#10b981' },
         },
         {
-          name: 'VRAM (GB)', type: 'line', yAxisIndex: 1, showSymbol: false, sampling: 'lttb',
-          data: steps.map((s, i) => [s, Number(((metrics.vram_mb[i] ?? 0) / 1024).toFixed(2))] as [number, number]),
+          name: memorySeriesLabel, type: 'line', yAxisIndex: 1, showSymbol: false, sampling: 'lttb',
+          data: steps.map((s, i) => [s, metrics.vram_mb[i] == null ? null : metrics.vram_mb[i]! / 1024] as [number, number | null]),
           lineStyle: { width: 1.2, color: '#ec4899' },
         },
       ],
     };
-  }, [metrics, xAxisName]);
+  }, [metrics, xAxisName, useEpoch, stepsPerEpoch, memorySeriesLabel]);
 
   const filteredLogs = logs.filter((l) => logFilter === 'all' || l.level === logFilter);
 
@@ -279,7 +293,8 @@ export default function JobDetail() {
     training: t('job.phaseTraining', '训练'),
     finalizing: t('job.phaseFinalizing', '收尾'),
   };
-  const rawPhase = job?.progress?.phase || '';
+  const phase = job?.progress?.phase || '';
+  const rawPhase = ['starting', 'loading', 'indexing', 'injecting', 'prepared'].includes(phase) ? 'preparing' : phase.startsWith('caching_') ? 'caching' : phase;
   const currentPhaseIndex = PHASE_KEYS.findIndex((k) => k === rawPhase);
 
   // 任务状态徽章（文案 + 颜色）
@@ -323,8 +338,23 @@ export default function JobDetail() {
     { key: 'config', icon: Code, label: t('job.tabConfig') },
   ] as const;
 
+  const resumeCheckpoint = async (checkpoint: JobCheckpoint) => {
+    if (!job || !configSnapshot || resuming) return;
+    setResuming(true); setActionError('');
+    try {
+      const next = await apiClient.post<Job>('/jobs', {
+        type: 'train', project_id: job.project_id, name: `${job.name} · ${t('job.continueTraining')} ${checkpoint.step}`,
+        config: { ...configSnapshot, checkpoint: { ...configSnapshot.checkpoint, resume: checkpoint.path } },
+      }, { silent: true });
+      navigate(`/jobs/${next.id}`);
+    } catch (err: unknown) { setActionError(formatApiError(err)); }
+    finally { setResuming(false); }
+  };
+
   return (
     <div className="space-y-6" data-testid="job-detail-page">
+      {job?.project_id && <Link to={`/projects/${job.project_id}?step=results`} className="inline-flex text-sm text-blue-600 hover:underline">← {t('projects.title')} · {t('projectDetail.jobsTab', '训练任务')}</Link>}
+      {(actionError || job?.error) && <div role="alert" className="whitespace-pre-line break-words rounded bg-red-50 text-red-700 p-3 dark:bg-red-950 dark:text-red-300">{actionError || job?.error}</div>}
       {/* 1. 头部指标与阶段时间线 */}
       <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 space-y-5">
         <div className="flex flex-wrap justify-between items-center gap-4">
@@ -349,7 +379,7 @@ export default function JobDetail() {
             label={t('job.speed')}
             value={job?.progress?.it_s != null ? `${Number(job.progress.it_s).toFixed(2)} it/s` : '--'}
           />
-          <StatCard label={t('job.vramPeak')} value={formatBytesMB(job?.progress?.vram_peak_mb)} />
+          <StatCard label={t(currentAllocated ? 'job.currentAllocated' : 'job.vramPeak')} value={formatBytesMB(job?.progress?.vram_peak_mb)} />
           <StatCard label={t('job.eta')} value={formatEta(job?.progress?.eta_s)} />
         </div>
 
@@ -362,7 +392,7 @@ export default function JobDetail() {
                 title={rawPhase || undefined}
               >
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>{t('job.phaseInProgress', '进行中')}</span>
+                <span>{t(`phase.${phase}`, t('job.phaseInProgress', '进行中'))}</span>
               </span>
               <div className="flex-1 h-0.5 bg-slate-200 dark:bg-slate-700 mx-1" />
             </>
@@ -433,7 +463,7 @@ export default function JobDetail() {
                 {stepLabel}
               </button>
               <button
-                onClick={() => setXAxisMode('epoch')}
+                onClick={() => setXAxisMode('epoch')} disabled={!stepsPerEpoch} title={!stepsPerEpoch ? t('job.epochUnavailable') : undefined}
                 className={`px-2.5 py-1 rounded ${xAxisMode === 'epoch' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-700'}`}
               >
                 {epochLabel}
@@ -442,6 +472,7 @@ export default function JobDetail() {
             <div className="flex items-center space-x-2 text-xs text-slate-500">
               <span>{t('job.emaAlpha')}:</span>
               <input
+                aria-label={t('job.emaAlpha')}
                 type="range"
                 min="0.1"
                 max="0.99"
@@ -471,7 +502,7 @@ export default function JobDetail() {
               )}
 
               <div className="pt-4 border-t dark:border-slate-700">
-                <div className="text-xs text-slate-400 mb-2">{t('job.perfTitle')}</div>
+                <div className="text-xs text-slate-400 mb-2">{t(chartVramMetric === 'current_allocated' ? 'job.currentMemoryPerfTitle' : 'job.perfTitle')}</div>
                 <EChart option={perfChartOption} style={{ height: 280 }} />
               </div>
             </>
@@ -527,15 +558,20 @@ export default function JobDetail() {
                 {checkpoints.map((cp, idx) => (
                   <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-750">
                     <td className="p-4 font-semibold font-mono">{cp.step}</td>
-                    <td className="p-4">{checkpointKindLabel(cp.kind)}</td>
+                    <td className="p-4">{checkpointKindLabel(cp.kind)}{cp.ema ? ' (EMA)' : ''}</td>
                     <td className="p-4 font-mono text-xs text-slate-500">{cp.path}</td>
                     <td className="p-4 font-mono">{formatBytes(cp.size)}</td>
                     <td className="p-4 text-xs text-slate-500 whitespace-nowrap">{formatTime(cp.created_at)}</td>
                     <td className="p-4 text-right space-x-2">
-                      <button className="px-2.5 py-1 text-xs bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 rounded inline-flex items-center space-x-1">
-                        <Download className="w-3.5 h-3.5" />
-                        <span>{t('job.download')}</span>
-                      </button>
+                      {cp.kind === 'full' ? (
+                        <button disabled={resuming || !configSnapshot} onClick={() => resumeCheckpoint(cp)} className="px-2.5 py-1 text-xs bg-blue-600 text-white rounded disabled:opacity-50">
+                          {t('job.continueTraining')}
+                        </button>
+                      ) : cp.artifact_id ? (
+                        <a href={apiUrl(`/artifacts/${cp.artifact_id}/download`)} className="px-2.5 py-1 text-xs bg-slate-100 dark:bg-slate-700 rounded inline-flex items-center space-x-1">
+                          <Download className="w-3.5 h-3.5" /><span>{t('job.download')}</span>
+                        </a>
+                      ) : <span className="text-xs text-slate-400">{t('job.downloadUnavailable')}</span>}
                     </td>
                   </tr>
                 ))}

@@ -21,6 +21,9 @@ i18n
     lng: savedLng || 'zh-CN',
     interpolation: {
       escapeValue: false,
+      // 本项目 locales 全部使用单花括号插值（{name}），此处全局对齐
+      prefix: '{',
+      suffix: '}',
     },
   });
 

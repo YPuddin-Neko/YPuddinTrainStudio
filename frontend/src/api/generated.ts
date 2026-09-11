@@ -141,6 +141,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/config/defaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Config Defaults */
+        get: operations["config_defaults_api_config_defaults_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/config/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Config Import */
+        post: operations["config_import_api_config_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/config/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Config Export */
+        post: operations["config_export_api_config_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/config/validate": {
         parameters: {
             query?: never;
@@ -281,7 +332,8 @@ export interface paths {
         delete: operations["delete_model_api_models__model_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Patch Model */
+        patch: operations["patch_model_api_models__model_id__patch"];
         trace?: never;
     };
     "/api/models/scan": {
@@ -385,6 +437,23 @@ export interface paths {
         put?: never;
         /** Add Dataset */
         post: operations["add_dataset_api_projects__pid__datasets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{pid}/datasets/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Dataset */
+        post: operations["upload_dataset_api_projects__pid__datasets_upload_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -755,10 +824,181 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/models/downloads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Downloads */
+        get: operations["list_downloads_api_models_downloads_get"];
+        put?: never;
+        /** Start Download */
+        post: operations["start_download_api_models_downloads_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/models/downloads/{download_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Download */
+        post: operations["cancel_download_api_models_downloads__download_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AdapterConfig */
+        AdapterConfig: {
+            /**
+             * Algo
+             * @description 适配器算法
+             * @default lokr
+             * @enum {string}
+             */
+            algo: "lora" | "lokr" | "loha" | "full";
+            /**
+             * Rank
+             * @description 秩（LoKr 中为 W2 的低秩；'full' 表示 W2 满矩阵）
+             * @default 16
+             */
+            rank: number | "full";
+            /**
+             * Alpha
+             * @description 缩放 alpha（scale = alpha / rank）
+             * @default 16
+             */
+            alpha: number;
+            /**
+             * Factor
+             * @description LoKr 因子：-1 平衡分解；f>0 时小因子 W1 的边长为 f
+             * @default -1
+             */
+            factor: number;
+            /**
+             * Decompose Both
+             * @description LoKr：W1 也做低秩分解
+             * @default false
+             */
+            decompose_both: boolean;
+            /**
+             * Rs Lora
+             * @description rsLoRA：scale = alpha / sqrt(rank)
+             * @default false
+             */
+            rs_lora: boolean;
+            /**
+             * Dora
+             * @description DoRA 权重分解（幅度/方向）
+             * @default false
+             */
+            dora: boolean;
+            /**
+             * Init
+             * @description 初始化：default（一侧置零）/ scalar（全随机 + 可训练标量从 0 起）
+             * @default default
+             * @enum {string}
+             */
+            init: "default" | "scalar";
+            /**
+             * Dropout
+             * @description 对适配器输出的 dropout
+             * @default 0
+             */
+            dropout: number;
+            /**
+             * Rank Dropout
+             * @description 秩轴 dropout
+             * @default 0
+             */
+            rank_dropout: number;
+            /**
+             * Module Dropout
+             * @description 整模块跳过概率
+             * @default 0
+             */
+            module_dropout: number;
+            /**
+             * Preset
+             * @description 族内目标预设（attn-mlp / attn-only / full-linear / ...）
+             * @default attn-mlp
+             */
+            preset: string;
+            /**
+             * Rules
+             * @description 按序匹配的覆盖规则
+             */
+            rules?: components["schemas"]["AdapterRule"][];
+            /**
+             * Mode
+             * @description 执行路径（auto 按算法与底模精度选择）
+             * @default auto
+             * @enum {string}
+             */
+            mode: "auto" | "bypass" | "merged";
+            /**
+             * Param Dtype
+             * @description 适配器参数精度（主权重）
+             * @default fp32
+             * @enum {string}
+             */
+            param_dtype: "fp32" | "bf16";
+            /**
+             * Lr Scale
+             * @description 按参数类别的学习率倍率，如 {'up': 16}（LoRA+）或 {'w1': 0.5}
+             */
+            lr_scale?: {
+                [key: string]: number;
+            };
+            /**
+             * Resume Weights
+             * @description 从已有适配器权重热启动
+             */
+            resume_weights?: string | null;
+        };
+        /** AdapterRule */
+        AdapterRule: {
+            /**
+             * Match
+             * @description 模块名匹配：glob，或 're:' 前缀正则
+             */
+            match: string;
+            /**
+             * Algo
+             * @description 覆盖算法；none 表示排除
+             */
+            algo?: ("lora" | "lokr" | "loha" | "full" | "none") | null;
+            /** Rank */
+            rank?: number | "full" | null;
+            /** Alpha */
+            alpha?: number | null;
+            /** Factor */
+            factor?: number | null;
+            /**
+             * Lr
+             * @description 该组参数的学习率（覆盖 optimizer.lr）
+             */
+            lr?: number | null;
+            /** Dropout */
+            dropout?: number | null;
+            /** Rank Dropout */
+            rank_dropout?: number | null;
+        };
         /** Artifact */
         Artifact: {
             /** Id */
@@ -817,6 +1057,122 @@ export interface components {
             /** Caption */
             caption: string;
         };
+        /** CaptionConfig */
+        CaptionConfig: {
+            /**
+             * Prefix
+             * @description 加在 caption 前的文本
+             * @default
+             */
+            prefix: string;
+            /**
+             * Suffix
+             * @description 加在 caption 后的文本
+             * @default
+             */
+            suffix: string;
+            /**
+             * Trigger Word
+             * @description 触发词：放在最前且不参与洗牌/丢弃
+             */
+            trigger_word?: string | null;
+            /**
+             * Keep Tokens
+             * @description 前 N 个 tag 固定不洗牌
+             * @default 0
+             */
+            keep_tokens: number;
+            /**
+             * Shuffle
+             * @description 随机打乱 tag 顺序
+             * @default false
+             */
+            shuffle: boolean;
+            /**
+             * Tag Dropout
+             * @description 每个 tag 被丢弃的概率
+             * @default 0
+             */
+            tag_dropout: number;
+            /**
+             * Caption Dropout
+             * @description 整条 caption 置空的概率（无条件训练，服务于 CFG）
+             * @default 0
+             */
+            caption_dropout: number;
+            /**
+             * Separator
+             * @description tag 分隔符
+             * @default ,
+             */
+            separator: string;
+            /**
+             * Wildcard
+             * @description 支持 {a|b} 通配符随机选择
+             * @default false
+             */
+            wildcard: boolean;
+            /**
+             * Cache Variants
+             * @description 文本编码为 cached 时，每张图预缓存的 caption 随机变体数（仅 shuffle / tag_dropout / wildcard 生效时有意义）
+             * @default 8
+             */
+            cache_variants: number;
+        };
+        /** CheckpointConfig */
+        CheckpointConfig: {
+            /**
+             * Output Dir
+             * @description 输出目录
+             * @default outputs/run
+             */
+            output_dir: string;
+            /**
+             * Name
+             * @description 产物文件名前缀
+             * @default lora
+             */
+            name: string;
+            /**
+             * Save Every Steps
+             * @description 每 N 步保存权重
+             */
+            save_every_steps?: number | null;
+            /**
+             * Save Every Epochs
+             * @description 每 N 轮保存权重
+             * @default 1
+             */
+            save_every_epochs: number | null;
+            /**
+             * Save State Every Steps
+             * @description 每 N 步保存完整可恢复状态
+             */
+            save_state_every_steps?: number | null;
+            /**
+             * Keep Last N
+             * @description 仅保留最近 N 组按步保存的权重（普通/EMA 成组；轮次与最终产物保留）
+             */
+            keep_last_n?: number | null;
+            /**
+             * Save Dtype
+             * @description 保存精度
+             * @default bf16
+             * @enum {string}
+             */
+            save_dtype: "bf16" | "fp16" | "fp32";
+            /**
+             * Save On Finish
+             * @description 结束时保存最终权重
+             * @default true
+             */
+            save_on_finish: boolean;
+            /**
+             * Resume
+             * @description 从完整状态目录恢复
+             */
+            resume?: string | null;
+        };
         /** ConfigBody */
         ConfigBody: {
             /** Config */
@@ -834,6 +1190,35 @@ export interface components {
             msg: string;
         } & {
             [key: string]: unknown;
+        };
+        /** ConfigExportBody */
+        ConfigExportBody: {
+            /** Config */
+            config: {
+                [key: string]: unknown;
+            };
+            /**
+             * Format
+             * @default toml
+             * @enum {string}
+             */
+            format: "toml" | "json";
+        };
+        /** ConfigImportBody */
+        ConfigImportBody: {
+            /** Text */
+            text: string;
+            /**
+             * Format
+             * @default toml
+             * @enum {string}
+             */
+            format: "toml" | "json";
+        };
+        /** ConfigText */
+        ConfigText: {
+            /** Text */
+            text: string;
         };
         /** ConfigWarning */
         ConfigWarning: {
@@ -875,6 +1260,89 @@ export interface components {
             prior_weight: number;
             /** Class Prompt */
             class_prompt?: string | null;
+        };
+        /** DatasetConfig */
+        DatasetConfig: {
+            /**
+             * Sources
+             * @description 数据源列表
+             */
+            sources?: components["schemas"]["DatasetSourceConfig"][];
+            /**
+             * Resolutions
+             * @description 训练分辩率（基准边长，可多个）
+             * @default [
+             *       1024
+             *     ]
+             */
+            resolutions: number[];
+            /**
+             * Aspect Ratio Limit
+             * @description 分桶允许的最大长宽比
+             * @default 2
+             */
+            aspect_ratio_limit: number;
+            /**
+             * Area Tolerance
+             * @description 分桶面积容差（相对基准面积）
+             * @default 0.1
+             */
+            area_tolerance: number;
+            /**
+             * Bucket Step
+             * @description 分桶网格步长（默认 64；必须是模型对齐值的倍数）
+             */
+            bucket_step?: number | null;
+            /**
+             * Bucket No Upscale
+             * @description 不放大小图（按原尺寸就近分桶）
+             * @default false
+             */
+            bucket_no_upscale: boolean;
+            /**
+             * Batch Size
+             * @description 每个微批的图片数
+             * @default 1
+             */
+            batch_size: number;
+            /** @description caption 处理 */
+            caption?: components["schemas"]["CaptionConfig"];
+            /**
+             * Flip
+             * @description 随机水平翻转（缓存双份 latent）
+             * @default false
+             */
+            flip: boolean;
+            /**
+             * Masked Loss
+             * @description 用 .mask.png 或 alpha 通道加权损失
+             * @default false
+             */
+            masked_loss: boolean;
+            /**
+             * Num Workers
+             * @description DataLoader 进程数（Windows 建议 0）
+             * @default 2
+             */
+            num_workers: number;
+            /**
+             * Cache Dir
+             * @description 缓存目录（默认 <output_dir>/cache）
+             */
+            cache_dir?: string | null;
+            /**
+             * Cache Latents
+             * @description 预编码并缓存 latents
+             * @default true
+             */
+            cache_latents: boolean;
+            /**
+             * Text Encoding
+             * @description 文本编码：online 每步在线编码（支持 caption 增强），cached 预缓存后卸载编码器
+             * @default auto
+             * @enum {string}
+             */
+            text_encoding: "auto" | "online" | "cached";
         };
         /** DatasetImage */
         DatasetImage: {
@@ -928,6 +1396,50 @@ export interface components {
             created_at: number;
         } & {
             [key: string]: unknown;
+        };
+        /** DatasetSourceConfig */
+        DatasetSourceConfig: {
+            /**
+             * Path
+             * @description 图片目录（递归）
+             */
+            path: string;
+            /**
+             * Repeats
+             * @description 重复次数
+             * @default 1
+             */
+            repeats: number;
+            /**
+             * Caption Ext
+             * @description caption 文件扩展名
+             * @default .txt
+             */
+            caption_ext: string;
+            /**
+             * Is Reg
+             * @description 正则集（先验保持）
+             * @default false
+             */
+            is_reg: boolean;
+            /**
+             * Prior Weight
+             * @description 正则集损失权重
+             * @default 1
+             */
+            prior_weight: number;
+            /**
+             * Class Prompt
+             * @description 缺少 caption 文件时使用的默认 caption
+             */
+            class_prompt?: string | null;
+            /** @description 覆盖数据集级 caption 设置 */
+            caption?: components["schemas"]["CaptionConfig"] | null;
+            /**
+             * Resolutions
+             * @description 覆盖数据集级分辩率列表
+             */
+            resolutions?: number[] | null;
         };
         /** DatasetStats */
         DatasetStats: {
@@ -1075,6 +1587,12 @@ export interface components {
         GpuInfo: {
             /** Index */
             index: number;
+            /**
+             * Kind
+             * @default cuda
+             * @enum {string}
+             */
+            kind: "cuda" | "mps";
             /** Name */
             name: string;
             /** Total Mb */
@@ -1086,6 +1604,12 @@ export interface components {
         GpuStats: {
             /** Index */
             index: number;
+            /**
+             * Kind
+             * @default cuda
+             * @enum {string}
+             */
+            kind: "cuda" | "mps";
             /** Name */
             name: string;
             /** Util Pct */
@@ -1096,6 +1620,16 @@ export interface components {
             mem_total_mb?: number | null;
             /** Temp C */
             temp_c?: number | null;
+            /** Power W */
+            power_w?: number | null;
+            /** Power Limit W */
+            power_limit_w?: number | null;
+            /** Telemetry Source */
+            telemetry_source?: string | null;
+            /** Telemetry Note */
+            telemetry_note?: string | null;
+            /** Cuda Available */
+            cuda_available?: boolean | null;
         } & {
             [key: string]: unknown;
         };
@@ -1114,6 +1648,11 @@ export interface components {
             torch: string | null;
             /** Cuda */
             cuda: string | null;
+            /**
+             * Mps
+             * @default false
+             */
+            mps: boolean;
             /** Gpus */
             gpus: components["schemas"]["GpuInfo"][];
             /** Families */
@@ -1208,6 +1747,11 @@ export interface components {
             created_at: number;
             /** Artifact Id */
             artifact_id?: string | null;
+            /**
+             * Ema
+             * @default false
+             */
+            ema: boolean;
         } & {
             [key: string]: unknown;
         };
@@ -1249,6 +1793,8 @@ export interface components {
             grad_norm: (number | null)[];
             /** Vram Mb */
             vram_mb: (number | null)[];
+            /** Vram Metric */
+            vram_metric?: string | null;
             /** It S */
             it_s: (number | null)[];
             /** Validation */
@@ -1294,6 +1840,14 @@ export interface components {
             it_s?: number | null;
             /** Vram Peak Mb */
             vram_peak_mb?: number | null;
+            /** Vram Metric */
+            vram_metric?: string | null;
+            /** Device */
+            device?: string | null;
+            /** Estimated Peak Mb */
+            estimated_peak_mb?: number | null;
+            /** Wait Reason */
+            wait_reason?: string | null;
         } & {
             [key: string]: unknown;
         };
@@ -1329,6 +1883,127 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** LoggingConfig */
+        LoggingConfig: {
+            /**
+             * Tensorboard
+             * @description 写 TensorBoard 日志
+             * @default false
+             */
+            tensorboard: boolean;
+            /** @description Weights & Biases */
+            wandb?: components["schemas"]["WandbConfig"] | null;
+            /**
+             * Events Path
+             * @description 事件 JSONL 文件（默认 <output_dir>/events.jsonl）
+             */
+            events_path?: string | null;
+            /**
+             * Level
+             * @description 日志级别
+             * @default info
+             * @enum {string}
+             */
+            level: "debug" | "info" | "warning";
+        };
+        /** LoopConfig */
+        LoopConfig: {
+            /**
+             * Max Steps
+             * @description 最大优化步数（与 epochs 至少填一个，先到者停止）
+             */
+            max_steps?: number | null;
+            /**
+             * Epochs
+             * @description 训练轮数
+             * @default 10
+             */
+            epochs: number | null;
+            /**
+             * Grad Accum
+             * @description 梯度累积微批数
+             * @default 1
+             */
+            grad_accum: number;
+            /**
+             * Mixed Precision
+             * @description 混合精度
+             * @default bf16
+             * @enum {string}
+             */
+            mixed_precision: "bf16" | "fp16" | "no";
+            /**
+             * Seed
+             * @description 随机种子
+             * @default 42
+             */
+            seed: number;
+            /**
+             * Ema
+             * @description 维护适配器权重的 EMA（CPU）
+             * @default false
+             */
+            ema: boolean;
+            /**
+             * Ema Decay
+             * @description EMA 衰减
+             * @default 0.999
+             */
+            ema_decay: number;
+            /**
+             * Nan Skip Limit
+             * @description 连续非有限损失跳过次数上限，超过报错
+             * @default 50
+             */
+            nan_skip_limit: number;
+            /**
+             * Log Every
+             * @description 每 N 步发一次 step 事件
+             * @default 1
+             */
+            log_every: number;
+        };
+        /** MemoryConfig */
+        MemoryConfig: {
+            /**
+             * Base Precision
+             * @description 冻结底模的存储精度（fp8 带逐张量缩放，需 CUDA）
+             * @default auto
+             * @enum {string}
+             */
+            base_precision: "auto" | "bf16" | "fp16" | "fp32" | "fp8_e4m3" | "fp8_e5m2";
+            /**
+             * Blocks To Swap
+             * @description 换出到 CPU pinned 内存的 block 数
+             * @default 0
+             */
+            blocks_to_swap: number;
+            /**
+             * Activation Checkpointing
+             * @description 激活检查点：block 逐块重算；unsloth 额外把块输入卸载到 CPU
+             * @default none
+             * @enum {string}
+             */
+            activation_checkpointing: "none" | "block" | "unsloth";
+            /**
+             * Offload Text Encoder
+             * @description 不用时把文本编码器放到 CPU
+             * @default false
+             */
+            offload_text_encoder: boolean;
+            /**
+             * Compile
+             * @description 逐 block torch.compile
+             * @default false
+             */
+            compile: boolean;
+            /**
+             * Allow Tf32
+             * @description 允许 TF32 matmul
+             * @default true
+             */
+            allow_tf32: boolean;
+        };
         /** ModelAsset */
         ModelAsset: {
             /** Id */
@@ -1354,10 +2029,16 @@ export interface components {
         };
         /** ModelBody */
         ModelBody: {
-            /** Family */
-            family: string;
-            /** Kind */
-            kind: string;
+            /**
+             * Family
+             * @enum {string}
+             */
+            family: "anima" | "krea2" | "toy";
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "dit" | "text_encoder" | "vae" | "tokenizer";
             /** Path */
             path: string;
             /** Dtype */
@@ -1368,6 +2049,236 @@ export interface components {
              */
             is_default: boolean;
         };
+        /** ModelConfig */
+        ModelConfig: {
+            /**
+             * Family
+             * @description 模型族（anima：Anima 2B；krea2：Krea 2 Raw 12.9B）
+             * @default anima
+             * @enum {string}
+             */
+            family: "anima" | "krea2" | "toy";
+            /**
+             * Dit Path
+             * @description DiT 主干权重（safetensors；支持官方 bf16 与 ComfyUI fp8_scaled 文件）
+             */
+            dit_path?: string | null;
+            /**
+             * Text Encoder Path
+             * @description 文本编码器（Anima：Qwen3-0.6B；Krea 2：Qwen3-VL-4B-Instruct）——HF 目录或单文件 safetensors
+             */
+            text_encoder_path?: string | null;
+            /**
+             * Vae Path
+             * @description VAE 权重
+             */
+            vae_path?: string | null;
+            /**
+             * Tokenizer Path
+             * @description 附加分词器目录（Anima: 旧版 T5 spiece；留空用内置）
+             */
+            tokenizer_path?: string | null;
+            /**
+             * Dtype
+             * @description 计算精度（autocast）
+             * @default bf16
+             * @enum {string}
+             */
+            dtype: "bf16" | "fp16" | "fp32";
+            /**
+             * Attention
+             * @description 注意力后端：sdpa（PyTorch 内置，自动选 flash/高效内核）；sage 需安装 sageattention，仅用于无掩码的图像自注意力
+             * @default auto
+             * @enum {string}
+             */
+            attention: "auto" | "sdpa" | "sage";
+        };
+        /** ModelDefaultPatch */
+        ModelDefaultPatch: {
+            /** Is Default */
+            is_default: boolean;
+        };
+        /** ModelDownload */
+        ModelDownload: {
+            /** Id */
+            id: string;
+            /** Family */
+            family: string;
+            /** Kind */
+            kind: string;
+            /** Source Url */
+            source_url: string;
+            /** Filename */
+            filename: string;
+            /** Target Path */
+            target_path: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "downloading" | "completed" | "failed" | "cancelled";
+            /**
+             * Downloaded Bytes
+             * @default 0
+             */
+            downloaded_bytes: number;
+            /** Total Bytes */
+            total_bytes?: number | null;
+            /** Error */
+            error?: string | null;
+            /** Model Id */
+            model_id?: string | null;
+            /** Created At */
+            created_at: number;
+            /** Finished At */
+            finished_at?: number | null;
+            /** Dtype */
+            dtype?: string | null;
+            /**
+             * Is Default
+             * @default true
+             */
+            is_default: boolean;
+        };
+        /** ModelDownloadRequest */
+        ModelDownloadRequest: {
+            /**
+             * Family
+             * @enum {string}
+             */
+            family: "anima" | "krea2";
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "dit" | "text_encoder" | "vae";
+            /** Url */
+            url?: string | null;
+            /** Repo Id */
+            repo_id?: string | null;
+            /** Filename */
+            filename?: string | null;
+            /**
+             * Revision
+             * @default main
+             */
+            revision: string;
+            /** Dtype */
+            dtype?: ("bf16" | "fp16" | "fp32" | "fp8") | null;
+            /**
+             * Is Default
+             * @default true
+             */
+            is_default: boolean;
+        };
+        /** ObjectiveConfig */
+        ObjectiveConfig: {
+            /**
+             * Timestep Sampling
+             * @description 时间步采样分布：shift = logit-normal 再做 Möbius shift（默认 3.0，与 Anima 推理的 shift 及 AnimaLoraStudio 默认一致）；logit_normal 不做 shift（sd-scripts 示例的 sigmoid）；resolution_shift 按图像 token 数动态 shift（Flux 式）
+             * @default shift
+             * @enum {string}
+             */
+            timestep_sampling: "uniform" | "logit_normal" | "shift" | "resolution_shift" | "mode" | "cosmap";
+            /**
+             * Logit Mean
+             * @description logit-normal 均值
+             * @default 0
+             */
+            logit_mean: number;
+            /**
+             * Logit Std
+             * @description logit-normal 标准差
+             * @default 1
+             */
+            logit_std: number;
+            /**
+             * Res Shift Tokens
+             * @description resolution_shift 的 token 数端点 (最小, 最大)；Flux 为 (256, 4096)，Krea 2 为 (256, 6400)
+             * @default [
+             *       256,
+             *       4096
+             *     ]
+             */
+            res_shift_tokens: [
+                number,
+                number
+            ];
+            /**
+             * Res Shift Mu
+             * @description resolution_shift 的 mu 端点 (最小 token 数处, 最大 token 数处)；实际 shift = exp(mu)
+             * @default [
+             *       0.5,
+             *       1.15
+             *     ]
+             */
+            res_shift_mu: [
+                number,
+                number
+            ];
+            /**
+             * Shift
+             * @description 常数 shift：t' = s·t / (1 + (s-1)·t)
+             * @default 3
+             */
+            shift: number;
+            /**
+             * Mode Scale
+             * @description SD3 mode 采样的 scale
+             * @default 1.29
+             */
+            mode_scale: number;
+            /**
+             * Stratified
+             * @description 批内分层抽样（降低梯度方差）
+             * @default true
+             */
+            stratified: boolean;
+            /**
+             * T Min
+             * @description 时间步下限
+             * @default 0
+             */
+            t_min: number;
+            /**
+             * T Max
+             * @description 时间步上限
+             * @default 1
+             */
+            t_max: number;
+            /**
+             * Loss
+             * @description 损失函数
+             * @default mse
+             * @enum {string}
+             */
+            loss: "mse" | "huber" | "pseudo_huber";
+            /**
+             * Huber C
+             * @description Huber delta / pseudo-Huber c
+             * @default 0.1
+             */
+            huber_c: number;
+            /**
+             * Weighting
+             * @description 按时间步的损失加权
+             * @default none
+             * @enum {string}
+             */
+            weighting: "none" | "sigma_sqrt" | "cosmap" | "snr_like" | "cosmos";
+            /**
+             * Snr Gamma
+             * @description snr_like 加权的上限 γ
+             * @default 5
+             */
+            snr_gamma: number;
+            /**
+             * Ip Noise Gamma
+             * @description 输入扰动噪声强度
+             * @default 0
+             */
+            ip_noise_gamma: number;
+        };
         /** Ok */
         Ok: {
             /**
@@ -1377,6 +2288,77 @@ export interface components {
             ok: boolean;
         } & {
             [key: string]: unknown;
+        };
+        /** OptimizerConfig */
+        OptimizerConfig: {
+            /**
+             * Type
+             * @description adamw / adamw8bit / lion / prodigy / prodigy_plus_sf / adafactor / came，或 'module.Class'
+             * @default adamw
+             */
+            type: string;
+            /**
+             * Lr
+             * @description 学习率
+             * @default 0.0001
+             */
+            lr: number;
+            /**
+             * Weight Decay
+             * @description 权重衰减
+             * @default 0.01
+             */
+            weight_decay: number;
+            /**
+             * Betas
+             * @description Adam betas
+             * @default [
+             *       0.9,
+             *       0.99
+             *     ]
+             */
+            betas: [
+                number,
+                number
+            ];
+            /**
+             * Eps
+             * @description Adam eps
+             * @default 1e-8
+             */
+            eps: number;
+            /**
+             * Args
+             * @description 透传给优化器的额外参数
+             */
+            args?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Grad Clip Norm
+             * @description 梯度范数裁剪（0 关闭）
+             * @default 1
+             */
+            grad_clip_norm: number;
+            /**
+             * Kahan
+             * @description bf16 参数的 Kahan 补偿累加
+             * @default false
+             */
+            kahan: boolean;
+            /**
+             * Fused Backward
+             * @description 逐参数在反向中即时更新并释放梯度（需 grad_accum=1）
+             * @default false
+             */
+            fused_backward: boolean;
+            /**
+             * Group Lr
+             * @description 按模块分组的学习率，如 {'llm_adapter': 5e-5, 'te': 2e-5}
+             */
+            group_lr?: {
+                [key: string]: number;
+            };
         };
         /** Plan */
         Plan: {
@@ -1600,12 +2582,21 @@ export interface components {
         };
         /** QueueSettings */
         QueueSettings: {
-            /** Held */
+            /**
+             * Held
+             * @default false
+             */
             held: boolean;
-            /** Max Concurrent */
+            /**
+             * Max Concurrent
+             * @default 1
+             */
             max_concurrent: number;
-        } & {
-            [key: string]: unknown;
+            /**
+             * Memory Admission
+             * @default true
+             */
+            memory_admission: boolean;
         };
         /** RamStats */
         RamStats: {
@@ -1627,6 +2618,102 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** SamplePrompt */
+        SamplePrompt: {
+            /** Prompt */
+            prompt: string;
+            /**
+             * Negative
+             * @default
+             */
+            negative: string;
+            /** Seed */
+            seed?: number | null;
+            /** Width */
+            width?: number | null;
+            /** Height */
+            height?: number | null;
+            /** Steps */
+            steps?: number | null;
+            /** Cfg */
+            cfg?: number | null;
+        };
+        /** SamplingConfig */
+        SamplingConfig: {
+            /**
+             * Enabled
+             * @description 训练期间生成预览图
+             * @default false
+             */
+            enabled: boolean;
+            /**
+             * Every Steps
+             * @description 每 N 步
+             */
+            every_steps?: number | null;
+            /**
+             * Every Epochs
+             * @description 每 N 轮
+             * @default 1
+             */
+            every_epochs: number | null;
+            /**
+             * At Start
+             * @description 训练前先出一组基线图
+             * @default false
+             */
+            at_start: boolean;
+            /**
+             * Prompts
+             * @description 提示词列表
+             */
+            prompts?: components["schemas"]["SamplePrompt"][];
+            /**
+             * Prompts File
+             * @description 提示词文件（.txt 每行一条 / .toml）
+             */
+            prompts_file?: string | null;
+            /**
+             * Steps
+             * @description 采样步数（空用族默认）
+             */
+            steps?: number | null;
+            /**
+             * Cfg
+             * @description CFG 强度（空用族默认）
+             */
+            cfg?: number | null;
+            /**
+             * Shift
+             * @description 采样 shift（空用族默认）
+             */
+            shift?: number | null;
+            /**
+             * Width
+             * @description 宽
+             * @default 1024
+             */
+            width: number;
+            /**
+             * Height
+             * @description 高
+             * @default 1024
+             */
+            height: number;
+            /**
+             * Seed
+             * @description 基础种子
+             * @default 0
+             */
+            seed: number;
+            /**
+             * Sampler
+             * @description 采样器
+             * @default euler
+             * @constant
+             */
+            sampler: "euler";
+        };
         /** ScanBody */
         ScanBody: {
             /**
@@ -1640,6 +2727,45 @@ export interface components {
              * @default anima
              */
             family: string;
+        };
+        /** SchedulerConfig */
+        SchedulerConfig: {
+            /**
+             * Type
+             * @description 学习率调度
+             * @default cosine
+             * @enum {string}
+             */
+            type: "constant" | "linear" | "cosine" | "cosine_restarts" | "polynomial" | "warmup_stable_decay" | "rex";
+            /**
+             * Warmup Steps
+             * @description 预热步数（<1 视为总步数比例）
+             * @default 0
+             */
+            warmup_steps: number;
+            /**
+             * Min Lr Ratio
+             * @description 最终学习率相对初始的比例
+             * @default 0
+             */
+            min_lr_ratio: number;
+            /**
+             * Num Cycles
+             * @description cosine_restarts 周期数
+             * @default 1
+             */
+            num_cycles: number;
+            /**
+             * Power
+             * @description polynomial 幂
+             * @default 1
+             */
+            power: number;
+            /**
+             * Decay Steps
+             * @description warmup_stable_decay 的衰减步数（<1 视为比例）
+             */
+            decay_steps?: number | null;
         };
         /** Settings */
         Settings: {
@@ -1673,10 +2799,16 @@ export interface components {
         };
         /** SettingsUi */
         SettingsUi: {
-            /** Language */
-            language: string;
-            /** Theme */
-            theme: string;
+            /**
+             * Language
+             * @enum {string}
+             */
+            language: "zh-CN" | "en";
+            /**
+             * Theme
+             * @enum {string}
+             */
+            theme: "light" | "dark" | "system";
         } & {
             [key: string]: unknown;
         };
@@ -1692,6 +2824,13 @@ export interface components {
             };
             /** Ypuddin */
             ypuddin: string;
+            /** Cuda */
+            cuda?: string | null;
+            /**
+             * Cuda Available
+             * @default false
+             */
+            cuda_available: boolean;
         } & {
             [key: string]: unknown;
         };
@@ -1723,6 +2862,21 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** TrainConfig */
+        TrainConfig: {
+            model?: components["schemas"]["ModelConfig"];
+            dataset?: components["schemas"]["DatasetConfig"];
+            adapter?: components["schemas"]["AdapterConfig"];
+            objective?: components["schemas"]["ObjectiveConfig"];
+            optimizer?: components["schemas"]["OptimizerConfig"];
+            scheduler?: components["schemas"]["SchedulerConfig"];
+            memory?: components["schemas"]["MemoryConfig"];
+            loop?: components["schemas"]["LoopConfig"];
+            checkpoint?: components["schemas"]["CheckpointConfig"];
+            sampling?: components["schemas"]["SamplingConfig"];
+            validation?: components["schemas"]["ValidationConfig"];
+            logging?: components["schemas"]["LoggingConfig"];
+        };
         /** ValidateResult */
         ValidateResult: {
             /** Ok */
@@ -1737,6 +2891,61 @@ export interface components {
             } | null;
         } & {
             [key: string]: unknown;
+        };
+        /** ValidationConfig */
+        ValidationConfig: {
+            /**
+             * Enabled
+             * @description 确定性验证损失
+             * @default false
+             */
+            enabled: boolean;
+            /**
+             * Split Ratio
+             * @description 从训练集按内容哈希切出的比例
+             * @default 0
+             */
+            split_ratio: number;
+            /**
+             * Sources
+             * @description 显式验证数据源
+             */
+            sources?: components["schemas"]["DatasetSourceConfig"][];
+            /**
+             * Every Steps
+             * @description 每 N 步验证
+             */
+            every_steps?: number | null;
+            /**
+             * Every Epochs
+             * @description 每 N 轮验证
+             * @default 1
+             */
+            every_epochs: number | null;
+            /**
+             * Timesteps
+             * @description 固定验证时间步（分位数）
+             * @default [
+             *       0.1,
+             *       0.3,
+             *       0.5,
+             *       0.7,
+             *       0.9
+             *     ]
+             */
+            timesteps: number[];
+            /**
+             * Max Images
+             * @description 最多使用的验证图数
+             * @default 64
+             */
+            max_images: number | null;
+            /**
+             * Seed
+             * @description 验证噪声种子
+             * @default 1234
+             */
+            seed: number;
         };
         /** ValidationError */
         ValidationError: {
@@ -1763,6 +2972,18 @@ export interface components {
             mean: number;
         } & {
             [key: string]: unknown;
+        };
+        /** WandbConfig */
+        WandbConfig: {
+            /**
+             * Project
+             * @default ypuddin
+             */
+            project: string;
+            /** Run Name */
+            run_name?: string | null;
+            /** Entity */
+            entity?: string | null;
         };
     };
     responses: never;
@@ -1988,6 +3209,92 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    config_defaults_api_config_defaults_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrainConfig"];
+                };
+            };
+        };
+    };
+    config_import_api_config_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigImportBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrainConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    config_export_api_config_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigExportBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigText"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -2364,6 +3671,41 @@ export interface operations {
             };
         };
     };
+    patch_model_api_models__model_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelDefaultPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelAsset"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     scan_models_api_models_scan_post: {
         parameters: {
             query?: never;
@@ -2711,6 +4053,46 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_dataset_api_projects__pid__datasets_upload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    files: string[];
+                    name?: string;
+                    /** @default 1 */
+                    repeats?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3449,9 +4831,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
+                "application/json": components["schemas"]["QueueSettings"];
             };
         };
         responses: {
@@ -3623,6 +5003,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Artifact"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_downloads_api_models_downloads_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelDownload"][];
+                };
+            };
+        };
+    };
+    start_download_api_models_downloads_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelDownloadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelDownload"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_download_api_models_downloads__download_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                download_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelDownload"];
                 };
             };
             /** @description Validation Error */

@@ -56,19 +56,20 @@ def _sidecar(path: Path, ext: str) -> str | None:
     return str(p) if p.exists() else None
 
 
-def _mask_for(path: Path) -> str | None:
+def mask_for(path: Path) -> str | None:
     for suf in MASK_SUFFIXES:
         p = path.with_name(path.stem + suf)
-        if p.exists():
+        if p.is_file():
             return str(p)
     return None
 
 
 def iter_images(root: str | Path) -> Iterator[Path]:
-    root = Path(root)
+    root = Path(root).expanduser()
     if not root.is_dir():
         raise FileNotFoundError(f"dataset source not found: {root}")
-    for dirpath, _dirs, files in os.walk(root):
+    for dirpath, dirs, files in os.walk(root):
+        dirs.sort()
         for f in sorted(files):
             p = Path(dirpath) / f
             if p.suffix.lower() in IMAGE_EXTS and not p.name.endswith(".mask.png"):
@@ -76,27 +77,42 @@ def iter_images(root: str | Path) -> Iterator[Path]:
 
 
 class IndexDB:
-    """SQLite cache of (path, mtime, size) -> (hash, width, height, has_alpha) so rescans are cheap."""
+    """SQLite image probe cache with nanosecond file identity checks so rescans are cheap."""
 
     def __init__(self, path: str | Path):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(str(path))
+        self.conn = sqlite3.connect(str(path), timeout=30)
+        self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, mtime REAL, size INTEGER, hash TEXT, width INTEGER, height INTEGER, has_alpha INTEGER)"
+            "CREATE TABLE IF NOT EXISTS files_v2 (path TEXT PRIMARY KEY, signature TEXT, hash TEXT, width INTEGER, height INTEGER, has_alpha INTEGER)"
         )
         self.conn.commit()
 
-    def lookup(self, path: str, mtime: float, size: int) -> tuple[str, int, int, bool] | None:
+    def lookup(
+        self, path: str, mtime: float, size: int, *, stat_signature: str | None = None
+    ) -> tuple[str, int, int, bool] | None:
         row = self.conn.execute(
-            "SELECT hash, width, height, has_alpha, mtime, size FROM files WHERE path=?", (path,)
+            "SELECT hash, width, height, has_alpha, signature FROM files_v2 WHERE path=?", (path,)
         ).fetchone()
-        if row and abs(row[4] - mtime) < 1e-6 and row[5] == size:
+        if row and row[4] == (stat_signature or json.dumps((mtime, size))):
             return row[0], row[1], row[2], bool(row[3])
         return None
 
-    def store(self, path: str, mtime: float, size: int, h: str, w: int, ht: int, alpha: bool) -> None:
+    def store(
+        self,
+        path: str,
+        mtime: float,
+        size: int,
+        h: str,
+        w: int,
+        ht: int,
+        alpha: bool,
+        *,
+        stat_signature: str | None = None,
+    ) -> None:
         self.conn.execute(
-            "INSERT OR REPLACE INTO files VALUES (?,?,?,?,?,?,?)", (path, mtime, size, h, w, ht, int(alpha))
+            "INSERT OR REPLACE INTO files_v2 VALUES (?,?,?,?,?,?)",
+            (path, stat_signature or json.dumps((mtime, size)), h, w, ht, int(alpha)),
         )
 
     def commit(self) -> None:
@@ -128,7 +144,10 @@ def scan_sources(
     total = len(paths)
     for i, (si, p, src) in enumerate(paths):
         st = p.stat()
-        cached = index_db.lookup(str(p), st.st_mtime, st.st_size) if index_db else None
+        signature = json.dumps((st.st_mtime_ns, st.st_ctime_ns, st.st_size, st.st_ino, st.st_dev))
+        cached = (
+            index_db.lookup(str(p), st.st_mtime, st.st_size, stat_signature=signature) if index_db else None
+        )
         if cached is None:
             try:
                 w, h, alpha = probe_image(p)
@@ -137,7 +156,7 @@ def scan_sources(
                 continue
             digest = content_hash(p)
             if index_db:
-                index_db.store(str(p), st.st_mtime, st.st_size, digest, w, h, alpha)
+                index_db.store(str(p), st.st_mtime, st.st_size, digest, w, h, alpha, stat_signature=signature)
         else:
             digest, w, h, alpha = cached
         records.append(
@@ -148,7 +167,7 @@ def scan_sources(
                 width=w,
                 height=h,
                 caption_path=_sidecar(p, src.caption_ext),
-                mask_path=_mask_for(p),
+                mask_path=mask_for(p),
                 has_alpha=alpha,
             )
         )
@@ -159,9 +178,34 @@ def scan_sources(
     return records
 
 
-def dataset_fingerprint(records: list[ImageRecord], sources: list[DatasetSourceConfig]) -> str:
+def record_content_key(record: ImageRecord) -> tuple[int, str, str, str]:
+    """Semantic ordering: renaming/moving an image and its sidecars keeps its sampler position."""
+    return (
+        record.source_index,
+        record.content_hash,
+        content_hash(record.caption_path) if record.caption_path else "",
+        content_hash(record.mask_path) if record.mask_path else "",
+    )
+
+
+def dataset_fingerprint(
+    records: list[ImageRecord],
+    sources: list[DatasetSourceConfig],
+    *,
+    settings: dict | None = None,
+) -> str:
+    """Identity of training content and its interpretation, independent of source locations.
+
+    Caption/mask bytes and source association matter; directory names and image names do not.
+    Versioning intentionally invalidates old checkpoints whose fingerprints ignored sidecars.
+    """
     h = hashlib.blake2b(digest_size=8)
-    h.update(json.dumps([s.model_dump(mode="json") for s in sources], sort_keys=True).encode())
-    for r in sorted(records, key=lambda r: r.content_hash):
-        h.update(r.content_hash.encode())
+    semantic_sources = [s.model_dump(mode="json", exclude={"path"}) for s in sources]
+    payload = {
+        "version": 2,
+        "sources": semantic_sources,
+        "settings": settings or {},
+        "records": sorted(record_content_key(r) for r in records),
+    }
+    h.update(json.dumps(payload, sort_keys=True).encode())
     return h.hexdigest()

@@ -143,3 +143,90 @@ def test_needs_copy_link_mode():
     assert boot.needs_copy_link_mode(100, 100) is False
     assert boot.needs_copy_link_mode(None, 100) is False  # unknown -> leave uv's default behaviour
     assert boot.needs_copy_link_mode(100, None) is False
+
+
+@pytest.mark.parametrize(
+    ("version", "supported"),
+    [
+        ("v18.20.8", False),
+        ("v20.18.9", False),
+        ("v20.19.0", True),
+        ("v21.9.0", False),
+        ("v22.11.0", False),
+        ("v22.12.0", True),
+        ("v24.0.0", True),
+    ],
+)
+def test_node_runtime_matches_vite(version, supported):
+    assert boot.node_supported(version) == supported
+
+
+def test_saved_server_address_and_explicit_override(tmp_path):
+    import json
+
+    (tmp_path / "settings.json").write_text(json.dumps({"server": {"host": "0.0.0.0", "port": 9123}}))
+    assert boot.server_address(None, None, str(tmp_path)) == ("0.0.0.0", 9123)
+    assert boot.server_address("127.0.0.1", 9133, str(tmp_path)) == ("127.0.0.1", 9133)
+
+
+def _frontend_manifest(root):
+    import hashlib
+    import json
+
+    (root / "dist").mkdir(exist_ok=True)
+    (root / "dist/index.html").write_text("built")
+    inputs = {
+        p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+        for p in root.rglob("*")
+        if p.is_file() and "dist" not in p.relative_to(root).parts
+    }
+    outputs = {"index.html": hashlib.sha256(b"built").hexdigest()}
+    (root / "dist/.source-manifest.json").write_text(
+        json.dumps({"version": 1, "inputs": inputs, "outputs": outputs})
+    )
+
+
+def test_frontend_fingerprint_survives_timestamps_but_detects_all_build_inputs(monkeypatch, tmp_path):
+    import os
+
+    monkeypatch.setattr(boot, "FRONTEND", tmp_path)
+    (tmp_path / "src").mkdir()
+    for name in ("src/App.tsx", "package-lock.json", "tailwind.config.ts", "tsconfig.json"):
+        (tmp_path / name).write_text("before")
+    _frontend_manifest(tmp_path)
+    assert boot.frontend_stale() is False
+    for name in ("src/App.tsx", "package-lock.json", "tailwind.config.ts", "tsconfig.json"):
+        p = tmp_path / name
+        p.write_text("after")
+        os.utime(p, (1, 1))
+        assert boot.frontend_stale() is True
+        p.write_text("before")
+        assert boot.frontend_stale() is False
+    (tmp_path / "src/App.tsx").unlink()
+    assert boot.frontend_stale() is True
+
+
+def test_frontend_missing_manifest_or_corrupt_output_requires_build(monkeypatch, tmp_path):
+    monkeypatch.setattr(boot, "FRONTEND", tmp_path)
+    (tmp_path / "src").mkdir()
+    _frontend_manifest(tmp_path)
+    (tmp_path / "dist/index.html").write_text("old UI")
+    assert boot.frontend_stale() is True
+    _frontend_manifest(tmp_path)
+    (tmp_path / "dist/.source-manifest.json").unlink()
+    assert boot.frontend_stale() is True
+
+
+def test_verified_frontend_does_not_need_node_to_launch(monkeypatch):
+    monkeypatch.setattr(boot, "frontend_stale", lambda: False)
+    monkeypatch.setattr(boot.shutil, "which", lambda _: None)
+    assert boot.build_frontend() is True
+
+
+@pytest.mark.parametrize("invalid", ["[]", '{"version": 1, "inputs": {}, "outputs": ["index.html"]}'])
+def test_malformed_build_manifest_is_stale(monkeypatch, tmp_path, invalid):
+    monkeypatch.setattr(boot, "FRONTEND", tmp_path)
+    (tmp_path / "dist").mkdir()
+    (tmp_path / "dist/index.html").write_text("built")
+    (tmp_path / "dist/.source-manifest.json").write_text(invalid)
+    assert boot.frontend_stale() is True

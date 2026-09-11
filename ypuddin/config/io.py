@@ -102,6 +102,30 @@ def config_hash(config: TrainConfig | Mapping[str, Any]) -> str:
     return hashlib.blake2b(blob, digest_size=8).hexdigest()
 
 
+def absolute_paths(config: TrainConfig) -> TrainConfig:
+    """Freeze local paths against the submitting process cwd before a service job changes cwd."""
+    cfg = config.model_copy(deep=True)
+    fields = [
+        (cfg.model, "dit_path"),
+        (cfg.model, "text_encoder_path"),
+        (cfg.model, "vae_path"),
+        (cfg.model, "tokenizer_path"),
+        (cfg.dataset, "cache_dir"),
+        (cfg.adapter, "resume_weights"),
+        (cfg.checkpoint, "output_dir"),
+        (cfg.checkpoint, "resume"),
+        (cfg.sampling, "prompts_file"),
+        (cfg.logging, "events_path"),
+        *((src, "path") for src in cfg.dataset.sources),
+        *((src, "path") for src in cfg.validation.sources),
+    ]
+    for obj, name in fields:
+        value = getattr(obj, name)
+        if value:
+            setattr(obj, name, str(Path(value).expanduser().resolve()))
+    return cfg
+
+
 def _strip_none(obj: Any) -> Any:
     if isinstance(obj, dict):
         return {k: _strip_none(v) for k, v in obj.items() if v is not None}

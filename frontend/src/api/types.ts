@@ -8,7 +8,9 @@ export type GpuStats = S['GpuStats'];
 export type Project = S['Project'];
 export type Job = S['Job'];
 export type JobProgress = S['JobProgress'];
-export type JobMetrics = S['JobMetrics'];
+export type JobMetrics = Pick<S['JobMetrics'], 'steps' | 'loss' | 'loss_ema' | 'grad_norm' | 'vram_mb' | 'vram_metric' | 'it_s' | 'validation'> & {
+  lr: Record<string, Array<number | null>>;
+};
 export type JobSample = S['JobSample'];
 export type JobCheckpoint = S['JobCheckpoint'];
 export type JobLogResponse = S['JobLog'];
@@ -18,6 +20,8 @@ export type FsListResponse = S['FsList'];
 export type FsListEntry = S['FsEntry'];
 export type Artifact = S['Artifact'];
 export type ModelAsset = S['ModelAsset'];
+export type ModelDownload = S['ModelDownload'];
+export type ModelDownloadRequest = S['ModelDownloadRequest'];
 export type Settings = S['Settings'];
 export type Plan = S['Plan'];
 export type Preset = S['Preset'];
@@ -39,6 +43,29 @@ export type FamilyInfo = S['FamilyInfo'];
 export type FamilyPreset = S['FamilyPreset'];
 
 // ---- openapi 未覆盖（或形状不便引用）的本地类型：手写保留 ----
+
+// GPU 统计：在 generated GpuStats 上扩展 Apple MPS 适配字段
+export type GpuInfo = S['GpuStats'] & {
+  kind?: 'cuda' | 'mps' | string;
+  power_w?: number | null;
+};
+
+export interface SystemInfo {
+  python?: string;
+  platform?: string;
+  packages?: Record<string, string | null>;
+  ypuddin?: string;
+  cuda?: string | null;
+  cuda_available?: boolean;
+  [key: string]: unknown;
+}
+
+/** 判断是否 Apple Silicon 平台（后端 /system/info.platform 形如 macOS-15.7.9-arm64-arm-64bit） */
+export function isAppleSilicon(info: SystemInfo | null | undefined): boolean {
+  const p = (info?.platform || '').toLowerCase();
+  const isMac = p.includes('darwin') || p.includes('macos') || p.includes('mac os');
+  return isMac && (p.includes('arm64') || p.includes('arm'));
+}
 
 export type JobStatus =
   | 'queued'
@@ -99,6 +126,7 @@ export interface JobStepEvent {
   grad_norm: number;
   it_s: number;
   vram_mb: number | null;
+  vram_metric?: string | null;
   eta_s: number | null;
 }
 

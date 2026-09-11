@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "YPuddin Train Studio",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "paths": {
     "/api/health": {
@@ -229,6 +229,100 @@
                   "additionalProperties": true,
                   "type": "object",
                   "title": "Response Schema Train Api Schema Train Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/config/defaults": {
+      "get": {
+        "summary": "Config Defaults",
+        "operationId": "config_defaults_api_config_defaults_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainConfig"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/config/import": {
+      "post": {
+        "summary": "Config Import",
+        "operationId": "config_import_api_config_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigImportBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainConfig"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/config/export": {
+      "post": {
+        "summary": "Config Export",
+        "operationId": "config_export_api_config_export_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigExportBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigText"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -646,6 +740,53 @@
       }
     },
     "/api/models/{model_id}": {
+      "patch": {
+        "summary": "Patch Model",
+        "operationId": "patch_model_api_models__model_id__patch",
+        "parameters": [
+          {
+            "name": "model_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Model Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelDefaultPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelAsset"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "summary": "Delete Model",
         "operationId": "delete_model_api_models__model_id__delete",
@@ -1158,6 +1299,77 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{pid}/datasets/upload": {
+      "post": {
+        "summary": "Upload Dataset",
+        "operationId": "upload_dataset_api_projects__pid__datasets_upload_post",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "files"
+                ],
+                "properties": {
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    }
+                  },
+                  "name": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "repeats": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000000,
+                    "default": 1
+                  }
                 }
               }
             }
@@ -2218,9 +2430,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
-                "type": "object",
-                "title": "Body"
+                "$ref": "#/components/schemas/QueueSettings"
               }
             }
           },
@@ -2471,10 +2681,455 @@
           }
         }
       }
+    },
+    "/api/models/downloads": {
+      "get": {
+        "summary": "List Downloads",
+        "operationId": "list_downloads_api_models_downloads_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ModelDownload"
+                  },
+                  "type": "array",
+                  "title": "Response List Downloads Api Models Downloads Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Start Download",
+        "operationId": "start_download_api_models_downloads_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelDownloadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelDownload"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/models/downloads/{download_id}/cancel": {
+      "post": {
+        "summary": "Cancel Download",
+        "operationId": "cancel_download_api_models_downloads__download_id__cancel_post",
+        "parameters": [
+          {
+            "name": "download_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Download Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelDownload"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AdapterConfig": {
+        "properties": {
+          "algo": {
+            "type": "string",
+            "enum": [
+              "lora",
+              "lokr",
+              "loha",
+              "full"
+            ],
+            "title": "Algo",
+            "description": "适配器算法",
+            "default": "lokr",
+            "x-ui": {
+              "control": "select",
+              "group": "adapter",
+              "order": 0
+            }
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string",
+                "const": "full"
+              }
+            ],
+            "title": "Rank",
+            "description": "秩（LoKr 中为 W2 的低秩；'full' 表示 W2 满矩阵）",
+            "default": 16,
+            "x-ui": {
+              "group": "adapter",
+              "order": 10
+            }
+          },
+          "alpha": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Alpha",
+            "description": "缩放 alpha（scale = alpha / rank）",
+            "default": 16.0,
+            "x-ui": {
+              "group": "adapter",
+              "order": 20
+            }
+          },
+          "factor": {
+            "type": "integer",
+            "title": "Factor",
+            "description": "LoKr 因子：-1 平衡分解；f>0 时小因子 W1 的边长为 f",
+            "default": -1,
+            "x-ui": {
+              "group": "adapter",
+              "order": 30,
+              "show_when": "adapter.algo == 'lokr'"
+            }
+          },
+          "decompose_both": {
+            "type": "boolean",
+            "title": "Decompose Both",
+            "description": "LoKr：W1 也做低秩分解",
+            "default": false,
+            "x-ui": {
+              "advanced": true,
+              "control": "switch",
+              "group": "adapter",
+              "order": 40,
+              "show_when": "adapter.algo == 'lokr'"
+            }
+          },
+          "rs_lora": {
+            "type": "boolean",
+            "title": "Rs Lora",
+            "description": "rsLoRA：scale = alpha / sqrt(rank)",
+            "default": false,
+            "x-ui": {
+              "advanced": true,
+              "control": "switch",
+              "group": "adapter",
+              "order": 50
+            }
+          },
+          "dora": {
+            "type": "boolean",
+            "title": "Dora",
+            "description": "DoRA 权重分解（幅度/方向）",
+            "default": false,
+            "x-ui": {
+              "control": "switch",
+              "group": "adapter",
+              "order": 60
+            }
+          },
+          "init": {
+            "type": "string",
+            "enum": [
+              "default",
+              "scalar"
+            ],
+            "title": "Init",
+            "description": "初始化：default（一侧置零）/ scalar（全随机 + 可训练标量从 0 起）",
+            "default": "default",
+            "x-ui": {
+              "advanced": true,
+              "control": "select",
+              "group": "adapter",
+              "order": 70
+            }
+          },
+          "dropout": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Dropout",
+            "description": "对适配器输出的 dropout",
+            "default": 0.0,
+            "x-ui": {
+              "advanced": true,
+              "group": "adapter",
+              "order": 80
+            }
+          },
+          "rank_dropout": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Rank Dropout",
+            "description": "秩轴 dropout",
+            "default": 0.0,
+            "x-ui": {
+              "advanced": true,
+              "group": "adapter",
+              "order": 90
+            }
+          },
+          "module_dropout": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Module Dropout",
+            "description": "整模块跳过概率",
+            "default": 0.0,
+            "x-ui": {
+              "advanced": true,
+              "group": "adapter",
+              "order": 100
+            }
+          },
+          "preset": {
+            "type": "string",
+            "title": "Preset",
+            "description": "族内目标预设（attn-mlp / attn-only / full-linear / ...）",
+            "default": "attn-mlp",
+            "x-ui": {
+              "control": "select",
+              "group": "adapter",
+              "order": 110
+            }
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/AdapterRule"
+            },
+            "type": "array",
+            "title": "Rules",
+            "description": "按序匹配的覆盖规则",
+            "x-ui": {
+              "control": "rules",
+              "group": "adapter",
+              "order": 120
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "bypass",
+              "merged"
+            ],
+            "title": "Mode",
+            "description": "执行路径（auto 按算法与底模精度选择）",
+            "default": "auto",
+            "x-ui": {
+              "advanced": true,
+              "control": "select",
+              "group": "adapter",
+              "order": 130
+            }
+          },
+          "param_dtype": {
+            "type": "string",
+            "enum": [
+              "fp32",
+              "bf16"
+            ],
+            "title": "Param Dtype",
+            "description": "适配器参数精度（主权重）",
+            "default": "fp32",
+            "x-ui": {
+              "advanced": true,
+              "control": "select",
+              "group": "adapter",
+              "order": 140
+            }
+          },
+          "lr_scale": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Lr Scale",
+            "description": "按参数类别的学习率倍率，如 {'up': 16}（LoRA+）或 {'w1': 0.5}",
+            "x-ui": {
+              "advanced": true,
+              "group": "adapter",
+              "order": 150
+            }
+          },
+          "resume_weights": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume Weights",
+            "description": "从已有适配器权重热启动",
+            "x-ui": {
+              "advanced": true,
+              "control": "path",
+              "group": "adapter",
+              "order": 160
+            }
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AdapterConfig"
+      },
+      "AdapterRule": {
+        "properties": {
+          "match": {
+            "type": "string",
+            "title": "Match",
+            "description": "模块名匹配：glob，或 're:' 前缀正则"
+          },
+          "algo": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "lora",
+                  "lokr",
+                  "loha",
+                  "full",
+                  "none"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Algo",
+            "description": "覆盖算法；none 表示排除"
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string",
+                "const": "full"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank"
+          },
+          "alpha": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alpha"
+          },
+          "factor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Factor"
+          },
+          "lr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lr",
+            "description": "该组参数的学习率（覆盖 optimizer.lr）"
+          },
+          "dropout": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dropout"
+          },
+          "rank_dropout": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank Dropout"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "match"
+        ],
+        "title": "AdapterRule"
+      },
       "Artifact": {
         "properties": {
           "id": {
@@ -2659,6 +3314,279 @@
         ],
         "title": "CaptionBody"
       },
+      "CaptionConfig": {
+        "properties": {
+          "prefix": {
+            "type": "string",
+            "title": "Prefix",
+            "description": "加在 caption 前的文本",
+            "default": "",
+            "x-ui": {
+              "group": "caption",
+              "order": 0
+            }
+          },
+          "suffix": {
+            "type": "string",
+            "title": "Suffix",
+            "description": "加在 caption 后的文本",
+            "default": "",
+            "x-ui": {
+              "group": "caption",
+              "order": 10
+            }
+          },
+          "trigger_word": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trigger Word",
+            "description": "触发词：放在最前且不参与洗牌/丢弃",
+            "x-ui": {
+              "group": "caption",
+              "order": 20
+            }
+          },
+          "keep_tokens": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Keep Tokens",
+            "description": "前 N 个 tag 固定不洗牌",
+            "default": 0,
+            "x-ui": {
+              "group": "caption",
+              "order": 30
+            }
+          },
+          "shuffle": {
+            "type": "boolean",
+            "title": "Shuffle",
+            "description": "随机打乱 tag 顺序",
+            "default": false,
+            "x-ui": {
+              "control": "switch",
+              "group": "caption",
+              "order": 40
+            }
+          },
+          "tag_dropout": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Tag Dropout",
+            "description": "每个 tag 被丢弃的概率",
+            "default": 0.0,
+            "x-ui": {
+              "control": "slider",
+              "group": "caption",
+              "order": 50,
+              "step": 0.01
+            }
+          },
+          "caption_dropout": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Caption Dropout",
+            "description": "整条 caption 置空的概率（无条件训练，服务于 CFG）",
+            "default": 0.0,
+            "x-ui": {
+              "control": "slider",
+              "group": "caption",
+              "order": 60,
+              "step": 0.01
+            }
+          },
+          "separator": {
+            "type": "string",
+            "title": "Separator",
+            "description": "tag 分隔符",
+            "default": ",",
+            "x-ui": {
+              "advanced": true,
+              "group": "caption",
+              "order": 70
+            }
+          },
+          "wildcard": {
+            "type": "boolean",
+            "title": "Wildcard",
+            "description": "支持 {a|b} 通配符随机选择",
+            "default": false,
+            "x-ui": {
+              "advanced": true,
+              "control": "switch",
+              "group": "caption",
+              "order": 80
+            }
+          },
+          "cache_variants": {
+            "type": "integer",
+            "maximum": 256.0,
+            "minimum": 1.0,
+            "title": "Cache Variants",
+            "description": "文本编码为 cached 时，每张图预缓存的 caption 随机变体数（仅 shuffle / tag_dropout / wildcard 生效时有意义）",
+            "default": 8,
+            "x-ui": {
+              "advanced": true,
+              "group": "caption",
+              "order": 90,
+              "show_when": "dataset.text_encoding != 'online'"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CaptionConfig"
+      },
+      "CheckpointConfig": {
+        "properties": {
+          "output_dir": {
+            "type": "string",
+            "title": "Output Dir",
+            "description": "输出目录",
+            "default": "outputs/run",
+            "x-ui": {
+              "control": "path",
+              "group": "checkpoint",
+              "order": 0
+            }
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "产物文件名前缀",
+            "default": "lora",
+            "x-ui": {
+              "group": "checkpoint",
+              "order": 10
+            }
+          },
+          "save_every_steps": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Save Every Steps",
+            "description": "每 N 步保存权重",
+            "x-ui": {
+              "group": "checkpoint",
+              "order": 20
+            }
+          },
+          "save_every_epochs": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Save Every Epochs",
+            "description": "每 N 轮保存权重",
+            "default": 1,
+            "x-ui": {
+              "group": "checkpoint",
+              "order": 30
+            }
+          },
+          "save_state_every_steps": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Save State Every Steps",
+            "description": "每 N 步保存完整可恢复状态",
+            "x-ui": {
+              "advanced": true,
+              "group": "checkpoint",
+              "order": 40
+            }
+          },
+          "keep_last_n": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keep Last N",
+            "description": "仅保留最近 N 组按步保存的权重（普通/EMA 成组；轮次与最终产物保留）",
+            "x-ui": {
+              "advanced": true,
+              "group": "checkpoint",
+              "order": 50
+            }
+          },
+          "save_dtype": {
+            "type": "string",
+            "enum": [
+              "bf16",
+              "fp16",
+              "fp32"
+            ],
+            "title": "Save Dtype",
+            "description": "保存精度",
+            "default": "bf16",
+            "x-ui": {
+              "control": "select",
+              "group": "checkpoint",
+              "order": 60
+            }
+          },
+          "save_on_finish": {
+            "type": "boolean",
+            "title": "Save On Finish",
+            "description": "结束时保存最终权重",
+            "default": true,
+            "x-ui": {
+              "control": "switch",
+              "group": "checkpoint",
+              "order": 70
+            }
+          },
+          "resume": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume",
+            "description": "从完整状态目录恢复",
+            "x-ui": {
+              "control": "path",
+              "group": "checkpoint",
+              "order": 80
+            }
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CheckpointConfig"
+      },
       "ConfigBody": {
         "properties": {
           "config": {
@@ -2706,6 +3634,64 @@
         ],
         "title": "ConfigError"
       },
+      "ConfigExportBody": {
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "toml",
+              "json"
+            ],
+            "title": "Format",
+            "default": "toml"
+          }
+        },
+        "type": "object",
+        "required": [
+          "config"
+        ],
+        "title": "ConfigExportBody"
+      },
+      "ConfigImportBody": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "toml",
+              "json"
+            ],
+            "title": "Format",
+            "default": "toml"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "ConfigImportBody"
+      },
+      "ConfigText": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "ConfigText"
+      },
       "ConfigWarning": {
         "properties": {
           "code": {
@@ -2746,6 +3732,8 @@
           },
           "repeats": {
             "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": 1.0,
             "title": "Repeats",
             "default": 1
           },
@@ -2761,6 +3749,7 @@
           },
           "prior_weight": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Prior Weight",
             "default": 1.0
           },
@@ -2781,6 +3770,192 @@
           "path"
         ],
         "title": "DatasetBody"
+      },
+      "DatasetConfig": {
+        "properties": {
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/DatasetSourceConfig"
+            },
+            "type": "array",
+            "title": "Sources",
+            "description": "数据源列表",
+            "x-ui": {
+              "group": "dataset",
+              "order": 0
+            }
+          },
+          "resolutions": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Resolutions",
+            "description": "训练分辩率（基准边长，可多个）",
+            "default": [
+              1024
+            ],
+            "x-ui": {
+              "control": "tags",
+              "group": "dataset",
+              "order": 10
+            }
+          },
+          "aspect_ratio_limit": {
+            "type": "number",
+            "minimum": 1.0,
+            "title": "Aspect Ratio Limit",
+            "description": "分桶允许的最大长宽比",
+            "default": 2.0,
+            "x-ui": {
+              "group": "dataset",
+              "order": 20
+            }
+          },
+          "area_tolerance": {
+            "type": "number",
+            "maximum": 0.5,
+            "minimum": 0.0,
+            "title": "Area Tolerance",
+            "description": "分桶面积容差（相对基准面积）",
+            "default": 0.1,
+            "x-ui": {
+              "advanced": true,
+              "group": "dataset",
+              "order": 30
+            }
+          },
+          "bucket_step": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 8.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bucket Step",
+            "description": "分桶网格步长（默认 64；必须是模型对齐值的倍数）",
+            "x-ui": {
+              "advanced": true,
+              "group": "dataset",
+              "order": 35
+            }
+          },
+          "bucket_no_upscale": {
+            "type": "boolean",
+            "title": "Bucket No Upscale",
+            "description": "不放大小图（按原尺寸就近分桶）",
+            "default": false,
+            "x-ui": {
+              "control": "switch",
+              "group": "dataset",
+              "order": 40
+            }
+          },
+          "batch_size": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Batch Size",
+            "description": "每个微批的图片数",
+            "default": 1,
+            "x-ui": {
+              "group": "dataset",
+              "order": 50
+            }
+          },
+          "caption": {
+            "$ref": "#/components/schemas/CaptionConfig",
+            "description": "caption 处理",
+            "x-ui": {
+              "group": "dataset",
+              "order": 60
+            }
+          },
+          "flip": {
+            "type": "boolean",
+            "title": "Flip",
+            "description": "随机水平翻转（缓存双份 latent）",
+            "default": false,
+            "x-ui": {
+              "control": "switch",
+              "group": "dataset",
+              "order": 70
+            }
+          },
+          "masked_loss": {
+            "type": "boolean",
+            "title": "Masked Loss",
+            "description": "用 .mask.png 或 alpha 通道加权损失",
+            "default": false,
+            "x-ui": {
+              "control": "switch",
+              "group": "dataset",
+              "order": 80
+            }
+          },
+          "num_workers": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Num Workers",
+            "description": "DataLoader 进程数（Windows 建议 0）",
+            "default": 2,
+            "x-ui": {
+              "advanced": true,
+              "group": "dataset",
+              "order": 90
+            }
+          },
+          "cache_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Dir",
+            "description": "缓存目录（默认 <output_dir>/cache）",
+            "x-ui": {
+              "advanced": true,
+              "control": "path",
+              "group": "dataset",
+              "order": 100
+            }
+          },
+          "cache_latents": {
+            "type": "boolean",
+            "title": "Cache Latents",
+            "description": "预编码并缓存 latents",
+            "default": true,
+            "x-ui": {
+              "control": "switch",
+              "group": "dataset",
+              "order": 110
+            }
+          },
+          "text_encoding": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "online",
+              "cached"
+            ],
+            "title": "Text Encoding",
+            "description": "文本编码：online 每步在线编码（支持 caption 增强），cached 预缓存后卸载编码器",
+            "default": "auto",
+            "x-ui": {
+              "control": "select",
+              "group": "dataset",
+              "order": 120
+            }
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DatasetConfig"
       },
       "DatasetImage": {
         "properties": {
@@ -2929,6 +4104,89 @@
           "created_at"
         ],
         "title": "DatasetSource"
+      },
+      "DatasetSourceConfig": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "description": "图片目录（递归）",
+            "x-ui": {
+              "control": "path",
+              "order": 0
+            }
+          },
+          "repeats": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Repeats",
+            "description": "重复次数",
+            "default": 1
+          },
+          "caption_ext": {
+            "type": "string",
+            "title": "Caption Ext",
+            "description": "caption 文件扩展名",
+            "default": ".txt"
+          },
+          "is_reg": {
+            "type": "boolean",
+            "title": "Is Reg",
+            "description": "正则集（先验保持）",
+            "default": false
+          },
+          "prior_weight": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Prior Weight",
+            "description": "正则集损失权重",
+            "default": 1.0
+          },
+          "class_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Class Prompt",
+            "description": "缺少 caption 文件时使用的默认 caption"
+          },
+          "caption": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaptionConfig"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "覆盖数据集级 caption 设置"
+          },
+          "resolutions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolutions",
+            "description": "覆盖数据集级分辩率列表"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "title": "DatasetSourceConfig"
       },
       "DatasetStats": {
         "properties": {
@@ -3290,6 +4548,15 @@
             "type": "integer",
             "title": "Index"
           },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cuda",
+              "mps"
+            ],
+            "title": "Kind",
+            "default": "cuda"
+          },
           "name": {
             "type": "string",
             "title": "Name"
@@ -3319,6 +4586,15 @@
           "index": {
             "type": "integer",
             "title": "Index"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cuda",
+              "mps"
+            ],
+            "title": "Kind",
+            "default": "cuda"
           },
           "name": {
             "type": "string",
@@ -3367,6 +4643,61 @@
               }
             ],
             "title": "Temp C"
+          },
+          "power_w": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Power W"
+          },
+          "power_limit_w": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Power Limit W"
+          },
+          "telemetry_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telemetry Source"
+          },
+          "telemetry_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telemetry Note"
+          },
+          "cuda_available": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cuda Available"
           }
         },
         "additionalProperties": true,
@@ -3421,6 +4752,11 @@
               }
             ],
             "title": "Cuda"
+          },
+          "mps": {
+            "type": "boolean",
+            "title": "Mps",
+            "default": false
           },
           "gpus": {
             "items": {
@@ -3761,6 +5097,11 @@
               }
             ],
             "title": "Artifact Id"
+          },
+          "ema": {
+            "type": "boolean",
+            "title": "Ema",
+            "default": false
           }
         },
         "additionalProperties": true,
@@ -3913,6 +5254,17 @@
             },
             "type": "array",
             "title": "Vram Mb"
+          },
+          "vram_metric": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vram Metric"
           },
           "it_s": {
             "items": {
@@ -4099,6 +5451,50 @@
               }
             ],
             "title": "Vram Peak Mb"
+          },
+          "vram_metric": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vram Metric"
+          },
+          "device": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device"
+          },
+          "estimated_peak_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Peak Mb"
+          },
+          "wait_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wait Reason"
           }
         },
         "additionalProperties": true,
@@ -4185,6 +5581,292 @@
         ],
         "title": "LogLine"
       },
+      "LoggingConfig": {
+        "properties": {
+          "tensorboard": {
+            "type": "boolean",
+            "title": "Tensorboard",
+            "description": "写 TensorBoard 日志",
+            "default": false,
+            "x-ui": {
+              "control": "switch",
+              "group": "logging",
+              "order": 0
+            }
+          },
+          "wandb": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WandbConfig"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Weights & Biases",
+            "x-ui": {
+              "advanced": true,
+              "group": "logging",
+              "order": 10
+            }
+          },
+          "events_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events Path",
+            "description": "事件 JSONL 文件（默认 <output_dir>/events.jsonl）",
+            "x-ui": {
+              "advanced": true,
+              "control": "path",
+              "group": "logging",
+              "order": 20
+            }
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "debug",
+              "info",
+              "warning"
+            ],
+            "title": "Level",
+            "description": "日志级别",
+            "default": "info",
+            "x-ui": {
+              "advanced": true,
+              "control": "select",
+              "group": "logging",
+              "order": 30
+            }
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "LoggingConfig"
+      },
+      "LoopConfig": {
+        "properties": {
+          "max_steps": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Steps",
+            "description": "最大优化步数（与 epochs 至少填一个，先到者停止）",
+            "x-ui": {
+              "group": "loop",
+              "order": 0
+            }
+          },
+          "epochs": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epochs",
+            "description": "训练轮数",
+            "default": 10,
+            "x-ui": {
+              "group": "loop",
+              "order": 10
+            }
+          },
+          "grad_accum": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Grad Accum",
+            "description": "梯度累积微批数",
+            "default": 1,
+            "x-ui": {
+              "group": "loop",
+              "order": 20
+            }
+          },
+          "mixed_precision": {
+            "type": "string",
+            "enum": [
+              "bf16",
+              "fp16",
+              "no"
+            ],
+            "title": "Mixed Precision",
+            "description": "混合精度",
+            "default": "bf16",
+            "x-ui": {
+              "control": "select",
+              "group": "loop",
+              "order": 30
+            }
+          },
+          "seed": {
+            "type": "integer",
+            "title": "Seed",
+            "description": "随机种子",
+            "default": 42,
+            "x-ui": {
+              "group": "loop",
+              "order": 40
+            }
+          },
+          "ema": {
+            "type": "boolean",
+            "title": "Ema",
+            "description": "维护适配器权重的 EMA（CPU）",
+            "default": false,
+            "x-ui": {
+              "advanced": true,
+              "control": "switch",
+              "group": "loop",
+              "order": 50
+            }
+          },
+          "ema_decay": {
+            "type": "number",
+            "exclusiveMaximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Ema Decay",
+            "description": "EMA 衰减",
+            "default": 0.999,
+            "x-ui": {
+              "advanced": true,
+              "group": "loop",
+              "order": 60,
+              "show_when": "loop.ema == true"
+            }
+          },
+          "nan_skip_limit": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Nan Skip Limit",
+            "description": "连续非有限损失跳过次数上限，超过报错",
+            "default": 50,
+            "x-ui": {
+              "advanced": true,
+              "group": "loop",
+              "order": 70
+            }
+          },
+          "log_every": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Log Every",
+            "description": "每 N 步发一次 step 事件",
+            "default": 1,
+            "x-ui": {
+              "advanced": true,
+              "group": "loop",
+              "order": 80
+            }
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "LoopConfig"
+      },
+      "MemoryConfig": {
+        "properties": {
+          "base_precision": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "bf16",
+              "fp16",
+              "fp32",
+              "fp8_e4m3",
+              "fp8_e5m2"
+            ],
+            "title": "Base Precision",
+            "description": "冻结底模的存储精度（fp8 带逐张量缩放，需 CUDA）",
+            "default": "auto",
+            "x-ui": {
+              "control": "select",
+              "group": "memory",
+              "order": 0
+            }
+          },
+          "blocks_to_swap": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Blocks To Swap",
+            "description": "换出到 CPU pinned 内存的 block 数",
+            "default": 0,
+            "x-ui": {
+              "group": "memory",
+              "order": 10
+            }
+          },
+          "activation_checkpointing": {
+            "type": "string",
+            "enum": [
+              "none",
+              "block",
+              "unsloth"
+            ],
+            "title": "Activation Checkpointing",
+            "description": "激活检查点：block 逐块重算；unsloth 额外把块输入卸载到 CPU",
+            "default": "none",
+            "x-ui": {
+              "control": "select",
+              "group": "memory",
+              "order": 20
+            }
+          },
+          "offload_text_encoder": {
+            "type": "boolean",
+            "title": "Offload Text Encoder",
+            "description": "不用时把文本编码器放到 CPU",
+            "default": false,
+            "x-ui": {
+              "control": "switch",
+              "group": "memory",
+              "order": 30
+            }
+          },
+          "compile": {
+            "type": "boolean",
+            "title": "Compile",
+            "description": "逐 block torch.compile",
+            "default": false,
+            "x-ui": {
+              "advanced": true,
+              "control": "switch",
+              "group": "memory",
+              "order": 40
+            }
+          },
+          "allow_tf32": {
+            "type": "boolean",
+            "title": "Allow Tf32",
+            "description": "允许 TF32 matmul",
+            "default": true,
+            "x-ui": {
+              "advanced": true,
+              "control": "switch",
+              "group": "memory",
+              "order": 50
+            }
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "MemoryConfig"
+      },
       "ModelAsset": {
         "properties": {
           "id": {
@@ -4250,10 +5932,21 @@
         "properties": {
           "family": {
             "type": "string",
+            "enum": [
+              "anima",
+              "krea2",
+              "toy"
+            ],
             "title": "Family"
           },
           "kind": {
             "type": "string",
+            "enum": [
+              "dit",
+              "text_encoder",
+              "vae",
+              "tokenizer"
+            ],
             "title": "Kind"
           },
           "path": {
@@ -4285,6 +5978,582 @@
         ],
         "title": "ModelBody"
       },
+      "ModelConfig": {
+        "properties": {
+          "family": {
+            "type": "string",
+            "enum": [
+              "anima",
+              "krea2",
+              "toy"
+            ],
+            "title": "Family",
+            "description": "模型族（anima：Anima 2B；krea2：Krea 2 Raw 12.9B）",
+            "default": "anima",
+            "x-ui": {
+              "control": "select",
+              "group": "model",
+              "order": 0
+            }
+          },
+          "dit_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dit Path",
+            "description": "DiT 主干权重（safetensors；支持官方 bf16 与 ComfyUI fp8_scaled 文件）",
+            "x-ui": {
+              "control": "path",
+              "group": "model",
+              "order": 10
+            }
+          },
+          "text_encoder_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Encoder Path",
+            "description": "文本编码器（Anima：Qwen3-0.6B；Krea 2：Qwen3-VL-4B-Instruct）——HF 目录或单文件 safetensors",
+            "x-ui": {
+              "control": "path",
+              "group": "model",
+              "order": 20
+            }
+          },
+          "vae_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vae Path",
+            "description": "VAE 权重",
+            "x-ui": {
+              "control": "path",
+              "group": "model",
+              "order": 30
+            }
+          },
+          "tokenizer_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokenizer Path",
+            "description": "附加分词器目录（Anima: 旧版 T5 spiece；留空用内置）",
+            "x-ui": {
+              "advanced": true,
+              "control": "path",
+              "group": "model",
+              "order": 40
+            }
+          },
+          "dtype": {
+            "type": "string",
+            "enum": [
+              "bf16",
+              "fp16",
+              "fp32"
+            ],
+            "title": "Dtype",
+            "description": "计算精度（autocast）",
+            "default": "bf16",
+            "x-ui": {
+              "control": "select",
+              "group": "model",
+              "order": 50
+            }
+          },
+          "attention": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "sdpa",
+              "sage"
+            ],
+            "title": "Attention",
+            "description": "注意力后端：sdpa（PyTorch 内置，自动选 flash/高效内核）；sage 需安装 sageattention，仅用于无掩码的图像自注意力",
+            "default": "auto",
+            "x-ui": {
+              "advanced": true,
+              "control": "select",
+              "group": "model",
+              "order": 60
+            }
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ModelConfig"
+      },
+      "ModelDefaultPatch": {
+        "properties": {
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default"
+          }
+        },
+        "type": "object",
+        "required": [
+          "is_default"
+        ],
+        "title": "ModelDefaultPatch"
+      },
+      "ModelDownload": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "family": {
+            "type": "string",
+            "title": "Family"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "source_url": {
+            "type": "string",
+            "title": "Source Url"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "target_path": {
+            "type": "string",
+            "title": "Target Path"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "downloading",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status"
+          },
+          "downloaded_bytes": {
+            "type": "integer",
+            "title": "Downloaded Bytes",
+            "default": 0
+          },
+          "total_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Bytes"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "dtype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dtype"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "family",
+          "kind",
+          "source_url",
+          "filename",
+          "target_path",
+          "status",
+          "created_at"
+        ],
+        "title": "ModelDownload"
+      },
+      "ModelDownloadRequest": {
+        "properties": {
+          "family": {
+            "type": "string",
+            "enum": [
+              "anima",
+              "krea2"
+            ],
+            "title": "Family"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "dit",
+              "text_encoder",
+              "vae"
+            ],
+            "title": "Kind"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "repo_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo Id"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "revision": {
+            "type": "string",
+            "title": "Revision",
+            "default": "main"
+          },
+          "dtype": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "bf16",
+                  "fp16",
+                  "fp32",
+                  "fp8"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dtype"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "family",
+          "kind"
+        ],
+        "title": "ModelDownloadRequest"
+      },
+      "ObjectiveConfig": {
+        "properties": {
+          "timestep_sampling": {
+            "type": "string",
+            "enum": [
+              "uniform",
+              "logit_normal",
+              "shift",
+              "resolution_shift",
+              "mode",
+              "cosmap"
+            ],
+            "title": "Timestep Sampling",
+            "description": "时间步采样分布：shift = logit-normal 再做 Möbius shift（默认 3.0，与 Anima 推理的 shift 及 AnimaLoraStudio 默认一致）；logit_normal 不做 shift（sd-scripts 示例的 sigmoid）；resolution_shift 按图像 token 数动态 shift（Flux 式）",
+            "default": "shift",
+            "x-ui": {
+              "control": "select",
+              "group": "objective",
+              "order": 0
+            }
+          },
+          "logit_mean": {
+            "type": "number",
+            "title": "Logit Mean",
+            "description": "logit-normal 均值",
+            "default": 0.0,
+            "x-ui": {
+              "group": "objective",
+              "order": 10,
+              "show_when": "objective.timestep_sampling in ['logit_normal','shift','resolution_shift']"
+            }
+          },
+          "logit_std": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Logit Std",
+            "description": "logit-normal 标准差",
+            "default": 1.0,
+            "x-ui": {
+              "group": "objective",
+              "order": 20,
+              "show_when": "objective.timestep_sampling in ['logit_normal','shift','resolution_shift']"
+            }
+          },
+          "res_shift_tokens": {
+            "prefixItems": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Res Shift Tokens",
+            "description": "resolution_shift 的 token 数端点 (最小, 最大)；Flux 为 (256, 4096)，Krea 2 为 (256, 6400)",
+            "default": [
+              256,
+              4096
+            ],
+            "x-ui": {
+              "advanced": true,
+              "group": "objective",
+              "order": 25,
+              "show_when": "objective.timestep_sampling == 'resolution_shift'"
+            }
+          },
+          "res_shift_mu": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Res Shift Mu",
+            "description": "resolution_shift 的 mu 端点 (最小 token 数处, 最大 token 数处)；实际 shift = exp(mu)",
+            "default": [
+              0.5,
+              1.15
+            ],
+            "x-ui": {
+              "advanced": true,
+              "group": "objective",
+              "order": 26,
+              "show_when": "objective.timestep_sampling == 'resolution_shift'"
+            }
+          },
+          "shift": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Shift",
+            "description": "常数 shift：t' = s·t / (1 + (s-1)·t)",
+            "default": 3.0,
+            "x-ui": {
+              "group": "objective",
+              "order": 30,
+              "show_when": "objective.timestep_sampling == 'shift'"
+            }
+          },
+          "mode_scale": {
+            "type": "number",
+            "title": "Mode Scale",
+            "description": "SD3 mode 采样的 scale",
+            "default": 1.29,
+            "x-ui": {
+              "group": "objective",
+              "order": 40,
+              "show_when": "objective.timestep_sampling == 'mode'"
+            }
+          },
+          "stratified": {
+            "type": "boolean",
+            "title": "Stratified",
+            "description": "批内分层抽样（降低梯度方差）",
+            "default": true,
+            "x-ui": {
+              "advanced": true,
+              "control": "switch",
+              "group": "objective",
+              "order": 50
+            }
+          },
+          "t_min": {
+            "type": "number",
+            "exclusiveMaximum": 1.0,
+            "minimum": 0.0,
+            "title": "T Min",
+            "description": "时间步下限",
+            "default": 0.0,
+            "x-ui": {
+              "advanced": true,
+              "group": "objective",
+              "order": 60
+            }
+          },
+          "t_max": {
+            "type": "number",
+            "maximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "T Max",
+            "description": "时间步上限",
+            "default": 1.0,
+            "x-ui": {
+              "advanced": true,
+              "group": "objective",
+              "order": 70
+            }
+          },
+          "loss": {
+            "type": "string",
+            "enum": [
+              "mse",
+              "huber",
+              "pseudo_huber"
+            ],
+            "title": "Loss",
+            "description": "损失函数",
+            "default": "mse",
+            "x-ui": {
+              "control": "select",
+              "group": "objective",
+              "order": 80
+            }
+          },
+          "huber_c": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Huber C",
+            "description": "Huber delta / pseudo-Huber c",
+            "default": 0.1,
+            "x-ui": {
+              "group": "objective",
+              "order": 90,
+              "show_when": "objective.loss != 'mse'"
+            }
+          },
+          "weighting": {
+            "type": "string",
+            "enum": [
+              "none",
+              "sigma_sqrt",
+              "cosmap",
+              "snr_like",
+              "cosmos"
+            ],
+            "title": "Weighting",
+            "description": "按时间步的损失加权",
+            "default": "none",
+            "x-ui": {
+              "control": "select",
+              "group": "objective",
+              "order": 100
+            }
+          },
+          "snr_gamma": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Snr Gamma",
+            "description": "snr_like 加权的上限 γ",
+            "default": 5.0,
+            "x-ui": {
+              "group": "objective",
+              "order": 110,
+              "show_when": "objective.weighting == 'snr_like'"
+            }
+          },
+          "ip_noise_gamma": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Ip Noise Gamma",
+            "description": "输入扰动噪声强度",
+            "default": 0.0,
+            "x-ui": {
+              "advanced": true,
+              "group": "objective",
+              "order": 120
+            }
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ObjectiveConfig"
+      },
       "Ok": {
         "properties": {
           "ok": {
@@ -4296,6 +6565,141 @@
         "additionalProperties": true,
         "type": "object",
         "title": "Ok"
+      },
+      "OptimizerConfig": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "adamw / adamw8bit / lion / prodigy / prodigy_plus_sf / adafactor / came，或 'module.Class'",
+            "default": "adamw",
+            "x-ui": {
+              "control": "select",
+              "group": "optimizer",
+              "order": 0
+            }
+          },
+          "lr": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Lr",
+            "description": "学习率",
+            "default": 0.0001,
+            "x-ui": {
+              "group": "optimizer",
+              "order": 10
+            }
+          },
+          "weight_decay": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Weight Decay",
+            "description": "权重衰减",
+            "default": 0.01,
+            "x-ui": {
+              "group": "optimizer",
+              "order": 20
+            }
+          },
+          "betas": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Betas",
+            "description": "Adam betas",
+            "default": [
+              0.9,
+              0.99
+            ],
+            "x-ui": {
+              "advanced": true,
+              "group": "optimizer",
+              "order": 30
+            }
+          },
+          "eps": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Eps",
+            "description": "Adam eps",
+            "default": 1e-08,
+            "x-ui": {
+              "advanced": true,
+              "group": "optimizer",
+              "order": 40
+            }
+          },
+          "args": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Args",
+            "description": "透传给优化器的额外参数",
+            "x-ui": {
+              "advanced": true,
+              "group": "optimizer",
+              "order": 50
+            }
+          },
+          "grad_clip_norm": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Grad Clip Norm",
+            "description": "梯度范数裁剪（0 关闭）",
+            "default": 1.0,
+            "x-ui": {
+              "group": "optimizer",
+              "order": 60
+            }
+          },
+          "kahan": {
+            "type": "boolean",
+            "title": "Kahan",
+            "description": "bf16 参数的 Kahan 补偿累加",
+            "default": false,
+            "x-ui": {
+              "advanced": true,
+              "control": "switch",
+              "group": "optimizer",
+              "order": 70
+            }
+          },
+          "fused_backward": {
+            "type": "boolean",
+            "title": "Fused Backward",
+            "description": "逐参数在反向中即时更新并释放梯度（需 grad_accum=1）",
+            "default": false,
+            "x-ui": {
+              "advanced": true,
+              "control": "switch",
+              "group": "optimizer",
+              "order": 80
+            }
+          },
+          "group_lr": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Group Lr",
+            "description": "按模块分组的学习率，如 {'llm_adapter': 5e-5, 'te': 2e-5}",
+            "x-ui": {
+              "advanced": true,
+              "group": "optimizer",
+              "order": 90
+            }
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "OptimizerConfig"
       },
       "Plan": {
         "properties": {
@@ -4741,19 +7145,24 @@
         "properties": {
           "held": {
             "type": "boolean",
-            "title": "Held"
+            "title": "Held",
+            "default": false
           },
           "max_concurrent": {
             "type": "integer",
-            "title": "Max Concurrent"
+            "maximum": 64.0,
+            "minimum": 1.0,
+            "title": "Max Concurrent",
+            "default": 1
+          },
+          "memory_admission": {
+            "type": "boolean",
+            "title": "Memory Admission",
+            "default": true
           }
         },
-        "additionalProperties": true,
+        "additionalProperties": false,
         "type": "object",
-        "required": [
-          "held",
-          "max_concurrent"
-        ],
         "title": "QueueSettings"
       },
       "RamStats": {
@@ -4799,6 +7208,291 @@
         ],
         "title": "ResolutionCount"
       },
+      "SamplePrompt": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "negative": {
+            "type": "string",
+            "title": "Negative",
+            "default": ""
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 8192.0,
+                "minimum": 32.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 8192.0,
+                "minimum": 32.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "steps": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1000.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steps"
+          },
+          "cfg": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cfg"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "title": "SamplePrompt"
+      },
+      "SamplingConfig": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "训练期间生成预览图",
+            "default": false,
+            "x-ui": {
+              "control": "switch",
+              "group": "sampling",
+              "order": 0
+            }
+          },
+          "every_steps": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Every Steps",
+            "description": "每 N 步",
+            "x-ui": {
+              "group": "sampling",
+              "order": 10,
+              "show_when": "sampling.enabled == true"
+            }
+          },
+          "every_epochs": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Every Epochs",
+            "description": "每 N 轮",
+            "default": 1,
+            "x-ui": {
+              "group": "sampling",
+              "order": 20,
+              "show_when": "sampling.enabled == true"
+            }
+          },
+          "at_start": {
+            "type": "boolean",
+            "title": "At Start",
+            "description": "训练前先出一组基线图",
+            "default": false,
+            "x-ui": {
+              "control": "switch",
+              "group": "sampling",
+              "order": 30,
+              "show_when": "sampling.enabled == true"
+            }
+          },
+          "prompts": {
+            "items": {
+              "$ref": "#/components/schemas/SamplePrompt"
+            },
+            "type": "array",
+            "title": "Prompts",
+            "description": "提示词列表",
+            "x-ui": {
+              "control": "prompts",
+              "group": "sampling",
+              "order": 40,
+              "show_when": "sampling.enabled == true"
+            }
+          },
+          "prompts_file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompts File",
+            "description": "提示词文件（.txt 每行一条 / .toml）",
+            "x-ui": {
+              "control": "path",
+              "group": "sampling",
+              "order": 50,
+              "show_when": "sampling.enabled == true"
+            }
+          },
+          "steps": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1000.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steps",
+            "description": "采样步数（空用族默认）",
+            "x-ui": {
+              "group": "sampling",
+              "order": 60,
+              "show_when": "sampling.enabled == true"
+            }
+          },
+          "cfg": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cfg",
+            "description": "CFG 强度（空用族默认）",
+            "x-ui": {
+              "group": "sampling",
+              "order": 70,
+              "show_when": "sampling.enabled == true"
+            }
+          },
+          "shift": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shift",
+            "description": "采样 shift（空用族默认）",
+            "x-ui": {
+              "group": "sampling",
+              "order": 80,
+              "show_when": "sampling.enabled == true"
+            }
+          },
+          "width": {
+            "type": "integer",
+            "maximum": 8192.0,
+            "minimum": 32.0,
+            "title": "Width",
+            "description": "宽",
+            "default": 1024,
+            "x-ui": {
+              "group": "sampling",
+              "order": 90,
+              "show_when": "sampling.enabled == true"
+            }
+          },
+          "height": {
+            "type": "integer",
+            "maximum": 8192.0,
+            "minimum": 32.0,
+            "title": "Height",
+            "description": "高",
+            "default": 1024,
+            "x-ui": {
+              "group": "sampling",
+              "order": 100,
+              "show_when": "sampling.enabled == true"
+            }
+          },
+          "seed": {
+            "type": "integer",
+            "title": "Seed",
+            "description": "基础种子",
+            "default": 0,
+            "x-ui": {
+              "group": "sampling",
+              "order": 110,
+              "show_when": "sampling.enabled == true"
+            }
+          },
+          "sampler": {
+            "type": "string",
+            "const": "euler",
+            "title": "Sampler",
+            "description": "采样器",
+            "default": "euler",
+            "x-ui": {
+              "control": "select",
+              "group": "sampling",
+              "order": 120,
+              "show_when": "sampling.enabled == true"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SamplingConfig"
+      },
       "ScanBody": {
         "properties": {
           "path": {
@@ -4822,6 +7516,97 @@
         },
         "type": "object",
         "title": "ScanBody"
+      },
+      "SchedulerConfig": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "constant",
+              "linear",
+              "cosine",
+              "cosine_restarts",
+              "polynomial",
+              "warmup_stable_decay",
+              "rex"
+            ],
+            "title": "Type",
+            "description": "学习率调度",
+            "default": "cosine",
+            "x-ui": {
+              "control": "select",
+              "group": "scheduler",
+              "order": 0
+            }
+          },
+          "warmup_steps": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Warmup Steps",
+            "description": "预热步数（<1 视为总步数比例）",
+            "default": 0,
+            "x-ui": {
+              "group": "scheduler",
+              "order": 10
+            }
+          },
+          "min_lr_ratio": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Min Lr Ratio",
+            "description": "最终学习率相对初始的比例",
+            "default": 0.0,
+            "x-ui": {
+              "group": "scheduler",
+              "order": 20
+            }
+          },
+          "num_cycles": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Num Cycles",
+            "description": "cosine_restarts 周期数",
+            "default": 1,
+            "x-ui": {
+              "group": "scheduler",
+              "order": 30,
+              "show_when": "scheduler.type == 'cosine_restarts'"
+            }
+          },
+          "power": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Power",
+            "description": "polynomial 幂",
+            "default": 1.0,
+            "x-ui": {
+              "group": "scheduler",
+              "order": 40,
+              "show_when": "scheduler.type == 'polynomial'"
+            }
+          },
+          "decay_steps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decay Steps",
+            "description": "warmup_stable_decay 的衰减步数（<1 视为比例）",
+            "x-ui": {
+              "group": "scheduler",
+              "order": 50,
+              "show_when": "scheduler.type == 'warmup_stable_decay'"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SchedulerConfig"
       },
       "Settings": {
         "properties": {
@@ -4877,10 +7662,13 @@
         "properties": {
           "host": {
             "type": "string",
+            "minLength": 1,
             "title": "Host"
           },
           "port": {
             "type": "integer",
+            "maximum": 65535.0,
+            "minimum": 1.0,
             "title": "Port"
           }
         },
@@ -4896,10 +7684,19 @@
         "properties": {
           "language": {
             "type": "string",
+            "enum": [
+              "zh-CN",
+              "en"
+            ],
             "title": "Language"
           },
           "theme": {
             "type": "string",
+            "enum": [
+              "light",
+              "dark",
+              "system"
+            ],
             "title": "Theme"
           }
         },
@@ -4938,6 +7735,22 @@
           "ypuddin": {
             "type": "string",
             "title": "Ypuddin"
+          },
+          "cuda": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cuda"
+          },
+          "cuda_available": {
+            "type": "boolean",
+            "title": "Cuda Available",
+            "default": false
           }
         },
         "additionalProperties": true,
@@ -5028,6 +7841,49 @@
         ],
         "title": "TagBatchResult"
       },
+      "TrainConfig": {
+        "properties": {
+          "model": {
+            "$ref": "#/components/schemas/ModelConfig"
+          },
+          "dataset": {
+            "$ref": "#/components/schemas/DatasetConfig"
+          },
+          "adapter": {
+            "$ref": "#/components/schemas/AdapterConfig"
+          },
+          "objective": {
+            "$ref": "#/components/schemas/ObjectiveConfig"
+          },
+          "optimizer": {
+            "$ref": "#/components/schemas/OptimizerConfig"
+          },
+          "scheduler": {
+            "$ref": "#/components/schemas/SchedulerConfig"
+          },
+          "memory": {
+            "$ref": "#/components/schemas/MemoryConfig"
+          },
+          "loop": {
+            "$ref": "#/components/schemas/LoopConfig"
+          },
+          "checkpoint": {
+            "$ref": "#/components/schemas/CheckpointConfig"
+          },
+          "sampling": {
+            "$ref": "#/components/schemas/SamplingConfig"
+          },
+          "validation": {
+            "$ref": "#/components/schemas/ValidationConfig"
+          },
+          "logging": {
+            "$ref": "#/components/schemas/LoggingConfig"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TrainConfig"
+      },
       "ValidateResult": {
         "properties": {
           "ok": {
@@ -5069,6 +7925,139 @@
           "warnings"
         ],
         "title": "ValidateResult"
+      },
+      "ValidationConfig": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "确定性验证损失",
+            "default": false,
+            "x-ui": {
+              "control": "switch",
+              "group": "validation",
+              "order": 0
+            }
+          },
+          "split_ratio": {
+            "type": "number",
+            "exclusiveMaximum": 1.0,
+            "minimum": 0.0,
+            "title": "Split Ratio",
+            "description": "从训练集按内容哈希切出的比例",
+            "default": 0.0,
+            "x-ui": {
+              "group": "validation",
+              "order": 10,
+              "show_when": "validation.enabled == true"
+            }
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/DatasetSourceConfig"
+            },
+            "type": "array",
+            "title": "Sources",
+            "description": "显式验证数据源",
+            "x-ui": {
+              "group": "validation",
+              "order": 20,
+              "show_when": "validation.enabled == true"
+            }
+          },
+          "every_steps": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Every Steps",
+            "description": "每 N 步验证",
+            "x-ui": {
+              "group": "validation",
+              "order": 30,
+              "show_when": "validation.enabled == true"
+            }
+          },
+          "every_epochs": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Every Epochs",
+            "description": "每 N 轮验证",
+            "default": 1,
+            "x-ui": {
+              "group": "validation",
+              "order": 40,
+              "show_when": "validation.enabled == true"
+            }
+          },
+          "timesteps": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Timesteps",
+            "description": "固定验证时间步（分位数）",
+            "default": [
+              0.1,
+              0.3,
+              0.5,
+              0.7,
+              0.9
+            ],
+            "x-ui": {
+              "control": "tags",
+              "group": "validation",
+              "order": 50,
+              "show_when": "validation.enabled == true"
+            }
+          },
+          "max_images": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Images",
+            "description": "最多使用的验证图数",
+            "default": 64,
+            "x-ui": {
+              "group": "validation",
+              "order": 60,
+              "show_when": "validation.enabled == true"
+            }
+          },
+          "seed": {
+            "type": "integer",
+            "title": "Seed",
+            "description": "验证噪声种子",
+            "default": 1234,
+            "x-ui": {
+              "advanced": true,
+              "group": "validation",
+              "order": 70,
+              "show_when": "validation.enabled == true"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ValidationConfig"
       },
       "ValidationError": {
         "properties": {
@@ -5136,6 +8125,40 @@
           "mean"
         ],
         "title": "ValidationPoint"
+      },
+      "WandbConfig": {
+        "properties": {
+          "project": {
+            "type": "string",
+            "title": "Project",
+            "default": "ypuddin"
+          },
+          "run_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Name"
+          },
+          "entity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "WandbConfig"
       }
     }
   }

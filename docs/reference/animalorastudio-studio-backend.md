@@ -69,12 +69,22 @@ eval_sessions / eval_candidates / eval_metric_results (v19)
 ```
 `db.py:36-66` defines the vocabularies:
 ```python
-VALID_STATUSES = {"pending","running","done","failed","canceled","paused","scheduled"}
-TERMINAL_STATUSES = {"done","failed","canceled"}
-LIVE_STATUSES = ("running","paused","pending","scheduled")
-GPU_TASK_TYPES = ("train","reg_ai","generate")
-JOB_TASK_TYPES = ("download","preprocess","tag","reg_build","eval_session",
-                  "eval_samples","eval_clip","eval_dino","eval_tag","eval_ccip")  # last 5 legacy
+VALID_STATUSES = {"pending", "running", "done", "failed", "canceled", "paused", "scheduled"}
+TERMINAL_STATUSES = {"done", "failed", "canceled"}
+LIVE_STATUSES = ("running", "paused", "pending", "scheduled")
+GPU_TASK_TYPES = ("train", "reg_ai", "generate")
+JOB_TASK_TYPES = (
+    "download",
+    "preprocess",
+    "tag",
+    "reg_build",
+    "eval_session",
+    "eval_samples",
+    "eval_clip",
+    "eval_dino",
+    "eval_tag",
+    "eval_ccip",
+)  # last 5 legacy
 ```
 DAO is plain functions (`create_task:119-160`, `update_task:315-323` builds `SET k=?` from kwargs, `list_tasks_page`, `promote_due_scheduled:282-304`, `reorder:332-342`, `get/set_queue_held`). Every call opens a **fresh connection** (`connection_for`, `db.py:80-86`); there is no pool. `services/projects/jobs.py` is a "job" façade over the same table (`create_job` → `db.create_task(task_type=kind, params=...)`, `as_job()` injects `kind` + `log_path`).
 

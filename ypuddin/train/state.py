@@ -22,6 +22,8 @@ def capture_rng(generators: dict[str, torch.Generator] | None = None) -> dict[st
     }
     if torch.cuda.is_available():
         state["cuda"] = torch.cuda.get_rng_state_all()
+    if torch.backends.mps.is_available():
+        state["mps"] = torch.mps.get_rng_state()
     if generators:
         state["generators"] = {k: g.get_state() for k, g in generators.items()}
     return state
@@ -33,6 +35,8 @@ def restore_rng(state: dict[str, Any], generators: dict[str, torch.Generator] | 
     torch.set_rng_state(state["torch"])
     if "cuda" in state and torch.cuda.is_available():
         torch.cuda.set_rng_state_all(state["cuda"])
+    if "mps" in state and torch.backends.mps.is_available():
+        torch.mps.set_rng_state(state["mps"])
     if generators and "generators" in state:
         for k, g in generators.items():
             if k in state["generators"]:
@@ -64,9 +68,11 @@ def save_checkpoint(
     sampler_state: dict[str, Any],
     progress: Progress,
     rng: dict[str, Any],
+    training_tensors: dict[str, torch.Tensor] | None = None,
     ema_tensors: dict[str, torch.Tensor] | None = None,
     config_hash: str = "",
     dataset_fingerprint: str = "",
+    model_identity: str = "",
 ) -> Path:
     """Write everything needed for an exact resume into ``path`` (atomic via temp dir + rename)."""
     final = Path(path)
@@ -82,6 +88,11 @@ def save_checkpoint(
     torch.save(optimizer.state_dict(), tmp / "optimizer.pt")
     torch.save(scheduler.state_dict() if scheduler is not None else {}, tmp / "scheduler.pt")
     torch.save(rng, tmp / "rng.pt")
+    if training_tensors is not None:
+        save_file(
+            {k: v.detach().cpu().contiguous() for k, v in training_tensors.items()},
+            str(tmp / "training.safetensors"),
+        )
     if ema_tensors:
         save_file(
             {k: v.detach().cpu().contiguous() for k, v in ema_tensors.items()}, str(tmp / "ema.safetensors")
@@ -91,7 +102,8 @@ def save_checkpoint(
         "sampler": sampler_state,
         "config_hash": config_hash,
         "dataset_fingerprint": dataset_fingerprint,
-        "format": 1,
+        "model_identity": model_identity,
+        "format": 2 if training_tensors is not None else 1,
     }
     (tmp / "state.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     if final.exists():
@@ -103,6 +115,9 @@ def save_checkpoint(
 def load_checkpoint(path: str | Path) -> dict[str, Any]:
     p = Path(path)
     meta = json.loads((p / "state.json").read_text(encoding="utf-8"))
+    version = meta.get("format", 1)
+    if version not in (1, 2):
+        raise ValueError(f"unsupported checkpoint format {version}")
     out: dict[str, Any] = {
         "adapter": load_file(str(p / "adapter.safetensors")),
         "optimizer": torch.load(p / "optimizer.pt", map_location="cpu", weights_only=False),
@@ -112,7 +127,11 @@ def load_checkpoint(path: str | Path) -> dict[str, Any]:
         "sampler": meta["sampler"],
         "config_hash": meta.get("config_hash", ""),
         "dataset_fingerprint": meta.get("dataset_fingerprint", ""),
+        "model_identity": meta.get("model_identity", ""),
+        "format": version,
     }
+    if version >= 2:
+        out["training"] = load_file(str(p / "training.safetensors"))
     if (p / "ema.safetensors").exists():
         out["ema"] = load_file(str(p / "ema.safetensors"))
     return out

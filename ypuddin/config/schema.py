@@ -348,6 +348,21 @@ class OptimizerConfig(_Strict):
         ui_=ui("optimizer", order=90, advanced=True),
     )
 
+    @field_validator("fused_backward")
+    @classmethod
+    def _fused_backward_supported(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("fused_backward is not implemented; use false for normal optimizer steps")
+        return value
+
+    @model_validator(mode="after")
+    def _schedule_free_kahan(self) -> OptimizerConfig:
+        if self.kahan and (
+            self.type.lower() in {"prodigy_plus_sf", "adamw_sf"} or "schedulefree" in self.type.lower()
+        ):
+            raise ValueError("kahan cannot be combined with a schedule-free optimizer")
+        return self
+
 
 class SchedulerConfig(_Strict):
     type: Literal[
@@ -441,7 +456,10 @@ class CheckpointConfig(_Strict):
         None, ge=1, help="每 N 步保存完整可恢复状态", ui_=ui("checkpoint", order=40, advanced=True)
     )
     keep_last_n: int | None = F(
-        None, ge=1, help="只保留最近 N 个权重文件", ui_=ui("checkpoint", order=50, advanced=True)
+        None,
+        ge=1,
+        help="仅保留最近 N 组按步保存的权重（普通/EMA 成组；轮次与最终产物保留）",
+        ui_=ui("checkpoint", order=50, advanced=True),
     )
     save_dtype: DType = F("bf16", help="保存精度", ui_=ui("checkpoint", order=60, control="select"))
     save_on_finish: bool = F(

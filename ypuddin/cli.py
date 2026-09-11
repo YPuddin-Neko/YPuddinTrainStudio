@@ -47,14 +47,27 @@ def cmd_plan(args: argparse.Namespace) -> int:
 
     cfg = _load(args)
     gpu = None
+    device = args.device
     try:
         import torch
 
-        if torch.cuda.is_available():
-            gpu = torch.cuda.get_device_properties(0).total_memory / 2**20
+        if device is None:
+            device = (
+                "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+            )
+        target = torch.device(device)
+        if target.type == "cuda" and torch.cuda.is_available():
+            gpu = torch.cuda.get_device_properties(target.index or 0).total_memory / 2**20
+        elif target.type == "mps" and torch.backends.mps.is_available():
+            try:
+                import psutil
+
+                gpu = psutil.virtual_memory().total / 2**20
+            except ImportError:
+                gpu = torch.mps.recommended_max_memory() / 2**20
     except Exception:  # noqa: BLE001
         pass
-    result = plan(cfg, gpu_total_mb=gpu)
+    result = plan(cfg, gpu_total_mb=gpu, device=device or "cpu")
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return 0 if result["ok"] else 1
 
@@ -204,7 +217,11 @@ def cmd_serve(args: argparse.Namespace) -> int:
         return 1
 
     app = create_app(data_root=args.data_root)
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    settings = app.state.ctx.settings()["server"]
+    host, port = args.host or settings["host"], args.port or settings["port"]
+    # SSE connections are long-lived; bound their drain before the lifespan asks
+    # running trainers to checkpoint and closes the database.
+    uvicorn.run(app, host=host, port=port, log_level="info", timeout_graceful_shutdown=5)
     return 0
 
 
@@ -226,6 +243,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     pl = sub.add_parser("plan", help="validate and estimate steps / buckets / VRAM without loading weights")
     _add_config_args(pl)
+    pl.add_argument(
+        "--device",
+        default=None,
+        help="target device (auto-detect by default; cuda permits offline GPU planning)",
+    )
     pl.set_defaults(fn=cmd_plan)
 
     v = sub.add_parser("validate", help="validate a config")
@@ -271,7 +293,7 @@ def build_parser() -> argparse.ArgumentParser:
     sm.add_argument("--resolution", type=int, default=512, help="training resolution for the smoke dataset")
     sm.add_argument("--sample-size", type=int, default=512)
     sm.add_argument("--sample-steps", type=int, default=8)
-    sm.add_argument("--device", default=None, help="cuda / cuda:1 / cpu (default: auto)")
+    sm.add_argument("--device", default=None, help="cuda / cuda:1 / mps / cpu (default: auto)")
     sm.set_defaults(fn=cmd_smoke)
 
     mg = sub.add_parser("merge", help="merge an adapter into base weights")
@@ -287,8 +309,8 @@ def build_parser() -> argparse.ArgumentParser:
     mg.set_defaults(fn=cmd_merge)
 
     sv = sub.add_parser("serve", help="run the HTTP service for the web UI")
-    sv.add_argument("--host", default="127.0.0.1")
-    sv.add_argument("--port", type=int, default=8765)
+    sv.add_argument("--host", default=None, help="override the saved server host")
+    sv.add_argument("--port", type=int, default=None, help="override the saved server port")
     sv.add_argument("--data-root", default="studio_data")
     sv.set_defaults(fn=cmd_serve)
     return p

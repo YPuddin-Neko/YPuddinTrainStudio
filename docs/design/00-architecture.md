@@ -95,16 +95,18 @@
 ```python
 @dataclass(frozen=True)
 class ModelSpec:
-    name: str                      # "anima"
+    name: str  # "anima"
     objective: Literal["rectified_flow"]
-    latent: LatentSpec             # channels=16, stride=8, patch=2, temporal=False
-    text: TextSpec                 # max_len=512, pad_floor=True, encoders=("qwen3",)
-    capabilities: frozenset[str]   # {"block_swap","fp8_base","llm_adapter","text_encoder_train",...}
+    latent: LatentSpec  # channels=16, stride=8, patch=2, temporal=False
+    text: TextSpec  # max_len=512, pad_floor=True, encoders=("qwen3",)
+    capabilities: frozenset[str]  # {"block_swap","fp8_base","llm_adapter","text_encoder_train",...}
     t_convention: Literal["unit"]  # 模型接收 t∈(0,1)（Anima/Cosmos），而非 t*1000
     sampling_defaults: SamplingDefaults  # steps=25, cfg=4.0, shift=3.0, sampler="euler"
 
+
 class ModelFamily(Protocol):
     spec: ModelSpec
+
     def load(self, paths: ModelPaths, *, dtype, device, memory: MemoryPlan) -> LoadedModel: ...
     # 文本：tokenize → encode，返回 opaque 的 TextCond（含 fingerprint 用于缓存键）
     def text_pipeline(self, loaded) -> TextPipeline: ...
@@ -118,6 +120,7 @@ class ModelFamily(Protocol):
     def key_mapping(self) -> KeyMapping: ...
     # 显存计划：可交换的 block 列表、必须保持高精度的模块名、每 block 参数量
     def memory_layout(self, loaded) -> MemoryLayout: ...
+
     # 预览采样所需的最小推理：调用 forward + CFG，由 sampling 模块驱动
 ```
 
@@ -182,14 +185,14 @@ Trainer(config)
 
 - 步为一等公民（epoch 是派生量）；梯度累积在微批层面；`sync_gradients` 边界才计步、裁剪、调度。
 - 非有限损失：跳过该微批并计数，连续 N 次升级为错误（沿用 AnimaLoraStudio 教训）。
-- **完整检查点**（原子写入）：适配器权重、优化器状态、调度器、`BucketBatchSampler` 状态、时间步采样器状态、EMA、RNG（python/numpy/torch/cuda）、step/epoch、配置哈希、数据指纹。恢复时校验指纹并逐项还原 → **任意步边界可暂停恢复**。
+- **完整检查点**（原子写入）：适配器权重、优化器状态、调度器、`BucketBatchSampler` 状态、时间步采样器状态、EMA、RNG（python/numpy/torch/cuda/mps）、step/epoch、配置哈希、数据指纹。恢复时校验指纹并逐项还原 → **任意步边界可暂停恢复**。
 - **控制通道**：`control/` 目录下的命令文件（`pause`、`save`、`stop`）+ SIGINT/SIGTERM（Windows 上以文件为主）。暂停 = 在下一个优化器步边界写完整检查点后退出（状态 `paused`）。
 - EMA（可选，默认 CPU 上对适配器参数），保存 `-ema` 变体。
-- 优化器：AdamW / AdamW8bit / Lion / Prodigy / Prodigy+ScheduleFree / Adafactor / CAME + 通用 `module.Class` 透传；`kahan=true` 对任何优化器在 bf16 参数上补偿；`fused_backward`（逐参数 post-accumulate hook，即时释放梯度）。
+- 优化器：AdamW / AdamW8bit / Lion / Prodigy / Prodigy+ScheduleFree / Adafactor / CAME + 通用 `module.Class` 透传；`kahan=true` 在 bf16 参数上补偿（与 Schedule-Free 组合显式拒绝）；`fused_backward=true` 尚未实现，配置校验显式拒绝。
 - 调度器：constant / linear / cosine / cosine_restarts / polynomial / warmup_stable_decay / rex；schedule-free 感知（train/eval 切换）。
 - 采样出图：Euler + shift，CFG，多提示词，按步/epoch 触发，在训练进程内以 `no_grad` 运行并可临时切换 swap 为推理模式；产物写 `samples/` 并发事件。
 - 事件（JSON Lines → `events.jsonl` + 管道）：`run.started`、`phase.changed`、`cache.progress`、`step`（loss/lr/grad_norm/it_s/vram/eta）、`validation`、`sample.saved`、`checkpoint.saved`、`warning`、`run.finished|failed|paused`。TensorBoard / W&B 作为可选 sink。
-- 多 GPU：`torchrun` DDP；适配器是真实子模块所以 DDP 归约自然成立；采样器按 rank 切分；缓存按 rank 分片。
+- 多 GPU 训练是后续目标，当前没有 DDP 包装；服务可在不同 GPU 上各运行一个独立单设备任务。
 
 ---
 
@@ -198,18 +201,18 @@ Trainer(config)
 - **fp8 冻结底模**：加载时把 `memory_layout.quantizable` 的 2D 权重量化为 `float8_e4m3fn` + 逐张量（或逐 128 行块）fp32 缩放；前向在 bypass 路径反量化到 bf16 做 matmul；兼容读取 ComfyUI `fp8_scaled`（`scale_weight`）文件与裸 fp8 文件；LoRA 参数始终全精度。merge 工具支持"反量化 → 加 ΔW → 重量化（`amax/448`）"。
 - **Block Swap**：最后 N 个 block 的权重驻留 **pinned 主机内存**（打包进少量大块，规避 2^n 取整），前向 pre/post hook 与反向 pre/post hook 在专用 CUDA 流上预取/换出，`param.data` 原地交换（不替换模块对象）；LoRA 参数永不交换；推理模式可整体关闭。
 - **激活检查点**：`none | block | unsloth`（block 输入异步卸载到 CPU，反向时重算）。
-- **VRAM 规划器**：`plan` 命令与服务预检共用；训练期以 `torch.cuda.max_memory_allocated` 上报真实峰值。
+- **VRAM 规划器**：`plan` 命令与服务预检共用且采用相同数据布局。MPS 按 FP32 估算，不将 CPU swap 视为统一内存释放。训练事件 `vram_metric=peak_allocated` 表示 CUDA PyTorch 分配峰值，`current_allocated` 表示 MPS 当前 PyTorch 分配量，不代表整机或驱动的硬件峰值。
 
 ---
 
 ## 11. 服务与任务（`ypuddin.server`）
 
-- FastAPI；SQLite（`aiosqlite`），表：`projects`、`datasets`、`presets`、`jobs`、`artifacts`、`events`（滚动保留）；WAL。
-- **JobSupervisor**：任务是子进程（`ypuddin train … --events-fd`），事件经**专用管道**（非 stdout）进入 EventBus → SSE `/api/events`（支持 `Last-Event-ID` 断线续传）。stdout/stderr 单独落 `run.log`。
-- 队列：优先级 FIFO，`scheduled_at` 定时；GPU 槽位以 nvml **实测空闲显存** + plan 估算做准入，而非静态标签。
-- 控制：`POST /jobs/{id}/pause|resume|cancel|save`；pause 写命令文件并等待 `run.paused` 事件（超时降级为 cancel 并保留最近检查点）。
+- FastAPI；标准库 `sqlite3` + RLock + WAL；表为 `projects`、`datasets`、`jobs`、`artifacts`、`models`、`kv`。配置草稿、预设和事件文件单独落盘。
+- **JobSupervisor**：每任务启动 `ypuddin train/cache … --device` 子进程，独立 `events.jsonl` 被监督器尾读进入 EventBus → SSE `/api/events`（支持有限内存环中的 Last-Event-ID 重放）。stdout/stderr 单独落 `run.log`；重连时前端重新拉取快照。
+- 队列：优先级 FIFO、定时任务、每加速器独占。CUDA 空闲显存来自 PyTorch，NVML 仅补充可用遥测；MPS 来自系统可用统一内存。空闲容量与 Plan 估算用于可关闭的 `memory_admission` 准入，不支持 DDP。
+- 控制：`POST /jobs/{id}/pause|resume|cancel|save` 写命令文件。缓存准备中可暂停并复用缓存，恢复准备中再次暂停保留原恢复目标；训练暂停在优化器步边界保存完整状态。取消超时仅杀对应原子进程，服务停止先请求暂停再限时等待。CLI 给 SSE 连接 5 秒退出宽限，随后进入服务清理。
 - 错误信封 `{"error": {"code","message","trace_id","details"}}`，`X-Trace-Id` 贯穿。
-- OpenAPI JSON 导出到 `docs/api/openapi.json` 供前端生成客户端；SSE 事件类型与 payload 在 `docs/api/events.md` 定义并有 pydantic 模型保证。
+- OpenAPI JSON 导出到 `docs/api/openapi.json` 供前端生成类型。训练事件及服务转换以 `train/trainer.py`、`server/supervisor.py` 为准；SSE payload 未统一为完整 Pydantic 模型。
 - 前端需求见 `../frontend-spec.md`。
 
 ---
@@ -242,6 +245,13 @@ Trainer(config)
 - **D2 适配器用真实子模块替换**：换取 DDP/compile/state_dict 的常规行为，代价是需要一次模块树重写（可逆）。
 - **D3 kohya 键名为内部规范存储格式**：ComfyUI、A1111 生态直接可用；同时提供 ComfyUI/PEFT 键导出。
 - **D4 缓存集中、内容哈希键**：数据集目录保持干净；重命名/移动不失效；多项目共享。
-- **D5 事件走专用管道**：杜绝 stdout 解析的脆弱性；日志与事件分离。
+- **D5 事件走独立 JSONL 文件**：杜绝 stdout 解析的脆弱性；日志与事件分离。
 - **D6 精确暂停恢复而非 epoch 末备份**：一切有状态组件必须实现 `state_dict`，这是设计约束而非事后补丁。
 - **D7 Apache-2.0，不复制 GPL 代码**：Anima 模型结构以 NVIDIA Cosmos-Predict2（Apache-2.0）与 sd-scripts（Apache-2.0）为参考独立实现；ComfyUI 派生的采样器/文本编码细节只做行为对齐，不搬代码。
+
+
+## 15. 2026-09-11 修复后的状态边界
+
+模型先在 CPU 加载主干并注入适配器，缓存所需 VAE/文本编码器错峰加载；之后按换块布局搬运训练主干。实际 VAE/文本权重、配置和 tokenizer 内容形成缓存指纹，DiT 与两编码器身份写入 format 2 完整状态。缓存键不含 mask，mask 每次读取；数据指纹含 caption/mask/验证源且采样顺序按内容稳定排序。新版恢复校验不能兼容旧文件名排序时明确拒绝。
+
+服务对新任务冻结绝对路径并强制独立事件/输出路径。修改设置中的 cache/output/models 只影响后续任务；已有运行路径保留。host/port 重启生效且显式 CLI 参数优先；data_root 只由启动参数决定。详情见 `../FIX_REPORT_2026-09-11.md`。

@@ -1,28 +1,36 @@
+import { ACTIVE_JOB_STATUSES, mergeJobEvent } from '../../utils/jobs';
 import React from 'react';
+import { GpuCard } from '../../components/GpuCard';
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../api/client';
-import { SystemStats, Job, JobListResponse, Artifact } from '../../api/types';
+import { SystemStats, SystemInfo, Job, JobListResponse, Artifact, isAppleSilicon } from '../../api/types';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
 import { formatBytesGB, formatBytesMB, formatEta } from '../../utils/format';
-import { Activity, Layers, Box, Cpu, HardDrive, Zap, AlertTriangle } from 'lucide-react';
+import { Activity, Layers, Box, Cpu, HardDrive, ArrowRight, AlertTriangle, Cpu as AppleChip } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export default function Dashboard() {
   const { t } = useTranslation();
   const [stats, setStats] = React.useState<SystemStats | null>(null);
+  const [sysInfo, setSysInfo] = React.useState<SystemInfo | null>(null);
   const [jobs, setJobs] = React.useState<Job[]>([]);
+  const [queueTotal, setQueueTotal] = React.useState(0);
+  const [completedTotal, setCompletedTotal] = React.useState(0);
   const [artifacts, setArtifacts] = React.useState<Artifact[]>([]);
 
   const fetchJobs = React.useCallback(() => {
-    apiClient.get<JobListResponse | Job[]>('/jobs').then((res) => {
+    apiClient.get<JobListResponse | Job[]>('/jobs', { params: { status: ACTIVE_JOB_STATUSES } }).then((res) => {
       if (Array.isArray(res)) setJobs(res);
       else if (res && Array.isArray(res.items)) setJobs(res.items);
     }).catch(console.error);
+    apiClient.get<JobListResponse>('/jobs', { params: { status: 'queued,scheduled', page_size: 1 } }).then((page) => setQueueTotal(page.total)).catch(console.error);
+    apiClient.get<JobListResponse>('/jobs', { params: { status: 'completed', page_size: 1 } }).then((page) => setCompletedTotal(page.total)).catch(console.error);
   }, []);
 
   React.useEffect(() => {
     apiClient.get<SystemStats>('/system/stats').then(setStats).catch(console.error);
+    apiClient.get<SystemInfo>('/system/info').then(setSysInfo).catch(() => {});
     fetchJobs();
     apiClient.get<Artifact[]>('/artifacts').then((res) => setArtifacts(Array.isArray(res) ? res : [])).catch(console.error);
   }, [fetchJobs]);
@@ -35,32 +43,37 @@ export default function Dashboard() {
     fetchJobs();
   });
 
-  const runningJob = jobs.find((j) => j.status === 'running');
-  const queuedCount = jobs.filter((j) => j.status === 'queued' || j.status === 'scheduled').length;
-  const completedJobs = jobs.filter((j) => j.status === 'completed');
+  useEventStream(EVENT_TYPES.JOB_STEP, (data: any) => setJobs((rows) => rows.map((job) => mergeJobEvent(job, data))));
+  useEventStream(EVENT_TYPES.JOB_PHASE, (data: any) => setJobs((rows) => rows.map((job) => mergeJobEvent(job, data))));
+  useEventStream(EVENT_TYPES.JOB_CHECKPOINT, () => apiClient.get<Artifact[]>('/artifacts').then(setArtifacts).catch(console.error));
+  useEventStream(EVENT_TYPES.QUEUE_CHANGED, fetchJobs);
+  const runningJob = jobs.find((j) => ACTIVE_JOB_STATUSES.split(',').includes(j.status));
   const gpus = stats?.gpus || [];
+  const appleSilicon = isAppleSilicon(sysInfo);
 
   return (
     <div className="space-y-6" data-testid="dashboard-page">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div><h1 className="text-2xl font-bold">{t('hardware.homeTitle')}</h1><p className="mt-2 text-sm text-slate-500">{t('hardware.homeDescription')}</p></div>
+        <Link to="/projects" className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium">{t('hardware.startTraining')}<ArrowRight className="w-4 h-4" /></Link>
+      </div>
       {/* 1. 顶部系统状态条 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {gpus.map((gpu) => (
-          <div key={gpu.index} className="p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
-            <div className="flex justify-between items-center text-xs text-slate-400">
-              <span className="flex items-center space-x-1">
-                <Zap className="w-3.5 h-3.5 text-amber-500" />
-                <span>{t('dashboard.gpu')} {gpu.index}{gpu.name ? ` · ${gpu.name}` : ''}</span>
-              </span>
-              <span className="font-mono">{gpu.temp_c != null ? `${gpu.temp_c}°C` : ''}</span>
-            </div>
-            <div className="text-2xl font-bold font-mono mt-1">{gpu.util_pct ?? 0}%</div>
-            <div className="text-xs text-slate-400 mt-1 font-mono">
-              {t('dashboard.vram')}: {formatBytesMB(gpu.mem_used_mb)} / {formatBytesMB(gpu.mem_total_mb)}
-            </div>
-          </div>
-        ))}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {gpus.map((gpu) => <GpuCard key={gpu.index} gpu={gpu} />)}
 
-        {gpus.length === 0 && (
+        {gpus.length === 0 && appleSilicon && (
+          <div className="p-4 bg-blue-50 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800" data-testid="apple-gpu-card">
+            <div className="flex items-center space-x-1 text-xs text-blue-600 dark:text-blue-400">
+              <AppleChip className="w-3.5 h-3.5" />
+              <span>{t('dashboard.appleGpuTitle', 'Apple Silicon GPU')}</span>
+            </div>
+            <p className="text-xs text-blue-600/80 dark:text-blue-400/80 mt-1.5">
+              {t('dashboard.appleGpuDesc', 'MPS 适配开发中，利用率/功耗上报由后端提供后将自动显示。')}
+            </p>
+          </div>
+        )}
+
+        {gpus.length === 0 && !appleSilicon && (
           <div className="p-4 bg-amber-50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800" data-testid="no-gpu-card">
             <div className="flex items-center space-x-1 text-xs text-amber-600 dark:text-amber-400">
               <AlertTriangle className="w-3.5 h-3.5" />
@@ -70,6 +83,7 @@ export default function Dashboard() {
           </div>
         )}
 
+        <div className="grid grid-cols-3 gap-3">
         <div className="p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
           <div className="flex justify-between items-center text-xs text-slate-400">
             <span className="flex items-center space-x-1">
@@ -109,6 +123,7 @@ export default function Dashboard() {
             / {stats?.disks?.[0] ? formatBytesGB(stats.disks[0].total_gb) : '--'}
           </div>
         </div>
+        </div>
       </div>
 
       {/* 2. 正在运行的任务卡片 */}
@@ -137,7 +152,7 @@ export default function Dashboard() {
             <div>
               <div className="text-xs text-slate-400">{t('dashboard.phaseStep')}</div>
               <div className="font-semibold text-sm capitalize font-mono">
-                {runningJob.progress.phase || '--'} ({runningJob.progress.step ?? 0}/{runningJob.progress.total_steps ?? 0})
+                {runningJob.progress.phase ? t(`phase.${runningJob.progress.phase}`, runningJob.progress.phase) : '--'} ({runningJob.progress.step ?? 0}/{runningJob.progress.total_steps ?? 0})
               </div>
             </div>
             <div>
@@ -161,8 +176,9 @@ export default function Dashboard() {
           </div>
         </div>
       ) : (
-        <div className="p-6 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-center min-h-[120px] text-slate-500">
-          {t('dashboard.noActiveJob')}
+        <div className="p-6 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-5">
+          <div><h2 className="font-semibold">{t('dashboard.noActiveJob')}</h2><p className="text-sm text-slate-500 mt-2">{t('hardware.workspaceHint')}</p></div>
+          <div className="flex gap-3 text-sm"><Link to="/models" className="px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800">{t('hardware.manageModels')}</Link><Link to="/projects" className="inline-flex items-center gap-2 px-4 py-2.5 text-blue-600 bg-blue-50 dark:bg-blue-950/40 rounded-lg">{t('hardware.openProjects')}<ArrowRight className="w-4 h-4" /></Link></div>
         </div>
       )}
 
@@ -179,11 +195,11 @@ export default function Dashboard() {
           <div className="flex space-x-4">
             <div className="flex-1 p-3 bg-slate-50 dark:bg-slate-900 rounded-lg">
               <div className="text-xs text-slate-400">{t('dashboard.queuedScheduled')}</div>
-              <div className="text-xl font-bold font-mono mt-1">{queuedCount}</div>
+              <div className="text-xl font-bold font-mono mt-1">{queueTotal}</div>
             </div>
             <div className="flex-1 p-3 bg-slate-50 dark:bg-slate-900 rounded-lg">
               <div className="text-xs text-slate-400">{t('dashboard.completedRecent')}</div>
-              <div className="text-xl font-bold font-mono mt-1">{completedJobs.length}</div>
+              <div className="text-xl font-bold font-mono mt-1">{completedTotal}</div>
             </div>
           </div>
         </div>

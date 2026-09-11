@@ -1,2308 +1,2308 @@
 {
-    "$defs": {
-        "AdapterConfig": {
-            "additionalProperties": false,
-            "properties": {
-                "algo": {
-                    "default": "lokr",
-                    "description": "\u9002\u914d\u5668\u7b97\u6cd5",
-                    "enum": [
-                        "lora",
-                        "lokr",
-                        "loha",
-                        "full"
-                    ],
-                    "title": "Algo",
-                    "type": "string",
-                    "x-ui": {
-                        "control": "select",
-                        "group": "adapter",
-                        "order": 0
-                    }
-                },
-                "rank": {
-                    "anyOf": [
-                        {
-                            "type": "integer"
-                        },
-                        {
-                            "const": "full",
-                            "type": "string"
-                        }
-                    ],
-                    "default": 16,
-                    "description": "\u79e9\uff08LoKr \u4e2d\u4e3a W2 \u7684\u4f4e\u79e9\uff1b'full' \u8868\u793a W2 \u6ee1\u77e9\u9635\uff09",
-                    "title": "Rank",
-                    "x-ui": {
-                        "group": "adapter",
-                        "order": 10
-                    }
-                },
-                "alpha": {
-                    "default": 16.0,
-                    "description": "\u7f29\u653e alpha\uff08scale = alpha / rank\uff09",
-                    "exclusiveMinimum": 0,
-                    "title": "Alpha",
-                    "type": "number",
-                    "x-ui": {
-                        "group": "adapter",
-                        "order": 20
-                    }
-                },
-                "factor": {
-                    "default": -1,
-                    "description": "LoKr \u56e0\u5b50\uff1a-1 \u5e73\u8861\u5206\u89e3\uff1bf>0 \u65f6\u5c0f\u56e0\u5b50 W1 \u7684\u8fb9\u957f\u4e3a f",
-                    "title": "Factor",
-                    "type": "integer",
-                    "x-ui": {
-                        "group": "adapter",
-                        "order": 30,
-                        "show_when": "adapter.algo == 'lokr'"
-                    }
-                },
-                "decompose_both": {
-                    "default": false,
-                    "description": "LoKr\uff1aW1 \u4e5f\u505a\u4f4e\u79e9\u5206\u89e3",
-                    "title": "Decompose Both",
-                    "type": "boolean",
-                    "x-ui": {
-                        "advanced": true,
-                        "control": "switch",
-                        "group": "adapter",
-                        "order": 40,
-                        "show_when": "adapter.algo == 'lokr'"
-                    }
-                },
-                "rs_lora": {
-                    "default": false,
-                    "description": "rsLoRA\uff1ascale = alpha / sqrt(rank)",
-                    "title": "Rs Lora",
-                    "type": "boolean",
-                    "x-ui": {
-                        "advanced": true,
-                        "control": "switch",
-                        "group": "adapter",
-                        "order": 50
-                    }
-                },
-                "dora": {
-                    "default": false,
-                    "description": "DoRA \u6743\u91cd\u5206\u89e3\uff08\u5e45\u5ea6/\u65b9\u5411\uff09",
-                    "title": "Dora",
-                    "type": "boolean",
-                    "x-ui": {
-                        "control": "switch",
-                        "group": "adapter",
-                        "order": 60
-                    }
-                },
-                "init": {
-                    "default": "default",
-                    "description": "\u521d\u59cb\u5316\uff1adefault\uff08\u4e00\u4fa7\u7f6e\u96f6\uff09/ scalar\uff08\u5168\u968f\u673a + \u53ef\u8bad\u7ec3\u6807\u91cf\u4ece 0 \u8d77\uff09",
-                    "enum": [
-                        "default",
-                        "scalar"
-                    ],
-                    "title": "Init",
-                    "type": "string",
-                    "x-ui": {
-                        "advanced": true,
-                        "control": "select",
-                        "group": "adapter",
-                        "order": 70
-                    }
-                },
-                "dropout": {
-                    "default": 0.0,
-                    "description": "\u5bf9\u9002\u914d\u5668\u8f93\u51fa\u7684 dropout",
-                    "maximum": 1,
-                    "minimum": 0,
-                    "title": "Dropout",
-                    "type": "number",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "adapter",
-                        "order": 80
-                    }
-                },
-                "rank_dropout": {
-                    "default": 0.0,
-                    "description": "\u79e9\u8f74 dropout",
-                    "maximum": 1,
-                    "minimum": 0,
-                    "title": "Rank Dropout",
-                    "type": "number",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "adapter",
-                        "order": 90
-                    }
-                },
-                "module_dropout": {
-                    "default": 0.0,
-                    "description": "\u6574\u6a21\u5757\u8df3\u8fc7\u6982\u7387",
-                    "maximum": 1,
-                    "minimum": 0,
-                    "title": "Module Dropout",
-                    "type": "number",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "adapter",
-                        "order": 100
-                    }
-                },
-                "preset": {
-                    "default": "attn-mlp",
-                    "description": "\u65cf\u5185\u76ee\u6807\u9884\u8bbe\uff08attn-mlp / attn-only / full-linear / ...\uff09",
-                    "title": "Preset",
-                    "type": "string",
-                    "x-ui": {
-                        "control": "select",
-                        "group": "adapter",
-                        "order": 110
-                    }
-                },
-                "rules": {
-                    "description": "\u6309\u5e8f\u5339\u914d\u7684\u8986\u76d6\u89c4\u5219",
-                    "items": {
-                        "$ref": "#/$defs/AdapterRule"
-                    },
-                    "title": "Rules",
-                    "type": "array",
-                    "x-ui": {
-                        "control": "rules",
-                        "group": "adapter",
-                        "order": 120
-                    }
-                },
-                "mode": {
-                    "default": "auto",
-                    "description": "\u6267\u884c\u8def\u5f84\uff08auto \u6309\u7b97\u6cd5\u4e0e\u5e95\u6a21\u7cbe\u5ea6\u9009\u62e9\uff09",
-                    "enum": [
-                        "auto",
-                        "bypass",
-                        "merged"
-                    ],
-                    "title": "Mode",
-                    "type": "string",
-                    "x-ui": {
-                        "advanced": true,
-                        "control": "select",
-                        "group": "adapter",
-                        "order": 130
-                    }
-                },
-                "param_dtype": {
-                    "default": "fp32",
-                    "description": "\u9002\u914d\u5668\u53c2\u6570\u7cbe\u5ea6\uff08\u4e3b\u6743\u91cd\uff09",
-                    "enum": [
-                        "fp32",
-                        "bf16"
-                    ],
-                    "title": "Param Dtype",
-                    "type": "string",
-                    "x-ui": {
-                        "advanced": true,
-                        "control": "select",
-                        "group": "adapter",
-                        "order": 140
-                    }
-                },
-                "lr_scale": {
-                    "additionalProperties": {
-                        "type": "number"
-                    },
-                    "description": "\u6309\u53c2\u6570\u7c7b\u522b\u7684\u5b66\u4e60\u7387\u500d\u7387\uff0c\u5982 {'up': 16}\uff08LoRA+\uff09\u6216 {'w1': 0.5}",
-                    "title": "Lr Scale",
-                    "type": "object",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "adapter",
-                        "order": 150
-                    }
-                },
-                "resume_weights": {
-                    "anyOf": [
-                        {
-                            "type": "string"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "\u4ece\u5df2\u6709\u9002\u914d\u5668\u6743\u91cd\u70ed\u542f\u52a8",
-                    "title": "Resume Weights",
-                    "x-ui": {
-                        "advanced": true,
-                        "control": "path",
-                        "group": "adapter",
-                        "order": 160
-                    }
-                }
-            },
-            "title": "AdapterConfig",
-            "type": "object"
+  "$defs": {
+    "AdapterConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "algo": {
+          "default": "lokr",
+          "description": "适配器算法",
+          "enum": [
+            "lora",
+            "lokr",
+            "loha",
+            "full"
+          ],
+          "title": "Algo",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "adapter",
+            "order": 0
+          }
         },
-        "AdapterRule": {
-            "additionalProperties": false,
-            "properties": {
-                "match": {
-                    "description": "\u6a21\u5757\u540d\u5339\u914d\uff1aglob\uff0c\u6216 're:' \u524d\u7f00\u6b63\u5219",
-                    "title": "Match",
-                    "type": "string"
-                },
-                "algo": {
-                    "anyOf": [
-                        {
-                            "enum": [
-                                "lora",
-                                "lokr",
-                                "loha",
-                                "full",
-                                "none"
-                            ],
-                            "type": "string"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "\u8986\u76d6\u7b97\u6cd5\uff1bnone \u8868\u793a\u6392\u9664",
-                    "title": "Algo"
-                },
-                "rank": {
-                    "anyOf": [
-                        {
-                            "type": "integer"
-                        },
-                        {
-                            "const": "full",
-                            "type": "string"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "title": "Rank"
-                },
-                "alpha": {
-                    "anyOf": [
-                        {
-                            "type": "number"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "title": "Alpha"
-                },
-                "factor": {
-                    "anyOf": [
-                        {
-                            "type": "integer"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "title": "Factor"
-                },
-                "lr": {
-                    "anyOf": [
-                        {
-                            "type": "number"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "\u8be5\u7ec4\u53c2\u6570\u7684\u5b66\u4e60\u7387\uff08\u8986\u76d6 optimizer.lr\uff09",
-                    "title": "Lr"
-                },
-                "dropout": {
-                    "anyOf": [
-                        {
-                            "type": "number"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "title": "Dropout"
-                },
-                "rank_dropout": {
-                    "anyOf": [
-                        {
-                            "type": "number"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "title": "Rank Dropout"
-                }
+        "rank": {
+          "anyOf": [
+            {
+              "type": "integer"
             },
-            "required": [
-                "match"
-            ],
-            "title": "AdapterRule",
-            "type": "object"
+            {
+              "const": "full",
+              "type": "string"
+            }
+          ],
+          "default": 16,
+          "description": "秩（LoKr 中为 W2 的低秩；'full' 表示 W2 满矩阵）",
+          "title": "Rank",
+          "x-ui": {
+            "group": "adapter",
+            "order": 10
+          }
         },
-        "CaptionConfig": {
-            "additionalProperties": false,
-            "properties": {
-                "prefix": {
-                    "default": "",
-                    "description": "\u52a0\u5728 caption \u524d\u7684\u6587\u672c",
-                    "title": "Prefix",
-                    "type": "string",
-                    "x-ui": {
-                        "group": "caption",
-                        "order": 0
-                    }
-                },
-                "suffix": {
-                    "default": "",
-                    "description": "\u52a0\u5728 caption \u540e\u7684\u6587\u672c",
-                    "title": "Suffix",
-                    "type": "string",
-                    "x-ui": {
-                        "group": "caption",
-                        "order": 10
-                    }
-                },
-                "trigger_word": {
-                    "anyOf": [
-                        {
-                            "type": "string"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "\u89e6\u53d1\u8bcd\uff1a\u653e\u5728\u6700\u524d\u4e14\u4e0d\u53c2\u4e0e\u6d17\u724c/\u4e22\u5f03",
-                    "title": "Trigger Word",
-                    "x-ui": {
-                        "group": "caption",
-                        "order": 20
-                    }
-                },
-                "keep_tokens": {
-                    "default": 0,
-                    "description": "\u524d N \u4e2a tag \u56fa\u5b9a\u4e0d\u6d17\u724c",
-                    "minimum": 0,
-                    "title": "Keep Tokens",
-                    "type": "integer",
-                    "x-ui": {
-                        "group": "caption",
-                        "order": 30
-                    }
-                },
-                "shuffle": {
-                    "default": false,
-                    "description": "\u968f\u673a\u6253\u4e71 tag \u987a\u5e8f",
-                    "title": "Shuffle",
-                    "type": "boolean",
-                    "x-ui": {
-                        "control": "switch",
-                        "group": "caption",
-                        "order": 40
-                    }
-                },
-                "tag_dropout": {
-                    "default": 0.0,
-                    "description": "\u6bcf\u4e2a tag \u88ab\u4e22\u5f03\u7684\u6982\u7387",
-                    "maximum": 1,
-                    "minimum": 0,
-                    "title": "Tag Dropout",
-                    "type": "number",
-                    "x-ui": {
-                        "control": "slider",
-                        "group": "caption",
-                        "order": 50,
-                        "step": 0.01
-                    }
-                },
-                "caption_dropout": {
-                    "default": 0.0,
-                    "description": "\u6574\u6761 caption \u7f6e\u7a7a\u7684\u6982\u7387\uff08\u65e0\u6761\u4ef6\u8bad\u7ec3\uff0c\u670d\u52a1\u4e8e CFG\uff09",
-                    "maximum": 1,
-                    "minimum": 0,
-                    "title": "Caption Dropout",
-                    "type": "number",
-                    "x-ui": {
-                        "control": "slider",
-                        "group": "caption",
-                        "order": 60,
-                        "step": 0.01
-                    }
-                },
-                "separator": {
-                    "default": ",",
-                    "description": "tag \u5206\u9694\u7b26",
-                    "title": "Separator",
-                    "type": "string",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "caption",
-                        "order": 70
-                    }
-                },
-                "wildcard": {
-                    "default": false,
-                    "description": "\u652f\u6301 {a|b} \u901a\u914d\u7b26\u968f\u673a\u9009\u62e9",
-                    "title": "Wildcard",
-                    "type": "boolean",
-                    "x-ui": {
-                        "advanced": true,
-                        "control": "switch",
-                        "group": "caption",
-                        "order": 80
-                    }
-                },
-                "cache_variants": {
-                    "default": 8,
-                    "description": "\u6587\u672c\u7f16\u7801\u4e3a cached \u65f6\uff0c\u6bcf\u5f20\u56fe\u9884\u7f13\u5b58\u7684 caption \u968f\u673a\u53d8\u4f53\u6570\uff08\u4ec5 shuffle / tag_dropout / wildcard \u751f\u6548\u65f6\u6709\u610f\u4e49\uff09",
-                    "maximum": 256,
-                    "minimum": 1,
-                    "title": "Cache Variants",
-                    "type": "integer",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "caption",
-                        "order": 90,
-                        "show_when": "dataset.text_encoding != 'online'"
-                    }
-                }
-            },
-            "title": "CaptionConfig",
-            "type": "object"
+        "alpha": {
+          "default": 16.0,
+          "description": "缩放 alpha（scale = alpha / rank）",
+          "exclusiveMinimum": 0,
+          "title": "Alpha",
+          "type": "number",
+          "x-ui": {
+            "group": "adapter",
+            "order": 20
+          }
         },
-        "CheckpointConfig": {
-            "additionalProperties": false,
-            "properties": {
-                "output_dir": {
-                    "default": "outputs/run",
-                    "description": "\u8f93\u51fa\u76ee\u5f55",
-                    "title": "Output Dir",
-                    "type": "string",
-                    "x-ui": {
-                        "control": "path",
-                        "group": "checkpoint",
-                        "order": 0
-                    }
-                },
-                "name": {
-                    "default": "lora",
-                    "description": "\u4ea7\u7269\u6587\u4ef6\u540d\u524d\u7f00",
-                    "title": "Name",
-                    "type": "string",
-                    "x-ui": {
-                        "group": "checkpoint",
-                        "order": 10
-                    }
-                },
-                "save_every_steps": {
-                    "anyOf": [
-                        {
-                            "minimum": 1,
-                            "type": "integer"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "\u6bcf N \u6b65\u4fdd\u5b58\u6743\u91cd",
-                    "title": "Save Every Steps",
-                    "x-ui": {
-                        "group": "checkpoint",
-                        "order": 20
-                    }
-                },
-                "save_every_epochs": {
-                    "anyOf": [
-                        {
-                            "minimum": 1,
-                            "type": "integer"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": 1,
-                    "description": "\u6bcf N \u8f6e\u4fdd\u5b58\u6743\u91cd",
-                    "title": "Save Every Epochs",
-                    "x-ui": {
-                        "group": "checkpoint",
-                        "order": 30
-                    }
-                },
-                "save_state_every_steps": {
-                    "anyOf": [
-                        {
-                            "minimum": 1,
-                            "type": "integer"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "\u6bcf N \u6b65\u4fdd\u5b58\u5b8c\u6574\u53ef\u6062\u590d\u72b6\u6001",
-                    "title": "Save State Every Steps",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "checkpoint",
-                        "order": 40
-                    }
-                },
-                "keep_last_n": {
-                    "anyOf": [
-                        {
-                            "minimum": 1,
-                            "type": "integer"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "\u53ea\u4fdd\u7559\u6700\u8fd1 N \u4e2a\u6743\u91cd\u6587\u4ef6",
-                    "title": "Keep Last N",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "checkpoint",
-                        "order": 50
-                    }
-                },
-                "save_dtype": {
-                    "default": "bf16",
-                    "description": "\u4fdd\u5b58\u7cbe\u5ea6",
-                    "enum": [
-                        "bf16",
-                        "fp16",
-                        "fp32"
-                    ],
-                    "title": "Save Dtype",
-                    "type": "string",
-                    "x-ui": {
-                        "control": "select",
-                        "group": "checkpoint",
-                        "order": 60
-                    }
-                },
-                "save_on_finish": {
-                    "default": true,
-                    "description": "\u7ed3\u675f\u65f6\u4fdd\u5b58\u6700\u7ec8\u6743\u91cd",
-                    "title": "Save On Finish",
-                    "type": "boolean",
-                    "x-ui": {
-                        "control": "switch",
-                        "group": "checkpoint",
-                        "order": 70
-                    }
-                },
-                "resume": {
-                    "anyOf": [
-                        {
-                            "type": "string"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "\u4ece\u5b8c\u6574\u72b6\u6001\u76ee\u5f55\u6062\u590d",
-                    "title": "Resume",
-                    "x-ui": {
-                        "control": "path",
-                        "group": "checkpoint",
-                        "order": 80
-                    }
-                }
-            },
-            "title": "CheckpointConfig",
-            "type": "object"
+        "factor": {
+          "default": -1,
+          "description": "LoKr 因子：-1 平衡分解；f>0 时小因子 W1 的边长为 f",
+          "title": "Factor",
+          "type": "integer",
+          "x-ui": {
+            "group": "adapter",
+            "order": 30,
+            "show_when": "adapter.algo == 'lokr'"
+          }
         },
-        "DatasetConfig": {
-            "additionalProperties": false,
-            "properties": {
-                "sources": {
-                    "description": "\u6570\u636e\u6e90\u5217\u8868",
-                    "items": {
-                        "$ref": "#/$defs/DatasetSourceConfig"
-                    },
-                    "title": "Sources",
-                    "type": "array",
-                    "x-ui": {
-                        "group": "dataset",
-                        "order": 0
-                    }
-                },
-                "resolutions": {
-                    "default": [
-                        1024
-                    ],
-                    "description": "\u8bad\u7ec3\u5206\u8fa9\u7387\uff08\u57fa\u51c6\u8fb9\u957f\uff0c\u53ef\u591a\u4e2a\uff09",
-                    "items": {
-                        "type": "integer"
-                    },
-                    "title": "Resolutions",
-                    "type": "array",
-                    "x-ui": {
-                        "control": "tags",
-                        "group": "dataset",
-                        "order": 10
-                    }
-                },
-                "aspect_ratio_limit": {
-                    "default": 2.0,
-                    "description": "\u5206\u6876\u5141\u8bb8\u7684\u6700\u5927\u957f\u5bbd\u6bd4",
-                    "minimum": 1.0,
-                    "title": "Aspect Ratio Limit",
-                    "type": "number",
-                    "x-ui": {
-                        "group": "dataset",
-                        "order": 20
-                    }
-                },
-                "area_tolerance": {
-                    "default": 0.1,
-                    "description": "\u5206\u6876\u9762\u79ef\u5bb9\u5dee\uff08\u76f8\u5bf9\u57fa\u51c6\u9762\u79ef\uff09",
-                    "maximum": 0.5,
-                    "minimum": 0,
-                    "title": "Area Tolerance",
-                    "type": "number",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "dataset",
-                        "order": 30
-                    }
-                },
-                "bucket_step": {
-                    "anyOf": [
-                        {
-                            "minimum": 8,
-                            "type": "integer"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "\u5206\u6876\u7f51\u683c\u6b65\u957f\uff08\u9ed8\u8ba4 64\uff1b\u5fc5\u987b\u662f\u6a21\u578b\u5bf9\u9f50\u503c\u7684\u500d\u6570\uff09",
-                    "title": "Bucket Step",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "dataset",
-                        "order": 35
-                    }
-                },
-                "bucket_no_upscale": {
-                    "default": false,
-                    "description": "\u4e0d\u653e\u5927\u5c0f\u56fe\uff08\u6309\u539f\u5c3a\u5bf8\u5c31\u8fd1\u5206\u6876\uff09",
-                    "title": "Bucket No Upscale",
-                    "type": "boolean",
-                    "x-ui": {
-                        "control": "switch",
-                        "group": "dataset",
-                        "order": 40
-                    }
-                },
-                "batch_size": {
-                    "default": 1,
-                    "description": "\u6bcf\u4e2a\u5fae\u6279\u7684\u56fe\u7247\u6570",
-                    "minimum": 1,
-                    "title": "Batch Size",
-                    "type": "integer",
-                    "x-ui": {
-                        "group": "dataset",
-                        "order": 50
-                    }
-                },
-                "caption": {
-                    "$ref": "#/$defs/CaptionConfig",
-                    "description": "caption \u5904\u7406",
-                    "x-ui": {
-                        "group": "dataset",
-                        "order": 60
-                    }
-                },
-                "flip": {
-                    "default": false,
-                    "description": "\u968f\u673a\u6c34\u5e73\u7ffb\u8f6c\uff08\u7f13\u5b58\u53cc\u4efd latent\uff09",
-                    "title": "Flip",
-                    "type": "boolean",
-                    "x-ui": {
-                        "control": "switch",
-                        "group": "dataset",
-                        "order": 70
-                    }
-                },
-                "masked_loss": {
-                    "default": false,
-                    "description": "\u7528 .mask.png \u6216 alpha \u901a\u9053\u52a0\u6743\u635f\u5931",
-                    "title": "Masked Loss",
-                    "type": "boolean",
-                    "x-ui": {
-                        "control": "switch",
-                        "group": "dataset",
-                        "order": 80
-                    }
-                },
-                "num_workers": {
-                    "default": 2,
-                    "description": "DataLoader \u8fdb\u7a0b\u6570\uff08Windows \u5efa\u8bae 0\uff09",
-                    "minimum": 0,
-                    "title": "Num Workers",
-                    "type": "integer",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "dataset",
-                        "order": 90
-                    }
-                },
-                "cache_dir": {
-                    "anyOf": [
-                        {
-                            "type": "string"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "\u7f13\u5b58\u76ee\u5f55\uff08\u9ed8\u8ba4 <output_dir>/cache\uff09",
-                    "title": "Cache Dir",
-                    "x-ui": {
-                        "advanced": true,
-                        "control": "path",
-                        "group": "dataset",
-                        "order": 100
-                    }
-                },
-                "cache_latents": {
-                    "default": true,
-                    "description": "\u9884\u7f16\u7801\u5e76\u7f13\u5b58 latents",
-                    "title": "Cache Latents",
-                    "type": "boolean",
-                    "x-ui": {
-                        "control": "switch",
-                        "group": "dataset",
-                        "order": 110
-                    }
-                },
-                "text_encoding": {
-                    "default": "auto",
-                    "description": "\u6587\u672c\u7f16\u7801\uff1aonline \u6bcf\u6b65\u5728\u7ebf\u7f16\u7801\uff08\u652f\u6301 caption \u589e\u5f3a\uff09\uff0ccached \u9884\u7f13\u5b58\u540e\u5378\u8f7d\u7f16\u7801\u5668",
-                    "enum": [
-                        "auto",
-                        "online",
-                        "cached"
-                    ],
-                    "title": "Text Encoding",
-                    "type": "string",
-                    "x-ui": {
-                        "control": "select",
-                        "group": "dataset",
-                        "order": 120
-                    }
-                }
-            },
-            "title": "DatasetConfig",
-            "type": "object"
+        "decompose_both": {
+          "default": false,
+          "description": "LoKr：W1 也做低秩分解",
+          "title": "Decompose Both",
+          "type": "boolean",
+          "x-ui": {
+            "advanced": true,
+            "control": "switch",
+            "group": "adapter",
+            "order": 40,
+            "show_when": "adapter.algo == 'lokr'"
+          }
         },
-        "DatasetSourceConfig": {
-            "additionalProperties": false,
-            "properties": {
-                "path": {
-                    "description": "\u56fe\u7247\u76ee\u5f55\uff08\u9012\u5f52\uff09",
-                    "title": "Path",
-                    "type": "string",
-                    "x-ui": {
-                        "control": "path",
-                        "order": 0
-                    }
-                },
-                "repeats": {
-                    "default": 1,
-                    "description": "\u91cd\u590d\u6b21\u6570",
-                    "minimum": 1,
-                    "title": "Repeats",
-                    "type": "integer"
-                },
-                "caption_ext": {
-                    "default": ".txt",
-                    "description": "caption \u6587\u4ef6\u6269\u5c55\u540d",
-                    "title": "Caption Ext",
-                    "type": "string"
-                },
-                "is_reg": {
-                    "default": false,
-                    "description": "\u6b63\u5219\u96c6\uff08\u5148\u9a8c\u4fdd\u6301\uff09",
-                    "title": "Is Reg",
-                    "type": "boolean"
-                },
-                "prior_weight": {
-                    "default": 1.0,
-                    "description": "\u6b63\u5219\u96c6\u635f\u5931\u6743\u91cd",
-                    "minimum": 0,
-                    "title": "Prior Weight",
-                    "type": "number"
-                },
-                "class_prompt": {
-                    "anyOf": [
-                        {
-                            "type": "string"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "\u7f3a\u5c11 caption \u6587\u4ef6\u65f6\u4f7f\u7528\u7684\u9ed8\u8ba4 caption",
-                    "title": "Class Prompt"
-                },
-                "caption": {
-                    "anyOf": [
-                        {
-                            "$ref": "#/$defs/CaptionConfig"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "\u8986\u76d6\u6570\u636e\u96c6\u7ea7 caption \u8bbe\u7f6e"
-                },
-                "resolutions": {
-                    "anyOf": [
-                        {
-                            "items": {
-                                "type": "integer"
-                            },
-                            "type": "array"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "\u8986\u76d6\u6570\u636e\u96c6\u7ea7\u5206\u8fa9\u7387\u5217\u8868",
-                    "title": "Resolutions"
-                }
-            },
-            "required": [
-                "path"
-            ],
-            "title": "DatasetSourceConfig",
-            "type": "object"
+        "rs_lora": {
+          "default": false,
+          "description": "rsLoRA：scale = alpha / sqrt(rank)",
+          "title": "Rs Lora",
+          "type": "boolean",
+          "x-ui": {
+            "advanced": true,
+            "control": "switch",
+            "group": "adapter",
+            "order": 50
+          }
         },
-        "LoggingConfig": {
-            "additionalProperties": false,
-            "properties": {
-                "tensorboard": {
-                    "default": false,
-                    "description": "\u5199 TensorBoard \u65e5\u5fd7",
-                    "title": "Tensorboard",
-                    "type": "boolean",
-                    "x-ui": {
-                        "control": "switch",
-                        "group": "logging",
-                        "order": 0
-                    }
-                },
-                "wandb": {
-                    "anyOf": [
-                        {
-                            "$ref": "#/$defs/WandbConfig"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "Weights & Biases",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "logging",
-                        "order": 10
-                    }
-                },
-                "events_path": {
-                    "anyOf": [
-                        {
-                            "type": "string"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "\u4e8b\u4ef6 JSONL \u6587\u4ef6\uff08\u9ed8\u8ba4 <output_dir>/events.jsonl\uff09",
-                    "title": "Events Path",
-                    "x-ui": {
-                        "advanced": true,
-                        "control": "path",
-                        "group": "logging",
-                        "order": 20
-                    }
-                },
-                "level": {
-                    "default": "info",
-                    "description": "\u65e5\u5fd7\u7ea7\u522b",
-                    "enum": [
-                        "debug",
-                        "info",
-                        "warning"
-                    ],
-                    "title": "Level",
-                    "type": "string",
-                    "x-ui": {
-                        "advanced": true,
-                        "control": "select",
-                        "group": "logging",
-                        "order": 30
-                    }
-                }
-            },
-            "title": "LoggingConfig",
-            "type": "object"
+        "dora": {
+          "default": false,
+          "description": "DoRA 权重分解（幅度/方向）",
+          "title": "Dora",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "adapter",
+            "order": 60
+          }
         },
-        "LoopConfig": {
-            "additionalProperties": false,
-            "properties": {
-                "max_steps": {
-                    "anyOf": [
-                        {
-                            "minimum": 1,
-                            "type": "integer"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "\u6700\u5927\u4f18\u5316\u6b65\u6570\uff08\u4e0e epochs \u81f3\u5c11\u586b\u4e00\u4e2a\uff0c\u5148\u5230\u8005\u505c\u6b62\uff09",
-                    "title": "Max Steps",
-                    "x-ui": {
-                        "group": "loop",
-                        "order": 0
-                    }
-                },
-                "epochs": {
-                    "anyOf": [
-                        {
-                            "minimum": 1,
-                            "type": "integer"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": 10,
-                    "description": "\u8bad\u7ec3\u8f6e\u6570",
-                    "title": "Epochs",
-                    "x-ui": {
-                        "group": "loop",
-                        "order": 10
-                    }
-                },
-                "grad_accum": {
-                    "default": 1,
-                    "description": "\u68af\u5ea6\u7d2f\u79ef\u5fae\u6279\u6570",
-                    "minimum": 1,
-                    "title": "Grad Accum",
-                    "type": "integer",
-                    "x-ui": {
-                        "group": "loop",
-                        "order": 20
-                    }
-                },
-                "mixed_precision": {
-                    "default": "bf16",
-                    "description": "\u6df7\u5408\u7cbe\u5ea6",
-                    "enum": [
-                        "bf16",
-                        "fp16",
-                        "no"
-                    ],
-                    "title": "Mixed Precision",
-                    "type": "string",
-                    "x-ui": {
-                        "control": "select",
-                        "group": "loop",
-                        "order": 30
-                    }
-                },
-                "seed": {
-                    "default": 42,
-                    "description": "\u968f\u673a\u79cd\u5b50",
-                    "title": "Seed",
-                    "type": "integer",
-                    "x-ui": {
-                        "group": "loop",
-                        "order": 40
-                    }
-                },
-                "ema": {
-                    "default": false,
-                    "description": "\u7ef4\u62a4\u9002\u914d\u5668\u6743\u91cd\u7684 EMA\uff08CPU\uff09",
-                    "title": "Ema",
-                    "type": "boolean",
-                    "x-ui": {
-                        "advanced": true,
-                        "control": "switch",
-                        "group": "loop",
-                        "order": 50
-                    }
-                },
-                "ema_decay": {
-                    "default": 0.999,
-                    "description": "EMA \u8870\u51cf",
-                    "exclusiveMaximum": 1,
-                    "exclusiveMinimum": 0,
-                    "title": "Ema Decay",
-                    "type": "number",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "loop",
-                        "order": 60,
-                        "show_when": "loop.ema == true"
-                    }
-                },
-                "nan_skip_limit": {
-                    "default": 50,
-                    "description": "\u8fde\u7eed\u975e\u6709\u9650\u635f\u5931\u8df3\u8fc7\u6b21\u6570\u4e0a\u9650\uff0c\u8d85\u8fc7\u62a5\u9519",
-                    "minimum": 1,
-                    "title": "Nan Skip Limit",
-                    "type": "integer",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "loop",
-                        "order": 70
-                    }
-                },
-                "log_every": {
-                    "default": 1,
-                    "description": "\u6bcf N \u6b65\u53d1\u4e00\u6b21 step \u4e8b\u4ef6",
-                    "minimum": 1,
-                    "title": "Log Every",
-                    "type": "integer",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "loop",
-                        "order": 80
-                    }
-                }
-            },
-            "title": "LoopConfig",
-            "type": "object"
+        "init": {
+          "default": "default",
+          "description": "初始化：default（一侧置零）/ scalar（全随机 + 可训练标量从 0 起）",
+          "enum": [
+            "default",
+            "scalar"
+          ],
+          "title": "Init",
+          "type": "string",
+          "x-ui": {
+            "advanced": true,
+            "control": "select",
+            "group": "adapter",
+            "order": 70
+          }
         },
-        "MemoryConfig": {
-            "additionalProperties": false,
-            "properties": {
-                "base_precision": {
-                    "default": "auto",
-                    "description": "\u51bb\u7ed3\u5e95\u6a21\u7684\u5b58\u50a8\u7cbe\u5ea6\uff08fp8 \u5e26\u9010\u5f20\u91cf\u7f29\u653e\uff0c\u9700 CUDA\uff09",
-                    "enum": [
-                        "auto",
-                        "bf16",
-                        "fp16",
-                        "fp32",
-                        "fp8_e4m3",
-                        "fp8_e5m2"
-                    ],
-                    "title": "Base Precision",
-                    "type": "string",
-                    "x-ui": {
-                        "control": "select",
-                        "group": "memory",
-                        "order": 0
-                    }
-                },
-                "blocks_to_swap": {
-                    "default": 0,
-                    "description": "\u6362\u51fa\u5230 CPU pinned \u5185\u5b58\u7684 block \u6570",
-                    "minimum": 0,
-                    "title": "Blocks To Swap",
-                    "type": "integer",
-                    "x-ui": {
-                        "group": "memory",
-                        "order": 10
-                    }
-                },
-                "activation_checkpointing": {
-                    "default": "none",
-                    "description": "\u6fc0\u6d3b\u68c0\u67e5\u70b9\uff1ablock \u9010\u5757\u91cd\u7b97\uff1bunsloth \u989d\u5916\u628a\u5757\u8f93\u5165\u5378\u8f7d\u5230 CPU",
-                    "enum": [
-                        "none",
-                        "block",
-                        "unsloth"
-                    ],
-                    "title": "Activation Checkpointing",
-                    "type": "string",
-                    "x-ui": {
-                        "control": "select",
-                        "group": "memory",
-                        "order": 20
-                    }
-                },
-                "offload_text_encoder": {
-                    "default": false,
-                    "description": "\u4e0d\u7528\u65f6\u628a\u6587\u672c\u7f16\u7801\u5668\u653e\u5230 CPU",
-                    "title": "Offload Text Encoder",
-                    "type": "boolean",
-                    "x-ui": {
-                        "control": "switch",
-                        "group": "memory",
-                        "order": 30
-                    }
-                },
-                "compile": {
-                    "default": false,
-                    "description": "\u9010 block torch.compile",
-                    "title": "Compile",
-                    "type": "boolean",
-                    "x-ui": {
-                        "advanced": true,
-                        "control": "switch",
-                        "group": "memory",
-                        "order": 40
-                    }
-                },
-                "allow_tf32": {
-                    "default": true,
-                    "description": "\u5141\u8bb8 TF32 matmul",
-                    "title": "Allow Tf32",
-                    "type": "boolean",
-                    "x-ui": {
-                        "advanced": true,
-                        "control": "switch",
-                        "group": "memory",
-                        "order": 50
-                    }
-                }
-            },
-            "title": "MemoryConfig",
-            "type": "object"
+        "dropout": {
+          "default": 0.0,
+          "description": "对适配器输出的 dropout",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Dropout",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "adapter",
+            "order": 80
+          }
         },
-        "ModelConfig": {
-            "additionalProperties": false,
-            "properties": {
-                "family": {
-                    "default": "anima",
-                    "description": "\u6a21\u578b\u65cf\uff08anima\uff1aAnima 2B\uff1bkrea2\uff1aKrea 2 Raw 12.9B\uff09",
-                    "enum": [
-                        "anima",
-                        "krea2",
-                        "toy"
-                    ],
-                    "title": "Family",
-                    "type": "string",
-                    "x-ui": {
-                        "control": "select",
-                        "group": "model",
-                        "order": 0
-                    }
-                },
-                "dit_path": {
-                    "anyOf": [
-                        {
-                            "type": "string"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "DiT \u4e3b\u5e72\u6743\u91cd\uff08safetensors\uff1b\u652f\u6301\u5b98\u65b9 bf16 \u4e0e ComfyUI fp8_scaled \u6587\u4ef6\uff09",
-                    "title": "Dit Path",
-                    "x-ui": {
-                        "control": "path",
-                        "group": "model",
-                        "order": 10
-                    }
-                },
-                "text_encoder_path": {
-                    "anyOf": [
-                        {
-                            "type": "string"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "\u6587\u672c\u7f16\u7801\u5668\uff08Anima\uff1aQwen3-0.6B\uff1bKrea 2\uff1aQwen3-VL-4B-Instruct\uff09\u2014\u2014HF \u76ee\u5f55\u6216\u5355\u6587\u4ef6 safetensors",
-                    "title": "Text Encoder Path",
-                    "x-ui": {
-                        "control": "path",
-                        "group": "model",
-                        "order": 20
-                    }
-                },
-                "vae_path": {
-                    "anyOf": [
-                        {
-                            "type": "string"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "VAE \u6743\u91cd",
-                    "title": "Vae Path",
-                    "x-ui": {
-                        "control": "path",
-                        "group": "model",
-                        "order": 30
-                    }
-                },
-                "tokenizer_path": {
-                    "anyOf": [
-                        {
-                            "type": "string"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "\u9644\u52a0\u5206\u8bcd\u5668\u76ee\u5f55\uff08Anima: \u65e7\u7248 T5 spiece\uff1b\u7559\u7a7a\u7528\u5185\u7f6e\uff09",
-                    "title": "Tokenizer Path",
-                    "x-ui": {
-                        "advanced": true,
-                        "control": "path",
-                        "group": "model",
-                        "order": 40
-                    }
-                },
-                "dtype": {
-                    "default": "bf16",
-                    "description": "\u8ba1\u7b97\u7cbe\u5ea6\uff08autocast\uff09",
-                    "enum": [
-                        "bf16",
-                        "fp16",
-                        "fp32"
-                    ],
-                    "title": "Dtype",
-                    "type": "string",
-                    "x-ui": {
-                        "control": "select",
-                        "group": "model",
-                        "order": 50
-                    }
-                },
-                "attention": {
-                    "default": "auto",
-                    "description": "\u6ce8\u610f\u529b\u540e\u7aef\uff1asdpa\uff08PyTorch \u5185\u7f6e\uff0c\u81ea\u52a8\u9009 flash/\u9ad8\u6548\u5185\u6838\uff09\uff1bsage \u9700\u5b89\u88c5 sageattention\uff0c\u4ec5\u7528\u4e8e\u65e0\u63a9\u7801\u7684\u56fe\u50cf\u81ea\u6ce8\u610f\u529b",
-                    "enum": [
-                        "auto",
-                        "sdpa",
-                        "sage"
-                    ],
-                    "title": "Attention",
-                    "type": "string",
-                    "x-ui": {
-                        "advanced": true,
-                        "control": "select",
-                        "group": "model",
-                        "order": 60
-                    }
-                }
-            },
-            "title": "ModelConfig",
-            "type": "object"
+        "rank_dropout": {
+          "default": 0.0,
+          "description": "秩轴 dropout",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Rank Dropout",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "adapter",
+            "order": 90
+          }
         },
-        "ObjectiveConfig": {
-            "additionalProperties": false,
-            "properties": {
-                "timestep_sampling": {
-                    "default": "shift",
-                    "description": "\u65f6\u95f4\u6b65\u91c7\u6837\u5206\u5e03\uff1ashift = logit-normal \u518d\u505a M\u00f6bius shift\uff08\u9ed8\u8ba4 3.0\uff0c\u4e0e Anima \u63a8\u7406\u7684 shift \u53ca AnimaLoraStudio \u9ed8\u8ba4\u4e00\u81f4\uff09\uff1blogit_normal \u4e0d\u505a shift\uff08sd-scripts \u793a\u4f8b\u7684 sigmoid\uff09\uff1bresolution_shift \u6309\u56fe\u50cf token \u6570\u52a8\u6001 shift\uff08Flux \u5f0f\uff09",
-                    "enum": [
-                        "uniform",
-                        "logit_normal",
-                        "shift",
-                        "resolution_shift",
-                        "mode",
-                        "cosmap"
-                    ],
-                    "title": "Timestep Sampling",
-                    "type": "string",
-                    "x-ui": {
-                        "control": "select",
-                        "group": "objective",
-                        "order": 0
-                    }
-                },
-                "logit_mean": {
-                    "default": 0.0,
-                    "description": "logit-normal \u5747\u503c",
-                    "title": "Logit Mean",
-                    "type": "number",
-                    "x-ui": {
-                        "group": "objective",
-                        "order": 10,
-                        "show_when": "objective.timestep_sampling in ['logit_normal','shift','resolution_shift']"
-                    }
-                },
-                "logit_std": {
-                    "default": 1.0,
-                    "description": "logit-normal \u6807\u51c6\u5dee",
-                    "exclusiveMinimum": 0,
-                    "title": "Logit Std",
-                    "type": "number",
-                    "x-ui": {
-                        "group": "objective",
-                        "order": 20,
-                        "show_when": "objective.timestep_sampling in ['logit_normal','shift','resolution_shift']"
-                    }
-                },
-                "res_shift_tokens": {
-                    "default": [
-                        256,
-                        4096
-                    ],
-                    "description": "resolution_shift \u7684 token \u6570\u7aef\u70b9 (\u6700\u5c0f, \u6700\u5927)\uff1bFlux \u4e3a (256, 4096)\uff0cKrea 2 \u4e3a (256, 6400)",
-                    "maxItems": 2,
-                    "minItems": 2,
-                    "prefixItems": [
-                        {
-                            "type": "integer"
-                        },
-                        {
-                            "type": "integer"
-                        }
-                    ],
-                    "title": "Res Shift Tokens",
-                    "type": "array",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "objective",
-                        "order": 25,
-                        "show_when": "objective.timestep_sampling == 'resolution_shift'"
-                    }
-                },
-                "res_shift_mu": {
-                    "default": [
-                        0.5,
-                        1.15
-                    ],
-                    "description": "resolution_shift \u7684 mu \u7aef\u70b9 (\u6700\u5c0f token \u6570\u5904, \u6700\u5927 token \u6570\u5904)\uff1b\u5b9e\u9645 shift = exp(mu)",
-                    "maxItems": 2,
-                    "minItems": 2,
-                    "prefixItems": [
-                        {
-                            "type": "number"
-                        },
-                        {
-                            "type": "number"
-                        }
-                    ],
-                    "title": "Res Shift Mu",
-                    "type": "array",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "objective",
-                        "order": 26,
-                        "show_when": "objective.timestep_sampling == 'resolution_shift'"
-                    }
-                },
-                "shift": {
-                    "default": 3.0,
-                    "description": "\u5e38\u6570 shift\uff1at' = s\u00b7t / (1 + (s-1)\u00b7t)",
-                    "exclusiveMinimum": 0,
-                    "title": "Shift",
-                    "type": "number",
-                    "x-ui": {
-                        "group": "objective",
-                        "order": 30,
-                        "show_when": "objective.timestep_sampling == 'shift'"
-                    }
-                },
-                "mode_scale": {
-                    "default": 1.29,
-                    "description": "SD3 mode \u91c7\u6837\u7684 scale",
-                    "title": "Mode Scale",
-                    "type": "number",
-                    "x-ui": {
-                        "group": "objective",
-                        "order": 40,
-                        "show_when": "objective.timestep_sampling == 'mode'"
-                    }
-                },
-                "stratified": {
-                    "default": true,
-                    "description": "\u6279\u5185\u5206\u5c42\u62bd\u6837\uff08\u964d\u4f4e\u68af\u5ea6\u65b9\u5dee\uff09",
-                    "title": "Stratified",
-                    "type": "boolean",
-                    "x-ui": {
-                        "advanced": true,
-                        "control": "switch",
-                        "group": "objective",
-                        "order": 50
-                    }
-                },
-                "t_min": {
-                    "default": 0.0,
-                    "description": "\u65f6\u95f4\u6b65\u4e0b\u9650",
-                    "exclusiveMaximum": 1,
-                    "minimum": 0,
-                    "title": "T Min",
-                    "type": "number",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "objective",
-                        "order": 60
-                    }
-                },
-                "t_max": {
-                    "default": 1.0,
-                    "description": "\u65f6\u95f4\u6b65\u4e0a\u9650",
-                    "exclusiveMinimum": 0,
-                    "maximum": 1,
-                    "title": "T Max",
-                    "type": "number",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "objective",
-                        "order": 70
-                    }
-                },
-                "loss": {
-                    "default": "mse",
-                    "description": "\u635f\u5931\u51fd\u6570",
-                    "enum": [
-                        "mse",
-                        "huber",
-                        "pseudo_huber"
-                    ],
-                    "title": "Loss",
-                    "type": "string",
-                    "x-ui": {
-                        "control": "select",
-                        "group": "objective",
-                        "order": 80
-                    }
-                },
-                "huber_c": {
-                    "default": 0.1,
-                    "description": "Huber delta / pseudo-Huber c",
-                    "exclusiveMinimum": 0,
-                    "title": "Huber C",
-                    "type": "number",
-                    "x-ui": {
-                        "group": "objective",
-                        "order": 90,
-                        "show_when": "objective.loss != 'mse'"
-                    }
-                },
-                "weighting": {
-                    "default": "none",
-                    "description": "\u6309\u65f6\u95f4\u6b65\u7684\u635f\u5931\u52a0\u6743",
-                    "enum": [
-                        "none",
-                        "sigma_sqrt",
-                        "cosmap",
-                        "snr_like",
-                        "cosmos"
-                    ],
-                    "title": "Weighting",
-                    "type": "string",
-                    "x-ui": {
-                        "control": "select",
-                        "group": "objective",
-                        "order": 100
-                    }
-                },
-                "snr_gamma": {
-                    "default": 5.0,
-                    "description": "snr_like \u52a0\u6743\u7684\u4e0a\u9650 \u03b3",
-                    "exclusiveMinimum": 0,
-                    "title": "Snr Gamma",
-                    "type": "number",
-                    "x-ui": {
-                        "group": "objective",
-                        "order": 110,
-                        "show_when": "objective.weighting == 'snr_like'"
-                    }
-                },
-                "ip_noise_gamma": {
-                    "default": 0.0,
-                    "description": "\u8f93\u5165\u6270\u52a8\u566a\u58f0\u5f3a\u5ea6",
-                    "minimum": 0,
-                    "title": "Ip Noise Gamma",
-                    "type": "number",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "objective",
-                        "order": 120
-                    }
-                }
-            },
-            "title": "ObjectiveConfig",
-            "type": "object"
+        "module_dropout": {
+          "default": 0.0,
+          "description": "整模块跳过概率",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Module Dropout",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "adapter",
+            "order": 100
+          }
         },
-        "OptimizerConfig": {
-            "additionalProperties": false,
-            "properties": {
-                "type": {
-                    "default": "adamw",
-                    "description": "adamw / adamw8bit / lion / prodigy / prodigy_plus_sf / adafactor / came\uff0c\u6216 'module.Class'",
-                    "title": "Type",
-                    "type": "string",
-                    "x-ui": {
-                        "control": "select",
-                        "group": "optimizer",
-                        "order": 0
-                    }
-                },
-                "lr": {
-                    "default": 0.0001,
-                    "description": "\u5b66\u4e60\u7387",
-                    "exclusiveMinimum": 0,
-                    "title": "Lr",
-                    "type": "number",
-                    "x-ui": {
-                        "group": "optimizer",
-                        "order": 10
-                    }
-                },
-                "weight_decay": {
-                    "default": 0.01,
-                    "description": "\u6743\u91cd\u8870\u51cf",
-                    "minimum": 0,
-                    "title": "Weight Decay",
-                    "type": "number",
-                    "x-ui": {
-                        "group": "optimizer",
-                        "order": 20
-                    }
-                },
-                "betas": {
-                    "default": [
-                        0.9,
-                        0.99
-                    ],
-                    "description": "Adam betas",
-                    "maxItems": 2,
-                    "minItems": 2,
-                    "prefixItems": [
-                        {
-                            "type": "number"
-                        },
-                        {
-                            "type": "number"
-                        }
-                    ],
-                    "title": "Betas",
-                    "type": "array",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "optimizer",
-                        "order": 30
-                    }
-                },
-                "eps": {
-                    "default": 1e-08,
-                    "description": "Adam eps",
-                    "exclusiveMinimum": 0,
-                    "title": "Eps",
-                    "type": "number",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "optimizer",
-                        "order": 40
-                    }
-                },
-                "args": {
-                    "additionalProperties": true,
-                    "description": "\u900f\u4f20\u7ed9\u4f18\u5316\u5668\u7684\u989d\u5916\u53c2\u6570",
-                    "title": "Args",
-                    "type": "object",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "optimizer",
-                        "order": 50
-                    }
-                },
-                "grad_clip_norm": {
-                    "default": 1.0,
-                    "description": "\u68af\u5ea6\u8303\u6570\u88c1\u526a\uff080 \u5173\u95ed\uff09",
-                    "minimum": 0,
-                    "title": "Grad Clip Norm",
-                    "type": "number",
-                    "x-ui": {
-                        "group": "optimizer",
-                        "order": 60
-                    }
-                },
-                "kahan": {
-                    "default": false,
-                    "description": "bf16 \u53c2\u6570\u7684 Kahan \u8865\u507f\u7d2f\u52a0",
-                    "title": "Kahan",
-                    "type": "boolean",
-                    "x-ui": {
-                        "advanced": true,
-                        "control": "switch",
-                        "group": "optimizer",
-                        "order": 70
-                    }
-                },
-                "fused_backward": {
-                    "default": false,
-                    "description": "\u9010\u53c2\u6570\u5728\u53cd\u5411\u4e2d\u5373\u65f6\u66f4\u65b0\u5e76\u91ca\u653e\u68af\u5ea6\uff08\u9700 grad_accum=1\uff09",
-                    "title": "Fused Backward",
-                    "type": "boolean",
-                    "x-ui": {
-                        "advanced": true,
-                        "control": "switch",
-                        "group": "optimizer",
-                        "order": 80
-                    }
-                },
-                "group_lr": {
-                    "additionalProperties": {
-                        "type": "number"
-                    },
-                    "description": "\u6309\u6a21\u5757\u5206\u7ec4\u7684\u5b66\u4e60\u7387\uff0c\u5982 {'llm_adapter': 5e-5, 'te': 2e-5}",
-                    "title": "Group Lr",
-                    "type": "object",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "optimizer",
-                        "order": 90
-                    }
-                }
-            },
-            "title": "OptimizerConfig",
-            "type": "object"
+        "preset": {
+          "default": "attn-mlp",
+          "description": "族内目标预设（attn-mlp / attn-only / full-linear / ...）",
+          "title": "Preset",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "adapter",
+            "order": 110
+          }
         },
-        "SamplePrompt": {
-            "additionalProperties": false,
-            "properties": {
-                "prompt": {
-                    "title": "Prompt",
-                    "type": "string"
-                },
-                "negative": {
-                    "default": "",
-                    "title": "Negative",
-                    "type": "string"
-                },
-                "seed": {
-                    "anyOf": [
-                        {
-                            "type": "integer"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "title": "Seed"
-                },
-                "width": {
-                    "anyOf": [
-                        {
-                            "maximum": 8192,
-                            "minimum": 32,
-                            "type": "integer"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "title": "Width"
-                },
-                "height": {
-                    "anyOf": [
-                        {
-                            "maximum": 8192,
-                            "minimum": 32,
-                            "type": "integer"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "title": "Height"
-                },
-                "steps": {
-                    "anyOf": [
-                        {
-                            "maximum": 1000,
-                            "minimum": 1,
-                            "type": "integer"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "title": "Steps"
-                },
-                "cfg": {
-                    "anyOf": [
-                        {
-                            "minimum": 0,
-                            "type": "number"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "title": "Cfg"
-                }
-            },
-            "required": [
-                "prompt"
-            ],
-            "title": "SamplePrompt",
-            "type": "object"
+        "rules": {
+          "description": "按序匹配的覆盖规则",
+          "items": {
+            "$ref": "#/$defs/AdapterRule"
+          },
+          "title": "Rules",
+          "type": "array",
+          "x-ui": {
+            "control": "rules",
+            "group": "adapter",
+            "order": 120
+          }
         },
-        "SamplingConfig": {
-            "additionalProperties": false,
-            "properties": {
-                "enabled": {
-                    "default": false,
-                    "description": "\u8bad\u7ec3\u671f\u95f4\u751f\u6210\u9884\u89c8\u56fe",
-                    "title": "Enabled",
-                    "type": "boolean",
-                    "x-ui": {
-                        "control": "switch",
-                        "group": "sampling",
-                        "order": 0
-                    }
-                },
-                "every_steps": {
-                    "anyOf": [
-                        {
-                            "minimum": 1,
-                            "type": "integer"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "\u6bcf N \u6b65",
-                    "title": "Every Steps",
-                    "x-ui": {
-                        "group": "sampling",
-                        "order": 10,
-                        "show_when": "sampling.enabled == true"
-                    }
-                },
-                "every_epochs": {
-                    "anyOf": [
-                        {
-                            "minimum": 1,
-                            "type": "integer"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": 1,
-                    "description": "\u6bcf N \u8f6e",
-                    "title": "Every Epochs",
-                    "x-ui": {
-                        "group": "sampling",
-                        "order": 20,
-                        "show_when": "sampling.enabled == true"
-                    }
-                },
-                "at_start": {
-                    "default": false,
-                    "description": "\u8bad\u7ec3\u524d\u5148\u51fa\u4e00\u7ec4\u57fa\u7ebf\u56fe",
-                    "title": "At Start",
-                    "type": "boolean",
-                    "x-ui": {
-                        "control": "switch",
-                        "group": "sampling",
-                        "order": 30,
-                        "show_when": "sampling.enabled == true"
-                    }
-                },
-                "prompts": {
-                    "description": "\u63d0\u793a\u8bcd\u5217\u8868",
-                    "items": {
-                        "$ref": "#/$defs/SamplePrompt"
-                    },
-                    "title": "Prompts",
-                    "type": "array",
-                    "x-ui": {
-                        "control": "prompts",
-                        "group": "sampling",
-                        "order": 40,
-                        "show_when": "sampling.enabled == true"
-                    }
-                },
-                "prompts_file": {
-                    "anyOf": [
-                        {
-                            "type": "string"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "\u63d0\u793a\u8bcd\u6587\u4ef6\uff08.txt \u6bcf\u884c\u4e00\u6761 / .toml\uff09",
-                    "title": "Prompts File",
-                    "x-ui": {
-                        "control": "path",
-                        "group": "sampling",
-                        "order": 50,
-                        "show_when": "sampling.enabled == true"
-                    }
-                },
-                "steps": {
-                    "anyOf": [
-                        {
-                            "maximum": 1000,
-                            "minimum": 1,
-                            "type": "integer"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "\u91c7\u6837\u6b65\u6570\uff08\u7a7a\u7528\u65cf\u9ed8\u8ba4\uff09",
-                    "title": "Steps",
-                    "x-ui": {
-                        "group": "sampling",
-                        "order": 60,
-                        "show_when": "sampling.enabled == true"
-                    }
-                },
-                "cfg": {
-                    "anyOf": [
-                        {
-                            "minimum": 0,
-                            "type": "number"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "CFG \u5f3a\u5ea6\uff08\u7a7a\u7528\u65cf\u9ed8\u8ba4\uff09",
-                    "title": "Cfg",
-                    "x-ui": {
-                        "group": "sampling",
-                        "order": 70,
-                        "show_when": "sampling.enabled == true"
-                    }
-                },
-                "shift": {
-                    "anyOf": [
-                        {
-                            "exclusiveMinimum": 0,
-                            "type": "number"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "\u91c7\u6837 shift\uff08\u7a7a\u7528\u65cf\u9ed8\u8ba4\uff09",
-                    "title": "Shift",
-                    "x-ui": {
-                        "group": "sampling",
-                        "order": 80,
-                        "show_when": "sampling.enabled == true"
-                    }
-                },
-                "width": {
-                    "default": 1024,
-                    "description": "\u5bbd",
-                    "maximum": 8192,
-                    "minimum": 32,
-                    "title": "Width",
-                    "type": "integer",
-                    "x-ui": {
-                        "group": "sampling",
-                        "order": 90,
-                        "show_when": "sampling.enabled == true"
-                    }
-                },
-                "height": {
-                    "default": 1024,
-                    "description": "\u9ad8",
-                    "maximum": 8192,
-                    "minimum": 32,
-                    "title": "Height",
-                    "type": "integer",
-                    "x-ui": {
-                        "group": "sampling",
-                        "order": 100,
-                        "show_when": "sampling.enabled == true"
-                    }
-                },
-                "seed": {
-                    "default": 0,
-                    "description": "\u57fa\u7840\u79cd\u5b50",
-                    "title": "Seed",
-                    "type": "integer",
-                    "x-ui": {
-                        "group": "sampling",
-                        "order": 110,
-                        "show_when": "sampling.enabled == true"
-                    }
-                },
-                "sampler": {
-                    "const": "euler",
-                    "default": "euler",
-                    "description": "\u91c7\u6837\u5668",
-                    "title": "Sampler",
-                    "type": "string",
-                    "x-ui": {
-                        "control": "select",
-                        "group": "sampling",
-                        "order": 120,
-                        "show_when": "sampling.enabled == true"
-                    }
-                }
-            },
-            "title": "SamplingConfig",
-            "type": "object"
+        "mode": {
+          "default": "auto",
+          "description": "执行路径（auto 按算法与底模精度选择）",
+          "enum": [
+            "auto",
+            "bypass",
+            "merged"
+          ],
+          "title": "Mode",
+          "type": "string",
+          "x-ui": {
+            "advanced": true,
+            "control": "select",
+            "group": "adapter",
+            "order": 130
+          }
         },
-        "SchedulerConfig": {
-            "additionalProperties": false,
-            "properties": {
-                "type": {
-                    "default": "cosine",
-                    "description": "\u5b66\u4e60\u7387\u8c03\u5ea6",
-                    "enum": [
-                        "constant",
-                        "linear",
-                        "cosine",
-                        "cosine_restarts",
-                        "polynomial",
-                        "warmup_stable_decay",
-                        "rex"
-                    ],
-                    "title": "Type",
-                    "type": "string",
-                    "x-ui": {
-                        "control": "select",
-                        "group": "scheduler",
-                        "order": 0
-                    }
-                },
-                "warmup_steps": {
-                    "default": 0,
-                    "description": "\u9884\u70ed\u6b65\u6570\uff08<1 \u89c6\u4e3a\u603b\u6b65\u6570\u6bd4\u4f8b\uff09",
-                    "minimum": 0,
-                    "title": "Warmup Steps",
-                    "type": "number",
-                    "x-ui": {
-                        "group": "scheduler",
-                        "order": 10
-                    }
-                },
-                "min_lr_ratio": {
-                    "default": 0.0,
-                    "description": "\u6700\u7ec8\u5b66\u4e60\u7387\u76f8\u5bf9\u521d\u59cb\u7684\u6bd4\u4f8b",
-                    "maximum": 1,
-                    "minimum": 0,
-                    "title": "Min Lr Ratio",
-                    "type": "number",
-                    "x-ui": {
-                        "group": "scheduler",
-                        "order": 20
-                    }
-                },
-                "num_cycles": {
-                    "default": 1,
-                    "description": "cosine_restarts \u5468\u671f\u6570",
-                    "minimum": 1,
-                    "title": "Num Cycles",
-                    "type": "integer",
-                    "x-ui": {
-                        "group": "scheduler",
-                        "order": 30,
-                        "show_when": "scheduler.type == 'cosine_restarts'"
-                    }
-                },
-                "power": {
-                    "default": 1.0,
-                    "description": "polynomial \u5e42",
-                    "exclusiveMinimum": 0,
-                    "title": "Power",
-                    "type": "number",
-                    "x-ui": {
-                        "group": "scheduler",
-                        "order": 40,
-                        "show_when": "scheduler.type == 'polynomial'"
-                    }
-                },
-                "decay_steps": {
-                    "anyOf": [
-                        {
-                            "type": "number"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "warmup_stable_decay \u7684\u8870\u51cf\u6b65\u6570\uff08<1 \u89c6\u4e3a\u6bd4\u4f8b\uff09",
-                    "title": "Decay Steps",
-                    "x-ui": {
-                        "group": "scheduler",
-                        "order": 50,
-                        "show_when": "scheduler.type == 'warmup_stable_decay'"
-                    }
-                }
-            },
-            "title": "SchedulerConfig",
-            "type": "object"
+        "param_dtype": {
+          "default": "fp32",
+          "description": "适配器参数精度（主权重）",
+          "enum": [
+            "fp32",
+            "bf16"
+          ],
+          "title": "Param Dtype",
+          "type": "string",
+          "x-ui": {
+            "advanced": true,
+            "control": "select",
+            "group": "adapter",
+            "order": 140
+          }
         },
-        "ValidationConfig": {
-            "additionalProperties": false,
-            "properties": {
-                "enabled": {
-                    "default": false,
-                    "description": "\u786e\u5b9a\u6027\u9a8c\u8bc1\u635f\u5931",
-                    "title": "Enabled",
-                    "type": "boolean",
-                    "x-ui": {
-                        "control": "switch",
-                        "group": "validation",
-                        "order": 0
-                    }
-                },
-                "split_ratio": {
-                    "default": 0.0,
-                    "description": "\u4ece\u8bad\u7ec3\u96c6\u6309\u5185\u5bb9\u54c8\u5e0c\u5207\u51fa\u7684\u6bd4\u4f8b",
-                    "exclusiveMaximum": 1,
-                    "minimum": 0,
-                    "title": "Split Ratio",
-                    "type": "number",
-                    "x-ui": {
-                        "group": "validation",
-                        "order": 10,
-                        "show_when": "validation.enabled == true"
-                    }
-                },
-                "sources": {
-                    "description": "\u663e\u5f0f\u9a8c\u8bc1\u6570\u636e\u6e90",
-                    "items": {
-                        "$ref": "#/$defs/DatasetSourceConfig"
-                    },
-                    "title": "Sources",
-                    "type": "array",
-                    "x-ui": {
-                        "group": "validation",
-                        "order": 20,
-                        "show_when": "validation.enabled == true"
-                    }
-                },
-                "every_steps": {
-                    "anyOf": [
-                        {
-                            "minimum": 1,
-                            "type": "integer"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "description": "\u6bcf N \u6b65\u9a8c\u8bc1",
-                    "title": "Every Steps",
-                    "x-ui": {
-                        "group": "validation",
-                        "order": 30,
-                        "show_when": "validation.enabled == true"
-                    }
-                },
-                "every_epochs": {
-                    "anyOf": [
-                        {
-                            "minimum": 1,
-                            "type": "integer"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": 1,
-                    "description": "\u6bcf N \u8f6e\u9a8c\u8bc1",
-                    "title": "Every Epochs",
-                    "x-ui": {
-                        "group": "validation",
-                        "order": 40,
-                        "show_when": "validation.enabled == true"
-                    }
-                },
-                "timesteps": {
-                    "default": [
-                        0.1,
-                        0.3,
-                        0.5,
-                        0.7,
-                        0.9
-                    ],
-                    "description": "\u56fa\u5b9a\u9a8c\u8bc1\u65f6\u95f4\u6b65\uff08\u5206\u4f4d\u6570\uff09",
-                    "items": {
-                        "type": "number"
-                    },
-                    "title": "Timesteps",
-                    "type": "array",
-                    "x-ui": {
-                        "control": "tags",
-                        "group": "validation",
-                        "order": 50,
-                        "show_when": "validation.enabled == true"
-                    }
-                },
-                "max_images": {
-                    "anyOf": [
-                        {
-                            "minimum": 1,
-                            "type": "integer"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": 64,
-                    "description": "\u6700\u591a\u4f7f\u7528\u7684\u9a8c\u8bc1\u56fe\u6570",
-                    "title": "Max Images",
-                    "x-ui": {
-                        "group": "validation",
-                        "order": 60,
-                        "show_when": "validation.enabled == true"
-                    }
-                },
-                "seed": {
-                    "default": 1234,
-                    "description": "\u9a8c\u8bc1\u566a\u58f0\u79cd\u5b50",
-                    "title": "Seed",
-                    "type": "integer",
-                    "x-ui": {
-                        "advanced": true,
-                        "group": "validation",
-                        "order": 70,
-                        "show_when": "validation.enabled == true"
-                    }
-                }
-            },
-            "title": "ValidationConfig",
-            "type": "object"
+        "lr_scale": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "按参数类别的学习率倍率，如 {'up': 16}（LoRA+）或 {'w1': 0.5}",
+          "title": "Lr Scale",
+          "type": "object",
+          "x-ui": {
+            "advanced": true,
+            "group": "adapter",
+            "order": 150
+          }
         },
-        "WandbConfig": {
-            "additionalProperties": false,
-            "properties": {
-                "project": {
-                    "default": "ypuddin",
-                    "title": "Project",
-                    "type": "string"
-                },
-                "run_name": {
-                    "anyOf": [
-                        {
-                            "type": "string"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "title": "Run Name"
-                },
-                "entity": {
-                    "anyOf": [
-                        {
-                            "type": "string"
-                        },
-                        {
-                            "type": "null"
-                        }
-                    ],
-                    "default": null,
-                    "title": "Entity"
-                }
+        "resume_weights": {
+          "anyOf": [
+            {
+              "type": "string"
             },
-            "title": "WandbConfig",
-            "type": "object"
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "从已有适配器权重热启动",
+          "title": "Resume Weights",
+          "x-ui": {
+            "advanced": true,
+            "control": "path",
+            "group": "adapter",
+            "order": 160
+          }
         }
+      },
+      "title": "AdapterConfig",
+      "type": "object"
     },
-    "additionalProperties": false,
-    "properties": {
-        "model": {
-            "$ref": "#/$defs/ModelConfig"
+    "AdapterRule": {
+      "additionalProperties": false,
+      "properties": {
+        "match": {
+          "description": "模块名匹配：glob，或 're:' 前缀正则",
+          "title": "Match",
+          "type": "string"
         },
-        "dataset": {
-            "$ref": "#/$defs/DatasetConfig"
+        "algo": {
+          "anyOf": [
+            {
+              "enum": [
+                "lora",
+                "lokr",
+                "loha",
+                "full",
+                "none"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "覆盖算法；none 表示排除",
+          "title": "Algo"
         },
-        "adapter": {
-            "$ref": "#/$defs/AdapterConfig"
+        "rank": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "const": "full",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rank"
         },
-        "objective": {
-            "$ref": "#/$defs/ObjectiveConfig"
+        "alpha": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Alpha"
         },
-        "optimizer": {
-            "$ref": "#/$defs/OptimizerConfig"
+        "factor": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Factor"
         },
-        "scheduler": {
-            "$ref": "#/$defs/SchedulerConfig"
+        "lr": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "该组参数的学习率（覆盖 optimizer.lr）",
+          "title": "Lr"
         },
-        "memory": {
-            "$ref": "#/$defs/MemoryConfig"
+        "dropout": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dropout"
         },
-        "loop": {
-            "$ref": "#/$defs/LoopConfig"
-        },
-        "checkpoint": {
-            "$ref": "#/$defs/CheckpointConfig"
-        },
-        "sampling": {
-            "$ref": "#/$defs/SamplingConfig"
-        },
-        "validation": {
-            "$ref": "#/$defs/ValidationConfig"
-        },
-        "logging": {
-            "$ref": "#/$defs/LoggingConfig"
+        "rank_dropout": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rank Dropout"
         }
+      },
+      "required": [
+        "match"
+      ],
+      "title": "AdapterRule",
+      "type": "object"
     },
-    "title": "TrainConfig",
-    "type": "object",
-    "x-ui-groups": [
-        "model",
-        "dataset",
-        "caption",
-        "adapter",
-        "objective",
-        "optimizer",
-        "scheduler",
-        "memory",
-        "loop",
-        "checkpoint",
-        "sampling",
-        "validation",
-        "logging"
-    ]
+    "CaptionConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "prefix": {
+          "default": "",
+          "description": "加在 caption 前的文本",
+          "title": "Prefix",
+          "type": "string",
+          "x-ui": {
+            "group": "caption",
+            "order": 0
+          }
+        },
+        "suffix": {
+          "default": "",
+          "description": "加在 caption 后的文本",
+          "title": "Suffix",
+          "type": "string",
+          "x-ui": {
+            "group": "caption",
+            "order": 10
+          }
+        },
+        "trigger_word": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "触发词：放在最前且不参与洗牌/丢弃",
+          "title": "Trigger Word",
+          "x-ui": {
+            "group": "caption",
+            "order": 20
+          }
+        },
+        "keep_tokens": {
+          "default": 0,
+          "description": "前 N 个 tag 固定不洗牌",
+          "minimum": 0,
+          "title": "Keep Tokens",
+          "type": "integer",
+          "x-ui": {
+            "group": "caption",
+            "order": 30
+          }
+        },
+        "shuffle": {
+          "default": false,
+          "description": "随机打乱 tag 顺序",
+          "title": "Shuffle",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "caption",
+            "order": 40
+          }
+        },
+        "tag_dropout": {
+          "default": 0.0,
+          "description": "每个 tag 被丢弃的概率",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Tag Dropout",
+          "type": "number",
+          "x-ui": {
+            "control": "slider",
+            "group": "caption",
+            "order": 50,
+            "step": 0.01
+          }
+        },
+        "caption_dropout": {
+          "default": 0.0,
+          "description": "整条 caption 置空的概率（无条件训练，服务于 CFG）",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Caption Dropout",
+          "type": "number",
+          "x-ui": {
+            "control": "slider",
+            "group": "caption",
+            "order": 60,
+            "step": 0.01
+          }
+        },
+        "separator": {
+          "default": ",",
+          "description": "tag 分隔符",
+          "title": "Separator",
+          "type": "string",
+          "x-ui": {
+            "advanced": true,
+            "group": "caption",
+            "order": 70
+          }
+        },
+        "wildcard": {
+          "default": false,
+          "description": "支持 {a|b} 通配符随机选择",
+          "title": "Wildcard",
+          "type": "boolean",
+          "x-ui": {
+            "advanced": true,
+            "control": "switch",
+            "group": "caption",
+            "order": 80
+          }
+        },
+        "cache_variants": {
+          "default": 8,
+          "description": "文本编码为 cached 时，每张图预缓存的 caption 随机变体数（仅 shuffle / tag_dropout / wildcard 生效时有意义）",
+          "maximum": 256,
+          "minimum": 1,
+          "title": "Cache Variants",
+          "type": "integer",
+          "x-ui": {
+            "advanced": true,
+            "group": "caption",
+            "order": 90,
+            "show_when": "dataset.text_encoding != 'online'"
+          }
+        }
+      },
+      "title": "CaptionConfig",
+      "type": "object"
+    },
+    "CheckpointConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "output_dir": {
+          "default": "outputs/run",
+          "description": "输出目录",
+          "title": "Output Dir",
+          "type": "string",
+          "x-ui": {
+            "control": "path",
+            "group": "checkpoint",
+            "order": 0
+          }
+        },
+        "name": {
+          "default": "lora",
+          "description": "产物文件名前缀",
+          "title": "Name",
+          "type": "string",
+          "x-ui": {
+            "group": "checkpoint",
+            "order": 10
+          }
+        },
+        "save_every_steps": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "每 N 步保存权重",
+          "title": "Save Every Steps",
+          "x-ui": {
+            "group": "checkpoint",
+            "order": 20
+          }
+        },
+        "save_every_epochs": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 1,
+          "description": "每 N 轮保存权重",
+          "title": "Save Every Epochs",
+          "x-ui": {
+            "group": "checkpoint",
+            "order": 30
+          }
+        },
+        "save_state_every_steps": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "每 N 步保存完整可恢复状态",
+          "title": "Save State Every Steps",
+          "x-ui": {
+            "advanced": true,
+            "group": "checkpoint",
+            "order": 40
+          }
+        },
+        "keep_last_n": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "仅保留最近 N 组按步保存的权重（普通/EMA 成组；轮次与最终产物保留）",
+          "title": "Keep Last N",
+          "x-ui": {
+            "advanced": true,
+            "group": "checkpoint",
+            "order": 50
+          }
+        },
+        "save_dtype": {
+          "default": "bf16",
+          "description": "保存精度",
+          "enum": [
+            "bf16",
+            "fp16",
+            "fp32"
+          ],
+          "title": "Save Dtype",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "checkpoint",
+            "order": 60
+          }
+        },
+        "save_on_finish": {
+          "default": true,
+          "description": "结束时保存最终权重",
+          "title": "Save On Finish",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "checkpoint",
+            "order": 70
+          }
+        },
+        "resume": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "从完整状态目录恢复",
+          "title": "Resume",
+          "x-ui": {
+            "control": "path",
+            "group": "checkpoint",
+            "order": 80
+          }
+        }
+      },
+      "title": "CheckpointConfig",
+      "type": "object"
+    },
+    "DatasetConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "sources": {
+          "description": "数据源列表",
+          "items": {
+            "$ref": "#/$defs/DatasetSourceConfig"
+          },
+          "title": "Sources",
+          "type": "array",
+          "x-ui": {
+            "group": "dataset",
+            "order": 0
+          }
+        },
+        "resolutions": {
+          "default": [
+            1024
+          ],
+          "description": "训练分辩率（基准边长，可多个）",
+          "items": {
+            "type": "integer"
+          },
+          "title": "Resolutions",
+          "type": "array",
+          "x-ui": {
+            "control": "tags",
+            "group": "dataset",
+            "order": 10
+          }
+        },
+        "aspect_ratio_limit": {
+          "default": 2.0,
+          "description": "分桶允许的最大长宽比",
+          "minimum": 1.0,
+          "title": "Aspect Ratio Limit",
+          "type": "number",
+          "x-ui": {
+            "group": "dataset",
+            "order": 20
+          }
+        },
+        "area_tolerance": {
+          "default": 0.1,
+          "description": "分桶面积容差（相对基准面积）",
+          "maximum": 0.5,
+          "minimum": 0,
+          "title": "Area Tolerance",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "dataset",
+            "order": 30
+          }
+        },
+        "bucket_step": {
+          "anyOf": [
+            {
+              "minimum": 8,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "分桶网格步长（默认 64；必须是模型对齐值的倍数）",
+          "title": "Bucket Step",
+          "x-ui": {
+            "advanced": true,
+            "group": "dataset",
+            "order": 35
+          }
+        },
+        "bucket_no_upscale": {
+          "default": false,
+          "description": "不放大小图（按原尺寸就近分桶）",
+          "title": "Bucket No Upscale",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "dataset",
+            "order": 40
+          }
+        },
+        "batch_size": {
+          "default": 1,
+          "description": "每个微批的图片数",
+          "minimum": 1,
+          "title": "Batch Size",
+          "type": "integer",
+          "x-ui": {
+            "group": "dataset",
+            "order": 50
+          }
+        },
+        "caption": {
+          "$ref": "#/$defs/CaptionConfig",
+          "description": "caption 处理",
+          "x-ui": {
+            "group": "dataset",
+            "order": 60
+          }
+        },
+        "flip": {
+          "default": false,
+          "description": "随机水平翻转（缓存双份 latent）",
+          "title": "Flip",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "dataset",
+            "order": 70
+          }
+        },
+        "masked_loss": {
+          "default": false,
+          "description": "用 .mask.png 或 alpha 通道加权损失",
+          "title": "Masked Loss",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "dataset",
+            "order": 80
+          }
+        },
+        "num_workers": {
+          "default": 2,
+          "description": "DataLoader 进程数（Windows 建议 0）",
+          "minimum": 0,
+          "title": "Num Workers",
+          "type": "integer",
+          "x-ui": {
+            "advanced": true,
+            "group": "dataset",
+            "order": 90
+          }
+        },
+        "cache_dir": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "缓存目录（默认 <output_dir>/cache）",
+          "title": "Cache Dir",
+          "x-ui": {
+            "advanced": true,
+            "control": "path",
+            "group": "dataset",
+            "order": 100
+          }
+        },
+        "cache_latents": {
+          "default": true,
+          "description": "预编码并缓存 latents",
+          "title": "Cache Latents",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "dataset",
+            "order": 110
+          }
+        },
+        "text_encoding": {
+          "default": "auto",
+          "description": "文本编码：online 每步在线编码（支持 caption 增强），cached 预缓存后卸载编码器",
+          "enum": [
+            "auto",
+            "online",
+            "cached"
+          ],
+          "title": "Text Encoding",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "dataset",
+            "order": 120
+          }
+        }
+      },
+      "title": "DatasetConfig",
+      "type": "object"
+    },
+    "DatasetSourceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "图片目录（递归）",
+          "title": "Path",
+          "type": "string",
+          "x-ui": {
+            "control": "path",
+            "order": 0
+          }
+        },
+        "repeats": {
+          "default": 1,
+          "description": "重复次数",
+          "minimum": 1,
+          "title": "Repeats",
+          "type": "integer"
+        },
+        "caption_ext": {
+          "default": ".txt",
+          "description": "caption 文件扩展名",
+          "title": "Caption Ext",
+          "type": "string"
+        },
+        "is_reg": {
+          "default": false,
+          "description": "正则集（先验保持）",
+          "title": "Is Reg",
+          "type": "boolean"
+        },
+        "prior_weight": {
+          "default": 1.0,
+          "description": "正则集损失权重",
+          "minimum": 0,
+          "title": "Prior Weight",
+          "type": "number"
+        },
+        "class_prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "缺少 caption 文件时使用的默认 caption",
+          "title": "Class Prompt"
+        },
+        "caption": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CaptionConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "覆盖数据集级 caption 设置"
+        },
+        "resolutions": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "覆盖数据集级分辩率列表",
+          "title": "Resolutions"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "DatasetSourceConfig",
+      "type": "object"
+    },
+    "LoggingConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "tensorboard": {
+          "default": false,
+          "description": "写 TensorBoard 日志",
+          "title": "Tensorboard",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "logging",
+            "order": 0
+          }
+        },
+        "wandb": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WandbConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Weights & Biases",
+          "x-ui": {
+            "advanced": true,
+            "group": "logging",
+            "order": 10
+          }
+        },
+        "events_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "事件 JSONL 文件（默认 <output_dir>/events.jsonl）",
+          "title": "Events Path",
+          "x-ui": {
+            "advanced": true,
+            "control": "path",
+            "group": "logging",
+            "order": 20
+          }
+        },
+        "level": {
+          "default": "info",
+          "description": "日志级别",
+          "enum": [
+            "debug",
+            "info",
+            "warning"
+          ],
+          "title": "Level",
+          "type": "string",
+          "x-ui": {
+            "advanced": true,
+            "control": "select",
+            "group": "logging",
+            "order": 30
+          }
+        }
+      },
+      "title": "LoggingConfig",
+      "type": "object"
+    },
+    "LoopConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "max_steps": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "最大优化步数（与 epochs 至少填一个，先到者停止）",
+          "title": "Max Steps",
+          "x-ui": {
+            "group": "loop",
+            "order": 0
+          }
+        },
+        "epochs": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 10,
+          "description": "训练轮数",
+          "title": "Epochs",
+          "x-ui": {
+            "group": "loop",
+            "order": 10
+          }
+        },
+        "grad_accum": {
+          "default": 1,
+          "description": "梯度累积微批数",
+          "minimum": 1,
+          "title": "Grad Accum",
+          "type": "integer",
+          "x-ui": {
+            "group": "loop",
+            "order": 20
+          }
+        },
+        "mixed_precision": {
+          "default": "bf16",
+          "description": "混合精度",
+          "enum": [
+            "bf16",
+            "fp16",
+            "no"
+          ],
+          "title": "Mixed Precision",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "loop",
+            "order": 30
+          }
+        },
+        "seed": {
+          "default": 42,
+          "description": "随机种子",
+          "title": "Seed",
+          "type": "integer",
+          "x-ui": {
+            "group": "loop",
+            "order": 40
+          }
+        },
+        "ema": {
+          "default": false,
+          "description": "维护适配器权重的 EMA（CPU）",
+          "title": "Ema",
+          "type": "boolean",
+          "x-ui": {
+            "advanced": true,
+            "control": "switch",
+            "group": "loop",
+            "order": 50
+          }
+        },
+        "ema_decay": {
+          "default": 0.999,
+          "description": "EMA 衰减",
+          "exclusiveMaximum": 1,
+          "exclusiveMinimum": 0,
+          "title": "Ema Decay",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "loop",
+            "order": 60,
+            "show_when": "loop.ema == true"
+          }
+        },
+        "nan_skip_limit": {
+          "default": 50,
+          "description": "连续非有限损失跳过次数上限，超过报错",
+          "minimum": 1,
+          "title": "Nan Skip Limit",
+          "type": "integer",
+          "x-ui": {
+            "advanced": true,
+            "group": "loop",
+            "order": 70
+          }
+        },
+        "log_every": {
+          "default": 1,
+          "description": "每 N 步发一次 step 事件",
+          "minimum": 1,
+          "title": "Log Every",
+          "type": "integer",
+          "x-ui": {
+            "advanced": true,
+            "group": "loop",
+            "order": 80
+          }
+        }
+      },
+      "title": "LoopConfig",
+      "type": "object"
+    },
+    "MemoryConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "base_precision": {
+          "default": "auto",
+          "description": "冻结底模的存储精度（fp8 带逐张量缩放，需 CUDA）",
+          "enum": [
+            "auto",
+            "bf16",
+            "fp16",
+            "fp32",
+            "fp8_e4m3",
+            "fp8_e5m2"
+          ],
+          "title": "Base Precision",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "memory",
+            "order": 0
+          }
+        },
+        "blocks_to_swap": {
+          "default": 0,
+          "description": "换出到 CPU pinned 内存的 block 数",
+          "minimum": 0,
+          "title": "Blocks To Swap",
+          "type": "integer",
+          "x-ui": {
+            "group": "memory",
+            "order": 10
+          }
+        },
+        "activation_checkpointing": {
+          "default": "none",
+          "description": "激活检查点：block 逐块重算；unsloth 额外把块输入卸载到 CPU",
+          "enum": [
+            "none",
+            "block",
+            "unsloth"
+          ],
+          "title": "Activation Checkpointing",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "memory",
+            "order": 20
+          }
+        },
+        "offload_text_encoder": {
+          "default": false,
+          "description": "不用时把文本编码器放到 CPU",
+          "title": "Offload Text Encoder",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "memory",
+            "order": 30
+          }
+        },
+        "compile": {
+          "default": false,
+          "description": "逐 block torch.compile",
+          "title": "Compile",
+          "type": "boolean",
+          "x-ui": {
+            "advanced": true,
+            "control": "switch",
+            "group": "memory",
+            "order": 40
+          }
+        },
+        "allow_tf32": {
+          "default": true,
+          "description": "允许 TF32 matmul",
+          "title": "Allow Tf32",
+          "type": "boolean",
+          "x-ui": {
+            "advanced": true,
+            "control": "switch",
+            "group": "memory",
+            "order": 50
+          }
+        }
+      },
+      "title": "MemoryConfig",
+      "type": "object"
+    },
+    "ModelConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "family": {
+          "default": "anima",
+          "description": "模型族（anima：Anima 2B；krea2：Krea 2 Raw 12.9B）",
+          "enum": [
+            "anima",
+            "krea2",
+            "toy"
+          ],
+          "title": "Family",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "model",
+            "order": 0
+          }
+        },
+        "dit_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "DiT 主干权重（safetensors；支持官方 bf16 与 ComfyUI fp8_scaled 文件）",
+          "title": "Dit Path",
+          "x-ui": {
+            "control": "path",
+            "group": "model",
+            "order": 10
+          }
+        },
+        "text_encoder_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "文本编码器（Anima：Qwen3-0.6B；Krea 2：Qwen3-VL-4B-Instruct）——HF 目录或单文件 safetensors",
+          "title": "Text Encoder Path",
+          "x-ui": {
+            "control": "path",
+            "group": "model",
+            "order": 20
+          }
+        },
+        "vae_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "VAE 权重",
+          "title": "Vae Path",
+          "x-ui": {
+            "control": "path",
+            "group": "model",
+            "order": 30
+          }
+        },
+        "tokenizer_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "附加分词器目录（Anima: 旧版 T5 spiece；留空用内置）",
+          "title": "Tokenizer Path",
+          "x-ui": {
+            "advanced": true,
+            "control": "path",
+            "group": "model",
+            "order": 40
+          }
+        },
+        "dtype": {
+          "default": "bf16",
+          "description": "计算精度（autocast）",
+          "enum": [
+            "bf16",
+            "fp16",
+            "fp32"
+          ],
+          "title": "Dtype",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "model",
+            "order": 50
+          }
+        },
+        "attention": {
+          "default": "auto",
+          "description": "注意力后端：sdpa（PyTorch 内置，自动选 flash/高效内核）；sage 需安装 sageattention，仅用于无掩码的图像自注意力",
+          "enum": [
+            "auto",
+            "sdpa",
+            "sage"
+          ],
+          "title": "Attention",
+          "type": "string",
+          "x-ui": {
+            "advanced": true,
+            "control": "select",
+            "group": "model",
+            "order": 60
+          }
+        }
+      },
+      "title": "ModelConfig",
+      "type": "object"
+    },
+    "ObjectiveConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "timestep_sampling": {
+          "default": "shift",
+          "description": "时间步采样分布：shift = logit-normal 再做 Möbius shift（默认 3.0，与 Anima 推理的 shift 及 AnimaLoraStudio 默认一致）；logit_normal 不做 shift（sd-scripts 示例的 sigmoid）；resolution_shift 按图像 token 数动态 shift（Flux 式）",
+          "enum": [
+            "uniform",
+            "logit_normal",
+            "shift",
+            "resolution_shift",
+            "mode",
+            "cosmap"
+          ],
+          "title": "Timestep Sampling",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "objective",
+            "order": 0
+          }
+        },
+        "logit_mean": {
+          "default": 0.0,
+          "description": "logit-normal 均值",
+          "title": "Logit Mean",
+          "type": "number",
+          "x-ui": {
+            "group": "objective",
+            "order": 10,
+            "show_when": "objective.timestep_sampling in ['logit_normal','shift','resolution_shift']"
+          }
+        },
+        "logit_std": {
+          "default": 1.0,
+          "description": "logit-normal 标准差",
+          "exclusiveMinimum": 0,
+          "title": "Logit Std",
+          "type": "number",
+          "x-ui": {
+            "group": "objective",
+            "order": 20,
+            "show_when": "objective.timestep_sampling in ['logit_normal','shift','resolution_shift']"
+          }
+        },
+        "res_shift_tokens": {
+          "default": [
+            256,
+            4096
+          ],
+          "description": "resolution_shift 的 token 数端点 (最小, 最大)；Flux 为 (256, 4096)，Krea 2 为 (256, 6400)",
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "title": "Res Shift Tokens",
+          "type": "array",
+          "x-ui": {
+            "advanced": true,
+            "group": "objective",
+            "order": 25,
+            "show_when": "objective.timestep_sampling == 'resolution_shift'"
+          }
+        },
+        "res_shift_mu": {
+          "default": [
+            0.5,
+            1.15
+          ],
+          "description": "resolution_shift 的 mu 端点 (最小 token 数处, 最大 token 数处)；实际 shift = exp(mu)",
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Res Shift Mu",
+          "type": "array",
+          "x-ui": {
+            "advanced": true,
+            "group": "objective",
+            "order": 26,
+            "show_when": "objective.timestep_sampling == 'resolution_shift'"
+          }
+        },
+        "shift": {
+          "default": 3.0,
+          "description": "常数 shift：t' = s·t / (1 + (s-1)·t)",
+          "exclusiveMinimum": 0,
+          "title": "Shift",
+          "type": "number",
+          "x-ui": {
+            "group": "objective",
+            "order": 30,
+            "show_when": "objective.timestep_sampling == 'shift'"
+          }
+        },
+        "mode_scale": {
+          "default": 1.29,
+          "description": "SD3 mode 采样的 scale",
+          "title": "Mode Scale",
+          "type": "number",
+          "x-ui": {
+            "group": "objective",
+            "order": 40,
+            "show_when": "objective.timestep_sampling == 'mode'"
+          }
+        },
+        "stratified": {
+          "default": true,
+          "description": "批内分层抽样（降低梯度方差）",
+          "title": "Stratified",
+          "type": "boolean",
+          "x-ui": {
+            "advanced": true,
+            "control": "switch",
+            "group": "objective",
+            "order": 50
+          }
+        },
+        "t_min": {
+          "default": 0.0,
+          "description": "时间步下限",
+          "exclusiveMaximum": 1,
+          "minimum": 0,
+          "title": "T Min",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "objective",
+            "order": 60
+          }
+        },
+        "t_max": {
+          "default": 1.0,
+          "description": "时间步上限",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "T Max",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "objective",
+            "order": 70
+          }
+        },
+        "loss": {
+          "default": "mse",
+          "description": "损失函数",
+          "enum": [
+            "mse",
+            "huber",
+            "pseudo_huber"
+          ],
+          "title": "Loss",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "objective",
+            "order": 80
+          }
+        },
+        "huber_c": {
+          "default": 0.1,
+          "description": "Huber delta / pseudo-Huber c",
+          "exclusiveMinimum": 0,
+          "title": "Huber C",
+          "type": "number",
+          "x-ui": {
+            "group": "objective",
+            "order": 90,
+            "show_when": "objective.loss != 'mse'"
+          }
+        },
+        "weighting": {
+          "default": "none",
+          "description": "按时间步的损失加权",
+          "enum": [
+            "none",
+            "sigma_sqrt",
+            "cosmap",
+            "snr_like",
+            "cosmos"
+          ],
+          "title": "Weighting",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "objective",
+            "order": 100
+          }
+        },
+        "snr_gamma": {
+          "default": 5.0,
+          "description": "snr_like 加权的上限 γ",
+          "exclusiveMinimum": 0,
+          "title": "Snr Gamma",
+          "type": "number",
+          "x-ui": {
+            "group": "objective",
+            "order": 110,
+            "show_when": "objective.weighting == 'snr_like'"
+          }
+        },
+        "ip_noise_gamma": {
+          "default": 0.0,
+          "description": "输入扰动噪声强度",
+          "minimum": 0,
+          "title": "Ip Noise Gamma",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "objective",
+            "order": 120
+          }
+        }
+      },
+      "title": "ObjectiveConfig",
+      "type": "object"
+    },
+    "OptimizerConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "default": "adamw",
+          "description": "adamw / adamw8bit / lion / prodigy / prodigy_plus_sf / adafactor / came，或 'module.Class'",
+          "title": "Type",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "optimizer",
+            "order": 0
+          }
+        },
+        "lr": {
+          "default": 0.0001,
+          "description": "学习率",
+          "exclusiveMinimum": 0,
+          "title": "Lr",
+          "type": "number",
+          "x-ui": {
+            "group": "optimizer",
+            "order": 10
+          }
+        },
+        "weight_decay": {
+          "default": 0.01,
+          "description": "权重衰减",
+          "minimum": 0,
+          "title": "Weight Decay",
+          "type": "number",
+          "x-ui": {
+            "group": "optimizer",
+            "order": 20
+          }
+        },
+        "betas": {
+          "default": [
+            0.9,
+            0.99
+          ],
+          "description": "Adam betas",
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Betas",
+          "type": "array",
+          "x-ui": {
+            "advanced": true,
+            "group": "optimizer",
+            "order": 30
+          }
+        },
+        "eps": {
+          "default": 1e-08,
+          "description": "Adam eps",
+          "exclusiveMinimum": 0,
+          "title": "Eps",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "optimizer",
+            "order": 40
+          }
+        },
+        "args": {
+          "additionalProperties": true,
+          "description": "透传给优化器的额外参数",
+          "title": "Args",
+          "type": "object",
+          "x-ui": {
+            "advanced": true,
+            "group": "optimizer",
+            "order": 50
+          }
+        },
+        "grad_clip_norm": {
+          "default": 1.0,
+          "description": "梯度范数裁剪（0 关闭）",
+          "minimum": 0,
+          "title": "Grad Clip Norm",
+          "type": "number",
+          "x-ui": {
+            "group": "optimizer",
+            "order": 60
+          }
+        },
+        "kahan": {
+          "default": false,
+          "description": "bf16 参数的 Kahan 补偿累加",
+          "title": "Kahan",
+          "type": "boolean",
+          "x-ui": {
+            "advanced": true,
+            "control": "switch",
+            "group": "optimizer",
+            "order": 70
+          }
+        },
+        "fused_backward": {
+          "default": false,
+          "description": "逐参数在反向中即时更新并释放梯度（需 grad_accum=1）",
+          "title": "Fused Backward",
+          "type": "boolean",
+          "x-ui": {
+            "advanced": true,
+            "control": "switch",
+            "group": "optimizer",
+            "order": 80
+          }
+        },
+        "group_lr": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "按模块分组的学习率，如 {'llm_adapter': 5e-5, 'te': 2e-5}",
+          "title": "Group Lr",
+          "type": "object",
+          "x-ui": {
+            "advanced": true,
+            "group": "optimizer",
+            "order": 90
+          }
+        }
+      },
+      "title": "OptimizerConfig",
+      "type": "object"
+    },
+    "SamplePrompt": {
+      "additionalProperties": false,
+      "properties": {
+        "prompt": {
+          "title": "Prompt",
+          "type": "string"
+        },
+        "negative": {
+          "default": "",
+          "title": "Negative",
+          "type": "string"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "maximum": 8192,
+              "minimum": 32,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "maximum": 8192,
+              "minimum": 32,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height"
+        },
+        "steps": {
+          "anyOf": [
+            {
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Steps"
+        },
+        "cfg": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cfg"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "title": "SamplePrompt",
+      "type": "object"
+    },
+    "SamplingConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "训练期间生成预览图",
+          "title": "Enabled",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "sampling",
+            "order": 0
+          }
+        },
+        "every_steps": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "每 N 步",
+          "title": "Every Steps",
+          "x-ui": {
+            "group": "sampling",
+            "order": 10,
+            "show_when": "sampling.enabled == true"
+          }
+        },
+        "every_epochs": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 1,
+          "description": "每 N 轮",
+          "title": "Every Epochs",
+          "x-ui": {
+            "group": "sampling",
+            "order": 20,
+            "show_when": "sampling.enabled == true"
+          }
+        },
+        "at_start": {
+          "default": false,
+          "description": "训练前先出一组基线图",
+          "title": "At Start",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "sampling",
+            "order": 30,
+            "show_when": "sampling.enabled == true"
+          }
+        },
+        "prompts": {
+          "description": "提示词列表",
+          "items": {
+            "$ref": "#/$defs/SamplePrompt"
+          },
+          "title": "Prompts",
+          "type": "array",
+          "x-ui": {
+            "control": "prompts",
+            "group": "sampling",
+            "order": 40,
+            "show_when": "sampling.enabled == true"
+          }
+        },
+        "prompts_file": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "提示词文件（.txt 每行一条 / .toml）",
+          "title": "Prompts File",
+          "x-ui": {
+            "control": "path",
+            "group": "sampling",
+            "order": 50,
+            "show_when": "sampling.enabled == true"
+          }
+        },
+        "steps": {
+          "anyOf": [
+            {
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "采样步数（空用族默认）",
+          "title": "Steps",
+          "x-ui": {
+            "group": "sampling",
+            "order": 60,
+            "show_when": "sampling.enabled == true"
+          }
+        },
+        "cfg": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "CFG 强度（空用族默认）",
+          "title": "Cfg",
+          "x-ui": {
+            "group": "sampling",
+            "order": 70,
+            "show_when": "sampling.enabled == true"
+          }
+        },
+        "shift": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "采样 shift（空用族默认）",
+          "title": "Shift",
+          "x-ui": {
+            "group": "sampling",
+            "order": 80,
+            "show_when": "sampling.enabled == true"
+          }
+        },
+        "width": {
+          "default": 1024,
+          "description": "宽",
+          "maximum": 8192,
+          "minimum": 32,
+          "title": "Width",
+          "type": "integer",
+          "x-ui": {
+            "group": "sampling",
+            "order": 90,
+            "show_when": "sampling.enabled == true"
+          }
+        },
+        "height": {
+          "default": 1024,
+          "description": "高",
+          "maximum": 8192,
+          "minimum": 32,
+          "title": "Height",
+          "type": "integer",
+          "x-ui": {
+            "group": "sampling",
+            "order": 100,
+            "show_when": "sampling.enabled == true"
+          }
+        },
+        "seed": {
+          "default": 0,
+          "description": "基础种子",
+          "title": "Seed",
+          "type": "integer",
+          "x-ui": {
+            "group": "sampling",
+            "order": 110,
+            "show_when": "sampling.enabled == true"
+          }
+        },
+        "sampler": {
+          "const": "euler",
+          "default": "euler",
+          "description": "采样器",
+          "title": "Sampler",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "sampling",
+            "order": 120,
+            "show_when": "sampling.enabled == true"
+          }
+        }
+      },
+      "title": "SamplingConfig",
+      "type": "object"
+    },
+    "SchedulerConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "default": "cosine",
+          "description": "学习率调度",
+          "enum": [
+            "constant",
+            "linear",
+            "cosine",
+            "cosine_restarts",
+            "polynomial",
+            "warmup_stable_decay",
+            "rex"
+          ],
+          "title": "Type",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "scheduler",
+            "order": 0
+          }
+        },
+        "warmup_steps": {
+          "default": 0,
+          "description": "预热步数（<1 视为总步数比例）",
+          "minimum": 0,
+          "title": "Warmup Steps",
+          "type": "number",
+          "x-ui": {
+            "group": "scheduler",
+            "order": 10
+          }
+        },
+        "min_lr_ratio": {
+          "default": 0.0,
+          "description": "最终学习率相对初始的比例",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Min Lr Ratio",
+          "type": "number",
+          "x-ui": {
+            "group": "scheduler",
+            "order": 20
+          }
+        },
+        "num_cycles": {
+          "default": 1,
+          "description": "cosine_restarts 周期数",
+          "minimum": 1,
+          "title": "Num Cycles",
+          "type": "integer",
+          "x-ui": {
+            "group": "scheduler",
+            "order": 30,
+            "show_when": "scheduler.type == 'cosine_restarts'"
+          }
+        },
+        "power": {
+          "default": 1.0,
+          "description": "polynomial 幂",
+          "exclusiveMinimum": 0,
+          "title": "Power",
+          "type": "number",
+          "x-ui": {
+            "group": "scheduler",
+            "order": 40,
+            "show_when": "scheduler.type == 'polynomial'"
+          }
+        },
+        "decay_steps": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "warmup_stable_decay 的衰减步数（<1 视为比例）",
+          "title": "Decay Steps",
+          "x-ui": {
+            "group": "scheduler",
+            "order": 50,
+            "show_when": "scheduler.type == 'warmup_stable_decay'"
+          }
+        }
+      },
+      "title": "SchedulerConfig",
+      "type": "object"
+    },
+    "ValidationConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "确定性验证损失",
+          "title": "Enabled",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "validation",
+            "order": 0
+          }
+        },
+        "split_ratio": {
+          "default": 0.0,
+          "description": "从训练集按内容哈希切出的比例",
+          "exclusiveMaximum": 1,
+          "minimum": 0,
+          "title": "Split Ratio",
+          "type": "number",
+          "x-ui": {
+            "group": "validation",
+            "order": 10,
+            "show_when": "validation.enabled == true"
+          }
+        },
+        "sources": {
+          "description": "显式验证数据源",
+          "items": {
+            "$ref": "#/$defs/DatasetSourceConfig"
+          },
+          "title": "Sources",
+          "type": "array",
+          "x-ui": {
+            "group": "validation",
+            "order": 20,
+            "show_when": "validation.enabled == true"
+          }
+        },
+        "every_steps": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "每 N 步验证",
+          "title": "Every Steps",
+          "x-ui": {
+            "group": "validation",
+            "order": 30,
+            "show_when": "validation.enabled == true"
+          }
+        },
+        "every_epochs": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 1,
+          "description": "每 N 轮验证",
+          "title": "Every Epochs",
+          "x-ui": {
+            "group": "validation",
+            "order": 40,
+            "show_when": "validation.enabled == true"
+          }
+        },
+        "timesteps": {
+          "default": [
+            0.1,
+            0.3,
+            0.5,
+            0.7,
+            0.9
+          ],
+          "description": "固定验证时间步（分位数）",
+          "items": {
+            "type": "number"
+          },
+          "title": "Timesteps",
+          "type": "array",
+          "x-ui": {
+            "control": "tags",
+            "group": "validation",
+            "order": 50,
+            "show_when": "validation.enabled == true"
+          }
+        },
+        "max_images": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 64,
+          "description": "最多使用的验证图数",
+          "title": "Max Images",
+          "x-ui": {
+            "group": "validation",
+            "order": 60,
+            "show_when": "validation.enabled == true"
+          }
+        },
+        "seed": {
+          "default": 1234,
+          "description": "验证噪声种子",
+          "title": "Seed",
+          "type": "integer",
+          "x-ui": {
+            "advanced": true,
+            "group": "validation",
+            "order": 70,
+            "show_when": "validation.enabled == true"
+          }
+        }
+      },
+      "title": "ValidationConfig",
+      "type": "object"
+    },
+    "WandbConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "default": "ypuddin",
+          "title": "Project",
+          "type": "string"
+        },
+        "run_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Name"
+        },
+        "entity": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Entity"
+        }
+      },
+      "title": "WandbConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "model": {
+      "$ref": "#/$defs/ModelConfig"
+    },
+    "dataset": {
+      "$ref": "#/$defs/DatasetConfig"
+    },
+    "adapter": {
+      "$ref": "#/$defs/AdapterConfig"
+    },
+    "objective": {
+      "$ref": "#/$defs/ObjectiveConfig"
+    },
+    "optimizer": {
+      "$ref": "#/$defs/OptimizerConfig"
+    },
+    "scheduler": {
+      "$ref": "#/$defs/SchedulerConfig"
+    },
+    "memory": {
+      "$ref": "#/$defs/MemoryConfig"
+    },
+    "loop": {
+      "$ref": "#/$defs/LoopConfig"
+    },
+    "checkpoint": {
+      "$ref": "#/$defs/CheckpointConfig"
+    },
+    "sampling": {
+      "$ref": "#/$defs/SamplingConfig"
+    },
+    "validation": {
+      "$ref": "#/$defs/ValidationConfig"
+    },
+    "logging": {
+      "$ref": "#/$defs/LoggingConfig"
+    }
+  },
+  "title": "TrainConfig",
+  "type": "object",
+  "x-ui-groups": [
+    "model",
+    "dataset",
+    "caption",
+    "adapter",
+    "objective",
+    "optimizer",
+    "scheduler",
+    "memory",
+    "loop",
+    "checkpoint",
+    "sampling",
+    "validation",
+    "logging"
+  ]
 }

@@ -93,3 +93,26 @@ def test_objective_loss_masked(loss):
     if ref is not None:
         torch.testing.assert_close(per_m, ref[:, :, :4].flatten(1).mean(1))
     assert torch.isfinite(masked)
+
+
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "cuda", marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable")
+        ),
+        pytest.param(
+            "mps", marks=pytest.mark.skipif(not torch.backends.mps.is_available(), reason="MPS unavailable")
+        ),
+    ],
+)
+def test_cpu_noise_generator_matches_on_all_devices(device):
+    obj = Objective(ObjectiveConfig(ip_noise_gamma=0.2))
+    x = torch.ones(2, 4, 8, 8)
+    t = torch.tensor([0.2, 0.7])
+    expected = obj.prepare(x, t, generator=torch.Generator().manual_seed(9))
+    gen = torch.Generator().manual_seed(9)
+    actual = obj.prepare(x.to(device), t.to(device), generator=gen)
+    for a, b in zip(actual, expected, strict=True):
+        torch.testing.assert_close(a.cpu(), b, rtol=1e-6, atol=1e-6)

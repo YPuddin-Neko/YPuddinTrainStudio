@@ -225,7 +225,13 @@ class ToyFamily(ModelFamily):
     )
 
     def load(
-        self, cfg: ModelConfig, memory: MemoryConfig, *, device: torch.device | str, dtype: torch.dtype
+        self,
+        cfg: ModelConfig,
+        memory: MemoryConfig,
+        *,
+        device: torch.device | str,
+        dtype: torch.dtype,
+        backbone_device: torch.device | str | None = None,
     ) -> LoadedModel:
         torch.manual_seed(0)
         backbone = ToyDiT()
@@ -233,7 +239,7 @@ class ToyFamily(ModelFamily):
             from safetensors.torch import load_file
 
             backbone.load_state_dict(load_file(cfg.dit_path))
-        backbone.to(device=device, dtype=dtype)
+        backbone.to(device=backbone_device or device, dtype=dtype)
         backbone.grad_checkpointing = memory.activation_checkpointing != "none"
         return LoadedModel(
             backbone=backbone, text=ToyText(), latent=ToyLatent(), device=torch.device(device), dtype=dtype
@@ -257,6 +263,11 @@ class ToyFamily(ModelFamily):
 
     def meta_backbone(self, cfg: ModelConfig) -> nn.Module:
         return ToyDiT()
+
+    def linear_module_names(self) -> list[str]:
+        with torch.device("meta"):
+            backbone = ToyDiT()
+        return [name for name, module in backbone.named_modules() if isinstance(module, nn.Linear)]
 
     def memory_layout_meta(self, backbone: nn.Module) -> MemoryLayout:
         return MemoryLayout(blocks=list(backbone.blocks))

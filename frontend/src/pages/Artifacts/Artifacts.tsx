@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { apiClient } from '../../api/client';
+import { apiClient, apiUrl } from '../../api/client';
 import { Artifact } from '../../api/types';
 import { formatBytes, formatTime } from '../../utils/format';
 import { Box, Download, Trash2, FileJson, PackageOpen } from 'lucide-react';
@@ -82,7 +82,7 @@ export default function Artifacts() {
                   <td className="p-4 text-right">
                     <div className="flex items-center justify-end space-x-2">
                       <a
-                        href={`/api/artifacts/${a.id}/download`}
+                        href={apiUrl(`/artifacts/${a.id}/download`)}
                         className="p-1.5 text-slate-500 hover:text-blue-600 rounded hover:bg-slate-100 dark:hover:bg-slate-700"
                         title={t('common.download')}
                       >

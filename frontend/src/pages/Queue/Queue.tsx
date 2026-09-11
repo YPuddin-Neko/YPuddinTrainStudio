@@ -1,3 +1,4 @@
+import { mergeJobEvent } from '../../utils/jobs';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../api/client';
@@ -45,42 +46,49 @@ const STATUS_DEFAULTS: Record<string, string> = {
 
 export default function Queue() {
   const { t } = useTranslation();
+  const [page, setPage] = React.useState(1);
+  const [total, setTotal] = React.useState(0);
+  const [statusFilter, setStatusFilter] = React.useState('');
+  const pageSize = 50;
+  const requestRef = React.useRef(0);
   const [jobs, setJobs] = React.useState<Job[]>([]);
-  const [settings, setSettings] = React.useState<QueueSettings>({ held: false, max_concurrent: 1 });
+  const [settings, setSettings] = React.useState<QueueSettings>({ held: false, max_concurrent: 1, memory_admission: true });
   const [optimisticStates, setOptimisticStates] = React.useState<Record<string, string>>({});
 
   const statusLabel = (status: string): string =>
     t(`queue.status.${status}`, STATUS_DEFAULTS[status] ?? status);
 
-  const fetchJobs = () => {
-    apiClient.get<JobListResponse | Job[]>('/jobs').then((data) => {
-      // 兼容分页响应 {items, total, page, page_size} 与简单数组
-      if (Array.isArray(data)) {
-        setJobs(data);
-      } else if (data && Array.isArray(data.items)) {
-        setJobs(data.items);
-      }
+  const fetchJobs = React.useCallback(() => {
+    const requestId = ++requestRef.current;
+    apiClient.get<JobListResponse | Job[]>('/jobs', { params: { page, page_size: pageSize, status: statusFilter || undefined } }).then((data) => {
+      if (requestId !== requestRef.current) return;
+      const items = Array.isArray(data) ? data : data.items;
+      const count = Array.isArray(data) ? data.length : data.total;
+      setJobs(items); setTotal(count);
+      if (page > 1 && items.length === 0) setPage(Math.max(1, Math.ceil(count / pageSize)));
     }).catch(console.error);
-  };
+  }, [page, statusFilter]);
 
   const fetchSettings = () => {
     apiClient.get<QueueSettings>('/queue/settings').then(setSettings).catch(console.error);
   };
 
   React.useEffect(() => {
-    fetchJobs();
     fetchSettings();
   }, []);
+
+  React.useEffect(() => { fetchJobs(); }, [fetchJobs]);
 
   // 监听 job.state 更新
   useEventStream(EVENT_TYPES.JOB_STATE, (data: any) => {
     setJobs((prev) =>
       prev.map((j) =>
         j.id === data.job_id
-          ? { ...j, status: data.status, progress: data.progress || j.progress }
+          ? mergeJobEvent(j, data)
           : j
       )
     );
+    if (statusFilter) fetchJobs();
     // 状态已确认，清除乐观状态
     setOptimisticStates((prev) => {
       const next = { ...prev };
@@ -89,18 +97,23 @@ export default function Queue() {
     });
   });
 
+  useEventStream(EVENT_TYPES.JOB_STEP, (data: any) => setJobs((rows) => rows.map((job) => mergeJobEvent(job, data))));
+  useEventStream(EVENT_TYPES.JOB_PHASE, (data: any) => setJobs((rows) => rows.map((job) => mergeJobEvent(job, data))));
+
   // 监听队列变化刷新
   useEventStream(EVENT_TYPES.QUEUE_CHANGED, () => {
     fetchJobs();
   });
 
   const handleAction = (jobId: string, action: string) => {
+    if (action === 'cancel' && !window.confirm(t('queue.cancelConfirm'))) return;
     // 乐观 UI 状态
     setOptimisticStates((prev) => ({ ...prev, [jobId]: `${action}ing` }));
 
     apiClient.post<Job>(`/jobs/${jobId}/${action}`, {})
       .then((updatedJob) => {
-        setJobs((prev) => prev.map((j) => (j.id === jobId ? updatedJob : j)));
+        if (updatedJob.id === jobId) setJobs((prev) => prev.map((j) => (j.id === jobId ? updatedJob : j)));
+        else fetchJobs();
         // 清除乐观状态
         setOptimisticStates((prev) => {
           const next = { ...prev };
@@ -201,7 +214,20 @@ export default function Queue() {
         </button>
       </div>
 
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+        <select aria-label={t('queue.statusFilter')} value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className="rounded border px-3 py-2 dark:bg-slate-900 dark:border-slate-600">
+          <option value="">{t('queue.allStatuses')}</option>
+          {['queued', 'scheduled', 'running', 'pausing', 'cancelling', 'paused', 'completed', 'failed', 'cancelled'].map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
+        </select>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={settings.memory_admission !== false}
+          onChange={(e) => apiClient.put<QueueSettings>('/queue/settings', { memory_admission: e.target.checked }).then(setSettings).catch(console.error)} />{t('queue.memoryAdmission')}</label>
+        <div className="flex items-center gap-3">
+          <span>{t('queue.pagination', { page, pages: Math.max(1, Math.ceil(total / pageSize)), total })}</span>
+          <button disabled={page <= 1} onClick={() => setPage((v) => v - 1)} className="rounded border px-3 py-1 disabled:opacity-40">{t('common.previous')}</button>
+          <button disabled={page * pageSize >= total} onClick={() => setPage((v) => v + 1)} className="rounded border px-3 py-1 disabled:opacity-40">{t('common.next')}</button>
+        </div>
+      </div>
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-x-auto">
         <table className="w-full text-left border-collapse" data-testid="jobs-table">
           <thead>
             <tr className="border-b border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-400">
@@ -262,6 +288,7 @@ export default function Queue() {
                     <span className={`px-2 py-1 rounded text-xs font-medium ${statusBadgeClass(displayStatus)}`}>
                       {statusLabel(displayStatus)}
                     </span>
+                    {job.progress?.phase === 'waiting_for_device' && <p className="mt-1 text-xs text-amber-600">{t('phase.waiting_for_device')}</p>}
                   </td>
                   <td className="p-4">
                     {job.progress && job.progress.step != null && job.progress.total_steps != null && job.progress.total_steps > 0 ? (
@@ -279,12 +306,13 @@ export default function Queue() {
                   <td className="p-4">
                     <input
                       type="number"
+                      key={`${job.id}-${job.priority}`}
                       defaultValue={job.priority}
                       aria-label={t('queue.priority')}
                       onBlur={(e) => {
                         const val = Number(e.target.value);
                         if (val !== job.priority) {
-                          apiClient.patch(`/jobs/${job.id}`, { priority: val }).then(fetchJobs);
+                          apiClient.patch(`/jobs/${job.id}`, { priority: val }).then(fetchJobs).catch(console.error);
                         }
                       }}
                       className="w-16 px-2 py-1 border rounded text-sm dark:bg-slate-900 dark:border-slate-600"
@@ -333,7 +361,7 @@ export default function Queue() {
                       >
                         <RefreshCcw className="w-4 h-4" />
                       </button>
-                      {(job.status === 'running' || job.status === 'queued') && (
+                      {(['running', 'queued', 'scheduled', 'paused'].includes(job.status)) && (
                         <button
                           onClick={() => handleAction(job.id, 'cancel')}
                           className="p-1 text-slate-500 hover:text-red-600"

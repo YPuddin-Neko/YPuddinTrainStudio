@@ -107,6 +107,40 @@ class AdapterSet:
             layer.adapter.train(mode)
 
     # ----------------------------------------------------------------- io surface
+    def training_state_dict(self) -> dict[str, Tensor]:
+        """Raw trainable state, without the scalar/alpha folding used by inference exports."""
+        state: dict[str, Tensor] = {}
+        for name, layer in self.layers.items():
+            for key, value in layer.adapter.state_dict().items():
+                state[f"{name}.adapter.{key}"] = value.detach().clone()
+            if layer.dora is not None:
+                for key, value in layer.dora.state_dict().items():
+                    state[f"{name}.dora.{key}"] = value.detach().clone()
+        return state
+
+    def load_training_state(self, state: dict[str, Tensor]) -> None:
+        expected = {
+            f"{name}.{kind}.{key}"
+            for name, layer in self.layers.items()
+            for kind, module in (("adapter", layer.adapter), ("dora", layer.dora))
+            if module is not None
+            for key in module.state_dict()
+        }
+        if state.keys() != expected:
+            missing = sorted(expected - state.keys())
+            extra = sorted(state.keys() - expected)
+            raise ValueError(
+                f"checkpoint adapter structure changed: missing={missing[:3]}, extra={extra[:3]}"
+            )
+        for name, layer in self.layers.items():
+            for kind, module in (("adapter", layer.adapter), ("dora", layer.dora)):
+                if module is None:
+                    continue
+                prefix = f"{name}.{kind}."
+                module.load_state_dict(
+                    {k[len(prefix) :]: v for k, v in state.items() if k.startswith(prefix)}
+                )
+
     def export_state(self) -> tuple[dict[str, Tensor], dict[str, Any]]:
         tensors: dict[str, Tensor] = {}
         targets_meta: dict[str, Any] = {}
@@ -138,6 +172,11 @@ class AdapterSet:
             if isinstance(rebuilt, Full):
                 rebuilt.bind_base(layer.base.dequant(torch.float32))
             layer.adapter.load_state_dict(rebuilt.state_dict(), strict=False)
+            # Inference files fold scalar into a factor. A warm start uses that factor with gain 1;
+            # exact training resume uses load_training_state instead.
+            if layer.adapter.scalar is not None:
+                with torch.no_grad():
+                    layer.adapter.scalar.fill_(1.0)
             if dora is not None and layer.dora is not None:
                 layer.dora.load_tensor(dora)
         if missing and strict:

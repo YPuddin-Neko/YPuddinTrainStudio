@@ -96,7 +96,7 @@ describe('FE-M7: family-driven SchemaForm', () => {
       <SchemaForm schema={trainSchema as any} value={baseConfig} onChange={() => {}} family={krea2Family} />
     );
     const field = screen.getByTestId('field-sampling.shift');
-    const input = field.querySelector('input') as HTMLInputElement;
+    const input = field.querySelector('input[type=number]') as HTMLInputElement;
     expect(input.placeholder).toContain('自动');
   });
 

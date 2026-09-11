@@ -172,13 +172,22 @@ class Krea2Family(ModelFamily):
                 problems.append(f"model.{field} does not exist: {value}")
         return problems
 
+    def latent_fingerprint(self, cfg: ModelConfig, *, dtype: torch.dtype) -> str:
+        return AnimaLatent(cfg.vae_path, dtype=dtype).fingerprint
+
     def load(
-        self, cfg: ModelConfig, memory: MemoryConfig, *, device: torch.device | str, dtype: torch.dtype
+        self,
+        cfg: ModelConfig,
+        memory: MemoryConfig,
+        *,
+        device: torch.device | str,
+        dtype: torch.dtype,
+        backbone_device: torch.device | str | None = None,
     ) -> LoadedModel:
         problems = self.validate_config(cfg)
         if problems:
             raise FileNotFoundError("; ".join(problems))
-        dit, config = load_dit(cfg.dit_path, device=device, dtype=dtype)
+        dit, config = load_dit(cfg.dit_path, device=backbone_device or device, dtype=dtype)
         if memory.activation_checkpointing != "none":
             if memory.activation_checkpointing == "unsloth":
                 log.warning(

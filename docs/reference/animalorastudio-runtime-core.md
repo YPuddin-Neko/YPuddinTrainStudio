@@ -61,15 +61,15 @@ Important coupling: the runtime **imports the studio package** (`studio.infrastr
 ```python
 args = parse_args()
 ctx = TrainingContext(args=args)
-phases.bootstrap.run(ctx)   # yaml+CLI -> TrainingConfig, family, seed, dtype, dirs, wandb, loss_fn
-phases.models.run(ctx)      # paths, fp8 check, load VAE+TE (+DiT unless deferred), inject adapter, block swap
-phases.dataset.run(ctx)     # datasets, latent cache, samplers, dataloader, VAE roundtrip self-test
+phases.bootstrap.run(ctx)  # yaml+CLI -> TrainingConfig, family, seed, dtype, dirs, wandb, loss_fn
+phases.models.run(ctx)  # paths, fp8 check, load VAE+TE (+DiT unless deferred), inject adapter, block swap
+phases.dataset.run(ctx)  # datasets, latent cache, samplers, dataloader, VAE roundtrip self-test
 phases.text_cache.run(ctx)  # Krea2: pre-encode captions to sidecars, release TE
-phases.models.finish(ctx)   # Krea2: load DiT now (TE gone) + inject adapter
-phases.optimizer.run(ctx)   # param groups, optimizer, total_steps, scheduler, timestep sampler
-phases.resume.run(ctx)      # progress UI, --resume-state, signal handlers, step-0 baseline samples
+phases.models.finish(ctx)  # Krea2: load DiT now (TE gone) + inject adapter
+phases.optimizer.run(ctx)  # param groups, optimizer, total_steps, scheduler, timestep sampler
+phases.resume.run(ctx)  # progress UI, --resume-state, signal handlers, step-0 baseline samples
 loop.run(ctx)
-phases.finalize.run(ctx)    # final save, eval event, block swap release, wandb finish
+phases.finalize.run(ctx)  # final save, eval event, block swap release, wandb finish
 ```
 
 ### 1.2 Plugin registry system
@@ -92,13 +92,16 @@ Family registry is only half-pluggable: `get_family()` is an if/elif on `"anima"
 ```python
 @dataclass(frozen=True)
 class ModelSpec:
-    family_id: str; display_name: str
-    objective: Literal["rectified_flow"]          # only legal value in v1
-    latent: LatentSpec      # fingerprint, channels, spatial_stride, patch_spatial/temporal, temporal, rgb_factors/bias
-    text: TextSpec          # strategy: "online" | "cached_varlen"; max_seq_len; fingerprint
-    sampling: SamplingDefaults   # samplers, schedulers, default_sampler/scheduler/steps/cfg, shift_policy
-    capabilities: frozenset[str] # subset of KNOWN_CAPABILITIES (L114-118): navit sra leap compile_blocks caption_tag_ops online_text text_cache masked_loss block_swap
-    lora: LoraOutputSpec    # prefix="lora_unet", preset_name
+    family_id: str
+    display_name: str
+    objective: Literal["rectified_flow"]  # only legal value in v1
+    latent: LatentSpec  # fingerprint, channels, spatial_stride, patch_spatial/temporal, temporal, rgb_factors/bias
+    text: TextSpec  # strategy: "online" | "cached_varlen"; max_seq_len; fingerprint
+    sampling: SamplingDefaults  # samplers, schedulers, default_sampler/scheduler/steps/cfg, shift_policy
+    capabilities: frozenset[
+        str
+    ]  # subset of KNOWN_CAPABILITIES (L114-118): navit sra leap compile_blocks caption_tag_ops online_text text_cache masked_loss block_swap
+    lora: LoraOutputSpec  # prefix="lora_unet", preset_name
     config_defaults: Mapping[str, Any]
 ```
 
@@ -197,9 +200,9 @@ Family config defaults overlay (`studio/domain/common.py:32-47`): krea2 forces `
 - Compute: `patch_fp8_linears()` (`quant_fp8.py:91-131`) monkeypatches each fp8 `nn.Linear.forward` with
 ```python
 def _fp8_linear_forward(self, input):
-    weight = self.weight.to(input.dtype)              # dequant on the fly, per forward
+    weight = self.weight.to(input.dtype)  # dequant on the fly, per forward
     if (scale := getattr(self, "weight_scale", None)) is not None:
-        weight = weight * scale.to(input.dtype)       # per-tensor scale, cast first (ComfyUI parity)
+        weight = weight * scale.to(input.dtype)  # per-tensor scale, cast first (ComfyUI parity)
     return F.linear(input, weight, bias)
 ```
   i.e. **no fp8 matmul (`_scaled_mm`), no fused dequant kernels** — a transient bf16 copy of each weight per forward (and again in checkpoint recompute). Hence `_validate_fp8_base` (`phases/models.py:243-275`) requires `grad_checkpoint=True` and rejects `lora_dora` (DoRA reads base norms).
@@ -270,14 +273,34 @@ Anima `sample_image` (`families/anima/sampling.py:263-537`) is a ComfyUI KSample
 - Representative fields:
 ```python
 model_family: Literal["anima", "krea2"] = "anima"
-lora_type: Literal["lora","lokr","loha","ortho","tlora"] = "lora";  lora_rank: int;  lora_alpha: float = 32.0
-optimizer_type: Literal["adamw","automagic","came","lion","prodigy","prodigy_plus_schedulefree","soap","soap_sf"] = "adamw"
-lr_scheduler: Literal["none","cosine","cosine_with_restart","cosine_with_warmup"]
-mixed_precision: Literal["bf16","fp16","no"];  grad_checkpoint: bool;  grad_accum: int = 4;  batch_size: int = 1
-timestep_sampling: Literal["logit_normal","uniform","logit_normal_low","mode","mixed_uniform_low","mixed_uniform_logit","krea2_shift"]
-loss_type: Literal["mse","huber"];  loss_weighting: Literal["none","min_snr","detail_inv_t","cosmap"]
-cache_latents: bool = True;  text_encoder_cache: bool = True;  blocks_to_swap: int = 0;  navit_packing: bool
-sample_sampler_name: Literal["er_sde","dpmpp_3m_sde","euler"];  sample_scheduler: Literal["simple","sgm_uniform"]
+lora_type: Literal["lora", "lokr", "loha", "ortho", "tlora"] = "lora"
+lora_rank: int
+lora_alpha: float = 32.0
+optimizer_type: Literal[
+    "adamw", "automagic", "came", "lion", "prodigy", "prodigy_plus_schedulefree", "soap", "soap_sf"
+] = "adamw"
+lr_scheduler: Literal["none", "cosine", "cosine_with_restart", "cosine_with_warmup"]
+mixed_precision: Literal["bf16", "fp16", "no"]
+grad_checkpoint: bool
+grad_accum: int = 4
+batch_size: int = 1
+timestep_sampling: Literal[
+    "logit_normal",
+    "uniform",
+    "logit_normal_low",
+    "mode",
+    "mixed_uniform_low",
+    "mixed_uniform_logit",
+    "krea2_shift",
+]
+loss_type: Literal["mse", "huber"]
+loss_weighting: Literal["none", "min_snr", "detail_inv_t", "cosmap"]
+cache_latents: bool = True
+text_encoder_cache: bool = True
+blocks_to_swap: int = 0
+navit_packing: bool
+sample_sampler_name: Literal["er_sde", "dpmpp_3m_sde", "euler"]
+sample_scheduler: Literal["simple", "sgm_uniform"]
 ```
 
 ### 1.14 Runtime-specific weaknesses observed while reading (beyond the ADR/CHANGELOG survey)

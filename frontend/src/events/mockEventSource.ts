@@ -1,5 +1,5 @@
 import { EVENT_TYPES } from './eventTypes';
-import { runningMockJobs } from '../mocks/mockStore';
+import { runningMockJobs, findMockJob } from '../mocks/mockStore';
 
 /**
  * 开发态 mock SSE 事件源。
@@ -17,7 +17,7 @@ export function createMockEventSource() {
   // 每个 job 独立的步进状态，支持任意 job_id（含 POST /jobs 新建的）
   const perJob = new Map<string, { step: number; loss: number }>();
   const stateOf = (jobId: string) => {
-    if (!perJob.has(jobId)) perJob.set(jobId, { step: 0, loss: 0.42 });
+    if (!perJob.has(jobId)) perJob.set(jobId, { step: findMockJob(jobId)?.progress?.step || 0, loss: 0.42 });
     return perJob.get(jobId)!;
   };
 
@@ -37,7 +37,7 @@ export function createMockEventSource() {
         disks: [{ path: '/data', used_gb: 250, total_gb: 1000 }],
         gpus: [
           {
-            index: 0, name: 'NVIDIA RTX 4090',
+            index: 0, kind: 'cuda', name: 'NVIDIA RTX 4090',
             util_pct: Math.round(60 + Math.random() * 30),
             mem_used_mb: 16000 + Math.random() * 3000,
             mem_total_mb: 24576, temp_c: 62 + Math.random() * 8,
@@ -55,6 +55,8 @@ export function createMockEventSource() {
         st.step += 1;
         st.loss = Math.max(0.02, st.loss * 0.998 + (Math.random() - 0.5) * 0.01);
         const total = job.progress?.total_steps || 2000;
+        job.progress = { ...job.progress, step: st.step, epoch: Math.floor(st.step / 500) };
+        job.latest = { ...job.latest, loss: st.loss, loss_ema: st.loss * 0.99 };
         emit(EVENT_TYPES.JOB_STEP, {
           job_id: job.id,
           step: st.step,

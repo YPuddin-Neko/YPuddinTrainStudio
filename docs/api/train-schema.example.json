@@ -577,7 +577,7 @@
             }
           ],
           "default": null,
-          "description": "只保留最近 N 个权重文件",
+          "description": "仅保留最近 N 组按步保存的权重（普通/EMA 成组；轮次与最终产物保留）",
           "title": "Keep Last N",
           "x-ui": {
             "advanced": true,

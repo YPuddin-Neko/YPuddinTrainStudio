@@ -158,6 +158,17 @@ class BlockSwapper:
         return hook
 
     # ----------------------------------------------------------------- lifecycle
+    def move_model_to_device(self, model: nn.Module) -> None:
+        """Move trainable tensors and resident modules without first uploading swapped frozen blocks.
+
+        Rebinding data preserves the Tensor objects recorded by the hooks, including buffers.
+        Using model.to() here would upload all weights and replace buffer objects.
+        """
+        owned = {id(t) for values in self._tensors.values() for t in values}
+        for tensor in list(model.parameters()) + list(model.buffers()):
+            if id(tensor) not in owned:
+                tensor.data = tensor.data.to(self.device)
+
     def set_forward_only(self, value: bool) -> None:
         """Inference mode: release every block right after its forward."""
         self.forward_only = value

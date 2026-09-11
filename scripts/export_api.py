@@ -9,8 +9,14 @@ from ypuddin.server import create_app
 
 root = Path(__file__).resolve().parents[1] / "docs" / "api"
 root.mkdir(parents=True, exist_ok=True)
-app = create_app(tempfile.mkdtemp(), frontend_dist="/nonexistent")
-(root / "openapi.json").write_text(json.dumps(app.openapi(), indent=2, ensure_ascii=False), encoding="utf-8")
+with tempfile.TemporaryDirectory() as temporary:
+    app = create_app(temporary, frontend_dist="/nonexistent")
+    try:
+        (root / "openapi.json").write_text(
+            json.dumps(app.openapi(), indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+    finally:
+        app.state.ctx.db.close()
 (root / "train-schema.example.json").write_text(
     json.dumps(TrainConfig.json_schema(), indent=2, ensure_ascii=False), encoding="utf-8"
 )

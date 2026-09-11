@@ -1,3 +1,5 @@
+import trainSchema from '../schema/train-schema.json';
+import { schemaDefaults } from '../utils/config';
 import { http, HttpResponse } from 'msw';
 import { mockJobs, updateMockJob, removeMockJob } from './mockStore';
 import {
@@ -20,9 +22,12 @@ import {
   ModelAsset,
 } from '../api/types';
 
+const customPresets: Preset[] = [];
+
 let mockQueueSettings: QueueSettings = {
   held: false,
   max_concurrent: 1,
+  memory_admission: true,
 };
 
 let mockSettings: Settings = {
@@ -236,10 +241,19 @@ export const handlers = [
       ram: { used_mb: 16384, total_mb: 65536 },
       disks: [{ path: '/data', used_gb: 250, total_gb: 1000 }],
       gpus: [
-        { index: 0, name: 'NVIDIA RTX 4090', util_pct: 78, mem_used_mb: 18432, mem_total_mb: 24576, temp_c: 65 },
+        { index: 0, kind: 'cuda', name: 'NVIDIA RTX 4090', util_pct: 78, mem_used_mb: 18432, mem_total_mb: 24576, temp_c: 65 },
       ],
     };
     return HttpResponse.json(stats);
+  }),
+
+  http.get('/api/system/info', () => {
+    return HttpResponse.json({
+      python: '3.12.12',
+      platform: 'macOS-15.7.9-arm64-arm-64bit',
+      packages: { torch: '2.14.0', fastapi: '0.141.1' },
+      ypuddin: '0.1.0',
+    });
   }),
 
   http.get('/api/fs/list', ({ request }) => {
@@ -289,6 +303,18 @@ export const handlers = [
   http.post('/api/projects/:id/datasets', async ({ request }) => {
     const body = (await request.json()) as any;
     return HttpResponse.json({ ...mockDatasetInfo, source: { ...mockDatasetInfo.source, ...body, id: 'ds_new', project_id: 'proj_01' } });
+  }),
+
+  http.get('/api/schema/train', () => HttpResponse.json(trainSchema)),
+  http.get('/api/config/defaults', () => HttpResponse.json(schemaDefaults(trainSchema))),
+  http.put('/api/projects/:id/config', async ({ request }) => HttpResponse.json(await request.json())),
+  http.post('/api/config/import', () => HttpResponse.json({ error: { code: 'mock.real_backend_required', message: 'TOML import requires the real backend (VITE_USE_MOCK=false).' } }, { status: 501 })),
+  http.post('/api/config/export', () => HttpResponse.json({ error: { code: 'mock.real_backend_required', message: 'TOML export requires the real backend (VITE_USE_MOCK=false).' } }, { status: 501 })),
+  http.post('/api/presets', async ({ request }) => {
+    const body = await request.json() as any;
+    const preset = { ...body, builtin: false, updated_at: Date.now() / 1000 } as Preset;
+    customPresets.push(preset);
+    return HttpResponse.json(preset);
   }),
 
   http.get('/api/projects/:id/config', () => {
@@ -371,8 +397,11 @@ export const handlers = [
   http.get('/api/jobs', ({ request }) => {
     const url = new URL(request.url);
     const projectId = url.searchParams.get('project_id');
-    const items = projectId ? mockJobs.filter((j) => j.project_id === projectId) : mockJobs;
-    const resp: JobListResponse = { items, total: items.length, page: 1, page_size: 50 };
+    const statuses = url.searchParams.get('status')?.split(',');
+    const page = Number(url.searchParams.get('page') || 1);
+    const pageSize = Number(url.searchParams.get('page_size') || 50);
+    const filtered = mockJobs.filter((j) => (!projectId || j.project_id === projectId) && (!statuses || statuses.includes(j.status)));
+    const resp: JobListResponse = { items: filtered.slice((page - 1) * pageSize, page * pageSize), total: filtered.length, page, page_size: pageSize };
     return HttpResponse.json(resp);
   }),
 
@@ -486,7 +515,7 @@ export const handlers = [
     const checkpoints: JobCheckpoint[] = [
       {
         step: 200, kind: 'weights', path: '/models/checkpoints/chara-v1-step200.safetensors',
-        size: 85000000, created_at: 1789000000, artifact_id: 'art_01',
+        size: 85000000, created_at: 1789000000, artifact_id: 'art_01', ema: false,
       },
     ];
     return HttpResponse.json(checkpoints);
@@ -514,8 +543,9 @@ export const handlers = [
 
   http.post('/api/config/validate', async ({ request }) => {
     const body = (await request.json()) as any;
+    if (!body?.config || typeof body.config !== 'object') return HttpResponse.json({ error: { code: 'config.envelope', message: 'Expected {config}' } }, { status: 422 });
     const errors = [];
-    if (body?.adapter?.rank > 1024) {
+    if (body.config.adapter?.rank > 1024) {
       errors.push({ loc: 'adapter.rank', msg: 'Rank cannot exceed 1024' });
     }
     return HttpResponse.json({ ok: errors.length === 0, errors, warnings: [] });
@@ -592,7 +622,7 @@ export const handlers = [
         builtin: true, updated_at: null,
       },
     ];
-    return HttpResponse.json(presets);
+    return HttpResponse.json([...presets, ...customPresets]);
   }),
 
   // ---- Models ----

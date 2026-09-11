@@ -1,25 +1,23 @@
 # YPuddin Train Studio
 
-一个面向扩散模型（已支持 **Anima**：Cosmos-Predict2 风格 DiT + Qwen3-0.6B + Qwen-Image VAE；**Krea 2**：12.9B 单流 MMDiT + Qwen3-VL-4B + Qwen-Image VAE）的
-**模块化 LoRA / LoKr 训练器**，附带供 Web 前端调用的服务 API。
+一个面向扩散模型的**模块化适配器训练器**，包含 LoRA / LoKr / LoHa / DoRA、数据缓存、任务队列、服务 API 与 Web 界面。已接入 **Anima**（Cosmos-Predict2 风格 DiT + Qwen3-0.6B + Qwen-Image VAE）和 **Krea 2**（单流 MMDiT + Qwen3-VL-4B + Qwen-Image VAE）。训练核心与两族模型通过统一接口连接；模型组件包含按 Apache-2.0 引入的上游实现，来源见各 `vendor/NOTICE.md`。
 
-它不是现有训练脚本的 GUI 套壳：训练核心、适配器（LoRA / LoKr / LoHa / DoRA）、数据流水线、
-显存编排与任务服务全部自研，设计目标是同时超越
-[sd-scripts](../sd-scripts)、[diffusion-pipe](../diffusion-pipe) 与 [AnimaLoraStudio](../AnimaLoraStudio)
-各自的长处（详见 [`docs/design/00-architecture.md`](docs/design/00-architecture.md)）。
+当前处于集成验证阶段：已有 CPU 玩具模型与缩小版真实组件的训练、暂停恢复、采样和服务回归测试；**官方完整权重在 NVIDIA GPU 上的训练、实际 ComfyUI 加载与质量验收、速度和显存基准仍待完成**。测试结果和数量见[本轮修复报告](docs/FIX_REPORT_2026-09-11.md)，功能状态见 [`docs/design/03-status.md`](docs/design/03-status.md)。参考项目分析保存在 `docs/reference/`，不作为性能优于参考实现的结论。
+
+当前交付 **v0.2.0**：创建项目 → 上传图片/标签或导入目录 → 准备模型 → 编辑参数并启动训练。模型库支持下载与默认路径设置，功率显示贯穿训练页面。操作步骤和 Windows 升级方式见[工作流使用与验收](docs/UI_WORKFLOW_2026-09-11.md)。
 
 ## 仓库结构
 
 ```
 studio.sh/.bat    一键安装 + 启动
 ypuddin/          Python 后端包（训练核心 + 服务 API），CLI 入口 `ypuddin`
-frontend/         Web 前端（由独立会话负责，见 docs/frontend-spec.md）
+frontend/         Web 前端（动态配置表单、数据集、任务监控与产物管理）
 docs/deploy.md    部署与运行指南
 docs/design/      架构设计文档（ADR 风格）
 docs/reference/   对四个参考项目的深度分析报告
 tests/            CPU 可跑的单元 / 集成测试（用玩具模型族端到端验证训练循环）
 scripts/          bootstrap.py（studio.sh/.bat 的实现）与开发辅助脚本
-.handoff/         与前端会话交接用的状态文件
+HANDOVER.md       当前交接说明与验证边界
 ```
 
 ## 快速开始
@@ -29,9 +27,11 @@ scripts/          bootstrap.py（studio.sh/.bat 的实现）与开发辅助脚�
 studio.bat         # Windows
 ```
 
-第一次运行自动创建 `venv`、按显卡驱动安装对应 CUDA 版 PyTorch、构建前端并启动服务，浏览器打开 `http://127.0.0.1:8765/`。
+第一次运行自动创建 `venv`、选择 PyTorch 安装来源、有可用 Node 时构建前端并启动服务，默认浏览器地址为 `http://127.0.0.1:8765/`。构建前端需要 Node 20.19+ 或 22.12+；macOS 使用支持 MPS 的 PyTorch，当前 MPS 训练按 FP32 执行，内存预算按统一内存估算。
 `./studio.sh doctor` 查看本机环境；`./studio.sh smoke --set model.dit_path=… --set model.text_encoder_path=… --set model.vae_path=…`
 用真实权重自检整条训练链路。完整说明（参数、手动安装、目录结构、常驻服务、远程访问、排障）见 [`docs/deploy.md`](docs/deploy.md)。
+
+升级前保留数据和断点。新版完整训练状态使用 v2 格式，数据指纹和排序规则已更新；旧指纹断点不能直接当作新版的精确续训状态使用。缓存依据实际权重、分词器和数据内容识别，修改 caption 或 mask 会影响数据指纹；详细兼容与迁移方式见部署指南。
 
 ## 开发环境
 

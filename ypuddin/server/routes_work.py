@@ -6,20 +6,25 @@ import asyncio
 import io
 import json
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 from ypuddin.config import DatasetSourceConfig, TrainConfig, deep_merge
+from ypuddin.config.io import absolute_paths
 from ypuddin.data import IndexDB, scan_sources
 
 from . import models as m
 from .context import ServiceContext
+from .dataset_uploads import UploadBatch, read_upload, staged_upload
 from .db import new_id, now
 from .errors import ApiError, NotFound
+from .hardware import gpu_info
 
 router = APIRouter()
 
@@ -114,6 +119,11 @@ def delete_project(pid: str, delete_files: bool = False, c: ServiceContext = Dep
         "SELECT id FROM jobs WHERE project_id=? AND status IN ('running','pausing','cancelling')", (pid,)
     ):
         raise ApiError("project has running jobs", code="project.busy", status=409)
+    if delete_files:
+        for job in c.db.fetchall("SELECT id, run_dir FROM jobs WHERE project_id=?", (pid,)):
+            run = Path(job["run_dir"])
+            if run.name == job["id"] and run.is_dir() and not run.is_symlink():
+                shutil.rmtree(run)
     c.db.execute("DELETE FROM jobs WHERE project_id=?", (pid,))
     c.db.execute("DELETE FROM artifacts WHERE project_id=?", (pid,))
     c.db.delete("projects", pid)
@@ -134,22 +144,112 @@ def get_project_config(pid: str, c: ServiceContext = Depends(ctx)) -> dict[str, 
 
 @router.put("/projects/{pid}/config")
 def put_project_config(pid: str, body: dict[str, Any], c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    _get_project(c, pid)
+    with c.db.lock:
+        _get_project(c, pid)
+        _write_project_config(c, pid, body)
+        c.db.update("projects", pid, {"updated_at": now()})
+    return body
+
+
+def _write_project_config(c: ServiceContext, pid: str, body: dict[str, Any]) -> None:
+    """Caller holds the DB lock to serialize config edits with dataset source registration."""
     d = c.project_dir(pid)
     d.mkdir(parents=True, exist_ok=True)
-    (d / "config.json").write_text(json.dumps(body, indent=2, ensure_ascii=False), encoding="utf-8")
-    c.db.update("projects", pid, {"updated_at": now()})
-    return body
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=d, suffix=".tmp", delete=False) as fp:
+        temporary = Path(fp.name)
+        try:
+            json.dump(body, fp, indent=2, ensure_ascii=False)
+        except BaseException:
+            fp.close()
+            temporary.unlink(missing_ok=True)
+            raise
+    try:
+        temporary.replace(d / "config.json")
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 # --------------------------------------------------------------------------- datasets
 class DatasetBody(BaseModel):
     path: str
-    repeats: int = 1
+    repeats: int = Field(1, ge=1, le=1_000_000)
     caption_ext: str = ".txt"
     is_reg: bool = False
-    prior_weight: float = 1.0
+    prior_weight: float = Field(1.0, ge=0)
     class_prompt: str | None = None
+
+
+def _dataset_config(c: ServiceContext, pid: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    cfg = get_project_config(pid, c)
+    dataset = cfg.setdefault("dataset", {})
+    if not isinstance(dataset, dict):
+        raise ApiError("project dataset config must be an object", code="config.invalid")
+    sources = dataset.setdefault("sources", [])
+    if not isinstance(sources, list) or any(not isinstance(item, dict) for item in sources):
+        raise ApiError("project dataset.sources must be a list of objects", code="config.invalid")
+    return cfg, sources
+
+
+def _same_source(path: Any, expected: str) -> bool:
+    return isinstance(path, str) and Path(path).expanduser().resolve() == Path(expected).resolve()
+
+
+def _register_dataset(c: ServiceContext, pid: str, body: DatasetBody, *, did: str | None = None) -> str:
+    """Register the source and add it to the project's training draft under one lock."""
+    p = Path(body.path).expanduser().resolve()
+    if not p.is_dir():
+        raise NotFound(f"directory not found: {p}", code="fs.not_found")
+    source = body.model_dump() | {"path": str(p)}
+    did = did or new_id("d")
+    with c.db.lock:
+        _get_project(c, pid)
+        if any(
+            _same_source(row["path"], str(p))
+            for row in c.db.fetchall("SELECT path FROM datasets WHERE project_id=?", (pid,))
+        ):
+            raise ApiError(
+                "this dataset directory is already registered", code="dataset.duplicate", status=409
+            )
+        config, sources = _dataset_config(c, pid)
+        previous = json.loads(json.dumps(config))
+        match = next((item for item in sources if _same_source(item.get("path"), str(p))), None)
+        if match is None:
+            sources.append(source)
+        else:
+            match.update(source)  # retain advanced per-source caption/resolution settings
+        c.db.execute("BEGIN IMMEDIATE")
+        written = False
+        try:
+            c.db.insert(
+                "datasets",
+                {
+                    "id": did,
+                    "project_id": pid,
+                    **source,
+                    "is_reg": int(body.is_reg),
+                    "created_at": now(),
+                    "index_status": "indexing",
+                    "stats_json": "{}",
+                },
+            )
+            _write_project_config(c, pid, config)
+            written = True
+            c.db.update("projects", pid, {"updated_at": now()})
+            c.db.execute("COMMIT")
+        except BaseException:
+            c.db.execute("ROLLBACK")
+            if written:
+                _write_project_config(c, pid, previous)
+            raise
+    c.bus.publish("dataset.changed", {"dataset_id": did, "project_id": pid, "reason": "added"})
+    return did
+
+
+def _register_upload(c: ServiceContext, pid: str, batch: UploadBatch) -> str:
+    did = new_id("d")
+    with staged_upload(c.project_dir(pid), did, batch) as directory:
+        _register_dataset(c, pid, DatasetBody(path=str(directory), repeats=batch.repeats), did=did)
+    return did
 
 
 def _records_path(c: ServiceContext, did: str) -> Path:
@@ -199,9 +299,12 @@ def _index_dataset(c: ServiceContext, did: str) -> None:
         "ar_hist": [{"ar": k, "count": v} for k, v in sorted(ars.items(), key=lambda x: float(x[0]))],
         "masks": sum(1 for r in records if r.mask_path),
     }
-    _records_path(c, did).parent.mkdir(parents=True, exist_ok=True)
-    _records_path(c, did).write_text(json.dumps([r.to_dict() for r in records]), encoding="utf-8")
-    c.db.update("datasets", did, {"index_status": "ready", "stats_json": json.dumps(stats)})
+    with c.db.lock:
+        if not c.db.fetchone("SELECT id FROM datasets WHERE id=?", (did,)):
+            return  # A source removed during indexing must not recreate its index file.
+        _records_path(c, did).parent.mkdir(parents=True, exist_ok=True)
+        _records_path(c, did).write_text(json.dumps([r.to_dict() for r in records]), encoding="utf-8")
+        c.db.update("datasets", did, {"index_status": "ready", "stats_json": json.dumps(stats)})
     c.bus.publish("dataset.changed", {"dataset_id": did})
 
 
@@ -241,7 +344,13 @@ def _cache_stats(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
         from ypuddin.models import get_family
 
         raw = get_project_config(r["project_id"], c)
-        raw.setdefault("dataset", {})["sources"] = [{"path": r["path"]}]
+        source_path = Path(r["path"]).expanduser().resolve()
+        matching = [
+            src
+            for src in raw.get("dataset", {}).get("sources", [])
+            if Path(src["path"]).expanduser().resolve() == source_path
+        ]
+        raw.setdefault("dataset", {})["sources"] = matching or [{"path": r["path"], "repeats": r["repeats"]}]
         cfg = TrainConfig.model_validate(raw)
         family = get_family(cfg.model.family)
         recs = [
@@ -251,8 +360,11 @@ def _cache_stats(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
         if not recs:
             return {}
         ds = cfg.dataset
+        from dataclasses import replace
+
+        recs = [replace(rec, source_index=i) for i in range(len(ds.sources)) for rec in recs]
         bm = BucketManager(
-            ds.resolutions,
+            sorted({resolution for src in ds.sources for resolution in (src.resolutions or ds.resolutions)}),
             align=family.spec.latent.align,
             step=ds.bucket_step,
             aspect_ratio_limit=ds.aspect_ratio_limit,
@@ -261,13 +373,23 @@ def _cache_stats(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
         )
         items = expand_items(recs, ds.sources, ds, bm)
         cache_root = Path(ds.cache_dir) if ds.cache_dir else c.cache_dir(r["project_id"])
+        import torch
+
+        from ypuddin.models.fingerprints import fingerprint_cache
+
+        devices = gpu_info()
+        dtype = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}[cfg.model.dtype]
+        if not devices or devices[0]["kind"] == "mps":
+            dtype = torch.float32
+        with fingerprint_cache(cache_root / "fingerprints"):
+            latent_identity = family.latent_fingerprint(cfg.model, dtype=dtype)
         lc = LatentCache(cache_root / "latents")
         keys = {
             LatentCache.key(
                 it.record.content_hash,
                 it.bucket.width,
                 it.bucket.height,
-                family.spec.latent.fingerprint,
+                latent_identity,
                 flip,
             )
             for it in items
@@ -294,30 +416,45 @@ def list_datasets(pid: str, c: ServiceContext = Depends(ctx)) -> list[dict[str, 
     response_model=m.DatasetInfo,
     response_model_exclude_unset=True,
 )
-async def add_dataset(pid: str, body: DatasetBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    _get_project(c, pid)
-    p = Path(body.path).expanduser()
-    if not p.is_dir():
-        raise NotFound(f"directory not found: {p}", code="fs.not_found")
-    did = new_id("d")
-    c.db.insert(
-        "datasets",
-        {
-            "id": did,
-            "project_id": pid,
-            "path": str(p),
-            "repeats": body.repeats,
-            "caption_ext": body.caption_ext,
-            "is_reg": int(body.is_reg),
-            "prior_weight": body.prior_weight,
-            "class_prompt": body.class_prompt,
-            "created_at": now(),
-            "index_status": "indexing",
-            "stats_json": "{}",
-        },
-    )
-    asyncio.get_running_loop().run_in_executor(None, _index_dataset, c, did)
+def add_dataset(
+    pid: str, body: DatasetBody, background_tasks: BackgroundTasks, c: ServiceContext = Depends(ctx)
+) -> dict[str, Any]:
+    did = _register_dataset(c, pid, body)
+    background_tasks.add_task(_index_dataset, c, did)
     return _dataset_row(c, c.db.fetchone("SELECT * FROM datasets WHERE id=?", (did,)))
+
+
+@router.post(
+    "/projects/{pid}/datasets/upload",
+    response_model=m.DatasetInfo,
+    response_model_exclude_unset=True,
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "multipart/form-data": {
+                    "schema": {
+                        "type": "object",
+                        "required": ["files"],
+                        "properties": {
+                            "files": {"type": "array", "items": {"type": "string", "format": "binary"}},
+                            "name": {"type": "string", "maxLength": 100},
+                            "repeats": {"type": "integer", "minimum": 1, "maximum": 1_000_000, "default": 1},
+                        },
+                    }
+                }
+            },
+        }
+    },
+)
+async def upload_dataset(
+    pid: str, request: Request, background_tasks: BackgroundTasks, c: ServiceContext = Depends(ctx)
+) -> dict[str, Any]:
+    _get_project(c, pid)
+    async with read_upload(request) as batch:
+        did = await run_in_threadpool(_register_upload, c, pid, batch)
+    background_tasks.add_task(_index_dataset, c, did)
+    return _dataset_row(c, _get_dataset(c, did))
 
 
 def _get_dataset(c: ServiceContext, did: str) -> dict[str, Any]:
@@ -342,8 +479,29 @@ async def rescan_dataset(did: str, c: ServiceContext = Depends(ctx)) -> dict[str
 
 @router.delete("/datasets/{did}", response_model=m.Ok, response_model_exclude_unset=True)
 def delete_dataset(did: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    _get_dataset(c, did)
-    c.db.delete("datasets", did)
+    with c.db.lock:
+        row = _get_dataset(c, did)
+        pid = row["project_id"]
+        config, sources = _dataset_config(c, pid) if pid else (None, [])
+        previous = json.loads(json.dumps(config)) if config is not None else None
+        if config is not None:
+            config["dataset"]["sources"] = [
+                item for item in sources if not _same_source(item.get("path"), row["path"])
+            ]
+        written = False
+        c.db.execute("BEGIN IMMEDIATE")
+        try:
+            c.db.delete("datasets", did)
+            if config is not None:
+                _write_project_config(c, pid, config)
+                written = True
+                c.db.update("projects", pid, {"updated_at": now()})
+            c.db.execute("COMMIT")
+        except BaseException:
+            c.db.execute("ROLLBACK")
+            if written:
+                _write_project_config(c, pid, previous)
+            raise
     _records_path(c, did).unlink(missing_ok=True)
     c.bus.publish("dataset.changed", {"dataset_id": did, "reason": "deleted"})
     return {"ok": True}
@@ -535,6 +693,8 @@ def list_jobs(
 def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     if body.type not in ("train", "cache"):
         raise ApiError(f"unsupported job type {body.type}", code="job.bad_type")
+    if body.project_id:
+        _get_project(c, body.project_id)
     config = body.config
     if config is None and body.project_id:
         config = get_project_config(body.project_id, c)
@@ -542,14 +702,20 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
         raise ApiError("config is required", code="job.no_config")
     jid = new_id("j")
     run_dir = c.runs_dir(body.project_id) / jid
-    config = deep_merge(config, {"checkpoint": {"output_dir": str(run_dir)}})
+    config = deep_merge(
+        config,
+        {
+            "checkpoint": {"output_dir": str(run_dir)},
+            "logging": {"events_path": str(run_dir / "events.jsonl")},
+        },
+    )
     if not (config.get("dataset") or {}).get("cache_dir"):
         # a pre-cache job and the training jobs after it must hit the same cache
         config = deep_merge(config, {"dataset": {"cache_dir": str(c.cache_dir(body.project_id))}})
     from pydantic import ValidationError
 
     try:
-        cfg = TrainConfig.model_validate(config)
+        cfg = absolute_paths(TrainConfig.model_validate(config))
     except ValidationError as e:
         raise ApiError(
             "invalid config",
@@ -560,6 +726,26 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
                 ]
             },
         ) from e
+    from ypuddin.train.plan import plan
+
+    devices = gpu_info()
+    preflight = plan(
+        cfg,
+        gpu_total_mb=max((g["mem_total_mb"] for g in devices), default=None),
+        device=devices[0]["device"] if devices else "cpu",
+    )
+    if not preflight["ok"]:
+        raise ApiError(
+            "training preflight failed", code="config.invalid", details={"errors": preflight["errors"]}
+        )
+    if cfg.checkpoint.resume:
+        state = Path(cfg.checkpoint.resume).expanduser()
+        if not (state / "state.json").is_file():
+            raise ApiError(
+                "resume must point to a complete state directory",
+                code="config.invalid",
+                details={"errors": [{"loc": "checkpoint.resume", "msg": "complete checkpoint not found"}]},
+            )
     status = "scheduled" if body.scheduled_at and body.scheduled_at > now() else "queued"
     c.db.insert(
         "jobs",
@@ -574,7 +760,9 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
             "created_at": now(),
             "run_dir": str(run_dir),
             "config_json": json.dumps(cfg.to_dict()),
-            "progress_json": "{}",
+            "progress_json": json.dumps(
+                {"estimated_peak_mb": preflight.get("memory", {}).get("peak_mb_estimate")}
+            ),
             "latest_json": "{}",
         },
     )
@@ -652,8 +840,10 @@ def job_metrics(jid: str, since_step: int = 0, c: ServiceContext = Depends(ctx))
     steps, loss, loss_ema, grad, vram, its = [], [], [], [], [], []
     lr: dict[str, list[float]] = {}
     validation = []
+    vram_metric = None
     for ev in _events_file(c, jid):
         if ev.get("type") == "step" and ev["step"] > since_step:
+            vram_metric = ev.get("vram_metric") or vram_metric
             steps.append(ev["step"])
             loss.append(ev.get("loss"))
             loss_ema.append(ev.get("loss_ema"))
@@ -671,6 +861,7 @@ def job_metrics(jid: str, since_step: int = 0, c: ServiceContext = Depends(ctx))
         "lr": lr,
         "grad_norm": grad,
         "vram_mb": vram,
+        "vram_metric": vram_metric,
         "it_s": its,
         "validation": validation,
     }
@@ -708,6 +899,8 @@ def job_checkpoints(jid: str, c: ServiceContext = Depends(ctx)) -> list[dict[str
     for ev in _events_file(c, jid):
         if ev.get("type") == "checkpoint.saved":
             p = Path(ev["path"])
+            if not p.exists():
+                continue  # Retention has removed this checkpoint; do not offer a dead download/resume.
             size = (
                 p.stat().st_size
                 if p.is_file()
@@ -723,6 +916,7 @@ def job_checkpoints(jid: str, c: ServiceContext = Depends(ctx)) -> list[dict[str
                     "size": size,
                     "created_at": ev["ts"],
                     "artifact_id": arts.get(str(p)),
+                    "ema": bool(ev.get("ema")),
                 }
             )
     return out
@@ -769,9 +963,9 @@ def queue_settings(c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
 
 
 @router.put("/queue/settings", response_model=m.QueueSettings, response_model_exclude_unset=True)
-def put_queue_settings(body: dict[str, Any], c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+def put_queue_settings(body: m.QueueSettings, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     cur = queue_settings(c)
-    cur.update({k: v for k, v in body.items() if k in ("held", "max_concurrent")})
+    cur.update(body.model_dump(exclude_unset=True))
     c.db.set_kv("queue.settings", cur)
     c.bus.publish("queue.changed", {})
     return cur
@@ -809,7 +1003,11 @@ def list_artifacts(project_id: str | None = None, c: ServiceContext = Depends(ct
     sql, params = "SELECT * FROM artifacts", ()
     if project_id:
         sql, params = sql + " WHERE project_id=?", (project_id,)
-    return [_artifact_row(r) for r in c.db.fetchall(sql + " ORDER BY created_at DESC", params)]
+    return [
+        _artifact_row(r)
+        for r in c.db.fetchall(sql + " ORDER BY created_at DESC", params)
+        if Path(r["path"]).is_file()
+    ]
 
 
 def _get_artifact(c: ServiceContext, aid: str) -> dict[str, Any]:

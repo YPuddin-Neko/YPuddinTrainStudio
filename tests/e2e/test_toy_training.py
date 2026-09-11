@@ -3,8 +3,9 @@
 import json
 from pathlib import Path
 
+import pytest
 import torch
-from safetensors.torch import load_file
+from safetensors.torch import load_file, save_file
 
 from ypuddin.config import TrainConfig
 from ypuddin.train import Trainer
@@ -78,12 +79,23 @@ def test_full_run_produces_artifacts_and_events(image_dataset, tmp_path):
     assert val[-1]["mean"] < val[0]["mean"]
 
 
-def test_pause_and_resume_is_bit_exact(image_dataset, tmp_path):
+@pytest.mark.parametrize(
+    "adapter",
+    [
+        {},
+        {"init": "scalar"},
+        {"module_dropout": 0.2},
+        {"dropout": 0.2, "rank_dropout": 0.2},
+        {"init": "scalar", "rs_lora": True, "module_dropout": 0.1},
+    ],
+)
+def test_pause_and_resume_is_bit_exact(image_dataset, tmp_path, adapter):
     # Reference: uninterrupted run of N steps, saving a full state at step 4.
     ref_dir = tmp_path / "ref"
     cfg = _cfg(
         image_dataset,
         ref_dir,
+        adapter=adapter,
         checkpoint={
             "output_dir": str(ref_dir),
             "name": "toy",
@@ -104,6 +116,7 @@ def test_pause_and_resume_is_bit_exact(image_dataset, tmp_path):
     cfg2 = _cfg(
         image_dataset,
         res_dir,
+        adapter=adapter,
         checkpoint={
             "output_dir": str(res_dir),
             "name": "toy",
@@ -156,6 +169,80 @@ def test_control_file_pause(image_dataset, tmp_path):
     assert outcome == "paused"
     assert (out / "state-paused" / "state.json").exists()
     assert trainer.progress.step == 3
+
+
+@pytest.mark.parametrize("change", ["contents", "filename", "missing_identity"])
+def test_resume_checks_actual_model_assets(image_dataset, tmp_path, change):
+    from ypuddin.models.toy import ToyDiT
+
+    weights = tmp_path / "base.safetensors"
+    torch.manual_seed(123)
+    base = ToyDiT().state_dict()
+    save_file(base, weights)
+    cfg = _cfg(
+        image_dataset,
+        tmp_path / "ref",
+        model={"dit_path": str(weights)},
+        loop={"epochs": 2},
+        checkpoint={"save_state_every_steps": 1},
+        sampling={"enabled": False},
+        validation={"enabled": False},
+    )
+    ref = Trainer(cfg, device="cpu")
+    assert ref.run() == "finished"
+    checkpoint = tmp_path / "ref" / "state-1"
+    meta = json.loads((checkpoint / "state.json").read_text())
+    assert meta["format"] == 2 and meta["model_identity"] == ref.model_identity
+
+    if change == "contents":
+        base["final_layer.weight"] = base["final_layer.weight"] + 0.25
+        save_file(base, weights)  # The path and file size stay the same.
+    elif change == "filename":
+        renamed = tmp_path / "renamed.safetensors"
+        weights.rename(renamed)
+        cfg.model.dit_path = str(renamed)
+    else:
+        del meta["model_identity"]
+        (checkpoint / "state.json").write_text(json.dumps(meta))
+
+    cfg.checkpoint.output_dir = str(tmp_path / "resumed")
+    cfg.checkpoint.resume = str(checkpoint)
+    cfg.dataset.cache_dir = str(tmp_path / "ref" / "cache")
+    resumed = Trainer(cfg, device="cpu")
+    if change == "contents":
+        with pytest.raises(ValueError, match="checkpoint model assets"):
+            resumed.run()
+    else:
+        assert resumed.run() == "finished"
+        for key, expected in ref.adapters.training_state_dict().items():
+            torch.testing.assert_close(resumed.adapters.training_state_dict()[key], expected, rtol=0, atol=0)
+        if change == "missing_identity":
+            assert any(
+                event["type"] == "warning" and "no model asset identity" in event["message"]
+                for event in _events(tmp_path / "resumed" / "events.jsonl")
+            )
+
+
+def test_weight_rotation_keeps_normal_and_ema_as_one_step(image_dataset, tmp_path):
+    cfg = _cfg(
+        image_dataset,
+        tmp_path / "run",
+        loop={"epochs": 1, "ema": True},
+        checkpoint={"save_every_steps": 1, "keep_last_n": 1, "save_every_epochs": None},
+        sampling={"enabled": False},
+        validation={"enabled": False},
+    )
+    trainer = Trainer(cfg, device="cpu")
+    assert trainer.run() == "finished"
+    step = trainer.progress.step
+    expected = {f"toy-step{step:06d}.safetensors", f"toy-step{step:06d}-ema.safetensors"}
+    assert {path.name for path in trainer.run_dir.glob("toy-step*.safetensors")} == expected
+    events = _events(trainer.run_dir / "events.jsonl")
+    saved = [event for event in events if event["type"] == "checkpoint.saved" and event["step"] == step]
+    assert expected.issubset({Path(event["path"]).name for event in saved})
+    assert {event["ema"] for event in saved} == {False, True}
+    assert (trainer.run_dir / "toy-final.safetensors").exists()
+    assert (trainer.run_dir / "toy-final-ema.safetensors").exists()
 
 
 def test_lora_and_full_and_ema_variants(image_dataset, tmp_path):
@@ -333,3 +420,292 @@ def test_compile_is_ignored_off_cuda_and_rejected_with_block_swap(image_dataset,
 
     with pytest.raises(ValueError, match="compile"):
         Trainer(bad, device="cpu").prepare()
+
+
+def test_initial_preview_preserves_training_rng_and_unloads_vae(image_dataset, tmp_path, monkeypatch):
+    outs = []
+    for at_start in (False, True):
+        cfg = _cfg(
+            image_dataset,
+            tmp_path / str(at_start),
+            adapter={"module_dropout": 0.2},
+            loop={"epochs": 1},
+            validation={"enabled": False},
+            sampling={"enabled": True, "at_start": at_start, "every_epochs": None, "every_steps": None},
+        )
+        trainer = Trainer(cfg, device="cpu")
+        trainer.prepare()
+        unloads = []
+        monkeypatch.setattr(trainer.loaded.latent, "unload", lambda calls=unloads: calls.append(True))
+        assert trainer.run() == "finished"
+        samples = [e for e in _events(trainer.run_dir / "events.jsonl") if e["type"] == "sample.saved"]
+        assert len(samples) == int(at_start)
+        if at_start:
+            assert samples[0]["step"] == 0 and Path(samples[0]["path"]).name.startswith("initial_")
+            assert unloads
+        outs.append(trainer.adapters.training_state_dict())
+    for key in outs[0]:
+        torch.testing.assert_close(outs[0][key], outs[1][key], rtol=0, atol=0)
+
+
+def test_sampling_exception_restores_training_mode_and_unloads_vae(image_dataset, tmp_path, monkeypatch):
+    trainer = Trainer(_cfg(image_dataset, tmp_path / "run", memory={"blocks_to_swap": 2}), device="cpu")
+    trainer.prepare()
+    trainer.loaded.backbone.train()
+    unloaded = []
+    monkeypatch.setattr(trainer.loaded.latent, "unload", lambda: unloaded.append(True))
+
+    def fail(_latents):
+        raise RuntimeError("decode failed")
+
+    monkeypatch.setattr(trainer.loaded.latent, "decode", fail)
+    with pytest.raises(RuntimeError, match="decode failed"):
+        trainer.sample_images("broken")
+    assert unloaded and trainer.loaded.backbone.training and not trainer.swapper.forward_only
+
+
+@pytest.mark.parametrize("cache_only", [False, True])
+def test_preparation_pause_preserves_cache_without_fake_state(image_dataset, tmp_path, cache_only):
+    from ypuddin.train import cache
+
+    out = tmp_path / "run"
+    cfg = _cfg(
+        image_dataset,
+        out,
+        dataset={"batch_size": 1},
+        sampling={"enabled": False},
+        validation={"enabled": False},
+    )
+    events = []
+
+    def on_event(e):
+        events.append(e)
+        if e["type"] == "cache.progress" and e["kind"] == "latents" and e["done"] == 1:
+            (out / "control").mkdir(exist_ok=True)
+            (out / "control" / "pause").touch()
+
+    em = Emitter(listeners=[on_event])
+    outcome = (
+        cache(cfg, device="cpu", emitter=em) if cache_only else Trainer(cfg, device="cpu", emitter=em).run()
+    )
+    assert outcome == "paused"
+    assert events[-1]["type"] == "run.paused" and events[-1]["preparing"]
+    assert list((out / "cache").rglob("*.safetensors")) and not (out / "state-paused").exists()
+
+
+def test_training_failure_emits_terminal_event(image_dataset, tmp_path, monkeypatch):
+    events = []
+    trainer = Trainer(
+        _cfg(image_dataset, tmp_path / "run"), device="cpu", emitter=Emitter(listeners=[events.append])
+    )
+
+    def fail():
+        raise RuntimeError("model rejected")
+
+    monkeypatch.setattr(trainer, "prepare", fail)
+    with pytest.raises(RuntimeError, match="model rejected"):
+        trainer.run()
+    assert [e["type"] for e in events] == ["run.failed"]
+
+
+def test_legacy_scalar_checkpoint_rejected_and_weights_still_warm_start(image_dataset, tmp_path):
+    cfg = _cfg(
+        image_dataset,
+        tmp_path / "ref",
+        adapter={"init": "scalar"},
+        loop={"epochs": 1},
+        checkpoint={"save_state_every_steps": 1},
+        sampling={"enabled": False},
+        validation={"enabled": False},
+    )
+    ref = Trainer(cfg, device="cpu")
+    ref.run()
+    path = tmp_path / "ref" / "state-1"
+    meta = json.loads((path / "state.json").read_text())
+    assert meta["format"] == 2 and (path / "training.safetensors").exists()
+    meta["format"] = 1
+    (path / "state.json").write_text(json.dumps(meta))
+    cfg.checkpoint.output_dir = str(tmp_path / "resumed")
+    cfg.checkpoint.resume = str(path)
+    with pytest.raises(ValueError, match="legacy checkpoints did not save scalar"):
+        Trainer(cfg, device="cpu").run()
+    cfg.checkpoint.resume = None
+    cfg.adapter.resume_weights = str(path / "adapter.safetensors")
+    warm = Trainer(cfg, device="cpu")
+    warm.prepare()
+    assert all(layer.adapter.scalar.item() == 1 for layer in warm.adapters.layers.values())
+
+
+def test_device_autoselection_prefers_cuda_then_mps(monkeypatch):
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
+    assert Trainer._pick_device().type == "mps"
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    assert Trainer._pick_device().type == "cuda"
+
+
+@pytest.mark.parametrize(
+    "device",
+    [
+        pytest.param(
+            "mps", marks=pytest.mark.skipif(not torch.backends.mps.is_available(), reason="MPS unavailable")
+        ),
+        pytest.param(
+            "cuda", marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable")
+        ),
+    ],
+)
+@pytest.mark.parametrize("swap", [0, 2])
+def test_accelerator_train_resume_and_preview(image_dataset, tmp_path, device, swap):
+    cfg = _cfg(
+        image_dataset,
+        tmp_path / "ref",
+        adapter={"module_dropout": 0.2, "rank_dropout": 0.1},
+        loop={"epochs": 2},
+        memory={"blocks_to_swap": swap},
+        checkpoint={"save_state_every_steps": 1},
+        validation={"enabled": False},
+        sampling={"enabled": False},
+    )
+    ref = Trainer(cfg, device=device)
+    ref.run()
+    cfg.checkpoint.output_dir = str(tmp_path / "resumed")
+    cfg.checkpoint.resume = str(tmp_path / "ref" / "state-1")
+    res = Trainer(cfg, device=device)
+    res.run()
+    for key, expected in ref.adapters.training_state_dict().items():
+        torch.testing.assert_close(res.adapters.training_state_dict()[key], expected, rtol=0, atol=0)
+    assert res.sample_images("accelerator")
+
+
+def test_kahan_bf16_resume_keeps_full_precision_moments(image_dataset, tmp_path):
+    cfg = _cfg(
+        image_dataset,
+        tmp_path / "ref",
+        adapter={"param_dtype": "bf16"},
+        optimizer={"kahan": True},
+        loop={"epochs": 2},
+        checkpoint={"save_state_every_steps": 1},
+        validation={"enabled": False},
+        sampling={"enabled": False},
+    )
+    ref = Trainer(cfg, device="cpu")
+    ref.run()
+    cfg.checkpoint.output_dir = str(tmp_path / "resumed")
+    cfg.checkpoint.resume = str(tmp_path / "ref" / "state-1")
+    res = Trainer(cfg, device="cpu")
+    res.run()
+    for key, expected in ref.adapters.training_state_dict().items():
+        torch.testing.assert_close(res.adapters.training_state_dict()[key], expected, rtol=0, atol=0)
+    assert all(state["exp_avg"].dtype == torch.float32 for state in res.optimizer.state.values())
+
+
+def test_optional_log_sinks_receive_metrics_images_and_close(image_dataset, tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    seen = {"scalars": [], "images": [], "wandb": [], "closed": [], "init": []}
+
+    class Writer:
+        def __init__(self, **kwargs):
+            seen["init"].append(kwargs)
+
+        def add_scalar(self, *args, **kwargs):
+            seen["scalars"].append(args)
+
+        def add_image(self, *args, **kwargs):
+            seen["images"].append(args[0])
+
+        def close(self):
+            seen["closed"].append("tensorboard")
+
+    run = SimpleNamespace(
+        log=lambda values, **kwargs: seen["wandb"].append(values),
+        finish=lambda **kwargs: seen["closed"].append("wandb"),
+    )
+    monkeypatch.setitem(sys.modules, "torch.utils.tensorboard", SimpleNamespace(SummaryWriter=Writer))
+    monkeypatch.setitem(
+        sys.modules,
+        "wandb",
+        SimpleNamespace(init=lambda **kwargs: run, Image=lambda *args, **kwargs: "image"),
+    )
+    cfg = _cfg(
+        image_dataset,
+        tmp_path / "run",
+        loop={"epochs": 1},
+        logging={"tensorboard": True, "wandb": {"project": "test"}},
+        sampling={"enabled": True, "at_start": True, "every_epochs": None},
+    )
+    assert Trainer(cfg, device="cpu").run() == "finished"
+    assert {x[0] for x in seen["scalars"]} >= {"train/loss", "validation/mean", "lr/w1"}
+    assert seen["images"] and any("samples/0" in x for x in seen["wandb"])
+    assert sorted(seen["closed"]) == ["tensorboard", "wandb"]
+
+
+def test_schedule_free_switches_for_evaluation_export_and_returns_to_train(
+    image_dataset, tmp_path, monkeypatch
+):
+    import sys
+    from types import SimpleNamespace
+
+    calls = []
+
+    class Fake(torch.optim.SGD):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.training = False
+
+        def train(self):
+            self.training = True
+            calls.append("train")
+
+        def eval(self):
+            self.training = False
+            calls.append("eval")
+
+        def step(self, closure=None):
+            assert self.training
+            calls.append("step")
+            return super().step(closure)
+
+    monkeypatch.setitem(sys.modules, "audit_schedulefree", SimpleNamespace(Fake=Fake))
+    cfg = _cfg(
+        image_dataset,
+        tmp_path / "run",
+        optimizer={"type": "audit_schedulefree.Fake"},
+        loop={"epochs": 1},
+        sampling={"enabled": True, "at_start": True, "every_epochs": None},
+    )
+    trainer = Trainer(cfg, device="cpu")
+    assert trainer.run() == "finished"
+    assert calls[0] == "train" and "step" in calls and calls.count("eval") >= 3
+    assert trainer.optimizer.training and trainer.scheduler is None
+
+
+def test_real_schedule_free_resume_and_tensorboard_event_files(image_dataset, tmp_path):
+    pytest.importorskip("schedulefree")
+    pytest.importorskip("tensorboard")
+    from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+
+    cfg = _cfg(
+        image_dataset,
+        tmp_path / "ref",
+        optimizer={"type": "adamw_sf"},
+        loop={"epochs": 2},
+        checkpoint={"save_state_every_steps": 1},
+        sampling={"enabled": True, "at_start": True, "every_epochs": 1},
+        logging={"tensorboard": True},
+    )
+    ref = Trainer(cfg, device="cpu")
+    ref.run()
+    cfg.checkpoint.output_dir = str(tmp_path / "resumed")
+    cfg.checkpoint.resume = str(tmp_path / "ref" / "state-1")
+    res = Trainer(cfg, device="cpu")
+    res.run()
+    for key, expected in ref.adapters.training_state_dict().items():
+        torch.testing.assert_close(res.adapters.training_state_dict()[key], expected, rtol=0, atol=0)
+    events = EventAccumulator(str(tmp_path / "ref" / "tensorboard"))
+    events.Reload()
+    assert {"train/loss", "validation/mean"} <= set(events.Tags()["scalars"])
+    assert "samples/0" in events.Tags()["images"]
+    assert all(g["train_mode"] for g in res.optimizer.param_groups)

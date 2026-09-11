@@ -7,6 +7,7 @@ import uuid
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -74,7 +75,11 @@ def install(app: FastAPI) -> None:
     async def _validation(_req: Request, exc: RequestValidationError):
         return JSONResponse(
             status_code=422,
-            content=envelope("validation", "request validation failed", {"errors": exc.errors()}),
+            content=envelope(
+                "validation",
+                "request validation failed",
+                {"errors": jsonable_encoder(exc.errors(), custom_encoder={ValueError: str})},
+            ),
         )
 
     @app.exception_handler(Exception)

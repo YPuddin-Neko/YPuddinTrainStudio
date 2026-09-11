@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import random
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +14,7 @@ from torch import Tensor
 from torch.utils.data import Dataset
 
 from ypuddin.config import CaptionConfig, DatasetConfig, DatasetSourceConfig, TrainConfig
+from ypuddin.config.schema import MAX_SIDE
 from ypuddin.models import LatentSpec
 
 from .buckets import Bucket, BucketManager
@@ -24,8 +25,8 @@ from .captions import (
     transform_caption,
     transform_caption_deterministic,
 )
-from .images import load_mask, load_rgb, pil_to_tensor, to_bucket
-from .index import ImageRecord, IndexDB, dataset_fingerprint, scan_sources
+from .images import load_alpha, load_mask, load_rgb, pil_to_tensor, to_bucket
+from .index import ImageRecord, IndexDB, dataset_fingerprint, mask_for, record_content_key, scan_sources
 
 log = logging.getLogger(__name__)
 
@@ -174,13 +175,22 @@ class TrainDataset(Dataset):
             flip,
         )
 
-    def load_pixels(self, item: Item, flip: bool) -> tuple[Tensor, Tensor | None]:
+    def load_pixels(
+        self, item: Item, flip: bool, *, include_mask: bool = True
+    ) -> tuple[Tensor, Tensor | None]:
         im, alpha = load_rgb(item.record.path)
         px = pil_to_tensor(to_bucket(im, item.bucket.width, item.bucket.height, flip=flip))
         mask = None
-        if self.masked_loss:
-            mask = load_mask(item.record.mask_path, alpha, item.bucket.width, item.bucket.height, flip=flip)
+        if self.masked_loss and include_mask:
+            mask = load_mask(
+                mask_for(Path(item.record.path)), alpha, item.bucket.width, item.bucket.height, flip=flip
+            )
         return px, mask
+
+    def current_mask(self, item: Item, flip: bool) -> Tensor | None:
+        path = mask_for(Path(item.record.path))
+        alpha = load_alpha(item.record.path) if path is None and item.record.has_alpha else None
+        return load_mask(path, alpha, item.bucket.width, item.bucket.height, flip=flip)
 
     def __getitem__(self, index: int) -> dict[str, Any]:
         item = self.items[index]
@@ -200,8 +210,12 @@ class TrainDataset(Dataset):
         if self.cache is not None and self.cache.has(key):
             entry = self.cache.get(key)
             out["latents"] = entry["latents"]
-            if self.masked_loss and "mask" in entry:
-                out["mask"] = entry["mask"].float()
+            # Ignore masks in pre-v2 cache entries. Sidecars can change independently of the
+            # image/VAE key, including being added after an unmasked pre-cache job.
+            if self.masked_loss:
+                mask = self.current_mask(item, flip)
+                if mask is not None:
+                    out["mask"] = mask
         else:
             px, mask = self.load_pixels(item, flip)
             out["pixels"] = px
@@ -224,8 +238,9 @@ def collate(samples: list[dict[str, Any]]) -> dict[str, Any]:
         batch["latents"] = torch.stack([s["latents"] for s in samples])
     else:
         batch["pixels"] = torch.stack([s["pixels"] for s in samples])
-    if all("mask" in s for s in samples):
-        batch["mask"] = torch.stack([s["mask"] for s in samples])
+    if any("mask" in s for s in samples):
+        reference = next(s["mask"] for s in samples if "mask" in s)
+        batch["mask"] = torch.stack([s.get("mask", torch.ones_like(reference)) for s in samples])
     return batch
 
 
@@ -239,6 +254,101 @@ class DataBundle:
     latent_cache: LatentCache | None
 
 
+class DataConfigError(ValueError):
+    """A data preflight failure that the service can associate with a configuration field."""
+
+    def __init__(self, loc: str, message: str):
+        super().__init__(message)
+        self.loc = loc
+
+
+@dataclass
+class DataLayout:
+    records: list[ImageRecord]
+    validation_records: list[ImageRecord]
+    items: list[Item]
+    validation_items: list[Item]
+    sources: list[DatasetSourceConfig]
+    bucket_manager: BucketManager
+
+
+def prepare_data_layout(
+    cfg: TrainConfig,
+    latent_spec: LatentSpec,
+    *,
+    index_db: IndexDB | None = None,
+    progress: Callable[[str, int, int], None] | None = None,
+) -> DataLayout:
+    """Shared preflight and train data selection; does not load models or create tensor caches."""
+    ds = cfg.dataset
+    if not ds.sources:
+        raise DataConfigError("dataset.sources", "at least one training dataset source is required")
+    extra_sources = list(cfg.validation.sources) if cfg.validation.enabled else []
+    sources = list(ds.sources) + extra_sources
+    resolutions = set(ds.resolutions)
+    for i, src in enumerate(sources):
+        prefix = (
+            f"dataset.sources.{i}" if i < len(ds.sources) else f"validation.sources.{i - len(ds.sources)}"
+        )
+        if src.resolutions is not None:
+            if not src.resolutions or any(r < 32 or r > MAX_SIDE for r in src.resolutions):
+                raise DataConfigError(f"{prefix}.resolutions", f"resolutions must be within [32, {MAX_SIDE}]")
+            resolutions.update(src.resolutions)
+        if not Path(src.path).expanduser().is_dir():
+            raise DataConfigError(f"{prefix}.path", f"dataset source not found: {src.path}")
+    try:
+        bm = BucketManager(
+            sorted(resolutions, reverse=True),
+            align=latent_spec.align,
+            step=ds.bucket_step,
+            aspect_ratio_limit=ds.aspect_ratio_limit,
+            area_tolerance=ds.area_tolerance,
+            no_upscale=ds.bucket_no_upscale,
+        )
+    except ValueError as e:
+        raise DataConfigError("dataset.bucket_step", str(e)) from e
+
+    def scan(group: list[DatasetSourceConfig], prefix: str, offset: int = 0) -> list[ImageRecord]:
+        try:
+            records = scan_sources(
+                group,
+                index_db=index_db,
+                progress=(lambda d, t: progress("index", d, t)) if progress else None,
+            )
+            return sorted(
+                (replace(record, source_index=record.source_index + offset) for record in records),
+                key=record_content_key,
+            )
+        except OSError as e:
+            raise DataConfigError(prefix, str(e)) from e
+
+    records = scan(ds.sources, "dataset.sources")
+    if not records:
+        raise DataConfigError("dataset.sources", "no readable images found in dataset sources")
+    val_records: list[ImageRecord] = []
+    if cfg.validation.enabled:
+        records, held_out = _split_by_hash(records, cfg.validation.split_ratio)
+        explicit = scan(extra_sources, "validation.sources", len(ds.sources)) if extra_sources else []
+        # Explicit validation source configuration wins when the same image is also in a split.
+        val_records = explicit + held_out
+        validation_hashes = {record.content_hash for record in val_records}
+        records = [record for record in records if record.content_hash not in validation_hashes]
+    if not records:
+        raise DataConfigError("dataset.sources", "no training images remain after validation exclusion/split")
+    items = expand_items(records, sources, ds, bm)
+    if not items:
+        raise DataConfigError("dataset.sources", "training dataset has no items")
+    validation_items: list[Item] = []
+    seen: set[str] = set()
+    for item in expand_items(val_records, sources, ds, bm):
+        if item.record.content_hash not in seen:
+            seen.add(item.record.content_hash)
+            validation_items.append(item)
+    if cfg.validation.max_images:
+        validation_items = validation_items[: cfg.validation.max_images]
+    return DataLayout(records, val_records, items, validation_items, sources, bm)
+
+
 def build_data(
     cfg: TrainConfig,
     latent_spec: LatentSpec,
@@ -249,31 +359,15 @@ def build_data(
     ds = cfg.dataset
     index_db = IndexDB(Path(cache_root) / "index.sqlite")
     try:
-        records = scan_sources(
-            ds.sources,
+        layout = prepare_data_layout(
+            cfg,
+            latent_spec,
             index_db=index_db,
-            progress=(lambda d, t: progress("index", d, t)) if progress else None,
+            progress=progress,
         )
     finally:
         index_db.close()
-    if not records:
-        raise ValueError("no images found in dataset sources")
-    val_records: list[ImageRecord] = []
-    if cfg.validation.enabled:
-        if cfg.validation.split_ratio > 0:
-            records, val_records = _split_by_hash(records, cfg.validation.split_ratio)
-        if cfg.validation.sources:
-            extra = scan_sources(cfg.validation.sources)
-            val_records.extend(extra)
-    bm = BucketManager(
-        ds.resolutions,
-        align=latent_spec.align,
-        step=ds.bucket_step,
-        aspect_ratio_limit=ds.aspect_ratio_limit,
-        area_tolerance=ds.area_tolerance,
-        no_upscale=ds.bucket_no_upscale,
-    )
-    items = expand_items(records, ds.sources, ds, bm)
+    records, items, bm = layout.records, layout.items, layout.bucket_manager
     cache = LatentCache(Path(cache_root) / "latents") if ds.cache_latents else None
     train = TrainDataset(
         items,
@@ -284,21 +378,9 @@ def build_data(
         seed=cfg.loop.seed,
     )
     val = None
-    if val_records:
-        vsources = list(ds.sources) + list(cfg.validation.sources)
-        vitems = expand_items(val_records, vsources, ds, bm)
-        # validation: one item per image, first resolution only, no repeats
-        seen: set[str] = set()
-        uniq = []
-        for it in vitems:
-            if it.record.content_hash in seen:
-                continue
-            seen.add(it.record.content_hash)
-            uniq.append(it)
-        if cfg.validation.max_images:
-            uniq = uniq[: cfg.validation.max_images]
+    if layout.validation_items:
         val = TrainDataset(
-            uniq,
+            layout.validation_items,
             latent_spec=latent_spec,
             latent_cache=cache,
             flip=False,
@@ -316,7 +398,15 @@ def build_data(
         captioned=sum(1 for r in records if r.caption_path),
         validation_images=len(val.items) if val else 0,
         buckets=[{"base": b, "w": w, "h": h, "items": n} for (b, w, h), n in sorted(counts.items())],
-        fingerprint=dataset_fingerprint(records, ds.sources),
+        fingerprint=dataset_fingerprint(
+            records + [item.record for item in layout.validation_items],
+            layout.sources,
+            settings={
+                "dataset": ds.model_dump(mode="json", exclude={"sources", "cache_dir", "num_workers"}),
+                "validation": cfg.validation.model_dump(mode="json", exclude={"sources"}),
+                "validation_content": [item.record.content_hash for item in layout.validation_items],
+            },
+        ),
     )
     return DataBundle(train, val, plan, records, bm, cache)
 
@@ -346,8 +436,8 @@ def cache_latents(
                     if bundle.latent_cache.has(key):
                         yield key, {}
                         continue
-                    px, mask = ds.load_pixels(item, flip)
-                    yield key, {"pixels": px, "mask": mask}
+                    px, _mask = ds.load_pixels(item, flip, include_mask=False)
+                    yield key, {"pixels": px}
 
     total = sum(len(ds.items) * (2 if ds.flip else 1) for ds in datasets)
     return build_latent_cache(

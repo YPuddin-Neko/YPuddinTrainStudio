@@ -15,8 +15,10 @@ import {
   Box,
   Clock,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { formatTime } from '../../utils/format';
+import { formatApiError } from '../../utils/errors';
+import { useWorkspaceText } from '../../utils/workspaceText';
 
 interface ProjectListResponse {
   items: Project[];
@@ -25,6 +27,9 @@ interface ProjectListResponse {
 
 export default function Projects() {
   const { t } = useTranslation();
+  const text = useWorkspaceText();
+  const navigate = useNavigate();
+  const [error, setError] = React.useState('');
   const [projects, setProjects] = React.useState<Project[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [modalOpen, setModalOpen] = React.useState(false);
@@ -44,7 +49,7 @@ export default function Projects() {
           setProjects(data.items);
         }
       })
-      .catch(console.error)
+      .catch((error) => setError(formatApiError(error)))
       .finally(() => setLoading(false));
   };
 
@@ -55,14 +60,15 @@ export default function Projects() {
   const handleCreate = () => {
     if (!newName.trim()) return;
     setCreating(true);
+    setError('');
     apiClient.post<Project>('/projects', { name: newName.trim(), note: newNote.trim() })
-      .then(() => {
+      .then((project) => {
         setModalOpen(false);
         setNewName('');
         setNewNote('');
-        fetchProjects();
+        navigate(`/projects/${project.id}`);
       })
-      .catch(console.error)
+      .catch((error) => setError(formatApiError(error)))
       .finally(() => setCreating(false));
   };
 
@@ -119,6 +125,7 @@ export default function Projects() {
 
   return (
     <div className="space-y-6" data-testid="projects-page">
+      {error && <div role="alert" className="whitespace-pre-line rounded bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{error}</div>}
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">
           {t('projects.title')}
@@ -136,6 +143,8 @@ export default function Projects() {
           <span>{t('projects.newProject')}</span>
         </button>
       </div>
+
+      <p className="text-sm text-slate-500">{text('一个项目包含训练图片、标签、模型选择、训练参数和结果。新建后即可上传图片并开始准备训练。', 'Each project contains training images, captions, model choices, configuration and results. Create one to upload images and prepare your training.')}</p>
 
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="relative flex-1 max-w-md">
@@ -252,6 +261,7 @@ export default function Projects() {
                 {statChip(<Activity className="w-3.5 h-3.5" />, t('projects.jobs'), proj.stats?.jobs || 0)}
                 {statChip(<Box className="w-3.5 h-3.5" />, t('projects.artifacts'), proj.stats?.artifacts || 0)}
               </div>
+              <Link to={`/projects/${proj.id}`} className="mt-4 inline-flex rounded-lg bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-100 dark:bg-blue-950/40 dark:text-blue-300">{text('打开训练工作区 →', 'Open training workspace →')}</Link>
             </div>
           ))}
         </div>
@@ -262,6 +272,8 @@ export default function Projects() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-800 rounded-xl max-w-md w-full p-6 space-y-4 shadow-xl" data-testid="create-project-modal">
             <h3 className="font-semibold text-lg">{t('projects.newProject')}</h3>
+            <p className="text-sm text-slate-500">{text('创建后进入工作区：上传数据 → 选择模型 → 设置参数 → 启动训练。', 'Next: upload data → choose a model → configure → start training.')}</p>
+            {error && <p role="alert" className="whitespace-pre-line text-sm text-red-600">{error}</p>}
             <div className="space-y-3">
               <input
                 type="text"

@@ -6,12 +6,12 @@ kohya loader reads a LoKr file written by ypuddin — with low-rank ``w2`` and
 ``alpha != rank``, the case where scale handling matters — and produces an
 identical model output.
 """
+
+import pytest
 import torch
 from torch import nn
 
-import pytest
-
-lycoris = pytest.importorskip("lycoris", reason="lycoris-lora not installed")
+pytest.importorskip("lycoris", reason="lycoris-lora not installed")
 import lycoris.kohya  # noqa: E402
 
 from ypuddin.adapters import (  # noqa: E402
@@ -58,7 +58,9 @@ def test_lycoris_loads_ypuddin_lokr_file(tmp_path):
         for layer in aset.layers.values():
             for p in layer.adapter.parameters():
                 p.copy_(torch.randn_like(p) * 0.05)
-    assert all(l.adapter.w2_lowrank for l in aset.layers.values()), "test must exercise the alpha path"
+    assert all(layer.adapter.w2_lowrank for layer in aset.layers.values()), (
+        "test must exercise the alpha path"
+    )
     y_ours = base(x)
     n_layers = len(aset.layers)
     tensors, targets = aset.export_state()

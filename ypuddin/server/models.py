@@ -20,6 +20,7 @@ class _Out(BaseModel):
 # --------------------------------------------------------------------------- system
 class GpuInfo(_Out):
     index: int
+    kind: Literal["cuda", "mps"] = "cuda"
     name: str
     total_mb: int | None = None
 
@@ -29,17 +30,24 @@ class Health(_Out):
     api_version: int
     torch: str | None
     cuda: str | None
+    mps: bool = False
     gpus: list[GpuInfo]
     families: list[str]
 
 
 class GpuStats(_Out):
     index: int
+    kind: Literal["cuda", "mps"] = "cuda"
     name: str
     util_pct: float | None = None
     mem_used_mb: int | None = None
     mem_total_mb: int | None = None
     temp_c: float | None = None
+    power_w: float | None = None
+    power_limit_w: float | None = None
+    telemetry_source: str | None = None
+    telemetry_note: str | None = None
+    cuda_available: bool | None = None
 
 
 class RamStats(_Out):
@@ -65,6 +73,8 @@ class SystemInfo(_Out):
     platform: str
     packages: dict[str, str | None]
     ypuddin: str
+    cuda: str | None = None
+    cuda_available: bool = False
 
 
 class SettingsPaths(_Out):
@@ -75,13 +85,13 @@ class SettingsPaths(_Out):
 
 
 class SettingsServer(_Out):
-    host: str
-    port: int
+    host: str = Field(min_length=1)
+    port: int = Field(ge=1, le=65535)
 
 
 class SettingsUi(_Out):
-    language: str
-    theme: str
+    language: Literal["zh-CN", "en"]
+    theme: Literal["light", "dark", "system"]
 
 
 class Settings(_Out):
@@ -333,6 +343,10 @@ class JobProgress(_Out):
     eta_s: float | None = None
     it_s: float | None = None
     vram_peak_mb: float | None = None
+    vram_metric: str | None = None
+    device: str | None = None
+    estimated_peak_mb: float | None = None
+    wait_reason: str | None = None
 
 
 class JobLatest(_Out):
@@ -381,6 +395,7 @@ class JobMetrics(_Out):
     lr: dict[str, list[float]]
     grad_norm: list[float | None]
     vram_mb: list[float | None]
+    vram_metric: str | None = None
     it_s: list[float | None]
     validation: list[ValidationPoint]
 
@@ -403,6 +418,7 @@ class JobCheckpoint(_Out):
     size: int | None
     created_at: float
     artifact_id: str | None = None
+    ema: bool = False
 
 
 class LogLine(_Out):
@@ -417,8 +433,10 @@ class JobLog(_Out):
 
 
 class QueueSettings(_Out):
-    held: bool
-    max_concurrent: int
+    model_config = ConfigDict(extra="forbid")
+    held: bool = False
+    max_concurrent: int = Field(1, ge=1, le=64)
+    memory_admission: bool = True
 
 
 # --------------------------------------------------------------------------- artifacts

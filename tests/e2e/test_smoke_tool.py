@@ -2,10 +2,13 @@
 
 import json
 
+import pytest
+
 from ypuddin.cli import main
 
 
-def test_smoke_cli_toy_family(tmp_path, capsys):
+@pytest.mark.parametrize("algo", ["lokr", "lora", "loha", "full"])
+def test_smoke_cli_toy_family(tmp_path, capsys, algo):
     out = tmp_path / "smoke"
     rc = main(
         [
@@ -14,6 +17,8 @@ def test_smoke_cli_toy_family(tmp_path, capsys):
             "model.family=toy",
             "--set",
             "model.dtype=fp32",
+            "--set",
+            f"adapter.algo={algo}",
             "--set",
             "adapter.rank=4",
             "--set",

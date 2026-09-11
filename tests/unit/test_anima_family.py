@@ -122,9 +122,11 @@ def test_meta_backbone_2b_parameter_count():
     assert "blocks.0.self_attn.q_proj" in names and "llm_adapter.blocks.0.cross_attn.k_proj" in names
 
 
-def test_latent_pipeline_wrapper_with_tiny_vae():
+def test_latent_pipeline_wrapper_with_tiny_vae(tmp_path):
     torch.manual_seed(0)
-    lat = AnimaLatent("/nonexistent.safetensors", device="cpu", dtype=torch.float32)
+    path = tmp_path / "tiny-vae.safetensors"
+    path.write_bytes(b"test fixture: in-memory VAE below")
+    lat = AnimaLatent(path, device="cpu", dtype=torch.float32)
     lat.vae = AutoencoderKLQwenImage2D(base_dim=16, z_dim=16, dim_mult=[1, 2, 4, 4], num_res_blocks=1).eval()
     px = torch.rand(1, 3, 64, 64) * 2 - 1
     z = lat.encode(px)

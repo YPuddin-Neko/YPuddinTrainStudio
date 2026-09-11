@@ -173,7 +173,13 @@ class ModelFamily(ABC):
 
     @abstractmethod
     def load(
-        self, cfg: ModelConfig, memory: MemoryConfig, *, device: torch.device | str, dtype: torch.dtype
+        self,
+        cfg: ModelConfig,
+        memory: MemoryConfig,
+        *,
+        device: torch.device | str,
+        dtype: torch.dtype,
+        backbone_device: torch.device | str | None = None,
     ) -> LoadedModel: ...
 
     @abstractmethod
@@ -207,3 +213,7 @@ class ModelFamily(ABC):
     def validate_config(self, cfg: ModelConfig) -> list[str]:
         """Return human-readable problems (missing paths etc.) without loading weights."""
         return []
+
+    def latent_fingerprint(self, cfg: ModelConfig, *, dtype: torch.dtype) -> str:
+        """Identity used by cache-coverage queries without loading the VAE."""
+        return self.spec.latent.fingerprint

@@ -8,7 +8,7 @@ import platform
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import psutil
 from fastapi import APIRouter, Depends, Request
@@ -24,6 +24,7 @@ from . import models as m
 from .context import ServiceContext
 from .db import new_id, now
 from .errors import ApiError, NotFound
+from .hardware import gpu_info
 
 router = APIRouter()
 
@@ -33,41 +34,6 @@ def ctx(request: Request) -> ServiceContext:
 
 
 # --------------------------------------------------------------------------- system
-def gpu_info() -> list[dict[str, Any]]:
-    try:
-        import torch
-
-        if not torch.cuda.is_available():
-            return []
-        out = []
-        for i in range(torch.cuda.device_count()):
-            props = torch.cuda.get_device_properties(i)
-            entry: dict[str, Any] = {
-                "index": i,
-                "name": props.name,
-                "mem_total_mb": round(props.total_memory / 2**20),
-            }
-            try:
-                free, total = torch.cuda.mem_get_info(i)
-                entry["mem_used_mb"] = round((total - free) / 2**20)
-            except Exception:  # noqa: BLE001
-                pass
-            out.append(entry)
-        try:
-            import pynvml
-
-            pynvml.nvmlInit()
-            for e in out:
-                h = pynvml.nvmlDeviceGetHandleByIndex(e["index"])
-                e["util_pct"] = pynvml.nvmlDeviceGetUtilizationRates(h).gpu
-                e["temp_c"] = pynvml.nvmlDeviceGetTemperature(h, pynvml.NVML_TEMPERATURE_GPU)
-        except Exception:  # noqa: BLE001
-            pass
-        return out
-    except Exception:  # noqa: BLE001
-        return []
-
-
 def system_stats(data_root: Path) -> dict[str, Any]:
     vm = psutil.virtual_memory()
     disks = []
@@ -86,7 +52,7 @@ def system_stats(data_root: Path) -> dict[str, Any]:
         "cpu_pct": psutil.cpu_percent(interval=None),
         "ram": {"used_mb": round(vm.used / 2**20), "total_mb": round(vm.total / 2**20)},
         "disks": disks,
-        "gpus": gpu_info(),
+        "gpus": gpu_info(include_unavailable=True),
     }
 
 
@@ -98,12 +64,17 @@ def health(c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
         torch_v, cuda = torch.__version__, torch.version.cuda
     except Exception:  # noqa: BLE001
         torch_v, cuda = None, None
+    devices = gpu_info()
     return {
         "version": ypuddin.__version__,
         "api_version": ypuddin.API_VERSION,
         "torch": torch_v,
         "cuda": cuda,
-        "gpus": [{"index": g["index"], "name": g["name"], "total_mb": g["mem_total_mb"]} for g in gpu_info()],
+        "mps": any(g["kind"] == "mps" for g in devices),
+        "gpus": [
+            {"index": g["index"], "kind": g["kind"], "name": g["name"], "total_mb": g["mem_total_mb"]}
+            for g in devices
+        ],
         "families": available_families(),
     }
 
@@ -115,17 +86,27 @@ def stats(c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
 
 @router.get("/system/info", response_model=m.SystemInfo, response_model_exclude_unset=True)
 def info() -> dict[str, Any]:
+    from importlib.metadata import PackageNotFoundError, version
+
+    import torch
+
     mods = {}
     for name in ("torch", "transformers", "safetensors", "pydantic", "fastapi"):
         try:
             mods[name] = __import__(name).__version__
         except Exception:  # noqa: BLE001
             mods[name] = None
+    try:
+        mods["nvidia-ml-py"] = version("nvidia-ml-py")
+    except PackageNotFoundError:
+        mods["nvidia-ml-py"] = None
     return {
         "python": sys.version.split()[0],
         "platform": platform.platform(),
         "packages": mods,
         "ypuddin": ypuddin.__version__,
+        "cuda": torch.version.cuda,
+        "cuda_available": torch.cuda.is_available(),
     }
 
 
@@ -213,7 +194,10 @@ def get_settings(c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
 
 @router.put("/settings", response_model=m.Settings, response_model_exclude_unset=True)
 def put_settings(patch: dict[str, Any], c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    return c.save_settings(patch)
+    try:
+        return c.save_settings(patch)
+    except (ValueError, TypeError, KeyError) as exc:
+        raise ApiError(str(exc), code="settings.invalid") from exc
 
 
 @router.get("/fs/list", response_model=m.FsList, response_model_exclude_unset=True)
@@ -249,6 +233,55 @@ def schema_train() -> dict[str, Any]:
     return TrainConfig.json_schema()
 
 
+@router.get("/config/defaults", response_model=TrainConfig)
+def config_defaults() -> dict[str, Any]:
+    return TrainConfig().to_dict()
+
+
+class ConfigImportBody(BaseModel):
+    text: str
+    format: Literal["toml", "json"] = "toml"
+
+
+class ConfigExportBody(BaseModel):
+    config: dict[str, Any]
+    format: Literal["toml", "json"] = "toml"
+
+
+class ConfigText(BaseModel):
+    text: str
+
+
+def _validated_or_error(raw: dict[str, Any]) -> TrainConfig:
+    cfg, errors = _validate(raw)
+    if cfg is None:
+        raise ApiError("invalid config", code="config.invalid", details={"errors": errors})
+    return cfg
+
+
+@router.post("/config/import", response_model=TrainConfig)
+def config_import(body: ConfigImportBody) -> dict[str, Any]:
+    from ypuddin.config.io import tomllib
+
+    try:
+        raw = json.loads(body.text) if body.format == "json" else tomllib.loads(body.text)
+    except ValueError as exc:
+        raise ApiError(str(exc), code="config.parse") from exc
+    if not isinstance(raw, dict):
+        raise ApiError("config must be an object", code="config.invalid")
+    return _validated_or_error(raw).to_dict()
+
+
+@router.post("/config/export", response_model=ConfigText)
+def config_export(body: ConfigExportBody) -> dict[str, str]:
+    cfg = _validated_or_error(body.config)
+    return {
+        "text": dump_toml(cfg)
+        if body.format == "toml"
+        else json.dumps(cfg.to_dict(), ensure_ascii=False, indent=2)
+    }
+
+
 class ConfigBody(BaseModel):
     config: dict[str, Any]
     dataset_ids: list[str] | None = None
@@ -275,7 +308,11 @@ def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str,
     if cfg is None:
         return {"ok": False, "errors": errors, "warnings": []}
     gpus = gpu_info()
-    return make_plan(cfg, gpu_total_mb=gpus[0]["mem_total_mb"] if gpus else None)
+    return make_plan(
+        cfg,
+        gpu_total_mb=gpus[0]["mem_total_mb"] if gpus else None,
+        device=gpus[0]["device"] if gpus else "cpu",
+    )
 
 
 # --------------------------------------------------------------------------- presets
@@ -445,8 +482,8 @@ def import_toml(body: dict[str, str]) -> dict[str, Any]:
 
 # --------------------------------------------------------------------------- models
 class ModelBody(BaseModel):
-    family: str
-    kind: str  # dit | text_encoder | vae | tokenizer
+    family: Literal["anima", "krea2", "toy"]
+    kind: Literal["dit", "text_encoder", "vae", "tokenizer"]
     path: str
     dtype: str | None = None
     is_default: bool = False
@@ -464,7 +501,15 @@ def list_models(c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
 
 @router.post("/models", response_model=m.ModelAsset, response_model_exclude_unset=True)
 def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    p = Path(body.path).expanduser()
+    p = Path(body.path).expanduser().resolve()
+    if not p.exists():
+        raise NotFound(f"model path not found: {p}", code="model.not_found")
+    if not c.is_allowed(p):
+        raise ApiError("model path is outside allowed storage roots", code="model.path", status=403)
+    if body.kind in {"dit", "vae"} and not p.is_file():
+        raise ApiError("DiT and VAE paths must point to a weight file", code="model.path")
+    if body.kind == "tokenizer" and not p.is_dir():
+        raise ApiError("tokenizer path must point to a complete tokenizer directory", code="model.path")
     size = (
         p.stat().st_size
         if p.is_file()
@@ -472,23 +517,60 @@ def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, An
         if p.is_dir()
         else 0
     )
-    mid = new_id("m")
-    if body.is_default:
-        c.db.execute("UPDATE models SET is_default=0 WHERE family=? AND kind=?", (body.family, body.kind))
-    c.db.insert(
-        "models",
-        {
-            "id": mid,
-            "family": body.family,
-            "kind": body.kind,
-            "path": str(p),
-            "size": size,
-            "dtype": body.dtype,
-            "is_default": int(body.is_default),
-            "created_at": now(),
-        },
-    )
+    with c.db.lock:
+        existing = c.db.fetchone(
+            "SELECT * FROM models WHERE family=? AND kind=? AND path=?", (body.family, body.kind, str(p))
+        )
+        mid = existing["id"] if existing else new_id("m")
+        if body.is_default:
+            c.db.execute("UPDATE models SET is_default=0 WHERE family=? AND kind=?", (body.family, body.kind))
+        if existing:
+            c.db.update(
+                "models",
+                mid,
+                {
+                    "size": size,
+                    "dtype": body.dtype,
+                    "is_default": int(body.is_default or existing["is_default"]),
+                },
+            )
+        else:
+            c.db.insert(
+                "models",
+                {
+                    "id": mid,
+                    "family": body.family,
+                    "kind": body.kind,
+                    "path": str(p),
+                    "size": size,
+                    "dtype": body.dtype,
+                    "is_default": int(body.is_default),
+                    "created_at": now(),
+                },
+            )
     return _model_row(c.db.fetchone("SELECT * FROM models WHERE id=?", (mid,)))
+
+
+class ModelDefaultPatch(BaseModel):
+    is_default: bool
+
+
+@router.patch("/models/{model_id}", response_model=m.ModelAsset)
+def patch_model(model_id: str, body: ModelDefaultPatch, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+    with c.db.lock:
+        row = c.db.fetchone("SELECT * FROM models WHERE id=?", (model_id,))
+        if row is None:
+            raise NotFound("model not found", code="model.not_found")
+        if body.is_default and not Path(row["path"]).exists():
+            raise NotFound(
+                "the model file is missing; register its new location first", code="model.not_found"
+            )
+        if body.is_default:
+            c.db.execute(
+                "UPDATE models SET is_default=0 WHERE family=? AND kind=?", (row["family"], row["kind"])
+            )
+        c.db.update("models", model_id, {"is_default": int(body.is_default)})
+        return _model_row(c.db.fetchone("SELECT * FROM models WHERE id=?", (model_id,)))
 
 
 @router.delete("/models/{model_id}", response_model=m.Ok, response_model_exclude_unset=True)
@@ -506,12 +588,14 @@ class ScanBody(BaseModel):
 
 @router.post("/models/scan", response_model=list[m.ModelAsset], response_model_exclude_unset=True)
 def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
-    root = Path(body.path or str(c.data_root / "models")).expanduser()
+    root = Path(body.path or c.settings()["paths"]["models_dir"]).expanduser()
     if not root.is_dir():
         raise NotFound(f"directory not found: {root}", code="fs.not_found")
     found = []
     known = {r["path"] for r in c.db.fetchall("SELECT path FROM models")}
     for f in sorted(root.rglob("*.safetensors")):
+        if any(part.startswith(".") for part in f.relative_to(root).parts):
+            continue  # Never register files from download staging or other hidden working directories.
         if str(f) in known:
             continue
         name = f.name.lower()
@@ -577,7 +661,7 @@ async def events(
 async def stats_publisher(c: ServiceContext, interval: float = 2.5) -> None:
     while True:
         try:
-            c.bus.publish("system.stats", system_stats(c.data_root))
+            c.bus.publish("system.stats", await asyncio.to_thread(system_stats, c.data_root))
         except Exception:  # noqa: BLE001
             pass
         await asyncio.sleep(interval)

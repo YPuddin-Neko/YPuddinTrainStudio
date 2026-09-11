@@ -26,6 +26,25 @@ T5_PAD_ID = 0
 T5_EOS_ID = 1
 
 
+def tokenizer_assets(root: str | Path) -> list[Path]:
+    """Tokenization inputs, excluding unrelated checkpoints in a shared models directory."""
+    root = Path(root)
+    names = {
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "special_tokens_map.json",
+        "added_tokens.json",
+        "vocab.json",
+        "vocab.txt",
+        "merges.txt",
+        "spiece.model",
+        "tokenizer.model",
+        "config.json",
+        "chat_template.jinja",
+    }
+    return sorted(p for p in root.iterdir() if p.is_file() and p.name in names)
+
+
 def _load_qwen3(path: str | Path, dtype: torch.dtype, device: torch.device | str) -> nn.Module:
     from transformers import AutoConfig, AutoModelForCausalLM
 
@@ -105,6 +124,16 @@ class AnimaText(TextPipeline):
         self.device = torch.device(device)
         self._path = text_encoder_path
         self.encoder: nn.Module | None = None
+        from ypuddin.models.fingerprints import content_fingerprint
+
+        assets = [
+            Path(text_encoder_path),
+            *tokenizer_assets(qwen_tok_dir),
+            *tokenizer_assets(tokenizer_path or ASSETS / "t5_old"),
+        ]
+        if Path(text_encoder_path).is_file():
+            assets.append(ASSETS / "qwen3_06b" / "config.json")
+        self.fingerprint = content_fingerprint(assets, namespace=f"{AnimaText.fingerprint}:{max_len}:{dtype}")
 
     # ----------------------------------------------------------------- weights
     def _ensure_loaded(self) -> nn.Module:
