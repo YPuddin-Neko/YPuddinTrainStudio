@@ -95,9 +95,9 @@ def plan(
             "fp8 base precision requires CUDA",
         ),
         (
-            device_type in ("cpu", "mps") and cfg.model.attention == "sage",
+            device_type in ("cpu", "mps") and cfg.model.attention in ("sage", "xformers", "flash_attn"),
             "model.attention",
-            "SageAttention requires CUDA",
+            f"{cfg.model.attention} attention requires CUDA",
         ),
         (
             device_type in ("cpu", "mps") and "8bit" in cfg.optimizer.type.lower(),

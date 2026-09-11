@@ -138,7 +138,10 @@ def get_project_config(pid: str, c: ServiceContext = Depends(ctx)) -> dict[str, 
     f = c.project_dir(pid) / "config.json"
     if f.exists():
         return json.loads(f.read_text(encoding="utf-8"))
+    from .environment import environment_attention_default
+
     cfg = TrainConfig()
+    cfg.model.attention = environment_attention_default(c)
     return deep_merge(cfg.to_dict(), {"checkpoint": {"output_dir": str(c.runs_dir(pid))}})
 
 

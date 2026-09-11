@@ -3,17 +3,19 @@ import { ACTIVE_JOB_STATUSES, mergeJobEvent } from '../utils/jobs';
 import React from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Activity, Folder, Layers, Box, Settings as SettingsIcon, Moon, Sun, Globe, Cpu, Zap, HardDrive, PlayCircle, Menu, X, Plus } from 'lucide-react';
+import { Activity, Folder, Layers, Settings as SettingsIcon, Moon, Sun, Globe, Cpu, Zap, HardDrive, PlayCircle, Menu, X, Plus } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { SystemStats, SystemInfo, Job, JobListResponse, Settings, isAppleSilicon } from '../api/types';
 import { useEventStream, useEventStreamStatus } from '../events/useEventStream';
 import { EVENT_TYPES } from '../events/eventTypes';
 import { formatBytesGB, formatBytesMB } from '../utils/format';
+import { useWorkspaceText } from '../utils/workspaceText';
 
 const NavItem = ({ to, icon: Icon, label, active }: any) => (
   <Link
     to={to}
-    className={`flex items-center space-x-3 px-4 py-2.5 rounded-lg transition-colors text-sm ${
+    aria-current={active ? 'page' : undefined}
+    className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors text-sm ${
       active
         ? 'bg-blue-50 text-blue-600 dark:bg-slate-800 dark:text-blue-400 font-medium'
         : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
@@ -26,6 +28,7 @@ const NavItem = ({ to, icon: Icon, label, active }: any) => (
 
 export default function Layout() {
   const { t, i18n } = useTranslation();
+  const text = useWorkspaceText();
   const location = useLocation();
   const [theme, setTheme] = React.useState<Settings['ui']['theme']>('system');
   const [systemDark, setSystemDark] = React.useState(window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false);
@@ -111,8 +114,6 @@ export default function Layout() {
     { to: '/', icon: Activity, label: t('nav.dashboard') },
     { to: '/projects', icon: Folder, label: t('nav.projects') },
     { to: '/queue', icon: Layers, label: t('nav.queue') },
-    { to: '/artifacts', icon: Box, label: t('nav.artifacts') },
-    { to: '/models', icon: HardDrive, label: t('nav.models') },
     { to: '/settings', icon: SettingsIcon, label: t('nav.settings') },
   ];
 
@@ -123,16 +124,16 @@ export default function Layout() {
     <div className="flex h-screen overflow-hidden">
       {/* Sidebar */}
       {menuOpen && <button className="fixed inset-0 z-20 bg-black/40 md:hidden" aria-label={t('hardware.closeMenu')} onClick={() => setMenuOpen(false)} />}
-      <aside className={`w-56 flex-shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex-col fixed inset-y-0 left-0 z-30 md:static ${menuOpen ? 'flex' : 'hidden md:flex'}`}>
-        <div className="h-14 flex items-center px-5 border-b border-slate-200 dark:border-slate-800">
-          <h1 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">
+      <aside className={`w-[184px] flex-shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex-col fixed inset-y-0 left-0 z-30 md:static ${menuOpen ? 'flex' : 'hidden md:flex'}`}>
+        <div className="h-12 flex shrink-0 items-center px-3 border-b border-slate-200 dark:border-slate-800">
+          <h1 className="text-base font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">
             YPuddin
           </h1>
-          <span className="ml-2 text-[10px] font-mono text-slate-400 mt-1">Train Studio</span>
+          <span className="ml-2 hidden md:inline text-[9px] font-mono text-slate-400 mt-1">Train Studio</span>
           <button onClick={() => setMenuOpen(false)} className="ml-auto md:hidden p-2" aria-label={t('hardware.closeMenu')}><X className="w-4 h-4" /></button>
         </div>
-        <div className="px-3 pt-4"><Link to="/projects" onClick={() => setMenuOpen(false)} className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 px-3 py-2.5 text-sm font-medium text-white"><Plus className="w-4 h-4" />{t('hardware.startTraining')}</Link></div>
-        <nav className="flex-1 overflow-y-auto p-3 space-y-1" onClick={() => setMenuOpen(false)}>
+        <div className="px-3 pt-3"><Link to="/projects" onClick={() => setMenuOpen(false)} className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 px-3 py-2.5 text-sm font-medium text-white"><Plus className="w-4 h-4" />{t('hardware.startTraining')}</Link></div>
+        <nav aria-label={text('主导航', 'Main navigation')} className="flex-1 overflow-y-auto p-2 space-y-1" onClick={() => setMenuOpen(false)}>
           {navItems.map((item) => (
             <NavItem
               key={item.to}
@@ -142,8 +143,11 @@ export default function Layout() {
               active={location.pathname === item.to || (item.to !== '/' && location.pathname.startsWith(item.to))}
             />
           ))}
+          {location.pathname.startsWith('/settings') && <div className="ml-5 border-l border-slate-200 pl-2 dark:border-slate-700">
+            {[['environment', text('环境设置', 'Environment')], ['preferences', text('存储与界面', 'Preferences')]].map(([path, label]) => <Link key={path} to={`/settings/${path}`} aria-current={location.pathname.endsWith(path) ? 'page' : undefined} className={`block rounded-md px-3 py-2 text-xs ${location.pathname.endsWith(path) ? 'font-medium text-blue-600 dark:text-blue-300' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>{label}</Link>)}
+          </div>}
         </nav>
-        {sysInfo?.ypuddin && <div className="px-5 py-2 text-[11px] text-slate-400" title={t('hardware.serverVersion')}>v{sysInfo.ypuddin}</div>}
+        {sysInfo?.ypuddin && <div className="px-3 py-2 text-[11px] text-slate-400" title={t('hardware.serverVersion')}>v{sysInfo.ypuddin}</div>}
         <div className="p-3 border-t border-slate-200 dark:border-slate-800 flex space-x-2">
           <button onClick={toggleTheme} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400" title={t('settings.theme')}>
             {isDark ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
@@ -158,28 +162,29 @@ export default function Layout() {
       {/* Main Content */}
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden relative">
         {/* Topbar：实时系统状态 + 训练中胶囊 */}
-        <header className="min-h-14 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex flex-wrap gap-2 items-center justify-between px-3 md:px-6 py-2 z-10 shrink-0">
-          <button className="p-2 md:hidden" aria-label={t('hardware.openMenu')} onClick={() => setMenuOpen(true)}><Menu className="w-5 h-5" /></button>
-          <div className="flex items-center space-x-3 min-w-0">
+        <header className="h-12 min-h-12 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex gap-2 items-center justify-between px-3 md:px-4 z-10 shrink-0">
+          <button className="shrink-0 p-1.5 md:hidden" aria-label={t('hardware.openMenu')} onClick={() => setMenuOpen(true)}><Menu className="w-5 h-5" /></button>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             {runningJob && (
               <Link
                 to={`/jobs/${runningJob.id}`}
-                className="flex items-center space-x-2 px-3 py-1.5 rounded-full bg-green-50 dark:bg-green-950/40 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-300 text-xs font-medium truncate"
+                title={runningJob.name}
+                className="flex min-w-0 items-center space-x-1.5 px-2 py-1.5 rounded-full bg-green-50 dark:bg-green-950/40 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-300 text-xs font-medium truncate"
                 data-testid="topbar-running-job"
               >
                 <PlayCircle className="w-3.5 h-3.5 animate-pulse" />
-                <span className="truncate max-w-[180px]">{runningJob.name}</span>
+                <span className="hidden md:inline truncate max-w-[100px] xl:max-w-[180px]">{runningJob.name}</span><span className="md:hidden">{text('训练', 'Training')}</span>
                 {runningJob.progress?.step != null && runningJob.progress?.total_steps != null && (
-                  <span className="font-mono">{runningJob.progress.step}/{runningJob.progress.total_steps}</span>
+                  <span className="hidden lg:inline font-mono">{runningJob.progress.step}/{runningJob.progress.total_steps}</span>
                 )}
               </Link>
             )}
           </div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-500 dark:text-slate-400">
+          <div className="flex min-w-0 shrink-0 items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
             <span role="status" data-testid="event-connection" className={connectionStatus === 'connected' ? 'text-green-600' : 'text-amber-600'}>
-              {t(`connection.${connectionStatus}`)}
+              <span className="hidden sm:inline">{t(`connection.${connectionStatus}`)}</span><span className="sm:hidden" aria-label={t(`connection.${connectionStatus}`)}><span aria-hidden="true" className={`inline-block h-2 w-2 rounded-full ${connectionStatus === 'connected' ? 'bg-green-500' : 'bg-amber-500'}`} /></span>
             </span>
-            {(stats?.gpus?.length || 0) > 1 && <select aria-label={t('dashboard.gpu')} value={gpu?.index} onChange={event => setSelectedGpu(Number(event.target.value))} className="bg-transparent max-w-40 rounded border border-slate-200 dark:border-slate-700 p-1">{stats?.gpus.map(item => <option key={item.index} value={item.index}>{item.name}</option>)}</select>}
+            {(stats?.gpus?.length || 0) > 1 && <select aria-label={t('dashboard.gpu')} value={gpu?.index} onChange={event => setSelectedGpu(Number(event.target.value))} className="bg-transparent max-w-20 sm:max-w-40 rounded border border-slate-200 dark:border-slate-700 p-1">{stats?.gpus.map(item => <option key={item.index} value={item.index}>{item.name}</option>)}</select>}
             {gpu ? (
               <Link to="/" className="flex items-center gap-2 hover:text-blue-600" title={`${gpu.name}${gpu.telemetry_note ? ' · ' + t(`hardware.${gpu.telemetry_note}`) : ''}`}>
                 <Zap className="w-3.5 h-3.5 text-amber-500" />
@@ -187,7 +192,7 @@ export default function Layout() {
                   <span className="font-semibold text-slate-700 dark:text-slate-200" data-testid="topbar-gpu-power">{t('hardware.power')} {gpu.power_w != null ? `${Math.round(gpu.power_w)} W` : t('hardware.unavailable')}</span>
                   <span className="hidden lg:inline ml-2 font-mono">{gpu.util_pct != null ? `${gpu.util_pct}% · ` : ''}{formatBytesMB(gpu.mem_used_mb)}/{formatBytesMB(gpu.mem_total_mb)}</span>
                 </span>
-                {gpu.temp_c != null && <span className="text-slate-400">{gpu.temp_c}°C</span>}
+                {gpu.temp_c != null && <span className="hidden sm:inline text-slate-400">{gpu.temp_c}°C</span>}
               </Link>
             ) : isAppleSilicon(sysInfo) ? (
               <span className="text-blue-500/80" data-testid="topbar-apple-gpu">
@@ -212,7 +217,7 @@ export default function Layout() {
         </header>
         <ApiErrorNotice />
 
-        <div ref={contentRef} className="flex-1 overflow-auto p-4 md:p-6">
+        <div ref={contentRef} className="flex-1 overflow-auto p-3 md:p-4">
           <Outlet />
         </div>
       </main>

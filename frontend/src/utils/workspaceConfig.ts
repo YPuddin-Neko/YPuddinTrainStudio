@@ -1,4 +1,18 @@
-import type { ModelAsset, FamilyInfo } from '../api/types';
+import type { ModelAsset, FamilyInfo, DatasetInfo } from '../api/types';
+
+/** Windows paths are case-insensitive; preserve case for POSIX server paths. */
+export function normalizeDatasetPath(path: string) {
+  const trimmed = path.trim();
+  const windows = /^[a-z]:[\\/]/i.test(trimmed) || /^[\\/]{2}/.test(trimmed);
+  const normalized = trimmed.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '') || (trimmed ? '/' : '');
+  return windows ? normalized.toLowerCase() : normalized;
+}
+
+export function matchingTrainingDatasets(config: Record<string, any>, datasets: DatasetInfo[]) {
+  const sources = Array.isArray(config.dataset?.sources) ? config.dataset.sources : [];
+  const paths = new Set(sources.flatMap((source: { path?: unknown }) => typeof source?.path === 'string' && source.path.trim() ? [normalizeDatasetPath(source.path)] : []));
+  return datasets.filter(dataset => typeof dataset.source?.path === 'string' && paths.has(normalizeDatasetPath(dataset.source.path)));
+}
 
 export const MODEL_PATH_FIELDS = {
   dit_path: 'dit', text_encoder_path: 'text_encoder', vae_path: 'vae', tokenizer_path: 'tokenizer',

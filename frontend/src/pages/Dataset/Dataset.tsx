@@ -6,6 +6,8 @@ import { DatasetInfo, Job, Plan } from '../../api/types';
 import { useDatasetImages } from '../../api/hooks/useDatasetImages';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
+import { MaskEditor } from '../../components/masks/MaskEditor';
+import { formatApiError } from '../../utils/errors';
 import { TagChips } from '../../components/TagChips';
 import { formatBytes, formatParams, formatPercent } from '../../utils/format';
 import { ProjectWorkflow, NextStepLink } from '../../components/ProjectWorkflow';
@@ -22,11 +24,12 @@ import {
   CheckSquare,
   Square,
   Zap,
+  Brush,
 } from 'lucide-react';
 
 const THUMB_SIZE = 256;
 const CARD_W = 176;
-const CARD_H = 224;
+const CARD_H = 260;
 const GAP = 12;
 
 function Histogram({ data, label, barColor }: { data: Array<{ name: string; count: number }>; label: string; barColor: string }) {
@@ -62,11 +65,14 @@ export default function Dataset() {
   const [info, setInfo] = React.useState<DatasetInfo | null>(null);
   const [indexProgress, setIndexProgress] = React.useState<{ done: number; total: number } | null>(null);
   const [activeImage, setActiveImage] = React.useState<string | null>(null);
+  const [maskImage, setMaskImage] = React.useState<{ hash: string; relPath: string } | null>(null);
+  const [actionError, setActionError] = React.useState('');
   const [editCaption, setEditCaption] = React.useState('');
   const [savingCaption, setSavingCaption] = React.useState(false);
   const [batchAdd, setBatchAdd] = React.useState('');
   const [batchRemove, setBatchRemove] = React.useState('');
   const [buckets, setBuckets] = React.useState<Plan['buckets'] | null>(null);
+  const [showDistribution, setShowDistribution] = React.useState(false);
   const [busyAction, setBusyAction] = React.useState<string | null>(null);
 
   const images = useDatasetImages(id);
@@ -119,6 +125,14 @@ export default function Dataset() {
   const startRow = Math.max(0, Math.floor(scrollTop / rowH) - 2);
   const endRow = Math.min(rows, Math.ceil((scrollTop + viewportH) / rowH) + 2);
   const visibleItems = images.items.slice(startRow * cols, endRow * cols);
+
+  const enableMaskedTraining = async () => {
+    if (!info) return;
+    const endpoint = `/projects/${info.source.project_id}/config`;
+    const config = await apiClient.get<{ dataset?: Record<string, unknown>; [key: string]: unknown }>(endpoint);
+    await apiClient.put(endpoint, { ...config, dataset: { ...config.dataset, masked_loss: true } });
+    navigate(`/projects/${info.source.project_id}/train`);
+  };
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     setScrollTop(e.currentTarget.scrollTop);
@@ -205,7 +219,7 @@ export default function Dataset() {
     setBusyAction('buckets');
     apiClient.get<any>(`/projects/${info.source.project_id}/config`)
       .then((config) => apiClient.post<Plan>('/plan', { config, dataset_ids: [id] }))
-      .then((plan) => setBuckets(plan.buckets || []))
+      .then((plan) => { setBuckets(plan.buckets || []); setShowDistribution(true); })
       .catch(console.error)
       .finally(() => setBusyAction(null));
   };
@@ -229,18 +243,20 @@ export default function Dataset() {
   const coverage = stats?.images ? Math.round(((stats.captioned || 0) / stats.images) * 100) : 0;
   const activeImg = activeImage ? images.items.find((i) => i.hash === activeImage) : undefined;
   const activeSize = activeImg?.size;
+  const datasetName = info?.source.path.replace(/[\\/]+$/, '').split(/[\\/]/).pop()?.replace(/^d_[0-9a-f]+-/i, '') || id;
 
   return (
-    <div className="space-y-6" data-testid="dataset-page">
-      {info?.source.project_id && <div className="space-y-4"><Link to={`/projects/${info.source.project_id}`} className="text-sm text-blue-500">← {text('返回项目，继续添加训练数据', 'Back to project and add more data')}</Link><ProjectWorkflow projectId={info.source.project_id} active="data" /><div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-slate-500">{text('点击图片检查并编辑标签；也可以多选图片批量增删标签。', 'Click an image to review and edit its caption, or select images to edit tags in bulk.')}</p><NextStepLink to={`/projects/${info.source.project_id}?step=models`}>{text('下一步：模型准备', 'Next: model setup')}</NextStepLink></div></div>}
+    <div className="space-y-3" data-testid="dataset-page">
+      {info?.source.project_id && <ProjectWorkflow projectId={info.source.project_id} active="data" />}
+      {actionError && <div role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{actionError}</div>}
       {/* 顶部标题与动作 */}
-      <div className="flex flex-wrap justify-between items-center gap-3">
-        <div>
-          <h2 className="text-2xl font-bold flex items-center space-x-2">
-            <Database className="w-6 h-6 text-blue-500" />
-            <span className="font-mono text-xl">{info?.source.path || id}</span>
+      <div className="flex flex-wrap justify-between items-center gap-2">
+        <div className="min-w-0 flex-1 basis-56">
+          <h2 className="flex min-w-0 items-center gap-2 text-base font-semibold" title={info?.source.path}>
+            <Database className="h-4 w-4 shrink-0 text-blue-500" />
+            <span className="truncate">{datasetName}</span>
           </h2>
-          <div className="flex items-center space-x-3 mt-1 text-xs text-slate-400">
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
             <span>{t('dataset.repeats')} ×{info?.source.repeats ?? '--'}</span>
             <span>{t('dataset.caption')}: {info?.source.caption_ext || '--'}</span>
             <span className={`px-2 py-0.5 rounded ${
@@ -252,9 +268,10 @@ export default function Dataset() {
             }`}>
               {statusLabel(info?.index_status)}
             </span>
+            {info && <details className="min-w-0 max-w-full"><summary className="cursor-pointer">{text('查看完整路径', 'Full path')}</summary><code className="mt-1 block break-all text-[11px]">{info.source.path}</code></details>}
           </div>
         </div>
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center gap-1.5 [&>button]:px-2 [&>button]:py-1.5 [&>button]:text-xs">
           <button
             onClick={handleBucketPreview}
             disabled={busyAction === 'buckets'}
@@ -290,6 +307,18 @@ export default function Dataset() {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
+        <div className="min-w-0 flex-1 basis-72 text-xs text-slate-500">
+          <p>{text('点击图片编辑标签，用“编辑遮罩”绘制训练区域。', 'Click an image to edit captions; choose Edit mask to paint the training area.')}</p>
+          <details className="mt-1"><summary className="cursor-pointer text-slate-600 dark:text-slate-300">{text('白色参与训练，黑色忽略 · 遮罩规则', 'White trains, black is ignored · Mask rules')}</summary><p className="mt-1 max-w-2xl">{text('没有独立遮罩时使用原图 Alpha；没有 Alpha 时全图参与。只有启用遮罩训练后才会生效。', 'Without a sidecar, image alpha is used; without alpha, the whole image participates. Enable masked training to apply these weights.')}</p></details>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {info?.source.project_id && <Link to={`/projects/${info.source.project_id}?step=data`} className="px-1 py-1.5 text-blue-500">{text('添加数据', 'Add dataset')}</Link>}
+          <button disabled={!info || busyAction === 'mask-enable'} onClick={() => { setBusyAction('mask-enable'); setActionError(''); void enableMaskedTraining().catch((error) => setActionError(formatApiError(error))).finally(() => setBusyAction(null)); }} className="shrink-0 rounded-md bg-blue-600 px-2.5 py-1.5 text-white disabled:opacity-50">{text('启用遮罩并前往训练', 'Enable masks and open training')}</button>
+          {info?.source.project_id && <NextStepLink to={`/projects/${info.source.project_id}?step=models`}>{text('模型准备', 'Model setup')}</NextStepLink>}
+        </div>
+      </div>
+
       {/* 索引进度条 */}
       {(info?.index_status === 'indexing' || indexProgress) && (
         <div className="p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl" data-testid="index-progress">
@@ -306,36 +335,34 @@ export default function Dataset() {
         </div>
       )}
 
-      {/* 概览卡 */}
+      {/* 统计保持一行，分布与分桶按需展开 */}
       {stats && (
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4" data-testid="dataset-overview">
-          <div className="p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
-            <div className="text-xs text-slate-400">{t('dataset.images')}</div>
-            <div className="text-2xl font-bold font-mono">{formatParams(stats.images)}</div>
-            <div className="text-xs text-slate-400">
-              {t('dataset.captioned')}: <span className="font-mono">{formatParams(stats.captioned ?? 0)}</span> (<span className="font-mono">{formatPercent(coverage)}</span>) · {t('dataset.masks')}: <span className="font-mono">{formatParams(stats.masks ?? 0)}</span>
-            </div>
-            {info?.cache?.latents && (
-              <div className="text-xs text-slate-400">
-                {t('dataset.latents')}: <span className="font-mono">{info.cache.latents.cached}/{info.cache.latents.total}</span> · {t('dataset.text')}: <span className="font-mono">{info.cache.text?.cached ?? 0}/{info.cache.text?.total ?? 0}</span>
-              </div>
-            )}
+        <div className="rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800" data-testid="dataset-overview">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+            <dl className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-500">
+              <div className="flex items-baseline gap-2"><dt>{t('dataset.images')}</dt><dd className="font-mono text-sm font-semibold text-slate-800 dark:text-slate-100">{formatParams(stats.images)}</dd></div>
+              <div className="flex items-baseline gap-2"><dt>{t('dataset.captioned')}</dt><dd><span className="font-mono text-slate-800 dark:text-slate-100">{formatParams(stats.captioned ?? 0)}</span> · {formatPercent(coverage)}</dd></div>
+              <div className="flex items-baseline gap-2"><dt>{t('dataset.masks')}</dt><dd className="font-mono text-slate-800 dark:text-slate-100">{formatParams(stats.masks ?? 0)}</dd></div>
+              {info?.cache?.latents && <div>{t('dataset.latents')}: <span className="font-mono">{info.cache.latents.cached}/{info.cache.latents.total}</span> · {t('dataset.text')}: <span className="font-mono">{info.cache.text?.cached ?? 0}/{info.cache.text?.total ?? 0}</span></div>}
+            </dl>
+            <button type="button" aria-expanded={showDistribution} aria-controls="dataset-distribution" onClick={() => setShowDistribution(value => !value)} className="flex items-center gap-1.5 py-1 text-xs text-blue-500"><Layers size={13}/>{text('分布与分桶', 'Distribution & buckets')}</button>
           </div>
-          <div className="p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+          {showDistribution && <div id="dataset-distribution" className="grid gap-3 border-t border-slate-200 p-3 sm:grid-cols-3 dark:border-slate-700">
+          <div className="min-w-0">
             <Histogram
               label={t('dataset.resolutions')}
               barColor="bg-blue-400"
               data={(stats.resolutions || []).map((r) => ({ name: `${r.w}×${r.h}`, count: r.count }))}
             />
           </div>
-          <div className="p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+          <div className="min-w-0">
             <Histogram
               label={t('dataset.aspectRatio')}
               barColor="bg-indigo-400"
               data={(stats.ar_hist || []).map((r) => ({ name: r.ar, count: r.count }))}
             />
           </div>
-          <div className="p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-auto">
+          <div className="max-h-40 min-w-0 overflow-auto">
             <div className="text-xs text-slate-400 mb-1.5">{t('dataset.bucketsTitle')}</div>
             {buckets ? (
               <table className="w-full text-xs">
@@ -360,19 +387,20 @@ export default function Dataset() {
               <div className="text-xs text-slate-400">{t('dataset.bucketsHint')}</div>
             )}
           </div>
+          </div>}
         </div>
       )}
 
       {/* 搜索与批量操作条 */}
-      <div className="flex flex-wrap items-center gap-3 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
-        <div className="flex items-center space-x-2 flex-1 min-w-[220px]">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+        <div className="flex items-center space-x-2 flex-1 min-w-0 basis-52">
           <Search className="w-4 h-4 text-slate-400" />
           <input
             type="text"
             value={images.q}
             onChange={(e) => images.setQ(e.target.value)}
             placeholder={t('dataset.filterPlaceholder')}
-            className="flex-1 px-2 py-1.5 text-sm bg-transparent outline-none"
+            className="min-w-0 flex-1 px-2 py-1 text-xs bg-transparent outline-none"
             data-testid="dataset-search"
           />
         </div>
@@ -444,21 +472,18 @@ export default function Dataset() {
               const selected = images.selected.has(img.hash);
               return (
                 <div
-                  key={img.hash}
+                  key={`${img.hash}:${img.rel_path}`}
                   className={`relative rounded-lg overflow-hidden border cursor-pointer group ${
                     selected ? 'border-blue-500 ring-2 ring-blue-500/40' : 'border-slate-200 dark:border-slate-700'
                   }`}
                   style={{ width: CARD_W, height: CARD_H }}
                   data-testid={`image-card-${img.hash}`}
                 >
-                  <img
-                    src={apiUrl(`/datasets/${id}/images/${img.hash}/thumb?size=${THUMB_SIZE}`)}
-                    alt={img.rel_path}
-                    loading="lazy"
-                    className="w-full h-[170px] object-cover bg-slate-100 dark:bg-slate-900"
-                    onClick={() => openEditor(img.hash)}
-                  />
+                  <button type="button" onClick={() => openEditor(img.hash)} aria-label={`${text('编辑标签', 'Edit caption')}: ${img.rel_path}`} className="block w-full">
+                    <img src={apiUrl(`/datasets/${id}/images/${img.hash}/thumb?size=${THUMB_SIZE}`)} alt={img.rel_path} loading="lazy" className="w-full h-[170px] object-cover bg-slate-100 dark:bg-slate-900" />
+                  </button>
                   <button
+                    aria-label={`${text('选择图片', 'Select image')}: ${img.rel_path}`}
                     onClick={() => images.toggleSelect(img.hash)}
                     className={`absolute top-1.5 left-1.5 w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold ${
                       selected ? 'bg-blue-600 text-white' : 'bg-black/40 text-white opacity-0 group-hover:opacity-100'
@@ -469,6 +494,7 @@ export default function Dataset() {
                   <div className="p-1.5 text-[10px] text-slate-500 truncate" title={img.caption}>
                     <span className="font-mono">{img.width}×{img.height}</span> · {img.caption || t('dataset.noCaption', '（无 caption）')}
                   </div>
+                  <button type="button" onClick={() => setMaskImage({ hash: img.hash, relPath: img.rel_path })} className="mx-1.5 flex min-h-9 w-[calc(100%-12px)] items-center justify-center gap-1 rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700"><Brush className="h-3.5 w-3.5" />{img.has_mask ? text('编辑遮罩 · 已有文件', 'Edit mask · saved') : text('编辑遮罩', 'Edit mask')}</button>
                 </div>
               );
             })}
@@ -478,6 +504,8 @@ export default function Dataset() {
           <div className="sticky bottom-0 text-center text-xs text-slate-400 py-2 bg-white/80 dark:bg-slate-800/80">{t('common.loading')}</div>
         )}
       </div>
+
+      {maskImage && id && <MaskEditor datasetId={id} imageId={maskImage.hash} relPath={maskImage.relPath} onClose={() => setMaskImage(null)} onSaved={() => { fetchInfo(); images.refresh(); }} onEnableTraining={enableMaskedTraining} />}
 
       {/* 大图 + caption 编辑抽屉 */}
       {activeImage && (
@@ -517,6 +545,7 @@ export default function Dataset() {
                 )}
               </div>
               <div className="space-y-3">
+                <button type="button" onClick={() => { if (activeImg) { setMaskImage({ hash: activeImg.hash, relPath: activeImg.rel_path }); setActiveImage(null); } }} className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600"><Brush className="h-4 w-4" />{text('编辑这张图片的训练遮罩', 'Edit this image’s training mask')}</button>
                 <div className="text-xs text-slate-400">{t('dataset.captionEditorTitle')}</div>
                 <TagChips caption={editCaption} onChange={setEditCaption} />
                 <div className="flex justify-end space-x-2 pt-2">

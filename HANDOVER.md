@@ -1,27 +1,29 @@
 # YPuddin Train Studio — 项目交接报告
 
 > 写给接手本项目的模型/工程师。本文自洽：读完这一份 + 点开的几个文件，就能不需要前任任何上下文地继续开发。
-> 日期：2026-09-11 · 仓库：`xiangmuyuanma/` · 本文在原交接资料基础上按源码审计与修复验收更新；当前源码与前端交付版本为 0.2.0。
+> 日期：2026-09-11 · 仓库：`xiangmuyuanma/` · 本文在原交接资料基础上按源码审计与修复验收更新；当前源码与前端交付版本为 0.3.0。
 
 ## 0. 先读这三个文件
 
 1. 本文。
-2. `docs/UI_WORKFLOW_2026-09-11.md` —— 最新 v0.2.0 前端工作流、上传、模型下载、功率采集、Windows 更新方式与本轮验收。`docs/FIX_REPORT_2026-09-11.md` 记录此前训练核心修复与升级边界；`docs/COMPLETION_AUDIT_2026-09-11.md` 保留修复前审计证据。
+2. `docs/UI_REDESIGN_2026-09-11.md` —— 最新 v0.3.0 参数工作区、遮罩编辑、环境管理、实际参考对比与本轮验收。`docs/UI_WORKFLOW_2026-09-11.md` 保留 v0.2.0 工作流与功率采集记录。`docs/FIX_REPORT_2026-09-11.md` 记录此前训练核心修复与升级边界；`docs/COMPLETION_AUDIT_2026-09-11.md` 保留修复前审计证据。
 3. `docs/design/03-status.md` —— 逐组件状态表与运行方式。
 
 ## 1. 项目定位
 
-一个桌面化的 diffusion **LoRA / LoKr 训练器**，目标是比 sd-scripts、diffusion-pipe、AnimaLoraStudio 做得更好（对它们的逐项短板分析见 `docs/reference/*.md`）。不是 GUI 套壳：训练核心、适配器、数据流水线、服务 API、CLI 全部自研。
+一个桌面化的 diffusion **LoRA / LoKr 训练器**。训练循环、适配器、数据流水线、服务 API 与 CLI 独立实现，模型组件包含按 Apache-2.0 引入的上游代码（见各 `vendor/NOTICE.md`）。`docs/reference/*.md` 保留早期参考审计，不能据此推断参考项目当前版本的状态或本项目性能更好。
 
 - **模型族**：`anima`（Anima 2B，Cosmos-Predict2 DiT + Qwen3-0.6B + Qwen-Image VAE）与 `krea2`（Krea 2 Raw 12.9B 单流 MMDiT + Qwen3-VL-4B + 同款 VAE）是一等公民；另有 `toy` 族供 CPU 测试。新族 = 实现 `ModelFamily` 协议（`ypuddin/models/`）。
 - **适配器**：LoKr（自研，与 LyCORIS 文件格式兼容）、LoRA、LoHa、Full、DoRA 包装。目标选择用 preset + 有序 rules（`ypuddin/adapters/rules.py`）。
 - **形态**：Python 包 `ypuddin`（CLI + FastAPI 服务）+ `frontend/`（React/Vite 界面，可选）。一键脚本 `studio.sh` / `studio.bat`。
 - 许可证 Apache-2.0（参考项目里 diffusion-pipe 与 AnimaLoraStudio 是 GPL——只读不抄；sd-scripts / musubi-tuner 是 Apache-2.0，vendor 的代码见 §7）。
 
-## 2. 当前状态（v0.2.0 工作流改造后）
+## 2. 当前状态（v0.3.0 工作区改造后）
 
 当前是具备实际训练、数据上传到训练启动的 Web 工作流的集成验证版本；官方 Anima / Krea 2 全尺寸权重和 NVIDIA 路径仍待验收，不能称为所有功能已完成。
 
+- v0.3.0 重做紧凑参数分区、实时分桶、字段预检定位、固定启动栏；新增实际遮罩绘制和环境依赖管理，模型/产物合并入设置。逐图遮罩写入与数据索引使用维护锁，环境变更串行化且重启前阻止任务使用旧进程依赖。Anima/Krea 共用 xformers/flash-attn 路径，Sage 仅采样。最新版 UI 验收见 UI_REDESIGN 文档。
+- 本轮后端 **371 passed / 3 CUDA skipped**，前端 **115 passed（25 个文件）**；Lint、TypeScript 与生产构建通过。浏览器完成启用遮罩的 5 步 Toy/MPS 训练，下载的最终产物包含 60 个可读张量。机器记录见 `docs/validation/v0.3.0.json`，真实截图见 `docs/screenshots/v0.3.0/`。
 - v0.2.0 新增项目四步工作区、浏览器图片/目录/ZIP 上传自动同步配置、常用参数与首屏启动、模型组件下载和默认路径、环境诊断、NVML/nvidia-smi 功率采集与前端内容指纹。此前后端测试通过不代表前端体验已经完成；最新验收见 UI_WORKFLOW 文档。
 - 前一轮修复了设备 RNG、scalar/dropout/Kahan 续训、mask 缓存、实际编码器指纹、验证源与分桶、分阶段模型加载、准备阶段暂停、队列设备分配、保存设置不生效、前端配置及实时数据断链。
 - 前一轮训练核心回归 **278 passed / 3 CUDA skipped**；前端 **72 tests**、lint、TypeScript、production build 通过，包含本机实际 MPS 运算。浏览器已完成 TOML 导入、12 步 MPS 训练、初始/周期预览、权重下载、从第 6 步续训至第 12 步；60 个最终权重张量逐位相同。
@@ -65,7 +67,7 @@ tests/              unit + e2e（toy 族让完整训练/服务流程在 CPU 几�
 - `venv/bin/python -m pytest tests/ -q`（全量）；前端 `cd frontend && npm run lint && npm run test && npm run build && npm audit`。
 - 四条铁律级测试：暂停/恢复逐位一致、swap 开/关逐位一致、`forward_bypass ≡ merged ≡ base+F.linear(x,ΔW)`（含 alpha≠rank）、LyCORIS 交叉加载。
 - Anima/Krea2 各有一个 e2e：用**缩小版真实架构**组件在 CPU 跑完整链路（加载→文本→缓存→训练→验证→采样→导出→ComfyUI 键转换→合并回带前缀底模），fp8_scaled 底模也在其列。
-- 前端测试用 MSW mock + 真实后端截图验收（`frontend/screenshots/`）。
+- 前端测试用 MSW mock + 真实后端浏览器验收；当前截图保存在 `docs/screenshots/v0.3.0/`，早期截图在 `frontend/screenshots/`。
 
 ## 6. 接手后的 critical path（按序）
 

@@ -411,7 +411,8 @@
     "downloadStatus_failed": "下载失败",
     "downloadStatus_cancelled": "已取消",
     "customSourceKept": "已保留你填写的来源，请确认它属于当前选择的组件。",
-    "fillSuggestedSource": "填入当前组件的标准来源"
+    "fillSuggestedSource": "填入当前组件的标准来源",
+    "changeDownloadDir": "更改保存目录"
   },
   "settings": {
     "title": "系统设置",
@@ -459,7 +460,8 @@
     "sampling": "采样预览",
     "validation": "验证集评估",
     "logging": "日志与监控",
-    "fieldCount": "{count} 项"
+    "fieldCount": "{count} 项",
+    "caption": "标签处理"
   },
   "family": {
     "anima": "Anima 2B",

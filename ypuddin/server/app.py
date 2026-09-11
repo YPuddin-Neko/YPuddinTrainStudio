@@ -13,10 +13,18 @@ from fastapi.staticfiles import StaticFiles
 
 import ypuddin
 
-from . import errors, routes_core, routes_model_downloads, routes_work
+from . import (
+    errors,
+    routes_core,
+    routes_dataset_masks,
+    routes_environment,
+    routes_model_downloads,
+    routes_work,
+)
 from .bus import EventBus
 from .context import ServiceContext
 from .db import Database
+from .environment import EnvironmentManager
 from .model_downloads import ModelDownloads
 from .supervisor import JobSupervisor
 
@@ -36,6 +44,7 @@ def create_app(
     supervisor = JobSupervisor(db, bus, root, poll_interval=poll_interval)
     context = ServiceContext(data_root=root, db=db, bus=bus, supervisor=supervisor)
     model_downloads = ModelDownloads(context)
+    environment = EnvironmentManager(context)
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -48,6 +57,7 @@ def create_app(
             stats_task.cancel()
             await supervisor.stop()
             await asyncio.to_thread(model_downloads.close)
+            await asyncio.to_thread(environment.close)
             db.close()
 
     app = FastAPI(
@@ -59,6 +69,7 @@ def create_app(
     )
     app.state.ctx = context
     app.state.model_downloads = model_downloads
+    app.state.environment = environment
     errors.install(app)
     app.add_middleware(
         CORSMiddleware,
@@ -70,6 +81,8 @@ def create_app(
     app.include_router(routes_core.router, prefix="/api")
     app.include_router(routes_work.router, prefix="/api")
     app.include_router(routes_model_downloads.router, prefix="/api")
+    app.include_router(routes_dataset_masks.router, prefix="/api")
+    app.include_router(routes_environment.router, prefix="/api")
 
     dist = Path(frontend_dist) if frontend_dist else Path(__file__).resolve().parents[2] / "frontend" / "dist"
     if (dist / "index.html").exists():

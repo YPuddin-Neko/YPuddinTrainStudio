@@ -61,7 +61,7 @@ uv pip install --python venv/bin/python torch --index-url https://download.pytor
 #   其余依赖可加 --index-url https://mirrors.ustc.edu.cn/pypi/simple（或 pypi.tuna.tsinghua.edu.cn/simple、mirrors.aliyun.com/pypi/simple）
 uv pip install --python venv/bin/python -e ".[models,server]"           # 训练 + 服务
 uv pip install --python venv/bin/python -e ".[cuda,optim]"              # CUDA 可选：bitsandbytes 8-bit、Prodigy 等
-uv pip install --python venv/bin/python sageattention                   # 可选：model.attention = "sage"
+uv pip install --python venv/bin/python sageattention                   # 可选：仅无梯度采样使用 Sage，训练反向保持 SDPA
 cd frontend && npm ci && npm run build && cd ..                          # 可选：Web 界面
 venv/bin/ypuddin serve --host 127.0.0.1 --port 8765 --data-root studio_data
 ```
@@ -269,3 +269,12 @@ ypuddin serve    --port 8765 --data-root studio_data
 ```
 
 配置文件支持 TOML 与 JSON（`ypuddin schema` 打印带说明的 JSON Schema）；`--set a.b=c` 可覆盖字段，CLI 的 `--preset preset.toml` 叠加**预设文件**，Web 内置预设通过界面选择。配置校验/导入导出无需加载模型；Plan 还会检查数据和权重几何信息，CLI 默认检测本机设备，也可用 `--device` 指定目标。Python API 的 `plan(..., device=None)` 可只作离线预检，不启用实际设备门禁。最小 Anima 配置见 `docs/design/03-status.md`。
+
+
+## v0.3.0 环境与界面升级
+
+在源码目录更新 Git 后，重新运行 `studio.bat`（Windows）或 `./studio.sh`。启动器检查依赖与前端内容指纹，必要时补依赖/重建前端；已有项目、配置、模型文件保留。模型和产物的新入口为“系统设置 → 环境设置”。
+
+运行环境页可检查并管理 xformers、flash-attn、SageAttention、NVML 采集、TensorBoard、W&B 与 Schedule-Free。操作先生成 wheel / 版本变更计划，确认应用后显示安装日志。基础 Torch/CUDA/NumPy 受保护；没有兼容预编译 wheel 时显示具体原因，不会隐式启动源码编译。Windows FlashAttention 可上传匹配当前 Python、Torch、CUDA 的 wheel。依赖实际修改后必须重启训练器，维护状态在重启前阻止训练与预缓存任务启动。
+
+本机使用 Apple GPU，CUDA 扩展安装及真实 NVIDIA 功率读数未在本机验证。需要 CUDA 的选项显示原因并禁用；Apple MPS 不提供功率数据，不显示虚构的瓦数。

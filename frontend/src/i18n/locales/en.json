@@ -411,7 +411,8 @@
     "downloadStatus_failed": "Download failed",
     "downloadStatus_cancelled": "Cancelled",
     "customSourceKept": "Your custom source was kept. Check that it matches the selected component.",
-    "fillSuggestedSource": "Use the standard source for this component"
+    "fillSuggestedSource": "Use the standard source for this component",
+    "changeDownloadDir": "Change download directory"
   },
   "settings": {
     "title": "Settings",
@@ -459,7 +460,8 @@
     "sampling": "Sampling Preview",
     "validation": "Validation",
     "logging": "Logging & Monitoring",
-    "fieldCount": "{count} fields"
+    "fieldCount": "{count} fields",
+    "caption": "Caption processing"
   },
   "family": {
     "anima": "Anima 2B",

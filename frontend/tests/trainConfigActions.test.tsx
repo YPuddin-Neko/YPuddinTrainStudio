@@ -38,6 +38,7 @@ describe('training configuration actions', () => {
     const dynamicField = await screen.findByTestId('field-loop.backend_added');
     fireEvent.change(within(dynamicField).getByRole('textbox'), { target: { value: 'from-current-backend' } });
     fireEvent.change(screen.getByRole('textbox', { name: '任务名称（可选）' }), { target: { value: 'Scheduled training' } });
+    fireEvent.click(screen.getByText('排期', {selector:'summary'}));
     fireEvent.change(screen.getByRole('spinbutton', { name: '优先级' }), { target: { value: '7' } });
     fireEvent.change(screen.getByLabelText('计划开始时间（留空立即排队）'), { target: { value: '2026-10-12T08:30' } });
     await waitFor(() => expect(enqueue()).toBeEnabled());
@@ -60,10 +61,13 @@ describe('training configuration actions', () => {
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     showConfig();
+    fireEvent.click(screen.getByText('配置工具', {selector:'summary'}));
     await waitFor(() => expect(screen.getByRole('button', { name: '导入 TOML' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: '导入 TOML' }));
     fireEvent.change(screen.getByRole('textbox', { name: 'TOML 配置内容' }), { target: { value: '[dataset.caption]\ntrigger_word="from_toml"' } });
     fireEvent.click(screen.getByRole('button', { name: '校验并应用' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: '校验并应用' })).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole('tab', {name:'数据与分桶'}));
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'dataset.caption.trigger_word' })).toHaveValue('from_toml'));
     expect(imported.format).toBe('toml');
     fireEvent.change(screen.getByRole('textbox', { name: '新预设名称' }), { target: { value: 'my-preset' } });
@@ -79,7 +83,13 @@ describe('training configuration actions', () => {
   it('blocks enqueue on plan errors and shows failed requests in the page', async () => {
     server.use(http.post('/api/plan', () => HttpResponse.json({ ok: false, errors: [{ loc: 'model.dit_path', msg: 'Weight file is missing' }], warnings: [] })));
     showConfig();
-    await screen.findAllByText(/Weight file is missing/);
+    await screen.findByText('1 项待配置');
+    expect(screen.queryByText('Weight file is missing')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', {name:'1 项待配置'}));
+    fireEvent.click(screen.getByRole('button', {name:'配置主模型 / DiT'}));
+    await waitFor(() => expect(screen.getByRole('tab', {name:'模型与输出'})).toHaveAttribute('aria-selected','true'));
+    expect(screen.getAllByText('找不到指定文件，请检查训练机上的路径').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByText('配置工具', {selector:'summary'}));
     expect(enqueue()).toBeDisabled();
     server.use(http.post('/api/config/export', () => HttpResponse.json({ error: { code: 'config.invalid', message: 'Export validation failed' } }, { status: 400 })));
     fireEvent.click(screen.getByRole('button', { name: '导出 TOML' }));
@@ -95,7 +105,9 @@ describe('training configuration actions', () => {
       },
     }, { status: 400 })));
     showConfig();
+    fireEvent.click(screen.getByText('配置工具', {selector:'summary'}));
     await waitFor(() => expect(screen.getByRole('button', { name: '导入 TOML' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('tab', {name:'数据与分桶'}));
     const trigger = screen.getByRole('textbox', { name: 'dataset.caption.trigger_word' });
     fireEvent.change(trigger, { target: { value: 'keep_draft' } });
     fireEvent.click(screen.getByRole('button', { name: '导入 TOML' }));

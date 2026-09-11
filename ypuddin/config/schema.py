@@ -41,9 +41,9 @@ class ModelConfig(_Strict):
         ui_=ui("model", order=40, control="path", advanced=True),
     )
     dtype: DType = F("bf16", help="计算精度（autocast）", ui_=ui("model", order=50, control="select"))
-    attention: Literal["auto", "sdpa", "sage"] = F(
+    attention: Literal["auto", "sdpa", "sage", "xformers", "flash_attn"] = F(
         "auto",
-        help="注意力后端：sdpa（PyTorch 内置，自动选 flash/高效内核）；sage 需安装 sageattention，仅用于无掩码的图像自注意力",
+        help="注意力后端：SDPA 使用 PyTorch 内置内核；xFormers / FlashAttention 需要匹配的 CUDA 扩展，Sage 仅用于无梯度推理。环境设置可查看兼容条件和安装状态。",
         ui_=ui("model", order=60, control="select", advanced=True),
     )
 

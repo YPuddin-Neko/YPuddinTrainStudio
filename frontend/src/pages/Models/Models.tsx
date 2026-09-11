@@ -30,7 +30,7 @@ const SOURCES: Record<string, Record<string, { label: string; url: string; size:
   },
 };
 
-export default function Models() {
+export default function Models({ embedded = false }: { embedded?: boolean }) {
   const { t } = useTranslation();
   const [params] = useSearchParams();
   const { data: families } = useFamilies();
@@ -110,12 +110,12 @@ export default function Models() {
   const tasks = downloads.filter(d => d.family === family);
   const ready = ['dit', 'text_encoder', 'vae'].filter(k => selected.some(m => m.kind === k && m.exists && m.is_default)).length;
 
-  return <div className="space-y-6" data-testid="models-page">
+  return <div className={embedded ? 'space-y-4' : 'space-y-6'} data-testid="models-page">
     <div className="flex flex-wrap items-start justify-between gap-4">
-      <div><h2 className="flex items-center gap-2 text-2xl font-bold"><HardDrive className="h-6 w-6 text-blue-500" />{t('models.title')}</h2><p className="mt-1 text-sm text-slate-500">{t('models.setupSubtitle', '下载标准组件，或登记已有模型，再为每个模型族选择默认路径。')}</p></div>
+      <div><h2 className={`flex items-center gap-2 font-bold ${embedded ? 'text-base' : 'text-2xl'}`}>{!embedded && <HardDrive className="h-6 w-6 text-blue-500" />}{t('models.title')}</h2><p className="mt-1 text-sm text-slate-500">{t('models.setupSubtitle', '下载标准组件，或登记已有模型，再为每个模型族选择默认路径。')}</p></div>
       <div className="flex flex-wrap gap-2">
         {params.get('project') && <Link className={secondary} to={`/projects/${encodeURIComponent(params.get('project')!)}`}>{t('models.backProject', '返回项目')}</Link>}
-        <Link to="/settings#models" className={secondary}><Settings2 size={16} />{t('models.storageSettings', '目录与默认设置')}</Link>
+        {!embedded && <Link to="/settings/preferences" className={secondary}><Settings2 size={16} />{t('models.storageSettings', '目录与默认设置')}</Link>}
         <button className={secondary} onClick={() => local()} data-testid="add-model-btn"><Plus size={16} />{t('models.addModel')}</button>
         {family !== 'toy' && <button className={primary} onClick={() => openDownload()} data-testid="download-model-btn"><Download size={16} />{t('models.download', '下载模型')}</button>}
       </div>
@@ -139,7 +139,7 @@ export default function Models() {
         <button type="button" className="text-xs text-blue-600 hover:underline" onClick={() => openDownload(kind)}>{t('models.fillSuggestedSource', '填入当前组件的标准来源')}</button>
         <div className="grid gap-3 md:grid-cols-3"><label className="space-y-1 text-xs">{t('models.kind')}<select className={input} value={kind} onChange={e => changeDownloadKind(e.target.value)}>{['dit', 'text_encoder', 'vae'].map(k => <option key={k} value={k}>{label(k)}</option>)}</select></label><label className="space-y-1 text-xs">{t('models.sourceMode', '来源格式')}<select className={input} value={sourceMode} onChange={e => setSourceMode(e.target.value as 'url' | 'repo')}><option value="url">Hugging Face URL</option><option value="repo">{t('models.repoAndFile', '仓库 + 文件名')}</option></select></label><label className="space-y-1 text-xs">{t('models.dtype')}<select className={input} value={dtype} onChange={e => setDtype(e.target.value)}>{['bf16', 'fp16', 'fp32', 'fp8', ''].map(d => <option key={d} value={d}>{d || t('models.dtypeUnknown', '未知')}</option>)}</select></label></div>
         {sourceMode === 'url' ? <label className="block space-y-1 text-xs">{t('models.fileUrl', '文件下载链接')}<input autoFocus className={input} value={url} onChange={e => setUrl(e.target.value)} placeholder="https://huggingface.co/owner/repo/blob/main/model.safetensors" required data-testid="model-download-url" /></label> : <div className="grid gap-3 md:grid-cols-3"><label className="space-y-1 text-xs">Repository<input className={input} value={repo} onChange={e => setRepo(e.target.value)} placeholder="owner/repository" required /></label><label className="space-y-1 text-xs">{t('models.repositoryFile', '仓库内文件名')}<input className={input} value={filename} onChange={e => setFilename(e.target.value)} placeholder="folder/model.safetensors" required /></label><label className="space-y-1 text-xs">Revision<input className={input} value={revision} onChange={e => setRevision(e.target.value)} placeholder="main" required /></label></div>}
-        <p className="break-all text-xs leading-6 text-slate-500">{t('models.downloadDestination', '保存目录')}：{settings?.paths.models_dir}<br />{t('models.downloadHelp', '支持完整 safetensors 单文件。下载并检查文件完整性后才注册；模型架构与训练兼容性仍由训练准备阶段校验。中断后可重新下载，已有文件不会覆盖。私有/授权仓库请先在运行服务的电脑上执行 hf auth login 并取得访问权限。')}</p>
+        <p className="break-all text-xs leading-6 text-slate-500">{t('models.downloadDestination', '保存目录')}：{settings?.paths.models_dir} <Link className="ml-2 text-blue-600 underline dark:text-blue-400" to="/settings/preferences">{t('models.changeDownloadDir', '更改保存目录')}</Link><br />{t('models.downloadHelp', '支持完整 safetensors 单文件。下载并检查文件完整性后才注册；模型架构与训练兼容性仍由训练准备阶段校验。中断后可重新下载，已有文件不会覆盖。私有/授权仓库请先在运行服务的电脑上执行 hf auth login 并取得访问权限。')}</p>
         <div className="flex flex-wrap items-center justify-between gap-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={isDefault} onChange={e => setIsDefault(e.target.checked)} />{t('models.defaultAfterDownload', '完成后设为本族默认组件')}</label><button className={primary} disabled={busy} type="submit" data-testid="model-download-start">{busy ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}{t('models.startDownload', '开始下载')}</button></div>
       </form>
     </section>}

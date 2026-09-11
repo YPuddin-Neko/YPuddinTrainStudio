@@ -234,8 +234,12 @@ def schema_train() -> dict[str, Any]:
 
 
 @router.get("/config/defaults", response_model=TrainConfig)
-def config_defaults() -> dict[str, Any]:
-    return TrainConfig().to_dict()
+def config_defaults(c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+    from .environment import environment_attention_default
+
+    defaults = TrainConfig().to_dict()
+    defaults["model"]["attention"] = environment_attention_default(c)
+    return defaults
 
 
 class ConfigImportBody(BaseModel):

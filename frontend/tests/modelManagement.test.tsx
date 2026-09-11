@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import Models from '../src/pages/Models/Models';
-import SettingsPage from '../src/pages/Settings/Settings';
+import Preferences from '../src/pages/Settings/Preferences';
 import { ModelAsset, ModelDownload, Settings } from '../src/api/types';
 import i18n from '../src/i18n';
 import { handlers } from '../src/mocks/handlers';
@@ -87,11 +87,10 @@ describe('real model management UI contracts', () => {
     expect(models.some(m => m.kind === 'text_encoder')).toBe(false);
   });
 
-  it('settings changes model defaults immediately and broadcasts saved appearance', async () => {
-    mount(<SettingsPage />, '/settings');
+  it('preferences broadcasts saved appearance without duplicating model settings', async () => {
+    mount(<Preferences />, '/settings/preferences');
     const page = await screen.findByTestId('settings-page');
-    fireEvent.change(within(page).getByLabelText(i18n.t('models.kind_dit')), { target: { value: 'a' } });
-    await waitFor(() => expect(patch).toHaveBeenCalledWith('a', { is_default: true }));
+    expect(within(page).queryByLabelText(i18n.t('models.kind_dit'))).not.toBeInTheDocument();
     const changed = vi.fn();
     window.addEventListener('studio.settings.changed', changed);
     fireEvent.change(screen.getByTestId('settings-theme'), { target: { value: 'dark' } });

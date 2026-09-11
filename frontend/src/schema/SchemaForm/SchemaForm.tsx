@@ -1,10 +1,11 @@
 import React from 'react';
 import { evaluateShowWhen } from '../showWhen';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, ChevronRight, Plus, Trash2, ArrowUp, ArrowDown, FolderOpen } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Trash2, ArrowUp, ArrowDown, FolderOpen, HelpCircle } from 'lucide-react';
 import { PathInput, PathPickerModal } from '../../components/PathBrowser';
 import { apiClient } from '../../api/client';
 import { FamilyInfo } from '../../api/types';
+import { configFieldLabel } from '../../utils/configPresentation';
 
 interface SchemaProperty {
   type?: string;
@@ -46,6 +47,9 @@ interface SchemaFormProps {
   /** 当前模型族信息（GET /api/families），驱动 preset 下拉 / text_modes / weights 提示 / sampling 默认值 */
   family?: FamilyInfo;
   families?: FamilyInfo[];
+  compact?: boolean;
+  groupFilter?: string[];
+  search?: string;
 }
 
 const resolveRef = (rootSchema: any, refPath: string) => {
@@ -199,24 +203,24 @@ const KeyValueEditor: React.FC<{
   value: Record<string, any>;
   onChange: (val: Record<string, any>) => void;
 }> = ({ value = {}, onChange }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const [keyDrafts, setKeyDrafts] = React.useState<Record<string,string>>({});
+  const [keyError, setKeyError] = React.useState('');
   const entries = Object.entries(value);
 
   const addEntry = () => {
     onChange({ ...value, [`key_${Date.now()}`]: 1.0 });
   };
 
-  const updateKey = (oldKey: string, newKey: string) => {
-    if (!newKey || oldKey === newKey) return;
-    const newObj: Record<string, any> = {};
-    for (const [k, v] of Object.entries(value)) {
-      if (k === oldKey) {
-        newObj[newKey] = v;
-      } else {
-        newObj[k] = v;
-      }
+  const updateKey = (oldKey: string, rawKey: string) => {
+    const newKey = rawKey.trim();
+    if (!newKey || (newKey !== oldKey && Object.prototype.hasOwnProperty.call(value, newKey))) {
+      setKeyError(i18n.language.startsWith('en') ? 'Keys must be non-empty and unique.' : '参数名不能为空或重复，请重新填写。');
+      setKeyDrafts(drafts => ({...drafts, [oldKey]:oldKey})); return;
     }
-    onChange(newObj);
+    setKeyError('');
+    if (oldKey === newKey) return;
+    onChange(Object.fromEntries(Object.entries(value).map(([key, val]) => [key === oldKey ? newKey : key, val])));
   };
 
   const updateVal = (key: string, val: any) => {
@@ -235,7 +239,9 @@ const KeyValueEditor: React.FC<{
         <div key={k} className="flex items-center space-x-2 text-xs">
           <input
             type="text"
-            value={k}
+            value={keyDrafts[k] ?? k}
+            aria-label={`${t('train.keyPlaceholder', '键')} ${k}`}
+            onChange={event => setKeyDrafts(drafts => ({...drafts,[k]:event.target.value}))}
             onBlur={(e) => updateKey(k, e.target.value)}
             className="flex-1 px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600 font-mono"
             placeholder={t('train.keyPlaceholder', '键')}
@@ -243,18 +249,21 @@ const KeyValueEditor: React.FC<{
           <input
             type="text"
             value={typeof v === 'object' ? JSON.stringify(v) : v ?? ''}
+            aria-label={`${t('train.valuePlaceholder', '值')} ${k}`}
             onChange={(e) => {
-              const num = Number(e.target.value);
-              updateVal(k, isNaN(num) || e.target.value === '' ? e.target.value : num);
+              let next: unknown = e.target.value;
+              try { next = JSON.parse(e.target.value); } catch { /* String values remain strings. */ }
+              updateVal(k, next);
             }}
             className="flex-1 px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600 font-mono"
             placeholder={t('train.valuePlaceholder', '值')}
           />
-          <button type="button" onClick={() => removeEntry(k)} className="text-red-500 hover:text-red-700 p-1">
+          <button type="button" aria-label={`${t('common.remove', '移除')} ${k}`} onClick={() => removeEntry(k)} className="text-red-500 hover:text-red-700 p-1">
             <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
       ))}
+      {keyError && <p role="alert" className="text-xs text-amber-600">{keyError}</p>}
       <button
         type="button"
         onClick={addEntry}
@@ -504,7 +513,9 @@ const ModelPathInput: React.FC<{
   value: string;
   kind: string | null;
   onChange: (val: string) => void;
-}> = ({ value, kind, onChange }) => {
+  label?: string;
+  familyName?: string;
+}> = ({ value, kind, onChange, label, familyName }) => {
   const { t } = useTranslation();
   const [models, setModels] = React.useState<Array<{ id: string; path: string; kind: string; family: string }>>([]);
 
@@ -516,11 +527,11 @@ const ModelPathInput: React.FC<{
       .catch(() => setModels([]));
   }, [kind]);
 
-  const matched = kind ? models.filter((m) => m.kind === kind) : [];
+  const matched = kind ? models.filter((m) => m.kind === kind && (!familyName || m.family === familyName)) : [];
 
   return (
     <div className="space-y-1.5">
-      <PathInput value={value} onChange={onChange} />
+      <PathInput ariaLabel={label} value={value} onChange={onChange} />
       {matched.length > 0 && (
         <select
           className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs dark:bg-slate-900 dark:border-slate-600 text-slate-500"
@@ -542,11 +553,25 @@ const ModelPathInput: React.FC<{
   );
 };
 
+function ResolutionInput({value, onChange, label}: {value: number[] | string; onChange: (next: number[] | string) => void; label: string}) {
+  const {i18n} = useTranslation();
+  const english = i18n.language.startsWith('en');
+  const encoded = Array.isArray(value) ? value.join(', ') : String(value || '');
+  const [draft, setDraft] = React.useState(encoded);
+  React.useEffect(() => setDraft(encoded), [encoded]);
+  const update = (raw: string) => {
+    setDraft(raw);
+    const tokens = raw.replace(/[\u005b\u005d]/g, '').split(/[,，\s]+/).filter(Boolean);
+    onChange(tokens.length && tokens.every(token => /^\d+$/.test(token)) ? tokens.map(Number) : raw);
+  };
+  return <div className="resolution-editor"><input aria-label={label} value={draft} onChange={event => update(event.target.value)} placeholder="512, 768, 1024"/><div>{[512,768,1024].map(size => <button type="button" key={size} aria-label={`${english ? 'Use resolution' : '使用分辨率'} ${size}`} onClick={() => update(String(size))}>{size}</button>)}</div><span>{english ? 'Separate multiple resolutions with commas.' : '多个分辨率用逗号分隔'}</span></div>;
+}
+
 /** Nullable unions retain their actual scalar/object type and explicit null value. */
 const SchemaValueInput: React.FC<{
-  schema: any; property: SchemaProperty; value: any; name: string; placeholder?: string; onChange: (value: any) => void;
-}> = ({ schema, property, value, name, placeholder, onChange }) => {
-  const { t } = useTranslation();
+  schema: any; property: SchemaProperty; value: any; name: string; placeholder?: string; compact?: boolean; onChange: (value: any) => void;
+}> = ({ schema, property, value, name, placeholder, compact = false, onChange }) => {
+  const { t, i18n } = useTranslation();
   const alternatives = property.anyOf || [property];
   const nullable = alternatives.some((p) => p.type === 'null');
   const constant = alternatives.find((p) => p.const !== undefined);
@@ -561,7 +586,7 @@ const SchemaValueInput: React.FC<{
       {Object.entries(prop.properties).map(([key, child]) => <label key={key} className="block space-y-1 text-xs">
         <span>{t(`fields.${key}`, child.title || key)}</span>
         <SchemaValueInput schema={schema} property={child} value={value[key] === undefined ? child.default : value[key]}
-          name={`${name}.${key}`} onChange={(next) => onChange({ ...value, [key]: next })} />
+          name={`${name}.${key}`} compact={compact} onChange={(next) => onChange({ ...value, [key]: next })} />
       </label>)}
     </div>;
   } else if (prop.enum) {
@@ -582,10 +607,10 @@ const SchemaValueInput: React.FC<{
       step={prop['x-ui']?.step ?? (prop.type === 'integer' ? 1 : 'any')} placeholder={placeholder}
       onChange={(e) => onChange(e.target.value === '' && nullable ? null : numeric ? Number(e.target.value) : e.target.value)} />;
   }
-  return <div className="space-y-2">
+  return <div className={compact ? 'config-union' : 'space-y-2'}>
     {nullable && <label className="flex items-center gap-2 text-xs text-slate-500">
       <input type="checkbox" aria-label={`${name}.unset`} checked={value == null}
-        onChange={(e) => onChange(e.target.checked ? null : initialValue())} />{t('train.unset')}
+        onChange={(e) => onChange(e.target.checked ? null : initialValue())} /><span title={t('train.unset')}>{compact ? (i18n.resolvedLanguage?.startsWith('en') ? 'Unset' : '不设置') : t('train.unset')}</span>
     </label>}
     {input}
     {constant && <label className="flex items-center gap-2 text-xs"><input type="checkbox" aria-label={`${name}.${constant.const}`}
@@ -598,15 +623,18 @@ const FieldGroup: React.FC<{
   title: string;
   count?: number;
   children: React.ReactNode;
-}> = ({ title, count, children }) => {
+  compact?: boolean;
+  groupKey?: string;
+}> = ({ title, count, children, compact = false, groupKey }) => {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = React.useState(true);
   return (
-    <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-slate-800">
+    <section data-group={groupKey} className={compact ? `config-group ${['model', 'dataset', 'caption', 'sampling', 'validation'].includes(groupKey || '') ? 'config-group-wide' : ''}` : 'border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800'}>
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+        aria-expanded={isOpen}
+        className={compact ? 'config-group-title' : 'w-full flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors'}
       >
         <span className="font-medium text-slate-700 dark:text-slate-200">{title}</span>
         <span className="flex items-center space-x-2">
@@ -618,8 +646,8 @@ const FieldGroup: React.FC<{
           {isOpen ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
         </span>
       </button>
-      {isOpen && <div className="p-4 space-y-4">{children}</div>}
-    </div>
+      {isOpen && <div className={compact ? 'config-fields' : 'p-4 space-y-4'}>{children}</div>}
+    </section>
   );
 };
 
@@ -631,14 +659,29 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   errors = [],
   family,
   families,
+  compact = false,
+  groupFilter,
+  search = '',
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const english = i18n.resolvedLanguage?.startsWith('en') || false;
   const groups: Record<string, { order: number; fields: React.ReactNode[] }> = {};
 
   const renderField = (key: string, prop: SchemaProperty, parentPath: string[] = []) => {
     const path = [...parentPath, key];
     const fullPathKey = path.join('.');
-    const ui = prop['x-ui'] || {};
+    const ui = { ...(prop['x-ui'] || {}), ...(compact && fullPathKey === 'dataset.batch_size' ? {group:'loop'} : {}) };
+    if (compact && !showAdvanced && fullPathKey === 'adapter.rules' && !value.adapter?.rules?.length) return null;
+
+    const nested = prop.$ref ? resolveRef(schema, prop.$ref) : prop;
+    if (nested?.type === 'object' && nested.properties) {
+      Object.entries(nested.properties).forEach(([childKey, child]) => renderField(childKey, child as SchemaProperty, path));
+      return null;
+    }
+    const fieldLabel = configFieldLabel(fullPathKey, t(`fields.${key}`, prop.title || key), english);
+    const currentGroup = ui.group || parentPath[0] || 'default';
+    if (groupFilter && !groupFilter.includes(currentGroup)) return null;
+    if (search && !`${fieldLabel} ${fullPathKey} ${prop.description || ''}`.toLowerCase().includes(search.toLowerCase())) return null;
 
     if (ui.advanced && !showAdvanced) return null;
     if (ui.show_when) {
@@ -657,7 +700,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     let control = null;
 
     // 1. 递归对象渲染
-    if (prop.type === 'object' && prop.properties) {
+    if (compact && fullPathKey === 'dataset.resolutions') {
+      control = <ResolutionInput label={fieldLabel} value={fieldValue} onChange={next => onChange(setNestedValue(value, path, next))} />;
+    } else if (prop.type === 'object' && prop.properties) {
       control = (
         <div className="pl-4 border-l-2 border-slate-200 dark:border-slate-700 space-y-4">
           {Object.entries(prop.properties).map(([subKey, subProp]) =>
@@ -733,11 +778,13 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         <ModelPathInput
           value={fieldValue || ''}
           kind={modelKind}
+          label={fieldLabel}
+          familyName={value.model?.family}
           onChange={(val) => onChange(setNestedValue(value, path, val === '' && prop.anyOf?.some((p) => p.type === 'null') ? null : val))}
         />
       );
     } else if (prop.anyOf) {
-      control = <SchemaValueInput schema={schema} property={prop} value={fieldValue} name={fullPathKey}
+      control = <SchemaValueInput schema={schema} property={prop} value={fieldValue} name={fullPathKey} compact={compact}
         placeholder={family && fullPathKey === 'sampling.shift' ? (family.sampling?.shift != null ? String(family.sampling.shift) : t('sampling.shiftAuto')) : undefined}
         onChange={(val) => onChange(setNestedValue(value, path, val))} />;
     } else if (fullPathKey === 'model.family' && families?.length) {
@@ -803,7 +850,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         />
       );
     } else if (prop.type === 'integer' || prop.type === 'number') {
-      if (ui.control === 'slider' && ui.min !== undefined && ui.max !== undefined) {
+      if (!compact && ui.control === 'slider' && ui.min !== undefined && ui.max !== undefined) {
         control = (
           <input
             type="range"
@@ -875,22 +922,29 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         ? (family.weights || []).find((w) => w.field === key)
         : undefined;
 
+    const fieldId = `config-${fullPathKey}`;
+    const wide = ['sources', 'rules', 'prompts', 'resolutions', 'args', 'group_lr'].includes(key) || ui.control === 'path' || key.endsWith('_path') || key === 'output_dir';
+    if (React.isValidElement(control) && typeof control.type === 'string') {
+      control = React.cloneElement(control as React.ReactElement<any>, {id: fieldId, 'aria-label': (control.props as any)['aria-label'] || fieldLabel, 'aria-invalid': !!errorItem});
+    }
+    const help = [prop.description, weightMeta?.hint].filter(Boolean).join('\n');
     const label = (
-      <div key={fullPathKey} data-testid={`field-${fullPathKey}`} className={`flex flex-col space-y-1 p-2 rounded ${errorItem ? 'bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800' : ''}`}>
+      <div key={fullPathKey} id={`field-${fullPathKey}`} data-testid={`field-${fullPathKey}`} className={compact ? `config-field ${prop.type === 'boolean' ? 'config-field-toggle' : ''} ${wide ? 'config-field-wide' : ''} ${errorItem ? 'config-field-invalid' : ''}` : `flex flex-col space-y-1 p-2 rounded ${errorItem ? 'bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800' : ''}`}>
         <div className="flex justify-between items-center">
-          <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-            {weightMeta?.label || t(`fields.${key}`, prop.title || key)}
+          <label htmlFor={fieldId} className="text-sm font-medium text-slate-700 dark:text-slate-300">
+            {compact ? fieldLabel : weightMeta?.label || fieldLabel}
             {ui.unit && <span className="ml-1 text-xs text-slate-500">({ui.unit})</span>}
           </label>
+          {compact && help && <details className="config-help"><summary aria-label={`${fieldLabel} ${english ? 'help' : '说明'}`}><HelpCircle size={13} /></summary><p>{help}</p></details>}
         </div>
-        {prop.description && <p className="text-xs text-slate-500 dark:text-slate-400">{prop.description}</p>}
-        {weightMeta?.hint && (
+        {!compact && prop.description && <p className="text-xs text-slate-500 dark:text-slate-400">{prop.description}</p>}
+        {!compact && weightMeta?.hint && (
           <p className="text-[11px] text-slate-400 dark:text-slate-500" data-testid={`weight-hint-${key}`}>
             {weightMeta.hint}
           </p>
         )}
-        {errorItem && <p className="text-xs font-semibold text-red-600 dark:text-red-400">{errorItem.msg}</p>}
         <div className="mt-1">{control}</div>
+        {errorItem && <p className="text-xs text-red-600 dark:text-red-400">{errorItem.msg}</p>}
       </div>
     );
 
@@ -916,7 +970,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     });
   }
 
-  const groupOrder = schema?.['x-ui-groups'] || [];
+  const groupOrder = groupFilter || schema?.['x-ui-groups'] || [];
   const sortedGroups = Object.entries(groups).sort(([keyA, groupA], [keyB, groupB]) => {
     const indexA = groupOrder.indexOf(keyA);
     const indexB = groupOrder.indexOf(keyB);
@@ -927,12 +981,13 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   });
 
   return (
-    <div className="space-y-6" data-testid="schema-form">
+    <div className={compact ? 'compact-schema' : 'space-y-6'} data-testid="schema-form">
       {sortedGroups.map(([groupName, groupData]) => (
-        <FieldGroup key={groupName} title={t(`groups.${groupName}`, groupName)} count={groupData.fields.length}>
+        <FieldGroup key={groupName} title={t(`groups.${groupName}`, groupName)} count={groupData.fields.length} compact={compact} groupKey={groupName}>
           {groupData.fields}
         </FieldGroup>
       ))}
+      {sortedGroups.length === 0 && <p className="p-6 text-sm text-slate-500">{english ? 'No matching parameters.' : '没有匹配的参数。'}</p>}
     </div>
   );
 };

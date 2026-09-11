@@ -277,31 +277,34 @@ class AnimaFamily(ModelFamily):
     @staticmethod
     def resolve_attention(requested: str, device: torch.device | str) -> str:
         """Map the config value onto the vendored backend names; ``auto`` never picks an optional package."""
-        if requested == "sage":
-            from .vendor.attention import sage_available
+        if requested in ("sage", "xformers", "flash_attn"):
+            from .vendor.attention import backend_available
 
             if torch.device(device).type != "cuda":
-                raise ValueError("model.attention='sage' requires CUDA")
-            if not sage_available():
-                raise ValueError("model.attention='sage' requires the sageattention package")
-            return "sage"
+                raise ValueError(f"model.attention={requested!r} requires CUDA")
+            if not backend_available(requested):
+                raise ValueError(f"model.attention={requested!r} requires a compatible installed attention package; check Environment settings")
+            return requested
         return "torch"
 
     # ----------------------------------------------------------------- forward
     def forward(self, loaded: LoadedModel, x_t: Tensor, t: Tensor, cond: TextCond, **extra: Any) -> Tensor:
+        from .vendor.attention import sampling_attention
+
         dit = loaded.backbone
         b, _, h, w = x_t.shape
         x5 = x_t.unsqueeze(2)
         padding_mask = torch.zeros(b, 1, h, w, dtype=x5.dtype, device=x5.device)
-        out = dit(
-            x5,
-            t.to(device=x5.device, dtype=torch.float32),
-            cond["embeds"].to(device=x5.device, dtype=x5.dtype),
-            padding_mask=padding_mask,
-            target_input_ids=cond["t5_ids"].to(x5.device),
-            target_attention_mask=cond["t5_mask"].to(x5.device),
-            source_attention_mask=cond["attn_mask"].to(x5.device),
-        )
+        with sampling_attention(not dit.training):
+            out = dit(
+                x5,
+                t.to(device=x5.device, dtype=torch.float32),
+                cond["embeds"].to(device=x5.device, dtype=x5.dtype),
+                padding_mask=padding_mask,
+                target_input_ids=cond["t5_ids"].to(x5.device),
+                target_attention_mask=cond["t5_mask"].to(x5.device),
+                source_attention_mask=cond["attn_mask"].to(x5.device),
+            )
         return out.squeeze(2)
 
     # ----------------------------------------------------------------- adapters / memory

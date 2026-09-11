@@ -234,6 +234,8 @@ class Krea2Family(ModelFamily):
 
     # ----------------------------------------------------------------- forward
     def forward(self, loaded: LoadedModel, x_t: Tensor, t: Tensor, cond: TextCond, **extra: Any) -> Tensor:
+        from ypuddin.models.anima.vendor.attention import sampling_attention
+
         dit = loaded.backbone
         patch = int(dit.config.patch)
         b, c, h, w = x_t.shape
@@ -256,7 +258,8 @@ class Krea2Family(ModelFamily):
             [img_pos, torch.zeros(b, context.shape[1], 3, device=device, dtype=torch.float32)], dim=1
         )
         mask = torch.cat([torch.ones(b, hp * wp, device=device, dtype=torch.bool), txt_mask], dim=1)
-        out = dit(img=img, context=context, t=t.to(device=device, dtype=torch.float32), pos=pos, mask=mask)
+        with sampling_attention(not dit.training):
+            out = dit(img=img, context=context, t=t.to(device=device, dtype=torch.float32), pos=pos, mask=mask)
         return out.reshape(b, hp, wp, c, patch, patch).permute(0, 3, 1, 4, 2, 5).reshape(b, c, h, w)
 
     # ----------------------------------------------------------------- sampling

@@ -527,7 +527,7 @@ def test_attention_helper_split_and_masked_paths_match_sdpa():
     with pytest.raises(NotImplementedError):
         vendored_attention.attention(
             [q.clone(), k.clone(), v.clone()],
-            attn_params=vendored_attention.AttentionParams.create_attention_params("xformers", False),
+            attn_params=vendored_attention.AttentionParams.create_attention_params("unknown", False),
         )
     with pytest.raises(NotImplementedError):
         Anima(**dict(TINY_CFG, num_blocks=1, use_llm_adapter=False, attn_mode="flash"))(

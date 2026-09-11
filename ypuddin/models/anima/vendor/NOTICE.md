@@ -109,3 +109,5 @@ docstrings of the vendored files and re-implemented natively in `ypuddin`.
   checkpoint by `infer_dit_config`; defaults reproduce the official 1024/1024/6/16 adapter exactly.
 - `attention.py` (additional local modification): `attn_mode="sage"` dispatches unmasked, dropout-free calls to
   `sageattention.sageattn` when installed and falls back to PyTorch SDPA otherwise.
+
+2026-09-11：共享 attention shim 增加可选 xformers / flash_attn 后端；不支持的输入或扩展不可用时使用 PyTorch SDPA。SageAttention 仅在模型族显式无梯度采样上下文启用，训练及梯度检查点使用 SDPA 以保持反向传播。Krea 2 复用此 shim。

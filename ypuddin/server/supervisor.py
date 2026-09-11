@@ -16,6 +16,7 @@ from ypuddin.config.io import absolute_paths
 
 from .bus import EventBus
 from .db import Database, new_id, now
+from .environment import maintenance_blocked
 from .hardware import gpu_info
 
 log = logging.getLogger(__name__)
@@ -120,7 +121,7 @@ class JobSupervisor:
                 del self._procs[job_id]
                 self._devices.pop(job_id, None)
         settings = self.db.get_kv("queue.settings", {"held": False, "max_concurrent": self.max_concurrent})
-        if settings.get("held"):
+        if settings.get("held") or maintenance_blocked(self.db):
             return
         t = now()
         self.db.execute(
@@ -139,7 +140,12 @@ class JobSupervisor:
             if device is None:
                 continue
             try:
-                self._launch(nxt, device=device)
+                # Environment Apply takes this same lock before checking running jobs and
+                # setting maintenance. A queued worker cannot slip through that boundary.
+                with self.db.lock:
+                    if maintenance_blocked(self.db):
+                        break
+                    self._launch(nxt, device=device)
             except Exception as exc:
                 log.exception("could not launch job %s", nxt["id"])
                 self._set_status(nxt["id"], "failed", error=str(exc), finished_at=now())

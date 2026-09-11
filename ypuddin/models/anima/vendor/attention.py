@@ -3,8 +3,8 @@
 # ruff: noqa  -- vendored third-party code, kept byte-close to upstream; not linted to project style
 #
 # Local modifications (see NOTICE.md):
-#   * Only the PyTorch SDPA backend ("torch", alias "sdpa") is kept. The xformers / flash-attn / sageattention
-#     branches and their optional imports were removed; selecting one of those modes raises NotImplementedError.
+#   * Upstream's backend branches are replaced by a shared dispatch shim. PyTorch SDPA
+#     ("torch", alias "sdpa") remains the default and fallback.
 #   * In ``split_attn`` mode with no explicit ``seqlens`` the key/value tensors are no longer sliced to the *query*
 #     length. Upstream did ``k[i:i+1, :q_len]`` which is a no-op for self-attention but silently truncated the text
 #     context in cross-attention whenever the image token count was smaller than the text token count.
@@ -12,6 +12,9 @@
 #     to ``sageattention.sageattn`` when the package is installed; masked calls (text cross-attention) and dropout fall
 #     back to PyTorch SDPA, which is exactly what upstream's sage branch did.
 #   * ``_sdpa`` expands grouped-query k/v heads (Krea 2) so q/k/v head counts always match.
+#   * Optional xFormers / FlashAttention 2 dispatch is restored for compatible CUDA inputs;
+#     masks, unsupported shapes and dtypes retain SDPA. Sage is inference-only: gradient-
+#     carrying calls use SDPA so quantized kernels cannot silently detach training gradients.
 """Minimal SDPA attention helper used by :mod:`ypuddin.models.anima.vendor.cosmos_dit`.
 
 Call pattern (identical to sd-scripts ``library.attention``)::
@@ -24,12 +27,27 @@ Call pattern (identical to sd-scripts ``library.attention``)::
 """
 
 from dataclasses import dataclass
+from contextlib import contextmanager
+from contextvars import ContextVar
+import importlib
 from typing import Optional, Union
 
 import torch
 
 _TORCH_MODES = ("torch", "sdpa", None)
 _SAGE_MODES = ("sage", "sageattn")
+_EXTERNAL_MODES = ("xformers", "flash_attn")
+_SAMPLING = ContextVar("ypuddin_attention_sampling", default=False)
+
+
+@contextmanager
+def sampling_attention(enabled: bool):
+    """Explicit eval context avoids using inference kernels inside no-grad checkpoint passes."""
+    token = _SAMPLING.set(enabled)
+    try:
+        yield
+    finally:
+        _SAMPLING.reset(token)
 
 try:  # optional, CUDA-only accelerator (int8 QK^T); never required
     from sageattention import sageattn as _sageattn  # type: ignore
@@ -41,8 +59,29 @@ def sage_available() -> bool:
     return _sageattn is not None
 
 
+def backend_available(name: str) -> bool:
+    if name in _SAGE_MODES:
+        return sage_available()
+    module, entry = {"xformers": ("xformers.ops", "memory_efficient_attention"), "flash_attn": ("flash_attn", "flash_attn_func")}[name]
+    try:
+        return callable(getattr(importlib.import_module(module), entry, None))
+    except Exception:
+        return False
+
+
+def _external_attention(name, q, k, v, dropout_p):
+    module, entry = {"xformers": ("xformers.ops", "memory_efficient_attention"), "flash_attn": ("flash_attn", "flash_attn_func")}[name]
+    function = getattr(importlib.import_module(module), entry)
+    tensors = [t.transpose(1, 2).contiguous() for t in (q, k, v)]
+    if name == "xformers":
+        out = function(*tensors, p=dropout_p)
+    else:
+        out = function(*tensors, dropout_p=dropout_p, causal=False)
+    return out.transpose(1, 2)
+
+
 def _is_torch_mode(attn_mode: Optional[str]) -> bool:
-    return attn_mode in _TORCH_MODES or attn_mode in _SAGE_MODES
+    return attn_mode in _TORCH_MODES or attn_mode in _SAGE_MODES or attn_mode in _EXTERNAL_MODES
 
 
 def _sdpa(
@@ -59,10 +98,19 @@ def _sdpa(
         rep = q.shape[1] // k.shape[1]
         k = k.repeat_interleave(rep, dim=1)
         v = v.repeat_interleave(rep, dim=1)
-    if attn_mode in _SAGE_MODES and attn_mask is None and dropout_p == 0.0 and q.is_cuda:
+    gradients = torch.is_grad_enabled() and any(t.requires_grad for t in (q, k, v))
+    compatible = q.is_cuda and attn_mask is None and q.dtype in (torch.float16, torch.bfloat16) and q.dtype == k.dtype == v.dtype
+    if attn_mode in _SAGE_MODES and compatible and dropout_p == 0.0 and not gradients and _SAMPLING.get():
         if _sageattn is None:
             raise RuntimeError("attn_mode='sage' requires the sageattention package (pip install sageattention)")
         return _sageattn(q, k, v, tensor_layout="HND", is_causal=False)
+    if attn_mode in _EXTERNAL_MODES and compatible and q.shape[-1] <= 256 and q.shape[-1] % 8 == 0:
+        try:
+            return _external_attention(attn_mode, q, k, v, dropout_p)
+        except NotImplementedError:
+            # xFormers uses this to report no kernel for a particular shape/device. Do not
+            # catch RuntimeError: OOM, broken installs and other CUDA errors must surface.
+            pass
     return torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=dropout_p)
 
 
@@ -78,13 +126,14 @@ class AttentionParams:
 
     @property
     def supports_fp32(self) -> bool:
-        # flash-attn (removed) was the only backend without fp32 support
-        return self.attn_mode not in ["flash"]
+        # The shim falls back to SDPA for fp32 inputs.
+        return True
 
     @property
     def requires_same_dtype(self) -> bool:
-        # xformers (removed) was the only backend requiring identical q/k/v dtypes
-        return self.attn_mode in ["xformers"]
+        # Both accelerated backends need identical q/k/v dtypes. Cosmos may retain
+        # fp32 rotary outputs while v is autocast; ask it to align them before dispatch.
+        return self.attn_mode in ["xformers", "flash_attn"]
 
     @staticmethod
     def create_attention_params(attn_mode: Optional[str], split_attn: bool) -> "AttentionParams":
@@ -99,7 +148,7 @@ class AttentionParams:
             return AttentionParams(attn_mode, split_attn, None, None, None, None, None)
 
         if not _is_torch_mode(attn_mode):
-            raise NotImplementedError(f"Only the 'torch' attention backend is vendored; got attn_mode={attn_mode!r}")
+            raise NotImplementedError(f"Unsupported attention backend: {attn_mode!r}")
 
         # Note: attention_mask is only for text tokens, not including image tokens
         seqlens = attention_mask.sum(dim=1).to(torch.int32) + img_len  # [B]
@@ -153,8 +202,7 @@ def attention(
 
     if not _is_torch_mode(attn_params.attn_mode):
         raise NotImplementedError(
-            f"Only the 'torch' (SDPA) and 'sage' attention backends are vendored; got attn_mode={attn_params.attn_mode!r}. "
-            "xformers / flash-attn were removed from this copy (PyTorch SDPA already dispatches to flash kernels)."
+            f"Unsupported attention backend: {attn_params.attn_mode!r}"
         )
 
     # If split attn is False, attention mask is provided and all sequence lengths are same, we can trim the sequence
@@ -214,4 +262,4 @@ def attention(
     return x
 
 
-__all__ = ["AttentionParams", "attention", "sage_available"]
+__all__ = ["AttentionParams", "attention", "sage_available", "backend_available", "sampling_attention"]

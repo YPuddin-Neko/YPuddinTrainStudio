@@ -102,10 +102,12 @@ describe('project training workspace', () => {
     expect(await screen.findByRole('combobox', { name: '模型系列' })).toHaveValue('anima');
     await waitFor(() => expect(screen.getByDisplayValue('D:/models/anima.safetensors')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: '保存并进入参数与启动' }));
-    await screen.findByRole('region', { name: '常用训练参数' });
-    fireEvent.change(screen.getByRole('spinbutton', { name: '训练轮数' }), { target: { value: '4' } });
+    await screen.findByTestId('field-loop.epochs');
+    expect(screen.queryByRole('region', {name:'常用训练参数'})).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'loop.epochs' }), { target: { value: '4' } });
     fireEvent.change(screen.getByRole('spinbutton', { name: '学习率' }), { target: { value: '0.0002' } });
-    fireEvent.change(screen.getByRole('spinbutton', { name: '训练分辨率' }), { target: { value: '768' } });
+    fireEvent.click(screen.getByRole('tab', {name:'数据与分桶'}));
+    fireEvent.change(within(screen.getByTestId('field-dataset.resolutions')).getByRole('textbox'), { target: { value: '768' } });
     const start = screen.getByRole('button', { name: '开始训练' });
     await waitFor(() => expect(start).toBeEnabled());
     expect(start).toHaveTextContent('开始训练');
@@ -167,7 +169,7 @@ describe('project training workspace', () => {
     show('/projects/p_work/train');
     await screen.findByRole('spinbutton', { name: '学习率' });
     fireEvent.change(screen.getByRole('spinbutton', { name: '学习率' }), { target: { value: '0.0007' } });
-    fireEvent.click(screen.getByRole('link', { name: /返回项目工作区/ }));
+    fireEvent.click(screen.getByRole('link', { name: 'Character workspace' }));
     await screen.findByTestId('project-data-import');
     await waitFor(() => expect(backend.config().optimizer.lr).toBe(0.0007));
   });

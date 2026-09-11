@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "YPuddin Train Studio",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "paths": {
     "/api/health": {
@@ -2778,6 +2778,566 @@
           }
         }
       }
+    },
+    "/api/datasets/{did}/images/{h}/mask/info": {
+      "get": {
+        "summary": "Mask Info",
+        "operationId": "mask_info_api_datasets__did__images__h__mask_info_get",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Did"
+            }
+          },
+          {
+            "name": "h",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "H"
+            }
+          },
+          {
+            "name": "rel_path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rel Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/datasets/{did}/images/{h}/mask": {
+      "get": {
+        "summary": "Mask File",
+        "operationId": "mask_file_api_datasets__did__images__h__mask_get",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Did"
+            }
+          },
+          {
+            "name": "h",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "H"
+            }
+          },
+          {
+            "name": "rel_path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rel Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current loss weights as grayscale PNG",
+            "content": {
+              "image/png": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Save Mask",
+        "operationId": "save_mask_api_datasets__did__images__h__mask_put",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Did"
+            }
+          },
+          {
+            "name": "h",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "H"
+            }
+          },
+          {
+            "name": "rel_path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rel Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file",
+                  "revision"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "revision": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/datasets/{did}/images/{h}/mask/source": {
+      "get": {
+        "summary": "Mask Source",
+        "operationId": "mask_source_api_datasets__did__images__h__mask_source_get",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Did"
+            }
+          },
+          {
+            "name": "h",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "H"
+            }
+          },
+          {
+            "name": "rel_path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rel Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Source image in training orientation",
+            "content": {
+              "image/png": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/environment": {
+      "get": {
+        "summary": "Status",
+        "operationId": "status_api_environment_get",
+        "parameters": [
+          {
+            "name": "refresh",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Refresh"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentSnapshot"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/environment/settings": {
+      "put": {
+        "summary": "Settings",
+        "operationId": "settings_api_environment_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnvironmentSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentSettings"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/environment/operations": {
+      "get": {
+        "summary": "Operations",
+        "operationId": "operations_api_environment_operations_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EnvironmentOperation"
+                  },
+                  "type": "array",
+                  "title": "Response Operations Api Environment Operations Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Start",
+        "operationId": "start_api_environment_operations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnvironmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentOperation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/environment/operations/{id_}": {
+      "get": {
+        "summary": "Operation",
+        "operationId": "operation_api_environment_operations__id___get",
+        "parameters": [
+          {
+            "name": "id_",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id "
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentOperation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/environment/operations/{id_}/apply": {
+      "post": {
+        "summary": "Apply",
+        "operationId": "apply_api_environment_operations__id___apply_post",
+        "parameters": [
+          {
+            "name": "id_",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id "
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentOperation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/environment/operations/{id_}/cancel": {
+      "post": {
+        "summary": "Cancel",
+        "operationId": "cancel_api_environment_operations__id___cancel_post",
+        "parameters": [
+          {
+            "name": "id_",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id "
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentOperation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/environment/wheels": {
+      "post": {
+        "summary": "Wheel",
+        "operationId": "wheel_api_environment_wheels_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_wheel_api_environment_wheels_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentWheel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3286,6 +3846,20 @@
           "count"
         ],
         "title": "AspectCount"
+      },
+      "Body_wheel_api_environment_wheels_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_wheel_api_environment_wheels_post"
       },
       "Caption": {
         "properties": {
@@ -4258,6 +4832,420 @@
           "total_gb"
         ],
         "title": "DiskStats"
+      },
+      "EnvironmentOperation": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "package": {
+            "type": "string",
+            "title": "Package"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "planning",
+              "ready",
+              "installing",
+              "verifying",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "number",
+            "title": "Updated At"
+          },
+          "plan": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Plan"
+          },
+          "logs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Logs"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "restart_required": {
+            "type": "boolean",
+            "title": "Restart Required",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "package",
+          "action",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "EnvironmentOperation"
+      },
+      "EnvironmentPackage": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "backend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend"
+          },
+          "docs_url": {
+            "type": "string",
+            "title": "Docs Url"
+          },
+          "supported": {
+            "type": "boolean",
+            "title": "Supported"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "importable": {
+            "type": "boolean",
+            "title": "Importable"
+          },
+          "kernel_tested": {
+            "type": "boolean",
+            "title": "Kernel Tested"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "wheel_required": {
+            "type": "boolean",
+            "title": "Wheel Required"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "version",
+          "backend",
+          "docs_url",
+          "supported",
+          "reason",
+          "importable",
+          "kernel_tested",
+          "error",
+          "available",
+          "wheel_required"
+        ],
+        "title": "EnvironmentPackage"
+      },
+      "EnvironmentRequest": {
+        "properties": {
+          "package": {
+            "type": "string",
+            "enum": [
+              "xformers",
+              "flash-attn",
+              "sageattention",
+              "nvidia-ml-py",
+              "tensorboard",
+              "wandb",
+              "schedulefree"
+            ],
+            "title": "Package"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "install",
+              "repair",
+              "uninstall"
+            ],
+            "title": "Action",
+            "default": "install"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "wheel_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wheel Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "package"
+        ],
+        "title": "EnvironmentRequest"
+      },
+      "EnvironmentRuntime": {
+        "properties": {
+          "python": {
+            "type": "string",
+            "title": "Python"
+          },
+          "python_executable": {
+            "type": "string",
+            "title": "Python Executable"
+          },
+          "platform": {
+            "type": "string",
+            "title": "Platform"
+          },
+          "machine": {
+            "type": "string",
+            "title": "Machine"
+          },
+          "torch": {
+            "type": "string",
+            "title": "Torch"
+          },
+          "cuda_runtime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cuda Runtime"
+          },
+          "cuda_available": {
+            "type": "boolean",
+            "title": "Cuda Available"
+          },
+          "mps_available": {
+            "type": "boolean",
+            "title": "Mps Available"
+          },
+          "gpu_capability": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Capability"
+          },
+          "cxx11_abi": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cxx11 Abi"
+          },
+          "gpus": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Gpus"
+          },
+          "virtual_environment": {
+            "type": "boolean",
+            "title": "Virtual Environment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "python",
+          "python_executable",
+          "platform",
+          "machine",
+          "torch",
+          "cuda_runtime",
+          "cuda_available",
+          "mps_available",
+          "gpu_capability",
+          "gpus",
+          "virtual_environment"
+        ],
+        "title": "EnvironmentRuntime"
+      },
+      "EnvironmentSettings": {
+        "properties": {
+          "attention_default": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "sdpa",
+              "xformers",
+              "flash_attn",
+              "sage"
+            ],
+            "title": "Attention Default",
+            "default": "auto"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "EnvironmentSettings"
+      },
+      "EnvironmentSnapshot": {
+        "properties": {
+          "runtime": {
+            "$ref": "#/components/schemas/EnvironmentRuntime"
+          },
+          "packages": {
+            "items": {
+              "$ref": "#/components/schemas/EnvironmentPackage"
+            },
+            "type": "array",
+            "title": "Packages"
+          },
+          "attention_default": {
+            "type": "string",
+            "title": "Attention Default"
+          },
+          "restart_required": {
+            "type": "boolean",
+            "title": "Restart Required"
+          },
+          "maintenance": {
+            "type": "boolean",
+            "title": "Maintenance"
+          },
+          "running_jobs": {
+            "type": "boolean",
+            "title": "Running Jobs"
+          },
+          "probe_deferred": {
+            "type": "boolean",
+            "title": "Probe Deferred"
+          }
+        },
+        "type": "object",
+        "required": [
+          "runtime",
+          "packages",
+          "attention_default",
+          "restart_required",
+          "maintenance",
+          "running_jobs",
+          "probe_deferred"
+        ],
+        "title": "EnvironmentSnapshot"
+      },
+      "EnvironmentWheel": {
+        "properties": {
+          "wheel_id": {
+            "type": "string",
+            "title": "Wheel Id"
+          },
+          "package": {
+            "type": "string",
+            "title": "Package"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          }
+        },
+        "type": "object",
+        "required": [
+          "wheel_id",
+          "package",
+          "version",
+          "filename",
+          "size",
+          "sha256"
+        ],
+        "title": "EnvironmentWheel"
       },
       "FamilyInfo": {
         "properties": {
@@ -5779,6 +6767,59 @@
         "type": "object",
         "title": "LoopConfig"
       },
+      "MaskInfo": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "sidecar",
+              "alpha",
+              "full"
+            ],
+            "title": "Source"
+          },
+          "width": {
+            "type": "integer",
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height"
+          },
+          "coverage": {
+            "type": "number",
+            "title": "Coverage"
+          },
+          "has_mask": {
+            "type": "boolean",
+            "title": "Has Mask"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "revision": {
+            "type": "string",
+            "title": "Revision"
+          },
+          "resized": {
+            "type": "boolean",
+            "title": "Resized",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "width",
+          "height",
+          "coverage",
+          "has_mask",
+          "filename",
+          "revision"
+        ],
+        "title": "MaskInfo"
+      },
       "MemoryConfig": {
         "properties": {
           "base_precision": {
@@ -6086,10 +7127,12 @@
             "enum": [
               "auto",
               "sdpa",
-              "sage"
+              "sage",
+              "xformers",
+              "flash_attn"
             ],
             "title": "Attention",
-            "description": "注意力后端：sdpa（PyTorch 内置，自动选 flash/高效内核）；sage 需安装 sageattention，仅用于无掩码的图像自注意力",
+            "description": "注意力后端：SDPA 使用 PyTorch 内置内核；xFormers / FlashAttention 需要匹配的 CUDA 扩展，Sage 仅用于无梯度推理。环境设置可查看兼容条件和安装状态。",
             "default": "auto",
             "x-ui": {
               "advanced": true,
