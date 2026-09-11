@@ -54,6 +54,52 @@ class Database:
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.executescript(SCHEMA)
         self.lock = threading.RLock()
+        self._migrate_versions()
+
+    def _migrate_versions(self) -> None:
+        """Attach old rows without changing their paths or immutable job snapshots."""
+        with self.lock:
+            self.conn.execute("BEGIN IMMEDIATE")
+            try:
+                for table, column in (
+                    ("projects", "active_version_id"),
+                    ("datasets", "version_id"),
+                    ("jobs", "version_id"),
+                    ("artifacts", "version_id"),
+                    ("datasets", "origin_path"),
+                ):
+                    columns = {row[1] for row in self.conn.execute(f"PRAGMA table_info({table})")}
+                    if column not in columns:
+                        self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
+                self.conn.execute("""CREATE TABLE IF NOT EXISTS project_versions (
+                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    name TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', parent_version_id TEXT,
+                    archived INTEGER NOT NULL DEFAULT 0, legacy_layout INTEGER NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'ready', busy TEXT, progress_json TEXT NOT NULL DEFAULT '{}',
+                    error TEXT, created_at REAL NOT NULL, updated_at REAL NOT NULL,
+                    UNIQUE(project_id, name))""")
+                for project in list(
+                    self.conn.execute("SELECT * FROM projects WHERE active_version_id IS NULL")
+                ):
+                    vid = new_id("v")
+                    self.conn.execute(
+                        "INSERT INTO project_versions (id,project_id,name,legacy_layout,created_at,updated_at) VALUES (?,?,?,1,?,?)",
+                        (vid, project["id"], "v1", project["created_at"], project["updated_at"]),
+                    )
+                    self.conn.execute(
+                        "UPDATE projects SET active_version_id=? WHERE id=?", (vid, project["id"])
+                    )
+                for table in ("datasets", "jobs", "artifacts"):
+                    self.conn.execute(
+                        f"UPDATE {table} SET version_id=(SELECT active_version_id FROM projects WHERE projects.id={table}.project_id) WHERE version_id IS NULL AND project_id IS NOT NULL"
+                    )
+                self.conn.execute(
+                    "UPDATE artifacts SET version_id=(SELECT version_id FROM jobs WHERE jobs.id=artifacts.job_id) WHERE job_id IN (SELECT id FROM jobs WHERE version_id IS NOT NULL)"
+                )
+                self.conn.execute("COMMIT")
+            except BaseException:
+                self.conn.execute("ROLLBACK")
+                raise
 
     # ----------------------------------------------------------------- generic helpers
     def execute(self, sql: str, params: tuple | dict = ()) -> sqlite3.Cursor:

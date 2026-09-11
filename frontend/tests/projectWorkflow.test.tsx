@@ -54,6 +54,7 @@ function workspaceHandlers() {
     http.get('/api/projects', () => HttpResponse.json([])),
     http.post('/api/projects', async ({ request }) => HttpResponse.json({ ...project, ...await request.json() as object })),
     http.get('/api/projects/p_work', () => HttpResponse.json(project)),
+    http.get('/api/projects/p_work/versions', () => HttpResponse.json([])),
     http.get('/api/projects/p_work/config', () => HttpResponse.json(config)),
     http.put('/api/projects/p_work/config', async ({ request }) => { config = await request.json() as any; return HttpResponse.json(config); }),
     http.get('/api/projects/p_work/datasets', () => HttpResponse.json(datasets)),
@@ -97,11 +98,11 @@ describe('project training workspace', () => {
     expect(uploadText).toContain('filename="portrait.txt"');
     expect(uploadText).not.toContain('discard.png');
     expect(uploadText).toContain('name="repeats"\r\n\r\n3');
-    expect(screen.getByTestId('dataset-card-d_uploaded')).toHaveTextContent('1 张图片');
-    fireEvent.click(screen.getByRole('link', { name: '下一步：模型准备' }));
+    expect(await screen.findByTestId('dataset-card-d_uploaded')).toHaveTextContent('1 张图片');
+    fireEvent.click(screen.getByRole('link', { name: /^2\s*模型准备$/ }));
     expect(await screen.findByRole('combobox', { name: '模型系列' })).toHaveValue('anima');
     await waitFor(() => expect(screen.getByDisplayValue('D:/models/anima.safetensors')).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: '保存并进入参数与启动' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存并进入训练参数' }));
     await screen.findByTestId('field-loop.epochs');
     expect(screen.queryByRole('region', {name:'常用训练参数'})).not.toBeInTheDocument();
     fireEvent.change(screen.getByRole('spinbutton', { name: 'loop.epochs' }), { target: { value: '4' } });
@@ -136,7 +137,7 @@ describe('project training workspace', () => {
     const backend = workspaceHandlers(); let body: any;
     server.use(http.post('/api/projects/p_work/datasets', async ({ request }) => { body = await request.json(); backend.addSource(); return HttpResponse.json(indexed); }));
     show(); await screen.findByTestId('project-data-import');
-    fireEvent.click(screen.getByRole('button', { name: '使用训练机上的文件夹' }));
+    fireEvent.click(screen.getByRole('button', { name: '导入本机目录' }));
     fireEvent.change(within(screen.getByRole('group', { name: '训练图片文件夹路径' })).getByRole('textbox'), { target: { value: 'D:\\photos\\regularization' } });
     fireEvent.click(screen.getByRole('checkbox', { name: '这是正则化数据集（先验保持）' }));
     fireEvent.change(screen.getByRole('textbox', { name: '类别提示词' }), { target: { value: 'a person' } });
@@ -150,12 +151,12 @@ describe('project training workspace', () => {
     const backend = workspaceHandlers();
     show('/projects/p_work?step=models');
     await waitFor(() => expect(screen.getByDisplayValue('D:/models/anima.safetensors')).toBeInTheDocument());
+    await within(screen.getByRole('combobox', { name: '模型系列' })).findByRole('option', { name: /Krea/i });
     fireEvent.change(screen.getByRole('combobox', { name: '模型系列' }), { target: { value: 'krea2' } });
-    expect(screen.getByDisplayValue('D:/models/krea.safetensors')).toBeInTheDocument();
+    expect(await screen.findByDisplayValue('D:/models/krea.safetensors')).toBeInTheDocument();
     expect(screen.queryByDisplayValue('D:/models/qwen3.safetensors')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '保存模型选择' }));
-    await screen.findByRole('status');
-    expect(backend.config().model).toMatchObject({ family: 'krea2', dit_path: 'D:/models/krea.safetensors', text_encoder_path: null, vae_path: null });
+    await waitFor(() => expect(backend.config().model).toMatchObject({ family: 'krea2', dit_path: 'D:/models/krea.safetensors', text_encoder_path: null, vae_path: null }));
   });
 
   it('fills only existing defaults of the right family and preserves explicit model paths', () => {
@@ -169,7 +170,7 @@ describe('project training workspace', () => {
     show('/projects/p_work/train');
     await screen.findByRole('spinbutton', { name: '学习率' });
     fireEvent.change(screen.getByRole('spinbutton', { name: '学习率' }), { target: { value: '0.0007' } });
-    fireEvent.click(screen.getByRole('link', { name: 'Character workspace' }));
+    fireEvent.click(screen.getByRole('link', { name: /^1\s*训练数据$/ }));
     await screen.findByTestId('project-data-import');
     await waitFor(() => expect(backend.config().optimizer.lr).toBe(0.0007));
   });

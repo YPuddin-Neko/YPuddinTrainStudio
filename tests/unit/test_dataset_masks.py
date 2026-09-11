@@ -120,6 +120,7 @@ def test_limits_and_busy_index_or_job(api, monkeypatch):
             "name": "active",
             "type": "train",
             "project_id": source["project_id"],
+            "version_id": source["version_id"],
             "status": "running",
             "created_at": 0,
         },

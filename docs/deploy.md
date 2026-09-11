@@ -85,9 +85,14 @@ TensorBoard / W&B 已接入训练日志；需要先安装 `.[logging]`，再开�
 xiangmuyuanma/
 ├── venv/                Python 环境（可随时 --reinstall 重建）
 ├── studio_data/          服务数据目录（--data-root 可改），包含：
-│   ├── studio.db         SQLite：项目 / 数据集 / 任务 / 产物 / 模型注册表 的元数据
+│   ├── studio.db         SQLite：项目 / 版本 / 数据集 / 任务 / 产物 / 模型注册表
 │   ├── settings.json     「系统设置」页保存的设置
-│   ├── projects/<pid>/   每个项目：config.json（配置草稿）、cache/（latent + 文本缓存，任务间共享）、runs/<jid>/（每次训练：events.jsonl、run.log、权重、samples/、state-*/ 断点）
+│   ├── projects/<pid>/
+│   │   └── versions/<vid>/
+│   │       ├── config.json   本版本配置草稿
+│   │       ├── datasets/     本版本图片、caption 和 Mask 独立副本
+│   │       ├── cache/        同版本任务共享的编码缓存
+│   │       └── runs/<jid>/   每次训练：配置快照、事件、日志、权重、samples/、state-*/
 │   ├── runs/             不属于任何项目的任务
 │   ├── datasets/         数据集索引（图片哈希、尺寸、caption 路径）
 │   ├── cache/            全局图片索引与无项目任务的共享缓存
@@ -100,11 +105,12 @@ xiangmuyuanma/
 
 - **备份**包括 `studio_data/`、自定义输出目录以及外部原始数据集的图片/caption/mask；模型权重也应另行保存或记录可重获来源。缓存可重建，完整训练断点不能用推理权重代替。
 - 模型权重放哪都行，在界面「模型权重」页注册或在配置里填绝对路径；建议一个固定目录（如 `/models`），并在「系统设置」里把 `paths.models_dir` 指向它。
-- 数据集就是一个图片目录（递归），每张图旁边同名 `.txt` 是 caption；`.mask.png` 或 alpha 通道可做遮罩 loss。服务读取原始图片，caption 编辑会原地修改 `.txt`，不会复制图片。
+- 数据集是一个图片目录（递归），每张图旁边同名 `.txt` 是 caption；`.mask.png` 或 alpha 通道可做遮罩 loss。v0.4 的上传与服务器目录导入保存为当前版本的独立副本，caption/Mask 编辑修改该副本。旧迁移数据或高级 TOML 直接引用的外部目录仍使用原文件，不会仅因升级自动复制。
+- 旧项目迁移成兼容 v1 时不移动文件：原 `projects/<pid>/config.json` 继续作为该版本草稿，历史任务读取原运行/缓存/断点路径；新任务采用版本目录。详细布局见 [v0.4 项目版本说明](UI_VERSIONS_2026-09-11.md)。
 
 ### 路径设置何时生效
 
-`paths.cache_dir` 与 `paths.output_dir` 影响**新建任务**；默认保留上面的项目目录结构。自定义目录时按项目 ID 分目录，无项目任务使用共享缓存或独立运行目录。旧任务保存自己的配置和运行路径，修改设置不会搬迁旧缓存、权重或断点。`paths.models_dir` 是默认模型扫描目录。相对数据/模型路径在服务接收任务时按服务工作目录解析，建议使用绝对路径。
+`paths.cache_dir` 与 `paths.output_dir` 影响**新建任务**；默认保留上面的版本目录结构。自定义目录时按 `<项目 ID>/<版本 ID>` 分目录，无项目任务使用共享缓存或独立运行目录。旧任务保存自己的配置和运行路径，修改设置不会搬迁旧缓存、权重或断点。`paths.models_dir` 是默认模型扫描目录。相对数据/模型路径在服务接收任务时按服务工作目录解析，建议使用绝对路径。
 
 `server.host` / `server.port` 保存后在下次启动生效，`--host` / `--port` 优先覆盖保存值。`paths.data_root` 展示本次启动的数据目录；设置接口拒绝把它改成另一目录。切换数据目录应先迁移所需数据，再用 `--data-root` 启动，不能靠设置页完成迁移。
 
@@ -226,7 +232,7 @@ git pull
 ./studio.sh          # 依赖签名（pyproject.toml）或前端源码变了会自动重装 / 重建
 ```
 
-更新前备份服务数据与外部输出目录。当前启动会创建所需表，不能把 `CREATE TABLE IF NOT EXISTS` 当成通用数据库迁移机制；更换版本应同时阅读 `HANDOVER.md` 和修复报告。
+更新前备份服务数据与外部输出目录。v0.4 启动包含事务式版本迁移：补充 `project_versions` 与归属列，把旧项目/数据源/任务关联到兼容 v1，产物沿原任务归属；不搬迁文件或重写任务快照。这是明确的兼容迁移，不是任意版本都适用的通用数据迁移工具；更换版本同时阅读 `HANDOVER.md` 与 [本轮报告](UI_VERSIONS_2026-09-11.md)。
 
 本轮完整训练状态升级为 **state v2**，另存原始可训练参数、scalar、优化器/调度器、采样器、RNG（含 DataLoader 独立生成器）与 EMA。推理 `.safetensors` 的用途仍是加载/分发模型适配器。
 
@@ -271,9 +277,13 @@ ypuddin serve    --port 8765 --data-root studio_data
 配置文件支持 TOML 与 JSON（`ypuddin schema` 打印带说明的 JSON Schema）；`--set a.b=c` 可覆盖字段，CLI 的 `--preset preset.toml` 叠加**预设文件**，Web 内置预设通过界面选择。配置校验/导入导出无需加载模型；Plan 还会检查数据和权重几何信息，CLI 默认检测本机设备，也可用 `--device` 指定目标。Python API 的 `plan(..., device=None)` 可只作离线预检，不启用实际设备门禁。最小 Anima 配置见 `docs/design/03-status.md`。
 
 
-## v0.3.0 环境与界面升级
+## v0.4.0 项目版本与设置升级
 
-在源码目录更新 Git 后，重新运行 `studio.bat`（Windows）或 `./studio.sh`。启动器检查依赖与前端内容指纹，必要时补依赖/重建前端；已有项目、配置、模型文件保留。模型和产物的新入口为“系统设置 → 环境设置”。
+先停止旧服务，在源码目录更新 Git 后重新运行 `studio.bat`（Windows）或 `./studio.sh`。启动器在重启时检查依赖与前端内容指纹，必要时补依赖/重建前端；已有项目、配置、模型文件保留。没有联网程序自更新或生产热更新。匹配的已构建前端无需 Node，需要重建时则必须满足 Node 版本要求。
+
+项目内按版本进行“训练数据 → 模型准备 → 训练参数 → 任务与结果”。新版本可复制图片、caption、Mask 和验证源，也可只继承参数或使用默认空白配置；任务、采样与产物不复制。新导入目录会生成独立副本，原始目录保留；版本归档也不删除文件。任务仍保存配置快照而非独立图片快照，编辑旧版本数据前应先复制新版本，精确续训继续检查数据指纹。
+
+“设置”从工作区打开为宽抽屉，固定“运行环境 / 模型权重 / 存储路径 / 界面与服务”四类；训练产物改在“项目 → 版本 → 任务与结果”查看，采样按所属任务读取。开发前端默认访问真实服务，仅显式 `VITE_USE_MOCK=true` 启用演示模式。
 
 运行环境页可检查并管理 xformers、flash-attn、SageAttention、NVML 采集、TensorBoard、W&B 与 Schedule-Free。操作先生成 wheel / 版本变更计划，确认应用后显示安装日志。基础 Torch/CUDA/NumPy 受保护；没有兼容预编译 wheel 时显示具体原因，不会隐式启动源码编译。Windows FlashAttention 可上传匹配当前 Python、Torch、CUDA 的 wheel。依赖实际修改后必须重启训练器，维护状态在重启前阻止训练与预缓存任务启动。
 

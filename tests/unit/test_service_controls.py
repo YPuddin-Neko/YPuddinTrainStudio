@@ -51,6 +51,10 @@ def test_config_roundtrip_and_invalid_input(api):
     client, _ = api
     defaults = client.get("/api/config/defaults").json()
     defaults["dataset"]["caption"]["trigger_word"] = "训练词"
+    defaults["loop"].update(epochs=None, max_steps=3)
+    defaults["sampling"]["every_epochs"] = None
+    defaults["validation"]["every_epochs"] = None
+    defaults["checkpoint"]["save_every_epochs"] = None
     defaults["logging"]["wandb"] = {"project": "ypuddin", "run_name": "my run", "entity": None}
     for fmt in ("toml", "json"):
         output = client.post("/api/config/export", json={"config": defaults, "format": fmt})
@@ -90,8 +94,10 @@ def test_settings_new_paths_preserve_old_jobs_and_delete_custom_run(api, image_d
     assert result.status_code == 200, result.text
     pid = client.post("/api/projects", json={"name": "custom"}).json()["id"]
     new = create_job(api, image_dataset, project_id=pid)
-    assert Path(new["run_dir"]).parent == tmp_path / "output_dir" / pid
-    assert json.loads(new["config_json"])["dataset"]["cache_dir"] == str(tmp_path / "cache_dir" / pid)
+    assert Path(new["run_dir"]).parent == tmp_path / "output_dir" / pid / new["version_id"]
+    assert json.loads(new["config_json"])["dataset"]["cache_dir"] == str(
+        tmp_path / "cache_dir" / pid / new["version_id"]
+    )
     assert ctx.db.fetchone("SELECT run_dir FROM jobs WHERE id=?", (old["id"],))["run_dir"] == old["run_dir"]
     assert client.put("/api/settings", json={"paths": {"data_root": str(tmp_path)}}).status_code == 400
     assert client.put("/api/settings", json={"server": {"port": 99999}}).status_code == 400
@@ -100,6 +106,8 @@ def test_settings_new_paths_preserve_old_jobs_and_delete_custom_run(api, image_d
     (run / "weights").write_text("keep until explicit deletion")
     unrelated = run.parent / "user-file"
     unrelated.write_text("preserve")
+    assert client.delete(f"/api/projects/{pid}?delete_files=true").status_code == 409
+    ctx.db.update("jobs", new["id"], {"status": "completed"})
     assert client.delete(f"/api/projects/{pid}?delete_files=true").status_code == 200
     assert not run.exists() and unrelated.exists()
 
@@ -247,3 +255,22 @@ def test_memory_metric_survives_rest_and_rotated_files_are_hidden(api, image_dat
     weights.unlink()
     assert client.get(f"/api/jobs/{job['id']}/checkpoints").json() == []
     assert client.get("/api/artifacts").json() == []
+
+
+@pytest.mark.parametrize("change", ["pause", "delete"])
+def test_queue_rechecks_ownership_after_hardware_selection(api, image_dataset, monkeypatch, change):
+    client, ctx = api
+    job = create_job(api, image_dataset)
+    launched = Mock()
+
+    def select_device(*_args, **_kwargs):
+        if change == "pause":
+            ctx.supervisor.request(job["id"], "pause")
+        else:
+            assert client.delete(f"/api/jobs/{job['id']}").status_code == 200
+        return "cpu"
+
+    monkeypatch.setattr(ctx.supervisor, "_choose_device", select_device)
+    monkeypatch.setattr(ctx.supervisor, "_launch", launched)
+    ctx.supervisor._tick()
+    launched.assert_not_called()

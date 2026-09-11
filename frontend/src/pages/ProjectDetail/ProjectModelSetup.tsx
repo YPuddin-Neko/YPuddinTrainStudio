@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CheckCircle2, Loader2, Download } from 'lucide-react';
+import { projectUrl, versionConfigUrl } from '../../utils/projectVersions';
 import { apiClient } from '../../api/client';
 import type { ModelAsset } from '../../api/types';
 import { useFamilies } from '../../api/hooks/useFamilies';
@@ -9,8 +10,8 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import { fillDefaultModels, changeModelFamily, MODEL_PATH_FIELDS } from '../../utils/workspaceConfig';
 import { formatApiError } from '../../utils/errors';
 
-export default function ProjectModelSetup({ projectId, config, onSaved }: {
-  projectId: string; config: Record<string, any>; onSaved: (config: Record<string, any>) => void;
+export default function ProjectModelSetup({ projectId, versionId, config, onSaved }: {
+  projectId: string; versionId?: string; config: Record<string, any>; onSaved: (config: Record<string, any>) => void;
 }) {
   const text = useWorkspaceText();
   const navigate = useNavigate();
@@ -27,7 +28,7 @@ export default function ProjectModelSetup({ projectId, config, onSaved }: {
       if (active) { setAssets(models); setDraft((current) => fillDefaultModels(current, models)); setLoading(false); }
     }).catch((error) => { if (active) { setError(formatApiError(error)); setLoading(false); } });
     return () => { active = false; };
-  }, [projectId]);
+  }, [projectId, versionId]);
   const family = families.find((item) => item.name === draft.model?.family);
   const inputClass = 'w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:bg-slate-900 dark:border-slate-600';
   const fields = family?.weights.length ? family.weights : [
@@ -43,14 +44,14 @@ export default function ProjectModelSetup({ projectId, config, onSaved }: {
     setSaving(true); setError('');
     try {
       // Keep recently imported sources and edits outside this model section.
-      const latest = await apiClient.get<Record<string, any>>(`/projects/${projectId}/config`, { silent: true });
+      const latest = await apiClient.get<Record<string, any>>(versionConfigUrl(projectId, versionId), { silent: true });
       const changedFamily = latest.model?.family !== draft.model?.family;
       const next = { ...latest, model: draft.model,
         ...(changedFamily ? { adapter: { ...latest.adapter, preset: family?.default_preset ?? draft.adapter?.preset }, dataset: { ...latest.dataset, text_encoding: 'auto' } } : {}),
       };
-      await apiClient.put(`/projects/${projectId}/config`, next, { silent: true });
+      await apiClient.put(versionConfigUrl(projectId, versionId), next, { silent: true });
       onSaved(next); setSaved(true);
-      if (continueToTraining) navigate(`/projects/${projectId}/train`);
+      if (continueToTraining) navigate(projectUrl(projectId, versionId, 'train'));
     } catch (error) { setError(formatApiError(error)); }
     finally { setSaving(false); }
   };
@@ -85,6 +86,6 @@ export default function ProjectModelSetup({ projectId, config, onSaved }: {
         {saved && <p role="status" className="flex items-center gap-2 text-sm text-green-600"><CheckCircle2 className="h-4 w-4" />{text('模型配置已保存，参数页将检查文件与训练条件。', 'Model configuration saved. The training page will validate files and requirements.')}</p>}
       </div>
     </div>
-    <div className="flex justify-end"><button disabled={loading || saving} onClick={() => void save(true)} className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{text('保存并进入参数与启动', 'Save and continue to training')}</button></div>
+    <div className="flex justify-end"><button disabled={loading || saving} onClick={() => void save(true)} className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{text('保存并进入训练参数', 'Save and continue to training')}</button></div>
   </div>;
 }

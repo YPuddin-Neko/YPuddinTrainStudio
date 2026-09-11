@@ -1,16 +1,42 @@
-import { NavLink, Outlet } from 'react-router-dom';
-import { Settings2, Server, SlidersHorizontal } from 'lucide-react';
+import React from 'react';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Cpu, HardDrive, FolderCog, Palette } from 'lucide-react';
 import { useWorkspaceText } from '../../utils/workspaceText';
+import '../../styles/settings.css';
 
 export default function Settings() {
   const text = useWorkspaceText();
-  return <div className="min-w-0 space-y-4" data-testid="settings-shell">
-    <header className="flex flex-wrap items-center justify-between gap-3">
-      <div><h1 className="flex items-center gap-2 text-xl font-semibold"><Settings2 className="h-5 w-5 text-slate-500" />{text('设置', 'Settings')}</h1><p className="mt-1 text-xs text-slate-500">{text('准备训练环境，管理权重与产物，调整本机偏好。', 'Prepare the runtime, manage weights and outputs, and adjust local preferences.')}</p></div>
-      <nav aria-label={text('设置分区', 'Settings sections')} className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-900">
-        {[{ path: 'environment', label: text('环境设置', 'Environment'), Icon: Server }, { path: 'preferences', label: text('存储与界面', 'Preferences'), Icon: SlidersHorizontal }].map(({ path, label, Icon }) => <NavLink key={path} to={`/settings/${path}`} className={({ isActive }) => `flex items-center gap-2 rounded-md px-3 py-2 text-sm ${isActive ? 'bg-blue-50 font-medium text-blue-700 dark:bg-blue-950/50 dark:text-blue-300' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}><Icon className="h-4 w-4" />{label}</NavLink>)}
-      </nav>
+  const location = useLocation();
+  const navigate = useNavigate();
+  const params = new URLSearchParams(location.search);
+  const selected = location.pathname.endsWith('/preferences') ? params.get('section') === 'interface' ? 'interface' : 'storage' : params.get('tab') === 'models' ? 'models' : 'runtime';
+  const scroll = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => { if (scroll.current) scroll.current.scrollTop = 0; }, [selected]);
+  const tabs = [
+    { id: 'runtime', label: text('运行环境', 'Runtime'), Icon: Cpu },
+    { id: 'models', label: text('模型权重', 'Model weights'), Icon: HardDrive },
+    { id: 'storage', label: text('存储路径', 'Storage'), Icon: FolderCog },
+    { id: 'interface', label: text('界面与服务', 'Appearance & service'), Icon: Palette },
+  ];
+  const select = (id: string) => {
+    const next = new URLSearchParams(location.search);
+    const preferences = id === 'storage' || id === 'interface';
+    next.delete(preferences ? 'tab' : 'section');
+    next.set(preferences ? 'section' : 'tab', id);
+    navigate(`/settings/${preferences ? 'preferences' : 'environment'}?${next}`, { state: location.state, replace: true });
+  };
+  return <div className="settings-workspace" data-testid="settings-shell">
+    <header className="settings-heading">
+      <h1>{text('设置', 'Settings')}</h1>
+      <div className="settings-tabs" role="tablist" aria-label={text('设置分区', 'Settings sections')}>
+        {tabs.map(({ id, label, Icon }, index) => <button key={id} id={`settings-tab-${id}`} type="button" role="tab" aria-selected={selected === id} aria-controls="settings-content" tabIndex={selected === id ? 0 : -1} onClick={() => select(id)} onKeyDown={event => {
+          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+          event.preventDefault();
+          const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+          select(tabs[next].id); document.getElementById(`settings-tab-${tabs[next].id}`)?.focus();
+        }}><Icon size={15} /><span>{label}</span></button>)}
+      </div>
     </header>
-    <Outlet />
+    <div ref={scroll} id="settings-content" className="settings-scroll" role="tabpanel" aria-labelledby={`settings-tab-${selected}`}><Outlet /></div>
   </div>;
 }

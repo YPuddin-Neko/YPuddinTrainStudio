@@ -4,6 +4,7 @@ import { apiClient } from '../../api/client';
 import { Project } from '../../api/types';
 import {
   FolderPlus,
+  GitBranch,
   Trash2,
   Archive,
   Pencil,
@@ -79,13 +80,13 @@ export default function Projects() {
         setEditing(null);
         fetchProjects();
       })
-      .catch(console.error);
+      .catch(error => setError(formatApiError(error)));
   };
 
   const handleArchive = (id: string, archived: boolean) => {
     apiClient.patch<Project>(`/projects/${id}`, { archived: !archived })
       .then(fetchProjects)
-      .catch(console.error);
+      .catch(error => setError(formatApiError(error)));
   };
 
   const handleDelete = (id: string, name: string) => {
@@ -93,7 +94,7 @@ export default function Projects() {
     if (window.confirm(t('projects.deleteConfirm').replace('{name}', name))) {
       apiClient.delete(`/projects/${id}`)
         .then(fetchProjects)
-        .catch(console.error);
+        .catch(error => setError(formatApiError(error)));
     }
   };
 
@@ -144,7 +145,7 @@ export default function Projects() {
         </button>
       </div>
 
-      <p className="text-sm text-slate-500">{text('一个项目包含训练图片、标签、模型选择、训练参数和结果。新建后即可上传图片并开始准备训练。', 'Each project contains training images, captions, model choices, configuration and results. Create one to upload images and prepare your training.')}</p>
+      <p className="text-sm text-slate-500">{text('按项目管理实验，再用版本区分数据、训练参数与结果。新建项目会自动建立 v1；后续可复制为独立版本进行对比。', 'Organize experiments by project and keep data, parameters and results in separate versions. New projects start with v1; copy a version to compare experiments.')}</p>
 
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="relative flex-1 max-w-md">
@@ -257,6 +258,7 @@ export default function Projects() {
                 <span className="font-mono">{formatTime(proj.created_at)}</span>
               </div>
               <div className="flex flex-wrap gap-2 mt-3 text-xs">
+                {statChip(<GitBranch className="w-3.5 h-3.5" />, text('版本', 'Versions'), proj.version_count || 1)}
                 {statChip(<Database className="w-3.5 h-3.5" />, t('projects.datasets'), proj.dataset_ids?.length || 0)}
                 {statChip(<Activity className="w-3.5 h-3.5" />, t('projects.jobs'), proj.stats?.jobs || 0)}
                 {statChip(<Box className="w-3.5 h-3.5" />, t('projects.artifacts'), proj.stats?.artifacts || 0)}

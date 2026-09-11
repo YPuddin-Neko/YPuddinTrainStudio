@@ -1,0 +1,27 @@
+import React from 'react';
+import { createPortal } from 'react-dom';
+import { X } from 'lucide-react';
+import { useWorkspaceText } from '../utils/workspaceText';
+
+export default function Dialog({ title, onClose, children, wide = false }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
+  const text = useWorkspaceText();
+  const panel = React.useRef<HTMLDivElement>(null);
+  const closeRef = React.useRef(onClose); closeRef.current = onClose;
+  const id = React.useId();
+  React.useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    const element = panel.current;
+    element?.querySelector<HTMLElement>('input,select,button,textarea')?.focus();
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeRef.current(); }
+      if (event.key !== 'Tab') return;
+      const nodes = [...(element?.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"]') || [])];
+      const first = nodes[0], last = nodes[nodes.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    element?.addEventListener('keydown', keydown);
+    return () => { element?.removeEventListener('keydown', keydown); previous?.focus(); };
+  }, []);
+  return createPortal(<div className="workspace-dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><div ref={panel} role="dialog" aria-modal="true" aria-labelledby={id} className={`workspace-dialog ${wide ? 'workspace-dialog-wide' : ''}`}><header><h2 id={id}>{title}</h2><button type="button" aria-label={text('关闭','Close')} onClick={onClose}><X size={18}/></button></header>{children}</div></div>, document.body);
+}

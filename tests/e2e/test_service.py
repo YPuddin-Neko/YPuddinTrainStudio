@@ -332,6 +332,14 @@ async def test_response_models_cover_every_json_endpoint(live_server, image_data
         d = (await client.post(f"/api/projects/{p['id']}/datasets", json={"path": str(image_dataset)})).json()
         assert d["source"]["project_id"] == p["id"] and d["index_status"] in ("indexing", "ready")
         assert (await client.post(f"/api/datasets/{d['source']['id']}/rescan")).json()["ok"] is True
+        # Indexing holds the version data lock; removal must wait for the worker.
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            indexed = (await client.get(f"/api/datasets/{d['source']['id']}")).json()
+            if indexed["index_status"] != "indexing":
+                break
+            await asyncio.sleep(0.02)
+        assert indexed["index_status"] == "ready", indexed
         assert (await client.delete(f"/api/datasets/{d['source']['id']}")).json()["ok"] is True
         assert (await client.delete(f"/api/projects/{p['id']}")).json()["ok"] is True
 

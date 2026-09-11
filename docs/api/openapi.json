@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "YPuddin Train Studio",
-    "version": "0.3.0"
+    "version": "0.4.0"
   },
   "paths": {
     "/api/health": {
@@ -1137,6 +1137,22 @@
               "type": "string",
               "title": "Pid"
             }
+          },
+          {
+            "name": "version_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version Id"
+            }
           }
         ],
         "responses": {
@@ -1175,6 +1191,22 @@
             "schema": {
               "type": "string",
               "title": "Pid"
+            }
+          },
+          {
+            "name": "version_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version Id"
             }
           }
         ],
@@ -1216,6 +1248,210 @@
         }
       }
     },
+    "/api/projects/{pid}/versions": {
+      "get": {
+        "summary": "List Versions",
+        "operationId": "list_versions_api_projects__pid__versions_get",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "include_archived",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Include Archived"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectVersion"
+                  },
+                  "title": "Response List Versions Api Projects  Pid  Versions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Version",
+        "operationId": "create_version_api_projects__pid__versions_post",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectVersion"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{pid}/versions/{vid}": {
+      "get": {
+        "summary": "Get Version",
+        "operationId": "get_version_api_projects__pid__versions__vid__get",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectVersion"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Patch Version",
+        "operationId": "patch_version_api_projects__pid__versions__vid__patch",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectVersion"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{pid}/datasets": {
       "get": {
         "summary": "List Datasets",
@@ -1228,6 +1464,22 @@
             "schema": {
               "type": "string",
               "title": "Pid"
+            }
+          },
+          {
+            "name": "version_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version Id"
             }
           }
         ],
@@ -1269,6 +1521,22 @@
             "schema": {
               "type": "string",
               "title": "Pid"
+            }
+          },
+          {
+            "name": "version_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version Id"
             }
           }
         ],
@@ -1318,6 +1586,22 @@
             "schema": {
               "type": "string",
               "title": "Pid"
+            }
+          },
+          {
+            "name": "version_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version Id"
             }
           }
         ],
@@ -1851,6 +2135,22 @@
                 }
               ],
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "version_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version Id"
             }
           },
           {
@@ -2479,6 +2779,38 @@
                 }
               ],
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "version_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Job Id"
             }
           }
         ],
@@ -3707,6 +4039,17 @@
             ],
             "title": "Project Id"
           },
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          },
           "job_id": {
             "anyOf": [
               {
@@ -4033,8 +4376,11 @@
           },
           "name": {
             "type": "string",
+            "maxLength": 150,
+            "minLength": 1,
+            "pattern": "^[^/\\\\:*?\"<>|\\x00-\\x1f\\x7f]+$",
             "title": "Name",
-            "description": "产物文件名前缀",
+            "description": "产物文件名前缀，不含目录或路径分隔符",
             "default": "lora",
             "x-ui": {
               "group": "checkpoint",
@@ -4300,6 +4646,17 @@
       },
       "DatasetBody": {
         "properties": {
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          },
           "path": {
             "type": "string",
             "title": "Path"
@@ -4627,6 +4984,17 @@
               }
             ],
             "title": "Project Id"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
           },
           "path": {
             "type": "string",
@@ -5830,6 +6198,17 @@
             ],
             "title": "Project Id"
           },
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          },
           "status": {
             "anyOf": [
               {
@@ -5999,6 +6378,17 @@
               }
             ],
             "title": "Project Id"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
           },
           "config": {
             "anyOf": [
@@ -8090,6 +8480,22 @@
             "type": "array",
             "title": "Dataset Ids"
           },
+          "active_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Version Id"
+          },
+          "version_count": {
+            "type": "integer",
+            "title": "Version Count",
+            "default": 1
+          },
           "stats": {
             "$ref": "#/components/schemas/ProjectStats"
           }
@@ -8160,6 +8566,17 @@
               }
             ],
             "title": "Archived"
+          },
+          "active_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Version Id"
           }
         },
         "type": "object",
@@ -8183,6 +8600,107 @@
           "artifacts"
         ],
         "title": "ProjectStats"
+      },
+      "ProjectVersion": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          },
+          "parent_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Version Id"
+          },
+          "archived": {
+            "type": "boolean",
+            "title": "Archived"
+          },
+          "busy": {
+            "type": "boolean",
+            "title": "Busy"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "copying",
+              "ready",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "number",
+            "title": "Updated At"
+          },
+          "dataset_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dataset Ids"
+          },
+          "paths": {
+            "$ref": "#/components/schemas/VersionPaths"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/VersionStats"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/VersionProgress"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "name",
+          "note",
+          "archived",
+          "busy",
+          "status",
+          "created_at",
+          "updated_at",
+          "dataset_ids",
+          "paths",
+          "stats",
+          "progress"
+        ],
+        "title": "ProjectVersion"
       },
       "QueueSettings": {
         "properties": {
@@ -9168,6 +9686,191 @@
           "mean"
         ],
         "title": "ValidationPoint"
+      },
+      "VersionBody": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": ".*\\S.*",
+            "title": "Name"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 4000,
+            "title": "Note",
+            "default": ""
+          },
+          "source_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Version Id"
+          },
+          "data_mode": {
+            "type": "string",
+            "enum": [
+              "copy",
+              "empty"
+            ],
+            "title": "Data Mode",
+            "default": "copy"
+          },
+          "copy_config": {
+            "type": "boolean",
+            "title": "Copy Config",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "VersionBody"
+      },
+      "VersionPatch": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": ".*\\S.*"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "archived": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived"
+          }
+        },
+        "type": "object",
+        "title": "VersionPatch"
+      },
+      "VersionPaths": {
+        "properties": {
+          "root": {
+            "type": "string",
+            "title": "Root"
+          },
+          "config": {
+            "type": "string",
+            "title": "Config"
+          },
+          "datasets": {
+            "type": "string",
+            "title": "Datasets"
+          },
+          "runs": {
+            "type": "string",
+            "title": "Runs"
+          },
+          "cache": {
+            "type": "string",
+            "title": "Cache"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "root",
+          "config",
+          "datasets",
+          "runs",
+          "cache"
+        ],
+        "title": "VersionPaths"
+      },
+      "VersionProgress": {
+        "properties": {
+          "phase": {
+            "type": "string",
+            "title": "Phase",
+            "default": "ready"
+          },
+          "files_done": {
+            "type": "integer",
+            "title": "Files Done",
+            "default": 0
+          },
+          "files_total": {
+            "type": "integer",
+            "title": "Files Total",
+            "default": 0
+          },
+          "bytes_done": {
+            "type": "integer",
+            "title": "Bytes Done",
+            "default": 0
+          },
+          "bytes_total": {
+            "type": "integer",
+            "title": "Bytes Total",
+            "default": 0
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "VersionProgress"
+      },
+      "VersionStats": {
+        "properties": {
+          "datasets": {
+            "type": "integer",
+            "title": "Datasets"
+          },
+          "images": {
+            "type": "integer",
+            "title": "Images"
+          },
+          "jobs": {
+            "type": "integer",
+            "title": "Jobs"
+          },
+          "artifacts": {
+            "type": "integer",
+            "title": "Artifacts"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "datasets",
+          "images",
+          "jobs",
+          "artifacts"
+        ],
+        "title": "VersionStats"
       },
       "WandbConfig": {
         "properties": {

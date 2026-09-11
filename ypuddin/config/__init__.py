@@ -4,6 +4,7 @@ from .io import (
     dump_toml,
     load_config,
     parse_overrides,
+    parse_toml,
     read_config_file,
     write_config,
 )
@@ -55,6 +56,7 @@ __all__ = [
     "evaluate",
     "load_config",
     "parse_overrides",
+    "parse_toml",
     "read_config_file",
     "write_config",
 ]

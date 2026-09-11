@@ -34,7 +34,7 @@ function environment() {
   };
 }
 function operation(packageName = 'tensorboard', status = 'ready') {
-  return { id: 'env_test', package: packageName, action: 'install', status, created_at: 1, plan: [{ name: packageName, from_version: null, version: '1.2.3' }], logs: ['Resolved compatible wheel; Torch unchanged.'], error: null, restart_required: false };
+  return { id: 'env_test', package: packageName, action: 'install', status, created_at: 1, plan: [{ name: packageName, from_version: null, version: '1.2.3' }], logs: ['Resolved compatible wheel; Torch unchanged.'], error: null as string | null, restart_required: false };
 }
 beforeEach(async () => {
   await i18n.changeLanguage('zh-CN');
@@ -59,7 +59,9 @@ describe('real environment management UI contracts', () => {
   it('shows the target runtime and requires plan review before mutation', async () => {
     render(<EnvironmentManagerPanel />);
     expect(await screen.findByText('2.5.1+cu128')).toBeInTheDocument();
-    expect(screen.getByText('C:\\Studio\\venv\\Scripts\\python.exe')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '检查安装计划' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('解释器与显卡诊断'));
+    expect(screen.getByText('C:\\Studio\\venv\\Scripts\\python.exe')).toBeVisible();
     const row = screen.getByTestId('environment-package-tensorboard');
     fireEvent.click(within(row).getByRole('button', { name: '安装' }));
     fireEvent.change(screen.getByLabelText('tensorboard 版本'), { target: { value: '1.2.3' } });
@@ -110,6 +112,15 @@ describe('real environment management UI contracts', () => {
     fireEvent.click(screen.getByRole('button', { name: '检查安装计划' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Exact version required');
     expect(screen.getByLabelText('tensorboard 版本')).toHaveValue('invalid');
+  });
+
+  it('automatically exposes a failed operation and its logs when the drawer is reopened', async () => {
+    operations = [{ ...operation('tensorboard', 'failed'), error: 'Protected Torch dependency conflict' }];
+    render(<EnvironmentManagerPanel />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Protected Torch dependency conflict');
+    expect(screen.getByLabelText('安装日志')).toHaveTextContent('Torch unchanged');
+    expect(screen.queryByRole('button', { name: '确认并执行此计划' })).not.toBeInTheDocument();
+    expect(apply).not.toHaveBeenCalled();
   });
 
   it('renders the English controls without Chinese fallbacks', async () => {

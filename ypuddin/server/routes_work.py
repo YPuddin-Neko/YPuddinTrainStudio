@@ -7,8 +7,9 @@ import io
 import json
 import shutil
 import tempfile
+from contextlib import nullcontext
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.concurrency import run_in_threadpool
@@ -25,6 +26,7 @@ from .dataset_uploads import UploadBatch, read_upload, staged_upload
 from .db import new_id, now
 from .errors import ApiError, NotFound
 from .hardware import gpu_info
+from .versions import ACTIVE_JOBS, assert_version_writable, version_row
 
 router = APIRouter()
 
@@ -53,16 +55,20 @@ class ProjectPatch(BaseModel):
     name: str | None = None
     note: str | None = None
     archived: bool | None = None
+    active_version_id: str | None = None
 
 
 def _project_row(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
-    ds = c.db.fetchall("SELECT id FROM datasets WHERE project_id=?", (r["id"],))
+    ds = c.db.fetchall("SELECT id FROM datasets WHERE version_id=?", (r["active_version_id"],))
     jobs = c.db.fetchone("SELECT COUNT(*) AS n FROM jobs WHERE project_id=?", (r["id"],))["n"]
     arts = c.db.fetchone("SELECT COUNT(*) AS n FROM artifacts WHERE project_id=?", (r["id"],))["n"]
     return {
         **r,
         "archived": bool(r["archived"]),
         "dataset_ids": [d["id"] for d in ds],
+        "version_count": c.db.fetchone(
+            "SELECT count(*) n FROM project_versions WHERE project_id=?", (r["id"],)
+        )["n"],
         "stats": {"jobs": jobs, "artifacts": arts},
     }
 
@@ -79,14 +85,29 @@ def list_projects(include_archived: bool = False, c: ServiceContext = Depends(ct
 
 @router.post("/projects", status_code=201, response_model=m.Project, response_model_exclude_unset=True)
 def create_project(body: ProjectBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    pid = new_id("p")
-    t = now()
-    c.db.insert(
-        "projects",
-        {"id": pid, "name": body.name, "note": body.note, "archived": 0, "created_at": t, "updated_at": t},
-    )
-    c.project_dir(pid).mkdir(parents=True, exist_ok=True)
-    return _project_row(c, c.db.fetchone("SELECT * FROM projects WHERE id=?", (pid,)))
+    with c.db.lock:
+        pid = new_id("p")
+        t = now()
+        c.db.insert(
+            "projects",
+            {
+                "id": pid,
+                "name": body.name,
+                "note": body.note,
+                "archived": 0,
+                "created_at": t,
+                "updated_at": t,
+            },
+        )
+        vid = new_id("v")
+        c.db.insert(
+            "project_versions",
+            {"id": vid, "project_id": pid, "name": "v1", "note": "", "created_at": t, "updated_at": t},
+        )
+        c.db.update("projects", pid, {"active_version_id": vid})
+        c.version_dir(pid, vid).mkdir(parents=True, exist_ok=True)
+        _write_project_config(c, pid, get_project_config(pid, c, vid), vid)
+        return _project_row(c, c.db.fetchone("SELECT * FROM projects WHERE id=?", (pid,)))
 
 
 def _get_project(c: ServiceContext, pid: str) -> dict[str, Any]:
@@ -103,60 +124,87 @@ def get_project(pid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
 
 @router.patch("/projects/{pid}", response_model=m.Project, response_model_exclude_unset=True)
 def patch_project(pid: str, body: ProjectPatch, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    _get_project(c, pid)
-    fields = {
-        k: (int(v) if isinstance(v, bool) else v) for k, v in body.model_dump().items() if v is not None
-    }
-    fields["updated_at"] = now()
-    c.db.update("projects", pid, fields)
-    return _project_row(c, _get_project(c, pid))
+    with c.db.lock:
+        _get_project(c, pid)
+        fields = {
+            k: (int(v) if isinstance(v, bool) else v) for k, v in body.model_dump().items() if v is not None
+        }
+        if body.active_version_id:
+            assert_version_writable(c, pid, body.active_version_id)
+        fields["updated_at"] = now()
+        c.db.update("projects", pid, fields)
+        return _project_row(c, _get_project(c, pid))
 
 
 @router.delete("/projects/{pid}", response_model=m.Ok, response_model_exclude_unset=True)
 def delete_project(pid: str, delete_files: bool = False, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    _get_project(c, pid)
-    if c.db.fetchone(
-        "SELECT id FROM jobs WHERE project_id=? AND status IN ('running','pausing','cancelling')", (pid,)
-    ):
-        raise ApiError("project has running jobs", code="project.busy", status=409)
-    if delete_files:
-        for job in c.db.fetchall("SELECT id, run_dir FROM jobs WHERE project_id=?", (pid,)):
-            run = Path(job["run_dir"])
-            if run.name == job["id"] and run.is_dir() and not run.is_symlink():
-                shutil.rmtree(run)
-    c.db.execute("DELETE FROM jobs WHERE project_id=?", (pid,))
-    c.db.execute("DELETE FROM artifacts WHERE project_id=?", (pid,))
-    c.db.delete("projects", pid)
-    if delete_files and c.project_dir(pid).exists():
-        shutil.rmtree(c.project_dir(pid))
-    return {"ok": True}
+    with c.db.lock:
+        _get_project(c, pid)
+        if c.db.fetchone(f"SELECT id FROM jobs WHERE project_id=? AND status IN {ACTIVE_JOBS}", (pid,)):
+            raise ApiError("project has running jobs", code="project.busy", status=409)
+        if c.db.fetchone(
+            "SELECT id FROM project_versions WHERE project_id=? AND (status='copying' OR busy IS NOT NULL)",
+            (pid,),
+        ):
+            raise ApiError("project has an active data copy", code="project.busy", status=409)
+        if any(
+            c.supervisor.is_running(row["id"])
+            for row in c.db.fetchall("SELECT id FROM jobs WHERE project_id=?", (pid,))
+        ):
+            raise ApiError("wait for the project's worker processes to exit", code="project.busy", status=409)
+        if delete_files:
+            for job in c.db.fetchall("SELECT id, run_dir FROM jobs WHERE project_id=?", (pid,)):
+                run = Path(job["run_dir"])
+                if run.name == job["id"] and run.is_dir() and not run.is_symlink():
+                    shutil.rmtree(run)
+        c.db.execute("DELETE FROM jobs WHERE project_id=?", (pid,))
+        c.db.execute("DELETE FROM artifacts WHERE project_id=?", (pid,))
+        c.db.delete("projects", pid)
+        if delete_files and c.project_dir(pid).exists():
+            shutil.rmtree(c.project_dir(pid))
+        return {"ok": True}
 
 
 @router.get("/projects/{pid}/config")
-def get_project_config(pid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    _get_project(c, pid)
-    f = c.project_dir(pid) / "config.json"
+def get_project_config(
+    pid: str, c: ServiceContext = Depends(ctx), version_id: str | None = None
+) -> dict[str, Any]:
+    version = c.resolve_version(pid, version_id)
+    if version["status"] != "ready":
+        raise ApiError("version configuration is not ready", code="version.not_ready", status=409)
+    f = c.config_path(pid, version_id)
     if f.exists():
         return json.loads(f.read_text(encoding="utf-8"))
     from .environment import environment_attention_default
 
     cfg = TrainConfig()
     cfg.model.attention = environment_attention_default(c)
-    return deep_merge(cfg.to_dict(), {"checkpoint": {"output_dir": str(c.runs_dir(pid))}})
+    return deep_merge(
+        cfg.to_dict(),
+        {
+            "checkpoint": {"output_dir": str(c.runs_dir(pid, version_id))},
+            "dataset": {"cache_dir": str(c.cache_dir(pid, version_id))},
+        },
+    )
 
 
 @router.put("/projects/{pid}/config")
-def put_project_config(pid: str, body: dict[str, Any], c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+def put_project_config(
+    pid: str, body: dict[str, Any], c: ServiceContext = Depends(ctx), version_id: str | None = None
+) -> dict[str, Any]:
     with c.db.lock:
-        _get_project(c, pid)
-        _write_project_config(c, pid, body)
+        version = assert_version_writable(c, pid, version_id)
+        _write_project_config(c, pid, body, version["id"])
+        c.db.update("project_versions", version["id"], {"updated_at": now()})
         c.db.update("projects", pid, {"updated_at": now()})
     return body
 
 
-def _write_project_config(c: ServiceContext, pid: str, body: dict[str, Any]) -> None:
+def _write_project_config(
+    c: ServiceContext, pid: str, body: dict[str, Any], version_id: str | None = None
+) -> None:
     """Caller holds the DB lock to serialize config edits with dataset source registration."""
-    d = c.project_dir(pid)
+    d = c.config_path(pid, version_id).parent
     d.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=d, suffix=".tmp", delete=False) as fp:
         temporary = Path(fp.name)
@@ -173,7 +221,87 @@ def _write_project_config(c: ServiceContext, pid: str, body: dict[str, Any]) -> 
 
 
 # --------------------------------------------------------------------------- datasets
+class VersionBody(BaseModel):
+    name: str = Field(min_length=1, max_length=100, pattern=r".*\S.*")
+    note: str = Field("", max_length=4000)
+    source_version_id: str | None = None
+    data_mode: Literal["copy", "empty"] = "copy"
+    copy_config: bool = True
+
+
+class VersionPatch(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=100, pattern=r".*\S.*")
+    note: str | None = Field(None, max_length=4000)
+    archived: bool | None = None
+
+
+@router.get("/projects/{pid}/versions", response_model=list[m.ProjectVersion])
+def list_versions(pid: str, include_archived: bool = True, c: ServiceContext = Depends(ctx)) -> list[dict]:
+    _get_project(c, pid)
+    sql = "SELECT * FROM project_versions WHERE project_id=?" + (
+        "" if include_archived else " AND archived=0"
+    )
+    return [version_row(c, r) for r in c.db.fetchall(sql + " ORDER BY created_at", (pid,))]
+
+
+@router.post("/projects/{pid}/versions", status_code=202, response_model=m.ProjectVersion)
+def create_version(pid: str, body: VersionBody, c: ServiceContext = Depends(ctx)) -> dict:
+    return c.versions.create(
+        pid, body.name.strip(), body.note, body.source_version_id, body.data_mode, body.copy_config
+    )
+
+
+@router.get("/projects/{pid}/versions/{vid}", response_model=m.ProjectVersion)
+def get_version(pid: str, vid: str, c: ServiceContext = Depends(ctx)) -> dict:
+    return version_row(c, c.resolve_version(pid, vid))
+
+
+@router.patch("/projects/{pid}/versions/{vid}", response_model=m.ProjectVersion)
+def patch_version(pid: str, vid: str, body: VersionPatch, c: ServiceContext = Depends(ctx)) -> dict:
+    with c.db.lock:
+        row = c.resolve_version(pid, vid)
+        if row["busy"] or row["status"] == "copying":
+            raise ApiError("wait for version copy to finish", code="version.busy", status=409)
+        fields = {
+            k: (int(v) if isinstance(v, bool) else v.strip() if k == "name" else v)
+            for k, v in body.model_dump().items()
+            if v is not None
+        }
+        if fields.get("name") and c.db.fetchone(
+            "SELECT id FROM project_versions WHERE project_id=? AND name=? AND id<>?",
+            (pid, fields["name"], vid),
+        ):
+            raise ApiError("a version with this name already exists", code="version.duplicate", status=409)
+        next_active = None
+        if body.archived:
+            if c.db.fetchone(f"SELECT id FROM jobs WHERE version_id=? AND status IN {ACTIVE_JOBS}", (vid,)):
+                raise ApiError("version has queued or running jobs", code="version.jobs_busy", status=409)
+            if _get_project(c, pid)["active_version_id"] == vid:
+                fallback = c.db.fetchone(
+                    "SELECT id FROM project_versions WHERE project_id=? AND id<>? AND archived=0 "
+                    "AND status='ready' AND busy IS NULL ORDER BY created_at DESC LIMIT 1",
+                    (pid, vid),
+                )
+                if not fallback:
+                    raise ApiError(
+                        "keep at least one ready, unarchived version", code="version.active", status=409
+                    )
+                next_active = fallback["id"]
+        fields["updated_at"] = now()
+        c.db.execute("BEGIN IMMEDIATE")
+        try:
+            if next_active:
+                c.db.update("projects", pid, {"active_version_id": next_active, "updated_at": now()})
+            c.db.update("project_versions", vid, fields)
+            c.db.execute("COMMIT")
+        except BaseException:
+            c.db.execute("ROLLBACK")
+            raise
+    return version_row(c, c.resolve_version(pid, vid))
+
+
 class DatasetBody(BaseModel):
+    version_id: str | None = None
     path: str
     repeats: int = Field(1, ge=1, le=1_000_000)
     caption_ext: str = ".txt"
@@ -182,8 +310,10 @@ class DatasetBody(BaseModel):
     class_prompt: str | None = None
 
 
-def _dataset_config(c: ServiceContext, pid: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    cfg = get_project_config(pid, c)
+def _dataset_config(
+    c: ServiceContext, pid: str, version_id: str | None = None
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    cfg = get_project_config(pid, c, version_id)
     dataset = cfg.setdefault("dataset", {})
     if not isinstance(dataset, dict):
         raise ApiError("project dataset config must be an object", code="config.invalid")
@@ -197,29 +327,47 @@ def _same_source(path: Any, expected: str) -> bool:
     return isinstance(path, str) and Path(path).expanduser().resolve() == Path(expected).resolve()
 
 
-def _register_dataset(c: ServiceContext, pid: str, body: DatasetBody, *, did: str | None = None) -> str:
+def _register_dataset(
+    c: ServiceContext,
+    pid: str,
+    body: DatasetBody,
+    *,
+    did: str | None = None,
+    version_id: str | None = None,
+    internal: bool = False,
+    origin_path: str | None = None,
+) -> str:
     """Register the source and add it to the project's training draft under one lock."""
     p = Path(body.path).expanduser().resolve()
     if not p.is_dir():
         raise NotFound(f"directory not found: {p}", code="fs.not_found")
-    source = body.model_dump() | {"path": str(p)}
+    source = body.model_dump(exclude={"version_id"}) | {"path": str(p)}
     did = did or new_id("d")
     with c.db.lock:
-        _get_project(c, pid)
+        version = c.resolve_version(pid, version_id or body.version_id)
+        if not internal:
+            assert_version_writable(c, pid, version["id"], data=True)
         if any(
             _same_source(row["path"], str(p))
-            for row in c.db.fetchall("SELECT path FROM datasets WHERE project_id=?", (pid,))
+            for row in c.db.fetchall("SELECT path FROM datasets WHERE version_id=?", (version["id"],))
         ):
             raise ApiError(
                 "this dataset directory is already registered", code="dataset.duplicate", status=409
             )
-        config, sources = _dataset_config(c, pid)
+        config, sources = _dataset_config(c, pid, version["id"])
         previous = json.loads(json.dumps(config))
-        match = next((item for item in sources if _same_source(item.get("path"), str(p))), None)
-        if match is None:
+        matching = [
+            item
+            for item in [*sources, *config.get("validation", {}).get("sources", [])]
+            if _same_source(item.get("path"), origin_path or str(p))
+        ]
+        if not matching:
             sources.append(source)
         else:
-            match.update(source)  # retain advanced per-source caption/resolution settings
+            explicit = body.model_dump(exclude={"version_id"}, exclude_unset=True) | {"path": str(p)}
+            for item in matching:
+                item.update(explicit)  # Preserve each source's role and all unedited advanced settings.
+            source = {key: matching[0].get(key, value) for key, value in source.items()}
         c.db.execute("BEGIN IMMEDIATE")
         written = False
         try:
@@ -228,30 +376,40 @@ def _register_dataset(c: ServiceContext, pid: str, body: DatasetBody, *, did: st
                 {
                     "id": did,
                     "project_id": pid,
+                    "version_id": version["id"],
+                    "origin_path": origin_path,
                     **source,
-                    "is_reg": int(body.is_reg),
+                    "is_reg": int(source["is_reg"]),
                     "created_at": now(),
                     "index_status": "indexing",
                     "stats_json": "{}",
                 },
             )
-            _write_project_config(c, pid, config)
+            _write_project_config(c, pid, config, version["id"])
             written = True
             c.db.update("projects", pid, {"updated_at": now()})
             c.db.execute("COMMIT")
         except BaseException:
             c.db.execute("ROLLBACK")
             if written:
-                _write_project_config(c, pid, previous)
+                _write_project_config(c, pid, previous, version["id"])
             raise
     c.bus.publish("dataset.changed", {"dataset_id": did, "project_id": pid, "reason": "added"})
     return did
 
 
-def _register_upload(c: ServiceContext, pid: str, batch: UploadBatch) -> str:
+def _register_upload(c: ServiceContext, pid: str, batch: UploadBatch, version_id: str | None = None) -> str:
     did = new_id("d")
-    with staged_upload(c.project_dir(pid), did, batch) as directory:
-        _register_dataset(c, pid, DatasetBody(path=str(directory), repeats=batch.repeats), did=did)
+    with c.versions.mutation(pid, version_id) as version:
+        with staged_upload(c.version_dir(pid, version["id"]), did, batch) as directory:
+            _register_dataset(
+                c,
+                pid,
+                DatasetBody(path=str(directory), repeats=batch.repeats),
+                did=did,
+                version_id=version["id"],
+                internal=True,
+            )
     return did
 
 
@@ -315,6 +473,7 @@ def _dataset_row(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
     source = {
         "id": r["id"],
         "project_id": r["project_id"],
+        "version_id": r.get("version_id"),
         "path": r["path"],
         "repeats": r["repeats"],
         "caption_ext": r["caption_ext"],
@@ -346,7 +505,7 @@ def _cache_stats(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
         from ypuddin.data.index import ImageRecord
         from ypuddin.models import get_family
 
-        raw = get_project_config(r["project_id"], c)
+        raw = get_project_config(r["project_id"], c, r.get("version_id"))
         source_path = Path(r["path"]).expanduser().resolve()
         matching = [
             src
@@ -375,7 +534,7 @@ def _cache_stats(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
             no_upscale=ds.bucket_no_upscale,
         )
         items = expand_items(recs, ds.sources, ds, bm)
-        cache_root = Path(ds.cache_dir) if ds.cache_dir else c.cache_dir(r["project_id"])
+        cache_root = c.cache_dir(r["project_id"], r.get("version_id"))
         import torch
 
         from ypuddin.models.fingerprints import fingerprint_cache
@@ -405,11 +564,15 @@ def _cache_stats(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.get("/projects/{pid}/datasets", response_model=list[m.DatasetInfo], response_model_exclude_unset=True)
-def list_datasets(pid: str, c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
-    _get_project(c, pid)
+def list_datasets(
+    pid: str, c: ServiceContext = Depends(ctx), version_id: str | None = None
+) -> list[dict[str, Any]]:
+    version = c.resolve_version(pid, version_id)
     return [
         _dataset_row(c, r)
-        for r in c.db.fetchall("SELECT * FROM datasets WHERE project_id=? ORDER BY created_at", (pid,))
+        for r in c.db.fetchall(
+            "SELECT * FROM datasets WHERE version_id=? ORDER BY created_at", (version["id"],)
+        )
     ]
 
 
@@ -420,9 +583,14 @@ def list_datasets(pid: str, c: ServiceContext = Depends(ctx)) -> list[dict[str, 
     response_model_exclude_unset=True,
 )
 def add_dataset(
-    pid: str, body: DatasetBody, background_tasks: BackgroundTasks, c: ServiceContext = Depends(ctx)
+    pid: str,
+    body: DatasetBody,
+    background_tasks: BackgroundTasks,
+    c: ServiceContext = Depends(ctx),
+    version_id: str | None = None,
 ) -> dict[str, Any]:
-    did = _register_dataset(c, pid, body)
+    version = c.resolve_version(pid, version_id or body.version_id)
+    did = c.versions.import_directory(pid, version["id"], body)
     background_tasks.add_task(_index_dataset, c, did)
     return _dataset_row(c, c.db.fetchone("SELECT * FROM datasets WHERE id=?", (did,)))
 
@@ -451,11 +619,15 @@ def add_dataset(
     },
 )
 async def upload_dataset(
-    pid: str, request: Request, background_tasks: BackgroundTasks, c: ServiceContext = Depends(ctx)
+    pid: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    c: ServiceContext = Depends(ctx),
+    version_id: str | None = None,
 ) -> dict[str, Any]:
-    _get_project(c, pid)
+    version = assert_version_writable(c, pid, version_id, data=True)
     async with read_upload(request) as batch:
-        did = await run_in_threadpool(_register_upload, c, pid, batch)
+        did = await run_in_threadpool(_register_upload, c, pid, batch, version["id"])
     background_tasks.add_task(_index_dataset, c, did)
     return _dataset_row(c, _get_dataset(c, did))
 
@@ -474,8 +646,13 @@ def get_dataset(did: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
 
 @router.post("/datasets/{did}/rescan", response_model=m.Ok, response_model_exclude_unset=True)
 async def rescan_dataset(did: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    _get_dataset(c, did)
-    c.db.update("datasets", did, {"index_status": "indexing"})
+    with c.db.lock:
+        row = _get_dataset(c, did)
+        assert_version_writable(c, row["project_id"], row["version_id"])
+        if row["index_status"] == "indexing":
+            return {"ok": True}
+        assert_version_writable(c, row["project_id"], row["version_id"], data=True)
+        c.db.update("datasets", did, {"index_status": "indexing"})
     asyncio.get_running_loop().run_in_executor(None, _index_dataset, c, did)
     return {"ok": True}
 
@@ -485,25 +662,32 @@ def delete_dataset(did: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]
     with c.db.lock:
         row = _get_dataset(c, did)
         pid = row["project_id"]
-        config, sources = _dataset_config(c, pid) if pid else (None, [])
+        assert_version_writable(c, pid, row["version_id"], data=True)
+        config, sources = _dataset_config(c, pid, row["version_id"]) if pid else (None, [])
         previous = json.loads(json.dumps(config)) if config is not None else None
         if config is not None:
             config["dataset"]["sources"] = [
                 item for item in sources if not _same_source(item.get("path"), row["path"])
             ]
+            if isinstance(config.get("validation"), dict):
+                config["validation"]["sources"] = [
+                    item
+                    for item in config["validation"].get("sources", [])
+                    if not _same_source(item.get("path"), row["path"])
+                ]
         written = False
         c.db.execute("BEGIN IMMEDIATE")
         try:
             c.db.delete("datasets", did)
             if config is not None:
-                _write_project_config(c, pid, config)
+                _write_project_config(c, pid, config, row["version_id"])
                 written = True
                 c.db.update("projects", pid, {"updated_at": now()})
             c.db.execute("COMMIT")
         except BaseException:
             c.db.execute("ROLLBACK")
             if written:
-                _write_project_config(c, pid, previous)
+                _write_project_config(c, pid, previous, row["version_id"])
             raise
     _records_path(c, did).unlink(missing_ok=True)
     c.bus.publish("dataset.changed", {"dataset_id": did, "reason": "deleted"})
@@ -589,19 +773,20 @@ def get_caption(did: str, h: str, c: ServiceContext = Depends(ctx)) -> dict[str,
 @router.put("/datasets/{did}/images/{h}/caption", response_model=m.Caption, response_model_exclude_unset=True)
 def put_caption(did: str, h: str, body: CaptionBody, c: ServiceContext = Depends(ctx)) -> dict[str, str]:
     row = _get_dataset(c, did)
-    r = _record_by_hash(c, did, h)
-    cap_path = (
-        Path(r["caption_path"]) if r["caption_path"] else Path(r["path"]).with_suffix(row["caption_ext"])
-    )
-    cap_path.write_text(body.caption.strip() + "\n", encoding="utf-8")
-    if not r["caption_path"]:
-        recs = _records(c, did)
-        for rec in recs:
-            if rec["content_hash"] == h:
-                rec["caption_path"] = str(cap_path)
-        _records_path(c, did).write_text(json.dumps(recs), encoding="utf-8")
-    c.bus.publish("dataset.changed", {"dataset_id": did, "reason": "caption"})
-    return {"caption": body.caption.strip()}
+    with c.versions.mutation(row["project_id"], row["version_id"]):
+        r = _record_by_hash(c, did, h)
+        cap_path = (
+            Path(r["caption_path"]) if r["caption_path"] else Path(r["path"]).with_suffix(row["caption_ext"])
+        )
+        cap_path.write_text(body.caption.strip() + "\n", encoding="utf-8")
+        if not r["caption_path"]:
+            recs = _records(c, did)
+            for rec in recs:
+                if rec["content_hash"] == h:
+                    rec["caption_path"] = str(cap_path)
+            _records_path(c, did).write_text(json.dumps(recs), encoding="utf-8")
+        c.bus.publish("dataset.changed", {"dataset_id": did, "reason": "caption"})
+        return {"caption": body.caption.strip()}
 
 
 class TagBatch(BaseModel):
@@ -615,33 +800,40 @@ def tags_batch(did: str, body: TagBatch, c: ServiceContext = Depends(ctx)) -> di
     from ypuddin.data import read_caption
 
     row = _get_dataset(c, did)
-    changed = 0
-    created = 0
-    wanted = set(body.hashes)
-    recs = _records(c, did)
-    for r in recs:
-        if r["content_hash"] not in wanted:
-            continue
-        cap_path = (
-            Path(r["caption_path"]) if r["caption_path"] else Path(r["path"]).with_suffix(row["caption_ext"])
-        )
-        tags = [
-            t.strip() for t in read_caption(r["caption_path"], row["class_prompt"]).split(",") if t.strip()
-        ]
-        tags = [t for t in tags if t not in body.remove]
-        for t in body.add:
-            if t not in tags:
-                tags.append(t)
-        cap_path.write_text(", ".join(tags) + "\n", encoding="utf-8")
-        if not r["caption_path"]:
-            r["caption_path"] = str(cap_path)  # a freshly created caption file must be found on the next read
-            created += 1
-        changed += 1
-    if created:
-        _records_path(c, did).write_text(json.dumps(recs), encoding="utf-8")
-    if changed:
-        c.bus.publish("dataset.changed", {"dataset_id": did, "reason": "tags"})
-    return {"changed": changed}
+    with c.versions.mutation(row["project_id"], row["version_id"]):
+        changed = 0
+        created = 0
+        wanted = set(body.hashes)
+        recs = _records(c, did)
+        for r in recs:
+            if r["content_hash"] not in wanted:
+                continue
+            cap_path = (
+                Path(r["caption_path"])
+                if r["caption_path"]
+                else Path(r["path"]).with_suffix(row["caption_ext"])
+            )
+            tags = [
+                t.strip()
+                for t in read_caption(r["caption_path"], row["class_prompt"]).split(",")
+                if t.strip()
+            ]
+            tags = [t for t in tags if t not in body.remove]
+            for t in body.add:
+                if t not in tags:
+                    tags.append(t)
+            cap_path.write_text(", ".join(tags) + "\n", encoding="utf-8")
+            if not r["caption_path"]:
+                r["caption_path"] = str(
+                    cap_path
+                )  # a freshly created caption file must be found on the next read
+                created += 1
+            changed += 1
+        if created:
+            _records_path(c, did).write_text(json.dumps(recs), encoding="utf-8")
+        if changed:
+            c.bus.publish("dataset.changed", {"dataset_id": did, "reason": "tags"})
+        return {"changed": changed}
 
 
 # --------------------------------------------------------------------------- jobs
@@ -649,6 +841,7 @@ class JobBody(BaseModel):
     type: str = "train"
     name: str
     project_id: str | None = None
+    version_id: str | None = None
     config: dict[str, Any] | None = None
     priority: int = 0
     scheduled_at: float | None = None
@@ -673,6 +866,7 @@ def _job_row(r: dict[str, Any]) -> dict[str, Any]:
 def list_jobs(
     status: str | None = None,
     project_id: str | None = None,
+    version_id: str | None = None,
     page: int = 1,
     page_size: int = 50,
     c: ServiceContext = Depends(ctx),
@@ -685,6 +879,9 @@ def list_jobs(
     if project_id:
         conds.append("project_id=?")
         params.append(project_id)
+    if version_id:
+        conds.append("version_id=?")
+        params.append(version_id)
     if conds:
         sql += " WHERE " + " AND ".join(conds)
     sql += " ORDER BY CASE status WHEN 'running' THEN 0 WHEN 'pausing' THEN 0 WHEN 'queued' THEN 1 WHEN 'scheduled' THEN 2 ELSE 3 END, priority DESC, created_at DESC"
@@ -696,15 +893,17 @@ def list_jobs(
 def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     if body.type not in ("train", "cache"):
         raise ApiError(f"unsupported job type {body.type}", code="job.bad_type")
-    if body.project_id:
-        _get_project(c, body.project_id)
+    version = assert_version_writable(c, body.project_id, body.version_id) if body.project_id else None
+    if body.version_id and not body.project_id:
+        raise ApiError("version_id requires project_id", code="version.project_required")
+    vid = version["id"] if version else None
     config = body.config
     if config is None and body.project_id:
-        config = get_project_config(body.project_id, c)
+        config = get_project_config(body.project_id, c, vid)
     if config is None:
         raise ApiError("config is required", code="job.no_config")
     jid = new_id("j")
-    run_dir = c.runs_dir(body.project_id) / jid
+    run_dir = c.runs_dir(body.project_id, vid) / jid
     config = deep_merge(
         config,
         {
@@ -712,9 +911,9 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
             "logging": {"events_path": str(run_dir / "events.jsonl")},
         },
     )
-    if not (config.get("dataset") or {}).get("cache_dir"):
+    if body.project_id or not (config.get("dataset") or {}).get("cache_dir"):
         # a pre-cache job and the training jobs after it must hit the same cache
-        config = deep_merge(config, {"dataset": {"cache_dir": str(c.cache_dir(body.project_id))}})
+        config = deep_merge(config, {"dataset": {"cache_dir": str(c.cache_dir(body.project_id, vid))}})
     from pydantic import ValidationError
 
     try:
@@ -749,26 +948,30 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
                 code="config.invalid",
                 details={"errors": [{"loc": "checkpoint.resume", "msg": "complete checkpoint not found"}]},
             )
-    status = "scheduled" if body.scheduled_at and body.scheduled_at > now() else "queued"
-    c.db.insert(
-        "jobs",
-        {
-            "id": jid,
-            "type": body.type,
-            "name": body.name,
-            "project_id": body.project_id,
-            "status": status,
-            "priority": body.priority,
-            "scheduled_at": body.scheduled_at,
-            "created_at": now(),
-            "run_dir": str(run_dir),
-            "config_json": json.dumps(cfg.to_dict()),
-            "progress_json": json.dumps(
-                {"estimated_peak_mb": preflight.get("memory", {}).get("peak_mb_estimate")}
-            ),
-            "latest_json": "{}",
-        },
-    )
+    with c.db.lock:
+        if version:
+            assert_version_writable(c, body.project_id, vid)
+        status = "scheduled" if body.scheduled_at and body.scheduled_at > now() else "queued"
+        c.db.insert(
+            "jobs",
+            {
+                "id": jid,
+                "type": body.type,
+                "name": body.name,
+                "project_id": body.project_id,
+                "version_id": vid,
+                "status": status,
+                "priority": body.priority,
+                "scheduled_at": body.scheduled_at,
+                "created_at": now(),
+                "run_dir": str(run_dir),
+                "config_json": json.dumps(cfg.to_dict()),
+                "progress_json": json.dumps(
+                    {"estimated_peak_mb": preflight.get("memory", {}).get("peak_mb_estimate")}
+                ),
+                "latest_json": "{}",
+            },
+        )
     c.bus.publish("queue.changed", {})
     row = c.db.fetchone("SELECT * FROM jobs WHERE id=?", (jid,))
     c.bus.publish("job.state", {"job_id": jid, "status": status})
@@ -797,14 +1000,15 @@ def patch_job(jid: str, body: JobPatch, c: ServiceContext = Depends(ctx)) -> dic
 
 @router.delete("/jobs/{jid}", response_model=m.Ok, response_model_exclude_unset=True)
 def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    r = _get_job(c, jid)
-    if r["status"] in ("running", "pausing", "cancelling"):
-        raise ApiError("cancel the job first", code="job.running", status=409)
-    c.db.delete("jobs", jid)
-    if delete_files and r["run_dir"] and Path(r["run_dir"]).exists():
-        shutil.rmtree(r["run_dir"])
-    c.bus.publish("queue.changed", {})
-    return {"ok": True}
+    with c.db.lock:
+        r = _get_job(c, jid)
+        if r["status"] in ("running", "pausing", "cancelling") or c.supervisor.is_running(jid):
+            raise ApiError("cancel the job first", code="job.running", status=409)
+        c.db.delete("jobs", jid)
+        if delete_files and r["run_dir"] and Path(r["run_dir"]).exists():
+            shutil.rmtree(r["run_dir"])
+        c.bus.publish("queue.changed", {})
+        return {"ok": True}
 
 
 @router.post("/jobs/{jid}/{command}", response_model=m.Job, response_model_exclude_unset=True)
@@ -1002,13 +1206,21 @@ def _artifact_row(r: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.get("/artifacts", response_model=list[m.Artifact], response_model_exclude_unset=True)
-def list_artifacts(project_id: str | None = None, c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
-    sql, params = "SELECT * FROM artifacts", ()
-    if project_id:
-        sql, params = sql + " WHERE project_id=?", (project_id,)
+def list_artifacts(
+    project_id: str | None = None,
+    c: ServiceContext = Depends(ctx),
+    version_id: str | None = None,
+    job_id: str | None = None,
+) -> list[dict[str, Any]]:
+    conditions, params = [], []
+    for key, value in (("project_id", project_id), ("version_id", version_id), ("job_id", job_id)):
+        if value:
+            conditions.append(key + "=?")
+            params.append(value)
+    sql = "SELECT * FROM artifacts" + (" WHERE " + " AND ".join(conditions) if conditions else "")
     return [
         _artifact_row(r)
-        for r in c.db.fetchall(sql + " ORDER BY created_at DESC", params)
+        for r in c.db.fetchall(sql + " ORDER BY created_at DESC", tuple(params))
         if Path(r["path"]).is_file()
     ]
 
@@ -1027,10 +1239,13 @@ def get_artifact(aid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
 
 @router.delete("/artifacts/{aid}", response_model=m.Ok, response_model_exclude_unset=True)
 def delete_artifact(aid: str, delete_file: bool = False, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    r = _get_artifact(c, aid)
-    c.db.delete("artifacts", aid)
-    if delete_file:
-        Path(r["path"]).unlink(missing_ok=True)
+    with c.db.lock:
+        r = _get_artifact(c, aid)
+        if r["project_id"]:
+            assert_version_writable(c, r["project_id"], r.get("version_id"))
+        c.db.delete("artifacts", aid)
+        if delete_file:
+            Path(r["path"]).unlink(missing_ok=True)
     return {"ok": True}
 
 
@@ -1046,13 +1261,22 @@ class ConvertBody(BaseModel):
 
 @router.post("/artifacts/{aid}/convert", response_model=m.Artifact, response_model_exclude_unset=True)
 def convert_artifact(aid: str, body: ConvertBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+    r = _get_artifact(c, aid)
+    with (
+        c.versions.mutation(r["project_id"], r.get("version_id"), data=False)
+        if r["project_id"]
+        else nullcontext()
+    ):
+        return _convert_artifact(c, r, body)
+
+
+def _convert_artifact(c: ServiceContext, r: dict, body: ConvertBody) -> dict[str, Any]:
     from safetensors.torch import save_file
 
     from ypuddin.adapters import load_adapter_file
     from ypuddin.adapters.convert import comfy_to_kohya, kohya_to_comfy, lycoris_to_kohya
     from ypuddin.models import get_family
 
-    r = _get_artifact(c, aid)
     tensors, meta = load_adapter_file(r["path"])
     family = meta.get("ypuddin.family", "anima")
     if body.format == "comfyui":
@@ -1071,6 +1295,7 @@ def convert_artifact(aid: str, body: ConvertBody, c: ServiceContext = Depends(ct
         {
             "id": nid,
             "project_id": r["project_id"],
+            "version_id": r.get("version_id"),
             "job_id": r["job_id"],
             "name": dst.name,
             "path": str(dst),

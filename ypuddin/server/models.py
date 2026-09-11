@@ -262,12 +262,56 @@ class Project(_Out):
     created_at: float
     updated_at: float
     dataset_ids: list[str]
+    active_version_id: str | None = None
+    version_count: int = 1
     stats: ProjectStats
+
+
+class VersionProgress(_Out):
+    phase: str = "ready"
+    files_done: int = 0
+    files_total: int = 0
+    bytes_done: int = 0
+    bytes_total: int = 0
+
+
+class VersionPaths(_Out):
+    root: str
+    config: str
+    datasets: str
+    runs: str
+    cache: str
+
+
+class VersionStats(_Out):
+    datasets: int
+    images: int
+    jobs: int
+    artifacts: int
+
+
+class ProjectVersion(_Out):
+    id: str
+    project_id: str
+    name: str
+    note: str
+    parent_version_id: str | None = None
+    archived: bool
+    busy: bool
+    status: Literal["copying", "ready", "failed"]
+    error: str | None = None
+    created_at: float
+    updated_at: float
+    dataset_ids: list[str]
+    paths: VersionPaths
+    stats: VersionStats
+    progress: VersionProgress
 
 
 class DatasetSource(_Out):
     id: str
     project_id: str | None
+    version_id: str | None = None
     path: str
     repeats: int
     caption_ext: str
@@ -360,6 +404,7 @@ class Job(_Out):
     type: str
     name: str
     project_id: str | None
+    version_id: str | None = None
     status: JobStatus | str
     priority: int
     scheduled_at: float | None
@@ -443,6 +488,7 @@ class QueueSettings(_Out):
 class Artifact(_Out):
     id: str
     project_id: str | None
+    version_id: str | None = None
     job_id: str | None
     name: str
     path: str

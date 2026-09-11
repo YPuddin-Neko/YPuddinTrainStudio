@@ -265,10 +265,10 @@ def _validated_or_error(raw: dict[str, Any]) -> TrainConfig:
 
 @router.post("/config/import", response_model=TrainConfig)
 def config_import(body: ConfigImportBody) -> dict[str, Any]:
-    from ypuddin.config.io import tomllib
+    from ypuddin.config.io import parse_toml
 
     try:
-        raw = json.loads(body.text) if body.format == "json" else tomllib.loads(body.text)
+        raw = json.loads(body.text) if body.format == "json" else parse_toml(body.text)
     except ValueError as exc:
         raise ApiError(str(exc), code="config.parse") from exc
     if not isinstance(raw, dict):

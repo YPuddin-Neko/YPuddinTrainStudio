@@ -49,6 +49,7 @@ const mockProjects: Project[] = [
     created_at: 1789000000,
     updated_at: 1789000000,
     archived: false,
+    version_count: 1,
     dataset_ids: ['ds_01'],
     stats: { jobs: 2, artifacts: 1 },
   },
@@ -284,6 +285,7 @@ export const handlers = [
       created_at: Date.now() / 1000,
       updated_at: Date.now() / 1000,
       archived: false,
+    version_count: 1,
       dataset_ids: [],
       stats: { jobs: 0, artifacts: 0 },
     };

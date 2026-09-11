@@ -1,9 +1,10 @@
-import { Routes, Route } from 'react-router-dom';
-import React, { Suspense } from 'react';
+import { Routes, Route, Navigate, useLocation, useNavigate, type Location } from 'react-router-dom';
+import React from 'react';
 import Layout from './components/Layout';
+import SettingsDrawer from './components/SettingsDrawer';
 import SettingsRedirect from './pages/Settings/SettingsRedirect';
+import { projectUrl } from './utils/projectVersions';
 
-// Code-split pages with React.lazy
 const Dashboard = React.lazy(() => import('./pages/Dashboard/Dashboard'));
 const Projects = React.lazy(() => import('./pages/Projects/Projects'));
 const ProjectDetail = React.lazy(() => import('./pages/ProjectDetail/ProjectDetail'));
@@ -15,27 +16,35 @@ const Settings = React.lazy(() => import('./pages/Settings/Settings'));
 const EnvironmentSettings = React.lazy(() => import('./pages/Settings/EnvironmentSettings'));
 const Preferences = React.lazy(() => import('./pages/Settings/Preferences'));
 
+function LegacyOutputsRedirect() {
+  const location = useLocation(); const params = new URLSearchParams(location.search);
+  const project = params.get('project_id') || params.get('project');
+  const job = params.get('job_id') || params.get('job');
+  return <Navigate replace to={job ? `/jobs/${encodeURIComponent(job)}` : project ? projectUrl(project,params.get('version_id'),'results') : '/projects'}/>;
+}
+function EnvironmentRoute() {
+  const location = useLocation();
+  return new URLSearchParams(location.search).get('tab') === 'artifacts' ? <LegacyOutputsRedirect/> : <EnvironmentSettings/>;
+}
+function settingsRoutes() {
+  return <Route path="settings" element={<Settings/>}><Route index element={<SettingsRedirect/>}/><Route path="environment" element={<EnvironmentRoute/>}/><Route path="preferences" element={<Preferences/>}/></Route>;
+}
 export default function AppRoutes() {
-  return (
-    <Suspense fallback={<div className="flex items-center justify-center h-64 text-slate-400">Loading page...</div>}>
-      <Routes>
-        <Route path="/" element={<Layout />}>
-          <Route index element={<Dashboard />} />
-          <Route path="projects" element={<Projects />} />
-          <Route path="projects/:id" element={<ProjectDetail />} />
-          <Route path="projects/:id/train" element={<TrainConfig />} />
-          <Route path="datasets/:id" element={<Dataset />} />
-          <Route path="queue" element={<Queue />} />
-          <Route path="jobs/:id" element={<JobDetail />} />
-          <Route path="artifacts" element={<SettingsRedirect tab="artifacts" />} />
-          <Route path="models" element={<SettingsRedirect tab="models" />} />
-          <Route path="settings" element={<Settings />}>
-            <Route index element={<SettingsRedirect />} />
-            <Route path="environment" element={<EnvironmentSettings />} />
-            <Route path="preferences" element={<Preferences />} />
-          </Route>
-        </Route>
-      </Routes>
-    </Suspense>
-  );
+  const location = useLocation(); const navigate = useNavigate();
+  const previous = (location.state as {backgroundLocation?: Location} | null)?.backgroundLocation;
+  const background = location.pathname.startsWith('/settings') && previous?.pathname && !previous.pathname.startsWith('/settings') ? previous : null;
+  const closeSettings = () => { if(background)navigate(`${background.pathname}${background.search}${background.hash}`,{replace:true,state:background.state}); };
+  return <>
+    <div className="route-surface" aria-hidden={background ? true : undefined} {...(background ? {inert:''} : {})}><Routes location={background || location}>
+      <Route path="/" element={<Layout/>}>
+        <Route index element={<Dashboard/>}/><Route path="projects" element={<Projects/>}/>
+        <Route path="projects/:id" element={<ProjectDetail/>}/><Route path="projects/:id/train" element={<TrainConfig/>}/>
+        <Route path="projects/:id/v/:versionId" element={<ProjectDetail/>}/><Route path="projects/:id/v/:versionId/train" element={<TrainConfig/>}/>
+        <Route path="datasets/:id" element={<Dataset/>}/><Route path="queue" element={<Queue/>}/><Route path="jobs/:id" element={<JobDetail/>}/>
+        <Route path="artifacts" element={<LegacyOutputsRedirect/>}/><Route path="models" element={<SettingsRedirect tab="models"/>}/>
+        {settingsRoutes()}
+      </Route>
+    </Routes></div>
+    {background && <SettingsDrawer onClose={closeSettings}><Routes>{settingsRoutes()}</Routes></SettingsDrawer>}
+  </>;
 }

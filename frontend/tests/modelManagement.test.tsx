@@ -88,7 +88,7 @@ describe('real model management UI contracts', () => {
   });
 
   it('preferences broadcasts saved appearance without duplicating model settings', async () => {
-    mount(<Preferences />, '/settings/preferences');
+    mount(<Preferences />, '/settings/preferences?section=interface');
     const page = await screen.findByTestId('settings-page');
     expect(within(page).queryByLabelText(i18n.t('models.kind_dit'))).not.toBeInTheDocument();
     const changed = vi.fn();
@@ -100,6 +100,28 @@ describe('real model management UI contracts', () => {
     expect(settings.ui.theme).toBe('dark');
     window.removeEventListener('studio.settings.changed', changed);
     document.documentElement.classList.remove('dark');
+  });
+
+  it('keeps downloads on the server after the settings content closes and restores progress on reopen', async () => {
+    const view = mount(<Models embedded />);
+    fireEvent.click(await screen.findByTestId('download-model-btn'));
+    fireEvent.click(screen.getByTestId('model-download-start'));
+    await screen.findByTestId('model-downloads');
+    view.unmount();
+    expect(cancel).not.toHaveBeenCalled();
+    mount(<Models embedded />);
+    const list = await screen.findByTestId('model-downloads');
+    expect(within(list).getByRole('progressbar')).toHaveAttribute('value', '500');
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  it('opens local registration inside the work area without another overlay', async () => {
+    mount(<Models embedded />);
+    fireEvent.click(await screen.findByTestId('add-model-btn'));
+    const form = screen.getByTestId('add-model-modal');
+    expect(form.tagName).toBe('SECTION');
+    expect(within(form).getByTestId('model-kind-select')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('switching component updates a standard URL and preserves an explicit custom source', async () => {

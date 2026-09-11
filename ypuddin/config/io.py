@@ -36,7 +36,7 @@ def read_config_file(path: str | Path) -> dict[str, Any]:
     if p.suffix.lower() == ".json":
         return json.loads(text)
     if p.suffix.lower() == ".toml":
-        return tomllib.loads(text)
+        return parse_toml(text)
     raise ValueError(f"unsupported config format: {p.suffix} (use .toml or .json)")
 
 
@@ -126,16 +126,70 @@ def absolute_paths(config: TrainConfig) -> TrainConfig:
     return cfg
 
 
-def _strip_none(obj: Any) -> Any:
-    if isinstance(obj, dict):
-        return {k: _strip_none(v) for k, v in obj.items() if v is not None}
-    if isinstance(obj, list):
-        return [_strip_none(v) for v in obj]
-    return obj
+_NULL_PATHS_KEY = "__ypuddin_nulls__"
+
+
+def parse_toml(text: str) -> dict[str, Any]:
+    """Read ordinary TOML and restore explicit nulls from our lossless export metadata.
+
+    A missing setting in an ordinary/legacy TOML file still uses its schema default.
+    Values explicitly added to an exported table take precedence over stale null metadata.
+    """
+    data = tomllib.loads(text)
+    paths = data.pop(_NULL_PATHS_KEY, [])
+    if not isinstance(paths, list):
+        raise ValueError(f"{_NULL_PATHS_KEY} must be an array of key/index paths")
+    for path in paths:
+        if not isinstance(path, list) or not path or any(type(part) not in (str, int) for part in path):
+            raise ValueError(f"invalid explicit-null path: {path!r}")
+        current: Any = data
+        for part in path[:-1]:
+            if isinstance(current, dict) and isinstance(part, str) and part in current:
+                current = current[part]
+            elif isinstance(current, list) and type(part) is int and 0 <= part < len(current):
+                current = current[part]
+            else:
+                raise ValueError(f"explicit-null metadata refers to a missing parent: {path!r}")
+        final = path[-1]
+        if isinstance(current, dict) and isinstance(final, str):
+            current.setdefault(final, None)
+        elif isinstance(current, list) and type(final) is int and 0 <= final < len(current):
+            # TOML cannot represent a null array element. The exporter leaves an empty
+            # string placeholder; an explicitly edited nonempty value takes precedence.
+            if current[final] == "":
+                current[final] = None
+        else:
+            raise ValueError(f"explicit-null metadata refers to an invalid target: {path!r}")
+    return data
 
 
 def dump_toml(config: TrainConfig) -> str:
-    return tomli_w.dumps(_strip_none(config.to_dict()))
+    paths: list[list[str | int]] = []
+
+    def pack(obj: Any, path: list[str | int]) -> Any:
+        if isinstance(obj, dict):
+            result = {}
+            for key, value in obj.items():
+                if value is None:
+                    paths.append([*path, key])
+                else:
+                    result[key] = pack(value, [*path, key])
+            return result
+        if isinstance(obj, list):
+            result = []
+            for index, value in enumerate(obj):
+                if value is None:
+                    paths.append([*path, index])
+                    result.append("")
+                else:
+                    result.append(pack(value, [*path, index]))
+            return result
+        return obj
+
+    values = pack(config.to_dict(), [])
+    if paths:
+        values = {_NULL_PATHS_KEY: paths, **values}
+    return "# Explicit nulls are preserved below because TOML has no null value.\n" + tomli_w.dumps(values)
 
 
 def write_config(config: TrainConfig, path: str | Path) -> None:

@@ -58,6 +58,7 @@ def create_app(
             await supervisor.stop()
             await asyncio.to_thread(model_downloads.close)
             await asyncio.to_thread(environment.close)
+            await asyncio.to_thread(context.versions.close)
             db.close()
 
     app = FastAPI(

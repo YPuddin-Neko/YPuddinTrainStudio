@@ -178,13 +178,16 @@ def _save(c: ServiceContext, did: str, h: str, rel_path: str | None, data: bytes
         raise ApiError("mask is not a valid PNG image", code="mask.format") from exc
     with c.db.lock:
         row, image, target = _resolve(c, did, h, rel_path)
+        from .versions import assert_version_writable
+
+        assert_version_writable(c, row["project_id"], row["version_id"], data=True)
         if row["index_status"] == "indexing":
             raise ApiError(
                 "dataset is being indexed; retry after indexing finishes", code="mask.indexing", status=409
             )
         if c.db.fetchone(
-            "SELECT id FROM jobs WHERE project_id=? AND status IN ('running','pausing','cancelling')",
-            (row["project_id"],),
+            "SELECT id FROM jobs WHERE version_id=? AND status IN ('running','pausing','cancelling')",
+            (row["version_id"],),
         ):
             raise ApiError(
                 "stop the project's active job before editing training masks", code="mask.busy", status=409

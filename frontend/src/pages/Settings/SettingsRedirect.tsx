@@ -8,5 +8,5 @@ export default function SettingsRedirect({ tab }: { tab?: 'runtime' | 'models' |
   const selected = tab || (legacyHash === 'models' ? 'models' : params.get('tab')) || 'runtime';
   params.set('tab', selected);
   const hash = ['models', 'environment'].includes(legacyHash) ? '' : location.hash;
-  return <Navigate replace to={`/settings/environment?${params.toString()}${hash}`} />;
+  return <Navigate replace state={location.state} to={`/settings/environment?${params.toString()}${hash}`} />;
 }

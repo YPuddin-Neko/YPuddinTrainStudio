@@ -1,12 +1,12 @@
 # YPuddin Train Studio — 项目交接报告
 
 > 写给接手本项目的模型/工程师。本文自洽：读完这一份 + 点开的几个文件，就能不需要前任任何上下文地继续开发。
-> 日期：2026-09-11 · 仓库：`xiangmuyuanma/` · 本文在原交接资料基础上按源码审计与修复验收更新；当前源码与前端交付版本为 0.3.0。
+> 日期：2026-09-11 · 仓库：`xiangmuyuanma/` · 本文在原交接资料基础上按源码审计与修复验收更新；当前源码与前端版本为 0.4.0，最终交付证据见本轮报告。
 
 ## 0. 先读这三个文件
 
 1. 本文。
-2. `docs/UI_REDESIGN_2026-09-11.md` —— 最新 v0.3.0 参数工作区、遮罩编辑、环境管理、实际参考对比与本轮验收。`docs/UI_WORKFLOW_2026-09-11.md` 保留 v0.2.0 工作流与功率采集记录。`docs/FIX_REPORT_2026-09-11.md` 记录此前训练核心修复与升级边界；`docs/COMPLETION_AUDIT_2026-09-11.md` 保留修复前审计证据。
+2. `docs/UI_VERSIONS_2026-09-11.md` —— 最新 v0.4.0 项目版本、文件复制、任务结果、设置抽屉、实际参考对比和验收边界。`docs/UI_REDESIGN_2026-09-11.md` 保留 v0.3.0 遮罩/环境记录，`docs/UI_WORKFLOW_2026-09-11.md` 保留 v0.2.0 工作流记录。`docs/FIX_REPORT_2026-09-11.md` 记录此前训练核心修复与升级边界；`docs/COMPLETION_AUDIT_2026-09-11.md` 保留修复前审计证据。
 3. `docs/design/03-status.md` —— 逐组件状态表与运行方式。
 
 ## 1. 项目定位
@@ -18,12 +18,15 @@
 - **形态**：Python 包 `ypuddin`（CLI + FastAPI 服务）+ `frontend/`（React/Vite 界面，可选）。一键脚本 `studio.sh` / `studio.bat`。
 - 许可证 Apache-2.0（参考项目里 diffusion-pipe 与 AnimaLoraStudio 是 GPL——只读不抄；sd-scripts / musubi-tuner 是 Apache-2.0，vendor 的代码见 §7）。
 
-## 2. 当前状态（v0.3.0 工作区改造后）
+## 2. 当前状态（v0.4.0 项目版本改造后）
 
 当前是具备实际训练、数据上传到训练启动的 Web 工作流的集成验证版本；官方 Anima / Krea 2 全尺寸权重和 NVIDIA 路径仍待验收，不能称为所有功能已完成。
 
-- v0.3.0 重做紧凑参数分区、实时分桶、字段预检定位、固定启动栏；新增实际遮罩绘制和环境依赖管理，模型/产物合并入设置。逐图遮罩写入与数据索引使用维护锁，环境变更串行化且重启前阻止任务使用旧进程依赖。Anima/Krea 共用 xformers/flash-attn 路径，Sage 仅采样。最新版 UI 验收见 UI_REDESIGN 文档。
-- 本轮后端 **371 passed / 3 CUDA skipped**，前端 **115 passed（25 个文件）**；Lint、TypeScript 与生产构建通过。浏览器完成启用遮罩的 5 步 Toy/MPS 训练，下载的最终产物包含 60 个可读张量。机器记录见 `docs/validation/v0.3.0.json`，真实截图见 `docs/screenshots/v0.3.0/`。
+- v0.4.0 实际运行并对照 AnimaLoraStudio 0.27.0，统一项目页/训练页的身份、版本栏和四步工作区。顶部顺序为 CPU/内存/GPU/硬盘，GPU 保留占用/显存/功率/温度四读数。设置改为运行环境/模型权重/存储路径/界面与服务四类抽屉，训练产物回到项目版本的“任务与结果”。开发前端默认连接真实服务，mock 需显式 opt-in。
+- `server/versions.py` 提供真实数据副本与操作锁；复制包含训练源、验证源、caption 和 Mask，不复制任务与产物。旧项目迁移为兼容 v1，不移动旧文件；新任务的配置、缓存、运行目录、采样和产物绑定明确版本。高级 TOML 外部引用不自动复制，任务也没有单独的不可变图片快照。详见 UI_VERSIONS 文档。
+- **v0.4 后端 417 通过 / 3 CUDA 跳过，前端 149 通过**；lint、TypeScript、生产构建、真实十步 Toy/MPS、三张采样与三个权重下载核对通过。版本复制后的标签/遮罩互不影响，归档/恢复、抽屉上下文和页面尺寸已验收，详见 UI_VERSIONS 与 `docs/validation/v0.4.0.json`。本轮没有执行用户取消的在线 `npm audit`。
+- v0.3.0 历史改造包括紧凑参数分区、实时分桶、字段预检定位、固定启动栏、实际遮罩绘制和环境依赖管理；当时模型/产物合并入设置的入口已被 v0.4 替代。环境变更仍串行化，重启前阻止任务使用旧进程依赖。Anima/Krea 共用 xformers/flash-attn 路径，Sage 仅采样。
+- v0.3 历史验收为后端 **371 passed / 3 CUDA skipped**，前端 **115 passed（25 个文件）**；Lint、TypeScript 与生产构建通过。当时浏览器完成启用遮罩的 5 步 Toy/MPS 训练，最终产物包含 60 个可读张量。历史机器记录见 `docs/validation/v0.3.0.json`，截图见 `docs/screenshots/v0.3.0/`。
 - v0.2.0 新增项目四步工作区、浏览器图片/目录/ZIP 上传自动同步配置、常用参数与首屏启动、模型组件下载和默认路径、环境诊断、NVML/nvidia-smi 功率采集与前端内容指纹。此前后端测试通过不代表前端体验已经完成；最新验收见 UI_WORKFLOW 文档。
 - 前一轮修复了设备 RNG、scalar/dropout/Kahan 续训、mask 缓存、实际编码器指纹、验证源与分桶、分阶段模型加载、准备阶段暂停、队列设备分配、保存设置不生效、前端配置及实时数据断链。
 - 前一轮训练核心回归 **278 passed / 3 CUDA skipped**；前端 **72 tests**、lint、TypeScript、production build 通过，包含本机实际 MPS 运算。浏览器已完成 TOML 导入、12 步 MPS 训练、初始/周期预览、权重下载、从第 6 步续训至第 12 步；60 个最终权重张量逐位相同。
@@ -41,7 +44,7 @@ ypuddin/            后端包本体
   data/             数据集注册、分桶、caption 增强、内容哈希缓存
   train/            训练循环、暂停/恢复、验证、采样预览
   memory/           block swap、fp8 与激活卸载
-  server/           FastAPI：项目/任务/数据集/模型权重/SSE 事件
+  server/           FastAPI：项目/版本/任务/数据集/模型权重/SSE；versions.py 管理数据副本
   cli.py            ypuddin 命令入口
 frontend/           React 18 + Vite 8 + TanStack Query + Tailwind；schema 驱动表单
 scripts/bootstrap.py  一键部署全部逻辑（studio.sh/.bat 只是壳）
@@ -55,8 +58,8 @@ tests/              unit + e2e（toy 族让完整训练/服务流程在 CPU 几�
 ## 4. 关键设计决策（为什么这么做的，一句话版）
 
 - **进程通信**：训练子进程写独立 JSONL 事件流，监督器读事件流更新 SQLite/SSE；stdout 只是日志。不要退回解析 stdout。
-- **暂停/恢复**：任意步边界存全套状态（适配器/优化器/调度器/采样器位置/RNG/EMA），在相同资产、数据与兼容配置/运行环境下，恢复后与不间断训练**逐位一致**（CPU/MPS 回归证明；CUDA 待验收）。这是相对三个参考项目的核心优势，别破坏。
-- **缓存**：latent/文本缓存键 = 内容哈希（图片内容 × 桶 × 编码器指纹 × 翻转），跨任务共享；`POST /jobs` 默认把 `dataset.cache_dir` 指到项目共享缓存目录。文本缓存存的是**增强后**的 caption 变体（有界、确定性），所以卸载文本编码器后 shuffle/tag_dropout 仍可用。
+- **暂停/恢复**：任意步边界存全套状态（适配器/优化器/调度器/采样器位置/RNG/EMA），在相同资产、数据与兼容配置/运行环境下，恢复后与不间断训练**逐位一致**（CPU/MPS 回归证明；CUDA 待验收）。数据被修改时不得绕过状态指纹检查。
+- **版本与缓存**：latent/文本缓存键 = 内容哈希（图片内容 × 桶 × 编码器指纹 × 翻转），同版本任务共享；项目任务创建时把 `dataset.cache_dir` 绑定到所属版本缓存目录。任务的 `version_id`、配置和运行路径保存后不跟随活动版本切换。文本缓存存的是**增强后**的 caption 变体（有界、确定性），所以卸载文本编码器后 shuffle/tag_dropout 仍可用。
 - **LoKr 自研而非依赖 LyCORIS**：LyCORIS 4.0.0 的 `merge_to`/`get_diff_weight` 在 `alpha≠rank` 且 w2 低秩时把 scale 乘两次（实测，合并结果错一半）。我们的实现与之**文件格式兼容已实测**（`tests/unit/test_lycoris_compat.py` 用真 LyCORIS 加载我们的文件，输出逐位一致；需 `pip install lycoris-lora` 才跑，否则跳过）。细节：`docs/design/02-adapters-lokr.md` §7。
 - **Block swap**：前后向双钩子 + 推迟释放（修掉了"块输入无梯度时 backward hook 提前触发"）；开/关 swap 结果逐位一致（有测试）。
 - **配置**：分组 pydantic 模型 → JSON Schema（带 x-ui 提示）→ 前端零手写表单；新增配置项的完整链路见 00 架构文档。
@@ -64,10 +67,10 @@ tests/              unit + e2e（toy 族让完整训练/服务流程在 CPU 几�
 
 ## 5. 测试与验证体系
 
-- `venv/bin/python -m pytest tests/ -q`（全量）；前端 `cd frontend && npm run lint && npm run test && npm run build && npm audit`。
+- `venv/bin/python -m pytest tests/ -q`（全量）；前端 `cd frontend && npm run lint && npm run test && npm run build`。用户本轮取消在线 `npm audit`，不要把历史审计记录当作当前依赖的审计结果。
 - 四条铁律级测试：暂停/恢复逐位一致、swap 开/关逐位一致、`forward_bypass ≡ merged ≡ base+F.linear(x,ΔW)`（含 alpha≠rank）、LyCORIS 交叉加载。
 - Anima/Krea2 各有一个 e2e：用**缩小版真实架构**组件在 CPU 跑完整链路（加载→文本→缓存→训练→验证→采样→导出→ComfyUI 键转换→合并回带前缀底模），fp8_scaled 底模也在其列。
-- 前端测试用 MSW mock + 真实后端浏览器验收；当前截图保存在 `docs/screenshots/v0.3.0/`，早期截图在 `frontend/screenshots/`。
+- 前端单元测试可用 MSW，真实后端浏览器验收单独记录；v0.4 证据以 UI_VERSIONS 为准，历史截图在 `docs/screenshots/v0.3.0/` 和 `frontend/screenshots/`。
 
 ## 6. 接手后的 critical path（按序）
 
@@ -93,6 +96,7 @@ tests/              unit + e2e（toy 族让完整训练/服务流程在 CPU 几�
 
 - 本仓库 Apache-2.0。vendor 的代码（均 Apache-2.0，各目录有 `NOTICE.md` 记录来源 commit 与改动）：`ypuddin/models/anima/vendor/`（sd-scripts：Cosmos-Predict2 DiT、Qwen-Image VAE，已去掉 block swap 与 sd-scripts 依赖）、`ypuddin/models/krea2/vendor/`（musubi-tuner 8934cfb：SingleStreamDiT，同样处理）。
 - 同级目录的四个参考仓库（AnimaLoraStudio/、diffusion-pipe/、sd-scripts/、LyCORIS/）**不属于本项目**，运行时不依赖；其中 diffusion-pipe 与 AnimaLoraStudio 是 GPL-3.0——可读可参考，不要把代码搬进本仓库。
+- 顶栏使用的官方 Lucide GPU 图标按 ISC 许可引入，完整声明在 `frontend/public/licenses/lucide-gpu.txt`，生产构建同时保留 `licenses/lucide-gpu.txt`。
 
 ## 9. 协作模式备注（可选继承）
 
@@ -110,8 +114,8 @@ tests/              unit + e2e（toy 族让完整训练/服务流程在 CPU 几�
 ### 10.2 前端运行与验证
 ```bash
 cd frontend
-npm run dev                          # MSW mock 模式（含本地 mock SSE：曲线自增、采样进度、日志流）
-VITE_USE_MOCK=false npm run dev      # 直连真实后端（vite 代理 /api → 127.0.0.1:8765）
+npm run dev                          # v0.4 起默认直连真实后端，/api 代理到 127.0.0.1:8765
+VITE_USE_MOCK=true npm run dev       # 仅开发演示：显式启用 MSW 与模拟 SSE
 ```
 验收脚本（puppeteer-core 驱动本机 Chrome，截图到 `frontend/screenshots/`）：
 `test-real-flow.js`（训练全流程）/ `test-fe-m4.js`（数据集流）/ `test-cache-verify.js` / `test-jobdetail-verify.js` / `test-mock-sse.js` / `test-polish-shots.js`（8 页面批量截图）。

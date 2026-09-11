@@ -20,11 +20,22 @@ import {
 import { shapeValidationSeries, mergeValidationPoint, appendCapped, smoothLoss, appendMetricStep } from '../../utils/metrics';
 import { formatBytes, formatBytesMB, formatEta, formatTime } from '../../utils/format';
 import { formatApiError } from '../../utils/errors';
+import { projectUrl, type ProjectVersion } from '../../utils/projectVersions';
+import { useWorkspaceText } from '../../utils/workspaceText';
+
+type VersionedJob = Job & { version_id?: string | null };
 
 const LR_COLORS = ['#a78bfa', '#f59e0b', '#22d3ee', '#fb7185', '#84cc16', '#e879f9'];
 
 const PHASE_KEYS = ['preparing', 'caching', 'training', 'finalizing'];
 const LOG_LEVELS = ['all', 'info', 'warn', 'error', 'debug'];
+
+function mergeSamples(previous: JobSample[], incoming: JobSample[]): JobSample[] {
+  // Step and epoch triggers may share step/seed while saving different image files.
+  const samples = new Map(previous.map(sample => [sample.url, sample]));
+  for (const sample of incoming) samples.set(sample.url, { ...samples.get(sample.url), ...sample });
+  return [...samples.values()].sort((a, b) => a.step - b.step || a.created_at - b.created_at || a.prompt_index - b.prompt_index);
+}
 
 /** 大数字指标卡：label 小写 xs + 值 2xl font-mono */
 function StatCard({ label, value }: { label: string; value: string }) {
@@ -58,11 +69,13 @@ function logLevelColor(level: string): string {
 export default function JobDetail() {
   const { id } = useParams<{ id: string }>();
   const { t } = useTranslation();
+  const text = useWorkspaceText();
   const navigate = useNavigate();
   const [actionError, setActionError] = React.useState('');
   const [resuming, setResuming] = React.useState(false);
 
-  const [job, setJob] = React.useState<Job | null>(null);
+  const [job, setJob] = React.useState<VersionedJob | null>(null);
+  const [resolvedVersion, setResolvedVersion] = React.useState<{ projectId: string; versionId: string; name: string } | null>(null);
   const [metrics, setMetrics] = React.useState<JobMetrics | null>(null);
   const [samples, setSamples] = React.useState<JobSample[]>([]);
   const [checkpoints, setCheckpoints] = React.useState<JobCheckpoint[]>([]);
@@ -77,6 +90,16 @@ export default function JobDetail() {
   const [autoScrollLog, setAutoScrollLog] = React.useState<boolean>(true);
 
   const logContainerRef = React.useRef<HTMLDivElement>(null);
+  const samplesRequestRef = React.useRef<AbortController | null>(null);
+  const refreshSamples = React.useCallback(async () => {
+    if (!id) return;
+    samplesRequestRef.current?.abort();
+    const controller = new AbortController(); samplesRequestRef.current = controller;
+    try {
+      const history = await apiClient.get<JobSample[]>(`/jobs/${id}/samples`, { signal: controller.signal });
+      if (!controller.signal.aborted) setSamples(previous => mergeSamples(previous, history));
+    } catch (error) { if (!controller.signal.aborted) console.error(error); }
+  }, [id]);
 
   // Reset route-specific state and ignore responses from a previous task.
   React.useEffect(() => {
@@ -85,19 +108,35 @@ export default function JobDetail() {
     const options = { signal: controller.signal };
     const ignoreAbort = (error: Error) => { if (error.name !== 'AbortError') console.error(error); };
     setJob(null); setMetrics(null); setSamples([]); setCheckpoints([]); setLogs([]); setConfigSnapshot(null); setSampleProgress(null);
-    apiClient.get<Job>(`/jobs/${id}`, options).then(setJob).catch(ignoreAbort);
+    apiClient.get<VersionedJob>(`/jobs/${id}`, options).then(setJob).catch(ignoreAbort);
     apiClient.get<JobMetrics>(`/jobs/${id}/metrics`, options).then(setMetrics).catch(ignoreAbort);
-    apiClient.get<JobSample[]>(`/jobs/${id}/samples`, options).then(setSamples).catch(ignoreAbort);
+    void refreshSamples();
     apiClient.get<JobCheckpoint[]>(`/jobs/${id}/checkpoints`, options).then(setCheckpoints).catch(ignoreAbort);
     apiClient.get<{ lines: JobLogLine[] }>(`/jobs/${id}/log`, options).then((r) => setLogs(r.lines || [])).catch(ignoreAbort);
     apiClient.get<any>(`/jobs/${id}/config`, options).then(setConfigSnapshot).catch(ignoreAbort);
+    return () => { controller.abort(); samplesRequestRef.current?.abort(); };
+  }, [id, refreshSamples]);
+
+  // Version names are optional context; missing legacy metadata must not block monitoring.
+  React.useEffect(() => {
+    const projectId = job?.project_id, versionId = job?.version_id;
+    if (!projectId || !versionId) return;
+    const controller = new AbortController();
+    void apiClient.get<ProjectVersion[]>(`/projects/${encodeURIComponent(projectId)}/versions`, { params: { include_archived: true }, signal: controller.signal, silent: true })
+      .then(versions => {
+        if (controller.signal.aborted) return;
+        const match = versions.find(version => version.id === versionId && version.project_id === projectId);
+        setResolvedVersion({ projectId, versionId, name: match?.name.trim() || '' });
+      }).catch(() => { /* The job and its results remain available without version metadata. */ });
     return () => controller.abort();
-  }, [id]);
+  }, [job?.project_id, job?.version_id]);
+  const versionName = resolvedVersion?.projectId === job?.project_id && resolvedVersion?.versionId === job?.version_id ? resolvedVersion?.name : '';
 
   // 2. SSE 增量监听
   useEventStream(EVENT_TYPES.JOB_STATE, (data: any) => {
     if (data.job_id === id) {
       setJob((prev) => prev ? mergeJobEvent(prev, data) : null);
+      if (['completed', 'failed', 'cancelled', 'paused'].includes(data.status)) void refreshSamples();
     }
   });
 
@@ -115,16 +154,9 @@ export default function JobDetail() {
     if (data.job_id === id) apiClient.get<JobCheckpoint[]>(`/jobs/${id}/checkpoints`).then(setCheckpoints).catch(console.error);
   });
 
-  useEventStream(EVENT_TYPES.JOB_SAMPLE, (sample: JobSample & { job_id?: string }) => {
+  useEventStream(EVENT_TYPES.JOB_SAMPLE, (sample: JobSample & { job_id?: string; ts?: number }) => {
     if (sample.job_id && sample.job_id !== id) return;
-    setSamples((prev) => {
-      // 去重：同一 step + prompt_index + seed 的 SSE 重放不重复添加
-      const exists = prev.some(
-        (s) => s.step === sample.step && s.prompt_index === sample.prompt_index && s.seed === sample.seed
-      );
-      if (exists) return prev;
-      return [...prev, sample];
-    });
+    setSamples(previous => mergeSamples(previous, [{ ...sample, created_at: sample.created_at ?? sample.ts ?? Date.now() / 1000 }]));
   });
 
   // 采样进度：让预览生成阶段有明确进度，不再像"卡死"
@@ -344,6 +376,7 @@ export default function JobDetail() {
     try {
       const next = await apiClient.post<Job>('/jobs', {
         type: 'train', project_id: job.project_id, name: `${job.name} · ${t('job.continueTraining')} ${checkpoint.step}`,
+        ...(job.version_id ? { version_id: job.version_id } : {}),
         config: { ...configSnapshot, checkpoint: { ...configSnapshot.checkpoint, resume: checkpoint.path } },
       }, { silent: true });
       navigate(`/jobs/${next.id}`);
@@ -353,7 +386,7 @@ export default function JobDetail() {
 
   return (
     <div className="space-y-6" data-testid="job-detail-page">
-      {job?.project_id && <Link to={`/projects/${job.project_id}?step=results`} className="inline-flex text-sm text-blue-600 hover:underline">← {t('projects.title')} · {t('projectDetail.jobsTab', '训练任务')}</Link>}
+      {job?.project_id && <Link to={projectUrl(job.project_id, job.version_id, 'results')} className="inline-flex flex-wrap gap-1 text-sm text-blue-600 hover:underline">← {t('projects.title')} · {t('projectDetail.jobsTab', '训练任务')}{job.version_id && <span className="break-words text-xs" title={job.version_id}> · {versionName ? `${text('版本', 'Version')} ${versionName}` : text('所属版本', 'Version')}</span>}</Link>}
       {(actionError || job?.error) && <div role="alert" className="whitespace-pre-line break-words rounded bg-red-50 text-red-700 p-3 dark:bg-red-950 dark:text-red-300">{actionError || job?.error}</div>}
       {/* 1. 头部指标与阶段时间线 */}
       <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 space-y-5">

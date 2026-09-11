@@ -98,7 +98,7 @@
   "projectDetail": {
     "newTrainingJob": "新建训练任务",
     "tabDatasets": "数据集",
-    "tabConfig": "训练配置",
+    "tabConfig": "训练参数",
     "tabJobs": "任务",
     "tabArtifacts": "产物",
     "registeredSources": "已注册数据源",
@@ -106,7 +106,7 @@
     "noDatasets": "该项目还没有注册数据集。",
     "noJobs": "该项目还没有任务。",
     "noArtifacts": "该项目还没有产物。",
-    "openTrainConfig": "打开训练配置",
+    "openTrainConfig": "打开训练参数",
     "configHint": "在 Schema 驱动的编辑器中修改该项目的训练配置。",
     "repeats": "重复次数",
     "captionExt": "caption 扩展名",
@@ -177,7 +177,7 @@
     "tagChipsHint": "双击编辑，拖拽排序"
   },
   "train": {
-    "title": "训练配置",
+    "title": "训练参数",
     "advanced": "高级选项",
     "loadPreset": "-- 加载预设 --",
     "plan": "执行计划",
@@ -277,7 +277,7 @@
     "currentMemoryPerfTitle": "吞吐与当前训练分配量",
     "eta": "预计剩余",
     "tabMetrics": "指标图表",
-    "tabSamples": "Samples",
+    "tabSamples": "采样图",
     "tabCheckpoints": "检查点",
     "tabLogs": "日志",
     "tabConfig": "配置快照",

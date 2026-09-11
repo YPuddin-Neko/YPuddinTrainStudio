@@ -154,5 +154,5 @@ export function createMockEventSource() {
 }
 
 export function shouldUseMockEvents(): boolean {
-  return import.meta.env.DEV && import.meta.env.VITE_USE_MOCK !== 'false';
+  return import.meta.env.DEV && import.meta.env.VITE_USE_MOCK === 'true';
 }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import PureWindowsPath
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
@@ -449,7 +450,14 @@ class LoopConfig(_Strict):
 # --------------------------------------------------------------------------- checkpoint
 class CheckpointConfig(_Strict):
     output_dir: str = F("outputs/run", help="输出目录", ui_=ui("checkpoint", order=0, control="path"))
-    name: str = F("lora", help="产物文件名前缀", ui_=ui("checkpoint", order=10))
+    name: str = F(
+        "lora",
+        min_length=1,
+        max_length=150,
+        pattern=r'^[^/\\:*?"<>|\x00-\x1f\x7f]+$',
+        help="产物文件名前缀，不含目录或路径分隔符",
+        ui_=ui("checkpoint", order=10),
+    )
     save_every_steps: int | None = F(None, ge=1, help="每 N 步保存权重", ui_=ui("checkpoint", order=20))
     save_every_epochs: int | None = F(1, ge=1, help="每 N 轮保存权重", ui_=ui("checkpoint", order=30))
     save_state_every_steps: int | None = F(
@@ -466,6 +474,15 @@ class CheckpointConfig(_Strict):
         True, help="结束时保存最终权重", ui_=ui("checkpoint", order=70, control="switch")
     )
     resume: str | None = F(None, help="从完整状态目录恢复", ui_=ui("checkpoint", order=80, control="path"))
+
+    @field_validator("name")
+    @classmethod
+    def _filename_prefix(cls, value: str) -> str:
+        if not value.strip() or value.endswith((".", " ")) or PureWindowsPath(value).is_reserved():
+            raise ValueError(
+                "checkpoint.name must be a filename prefix; trailing dots/spaces and Windows device names are not allowed"
+            )
+        return value
 
 
 # --------------------------------------------------------------------------- sampling / validation / logging

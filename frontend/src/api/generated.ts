@@ -425,6 +425,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{pid}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Versions */
+        get: operations["list_versions_api_projects__pid__versions_get"];
+        put?: never;
+        /** Create Version */
+        post: operations["create_version_api_projects__pid__versions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{pid}/versions/{vid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Version */
+        get: operations["get_version_api_projects__pid__versions__vid__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Version */
+        patch: operations["patch_version_api_projects__pid__versions__vid__patch"];
+        trace?: never;
+    };
     "/api/projects/{pid}/datasets": {
         parameters: {
             query?: never;
@@ -1177,6 +1213,8 @@ export interface components {
             id: string;
             /** Project Id */
             project_id: string | null;
+            /** Version Id */
+            version_id?: string | null;
             /** Job Id */
             job_id: string | null;
             /** Name */
@@ -1306,7 +1344,7 @@ export interface components {
             output_dir: string;
             /**
              * Name
-             * @description 产物文件名前缀
+             * @description 产物文件名前缀，不含目录或路径分隔符
              * @default lora
              */
             name: string;
@@ -1413,6 +1451,8 @@ export interface components {
         };
         /** DatasetBody */
         DatasetBody: {
+            /** Version Id */
+            version_id?: string | null;
             /** Path */
             path: string;
             /**
@@ -1557,6 +1597,8 @@ export interface components {
             id: string;
             /** Project Id */
             project_id: string | null;
+            /** Version Id */
+            version_id?: string | null;
             /** Path */
             path: string;
             /** Repeats */
@@ -2003,6 +2045,8 @@ export interface components {
             name: string;
             /** Project Id */
             project_id: string | null;
+            /** Version Id */
+            version_id?: string | null;
             /** Status */
             status: ("queued" | "scheduled" | "running" | "pausing" | "cancelling" | "paused" | "completed" | "failed" | "cancelled") | string;
             /** Priority */
@@ -2041,6 +2085,8 @@ export interface components {
             name: string;
             /** Project Id */
             project_id?: string | null;
+            /** Version Id */
+            version_id?: string | null;
             /** Config */
             config?: {
                 [key: string]: unknown;
@@ -2893,6 +2939,13 @@ export interface components {
             updated_at: number;
             /** Dataset Ids */
             dataset_ids: string[];
+            /** Active Version Id */
+            active_version_id?: string | null;
+            /**
+             * Version Count
+             * @default 1
+             */
+            version_count: number;
             stats: components["schemas"]["ProjectStats"];
         } & {
             [key: string]: unknown;
@@ -2915,6 +2968,8 @@ export interface components {
             note?: string | null;
             /** Archived */
             archived?: boolean | null;
+            /** Active Version Id */
+            active_version_id?: string | null;
         };
         /** ProjectStats */
         ProjectStats: {
@@ -2922,6 +2977,41 @@ export interface components {
             jobs: number;
             /** Artifacts */
             artifacts: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ProjectVersion */
+        ProjectVersion: {
+            /** Id */
+            id: string;
+            /** Project Id */
+            project_id: string;
+            /** Name */
+            name: string;
+            /** Note */
+            note: string;
+            /** Parent Version Id */
+            parent_version_id?: string | null;
+            /** Archived */
+            archived: boolean;
+            /** Busy */
+            busy: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "copying" | "ready" | "failed";
+            /** Error */
+            error?: string | null;
+            /** Created At */
+            created_at: number;
+            /** Updated At */
+            updated_at: number;
+            /** Dataset Ids */
+            dataset_ids: string[];
+            paths: components["schemas"]["VersionPaths"];
+            stats: components["schemas"]["VersionStats"];
+            progress: components["schemas"]["VersionProgress"];
         } & {
             [key: string]: unknown;
         };
@@ -3315,6 +3405,96 @@ export interface components {
             };
             /** Mean */
             mean: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** VersionBody */
+        VersionBody: {
+            /** Name */
+            name: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Source Version Id */
+            source_version_id?: string | null;
+            /**
+             * Data Mode
+             * @default copy
+             * @enum {string}
+             */
+            data_mode: "copy" | "empty";
+            /**
+             * Copy Config
+             * @default true
+             */
+            copy_config: boolean;
+        };
+        /** VersionPatch */
+        VersionPatch: {
+            /** Name */
+            name?: string | null;
+            /** Note */
+            note?: string | null;
+            /** Archived */
+            archived?: boolean | null;
+        };
+        /** VersionPaths */
+        VersionPaths: {
+            /** Root */
+            root: string;
+            /** Config */
+            config: string;
+            /** Datasets */
+            datasets: string;
+            /** Runs */
+            runs: string;
+            /** Cache */
+            cache: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** VersionProgress */
+        VersionProgress: {
+            /**
+             * Phase
+             * @default ready
+             */
+            phase: string;
+            /**
+             * Files Done
+             * @default 0
+             */
+            files_done: number;
+            /**
+             * Files Total
+             * @default 0
+             */
+            files_total: number;
+            /**
+             * Bytes Done
+             * @default 0
+             */
+            bytes_done: number;
+            /**
+             * Bytes Total
+             * @default 0
+             */
+            bytes_total: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** VersionStats */
+        VersionStats: {
+            /** Datasets */
+            datasets: number;
+            /** Images */
+            images: number;
+            /** Jobs */
+            jobs: number;
+            /** Artifacts */
+            artifacts: number;
         } & {
             [key: string]: unknown;
         };
@@ -4280,7 +4460,9 @@ export interface operations {
     };
     get_project_config_api_projects__pid__config_get: {
         parameters: {
-            query?: never;
+            query?: {
+                version_id?: string | null;
+            };
             header?: never;
             path: {
                 pid: string;
@@ -4313,7 +4495,9 @@ export interface operations {
     };
     put_project_config_api_projects__pid__config_put: {
         parameters: {
-            query?: never;
+            query?: {
+                version_id?: string | null;
+            };
             header?: never;
             path: {
                 pid: string;
@@ -4350,9 +4534,147 @@ export interface operations {
             };
         };
     };
-    list_datasets_api_projects__pid__datasets_get: {
+    list_versions_api_projects__pid__versions_get: {
+        parameters: {
+            query?: {
+                include_archived?: boolean;
+            };
+            header?: never;
+            path: {
+                pid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectVersion"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_version_api_projects__pid__versions_post: {
         parameters: {
             query?: never;
+            header?: never;
+            path: {
+                pid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VersionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectVersion"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_version_api_projects__pid__versions__vid__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+                vid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectVersion"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_version_api_projects__pid__versions__vid__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+                vid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VersionPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectVersion"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_datasets_api_projects__pid__datasets_get: {
+        parameters: {
+            query?: {
+                version_id?: string | null;
+            };
             header?: never;
             path: {
                 pid: string;
@@ -4383,7 +4705,9 @@ export interface operations {
     };
     add_dataset_api_projects__pid__datasets_post: {
         parameters: {
-            query?: never;
+            query?: {
+                version_id?: string | null;
+            };
             header?: never;
             path: {
                 pid: string;
@@ -4418,7 +4742,9 @@ export interface operations {
     };
     upload_dataset_api_projects__pid__datasets_upload_post: {
         parameters: {
-            query?: never;
+            query?: {
+                version_id?: string | null;
+            };
             header?: never;
             path: {
                 pid: string;
@@ -4758,6 +5084,7 @@ export interface operations {
             query?: {
                 status?: string | null;
                 project_id?: string | null;
+                version_id?: string | null;
                 page?: number;
                 page_size?: number;
             };
@@ -5204,6 +5531,8 @@ export interface operations {
         parameters: {
             query?: {
                 project_id?: string | null;
+                version_id?: string | null;
+                job_id?: string | null;
             };
             header?: never;
             path?: never;

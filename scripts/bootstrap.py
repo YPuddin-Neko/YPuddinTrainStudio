@@ -392,7 +392,7 @@ def build_frontend(force: bool = False) -> bool:
         die(f"Node.js {version} 不支持当前前端；需要 20.19+ 或 22.12+")
     lock = FRONTEND / "package-lock.json"
     log("[5/5] 构建前端：安装 npm 依赖 ...")
-    run([npm, "ci" if lock.exists() else "install"], cwd=FRONTEND)
+    run([npm, "ci" if lock.exists() else "install", "--no-audit"], cwd=FRONTEND)
     log("[5/5] 构建前端：编译打包（tsc + vite build）...")
     run([npm, "run", "build"], cwd=FRONTEND)
     return True
@@ -462,7 +462,7 @@ def dev(host: str | None, port: int | None, data_root: str, fe_port: int, open_b
     if not npm:
         die("dev 模式需要 Node.js / npm")
     if not (FRONTEND / "node_modules").exists():
-        run([npm, "ci"], cwd=FRONTEND)
+        run([npm, "ci", "--no-audit"], cwd=FRONTEND)
     backend = subprocess.Popen(
         [str(venv_bin("ypuddin")), "serve", "--host", host, "--port", str(port), "--data-root", data_root],
         cwd=ROOT,

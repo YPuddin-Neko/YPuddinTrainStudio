@@ -52,7 +52,7 @@ def assert_no_import(api):
     client, context, pid = api
     assert client.get(f"/api/projects/{pid}/datasets").json() == []
     assert client.get(f"/api/projects/{pid}/config").json()["dataset"]["sources"] == []
-    root = context.project_dir(pid) / "datasets"
+    root = context.version_dir(pid) / "datasets"
     assert not root.exists() or list(root.iterdir()) == []
 
 
@@ -71,7 +71,7 @@ def test_upload_images_captions_masks_and_train_config(api):
     assert response.status_code == 200, response.text
     source = response.json()["source"]
     path = Path(source["path"])
-    assert path.is_relative_to(context.project_dir(pid) / "datasets")
+    assert path.is_relative_to(context.version_dir(pid) / "datasets")
     assert (path / "folder/a.txt").read_text() == "角色 caption"
     info = client.get(f"/api/datasets/{source['id']}").json()
     assert info["index_status"] == "ready"
@@ -225,7 +225,7 @@ def test_managed_root_cannot_redirect_outside_project(api, tmp_path):
     outside = tmp_path / "external-upload-target"
     outside.mkdir()
     try:
-        (context.project_dir(pid) / "datasets").symlink_to(outside, target_is_directory=True)
+        (context.version_dir(pid) / "datasets").symlink_to(outside, target_is_directory=True)
     except OSError:
         pytest.skip("directory symlinks are unavailable")
     response = upload(api, [("a.png", png())])

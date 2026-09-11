@@ -1,0 +1,331 @@
+{
+  "version": "0.4.0",
+  "date": "2026-09-11",
+  "reference": {
+    "version": "0.27.0",
+    "commit": "3d9d2e86045b879cd19c01ac4aa2337f45a283ab",
+    "validation": "Ran isolated real reference frontend/backend; operated project versions, settings drawer, environment/model layout. No upstream source changed or full model downloaded."
+  },
+  "backend": {
+    "total": 420,
+    "passed": 417,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 3,
+    "junit_sha256": "7012f902f724c449199d6dd171a847a83d832d41aacd459714a07e9edfdad18b",
+    "skip_reasons": [
+      {
+        "test": "test_accelerator_train_resume_and_preview[0-cuda]",
+        "reason": "CUDA unavailable"
+      },
+      {
+        "test": "test_accelerator_train_resume_and_preview[2-cuda]",
+        "reason": "CUDA unavailable"
+      },
+      {
+        "test": "test_cpu_noise_generator_matches_on_all_devices[cuda]",
+        "reason": "CUDA unavailable"
+      }
+    ]
+  },
+  "frontend": {
+    "total": 149,
+    "passed": 149,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "0a3713a52f73a64764e0107d3808165aad7d54950fa9dba6cd331c2be4d78c4f",
+    "skip_reasons": []
+  },
+  "browser_training": {
+    "job_id": "j_ce4c92d82604",
+    "version_id": "v_ec15db7f6d34",
+    "project_id": "p_9830a0aed22c",
+    "status": "completed",
+    "steps": 10,
+    "device": "mps",
+    "family": "toy",
+    "masked_loss": true,
+    "samples": [
+      {
+        "step": 0,
+        "url": "/api/jobs/j_ce4c92d82604/files?path=initial_00_0.png&kind=sample",
+        "bytes": 527,
+        "sha256": "8cfdec6b3b5c4aa19c68df7fbdd2f36c86267bf44ad842dcf5b6ed97accc0db5"
+      },
+      {
+        "step": 5,
+        "url": "/api/jobs/j_ce4c92d82604/files?path=step5_00_0.png&kind=sample",
+        "bytes": 523,
+        "sha256": "79607a57b39138530a9e4193dffeacc6900b7009ae0c1f8f79650e8118e4af61"
+      },
+      {
+        "step": 10,
+        "url": "/api/jobs/j_ce4c92d82604/files?path=step10_00_0.png&kind=sample",
+        "bytes": 528,
+        "sha256": "96c7bc011500c52832184b27544493288745ed808fb1a4a38d530180450161b6"
+      }
+    ],
+    "artifacts": [
+      {
+        "id": "a_16e3bcad1df2",
+        "name": "lora-final.safetensors",
+        "bytes": 19128,
+        "tensor_count": 60,
+        "sha256": "9ec8348416bfb6bbf5b32f2f715af8444360f702bcc7ae16c39e833348c69c82"
+      },
+      {
+        "id": "a_7275774d650e",
+        "name": "lora-epoch0002.safetensors",
+        "bytes": 19128,
+        "tensor_count": 60,
+        "sha256": "5ffef0ec53873a52ae7c7f37562dcfad36a779268d45f22a06247ac86c407633"
+      },
+      {
+        "id": "a_4e000c08b200",
+        "name": "lora-epoch0001.safetensors",
+        "bytes": 19120,
+        "tensor_count": 60,
+        "sha256": "b4620241677441303fd74680c2064e69dada9b37bbcb83520e3c1b7f65fd6238"
+      }
+    ],
+    "run_dir": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio/projects/p_9830a0aed22c/versions/v_ec15db7f6d34/runs/j_ce4c92d82604",
+    "disabled_epoch_sampling_preserved": true,
+    "other_versions_unchanged": true,
+    "versions": [
+      {
+        "id": "v_22a31da9666e",
+        "name": "v1",
+        "status": "ready",
+        "archived": false,
+        "stats": {
+          "datasets": 1,
+          "images": 8,
+          "jobs": 1,
+          "artifacts": 2
+        },
+        "paths": {
+          "root": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio/projects/p_9830a0aed22c",
+          "config": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio/projects/p_9830a0aed22c/config.json",
+          "datasets": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio/projects/p_9830a0aed22c/datasets",
+          "runs": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio/projects/p_9830a0aed22c/versions/v_22a31da9666e/runs",
+          "cache": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio/projects/p_9830a0aed22c/versions/v_22a31da9666e/cache"
+        }
+      },
+      {
+        "id": "v_4fcc117b5622",
+        "name": "v2 · 服装遮罩",
+        "status": "ready",
+        "archived": false,
+        "stats": {
+          "datasets": 1,
+          "images": 8,
+          "jobs": 0,
+          "artifacts": 0
+        },
+        "paths": {
+          "root": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio/projects/p_9830a0aed22c/versions/v_4fcc117b5622",
+          "config": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio/projects/p_9830a0aed22c/versions/v_4fcc117b5622/config.json",
+          "datasets": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio/projects/p_9830a0aed22c/versions/v_4fcc117b5622/datasets",
+          "runs": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio/projects/p_9830a0aed22c/versions/v_4fcc117b5622/runs",
+          "cache": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio/projects/p_9830a0aed22c/versions/v_4fcc117b5622/cache"
+        }
+      },
+      {
+        "id": "v_ec15db7f6d34",
+        "name": "v3 · 采样链路验收",
+        "status": "ready",
+        "archived": false,
+        "stats": {
+          "datasets": 1,
+          "images": 8,
+          "jobs": 2,
+          "artifacts": 6
+        },
+        "paths": {
+          "root": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio/projects/p_9830a0aed22c/versions/v_ec15db7f6d34",
+          "config": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio/projects/p_9830a0aed22c/versions/v_ec15db7f6d34/config.json",
+          "datasets": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio/projects/p_9830a0aed22c/versions/v_ec15db7f6d34/datasets",
+          "runs": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio/projects/p_9830a0aed22c/versions/v_ec15db7f6d34/runs",
+          "cache": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio/projects/p_9830a0aed22c/versions/v_ec15db7f6d34/cache"
+        }
+      }
+    ]
+  },
+  "version_file_isolation": {
+    "v1": {
+      "caption": "fox character, jacket, studio portrait",
+      "caption_path": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio/projects/p_9830a0aed22c/datasets/d_06c8e42ca57d-角色训练集/fox-01.txt",
+      "mask_sha256": "3dcaca23a7c1b1144436043786cc45f289e3fc8b3ec89a0cb61b69cba997acf7",
+      "mask_path": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio/projects/p_9830a0aed22c/datasets/d_06c8e42ca57d-角色训练集/fox-01.mask.png",
+      "mask_mean": 38.468284606933594,
+      "image_inode": 668023385
+    },
+    "v2": {
+      "caption": "fox character, jacket, studio portrait, v2_clothing_only",
+      "caption_path": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio/projects/p_9830a0aed22c/versions/v_4fcc117b5622/datasets/d_406708d082b8-d_06c8e42ca57d-角色训练集/fox-01.txt",
+      "mask_sha256": "dd9e18ab546f0339fdbce70feb71a38f7179384a807df9e5f61af4be12123420",
+      "mask_path": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio/projects/p_9830a0aed22c/versions/v_4fcc117b5622/datasets/d_406708d082b8-d_06c8e42ca57d-角色训练集/fox-01.mask.png",
+      "mask_mean": 216.5317153930664,
+      "image_inode": 668036541
+    }
+  },
+  "layout": {
+    "train": {
+      "font": "13px",
+      "frame": {
+        "bottom": 1107.1875,
+        "height": 1043.1875,
+        "left": 200,
+        "right": 1409,
+        "top": 64,
+        "width": 1209,
+        "x": 200,
+        "y": 64
+      },
+      "identity": {
+        "bottom": 146,
+        "height": 82,
+        "left": 200,
+        "right": 1409,
+        "top": 64,
+        "width": 1209,
+        "x": 200,
+        "y": 64
+      },
+      "workflow": {
+        "bottom": 265.5,
+        "height": 40,
+        "left": 200,
+        "right": 1409,
+        "top": 225.5,
+        "width": 1209,
+        "x": 200,
+        "y": 225.5
+      }
+    },
+    "data": {
+      "font": "13px",
+      "frame": {
+        "bottom": 858.6875,
+        "height": 794.6875,
+        "left": 200,
+        "right": 1409,
+        "top": 64,
+        "width": 1209,
+        "x": 200,
+        "y": 64
+      },
+      "identity": {
+        "bottom": 146,
+        "height": 82,
+        "left": 200,
+        "right": 1409,
+        "top": 64,
+        "width": 1209,
+        "x": 200,
+        "y": 64
+      },
+      "workflow": {
+        "bottom": 265.5,
+        "height": 40,
+        "left": 200,
+        "right": 1409,
+        "top": 225.5,
+        "width": 1209,
+        "x": 200,
+        "y": 225.5
+      }
+    }
+  },
+  "checks": {
+    "frontend_lint": "passed",
+    "typescript_and_production_build": "passed",
+    "ruff_lint": "passed",
+    "changed_python_format": "passed, 22 files",
+    "git_diff_check": "passed",
+    "production_browser": "real API and hashed Vite build served by FastAPI",
+    "archive_restore_readonly": "passed; no activation error, archived editor and launch absent; restored editable",
+    "settings_drawer_context": "passed; four tabs preserve mounted workspace, close returns version URL",
+    "mobile_viewport": [
+      390,
+      844
+    ],
+    "mobile_document_width": 390,
+    "themes": [
+      "light",
+      "dark"
+    ],
+    "npm_audit": "cancelled by user; not run; bootstrap installs pass --no-audit"
+  },
+  "screenshots": {
+    "datasets.png": {
+      "size": [
+        1440,
+        900
+      ],
+      "sha256": "47989ab74f8c32d974b5a17fca4407acfbfc336568895ef4f582074ec121c032"
+    },
+    "environment.png": {
+      "size": [
+        1440,
+        900
+      ],
+      "sha256": "a840d01ab6eb1860f29afea07ffea2c68085192696105c47b496aca48fcdcb0e"
+    },
+    "job-completed.png": {
+      "size": [
+        1440,
+        900
+      ],
+      "sha256": "4152559aefa6e251e9b9f757d019602ba516891e19e2097aabbe27af9029a13b"
+    },
+    "models.png": {
+      "size": [
+        1440,
+        900
+      ],
+      "sha256": "8c142f6d6f6b60355e1f436ae36e47a5c6a44996deb4347984dd49374db5f033"
+    },
+    "training-dark.png": {
+      "size": [
+        1440,
+        900
+      ],
+      "sha256": "27fa199b6f6ae560ab5344418d44bf575cdf8b1421ba3f268aa00eb446576432"
+    },
+    "training-mobile.png": {
+      "size": [
+        390,
+        844
+      ],
+      "sha256": "d5e6c2ff07c2fd415b09e3cfcce2a087e0abe8f703a67f9c51984c5edb805953"
+    },
+    "training.png": {
+      "size": [
+        1440,
+        900
+      ],
+      "sha256": "69d940ee7a4ad991d1d9b2cad0c5e652c342beac5d99c038fe41c945b03055f8"
+    },
+    "version-samples.png": {
+      "size": [
+        1440,
+        900
+      ],
+      "sha256": "393fb26766ede0d0a1baca0e96f31066f5fd7d4ff0e517c758c48ae894b0353b"
+    }
+  },
+  "package": {
+    "filename": "YPuddinTrainStudio-v0.4.0-2026-09-11.zip",
+    "verification": "SHA256, content manifest and extraction check are recorded in the archive-side verification JSON; archive hash is outside the archive to avoid a recursive self-hash."
+  },
+  "not_hardware_validated": [
+    "Windows NVIDIA power telemetry",
+    "Actual CUDA extension wheel installation",
+    "Official full Anima and Krea 2 model training",
+    "Actual ComfyUI loading of produced weights",
+    "Performance benchmarks and DDP"
+  ],
+  "environment_install_tests": "Mocked pip/subprocess plans; actual dependency environment was preserved."
+}

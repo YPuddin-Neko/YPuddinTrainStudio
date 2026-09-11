@@ -110,3 +110,80 @@ def test_all_show_when_expressions_in_schema_parse():
                 walk(v)
 
     walk(TrainConfig.json_schema())
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "../escape",
+        "..\\escape",
+        "/absolute",
+        "C:relative",
+        "CON",
+        "nul.txt",
+        "LPT9",
+        "COM1.data",
+        "trailing.",
+        "trailing ",
+        "bad?glob",
+        "bad\nline",
+        "",
+    ],
+)
+def test_checkpoint_prefix_stays_a_portable_filename(name):
+    with pytest.raises(ValueError, match="name"):
+        TrainConfig.model_validate({"checkpoint": {"name": name}})
+
+
+def test_checkpoint_prefix_allows_unicode_dots_and_hyphens():
+    assert (
+        TrainConfig.model_validate({"checkpoint": {"name": "角色.v2-lora"}}).checkpoint.name == "角色.v2-lora"
+    )
+
+
+def test_explicit_null_defaults_survive_toml_file_and_override_merge(tmp_path):
+    from ypuddin.config import parse_toml, write_config
+
+    cfg = TrainConfig.model_validate(
+        {
+            "loop": {"epochs": None, "max_steps": 3},
+            "sampling": {"every_epochs": None},
+            "validation": {"every_epochs": None},
+            "checkpoint": {"save_every_epochs": None},
+        }
+    )
+    text = dump_toml(cfg)
+    assert TrainConfig.model_validate(parse_toml(text)) == cfg
+    path = tmp_path / "worker.toml"
+    write_config(cfg, path)
+    loaded = load_config(path, base={"sampling": {"every_epochs": 8, "every_steps": 99}})
+    assert loaded == cfg
+    assert config_hash(loaded) == config_hash(cfg)
+    # A hand-written file without explicit-null metadata retains ordinary schema defaults.
+    assert TrainConfig.model_validate(parse_toml("[loop]\nmax_steps=3\n")).loop.epochs == 10
+
+
+def test_toml_nulls_preserve_nested_lists_and_literal_key_names():
+    from ypuddin.config import parse_toml
+
+    cfg = TrainConfig.model_validate(
+        {"optimizer": {"args": {"name.with/dots": None, "items": [None, "", {"a": None}]}}}
+    )
+    assert TrainConfig.model_validate(parse_toml(dump_toml(cfg))) == cfg
+
+
+def test_explicit_toml_value_overrides_null_metadata():
+    from ypuddin.config import parse_toml
+
+    data = parse_toml('__ypuddin_nulls__ = [["loop", "epochs"]]\n[loop]\nepochs=4\n')
+    assert data == {"loop": {"epochs": 4}}
+
+
+@pytest.mark.parametrize(
+    "metadata", ['"bad"', "[[]]", '[["loop", 1]]', '[["missing", "epochs"]]', "[[true]]"]
+)
+def test_invalid_toml_null_metadata_has_clear_parse_error(metadata):
+    from ypuddin.config import parse_toml
+
+    with pytest.raises(ValueError, match="null"):
+        parse_toml(f"__ypuddin_nulls__ = {metadata}\n[loop]\nmax_steps=3\n")

@@ -1,16 +1,17 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight, Database, Box, SlidersHorizontal, Activity } from 'lucide-react';
+import { projectUrl } from '../utils/projectVersions';
 import { useWorkspaceText } from '../utils/workspaceText';
 
 export type WorkspaceStep = 'data' | 'models' | 'train' | 'results';
 
-export function ProjectWorkflow({ projectId, active }: { projectId: string; active: WorkspaceStep }) {
+export function ProjectWorkflow({ projectId, versionId, active }: { projectId: string; versionId?: string | null; active: WorkspaceStep }) {
   const text = useWorkspaceText();
   const steps = [
-    { key: 'data', label: text('训练数据', 'Training data'), detail: text('上传图片与标签', 'Images and captions'), icon: Database, url: `/projects/${projectId}?step=data` },
-    { key: 'models', label: text('模型准备', 'Model setup'), detail: text('选择底模与组件', 'Base model and components'), icon: Box, url: `/projects/${projectId}?step=models` },
-    { key: 'train', label: text('参数与启动', 'Configure and train'), detail: text('设置参数，检查并启动', 'Configure, validate and start'), icon: SlidersHorizontal, url: `/projects/${projectId}/train` },
-    { key: 'results', label: text('任务与结果', 'Jobs and results'), detail: text('监控训练，下载模型', 'Monitor and download'), icon: Activity, url: `/projects/${projectId}?step=results` },
+    { key: 'data', label: text('训练数据', 'Training data'), detail: text('上传图片与标签', 'Images and captions'), icon: Database, url: projectUrl(projectId, versionId, 'data') },
+    { key: 'models', label: text('模型准备', 'Model setup'), detail: text('选择底模与组件', 'Base model and components'), icon: Box, url: projectUrl(projectId, versionId, 'models') },
+    { key: 'train', label: text('训练参数', 'Training parameters'), detail: text('设置参数，检查并启动', 'Configure, validate and start'), icon: SlidersHorizontal, url: projectUrl(projectId, versionId, 'train') },
+    { key: 'results', label: text('任务与结果', 'Jobs and results'), detail: text('监控训练，下载模型', 'Monitor and download'), icon: Activity, url: projectUrl(projectId, versionId, 'results') },
   ];
   return <nav aria-label={text('项目训练步骤', 'Project training steps')} className="project-workflow">
     {steps.map((step, index) => <Link key={step.key} to={step.url} aria-current={active === step.key ? 'step' : undefined} title={step.detail}>

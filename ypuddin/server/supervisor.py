@@ -145,7 +145,17 @@ class JobSupervisor:
                 with self.db.lock:
                     if maintenance_blocked(self.db):
                         break
-                    self._launch(nxt, device=device)
+                    current = self.db.fetchone("SELECT * FROM jobs WHERE id=?", (nxt["id"],))
+                    if not current or current["status"] != "queued":
+                        continue  # It may have been paused/deleted while hardware was inspected.
+                    if current.get("version_id"):
+                        version = self.db.fetchone(
+                            "SELECT * FROM project_versions WHERE id=?", (current["version_id"],)
+                        )
+                        if version and version["busy"]:
+                            continue
+                        self._check_job_version(current)
+                    self._launch(current, device=device)
             except Exception as exc:
                 log.exception("could not launch job %s", nxt["id"])
                 self._set_status(nxt["id"], "failed", error=str(exc), finished_at=now())
@@ -307,7 +317,7 @@ class JobSupervisor:
         self.db.update("jobs", job_id, {"progress_json": json.dumps(progress)})
 
     def _register_artifact(self, job_id: str, ev: dict[str, Any]) -> None:
-        job = self.db.fetchone("SELECT project_id, name FROM jobs WHERE id=?", (job_id,))
+        job = self.db.fetchone("SELECT project_id, version_id, name FROM jobs WHERE id=?", (job_id,))
         path = Path(ev["path"])
         if not path.exists():
             return
@@ -317,6 +327,7 @@ class JobSupervisor:
             {
                 "id": aid,
                 "project_id": job["project_id"] if job else None,
+                "version_id": job["version_id"] if job else None,
                 "job_id": job_id,
                 "name": path.name,
                 "path": str(path),
@@ -390,9 +401,15 @@ class JobSupervisor:
 
     # ----------------------------------------------------------------- control
     def request(self, job_id: str, command: str) -> dict[str, Any]:
+        with self.db.lock:
+            return self._request(job_id, command)
+
+    def _request(self, job_id: str, command: str) -> dict[str, Any]:
         job = self.db.fetchone("SELECT * FROM jobs WHERE id=?", (job_id,))
         if not job:
             raise KeyError(job_id)
+        if command in {"resume", "retry"}:
+            self._check_job_version(job)
         status = job["status"]
         if command == "pause":
             if status in ("queued", "scheduled"):
@@ -455,6 +472,7 @@ class JobSupervisor:
             proc.kill()
 
     def clone(self, job: dict[str, Any]) -> dict[str, Any]:
+        self._check_job_version(job)
         new = new_id("j")
         run_dir = Path(job["run_dir"]).parent / new
         cfg = json.loads(job["config_json"])
@@ -468,6 +486,7 @@ class JobSupervisor:
                 "type": job["type"],
                 "name": job["name"] + " (retry)",
                 "project_id": job["project_id"],
+                "version_id": job.get("version_id"),
                 "status": "queued",
                 "priority": job["priority"],
                 "created_at": now(),
@@ -488,3 +507,9 @@ class JobSupervisor:
 
     def is_running(self, job_id: str) -> bool:
         return job_id in self._procs
+
+    def _check_job_version(self, job: dict[str, Any]) -> None:
+        if job.get("version_id"):
+            version = self.db.fetchone("SELECT * FROM project_versions WHERE id=?", (job["version_id"],))
+            if not version or version["status"] != "ready" or version["busy"] or version["archived"]:
+                raise ValueError("job version is unavailable, archived or busy")

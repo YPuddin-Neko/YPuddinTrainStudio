@@ -32,9 +32,10 @@ const emit = (type: string, data: any) => act(() => subscriptions.get(type)?.for
 const chart = () => JSON.parse(screen.getAllByTestId('chart-option')[0].textContent!);
 const perfChart = () => JSON.parse(screen.getAllByTestId('chart-option').at(-1)!.textContent!);
 
-function showJob(vramMetric?: string) {
+function showJob(vramMetric?: string, versionId?: string) {
   server.use(
-    http.get('/api/jobs/job_01', () => HttpResponse.json({ ...mockJobs[0], progress: { step: 2, total_steps: 100, steps_per_epoch: 10, phase: 'training', vram_peak_mb: 2048, vram_metric: vramMetric } })),
+    http.get('/api/projects/proj_01/versions', () => HttpResponse.json([])),
+    http.get('/api/jobs/job_01', () => HttpResponse.json({ ...mockJobs[0], ...(versionId ? { version_id: versionId } : {}), progress: { step: 2, total_steps: 100, steps_per_epoch: 10, phase: 'training', vram_peak_mb: 2048, vram_metric: vramMetric } })),
     http.get('/api/jobs/job_01/metrics', () => HttpResponse.json({ steps: [1, 2], loss: [1, 0], loss_ema: [99, 99], lr: { default: [0.01, 0.005] }, grad_norm: [1, 1], vram_mb: [10, 20], vram_metric: vramMetric, it_s: [2, 2], validation: [] })),
   );
   render(<MemoryRouter initialEntries={['/jobs/job_01']}><Routes>
@@ -111,8 +112,9 @@ describe('training monitor interactions and events', () => {
       http.get('/api/jobs/job_01/config', () => HttpResponse.json({ model: { family: 'toy' }, dataset: { sources: [{ path: '/images' }] }, checkpoint: { output_dir: '/old' } })),
       http.post('/api/jobs', async ({ request }) => { body = await request.json(); return HttpResponse.json({ id: 'resumed-job' }); }),
     );
-    showJob();
+    showJob(undefined, 'v_original');
     await screen.findByText('2 / 100');
+    expect(screen.getByTitle('v_original').closest('a')).toHaveAttribute('href', '/projects/proj_01/v/v_original?step=results');
     checkpoints = [
       { step: 10, kind: 'weights', path: '/weights.safetensors', artifact_id: 'art_test', created_at: 1, size: 12, ema: true },
       { step: 10, kind: 'full', path: '/state-10', created_at: 1, size: 22 },
@@ -125,6 +127,33 @@ describe('training monitor interactions and events', () => {
     await waitFor(() => expect(body?.config?.checkpoint?.resume).toBe('/state-10'));
     expect(body.config.dataset.sources).toEqual([{ path: '/images' }]);
     expect(body.project_id).toBe('proj_01');
+    expect(body.version_id).toBe('v_original');
+  });
+
+  it('merges delayed initial samples with live files and recovers complete history after the job finishes', async () => {
+    const sample = (file: string, step: number) => ({ step, prompt_index: 0, prompt: file, seed: 7, url: `/api/jobs/job_01/files?path=${file}.png&kind=sample`, width: 64, height: 64, created_at: step + 1 });
+    const initial = sample('initial', 0), step5 = sample('step5', 5), epoch1 = sample('epoch1', 5), step10 = sample('step10', 10), epoch2 = sample('epoch2', 10);
+    let requests = 0; let releaseInitial: () => void = () => {};
+    server.use(http.get('/api/jobs/job_01/samples', async () => {
+      requests += 1;
+      if (requests === 1) { await new Promise<void>(resolve => { releaseInitial = resolve; }); return HttpResponse.json([initial]); }
+      return HttpResponse.json([initial, step5, epoch1, step10, epoch2]);
+    }));
+    showJob(); await screen.findByText('2 / 100');
+    await waitFor(() => expect(requests).toBe(1));
+    emit('job.sample', { ...step5, job_id: 'job_01' });
+    emit('job.sample', { ...epoch1, job_id: 'job_01' });
+    emit('job.sample', { ...epoch1, job_id: 'job_01' });
+    expect(screen.getByRole('button', { name: '采样图 (2)' })).toBeInTheDocument();
+    await act(async () => releaseInitial());
+    await screen.findByRole('button', { name: '采样图 (3)' });
+    emit('job.state', { job_id: 'other-job', status: 'completed' }); expect(requests).toBe(1);
+    emit('job.state', { job_id: 'job_01', status: 'completed' });
+    const samples = await screen.findByRole('button', { name: '采样图 (5)' });
+    expect(requests).toBe(2); fireEvent.click(samples);
+    expect(screen.getAllByRole('img')).toHaveLength(5);
+    expect(screen.getByRole('img', { name: 'initial' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'epoch2' })).toBeInTheDocument();
   });
 });
 
