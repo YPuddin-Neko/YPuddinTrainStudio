@@ -1,0 +1,440 @@
+{
+  "version": "0.5.3",
+  "recorded_at": "2026-09-11T23:58:09.790753+00:00",
+  "scope": "Frontend workspace redesign and navigation regressions. Backend training behavior unchanged.",
+  "reference": {
+    "project": "AnimaLoraStudio",
+    "version": "0.27.0",
+    "head": "3d9d2e86045b879cd19c01ac4aa2337f45a283ab",
+    "method": "Isolated local UI plus source review; no copied implementation or assets."
+  },
+  "frontend": {
+    "test_files": 48,
+    "tests_passed": 282,
+    "tests_failed": 0,
+    "test_command": "npm test -- --run",
+    "eslint_exit": 0,
+    "build_exit": 0,
+    "typescript": "Passed as part of npm run build",
+    "frontend_stale": false,
+    "manifest_sha256": "208374b9d1022976d157f5e462aee4e4a6f2a84e0bf1388f319490b974fe15af",
+    "outputs": {
+      "assets/AccessKeys-Bi123ZdL.css": "89335a656a3221f49e74a00b7207cf2832e3053751a4cae12e6df3cf027535be",
+      "assets/AccessKeys-BnCFVJR7.js": "fedcf50757c95114e310dc0841db7d9f9df0046e7559452c3272fb05dc42d31e",
+      "assets/Dashboard-BHkS85HI.css": "5224b8c8c36e0a3debc4e8a3a0b3b6018cc5dda9e867dd8ffeed24b01154abbf",
+      "assets/Dashboard-CkLJ-qfC.js": "f97ebf477b1437b3919ee38918798fcc3465b26b499c70b2ae0c321cccedf4c5",
+      "assets/Dataset-CSLy5NfI.css": "44206fa6960b0562a113a3a08e53ab885357120e2940cff1e43abb509bf2f5fb",
+      "assets/Dataset-D0XW5IBY.js": "3a61d928e99664ccabb4dc7982e88e58877d71d9a28b9d939da8571847a96328",
+      "assets/Dialog-Be7Fbwej.js": "f7ca525e4dea96dfac40ac6ca1b9e7244e0f5ce60b5848a9aa37b5fa95d18a73",
+      "assets/Dialog-waVbvSgd.css": "639dc7c3be7c1506f7be36f06224120f1c3bfc33fd147549178afc312d51549c",
+      "assets/EnvironmentSettings-Bc3fb9u8.js": "e8838e1544bc8214ff3a190223f1402a939f7a0641ce5f328add0634d80875d4",
+      "assets/JobDetail-BgYz5zzj.css": "524903eadc74b4308126d32d1eb863a23a1ec2b429f5f48833bcfe53cd58281a",
+      "assets/JobDetail-DrJYxGpd.js": "ea3d6a62c71871d798e6ce78eac35268ca226202ac43e5a2657e44d8a65d458e",
+      "assets/Models-B9hIDDLr.js": "2ae24faf37a40ee5726ae1d9f2c8e1232f2ab88e50a9988d6fa9f36b4516895d",
+      "assets/PathBrowser-CQaQ4fD9.js": "a87bc4fa805509212e19ae78df181eb2d0de9e489a1da0b4906589d735014c3f",
+      "assets/Preferences-pVWveo24.js": "f62d08a8b14f482080ada17ed3637dad3e153014f95916726c14ae2501c8007a",
+      "assets/ProjectDetail-BJH5K_mI.css": "5ed8ecdfc915029be4bf4151e15abbbbb22cbda1921ff7f8c65ff70687afc1c9",
+      "assets/ProjectDetail-BXU8bOPA.js": "5281c9174861452a70f07c7ff8a3a08a6997235079fb5449e905ba05d69d849a",
+      "assets/ProjectWorkspaceHeader-e-vM4aHI.js": "79cb0184dd284285eaa2c208e4559aaf01717bf74034b4abc514057bac0905c6",
+      "assets/Projects-BFw5tCP6.css": "c383b0974b31cbf84d881b4c9884566cf7477cfe5a86cdc72ad434cca8ea64d5",
+      "assets/Projects-Da2iJOo6.js": "665be0986cfdfd3bbcb3ddd662ca7d7281cdb6151bdd7238ead6aee5f9608244",
+      "assets/Queue-fKQCxYja.js": "0e0e758b9c25d02a65300823b5b1cea966a47f150eef5c5f79e6a4cc23a9d582",
+      "assets/Settings-D_WsM9fj.js": "96792518553caecce7980f43acada00e1b7dd71921bd01618f02d0aa98c977b6",
+      "assets/Settings-sVm9yzQt.css": "3b12cdb234a59bdd8576d3adc81c9a9be94d53fa7095a9226f1bd74b39804640",
+      "assets/SettingsSections-D52onIae.js": "e59db13624ec18549c47624f330edf7368d39dbf02e5e6ddff856d1434c88006",
+      "assets/TrainConfig-D1AQ1svf.css": "99f6bf57fe11dff171778973aaa00cec949995650b214eb2cec42e6b0f14b11f",
+      "assets/TrainConfig-D6o4R7Ps.js": "8b5ac21561939fbd65bffa8e2b519197ccde045aa7864a59ab1538ab1644ec39",
+      "assets/client-Dh3bE3i3.js": "dd18890f155d18e705c87bf705faa45411d06357d22732c15591574df382e68d",
+      "assets/echarts-Dp48jQwu.js": "ff55594c32bf2f2ffb111ae54e0e1e79b97ac3a4e644c31a7dcde53abc553dd2",
+      "assets/format-9G9_RQcA.js": "c0bb8f6085b5e23aaa0d05dd8e68b91adb3e2c6fcc8e93ef0b6b705fb7dda795",
+      "assets/index-DOkHgW2A.css": "5a2dabe1d0ffcc89b4cc0fbdbe4186edae6bdf414637826497e7cf9779f90cf4",
+      "assets/index-NsCMXz6e.js": "59207a434722dadc775db8f0e6df894914b081577dd19f0b378bcc1dafe6c4de",
+      "assets/jobPresentation-DkJ3T9Sz.js": "9567fc80f62429cd395cf825c887a60b1fa3a1085bed5aa2956c51db81faa401",
+      "assets/models-D6Xu74gX.css": "fd7fe16a0e4101c9cb653ee06130d4305d9c1226a81c42f27fc462452eede8e1",
+      "assets/project-workspace-Chv-nAGN.css": "3675acf88ec82df0b980bd6046d115a18b4a319b9f34f0b6519f8c01aeb5b286",
+      "assets/queue-BBLz0SeC.css": "c900c8aa220050896d49e975967a2b4d5c6f236d37873df167510d2a966198b5",
+      "assets/rolldown-runtime-hePW80VL.js": "580ad8c58061a4dde99bde0a56905e382f0568516ee2f5b84dbfb52085709021",
+      "assets/useFamilies-BTvKRaBj.js": "2d5fd3812c49c65c71b7d416ce706f998c00c8d097f4cac8a9fceafb35c4f9b7",
+      "assets/vendor-BS4aRX87.js": "5acbdada3ffc48b6da98eb031010f69623dd2fc86fc89c512b42ba88deb6fc6d",
+      "assets/workspaceConfig-CDr1SrUN.js": "3e7821a6a49b915531ee19675f5b5b473cc8d00b955ea16b36c1b12965510e8e",
+      "assets/workspaceText-CO2z8w8R.js": "e6adab22b68514d0447073a23f7b9a4add6512737a774c4f5ed9c2d53b1421e9",
+      "index.html": "3ade2bff91837d7c23b85123ffaf06c39764468d113f891c3c4d2088c890ea46",
+      "licenses/lucide-gpu.txt": "9558e922c3aa8d34b212e208272536492537cfa1b82a62c9185e1242d540cd95",
+      "mockServiceWorker.js": "26171599d94d5445297303f3a1f1cedec26835ea3d0057dcfa92ec520cb35cca",
+      "studio.svg": "4831f2cbe6f99f562201b74e8e204d923dbba42daf111d8a3b05537ddcb12274"
+    }
+  },
+  "browser": {
+    "formal_build_origin": "http://127.0.0.1:8894",
+    "user_preview": "http://127.0.0.1:8876/projects",
+    "viewports": [
+      [
+        1004,
+        773
+      ],
+      [
+        390,
+        844
+      ]
+    ],
+    "themes": [
+      "light",
+      "dark"
+    ],
+    "fixture": {
+      "images": 600,
+      "captions": 533,
+      "jobs": 251,
+      "waiting_held": 70,
+      "history": 181,
+      "samples": 48,
+      "utf8_log_lines": 1400,
+      "weights_are_synthetic": true
+    },
+    "cases": [
+      {
+        "case": "Compact single-project list",
+        "result": "pass",
+        "row_height_px": 48,
+        "no_single_page_pager": true
+      },
+      {
+        "case": "Workspace navigation density",
+        "result": "pass",
+        "title_height_px": 36,
+        "data_nav_height_px": 39,
+        "import_content_top_px": 163
+      },
+      {
+        "case": "600 image caption viewer",
+        "result": "pass",
+        "page": 2,
+        "pages": 15,
+        "first_page_image": "portrait_0040.png",
+        "grid_scroll_top_px": 1892,
+        "grid_scroll_height_px": 2309,
+        "grid_client_height_px": 417,
+        "next_step_rect_y": [
+          114,
+          142
+        ]
+      },
+      {
+        "case": "Narrow import and mobile sidebar",
+        "result": "pass",
+        "document_width_px": 390,
+        "sidebar_above_sticky_content": true,
+        "selected_stage_scrolls_into_view": true
+      },
+      {
+        "case": "Upload/hidden input/nested path browser controls",
+        "result": "pass",
+        "primary_button_blue_and_text_visible": true,
+        "file_inputs_keep_sr_only_geometry": true
+      },
+      {
+        "case": "Advanced training parameters",
+        "result": "pass",
+        "sequential_groups": true,
+        "fixed_launch_actions": true,
+        "bucket_preview_visible": true
+      },
+      {
+        "case": "Queue pagination and return context",
+        "result": "pass",
+        "history_page": 2,
+        "history_total": 181,
+        "url": "/queue?view=history&page=2"
+      },
+      {
+        "case": "Sample gallery pagination",
+        "result": "pass",
+        "page": 2,
+        "pages": 2,
+        "items_per_page": 24,
+        "first_step": 230,
+        "last_step": 0
+      },
+      {
+        "case": "UTF-8 full log pagination",
+        "result": "pass",
+        "lines_per_page": 500,
+        "page_2_first_index": 500,
+        "page_2_last_index": 999
+      },
+      {
+        "case": "Browser Back with failed caption save",
+        "result": "pass",
+        "injection": "An isolated existing fixture caption was temporarily read-only. A real backend PermissionError occurred.",
+        "draft_and_route_retained": true,
+        "retry_after_permission_restore_saved_then_navigated": true,
+        "fixture_content_and_permissions_restored": true
+      },
+      {
+        "case": "Browser Back with unsaved mask",
+        "result": "pass",
+        "black_mask_retained": true,
+        "undo_retained": true,
+        "undo_restored_white": true,
+        "mask_not_written": true
+      },
+      {
+        "case": "Settings drawer and uniform select",
+        "result": "pass",
+        "workspace_background_retained": true,
+        "unsupported_extensions_disabled": true
+      },
+      {
+        "case": "Data Router Back/Forward failures, mask history and settings background",
+        "result": "pass",
+        "evidence": "frontend/tests/datasetRouterNavigation.test.tsx: real AppRoutes in createMemoryRouter; complements browser Back check."
+      },
+      {
+        "case": "Searchable select closed retyping",
+        "result": "pass",
+        "evidence": "frontend/tests/studioSelect.test.tsx; missing -> Escape -> b -> Enter only selects visible Bravo."
+      }
+    ]
+  },
+  "screenshots": [
+    {
+      "path": "docs/screenshots/v0.5.3/import-dark.png",
+      "bytes": 55662,
+      "sha256": "3265dd2ef9ea74df06956f86193932810873dae9c0d5c3f691e3649e0cbd1b52"
+    },
+    {
+      "path": "docs/screenshots/v0.5.3/import-desktop.png",
+      "bytes": 56259,
+      "sha256": "153b2b38eea875f3390c3bac77f6616785218ce034c0feccd99ca81c65cc9ff1"
+    },
+    {
+      "path": "docs/screenshots/v0.5.3/import-narrow.png",
+      "bytes": 33229,
+      "sha256": "44e24bfb829eec72db56de9b7870ba249d3b157daf81cd4ad06fc80171e210e8"
+    },
+    {
+      "path": "docs/screenshots/v0.5.3/projects-desktop.png",
+      "bytes": 30409,
+      "sha256": "c7791ddeb1c8f0aab55be64826702d0bd5b94383525d26dcb00e6418da98b712"
+    },
+    {
+      "path": "docs/screenshots/v0.5.3/queue-history-page2.png",
+      "bytes": 80058,
+      "sha256": "1359e6dda10aaa99ef59469ec152d8160107ef584cf450ff0207833ae35e4948"
+    },
+    {
+      "path": "docs/screenshots/v0.5.3/samples-page2.png",
+      "bytes": 60936,
+      "sha256": "ad09ebf99780bf65969dd635bcaefa3b4b5669027c4fdf3210a8cb179cabfff8"
+    },
+    {
+      "path": "docs/screenshots/v0.5.3/settings-select.png",
+      "bytes": 57199,
+      "sha256": "40b6aa540c4c9bca3c3cd5f46fb60528d5d003fec9bf7d001e57b9b378b368eb"
+    },
+    {
+      "path": "docs/screenshots/v0.5.3/sidebar-narrow.png",
+      "bytes": 29030,
+      "sha256": "81acbb1d4b31cb17d0afb485ea3b7dd4ea53007db6d7fc3b76065b5bb1feac41"
+    },
+    {
+      "path": "docs/screenshots/v0.5.3/tags-600-scrolled.png",
+      "bytes": 66661,
+      "sha256": "a19f0cf07af5dd8a37c155586fb98e23d91495f3e179e9573044ac5144cdc145"
+    },
+    {
+      "path": "docs/screenshots/v0.5.3/training-advanced.png",
+      "bytes": 79296,
+      "sha256": "a984909d2f67c9136eaa6f0d0a9107dd7b201356eca19ceeb257c24443aa5851"
+    }
+  ],
+  "service_restart": {
+    "data_root": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio",
+    "old_pid": 97169,
+    "old_command": "venv/bin/ypuddin serve --data-root /private/tmp/ypuddin-v040-ui-iynrkk8w/studio --host 127.0.0.1 --port 8876",
+    "before_health": {
+      "version": "0.5.2",
+      "api_version": 1,
+      "torch": "2.14.0",
+      "cuda": null,
+      "mps": true,
+      "gpus": [
+        {
+          "index": 0,
+          "kind": "mps",
+          "name": "Apple M4 GPU",
+          "total_mb": 32768
+        }
+      ],
+      "families": [
+        "anima",
+        "krea2",
+        "toy"
+      ]
+    },
+    "before_tables": {
+      "projects": {
+        "count": 1,
+        "sha256": "06111a2da23ae463189c3111d073ce4082471678467e7efc647eada73a73a61b"
+      },
+      "project_versions": {
+        "count": 3,
+        "sha256": "c39a39ffa07d9086124e1f6ce7d62c1207ac842cea3163d0ad500ab2e795acc8"
+      },
+      "datasets": {
+        "count": 3,
+        "sha256": "8c4c990cf17b383e5a26fe2b25075f8fc127366fe3453b9a72eafa6cbf84a521"
+      },
+      "jobs": {
+        "count": 3,
+        "sha256": "f2d4c391aa25046b914c6d4536dab7dfe5f99cb8b70d8033bce992daa8cd4e3b"
+      },
+      "artifacts": {
+        "count": 8,
+        "sha256": "a9c06ecc0da6fa604424cfa53da06ea19d95d79c714b463cc737cf8fcd79734f"
+      },
+      "models": {
+        "count": 1,
+        "sha256": "80ceb62bc8a64579ee62f3b98d3c61e54a085d272d8c49a3e0716ae95288aa08"
+      }
+    },
+    "before_credentials": {
+      "huggingface": {
+        "configured": true
+      },
+      "modelscope": {
+        "configured": false
+      },
+      "danbooru": {
+        "configured": false
+      },
+      "gelbooru": {
+        "configured": false
+      }
+    },
+    "active_downloads": [],
+    "active_environment": [],
+    "after_pid": 26002,
+    "session": 21547,
+    "log": "/private/tmp/ypuddin-v053-main-service.log",
+    "after_health": {
+      "version": "0.5.3",
+      "api_version": 1,
+      "torch": "2.14.0",
+      "cuda": null,
+      "mps": true,
+      "gpus": [
+        {
+          "index": 0,
+          "kind": "mps",
+          "name": "Apple M4 GPU",
+          "total_mb": 32768
+        }
+      ],
+      "families": [
+        "anima",
+        "krea2",
+        "toy"
+      ]
+    },
+    "after_tables": {
+      "projects": {
+        "count": 1,
+        "sha256": "06111a2da23ae463189c3111d073ce4082471678467e7efc647eada73a73a61b"
+      },
+      "project_versions": {
+        "count": 3,
+        "sha256": "c39a39ffa07d9086124e1f6ce7d62c1207ac842cea3163d0ad500ab2e795acc8"
+      },
+      "datasets": {
+        "count": 3,
+        "sha256": "8c4c990cf17b383e5a26fe2b25075f8fc127366fe3453b9a72eafa6cbf84a521"
+      },
+      "jobs": {
+        "count": 3,
+        "sha256": "f2d4c391aa25046b914c6d4536dab7dfe5f99cb8b70d8033bce992daa8cd4e3b"
+      },
+      "artifacts": {
+        "count": 8,
+        "sha256": "a9c06ecc0da6fa604424cfa53da06ea19d95d79c714b463cc737cf8fcd79734f"
+      },
+      "models": {
+        "count": 1,
+        "sha256": "80ceb62bc8a64579ee62f3b98d3c61e54a085d272d8c49a3e0716ae95288aa08"
+      }
+    },
+    "after_credentials": {
+      "huggingface": {
+        "configured": true
+      },
+      "modelscope": {
+        "configured": false
+      },
+      "danbooru": {
+        "configured": false
+      },
+      "gelbooru": {
+        "configured": false
+      }
+    },
+    "table_hashes_preserved": true,
+    "frontend_stale": false,
+    "root_and_deep_spa_match_dist": true,
+    "verified_assets": [
+      "assets/AccessKeys-Bi123ZdL.css",
+      "assets/AccessKeys-BnCFVJR7.js",
+      "assets/Dashboard-BHkS85HI.css",
+      "assets/Dashboard-CkLJ-qfC.js",
+      "assets/Dataset-CSLy5NfI.css",
+      "assets/Dataset-D0XW5IBY.js",
+      "assets/Dialog-Be7Fbwej.js",
+      "assets/Dialog-waVbvSgd.css",
+      "assets/EnvironmentSettings-Bc3fb9u8.js",
+      "assets/JobDetail-BgYz5zzj.css",
+      "assets/JobDetail-DrJYxGpd.js",
+      "assets/Models-B9hIDDLr.js",
+      "assets/PathBrowser-CQaQ4fD9.js",
+      "assets/Preferences-pVWveo24.js",
+      "assets/ProjectDetail-BJH5K_mI.css",
+      "assets/ProjectDetail-BXU8bOPA.js",
+      "assets/ProjectWorkspaceHeader-e-vM4aHI.js",
+      "assets/Projects-BFw5tCP6.css",
+      "assets/Projects-Da2iJOo6.js",
+      "assets/Queue-fKQCxYja.js",
+      "assets/Settings-D_WsM9fj.js",
+      "assets/Settings-sVm9yzQt.css",
+      "assets/SettingsSections-D52onIae.js",
+      "assets/TrainConfig-D1AQ1svf.css",
+      "assets/TrainConfig-D6o4R7Ps.js",
+      "assets/client-Dh3bE3i3.js",
+      "assets/echarts-Dp48jQwu.js",
+      "assets/format-9G9_RQcA.js",
+      "assets/index-DOkHgW2A.css",
+      "assets/index-NsCMXz6e.js",
+      "assets/jobPresentation-DkJ3T9Sz.js",
+      "assets/models-D6Xu74gX.css",
+      "assets/project-workspace-Chv-nAGN.css",
+      "assets/queue-BBLz0SeC.css",
+      "assets/rolldown-runtime-hePW80VL.js",
+      "assets/useFamilies-BTvKRaBj.js",
+      "assets/vendor-BS4aRX87.js",
+      "assets/workspaceConfig-CDr1SrUN.js",
+      "assets/workspaceText-CO2z8w8R.js"
+    ],
+    "api_project": "p_9830a0aed22c",
+    "api_versions": 3
+  },
+  "historical_backend_validation": {
+    "version": "0.5.2",
+    "passed": 562,
+    "cuda_skipped": 3,
+    "rerun_this_version": false
+  },
+  "limits": [
+    "No Windows NVIDIA full-model training validation.",
+    "No fresh Windows/Linux dependency installation or CUDA wheel validation.",
+    "No complete real-account large-model download or regularization-site collection in this iteration.",
+    "Toy, synthetic samples, and fixture weights do not establish training quality or production performance."
+  ],
+  "npm_audit_run": false
+}

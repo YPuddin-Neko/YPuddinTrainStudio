@@ -151,6 +151,28 @@ describe('version result workspace', () => {
 });
 
 describe('embedded output scope', () => {
+  it('keeps embedded search, sorting, counts and refresh together without a duplicate title', async () => {
+    artifacts = [{ ...artifact('recent'), step: 10, created_at: 1700000020 }, { ...artifact('advanced'), step: 30 }];
+    render(<MemoryRouter><Artifacts embedded projectId="p1" versionId="v1"/></MemoryRouter>);
+    await screen.findByTestId('artifact-row-recent');
+    expect(screen.queryByRole('heading')).not.toBeInTheDocument();
+    const controls = screen.getByRole('textbox', { name: '搜索训练产物' }).closest<HTMLElement>('.artifact-controls')!;
+    expect(controls).toHaveTextContent('2 个产物');
+    fireEvent.click(within(controls).getByRole('combobox', { name: '产物排序' }));
+    fireEvent.click(screen.getByRole('option', { name: '训练步数降序' }));
+    expect(screen.getAllByTestId(/^artifact-row-/)[0]).toHaveAttribute('data-testid', 'artifact-row-advanced');
+    fireEvent.change(within(controls).getByRole('textbox', { name: '搜索训练产物' }), { target: { value: 'advanced' } });
+    expect(controls).toHaveTextContent('1 个产物');
+    fireEvent.click(within(controls).getByRole('button', { name: '刷新产物' }));
+    await screen.findByTestId('artifact-row-advanced');
+    expect(within(controls).getByRole('textbox', { name: '搜索训练产物' })).toHaveValue('advanced');
+    expect(within(controls).getByRole('combobox', { name: '产物排序' })).toHaveTextContent('训练步数降序');
+    expect(screen.queryByTestId('artifact-row-recent')).not.toBeInTheDocument();
+    fireEvent.click(within(controls).getByRole('button', { name: '清除筛选' }));
+    expect(screen.getAllByTestId(/^artifact-row-/)).toHaveLength(2);
+    expect(apiClient.get).toHaveBeenCalledTimes(2);
+  });
+
   it('pages weights using the top filter controls and keeps download actions on the selected page', async () => {
     artifacts = Array.from({ length: 26 }, (_, index) => artifact(`output-${index}`));
     render(<MemoryRouter><Artifacts embedded projectId="p1" versionId="v1"/></MemoryRouter>);
@@ -204,6 +226,10 @@ it('opens weights by default and scopes weights to a chosen training record with
   render(<MemoryRouter><VersionResults projectId="p1" versionId="v1"/><Location/></MemoryRouter>);
   await screen.findByTestId('artifact-row-a1');
   expect(screen.getByRole('tab', { name: '模型权重' })).toHaveAttribute('aria-selected', 'true');
+  const toolbar = screen.getByRole('tablist', { name: '版本训练结果' }).closest<HTMLElement>('.results-toolbar')!;
+  expect(toolbar).toHaveTextContent('共 2 次训练');
+  expect(within(toolbar).getByRole('link', { name: '全局队列' })).toHaveAttribute('href', '/queue?project_id=p1');
+  expect(screen.queryByText('此版本的模型权重、采样图与训练记录。')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: '暂停' })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('tab', { name: '训练记录' }));
   const row = await screen.findByTestId('result-job-j1');

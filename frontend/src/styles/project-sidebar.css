@@ -1,0 +1,36 @@
+.project-sidebar-slot:empty { display:none; }
+.project-sidebar { min-width:0; margin:5px 0 10px 9px; padding:9px 7px 7px 9px; border-left:1px solid var(--studio-line); color:var(--studio-text); }
+.project-sidebar-identity { display:flex; flex-direction:column; min-width:0; gap:3px; padding:2px 0 10px; }
+.project-sidebar-identity strong { font-size:13px; font-weight:650; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.project-sidebar-identity small { font-size:10px; color:var(--studio-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.project-sidebar-version-heading { display:flex; justify-content:space-between; gap:5px; margin-bottom:5px; font-size:10px; color:var(--studio-dim); }
+.project-sidebar-version-state { display:inline-flex; align-items:center; gap:3px; }
+.project-sidebar-version-state.status-failed { color:#dc2626; }.dark .project-sidebar-version-state.status-failed { color:#fca5a5; }
+.project-sidebar > .studio-select { min-height:32px; font-size:12px; gap:5px; padding:5px 6px; }
+.project-sidebar-actions { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:4px; margin:5px 0 8px; }
+.project-sidebar-actions > button { display:flex; align-items:center; justify-content:center; min-width:0; height:29px; border:1px solid var(--studio-line); border-radius:5px; background:var(--studio-panel); color:var(--studio-dim); }
+.project-sidebar-actions > button:hover:not(:disabled) { border-color:var(--studio-accent); color:var(--studio-accent); background:var(--studio-muted); }
+.project-sidebar-actions > button:disabled { opacity:.4; cursor:not-allowed; }
+.project-sidebar-archived { display:flex; align-items:center; gap:5px; font-size:10px; color:var(--studio-dim); margin:2px 0 8px; }
+.project-sidebar-archived input { width:12px; height:12px; margin:0; }
+.project-sidebar .sidebar-project-stages { display:block; }
+.project-sidebar .sidebar-project-stages .project-workflow { display:flex; flex-direction:column; gap:3px; border:0; background:transparent; margin:0; border-radius:0; overflow:visible; }
+.project-sidebar .sidebar-project-stages .project-workflow a { flex:none; justify-content:flex-start; gap:7px; min-height:34px; padding:7px 6px; border:0; border-radius:5px; font-size:12px; }
+.project-sidebar .sidebar-project-stages .project-workflow a[aria-current] { box-shadow:inset 2px 0 var(--studio-accent); }
+.project-sidebar .sidebar-project-stages .project-workflow .step-number { display:none; }
+.project-sidebar .sidebar-project-stages .project-workflow svg { display:block; flex-shrink:0; }
+.project-sidebar-fallback { width:184px; max-width:100%; }
+.workspace-navigation.workspace-page-heading { display:flex; flex-direction:row; align-items:center; justify-content:space-between; gap:12px; min-height:36px; padding:0 0 6px; margin:0; box-shadow:none; }
+.workspace-page-heading > h1 { margin:0; font-size:16px; line-height:24px; font-weight:650; }
+.workspace-page-heading .project-heading-status { min-width:0; font-size:11px; }
+.project-workspace { --workspace-head-height:36px; }
+.training-studio .training-toolbar-title h2 { display:none; }
+@media(max-width:767px) {
+  .app-sidebar-backdrop { z-index:40; }
+  .app-sidebar { z-index:45; }
+  .project-sidebar { margin-left:7px; }
+  .project-sidebar-actions > button { min-height:36px; }
+  .project-sidebar .sidebar-project-stages .project-workflow a { min-height:40px; }
+  .workspace-navigation.workspace-page-heading { gap:8px; }
+  .workspace-page-heading > h1 { font-size:15px; }
+}

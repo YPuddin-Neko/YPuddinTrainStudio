@@ -12,6 +12,8 @@ import { formatApiError } from '../utils/errors';
 import { useWorkspaceText } from '../utils/workspaceText';
 import SystemTelemetry from './SystemTelemetry';
 import StudioSelect from './StudioSelect';
+import { ProjectSidebarContext } from './projects/ProjectSidebarContext';
+import '../styles/project-sidebar.css';
 
 const NavItem = ({ to, icon: Icon, label, active, state }: any) => (
   <Link
@@ -36,6 +38,9 @@ export default function Layout() {
   const [theme, setTheme] = React.useState<Settings['ui']['theme']>('system');
   const [systemDark, setSystemDark] = React.useState(window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false);
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const [projectSidebarTarget, setProjectSidebarTarget] = React.useState<HTMLDivElement | null>(null);
+  const closeNavigation = React.useCallback(() => setMenuOpen(false), []);
+  const projectSidebar = React.useMemo(() => ({ target: projectSidebarTarget, closeNavigation }), [projectSidebarTarget, closeNavigation]);
   const contentRef = React.useRef<HTMLDivElement>(null);
   const isDark = theme === 'dark' || (theme === 'system' && systemDark);
   const connectionStatus = useEventStreamStatus();
@@ -45,6 +50,7 @@ export default function Layout() {
   const previousConnectionRef = React.useRef(connectionStatus);
   const [savingUi, setSavingUi] = React.useState(false);
   const [runningJobs, setRunningJobs] = React.useState<Job[]>([]);
+  React.useEffect(() => { setMenuOpen(false); }, [location.pathname, location.search]);
 
   React.useEffect(() => {
     if (isDark) document.documentElement.classList.add('dark');
@@ -141,10 +147,10 @@ export default function Layout() {
   const runningJob = runningJobs[0];
 
   return (
-    <div className="app-shell flex overflow-hidden">
+    <ProjectSidebarContext.Provider value={projectSidebar}><div className="app-shell flex overflow-hidden">
       {/* Sidebar */}
-      {menuOpen && <button className="fixed inset-0 z-20 bg-black/40 md:hidden" aria-label={t('hardware.closeMenu')} onClick={() => setMenuOpen(false)} />}
-      <aside className={`w-[184px] flex-shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex-col fixed inset-y-0 left-0 z-30 md:static ${menuOpen ? 'flex' : 'hidden md:flex'}`}>
+      {menuOpen && <button className="app-sidebar-backdrop fixed inset-0 bg-black/40 md:hidden" aria-label={t('hardware.closeMenu')} onClick={() => setMenuOpen(false)} />}
+      <aside className={`app-sidebar w-[184px] flex-shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex-col fixed inset-y-0 left-0 md:static ${menuOpen ? 'flex' : 'hidden md:flex'}`}>
         <div className="sidebar-brand-row">
           <Link to="/projects" className="sidebar-brand" onClick={() => setMenuOpen(false)} aria-label="YPuddin Train Studio">
             <svg className="sidebar-brand-mark" width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
@@ -157,16 +163,18 @@ export default function Layout() {
           <button onClick={() => setMenuOpen(false)} className="sidebar-menu-close md:hidden" aria-label={t('hardware.closeMenu')}><X className="w-4 h-4" /></button>
         </div>
         <div className="px-3 pt-3"><Link to="/projects" onClick={() => setMenuOpen(false)} className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 px-3 py-2.5 text-sm font-medium text-white"><Plus className="w-4 h-4" />{t('hardware.startTraining')}</Link></div>
-        <nav aria-label={text('主导航', 'Main navigation')} className="flex-1 overflow-y-auto p-2 space-y-1" onClick={() => setMenuOpen(false)}>
+        <nav aria-label={text('主导航', 'Main navigation')} className="flex-1 overflow-y-auto p-2 space-y-1" onClick={event => { if (event.target instanceof Element && event.target.closest('a[href]')) setMenuOpen(false); }}>
           {navItems.map((item) => (
+            <React.Fragment key={item.to}>
             <NavItem
-              key={item.to}
               to={item.to}
               icon={item.icon}
               label={item.label}
               active={location.pathname === item.to || (item.to !== '/' && location.pathname.startsWith(item.to))}
               state={item.to === '/settings' ? (location.pathname.startsWith('/settings') ? location.state?.backgroundLocation ? { backgroundLocation: location.state.backgroundLocation } : undefined : { backgroundLocation: location }) : undefined}
             />
+            {item.to === '/projects' && <div ref={setProjectSidebarTarget} className="project-sidebar-slot" data-testid="project-sidebar-slot"/>}
+            </React.Fragment>
           ))}
         </nav>
         <div className="sidebar-preferences" aria-label={text('界面偏好', 'Interface preferences')}>
@@ -210,6 +218,6 @@ export default function Layout() {
           <div className="app-page-frame" data-testid="app-page-frame"><React.Suspense fallback={<div className="space-y-4" role="status" data-testid="app-page-loading"><span className="sr-only">{t('common.loading')}</span><div className="h-6 w-48 rounded bg-slate-200 dark:bg-slate-800"/><div className="h-40 rounded-lg bg-slate-100 dark:bg-slate-900"/></div>}><Outlet /></React.Suspense></div>
         </div>
       </main>
-    </div>
+    </div></ProjectSidebarContext.Provider>
   );
 }

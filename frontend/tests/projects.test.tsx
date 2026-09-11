@@ -31,7 +31,7 @@ it('paginates 73 projects and resets the page when searching or changing the arc
   expect(screen.getByTestId('project-location')).toHaveTextContent('page=2');
   fireEvent.change(screen.getByRole('textbox', { name: '搜索项目' }), { target: { value: '样本 06' } });
   expect(screen.getAllByTestId(/^project-card-/)).toHaveLength(10);
-  expect(screen.getByLabelText('当前页')).toHaveTextContent('1 / 1');
+  expect(screen.queryByRole('navigation', { name: '项目分页' })).not.toBeInTheDocument();
   expect(screen.getByTestId('project-location')).not.toHaveTextContent('page=');
   fireEvent.change(screen.getByRole('textbox', { name: '搜索项目' }), { target: { value: '' } });
   fireEvent.click(screen.getByRole('button', { name: '下一页' }));
@@ -39,14 +39,14 @@ it('paginates 73 projects and resets the page when searching or changing the arc
   expect(screen.getByLabelText('当前页')).toHaveTextContent('1 / 2');
   expect(screen.getByTestId('project-card-p0')).toBeInTheDocument();
   expect(screen.queryByTestId('project-card-p1')).not.toBeInTheDocument();
-  expect(screen.getByRole('navigation', { name: '项目分页' })).toHaveTextContent('共 37 个项目');
+  expect(screen.getByRole('navigation', { name: '项目分页' })).toHaveAttribute('title', '共 37 个项目 · 每页 24 个');
   expect(document.querySelector('select')).toBeNull();
 });
 
 it('restores the list search and page after opening a project and using browser back', async () => {
   show('/projects?q=%E6%A0%B7%E6%9C%AC&page=2');
   const card = await screen.findByTestId('project-card-p24');
-  fireEvent.click(within(card).getByRole('link', { name: '打开训练工作区 →' }));
+  fireEvent.click(within(card).getByRole('link', { name: '打开项目：样本 024' }));
   expect(screen.getByTestId('project-location')).toHaveTextContent('/projects/p24');
   fireEvent.click(screen.getByRole('button', { name: 'Browser back' }));
   await screen.findByTestId('project-card-p24');
@@ -88,7 +88,7 @@ it('clears a failed list load after retry and retains a failed rename inside its
   expect(within(dialog).getByRole('textbox', { name: '项目名称' })).toHaveValue('保留的新名称');
   expect(within(dialog).getByRole('textbox', { name: '项目名称' })).toBeEnabled();
   fireEvent.click(within(dialog).getByRole('button', { name: '保存' }));
-  await screen.findByRole('link', { name: '保留的新名称' });
+  await screen.findByRole('link', { name: '打开项目：保留的新名称' });
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });
@@ -124,4 +124,26 @@ it('prevents dismissing a pending create and opens the created project once the 
   await waitFor(() => expect(screen.getByTestId('project-location')).toHaveTextContent('/projects/Character_01'));
   expect(apiClient.post).toHaveBeenCalledTimes(1);
   expect(apiClient.post).toHaveBeenCalledWith('/projects', { id: 'Character_01', name: '角色新项目', note: '' }, { silent: true });
+});
+
+it('shows a compact single-project row with one entry link, inline metadata and no empty-note or single-page filler', async () => {
+  projects = [{ ...projects[0], note: '', version_count: 3, dataset_ids: ['d1', 'd2'], stats: { jobs: 7, artifacts: 4 } }];
+  show();
+  const row = await screen.findByRole('listitem');
+  expect(within(row).getAllByRole('link')).toHaveLength(1);
+  expect(within(row).getByRole('link', { name: '打开项目：样本 000' })).toHaveAttribute('href', '/projects/p0');
+  expect(within(row).getByLabelText('版本: 3')).toBeInTheDocument();
+  expect(within(row).getByLabelText(`${i18n.t('projects.datasets')}: 2`)).toBeInTheDocument();
+  expect(within(row).getByLabelText(`${i18n.t('projects.jobs')}: 7`)).toBeInTheDocument();
+  expect(within(row).getByLabelText(`${i18n.t('projects.artifacts')}: 4`)).toBeInTheDocument();
+  expect(screen.queryByText(i18n.t('projects.noNote'))).not.toBeInTheDocument();
+  expect(screen.queryByText(i18n.t('projects.createdAt'))).not.toBeInTheDocument();
+  expect(screen.queryByRole('navigation', { name: '项目分页' })).not.toBeInTheDocument();
+  fireEvent.click(within(row).getByRole('button', { name: `${i18n.t('projects.archive')}: 样本 000` }));
+  const restored = await screen.findByRole('button', { name: `${i18n.t('projects.unarchive')}: 样本 000` });
+  expect(apiClient.patch).toHaveBeenCalledWith('/projects/p0', { archived: true });
+  expect(screen.getByTestId('project-location')).toHaveTextContent('/projects');
+  fireEvent.click(restored);
+  await screen.findByRole('button', { name: `${i18n.t('projects.archive')}: 样本 000` });
+  expect(apiClient.patch).toHaveBeenLastCalledWith('/projects/p0', { archived: false });
 });

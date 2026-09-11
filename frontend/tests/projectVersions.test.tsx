@@ -110,12 +110,20 @@ describe('explicit project version actions', () => {
     expect(await screen.findByRole('dialog', { name: '新建实验版本' })).toBeInTheDocument();
   });
 
-  it.each([{ active: 'train' as const, suffix: '/train' }, { active: 'results' as const, suffix: '?step=results' }])('switches versions using an explicit path while preserving $active', ({ active, suffix }) => {
+  it.each([{ active: 'train' as const, suffix: '/train' }, { active: 'results' as const, suffix: '?step=results' }])('switches versions using an explicit path while preserving $active', async ({ active, suffix }) => {
     render(wrap(<ProjectWorkspaceHeader project={project} versionId="v1" versions={versions} current={versions[0]} active={active} refresh={vi.fn().mockResolvedValue(undefined)}/>));
-    const link = within(screen.getByRole('navigation', { name: '项目版本' })).getByRole('link', { name: 'v2' });
-    expect(link).toHaveAttribute('href', `/projects/p_versions/v/v2${suffix}`);
-    fireEvent.click(link);
-    expect(screen.getByTestId('location')).toHaveTextContent(`/projects/p_versions/v/v2${suffix}`);
+    fireEvent.click(screen.getByRole('combobox', { name: '项目版本' }));
+    fireEvent.click(screen.getByRole('option', { name: 'v2' }));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(`/projects/p_versions/v/v2${suffix}`));
+  });
+
+  it('keeps the selected version and reports the save error when switching cannot flush the current draft', async () => {
+    const flush=vi.fn().mockRejectedValue(new Error('Version save failed'));
+    render(wrap(<ProjectWorkspaceHeader project={project} versionId="v1" versions={versions} current={versions[0]} active="train" refresh={vi.fn().mockResolvedValue(undefined)} beforeAction={flush}/>));
+    const selector=screen.getByRole('combobox',{name:'项目版本'});fireEvent.click(selector);fireEvent.click(screen.getByRole('option',{name:'v2'}));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Version save failed');
+    expect(selector).toHaveTextContent('v1');expect(selector).toBeEnabled();
+    expect(screen.getByTestId('location')).toHaveTextContent('/projects/p_versions/v/v1/train');expect(flush).toHaveBeenCalledOnce();
   });
 
   it('waits for the current version PUT before switching and never writes that draft into the destination version', async () => {
@@ -125,10 +133,11 @@ describe('explicit project version actions', () => {
       await new Promise<void>(resolve => { finishSave = resolve; }); state.configs.v1 = config; return HttpResponse.json(config);
     }));
     render(wrap(<Routes><Route path="/projects/:id/v/:versionId/train" element={<TrainConfig/>}/></Routes>));
-    await screen.findByRole('link', { name: 'v2' });
+    await screen.findByRole('combobox', { name: '项目版本' });
     await waitFor(() => expect(screen.getByRole('spinbutton', { name: 'loop.epochs' })).toHaveValue(2));
     fireEvent.change(screen.getByRole('spinbutton', { name: 'loop.epochs' }), { target: { value: '7' } });
-    fireEvent.click(within(screen.getByRole('navigation', { name: '项目版本' })).getByRole('link', { name: 'v2' }));
+    fireEvent.click(screen.getByRole('combobox', { name: '项目版本' }));
+    fireEvent.click(screen.getByRole('option', { name: 'v2' }));
     await waitFor(() => expect(pending).toHaveLength(1));
     expect(pending[0]).toMatchObject({ scope: 'v1', config: { loop: { epochs: 7 } } });
     expect(screen.getByTestId('location')).toHaveTextContent('/projects/p_versions/v/v1/train');

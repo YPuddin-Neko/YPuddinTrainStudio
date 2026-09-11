@@ -13,7 +13,8 @@ export function JobContext({ job }: { job: ContextJob }) {
   if (!job.project_id) return <span className="task-muted">{text('独立任务', 'Standalone job')}</span>;
   const number = job.version_number ? `v${job.version_number}` : '';
   const name = job.version_name?.trim() || '';
-  const version = number && name && number.toLowerCase() !== name.toLowerCase() ? `${number} · ${name}` : name || number || text('所属版本', 'Job version');
+  const includesNumber = number && new RegExp(`^${number}(?:$|[\\s·:：-])`, 'i').test(name);
+  const version = number && name && !includesNumber ? `${number} · ${name}` : name || number || text('所属版本', 'Job version');
   return <Link className="task-context" to={projectUrl(job.project_id, job.version_id, 'results')}>
     <strong>{job.project_name || job.project_id}</strong>
     <small>{version}</small>

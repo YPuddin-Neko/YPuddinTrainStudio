@@ -1,12 +1,12 @@
 # YPuddin Train Studio — 项目交接报告
 
 > 写给接手本项目的模型/工程师。本文自洽：读完这一份 + 点开的几个文件，就能不需要前任任何上下文地继续开发。
-> 日期：2026-09-12 · 仓库：`xiangmuyuanma/` · 当前源码与前端版本为 0.5.2；本轮设计审查与发布验收状态见下述最新报告，不复用旧版测试总数。
+> 日期：2026-09-12 · 仓库：`xiangmuyuanma/` · 当前源码与前端版本为 0.5.3；本轮设计审查与发布验收状态见下述最新报告，不复用旧版测试总数。
 
 ## 0. 先读这三个文件
 
 1. 本文。
-2. `docs/UI_DESIGN_REVIEW_2026-09-12.md` —— 最新 v0.5.2 中央访问密钥、官方模型候选、队列/版本结果、导航标签与请求隔离。`docs/UI_SIMPLIFICATION_2026-09-12.md` 保留 v0.5.1 项目目录、正则图及自动打标移除记录；`docs/native-resolution.md` 解释原生尺寸与梯度规则。UI_PIPELINE、UI_VERSIONS、UI_WORKFLOW、UI_REDESIGN、FIX_REPORT 与 COMPLETION_AUDIT 是历史证据。
+2. `docs/UI_WORKSPACE_V053_2026-09-12.md` —— 最新 v0.5.3 侧栏工作区、紧凑项目/导入/结果与移动叠层；`docs/USER_REQUIREMENTS_AUDIT_2026-09-12.md` 逐项对应历史要求。`docs/UI_DESIGN_REVIEW_2026-09-12.md` 保留 v0.5.2 中央访问密钥、官方模型候选、队列/版本结果、导航标签与请求隔离。`docs/UI_SIMPLIFICATION_2026-09-12.md` 保留 v0.5.1 项目目录、正则图及自动打标移除记录；`docs/native-resolution.md` 解释原生尺寸与梯度规则。UI_PIPELINE、UI_VERSIONS、UI_WORKFLOW、UI_REDESIGN、FIX_REPORT 与 COMPLETION_AUDIT 是历史证据。
 3. `docs/design/03-status.md` —— 逐组件状态表与运行方式。
 
 ## 1. 项目定位
@@ -18,9 +18,11 @@
 - **形态**：Python 包 `ypuddin`（CLI + FastAPI 服务）+ `frontend/`（React/Vite 界面，可选）。一键脚本 `studio.sh` / `studio.bat`。
 - 许可证 Apache-2.0（参考项目里 diffusion-pipe 与 AnimaLoraStudio 是 GPL——只读不抄；sd-scripts / musubi-tuner 是 Apache-2.0，vendor 的代码见 §7）。
 
-## 2. 当前状态（v0.5.2 工作区设计与中央凭据）
+## 2. 当前状态（v0.5.3 工作区布局复查）
 
-本轮后端全量 **562 passed / 3 CUDA skipped（565 收集）**，前端 **45 文件 / 263 测试通过**；Ruff、`eslint --max-warnings 0`、`tsc -b` 和生产 `npm run build` 均通过，OpenAPI/前端 API 类型已更新至 0.5.2。行为与边界见 [v0.5.2 报告](docs/UI_DESIGN_REVIEW_2026-09-12.md)，机器记录和生产页面/截图检查统一位于 `docs/validation/v0.5.2.json`、`docs/screenshots/v0.5.2/`。最终提交与 ZIP/独立解包校验写入发布包旁的 `*.verification.json`。旧版 **536 passed / 3 CUDA skipped、前端 220 passed** 属于 v0.5.1，不能视为本版结果。
+v0.5.3 的本轮测试、生产构建与实际浏览器检查见 `docs/validation/v0.5.3.json`、`docs/screenshots/v0.5.3/` 和 [工作区复查报告](docs/UI_WORKSPACE_V053_2026-09-12.md)。主要变化是统一侧栏项目/版本/阶段、紧凑列表和表单、结果及队列工具、样式覆盖修正、标签导航保存保护。最终提交与 ZIP 独立解包校验写入发布包旁的 `*.verification.json`。
+
+**历史 v0.5.2**：后端 562 passed / 3 CUDA skipped（565 收集），前端 45 文件 / 263 测试通过，Ruff/ESLint/TypeScript/生产构建通过。本轮没有改训练后端，也没有将旧后端总数作为新一轮重跑结果。旧 v0.5.1 的 536/3、前端 220 同样仅供追溯。
 
 当前是具备实际训练、数据上传到训练启动的 Web 工作流的集成验证版本；官方 Anima / Krea 2 全尺寸权重和 NVIDIA 路径仍待验收，不能称为所有功能已完成。
 

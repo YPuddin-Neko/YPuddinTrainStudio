@@ -24,6 +24,42 @@ function activeLabel() {
 }
 
 describe('shared select interaction', () => {
+  it('starts a fresh visible search when typing on a closed trigger after an empty search', async () => {
+    const user = userEvent.setup(); const changed = vi.fn();
+    render(<StudioSelect searchable aria-label="Versions" value="alpha" options={options} onValueChange={changed}/>);
+    const trigger = screen.getByRole('combobox', { name: 'Versions' });
+    await user.click(trigger); await user.type(screen.getByRole('searchbox'), 'missing');
+    expect(screen.queryByRole('option')).not.toBeInTheDocument();
+    await user.keyboard('{Escape}'); expect(trigger).toHaveFocus();
+    await user.keyboard('b');
+    const search = screen.getByRole('searchbox'); expect(search).toHaveFocus(); expect(search).toHaveValue('b');
+    expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Blocked', 'Bravo']);
+    expect(screen.getByRole('option', { name: 'Bravo' })).toHaveAttribute('data-active', 'true');
+    expect(changed).not.toHaveBeenCalled();
+    await user.keyboard('{Enter}'); expect(changed).toHaveBeenCalledExactlyOnceWith('bravo');
+    await user.keyboard('z'); expect(screen.queryByRole('option')).not.toBeInTheDocument();
+    await user.keyboard('{Enter}'); expect(changed).toHaveBeenCalledTimes(1);
+  });
+
+  it('filters searchable choices by contained text, keeps keyboard selection and restores trigger focus on Escape', async () => {
+    const user=userEvent.setup();const changed=vi.fn();
+    render(<><StudioSelect searchable aria-label="Versions" value="alpha" options={options} onValueChange={changed}/><button>After versions</button></>);
+    const trigger=screen.getByRole('combobox',{name:'Versions'});await user.click(trigger);
+    const search=screen.getByRole('searchbox');expect(search).toHaveFocus();
+    await user.type(search,'arl');expect(screen.getAllByRole('option')).toHaveLength(1);expect(screen.getByRole('option',{name:'Charlie'})).toBeInTheDocument();
+    await user.keyboard('{Enter}');expect(changed).toHaveBeenCalledExactlyOnceWith('charlie');expect(trigger).toHaveFocus();
+    await user.click(trigger);await user.type(screen.getByRole('searchbox'),'missing');expect(screen.getByRole('status')).toHaveTextContent('没有匹配的选项');
+    await user.keyboard('{Enter}');expect(changed).toHaveBeenCalledTimes(1);
+    await user.keyboard('{Escape}');expect(trigger).toHaveFocus();expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    await user.click(trigger);await user.tab();expect(screen.getByRole('button',{name:'After versions'})).toHaveFocus();expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
+  it('keeps the drawer open when Escape closes a searchable popup',async()=>{
+    const user=userEvent.setup();const close=vi.fn();
+    render(<SettingsDrawer onClose={close}><StudioSelect searchable aria-label="Versions" value="alpha" options={options} onValueChange={()=>{}}/></SettingsDrawer>);
+    await user.click(screen.getByRole('combobox'));await user.keyboard('{Escape}');
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();expect(close).not.toHaveBeenCalled();expect(screen.getByRole('combobox')).toHaveFocus();
+  });
   it('opens with the keyboard, skips disabled choices and commits only on Enter', async () => {
     const changed = vi.fn();
     const user = userEvent.setup();

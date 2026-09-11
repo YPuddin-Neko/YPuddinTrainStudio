@@ -95,7 +95,7 @@ export default function ProjectModelSetup({ projectId, versionId, config, onSave
   };
   const manageLink = `/settings/environment?tab=models&family=${draft.model?.family || 'anima'}`;
   return <section className="project-model-setup" data-testid="project-model-setup">
-    <div className="project-model-toolbar"><div><h3>{text('模型准备', 'Model setup')}</h3><span role="status">{dirty ? text('有未保存的修改', 'Unsaved changes') : saved ? text('已保存', 'Saved') : text('选择本版本使用的模型', 'Models used by this version')}</span></div><div className="project-model-actions">
+    <div className="project-model-toolbar"><div><span role="status">{dirty ? text('有未保存的修改', 'Unsaved changes') : saved ? text('已保存', 'Saved') : text('选择本版本使用的模型', 'Models used by this version')}</span></div><div className="project-model-actions">
       <Link to={manageLink} state={{ backgroundLocation: location }} className="model-button"><Download size={14}/>{text('下载 / 管理模型', 'Download / manage models')}</Link>
       <button className="model-button" disabled={loading || saving || !dirty} onClick={() => void save().catch(() => {})}>{saving ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>} {text('保存选择', 'Save selection')}</button>
       <button className="model-button model-button-primary" disabled={loading || saving} onClick={() => void save().then(() => navigate(projectUrl(projectId, versionId, 'train'))).catch(() => {})}>{text('训练参数', 'Training parameters')}<ArrowRight size={14}/></button>

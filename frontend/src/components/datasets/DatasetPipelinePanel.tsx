@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { CheckCircle2, ScanLine, Loader2, RotateCcw, ArrowRight, RefreshCw } from 'lucide-react';
+import { CheckCircle2, ScanLine, Loader2, RotateCcw, ArrowLeft, ArrowRight, RefreshCw } from 'lucide-react';
 import { apiClient, apiUrl } from '../../api/client';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatApiError } from '../../utils/errors';
@@ -38,6 +38,20 @@ export default function DatasetPipelinePanel({ projectId, versionId, config, rea
   const requested = params.get('data_step') || remembered;
   const stage = ['import','inspect','preprocess','captions','reg','prepare'].includes(requested) ? requested : 'import';
   useEffect(() => { try { sessionStorage.setItem(stageStorage,stage); } catch { /* URL remains authoritative. */ } },[stage,stageStorage]);
+  useEffect(() => {
+    const revealStage = () => {
+      const list = navigationRef.current?.querySelector<HTMLElement>('.pipeline-stages');
+      const current = list?.querySelector<HTMLElement>('[aria-current]');
+      if (!list || !current) return;
+      const viewport = list.getBoundingClientRect();
+      const item = current.getBoundingClientRect();
+      if (item.left < viewport.left) list.scrollLeft -= viewport.left - item.left;
+      else if (item.right > viewport.right) list.scrollLeft += item.right - viewport.right;
+    };
+    revealStage();
+    window.addEventListener('resize', revealStage);
+    return () => window.removeEventListener('resize', revealStage);
+  }, [stage, navigationRef]);
   const setStage = (value:string) => setParams(previous => { const next = new URLSearchParams(previous); next.set('data_step',value); return next; });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState('all');
@@ -95,16 +109,16 @@ export default function DatasetPipelinePanel({ projectId, versionId, config, rea
   return <div className="dataset-pipeline" data-testid="dataset-pipeline">
     <div className="pipeline-navigation" ref={navigationRef}>
     <nav className="pipeline-stages" aria-label={text('数据集流水线','Dataset pipeline')}>
-      {tabs.map(([id, label, badge], index) => <button key={id} type="button" aria-current={stage === id ? 'step' : undefined} onClick={() => setStage(id!)}><span className="pipeline-step-number">{index + 1}</span><strong>{label}</strong>{badge && <small>{badge}</small>}</button>)}
+      {tabs.map(([id, label, badge]) => <button key={id} type="button" aria-current={stage === id ? 'step' : undefined} title={badge ? `${label} · ${badge}` : undefined} onClick={() => setStage(id!)}><strong>{label}</strong></button>)}
     </nav>
-    <div className="pipeline-stage-navigation"><button disabled={stage === 'import'} onClick={() => setStage(tabs[Math.max(0,tabs.findIndex(tab => tab[0] === stage)-1)][0]!)}>{text('上一步','Previous step')}</button><span>{tabs.find(tab => tab[0] === stage)?.[1]}</span>{stage === 'prepare' ? <Link to={projectUrl(projectId,versionId,'train')}>{text('进入训练参数','Continue to training')}<ArrowRight size={14}/></Link> : <button onClick={() => setStage(tabs[Math.min(tabs.length-1,tabs.findIndex(tab => tab[0] === stage)+1)][0]!)}>{text('下一步','Next step')}<ArrowRight size={14}/></button>}</div>
+    <div className="pipeline-stage-navigation"><button disabled={stage === 'import'} onClick={() => setStage(tabs[Math.max(0,tabs.findIndex(tab => tab[0] === stage)-1)][0]!)} aria-label={text('上一步','Previous step')} title={text('上一步','Previous step')}><ArrowLeft size={14}/></button>{stage === 'prepare' ? <Link to={projectUrl(projectId,versionId,'train')}>{text('进入训练参数','Continue to training')}<ArrowRight size={14}/></Link> : <button onClick={() => setStage(tabs[Math.min(tabs.length-1,tabs.findIndex(tab => tab[0] === stage)+1)][0]!)} aria-label={text('下一步','Next step')} title={tabs[Math.min(tabs.length-1,tabs.findIndex(tab => tab[0] === stage)+1)][1] || ''}><ArrowRight size={14}/></button>}</div>
     </div>
     {(error || query.error) && <div role="alert" className="workspace-message error">{error || formatApiError(query.error)}<button onClick={() => void query.refetch()}>{text('重新读取','Reload')}</button></div>}
     {snapshot?.stale && <p className="pipeline-note">{text('图片、标签、遮罩或数据配置已变化，请重新检查。旧操作记录和备份仍保留。','Images, captions, masks or data settings changed. Run inspection again; operation history and backups are retained.')}</p>}
     {active && <div className="pipeline-active" role="status"><Loader2 size={16} className="animate-spin"/><strong>{actionName(active.action)}</strong><span>{statusName(active.phase)}</span><progress max={active.total || 1} value={active.done}/><span>{active.done} / {active.total || '—'}</span>{active.can_cancel && <button disabled={submitting} onClick={() => void perform({}, `/dataset-pipeline/operations/${active.id}/cancel`)}>{text('取消','Cancel')}</button>}{active.job_id && <Link to={`/jobs/${active.job_id}`}>{text('任务日志','Job log')}</Link>}</div>}
     {query.isPending && <p role="status"><Loader2 size={14} className="animate-spin"/>{text('读取准备状态…','Loading preparation status…')}</p>}
-    {stage === 'import' ? <div className={readOnly ? '' : 'version-data-layout'}>{datasetList}{!readOnly && <fieldset disabled={locked}>{importPanel}</fieldset>}</div> : stage === 'reg' ? <RegularizationPanel projectId={projectId} versionId={versionId} readOnly={readOnly || snapshot?.archived} onChanged={onChanged}/> : <>
-      <div className="pipeline-toolbar"><div><h3>{tabs.find(tab => tab[0] === stage)?.[1]}</h3><p>{stage === 'inspect' ? text('完整解码检查图片、标签与遮罩。重复图优先保留有遮罩及标签的副本；排除可在操作记录中恢复。','Check images, captions and masks. Duplicate selection preserves copies with masks and captions; excluded files can be restored from history.') : stage === 'preprocess' ? text('仅处理所选图片，遮罩同步裁切，标签保留；所有改动可恢复。','Edit selected images with matching mask geometry; captions and original backups are retained.') : stage === 'captions' ? text('选择图片查看完整的已有标签；可按文件名或标签搜索。','Select an image to read its existing caption. Search by filename or caption.') : text('检查真实训练要求与尺寸分组，然后运行 VAE / 文本编码缓存。缺少模型或配置错误会给出具体原因。','Check actual training requirements and image size groups, then run VAE / text encoding caches. Missing models or invalid settings are reported.')}</p></div>{stage !== 'captions' && <button className="pipeline-primary" disabled={locked} onClick={() => void perform({action: 'inspect'})}><ScanLine size={15}/>{text('检查数据','Inspect data')}</button>}<button aria-label={text('刷新流水线','Refresh pipeline')} onClick={refresh}><RefreshCw size={15}/></button>{stage !== 'captions' && report && <div className="pipeline-summary"><span>{images.length} {text('个图像文件','image files')} · {images.filter(image => !image.issues.some(issue => issue.code === 'unreadable_image')).length} {text('张可解码','decodable images')}</span><span className={report.errors ? 'pipeline-error-text' : ''}>{report.errors} {text('项错误','errors')}</span><span>{report.warnings} {text('项提示','warnings')}</span><span>{report.duplicate_groups.length} {text('组重复图','duplicate groups')}</span><span>{report.masks} {text('张遮罩','masks')}</span></div>}</div>
+    {stage === 'import' ? <div className={readOnly ? '' : 'version-data-layout'}>{!readOnly && <fieldset disabled={locked}>{importPanel}</fieldset>}{datasetList}</div> : stage === 'reg' ? <RegularizationPanel projectId={projectId} versionId={versionId} readOnly={readOnly || snapshot?.archived} onChanged={onChanged}/> : <>
+      {stage !== 'captions' && <div className="pipeline-toolbar"><div><h3 className="sr-only">{tabs.find(tab => tab[0] === stage)?.[1]}</h3><p>{stage === 'inspect' ? text('完整解码检查图片、标签与遮罩。重复图优先保留有遮罩及标签的副本；排除可在操作记录中恢复。','Check images, captions and masks. Duplicate selection preserves copies with masks and captions; excluded files can be restored from history.') : stage === 'preprocess' ? text('仅处理所选图片，遮罩同步裁切，标签保留；所有改动可恢复。','Edit selected images with matching mask geometry; captions and original backups are retained.') : stage === 'captions' ? text('选择图片查看完整的已有标签；可按文件名或标签搜索。','Select an image to read its existing caption. Search by filename or caption.') : text('检查真实训练要求与尺寸分组，然后运行 VAE / 文本编码缓存。缺少模型或配置错误会给出具体原因。','Check actual training requirements and image size groups, then run VAE / text encoding caches. Missing models or invalid settings are reported.')}</p></div>{stage !== 'captions' && <button className="pipeline-primary" disabled={locked} onClick={() => void perform({action: 'inspect'})}><ScanLine size={15}/>{text('检查数据','Inspect data')}</button>}<button aria-label={text('刷新流水线','Refresh pipeline')} onClick={refresh}><RefreshCw size={15}/></button>{stage !== 'captions' && report && <div className="pipeline-summary"><span>{images.length} {text('个图像文件','image files')} · {images.filter(image => !image.issues.some(issue => issue.code === 'unreadable_image')).length} {text('张可解码','decodable images')}</span><span className={report.errors ? 'pipeline-error-text' : ''}>{report.errors} {text('项错误','errors')}</span><span>{report.warnings} {text('项提示','warnings')}</span><span>{report.duplicate_groups.length} {text('组重复图','duplicate groups')}</span><span>{report.masks} {text('张遮罩','masks')}</span></div>}</div>}
 
       {stage !== 'captions' && report?.images.some(image => !image.editable) && <p className="pipeline-note">{text('旧版或外部引用素材先复制到独立新版本，之后可安全筛选与处理。','Copy legacy or external sources into an independent version before editing.')} <button disabled={locked} onClick={() => void copyForEditing()}>{text('复制为可处理的新版本','Copy into an editable version')}</button></p>}
       {report?.source_issues.map((issue,index) => <p role="alert" className="pipeline-error-text" key={index}>{issueName(issue)} {issue.path}</p>)}

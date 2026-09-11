@@ -1,4 +1,4 @@
 """YPuddin Train Studio - modular diffusion LoRA/LoKr trainer."""
 
-__version__ = "0.5.2"
+__version__ = "0.5.3"
 API_VERSION = 1

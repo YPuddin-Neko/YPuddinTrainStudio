@@ -1,0 +1,4 @@
+.studio-select-menu.studio-select-menu-searchable { display:flex; flex-direction:column; overflow:hidden; gap:4px; }
+.studio-select-menu-searchable > input { flex-shrink:0; width:100%; min-width:0; height:32px; border:1px solid var(--studio-line); border-radius:4px; background:var(--studio-panel); color:var(--studio-text); padding:5px 7px; font-size:12px; }
+.studio-select-results { overflow:auto; min-height:0; overscroll-behavior:contain; }
+.studio-select-empty { padding:8px 6px; font-size:12px; color:var(--studio-dim); }

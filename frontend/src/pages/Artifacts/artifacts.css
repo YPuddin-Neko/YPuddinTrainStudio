@@ -1,7 +1,21 @@
+.artifacts-page { display:flex; flex-direction:column; min-width:0; gap:12px; }
+.artifacts-embedded { gap:8px; }
+.artifact-heading h2 { display:flex; align-items:center; gap:8px; font-size:22px; font-weight:600; }
+.artifact-heading h2 svg { color:var(--studio-accent); }
+.artifact-heading p,.artifact-readonly { font-size:12px; color:var(--studio-dim); line-height:1.5; }
+.artifact-heading p { margin-top:4px; }
 .artifact-project-link { display:block; margin-top:5px; font-family:inherit; font-size:10px; color:var(--studio-accent); }
 [data-testid=artifacts-page] .studio-select { min-width:90px; }
 [data-testid=artifacts-page] table td:last-child .studio-select { max-width:120px; }
-.artifact-controls { position:sticky; top:var(--workspace-head-height,0px); z-index:15; }
+.artifact-controls { position:sticky; top:var(--workspace-head-height,0px); z-index:15; display:flex; align-items:center; flex-wrap:wrap; gap:7px; padding:7px 8px; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-panel); }
+.artifact-search { display:flex; align-items:center; flex:1 1 190px; gap:7px; min-width:160px; }
+.artifact-search > svg { flex:none; color:var(--studio-dim); }
+.artifact-search > input { width:100%; min-width:0; height:32px; background:transparent; color:var(--studio-text); font-size:12px; outline-offset:2px; }
+.artifact-controls > .artifact-sort { width:145px; flex:0 1 145px; min-height:32px; padding:5px 8px; }
+.artifact-count { flex:none; white-space:nowrap; font-size:11px; color:var(--studio-dim); font-variant-numeric:tabular-nums; }
+.artifact-refresh { display:inline-flex; align-items:center; flex:none; gap:5px; min-height:32px; padding:5px 8px; border:1px solid var(--studio-line); border-radius:4px; font-size:12px; white-space:nowrap; }
+.artifact-refresh:hover:not(:disabled) { background:var(--studio-muted); }
+.artifact-refresh:disabled { opacity:.45; }
 .artifact-controls > .task-pagination { flex:1 0 100%; }
 .artifact-compact-meta { display:none; }
 .artifact-row-actions { flex-wrap:wrap; }
@@ -24,4 +38,9 @@
   .artifact-table tr > td:first-child,.artifact-table tr > .artifact-action-cell { grid-column:1/-1; }
   .artifact-table .artifact-secondary { display:none; }
   .artifact-row-actions { justify-content:flex-start; }
+}
+@media(max-width:500px) {
+  .artifact-search { flex-basis:100%; }
+  .artifact-controls > .artifact-sort { flex:1 1 145px; max-width:190px; }
+  .artifact-refresh { margin-left:auto; }
 }

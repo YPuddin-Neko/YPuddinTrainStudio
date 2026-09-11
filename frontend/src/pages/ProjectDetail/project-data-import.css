@@ -1,0 +1,43 @@
+.project-data-import { min-width:0; display:grid; gap:10px; padding:12px; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-panel); color:var(--studio-text); }
+.project-import-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+.project-import-heading h3 { margin:0; font-size:13px; font-weight:600; }
+.project-import-modes { display:flex; align-items:center; gap:4px; }
+.project-import-modes > button { padding:5px 8px; border:1px solid transparent; border-radius:4px; font-size:12px; }
+.project-import-modes > button[aria-pressed=true] { color:var(--studio-accent); background:var(--studio-muted); border-color:var(--studio-line); }
+.project-import-dropzone { min-width:0; display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:12px; border:1px dashed var(--studio-line); border-radius:5px; background:var(--studio-muted); }
+.project-import-dropzone[data-dragging=true] { border-color:var(--studio-accent); }
+.project-import-drop-copy { display:flex; align-items:center; gap:10px; min-width:0; flex:1 1 280px; }
+.project-import-drop-copy > svg { flex:none; color:var(--studio-accent); }
+.project-import-drop-copy strong { display:block; font-size:12px; font-weight:500; }
+.project-import-drop-copy p,.project-import-location > p { margin:4px 0 0; font-size:11px; color:var(--studio-dim); line-height:1.5; }
+.project-import-file-actions { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.project-import-button { display:inline-flex; align-items:center; justify-content:center; gap:5px; min-height:32px; padding:5px 9px; border:1px solid var(--studio-line); border-radius:4px; background:var(--studio-panel); font-size:12px; }
+.project-import-primary { background:#2563eb; border-color:#2563eb; color:white; }
+.project-import-button:disabled,.project-import-modes > button:disabled { opacity:.5; }
+.project-import-selected { min-width:0; font-size:12px; }
+.project-import-selection-summary { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11px; }
+.project-import-selection-summary > button { color:var(--studio-dim); text-decoration:underline; }
+.project-import-files { max-height:100px; overflow:auto; margin-top:5px; }
+.project-import-files > li { display:flex; align-items:center; gap:8px; padding:4px 0; border-bottom:1px solid var(--studio-line); font-size:11px; }
+.project-import-files > li > span { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.project-import-files > li > small { color:var(--studio-dim); }
+.project-import-files > li > button { flex:none; padding:3px; }
+.project-import-location { min-width:0; display:grid; gap:7px; }
+.project-import-location > fieldset { min-width:0; border:0; margin:0; padding:0; }
+.project-import-configuration { display:flex; align-items:flex-end; gap:12px; min-width:0; }
+.project-import-options { flex:1; min-width:0; display:grid; gap:8px; }
+.project-import-fields,.project-import-reg-options { display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; min-width:0; }
+.project-import-field { display:flex; flex-direction:column; gap:4px; min-width:0; font-size:11px; color:var(--studio-dim); }
+.project-import-input { width:100%; min-width:0; height:32px; padding:5px 8px; border:1px solid var(--studio-line); border-radius:4px; background:var(--studio-panel); color:var(--studio-text); font-size:12px; }
+.project-import-name,.project-import-prompt { flex:1 1 140px; }
+.project-import-caption { flex:0 1 135px; }
+.project-import-repeats { flex:0 0 110px; }
+.project-import-prior { flex:0 1 135px; }
+.project-import-reg { display:flex; align-items:center; gap:5px; min-height:32px; flex:0 1 auto; font-size:11px; }
+.project-import-reg > input { flex:none; }
+.project-import-submit { flex:0 0 auto; max-width:190px; }
+.project-import-message { display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:8px; border-radius:4px; font-size:12px; white-space:pre-line; overflow-wrap:anywhere; }
+.project-import-message > a { text-decoration:underline; }
+.project-import-error { border:1px solid #dc262640; color:#dc2626; }
+.project-import-success { border:1px solid #05966940; color:#059669; }
+@media(max-width:700px) { .project-data-import { padding:10px; }.project-import-heading { align-items:start; }.project-import-dropzone { padding:10px; gap:9px; }.project-import-file-actions { width:100%; }.project-import-file-actions > button { flex:1; }.project-import-configuration { flex-wrap:wrap; }.project-import-options { flex-basis:100%; }.project-import-submit { margin-left:auto; max-width:100%; }.project-import-reg { min-height:25px; }.project-import-prior { flex-basis:120px; } }

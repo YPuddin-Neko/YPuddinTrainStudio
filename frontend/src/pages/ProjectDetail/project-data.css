@@ -1,0 +1,15 @@
+.project-data-summary { display:flex; align-items:center; gap:14px; color:var(--studio-dim); font-size:11px; }
+.project-data-summary span { display:inline-flex; align-items:baseline; gap:5px; white-space:nowrap; }
+.project-data-summary strong { color:var(--studio-text); font-weight:600; font-variant-numeric:tabular-nums; }
+.project-workspace .version-data-layout { grid-template-columns:minmax(0,1fr); gap:16px; }
+.project-workspace .version-dataset-row { flex-wrap:nowrap; padding:9px 11px; gap:10px; margin-bottom:0; border-radius:0; border-width:0 0 1px; }
+.project-workspace .version-dataset-row p { margin-top:2px; font-size:11px; }
+.project-workspace .version-dataset-row small { display:none; }
+.project-workspace .dataset-index-status { margin-left:0; flex-shrink:0; font-size:11px; }
+.project-workspace .version-dataset-list > .workspace-section-title { margin-bottom:3px; }
+.project-workspace .version-dataset-row:focus-visible { outline:2px solid var(--studio-accent); outline-offset:-2px; }
+@media(max-width:600px) {
+  .project-data-summary { gap:8px; font-size:10px; }
+  .project-workspace .version-dataset-row { flex-wrap:wrap; }
+  .project-workspace .dataset-index-status { margin-left:30px; }
+}

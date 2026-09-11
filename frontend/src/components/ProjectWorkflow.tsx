@@ -6,7 +6,7 @@ import '../styles/project-workspace.css';
 
 export type WorkspaceStep = 'data' | 'models' | 'train' | 'results';
 
-export function ProjectWorkflow({ projectId, versionId, active }: { projectId: string; versionId?: string | null; active: WorkspaceStep }) {
+export function ProjectWorkflow({ projectId, versionId, active, sidebar = false }: { projectId: string; versionId?: string | null; active: WorkspaceStep; sidebar?: boolean }) {
   const text = useWorkspaceText();
   const steps = [
     { key: 'data', label: text('训练数据', 'Training data'), detail: text('上传图片与标签', 'Images and captions'), icon: Database, url: projectUrl(projectId, versionId, 'data') },
@@ -15,14 +15,14 @@ export function ProjectWorkflow({ projectId, versionId, active }: { projectId: s
     { key: 'results', label: text('训练结果', 'Training results'), detail: text('本版本的产物、采样与训练记录', 'Outputs, samples and training history in this version'), icon: Activity, url: projectUrl(projectId, versionId, 'results') },
   ];
   const currentIndex = steps.findIndex(step => step.key === active);
-  return <div className="project-stage-navigation"><nav aria-label={text('项目训练步骤', 'Project training steps')} className="project-workflow">
+  return <div className={`project-stage-navigation${sidebar ? ' sidebar-project-stages' : ''}`}><nav aria-label={text('项目训练步骤', 'Project training steps')} className="project-workflow">
     {steps.map((step, index) => <Link key={step.key} to={step.url} aria-current={active === step.key ? 'step' : undefined} title={step.detail}>
       <span className="step-number">{index + 1}</span><step.icon size={14}/><span>{step.label}</span>
     </Link>)}
-  </nav><div className="project-stage-actions" aria-label={text('前后训练阶段', 'Previous and next training stages')}>
+  </nav>{!sidebar && <div className="project-stage-actions" aria-label={text('前后训练阶段', 'Previous and next training stages')}>
     {currentIndex > 0 && <Link to={steps[currentIndex-1].url} title={steps[currentIndex-1].label} aria-label={text(`上一阶段：${steps[currentIndex-1].label}`, `Previous stage: ${steps[currentIndex-1].label}`)}><ArrowLeft size={14}/></Link>}
     {currentIndex < steps.length-1 && <Link to={steps[currentIndex+1].url} title={steps[currentIndex+1].label} aria-label={text(`下一阶段：${steps[currentIndex+1].label}`, `Next stage: ${steps[currentIndex+1].label}`)}><span>{steps[currentIndex+1].label}</span><ArrowRight size={14}/></Link>}
-  </div></div>;
+  </div>}</div>;
 }
 
 export function NextStepLink({ to, children }: { to: string; children: React.ReactNode }) {

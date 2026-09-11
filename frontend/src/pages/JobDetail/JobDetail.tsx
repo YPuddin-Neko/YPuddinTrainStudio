@@ -353,7 +353,7 @@ export default function JobDetail() {
   const visibleSamples = filteredSamples.slice((samplePage - 1) * 24, samplePage * 24);
 
 
-  // 阶段时间线：未知 phase 兜底显示「进行中」
+  // Unknown phases only show activity while the worker is actually running.
   const phaseLabels: Record<string, string> = {
     preparing: t('job.phasePreparing', '准备'),
     caching: t('job.phaseCaching', '缓存'),
@@ -444,7 +444,7 @@ export default function JobDetail() {
 
         {/* 阶段时间线 */}
         <div className="flex items-center space-x-2 pt-2 border-t dark:border-slate-700">
-          {currentPhaseIndex === -1 && (
+          {currentPhaseIndex === -1 && job?.status === 'running' && (
             <>
               <span
                 className="flex items-center space-x-1.5 text-xs font-medium px-3 py-1.5 rounded-md bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"

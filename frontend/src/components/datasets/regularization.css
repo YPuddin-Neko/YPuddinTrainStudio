@@ -6,11 +6,11 @@
 .reg-count { font-size:11px; white-space:nowrap; padding:3px 7px; border-radius:5px; background:var(--studio-muted); }
 .reg-path { display:flex; align-items:center; gap:6px; font-size:10px; color:var(--studio-dim); margin:10px 0 16px; }
 .reg-path code { min-width:0; overflow-wrap:anywhere; }
-.regularization-panel form { display:grid; gap:12px; }
-.regularization-panel label { display:grid; gap:6px; min-width:0; font-size:12px; }
+.regularization-panel > form { display:grid; gap:12px; }
+.regularization-panel > form label { display:grid; gap:6px; min-width:0; font-size:12px; }
 .reg-form-grid { display:grid; grid-template-columns:2fr 1fr; gap:12px; }
 .reg-grid-three { grid-template-columns:repeat(3,minmax(0,1fr)); }
-.regularization-panel input,.regularization-panel textarea { width:100%; min-width:0; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-panel); color:var(--studio-text); padding:6px 9px; font-size:12px; line-height:20px; }
+.regularization-panel > form input:not([type=checkbox]):not([type=file]),.regularization-panel > form textarea { width:100%; min-width:0; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-panel); color:var(--studio-text); padding:6px 9px; font-size:12px; line-height:20px; }
 .regularization-panel :disabled { opacity:.5; }
 .regularization-panel textarea { resize:vertical; }
 .reg-options { padding:10px 0; border-top:1px solid var(--studio-line); }

@@ -22,6 +22,14 @@ import JobDetail from '../src/pages/JobDetail/JobDetail';
 import Queue from '../src/pages/Queue/Queue';
 
 describe('JobDetail Page (B1, B2, B3, B4)', () => {
+  it('does not report an unknown phase as running after the job has failed', async () => {
+    server.use(http.get('/api/jobs/job_01', () => HttpResponse.json({ ...mockJobs[0], status: 'failed', progress: { step: 3, total_steps: 10 }, error: 'model unavailable' })));
+    render(<MemoryRouter initialEntries={['/jobs/job_01']}><Routes><Route path="/jobs/:id" element={<JobDetail/>}/></Routes></MemoryRouter>);
+    await screen.findByText(/chara-v1/i);
+    expect(screen.queryByText('进行中')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '重新训练' })).toBeInTheDocument();
+  });
+
   it('renders header stats, metrics charts, and timeline without crash', async () => {
     render(
       <MemoryRouter initialEntries={['/jobs/job_01']}>

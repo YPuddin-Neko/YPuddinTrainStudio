@@ -1,6 +1,6 @@
-import { projectUrl, versionConfigUrl } from '../../utils/projectVersions';
+import { projectUrl, versionConfigUrl, type ProjectVersion, type VersionedProject } from '../../utils/projectVersions';
 import React from 'react';
-import { Link, useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useNavigate, useLocation, UNSAFE_DataRouterContext } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { apiClient, apiUrl } from '../../api/client';
 import { DatasetInfo, Job, Plan } from '../../api/types';
@@ -12,13 +12,13 @@ import { formatApiError } from '../../utils/errors';
 import { TagChips } from '../../components/TagChips';
 import { formatBytes, formatParams, formatPercent } from '../../utils/format';
 import './dataset-workspace.css';
-import { useWorkspaceHeight } from '../../components/projects/useWorkspaceHeight';
-import { ProjectWorkflow, NextStepLink } from '../../components/ProjectWorkflow';
+import { NextStepLink } from '../../components/ProjectWorkflow';
+import ProjectWorkspaceHeader from '../../components/projects/ProjectWorkspaceHeader';
+import DatasetNavigationGuard from '../../components/datasets/DatasetNavigationGuard';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import {
   RefreshCcw,
   Trash2,
-  Database,
   Layers,
   Image as ImageIcon,
   Search,
@@ -54,9 +54,16 @@ function Histogram({ data, label, barColor }: { data: Array<{ name: string; coun
 
 export default function Dataset() {
   const { id } = useParams<{ id: string }>();
+  return <DatasetContent key={id || ''} id={id}/>;
+}
+function DatasetContent({id}: {id?:string}) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const hasDataRouter = !!React.useContext(UNSAFE_DataRouterContext);
+  const allowedDestination = React.useRef<string | null>(null);
   const { t } = useTranslation();
   const text = useWorkspaceText();
+  const contextProblem = text('无法确认此数据集所属的项目版本。','The dataset project/version could not be verified.');
 
   // locales 占位符为单花括号（{n}），i18next 默认插值（{{}}）不处理，需手工替换
   const tt = React.useCallback(
@@ -66,12 +73,18 @@ export default function Dataset() {
   );
 
   const [info, setInfo] = React.useState<DatasetInfo | null>(null);
+  const [infoError, setInfoError] = React.useState('');
+  const [projectContext, setProjectContext] = React.useState<{project:VersionedProject;versions:ProjectVersion[];current?:ProjectVersion}|null>(null);
+  const [contextError, setContextError] = React.useState('');
+  const contextRequest = React.useRef<AbortController|null>(null);
   const [indexProgress, setIndexProgress] = React.useState<{ done: number; total: number } | null>(null);
   const [activeImage, setActiveImage] = React.useState<string | null>(null);
   const [maskImage, setMaskImage] = React.useState<{ hash: string; relPath: string } | null>(null);
   const [actionError, setActionError] = React.useState('');
   const [editCaption, setEditCaption] = React.useState('');
+  const [captionBase, setCaptionBase] = React.useState('');
   const [savingCaption, setSavingCaption] = React.useState(false);
+  const captionSave = React.useRef<Promise<void>|null>(null);
   const [batchAdd, setBatchAdd] = React.useState('');
   const [batchRemove, setBatchRemove] = React.useState('');
   const [buckets, setBuckets] = React.useState<Plan['buckets'] | null>(null);
@@ -80,7 +93,7 @@ export default function Dataset() {
   const [versionAccess, setVersionAccess] = React.useState<{ key: string; editable: boolean; archived: boolean; error?: string } | null>(null);
   const versionRequest = React.useRef<AbortController | null>(null);
   const versionKey = info?.source.version_id ? `${info.source.project_id}/${info.source.version_id}` : '';
-  const canEdit = !!info && (!versionKey || versionAccess?.key === versionKey && versionAccess.editable);
+  const canEdit = !!info && !infoError && (!versionKey || versionAccess?.key === versionKey && versionAccess.editable);
   const checkVersionAccess = React.useCallback(async () => {
     if (!versionKey) return;
     versionRequest.current?.abort(); const controller = new AbortController(); versionRequest.current = controller;
@@ -96,22 +109,38 @@ export default function Dataset() {
 
   const images = useDatasetImages(id);
   const gridRef = React.useRef<HTMLDivElement>(null);
-  const navigationRef = useWorkspaceHeight('--dataset-navigation-height');
   const [scrollTop, setScrollTop] = React.useState(0);
   const [viewportH, setViewportH] = React.useState(600);
   const [viewportW, setViewportW] = React.useState(1200);
 
   const fetchInfo = React.useCallback(() => {
     if (!id) return;
-    apiClient.get<DatasetInfo>(`/datasets/${id}`).then((data) => {
-      setInfo(data);
+    apiClient.get<DatasetInfo>(`/datasets/${id}`, {silent:true}).then((data) => {
+      setInfo(data); setInfoError('');
       if (data.index_status !== 'indexing') setIndexProgress(null);
-    }).catch(console.error);
+    }).catch(error => {setInfoError(formatApiError(error));setProjectContext(null);});
   }, [id]);
 
   React.useEffect(() => {
     fetchInfo();
   }, [fetchInfo]);
+  const refreshProjectContext = React.useCallback(async () => {
+    const source=info?.source;
+    if (!source?.project_id || infoError) return;
+    contextRequest.current?.abort();const controller=new AbortController();contextRequest.current=controller;
+    try {
+      const [project,versions]=await Promise.all([
+        apiClient.get<VersionedProject>(`/projects/${source.project_id}`,{silent:true,signal:controller.signal}),
+        source.version_id ? apiClient.get<ProjectVersion[]>(`/projects/${source.project_id}/versions`,{silent:true,signal:controller.signal,params:{include_archived:true}}) : Promise.resolve([]),
+      ]);
+      if(controller.signal.aborted)return;
+      const current=versions.find(version=>version.id===source.version_id && version.project_id===source.project_id);
+      if(project.id!==source.project_id || source.version_id && !current) throw new Error(contextProblem);
+      setProjectContext({project,versions,current});setContextError('');
+      if(current)setVersionAccess({key:`${source.project_id}/${source.version_id}`,editable:current.status==='ready' && !current.archived && !current.busy,archived:current.archived});
+    } catch(error){if(!controller.signal.aborted){setProjectContext(null);setContextError(formatApiError(error));}}
+  },[info?.source,infoError,contextProblem]);
+  React.useEffect(()=>{void refreshProjectContext();return()=>contextRequest.current?.abort();},[refreshProjectContext]);
 
   // 索引完成 / caption 修改 / rescan 完成 → 重新拉取数据集信息
   useEventStream(EVENT_TYPES.DATASET_CHANGED, (data: any) => {
@@ -154,7 +183,10 @@ export default function Dataset() {
     const endpoint = versionConfigUrl(info.source.project_id || '', info.source.version_id);
     const config = await apiClient.get<{ dataset?: Record<string, unknown>; [key: string]: unknown }>(endpoint);
     await apiClient.put(endpoint, { ...config, dataset: { ...config.dataset, masked_loss: true } });
-    navigate(projectUrl(info.source.project_id || '', info.source.version_id, 'train'));
+    const destination = projectUrl(info.source.project_id || '', info.source.version_id, 'train');
+    // The editor invokes this only after its mask was saved successfully.
+    allowedDestination.current = destination;
+    navigate(destination);
   };
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -171,20 +203,46 @@ export default function Dataset() {
     if (!img) return;
     setActiveImage(hash);
     setEditCaption(img.caption || '');
+    setCaptionBase(img.caption || '');
   };
 
-  const saveCaption = () => {
-    if (!activeImage || !id || !canEdit) return;
-    setSavingCaption(true);
-    apiClient
-      .put(`/datasets/${id}/images/${activeImage}/caption`, { caption: editCaption })
+  const saveCaption = async () => {
+    if (captionSave.current) return captionSave.current;
+    if (!activeImage || !id || !canEdit) throw new Error(text('当前图片只读，无法保存标签。','The image is read only; its caption cannot be saved.'));
+    setSavingCaption(true);setActionError('');
+    const pending=apiClient.put(`/datasets/${id}/images/${activeImage}/caption`, { caption: editCaption },{silent:true})
       .then(() => {
         images.updateCaption(activeImage, editCaption);
+        setCaptionBase(editCaption);
         setActiveImage(null);
       })
-      .catch(console.error)
-      .finally(() => setSavingCaption(false));
+      .catch(error=>{setActionError(formatApiError(error));throw error;})
+      .finally(() => {setSavingCaption(false);captionSave.current=null;});
+    captionSave.current=pending;return pending;
   };
+  const closeCaption = () => {if(!savingCaption && (editCaption===captionBase || window.confirm(text('标签尚未保存，确定放弃这些修改？','Discard the unsaved caption changes?'))))setActiveImage(null);};
+  const beforeNavigation = async () => {
+    if(maskImage)throw new Error(text('请先在遮罩编辑器中保存或关闭，再切换项目页面。','Save or close the mask editor before switching project pages.'));
+    if(activeImage && editCaption!==captionBase || captionSave.current)await saveCaption();
+  };
+  const leaveRef=React.useRef({beforeNavigation,dirty:false});
+  React.useLayoutEffect(()=>{leaveRef.current={beforeNavigation,dirty:!!maskImage || !!activeImage && editCaption!==captionBase || savingCaption};});
+  React.useEffect(()=>{
+    let leaving=false;
+    const click=(event:MouseEvent)=>{
+      if(hasDataRouter)return;
+      if(!leaveRef.current.dirty || event.defaultPrevented || event.button!==0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey)return;
+      const anchor=event.target instanceof Element?event.target.closest<HTMLAnchorElement>('a[href]'):null;
+      if(!anchor || anchor.hasAttribute('download') || anchor.target && anchor.target!=='_self')return;
+      const next=new URL(anchor.href,window.location.href);if(next.origin!==window.location.origin)return;
+      event.preventDefault();if(leaving)return;leaving=true;
+      const settings = next.pathname === '/settings' || next.pathname.startsWith('/settings/');
+      void leaveRef.current.beforeNavigation().then(()=>navigate(`${next.pathname}${next.search}${next.hash}`, settings ? {state:{backgroundLocation:location}} : undefined)).catch(error=>setActionError(formatApiError(error))).finally(()=>{leaving=false;});
+    };
+    const unload=(event:BeforeUnloadEvent)=>{if(leaveRef.current.dirty){event.preventDefault();event.returnValue='';}};
+    document.addEventListener('click',click,true);window.addEventListener('beforeunload',unload);
+    return()=>{document.removeEventListener('click',click,true);window.removeEventListener('beforeunload',unload);};
+  },[navigate,location,hasDataRouter]);
 
   const applyBatchTags = () => {
     if (!id || !canEdit || images.selected.size === 0) return;
@@ -271,80 +329,42 @@ export default function Dataset() {
 
   return (
     <div className="dataset-workspace space-y-3" data-testid="dataset-page">
-      {info?.source.project_id && <div className="dataset-workspace-navigation" ref={navigationRef}><Link to={projectUrl(info.source.project_id,info.source.version_id,'data')} className="dataset-workspace-return">{text('返回版本工作区','Return to version workspace')}</Link><ProjectWorkflow projectId={info.source.project_id} versionId={info.source.version_id} active="data" /></div>}
+      {hasDataRouter && <DatasetNavigationGuard shouldBlock={destination => {
+        if(allowedDestination.current === `${destination.pathname}${destination.search}${destination.hash}`){allowedDestination.current=null;return false;}
+        return leaveRef.current.dirty;
+      }} beforeLeave={() => leaveRef.current.beforeNavigation()} onError={error => setActionError(formatApiError(error))}/>}
+      {projectContext && !infoError ? <ProjectWorkspaceHeader project={projectContext.project} versionId={info?.source.version_id || undefined} versions={projectContext.versions} current={projectContext.current} active="data" title={datasetName} refresh={refreshProjectContext} beforeAction={beforeNavigation}/> : <h1 className="text-base font-semibold" title={info?.source.path}>{info && !infoError ? datasetName : text('图片、标签与遮罩','Images, captions and masks')}</h1>}
+      {(infoError || contextError) && <div role="alert" className="workspace-message error">{infoError || contextError}<button onClick={()=>{fetchInfo();void refreshProjectContext();}}>{t('common.retry')}</button></div>}
       {versionKey && !canEdit && <div className="flex flex-wrap items-center gap-2 rounded border border-slate-300 bg-slate-50 px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-900" role={versionAccess?.key === versionKey && versionAccess.error ? 'alert' : 'status'}>
         <span>{versionAccess?.key !== versionKey ? text('正在确认版本状态，暂以只读方式查看。', 'Checking version status. Viewing in read-only mode.') : versionAccess.error ? `${text('无法确认版本状态，编辑已暂停：', 'Cannot verify version status; editing is paused: ')}${versionAccess.error}` : versionAccess.archived ? text('此版本已归档，图片、标签和遮罩只读。', 'This version is archived. Images, captions and masks are read only.') : text('此版本暂不可编辑，当前为只读查看。', 'This version is not editable yet. Viewing in read-only mode.')}</span>
         <Link className="text-blue-600" to={projectUrl(info!.source.project_id || '', info!.source.version_id, 'data')}>{text('返回版本工作区', 'Return to version workspace')}</Link>
         <button type="button" className="text-blue-600" onClick={() => void checkVersionAccess()}>{t('common.refresh')}</button>
       </div>}
-      {actionError && <div role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{actionError}</div>}
-      {/* 顶部标题与动作 */}
-      <div className="flex flex-wrap justify-between items-center gap-2">
-        <div className="min-w-0 flex-1 basis-56">
-          <h2 className="flex min-w-0 items-center gap-2 text-base font-semibold" title={info?.source.path}>
-            <Database className="h-4 w-4 shrink-0 text-blue-500" />
-            <span className="truncate">{datasetName}</span>
-          </h2>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
-            <span>{t('dataset.repeats')} ×{info?.source.repeats ?? '--'}</span>
-            <span>{t('dataset.caption')}: {info?.source.caption_ext || '--'}</span>
-            <span className={`px-2 py-0.5 rounded ${
-              info?.index_status === 'ready'
-                ? 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400'
-                : info?.index_status === 'indexing'
-                ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400'
-                : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
-            }`}>
-              {statusLabel(info?.index_status)}
-            </span>
-            {info && <details className="min-w-0 max-w-full"><summary className="cursor-pointer">{text('查看完整路径', 'Full path')}</summary><code className="mt-1 block break-all text-[11px]">{info.source.path}</code></details>}
-          </div>
+      {actionError && !activeImage && <div role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{actionError}</div>}
+      <div className="dataset-overview-toolbar" data-testid="dataset-overview">
+        <div className="dataset-overview-counts">
+          <span className={`dataset-index-state status-${info?.index_status || 'unknown'}`}>{statusLabel(info?.index_status)}</span>
+          {stats && <>
+            <span>{t('dataset.images')} <b>{formatParams(stats.images)}</b></span>
+            <span>{t('dataset.captioned')} <b>{formatParams(stats.captioned ?? 0)}</b> <small>{formatPercent(coverage)}</small></span>
+            <span>{t('dataset.masks')} <b>{formatParams(stats.masks ?? 0)}</b></span>
+          </>}
+          <details className="dataset-source-details"><summary>{text('数据与遮罩说明', 'Dataset & mask details')}</summary><div>
+            <code>{info?.source.path}</code>
+            <p>{t('dataset.repeats')} ×{info?.source.repeats ?? '--'} · {t('dataset.caption')}: {info?.source.caption_ext || '--'}</p>
+            {info?.cache?.latents && <p>{t('dataset.latents')}: {info.cache.latents.cached}/{info.cache.latents.total} · {t('dataset.text')}: {info.cache.text?.cached ?? 0}/{info.cache.text?.total ?? 0}</p>}
+            <p>{canEdit ? text('点击图片编辑标签，用“编辑遮罩”绘制训练区域。', 'Click an image to edit captions; choose Edit mask to paint the training area.') : text('点击图片查看原图与标签。', 'Click an image to view the original and its caption.')}</p>
+            <p>{text('白色参与训练，黑色忽略。没有独立遮罩时使用原图 Alpha；没有 Alpha 时全图参与。启用遮罩训练后生效。', 'White trains, black is ignored. Without a sidecar, image alpha is used; without alpha, the whole image participates. Enable masked training to apply these weights.')}</p>
+          </div></details>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5 [&>button]:px-2 [&>button]:py-1.5 [&>button]:text-xs">
-          <button
-            onClick={handleBucketPreview}
-            disabled={busyAction === 'buckets'}
-            className="flex items-center space-x-1.5 px-3 py-2 text-sm bg-slate-100 dark:bg-slate-800 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50"
-          >
-            <Layers className="w-4 h-4" />
-            <span>{busyAction === 'buckets' ? t('dataset.computing') : t('dataset.bucketPreview')}</span>
-          </button>
-          <button
-            onClick={handlePrecache}
-            disabled={!canEdit || busyAction === 'precache'}
-            className="flex items-center space-x-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-          >
-            <Zap className="w-4 h-4" />
-            <span>{busyAction === 'precache' ? t('dataset.enqueuing') : t('dataset.precache')}</span>
-          </button>
-          <button
-            onClick={handleRescan}
-            disabled={!canEdit || busyAction === 'rescan'}
-            className="flex items-center space-x-1.5 px-3 py-2 text-sm bg-slate-100 dark:bg-slate-800 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50"
-          >
-            <RefreshCcw className="w-4 h-4" />
-            <span>{t('dataset.rescan')}</span>
-          </button>
-          <button
-            onClick={handleDelete}
-            disabled={!canEdit || busyAction === 'delete'}
-            className="flex items-center space-x-1.5 px-3 py-2 text-sm bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400 rounded-lg hover:bg-red-100 disabled:opacity-50"
-          >
-            <Trash2 className="w-4 h-4" />
-            <span>{t('dataset.remove')}</span>
-          </button>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
-        <div className="min-w-0 flex-1 basis-72 text-xs text-slate-500">
-          <p>{canEdit ? text('点击图片编辑标签，用“编辑遮罩”绘制训练区域。', 'Click an image to edit captions; choose Edit mask to paint the training area.') : text('点击图片查看原图与标签。', 'Click an image to view the original and its caption.')}</p>
-          <details className="mt-1"><summary className="cursor-pointer text-slate-600 dark:text-slate-300">{text('白色参与训练，黑色忽略 · 遮罩规则', 'White trains, black is ignored · Mask rules')}</summary><p className="mt-1 max-w-2xl">{text('没有独立遮罩时使用原图 Alpha；没有 Alpha 时全图参与。只有启用遮罩训练后才会生效。', 'Without a sidecar, image alpha is used; without alpha, the whole image participates. Enable masked training to apply these weights.')}</p></details>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          {canEdit && info?.source.project_id && <Link to={projectUrl(info.source.project_id || '', info.source.version_id, 'data')} className="px-1 py-1.5 text-blue-500">{text('添加数据', 'Add dataset')}</Link>}
-          <button disabled={!canEdit || busyAction === 'mask-enable'} onClick={() => { setBusyAction('mask-enable'); setActionError(''); void enableMaskedTraining().catch((error) => setActionError(formatApiError(error))).finally(() => setBusyAction(null)); }} className="shrink-0 rounded-md bg-blue-600 px-2.5 py-1.5 text-white disabled:opacity-50">{text('启用遮罩并前往训练', 'Enable masks and open training')}</button>
-          {info?.source.project_id && <NextStepLink to={projectUrl(info.source.project_id || '', info.source.version_id, 'models')}>{text('模型准备', 'Model setup')}</NextStepLink>}
+        <div className="dataset-overview-actions">
+          {canEdit && info?.source.project_id && <Link to={projectUrl(info.source.project_id, info.source.version_id, 'data')}>{text('添加数据', 'Add data')}</Link>}
+          <button disabled={!canEdit || busyAction === 'mask-enable'} onClick={() => { setBusyAction('mask-enable'); setActionError(''); void enableMaskedTraining().catch(error => setActionError(formatApiError(error))).finally(() => setBusyAction(null)); }} className="dataset-primary-action">{text('启用遮罩并前往训练', 'Enable masks and open training')}</button>
+          {info?.source.project_id && <NextStepLink to={projectUrl(info.source.project_id, info.source.version_id, 'models')}>{text('模型准备', 'Model setup')}</NextStepLink>}
+          <button type="button" aria-expanded={showDistribution} aria-controls="dataset-distribution" onClick={() => setShowDistribution(value => !value)}><Layers size={13}/>{text('分布与分桶', 'Distribution & buckets')}</button>
+          <button onClick={handlePrecache} disabled={!canEdit || busyAction === 'precache'} title={t('dataset.precache')} aria-label={busyAction === 'precache' ? t('dataset.enqueuing') : t('dataset.precache')}><Zap size={14}/></button>
+          <button onClick={handleRescan} disabled={!canEdit || busyAction === 'rescan'} title={t('dataset.rescan')} aria-label={t('dataset.rescan')}><RefreshCcw size={14}/></button>
+          <button onClick={handleDelete} disabled={!canEdit || busyAction === 'delete'} title={t('dataset.remove')} aria-label={t('dataset.remove')} className="dataset-remove-action"><Trash2 size={14}/></button>
         </div>
       </div>
 
@@ -364,19 +384,7 @@ export default function Dataset() {
         </div>
       )}
 
-      {/* 统计保持一行，分布与分桶按需展开 */}
-      {stats && (
-        <div className="rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800" data-testid="dataset-overview">
-          <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
-            <dl className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-500">
-              <div className="flex items-baseline gap-2"><dt>{t('dataset.images')}</dt><dd className="font-mono text-sm font-semibold text-slate-800 dark:text-slate-100">{formatParams(stats.images)}</dd></div>
-              <div className="flex items-baseline gap-2"><dt>{t('dataset.captioned')}</dt><dd><span className="font-mono text-slate-800 dark:text-slate-100">{formatParams(stats.captioned ?? 0)}</span> · {formatPercent(coverage)}</dd></div>
-              <div className="flex items-baseline gap-2"><dt>{t('dataset.masks')}</dt><dd className="font-mono text-slate-800 dark:text-slate-100">{formatParams(stats.masks ?? 0)}</dd></div>
-              {info?.cache?.latents && <div>{t('dataset.latents')}: <span className="font-mono">{info.cache.latents.cached}/{info.cache.latents.total}</span> · {t('dataset.text')}: <span className="font-mono">{info.cache.text?.cached ?? 0}/{info.cache.text?.total ?? 0}</span></div>}
-            </dl>
-            <button type="button" aria-expanded={showDistribution} aria-controls="dataset-distribution" onClick={() => setShowDistribution(value => !value)} className="flex items-center gap-1.5 py-1 text-xs text-blue-500"><Layers size={13}/>{text('分布与分桶', 'Distribution & buckets')}</button>
-          </div>
-          {showDistribution && <div id="dataset-distribution" className="grid gap-3 border-t border-slate-200 p-3 sm:grid-cols-3 dark:border-slate-700">
+      {stats && showDistribution && <div id="dataset-distribution" className="dataset-distribution grid gap-3 rounded border border-slate-200 p-3 sm:grid-cols-3 dark:border-slate-700">
           <div className="min-w-0">
             <Histogram
               label={t('dataset.resolutions')}
@@ -392,7 +400,7 @@ export default function Dataset() {
             />
           </div>
           <div className="max-h-40 min-w-0 overflow-auto">
-            <div className="text-xs text-slate-400 mb-1.5">{t('dataset.bucketsTitle')}</div>
+            <div className="mb-1.5 flex items-center justify-between gap-2 text-xs text-slate-400"><span>{t('dataset.bucketsTitle')}</span><button onClick={handleBucketPreview} disabled={busyAction === 'buckets'} className="text-blue-500 disabled:opacity-50">{busyAction === 'buckets' ? t('dataset.computing') : text('计算分桶', 'Calculate buckets')}</button></div>
             {buckets ? (
               <table className="w-full text-xs">
                 <thead>
@@ -416,9 +424,7 @@ export default function Dataset() {
               <div className="text-xs text-slate-400">{t('dataset.bucketsHint')}</div>
             )}
           </div>
-          </div>}
-        </div>
-      )}
+      </div>}
 
       {/* 搜索与批量操作条 */}
       <div className="dataset-browser-toolbar flex flex-wrap items-center gap-2 px-3 py-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
@@ -538,15 +544,16 @@ export default function Dataset() {
 
       {/* 大图 + caption 编辑抽屉 */}
       {activeImage && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-6" onClick={() => setActiveImage(null)}>
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-6" onClick={closeCaption}>
           <div
             className="bg-white dark:bg-slate-800 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-4 shadow-xl"
             onClick={(e) => e.stopPropagation()}
             data-testid="caption-editor"
+            role="dialog" aria-modal="true" aria-label={text('编辑图片标签','Edit image caption')}
           >
             <div className="flex justify-between items-center">
               <h3 className="font-semibold text-lg font-mono">{activeImg?.rel_path}</h3>
-              <button onClick={() => setActiveImage(null)} className="text-slate-400 hover:text-slate-600" title={t('common.close')}>
+              <button onClick={closeCaption} disabled={savingCaption} className="text-slate-400 hover:text-slate-600" title={t('common.close')}>
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -574,18 +581,19 @@ export default function Dataset() {
                 )}
               </div>
               <div className="space-y-3">
-                {canEdit && <button type="button" onClick={() => { if (activeImg) { setMaskImage({ hash: activeImg.hash, relPath: activeImg.rel_path }); setActiveImage(null); } }} className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600"><Brush className="h-4 w-4" />{text('编辑这张图片的训练遮罩', 'Edit this image’s training mask')}</button>}
+                {canEdit && <button type="button" disabled={savingCaption} onClick={() => { if (activeImg) {void (editCaption!==captionBase?saveCaption():Promise.resolve()).then(()=>{setMaskImage({ hash: activeImg.hash, relPath: activeImg.rel_path });setActiveImage(null);}).catch(()=>{});} }} className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600"><Brush className="h-4 w-4" />{text('编辑这张图片的训练遮罩', 'Edit this image’s training mask')}</button>}
                 <div className="text-xs text-slate-400">{t('dataset.captionEditorTitle')}</div>
-                {canEdit ? <TagChips caption={editCaption} onChange={setEditCaption} /> : <p className="whitespace-pre-wrap text-sm">{editCaption || t('dataset.noCaption', '（无 caption）')}</p>}
+                {actionError && <p role="alert" className="text-sm text-red-600">{actionError}</p>}
+                {canEdit ? <fieldset disabled={savingCaption}><TagChips caption={editCaption} onChange={setEditCaption} readOnly={savingCaption}/></fieldset> : <p className="whitespace-pre-wrap text-sm">{editCaption || t('dataset.noCaption', '（无 caption）')}</p>}
                 <div className="flex justify-end space-x-2 pt-2">
                   <button
-                    onClick={() => setActiveImage(null)}
+                    onClick={closeCaption} disabled={savingCaption}
                     className="px-4 py-2 text-sm rounded bg-slate-200 dark:bg-slate-700"
                   >
                     {t('common.cancel')}
                   </button>
                   <button
-                    onClick={saveCaption}
+                    onClick={()=>void saveCaption().catch(()=>{})}
                     disabled={!canEdit || savingCaption}
                     className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
                     data-testid="caption-save-btn"

@@ -1,7 +1,8 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
-import { GitBranch, Plus, Settings2, ArrowLeft, GitCompare, FolderOpen, Loader2, Copy, AlertCircle } from 'lucide-react';
+import { GitBranch, Plus, Settings2, GitCompare, FolderOpen, Loader2, Copy, AlertCircle } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatApiError } from '../../utils/errors';
@@ -10,15 +11,18 @@ import { type WorkspaceStep, ProjectWorkflow } from '../ProjectWorkflow';
 import Dialog from '../Dialog';
 import StudioSelect from '../StudioSelect';
 import { useWorkspaceHeight } from './useWorkspaceHeight';
+import { ProjectSidebarContext } from './ProjectSidebarContext';
+import '../../styles/project-sidebar.css';
 
 interface Props {
   project: VersionedProject; versionId?: string; versions: ProjectVersion[]; current?: ProjectVersion;
   active: WorkspaceStep; refresh: () => Promise<unknown>; beforeAction?: () => Promise<void>;
-  status?: React.ReactNode; error?: unknown;
+  status?: React.ReactNode; error?: unknown; title?: string;
 }
-export default function ProjectWorkspaceHeader({ project, versionId, versions, current, active, refresh, beforeAction, status, error: loadError }: Props) {
+export default function ProjectWorkspaceHeader({ project, versionId, versions, current, active, refresh, beforeAction, status, error: loadError, title: customTitle }: Props) {
   const text = useWorkspaceText();
   const navigationRef = useWorkspaceHeight('--workspace-head-height');
+  const sidebar = React.useContext(ProjectSidebarContext);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [dialog, setDialog] = React.useState<'create' | 'edit' | 'compare' | 'paths' | null>(null);
@@ -42,6 +46,16 @@ export default function ProjectWorkspaceHeader({ project, versionId, versions, c
   }, [busy,versionId,current?.status,current?.archived,current?.busy,project.id,project.active_version_id,queryClient]);
   const readyVersions = versions.filter(item => item.status === 'ready');
   const copySources = readyVersions.filter(item => !item.archived && !('busy' in item && item.busy));
+  const switchVersion = async (nextId: string) => {
+    if (busy || nextId === selectedId || !versions.some(item => item.id === nextId)) return;
+    setBusy(true); setError('');
+    try {
+      if (!current?.archived) await beforeAction?.();
+      navigate(projectUrl(project.id, nextId, active));
+      sidebar?.closeNavigation();
+    } catch (error) { setError(formatApiError(error)); }
+    finally { setBusy(false); }
+  };
   const begin = async (kind: typeof dialog) => {
     if (busy) return;
     setError(''); setBusy(true);
@@ -94,18 +108,26 @@ export default function ProjectWorkspaceHeader({ project, versionId, versions, c
   };
   const formatValue = (value: unknown) => value === undefined ? '—' : JSON.stringify(value);
   const problem = error || (loadError ? formatApiError(loadError) : '');
+  const versionState = (item: ProjectVersion) => item.archived ? text('已归档', 'Archived') : item.status === 'copying' ? text('创建中', 'Creating') : item.status === 'failed' ? text('失败', 'Failed') : item.busy ? text('使用中', 'In use') : text('就绪', 'Ready');
+  const title = customTitle ?? (active === 'data' ? text('训练数据', 'Training data') : active === 'models' ? text('模型准备', 'Model setup') : active === 'train' ? text('训练参数', 'Training parameters') : text('训练结果', 'Training results'));
+  const projectControls = <section className="project-sidebar" aria-label={text('当前项目工作区', 'Current project workspace')}>
+    <Link className="project-sidebar-identity" to={projectUrl(project.id, selectedId, 'data')} title={project.note || project.name}><strong title={project.name}>{project.name}</strong><small title={project.id}>{project.id}</small></Link>
+    {supported && <>
+      <div className="project-sidebar-version-heading"><span>{text('当前版本', 'Current version')}</span>{current && <span className={`project-sidebar-version-state status-${current.status}`} title={current.error || current.note || versionState(current)}>{current.status === 'copying' && <Loader2 size={11} className="animate-spin"/>}{versionState(current)}</span>}</div>
+      <StudioSelect searchable aria-label={text('项目版本', 'Project versions')} value={selectedId || ''} disabled={busy || !versions.length} icon={<GitBranch size={13}/>} onValueChange={value => void switchVersion(value)} options={versions.filter(item => showArchived || !item.archived || item.id === selectedId).map(item => ({value:item.id,label:`${item.name}${item.archived || item.status !== 'ready' ? ` · ${versionState(item)}` : ''}`}))}/>
+      <div className="project-sidebar-actions" aria-label={text('版本操作', 'Version actions')}>
+        <button type="button" onClick={() => void begin('create')} disabled={busy || versions.some(item => item.status === 'copying')} title={text('新版本', 'New version')} aria-label={text('新版本', 'New version')}><Plus size={14}/></button>
+        <button type="button" onClick={() => void begin('compare')} disabled={!current || readyVersions.length < 2 || busy} title={text('比较版本参数', 'Compare version parameters')} aria-label={text('比较', 'Compare')}><GitCompare size={14}/></button>
+        <button type="button" onClick={() => void begin('paths')} disabled={!current || busy} title={text('查看本版本目录', 'View version folders')} aria-label={text('查看本版本目录', 'View version folders')}><FolderOpen size={14}/></button>
+        <button type="button" onClick={() => void begin('edit')} disabled={!current || current.status === 'copying' || busy} title={text('版本设置', 'Version settings')} aria-label={text('版本设置', 'Version settings')}><Settings2 size={14}/></button>
+      </div>
+      {versions.some(item => item.archived) && <label className="project-sidebar-archived"><input type="checkbox" checked={showArchived} onChange={event => setShowArchived(event.target.checked)}/>{text('显示已归档版本', 'Show archived versions')}</label>}
+    </>}
+    <ProjectWorkflow projectId={project.id} versionId={selectedId} active={active} sidebar/>
+  </section>;
   return <>
-    <div className="workspace-navigation" ref={navigationRef}>
-    <header className="project-identity">
-      <div className="project-identity-main"><Link to="/projects" className="project-back"><ArrowLeft size={14}/>{text('项目', 'Projects')}</Link><h1><span className="project-name" title={project.name}>{project.name}</span><span>/</span><span className="project-version-name">{current?.name || (supported ? '…' : text('工作区', 'Workspace'))}</span></h1><p className="project-context-note">{current?.note || project.note || text('数据、参数与结果在当前版本内管理', 'Manage data, parameters and results in this version')}</p></div>
-      <div className="project-heading-status">{status}</div>
-    </header>
-    {supported && <div className="project-version-strip"><GitBranch size={15}/><span className="version-strip-label">{text('版本', 'Version')}</span><div className="version-list" role="navigation" aria-label={text('项目版本', 'Project versions')}>
-      {versions.filter(item => showArchived || !item.archived || item.id === selectedId).map(item => <Link key={item.id} to={projectUrl(project.id, item.id, active)} aria-current={item.id === selectedId ? 'page' : undefined} className={`version-chip ${item.id === selectedId ? 'selected' : ''}`}><span className={`version-status-dot status-${item.status}`}/>{item.name}{item.archived && <small>{text('已归档', 'Archived')}</small>}{item.status === 'copying' && <Loader2 size={12} className="animate-spin"/>}</Link>)}
-    </div><div className="version-actions"><button onClick={() => void begin('create')} disabled={busy || versions.some(item => item.status === 'copying')}><Plus size={14}/>{text('新版本', 'New version')}</button><button onClick={() => void begin('compare')} disabled={!current || readyVersions.length < 2 || busy} title={text('比较版本参数', 'Compare version parameters')}><GitCompare size={14}/>{text('比较', 'Compare')}</button><button onClick={() => void begin('paths')} disabled={!current} title={text('查看本版本目录', 'View version folders')} aria-label={text('查看本版本目录', 'View version folders')}><FolderOpen size={15}/></button><button onClick={() => void begin('edit')} disabled={!current || current.status === 'copying' || busy} aria-label={text('版本设置', 'Version settings')}><Settings2 size={15}/></button></div></div>}
-    <ProjectWorkflow projectId={project.id} versionId={selectedId} active={active}/>
-    </div>
-    {versions.some(item => item.archived) && <label className="version-archive-toggle"><input type="checkbox" checked={showArchived} onChange={event => setShowArchived(event.target.checked)}/>{text('显示已归档版本', 'Show archived versions')}</label>}
+    {sidebar ? sidebar.target && createPortal(projectControls, sidebar.target) : <div className="project-sidebar-fallback">{projectControls}</div>}
+    <header className="workspace-navigation workspace-page-heading" ref={navigationRef}><h1 title={title}>{title}</h1>{status && <div className="project-heading-status">{status}</div>}</header>
     {problem && !dialog && <div role="alert" className="workspace-message error">{problem}<button onClick={() => {setError(''); void refresh();}}>{text('重试', 'Retry')}</button></div>}
     {current?.archived && <div className="workspace-message" role="status"><AlertCircle size={16}/><div><strong>{text('此版本已归档 · 只读', 'This version is archived · Read only')}</strong><p>{text('可以查看数据、比较参数和下载已有结果；恢复版本后继续编辑与训练。', 'View data, compare configurations and download existing results. Restore the version to edit or train.')}</p></div><button disabled={busy} onClick={() => void archive()}>{busy ? text('正在恢复…', 'Restoring…') : text('恢复版本', 'Restore version')}</button></div>}
     {current?.status === 'copying' && <div className="workspace-message" role="status"><Loader2 size={16} className="animate-spin"/><div><strong>{text('正在建立独立版本', 'Creating an independent version')}</strong><p>{text('复制图片、标签与遮罩，完成后即可编辑；原版本保持不变。', 'Copying images, captions and masks. The original version is preserved.')}</p><progress max={Math.max(1,current.progress?.files_total || 0)} value={current.progress?.files_done || 0}/><span>{current.progress?.files_done || 0} / {current.progress?.files_total || '…'} {text('个文件', 'files')}</span></div></div>}
