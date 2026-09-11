@@ -78,6 +78,14 @@ class Database:
                     status TEXT NOT NULL DEFAULT 'ready', busy TEXT, progress_json TEXT NOT NULL DEFAULT '{}',
                     error TEXT, created_at REAL NOT NULL, updated_at REAL NOT NULL,
                     UNIQUE(project_id, name))""")
+                for table, column, declaration in (
+                    ("projects", "layout_version", "INTEGER NOT NULL DEFAULT 1"),
+                    ("project_versions", "number", "INTEGER"),
+                    ("jobs", "samples_dir", "TEXT"),
+                ):
+                    columns = {row[1] for row in self.conn.execute(f"PRAGMA table_info({table})")}
+                    if column not in columns:
+                        self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
                 for project in list(
                     self.conn.execute("SELECT * FROM projects WHERE active_version_id IS NULL")
                 ):
@@ -89,6 +97,22 @@ class Database:
                     self.conn.execute(
                         "UPDATE projects SET active_version_id=? WHERE id=?", (vid, project["id"])
                     )
+                for project in self.conn.execute("SELECT id FROM projects").fetchall():
+                    number = self.conn.execute(
+                        "SELECT coalesce(max(number),0) FROM project_versions WHERE project_id=?",
+                        (project["id"],),
+                    ).fetchone()[0]
+                    for version in self.conn.execute(
+                        "SELECT id FROM project_versions WHERE project_id=? AND number IS NULL ORDER BY created_at,id",
+                        (project["id"],),
+                    ).fetchall():
+                        number += 1
+                        self.conn.execute(
+                            "UPDATE project_versions SET number=? WHERE id=?", (number, version["id"])
+                        )
+                self.conn.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_version_number ON project_versions(project_id,number)"
+                )
                 for table in ("datasets", "jobs", "artifacts"):
                     self.conn.execute(
                         f"UPDATE {table} SET version_id=(SELECT active_version_id FROM projects WHERE projects.id={table}.project_id) WHERE version_id IS NULL AND project_id IS NOT NULL"

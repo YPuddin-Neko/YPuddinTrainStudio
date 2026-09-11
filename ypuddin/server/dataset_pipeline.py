@@ -329,18 +329,15 @@ class DatasetPipeline:
             raise PipelineCancelled("Operation cancelled; original files were preserved")
 
     def start(self, pid: str, vid: str, request: dict) -> dict:
-        from .environment import maintenance_blocked
-
-        # Environment apply checks queued taggers under this same lock. Keep
-        # admission and publication indivisible so native dependencies cannot
-        # change between the maintenance check and starting the worker.
+        # Historic automatic-tagging operations remain readable/undoable, but
+        # retry must not resurrect a removed inference capability.
+        if request["action"] == "tag":
+            raise ApiError(
+                "automatic tagging is no longer available; existing captions can be viewed and edited",
+                code="pipeline.tagging_removed",
+                status=410,
+            )
         with self.c.db.lock:
-            if request["action"] == "tag" and maintenance_blocked(self.c.db):
-                raise ApiError(
-                    "environment dependencies are being modified; wait for maintenance to finish",
-                    code="environment.maintenance",
-                    status=409,
-                )
             return self._start_locked(pid, vid, request)
 
     def _start_locked(self, pid: str, vid: str, request: dict) -> dict:
@@ -419,10 +416,18 @@ class DatasetPipeline:
         from .routes_work import _get_dataset, _validate_caption_extension
 
         resolved, seen = [], set()
-        managed = self.c.version_dir(pid, vid) / "datasets"
+        managed_roots = (self.c.dataset_dir(pid, vid), self.c.reg_dir(pid, vid))
         sources = {source["dataset_id"]: source for source in self._sources(pid, vid)}
         for ref in refs:
             row = _get_dataset(self.c, ref["dataset_id"])
+            managed = next(
+                (
+                    root
+                    for root in managed_roots
+                    if Path(row["path"]).resolve().is_relative_to(root.resolve())
+                ),
+                managed_roots[0],
+            )
             if row["project_id"] != pid or row["version_id"] != vid:
                 raise ApiError(
                     "image belongs to another project version", code="pipeline.version_mismatch", status=409
@@ -513,7 +518,10 @@ class DatasetPipeline:
                 "issues": [],
                 "editable": bool(
                     source["dataset_id"]
-                    and path.resolve().is_relative_to((self.c.version_dir(pid, vid) / "datasets").resolve())
+                    and any(
+                        path.resolve().is_relative_to(root.resolve())
+                        for root in (self.c.dataset_dir(pid, vid), self.c.reg_dir(pid, vid))
+                    )
                 ),
             }
             try:
@@ -796,82 +804,6 @@ class DatasetPipeline:
             self._progress(oid, "captions", index + 1, len(images), record["rel_path"])
         return changes
 
-    def _tagging(self, oid: str, work: Path, images: list[dict], options: dict) -> list[dict]:
-        from .dataset_tagging import generate
-
-        if any(not self.c.is_allowed(Path(options[key]).expanduser()) for key in ("model_path", "tags_path")):
-            raise ApiError(
-                "tagger files are outside the permitted roots", code="pipeline.tagging_path", status=403
-            )
-        candidates, previous, seen, identities = [], {}, set(), {}
-        for image in images:
-            path = image["caption"]
-            if path in seen:
-                continue
-            seen.add(path)
-            existing = path.read_text(encoding="utf-8-sig").strip() if path.exists() else ""
-            if options["mode"] == "missing" and existing:
-                continue
-            previous[path] = existing
-            identities[path] = (_digest(path) if path.exists() else None, _stat(image["path"]))
-            candidates.append(image)
-        self._cancelled(oid)
-        if not candidates:
-            self._progress(
-                oid, "tagging", 0, 0, "All selected images already have captions; no files changed"
-            )
-            return []
-        self._progress(oid, "tagging", 0, len(candidates), "Starting local image tagging")
-        cancel = self.cancel_events[oid]
-        try:
-            captions = generate(
-                candidates,
-                options,
-                lambda done, total, message: self._progress(oid, "tagging", done, total, message),
-                cancel,
-            )
-        except Exception:
-            self._cancelled(oid)
-            raise
-        self._cancelled(oid)
-        if len(captions) != len(candidates) or any(not isinstance(value, str) for value in captions):
-            raise ApiError("tagger returned an invalid number of captions", code="pipeline.tagging_output")
-        changes = []
-        for index, (image, generated) in enumerate(zip(candidates, captions, strict=True)):
-            self._cancelled(oid)
-            expected_caption, expected_image = identities[image["caption"]]
-            current_caption = _digest(image["caption"]) if image["caption"].exists() else None
-            if current_caption != expected_caption or _stat(image["path"]) != expected_image:
-                raise ApiError(
-                    "image or caption changed during tagging; no drafts were applied",
-                    code="pipeline.source_changed",
-                    status=409,
-                )
-            old = previous[image["caption"]]
-            # Preserve the complete existing caption in append mode. Tagger output and
-            # trigger words are normalized once here, inside the same reversible edit.
-            base = old if options["mode"] == "append" else ""
-            tags = [
-                tag.strip()
-                for tag in options.get("trigger_word", "").split(",") + base.split(",") + generated.split(",")
-                if tag.strip()
-            ]
-            text = ", ".join(dict.fromkeys(tags))
-            if text == old:
-                continue
-            staged = work / "staged" / f"tag-{index}"
-            staged.parent.mkdir(parents=True, exist_ok=True)
-            staged.write_text(text + "\n", encoding="utf-8")
-            change = self._change(work, image["caption"], staged)
-            if change["before"] != expected_caption:
-                raise ApiError(
-                    "caption changed while backing up tagging results",
-                    code="pipeline.source_changed",
-                    status=409,
-                )
-            changes.append(change)
-        return changes
-
     def _run(self, oid: str, lease: Any) -> None:
         from ypuddin.train.plan import plan
 
@@ -929,8 +861,6 @@ class DatasetPipeline:
                         changes = self._preprocess(oid, work, images, request["preprocess"])
                     elif action == "captions":
                         changes = self._captions(oid, work, images, request["captions"])
-                    elif action == "tag":
-                        changes = self._tagging(oid, work, images, request["tagging"])
                     else:
                         changes = []
                         seen = set()

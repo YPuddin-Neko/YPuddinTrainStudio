@@ -52,9 +52,7 @@ CATALOG = {
     "sageattention": ("sageattention", "sage", "https://github.com/thu-ml/SageAttention#installation"),
     "nvidia-ml-py": ("pynvml", None, "https://pypi.org/project/nvidia-ml-py/"),
     "tensorboard": ("tensorboard", None, "https://www.tensorflow.org/tensorboard/get_started"),
-    "wandb": ("wandb", None, "https://docs.wandb.ai/models/quickstart"),
     "schedulefree": ("schedulefree", None, "https://github.com/facebookresearch/schedule_free"),
-    "onnxruntime": ("onnxruntime", None, "https://onnxruntime.ai/docs/install/#install-onnx-runtime"),
 }
 ATTENTION = ("auto", "sdpa", "xformers", "flash_attn", "sage")
 MUTATING = ("installing", "verifying")
@@ -75,9 +73,7 @@ class EnvironmentRequest(BaseModel):
         "sageattention",
         "nvidia-ml-py",
         "tensorboard",
-        "wandb",
         "schedulefree",
-        "onnxruntime",
     ]
     action: Literal["install", "repair", "uninstall"] = "install"
     version: str | None = None
@@ -166,7 +162,10 @@ def environment_attention_default(context) -> str:
 
 
 def maintenance_blocked(db: Database) -> bool:
-    return bool(db.get_kv("environment.maintenance", {}).get("blocked"))
+    return bool(
+        db.get_kv("environment.maintenance", {}).get("blocked")
+        or db.get_kv("regularization.reservation", {}).get("id")
+    )
 
 
 def installed_versions() -> dict[str, str]:
@@ -218,17 +217,11 @@ def runtime_info() -> dict[str, Any]:
 # tiny tensors; imports alone do not establish that a wheel works with the current GPU.
 PROBE = r"""
 import importlib, json, torch
-names = {"xformers": "xformers.ops", "flash-attn": "flash_attn", "sageattention": "sageattention", "nvidia-ml-py": "pynvml", "tensorboard": "tensorboard", "wandb": "wandb", "schedulefree": "schedulefree", "onnxruntime": "onnxruntime"}
+names = {"xformers": "xformers.ops", "flash-attn": "flash_attn", "sageattention": "sageattention", "nvidia-ml-py": "pynvml", "tensorboard": "tensorboard", "schedulefree": "schedulefree"}
 out = {}
 for name, module in names.items():
     try:
         m = importlib.import_module(module)
-        if name == "onnxruntime" and "CPUExecutionProvider" not in m.get_available_providers():
-            raise RuntimeError("ONNX Runtime CPUExecutionProvider is unavailable")
-        if name == "onnxruntime":
-            from packaging.version import Version
-            if Version(m.__version__) < Version("1.17.0"):
-                raise RuntimeError("WD14 requires ONNX Runtime >= 1.17.0")
         tested = False
         if name in ("xformers", "flash-attn", "sageattention") and torch.cuda.is_available():
             q = torch.randn(1, 32, 2, 64, device="cuda", dtype=torch.float16, requires_grad=name != "sageattention")
@@ -425,6 +418,8 @@ class EnvironmentManager:
             self._update(id_, logs=[*op.logs, line[-4000:]][-300:])
 
     def _running(self):
+        if self.context.db.get_kv("regularization.reservation", {}).get("id"):
+            return True
         jobs = bool(
             self.context.db.fetchone(
                 "SELECT id FROM jobs WHERE status IN ('running','pausing','cancelling') LIMIT 1"
@@ -449,7 +444,7 @@ class EnvironmentManager:
         if self._running():
             raise EnvironmentError(
                 409,
-                "A training, cache or local tagging job is running. Stop it and wait for the process to exit before modifying dependencies.",
+                "A training, cache, AI regularization or data worker is running. Stop it and wait for the process to exit before modifying dependencies.",
             )
         if self._closed:
             raise EnvironmentError(503, "Environment manager is stopping")
@@ -687,23 +682,6 @@ class EnvironmentManager:
                     "Windows installation requires an uploaded compatible prebuilt wheel. Source compilation is disabled.",
                 )
             installed = self.versions().get(request.package)
-            if request.package == "onnxruntime" and request.action != "uninstall":
-                variants = set(self.versions()) & {
-                    "onnxruntime-gpu",
-                    "onnxruntime-directml",
-                    "onnxruntime-qnn",
-                    "onnxruntime-training",
-                }
-                if variants:
-                    raise EnvironmentError(
-                        422,
-                        "Another ONNX Runtime variant is installed. Resolve it before installing the CPU package; GPU/DirectML packages will not be replaced automatically.",
-                    )
-                chosen = installed if request.action == "repair" else request.version
-                if chosen and Version(chosen) < Version("1.17.0"):
-                    raise EnvironmentError(
-                        422, "WD14 requires onnxruntime >= 1.17.0; choose a newer CPU version."
-                    )
             if request.action in ("repair", "uninstall") and not installed:
                 raise EnvironmentError(422, "Package is not installed")
             if request.action == "repair" and request.version and request.version != installed:
@@ -752,8 +730,6 @@ class EnvironmentManager:
             )
             version = versions.get(request.package) if request.action == "repair" else request.version
             target = request.package + (f"=={version}" if version else "")
-            if request.package == "onnxruntime" and not version:
-                target += ">=1.17.0"
             if request.wheel_id:
                 wheel = self.context.db.get_kv("environment.wheel." + request.wheel_id)
                 if not wheel:
@@ -793,10 +769,6 @@ class EnvironmentManager:
             for row in rows:
                 meta = row["metadata"]
                 name, selected = canonicalize_name(meta["name"]), meta["version"]
-                if request.package == "onnxruntime" and name.startswith("onnxruntime-"):
-                    raise ValueError("CPU ONNX Runtime plans cannot install other ONNX runtime variants")
-                if name == "onnxruntime" and Version(selected) < Version("1.17.0"):
-                    raise ValueError("WD14 requires onnxruntime >= 1.17.0; choose a newer CPU wheel")
                 if protected(name):
                     raise ValueError(
                         f"Plan would modify protected runtime {name} ({versions.get(name, 'absent')} -> {selected}). Choose a compatible extension version or wheel."

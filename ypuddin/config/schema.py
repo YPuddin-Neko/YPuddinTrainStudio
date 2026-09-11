@@ -532,6 +532,8 @@ class SamplePrompt(_Strict):
 
 
 class SamplingConfig(_Strict):
+    # Service-owned destination. Omitted for CLI compatibility (<run_dir>/samples).
+    output_dir: str | None = None
     enabled: bool = F(False, help="训练期间生成预览图", ui_=ui("sampling", order=0, control="switch"))
     every_steps: int | None = F(
         None, ge=1, help="每 N 步", ui_=ui("sampling", order=10, show_when="sampling.enabled == true")

@@ -479,10 +479,16 @@ class JobSupervisor:
         self._check_job_version(job)
         new = new_id("j")
         run_dir = Path(job["run_dir"]).parent / new
+        samples_dir = (
+            Path(job["samples_dir"]).parent / new
+            if job.get("samples_dir") and Path(job["samples_dir"]).name == job["id"]
+            else run_dir / "samples"
+        )
         cfg = json.loads(job["config_json"])
         cfg.setdefault("checkpoint", {})["output_dir"] = str(run_dir)
         cfg["checkpoint"]["resume"] = None
         cfg.setdefault("logging", {})["events_path"] = str(run_dir / "events.jsonl")
+        cfg.setdefault("sampling", {})["output_dir"] = str(samples_dir)
         self.db.insert(
             "jobs",
             {
@@ -495,6 +501,7 @@ class JobSupervisor:
                 "priority": job["priority"],
                 "created_at": now(),
                 "run_dir": str(run_dir),
+                "samples_dir": str(samples_dir),
                 "config_json": json.dumps(cfg),
                 "progress_json": json.dumps(
                     {

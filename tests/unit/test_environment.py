@@ -181,56 +181,6 @@ def test_reviewed_install_does_not_mutate_until_apply_then_requires_restart(env)
     manager.close()
 
 
-def test_onnx_cpu_is_available_without_cuda_and_keeps_torch_protected(env):
-    env.runtime.update(cuda_available=False, cuda_runtime=None, gpu_capability=None)
-    status = env.client.get("/api/environment").json()
-    package = next(p for p in status["packages"] if p["name"] == "onnxruntime")
-    assert package["supported"] and not package["wheel_required"] and package["backend"] is None
-    response = env.client.post(
-        "/api/environment/operations", json={"package": "onnxruntime", "version": "1.20.1"}
-    )
-    assert response.status_code == 202
-    op = wait_status(env.manager, response.json()["id"])
-    assert op.status == "ready" and "onnxruntime" not in env.versions
-    env.client.post(f"/api/environment/operations/{op.id}/apply").raise_for_status()
-    done = wait_status(env.manager, op.id, ("completed", "failed"))
-    assert done.status == "completed", done.error
-    assert env.versions == {"torch": "2.5.1", "numpy": "2.1.0", "onnxruntime": "1.20.1"}
-    assert done.restart_required
-    package = next(
-        p
-        for p in env.client.get("/api/environment?refresh=true").json()["packages"]
-        if p["name"] == "onnxruntime"
-    )
-    assert package["available"]
-
-
-def test_onnx_never_installs_gpu_variant_or_overwrites_an_existing_variant(env):
-    assert (
-        env.client.post("/api/environment/operations", json={"package": "onnxruntime-gpu"}).status_code == 422
-    )
-    assert (
-        env.client.post(
-            "/api/environment/operations", json={"package": "onnxruntime", "version": "1.16.0"}
-        ).status_code
-        == 422
-    )
-    env.versions["onnxruntime-gpu"] = "1.20.1"
-    response = env.client.post("/api/environment/operations", json={"package": "onnxruntime"})
-    assert response.status_code == 422 and "variant" in response.text
-    assert not env.installer.calls
-
-
-def test_onnx_default_plan_pins_minimum_and_rejects_incompatible_resolved_wheel(env):
-    env.installer.rows = [FakeInstaller.row("onnxruntime", "1.16.0")]
-    response = env.client.post("/api/environment/operations", json={"package": "onnxruntime"})
-    assert response.status_code == 202
-    op = wait_status(env.manager, response.json()["id"])
-    assert op.status == "failed" and ">= 1.17.0" in op.error
-    assert env.installer.calls[0][-1] == "onnxruntime>=1.17.0"
-    assert "onnxruntime" not in env.versions
-
-
 @pytest.mark.parametrize("pipeline_status", ["queued", "running", "cancelling"])
 def test_environment_apply_and_probe_wait_for_local_tagger_under_shared_lock(env, pipeline_status):
     op = start(env)
@@ -259,12 +209,12 @@ def test_environment_apply_and_probe_wait_for_local_tagger_under_shared_lock(env
         assert entered.wait(1) and not finished.wait(0.05)
     worker.join(3)
     assert finished.is_set() and errors and errors[0].status == 409
-    assert "tagging" in str(errors[0])
+    assert "worker" in str(errors[0])
     assert env.manager.get(op.id).status == "ready" and "tensorboard" not in env.versions
     state = env.client.get("/api/environment?refresh=true").json()
     assert state["running_jobs"] and state["probe_deferred"]
     env.probe.assert_not_called()
-    assert env.client.post("/api/environment/operations", json={"package": "onnxruntime"}).status_code == 409
+    assert env.client.post("/api/environment/operations", json={"package": "tensorboard"}).status_code == 409
     env.context.db.update("dataset_pipeline_operations", "tag", {"status": "completed"})
     assert env.client.post(f"/api/environment/operations/{op.id}/apply").status_code == 202
     assert wait_status(env.manager, op.id, ("completed", "failed")).status == "completed"
@@ -279,13 +229,13 @@ def test_runtime_probes_cleanup_import_side_effects_in_disposable_cwd(monkeypatc
         directory = Path(kwargs["cwd"])
         assert directory != Path.cwd()
         directories.append(directory)
-        (directory / ":memory:.ses").write_text("simulated ORT import side effect")
+        (directory / ":memory:.ses").write_text("simulated native import side effect")
         return SimpleNamespace(
-            stdout='YPUDDIN_ENV={"onnxruntime":{"importable":true}}\n', stderr="", returncode=0
+            stdout='YPUDDIN_ENV={"xformers":{"importable":true}}\n', stderr="", returncode=0
         )
 
     monkeypatch.setattr(module.subprocess, "run", run)
-    assert probe_packages()["onnxruntime"]["importable"]
+    assert probe_packages()["xformers"]["importable"]
     assert directories and not directories[0].exists()
 
 
@@ -459,6 +409,14 @@ def test_cancel_plan_and_uninstall_require_existing_package(env):
     )
 
 
+@pytest.mark.parametrize("package", ["wandb", "onnxruntime", "onnxruntime-gpu"])
+def test_removed_external_logging_and_automatic_tagging_are_not_installable(env, package):
+    status = env.client.get("/api/environment").json()
+    assert package not in {item["name"] for item in status["packages"]}
+    assert env.client.post("/api/environment/operations", json={"package": package}).status_code == 422
+    assert not env.installer.calls
+
+
 def wheel_bytes(tmp_path, filename, name, *, version="1.0", requires=()):
     path = tmp_path / filename
     with zipfile.ZipFile(path, "w") as archive:
@@ -525,3 +483,29 @@ def test_request_cannot_inject_pip_flags_or_nonversion_requirements():
     for value in ("--extra-index-url=http://bad", "git+http://bad", "1.0; arbitrary", ">=1"):
         with pytest.raises(ValueError):
             EnvironmentRequest(package="tensorboard", version=value)
+
+
+def test_regularization_reservation_and_environment_apply_share_admission_lock(env):
+    op = start(env)
+    entered, completed = threading.Event(), threading.Event()
+    errors = []
+
+    def apply():
+        entered.set()
+        try:
+            env.manager.apply(op.id)
+        except Exception as error:
+            errors.append(error)
+        finally:
+            completed.set()
+
+    with env.context.db.lock:
+        env.context.db.set_kv("regularization.reservation", {"id": "reg_pending"})
+        worker = threading.Thread(target=apply)
+        worker.start()
+        assert entered.wait(1) and not completed.wait(0.05)
+    worker.join(3)
+    assert completed.is_set() and errors and errors[0].status == 409
+    assert "regularization" in str(errors[0])
+    assert maintenance_blocked(env.context.db)
+    assert not any("install" in call and "--dry-run" not in call for call in env.installer.calls)

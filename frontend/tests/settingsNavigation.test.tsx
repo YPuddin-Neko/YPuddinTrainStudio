@@ -14,6 +14,7 @@ beforeEach(async () => {
   await i18n.changeLanguage('zh-CN');
   vi.spyOn(apiClient, 'get').mockImplementation(async endpoint => {
     if (endpoint === '/settings') return config as any;
+    if (endpoint === '/system/info') return { ypuddin: 'test' } as any;
     throw new Error(`Unexpected GET ${endpoint}`);
   });
 });
@@ -49,7 +50,7 @@ describe('settings drawer content navigation', () => {
     expect(screen.queryByTestId('settings-theme')).not.toBeInTheDocument();
     expect(screen.queryByTestId('runtime-panel')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: '界面与服务' }));
-    expect(screen.getByTestId('settings-theme')).toHaveValue('light');
+    expect(screen.getByTestId('settings-theme')).toHaveTextContent(i18n.t('settings.themeLight'));
     expect(screen.queryByRole('textbox', { name: i18n.t('settings.dataRoot') })).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: i18n.t('settings.host') })).toHaveValue('127.0.0.1');
     const index = screen.getByRole('navigation', { name: '当前页章节' });

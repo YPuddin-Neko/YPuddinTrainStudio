@@ -393,56 +393,45 @@ def test_download_errors_redact_saved_token_and_auth_failure_guides_user(downloa
     assert secret not in str(row) and "Credentials" in row["error"] and "license" in row["error"]
 
 
-def test_catalog_bundle_is_atomic_checks_both_hashes_and_never_training_default(
-    download_service, monkeypatch
-):
-    import hashlib
-    import io
+def test_retired_tagger_cannot_be_downloaded_but_history_and_files_are_preserved(download_service):
+    client, control, root, app = download_service
+    from ypuddin.server.model_catalog import TAGGER_ID, TAGGER_REPO, TAGGER_REVISION
 
-    from ypuddin.server import model_downloads as module
-
-    client, _control, _root, app = download_service
-    payloads = {
-        "model.onnx": b"controlled model fixture",
-        "selected_tags.csv": b"tag_id,name,category\n1,fox,0\n",
-    }
-    monkeypatch.setattr(
-        module,
-        "TAGGER_FILES",
-        {
-            name: {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
-            for name, data in payloads.items()
-        },
+    assert client.get("/api/models/catalog").json() == []
+    assert client.post(f"/api/models/catalog/{TAGGER_ID}/download", json={}).status_code == 404
+    assert (
+        client.post(
+            "/api/models/downloads",
+            json={
+                "family": "tagger",
+                "kind": "tagger",
+                "repo_id": TAGGER_REPO,
+                "revision": TAGGER_REVISION,
+                "filename": "model.onnx",
+                "is_default": False,
+            },
+        ).status_code
+        == 422
     )
-
-    class BundleOpener:
-        corrupt = True
-
-        def open(self, request, timeout):
-            name = request.full_url.rsplit("/", 1)[-1]
-            data = payloads[name]
-            if self.corrupt and name.endswith("csv"):
-                data = b"X" * len(data)
-            stream = io.BytesIO(data)
-            stream.status = 200
-            stream.headers = {"Content-Length": str(len(data))}
-            return stream
-
-    opener = BundleOpener()
-    app.state.model_downloads.opener = opener
-    catalog = client.get("/api/models/catalog").json()[0]
-    assert catalog["role"] == "tagger" and not catalog["ready"]
-    response = client.post(f"/api/models/catalog/{catalog['id']}/download", json={})
-    assert response.status_code == 202, response.text
-    failed = wait_for(client, response.json()["id"])
-    assert failed["status"] == "failed" and "selected_tags.csv" in failed["error"]
-    assert not Path(catalog["path"]).exists() and client.get("/api/models").json() == []
-    opener.corrupt = False
-    row = wait_for(client, client.post(f"/api/models/downloads/{failed['id']}/retry", json={}).json()["id"])
-    assert row["status"] == "completed", row
-    catalog = client.get("/api/models/catalog").json()[0]
-    assert catalog["ready"]
-    assert all((Path(catalog["path"]) / name).read_bytes() == data for name, data in payloads.items())
-    asset = client.get("/api/models").json()[0]
-    assert asset["kind"] == asset["family"] == "tagger" and not asset["is_default"]
-    assert client.patch(f"/api/models/{asset['id']}", json={"is_default": True}).status_code == 400
+    folder = root / "tagger" / TAGGER_ID / TAGGER_REVISION
+    folder.mkdir(parents=True)
+    weights = folder / "model.onnx"
+    weights.write_bytes(b"existing user asset")
+    old = ModelDownload(
+        id="dl_legacy",
+        family="tagger",
+        kind="tagger",
+        provider="huggingface",
+        source_url=f"https://huggingface.co/{TAGGER_REPO}/resolve/{TAGGER_REVISION}/model.onnx",
+        filename="model.onnx",
+        target_path=str(weights),
+        status="failed",
+        created_at=1,
+        is_default=False,
+    ).model_dump()
+    app.state.model_downloads.tasks[old["id"]] = old
+    app.state.model_downloads._persist()
+    assert client.post("/api/models/downloads/dl_legacy/retry", json={}).status_code == 410
+    assert client.get("/api/models/downloads").json()[0]["id"] == "dl_legacy"
+    assert weights.read_bytes() == b"existing user asset"
+    assert not control.requests

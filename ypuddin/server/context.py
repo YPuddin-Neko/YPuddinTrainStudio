@@ -53,6 +53,13 @@ class ServiceContext:
                     base[k].update(v)
                 else:
                     base[k] = v
+        if "output_mode" not in base["paths"]:
+            base["paths"]["output_mode"] = (
+                "project"
+                if Path(base["paths"]["output_dir"]).expanduser().resolve()
+                == (self.data_root / "runs").resolve()
+                else "custom"
+            )
         base["paths"]["data_root"] = str(self.data_root)
         for key in ("cache_dir", "models_dir", "output_dir"):
             base["paths"][key] = str(Path(base["paths"][key]).expanduser().resolve())
@@ -69,6 +76,14 @@ class ServiceContext:
                 cur[k].update(v)
             else:
                 cur[k] = v
+        paths_patch = patch.get("paths", {})
+        if "output_dir" in paths_patch and "output_mode" not in paths_patch:
+            cur["paths"]["output_mode"] = (
+                "project"
+                if Path(paths_patch["output_dir"]).expanduser().resolve()
+                == (self.data_root / "runs").resolve()
+                else "custom"
+            )
         if Path(cur["paths"]["data_root"]).expanduser().resolve() != self.data_root.resolve():
             raise ValueError(
                 "data_root is controlled by --data-root; changing it requires a separate data migration"
@@ -92,7 +107,16 @@ class ServiceContext:
         return cur
 
     def project_dir(self, project_id: str) -> Path:
-        return self.data_root / "projects" / project_id
+        project = self.db.fetchone("SELECT layout_version FROM projects WHERE id=?", (project_id,))
+        return (
+            self.data_root
+            / ("project" if project and project["layout_version"] >= 2 else "projects")
+            / project_id
+        )
+
+    def project_layout(self, project_id: str) -> int:
+        project = self.db.fetchone("SELECT layout_version FROM projects WHERE id=?", (project_id,))
+        return project["layout_version"] if project else 1
 
     def resolve_version(self, project_id: str, version_id: str | None = None) -> dict[str, Any]:
         from .errors import NotFound
@@ -112,12 +136,64 @@ class ServiceContext:
         from .errors import ApiError
 
         root = self.project_dir(project_id)
-        path = root / "versions" / self.resolve_version(project_id, version_id)["id"]
-        if any(p.is_symlink() for p in (root, root / "versions", path)):
+        version = self.resolve_version(project_id, version_id)
+        path = (
+            root / f"v{version['number']}"
+            if self.project_layout(project_id) >= 2
+            else root / "versions" / version["id"]
+        )
+        if any(p.is_symlink() for p in (root.parent, root, path.parent, path)):
             raise ApiError(
                 "managed version directory cannot be redirected with symbolic links", code="version.path"
             )
         return path
+
+    def dataset_dir(self, project_id: str, version_id: str | None = None, *, is_reg: bool = False) -> Path:
+        name = "reg" if is_reg else "traindata" if self.project_layout(project_id) >= 2 else "datasets"
+        return self.version_dir(project_id, version_id) / name
+
+    def reg_dir(self, project_id: str, version_id: str | None = None) -> Path:
+        return self.dataset_dir(project_id, version_id, is_reg=True)
+
+    def version_label(self, project_id: str, version_id: str | None = None) -> str:
+        version = self.resolve_version(project_id, version_id)
+        return f"v{version['number']}" if self.project_layout(project_id) >= 2 else version["id"]
+
+    def samples_dir(self, project_id: str, version_id: str | None = None) -> Path:
+        return self.version_dir(project_id, version_id) / "samples"
+
+    def default_runs_dir(self, project_id: str, version_id: str | None = None) -> Path:
+        return self.version_dir(project_id, version_id) / (
+            "output" if self.project_layout(project_id) >= 2 else "runs"
+        )
+
+    def inherits_output_dir(
+        self, project_id: str | None, version_id: str | None, requested: str | None
+    ) -> bool:
+        if not requested or requested == "outputs/run":
+            return True
+        path = Path(requested).expanduser().resolve()
+        defaults = [self.runs_dir(project_id, version_id)]
+        if project_id:
+            defaults.append(self.default_runs_dir(project_id, version_id))
+        return any(path == root.resolve() for root in defaults)
+
+    def job_output_dir(
+        self, project_id: str | None, version_id: str | None, job_id: str, requested: str | None = None
+    ) -> Path:
+        if self.inherits_output_dir(project_id, version_id, requested):
+            return self.runs_dir(project_id, version_id) / job_id
+        root = Path(requested).expanduser().resolve()
+        # Reusing a saved job config creates a sibling, not a child directory
+        # that would be removed when deleting the original job's files.
+        if self.db.fetchone(
+            "SELECT id FROM jobs WHERE run_dir=? AND project_id IS ? AND version_id IS ?",
+            (str(root), project_id, version_id),
+        ):
+            return root.parent / job_id
+        if project_id:
+            root = root / project_id / self.version_label(project_id, version_id)
+        return root / job_id
 
     def config_path(self, project_id: str, version_id: str | None = None) -> Path:
         version = self.resolve_version(project_id, version_id)
@@ -129,13 +205,14 @@ class ServiceContext:
         return root / "config.json"
 
     def runs_dir(self, project_id: str | None, version_id: str | None = None) -> Path:
-        configured = Path(self.settings()["paths"]["output_dir"])
+        paths = self.settings()["paths"]
+        configured = Path(paths["output_dir"])
         if project_id:
             vid = self.resolve_version(project_id, version_id)["id"]
-            if configured.resolve() != (self.data_root / "runs").resolve():
-                return configured / project_id / vid
-            return self.version_dir(project_id, vid) / "runs"
-        if configured.resolve() != (self.data_root / "runs").resolve():
+            if paths["output_mode"] == "custom":
+                return configured / project_id / self.version_label(project_id, vid)
+            return self.default_runs_dir(project_id, vid)
+        if paths["output_mode"] == "custom":
             return configured
         return self.data_root / "runs"
 

@@ -82,6 +82,7 @@ class SettingsPaths(_Out):
     cache_dir: str
     models_dir: str
     output_dir: str
+    output_mode: Literal["project", "custom"] = "project"
 
 
 class SettingsServer(_Out):
@@ -276,6 +277,7 @@ class Project(_Out):
     dataset_ids: list[str]
     active_version_id: str | None = None
     version_count: int = 1
+    layout_version: int = 1
     stats: ProjectStats
 
 
@@ -293,6 +295,10 @@ class VersionPaths(_Out):
     datasets: str
     runs: str
     cache: str
+    traindata: str
+    reg: str
+    samples: str
+    output: str
 
 
 class VersionStats(_Out):
@@ -305,6 +311,7 @@ class VersionStats(_Out):
 class ProjectVersion(_Out):
     id: str
     project_id: str
+    number: int = 1
     name: str
     note: str
     parent_version_id: str | None = None
@@ -424,6 +431,7 @@ class Job(_Out):
     started_at: float | None
     finished_at: float | None
     run_dir: str | None
+    samples_dir: str | None = None
     progress: JobProgress
     latest: JobLatest
     error: str | None

@@ -6,7 +6,7 @@
 .dataset-pipeline button:focus-visible,.dataset-pipeline a:focus-visible,.dataset-pipeline input:focus-visible,.dataset-pipeline select:focus-visible { outline:2px solid #3b82f6;outline-offset:2px; }
 .dataset-pipeline .pipeline-primary { background:#2563eb;color:#fff;border-color:#2563eb; }
 .dataset-pipeline fieldset { min-width:0; }
-.pipeline-stages { display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px; }
+.pipeline-stages { display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px; }
 .dataset-pipeline .pipeline-stages button { justify-content:flex-start;text-align:left;padding:10px;flex-wrap:wrap; }
 .pipeline-stages button[aria-current] { color:#2563eb;background:#eff6ff;border-color:#93c5fd; }
 .dark .pipeline-stages button[aria-current] { color:#93c5fd;background:#172554; }

@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 from .context import ServiceContext
 from .db import new_id, now
 from .errors import ApiError, Conflict, NotFound
-from .model_catalog import TAGGER_FILES, TAGGER_ID, TAGGER_REPO, TAGGER_REVISION
+from .model_catalog import TAGGER_FILES
 from .model_credentials import ModelCredentials, Provider
 
 ACTIVE = {"queued", "downloading"}
@@ -27,8 +27,8 @@ ACTIVE = {"queued", "downloading"}
 
 class ModelDownloadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    family: Literal["anima", "krea2", "tagger"]
-    kind: Literal["dit", "text_encoder", "vae", "tagger"]
+    family: Literal["anima", "krea2"]
+    kind: Literal["dit", "text_encoder", "vae"]
     provider: Provider = "huggingface"
     mirror: Literal["official", "hf-mirror"] = "official"
     url: str | None = None
@@ -134,19 +134,7 @@ def resolve_source(body: ModelDownloadRequest) -> tuple[str, str]:
         for p in path.parts
     ):
         raise ValueError("filename is not portable to Windows")
-    if body.kind == "tagger" or body.family == "tagger":
-        if (body.kind, body.family, body.provider, repo, revision, filename) != (
-            "tagger",
-            "tagger",
-            "huggingface",
-            TAGGER_REPO,
-            TAGGER_REVISION,
-            "model.onnx",
-        ):
-            raise ValueError("tagger downloads must use the reviewed catalog entry and pinned revision")
-        if body.is_default:
-            raise ValueError("tagger assets cannot be training defaults")
-    elif path.suffix.lower() != ".safetensors":
+    if path.suffix.lower() != ".safetensors":
         raise ValueError("download a complete .safetensors file; register local HF directories separately")
     if re.search(r"-\d{5}-of-\d{5}\.safetensors$", path.name):
         raise ValueError("this is one weight shard; register the complete local HF directory instead")
@@ -262,8 +250,6 @@ class ModelDownloads:
         if not self.context.is_allowed(root):
             raise ApiError("model directory is outside allowed storage roots", status=403)
         folder = root / body.family / body.kind / hashlib.sha256(source.encode()).hexdigest()[:12]
-        if body.kind == "tagger":
-            folder = root / "tagger" / TAGGER_ID / TAGGER_REVISION
         target = folder / filename
         with self.lock:
             if self.closed:
@@ -302,28 +288,8 @@ class ModelDownloads:
             return dict(row)
 
     def catalog(self) -> list[dict[str, Any]]:
-        root = Path(self.context.settings()["paths"]["models_dir"]).resolve()
-        path = root / "tagger" / TAGGER_ID / TAGGER_REVISION
-        ready = all(
-            (path / name).is_file() and (path / name).stat().st_size == meta["size"]
-            for name, meta in TAGGER_FILES.items()
-        )
-        return [
-            {
-                "id": TAGGER_ID,
-                "role": "tagger",
-                "name": "WD SwinV2 Tagger v3",
-                "repo_id": TAGGER_REPO,
-                "revision": TAGGER_REVISION,
-                "files": list(TAGGER_FILES),
-                "path": str(path),
-                "ready": ready,
-                "providers": ["huggingface"],
-                "license": "Apache-2.0",
-                "size": sum(f["size"] for f in TAGGER_FILES.values()),
-                "url": f"https://huggingface.co/{TAGGER_REPO}",
-            }
-        ]
+        # Kept empty for old clients; automatic tagging is no longer offered.
+        return []
 
     def cancel(self, id_: str) -> dict[str, Any]:
         with self.lock:
@@ -338,6 +304,10 @@ class ModelDownloads:
             row = self.tasks.get(id_)
             if row is None:
                 raise NotFound("download not found", code="download.not_found")
+            if row["kind"] == "tagger":
+                raise ApiError(
+                    "automatic tagging is no longer available", status=410, code="download.retired"
+                )
             if row["status"] not in {"failed", "cancelled"}:
                 raise Conflict("only failed or cancelled downloads can be retried", code="download.retry")
             body = ModelDownloadRequest(

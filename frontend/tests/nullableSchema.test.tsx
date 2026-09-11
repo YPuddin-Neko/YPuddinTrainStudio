@@ -21,14 +21,26 @@ describe('nullable schema editing', () => {
     expect(JSON.parse(screen.getByTestId('value').textContent!).dataset.caption.trigger_word).toBeNull();
   });
 
-  it('enables a nullable W&B object, edits nested strings, and unsets the object', () => {
-    render(<Editor />);
-    fireEvent.click(screen.getByRole('checkbox', { name: 'logging.wandb.unset' }));
-    fireEvent.change(screen.getByRole('textbox', { name: 'logging.wandb.project' }), { target: { value: 'training-project' } });
-    fireEvent.change(screen.getByRole('textbox', { name: 'logging.wandb.run_name' }), { target: { value: 'experiment-1' } });
-    expect(JSON.parse(screen.getByTestId('value').textContent!).logging.wandb).toEqual({ project: 'training-project', run_name: 'experiment-1' });
-    fireEvent.click(screen.getByRole('checkbox', { name: 'logging.wandb.unset' }));
-    expect(JSON.parse(screen.getByTestId('value').textContent!).logging.wandb).toBeNull();
+  it.each([false,true])('hides cloud logging controls while retaining historical values in compact=%s', compact => {
+    const legacy = {project:'old-project',run_name:'old-run',entity:'old-team'};
+    function LegacyEditor() { const [value,setValue]=React.useState({logging:{level:'info',wandb:legacy}}); return <><SchemaForm schema={trainSchema} value={value} onChange={setValue as any} compact={compact} showAdvanced/><output data-testid="legacy-value">{JSON.stringify(value)}</output></>; }
+    render(<LegacyEditor/>);
+    expect(screen.queryByTestId('field-logging.wandb')).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox',{name:'logging.wandb.unset'})).not.toBeInTheDocument();
+    expect(screen.queryByText('Weights & Biases')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox',{name:'日志级别'}),{target:{value:'debug'}});
+    expect(JSON.parse(screen.getByTestId('legacy-value').textContent!).logging).toEqual({level:'debug',wandb:legacy});
+  });
+
+  it('still supports nullable objects independently of retired cloud logging controls', () => {
+    const schema={properties:{options:{anyOf:[{type:'object',properties:{name:{type:'string'}}},{type:'null'}],default:null}}};
+    function OptionalEditor() {const [value,setValue]=React.useState<Record<string,any>>({options:null});return <><SchemaForm schema={schema} value={value} onChange={setValue}/><output data-testid="optional-value">{JSON.stringify(value)}</output></>;}
+    render(<OptionalEditor/>);
+    fireEvent.click(screen.getByRole('checkbox',{name:'options.unset'}));
+    fireEvent.change(screen.getByRole('textbox',{name:'options.name'}),{target:{value:'local-option'}});
+    expect(JSON.parse(screen.getByTestId('optional-value').textContent!).options).toEqual({name:'local-option'});
+    fireEvent.click(screen.getByRole('checkbox',{name:'options.unset'}));
+    expect(JSON.parse(screen.getByTestId('optional-value').textContent!).options).toBeNull();
   });
 
   it('renders a newly registered family even when the bundled schema has no enum entry', () => {

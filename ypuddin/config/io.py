@@ -115,6 +115,7 @@ def absolute_paths(config: TrainConfig) -> TrainConfig:
         (cfg.checkpoint, "output_dir"),
         (cfg.checkpoint, "resume"),
         (cfg.sampling, "prompts_file"),
+        (cfg.sampling, "output_dir"),
         (cfg.logging, "events_path"),
         *((src, "path") for src in cfg.dataset.sources),
         *((src, "path") for src in cfg.validation.sources),

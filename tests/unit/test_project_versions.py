@@ -390,6 +390,7 @@ def test_legacy_version_directory_view_matches_existing_data_root(api):
     client, c, project = api
     pid, vid = project["id"], project["active_version_id"]
     c.db.update("project_versions", vid, {"legacy_layout": 1})
+    c.db.update("projects", pid, {"layout_version": 1})
     row = client.get(f"/api/projects/{pid}/versions/{vid}").json()
     assert row["paths"]["root"] == str(c.project_dir(pid))
     assert row["paths"]["datasets"] == str(c.project_dir(pid) / "datasets")

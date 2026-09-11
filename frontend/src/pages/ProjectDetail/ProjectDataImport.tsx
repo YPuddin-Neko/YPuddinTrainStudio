@@ -8,14 +8,14 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatApiError } from '../../utils/errors';
 import { formatBytes } from '../../utils/format';
 
-export default function ProjectDataImport({ projectId, versionId, onImported }: { projectId: string; versionId?: string; onImported: () => void }) {
+export default function ProjectDataImport({ projectId, versionId, onImported, defaultIsReg = false }: { projectId: string; versionId?: string; onImported: () => void; defaultIsReg?: boolean }) {
   const text = useWorkspaceText();
   const [mode, setMode] = React.useState<'upload' | 'path'>('upload');
   const [files, setFiles] = React.useState<File[]>([]);
   const [name, setName] = React.useState('');
   const [path, setPath] = React.useState('');
   const [repeats, setRepeats] = React.useState(1);
-  const [isReg, setIsReg] = React.useState(false);
+  const [isReg, setIsReg] = React.useState(defaultIsReg);
   const [captionExt, setCaptionExt] = React.useState('.txt');
   const [priorWeight, setPriorWeight] = React.useState(1);
   const [classPrompt, setClassPrompt] = React.useState('');
@@ -42,6 +42,8 @@ export default function ProjectDataImport({ projectId, versionId, onImported }: 
         const form = new FormData();
         files.forEach((file) => form.append('files', file, file.webkitRelativePath || file.name));
         form.append('name', name.trim()); form.append('repeats', String(repeats));
+        form.append('is_reg', String(isReg)); form.append('prior_weight', String(priorWeight));
+        form.append('class_prompt', classPrompt.trim()); form.append('caption_ext', '.txt');
         result = await apiClient.post<DatasetInfo>(`/projects/${projectId}/datasets/upload`, form, { params: { version_id: versionId }, silent: true });
         setFiles([]);
         if (fileInput.current) fileInput.current.value = '';
@@ -58,7 +60,7 @@ export default function ProjectDataImport({ projectId, versionId, onImported }: 
   };
 
   return <form onSubmit={submit} className="version-data-import" data-testid="project-data-import">
-    <div><h3 className="text-base font-semibold">{text('添加训练图片', 'Add training images')}</h3><p className="mt-1 text-sm text-slate-500">{text('图片与同名标签、遮罩一起导入到当前版本。', 'Import images with matching captions and masks into this version.')}</p></div>
+    <div><h3 className="text-base font-semibold">{defaultIsReg?text('添加已有正则图','Add existing regularization images'):text('添加训练图片', 'Add training images')}</h3><p className="mt-1 text-sm text-slate-500">{text('图片与同名标签、遮罩一起导入到当前版本。', 'Import images with matching captions and masks into this version.')}</p></div>
     <div className="flex flex-wrap gap-2" role="group" aria-label={text('数据导入方式', 'Data import method')}>
       {[['upload', text('从电脑上传', 'Upload from computer')], ['path', text('导入本机目录', 'Import a server folder')]].map(([key, label]) => <button key={key} type="button" disabled={busy} onClick={() => { setMode(key as typeof mode); setError(''); }} aria-pressed={mode === key} className={`rounded-lg px-3 py-2 text-sm border ${mode === key ? 'bg-blue-50 border-blue-400 text-blue-700 dark:bg-blue-950 dark:text-blue-300' : 'border-slate-200 dark:border-slate-600'}`}>{label}</button>)}
     </div>
@@ -84,10 +86,10 @@ export default function ProjectDataImport({ projectId, versionId, onImported }: 
       <p className="text-sm text-slate-500">{text('选择运行训练器电脑上的文件夹，导入时会复制到当前版本。浏览器在另一台电脑时，请使用“从电脑上传”。', 'The trainer copies this folder into the current version. Use Upload from computer for files on another machine.')}</p>
       <div role="group" aria-label={text('训练图片文件夹路径', 'Training image folder path')}><PathInput value={path} onChange={setPath} placeholder={text('例如 D:\\训练素材\\角色图', 'For example D:\\training-data\\character')} /></div>
       <label className="block text-sm">{text('标签文件扩展名', 'Caption file extension')}<input className={`${inputClass} mt-1 max-w-40`} value={captionExt} onChange={(e) => setCaptionExt(e.target.value)} required /></label>
-      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={isReg} onChange={(e) => setIsReg(e.target.checked)} />{text('这是正则化数据集（先验保持）', 'Regularization dataset (prior preservation)')}</label>
-      {isReg && <label className="block text-sm">{text('类别提示词', 'Class prompt')}<input className={`${inputClass} mt-1`} value={classPrompt} onChange={(e) => setClassPrompt(e.target.value)} /></label>}
-      {isReg && <label className="block text-sm">{text('先验保持权重', 'Prior preservation weight')}<input className={`${inputClass} mt-1 max-w-40`} type="number" min="0" step="0.1" value={priorWeight} onChange={(e) => setPriorWeight(Number(e.target.value))} /></label>}
     </>}
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={busy || defaultIsReg} checked={isReg} onChange={(e) => setIsReg(e.target.checked)} />{text('这是正则化数据集（先验保持）', 'Regularization dataset (prior preservation)')}</label>
+      {isReg && <label className="block text-sm">{text('类别提示词', 'Class prompt')}<input className={`${inputClass} mt-1`} disabled={busy} value={classPrompt} onChange={(e) => setClassPrompt(e.target.value)} /></label>}
+      {isReg && <label className="block text-sm">{text('先验保持权重', 'Prior preservation weight')}<input className={`${inputClass} mt-1 max-w-40`} type="number" min="0" step="0.1" disabled={busy} value={priorWeight} onChange={(e) => setPriorWeight(Number(e.target.value))} /></label>}
     <div className="flex flex-wrap items-end justify-between gap-3"><label className="text-sm">{text('每张图片重复次数', 'Repeats per image')}<input className={`${inputClass} mt-1 max-w-28 block`} type="number" min="1" step="1" required value={repeats} onChange={(e) => setRepeats(Number(e.target.value))} disabled={busy} /></label>
       <button type="submit" disabled={busy || repeats < 1 || (mode === 'upload' ? files.length === 0 : !path.trim())} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">{busy && <Loader2 className="h-4 w-4 animate-spin" />}{busy ? text('正在传输并登记，请稍候…', 'Transferring and registering…') : mode === 'upload' ? text('上传并添加到项目', 'Upload and add to project') : text('导入文件夹', 'Import folder')}</button>
     </div>

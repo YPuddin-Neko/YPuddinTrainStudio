@@ -61,7 +61,9 @@ class _UploadParser(MultiPartParser):
                 if path.suffix.lower() == ".zip"
                 else MAX_CAPTION_BYTES
                 if _ignored(path)
-                else _file_limit(path)
+                else MAX_FILE_BYTES
+                if path.suffix.lower() in IMAGE_EXTS or path.name.endswith(".mask")
+                else MAX_CAPTION_BYTES
             )
 
     def on_part_data(self, data: bytes, start: int, end: int) -> None:
@@ -76,6 +78,10 @@ class UploadBatch:
     files: list[UploadFile]
     name: str
     repeats: int
+    is_reg: bool = False
+    prior_weight: float = 1.0
+    class_prompt: str | None = None
+    caption_ext: str = ".txt"
 
 
 @asynccontextmanager
@@ -100,7 +106,7 @@ async def read_upload(request: Request) -> AsyncIterator[UploadBatch]:
                 raise _MultipartLimit("upload exceeds the 2 GiB request limit")
             yield chunk
 
-    parser = _UploadParser(request.headers, bounded_stream(), max_files=MAX_FILES, max_fields=2)
+    parser = _UploadParser(request.headers, bounded_stream(), max_files=MAX_FILES, max_fields=6)
     form = None
     try:
         try:
@@ -114,13 +120,16 @@ async def read_upload(request: Request) -> AsyncIterator[UploadBatch]:
         except Exception as exc:
             raise ApiError("invalid or interrupted multipart upload", code="upload.invalid") from exc
         entries = form.multi_items()
-        if any(key not in {"files", "name", "repeats"} for key, _value in entries):
+        fields = {"name", "repeats", "is_reg", "prior_weight", "class_prompt", "caption_ext"}
+        if any(key not in {"files", *fields} for key, _value in entries):
             raise ApiError("unknown upload field", code="upload.invalid")
         files = form.getlist("files")
         if not files or any(not isinstance(item, UploadFile) for item in files):
             raise ApiError("files must contain uploaded images or one ZIP", code="upload.no_files")
-        if len(form.getlist("name")) > 1 or len(form.getlist("repeats")) > 1:
-            raise ApiError("name and repeats must occur at most once", code="upload.invalid")
+        if any(len(form.getlist(key)) > 1 for key in fields):
+            raise ApiError("upload option fields must occur at most once", code="upload.invalid")
+        if any(not isinstance(form.get(key, ""), str) for key in fields):
+            raise ApiError("upload options must be text fields", code="upload.invalid")
         name = form.get("name", "upload")
         repeats = form.get("repeats", "1")
         if not isinstance(name, str) or not isinstance(repeats, str):
@@ -133,7 +142,32 @@ async def read_upload(request: Request) -> AsyncIterator[UploadBatch]:
             raise ApiError("repeats must be a positive integer", code="upload.invalid") from exc
         if not 1 <= repeat_count <= 1_000_000:
             raise ApiError("repeats must be between 1 and 1000000", code="upload.invalid")
-        yield UploadBatch(files=files, name=name, repeats=repeat_count)
+        from pydantic import ValidationError
+
+        from .routes_work import DatasetBody, _validate_caption_extension
+
+        try:
+            options = DatasetBody.model_validate(
+                {
+                    "path": ".",
+                    "is_reg": form.get("is_reg", "false"),
+                    "prior_weight": form.get("prior_weight", "1"),
+                    "class_prompt": form.get("class_prompt") or None,
+                    "caption_ext": form.get("caption_ext") or ".txt",
+                }
+            )
+            _validate_caption_extension(options.caption_ext)
+        except (ValidationError, ValueError) as exc:
+            raise ApiError(f"invalid dataset options: {exc}", code="upload.invalid") from exc
+        yield UploadBatch(
+            files=files,
+            name=name,
+            repeats=repeat_count,
+            is_reg=options.is_reg,
+            prior_weight=options.prior_weight,
+            class_prompt=options.class_prompt,
+            caption_ext=options.caption_ext,
+        )
     finally:
         if form is not None:
             await form.close()
@@ -171,8 +205,8 @@ def _ignored(path: Path) -> bool:
     return any(part == "__MACOSX" or part == ".DS_Store" or part.startswith("._") for part in path.parts)
 
 
-def _file_limit(path: Path) -> int:
-    if path.suffix.lower() == ".txt":
+def _file_limit(path: Path, caption_ext: str = ".txt") -> int:
+    if path.name.endswith(caption_ext):
         return MAX_CAPTION_BYTES
     if path.suffix.lower() in IMAGE_EXTS or path.name.endswith(".mask"):
         return MAX_FILE_BYTES
@@ -193,16 +227,16 @@ def _copy_file(source: BinaryIO, destination: Path, limit: int, budget: list[int
             output.write(chunk)
 
 
-def _validate_files(paths: list[Path]) -> None:
+def _validate_files(paths: list[Path], caption_ext: str = ".txt") -> None:
     images: dict[Path, Path] = {}
     sidecars = []
     for path in paths:
-        if path.suffix.lower() == ".txt":
+        if path.name.endswith(caption_ext):
             try:
                 path.read_text(encoding="utf-8-sig")
             except UnicodeError as exc:
                 raise ApiError(f"caption must be UTF-8: {path.name}", code="upload.caption") from exc
-            sidecars.append((path, path.with_suffix("")))
+            sidecars.append((path, path.with_name(path.name[: -len(caption_ext)])))
             continue
         try:
             with warnings.catch_warnings():
@@ -234,9 +268,11 @@ def _validate_files(paths: list[Path]) -> None:
 
 
 @contextmanager
-def staged_upload(project_dir: Path, dataset_id: str, batch: UploadBatch) -> Iterator[Path]:
+def staged_upload(
+    project_dir: Path, dataset_id: str, batch: UploadBatch, *, dataset_root: Path | None = None
+) -> Iterator[Path]:
     """Promote a validated batch once; remove only this batch if registration fails."""
-    root = project_dir / "datasets"
+    root = dataset_root or project_dir / "datasets"
     root.mkdir(parents=True, exist_ok=True)
     if root.is_symlink() or not root.resolve().is_relative_to(project_dir.resolve()):
         raise ApiError("managed dataset directory must remain inside its project", code="upload.path")
@@ -285,7 +321,7 @@ def staged_upload(project_dir: Path, dataset_id: str, batch: UploadBatch) -> Ite
                         raise ApiError("encrypted or unsupported ZIP compression", code="upload.zip_entry")
                     if item.is_dir() or _ignored(path):
                         continue
-                    limit = _file_limit(path)
+                    limit = _file_limit(path, batch.caption_ext)
                     if item.file_size > limit or (
                         item.file_size > CHUNK and item.file_size / max(item.compress_size, 1) > MAX_ZIP_RATIO
                     ):
@@ -302,12 +338,12 @@ def staged_upload(project_dir: Path, dataset_id: str, batch: UploadBatch) -> Ite
             for upload, path in zip(batch.files, names, strict=True):
                 if _ignored(path):
                     continue
-                limit = _file_limit(path)
+                limit = _file_limit(path, batch.caption_ext)
                 if upload.size is not None and upload.size > limit:
                     raise ApiError(f"uploaded file is too large: {path}", code="upload.too_large", status=413)
                 upload.file.seek(0)
                 _copy_file(upload.file, target(path), limit, budget)
-        _validate_files(paths)
+        _validate_files(paths, batch.caption_ext)
         if destination.exists():
             raise ApiError("dataset destination already exists", code="upload.duplicate", status=409)
         temporary.rename(destination)

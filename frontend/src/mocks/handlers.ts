@@ -36,6 +36,7 @@ let mockSettings: Settings = {
     cache_dir: '/Volumes/Service/Dev/cache',
     models_dir: '/Volumes/Service/Dev/models',
     output_dir: '/Volumes/Service/Dev/output',
+    output_mode: 'project',
   },
   server: { host: '127.0.0.1', port: 8765 },
   ui: { language: 'zh-CN', theme: 'system' },
@@ -44,6 +45,7 @@ let mockSettings: Settings = {
 const mockProjects: Project[] = [
   {
     id: 'proj_01',
+    layout_version: 1,
     name: 'Anima Anime Style',
     note: 'Fine-tuning with anime illustration dataset',
     created_at: 1789000000,
@@ -279,13 +281,14 @@ export const handlers = [
   http.post('/api/projects', async ({ request }) => {
     const body = (await request.json()) as any;
     const proj: Project = {
-      id: `p_${Date.now().toString(36)}`,
+      id: body.id || `p_${Date.now().toString(36)}`,
+      layout_version: 2,
       name: body.name,
       note: body.note || '',
       created_at: Date.now() / 1000,
       updated_at: Date.now() / 1000,
       archived: false,
-    version_count: 1,
+      version_count: 1,
       dataset_ids: [],
       stats: { jobs: 0, artifacts: 0 },
     };

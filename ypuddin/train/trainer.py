@@ -985,8 +985,10 @@ class Trainer:
         if not prompts:
             return []
         defaults = self.family.spec.sampling
-        out_dir = self.run_dir / "samples"
-        out_dir.mkdir(exist_ok=True)
+        out_dir = (
+            Path(self.cfg.sampling.output_dir) if self.cfg.sampling.output_dir else self.run_dir / "samples"
+        )
+        out_dir.mkdir(parents=True, exist_ok=True)
         paths: list[Path] = []
         stride = self.family.spec.latent.stride
         patch = self.family.spec.latent.patch

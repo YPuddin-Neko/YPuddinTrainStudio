@@ -3,14 +3,15 @@ import { ACTIVE_JOB_STATUSES, mergeJobEvent } from '../utils/jobs';
 import React from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Activity, Folder, Layers, Settings as SettingsIcon, Moon, Sun, Globe, PlayCircle, Menu, X, Plus, WifiOff, Loader2, RefreshCw } from 'lucide-react';
+import { Activity, Folder, Layers, Settings as SettingsIcon, Moon, Sun, Monitor, Globe, PlayCircle, Menu, X, Plus, WifiOff, Loader2, RefreshCw } from 'lucide-react';
 import { apiClient } from '../api/client';
-import { SystemStats, SystemInfo, Job, JobListResponse, Settings } from '../api/types';
+import { SystemStats, Job, JobListResponse, Settings } from '../api/types';
 import { useEventStream, useEventStreamStatus } from '../events/useEventStream';
 import { EVENT_TYPES } from '../events/eventTypes';
 import { formatApiError } from '../utils/errors';
 import { useWorkspaceText } from '../utils/workspaceText';
 import SystemTelemetry from './SystemTelemetry';
+import StudioSelect from './StudioSelect';
 
 const NavItem = ({ to, icon: Icon, label, active, state }: any) => (
   <Link
@@ -42,7 +43,7 @@ export default function Layout() {
   const [telemetryError, setTelemetryError] = React.useState('');
   const statsVersionRef = React.useRef(0);
   const previousConnectionRef = React.useRef(connectionStatus);
-  const [sysInfo, setSysInfo] = React.useState<SystemInfo | null>(null);
+  const [savingUi, setSavingUi] = React.useState(false);
   const [runningJobs, setRunningJobs] = React.useState<Job[]>([]);
 
   React.useEffect(() => {
@@ -109,7 +110,6 @@ export default function Layout() {
 
   React.useEffect(() => {
     void refreshTelemetry();
-    apiClient.get<SystemInfo>('/system/info').then(setSysInfo).catch(() => {});
     fetchJobs();
   }, [fetchJobs, refreshTelemetry]);
   React.useEffect(() => {
@@ -122,16 +122,13 @@ export default function Layout() {
   useEventStream(EVENT_TYPES.JOB_STEP, (data: any) => setRunningJobs((jobs) => jobs.map((job) => mergeJobEvent(job, data))));
   useEventStream(EVENT_TYPES.JOB_PHASE, (data: any) => setRunningJobs((jobs) => jobs.map((job) => mergeJobEvent(job, data))));
 
-  const toggleTheme = () => {
-    const next = isDark ? 'light' : 'dark';
-    setTheme(next);
-    void apiClient.put<Settings>('/settings', { ui: { theme: next } }).then(settings => window.dispatchEvent(new CustomEvent('studio.settings.changed', { detail: settings }))).catch(() => {});
-  };
-  const toggleLang = () => {
-    const newLang = i18n.language === 'zh-CN' ? 'en' : 'zh-CN';
-    i18n.changeLanguage(newLang);
-    localStorage.setItem('i18nextLng', newLang);
-    void apiClient.put<Settings>('/settings', { ui: { language: newLang } }).catch(() => {});
+  const changeUi = async (ui: Partial<Settings['ui']>) => {
+    setSavingUi(true);
+    try {
+      const settings = await apiClient.put<Settings>('/settings', { ui });
+      window.dispatchEvent(new CustomEvent('studio.settings.changed', { detail: settings }));
+    } catch { /* The shared API notice reports failed saves; keep the saved selection. */ }
+    finally { setSavingUi(false); }
   };
 
   const navItems = [
@@ -148,12 +145,16 @@ export default function Layout() {
       {/* Sidebar */}
       {menuOpen && <button className="fixed inset-0 z-20 bg-black/40 md:hidden" aria-label={t('hardware.closeMenu')} onClick={() => setMenuOpen(false)} />}
       <aside className={`w-[184px] flex-shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex-col fixed inset-y-0 left-0 z-30 md:static ${menuOpen ? 'flex' : 'hidden md:flex'}`}>
-        <div className="h-12 flex shrink-0 items-center px-3 border-b border-slate-200 dark:border-slate-800">
-          <h1 className="text-base font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">
-            YPuddin
-          </h1>
-          <span className="ml-2 hidden md:inline text-[9px] font-mono text-slate-400 mt-1">Train Studio</span>
-          <button onClick={() => setMenuOpen(false)} className="ml-auto md:hidden p-2" aria-label={t('hardware.closeMenu')}><X className="w-4 h-4" /></button>
+        <div className="sidebar-brand-row">
+          <Link to="/projects" className="sidebar-brand" onClick={() => setMenuOpen(false)} aria-label="YPuddin Train Studio">
+            <svg className="sidebar-brand-mark" width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+              <rect width="28" height="28" rx="8" fill="currentColor"/>
+              <path d="M8 8.5L14 14L20 8.5M14 14V21" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <circle cx="8" cy="8.5" r="2" fill="white"/><circle cx="20" cy="8.5" r="2" fill="white"/>
+            </svg>
+            <span className="sidebar-brand-text"><strong>YPuddin</strong><span>Train Studio</span></span>
+          </Link>
+          <button onClick={() => setMenuOpen(false)} className="sidebar-menu-close md:hidden" aria-label={t('hardware.closeMenu')}><X className="w-4 h-4" /></button>
         </div>
         <div className="px-3 pt-3"><Link to="/projects" onClick={() => setMenuOpen(false)} className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 px-3 py-2.5 text-sm font-medium text-white"><Plus className="w-4 h-4" />{t('hardware.startTraining')}</Link></div>
         <nav aria-label={text('主导航', 'Main navigation')} className="flex-1 overflow-y-auto p-2 space-y-1" onClick={() => setMenuOpen(false)}>
@@ -168,15 +169,14 @@ export default function Layout() {
             />
           ))}
         </nav>
-        {sysInfo?.ypuddin && <div className="px-3 py-2 text-[11px] text-slate-400" title={t('hardware.serverVersion')}>v{sysInfo.ypuddin}</div>}
-        <div className="p-3 border-t border-slate-200 dark:border-slate-800 flex space-x-2">
-          <button onClick={toggleTheme} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400" title={t('settings.theme')}>
-            {isDark ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
-          </button>
-          <button onClick={toggleLang} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center" title={t('settings.language')}>
-            <Globe className="w-[18px] h-[18px] mr-1" />
-            <span className="text-xs font-medium">{i18n.language === 'zh-CN' ? 'EN' : '中文'}</span>
-          </button>
+        <div className="sidebar-preferences" aria-label={text('界面偏好', 'Interface preferences')}>
+          <StudioSelect className="sidebar-preference" aria-label={t('settings.theme')} value={theme} disabled={savingUi}
+            icon={theme === 'system' ? <Monitor size={14}/> : theme === 'dark' ? <Moon size={14}/> : <Sun size={14}/>}
+            options={[{value:'system',label:text('自动','Auto')},{value:'light',label:text('浅色','Light')},{value:'dark',label:text('深色','Dark')}]}
+            onValueChange={value => void changeUi({theme:value as Settings['ui']['theme']})}/>
+          <StudioSelect className="sidebar-preference" aria-label={t('settings.language')} value={i18n.resolvedLanguage === 'en' ? 'en' : 'zh-CN'} disabled={savingUi}
+            icon={<Globe size={14}/>} options={[{value:'zh-CN',label:'中文'},{value:'en',label:'EN'}]}
+            onValueChange={value => void changeUi({language:value as Settings['ui']['language']})}/>
         </div>
       </aside>
 
@@ -185,8 +185,7 @@ export default function Layout() {
         {/* Topbar：实时系统状态 + 训练中胶囊 */}
         <header className="app-topbar bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800" data-testid="app-topbar">
           <button className="topbar-menu p-1.5" aria-label={t('hardware.openMenu')} onClick={() => setMenuOpen(true)}><Menu className="w-5 h-5" /></button>
-          <div className="topbar-job-slot">
-            {runningJob && (
+          {runningJob && <div className="topbar-job-slot">
               <Link
                 to={`/jobs/${runningJob.id}`}
                 title={runningJob.name}
@@ -199,12 +198,11 @@ export default function Layout() {
                   <span className="topbar-job-progress">{runningJob.progress.step}/{runningJob.progress.total_steps}</span>
                 )}
               </Link>
-            )}
-          </div>
-          <SystemTelemetry stats={stats} />
-          <div className="topbar-feedback-slot">
+          </div>}
+          {(telemetryError || connectionStatus !== 'connected') && <div className="topbar-feedback-slot">
             {telemetryError ? <button className="text-amber-600" onClick={() => void refreshTelemetry()} title={telemetryError} aria-label={text('硬件状态读取失败，点击重试', 'Hardware status failed; retry')}><RefreshCw size={15}/><span className="sr-only" role="alert">{telemetryError}</span></button> : connectionStatus !== 'connected' && <span role="status" data-testid="event-connection" title={t(`connection.${connectionStatus}`)} className="text-amber-600">{connectionStatus === 'disconnected' ? <WifiOff size={15}/> : <Loader2 size={15} className="animate-spin"/>}<span className="sr-only">{t(`connection.${connectionStatus}`)}</span></span>}
-          </div>
+          </div>}
+          <SystemTelemetry stats={stats} />
         </header>
         <ApiErrorNotice />
 

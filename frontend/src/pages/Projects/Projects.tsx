@@ -35,6 +35,9 @@ export default function Projects() {
   const [loading, setLoading] = React.useState(true);
   const [modalOpen, setModalOpen] = React.useState(false);
   const [newName, setNewName] = React.useState('');
+  const [newId, setNewId] = React.useState('');
+  const [idTouched, setIdTouched] = React.useState(false);
+  const [createError, setCreateError] = React.useState('');
   const [newNote, setNewNote] = React.useState('');
   const [creating, setCreating] = React.useState(false);
   const [editing, setEditing] = React.useState<{ id: string; name: string; note: string } | null>(null);
@@ -58,18 +61,22 @@ export default function Projects() {
     fetchProjects();
   }, []);
 
+  const idError = !newId ? text('请填写项目 ID。', 'Enter a project ID.') : newId.length>64 ? text('项目 ID 最多 64 个字符。', 'Project ID must be at most 64 characters.') : !/^[A-Za-z0-9_]+$/.test(newId) ? text('项目 ID 只能包含英文字母、数字和下划线。', 'Use only ASCII letters, digits and underscores in the project ID.') : '';
   const handleCreate = () => {
-    if (!newName.trim()) return;
+    setIdTouched(true);
+    if (!newName.trim() || idError) return;
     setCreating(true);
     setError('');
-    apiClient.post<Project>('/projects', { name: newName.trim(), note: newNote.trim() })
+    setCreateError('');
+    apiClient.post<Project>('/projects', { id: newId, name: newName.trim(), note: newNote.trim() }, {silent:true})
       .then((project) => {
         setModalOpen(false);
         setNewName('');
         setNewNote('');
+        setNewId(''); setIdTouched(false);
         navigate(`/projects/${project.id}`);
       })
-      .catch((error) => setError(formatApiError(error)))
+      .catch((error) => setCreateError(formatApiError(error)))
       .finally(() => setCreating(false));
   };
 
@@ -102,7 +109,7 @@ export default function Projects() {
   const visibleProjects = projects.filter((p) => {
     if (!showArchived && p.archived) return false;
     if (!query) return true;
-    return p.name.toLowerCase().includes(query) || (p.note || '').toLowerCase().includes(query);
+    return p.name.toLowerCase().includes(query) || p.id.toLowerCase().includes(query) || (p.note || '').toLowerCase().includes(query);
   });
 
   const statChip = (icon: React.ReactNode, label: string, value: number) => (
@@ -137,7 +144,7 @@ export default function Projects() {
           )}
         </h2>
         <button
-          onClick={() => setModalOpen(true)}
+          onClick={() => {setCreateError('');setModalOpen(true);}}
           className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
         >
           <FolderPlus className="w-4 h-4" />
@@ -272,44 +279,30 @@ export default function Projects() {
       {/* Create Modal */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-xl max-w-md w-full p-6 space-y-4 shadow-xl" data-testid="create-project-modal">
-            <h3 className="font-semibold text-lg">{t('projects.newProject')}</h3>
+          <form onSubmit={event=>{event.preventDefault();handleCreate();}} role="dialog" aria-modal="true" aria-labelledby="create-project-title" className="bg-white dark:bg-slate-800 rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 space-y-4 shadow-xl" data-testid="create-project-modal">
+            <h3 id="create-project-title" className="font-semibold text-lg">{t('projects.newProject')}</h3>
             <p className="text-sm text-slate-500">{text('创建后进入工作区：上传数据 → 选择模型 → 设置参数 → 启动训练。', 'Next: upload data → choose a model → configure → start training.')}</p>
-            {error && <p role="alert" className="whitespace-pre-line text-sm text-red-600">{error}</p>}
             <div className="space-y-3">
-              <input
-                type="text"
-                placeholder={t('projects.namePlaceholder')}
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                className="w-full px-3 py-2 border rounded-md text-sm dark:bg-slate-900 dark:border-slate-600"
-                data-testid="project-name-input"
-                autoFocus
-              />
-              <textarea
-                placeholder={t('projects.notePlaceholder')}
-                value={newNote}
-                onChange={(e) => setNewNote(e.target.value)}
-                rows={3}
-                className="w-full px-3 py-2 border rounded-md text-sm dark:bg-slate-900 dark:border-slate-600"
-              />
+              <label className="block space-y-1 text-sm"><span>{text('项目名称', 'Project name')}</span><input
+                type="text" required placeholder={t('projects.namePlaceholder')} value={newName} onChange={event=>setNewName(event.target.value)} disabled={creating}
+                className="w-full px-3 py-2 border rounded-md text-sm dark:bg-slate-900 dark:border-slate-600" data-testid="project-name-input" autoFocus
+              /><span className="block text-xs text-slate-500">{text('用于界面显示，支持中文及其他语言，可随时重命名。', 'Display name supports any language and can be renamed later.')}</span></label>
+              <label className="block space-y-1 text-sm"><span>{text('项目 ID', 'Project ID')}</span><input
+                type="text" required maxLength={64} value={newId} onChange={event=>{setNewId(event.target.value);setIdTouched(true);setCreateError('');}} onBlur={()=>setIdTouched(true)} disabled={creating}
+                aria-invalid={idTouched&&!!idError} aria-describedby="project-id-help project-id-error" autoComplete="off" spellCheck={false}
+                placeholder="my_project_01" className="w-full px-3 py-2 border rounded-md text-sm font-mono dark:bg-slate-900 dark:border-slate-600" data-testid="project-id-input"
+              /></label>
+              <p id="project-id-help" className="text-xs text-slate-500">{text('手工填写，只允许 A–Z、a–z、0–9 和下划线。它决定目录名称，创建后不可修改。', 'Enter manually using A–Z, a–z, 0–9 and underscores. This permanent ID is used as the folder name.')}</p>
+              {idTouched&&idError&&<p id="project-id-error" role="alert" className="text-xs text-red-600">{idError}</p>}
+              {createError&&<p role="alert" className="whitespace-pre-line text-sm text-red-600">{createError}</p>}
+              <p className="rounded bg-slate-100 p-2 font-mono text-xs break-all dark:bg-slate-900" aria-label={text('项目目录预览','Project folder preview')}>studio_data/project/{newId&&!idError?newId:'<project_id>'}/v1/</p>
+              <label className="block space-y-1 text-sm"><span>{text('备注（可选）', 'Notes (optional)')}</span><textarea placeholder={t('projects.notePlaceholder')} value={newNote} onChange={event=>setNewNote(event.target.value)} rows={2} disabled={creating} className="w-full px-3 py-2 border rounded-md text-sm dark:bg-slate-900 dark:border-slate-600"/></label>
             </div>
             <div className="flex justify-end space-x-2 pt-2">
-              <button
-                onClick={() => setModalOpen(false)}
-                className="px-4 py-2 text-sm rounded bg-slate-200 dark:bg-slate-700 hover:bg-slate-300"
-              >
-                {t('common.cancel')}
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={creating || !newName.trim()}
-                className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-              >
-                {creating ? t('projects.creating') : t('projects.create')}
-              </button>
+              <button type="button" onClick={()=>setModalOpen(false)} disabled={creating} className="px-4 py-2 text-sm rounded bg-slate-200 dark:bg-slate-700 hover:bg-slate-300">{t('common.cancel')}</button>
+              <button type="submit" disabled={creating||!newName.trim()||!!idError} className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">{creating?t('projects.creating'):t('projects.create')}</button>
             </div>
-          </div>
+          </form>
         </div>
       )}
 

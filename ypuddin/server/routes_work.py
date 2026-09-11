@@ -15,7 +15,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ypuddin.config import DatasetSourceConfig, TrainConfig, deep_merge
 from ypuddin.config.io import absolute_paths
@@ -48,8 +48,16 @@ def _page(items: list[Any], page: int, page_size: int) -> dict[str, Any]:
 
 # --------------------------------------------------------------------------- projects
 class ProjectBody(BaseModel):
+    id: str | None = Field(None, min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_]+$")
     name: str
     note: str = ""
+
+    @field_validator("id")
+    @classmethod
+    def safe_project_id(cls, value):
+        if value is not None and re.fullmatch(r"(?i:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])", value):
+            raise ValueError("project id cannot be a Windows device name")
+        return value
 
 
 class ProjectPatch(BaseModel):
@@ -87,27 +95,60 @@ def list_projects(include_archived: bool = False, c: ServiceContext = Depends(ct
 @router.post("/projects", status_code=201, response_model=m.Project, response_model_exclude_unset=True)
 def create_project(body: ProjectBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     with c.db.lock:
-        pid = new_id("p")
+        pid = body.id or new_id("p")
+        container = c.data_root / "project"
+        target = container / pid
+        if c.db.fetchone("SELECT id FROM projects WHERE lower(id)=lower(?)", (pid,)) or (
+            container.exists() and any(path.name.casefold() == pid.casefold() for path in container.iterdir())
+        ):
+            raise ApiError("project id or directory already exists", code="project.duplicate", status=409)
+        if container.is_symlink():
+            raise ApiError(
+                "project directory cannot be redirected with symbolic links", code="project.path", status=409
+            )
         t = now()
-        c.db.insert(
-            "projects",
-            {
-                "id": pid,
-                "name": body.name,
-                "note": body.note,
-                "archived": 0,
-                "created_at": t,
-                "updated_at": t,
-            },
-        )
-        vid = new_id("v")
-        c.db.insert(
-            "project_versions",
-            {"id": vid, "project_id": pid, "name": "v1", "note": "", "created_at": t, "updated_at": t},
-        )
-        c.db.update("projects", pid, {"active_version_id": vid})
-        c.version_dir(pid, vid).mkdir(parents=True, exist_ok=True)
-        _write_project_config(c, pid, get_project_config(pid, c, vid), vid)
+        created = False
+        c.db.execute("SAVEPOINT create_project")
+        try:
+            c.db.insert(
+                "projects",
+                {
+                    "id": pid,
+                    "name": body.name,
+                    "note": body.note,
+                    "archived": 0,
+                    "layout_version": 2,
+                    "created_at": t,
+                    "updated_at": t,
+                },
+            )
+            vid = new_id("v")
+            c.db.insert(
+                "project_versions",
+                {
+                    "id": vid,
+                    "project_id": pid,
+                    "number": 1,
+                    "name": "v1",
+                    "note": "",
+                    "created_at": t,
+                    "updated_at": t,
+                },
+            )
+            c.db.update("projects", pid, {"active_version_id": vid})
+            target.mkdir(parents=True, exist_ok=False)
+            created = True
+            root = c.version_dir(pid, vid)
+            for name in ("traindata", "reg", "samples", "output", "cache"):
+                (root / name).mkdir(parents=True, exist_ok=True)
+            _write_project_config(c, pid, get_project_config(pid, c, vid), vid)
+            c.db.execute("RELEASE SAVEPOINT create_project")
+        except BaseException:
+            c.db.execute("ROLLBACK TO SAVEPOINT create_project")
+            c.db.execute("RELEASE SAVEPOINT create_project")
+            if created:
+                shutil.rmtree(target, ignore_errors=True)
+            raise
         return _project_row(c, c.db.fetchone("SELECT * FROM projects WHERE id=?", (pid,)))
 
 
@@ -141,6 +182,7 @@ def patch_project(pid: str, body: ProjectPatch, c: ServiceContext = Depends(ctx)
 def delete_project(pid: str, delete_files: bool = False, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     with c.db.lock:
         _get_project(c, pid)
+        project_root = c.project_dir(pid)
         if c.db.fetchone(f"SELECT id FROM jobs WHERE project_id=? AND status IN {ACTIVE_JOBS}", (pid,)):
             raise ApiError("project has running jobs", code="project.busy", status=409)
         if c.db.fetchone(
@@ -154,15 +196,18 @@ def delete_project(pid: str, delete_files: bool = False, c: ServiceContext = Dep
         ):
             raise ApiError("wait for the project's worker processes to exit", code="project.busy", status=409)
         if delete_files:
-            for job in c.db.fetchall("SELECT id, run_dir FROM jobs WHERE project_id=?", (pid,)):
+            for job in c.db.fetchall("SELECT id, run_dir, samples_dir FROM jobs WHERE project_id=?", (pid,)):
                 run = Path(job["run_dir"])
                 if run.name == job["id"] and run.is_dir() and not run.is_symlink():
                     shutil.rmtree(run)
+                samples = Path(job["samples_dir"]) if job["samples_dir"] else None
+                if samples and samples.name == job["id"] and samples.is_dir() and not samples.is_symlink():
+                    shutil.rmtree(samples)
         c.db.execute("DELETE FROM jobs WHERE project_id=?", (pid,))
         c.db.execute("DELETE FROM artifacts WHERE project_id=?", (pid,))
         c.db.delete("projects", pid)
-        if delete_files and c.project_dir(pid).exists():
-            shutil.rmtree(c.project_dir(pid))
+        if delete_files and project_root.exists():
+            shutil.rmtree(project_root)
         return {"ok": True}
 
 
@@ -183,7 +228,7 @@ def get_project_config(
     return deep_merge(
         cfg.to_dict(),
         {
-            "checkpoint": {"output_dir": str(c.runs_dir(pid, version_id))},
+            "checkpoint": {"output_dir": str(c.default_runs_dir(pid, version_id))},
             "dataset": {"cache_dir": str(c.cache_dir(pid, version_id))},
         },
     )
@@ -381,6 +426,7 @@ def _register_dataset(
     version_id: str | None = None,
     internal: bool = False,
     origin_path: str | None = None,
+    caption: dict[str, Any] | None = None,
 ) -> str:
     """Register the source and add it to the project's training draft under one lock."""
     p = Path(body.path).expanduser().resolve()
@@ -414,6 +460,12 @@ def _register_dataset(
                 item.update(explicit)  # Preserve each source's role and all unedited advanced settings.
             source = {key: matching[0].get(key, value) for key, value in source.items()}
         _validate_caption_extension(source["caption_ext"])
+        if caption is not None:
+            from ypuddin.config.schema import CaptionConfig
+
+            source["caption"] = CaptionConfig.model_validate(caption).model_dump()
+            for item in matching:
+                item["caption"] = source["caption"]
         c.db.execute("BEGIN IMMEDIATE")
         written = False
         try:
@@ -424,7 +476,7 @@ def _register_dataset(
                     "project_id": pid,
                     "version_id": version["id"],
                     "origin_path": origin_path,
-                    **source,
+                    **{key: value for key, value in source.items() if key != "caption"},
                     "is_reg": int(source["is_reg"]),
                     "created_at": now(),
                     "index_status": "indexing",
@@ -447,11 +499,23 @@ def _register_dataset(
 def _register_upload(c: ServiceContext, pid: str, batch: UploadBatch, version_id: str | None = None) -> str:
     did = new_id("d")
     with c.versions.mutation(pid, version_id) as version:
-        with staged_upload(c.version_dir(pid, version["id"]), did, batch) as directory:
+        with staged_upload(
+            c.version_dir(pid, version["id"]),
+            did,
+            batch,
+            dataset_root=c.dataset_dir(pid, version["id"], is_reg=batch.is_reg),
+        ) as directory:
             _register_dataset(
                 c,
                 pid,
-                DatasetBody(path=str(directory), repeats=batch.repeats),
+                DatasetBody(
+                    path=str(directory),
+                    repeats=batch.repeats,
+                    is_reg=batch.is_reg,
+                    prior_weight=batch.prior_weight,
+                    class_prompt=batch.class_prompt,
+                    caption_ext=batch.caption_ext,
+                ),
                 did=did,
                 version_id=version["id"],
                 internal=True,
@@ -653,6 +717,10 @@ def add_dataset(
                             "files": {"type": "array", "items": {"type": "string", "format": "binary"}},
                             "name": {"type": "string", "maxLength": 100},
                             "repeats": {"type": "integer", "minimum": 1, "maximum": 1_000_000, "default": 1},
+                            "is_reg": {"type": "boolean", "default": False},
+                            "prior_weight": {"type": "number", "minimum": 0, "default": 1},
+                            "class_prompt": {"type": "string"},
+                            "caption_ext": {"type": "string", "default": ".txt"},
                         },
                     }
                 }
@@ -947,12 +1015,14 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
     if config is None:
         raise ApiError("config is required", code="job.no_config")
     jid = new_id("j")
-    run_dir = c.runs_dir(body.project_id, vid) / jid
+    run_dir = c.job_output_dir(body.project_id, vid, jid, config.get("checkpoint", {}).get("output_dir"))
+    samples_dir = c.samples_dir(body.project_id, vid) / jid if body.project_id else run_dir / "samples"
     config = deep_merge(
         config,
         {
             "checkpoint": {"output_dir": str(run_dir)},
             "logging": {"events_path": str(run_dir / "events.jsonl")},
+            "sampling": {"output_dir": str(samples_dir)},
         },
     )
     if body.project_id or not (config.get("dataset") or {}).get("cache_dir"):
@@ -1009,6 +1079,7 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
                 "scheduled_at": body.scheduled_at,
                 "created_at": now(),
                 "run_dir": str(run_dir),
+                "samples_dir": str(samples_dir),
                 "config_json": json.dumps(cfg.to_dict()),
                 "progress_json": json.dumps(
                     {"estimated_peak_mb": preflight.get("memory", {}).get("peak_mb_estimate")}
@@ -1051,6 +1122,10 @@ def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends
         c.db.delete("jobs", jid)
         if delete_files and r["run_dir"] and Path(r["run_dir"]).exists():
             shutil.rmtree(r["run_dir"])
+        if delete_files and r.get("samples_dir"):
+            samples = Path(r["samples_dir"])
+            if samples.name == jid and samples.is_dir() and not samples.is_symlink():
+                shutil.rmtree(samples)
         c.bus.publish("queue.changed", {})
         return {"ok": True}
 
@@ -1176,7 +1251,11 @@ def job_checkpoints(jid: str, c: ServiceContext = Depends(ctx)) -> list[dict[str
 @router.get("/jobs/{jid}/files")
 def job_file(jid: str, path: str, kind: str = "sample", c: ServiceContext = Depends(ctx)) -> Response:
     r = _get_job(c, jid)
-    base = Path(r["run_dir"]) / ("samples" if kind == "sample" else "")
+    base = (
+        (Path(r["samples_dir"]) if r.get("samples_dir") else Path(r["run_dir"]) / "samples")
+        if kind == "sample"
+        else Path(r["run_dir"])
+    )
     target = (base / Path(path).name).resolve()
     if not target.exists() or base.resolve() not in target.parents:
         raise NotFound("file not found", code="file.not_found")

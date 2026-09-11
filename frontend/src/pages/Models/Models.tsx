@@ -10,10 +10,9 @@ import { formatBytes } from '../../utils/format';
 import { formatApiError } from '../../utils/errors';
 import { SettingsSections } from '../Settings/SettingsSections';
 import ModelCredentials from './ModelCredentials';
-import TaggerModels from './TaggerModels';
 
 const FIELD_KIND: Record<string, string> = { dit_path: 'dit', text_encoder_path: 'text_encoder', vae_path: 'vae', tokenizer_path: 'tokenizer' };
-const KIND_LABEL: Record<string, string> = { dit: '主模型 / DiT', text_encoder: '文本编码器', vae: 'VAE', tokenizer: '分词器目录', tagger: '自动打标模型' };
+const KIND_LABEL: Record<string, string> = { dit: '主模型 / DiT', text_encoder: '文本编码器', vae: 'VAE', tokenizer: '分词器目录' };
 const input = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900';
 const panel = 'settings-model-panel';
 const secondary = 'inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:hover:bg-slate-700';
@@ -134,14 +133,13 @@ export default function Models({ embedded = false }: { embedded?: boolean }) {
     setDownloadOpen(false); setNotice(t('models.downloadStarted', '下载已加入列表，完成后自动注册到本族模型库。'));
   });
   const selected = models.filter(m => m.family === family);
-  const tasks = downloads.filter(d => d.family === family || d.family === 'tagger');
+  const tasks = downloads.filter(d => d.family === family);
   const ready = ['dit', 'text_encoder', 'vae'].filter(k => selected.some(m => m.kind === k && m.exists && m.is_default)).length;
 
   return <div data-testid="models-page"><SettingsSections sections={[
     { id: 'models-components', label: t('models.components', '模型组件') },
     ...(addOpen || downloadOpen ? [{ id: 'models-source', label: t('models.source', '添加来源') }] : []),
     ...(tasks.length ? [{ id: 'models-downloads', label: t('models.downloads', '下载列表') }] : []),
-    { id: 'models-taggers', label: '自动打标' },
     { id: 'models-credentials', label: '下载令牌' },
     { id: 'models-library', label: t('models.registeredFiles', '已登记模型') },
   ]}>
@@ -192,11 +190,10 @@ export default function Models({ embedded = false }: { embedded?: boolean }) {
 
     {tasks.length > 0 && <section id="models-downloads" data-settings-section tabIndex={-1} className="settings-section" data-testid="model-downloads"><div className="mb-4 flex items-center justify-between"><h3 className="font-semibold">{t('models.downloads', '下载列表')}</h3><button onClick={() => void refresh()} className="text-slate-500" aria-label={t('common.refresh', '刷新')}><RefreshCw size={16} /></button></div><div className="divide-y dark:divide-slate-700">{tasks.slice(0, 15).map(d => <div key={d.id} className="space-y-2 py-3">
       <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="break-all text-sm font-medium">{d.filename}</p><p className="mt-1 text-xs text-slate-500">{d.provider === 'modelscope' ? '魔搭' : d.mirror === 'hf-mirror' ? 'HF-Mirror' : 'Hugging Face'} · {label(d.kind)} · {t(`models.downloadStatus_${d.status}`, { queued: '等待下载', downloading: '正在下载', completed: '已下载并注册', failed: '下载失败', cancelled: '已取消' }[d.status])} · {formatBytes(d.downloaded_bytes)}{d.total_bytes ? ` / ${formatBytes(d.total_bytes)}` : ''}</p></div>
-        {active(d) ? <button className={secondary} disabled={cancelling.includes(d.id)} onClick={() => { setCancelling(v => [...v, d.id]); void action(() => apiClient.post(`/models/downloads/${d.id}/cancel`, {})).finally(() => setCancelling(v => v.filter(id => id !== d.id))); }}>{t('common.cancel')}</button> : d.status !== 'completed' && <div className="flex shrink-0 flex-wrap gap-2"><button className={secondary} disabled={busy} onClick={() => void action(() => apiClient.post(`/models/downloads/${d.id}/retry`, {}))}>{t('models.retryDownload', '重新下载')}</button>{d.kind !== 'tagger' && <button className={secondary} disabled={busy} onClick={() => { setKind(d.kind); setProvider(d.provider); setMirror(d.mirror); setUrl(d.source_url); setDtype(d.dtype || ''); setIsDefault(d.is_default); setSourceMode('url'); setDownloadOpen(true); setAddOpen(false); }}>更换来源</button>}</div>}</div>
+        {active(d) ? <button className={secondary} disabled={cancelling.includes(d.id)} onClick={() => { setCancelling(v => [...v, d.id]); void action(() => apiClient.post(`/models/downloads/${d.id}/cancel`, {})).finally(() => setCancelling(v => v.filter(id => id !== d.id))); }}>{t('common.cancel')}</button> : d.status !== 'completed' && <div className="flex shrink-0 flex-wrap gap-2"><button className={secondary} disabled={busy} onClick={() => void action(() => apiClient.post(`/models/downloads/${d.id}/retry`, {}))}>{t('models.retryDownload', '重新下载')}</button><button className={secondary} disabled={busy} onClick={() => { setKind(d.kind); setProvider(d.provider); setMirror(d.mirror); setUrl(d.source_url); setDtype(d.dtype || ''); setIsDefault(d.is_default); setSourceMode('url'); setDownloadOpen(true); setAddOpen(false); }}>更换来源</button></div>}</div>
       {active(d) && <progress className="h-2 w-full accent-blue-600" value={d.total_bytes ? d.downloaded_bytes : undefined} max={d.total_bytes || undefined} aria-label={t('models.downloadProgress', '下载进度')} />}<p className="break-all text-xs text-slate-400">{d.target_path}</p>{d.error && <p role="alert" className="break-words text-xs text-red-600 dark:text-red-400">{d.error}</p>}
     </div>)}</div></section>}
 
-    <TaggerModels onStarted={() => refresh()} />
     <ModelCredentials />
     <section id="models-library" data-settings-section tabIndex={-1} className="settings-section settings-model-library"><div className="mb-4 flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">{t('models.registeredFiles', '已登记模型')} · {selected.length}</h3><button className={secondary} disabled={busy} onClick={() => void action(async () => { const found = await apiClient.post<ModelAsset[]>('/models/scan', { family }); setNotice(`${t('models.scanAdded', '新登记文件')}：${found.length}`); })}><FolderSearch size={16} />{t('models.scanDirectory')}</button></div>
       {loading ? <p className="py-8 text-center text-sm text-slate-500">{t('common.loading')}</p> : selected.length === 0 ? <div className="space-y-3 py-8 text-center"><p className="text-sm text-slate-500">{family === 'toy' ? t('models.toyNoFiles', 'Toy 测试模型已内置，无需下载权重。') : t('models.emptySetup', '还没有本地模型。准备好三个组件即可在项目里使用。')}</p><button className={secondary} onClick={() => local()}><Plus size={16} />{t('models.useLocal', '已有文件')}</button></div> : <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="text-xs text-slate-400"><tr><th className="pb-3 pr-3">{t('models.kind')}</th><th className="pb-3">{t('models.pathLabel')}</th><th className="pb-3 px-3">{t('models.dtype')}</th><th className="pb-3 text-right">{t('models.status', '状态 / 操作')}</th></tr></thead><tbody className="divide-y dark:divide-slate-700">{selected.map(m => <tr key={m.id}>

@@ -46,9 +46,13 @@ def _events(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def test_full_run_produces_artifacts_and_events(image_dataset, tmp_path):
+@pytest.mark.parametrize("separate_samples", [False, True])
+def test_full_run_produces_artifacts_and_events(image_dataset, tmp_path, separate_samples):
     out = tmp_path / "run"
     cfg = _cfg(image_dataset, out)
+    samples_dir = tmp_path / "samples" / "job_fixture" if separate_samples else out / "samples"
+    if separate_samples:
+        cfg.sampling.output_dir = str(samples_dir)
     trainer = Trainer(cfg, device="cpu")
     outcome = trainer.run()
     assert outcome == "finished"
@@ -69,7 +73,10 @@ def test_full_run_produces_artifacts_and_events(image_dataset, tmp_path):
     # artifacts
     finals = list(out.glob("toy-final.safetensors"))
     assert finals, list(out.iterdir())
-    assert (out / "samples").exists() and list((out / "samples").glob("*.png"))
+    assert samples_dir.exists() and list(samples_dir.glob("*.png"))
+    assert all(Path(e["path"]).parent == samples_dir for e in events if e["type"] == "sample.saved")
+    if separate_samples:
+        assert not (out / "samples").exists()
     assert (out / "config.toml").exists()
     tensors = load_file(str(finals[0]))
     assert any(k.endswith(".lokr_w1") for k in tensors) and any(k.endswith(".alpha") for k in tensors)

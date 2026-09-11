@@ -12,7 +12,12 @@ export default function SettingsDrawer({ children, onClose }: {children: React.R
     const panel = ref.current;
     panel?.querySelector<HTMLElement>('button')?.focus();
     const keydown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { event.preventDefault(); closeRef.current(); }
+      if ((event.target as HTMLElement).closest('[role="dialog"]') !== panel) return;
+      if (event.key === 'Escape') {
+        // A select consumes the first Escape to dismiss its portalled list.
+        if ((event.target as HTMLElement).closest('[role="combobox"][aria-expanded="true"]')) return;
+        event.preventDefault(); closeRef.current();
+      }
       if (event.key !== 'Tab') return;
       const nodes = [...(panel?.querySelectorAll<HTMLElement>('a[href],button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"]') || [])];
       const first = nodes[0], last = nodes[nodes.length - 1];

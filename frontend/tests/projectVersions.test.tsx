@@ -22,7 +22,7 @@ beforeEach(async () => { await i18n.changeLanguage('zh-CN'); });
 afterEach(() => { server.resetHandlers(); vi.restoreAllMocks(); });
 afterAll(() => server.close());
 
-const project = { id: 'p_versions', name: 'Version scope test', active_version_id: 'v1', version_count: 2, dataset_ids: [], note: '', archived: false, created_at: 1, updated_at: 1, stats: { jobs: 0, artifacts: 0 } } as VersionedProject;
+const project = { id: 'p_versions', layout_version: 1, name: 'Version scope test', active_version_id: 'v1', version_count: 2, dataset_ids: [], note: '', archived: false, created_at: 1, updated_at: 1, stats: { jobs: 0, artifacts: 0 } } as VersionedProject;
 const version = (id: string): ProjectVersion => ({ id, project_id: project.id, name: id, note: '', status: 'ready', archived: false, created_at: 1, updated_at: 1, dataset_ids: [], stats: { datasets: 0, images: 0, jobs: 0, artifacts: 0 }, paths: { root: `D:/versions/${id}`, config: `D:/versions/${id}/config.toml`, datasets: `D:/versions/${id}/datasets`, runs: `D:/versions/${id}/runs`, cache: `D:/versions/${id}/cache` } });
 const versions = [version('v1'), version('v2')];
 function Location() { const location = useLocation(); return <output data-testid="location">{location.pathname}{location.search}</output>; }
@@ -54,6 +54,24 @@ function trainingFixture() {
 }
 
 describe('explicit project version actions', () => {
+  it.each([false,true])('shows actual version folder paths with legacy fallback (modern=%s)', async modern => {
+    const current={...versions[0],number:1,paths:{...versions[0].paths,...(modern?{root:'D:/studio/project/Character/v1',traindata:'D:/studio/project/Character/v1/traindata',reg:'D:/studio/project/Character/v1/reg',samples:'D:/studio/project/Character/v1/samples',output:'E:/custom/Character/v1/output'}:{})}};
+    render(wrap(<ProjectWorkspaceHeader project={project} versionId="v1" versions={[current]} current={current} active="data" refresh={vi.fn().mockResolvedValue(undefined)}/>));
+    fireEvent.click(screen.getByRole('button',{name:'查看本版本目录'}));
+    const dialog=await screen.findByRole('dialog',{name:'本版本的文件位置'});
+    if(modern){
+      expect(within(dialog).getByText('D:/studio/project/Character/v1/traindata')).toBeInTheDocument();
+      expect(within(dialog).getByText('D:/studio/project/Character/v1/reg')).toBeInTheDocument();
+      expect(within(dialog).getByText('E:/custom/Character/v1/output')).toBeInTheDocument();
+      expect(within(dialog).getByText(/samples\//)).toHaveTextContent('samples/<job_id>/');
+      expect(within(dialog).queryByText('D:/versions/v1/datasets')).not.toBeInTheDocument();
+    }else{
+      expect(within(dialog).getByText('D:/versions/v1/datasets')).toBeInTheDocument();
+      expect(within(dialog).getByText('D:/versions/v1/runs')).toBeInTheDocument();
+      expect(within(dialog).getByText(/旧项目沿用原有任务目录/)).toBeInTheDocument();
+    }
+  });
+
   it('flushes a pending draft before opening create, then copies the saved source using the real version endpoint', async () => {
     const calls: string[] = []; let finishSave: () => void = () => {}; let created: any;
     server.use(

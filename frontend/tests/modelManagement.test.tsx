@@ -30,12 +30,11 @@ beforeEach(async () => {
     { id: 'k', family: 'krea2', kind: 'dit', path: 'C:\\models\\krea2.safetensors', dtype: 'bf16', exists: true, is_default: true, size: 1024, created_at: 1 },
   ];
   downloads = [];
-  settings = { paths: { data_root: 'C:\\studio', models_dir: 'D:\\models', cache_dir: 'D:\\cache', output_dir: 'D:\\runs' }, server: { host: '127.0.0.1', port: 8765 }, ui: { language: 'zh-CN', theme: 'light' } };
+  settings = { paths: { data_root: 'C:\\studio', models_dir: 'D:\\models', cache_dir: 'D:\\cache', output_dir: 'D:\\runs', output_mode: 'project' }, server: { host: '127.0.0.1', port: 8765 }, ui: { language: 'zh-CN', theme: 'light' } };
   patch = vi.fn(); download = vi.fn(); cancel = vi.fn();
   server.use(
     http.get('/api/families', () => HttpResponse.json(['anima', 'krea2'].map(name => ({ name, label: name === 'anima' ? 'Anima' : 'Krea 2', weights: [{ field: 'dit_path' }, { field: 'text_encoder_path' }, { field: 'vae_path' }] })))),
     http.get('/api/models/credentials', () => HttpResponse.json({ huggingface: { configured: false }, modelscope: { configured: false } })),
-    http.get('/api/models/catalog', () => HttpResponse.json([])),
     http.get('/api/models', () => HttpResponse.json(models)),
     http.get('/api/settings', () => HttpResponse.json(settings)),
     http.put('/api/settings', async ({ request }) => { settings = await request.json() as Settings; return HttpResponse.json(settings); }),
@@ -62,6 +61,18 @@ function mount(element: React.ReactNode, path = '/models?family=anima') {
 }
 
 describe('real model management UI contracts', () => {
+  it('shows training models without automatic tagging download or dependency entry points', async () => {
+    downloads = [{id:'legacy',family:'tagger',kind:'tagger',filename:'model.onnx',status:'failed'} as ModelDownload];
+    const catalog = vi.fn();
+    server.use(http.get('/api/models/catalog', () => {catalog();return HttpResponse.json([]);}));
+    mount(<Models />);
+    await screen.findByText('C:\\models\\anima.safetensors');
+    expect(screen.queryByText(/自动打标|ONNX Runtime|WD14/)).not.toBeInTheDocument();
+    expect(screen.queryByText('model.onnx')).not.toBeInTheDocument();
+    expect(catalog).not.toHaveBeenCalled();
+    expect(download).not.toHaveBeenCalled();
+  });
+
   it('sets an existing component default for the selected family', async () => {
     mount(<Models />);
     const card = await screen.findByTestId('model-component-dit');
@@ -96,7 +107,8 @@ describe('real model management UI contracts', () => {
     expect(within(page).queryByLabelText(i18n.t('models.kind_dit'))).not.toBeInTheDocument();
     const changed = vi.fn();
     window.addEventListener('studio.settings.changed', changed);
-    fireEvent.change(screen.getByTestId('settings-theme'), { target: { value: 'dark' } });
+    fireEvent.click(screen.getByTestId('settings-theme'));
+    fireEvent.click(screen.getByRole('option', {name:i18n.t('settings.themeDark')}));
     fireEvent.click(screen.getByTestId('settings-save-btn'));
     await waitFor(() => expect(changed).toHaveBeenCalled());
     expect(document.documentElement.classList.contains('dark')).toBe(true);

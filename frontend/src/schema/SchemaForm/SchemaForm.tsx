@@ -676,6 +676,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   const renderField = (key: string, prop: SchemaProperty, parentPath: string[] = []) => {
     const path = [...parentPath, key];
     const fullPathKey = path.join('.');
+    // Keep legacy cloud-log data in the draft, but do not expose controls that enable it.
+    if (fullPathKey === 'logging.wandb' || fullPathKey.startsWith('logging.wandb.')) return null;
     const ui = { ...(prop['x-ui'] || {}), ...(compact && fullPathKey === 'dataset.batch_size' ? {group:'loop'} : {}) };
     if (conditionValue.dataset.resolution_mode === 'native' && ['dataset.resolutions', 'dataset.aspect_ratio_limit', 'dataset.area_tolerance', 'dataset.bucket_step', 'dataset.bucket_no_upscale'].includes(fullPathKey)) return null;
     if (compact && !showAdvanced && fullPathKey === 'adapter.rules' && !value.adapter?.rules?.length) return null;

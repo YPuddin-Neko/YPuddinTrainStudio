@@ -89,16 +89,30 @@ def test_job_preflight_paths_and_isolated_events(api, image_dataset, monkeypatch
 def test_settings_new_paths_preserve_old_jobs_and_delete_custom_run(api, image_dataset, tmp_path):
     client, ctx = api
     old = create_job(api, image_dataset)
+    old_run = Path(old["run_dir"])
+    old_samples = Path(old["samples_dir"] or old_run / "samples")
+    old_run.mkdir(parents=True, exist_ok=True)
+    old_samples.mkdir(parents=True, exist_ok=True)
+    old_weights = old_run / "old-weights"
+    old_sample = old_samples / "old-sample.png"
+    old_weights.write_bytes(b"existing weights")
+    old_sample.write_bytes(b"existing sample")
     paths = {name: str(tmp_path / name) for name in ("cache_dir", "output_dir", "models_dir")}
     result = client.put("/api/settings", json={"paths": paths, "server": {"port": 9123}})
     assert result.status_code == 200, result.text
     pid = client.post("/api/projects", json={"name": "custom"}).json()["id"]
     new = create_job(api, image_dataset, project_id=pid)
-    assert Path(new["run_dir"]).parent == tmp_path / "output_dir" / pid / new["version_id"]
+    assert Path(new["run_dir"]) == tmp_path / "output_dir" / pid / "v1" / new["id"]
+    expected_samples = ctx.data_root / "project" / pid / "v1" / "samples" / new["id"]
+    assert Path(new["samples_dir"]) == expected_samples
+    assert json.loads(new["config_json"])["sampling"]["output_dir"] == str(expected_samples)
     assert json.loads(new["config_json"])["dataset"]["cache_dir"] == str(
         tmp_path / "cache_dir" / pid / new["version_id"]
     )
-    assert ctx.db.fetchone("SELECT run_dir FROM jobs WHERE id=?", (old["id"],))["run_dir"] == old["run_dir"]
+    saved_old = ctx.db.fetchone("SELECT * FROM jobs WHERE id=?", (old["id"],))
+    assert {key: saved_old[key] for key in ("run_dir", "samples_dir", "config_json")} == {
+        key: old[key] for key in ("run_dir", "samples_dir", "config_json")
+    }
     assert client.put("/api/settings", json={"paths": {"data_root": str(tmp_path)}}).status_code == 400
     assert client.put("/api/settings", json={"server": {"port": 99999}}).status_code == 400
     run = Path(new["run_dir"])
@@ -110,6 +124,8 @@ def test_settings_new_paths_preserve_old_jobs_and_delete_custom_run(api, image_d
     ctx.db.update("jobs", new["id"], {"status": "completed"})
     assert client.delete(f"/api/projects/{pid}?delete_files=true").status_code == 200
     assert not run.exists() and unrelated.exists()
+    assert old_weights.read_bytes() == b"existing weights"
+    assert old_sample.read_bytes() == b"existing sample"
 
 
 def test_settings_relocated_root_and_concurrent_patch(api, tmp_path):

@@ -435,73 +435,6 @@ def test_visual_crop_rejects_outside_negative_fractional_and_multiple_images(api
     assert (root / "a.png").read_bytes() == before
 
 
-def test_tagging_drafts_use_caption_transaction_missing_append_undo(api, tmp_path, monkeypatch):
-    import sys
-    import types
-
-    row, root = imported(api, tmp_path)
-    seen = []
-
-    def generate(images, options, progress, cancel):
-        seen.extend(image["rel_path"] for image in images)
-        assert not cancel.is_set()
-        progress(len(images), len(images), "Local model fixture inference completed")
-        return ["red, generated" for _ in images]
-
-    monkeypatch.setitem(
-        sys.modules, "ypuddin.server.dataset_tagging", types.SimpleNamespace(generate=generate)
-    )
-    options = {
-        "model_path": "fixture.onnx",
-        "tags_path": "tags.csv",
-        "mode": "missing",
-        "trigger_word": "subject",
-    }
-    op = start(api, "tag", images=refs(row, "a.png", "b.png"), tagging=options)
-    assert op["status"] == "completed", op
-    assert seen == ["b.png"]
-    assert (root / "a.txt").read_text() == "red, portrait"
-    assert (root / "b.txt").read_text().strip() == "subject, red, generated"
-    assert start(api, "restore", restore_operation_id=op["id"])["status"] == "completed"
-    assert not (root / "b.txt").exists()
-    op = start(api, "tag", images=refs(row, "a.png"), tagging={**options, "mode": "append"})
-    assert op["status"] == "completed"
-    assert (root / "a.txt").read_text().strip() == "subject, red, portrait, generated"
-
-
-def test_tagging_cancel_stops_inference_before_publishing_captions(api, tmp_path, monkeypatch):
-    import sys
-    import types
-
-    row, root = imported(api, tmp_path)
-    entered = threading.Event()
-
-    def generate(images, options, progress, cancel):
-        entered.set()
-        assert cancel.wait(5)
-        raise RuntimeError("cancelled")
-
-    monkeypatch.setitem(
-        sys.modules, "ypuddin.server.dataset_tagging", types.SimpleNamespace(generate=generate)
-    )
-    client, _, _, project = api
-    url = f"/api/projects/{project['id']}/versions/{project['active_version_id']}/pipeline/operations"
-    response = client.post(
-        url,
-        json={
-            "action": "tag",
-            "images": refs(row, "b.png"),
-            "tagging": {"model_path": "fixture.onnx", "tags_path": "tags.csv"},
-        },
-    )
-    assert entered.wait(5)
-    assert client.post(f"/api/dataset-pipeline/operations/{response.json()['id']}/cancel").status_code == 200
-    op = finish(api, response)
-    assert op["status"] == "cancelled", op
-    assert not (root / "b.txt").exists()
-    assert (root / "a.txt").read_text() == "red, portrait"
-
-
 def test_config_caption_extension_syncs_version_registry_index_editor_and_pipeline(api, tmp_path):
     row, root = imported(api, tmp_path)
     client, c, _, project = api
@@ -549,76 +482,28 @@ def test_caption_extension_cannot_overwrite_images_or_escape_source(api, tmp_pat
     assert (root / "a.png").exists()
 
 
-def test_tagging_never_overwrites_caption_edited_externally_during_inference(api, tmp_path, monkeypatch):
-    import sys
-    import types
+def test_automatic_tagging_removed_but_historical_captions_and_undo_remain(api, tmp_path):
+    import json
 
     row, root = imported(api, tmp_path)
-
-    def generate(images, options, progress, cancel):
-        (root / "a.txt").write_text("external correction")
-        return ["new prediction"]
-
-    monkeypatch.setitem(
-        sys.modules, "ypuddin.server.dataset_tagging", types.SimpleNamespace(generate=generate)
-    )
-    op = start(
-        api,
-        "tag",
-        images=refs(row, "a.png"),
-        tagging={"model_path": "fixture.onnx", "tags_path": "tags.csv", "mode": "overwrite"},
-    )
-    assert op["status"] == "failed" and "changed during tagging" in op["error"], op
-    assert (root / "a.txt").read_text() == "external correction"
-
-
-def test_tagging_admission_and_queued_registration_share_environment_lock(api, tmp_path, monkeypatch):
-    row, _ = imported(api, tmp_path)
     client, c, manager, project = api
-    endpoint = f"/api/projects/{project['id']}/versions/{project['active_version_id']}/pipeline/operations"
-    request = {
-        "action": "tag",
-        "images": refs(row, "a.png"),
-        "tagging": {"model_path": "fixture.onnx", "tags_path": "tags.csv"},
-    }
-    c.db.set_kv("environment.maintenance", {"blocked": True})
-    response = client.post(endpoint, json=request)
-    assert response.status_code == 409 and "environment.maintenance" in response.text
+    url = f"/api/projects/{project['id']}/versions/{project['active_version_id']}/pipeline/operations"
+    assert client.get("/api/dataset-tagging/status").status_code == 404
+    request = {"action": "tag", "images": refs(row, "a.png"), "tagging": {"model_path": "old.onnx"}}
+    assert client.post(url, json=request).status_code == 422
+    assert (root / "a.txt").read_text() == "red, portrait"
+    op = start(
+        api, "captions", images=refs(row, "a.png"), captions={"mode": "append", "text": "old prediction"}
+    )
+    c.db.update(
+        "dataset_pipeline_operations", op["id"], {"action": "tag", "request_json": json.dumps(request)}
+    )
+    historic = client.get(f"/api/dataset-pipeline/operations/{op['id']}").json()
+    assert historic["action"] == "tag" and historic["can_undo"]
+    undo = start(api, "restore", restore_operation_id=op["id"])
+    assert undo["status"] == "completed", undo
+    assert (root / "a.txt").read_text() == "red, portrait"
+    c.db.update("dataset_pipeline_operations", op["id"], {"status": "failed"})
+    retry = client.post(f"/api/dataset-pipeline/operations/{op['id']}/retry")
+    assert retry.status_code == 410 and "tagging_removed" in retry.text
     assert not c.resolve_version(project["id"], project["active_version_id"])["busy"]
-    assert not c.db.fetchall("SELECT id FROM dataset_pipeline_operations")
-    c.db.set_kv("environment.maintenance", {"blocked": False})
-    lease_observed = threading.Event()
-    original_insert = c.db.insert
-    original_submit = manager.executor.submit
-    registrations = []
-    pending = []
-
-    def insert(table, row):
-        if table == "dataset_pipeline_operations":
-            # Simulate maintenance attempting to acquire the DB lock exactly
-            # between the tagger's lease and publishing its queued operation.
-            def maintenance():
-                lease_observed.set()
-                with c.db.lock:
-                    registrations.extend(c.db.fetchall("SELECT action FROM dataset_pipeline_operations"))
-
-            thread = threading.Thread(target=maintenance)
-            thread.start()
-            assert lease_observed.wait(2)
-            assert registrations == []
-            insert.thread = thread
-        return original_insert(table, row)
-
-    monkeypatch.setattr(c.db, "insert", insert)
-    monkeypatch.setattr(manager.executor, "submit", lambda *args: pending.append(args))
-    response = client.post(endpoint, json=request)
-    assert response.status_code == 202, response.text
-    insert.thread.join(2)
-    assert registrations == [{"action": "tag"}]
-    # Run the intentionally deferred operation to release its acquired lease.
-    monkeypatch.setattr(manager.executor, "submit", original_submit)
-    monkeypatch.setattr(c.db, "insert", original_insert)
-    oid = response.json()["id"]
-    manager.cancel(oid)
-    original_submit(*pending[0])
-    assert finish(api, response)["status"] == "cancelled"

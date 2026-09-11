@@ -4,7 +4,7 @@
 
 当前处于集成验证阶段：已有 CPU 玩具模型与缩小版真实组件的训练、暂停恢复、采样和服务回归测试；**官方完整权重在 NVIDIA GPU 上的训练、实际 ComfyUI 加载与质量验收、速度和显存基准仍待完成**。本轮验收记录见[v0.5 流水线与交互报告](docs/UI_PIPELINE_2026-09-11.md)，功能状态见 [`docs/design/03-status.md`](docs/design/03-status.md)。参考项目分析保存在 `docs/reference/`，不作为性能优于参考实现的结论。
 
-当前版本 **v0.5.0**：版本内接通导入、质量筛选、可撤销预处理、标签/遮罩和训练准备；新增独立实现的[原生分辨率训练](docs/native-resolution.md)，支持异尺寸批次、Mask 与在线 VAE 编码。模型设置支持 Hugging Face / 魔搭来源与令牌管理，本地 WD14 自动标注接通模型下载、依赖安装、批量生成与撤销。高级参数展开使用紧凑分组，概率控件、硬件读数和重连逻辑已改进。项目版本、图片、缓存、任务、采样与权重继续独立归属，详见[版本目录说明](docs/UI_VERSIONS_2026-09-11.md)。
+当前版本 **v0.5.1**：新项目采用独立显示名称和手填项目 ID，按 `project/<id>/vN/` 保存训练图、正则图、各任务采样与产物；支持自定义输出根。标签步骤精简为图片与已有标签查看，移除 WD14 自动打标和 W&B 入口。正则图支持本地底模生成、网站收集与已有图片导入；环境页保留计算后端和注意力加速，常规依赖由启动器自动补齐。详见[本轮目录与界面说明](docs/UI_SIMPLIFICATION_2026-09-12.md)。[原生分辨率训练](docs/native-resolution.md)、Mask、HF/魔搭模型下载和版本隔离继续保留。
 
 ## 仓库结构
 
@@ -37,7 +37,7 @@ studio.bat         # Windows
 
 ```bash
 uv venv --python 3.12 venv
-uv pip install --python venv/bin/python -e ".[dev,models,server]"
+uv pip install --python venv/bin/python -e ".[dev,models,server,optim,logging]"
 venv/bin/pytest                      # 全部 CPU 测试
 ./studio.sh dev                       # 后端 + Vite 热更新前端
 ```

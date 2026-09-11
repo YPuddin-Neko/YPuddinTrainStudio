@@ -1118,23 +1118,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/dataset-tagging/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Tagging Status */
-        get: operations["tagging_status_api_dataset_tagging_status_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/environment": {
         parameters: {
             query?: never;
@@ -1249,6 +1232,58 @@ export interface paths {
         put?: never;
         /** Wheel */
         post: operations["wheel_api_environment_wheels_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{pid}/versions/{vid}/regularization": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_projects__pid__versions__vid__regularization_get"];
+        put?: never;
+        /** Start */
+        post: operations["start_api_projects__pid__versions__vid__regularization_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/regularization/{oid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Operation */
+        get: operations["operation_api_regularization__oid__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/regularization/{oid}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel */
+        post: operations["cancel_api_regularization__oid__cancel_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2028,7 +2063,7 @@ export interface components {
              * Package
              * @enum {string}
              */
-            package: "xformers" | "flash-attn" | "sageattention" | "nvidia-ml-py" | "tensorboard" | "wandb" | "schedulefree" | "onnxruntime";
+            package: "xformers" | "flash-attn" | "sageattention" | "nvidia-ml-py" | "tensorboard" | "schedulefree";
             /**
              * Action
              * @default install
@@ -2330,6 +2365,8 @@ export interface components {
             finished_at: number | null;
             /** Run Dir */
             run_dir: string | null;
+            /** Samples Dir */
+            samples_dir?: string | null;
             progress: components["schemas"]["JobProgress"];
             latest: components["schemas"]["JobLatest"];
             /** Error */
@@ -2506,17 +2543,6 @@ export interface components {
             created_at: number;
         } & {
             [key: string]: unknown;
-        };
-        /** LocalTaggingModel */
-        LocalTaggingModel: {
-            /** Name */
-            name: string;
-            /** Path */
-            path: string;
-            /** Model Path */
-            model_path: string;
-            /** Tags Path */
-            tags_path: string;
         };
         /** LogLine */
         LogLine: {
@@ -2859,12 +2885,12 @@ export interface components {
              * Family
              * @enum {string}
              */
-            family: "anima" | "krea2" | "tagger";
+            family: "anima" | "krea2";
             /**
              * Kind
              * @enum {string}
              */
-            kind: "dit" | "text_encoder" | "vae" | "tagger";
+            kind: "dit" | "text_encoder" | "vae";
             /**
              * Provider
              * @default huggingface
@@ -3161,14 +3187,13 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "inspect" | "exclude" | "restore" | "preprocess" | "captions" | "tag" | "prepare";
+            action: "inspect" | "exclude" | "restore" | "preprocess" | "captions" | "prepare";
             /** Images */
             images?: components["schemas"]["PipelineImage"][];
             /** Restore Operation Id */
             restore_operation_id?: string | null;
             preprocess?: components["schemas"]["PreprocessOptions"] | null;
             captions?: components["schemas"]["CaptionOptions"] | null;
-            tagging?: components["schemas"]["TaggingOptions"] | null;
         };
         /** PipelineSnapshot */
         PipelineSnapshot: {
@@ -3424,12 +3449,19 @@ export interface components {
              * @default 1
              */
             version_count: number;
+            /**
+             * Layout Version
+             * @default 1
+             */
+            layout_version: number;
             stats: components["schemas"]["ProjectStats"];
         } & {
             [key: string]: unknown;
         };
         /** ProjectBody */
         ProjectBody: {
+            /** Id */
+            id?: string | null;
             /** Name */
             name: string;
             /**
@@ -3464,6 +3496,11 @@ export interface components {
             id: string;
             /** Project Id */
             project_id: string;
+            /**
+             * Number
+             * @default 1
+             */
+            number: number;
             /** Name */
             name: string;
             /** Note */
@@ -3520,6 +3557,136 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** RegularizationRequest */
+        RegularizationRequest: {
+            /**
+             * Source
+             * @default ai
+             * @enum {string}
+             */
+            source: "ai" | "danbooru" | "gelbooru";
+            /** Prompt */
+            prompt: string;
+            /**
+             * Negative
+             * @default
+             */
+            negative: string;
+            /**
+             * Count
+             * @default 20
+             */
+            count: number;
+            /**
+             * Width
+             * @default 1024
+             */
+            width: number;
+            /**
+             * Height
+             * @default 1024
+             */
+            height: number;
+            /**
+             * Steps
+             * @default 25
+             */
+            steps: number;
+            /**
+             * Cfg
+             * @default 4
+             */
+            cfg: number;
+            /**
+             * Seed
+             * @default 0
+             */
+            seed: number;
+            /**
+             * Repeats
+             * @default 1
+             */
+            repeats: number;
+            /**
+             * Prior Weight
+             * @default 1
+             */
+            prior_weight: number;
+            /** Excluded Tags */
+            excluded_tags?: string[];
+            /**
+             * Username
+             * @default
+             */
+            username: string;
+            /**
+             * User Id
+             * @default
+             */
+            user_id: string;
+            /**
+             * Api Key
+             * Format: password
+             * @default
+             */
+            api_key: string;
+        };
+        /** RegularizationStatus */
+        RegularizationStatus: {
+            /** Path */
+            path: string;
+            /** Images */
+            images: number;
+            /** Operations */
+            operations: components["schemas"]["RegularizationTask"][];
+        };
+        /** RegularizationTask */
+        RegularizationTask: {
+            /** Id */
+            id: string;
+            /** Project Id */
+            project_id: string;
+            /** Version Id */
+            version_id: string;
+            /** Source */
+            source: string;
+            /**
+             * Method
+             * @enum {string}
+             */
+            method: "ai" | "web";
+            /** Provider */
+            provider: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "cancelling" | "completed" | "failed" | "cancelled";
+            /** Phase */
+            phase: string;
+            /** Done */
+            done: number;
+            /** Total */
+            total: number;
+            /** Error */
+            error: string | null;
+            /** Logs */
+            logs: string[];
+            /** Dataset Id */
+            dataset_id: string | null;
+            /** Path */
+            path: string | null;
+            /** Images */
+            images: number;
+            /** Duplicates */
+            duplicates: number;
+            /** Created At */
+            created_at: number;
+            /** Finished At */
+            finished_at: number | null;
+            /** Can Cancel */
+            can_cancel: boolean;
+        };
         /** ResolutionCount */
         ResolutionCount: {
             /** W */
@@ -3553,6 +3720,8 @@ export interface components {
         };
         /** SamplingConfig */
         SamplingConfig: {
+            /** Output Dir */
+            output_dir?: string | null;
             /**
              * Enabled
              * @description 训练期间生成预览图
@@ -3698,6 +3867,12 @@ export interface components {
             models_dir: string;
             /** Output Dir */
             output_dir: string;
+            /**
+             * Output Mode
+             * @default project
+             * @enum {string}
+             */
+            output_mode: "project" | "custom";
         } & {
             [key: string]: unknown;
         };
@@ -3774,76 +3949,6 @@ export interface components {
             changed: number;
         } & {
             [key: string]: unknown;
-        };
-        /** TaggingOptions */
-        TaggingOptions: {
-            /** Model Path */
-            model_path: string;
-            /** Tags Path */
-            tags_path: string;
-            /**
-             * General Threshold
-             * @default 0.35
-             */
-            general_threshold: number;
-            /**
-             * Character Threshold
-             * @default 0.85
-             */
-            character_threshold: number;
-            /**
-             * Provider
-             * @default cpu
-             * @enum {string}
-             */
-            provider: "cpu" | "cuda";
-            /**
-             * Mode
-             * @default missing
-             * @enum {string}
-             */
-            mode: "missing" | "append" | "overwrite";
-            /**
-             * Trigger Word
-             * @default
-             */
-            trigger_word: string;
-        };
-        /** TaggingStatus */
-        TaggingStatus: {
-            /** Available */
-            available: boolean;
-            /** Runtime Available */
-            runtime_available: boolean;
-            /** Runtime Version */
-            runtime_version: string | null;
-            /** Runtime Providers */
-            runtime_providers: string[];
-            /** Providers */
-            providers: string[];
-            /**
-             * Provider
-             * @enum {string}
-             */
-            provider: "cpu" | "cuda";
-            /** Model Exists */
-            model_exists: boolean;
-            /** Tags Exists */
-            tags_exists: boolean;
-            /** Model Path */
-            model_path: string | null;
-            /** Tags Path */
-            tags_path: string | null;
-            /** Input Size */
-            input_size: number;
-            /** Models */
-            models: components["schemas"]["LocalTaggingModel"][];
-            /** Recommended Model Dir */
-            recommended_model_dir: string;
-            /** Errors */
-            errors: string[];
-            /** Notes */
-            notes: string[];
         };
         /** TrainConfig */
         TrainConfig: {
@@ -4000,6 +4105,14 @@ export interface components {
             runs: string;
             /** Cache */
             cache: string;
+            /** Traindata */
+            traindata: string;
+            /** Reg */
+            reg: string;
+            /** Samples */
+            samples: string;
+            /** Output */
+            output: string;
         } & {
             [key: string]: unknown;
         };
@@ -5306,6 +5419,13 @@ export interface operations {
                     name?: string;
                     /** @default 1 */
                     repeats?: number;
+                    /** @default false */
+                    is_reg?: boolean;
+                    /** @default 1 */
+                    prior_weight?: number;
+                    class_prompt?: string;
+                    /** @default .txt */
+                    caption_ext?: string;
                 };
             };
         };
@@ -6799,39 +6919,6 @@ export interface operations {
             };
         };
     };
-    tagging_status_api_dataset_tagging_status_get: {
-        parameters: {
-            query?: {
-                model_path?: string | null;
-                tags_path?: string | null;
-                provider?: "cpu" | "cuda";
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaggingStatus"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     status_api_environment_get: {
         parameters: {
             query?: {
@@ -7062,6 +7149,136 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvironmentWheel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    status_api_projects__pid__versions__vid__regularization_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+                vid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegularizationStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_api_projects__pid__versions__vid__regularization_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+                vid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegularizationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegularizationTask"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    operation_api_regularization__oid__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                oid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegularizationTask"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_api_regularization__oid__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                oid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegularizationTask"];
                 };
             };
             /** @description Validation Error */

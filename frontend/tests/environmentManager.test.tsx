@@ -29,12 +29,16 @@ function environment() {
       pkg('xformers', 'xformers', null),
       { ...pkg('flash-attn', 'flash_attn', null), wheel_required: true },
       pkg('tensorboard', null, null),
+      pkg('wandb', null, null),
+      pkg('nvidia-ml-py', null, null),
+      pkg('schedulefree', null, null),
+      pkg('sageattention', 'sage', '2.2.0'),
       pkg('onnxruntime', null, null),
     ],
     attention_default: 'auto', restart_required: false, maintenance: false, running_jobs: false, probe_deferred: false,
   };
 }
-function operation(packageName = 'tensorboard', status = 'ready') {
+function operation(packageName = 'xformers', status = 'ready') {
   return { id: 'env_test', package: packageName, action: 'install', status, created_at: 1, plan: [{ name: packageName, from_version: null, version: '1.2.3' }], logs: ['Resolved compatible wheel; Torch unchanged.'], error: null as string | null, restart_required: false };
 }
 beforeEach(async () => {
@@ -57,16 +61,17 @@ beforeEach(async () => {
 });
 
 describe('real environment management UI contracts', () => {
-  it('deep-links to the CPU tagger runtime and keeps install as a reviewed plan', async () => {
-    runtime.runtime.cuda_available = false;
+  it('shows only optional CUDA attention extensions and ignores removed package deep links', async () => {
     render(<EnvironmentManagerPanel focusPackage="onnxruntime" />);
-    await screen.findByLabelText('onnxruntime 版本');
-    expect(screen.getByText(/本地 WD14 自动打标/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '检查安装计划' })).toBeEnabled();
-    fireEvent.click(screen.getByRole('button', { name: '检查安装计划' }));
-    await waitFor(() => expect(create).toHaveBeenCalledWith({ package: 'onnxruntime', action: 'install' }));
-    expect(apply).not.toHaveBeenCalled();
-    expect(await screen.findByRole('button', { name: '确认并执行此计划' })).toBeInTheDocument();
+    await screen.findByTestId('environment-package-xformers');
+    expect(screen.getByTestId('environment-package-flash-attn')).toBeInTheDocument();
+    for (const name of ['torch', 'tensorboard', 'wandb', 'nvidia-ml-py', 'schedulefree', 'onnxruntime', 'sageattention']) {
+      expect(screen.queryByTestId(`environment-package-${name}`)).not.toBeInTheDocument();
+    }
+    expect(screen.queryByRole('button', { name: '检查安装计划' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('environment-operations')).not.toBeInTheDocument();
+    expect(screen.queryByText('环境操作记录')).not.toBeInTheDocument();
+    expect(within(screen.getByRole('navigation')).getAllByRole('button')).toHaveLength(2);
   });
   it('shows the target runtime and requires plan review before mutation', async () => {
     render(<EnvironmentManagerPanel />);
@@ -74,11 +79,12 @@ describe('real environment management UI contracts', () => {
     expect(screen.queryByRole('button', { name: '检查安装计划' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByText('解释器与显卡诊断'));
     expect(screen.getByText('C:\\Studio\\venv\\Scripts\\python.exe')).toBeVisible();
-    const row = screen.getByTestId('environment-package-tensorboard');
+    const row = screen.getByTestId('environment-package-xformers');
     fireEvent.click(within(row).getByRole('button', { name: '安装' }));
-    fireEvent.change(screen.getByLabelText('tensorboard 版本'), { target: { value: '1.2.3' } });
+    fireEvent.click(screen.getByText('手动版本与 wheel'));
+    fireEvent.change(screen.getByLabelText('xformers 版本'), { target: { value: '1.2.3' } });
     fireEvent.click(screen.getByRole('button', { name: '检查安装计划' }));
-    await waitFor(() => expect(create).toHaveBeenCalledWith({ package: 'tensorboard', action: 'install', version: '1.2.3' }));
+    await waitFor(() => expect(create).toHaveBeenCalledWith({ package: 'xformers', action: 'install', version: '1.2.3' }));
     const confirm = await screen.findByRole('button', { name: '确认并执行此计划' });
     expect(apply).not.toHaveBeenCalled();
     expect(screen.getByLabelText('安装日志')).toHaveTextContent('Torch unchanged');
@@ -90,10 +96,11 @@ describe('real environment management UI contracts', () => {
   it('blocks modifications while training and only enables tested attention defaults', async () => {
     runtime.running_jobs = true; runtime.probe_deferred = true;
     render(<EnvironmentManagerPanel />);
-    expect(await screen.findByText(/训练、缓存或本地打标任务正在运行/)).toBeInTheDocument();
+    expect(await screen.findByText(/训练或缓存任务正在运行/)).toBeInTheDocument();
     expect(within(screen.getByTestId('environment-package-xformers')).getByRole('button', { name: '安装' })).toBeDisabled();
-    expect(screen.getByRole('option', { name: 'xFormers' })).toBeDisabled();
-    expect(screen.getByRole('option', { name: 'PyTorch SDPA' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('combobox', { name: '新任务默认注意力' }));
+    expect(screen.getByRole('option', { name: 'xFormers' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('option', { name: 'PyTorch SDPA' })).not.toHaveAttribute('aria-disabled', 'true');
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -118,21 +125,81 @@ describe('real environment management UI contracts', () => {
   it('shows concrete validation errors and preserves the editable form', async () => {
     server.use(http.post('/api/environment/operations', () => HttpResponse.json({ error: { code: 'request.validation', message: 'Request validation failed', details: { errors: [{ loc: ['body', 'version'], msg: 'Exact version required' }] } } }, { status: 422 })));
     render(<EnvironmentManagerPanel />);
-    const row = await screen.findByTestId('environment-package-tensorboard');
+    const row = await screen.findByTestId('environment-package-xformers');
     fireEvent.click(within(row).getByRole('button', { name: '安装' }));
-    fireEvent.change(screen.getByLabelText('tensorboard 版本'), { target: { value: 'invalid' } });
+    fireEvent.click(screen.getByText('手动版本与 wheel'));
+    fireEvent.change(screen.getByLabelText('xformers 版本'), { target: { value: 'invalid' } });
     fireEvent.click(screen.getByRole('button', { name: '检查安装计划' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Exact version required');
-    expect(screen.getByLabelText('tensorboard 版本')).toHaveValue('invalid');
+    expect(screen.getByLabelText('xformers 版本')).toHaveValue('invalid');
   });
 
   it('automatically exposes a failed operation and its logs when the drawer is reopened', async () => {
-    operations = [{ ...operation('tensorboard', 'failed'), error: 'Protected Torch dependency conflict' }];
+    operations = [{ ...operation('xformers', 'failed'), error: 'Protected Torch dependency conflict' }];
     render(<EnvironmentManagerPanel />);
     expect(await screen.findByRole('alert')).toHaveTextContent('Protected Torch dependency conflict');
     expect(screen.getByLabelText('安装日志')).toHaveTextContent('Torch unchanged');
     expect(screen.queryByRole('button', { name: '确认并执行此计划' })).not.toBeInTheDocument();
     expect(apply).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '关闭结果' }));
+    expect(screen.queryByTestId('environment-operations')).not.toBeInTheDocument();
+  });
+
+  it('omits completed history and failures superseded by a completed operation', async () => {
+    operations = [{ ...operation('xformers', 'completed'), id: 'new' }, { ...operation('flash-attn', 'failed'), id: 'old', error: 'Old error' }];
+    render(<EnvironmentManagerPanel />);
+    await screen.findByTestId('environment-package-xformers');
+    expect(screen.queryByTestId('environment-operations')).not.toBeInTheDocument();
+    expect(screen.queryByText('Old error')).not.toBeInTheDocument();
+  });
+
+  it('restores an in-progress install and logs without exposing an interrupt action', async () => {
+    operations = [operation('flash-attn', 'installing')];
+    render(<EnvironmentManagerPanel />);
+    expect(await screen.findByLabelText('安装日志')).toHaveTextContent('Torch unchanged');
+    expect(screen.getByText('下载并安装')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '取消计划' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '关闭结果' })).not.toBeInTheDocument();
+    expect(within(screen.getByTestId('environment-package-xformers')).getByRole('button', { name: '安装' })).toBeDisabled();
+  });
+
+  it('saves an attention choice through the shared popup selector', async () => {
+    render(<EnvironmentManagerPanel />);
+    fireEvent.click(await screen.findByRole('combobox', { name: '新任务默认注意力' }));
+    fireEvent.click(screen.getByRole('option', { name: 'PyTorch SDPA' }));
+    await waitFor(() => expect(runtime.attention_default).toBe('sdpa'));
+    expect(screen.getByRole('combobox', { name: '新任务默认注意力' })).toHaveTextContent('PyTorch SDPA');
+  });
+
+  it('reopens concrete failure details when a collapsed active install fails', async () => {
+    operations = [operation('flash-attn', 'installing')];
+    render(<EnvironmentManagerPanel />);
+    await screen.findByLabelText('安装日志');
+    fireEvent.click(within(screen.getByTestId('environment-operations')).getByRole('button', { expanded: true }));
+    expect(screen.queryByLabelText('安装日志')).not.toBeInTheDocument();
+    operations = [{ ...operations[0], status: 'failed', error: 'Wheel verification failed' }];
+    fireEvent.click(screen.getByRole('button', { name: '重新检测' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Wheel verification failed');
+    expect(screen.getByLabelText('安装日志')).toHaveTextContent('Torch unchanged');
+  });
+
+  it('preserves a legacy Sage default with explicit sampling-only scope', async () => {
+    runtime.attention_default = 'sage';
+    render(<EnvironmentManagerPanel />);
+    expect(await screen.findByRole('combobox', { name: '新任务默认注意力' })).toHaveTextContent('SageAttention · 仅采样');
+    expect(screen.getByText(/训练反向传播仍使用 SDPA/)).toBeInTheDocument();
+    expect(runtime.attention_default).toBe('sage');
+    expect(screen.queryByTestId('environment-package-sageattention')).not.toBeInTheDocument();
+  });
+
+  it('shows the actual Apple backend instead of reporting missing CUDA as a fault', async () => {
+    runtime.runtime.cuda_available = false;
+    runtime.runtime.mps_available = true;
+    runtime.runtime.gpus = [];
+    render(<EnvironmentManagerPanel />);
+    expect(await screen.findByText('Apple MPS')).toBeInTheDocument();
+    expect(screen.getByText('Apple GPU')).toBeInTheDocument();
+    expect(screen.queryByText(/但无法使用 CUDA/)).not.toBeInTheDocument();
   });
 
   it('renders the English controls without Chinese fallbacks', async () => {

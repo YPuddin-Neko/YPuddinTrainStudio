@@ -18,9 +18,9 @@ from . import (
     routes_core,
     routes_dataset_masks,
     routes_dataset_pipeline,
-    routes_dataset_tagging,
     routes_environment,
     routes_model_downloads,
+    routes_regularization,
     routes_work,
 )
 from .bus import EventBus
@@ -29,6 +29,7 @@ from .dataset_pipeline import DatasetPipeline
 from .db import Database
 from .environment import EnvironmentManager
 from .model_downloads import ModelDownloads
+from .regularization import RegularizationManager
 from .supervisor import JobSupervisor
 
 log = logging.getLogger(__name__)
@@ -49,6 +50,7 @@ def create_app(
     model_downloads = ModelDownloads(context)
     environment = EnvironmentManager(context)
     dataset_pipeline = DatasetPipeline(context)
+    regularization = RegularizationManager(context)
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -60,6 +62,7 @@ def create_app(
         finally:
             stats_task.cancel()
             await supervisor.stop()
+            await asyncio.to_thread(regularization.close)
             await asyncio.to_thread(model_downloads.close)
             await asyncio.to_thread(environment.close)
             await asyncio.to_thread(dataset_pipeline.close)
@@ -77,6 +80,7 @@ def create_app(
     app.state.model_downloads = model_downloads
     app.state.environment = environment
     app.state.dataset_pipeline = dataset_pipeline
+    app.state.regularization = regularization
     errors.install(app)
     app.add_middleware(
         CORSMiddleware,
@@ -90,8 +94,8 @@ def create_app(
     app.include_router(routes_model_downloads.router, prefix="/api")
     app.include_router(routes_dataset_masks.router, prefix="/api")
     app.include_router(routes_dataset_pipeline.router, prefix="/api")
-    app.include_router(routes_dataset_tagging.router, prefix="/api")
     app.include_router(routes_environment.router, prefix="/api")
+    app.include_router(routes_regularization.router, prefix="/api")
 
     dist = Path(frontend_dist) if frontend_dist else Path(__file__).resolve().parents[2] / "frontend" / "dist"
     if (dist / "index.html").exists():

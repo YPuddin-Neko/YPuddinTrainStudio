@@ -1845,6 +1845,18 @@
     "SamplingConfig": {
       "additionalProperties": false,
       "properties": {
+        "output_dir": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Dir"
+        },
         "enabled": {
           "default": false,
           "description": "训练期间生成预览图",

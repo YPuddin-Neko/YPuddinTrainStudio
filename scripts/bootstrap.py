@@ -14,7 +14,7 @@
   shell   打印如何激活 venv
 
 全局参数
-  --torch=<cu128|cu126|cu124|cu118|cpu|auto>  PyTorch 版本（默认 auto：按显卡计算能力与驱动版本选）
+  --torch=<cu128|cu126|cu124|cu118|cpu|auto>  首次安装/重建的 PyTorch 类型（默认 auto）
   --index=<auto|cn|official>  包源。auto / cn（默认）：国内镜像优先，中科大 -> 清华 -> 阿里 -> 官方兜底，
                   探测不通的源自动排后，逐个尝试直到成功；official：官方源优先（镜像兜底）
   --mirror        等价于 --index=cn
@@ -34,6 +34,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 import webbrowser
@@ -62,7 +63,7 @@ TORCH_MIRRORS_CN = (
 CUDA_TAGS = (("cu128", 570), ("cu126", 560), ("cu124", 550), ("cu118", 450))
 # GPUs with compute capability >= 12.0 (RTX 50 series / Blackwell) only have kernels in the cu128+ wheels
 BLACKWELL_CC = 12.0
-EXTRAS_BASE = "models,server"
+EXTRAS_BASE = "models,server,optim,logging"
 
 
 def log(msg: str) -> None:
@@ -237,8 +238,92 @@ def find_base_python() -> str:
 # --------------------------------------------------------------------------- venv + dependencies
 def install_signature(torch_tag: str, extras: str) -> str:
     h = hashlib.sha256((ROOT / "pyproject.toml").read_bytes())
-    h.update(f"{torch_tag}|{extras}|{sys.platform}".encode())
+    h.update(Path(__file__).read_bytes())
+    h.update(f"{torch_tag}|{extras}|{sys.platform}|{platform.machine()}|{sys.version_info[:2]}".encode())
     return h.hexdigest()[:16]
+
+
+def venv_json(code: str, *args: str):
+    """Probe the selected venv, never the Python that happened to launch this script."""
+    with tempfile.TemporaryDirectory(prefix="ypuddin-bootstrap-probe-") as directory:
+        result = subprocess.run(
+            [str(venv_python()), "-c", code, *args],
+            cwd=directory,
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+    if result.returncode:
+        raise RuntimeError((result.stderr.strip() or "environment probe failed")[-1600:])
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+def installed_versions() -> dict[str, str]:
+    return venv_json(
+        "import importlib.metadata as m,json,re; "
+        "print(json.dumps({re.sub(r'[-_.]+','-',d.metadata['Name']).lower():d.version "
+        "for d in m.distributions() if d.metadata['Name']}))"
+    )
+
+
+def dependency_issues(extras: str) -> list[str]:
+    """Verify installed requirement metadata (including transitive dependencies) without imports."""
+    code = """
+import importlib.metadata as metadata, json, sys
+try:
+    from packaging.requirements import Requirement
+    from packaging.markers import default_environment
+    from packaging.utils import canonicalize_name
+except ImportError:
+    print(json.dumps(['packaging is missing']))
+    sys.exit(0)
+issues, seen = [], set()
+def visit(name, extras):
+    key = (canonicalize_name(name), tuple(sorted(extras)))
+    if key in seen:
+        return
+    seen.add(key)
+    try:
+        package = metadata.distribution(name)
+    except metadata.PackageNotFoundError:
+        issues.append(name + ' is missing')
+        return
+    for text in package.requires or []:
+        req = Requirement(text)
+        if req.marker and not any(req.marker.evaluate(dict(default_environment(), extra=extra)) for extra in ['', *extras]):
+            continue
+        try:
+            version = metadata.version(req.name)
+        except metadata.PackageNotFoundError:
+            issues.append(str(req) + ' is missing')
+            continue
+        if req.specifier and not req.specifier.contains(version, prereleases=True):
+            issues.append(str(req) + ' (installed ' + version + ')')
+        visit(req.name, req.extras)
+visit('ypuddin', sys.argv[1].split(','))
+print(json.dumps(sorted(set(issues))))
+"""
+    try:
+        return venv_json(code, extras)
+    except Exception as exc:
+        return [f"dependency verification failed: {exc}"]
+
+
+def protected_versions(versions: dict[str, str]) -> dict[str, str]:
+    """Keep the installed native training stack intact while adding ordinary dependencies."""
+    return {
+        name: version
+        for name, version in versions.items()
+        if name in {"torch", "torchvision", "torchaudio", "triton", "pytorch-triton", "numpy"}
+        or name.startswith("nvidia-")
+        and name != "nvidia-ml-py"
+    }
+
+
+def torch_runtime() -> dict:
+    return venv_json(
+        "import torch,json; print(json.dumps({'version':torch.__version__,'cuda':torch.version.cuda}))"
+    )
 
 
 def ensure_venv(torch_tag: str, *, index_mode: str, reinstall: bool, extras: str) -> None:
@@ -249,8 +334,11 @@ def ensure_venv(torch_tag: str, *, index_mode: str, reinstall: bool, extras: str
     if venv_python().exists() and MARKER.exists():
         try:
             if json.loads(MARKER.read_text()).get("signature") == sig:
-                log("[2/5] 依赖已是最新（pyproject.toml 未变化），跳过安装")
-                return
+                issues = dependency_issues(extras)
+                if not issues:
+                    log("[2/5] 常规依赖已齐全，跳过安装")
+                    return
+                log("[2/5] 检测到缺失或不满足版本要求的依赖，自动补齐: " + "; ".join(issues[:8]))
         except Exception:  # noqa: BLE001
             pass
     uv = uv_path()
@@ -264,6 +352,18 @@ def ensure_venv(torch_tag: str, *, index_mode: str, reinstall: bool, extras: str
     else:
         log(f"[2/5] 虚拟环境 {VENV.name}/ 已存在，更新依赖")
     py = str(venv_python())
+    versions = installed_versions()
+    preserved = protected_versions(versions)
+    if "torch" in versions:
+        # Updating the launcher/dependencies must not replace a working CUDA/MPS
+        # build merely because auto-detection now selects a newer wheel channel.
+        try:
+            current = torch_runtime()
+        except Exception as exc:
+            die(f"已有 PyTorch 无法加载，未修改环境：{exc}。请运行 doctor 检查；需要重建时使用 --reinstall。")
+        if tuple(int(n) for n in re.findall(r"\d+", current["version"])[:2]) < (2, 4):
+            die("已有 PyTorch 低于 2.4，自动补依赖不会替换它；请使用 --reinstall 重建环境。")
+        log(f"[3/5] 保留现有 PyTorch {current['version']} / CUDA {current['cuda'] or '无（CPU/MPS）'}")
     pypi_chain, torch_sources = index_chains(index_mode, torch_tag)
 
     env = dict(os.environ)
@@ -277,7 +377,7 @@ def ensure_venv(torch_tag: str, *, index_mode: str, reinstall: bool, extras: str
         return subprocess.run(cmd, env=env).returncode == 0
 
     def pip_cmd(
-        args: list[str], index_url: str | None, *, upgrade: bool = True, extra: list[str] | None = None
+        args: list[str], index_url: str | None, *, upgrade: bool = False, extra: list[str] | None = None
     ) -> list[str]:
         if uv:
             cmd = [uv, "pip", "install", "--python", py]
@@ -314,25 +414,63 @@ def ensure_venv(torch_tag: str, *, index_mode: str, reinstall: bool, extras: str
         die("所有来源都无法安装 PyTorch，请检查网络或用 --torch= 指定版本后重试")
 
     if not uv:
-        log("[3/5] 升级 pip / wheel")
+        log("[3/5] 检查 pip / wheel")
         pip_install(["pip", "wheel"], "pip/wheel")
-    if torch_tag != "cpu":
-        log(f"[3/5] 安装 PyTorch（CUDA 版本 {torch_tag}，约 2.5 GB，耐心等待）")
-        torch_install()
-    else:
-        log("[3/5] 安装 PyTorch（CPU / Apple MPS 版）")
-        pip_install(["torch>=2.4"], "torch")
+    if "torch" not in versions:
+        if platform.system() == "Darwin":
+            log("[3/5] 安装 Apple PyTorch（PyPI wheel 包含 MPS 支持）")
+            pip_install(["torch>=2.4"], "torch")
+        else:
+            log(f"[3/5] 安装 PyTorch（{torch_tag}，CUDA 版本下载较大，请耐心等待）")
+            torch_install()
+        current = torch_runtime()
+        expected_cuda = None if torch_tag == "cpu" else f"{torch_tag[2:-1]}.{torch_tag[-1]}"
+        if current["cuda"] != expected_cuda:
+            die(
+                f"新装 PyTorch CUDA 类型不匹配（期望 {expected_cuda}，实际 {current['cuda']}），请检查包源后重建。"
+            )
+        preserved = protected_versions(installed_versions())
+    if "torch" not in preserved:
+        die("无法确认已安装 PyTorch 的版本，停止安装以保护训练环境。")
     log(f"[4/5] 安装训练器 ypuddin 及其依赖 [{extras}]")
-    pip_install(["-e", f"{ROOT}[{extras}]"], f"ypuddin[{extras}]")
+    # Exact constraints apply to the whole dependency resolution, not just the
+    # explicitly requested torch package. Conflicting accelerators fail before
+    # pip can silently swap the existing CUDA stack for a different build.
+    with tempfile.TemporaryDirectory(prefix="ypuddin-bootstrap-constraints-") as directory:
+        constraints = Path(directory) / "native-stack.txt"
+        constraints.write_text(
+            "".join(f"{name}=={version}\n" for name, version in sorted(preserved.items())), encoding="utf-8"
+        )
+        pip_install(
+            ["--constraint", str(constraints), "-e", f"{ROOT}[{extras}]"],
+            f"ypuddin[{extras}]（保留现有 PyTorch/CUDA）",
+        )
+    after = installed_versions()
+    changed = [name for name, version in preserved.items() if after.get(name) != version]
+    if changed:
+        die("安装器意外改变了受保护的原生依赖：" + ", ".join(changed) + "；未写入成功标记，请检查环境。")
+    issues = dependency_issues(extras)
+    if issues:
+        die("安装后依赖仍不完整：" + "; ".join(issues[:12]) + "；下次启动会重试补齐。")
     MARKER.write_text(
-        json.dumps({"signature": sig, "torch": torch_tag, "extras": extras, "time": time.time()})
+        json.dumps(
+            {
+                "signature": sig,
+                "torch": torch_tag,
+                "torch_version": after["torch"],
+                "extras": extras,
+                "time": time.time(),
+            }
+        )
     )
 
 
 def choose_extras(torch_tag: str) -> str:
     extras = EXTRAS_BASE
-    if torch_tag != "cpu" and platform.system() == "Linux":
-        extras += ",cuda,optim"  # bitsandbytes wheels are reliable on Linux; Windows users opt in manually
+    if platform.system() in {"Windows", "Linux"} and (
+        torch_tag != "cpu" or nvidia_driver_major() is not None
+    ):
+        extras += ",nvidia"
     return extras
 
 
@@ -524,13 +662,24 @@ def doctor() -> int:
                     )
         except Exception:  # noqa: BLE001
             pass
-        for mod in ("bitsandbytes", "sageattention", "prodigyopt", "transformers", "fastapi"):
-            r = subprocess.run(
-                [str(py), "-c", f"import {mod};print(getattr({mod},'__version__','ok'))"],
-                capture_output=True,
-                text=True,
-            )
-            print(f"  {mod:<14}: {r.stdout.strip() or '未安装'}")
+        versions = installed_versions()
+        for name in (
+            "transformers",
+            "fastapi",
+            "schedulefree",
+            "lion-pytorch",
+            "prodigyopt",
+            "prodigy-plus-schedule-free",
+            "pytorch-optimizer",
+            "tensorboard",
+        ):
+            print(f"  {name:<28}: {versions.get(name, '缺失，下次启动自动补齐')}")
+        if platform.system() in {"Windows", "Linux"} and driver is not None:
+            print(f"  {'nvidia-ml-py':<28}: {versions.get('nvidia-ml-py', '缺失，下次启动自动补齐')}")
+        for name in ("xformers", "flash-attn", "sageattention", "bitsandbytes"):
+            print(f"  {name:<28}: {versions.get(name, '未安装（可选，启动器不会自动安装）')}")
+        issues = dependency_issues(choose_extras(pick_torch_tag("auto")))
+        print("依赖完整性 : " + ("通过" if not issues else "; ".join(issues[:12])))
     npm = shutil.which("npm") or shutil.which("npm.cmd")
     print(f"Node/npm   : {shutil.which('node') or '未安装'} / {npm or '未安装'}")
     print(

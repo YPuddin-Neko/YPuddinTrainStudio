@@ -18,7 +18,12 @@ beforeEach(() => {
   sessionStorage.clear();
   submitted=[];
   state={signature:'one',inspection:{images:[{...image,rel_path:'a.png'},{...image,rel_path:'b.png',caption:'',hash:'def'}],duplicate_groups:[[0,1]],errors:0,warnings:3,captioned:1,masks:2,source_issues:[]},plan:null,operations:[],busy:false,archived:false,stale:false,ready_to_train:false,prepared_job_id:null};
-  vi.spyOn(apiClient,'get').mockImplementation(async () => structuredClone(state) as any);
+  vi.spyOn(apiClient,'get').mockImplementation(async url => {
+    if(url==='/projects/p_1/versions/v_2/regularization')return {path:'/project/p_1/v2/reg',images:0,operations:[]} as any;
+    if(url==='/projects/p_1/datasets') return [{source:{id:'d_1',path:'/data/images'},index_status:'ready'}] as any;
+    if(url==='/datasets/d_1/images') return {items:[{...image,rel_path:'a.png'},{...image,rel_path:'b.png',caption:'',hash:'def'}],page:1,page_size:40,total:2} as any;
+    return structuredClone(state) as any;
+  });
   vi.spyOn(apiClient,'post').mockImplementation(async (url,body) => {submitted.push({url,body});return operation as any;});
 });
 afterEach(() => vi.restoreAllMocks());
@@ -27,7 +32,7 @@ describe('dataset pipeline', () => {
     const first=show();
     fireEvent.click(screen.getByRole('button',{name:/预处理/}));
     expect(screen.getByTestId('pipeline-location')).toHaveTextContent('data_step=preprocess');
-    fireEvent.click(screen.getByRole('button',{name:/标签与遮罩/}));
+    fireEvent.click(screen.getByRole('button',{name:/标签查看/}));
     fireEvent.click(screen.getByRole('button',{name:'Browser back'}));
     expect(screen.getByRole('button',{name:/预处理/})).toHaveAttribute('aria-current','step');
     first.unmount();
@@ -36,6 +41,12 @@ describe('dataset pipeline', () => {
     second.unmount();
     show({versionId:'v_3'});
     expect(screen.getByText('Upload files')).toBeInTheDocument();
+  });
+  it('opens the version-scoped regularization step and preserves its URL',async()=>{
+    show();fireEvent.click(screen.getByRole('button',{name:/正则图/}));
+    expect(screen.getByTestId('pipeline-location')).toHaveTextContent('data_step=reg');
+    await waitFor(()=>expect(apiClient.get).toHaveBeenCalledWith('/projects/p_1/versions/v_2/regularization',expect.anything()));
+    expect(submitted).toEqual([]);
   });
   it('selects duplicate copies while keeping one and sends version-scoped exclusion', async () => {
     // Existing reports can put the uncaptioned download first. The richer copy wins.
@@ -59,15 +70,18 @@ describe('dataset pipeline', () => {
     fireEvent.click(screen.getByRole('button',{name:'处理 1 张选中图片'}));
     await waitFor(() => expect(submitted[0]?.body).toEqual({action:'preprocess',images:[{dataset_id:'d_1',rel_path:'a.png'}],preprocess:{mode:'center_crop',width:512,height:768,allow_upscale:false}}));
   });
-  it('keeps caption draft on failure and sends undo and retry', async () => {
-    state.operations=[operation,{...operation,id:'dp_failed',status:'failed',can_undo:false,error:'disk is full',result:{rolled_back:true}}];
-    show(); fireEvent.click(screen.getByRole('button',{name:/标签与遮罩/}));
-    fireEvent.click(await screen.findByRole('checkbox',{name:'选择 a.png'}));
-    fireEvent.change(screen.getByLabelText('标签文本'),{target:{value:'trigger, {filename}'}});
-    vi.mocked(apiClient.post).mockRejectedValueOnce(new Error('permission denied'));
-    fireEvent.click(screen.getByRole('button',{name:'保存 1 张标签'}));
-    await screen.findByText('permission denied');
-    expect(screen.getByLabelText('标签文本')).toHaveValue('trigger, {filename}');
+  it('views existing captions without an inspection or mutation and preserves recovery of old operations', async () => {
+    state.inspection=null;
+    state.operations=[{...operation,action:'tag'},{...operation,id:'dp_old_tag',action:'tag',status:'failed',can_undo:false,error:'old tagging failed'},{...operation,id:'dp_failed',status:'failed',can_undo:false,error:'disk is full',result:{rolled_back:true}}];
+    show(); fireEvent.click(screen.getByRole('button',{name:/标签查看/}));
+    expect(await screen.findByTestId('existing-caption')).toHaveTextContent('portrait');
+    expect(screen.queryByRole('button',{name:'检查数据'})).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox',{name:'标签文本'})).not.toBeInTheDocument();
+    expect(screen.queryByRole('form',{name:/WD14/})).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button',{name:'查看标签: b.png'}));
+    expect(screen.getByTestId('existing-caption')).toHaveTextContent('此图片暂无标签');
+    expect(submitted).toEqual([]);
+    expect(apiClient.get).toHaveBeenCalledWith('/projects/p_1/datasets',expect.objectContaining({params:{version_id:'v_2'}}));
     fireEvent.click(screen.getByRole('button',{name:'恢复此操作前的文件'}));
     await waitFor(() => expect(submitted[0]?.body).toEqual({action:'restore',restore_operation_id:'dp_1'}));
     await waitFor(() => expect(screen.getByRole('button',{name:'重试'})).not.toBeDisabled());

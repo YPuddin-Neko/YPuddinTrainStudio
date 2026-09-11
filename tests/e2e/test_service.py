@@ -158,6 +158,11 @@ async def test_rest_contract_and_training_job(live_server, image_dataset):
                     + "\n".join(line["msg"] for line in log["lines"][-30:])
                 )
             assert job["progress"]["step"] == job["progress"]["total_steps"]
+            run_root = Path(job["run_dir"])
+            sample_root = Path(job["samples_dir"])
+            assert run_root.parent.name == "output" and run_root.parent.parent.name == "v1"
+            assert sample_root == run_root.parent.parent / "samples" / jid
+            assert not (run_root / "samples").exists()
             metrics = (await client.get(f"/api/jobs/{jid}/metrics")).json()
             assert len(metrics["steps"]) == job["progress"]["total_steps"] and metrics["loss"]
             samples = (await client.get(f"/api/jobs/{jid}/samples")).json()
@@ -183,9 +188,22 @@ async def test_rest_contract_and_training_job(live_server, image_dataset):
             assert r.json()["held"] is True
             retry = (await client.post(f"/api/jobs/{jid}/retry")).json()
             assert retry["status"] == "queued" and retry["id"] != jid
+            assert Path(retry["run_dir"]).parent == run_root.parent
+            assert Path(retry["samples_dir"]).parent == sample_root.parent
+            assert retry["samples_dir"] != job["samples_dir"]
             await asyncio.sleep(0.6)
             assert (await client.get(f"/api/jobs/{retry['id']}")).json()["status"] == "queued"  # held
-            r = await client.post(f"/api/jobs/{retry['id']}/cancel")
+            original_images = {p.name: p.read_bytes() for p in sample_root.glob("*.png")}
+            await client.put("/api/queue/settings", json={"held": False})
+            cloned = await _wait_status(client, retry["id"], {"completed", "failed"})
+            assert cloned["status"] == "completed", cloned
+            clone_samples = (await client.get(f"/api/jobs/{retry['id']}/samples")).json()
+            assert clone_samples and (await client.get(clone_samples[0]["url"])).status_code == 200
+            assert {p.name: p.read_bytes() for p in sample_root.glob("*.png")} == original_images
+            assert list(Path(retry["samples_dir"]).glob("*.png"))
+            await client.put("/api/queue/settings", json={"held": True})
+            to_cancel = (await client.post(f"/api/jobs/{jid}/retry")).json()
+            r = await client.post(f"/api/jobs/{to_cancel['id']}/cancel")
             assert r.json()["status"] == "cancelled"
             r = await client.post(f"/api/jobs/{jid}/pause")
             assert r.status_code == 409 and r.json()["error"]["code"] == "job.bad_state"
@@ -198,6 +216,9 @@ async def test_rest_contract_and_training_job(live_server, image_dataset):
 async def test_pause_resume_via_api(live_server, image_dataset):
     if True:
         async with httpx.AsyncClient(base_url=live_server, timeout=30) as client:
+            project = (
+                await client.post("/api/projects", json={"id": "Pause_Resume", "name": "断点恢复"})
+            ).json()
             config = {
                 "model": {"family": "toy", "dtype": "fp32"},
                 "dataset": {
@@ -210,9 +231,20 @@ async def test_pause_resume_via_api(live_server, image_dataset):
                 "adapter": {"algo": "lora", "rank": 4, "alpha": 4},
                 "loop": {"epochs": 40, "mixed_precision": "no"},
                 "checkpoint": {"save_every_epochs": None, "name": "pr"},
+                "sampling": {
+                    "enabled": True,
+                    "at_start": True,
+                    "every_epochs": 40,
+                    "width": 64,
+                    "height": 64,
+                    "prompts": [{"prompt": "fixture", "steps": 1}],
+                },
             }
             job = (
-                await client.post("/api/jobs", json={"type": "train", "name": "pr", "config": config})
+                await client.post(
+                    "/api/jobs",
+                    json={"type": "train", "name": "pr", "project_id": project["id"], "config": config},
+                )
             ).json()
             jid = job["id"]
             # wait for a few steps then pause
@@ -232,6 +264,14 @@ async def test_pause_resume_via_api(live_server, image_dataset):
             j = await _wait_status(client, jid, {"completed", "failed"})
             assert j["status"] == "completed", j.get("error")
             assert j["progress"]["step"] == j["progress"]["total_steps"] > paused_step
+            assert j["samples_dir"] == job["samples_dir"]
+            sample_root = Path(j["samples_dir"])
+            assert sample_root == Path(j["run_dir"]).parent.parent / "samples" / jid
+            assert len(list(sample_root.glob("*.png"))) == 2
+            samples = (await client.get(f"/api/jobs/{jid}/samples")).json()
+            assert samples
+            for sample in samples:
+                assert (await client.get(sample["url"])).status_code == 200
 
 
 @pytest.mark.asyncio

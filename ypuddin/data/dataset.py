@@ -96,7 +96,9 @@ def expand_items(
     for r in records:
         src = sources[r.source_index]
         resolutions = src.resolutions or ds.resolutions
-        cap_cfg = src.caption or ds.caption
+        # Class-prior captions describe the base class, without the training trigger.
+        # An explicit source caption configuration still takes precedence.
+        cap_cfg = src.caption if src.caption is not None else CaptionConfig() if src.is_reg else ds.caption
         if ds.resolution_mode == "native" and ds.masked_loss and r.mask_path:
             try:
                 mask_width, mask_height, _ = probe_image(Path(r.mask_path))
@@ -384,7 +386,10 @@ def prepare_data_layout(
         raise DataConfigError("dataset.sources", "no readable images found in dataset sources")
     val_records: list[ImageRecord] = []
     if cfg.validation.enabled:
-        records, held_out = _split_by_hash(records, cfg.validation.split_ratio)
+        priors = [record for record in records if sources[record.source_index].is_reg]
+        examples = [record for record in records if not sources[record.source_index].is_reg]
+        examples, held_out = _split_by_hash(examples, cfg.validation.split_ratio)
+        records = sorted(examples + priors, key=record_content_key)
         explicit = scan(extra_sources, "validation.sources", len(ds.sources)) if extra_sources else []
         # Explicit validation source configuration wins when the same image is also in a split.
         val_records = explicit + held_out

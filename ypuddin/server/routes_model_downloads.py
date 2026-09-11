@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict
 
 from .errors import NotFound
-from .model_catalog import TAGGER_ID, TAGGER_REPO, TAGGER_REVISION
 from .model_credentials import CredentialState, CredentialStates, CredentialUpdate, Provider
 from .model_downloads import ModelDownload, ModelDownloadRequest, ModelDownloads
 
@@ -83,17 +82,4 @@ def model_catalog(service: ModelDownloads = Depends(downloads)):
 def download_catalog(
     catalog_id: str, body: CatalogDownloadRequest, service: ModelDownloads = Depends(downloads)
 ):
-    if catalog_id != TAGGER_ID:
-        raise NotFound("catalog entry not found", code="model.catalog")
-    return service.start(
-        ModelDownloadRequest(
-            family="tagger",
-            kind="tagger",
-            provider=body.provider,
-            mirror=body.mirror,
-            repo_id=TAGGER_REPO,
-            filename="model.onnx",
-            revision=TAGGER_REVISION,
-            is_default=False,
-        )
-    )
+    raise NotFound("catalog entry not found", code="model.catalog")

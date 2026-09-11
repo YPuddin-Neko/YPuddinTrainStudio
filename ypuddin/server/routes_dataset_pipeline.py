@@ -41,27 +41,16 @@ class CaptionOptions(BaseModel):
     text: str = Field(max_length=32000)
 
 
-class TaggingOptions(BaseModel):
-    model_path: str = Field(min_length=1)
-    tags_path: str = Field(min_length=1)
-    general_threshold: float = Field(0.35, ge=0, le=1)
-    character_threshold: float = Field(0.85, ge=0, le=1)
-    provider: Literal["cpu", "cuda"] = "cpu"
-    mode: Literal["missing", "append", "overwrite"] = "missing"
-    trigger_word: str = Field("", max_length=1000)
-
-
 class PipelineRequest(BaseModel):
-    action: Literal["inspect", "exclude", "restore", "preprocess", "captions", "tag", "prepare"]
+    action: Literal["inspect", "exclude", "restore", "preprocess", "captions", "prepare"]
     images: list[PipelineImage] = Field(default_factory=list, max_length=20000)
     restore_operation_id: str | None = None
     preprocess: PreprocessOptions | None = None
     captions: CaptionOptions | None = None
-    tagging: TaggingOptions | None = None
 
     @model_validator(mode="after")
     def validate_action(self) -> PipelineRequest:
-        if self.action in {"exclude", "preprocess", "captions", "tag"} and not self.images:
+        if self.action in {"exclude", "preprocess", "captions"} and not self.images:
             raise ValueError("select at least one image")
         if self.action == "preprocess" and not self.preprocess:
             raise ValueError("preprocess options are required")
@@ -70,8 +59,6 @@ class PipelineRequest(BaseModel):
                 raise ValueError("visual cropping requires one image and a source pixel rectangle")
         if self.action == "captions" and not self.captions:
             raise ValueError("caption options are required")
-        if self.action == "tag" and not self.tagging:
-            raise ValueError("tagging model and options are required")
         if self.action == "restore" and not self.restore_operation_id:
             raise ValueError("restore_operation_id is required")
         return self

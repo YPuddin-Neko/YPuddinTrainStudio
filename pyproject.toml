@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ypuddin"
-version = "0.5.0"
+version = "0.5.1"
 description = "YPuddin Train Studio - a modular diffusion LoRA/LoKr trainer (Anima-first) with a service API"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -30,11 +30,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Local WD14/WDv3 ONNX caption generation. GPU runtime remains an explicit user choice.
-tagging = ["onnxruntime>=1.17,<2"]
 # Model loading for real families (Qwen3 tokenizer/text encoder, HF hub).
 models = [
-    "transformers>=4.51",
+    "transformers>=4.57",
     "huggingface-hub>=0.25",
     "sentencepiece>=0.2",
     "protobuf>=4.0",
@@ -46,8 +44,9 @@ server = [
     "python-multipart>=0.0.9",
     "psutil>=5.9",
     "packaging>=23.0",
-    "nvidia-ml-py>=12.0; sys_platform == 'win32' or sys_platform == 'linux'",
 ]
+# Selected automatically by the launcher only on NVIDIA hosts.
+nvidia = ["nvidia-ml-py>=12.0; sys_platform == 'win32' or sys_platform == 'linux'"]
 # CUDA-only accelerators; never imported unconditionally.
 cuda = [
     "bitsandbytes>=0.43",
@@ -58,12 +57,11 @@ optim = [
     "schedulefree>=1.4",
     "lion-pytorch>=0.2",
     "prodigyopt>=1.0",
-    "prodigy-plus-schedulefree>=2.0",
+    "prodigy-plus-schedule-free>=2.0",
     "pytorch-optimizer>=3.0",
 ]
 logging = [
     "tensorboard>=2.16",
-    "wandb>=0.17",
 ]
 dev = [
     "pytest>=8.0",

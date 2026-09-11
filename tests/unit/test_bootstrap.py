@@ -1,6 +1,7 @@
 """scripts/bootstrap.py: package-source fallback chain and GPU-aware torch flavour selection (no network)."""
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -12,6 +13,27 @@ SPEC = importlib.util.spec_from_file_location(
 boot = importlib.util.module_from_spec(SPEC)
 sys.modules["ypuddin_bootstrap"] = boot
 SPEC.loader.exec_module(boot)
+
+
+def fresh_torch(monkeypatch, tag):
+    version = "2.5.1" + ("+" + tag if tag != "cpu" else "+cpu")
+    snapshots = iter([{}, {"torch": version}, {"torch": version}])
+    monkeypatch.setattr(boot, "installed_versions", lambda: next(snapshots))
+    monkeypatch.setattr(boot, "dependency_issues", lambda extras: [])
+    monkeypatch.setattr(
+        boot,
+        "platform",
+        type(
+            "Platform",
+            (),
+            {"system": staticmethod(lambda: "Linux"), "machine": staticmethod(lambda: "x86_64")},
+        )(),
+    )
+    monkeypatch.setattr(
+        boot,
+        "torch_runtime",
+        lambda: {"version": version, "cuda": None if tag == "cpu" else f"{tag[2:-1]}.{tag[-1]}"},
+    )
 
 
 def test_index_chains_orders_mirrors_then_official(monkeypatch):
@@ -64,6 +86,7 @@ def test_pick_torch_tag_by_gpu_and_driver(monkeypatch, driver, gpus, expected):
 
 
 def test_install_falls_back_to_the_next_source_on_failure(monkeypatch, tmp_path):
+    fresh_torch(monkeypatch, "cu128")
     calls: list[list[str]] = []
 
     class Result:
@@ -101,6 +124,7 @@ def test_install_falls_back_to_the_next_source_on_failure(monkeypatch, tmp_path)
 
 
 def test_install_dies_when_every_source_fails(monkeypatch, tmp_path):
+    fresh_torch(monkeypatch, "cpu")
     monkeypatch.setattr(boot.subprocess, "run", lambda cmd, *a, **kw: type("R", (), {"returncode": 1})())
     monkeypatch.setattr(boot, "url_ok", lambda url, timeout=4.0: True)
     monkeypatch.setattr(boot, "uv_path", lambda: None)
@@ -113,6 +137,7 @@ def test_install_dies_when_every_source_fails(monkeypatch, tmp_path):
 
 
 def test_flat_listing_success_installs_wheel_then_dependencies(monkeypatch, tmp_path):
+    fresh_torch(monkeypatch, "cu126")
     calls: list[list[str]] = []
 
     def ok_run(cmd, *a, **kw):
@@ -133,9 +158,163 @@ def test_flat_listing_success_installs_wheel_then_dependencies(monkeypatch, tmp_
     assert (
         "--upgrade" not in torch_calls[1] and "--index-url" in torch_calls[1]
     )  # deps only, keep the cu126 wheel
-    assert (
-        "--upgrade" not in torch_calls[1] and "--index-url" in torch_calls[1]
-    )  # deps only, keep the cu126 wheel
+
+
+@pytest.mark.parametrize(
+    ("system", "tag", "driver", "nvidia"),
+    [
+        ("Windows", "cu128", 580, True),
+        ("Linux", "cu126", 560, True),
+        ("Darwin", "cpu", None, False),
+        ("Windows", "cpu", None, False),
+        ("Linux", "cpu", None, False),
+        ("Windows", "cpu", 580, True),
+    ],
+)
+def test_platform_bootstrap_includes_routine_training_dependencies(monkeypatch, system, tag, driver, nvidia):
+    monkeypatch.setattr(boot.platform, "system", lambda: system)
+    monkeypatch.setattr(boot, "nvidia_driver_major", lambda: driver)
+    extras = set(boot.choose_extras(tag).split(","))
+    assert {"models", "server", "optim", "logging"} <= extras
+    assert ("nvidia" in extras) is nvidia
+    assert not {"cuda", "tagging", "wandb"} & extras
+
+
+def test_launch_dependency_groups_include_real_optimizer_names_and_no_removed_features():
+    try:
+        import tomllib
+    except ImportError:
+        import tomli as tomllib
+    with (boot.ROOT / "pyproject.toml").open("rb") as source:
+        groups = tomllib.load(source)["project"]["optional-dependencies"]
+    assert "schedulefree>=1.4" in groups["optim"]
+    assert "prodigy-plus-schedule-free>=2.0" in groups["optim"]
+    assert "tensorboard>=2.16" in groups["logging"]
+    assert not any(
+        "wandb" in requirement or "onnxruntime" in requirement
+        for requirements in groups.values()
+        for requirement in requirements
+    )
+    assert not any("nvidia" in requirement for requirement in groups["server"])
+
+
+def existing_environment(monkeypatch, tmp_path):
+    monkeypatch.setattr(boot, "VENV", tmp_path / "venv")
+    monkeypatch.setattr(boot, "MARKER", tmp_path / "venv" / "marker.json")
+    boot.venv_python().parent.mkdir(parents=True)
+    boot.venv_python().touch()
+    monkeypatch.setattr(
+        boot,
+        "index_chains",
+        lambda *args: ([boot.PYPI_OFFICIAL], [("index-url", boot.TORCH_OFFICIAL.format(tag="cu128"))]),
+    )
+    monkeypatch.setattr(boot, "uv_path", lambda: None)
+    versions = {"torch": "2.5.1+cu124", "numpy": "1.26.4", "nvidia-cudnn-cu12": "9.1.0", "triton": "3.1.0"}
+    monkeypatch.setattr(boot, "installed_versions", lambda: versions.copy())
+    monkeypatch.setattr(boot, "torch_runtime", lambda: {"version": versions["torch"], "cuda": "12.4"})
+    monkeypatch.setattr(boot, "dependency_issues", lambda extras: [])
+    return versions
+
+
+@pytest.mark.parametrize("use_uv", [False, True])
+def test_incremental_setup_preserves_native_stack_and_only_adds_required_dependencies(
+    monkeypatch, tmp_path, use_uv
+):
+    versions = existing_environment(monkeypatch, tmp_path)
+    if use_uv:
+        monkeypatch.setattr(boot, "uv_path", lambda: "uv")
+        monkeypatch.setattr(boot, "uv_cache_dir", lambda _: tmp_path)
+    commands, pinned = [], []
+
+    def install(command, **kwargs):
+        commands.append(command)
+        assert "--upgrade" not in command and "torch>=2.4" not in command
+        if "--constraint" in command:
+            pinned.append(Path(command[command.index("--constraint") + 1]).read_text())
+        return type("Result", (), {"returncode": 0})()
+
+    monkeypatch.setattr(boot.subprocess, "run", install)
+    boot.ensure_venv("cu128", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE + ",nvidia")
+    assert len(pinned) == 1
+    assert all(f"{name}=={version}\n" in pinned[0] for name, version in versions.items())
+    assert any(f"[{boot.EXTRAS_BASE},nvidia]" in " ".join(command) for command in commands)
+    assert json.loads(boot.MARKER.read_text())["torch_version"] == "2.5.1+cu124"
+
+
+def test_matching_marker_repairs_a_missing_dependency_and_then_skips_network(monkeypatch, tmp_path):
+    existing_environment(monkeypatch, tmp_path)
+    boot.MARKER.write_text(json.dumps({"signature": boot.install_signature("cpu", boot.EXTRAS_BASE)}))
+    checks = iter([["schedulefree is missing"], []])
+    monkeypatch.setattr(boot, "dependency_issues", lambda _: next(checks))
+    commands = []
+    monkeypatch.setattr(
+        boot.subprocess,
+        "run",
+        lambda command, **kwargs: commands.append(command) or type("Result", (), {"returncode": 0})(),
+    )
+    boot.ensure_venv("cpu", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE)
+    assert any("-e" in command for command in commands)
+    monkeypatch.setattr(boot, "dependency_issues", lambda _: [])
+    commands.clear()
+    boot.ensure_venv("cpu", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE)
+    assert commands == []
+
+
+def test_unexpected_native_dependency_change_does_not_mark_install_success(monkeypatch, tmp_path):
+    versions = existing_environment(monkeypatch, tmp_path)
+
+    def install(command, **kwargs):
+        if "-e" in command:
+            versions["torch"] = "9.0.0"
+        return type("Result", (), {"returncode": 0})()
+
+    monkeypatch.setattr(boot.subprocess, "run", install)
+    with pytest.raises(SystemExit):
+        boot.ensure_venv("cpu", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE)
+    assert not boot.MARKER.exists()
+
+
+@pytest.mark.parametrize("system", ["Windows", "Linux", "Darwin"])
+def test_first_cpu_install_uses_cpu_channel_except_apple_mps(monkeypatch, tmp_path, system):
+    fresh_torch(monkeypatch, "cpu")
+    monkeypatch.setattr(boot.platform, "system", lambda: system)
+    monkeypatch.setattr(boot, "VENV", tmp_path / "venv")
+    monkeypatch.setattr(boot, "MARKER", tmp_path / "venv" / "marker.json")
+    boot.venv_python().parent.mkdir(parents=True)
+    boot.venv_python().touch()
+    monkeypatch.setattr(boot, "uv_path", lambda: None)
+    commands = []
+    monkeypatch.setattr(
+        boot.subprocess,
+        "run",
+        lambda command, **kwargs: commands.append(command) or type("Result", (), {"returncode": 0})(),
+    )
+    boot.ensure_venv("cpu", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE)
+    torch_command = next(command for command in commands if "torch>=2.4" in command)
+    source = torch_command[torch_command.index("--index-url") + 1]
+    assert source == (boot.PYPI_OFFICIAL if system == "Darwin" else "https://download.pytorch.org/whl/cpu")
+
+
+def test_dependency_health_probe_checks_selected_extras_and_transitive_metadata(monkeypatch, tmp_path):
+    def distribution(name, requirements):
+        root = tmp_path / f"{name}-1.0.dist-info"
+        root.mkdir()
+        (root / "METADATA").write_text(
+            f"Metadata-Version: 2.1\nName: {name}\nVersion: 1.0\n"
+            + "".join(f"Requires-Dist: {value}\n" for value in requirements)
+        )
+
+    distribution(
+        "ypuddin",
+        ["pipeline-helper>=1", "missing-optional; extra == 'optim'", "never-required; extra == 'cuda'"],
+    )
+    distribution("pipeline_helper", ["missing-transitive>=2"])
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+    monkeypatch.setattr(boot, "venv_python", lambda: Path(sys.executable))
+    issues = boot.dependency_issues("optim")
+    assert any("missing-optional" in issue for issue in issues)
+    assert any("missing-transitive" in issue for issue in issues)
+    assert not any("never-required" in issue for issue in issues)
 
 
 def test_needs_copy_link_mode():

@@ -21,14 +21,14 @@ git clone <本仓库> YPuddinTrainStudio && cd YPuddinTrainStudio/xiangmuyuanma
 studio.bat             # Windows（双击或在 PowerShell 里 .\studio.bat）
 ```
 
-第一次运行会依次：创建 `venv` → 选择 PyTorch 安装来源（NVIDIA 按驱动和显卡判断 CUDA 版本；macOS 使用含 MPS 支持的 PyPI 轮子）→ 安装 `ypuddin[models,server]`（Linux+CUDA 再加 `cuda,optim`）→ 有符合版本要求的 Node 则构建前端 → 启动服务 → 打开浏览器。初始地址为 `http://127.0.0.1:8765/`；保存过 host/port 设置后，下次启动使用保存值，命令行参数优先。后续运行会按依赖签名和前端构建状态做增量检查。
+第一次运行会依次：创建 `venv` → 选择 PyTorch 安装来源（NVIDIA 按驱动和显卡判断 CUDA 版本；macOS 使用含 MPS 支持的 PyPI 轮子）→ 安装 `ypuddin[models,server,optim,logging]`（NVIDIA 主机再加 `nvidia`，不自动安装注意力扩展）→ 有符合版本要求的 Node 则构建前端 → 启动服务 → 打开浏览器。初始地址为 `http://127.0.0.1:8765/`；保存过 host/port 设置后，下次启动使用保存值，命令行参数优先。后续运行按启动器/依赖签名、实际缺包及前端构建指纹做增量检查，保留已安装的 Torch/CUDA/Numpy 原生栈。
 
 常用参数（`.sh` 与 `.bat` 一致）：
 
 | 参数 | 作用 |
 |---|---|
 | `--port 8800` / `--host 0.0.0.0` / `--data-root /data/studio` | 覆盖服务端口 / 绑定地址 / 数据目录。初始默认 `127.0.0.1`、`8765`、`./studio_data`；host/port 可从设置读取，data-root 始终由本次启动参数决定 |
-| `--torch=cu128` | 强制 PyTorch 来源：`cu128` `cu126` `cu124` `cu118` `cpu`。默认 `auto`：脚本识别到 Blackwell 时选 cu128 并检查驱动；其余按驱动主版本 ≥570→cu128、≥560→cu126、≥550→cu124、≥450→cu118，否则 cpu。macOS 自动使用 PyPI 的 CPU/MPS 轮子。这是安装选择规则，安装后仍应通过 `doctor` 和真实 smoke 验证 |
+| `--torch=cu128` | 首次安装或 `--reinstall` 时选择 PyTorch 来源：`cu128` `cu126` `cu124` `cu118` `cpu`。默认 `auto`：脚本识别到 Blackwell 时选 cu128 并检查驱动；其余按驱动主版本 ≥570→cu128、≥560→cu126、≥550→cu124、≥450→cu118，否则 cpu。macOS 自动使用 PyPI 的 CPU/MPS 轮子。这是安装选择规则，安装后仍应通过 `doctor` 和真实 smoke 验证 |
 | `--index=auto\|cn\|official` | 包源。`auto` / `cn`（默认）：镜像优先——中科大 → 清华 → 阿里 → 官方兜底，某个源缺包或报错就自动换下一个，探测不通的源先排到后面；CUDA 轮子走阿里 → 上交 → 官方。`official`：普通依赖官方优先、镜像兜底，CUDA 轮子使用官方索引。`--mirror` 等价于 `--index=cn` |
 | `--reinstall` | 删掉 `venv` 重装，不删除服务数据、模型、数据集或自定义输出目录 |
 | `--no-browser` / `--no-frontend` | 不自动开浏览器 / 不构建前端（只要 API） |
@@ -59,8 +59,8 @@ uv pip install --python venv/bin/python torch --index-url https://download.pytor
 #   uv pip install --python venv/bin/python --no-index --no-deps --find-links https://mirrors.aliyun.com/pytorch-wheels/cu128 torch \
 #     && uv pip install --python venv/bin/python torch --index-url https://mirrors.ustc.edu.cn/pypi/simple   # 再补依赖
 #   其余依赖可加 --index-url https://mirrors.ustc.edu.cn/pypi/simple（或 pypi.tuna.tsinghua.edu.cn/simple、mirrors.aliyun.com/pypi/simple）
-uv pip install --python venv/bin/python -e ".[models,server]"           # 训练 + 服务
-uv pip install --python venv/bin/python -e ".[cuda,optim]"              # CUDA 可选：bitsandbytes 8-bit、Prodigy 等
+uv pip install --python venv/bin/python -e ".[models,server,optim,logging]"           # 训练 + 服务
+uv pip install --python venv/bin/python -e ".[cuda,nvidia]"              # CUDA 可选：bitsandbytes 8-bit、Prodigy 等
 uv pip install --python venv/bin/python sageattention                   # 可选：仅无梯度采样使用 Sage，训练反向保持 SDPA
 cd frontend && npm ci && npm run build && cd ..                          # 可选：Web 界面
 venv/bin/ypuddin serve --host 127.0.0.1 --port 8765 --data-root studio_data
@@ -72,12 +72,13 @@ macOS 将上面的 PyTorch 安装行改为 `uv pip install --python venv/bin/pyt
 |---|---|
 | `models` | transformers / huggingface-hub / sentencepiece —— 加载 Qwen3 文本编码器与分词器（Anima 必需） |
 | `server` | fastapi / uvicorn / psutil —— Web 服务（只用 CLI 训练可不装） |
-| `cuda` | bitsandbytes（`optimizer.type = "adamw8bit"`）、nvidia-ml-py（GPU 监控） |
-| `optim` | prodigyopt、prodigy-plus-schedulefree、pytorch-optimizer |
-| `logging` | tensorboard、wandb |
+| `cuda` | bitsandbytes（`optimizer.type = "adamw8bit"`），可选 |
+| `nvidia` | nvidia-ml-py（NVIDIA GPU 监控，启动器按平台选择） |
+| `optim` | schedulefree、lion-pytorch、prodigyopt、prodigy-plus-schedule-free、pytorch-optimizer |
+| `logging` | tensorboard；前端实时日志不依赖云端服务 |
 | `dev` | pytest、ruff、httpx（开发） |
 
-TensorBoard / W&B 已接入训练日志；需要先安装 `.[logging]`，再开启 `logging.tensorboard` 或配置 `logging.wandb`。Schedule-Free 优化器已接通训练与评估模式切换，需要对应优化器依赖。`optimizer.fused_backward = true` 尚未实现，配置会明确拒绝。
+启动器默认安装本地日志和常用优化器依赖，无需从环境页逐项安装。W&B 不再提供安装与前端入口，历史配置仍可读取。`optimizer.fused_backward = true` 尚未实现，配置会明确拒绝。
 
 ## 4. 目录与数据
 
@@ -87,12 +88,14 @@ xiangmuyuanma/
 ├── studio_data/          服务数据目录（--data-root 可改），包含：
 │   ├── studio.db         SQLite：项目 / 版本 / 数据集 / 任务 / 产物 / 模型注册表
 │   ├── settings.json     「系统设置」页保存的设置
-│   ├── projects/<pid>/
-│   │   └── versions/<vid>/
+│   ├── project/<project_id>/
+│   │   └── v1/（新版本依次 v2、v3…）
 │   │       ├── config.json   本版本配置草稿
-│   │       ├── datasets/     本版本图片、caption 和 Mask 独立副本
+│   │       ├── traindata/    本版本训练图片、caption 和 Mask 独立副本
+│   │       ├── reg/          本版本正则数据，按批次分目录
+│   │       ├── samples/<jid>/ 每次训练的采样图
 │   │       ├── cache/        同版本任务共享的编码缓存
-│   │       └── runs/<jid>/   每次训练：配置快照、事件、日志、权重、samples/、state-*/
+│   │       └── output/<jid>/ 每次训练：配置快照、事件、日志、权重、state-*/
 │   ├── runs/             不属于任何项目的任务
 │   ├── datasets/         数据集索引（图片哈希、尺寸、caption 路径）
 │   ├── cache/            全局图片索引与无项目任务的共享缓存
@@ -106,11 +109,11 @@ xiangmuyuanma/
 - **备份**包括 `studio_data/`、自定义输出目录以及外部原始数据集的图片/caption/mask；模型权重也应另行保存或记录可重获来源。缓存可重建，完整训练断点不能用推理权重代替。
 - 模型权重放哪都行，在界面「模型权重」页注册或在配置里填绝对路径；建议一个固定目录（如 `/models`），并在「系统设置」里把 `paths.models_dir` 指向它。
 - 数据集是一个图片目录（递归），每张图旁边同名 `.txt` 是 caption；`.mask.png` 或 alpha 通道可做遮罩 loss。v0.4 的上传与服务器目录导入保存为当前版本的独立副本，caption/Mask 编辑修改该副本。旧迁移数据或高级 TOML 直接引用的外部目录仍使用原文件，不会仅因升级自动复制。
-- 旧项目迁移成兼容 v1 时不移动文件：原 `projects/<pid>/config.json` 继续作为该版本草稿，历史任务读取原运行/缓存/断点路径；新任务采用版本目录。详细布局见 [v0.4 项目版本说明](UI_VERSIONS_2026-09-11.md)。
+- 旧项目迁移成兼容 v1 时不移动文件：原 `projects/<pid>/config.json` 继续作为该版本草稿，历史任务读取原运行/缓存/断点路径；新任务采用版本目录。新项目采用手填 ID 和上述 vN 目录；既有 projects 布局不移动。详见 [v0.5.1 目录说明](UI_SIMPLIFICATION_2026-09-12.md)。
 
 ### 路径设置何时生效
 
-`paths.cache_dir` 与 `paths.output_dir` 影响**新建任务**；默认保留上面的版本目录结构。自定义目录时按 `<项目 ID>/<版本 ID>` 分目录，无项目任务使用共享缓存或独立运行目录。旧任务保存自己的配置和运行路径，修改设置不会搬迁旧缓存、权重或断点。`paths.models_dir` 是默认模型扫描目录。相对数据/模型路径在服务接收任务时按服务工作目录解析，建议使用绝对路径。
+`paths.cache_dir` 与 `paths.output_mode=custom` 下的 `paths.output_dir` 影响**新建任务**；默认保留上面的版本目录结构。新项目自定义输出按 `<项目 ID>/vN/<任务 ID>` 分目录，无项目任务使用共享缓存或独立运行目录。旧任务保存自己的配置和运行路径，修改设置不会搬迁旧缓存、权重或断点。`paths.models_dir` 是默认模型扫描目录。相对数据/模型路径在服务接收任务时按服务工作目录解析，建议使用绝对路径。
 
 `server.host` / `server.port` 保存后在下次启动生效，`--host` / `--port` 优先覆盖保存值。`paths.data_root` 展示本次启动的数据目录；设置接口拒绝把它改成另一目录。切换数据目录应先迁移所需数据，再用 `--data-root` 启动，不能靠设置页完成迁移。
 
@@ -295,6 +298,6 @@ ypuddin serve    --port 8765 --data-root studio_data
 
 新增原生分辨率是可选模式，旧分桶配置不会自动切换。到「训练参数 → 数据与分桶」选择原生模式并查看实际尺寸分组、缩小图片数和训练步数。更换分辨率模式或修改素材后重新检查准备状态。
 
-使用 WD14 时，在「设置 → 模型权重」下载推荐的本地打标模型和标签表，在「设置 → 运行环境」安装 ONNX Runtime，按提示重启服务。随后进入项目版本「训练数据 → 标签与遮罩」，选择图片并生成标签；取消、重试和恢复均在操作记录中。可选依赖也可在停服后通过本项目解释器执行 `python -m pip install -e '.[tagging]'` 安装。运行环境页会保护已有 GPU 版 ONNX Runtime；使用该 GPU 版时无需再安装 CPU 包。
+自动打标已移除；在项目版本“标签查看”中选择图片读取已有标签，必要时进入逐图编辑器。正则数据在“正则图”步骤导入或生成，每批文件保存在本版本 reg 目录；生成/收集成功后自动登记为正则训练来源。
 
-Hugging Face 与 ModelScope 令牌在模型权重页分别管理，保存到运行数据目录的 `secrets.json`。更新代码时保留该文件，分享源码或打包时排除它。完整用法和本轮验证边界见 [v0.5 验收报告](UI_PIPELINE_2026-09-11.md)。
+Hugging Face 与 ModelScope 令牌在模型权重页分别管理，保存到运行数据目录的 `secrets.json`。更新代码时保留该文件，分享源码或打包时排除它。完整用法与验证边界见 [v0.5.1 说明](UI_SIMPLIFICATION_2026-09-12.md)。

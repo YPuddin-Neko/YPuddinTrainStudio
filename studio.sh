@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # YPuddin Train Studio —— Linux / macOS 一键启动脚本
 #
-#   ./studio.sh                    首次运行：创建 venv、按显卡驱动安装 CUDA 版 PyTorch、安装依赖、
-#                                  构建前端、启动服务并打开浏览器；之后再运行只做增量检查
+#   ./studio.sh                    首次运行：创建 venv、按平台安装 CUDA / MPS / CPU PyTorch、
+#                                  自动安装模型加载、优化器、本地日志和适用的 NVIDIA 监控依赖；
+#                                  构建前端并启动。之后只补缺失依赖，保留已安装的 Torch/CUDA。
 #   ./studio.sh --port 8800        换端口（默认 8765；还有 --host、--data-root）
-#   ./studio.sh --torch=cu126      强制 PyTorch 版本：cu128 cu126 cu124 cu118 cpu（默认按显卡/驱动自动选）
+#   ./studio.sh --torch=cu126      首次安装或 --reinstall 时选 PyTorch：cu128 cu126 cu124 cu118 cpu
 #   ./studio.sh --index=cn         强制国内镜像优先（中科大 → 清华 → 阿里 → 官方；默认自动探测）
 #   ./studio.sh --reinstall        删掉 venv 重装（studio_data/ 里的项目和权重不受影响）
 #   ./studio.sh dev                后端 + Vite 热更新前端（前端开发用）

@@ -1,14 +1,14 @@
 import type { Project } from '../api/types';
 
-export type VersionedProject = Project & { active_version_id?: string | null; version_count?: number };
+export type VersionedProject = Project & { active_version_id?: string | null; version_count?: number; layout_version?: number };
 export interface ProjectVersion {
-  id: string; project_id: string; name: string; note: string; archived: boolean;
+  id: string; project_id: string; number?: number; name: string; note: string; archived: boolean;
   parent_version_id?: string | null; status: 'copying' | 'ready' | 'failed';
   created_at: number; updated_at: number; dataset_ids: string[]; busy?: boolean;
   progress?: { phase: string; files_done: number; files_total: number; bytes_done: number; bytes_total: number };
   error?: string | null;
   stats: { datasets: number; images: number; jobs: number; artifacts: number };
-  paths: { root: string; config: string; datasets: string; runs: string; cache: string };
+  paths: { root: string; config: string; datasets: string; runs: string; cache: string; traindata?: string; reg?: string; samples?: string; output?: string };
 }
 export function projectUrl(projectId: string, versionId?: string | null, step?: string) {
   const base = `/projects/${encodeURIComponent(projectId)}${versionId ? `/v/${encodeURIComponent(versionId)}` : ''}`;

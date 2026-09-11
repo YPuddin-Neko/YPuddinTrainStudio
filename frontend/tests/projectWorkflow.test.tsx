@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { handlers } from '../src/mocks/handlers';
 import Projects from '../src/pages/Projects/Projects';
 import ProjectDetail from '../src/pages/ProjectDetail/ProjectDetail';
+import ProjectDataImport from '../src/pages/ProjectDetail/ProjectDataImport';
 import TrainConfig from '../src/pages/TrainConfig/TrainConfig';
 import { schemaDefaults } from '../src/utils/config';
 import { fillDefaultModels } from '../src/utils/workspaceConfig';
@@ -83,6 +84,7 @@ describe('project training workspace', () => {
     show('/projects');
     fireEvent.click(screen.getByRole('button', { name: '新建项目' }));
     fireEvent.change(screen.getByTestId('project-name-input'), { target: { value: 'Character workspace' } });
+    fireEvent.change(screen.getByTestId('project-id-input'), { target: { value: 'p_work' } });
     fireEvent.click(within(screen.getByTestId('create-project-modal')).getByRole('button', { name: '创建' }));
     await screen.findByTestId('project-data-import');
     expect(screen.getByRole('navigation', { name: '项目训练步骤' })).toBeInTheDocument();
@@ -131,6 +133,25 @@ describe('project training workspace', () => {
     expect(screen.getByRole('button', { name: '上传并添加到项目' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: '清空选择' }));
     expect(screen.getByRole('button', { name: '上传并添加到项目' })).toBeDisabled();
+  });
+
+  it('uploads regularization images into the explicit version with source metadata', async () => {
+    let fields:Record<string,string>={};let scope='';const imported=vi.fn();
+    server.use(http.post('/api/projects/p_work/datasets/upload',async({request})=>{
+      scope=new URL(request.url).searchParams.get('version_id')||'';
+      const form=await request.formData();fields=Object.fromEntries(['is_reg','prior_weight','class_prompt','repeats','caption_ext'].map(key=>[key,String(form.get(key))]));
+      expect(form.getAll('files')).toHaveLength(2);
+      return HttpResponse.json({...indexed,source:{...source,is_reg:true,version_id:'v2'}});
+    }));
+    render(<MemoryRouter><ProjectDataImport projectId="p_work" versionId="v2" defaultIsReg onImported={imported}/></MemoryRouter>);
+    expect(screen.getByRole('checkbox',{name:'这是正则化数据集（先验保持）'})).toBeChecked();
+    expect(screen.getByRole('checkbox',{name:'这是正则化数据集（先验保持）'})).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('选择训练文件'),{target:{files:[new File(['image'],'class.png'),new File(['a person'],'class.txt')]}});
+    fireEvent.change(screen.getByRole('textbox',{name:'类别提示词'}),{target:{value:'a person'}});
+    fireEvent.change(screen.getByRole('spinbutton',{name:'先验保持权重'}),{target:{value:'0.5'}});
+    fireEvent.click(screen.getByRole('button',{name:'上传并添加到项目'}));
+    await waitFor(()=>expect(imported).toHaveBeenCalledOnce());
+    expect(scope).toBe('v2');expect(fields).toEqual({is_reg:'true',prior_weight:'0.5',class_prompt:'a person',repeats:'1',caption_ext:'.txt'});
   });
 
   it('imports a training-machine path and includes regularization fields', async () => {

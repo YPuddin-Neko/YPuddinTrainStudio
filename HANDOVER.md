@@ -1,12 +1,12 @@
 # YPuddin Train Studio — 项目交接报告
 
 > 写给接手本项目的模型/工程师。本文自洽：读完这一份 + 点开的几个文件，就能不需要前任任何上下文地继续开发。
-> 日期：2026-09-11 · 仓库：`xiangmuyuanma/` · 本文在原交接资料基础上按源码审计与修复验收更新；当前源码与前端版本为 0.5.0，交付证据见本轮报告。
+> 日期：2026-09-12 · 仓库：`xiangmuyuanma/` · 本文在原交接资料基础上按源码审计与修复验收更新；当前源码与前端版本为 0.5.1，交付证据见本轮报告。
 
 ## 0. 先读这三个文件
 
 1. 本文。
-2. `docs/UI_PIPELINE_2026-09-11.md` —— 最新 v0.5.0 数据准备、交互验证与下载来源；`docs/native-resolution.md` 解释原生尺寸、像素预算和真实梯度规则。`docs/UI_VERSIONS_2026-09-11.md` 保留 v0.4.0 版本/目录迁移记录。更早 UI_WORKFLOW、UI_REDESIGN、FIX_REPORT 与 COMPLETION_AUDIT 是历史证据。
+2. `docs/UI_SIMPLIFICATION_2026-09-12.md` —— 最新 v0.5.1 界面、可读项目目录、正则图与自动打标移除说明。`docs/UI_PIPELINE_2026-09-11.md` —— 历史 v0.5.0 数据准备、交互验证与下载来源；`docs/native-resolution.md` 解释原生尺寸、像素预算和真实梯度规则。`docs/UI_VERSIONS_2026-09-11.md` 保留 v0.4.0 版本/目录迁移记录。更早 UI_WORKFLOW、UI_REDESIGN、FIX_REPORT 与 COMPLETION_AUDIT 是历史证据。
 3. `docs/design/03-status.md` —— 逐组件状态表与运行方式。
 
 ## 1. 项目定位
@@ -18,14 +18,22 @@
 - **形态**：Python 包 `ypuddin`（CLI + FastAPI 服务）+ `frontend/`（React/Vite 界面，可选）。一键脚本 `studio.sh` / `studio.bat`。
 - 许可证 Apache-2.0（参考项目里 diffusion-pipe 与 AnimaLoraStudio 是 GPL——只读不抄；sd-scripts / musubi-tuner 是 Apache-2.0，vendor 的代码见 §7）。
 
-## 2. 当前状态（v0.5.0 流水线与原生分辨率）
+## 2. 当前状态（v0.5.1 项目目录与正则图）
+
+本轮最终回归：后端 **536 passed / 3 CUDA skipped**，前端 **220 tests passed**；lint、TypeScript 与生产构建通过。实际浏览器新建项目、Toy 正则生成、标签查看、路径和顶栏布局均已验收，详见 `docs/validation/v0.5.1.json` 与 `docs/screenshots/v0.5.1/`。
 
 当前是具备实际训练、数据上传到训练启动的 Web 工作流的集成验证版本；官方 Anima / Krea 2 全尺寸权重和 NVIDIA 路径仍待验收，不能称为所有功能已完成。
+
+- v0.5.1 新项目采用用户填写的 ASCII ID、独立多语言显示名称、`project/<id>/vN` 物理目录；traindata/reg 与 samples/output 分离，采样和产物按任务 ID 隔离。新增 output_mode 明确默认项目路径与自定义根；旧项目和旧任务路径不迁移。
+- 正则图提供本地无适配器底模生成、限定站点网络收集与手动导入；后台独立任务具备版本锁、GPU/环境互斥、暂存发布、取消和恢复。仅完整批次登记 is_reg 数据源；不继承主体 trigger、不参与自动 val split。当前混合加权均值损失不等同于独立 train/reg 两项平均。
+- WD14 自动打标、模型推荐下载和生成 API 已撤下，前端改成图片与完整原标签查看；历史标签、备份和已下载资产保留。W&B 入口与默认依赖撤下，旧配置读取兼容。
+- 顶栏移除正常状态占位，侧栏品牌和底部等宽主题/语言控件重做；版本号移到设置服务信息。StudioSelect统一弹出菜单/键盘/主题/视窗定位；设置运行环境只显示主要后端与注意力加速。
+- 启动默认 models/server/optim/logging，NVIDIA额外安装监控；增量升级同时检查脚本/依赖指纹和真实缺包，保护已安装Torch/CUDA/Numpy，不在运行环境页逐包管理普通依赖。当前证据见 `docs/validation/v0.5.1.json`；下文旧统计及WD14验收均为历史记录。
 
 - v0.5 数据操作由 `server/dataset_pipeline.py` 管理，检查、排除、裁剪、缩放和标签修改都有操作记录与备份。准备到入队原子移交版本锁；修改数据会使旧准备结果过期。可视裁剪与 Mask 同步，撤销有外部修改冲突保护。
 - 原生模式由 `data/native.py` 和 `train/trainer.py::_run_native_epoch` 实现：尺寸对齐裁剪、像素预算、异尺寸逻辑批次、按图片数归一化梯度。未实现 NaViT 序列打包；不额外依赖变长注意力或强制 latent 缓存。不要把分组数误作逻辑批次/优化器步数。
 - 预设应用保留当前版本的训练/验证数据源、缓存、输出和恢复路径；保存预设移除这些运行字段。修改来源 caption 扩展名会同步本版本数据索引与逐图编辑器，图片/Mask 后缀不可用作标签后缀。
-- 本地 WD14 在可取消的隔离子进程运行；官方固定版本的 ONNX/标签表通过模型目录下载，ONNX Runtime 可从环境页安装，图片不上传云端。推理结果由数据流水线统一备份、发布和撤销；环境维护与打标互斥。
+- **历史 v0.5.0（v0.5.1 已移除此功能）**：本地 WD14 曾在可取消的隔离子进程运行；官方固定版本的 ONNX/标签表通过模型目录下载，ONNX Runtime 可从环境页安装，图片不上传云端。推理结果由数据流水线统一备份、发布和撤销；环境维护与打标互斥。
 - HF/ModelScope 凭证与公开设置分离，`secrets.json` 中是本机凭证，不是加密保险箱。API 只回传已配置状态，镜像匿名、跨域跳转移除认证头；不要把令牌写进配置、日志、截图、源码包或公共错误响应。
 - 高级参数块按顺序排列、组内分列，概率编辑显示百分比。SSE 有无事件检测和重连，避免服务重启后监控静默保留旧值。本轮后端 **483 通过 / 3 CUDA 跳过**、前端 **176 通过**；类型检查、lint、生产构建、真实 WD14 CPU 推理、两次 6 步 Toy/MPS 原生训练及 16 份采样/权重下载核对通过。浏览器证据见 UI_PIPELINE 与 `docs/validation/v0.5.0.json`，下面的测试数量均为历史记录。
 

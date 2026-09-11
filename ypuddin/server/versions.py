@@ -64,9 +64,15 @@ def version_row(c: Any, row: dict) -> dict:
         "paths": {
             "root": str(data_root),
             "config": str(c.config_path(pid, vid)),
-            "datasets": str(data_root / "datasets"),
+            "datasets": str(data_root / "datasets") if row["legacy_layout"] else str(c.dataset_dir(pid, vid)),
             "runs": str(c.runs_dir(pid, vid)),
             "cache": str(c.cache_dir(pid, vid)),
+            "traindata": str(data_root / "datasets")
+            if row["legacy_layout"]
+            else str(c.dataset_dir(pid, vid)),
+            "reg": str(c.reg_dir(pid, vid)),
+            "samples": str(c.samples_dir(pid, vid)),
+            "output": str(c.runs_dir(pid, vid)),
         },
     }
 
@@ -180,11 +186,15 @@ class VersionManager:
                     "wait for dataset indexing before creating a snapshot", code="version.busy", status=409
                 )
             vid = new_id("v")
+            number = c.db.fetchone(
+                "SELECT coalesce(max(number),0)+1 n FROM project_versions WHERE project_id=?", (pid,)
+            )["n"]
             t = now()
             c.db.insert(
                 "project_versions",
                 {
                     "id": vid,
+                    "number": number,
                     "project_id": pid,
                     "name": name,
                     "note": note,
@@ -212,7 +222,7 @@ class VersionManager:
 
         c = self.c
         staging = None
-        final = c.project_dir(pid) / "versions" / vid
+        final = None
         registered = []
         promoted = False
         progress = {"phase": "planning", "files_done": 0, "files_total": 0, "bytes_done": 0, "bytes_total": 0}
@@ -229,7 +239,7 @@ class VersionManager:
             update()
 
         try:
-            c.version_dir(pid, vid)  # Validate managed parents inside the failure/cleanup boundary.
+            final = c.version_dir(pid, vid)  # Validate inside the failure/cleanup boundary.
             final.parent.mkdir(parents=True, exist_ok=True)
             staging = Path(tempfile.mkdtemp(prefix=f".copy-{vid}-", dir=final.parent))
             sources = config.setdefault("dataset", {}).setdefault("sources", [])
@@ -259,14 +269,17 @@ class VersionManager:
                             "source": item,
                             "origin_path": origins.get(key) or key,
                             "manifest": file_manifest(path),
-                            "relative": Path("datasets") / dataset_directory_name(did, path),
+                            "relative": c.dataset_dir(pid, vid, is_reg=bool(item.get("is_reg"))).relative_to(
+                                final
+                            )
+                            / dataset_directory_name(did, path),
                         }
                 progress["files_total"] = sum(len(e["manifest"]) for e in entries.values())
                 progress["bytes_total"] = sum(size for e in entries.values() for _, size, _ in e["manifest"])
                 progress["phase"] = "copying"
                 update()
                 for e in entries.values():
-                    (staging / "datasets").mkdir(exist_ok=True)
+                    (staging / e["relative"].parent).mkdir(parents=True, exist_ok=True)
                     copy_source(e["path"], staging / e["relative"], e["manifest"], copied)
                 for item in [*sources, *validation]:
                     item["path"] = str(
@@ -276,12 +289,22 @@ class VersionManager:
                 config["dataset"]["sources"] = []
                 config["validation"]["sources"] = []
                 config["validation"]["enabled"] = False
-            config.setdefault("checkpoint", {}).update(
-                {"output_dir": str(c.runs_dir(pid, vid)), "resume": None}
-            )
+            checkpoint = config.setdefault("checkpoint", {})
+            if c.inherits_output_dir(pid, source_id, checkpoint.get("output_dir")):
+                checkpoint["output_dir"] = str(c.default_runs_dir(pid, vid))
+            checkpoint["resume"] = None
+            config.setdefault("sampling", {})["output_dir"] = None
             config.setdefault("adapter", {})["resume_weights"] = None
             config.setdefault("dataset", {})["cache_dir"] = str(c.cache_dir(pid, vid))
             config.setdefault("logging", {})["events_path"] = None
+            for directory in (
+                c.dataset_dir(pid, vid),
+                c.reg_dir(pid, vid),
+                c.samples_dir(pid, vid),
+                c.default_runs_dir(pid, vid),
+                final / "cache",
+            ):
+                (staging / directory.relative_to(final)).mkdir(parents=True, exist_ok=True)
             (staging / "config.json").write_text(
                 json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8"
             )
@@ -344,7 +367,7 @@ class VersionManager:
             c.bus.publish("version.changed", {"project_id": pid, "version_id": vid})
 
     def import_directory(self, pid: str, vid: str, body: Any) -> str:
-        from .routes_work import _register_dataset
+        from .routes_work import _register_dataset, get_project_config
 
         c = self.c
         source = Path(body.path).expanduser().resolve()
@@ -361,7 +384,23 @@ class VersionManager:
                     "this dataset directory is already imported", code="dataset.duplicate", status=409
                 )
             did = new_id("d")
-            root = c.version_dir(pid, vid) / "datasets"
+            is_reg = body.is_reg
+            if "is_reg" not in body.model_fields_set:
+                config = get_project_config(pid, c, vid)
+                match = next(
+                    (
+                        item
+                        for item in [
+                            *config.get("dataset", {}).get("sources", []),
+                            *config.get("validation", {}).get("sources", []),
+                        ]
+                        if Path(item["path"]).expanduser().resolve() == source
+                    ),
+                    None,
+                )
+                if match:
+                    is_reg = bool(match.get("is_reg"))
+            root = c.dataset_dir(pid, vid, is_reg=is_reg)
             if root.resolve().is_relative_to(source):
                 raise ApiError(
                     "dataset source cannot contain the managed dataset destination",

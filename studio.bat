@@ -18,8 +18,10 @@ REM Usage:
 REM   studio.bat                 first run: create venv, install the CUDA PyTorch
 REM                              matching your GPU, install deps, build frontend,
 REM                              start the server and open the browser
+REM                              Includes optimizers, local logs and NVIDIA monitoring.
+REM                              Later starts repair missing deps and preserve Torch/CUDA.
 REM   studio.bat --port 8800     change port (default 8765; also --host, --data-root)
-REM   studio.bat --torch=cu126   force PyTorch flavour: cu128 cu126 cu124 cu118 cpu
+REM   studio.bat --torch=cu126   first install/reinstall: cu128 cu126 cu124 cu118 cpu
 REM                              (default: auto by GPU compute capability + driver)
 REM   studio.bat --index=official  packages: official PyPI first (default: China
 REM                              mirrors first - USTC, Tsinghua, Aliyun, official last)
