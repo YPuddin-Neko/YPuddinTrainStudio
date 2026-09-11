@@ -125,4 +125,25 @@ describe('existing caption viewer',()=>{
     expect(vi.mocked(apiClient.get).mock.calls.every(([url])=>url==='/projects/p_1/datasets')).toBe(true);
     expect(apiClient.post).not.toHaveBeenCalled();
   });
+  it('resets only the image scroller when a real next page arrives and reveals next images without moving the outer page',async()=>{
+    let finish:(()=>void)|undefined;
+    vi.mocked(apiClient.get).mockImplementation(async(url,options)=>{
+      const params=options?.params as any;
+      if(url==='/projects/p_1/datasets')return [source('d_a')] as any;
+      if(params.page===2)await new Promise<void>(resolve=>{finish=resolve;});
+      return {items:params.page===2?[picture('next-first','next first'),picture('next-second','next second')]:[picture('old','old caption')],total:42,page:params.page,page_size:40} as any;
+    });
+    show();await screen.findByTestId('existing-caption');
+    const grid=screen.getByRole('region',{name:'图片缩略图'});const outer=grid.closest('section')!;outer.scrollTop=77;grid.scrollTop=900;
+    fireEvent.click(screen.getByRole('button',{name:'下一页'}));await waitFor(()=>expect(finish).toBeDefined());
+    expect(grid.scrollTop).toBe(900);expect(screen.getByTestId('existing-caption')).toHaveTextContent('old caption');
+    finish!();await waitFor(()=>expect(screen.getByTestId('existing-caption')).toHaveTextContent('next first'));
+    expect(grid.scrollTop).toBe(0);expect(outer.scrollTop).toBe(77);
+    const nextCard=screen.getByRole('button',{name:'查看标签: next-second.png'});
+    vi.spyOn(grid,'getBoundingClientRect').mockReturnValue({top:100,bottom:300,left:0,right:200,width:200,height:200,x:0,y:100,toJSON:()=>({})});
+    vi.spyOn(nextCard,'getBoundingClientRect').mockReturnValue({top:350,bottom:480,left:0,right:100,width:100,height:130,x:0,y:350,toJSON:()=>({})});
+    fireEvent.click(screen.getByRole('button',{name:'下一张'}));
+    expect(screen.getByTestId('existing-caption')).toHaveTextContent('next second');expect(grid.scrollTop).toBe(180);expect(outer.scrollTop).toBe(77);
+  });
+
 });

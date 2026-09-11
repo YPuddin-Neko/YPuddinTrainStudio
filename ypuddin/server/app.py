@@ -16,10 +16,12 @@ import ypuddin
 from . import (
     errors,
     routes_core,
+    routes_credentials,
     routes_dataset_masks,
     routes_dataset_pipeline,
     routes_environment,
     routes_model_downloads,
+    routes_model_recommendations,
     routes_regularization,
     routes_work,
 )
@@ -50,7 +52,7 @@ def create_app(
     model_downloads = ModelDownloads(context)
     environment = EnvironmentManager(context)
     dataset_pipeline = DatasetPipeline(context)
-    regularization = RegularizationManager(context)
+    regularization = RegularizationManager(context, credentials=model_downloads.credentials)
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -92,10 +94,12 @@ def create_app(
     app.include_router(routes_core.router, prefix="/api")
     app.include_router(routes_work.router, prefix="/api")
     app.include_router(routes_model_downloads.router, prefix="/api")
+    app.include_router(routes_model_recommendations.router, prefix="/api")
     app.include_router(routes_dataset_masks.router, prefix="/api")
     app.include_router(routes_dataset_pipeline.router, prefix="/api")
     app.include_router(routes_environment.router, prefix="/api")
     app.include_router(routes_regularization.router, prefix="/api")
+    app.include_router(routes_credentials.router, prefix="/api")
 
     dist = Path(frontend_dist) if frontend_dist else Path(__file__).resolve().parents[2] / "frontend" / "dist"
     if (dist / "index.html").exists():

@@ -120,7 +120,7 @@ describe('training monitor interactions and events', () => {
       { step: 10, kind: 'full', path: '/state-10', created_at: 1, size: 22 },
     ];
     emit('job.checkpoint', { job_id: 'job_01', step: 10 });
-    fireEvent.click(screen.getByRole('button', { name: /检查点/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /检查点/ }));
     expect(await screen.findByRole('link', { name: '下载' })).toHaveAttribute('href', 'http://localhost:3000/api/artifacts/art_test/download');
     expect(screen.getByText('仅权重 (EMA)')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '从此状态继续训练' }));
@@ -144,12 +144,12 @@ describe('training monitor interactions and events', () => {
     emit('job.sample', { ...step5, job_id: 'job_01' });
     emit('job.sample', { ...epoch1, job_id: 'job_01' });
     emit('job.sample', { ...epoch1, job_id: 'job_01' });
-    expect(screen.getByRole('button', { name: '采样图 (2)' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '采样图 (2)' })).toBeInTheDocument();
     await act(async () => releaseInitial());
-    await screen.findByRole('button', { name: '采样图 (3)' });
+    await screen.findByRole('tab', { name: '采样图 (3)' });
     emit('job.state', { job_id: 'other-job', status: 'completed' }); expect(requests).toBe(1);
     emit('job.state', { job_id: 'job_01', status: 'completed' });
-    const samples = await screen.findByRole('button', { name: '采样图 (5)' });
+    const samples = await screen.findByRole('tab', { name: '采样图 (5)' });
     expect(requests).toBe(2); fireEvent.click(samples);
     expect(screen.getAllByRole('img')).toHaveLength(5);
     expect(screen.getByRole('img', { name: 'initial' })).toBeInTheDocument();
@@ -170,7 +170,8 @@ describe('queue pagination', () => {
     fireEvent.click(screen.getByRole('button', { name: '下一页' }));
     await screen.findByText('Page 2');
     expect(requests[requests.length - 1].searchParams.get('page')).toBe('2');
-    fireEvent.change(screen.getByRole('combobox', { name: '任务状态筛选' }), { target: { value: 'failed' } });
+    fireEvent.click(screen.getByRole('tab', { name: /训练历史/ }));
+    fireEvent.click(screen.getByRole('combobox', { name: '状态筛选' })); fireEvent.click(screen.getByRole('option', { name: '失败' }));
     await screen.findByText('Page 1');
     expect(requests[requests.length - 1].searchParams.get('status')).toBe('failed');
   });

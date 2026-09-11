@@ -3,11 +3,12 @@ import { useSearchParams } from 'react-router-dom';
 import { EnvironmentManagerPanel } from '../../components/EnvironmentManagerPanel';
 import { useWorkspaceText } from '../../utils/workspaceText';
 const Models = React.lazy(() => import('../Models/Models'));
+const AccessKeys = React.lazy(() => import('./AccessKeys'));
 
 export default function EnvironmentSettings() {
   const text = useWorkspaceText();
   const [params] = useSearchParams();
   return <div data-testid="environment-settings"><React.Suspense fallback={<p role="status" className="settings-note">{text('正在加载…', 'Loading…')}</p>}>
-    {params.get('tab') === 'models' ? <Models embedded /> : <EnvironmentManagerPanel focusPackage={params.get('package') || undefined} />}
+    {params.get('tab') === 'credentials' ? <AccessKeys /> : params.get('tab') === 'models' ? <Models embedded /> : <EnvironmentManagerPanel focusPackage={params.get('package') || undefined} />}
   </React.Suspense></div>;
 }

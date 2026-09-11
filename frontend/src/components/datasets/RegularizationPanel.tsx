@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { FolderOpen, ImagePlus, Loader2, RefreshCw, X } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import { useWorkspaceText } from '../../utils/workspaceText';
@@ -8,6 +8,7 @@ import { formatApiError } from '../../utils/errors';
 import { projectUrl } from '../../utils/projectVersions';
 import StudioSelect from '../StudioSelect';
 import ProjectDataImport from '../../pages/ProjectDetail/ProjectDataImport';
+import type { CredentialStates } from '../../pages/Settings/AccessKeys';
 import './regularization.css';
 
 type Source = 'ai' | 'danbooru' | 'gelbooru';
@@ -22,6 +23,7 @@ const active = (task: RegularizationTask) => ['queued', 'running', 'cancelling']
 
 export default function RegularizationPanel({ projectId, versionId, readOnly = false, onChanged }: Props) {
   const text = useWorkspaceText();
+  const location = useLocation();
   const endpoint = `/projects/${projectId}/versions/${versionId}/regularization`;
   const [source, setSource] = useState<Source>('ai');
   const [prompt, setPrompt] = useState('');
@@ -35,8 +37,6 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
   const [weight, setWeight] = useState(1);
   const [repeats, setRepeats] = useState(1);
   const [excluded, setExcluded] = useState('');
-  const [username, setUsername] = useState('');
-  const [apiKey, setApiKey] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const notified = useRef(new Set<string>());
@@ -44,12 +44,21 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
   const changed = useRef(onChanged); changed.current = onChanged;
   useEffect(() => {
     loaded.current = false; notified.current.clear();
-    setPrompt(''); setError(''); setUsername(''); setApiKey('');
+    setPrompt(''); setError('');
   }, [projectId, versionId]);
   const query = useQuery({ queryKey: ['regularization', projectId, versionId],
     queryFn: () => apiClient.get<Snapshot>(endpoint, {silent:true}),
     refetchInterval: q => q.state.data?.operations.some(active) ? 1200 : false,
   });
+  const credentials = useQuery({ queryKey: ['credentials'], enabled: source !== 'ai',
+    queryFn: () => apiClient.get<CredentialStates>('/credentials', { silent: true }), staleTime: 0,
+  });
+  const refreshCredentials = credentials.refetch;
+  useEffect(() => {
+    const refresh = () => { if (source !== 'ai') void refreshCredentials(); };
+    window.addEventListener('credentials.changed', refresh);
+    return () => window.removeEventListener('credentials.changed', refresh);
+  }, [source, refreshCredentials]);
   useEffect(() => {
     const tasks = query.data?.operations;
     if (!tasks) return;
@@ -60,15 +69,15 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
   }, [query.data]);
   const current = query.data?.operations.find(active);
   const locked = readOnly || submitting || !!current;
+  const credentialsBlocked = source !== 'ai' && (credentials.isPending || !!credentials.error || (source === 'gelbooru' && !credentials.data?.gelbooru.configured));
   const start = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!prompt.trim() || locked) return;
+    if (!prompt.trim() || locked || credentialsBlocked) return;
     setSubmitting(true); setError('');
     try {
       await apiClient.post<RegularizationTask>(endpoint, {source,prompt:prompt.trim(),count,width,height,steps,cfg,seed,negative,
-        prior_weight:weight,repeats,excluded_tags:excluded.split(',').map(s=>s.trim()).filter(Boolean),
-        ...(source !== 'ai' && apiKey ? {username:username.trim(),api_key:apiKey} : {})}, {silent:true});
-      setApiKey(''); await query.refetch();
+        prior_weight:weight,repeats,excluded_tags:excluded.split(',').map(s=>s.trim()).filter(Boolean)}, {silent:true});
+      await query.refetch();
     } catch (err) { setError(formatApiError(err)); }
     finally { setSubmitting(false); }
   };
@@ -88,7 +97,7 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
     <form onSubmit={event=>void start(event)}>
       <div className="reg-form-grid">
         <label>{text('图片来源','Image source')}<StudioSelect aria-label={text('图片来源','Image source')} value={source} disabled={locked}
-          onValueChange={value=>{setSource(value as Source);setUsername('');setApiKey('');}}
+          onValueChange={value=>setSource(value as Source)}
           options={[{value:'ai',label:text('本地底模生成','Generate with base model')},{value:'danbooru',label:'Danbooru'},{value:'gelbooru',label:'Gelbooru'}]}/></label>
         <label>{text('图片数量','Image count')}<input type="number" min={1} max={200} step={1} value={count} disabled={locked} onChange={event=>setCount(Number(event.target.value))}/></label>
       </div>
@@ -110,8 +119,8 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
         {source === 'ai' ? <label>{text('负面提示词','Negative prompt')}<input value={negative} disabled={locked} onChange={event=>setNegative(event.target.value)}/></label> : <label>{text('排除标签','Excluded tags')}<input value={excluded} disabled={locked} onChange={event=>setExcluded(event.target.value)} placeholder={text('用逗号分隔','Separate with commas')}/></label>}
         <p className="reg-note">{text('正则图加入训练来源，不参与自动验证集划分；图片数量、重复次数和权重共同影响训练。','These images join training sources and are excluded from automatic validation splits. Count, repeats and weight all affect training.')}</p>
       </details>
-      {source !== 'ai' && <details className="reg-options"><summary>{text('站点凭据（可选）','Site credentials (optional)')}</summary><div className="reg-form-grid"><label>{text('用户名或用户 ID','Username or user ID')}<input value={username} disabled={locked} autoComplete="off" onChange={event=>setUsername(event.target.value)}/></label><label>API Key<input type="password" value={apiKey} disabled={locked} autoComplete="off" onChange={event=>setApiKey(event.target.value)}/></label></div><p className="reg-note">{text('仅用于本次收集，不保存到项目配置。','Used for this collection only; not saved in project configuration.')}</p></details>}
-      <div className="reg-actions"><span>{readOnly ? text('当前版本只读','This version is read-only') : text('每次创建独立批次，完成后自动加入训练来源。','Each run creates a separate batch and registers it after completion.')}</span><button type="submit" className="studio-primary" disabled={locked || !prompt.trim() || !!query.error}>{submitting || current ? <Loader2 size={14} className="animate-spin"/> : <ImagePlus size={14}/>} {source === 'ai' ? text('生成正则图','Generate images') : text('收集正则图','Collect images')}</button></div>
+      {source !== 'ai' && <div className="reg-options"><p className="reg-note" role="status">{credentials.error ? text('无法读取站点密钥状态。','Could not load site-key status.') : credentials.isPending ? text('读取站点密钥状态…','Loading site-key status…') : credentials.data?.[source]?.configured ? text(`${source} 访问密钥已配置`,`${source} access keys configured`) : source === 'gelbooru' ? text('Gelbooru 需要先配置用户 ID 和 API Key。','Configure the Gelbooru user ID and API key first.') : text('Danbooru 尚未配置密钥，将使用匿名访问。','Danbooru keys are not configured; anonymous access will be used.')}</p><Link className="studio-link" state={{ backgroundLocation: location.state?.backgroundLocation ?? location }} to={`/settings/environment?tab=credentials#credentials-${source}`}>{text('管理访问密钥','Manage access keys')}</Link>{credentials.error && <button type="button" className="ml-3 underline" onClick={()=>void credentials.refetch()}>{text('重试','Retry')}</button>}</div>}
+      <div className="reg-actions"><span>{readOnly ? text('当前版本只读','This version is read-only') : text('每次创建独立批次，完成后自动加入训练来源。','Each run creates a separate batch and registers it after completion.')}</span><button type="submit" className="studio-primary" disabled={locked || credentialsBlocked || !prompt.trim() || !!query.error}>{submitting || current ? <Loader2 size={14} className="animate-spin"/> : <ImagePlus size={14}/>} {source === 'ai' ? text('生成正则图','Generate images') : text('收集正则图','Collect images')}</button></div>
     </form>
     {query.data?.operations.slice(0,3).map(task=><article className="reg-task" key={task.id} aria-label={task.id}>
       <div className="reg-task-heading"><strong>{task.source === 'ai' ? text('底模生成','Base model generation') : task.source}</strong><code>{task.id}</code><span className={task.status === 'failed' ? 'reg-failed' : ''}>{statusName(task.status)}</span>{task.can_cancel && <button type="button" disabled={submitting || readOnly} onClick={()=>void cancel(task.id)} aria-label={text(`取消 ${task.id}`,`Cancel ${task.id}`)}><X size={14}/>{text('取消','Cancel')}</button>}</div>

@@ -11,6 +11,8 @@ import { MaskEditor } from '../../components/masks/MaskEditor';
 import { formatApiError } from '../../utils/errors';
 import { TagChips } from '../../components/TagChips';
 import { formatBytes, formatParams, formatPercent } from '../../utils/format';
+import './dataset-workspace.css';
+import { useWorkspaceHeight } from '../../components/projects/useWorkspaceHeight';
 import { ProjectWorkflow, NextStepLink } from '../../components/ProjectWorkflow';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import {
@@ -94,8 +96,10 @@ export default function Dataset() {
 
   const images = useDatasetImages(id);
   const gridRef = React.useRef<HTMLDivElement>(null);
+  const navigationRef = useWorkspaceHeight('--dataset-navigation-height');
   const [scrollTop, setScrollTop] = React.useState(0);
   const [viewportH, setViewportH] = React.useState(600);
+  const [viewportW, setViewportW] = React.useState(1200);
 
   const fetchInfo = React.useCallback(() => {
     if (!id) return;
@@ -128,14 +132,16 @@ export default function Dataset() {
   React.useEffect(() => {
     const el = gridRef.current;
     if (!el) return;
-    const onResize = () => setViewportH(el.clientHeight || 600);
+    const onResize = () => {setViewportH(el.clientHeight || 600);setViewportW(el.clientWidth || 1200);};
     onResize();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(onResize);
+    observer?.observe(el);
     window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
+    return () => { observer?.disconnect(); window.removeEventListener('resize', onResize); };
   }, []);
 
   // 虚拟滚动窗口计算
-  const containerWidth = Math.max(320, gridRef.current?.clientWidth || 1200);
+  const containerWidth = Math.max(1, viewportW);
   const cols = Math.max(1, Math.floor((containerWidth + GAP) / (CARD_W + GAP)));
   const rows = Math.ceil(images.items.length / cols);
   const rowH = CARD_H + GAP;
@@ -264,8 +270,8 @@ export default function Dataset() {
   const datasetName = info?.source.path.replace(/[\\/]+$/, '').split(/[\\/]/).pop()?.replace(/^(?:d_[0-9a-f]+-)+/i, '') || id;
 
   return (
-    <div className="space-y-3" data-testid="dataset-page">
-      {info?.source.project_id && <ProjectWorkflow projectId={info.source.project_id} versionId={info.source.version_id} active="data" />}
+    <div className="dataset-workspace space-y-3" data-testid="dataset-page">
+      {info?.source.project_id && <div className="dataset-workspace-navigation" ref={navigationRef}><Link to={projectUrl(info.source.project_id,info.source.version_id,'data')} className="dataset-workspace-return">{text('返回版本工作区','Return to version workspace')}</Link><ProjectWorkflow projectId={info.source.project_id} versionId={info.source.version_id} active="data" /></div>}
       {versionKey && !canEdit && <div className="flex flex-wrap items-center gap-2 rounded border border-slate-300 bg-slate-50 px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-900" role={versionAccess?.key === versionKey && versionAccess.error ? 'alert' : 'status'}>
         <span>{versionAccess?.key !== versionKey ? text('正在确认版本状态，暂以只读方式查看。', 'Checking version status. Viewing in read-only mode.') : versionAccess.error ? `${text('无法确认版本状态，编辑已暂停：', 'Cannot verify version status; editing is paused: ')}${versionAccess.error}` : versionAccess.archived ? text('此版本已归档，图片、标签和遮罩只读。', 'This version is archived. Images, captions and masks are read only.') : text('此版本暂不可编辑，当前为只读查看。', 'This version is not editable yet. Viewing in read-only mode.')}</span>
         <Link className="text-blue-600" to={projectUrl(info!.source.project_id || '', info!.source.version_id, 'data')}>{text('返回版本工作区', 'Return to version workspace')}</Link>
@@ -415,7 +421,7 @@ export default function Dataset() {
       )}
 
       {/* 搜索与批量操作条 */}
-      <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+      <div className="dataset-browser-toolbar flex flex-wrap items-center gap-2 px-3 py-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
         <div className="flex items-center space-x-2 flex-1 min-w-0 basis-52">
           <Search className="w-4 h-4 text-slate-400" />
           <input
@@ -473,8 +479,7 @@ export default function Dataset() {
       <div
         ref={gridRef}
         onScroll={handleScroll}
-        className="relative overflow-y-auto bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700"
-        style={{ height: 600 }}
+        className="dataset-browser-grid relative overflow-y-auto bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700"
         data-testid="image-grid"
       >
         <div style={{ height: rows * rowH, position: 'relative' }}>

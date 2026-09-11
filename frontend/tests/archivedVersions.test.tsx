@@ -103,10 +103,10 @@ describe('archived versions remain readable without write actions', () => {
     fireEvent.click(screen.getByRole('link', { name: /^2\s*模型准备$/ }));
     expect(screen.queryByTestId('project-model-setup')).not.toBeInTheDocument();
     expect(screen.getByText('此版本的模型配置只读，可通过版本比较查看参数差异。')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('link', { name: /^4\s*任务与结果$/ }));
+    fireEvent.click(screen.getByRole('link', { name: /^4\s*训练结果$/ }));
     expect(await screen.findByTestId('version-results')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '配置并启动训练' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('tab', { name: '模型产物' }));
+    fireEvent.click(screen.getByRole('tab', { name: '模型权重' }));
     const output = await screen.findByTestId('artifact-row-a_archive');
     expect(within(output).getByRole('link', { name: '下载: archive.safetensors' })).toHaveAttribute('href', expect.stringContaining('/artifacts/a_archive/download'));
     expect(within(output).getByRole('combobox', { name: '转换格式: archive.safetensors' })).toBeDisabled();
@@ -129,7 +129,7 @@ describe('archived versions remain readable without write actions', () => {
     expect(screen.queryByRole('spinbutton', { name: 'loop.epochs' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '开始训练' })).not.toBeInTheDocument();
     expect(state.configReads).toEqual([]); expect(state.writes).toEqual([]);
-    expect(screen.getByRole('link', { name: '查看此版本的任务与结果' })).toHaveAttribute('href', '/projects/p_archive/v/v1?step=results');
+    expect(screen.getByRole('link', { name: '查看此版本的训练结果' })).toHaveAttribute('href', '/projects/p_archive/v/v1?step=results');
     fireEvent.click(screen.getByRole('button', { name: '比较' }));
     const dialog = await screen.findByRole('dialog', { name: '比较版本' });
     fireEvent.click(within(dialog).getByRole('button', { name: '查看差异' }));
@@ -149,11 +149,14 @@ describe('archived versions remain readable without write actions', () => {
     fireEvent.click(screen.getByRole('button', { name: '新版本' }));
     const dialog = await screen.findByRole('dialog', { name: '新建实验版本' });
     const source = within(dialog).getByRole('combobox', { name: '创建来源' });
-    expect(within(source).getAllByRole('option').map(option => option.getAttribute('value'))).toEqual(['', 'v1']);
+    fireEvent.click(source);
+    expect(screen.getAllByRole('option').map(option=>option.textContent)).toEqual(['默认配置 · 空白版本','v1']);
+    fireEvent.keyDown(source,{key:'Escape'});
     fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
     fireEvent.click(screen.getByRole('button', { name: '比较' }));
     const compare = await screen.findByRole('dialog', { name: '比较版本' });
-    expect(within(within(compare).getByRole('combobox', { name: '对比版本' })).getByRole('option', { name: 'v2' })).toBeInTheDocument();
+    fireEvent.click(within(compare).getByRole('combobox',{name:'对比版本'}));
+    expect(screen.getByRole('option',{name:'v2'})).toBeInTheDocument();
     expect(state.writes).toEqual([]);
   });
 

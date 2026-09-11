@@ -28,7 +28,7 @@ describe('nullable schema editing', () => {
     expect(screen.queryByTestId('field-logging.wandb')).not.toBeInTheDocument();
     expect(screen.queryByRole('checkbox',{name:'logging.wandb.unset'})).not.toBeInTheDocument();
     expect(screen.queryByText('Weights & Biases')).not.toBeInTheDocument();
-    fireEvent.change(screen.getByRole('combobox',{name:'日志级别'}),{target:{value:'debug'}});
+    fireEvent.click(screen.getByRole('combobox',{name:'日志级别'}));fireEvent.click(screen.getByRole('option',{name:'debug'}));
     expect(JSON.parse(screen.getByTestId('legacy-value').textContent!).logging).toEqual({level:'debug',wandb:legacy});
   });
 
@@ -46,8 +46,23 @@ describe('nullable schema editing', () => {
   it('renders a newly registered family even when the bundled schema has no enum entry', () => {
     render(<SchemaForm schema={trainSchema} value={{ model: { family: 'future-family' } }} onChange={() => {}}
       families={[{ name: 'future-family', label: 'Future family' } as any]} />);
-    expect(screen.getByRole('combobox', { name: 'model.family' })).toHaveValue('future-family');
+    expect(screen.getByRole('combobox', { name: 'model.family' })).toHaveTextContent('Future family');
+    fireEvent.click(screen.getByRole('combobox',{name:'model.family'}));
     expect(screen.getByRole('option', { name: 'Future family' })).toBeInTheDocument();
+  });
+
+  it('retains zero and numeric enum types with keyboard selection and nullable reset', () => {
+    const schema={properties:{mode:{type:'integer',enum:[0,1,2]},optional:{anyOf:[{type:'integer',enum:[0,1]},{type:'null'}]}}};
+    function EnumEditor(){const [value,setValue]=React.useState<Record<string,any>>({mode:0,optional:null});return <><SchemaForm schema={schema} value={value} onChange={setValue}/><output data-testid="enum-value">{JSON.stringify(value)}</output></>;}
+    render(<EnumEditor/>);
+    const mode=screen.getByRole('combobox',{name:'mode'});
+    expect(mode).toHaveTextContent('0');
+    fireEvent.keyDown(mode,{key:'ArrowDown'});fireEvent.keyDown(mode,{key:'End'});fireEvent.keyDown(mode,{key:'Enter'});
+    expect(JSON.parse(screen.getByTestId('enum-value').textContent!).mode).toBe(2);
+    fireEvent.click(screen.getByRole('combobox',{name:'optional'}));fireEvent.click(screen.getByRole('option',{name:'0'}));
+    expect(JSON.parse(screen.getByTestId('enum-value').textContent!).optional).toBe(0);
+    fireEvent.click(screen.getByRole('checkbox',{name:'optional.unset'}));
+    expect(JSON.parse(screen.getByTestId('enum-value').textContent!).optional).toBeNull();
   });
 
   it('preserves inherited prompt values, edits steps and CFG, and clears back to null', () => {

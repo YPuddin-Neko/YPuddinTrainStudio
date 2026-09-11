@@ -64,7 +64,8 @@ describe('dataset pipeline', () => {
     expect(screen.getByText(/当前为原生分辨率模式/)).toBeInTheDocument();
     expect(screen.getByRole('button',{name:'处理 0 张选中图片'})).toBeDisabled();
     fireEvent.click(await screen.findByRole('checkbox',{name:'选择 a.png'}));
-    fireEvent.change(screen.getByLabelText('处理方式'),{target:{value:'center_crop'}});
+    fireEvent.click(screen.getByRole('combobox',{name:'处理方式'}));
+    fireEvent.click(screen.getByRole('option',{name:'中心裁剪到指定比例'}));
     fireEvent.change(screen.getByLabelText('处理宽度'),{target:{value:'512'}});
     fireEvent.change(screen.getByLabelText('处理高度'),{target:{value:'768'}});
     fireEvent.click(screen.getByRole('button',{name:'处理 1 张选中图片'}));

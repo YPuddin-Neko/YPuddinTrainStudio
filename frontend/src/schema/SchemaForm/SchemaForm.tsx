@@ -7,6 +7,7 @@ import { apiClient } from '../../api/client';
 import { FamilyInfo } from '../../api/types';
 import { configFieldLabel, configOptionLabel } from '../../utils/configPresentation';
 import NumericControl from './NumericControl';
+import StudioSelect from '../../components/StudioSelect';
 
 interface SchemaProperty {
   type?: string;
@@ -133,18 +134,9 @@ const RulesEditor: React.FC<{
             onChange={(e) => updateRule(idx, 'match', e.target.value)}
             className="flex-1 min-w-[140px] px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
           />
-          <select
-            value={rule.algo ?? ''}
-            onChange={(e) => updateRule(idx, 'algo', e.target.value || null)}
-            className="px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
-          >
-            <option value="">{t('train.inherit')}</option>
-            <option value="none">none</option>
-            <option value="lora">lora</option>
-            <option value="lokr">lokr</option>
-            <option value="loha">loha</option>
-            <option value="full">full</option>
-          </select>
+          <StudioSelect aria-label={`${t('train.algo', '算法')} ${idx+1}`} value={rule.algo ?? ''} onValueChange={value => updateRule(idx,'algo',value || null)}
+            options={[{value:'',label:t('train.inherit')},...['none','lora','lokr','loha','full'].map(value=>({value,label:value}))]}/>
+
           <input
             type="text"
             placeholder="Rank / full"
@@ -538,21 +530,9 @@ const ModelPathInput: React.FC<{
     <div className="space-y-1.5">
       <PathInput ariaLabel={label} value={value} onChange={onChange} />
       {matched.length > 0 && (
-        <select
-          className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs dark:bg-slate-900 dark:border-slate-600 text-slate-500"
-          value=""
-          onChange={(e) => {
-            if (e.target.value) onChange(e.target.value);
-          }}
-          data-testid="model-registry-select"
-        >
-          <option value="">{t('models.fromRegistry')}</option>
-          {matched.map((m) => (
-            <option key={m.id} value={m.path}>
-              [{m.family}] {m.path}
-            </option>
-          ))}
-        </select>
+        <StudioSelect aria-label={`${label || kind} · ${t('models.fromRegistry')}`} value="" onValueChange={onChange} data-testid="model-registry-select"
+          options={[{value:'',label:t('models.fromRegistry'),disabled:true},...matched.map(model=>({value:model.path,label:`[${model.family}] ${model.path}`}))]}/>
+
       )}
     </div>
   );
@@ -595,10 +575,8 @@ const SchemaValueInput: React.FC<{
       </label>)}
     </div>;
   } else if (prop.enum) {
-    input = <select className={cls} aria-label={name} value={value ?? ''} onChange={(e) => onChange(e.target.value === '' && nullable ? null : e.target.value)}>
-      {nullable && <option value="">{t('train.unset')}</option>}
-      {prop.enum.map((item) => <option key={String(item)} value={item}>{String(item)}</option>)}
-    </select>;
+    input = <StudioSelect aria-label={name} value={value == null ? '' : String(value)} onValueChange={next => onChange(next === '' && nullable ? null : prop.enum!.find(item => String(item) === next))}
+      options={[...(nullable ? [{value:'',label:t('train.unset')}] : []),...prop.enum.map(item=>({value:String(item),label:String(item)}))]}/>;
   } else if (prop.type === 'boolean') {
     input = <input type="checkbox" aria-label={name} checked={!!value} onChange={(e) => onChange(e.target.checked)} />;
   } else if (prop.type === 'array') {
@@ -803,41 +781,22 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         placeholder={family && fullPathKey === 'sampling.shift' ? (family.sampling?.shift != null ? String(family.sampling.shift) : t('sampling.shiftAuto')) : undefined}
         onChange={(val) => onChange(setNestedValue(value, path, val))} />;
     } else if (fullPathKey === 'model.family' && families?.length) {
-      control = <select aria-label="model.family" value={fieldValue || families[0].name}
-        className="w-full rounded-md border px-3 py-2 text-sm dark:bg-slate-900 dark:border-slate-600"
-        onChange={(e) => onChange(setNestedValue(value, path, e.target.value))}>
-        {families.map((item) => <option key={item.name} value={item.name}>{item.label || item.name}</option>)}
-      </select>;
+      control = <StudioSelect aria-label="model.family" value={fieldValue || families[0].name}
+        onValueChange={next => onChange(setNestedValue(value,path,next))} options={families.map(item=>({value:item.name,label:item.label || item.name}))}/>;
     } else if (fullPathKey === 'adapter.preset' && family) {
       // 族内预设下拉：name — description（N 层）
       control = (
-        <select
-          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:bg-slate-900 dark:border-slate-600"
-          value={fieldValue || family.default_preset || ''}
-          onChange={(e) => onChange(setNestedValue(value, path, e.target.value))}
-          data-testid="adapter-preset-select"
-        >
-          {(family.presets || []).map((p) => (
-            <option key={p.name} value={p.name}>
-              {p.name} — {p.description}（{t('preset.layers', { n: p.layers })}）
-            </option>
-          ))}
-        </select>
+        <StudioSelect aria-label={fieldLabel} value={fieldValue || family.default_preset || ''} data-testid="adapter-preset-select"
+          onValueChange={next => onChange(setNestedValue(value,path,next))} options={(family.presets || []).map(preset=>({value:preset.name,label:`${preset.name} — ${preset.description}（${t('preset.layers',{n:preset.layers})}）`}))}/>
+
       );
     } else if (fullPathKey === 'dataset.text_encoding' && family) {
       // 文本编码选项受族 text_modes 约束（krea2 无 online）
       control = (
         <div className="space-y-1">
-          <select
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:bg-slate-900 dark:border-slate-600"
-            value={fieldValue || 'auto'}
-            onChange={(e) => onChange(setNestedValue(value, path, e.target.value))}
-            data-testid="text-encoding-select"
-          >
-            {(family.text_modes || []).map((m) => (
-              <option key={m} value={m}>{t(`textMode.${m}`, m)}</option>
-            ))}
-          </select>
+          <StudioSelect aria-label={fieldLabel} value={fieldValue || 'auto'} data-testid="text-encoding-select"
+            onValueChange={next => onChange(setNestedValue(value,path,next))} options={(family.text_modes || []).map(mode=>({value:mode,label:t(`textMode.${mode}`,mode)}))}/>
+
           {(family.text_modes || []).length === 2 && !family.text_modes.includes('online') && (
             <p className="text-[11px] text-slate-400">{t('textMode.autoOnly')}</p>
           )}
@@ -845,15 +804,10 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       );
     } else if (prop.enum) {
       control = (
-        <select
-          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:bg-slate-900 dark:border-slate-600"
-          value={fieldValue || ''}
-          onChange={(e) => onChange(setNestedValue(value, path, e.target.value))}
-        >
-          {prop.enum.map((opt: any) => (
-            <option key={opt} value={opt}>{configOptionLabel(fullPathKey, String(opt), english)}</option>
-          ))}
-        </select>
+        <StudioSelect aria-label={fieldLabel} value={fieldValue == null ? '' : String(fieldValue)}
+          onValueChange={next => onChange(setNestedValue(value,path,prop.enum!.find(option=>String(option)===next)))}
+          options={prop.enum.map(option=>({value:String(option),label:configOptionLabel(fullPathKey,String(option),english)}))}/>
+
       );
     } else if (prop.type === 'boolean' || ui.control === 'switch') {
       control = (
@@ -930,7 +884,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         : undefined;
 
     const wide = ['sources', 'rules', 'prompts', 'resolutions', 'args', 'group_lr'].includes(key) || ui.control === 'path' || key.endsWith('_path') || key === 'output_dir';
-    if (React.isValidElement(control) && typeof control.type === 'string') {
+    if (React.isValidElement(control) && (typeof control.type === 'string' || control.type === StudioSelect)) {
       control = React.cloneElement(control as React.ReactElement<any>, {id: fieldId, 'aria-label': (control.props as any)['aria-label'] || fieldLabel, 'aria-invalid': !!errorItem});
     }
     const help = [prop.description, weightMeta?.hint].filter(Boolean).join('\n');

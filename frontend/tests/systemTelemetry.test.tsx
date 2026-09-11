@@ -88,10 +88,11 @@ describe('stable system telemetry', () => {
     const data = snapshot(); const second = { ...data.gpus[0], index: 3, name: 'Second GPU', power_w: 280, util_pct: 85 };
     data.gpus.push(second);
     const { rerender } = render(<SystemTelemetry stats={data}/>);
-    fireEvent.change(screen.getByRole('combobox', { name: '选择监控显卡' }), { target: { value: '3' } });
+    fireEvent.click(screen.getByRole('combobox', { name: '选择监控显卡' }));
+    fireEvent.click(screen.getByRole('option', { name: 'GPU 3 · Second GPU' }));
     expect(screen.getByLabelText('GPU 功率')).toHaveTextContent('280 W');
     rerender(<SystemTelemetry stats={{ ...data, gpus: [{ ...second, power_w: 285 }, data.gpus[0]] }}/>);
-    expect(screen.getByRole('combobox')).toHaveValue('3');
+    expect(screen.getByRole('combobox')).toHaveTextContent('GPU 3 · Second GPU');
     expect(screen.getByLabelText('GPU 功率')).toHaveTextContent('285 W');
     rerender(<SystemTelemetry stats={snapshot()}/>);
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();

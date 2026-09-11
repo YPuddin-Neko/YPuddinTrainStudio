@@ -981,6 +981,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/models/recommendations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Recommendations */
+        get: operations["recommendations_api_models_recommendations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/models/recommendations/{model_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Download Recommendation */
+        post: operations["download_recommendation_api_models_recommendations__model_id__download_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/models/recommendations/{model_id}/use": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Use Recommendation */
+        post: operations["use_recommendation_api_models_recommendations__model_id__use_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/datasets/{did}/images/{h}/mask/info": {
         parameters: {
             query?: never;
@@ -1290,10 +1341,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Credential States */
+        get: operations["credential_states_api_credentials_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/credentials/danbooru": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save Danbooru */
+        put: operations["save_danbooru_api_credentials_danbooru_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/credentials/gelbooru": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save Gelbooru */
+        put: operations["save_gelbooru_api_credentials_gelbooru_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/credentials/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save Model Token */
+        put: operations["save_model_token_api_credentials__provider__put"];
+        post?: never;
+        /** Clear Credential */
+        delete: operations["clear_credential_api_credentials__provider__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AccessCredentialStates */
+        AccessCredentialStates: {
+            huggingface: components["schemas"]["CredentialState"];
+            modelscope: components["schemas"]["CredentialState"];
+            danbooru: components["schemas"]["CredentialState"];
+            gelbooru: components["schemas"]["CredentialState"];
+        };
         /** AdapterConfig */
         AdapterConfig: {
             /**
@@ -1726,6 +1853,16 @@ export interface components {
             width: number;
             /** Height */
             height: number;
+        };
+        /** DanbooruCredentialUpdate */
+        DanbooruCredentialUpdate: {
+            /**
+             * Api Key
+             * Format: password
+             */
+            api_key: string;
+            /** Username */
+            username: string;
         };
         /** DatasetBody */
         DatasetBody: {
@@ -2249,6 +2386,16 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** GelbooruCredentialUpdate */
+        GelbooruCredentialUpdate: {
+            /**
+             * Api Key
+             * Format: password
+             */
+            api_key: string;
+            /** User Id */
+            user_id: string;
+        };
         /** GpuInfo */
         GpuInfo: {
             /** Index */
@@ -2351,6 +2498,12 @@ export interface components {
             project_id: string | null;
             /** Version Id */
             version_id?: string | null;
+            /** Project Name */
+            project_name?: string | null;
+            /** Version Name */
+            version_name?: string | null;
+            /** Version Number */
+            version_number?: number | null;
             /** Status */
             status: ("queued" | "scheduled" | "running" | "pausing" | "cancelling" | "paused" | "completed" | "failed" | "cancelled") | string;
             /** Priority */
@@ -2446,6 +2599,11 @@ export interface components {
             lines: components["schemas"]["LogLine"][];
             /** Next Offset */
             next_offset: number;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
         } & {
             [key: string]: unknown;
         };
@@ -2878,6 +3036,12 @@ export interface components {
              * @default true
              */
             is_default: boolean;
+            /** Recommendation Id */
+            recommendation_id?: string | null;
+            /** Expected Size */
+            expected_size?: number | null;
+            /** Sha256 */
+            sha256?: string | null;
         };
         /** ModelDownloadRequest */
         ModelDownloadRequest: {
@@ -3556,6 +3720,78 @@ export interface components {
             total_mb: number;
         } & {
             [key: string]: unknown;
+        };
+        /** RecommendationDownloadRequest */
+        RecommendationDownloadRequest: {
+            /**
+             * Provider
+             * @default huggingface
+             * @enum {string}
+             */
+            provider: "huggingface" | "modelscope";
+            /**
+             * Is Default
+             * @default true
+             */
+            is_default: boolean;
+        };
+        /** RecommendedModel */
+        RecommendedModel: {
+            /** Id */
+            id: string;
+            /**
+             * Family
+             * @enum {string}
+             */
+            family: "anima" | "krea2";
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "dit" | "text_encoder" | "vae";
+            /** Name */
+            name: string;
+            /**
+             * Dtype
+             * @enum {string}
+             */
+            dtype: "bf16" | "fp8";
+            /** Size */
+            size: number;
+            /** Sha256 */
+            sha256: string;
+            /**
+             * Recommended
+             * @default true
+             */
+            recommended: boolean;
+            /** Sources */
+            sources: components["schemas"]["RecommendedSource"][];
+            /** Model Id */
+            model_id?: string | null;
+            /** Available Path */
+            available_path?: string | null;
+            /**
+             * Is Default
+             * @default false
+             */
+            is_default: boolean;
+        };
+        /** RecommendedSource */
+        RecommendedSource: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "huggingface" | "modelscope";
+            /** Repo Id */
+            repo_id: string;
+            /** Filename */
+            filename: string;
+            /** Revision */
+            revision: string;
+            /** Url */
+            url: string;
         };
         /** RegularizationRequest */
         RegularizationRequest: {
@@ -5755,6 +5991,9 @@ export interface operations {
                 version_id?: string | null;
                 page?: number;
                 page_size?: number;
+                group?: ("active" | "waiting" | "history") | null;
+                type?: ("train" | "cache") | null;
+                q?: string | null;
             };
             header?: never;
             path?: never;
@@ -6113,6 +6352,7 @@ export interface operations {
             query?: {
                 offset?: number;
                 limit?: number;
+                tail?: boolean;
             };
             header?: never;
             path: {
@@ -6601,6 +6841,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModelDownload"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recommendations_api_models_recommendations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecommendedModel"][];
+                };
+            };
+        };
+    };
+    download_recommendation_api_models_recommendations__model_id__download_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecommendationDownloadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelDownload"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    use_recommendation_api_models_recommendations__model_id__use_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelAsset"];
                 };
             };
             /** @description Validation Error */
@@ -7279,6 +7605,158 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RegularizationTask"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    credential_states_api_credentials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessCredentialStates"];
+                };
+            };
+        };
+    };
+    save_danbooru_api_credentials_danbooru_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DanbooruCredentialUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CredentialState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_gelbooru_api_credentials_gelbooru_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GelbooruCredentialUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CredentialState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_model_token_api_credentials__provider__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "huggingface" | "modelscope";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CredentialUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CredentialState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_credential_api_credentials__provider__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "huggingface" | "modelscope" | "danbooru" | "gelbooru";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CredentialState"];
                 };
             };
             /** @description Validation Error */

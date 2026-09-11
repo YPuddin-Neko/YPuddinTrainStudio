@@ -390,7 +390,7 @@ def test_download_errors_redact_saved_token_and_auth_failure_guides_user(downloa
 
     app.state.model_downloads.opener = Unauthorized()
     row = wait_for(client, start(client, "gated.safetensors").json()["id"])
-    assert secret not in str(row) and "Credentials" in row["error"] and "license" in row["error"]
+    assert secret not in str(row) and "Settings → Access keys" in row["error"] and "license" in row["error"]
 
 
 def test_retired_tagger_cannot_be_downloaded_but_history_and_files_are_preserved(download_service):

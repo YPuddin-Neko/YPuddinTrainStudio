@@ -1,4 +1,5 @@
 import React from 'react';
+import StudioSelect from './StudioSelect';
 import { Cpu, HardDrive, MemoryStick, createLucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { SystemStats } from '../api/types';
@@ -56,7 +57,7 @@ export default function SystemTelemetry({ stats }: { stats: SystemStats | null }
       </div>
       <div className="telemetry-group telemetry-gpu" role="group" aria-label="GPU" title={gpuDescription} data-testid="telemetry-gpu">
         <Gpu size={18} aria-hidden="true" />
-        <div className="telemetry-device">{gpus.length > 1 ? <select aria-label={text('选择监控显卡', 'Choose monitored GPU')} value={gpu?.index} onChange={event => setSelectedGpu(Number(event.target.value))}>{gpus.map(item => <option key={item.index} value={item.index}>GPU {item.index} · {item.name}</option>)}</select> : <span className="telemetry-label">GPU{gpu ? '' : ' —'}</span>}<span className="telemetry-device-kind">{unified ? 'MPS' : gpu?.kind === 'cuda' ? 'CUDA' : ''}</span></div>
+        <div className="telemetry-device">{gpus.length > 1 ? <StudioSelect className="telemetry-gpu-select" aria-label={text('选择监控显卡', 'Choose monitored GPU')} value={String(gpu?.index ?? 0)} onValueChange={value => setSelectedGpu(Number(value))} options={gpus.map(item => ({value:String(item.index), label:`GPU ${item.index} · ${item.name}`}))}/> : <span className="telemetry-label">GPU{gpu ? '' : ' —'}</span>}<span className="telemetry-device-kind">{unified ? 'MPS' : gpu?.kind === 'cuda' ? 'CUDA' : ''}</span></div>
         <div className="telemetry-gpu-readings">
           <div><span className="telemetry-label">{text('占用', 'Load')}</span><Reading value={gpu?.util_pct} label={text('GPU 占用率', 'GPU utilization')} testId="topbar-gpu-util"/></div>
           <div title={`${memoryLabel} · ${gpuMemory}`}><span className="telemetry-label">{memoryLabel}</span><Reading value={ratio(gpu?.mem_used_mb, gpu?.mem_total_mb)} label={unified ? text('系统统一内存占用率', 'System unified memory utilization') : text('显存占用率', 'VRAM utilization')} testId="topbar-gpu-memory"/></div>

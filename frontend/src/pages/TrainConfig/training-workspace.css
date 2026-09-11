@@ -1,0 +1,19 @@
+.training-studio { --training-toolbar-height:46px; }
+.training-studio .training-toolbar { top:calc(var(--workspace-head-height,0px)); z-index:26; margin:0; padding:6px 0; background:var(--workspace-surface); flex-wrap:wrap; gap:8px; }
+.training-studio .toolbar-actions { gap:7px; }
+.training-studio .toolbar-actions>.studio-select { width:150px; min-width:90px; font-size:12px; }
+.training-studio .save-draft { min-height:34px; }
+.training-studio .save-draft:disabled { opacity:.5; }
+.training-studio .config-tabs { top:calc(var(--workspace-head-height,0px) + var(--training-toolbar-height)); z-index:24; overflow-x:auto; scrollbar-width:thin; background:var(--workspace-surface); }
+.training-studio .training-inspector { top:calc(var(--workspace-head-height,0px) + var(--training-toolbar-height) + 8px); max-height:calc(100dvh - var(--workspace-head-height,0px) - var(--training-toolbar-height) - 140px); overflow:auto; scrollbar-gutter:stable; }
+.training-studio .training-launch-bar { z-index:31; margin-top:8px; padding:10px 0; }
+.training-studio .config-field { scroll-margin-top:calc(var(--workspace-head-height,0px) + var(--training-toolbar-height) + 55px); scroll-margin-bottom:100px; }
+.training-studio .config-field .studio-select { width:100%; min-height:31px; height:31px; padding:5px 8px; font-size:12px; }
+.training-studio .config-field-invalid .studio-select { border-color:#d97706; }
+.training-studio .config-union>.studio-select { flex:1; min-width:48px; width:0; order:-1; }
+@media(max-width:1100px) { .training-studio .training-toolbar-title { display:none; }.training-studio .config-search { max-width:none; }.training-studio .toolbar-actions>.studio-select { width:135px; } }
+@media(max-width:800px) { .training-studio .training-inspector { position:static; max-height:none; overflow:visible; }.training-studio .training-toolbar { gap:6px; }.training-studio .config-search { flex-basis:100%; }.training-studio .toolbar-actions { width:100%; }.training-studio .toolbar-actions>.studio-select { flex:1; max-width:200px; } }
+@media(max-width:767px) { .training-studio .training-toolbar { top:calc(var(--workspace-head-height,0px)); }.training-studio .config-tabs { top:calc(var(--workspace-head-height,0px) + var(--training-toolbar-height)); }.training-studio .training-launch-bar { bottom:-12px; } }
+@media(max-width:520px) { .training-studio .toolbar-actions { gap:5px; flex-wrap:wrap; }.training-studio .toolbar-actions>.studio-select { width:120px; }.training-studio .config-tools>summary { padding-inline:6px; }.training-studio .save-draft { padding-inline:6px; font-size:11px; } }
+.training-studio #training-parameters { scroll-margin-top:calc(var(--workspace-head-height,0px) + var(--training-toolbar-height) + 44px); }
+.training-studio .config-tabs { overflow-y:hidden; }

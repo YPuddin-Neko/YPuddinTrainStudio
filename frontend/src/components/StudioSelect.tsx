@@ -11,6 +11,7 @@ interface Props {
   disabled?: boolean;
   className?: string;
   icon?: React.ReactNode;
+  'aria-invalid'?: React.AriaAttributes['aria-invalid'];
   'aria-label'?: string;
   'aria-labelledby'?: string;
   'aria-describedby'?: string;
@@ -37,6 +38,7 @@ export default function StudioSelect({ id, value, options, onValueChange, disabl
     setOpen(true);
   };
   const choose = (index: number) => {
+    if (trigger.current?.matches(':disabled')) { setOpen(false); return; }
     const option = options[index];
     if (!option || option.disabled) return;
     setOpen(false);

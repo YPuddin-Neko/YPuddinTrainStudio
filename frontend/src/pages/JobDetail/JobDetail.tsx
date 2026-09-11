@@ -1,6 +1,6 @@
 import { mergeJobEvent } from '../../utils/jobs';
 import React from 'react';
-import { Link, useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { EChart } from '../../components/EChart';
 import { apiClient, apiUrl } from '../../api/client';
@@ -22,6 +22,10 @@ import { formatBytes, formatBytesMB, formatEta, formatTime } from '../../utils/f
 import { formatApiError } from '../../utils/errors';
 import { projectUrl, type ProjectVersion } from '../../utils/projectVersions';
 import { useWorkspaceText } from '../../utils/workspaceText';
+import StudioSelect from '../../components/StudioSelect';
+import { JobActions } from '../Queue/jobPresentation';
+import '../Queue/queue.css';
+import './job-detail.css';
 
 type VersionedJob = Job & { version_id?: string | null };
 
@@ -71,6 +75,10 @@ export default function JobDetail() {
   const { t } = useTranslation();
   const text = useWorkspaceText();
   const navigate = useNavigate();
+  const location = useLocation();
+  const queueReturnTo = typeof location.state?.queueReturnTo === 'string' && /^\/queue(?:\?|$)/.test(location.state.queueReturnTo) ? location.state.queueReturnTo : '/queue';
+  const [params, setParams] = useSearchParams();
+  const [dataError, setDataError] = React.useState('');
   const [actionError, setActionError] = React.useState('');
   const [resuming, setResuming] = React.useState(false);
 
@@ -83,11 +91,35 @@ export default function JobDetail() {
   const [configSnapshot, setConfigSnapshot] = React.useState<any>(null);
   const [sampleProgress, setSampleProgress] = React.useState<{ step: number; promptIndex: number; prompts: number; done: number; total: number } | null>(null);
 
-  const [activeTab, setActiveTab] = React.useState<'metrics' | 'samples' | 'checkpoints' | 'logs' | 'config'>('metrics');
+  const activeTab = ['metrics', 'samples', 'checkpoints', 'logs', 'config'].includes(params.get('tab') || '') ? params.get('tab')! : 'metrics';
+  const setActiveTab = (tab: string) => { const next = new URLSearchParams(params); next.set('tab', tab); setParams(next, { state: location.state }); };
   const [xAxisMode, setXAxisMode] = React.useState<'step' | 'epoch'>('step');
   const [emaAlpha, setEmaAlpha] = React.useState<number>(0.9);
   const [logFilter, setLogFilter] = React.useState<string>('all');
   const [autoScrollLog, setAutoScrollLog] = React.useState<boolean>(true);
+  const [logMode, setLogMode] = React.useState<'live' | 'history'>('live');
+  const [logOffsets, setLogOffsets] = React.useState([0]);
+  const [nextLogOffset, setNextLogOffset] = React.useState(0);
+  const [hasMoreLogs, setHasMoreLogs] = React.useState(false);
+  const [logLoading, setLogLoading] = React.useState(false);
+  const [logError, setLogError] = React.useState('');
+  const [logQuery, setLogQuery] = React.useState('');
+  const [samplePage, setSamplePage] = React.useState(1);
+  const [sampleStep, setSampleStep] = React.useState('');
+  const logRequest = React.useRef<AbortController | null>(null);
+  const logOffset = logOffsets[logOffsets.length - 1];
+  const fetchLogs = React.useCallback(async () => {
+    if (!id) return;
+    logRequest.current?.abort(); const controller = new AbortController(); logRequest.current = controller;
+    setLogLoading(true); setLogError('');
+    try {
+      const response = await apiClient.get<{ lines: JobLogLine[]; next_offset: number; has_more?: boolean }>(`/jobs/${id}/log`, { params: { offset: logOffset, limit: 500, tail: logMode === 'live' }, signal: controller.signal, silent: true });
+      if (!controller.signal.aborted) { setLogs(response.lines || []); setNextLogOffset(response.next_offset); setHasMoreLogs(response.has_more ?? response.lines.length >= 500); }
+    } catch (error) { if (!controller.signal.aborted) setLogError(formatApiError(error)); }
+    finally { if (!controller.signal.aborted) setLogLoading(false); }
+  }, [id, logMode, logOffset]);
+  React.useEffect(() => { void fetchLogs(); return () => logRequest.current?.abort(); }, [fetchLogs]);
+
 
   const logContainerRef = React.useRef<HTMLDivElement>(null);
   const samplesRequestRef = React.useRef<AbortController | null>(null);
@@ -106,13 +138,12 @@ export default function JobDetail() {
     if (!id) return;
     const controller = new AbortController();
     const options = { signal: controller.signal };
-    const ignoreAbort = (error: Error) => { if (error.name !== 'AbortError') console.error(error); };
-    setJob(null); setMetrics(null); setSamples([]); setCheckpoints([]); setLogs([]); setConfigSnapshot(null); setSampleProgress(null);
+    const ignoreAbort = (error: Error) => { if (!controller.signal.aborted) setDataError(formatApiError(error)); };
+    setDataError(''); setSamplePage(1); setSampleStep(''); setLogOffsets([0]); setLogMode('live'); setJob(null); setMetrics(null); setSamples([]); setCheckpoints([]); setLogs([]); setConfigSnapshot(null); setSampleProgress(null);
     apiClient.get<VersionedJob>(`/jobs/${id}`, options).then(setJob).catch(ignoreAbort);
     apiClient.get<JobMetrics>(`/jobs/${id}/metrics`, options).then(setMetrics).catch(ignoreAbort);
     void refreshSamples();
     apiClient.get<JobCheckpoint[]>(`/jobs/${id}/checkpoints`, options).then(setCheckpoints).catch(ignoreAbort);
-    apiClient.get<{ lines: JobLogLine[] }>(`/jobs/${id}/log`, options).then((r) => setLogs(r.lines || [])).catch(ignoreAbort);
     apiClient.get<any>(`/jobs/${id}/config`, options).then(setConfigSnapshot).catch(ignoreAbort);
     return () => { controller.abort(); samplesRequestRef.current?.abort(); };
   }, [id, refreshSamples]);
@@ -177,9 +208,9 @@ export default function JobDetail() {
   });
 
   useEventStream(EVENT_TYPES.JOB_LOG, (data: any) => {
-    if (data.job_id === id && data.lines) {
-      // 环形缓存：最多保留最近 5 万行，旧行丢弃
-      setLogs((prev) => appendCapped(prev, data.lines, 50000));
+    if (data.job_id === id && data.lines && logMode === 'live') {
+      // History is read from disk; only the current live window receives events.
+      setLogs((prev) => appendCapped(prev, data.lines, 500));
     }
   });
 
@@ -204,7 +235,7 @@ export default function JobDetail() {
     if (autoScrollLog && logContainerRef.current) {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
-  }, [logs, autoScrollLog]);
+  }, [logs, autoScrollLog, activeTab]);
 
   const stepLabel = t('job.step');
   const epochLabel = t('job.epoch');
@@ -316,7 +347,11 @@ export default function JobDetail() {
     };
   }, [metrics, xAxisName, useEpoch, stepsPerEpoch, memorySeriesLabel]);
 
-  const filteredLogs = logs.filter((l) => logFilter === 'all' || l.level === logFilter);
+  const filteredLogs = logs.filter(line => (logFilter === 'all' || (line.level === 'warning' ? 'warn' : line.level) === logFilter) && (!logQuery || line.msg.toLocaleLowerCase().includes(logQuery.toLocaleLowerCase())));
+  const filteredSamples = [...samples].reverse().filter(sample => !sampleStep || String(sample.step) === sampleStep);
+  const samplePages = Math.max(1, Math.ceil(filteredSamples.length / 24));
+  const visibleSamples = filteredSamples.slice((samplePage - 1) * 24, samplePage * 24);
+
 
   // 阶段时间线：未知 phase 兜底显示「进行中」
   const phaseLabels: Record<string, string> = {
@@ -385,23 +420,14 @@ export default function JobDetail() {
   };
 
   return (
-    <div className="space-y-6" data-testid="job-detail-page">
-      {job?.project_id && <Link to={projectUrl(job.project_id, job.version_id, 'results')} className="inline-flex flex-wrap gap-1 text-sm text-blue-600 hover:underline">← {t('projects.title')} · {t('projectDetail.jobsTab', '训练任务')}{job.version_id && <span className="break-words text-xs" title={job.version_id}> · {versionName ? `${text('版本', 'Version')} ${versionName}` : text('所属版本', 'Version')}</span>}</Link>}
+    <div className="job-monitor task-workspace" data-testid="job-detail-page">
+      <div className="job-monitor-bar"><div className="job-monitor-links"><Link to={queueReturnTo}>← {text('全局训练队列', 'Training queue')}</Link>
+      {job?.project_id && <Link to={projectUrl(job.project_id, job.version_id, 'results')} className="inline-flex flex-wrap gap-1 text-sm text-blue-600 hover:underline">← {job.project_id} · {text('训练结果', 'Training results')}{job.version_id && <span className="break-words text-xs" title={job.version_id}> · {versionName ? `${text('版本', 'Version')} ${versionName}` : text('所属版本', 'Version')}</span>}</Link>}
+      </div><div className="job-monitor-identity"><div><h1>{job?.name || text('读取任务…', 'Loading job…')}</h1><small>{id} · {job?.type === 'cache' ? text('缓存任务', 'Cache job') : text('训练任务', 'Training job')}</small></div><span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${statusBadgeClass}`}>{statusText}</span>{job && <JobActions key={job.id} job={job} onUpdated={updated => { if (updated.id === job.id) setJob(updated); else navigate(`/jobs/${updated.id}`); }}/>}</div></div>
+      {dataError && <div className="task-error" role="alert">{dataError}</div>}
       {(actionError || job?.error) && <div role="alert" className="whitespace-pre-line break-words rounded bg-red-50 text-red-700 p-3 dark:bg-red-950 dark:text-red-300">{actionError || job?.error}</div>}
       {/* 1. 头部指标与阶段时间线 */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 space-y-5">
-        <div className="flex flex-wrap justify-between items-center gap-4">
-          <div>
-            <div className="flex items-center space-x-3">
-              <h2 className="text-2xl font-bold">{job?.name || t('job.unnamedJob', `任务 #${id}`)}</h2>
-              <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${statusBadgeClass}`}>
-                {statusText}
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 mt-1 font-mono">{id}</p>
-          </div>
-        </div>
-
+      <div className="job-monitor-summary bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 space-y-3">
         {/* 大数字指标 StatCard */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <StatCard
@@ -470,10 +496,12 @@ export default function JobDetail() {
 
       {/* 2. Tabs 切换导航 */}
       <div className="border-b border-slate-200 dark:border-slate-700">
-        <nav className="flex space-x-6 text-sm font-medium">
-          {tabs.map((tab) => (
+        <nav className="job-monitor-tabs task-tabs" role="tablist" aria-label={text('任务详情分区', 'Job details tabs')}>
+          {tabs.map((tab, index) => (
             <button
               key={tab.key}
+              role="tab" id={`job-tab-${tab.key}`} aria-controls={`job-panel-${tab.key}`} tabIndex={activeTab === tab.key ? 0 : -1} aria-selected={activeTab === tab.key}
+              onKeyDown={event => { const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1; if (next >= 0) { event.preventDefault(); setActiveTab(tabs[next].key); document.getElementById(`job-tab-${tabs[next].key}`)?.focus(); } }}
               onClick={() => setActiveTab(tab.key)}
               className={`flex items-center space-x-2 py-3 border-b-2 ${activeTab === tab.key ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
             >
@@ -485,6 +513,7 @@ export default function JobDetail() {
       </div>
 
       {/* 3. 详细内容区域 */}
+      <div role="tabpanel" id={`job-panel-${activeTab}`} aria-labelledby={`job-tab-${activeTab}`}>
       {activeTab === 'metrics' && (
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 space-y-4">
           <div className="flex justify-between items-center">
@@ -525,7 +554,7 @@ export default function JobDetail() {
             />
           ) : (
             <>
-              <EChart option={lossChartOption} style={{ height: 400 }} />
+              <EChart option={lossChartOption} style={{ height: 310 }} />
 
               {validationChartOption && (
                 <div className="pt-4 border-t dark:border-slate-700">
@@ -544,7 +573,7 @@ export default function JobDetail() {
       )}
 
       {activeTab === 'samples' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4" data-testid="samples-gallery">
+        <section><div className="job-sample-controls"><StudioSelect aria-label={text('采样步数', 'Sample step')} value={sampleStep} options={[{ value: '', label: text('全部步数', 'All steps') }, ...[...new Set(samples.map(sample => sample.step))].sort((a,b) => b-a).map(step => ({ value: String(step), label: `${text('步数', 'Step')} ${step}` }))]} onValueChange={value => { setSampleStep(value); setSamplePage(1); }}/><span>{text(`共 ${filteredSamples.length} 张 · 每页 24 张`, `${filteredSamples.length} samples · 24 per page`)}</span>{samplePages > 1 && <div className="task-actions"><button className="task-button" disabled={samplePage <= 1} onClick={() => setSamplePage(page => page - 1)}>{text('上一页', 'Previous')}</button><span>{samplePage} / {samplePages}</span><button className="task-button" disabled={samplePage >= samplePages} onClick={() => setSamplePage(page => page + 1)}>{text('下一页', 'Next')}</button></div>}</div><div className="job-sample-gallery" data-testid="samples-gallery">
           {samples.length === 0 && (
             <EmptyState
               icon={ImageIcon}
@@ -552,9 +581,9 @@ export default function JobDetail() {
               hint={t('job.noSamplesHint', '训练过程中的采样预览会自动出现在这里。')}
             />
           )}
-          {samples.map((s, idx) => (
+          {visibleSamples.map((s, idx) => (
             <div key={idx} className="bg-white dark:bg-slate-800 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700">
-              <img src={s.url} alt={s.prompt} className="w-full h-56 object-cover bg-slate-100 dark:bg-slate-900" />
+              <a href={s.url.startsWith('/api/') ? apiUrl(s.url.slice(4)) : s.url} target="_blank" rel="noreferrer" aria-label={`${text('打开完整采样图', 'Open full sample')}: ${s.prompt}`}><img loading="lazy" src={s.url.startsWith('/api/') ? apiUrl(s.url.slice(4)) : s.url} alt={s.prompt} className="w-full h-56 object-contain bg-slate-100 dark:bg-slate-900" /></a>
               <div className="p-3 space-y-1 text-xs">
                 <div className="flex justify-between font-semibold">
                   <span className="font-mono">{t('job.step')} {s.step}</span>
@@ -564,11 +593,11 @@ export default function JobDetail() {
               </div>
             </div>
           ))}
-        </div>
+        </div></section>
       )}
 
       {activeTab === 'checkpoints' && (
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-x-auto">
           {checkpoints.length === 0 ? (
             <EmptyState
               icon={Layers}
@@ -616,28 +645,9 @@ export default function JobDetail() {
 
       {activeTab === 'logs' && (
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3">
-          <div className="flex justify-between items-center text-xs">
-            <div className="flex space-x-2">
-              {LOG_LEVELS.map((lvl) => (
-                <button
-                  key={lvl}
-                  onClick={() => setLogFilter(lvl)}
-                  className={`px-2.5 py-1 rounded ${logFilter === lvl ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-700'}`}
-                >
-                  {logLevelLabels[lvl]}
-                </button>
-              ))}
-            </div>
-            <label className="flex items-center space-x-1 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={autoScrollLog}
-                onChange={(e) => setAutoScrollLog(e.target.checked)}
-                className="rounded"
-              />
-              <span>{t('job.followBottom')}</span>
-            </label>
-          </div>
+          <div className="job-log-toolbar"><StudioSelect aria-label={text('日志模式', 'Log mode')} value={logMode} options={[{ value: 'live', label: text('实时末尾 · 500 行', 'Live tail · 500 lines') }, { value: 'history', label: text('完整历史 · 分页读取', 'Full history · paginated') }]} onValueChange={value => { setLogMode(value as 'live' | 'history'); setLogOffsets([0]); setLogs([]); }}/><StudioSelect aria-label={text('日志级别', 'Log level')} value={logFilter} options={LOG_LEVELS.map(value => ({ value, label: logLevelLabels[value] }))} onValueChange={setLogFilter}/><input aria-label={text('搜索当前页日志', 'Search this log page')} value={logQuery} onChange={event => setLogQuery(event.target.value)} placeholder={text('搜索当前页日志', 'Search this log page')}/><button className="task-button" disabled={logLoading} onClick={() => void fetchLogs()}>{text('刷新日志', 'Refresh logs')}</button><label><input type="checkbox" checked={autoScrollLog} onChange={event => setAutoScrollLog(event.target.checked)}/>{t('job.followBottom')}</label></div>
+          {logError && <p role="alert" className="task-error">{logError}</p>}
+          {logMode === 'history' && <div className="task-pagination"><span>{text('按原始顺序读取，每页最多 500 行；筛选作用于当前页。', 'Original order, up to 500 lines per page; filters apply to this page.')}</span><div><button className="task-button" disabled={logLoading || logOffsets.length === 1} onClick={() => { setLogs([]); setLogOffsets(offsets => offsets.slice(0, -1)); }}>{text('上一页日志', 'Previous log page')}</button><span>{logOffsets.length}</span><button className="task-button" disabled={logLoading || !hasMoreLogs} onClick={() => { setLogs([]); setLogOffsets(offsets => [...offsets, nextLogOffset]); }}>{text('下一页日志', 'Next log page')}</button></div></div>}
           <div
             ref={logContainerRef}
             className="h-80 overflow-y-auto bg-slate-900 text-slate-200 font-mono text-xs p-3 rounded-lg space-y-1"
@@ -680,6 +690,7 @@ export default function JobDetail() {
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }

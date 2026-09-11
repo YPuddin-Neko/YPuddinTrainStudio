@@ -424,6 +424,9 @@ class Job(_Out):
     name: str
     project_id: str | None
     version_id: str | None = None
+    project_name: str | None = None
+    version_name: str | None = None
+    version_number: int | None = None
     status: JobStatus | str
     priority: int
     scheduled_at: float | None
@@ -495,6 +498,7 @@ class LogLine(_Out):
 class JobLog(_Out):
     lines: list[LogLine]
     next_offset: int
+    has_more: bool = False
 
 
 class QueueSettings(_Out):

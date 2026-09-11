@@ -26,7 +26,7 @@ let samples: Record<string, JobSample[]>;
 beforeEach(async () => {
   await i18n.changeLanguage('zh-CN'); jobs = [job('j1'), job('j2')]; artifacts = [artifact('a1'), artifact('foreign', 'v2')]; samples = { j1: [sample('j1')], j2: [sample('j2', 20)] };
   vi.spyOn(apiClient, 'get').mockImplementation(async (endpoint, options) => {
-    if (endpoint === '/jobs') return { items: jobs.filter(item => !options?.params?.version_id || item.version_id === options.params.version_id), total: jobs.length, page: options?.params?.page || 1, page_size: 50 } as any;
+    if (endpoint === '/jobs') return { items: jobs.filter(item => !options?.params?.version_id || item.version_id === options.params.version_id), total: jobs.length, page: options?.params?.page || 1, page_size: 50, type: 'train' } as any;
     if (endpoint === '/artifacts') return artifacts as any;
     const match = endpoint.match(/^\/jobs\/([^/]+)\/samples$/);
     if (match) return (samples[match[1]] || []) as any;
@@ -35,14 +35,14 @@ beforeEach(async () => {
   vi.spyOn(apiClient, 'post').mockImplementation(async endpoint => { if (endpoint === '/artifacts/a1/convert') { const output = artifact('converted'); artifacts.push(output); return output as any; } throw new Error(`Unexpected POST ${endpoint}`); });
 });
 afterEach(() => { vi.restoreAllMocks(); });
-const view = (versionId = 'v1') => <MemoryRouter><VersionResults projectId="p1" versionId={versionId}/></MemoryRouter>;
+const view = (versionId = 'v1') => <MemoryRouter initialEntries={['/projects/p1?result_tab=jobs']}><VersionResults projectId="p1" versionId={versionId}/></MemoryRouter>;
 function Location() { const location = useLocation(); return <output data-testid="location">{location.pathname}{location.search}</output>; }
 
 describe('version result workspace', () => {
   it('requests the current version with pagination and merges only its visible jobs from events', async () => {
     render(view());
     const row = await screen.findByTestId('result-job-j1');
-    expect(apiClient.get).toHaveBeenCalledWith('/jobs', expect.objectContaining({ params: { project_id: 'p1', version_id: 'v1', page: 1, page_size: 50 } }));
+    expect(apiClient.get).toHaveBeenCalledWith('/jobs', expect.objectContaining({ params: { project_id: 'p1', version_id: 'v1', page: 1, page_size: 50, type: 'train' } }));
     expect(vi.mocked(apiClient.get).mock.calls.some(([url]) => url.endsWith('/samples'))).toBe(false);
     expect(vi.mocked(apiClient.get).mock.calls.some(([url]) => url === '/artifacts')).toBe(false);
     emit('job.step', { job_id: 'j1', step: 8, loss: 0.125 });
@@ -59,7 +59,7 @@ describe('version result workspace', () => {
     const image = await screen.findByRole('img', { name: 'j1 prompt' });
     expect(image).toHaveAttribute('src', 'http://localhost:3000/api/jobs/j1/files?path=sample-10.png&kind=sample');
     expect(vi.mocked(apiClient.get).mock.calls.filter(([url]) => url.endsWith('/samples')).map(([url]) => url)).toEqual(['/jobs/j1/samples']);
-    fireEvent.change(screen.getByRole('combobox', { name: '采样所属任务' }), { target: { value: 'j2' } });
+    fireEvent.click(screen.getByRole('combobox', { name: '采样所属任务' })); fireEvent.click(screen.getByRole('option', { name: /Run j2/ }));
     await screen.findByRole('img', { name: 'j2 prompt' });
     expect(screen.queryByRole('img', { name: 'j1 prompt' })).not.toBeInTheDocument();
     const before = vi.mocked(apiClient.get).mock.calls.length;
@@ -95,27 +95,47 @@ describe('version result workspace', () => {
     const { rerender } = render(view()); await screen.findByText('Run j1');
     fireEvent.click(screen.getByRole('tab', { name: '采样图' }));
     await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith('/jobs/j1/samples', expect.anything()));
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'j2' } });
+    fireEvent.click(screen.getByRole('combobox', { name: '采样所属任务' })); fireEvent.click(screen.getByRole('option', { name: /Run j2/ }));
     await screen.findByRole('img', { name: 'j2 prompt' });
     await act(async () => finish([sample('j1')]));
     expect(screen.queryByRole('img', { name: 'j1 prompt' })).not.toBeInTheDocument();
     jobs = [job('new-version-job', 'v2')]; rerender(view('v2'));
+    fireEvent.click(screen.getByRole('tab', { name: '训练记录' }));
     await screen.findByText('Run new-version-job');
-    expect(screen.getByRole('tab', { name: '训练任务' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: '训练记录' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
-    expect(apiClient.get).toHaveBeenLastCalledWith('/jobs', expect.objectContaining({ params: { project_id: 'p1', version_id: 'v2', page: 1, page_size: 50 } }));
+    expect(apiClient.get).toHaveBeenLastCalledWith('/jobs', expect.objectContaining({ params: { project_id: 'p1', version_id: 'v2', page: 1, page_size: 50, type: 'train' } }));
   });
 
   it('lets the sample selector move through paginated jobs rather than fetching every job', async () => {
     const original = vi.mocked(apiClient.get).getMockImplementation()!;
-    vi.mocked(apiClient.get).mockImplementation(async (url, options) => url === '/jobs' ? { items: [job(options?.params?.page === 2 ? 'j2' : 'j1')], total: 51, page: options?.params?.page, page_size: 50 } as any : original(url, options));
+    vi.mocked(apiClient.get).mockImplementation(async (url, options) => url === '/jobs' ? { items: [job(options?.params?.page === 2 ? 'j2' : 'j1')], total: 51, page: options?.params?.page, page_size: 50, type: 'train' } as any : original(url, options));
     render(view()); await screen.findByText('Run j1');
     fireEvent.click(screen.getByRole('tab', { name: '采样图' }));
     await screen.findByRole('img', { name: 'j1 prompt' });
-    fireEvent.click(screen.getByRole('button', { name: '下一页任务' }));
+    fireEvent.click(within(screen.getByRole('combobox', { name: '采样所属任务' }).closest<HTMLElement>('.results-sample-toolbar')!).getByRole('button', { name: '下一页任务' }));
     await screen.findByRole('img', { name: 'j2 prompt' });
-    expect(apiClient.get).toHaveBeenCalledWith('/jobs', expect.objectContaining({ params: { project_id: 'p1', version_id: 'v1', page: 2, page_size: 50 } }));
-    expect(screen.getByRole('combobox')).toHaveValue('j2');
+    expect(apiClient.get).toHaveBeenCalledWith('/jobs', expect.objectContaining({ params: { project_id: 'p1', version_id: 'v1', page: 2, page_size: 50, type: 'train' } }));
+    expect(screen.getByRole('combobox', { name: '采样所属任务' })).toHaveTextContent('Run j2');
+  });
+
+  it('pages a large sample gallery from its top controls and hides unnecessary single-page task navigation', async () => {
+    samples.j1 = Array.from({ length: 49 }, (_, step) => ({ ...sample('j1', step), prompt: `sample ${step}` }));
+    render(view()); await screen.findByText('Run j1');
+    fireEvent.click(screen.getByRole('tab', { name: '采样图' }));
+    await screen.findByRole('img', { name: 'sample 48' });
+    const controls = screen.getByRole('combobox', { name: '采样所属任务' }).closest<HTMLElement>('.results-selection-controls')!;
+    expect(screen.queryByRole('button', { name: '下一页任务' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('img')).toHaveLength(24);
+    fireEvent.click(within(controls).getByRole('button', { name: '下一页采样图' }));
+    expect(screen.getByRole('img', { name: 'sample 24' })).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: 'sample 48' })).not.toBeInTheDocument();
+    fireEvent.click(within(controls).getByRole('button', { name: '下一页采样图' }));
+    expect(screen.getAllByRole('img')).toHaveLength(1);
+    expect(screen.getByRole('link', { name: '下载第 0 步采样图' })).toHaveAttribute('href', expect.stringContaining('/jobs/j1/files?path=sample-0.png'));
+    fireEvent.click(screen.getByRole('combobox', { name: '采样所属任务' })); fireEvent.click(screen.getByRole('option', { name: /Run j2/ }));
+    await screen.findByRole('img', { name: 'j2 prompt' });
+    expect(screen.queryByRole('button', { name: '下一页采样图' })).not.toBeInTheDocument();
   });
 
   it('recovers from job and selected sample request failures', async () => {
@@ -131,6 +151,19 @@ describe('version result workspace', () => {
 });
 
 describe('embedded output scope', () => {
+  it('pages weights using the top filter controls and keeps download actions on the selected page', async () => {
+    artifacts = Array.from({ length: 26 }, (_, index) => artifact(`output-${index}`));
+    render(<MemoryRouter><Artifacts embedded projectId="p1" versionId="v1"/></MemoryRouter>);
+    await screen.findByTestId('artifact-row-output-0');
+    expect(screen.getAllByTestId(/^artifact-row-/)).toHaveLength(25);
+    const controls = screen.getByRole('textbox', { name: '搜索训练产物' }).closest<HTMLElement>('.artifact-controls')!;
+    fireEvent.click(within(controls).getByRole('button', { name: '下一页产物' }));
+    expect(screen.getAllByTestId(/^artifact-row-/)).toHaveLength(1);
+    expect(screen.getByRole('link', { name: '下载: output-25.safetensors' })).toHaveAttribute('href', 'http://localhost:3000/api/artifacts/output-25/download');
+    fireEvent.change(screen.getByRole('textbox', { name: '搜索训练产物' }), { target: { value: 'output-0.' } });
+    expect(screen.getByTestId('artifact-row-output-0')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '下一页产物' })).not.toBeInTheDocument();
+  });
   it('locks props against URL filters and keeps scope through search clearing, conversion and download', async () => {
     artifacts.push(artifact('other-job', 'v1', 'j2'));
     const path = '/projects/p1/v/v1?step=results&project_id=p2&version_id=v2&job_id=alien&q=wrong';
@@ -139,7 +172,7 @@ describe('embedded output scope', () => {
     expect(screen.queryByTestId('artifact-row-foreign')).not.toBeInTheDocument();
     expect(screen.queryByTestId('artifact-row-other-job')).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: '搜索训练产物' })).toHaveValue('');
-    expect(apiClient.get).toHaveBeenCalledWith('/artifacts', expect.objectContaining({ params: { project_id: 'p1', version_id: 'v1' } }));
+    expect(apiClient.get).toHaveBeenCalledWith('/artifacts', expect.objectContaining({ params: { project_id: 'p1', version_id: 'v1', job_id: 'j1' } }));
     fireEvent.change(screen.getByRole('textbox', { name: '搜索训练产物' }), { target: { value: 'missing' } });
     expect(screen.queryByTestId('artifact-row-a1')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '清除筛选' }));
@@ -147,7 +180,7 @@ describe('embedded output scope', () => {
     expect(screen.getByTestId('artifact-row-a1')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '查看元数据: a1.safetensors' }));
     expect(screen.getByRole('dialog')).toHaveTextContent('v1'); fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
-    fireEvent.change(screen.getByRole('combobox', { name: '转换格式: a1.safetensors' }), { target: { value: 'kohya' } });
+    fireEvent.click(screen.getByRole('combobox', { name: '转换格式: a1.safetensors' })); fireEvent.click(screen.getByRole('option', { name: 'kohya' }));
     await screen.findByTestId('artifact-row-converted');
     expect(apiClient.post).toHaveBeenCalledWith('/artifacts/a1/convert', { format: 'kohya' }, { silent: true });
     expect(screen.getByRole('link', { name: '下载: converted.safetensors' })).toHaveAttribute('href', 'http://localhost:3000/api/artifacts/converted/download');
@@ -165,4 +198,17 @@ describe('embedded output scope', () => {
     expect(screen.queryByTestId('artifact-row-old-version')).not.toBeInTheDocument();
     expect(screen.getByTestId('artifact-row-v2-output')).toBeInTheDocument();
   });
+});
+
+it('opens weights by default and scopes weights to a chosen training record without queue controls', async () => {
+  render(<MemoryRouter><VersionResults projectId="p1" versionId="v1"/><Location/></MemoryRouter>);
+  await screen.findByTestId('artifact-row-a1');
+  expect(screen.getByRole('tab', { name: '模型权重' })).toHaveAttribute('aria-selected', 'true');
+  expect(screen.queryByRole('button', { name: '暂停' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab', { name: '训练记录' }));
+  const row = await screen.findByTestId('result-job-j1');
+  fireEvent.click(within(row).getByRole('button', { name: '查看权重' }));
+  await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith('/artifacts', expect.objectContaining({ params: { project_id: 'p1', version_id: 'v1', job_id: 'j1' } })));
+  expect(screen.getByRole('combobox', { name: '权重所属任务' })).toHaveTextContent('Run j1');
+  expect(screen.getByTestId('location')).toHaveTextContent('result_tab=artifacts');
 });

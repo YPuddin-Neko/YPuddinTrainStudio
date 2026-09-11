@@ -181,7 +181,7 @@ describe('explicit project version actions', () => {
     render(wrap(<Routes><Route path="/datasets/:id" element={<Dataset/>}/><Route path="/projects/:id/v/:versionId/train" element={<p>Version training destination</p>}/></Routes>, '/datasets/d_v2'));
     const workflow = await screen.findByRole('navigation', { name: '项目训练步骤' });
     expect(within(workflow).getByRole('link', { name: /^3\s*训练参数$/ })).toHaveAttribute('href', '/projects/p_versions/v/v2/train');
-    expect(within(workflow).getByRole('link', { name: /^4\s*任务与结果$/ })).toHaveAttribute('href', '/projects/p_versions/v/v2?step=results');
+    expect(within(workflow).getByRole('link', { name: /^4\s*训练结果$/ })).toHaveAttribute('href', '/projects/p_versions/v/v2?step=results');
     fireEvent.click(screen.getByRole('button', { name: i18n.t('dataset.precache') }));
     await waitFor(() => expect(submitted).toHaveLength(1));
     expect(submitted[0]).toMatchObject({ type: 'cache', project_id: project.id, version_id: 'v2' });

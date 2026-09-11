@@ -534,7 +534,7 @@ export const handlers = [
       { ts: 1789000005, level: 'info' as const, msg: 'Starting training loop at epoch 1...' },
       { ts: 1789000010, level: 'warn' as const, msg: 'VRAM usage close to peak threshold.' },
     ];
-    const resp: JobLogResponse = { lines: lines.slice(offset), next_offset: lines.length };
+    const resp: JobLogResponse = { lines: lines.slice(offset), next_offset: lines.length, has_more: false };
     return HttpResponse.json(resp);
   }),
 

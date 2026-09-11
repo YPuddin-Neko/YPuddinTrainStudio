@@ -250,3 +250,6 @@
 .config-tabs { position:sticky; top:46px; z-index:11; background:var(--studio-muted); }
 .training-inspector { top:52px; }
 @media(max-width:800px) { .config-tabs { top:94px; } }
+
+.telemetry-gpu-select.studio-select { width:76px; min-height:18px; height:18px; padding:0 2px; border:0; font-size:10px; gap:2px; line-height:16px; }
+.telemetry-gpu-select .studio-select-chevron { width:10px; }

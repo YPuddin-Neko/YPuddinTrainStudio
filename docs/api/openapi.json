@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "YPuddin Train Studio",
-    "version": "0.5.1"
+    "version": "0.5.2"
   },
   "paths": {
     "/api/health": {
@@ -2188,6 +2188,63 @@
               "default": 50,
               "title": "Page Size"
             }
+          },
+          {
+            "name": "group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "active",
+                    "waiting",
+                    "history"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "train",
+                    "cache"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
           }
         ],
         "responses": {
@@ -2695,6 +2752,16 @@
               "type": "integer",
               "default": 2000,
               "title": "Limit"
+            }
+          },
+          {
+            "name": "tail",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Tail"
             }
           }
         ],
@@ -3332,6 +3399,116 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ModelDownload"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/models/recommendations": {
+      "get": {
+        "summary": "Recommendations",
+        "operationId": "recommendations_api_models_recommendations_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RecommendedModel"
+                  },
+                  "type": "array",
+                  "title": "Response Recommendations Api Models Recommendations Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/models/recommendations/{model_id}/download": {
+      "post": {
+        "summary": "Download Recommendation",
+        "operationId": "download_recommendation_api_models_recommendations__model_id__download_post",
+        "parameters": [
+          {
+            "name": "model_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Model Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecommendationDownloadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelDownload"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/models/recommendations/{model_id}/use": {
+      "post": {
+        "summary": "Use Recommendation",
+        "operationId": "use_recommendation_api_models_recommendations__model_id__use_post",
+        "parameters": [
+          {
+            "name": "model_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Model Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelAsset"
                 }
               }
             }
@@ -4313,10 +4490,224 @@
           }
         }
       }
+    },
+    "/api/credentials": {
+      "get": {
+        "summary": "Credential States",
+        "operationId": "credential_states_api_credentials_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessCredentialStates"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/credentials/danbooru": {
+      "put": {
+        "summary": "Save Danbooru",
+        "operationId": "save_danbooru_api_credentials_danbooru_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DanbooruCredentialUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/credentials/gelbooru": {
+      "put": {
+        "summary": "Save Gelbooru",
+        "operationId": "save_gelbooru_api_credentials_gelbooru_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GelbooruCredentialUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/credentials/{provider}": {
+      "put": {
+        "summary": "Save Model Token",
+        "operationId": "save_model_token_api_credentials__provider__put",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "huggingface",
+                "modelscope"
+              ],
+              "type": "string",
+              "title": "Provider"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Clear Credential",
+        "operationId": "clear_credential_api_credentials__provider__delete",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "huggingface",
+                "modelscope",
+                "danbooru",
+                "gelbooru"
+              ],
+              "type": "string",
+              "title": "Provider"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AccessCredentialStates": {
+        "properties": {
+          "huggingface": {
+            "$ref": "#/components/schemas/CredentialState"
+          },
+          "modelscope": {
+            "$ref": "#/components/schemas/CredentialState"
+          },
+          "danbooru": {
+            "$ref": "#/components/schemas/CredentialState"
+          },
+          "gelbooru": {
+            "$ref": "#/components/schemas/CredentialState"
+          }
+        },
+        "type": "object",
+        "required": [
+          "huggingface",
+          "modelscope",
+          "danbooru",
+          "gelbooru"
+        ],
+        "title": "AccessCredentialStates"
+      },
       "AdapterConfig": {
         "properties": {
           "algo": {
@@ -5410,6 +5801,29 @@
           "height"
         ],
         "title": "CropRectangle"
+      },
+      "DanbooruCredentialUpdate": {
+        "properties": {
+          "api_key": {
+            "type": "string",
+            "format": "password",
+            "title": "Api Key",
+            "writeOnly": true
+          },
+          "username": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Username"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "api_key",
+          "username"
+        ],
+        "title": "DanbooruCredentialUpdate"
       },
       "DatasetBody": {
         "properties": {
@@ -6724,6 +7138,28 @@
         ],
         "title": "FsList"
       },
+      "GelbooruCredentialUpdate": {
+        "properties": {
+          "api_key": {
+            "type": "string",
+            "format": "password",
+            "title": "Api Key",
+            "writeOnly": true
+          },
+          "user_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "title": "User Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "api_key",
+          "user_id"
+        ],
+        "title": "GelbooruCredentialUpdate"
+      },
       "GpuInfo": {
         "properties": {
           "index": {
@@ -7034,6 +7470,39 @@
               }
             ],
             "title": "Version Id"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
+          },
+          "version_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Name"
+          },
+          "version_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Number"
           },
           "status": {
             "anyOf": [
@@ -7385,6 +7854,11 @@
           "next_offset": {
             "type": "integer",
             "title": "Next Offset"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
           }
         },
         "additionalProperties": true,
@@ -8590,6 +9064,39 @@
             "type": "boolean",
             "title": "Is Default",
             "default": true
+          },
+          "recommendation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendation Id"
+          },
+          "expected_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Size"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256"
           }
         },
         "type": "object",
@@ -10131,6 +10638,162 @@
           "total_mb"
         ],
         "title": "RamStats"
+      },
+      "RecommendationDownloadRequest": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "huggingface",
+              "modelscope"
+            ],
+            "title": "Provider",
+            "default": "huggingface"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "RecommendationDownloadRequest"
+      },
+      "RecommendedModel": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "family": {
+            "type": "string",
+            "enum": [
+              "anima",
+              "krea2"
+            ],
+            "title": "Family"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "dit",
+              "text_encoder",
+              "vae"
+            ],
+            "title": "Kind"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "dtype": {
+            "type": "string",
+            "enum": [
+              "bf16",
+              "fp8"
+            ],
+            "title": "Dtype"
+          },
+          "size": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Size"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256"
+          },
+          "recommended": {
+            "type": "boolean",
+            "title": "Recommended",
+            "default": true
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/RecommendedSource"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "available_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Path"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "family",
+          "kind",
+          "name",
+          "dtype",
+          "size",
+          "sha256",
+          "sources"
+        ],
+        "title": "RecommendedModel"
+      },
+      "RecommendedSource": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "huggingface",
+              "modelscope"
+            ],
+            "title": "Provider"
+          },
+          "repo_id": {
+            "type": "string",
+            "title": "Repo Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "revision": {
+            "type": "string",
+            "title": "Revision"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "repo_id",
+          "filename",
+          "revision",
+          "url"
+        ],
+        "title": "RecommendedSource"
       },
       "RegularizationRequest": {
         "properties": {

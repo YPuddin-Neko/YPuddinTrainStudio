@@ -74,9 +74,17 @@ def install(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def _validation(_req: Request, exc: RequestValidationError):
         errors = exc.errors()
-        if _req.url.path.startswith("/api/models"):
+        if _req.url.path.startswith(("/api/models", "/api/credentials")):
             # Model credentials and pasted source URLs must never be echoed on validation errors.
             errors = [{k: v for k, v in error.items() if k in {"loc", "msg", "type"}} for error in errors]
+        if _req.url.path.startswith("/api/credentials"):
+            # Even an unexpected JSON property name can be a mistakenly pasted key.
+            fields = {"body", "path", "query", "provider", "token", "username", "user_id", "api_key"}
+            for error in errors:
+                error["loc"] = [
+                    part if isinstance(part, int) or part in fields else "[field]"
+                    for part in error.get("loc", [])
+                ]
         return JSONResponse(
             status_code=422,
             content=envelope(

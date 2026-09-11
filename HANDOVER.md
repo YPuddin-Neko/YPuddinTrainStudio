@@ -1,12 +1,12 @@
 # YPuddin Train Studio — 项目交接报告
 
 > 写给接手本项目的模型/工程师。本文自洽：读完这一份 + 点开的几个文件，就能不需要前任任何上下文地继续开发。
-> 日期：2026-09-12 · 仓库：`xiangmuyuanma/` · 本文在原交接资料基础上按源码审计与修复验收更新；当前源码与前端版本为 0.5.1，交付证据见本轮报告。
+> 日期：2026-09-12 · 仓库：`xiangmuyuanma/` · 当前源码与前端版本为 0.5.2；本轮设计审查与发布验收状态见下述最新报告，不复用旧版测试总数。
 
 ## 0. 先读这三个文件
 
 1. 本文。
-2. `docs/UI_SIMPLIFICATION_2026-09-12.md` —— 最新 v0.5.1 界面、可读项目目录、正则图与自动打标移除说明。`docs/UI_PIPELINE_2026-09-11.md` —— 历史 v0.5.0 数据准备、交互验证与下载来源；`docs/native-resolution.md` 解释原生尺寸、像素预算和真实梯度规则。`docs/UI_VERSIONS_2026-09-11.md` 保留 v0.4.0 版本/目录迁移记录。更早 UI_WORKFLOW、UI_REDESIGN、FIX_REPORT 与 COMPLETION_AUDIT 是历史证据。
+2. `docs/UI_DESIGN_REVIEW_2026-09-12.md` —— 最新 v0.5.2 中央访问密钥、官方模型候选、队列/版本结果、导航标签与请求隔离。`docs/UI_SIMPLIFICATION_2026-09-12.md` 保留 v0.5.1 项目目录、正则图及自动打标移除记录；`docs/native-resolution.md` 解释原生尺寸与梯度规则。UI_PIPELINE、UI_VERSIONS、UI_WORKFLOW、UI_REDESIGN、FIX_REPORT 与 COMPLETION_AUDIT 是历史证据。
 3. `docs/design/03-status.md` —— 逐组件状态表与运行方式。
 
 ## 1. 项目定位
@@ -18,15 +18,23 @@
 - **形态**：Python 包 `ypuddin`（CLI + FastAPI 服务）+ `frontend/`（React/Vite 界面，可选）。一键脚本 `studio.sh` / `studio.bat`。
 - 许可证 Apache-2.0（参考项目里 diffusion-pipe 与 AnimaLoraStudio 是 GPL——只读不抄；sd-scripts / musubi-tuner 是 Apache-2.0，vendor 的代码见 §7）。
 
-## 2. 当前状态（v0.5.1 项目目录与正则图）
+## 2. 当前状态（v0.5.2 工作区设计与中央凭据）
 
-本轮最终回归：后端 **536 passed / 3 CUDA skipped**，前端 **220 tests passed**；lint、TypeScript 与生产构建通过。实际浏览器新建项目、Toy 正则生成、标签查看、路径和顶栏布局均已验收，详见 `docs/validation/v0.5.1.json` 与 `docs/screenshots/v0.5.1/`。
+本轮后端全量 **562 passed / 3 CUDA skipped（565 收集）**，前端 **45 文件 / 263 测试通过**；Ruff、`eslint --max-warnings 0`、`tsc -b` 和生产 `npm run build` 均通过，OpenAPI/前端 API 类型已更新至 0.5.2。行为与边界见 [v0.5.2 报告](docs/UI_DESIGN_REVIEW_2026-09-12.md)，机器记录和生产页面/截图检查统一位于 `docs/validation/v0.5.2.json`、`docs/screenshots/v0.5.2/`。最终提交与 ZIP/独立解包校验写入发布包旁的 `*.verification.json`。旧版 **536 passed / 3 CUDA skipped、前端 220 passed** 属于 v0.5.1，不能视为本版结果。
 
 当前是具备实际训练、数据上传到训练启动的 Web 工作流的集成验证版本；官方 Anima / Krea 2 全尺寸权重和 NVIDIA 路径仍待验收，不能称为所有功能已完成。
 
+- 设置增加独立“访问密钥”，四来源共用本机安全存储：HF/ModelScope 令牌、Danbooru 用户名/API Key、Gelbooru 用户 ID/API Key。GET 仅返回 configured；正则收集默认读取存储，前端不再一次性输入站点密钥。旧接口保留兼容，运行任务保持启动时凭据。
+- `model_recommendations.py` 明确官方组件与两来源映射，推荐下载校验大小/SHA-256/组件后才登记；重试保留原校验。跨来源共享 hash 目标目录互斥；本地候选在 `/use` 验 SHA，按文件状态缓存结果，已验证 VAE 可跨模型族复用。官方目录信息核对与本地小文件测试不代表完整权重训练验收。
+- 全局队列负责跨项目任务筛选/分页，版本结果按明确版本查询，任务详情保留曲线/有界日志/任务采样与产物。项目和训练导航、标签查看器工具及分页固定可达；不同区域独立滚动。
+- 配置与任务/数据集/预设/模型库辅助请求隔离。辅助失败显示局部重试，不伪造空数据、不用默认配置覆盖草稿；配置失败时禁止挂载可写表单，显式版本保存和迟到响应隔离均有回归。
+- 训练参数按项目/版本保存 session 草稿，浏览器 Back 后可恢复未保存修改，并只合并用户改过的字段；串行保存避免旧请求覆盖新输入，保存完成仅清理对应草稿。通用 Dialog 自带独立样式，冷路由弹窗不依赖其他页面预先加载 CSS。
+
+以下为本版继承的目录与训练契约；标明历史的数量和已撤下功能仅供追溯。
+
 - v0.5.1 新项目采用用户填写的 ASCII ID、独立多语言显示名称、`project/<id>/vN` 物理目录；traindata/reg 与 samples/output 分离，采样和产物按任务 ID 隔离。新增 output_mode 明确默认项目路径与自定义根；旧项目和旧任务路径不迁移。
 - 正则图提供本地无适配器底模生成、限定站点网络收集与手动导入；后台独立任务具备版本锁、GPU/环境互斥、暂存发布、取消和恢复。仅完整批次登记 is_reg 数据源；不继承主体 trigger、不参与自动 val split。当前混合加权均值损失不等同于独立 train/reg 两项平均。
-- WD14 自动打标、模型推荐下载和生成 API 已撤下，前端改成图片与完整原标签查看；历史标签、备份和已下载资产保留。W&B 入口与默认依赖撤下，旧配置读取兼容。
+- WD14 自动打标、WD14 专用模型推荐下载和推理 API 已撤下，前端改成图片与完整原标签查看；历史标签、备份和已下载资产保留。W&B 入口与默认依赖撤下，旧配置读取兼容。v0.5.2 的训练底模推荐是独立服务。
 - 顶栏移除正常状态占位，侧栏品牌和底部等宽主题/语言控件重做；版本号移到设置服务信息。StudioSelect统一弹出菜单/键盘/主题/视窗定位；设置运行环境只显示主要后端与注意力加速。
 - 启动默认 models/server/optim/logging，NVIDIA额外安装监控；增量升级同时检查脚本/依赖指纹和真实缺包，保护已安装Torch/CUDA/Numpy，不在运行环境页逐包管理普通依赖。当前证据见 `docs/validation/v0.5.1.json`；下文旧统计及WD14验收均为历史记录。
 
@@ -46,7 +54,7 @@
 - 前一轮修复了设备 RNG、scalar/dropout/Kahan 续训、mask 缓存、实际编码器指纹、验证源与分桶、分阶段模型加载、准备阶段暂停、队列设备分配、保存设置不生效、前端配置及实时数据断链。
 - 前一轮训练核心回归 **278 passed / 3 CUDA skipped**；前端 **72 tests**、lint、TypeScript、production build 通过，包含本机实际 MPS 运算。浏览器已完成 TOML 导入、12 步 MPS 训练、初始/周期预览、权重下载、从第 6 步续训至第 12 步；60 个最终权重张量逐位相同。
 - 新完整状态为 format 2，保存原始训练参数与模型资产身份；新数据指纹包含 caption / mask / 验证数据。**旧版完整状态可能不兼容**，不得跳过检查强行恢复。已有权重可通过 `adapter.resume_weights` 热启动新训练；不要删除旧状态或数据。
-- Schedule-Free 模式、TensorBoard、W&B sink 和初始采样已接通；真实 Schedule-Free/TensorBoard 已测，W&B 仅模拟契约测试。`optimizer.fused_backward=true` 当前显式拒绝，尚未实现。
+- Schedule-Free 模式、TensorBoard 和初始采样已接通，真实 Schedule-Free/TensorBoard 已测；早期 W&B sink 只做过模拟契约测试，当前不提供入口或默认安装。`optimizer.fused_backward=true` 当前显式拒绝，尚未实现。
 - MPS 使用 FP32、不启用 autocast。系统仪表盘显示统一内存；训练指标显示当前 PyTorch 分配量。CUDA 的训练指标是 PyTorch 分配峰值，两者不等同。
 - 队列按设备独占运行多个单设备任务，**未实现 DDP**。显存估算用于准入，可关闭 `memory_admission`；估算不是容量保证。
 

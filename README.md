@@ -2,9 +2,11 @@
 
 一个面向扩散模型的**模块化适配器训练器**，包含 LoRA / LoKr / LoHa / DoRA、数据缓存、任务队列、服务 API 与 Web 界面。已接入 **Anima**（Cosmos-Predict2 风格 DiT + Qwen3-0.6B + Qwen-Image VAE）和 **Krea 2**（单流 MMDiT + Qwen3-VL-4B + Qwen-Image VAE）。训练核心与两族模型通过统一接口连接；模型组件包含按 Apache-2.0 引入的上游实现，来源见各 `vendor/NOTICE.md`。
 
-当前处于集成验证阶段：已有 CPU 玩具模型与缩小版真实组件的训练、暂停恢复、采样和服务回归测试；**官方完整权重在 NVIDIA GPU 上的训练、实际 ComfyUI 加载与质量验收、速度和显存基准仍待完成**。本轮验收记录见[v0.5 流水线与交互报告](docs/UI_PIPELINE_2026-09-11.md)，功能状态见 [`docs/design/03-status.md`](docs/design/03-status.md)。参考项目分析保存在 `docs/reference/`，不作为性能优于参考实现的结论。
+当前处于集成验证阶段：已有 CPU 玩具模型与缩小版真实组件的训练、暂停恢复、采样和服务回归测试；**官方完整权重在 NVIDIA GPU 上的训练、实际 ComfyUI 加载与质量验收、速度和显存基准仍待完成**。本轮范围与证据见[v0.5.2 设计审查报告](docs/UI_DESIGN_REVIEW_2026-09-12.md)，功能状态见 [`docs/design/03-status.md`](docs/design/03-status.md)。参考项目分析保存在 `docs/reference/`，不作为性能优于参考实现的结论。
 
-当前版本 **v0.5.1**：新项目采用独立显示名称和手填项目 ID，按 `project/<id>/vN/` 保存训练图、正则图、各任务采样与产物；支持自定义输出根。标签步骤精简为图片与已有标签查看，移除 WD14 自动打标和 W&B 入口。正则图支持本地底模生成、网站收集与已有图片导入；环境页保留计算后端和注意力加速，常规依赖由启动器自动补齐。详见[本轮目录与界面说明](docs/UI_SIMPLIFICATION_2026-09-12.md)。[原生分辨率训练](docs/native-resolution.md)、Mask、HF/魔搭模型下载和版本隔离继续保留。
+当前版本 **v0.5.2**：设置新增集中“访问密钥”，管理 HF、魔搭、Danbooru 与 Gelbooru；模型准备提供官方组件候选、HF/魔搭来源选择、大小/SHA-256 校验和共享 VAE 复用。全局任务队列与项目版本结果分开，项目/训练导航、标签查看和错误重试进一步整理；辅助 API 失败不会将默认值写回已有草稿。详见[本轮设计与验证边界](docs/UI_DESIGN_REVIEW_2026-09-12.md)。
+
+项目继续采用独立显示名称和手填 ID，按 `project/<id>/vN/` 保存训练图、正则图、各任务采样与产物，支持自定义输出根。正则图支持本地底模生成、网站收集与已有图片导入；标签页查看/编辑已有 caption，不提供 WD14 自动打标。环境页保留计算后端和注意力加速，常规依赖由启动器补齐。[目录规则](docs/UI_SIMPLIFICATION_2026-09-12.md)、[原生分辨率训练](docs/native-resolution.md)、Mask 和版本隔离继续保留。
 
 ## 仓库结构
 

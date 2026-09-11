@@ -15,11 +15,15 @@ import {
   Activity,
   Box,
   Clock,
+  RefreshCw,
 } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import Dialog from '../../components/Dialog';
 import { formatTime } from '../../utils/format';
 import { formatApiError } from '../../utils/errors';
 import { useWorkspaceText } from '../../utils/workspaceText';
+import '../../styles/project-workspace.css';
+import './projects.css';
 
 interface ProjectListResponse {
   items: Project[];
@@ -30,6 +34,7 @@ export default function Projects() {
   const { t } = useTranslation();
   const text = useWorkspaceText();
   const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
   const [error, setError] = React.useState('');
   const [projects, setProjects] = React.useState<Project[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -41,17 +46,27 @@ export default function Projects() {
   const [newNote, setNewNote] = React.useState('');
   const [creating, setCreating] = React.useState(false);
   const [editing, setEditing] = React.useState<{ id: string; name: string; note: string } | null>(null);
-  const [search, setSearch] = React.useState('');
-  const [showArchived, setShowArchived] = React.useState(true);
+  const [renaming, setRenaming] = React.useState(false);
+  const [renameError, setRenameError] = React.useState('');
+  const search = params.get('q') || '';
+  const showArchived = params.get('archived') !== '0';
+  const requestedPage = Math.max(1, Math.floor(Number(params.get('page')) || 1));
+  const changeFilter = (patch: Record<string, string | null>, replace = false) => {
+    const next = new URLSearchParams(params); next.delete('page');
+    Object.entries(patch).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key));
+    setParams(next, { replace });
+  };
 
   const fetchProjects = () => {
-    apiClient.get<ProjectListResponse | Project[]>('/projects')
+    setLoading(true);
+    return apiClient.get<ProjectListResponse | Project[]>('/projects', { silent: true })
       .then((data) => {
         if (Array.isArray(data)) {
           setProjects(data);
         } else if (data && Array.isArray(data.items)) {
           setProjects(data.items);
         }
+        setError('');
       })
       .catch((error) => setError(formatApiError(error)))
       .finally(() => setLoading(false));
@@ -64,7 +79,7 @@ export default function Projects() {
   const idError = !newId ? text('请填写项目 ID。', 'Enter a project ID.') : newId.length>64 ? text('项目 ID 最多 64 个字符。', 'Project ID must be at most 64 characters.') : !/^[A-Za-z0-9_]+$/.test(newId) ? text('项目 ID 只能包含英文字母、数字和下划线。', 'Use only ASCII letters, digits and underscores in the project ID.') : '';
   const handleCreate = () => {
     setIdTouched(true);
-    if (!newName.trim() || idError) return;
+    if (creating || !newName.trim() || idError) return;
     setCreating(true);
     setError('');
     setCreateError('');
@@ -81,13 +96,15 @@ export default function Projects() {
   };
 
   const handleRename = () => {
-    if (!editing || !editing.name.trim()) return;
-    apiClient.patch<Project>(`/projects/${editing.id}`, { name: editing.name.trim(), note: editing.note })
+    if (renaming || !editing || !editing.name.trim()) return;
+    setRenaming(true); setRenameError('');
+    apiClient.patch<Project>(`/projects/${editing.id}`, { name: editing.name.trim(), note: editing.note }, { silent: true })
       .then(() => {
         setEditing(null);
-        fetchProjects();
+        void fetchProjects();
       })
-      .catch(error => setError(formatApiError(error)));
+      .catch(error => setRenameError(formatApiError(error)))
+      .finally(() => setRenaming(false));
   };
 
   const handleArchive = (id: string, archived: boolean) => {
@@ -111,6 +128,15 @@ export default function Projects() {
     if (!query) return true;
     return p.name.toLowerCase().includes(query) || p.id.toLowerCase().includes(query) || (p.note || '').toLowerCase().includes(query);
   });
+  const pageCount = Math.max(1, Math.ceil(visibleProjects.length / 24));
+  const page = Math.min(requestedPage, pageCount);
+  const pageProjects = visibleProjects.slice((page - 1) * 24, page * 24);
+  React.useEffect(() => {
+    if (loading || error || requestedPage <= pageCount) return;
+    const next = new URLSearchParams(params);
+    if (pageCount === 1) next.delete('page'); else next.set('page', String(pageCount));
+    setParams(next, { replace: true });
+  }, [loading, error, requestedPage, pageCount, params, setParams]);
 
   const statChip = (icon: React.ReactNode, label: string, value: number) => (
     <span className="inline-flex items-center space-x-1 px-2 py-1 rounded-full bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300">
@@ -132,9 +158,9 @@ export default function Projects() {
   );
 
   return (
-    <div className="space-y-6" data-testid="projects-page">
-      {error && <div role="alert" className="whitespace-pre-line rounded bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{error}</div>}
-      <div className="flex justify-between items-center">
+    <div className="projects-workspace" data-testid="projects-page">
+      <header className="projects-toolbar">
+      <div className="flex flex-wrap gap-3 justify-between items-center">
         <h2 className="text-2xl font-bold">
           {t('projects.title')}
           {!loading && projects.length > 0 && (
@@ -143,24 +169,25 @@ export default function Projects() {
             </span>
           )}
         </h2>
-        <button
+        <div className="flex items-center gap-2"><button type="button" aria-label={text('刷新项目', 'Refresh projects')} disabled={loading} onClick={() => void fetchProjects()} className="projects-page-button"><RefreshCw size={15}/></button><button
           onClick={() => {setCreateError('');setModalOpen(true);}}
           className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
         >
           <FolderPlus className="w-4 h-4" />
           <span>{t('projects.newProject')}</span>
-        </button>
+        </button></div>
       </div>
 
-      <p className="text-sm text-slate-500">{text('按项目管理实验，再用版本区分数据、训练参数与结果。新建项目会自动建立 v1；后续可复制为独立版本进行对比。', 'Organize experiments by project and keep data, parameters and results in separate versions. New projects start with v1; copy a version to compare experiments.')}</p>
+      <p className="text-xs text-slate-500">{text('每个项目从 v1 开始；复制版本可对比不同数据、参数与训练结果。', 'Projects start with v1. Copy versions to compare data, parameters and training results.')}</p>
 
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+      <div className="projects-filter-row">
         <div className="relative flex-1 max-w-md">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           <input
             type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => changeFilter({ q: e.target.value || null }, true)}
+            aria-label={text('搜索项目', 'Search projects')}
             placeholder={t('projects.searchPlaceholder', '按名称 / 备注搜索…')}
             className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm dark:bg-slate-900 dark:border-slate-600"
             data-testid="project-search-input"
@@ -170,13 +197,19 @@ export default function Projects() {
           <input
             type="checkbox"
             checked={showArchived}
-            onChange={(e) => setShowArchived(e.target.checked)}
+            onChange={(e) => changeFilter({ archived: e.target.checked ? null : '0' })}
             className="rounded border-slate-300"
             data-testid="show-archived-toggle"
           />
           <span>{t('projects.showArchived', '显示已归档')}</span>
         </label>
       </div>
+      <nav className="projects-pagination" aria-label={text('项目分页', 'Project pagination')}>
+        <span>{loading ? text('读取中…', 'Loading…') : text(`共 ${visibleProjects.length} 个项目 · 每页 24 个`, `${visibleProjects.length} projects · 24 per page`)}</span>
+        <div><button className="projects-page-button" disabled={loading || page <= 1} onClick={() => changeFilter({ page: String(page - 1) })}>{text('上一页', 'Previous')}</button><span aria-label={text('当前页', 'Current page')}>{page} / {pageCount}</span><button className="projects-page-button" disabled={loading || page >= pageCount} onClick={() => changeFilter({ page: String(page + 1) })}>{text('下一页', 'Next')}</button></div>
+      </nav>
+      {error && <div role="alert" className="projects-list-error"><span>{error}</span><button onClick={() => void fetchProjects()} disabled={loading}>{t('common.retry')}</button></div>}
+      </header>
 
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6" data-testid="projects-skeleton">
@@ -220,8 +253,8 @@ export default function Projects() {
           )
         )
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {visibleProjects.map((proj) => (
+        <div className="projects-grid" aria-label={text('项目列表', 'Project list')}>
+          {pageProjects.map((proj) => (
             <div
               key={proj.id}
               className="block p-5 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-blue-500 transition-colors"
@@ -236,7 +269,7 @@ export default function Projects() {
                 </Link>
                 <div className="flex space-x-1">
                   <button
-                    onClick={() => setEditing({ id: proj.id, name: proj.name, note: proj.note || '' })}
+                    onClick={() => { setRenameError(''); setEditing({ id: proj.id, name: proj.name, note: proj.note || '' }); }}
                     className="p-1 text-slate-400 hover:text-blue-500"
                     title={t('projects.rename')}
                   >
@@ -278,14 +311,13 @@ export default function Projects() {
 
       {/* Create Modal */}
       {modalOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <form onSubmit={event=>{event.preventDefault();handleCreate();}} role="dialog" aria-modal="true" aria-labelledby="create-project-title" className="bg-white dark:bg-slate-800 rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 space-y-4 shadow-xl" data-testid="create-project-modal">
-            <h3 id="create-project-title" className="font-semibold text-lg">{t('projects.newProject')}</h3>
+        <Dialog title={t('projects.newProject')} onClose={() => setModalOpen(false)} closeDisabled={creating}>
+          <form onSubmit={event=>{event.preventDefault();handleCreate();}} className="space-y-4" data-testid="create-project-modal" aria-busy={creating}>
             <p className="text-sm text-slate-500">{text('创建后进入工作区：上传数据 → 选择模型 → 设置参数 → 启动训练。', 'Next: upload data → choose a model → configure → start training.')}</p>
             <div className="space-y-3">
               <label className="block space-y-1 text-sm"><span>{text('项目名称', 'Project name')}</span><input
                 type="text" required placeholder={t('projects.namePlaceholder')} value={newName} onChange={event=>setNewName(event.target.value)} disabled={creating}
-                className="w-full px-3 py-2 border rounded-md text-sm dark:bg-slate-900 dark:border-slate-600" data-testid="project-name-input" autoFocus
+                className="w-full px-3 py-2 border rounded-md text-sm dark:bg-slate-900 dark:border-slate-600" data-testid="project-name-input"
               /><span className="block text-xs text-slate-500">{text('用于界面显示，支持中文及其他语言，可随时重命名。', 'Display name supports any language and can be renamed later.')}</span></label>
               <label className="block space-y-1 text-sm"><span>{text('项目 ID', 'Project ID')}</span><input
                 type="text" required maxLength={64} value={newId} onChange={event=>{setNewId(event.target.value);setIdTouched(true);setCreateError('');}} onBlur={()=>setIdTouched(true)} disabled={creating}
@@ -303,44 +335,47 @@ export default function Projects() {
               <button type="submit" disabled={creating||!newName.trim()||!!idError} className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">{creating?t('projects.creating'):t('projects.create')}</button>
             </div>
           </form>
-        </div>
+        </Dialog>
       )}
 
       {/* Edit Modal */}
       {editing && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-xl max-w-md w-full p-6 space-y-4 shadow-xl">
-            <h3 className="font-semibold text-lg">{t('projects.renameTitle', '重命名项目')}</h3>
+        <Dialog title={t('projects.renameTitle', '重命名项目')} onClose={() => setEditing(null)} closeDisabled={renaming}>
+          <form className="space-y-4" onSubmit={event => { event.preventDefault(); handleRename(); }} aria-busy={renaming}>
+            {renameError && <p role="alert" className="whitespace-pre-line text-sm text-red-600">{renameError}</p>}
             <div className="space-y-3">
-              <input
+              <label className="block space-y-1 text-sm"><span>{text('项目名称', 'Project name')}</span><input
                 type="text"
+                required disabled={renaming}
                 value={editing.name}
                 onChange={(e) => setEditing({ ...editing, name: e.target.value })}
                 className="w-full px-3 py-2 border rounded-md text-sm dark:bg-slate-900 dark:border-slate-600"
-              />
-              <textarea
+              /></label>
+              <label className="block space-y-1 text-sm"><span>{text('备注（可选）', 'Notes (optional)')}</span><textarea
+                disabled={renaming}
                 value={editing.note}
                 onChange={(e) => setEditing({ ...editing, note: e.target.value })}
                 rows={3}
                 className="w-full px-3 py-2 border rounded-md text-sm dark:bg-slate-900 dark:border-slate-600"
-              />
+              /></label>
             </div>
             <div className="flex justify-end space-x-2 pt-2">
               <button
+                type="button" disabled={renaming}
                 onClick={() => setEditing(null)}
                 className="px-4 py-2 text-sm rounded bg-slate-200 dark:bg-slate-700 hover:bg-slate-300"
               >
                 {t('common.cancel')}
               </button>
               <button
-                onClick={handleRename}
+                type="submit" disabled={renaming || !editing.name.trim()}
                 className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
               >
-                {t('common.save')}
+                {renaming ? text('保存中…', 'Saving…') : t('common.save')}
               </button>
             </div>
-          </div>
-        </div>
+          </form>
+        </Dialog>
       )}
     </div>
   );

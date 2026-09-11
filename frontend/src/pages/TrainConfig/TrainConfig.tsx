@@ -15,8 +15,51 @@ import { useProjectVersions } from '../../components/projects/useProjectVersions
 import { projectUrl, versionConfigUrl, type VersionedProject } from '../../utils/projectVersions';
 import '../../styles/project-workspace.css';
 import BucketInspector from './BucketInspector';
+import StudioSelect from '../../components/StudioSelect';
+import { useWorkspaceHeight } from '../../components/projects/useWorkspaceHeight';
+import './training-workspace.css';
 import { CONFIG_TAB_GROUPS, ConfigTab, ConfigIssue, presentConfigIssues, presentPlanWarning } from '../../utils/configPresentation';
 import { AlertCircle, CheckCircle2, ChevronRight, Search, SlidersHorizontal, Play, Settings2, Brush, Database, Box, Sparkles, Loader2 } from 'lucide-react';
+
+const trainingDraftKey = (projectId: string, versionId?: string) => `training-draft:${projectId}:${versionId || 'legacy'}`;
+const isConfigObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
+
+// Restore only locally changed fields, preserving unrelated server changes made while away.
+function restoreDraftChanges(current: unknown, base: unknown, draft: unknown): unknown {
+  if (JSON.stringify(base) === JSON.stringify(draft)) return current;
+  if (!isConfigObject(base) || !isConfigObject(draft)) return draft;
+  const next: Record<string, unknown> = isConfigObject(current) ? { ...current } : {};
+  for (const key of new Set([...Object.keys(base), ...Object.keys(draft)])) {
+    if (['__proto__', 'constructor', 'prototype'].includes(key)) continue;
+    if (JSON.stringify(base[key]) === JSON.stringify(draft[key])) continue;
+    if (!(key in draft)) delete next[key];
+    else next[key] = restoreDraftChanges(next[key], base[key], draft[key]);
+  }
+  return next;
+}
+
+function readTrainingDraft(key: string) {
+  try {
+    const saved: unknown = JSON.parse(sessionStorage.getItem(key) || 'null');
+    if (isConfigObject(saved) && saved.version === 1 && isConfigObject(saved.base) && isConfigObject(saved.draft)) return saved;
+  } catch { /* Storage can be unavailable or contain an obsolete draft. */ }
+  return null;
+}
+
+function clearSavedTrainingDraft(key: string, encoded: string) {
+  try {
+    const saved = readTrainingDraft(key);
+    // An older request must not erase edits made while it was in flight.
+    if (saved && JSON.stringify(saved.draft) === encoded) sessionStorage.removeItem(key);
+  } catch { /* The server save remains successful when session storage is unavailable. */ }
+}
+
+function rememberTrainingDraft(key: string, config: Record<string, unknown>, base: string) {
+  try {
+    if (JSON.stringify(config) === base) clearSavedTrainingDraft(key, base);
+    else if (base) sessionStorage.setItem(key, JSON.stringify({ version: 1, base: JSON.parse(base), draft: config }));
+  } catch { /* The existing save and beforeunload guards still protect the draft. */ }
+}
 
 export default function TrainConfig() {
   const { id, versionId } = useParams<{ id: string; versionId: string }>();
@@ -26,11 +69,17 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const { t, i18n } = useTranslation();
   const english = i18n.language.startsWith('en');
   const text = useWorkspaceText();
+  const toolbarRef = useWorkspaceHeight('--training-toolbar-height');
   const location = useLocation();
   const navigate = useNavigate();
   const { data: families } = useFamilies();
   const [activeTab, setActiveTab] = React.useState<ConfigTab>('train');
   const [search, setSearch] = React.useState('');
+  const previousTab = React.useRef(activeTab);
+  React.useLayoutEffect(() => {
+    if (previousTab.current !== activeTab) document.getElementById('training-parameters')?.scrollIntoView?.({block:'start'});
+    previousTab.current = activeTab;
+  }, [activeTab]);
   const [project, setProject] = React.useState<VersionedProject | null>(null);
   const versions = useProjectVersions(project, versionId);
   const versionStatus = versions.current?.status;
@@ -42,7 +91,13 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const [schema, setSchema] = React.useState<any>(null);
   const [defaults, setDefaults] = React.useState<Record<string, any>>({});
   const [registeredModels, setRegisteredModels] = React.useState<ModelAsset[]>([]);
+  const registeredModelsRef = React.useRef<ModelAsset[]>([]);
+  const initialConfigRef = React.useRef<string|null>(null);
+  const [auxiliaryErrors,setAuxiliaryErrors] = React.useState<Record<string,string>>({});
+  const [auxiliaryReload,setAuxiliaryReload] = React.useState(0);
+  const [auxiliaryLoading,setAuxiliaryLoading] = React.useState(false);
   const [loaded, setLoaded] = React.useState(false);
+  const [recoveredDraft, setRecoveredDraft] = React.useState(false);
   const [reload, setReload] = React.useState(0);
   const [error, setError] = React.useState('');
   const [showAdvanced, setShowAdvanced] = React.useState(false);
@@ -65,14 +120,24 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const [savingNavigation, setSavingNavigation] = React.useState(false);
   const navigationPendingRef = React.useRef(false);
   const lastSavedRef = React.useRef('');
+  const submittedConfigRef = React.useRef<string | null>(null);
   const saveQueueRef = React.useRef<Promise<unknown>>(Promise.resolve());
   const draftRef = React.useRef({ projectId, versionId, config, loaded, archived });
-  React.useLayoutEffect(() => { draftRef.current = { projectId, versionId, config, loaded, archived }; }, [projectId, versionId, config, loaded, archived]);
+  React.useLayoutEffect(() => {
+    draftRef.current = { projectId, versionId, config, loaded, archived };
+    if (projectId && loaded && !archived) rememberTrainingDraft(trainingDraftKey(projectId, versionId), config, submittedConfigRef.current || lastSavedRef.current);
+  }, [projectId, versionId, config, loaded, archived]);
   React.useEffect(() => () => {
     const draft = draftRef.current;
-    if (!draft.projectId || !draft.loaded || draft.archived || JSON.stringify(draft.config) === lastSavedRef.current) return;
+    if (!draft.projectId || !draft.loaded || draft.archived || (!submittedConfigRef.current && JSON.stringify(draft.config) === lastSavedRef.current)) return;
     // Route navigation must not discard changes still in the autosave debounce.
-    saveQueueRef.current = saveQueueRef.current.catch(() => {}).then(() => apiClient.put(versionConfigUrl(draft.projectId!, draft.versionId), draft.config));
+    const key = trainingDraftKey(draft.projectId, draft.versionId);
+    const encoded = JSON.stringify(draft.config);
+    rememberTrainingDraft(key, draft.config, submittedConfigRef.current || lastSavedRef.current);
+    saveQueueRef.current = saveQueueRef.current.catch(() => {}).then(async () => {
+      if (encoded !== lastSavedRef.current) await apiClient.put(versionConfigUrl(draft.projectId!, draft.versionId), draft.config, { silent: true });
+      clearSavedTrainingDraft(key, encoded);
+    });
     void saveQueueRef.current.catch(() => {});
   }, [projectId, versionId]);
 
@@ -82,15 +147,28 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       if (!draft.projectId || !draft.loaded || draft.archived) break;
       const encoded = JSON.stringify(draft.config);
       const pending = saveQueueRef.current.catch(() => {}).then(async () => {
-        if (encoded === lastSavedRef.current) return;
-        await apiClient.put(versionConfigUrl(draft.projectId!, draft.versionId), draft.config, { silent: true });
-        lastSavedRef.current = encoded;
+        const current = draftRef.current;
+        const latest = current.projectId === draft.projectId && current.versionId === draft.versionId ? current : draft;
+        const submitted = JSON.stringify(latest.config);
+        if (submitted === lastSavedRef.current) return;
+        submittedConfigRef.current = submitted;
+        try { await apiClient.put(versionConfigUrl(draft.projectId!, draft.versionId), latest.config, { silent: true }); }
+        finally { submittedConfigRef.current = null; }
+        lastSavedRef.current = submitted;
+        clearSavedTrainingDraft(trainingDraftKey(draft.projectId!, draft.versionId), submitted);
         setSavedAt(new Date().toLocaleTimeString(undefined, { hour12: false }));
       });
       saveQueueRef.current = pending;
       await pending;
       if (draft.projectId === draftRef.current.projectId && draft.versionId === draftRef.current.versionId && encoded === JSON.stringify(draftRef.current.config)) break;
     }
+  };
+  const saveDraftNow = async () => {
+    if (navigationPendingRef.current) return;
+    navigationPendingRef.current = true; setSavingNavigation(true); setError('');
+    try { await flushDraft(); }
+    catch (err) { setError(`${text('草稿保存失败，修改仍保留在此页面。', 'Draft could not be saved. Your changes remain on this page.')}\n${formatApiError(err)}`); }
+    finally { navigationPendingRef.current = false; setSavingNavigation(false); }
   };
   const navigateWithSavedDraft = async (destination: string) => {
     if (navigationPendingRef.current) return;
@@ -103,7 +181,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     } finally { navigationPendingRef.current = false; setSavingNavigation(false); }
   };
 
-  const handleInternalLink = (event: React.MouseEvent<HTMLDivElement>) => {
+  const handleInternalLink = (event: MouseEvent) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const anchor = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href]') : null;
     if (!anchor || (anchor.target && anchor.target.toLowerCase() !== '_self') || anchor.hasAttribute('download')) return;
@@ -112,6 +190,21 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     event.preventDefault();
     void navigateWithSavedDraft(`${destination.pathname}${destination.search}${destination.hash}`);
   };
+  const linkGuard = React.useRef(handleInternalLink);
+  React.useLayoutEffect(() => { linkGuard.current = handleInternalLink; });
+  React.useEffect(() => {
+    const guard = (event: MouseEvent) => linkGuard.current(event);
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      const draft = draftRef.current;
+      if (draft.loaded && !draft.archived && JSON.stringify(draft.config) !== lastSavedRef.current) {
+        event.preventDefault(); event.returnValue = '';
+      }
+    };
+    document.addEventListener('click',guard,true);
+    window.addEventListener('beforeunload',beforeUnload);
+    return () => { document.removeEventListener('click',guard,true); window.removeEventListener('beforeunload',beforeUnload); };
+  }, []);
+
 
   React.useEffect(() => {
     if (versionId && (versionStatus !== 'ready' || archived)) return;
@@ -119,25 +212,43 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     setLoaded(false);
     setError('');
     setSavedAt(null);
+    setRecoveredDraft(false);
     Promise.all([
       apiClient.get<any>('/schema/train', { silent: true }),
       apiClient.get<Record<string, any>>('/config/defaults', { silent: true }),
       projectId ? apiClient.get<Record<string, any>>(versionConfigUrl(projectId, versionId), { silent: true }) : Promise.resolve({}),
-      apiClient.get<Preset[]>('/presets', { silent: true }),
-      apiClient.get<ModelAsset[]>('/models', { silent: true }),
-    ]).then(([nextSchema, nextDefaults, draft, nextPresets, models]) => {
+    ]).then(([nextSchema, nextDefaults, draft]) => {
       if (!active) return;
-      const next = fillDefaultModels(mergeConfig(nextDefaults, draft), models);
+      const next = fillDefaultModels(mergeConfig(nextDefaults, draft), registeredModelsRef.current);
       setSchema(nextSchema);
       setDefaults(nextDefaults);
-      setPresets(nextPresets);
-      setRegisteredModels(models);
+      initialConfigRef.current = JSON.stringify(next);
       lastSavedRef.current = JSON.stringify(next);
-      setConfig(next);
+      const saved = projectId ? readTrainingDraft(trainingDraftKey(projectId, versionId)) : null;
+      const restored = saved ? restoreDraftChanges(next, saved.base, saved.draft) as Record<string, any> : next;
+      setRecoveredDraft(JSON.stringify(restored) !== JSON.stringify(next));
+      setConfig(restored);
       setLoaded(true);
     }).catch((err) => { if (active) setError(formatApiError(err)); });
     return () => { active = false; };
   }, [projectId, versionId, reload, versionStatus, archived]);
+
+  React.useEffect(() => {
+    let active=true;
+    setAuxiliaryLoading(true);
+    const clear=(key:string)=>setAuxiliaryErrors(previous=>{const next={...previous};delete next[key];return next;});
+    const requests=[
+      apiClient.get<Preset[]>('/presets',{silent:true}).then(items=>{if(active){setPresets(items);clear('presets');}}).catch(error=>{if(active)setAuxiliaryErrors(previous=>({...previous,presets:formatApiError(error)}));}),
+      apiClient.get<ModelAsset[]>('/models',{silent:true}).then(models=>{
+        if(!active)return;
+        registeredModelsRef.current=models;setRegisteredModels(models);clear('models');
+        // A late registry reply/retry must not replace a draft the user has edited.
+        setConfig(current=>JSON.stringify(current)===initialConfigRef.current?fillDefaultModels(current,models):current);
+      }).catch(error=>{if(active)setAuxiliaryErrors(previous=>({...previous,models:formatApiError(error)}));}),
+    ];
+    void Promise.all(requests).finally(()=>{if(active)setAuxiliaryLoading(false);});
+    return ()=>{active=false;};
+  },[projectId,versionId,auxiliaryReload]);
 
   React.useEffect(() => {
     if (!projectId) return;
@@ -156,12 +267,24 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     const timer = setTimeout(() => {
       saveQueueRef.current = saveQueueRef.current.catch(() => {}).then(async () => {
         if (!active) return;
-        await apiClient.put(versionConfigUrl(projectId, versionId), config, { silent: true });
-        if (active) {
-          lastSavedRef.current = encoded;
-          setSavedAt(new Date().toLocaleTimeString(undefined, { hour12: false }));
+        let next = config;
+        while (true) {
+          const submitted = JSON.stringify(next);
+          if (submitted !== lastSavedRef.current) {
+            submittedConfigRef.current = submitted;
+            try { await apiClient.put(versionConfigUrl(projectId, versionId), next, { silent: true }); }
+            finally { submittedConfigRef.current = null; }
+            lastSavedRef.current = submitted;
+            clearSavedTrainingDraft(trainingDraftKey(projectId, versionId), submitted);
+          }
+          const latest = draftRef.current;
+          if (latest.projectId !== projectId || latest.versionId !== versionId || !latest.loaded || latest.archived || JSON.stringify(latest.config) === submitted) break;
+          // Include edits made during this request, even a return to the old saved value.
+          next = latest.config;
+          rememberTrainingDraft(trainingDraftKey(projectId, versionId), next, lastSavedRef.current);
         }
-      }).catch((err) => { if (active) setError(formatApiError(err)); });
+        setSavedAt(new Date().toLocaleTimeString(undefined, { hour12: false }));
+      }).catch((err) => { setError(formatApiError(err)); });
     }, 1000);
     return () => { active = false; clearTimeout(timer); };
   }, [config, projectId, versionId, loaded, savingNavigation, archived]);
@@ -270,6 +393,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
         await saveQueueRef.current.catch(() => {});
         await apiClient.put(versionConfigUrl(projectId, versionId), config, { silent: true });
         lastSavedRef.current = JSON.stringify(config);
+        clearSavedTrainingDraft(trainingDraftKey(projectId, versionId), lastSavedRef.current);
       }
       const job = await apiClient.post<Job>('/jobs', {
         type: 'train', name: jobName.trim() || project?.name || `${config.model?.family || 'model'} training`, project_id: projectId || null, version_id: versionId || project?.active_version_id || null,
@@ -307,20 +431,24 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const modelUrl = `/settings/environment?tab=models&family=${encodeURIComponent(config.model?.family || 'anima')}${projectId ? `&project=${encodeURIComponent(projectId)}` : ''}`;
 
   if (!versionId && project?.active_version_id) return <Navigate replace to={projectUrl(project.id, project.active_version_id, 'train')}/>;
-  const draftStatus = <span className="draft-indicator" data-testid={savedAt ? 'draft-saved' : undefined}>{savingNavigation ? <><Loader2 size={12} className="animate-spin"/>{text('正在保存草稿…', 'Saving draft…')}</> : savedAt ? <><CheckCircle2 size={12}/>{t('train.draftSaved', { time: savedAt })}</> : loaded ? text('修改自动保存', 'Changes save automatically') : text('正在加载…', 'Loading…')}</span>;
+  const dirty = loaded && JSON.stringify(config) !== lastSavedRef.current;
+  const draftStatus = <span className="draft-indicator" data-testid={savedAt && !dirty ? 'draft-saved' : undefined}>{savingNavigation ? <><Loader2 size={12} className="animate-spin"/>{text('正在保存草稿…', 'Saving draft…')}</> : dirty ? text('有未保存修改', 'Unsaved changes') : savedAt ? <><CheckCircle2 size={12}/>{t('train.draftSaved', { time: savedAt })}</> : loaded ? text('修改自动保存', 'Changes save automatically') : text('正在加载…', 'Loading…')}</span>;
   if (versionId && (versions.current?.status !== 'ready' || archived)) return <div className="training-studio project-workspace">
     {project && <ProjectWorkspaceHeader project={project} versionId={versionId} versions={versions.versions} current={versions.current} active="train" refresh={versions.refresh} error={versions.error}/>}
-    {archived && <Link className="workspace-message" to={projectUrl(projectId || '', versionId, 'results')}>{text('查看此版本的任务与结果', 'View this version’s jobs and results')}</Link>}
+    {archived && <Link className="workspace-message" to={projectUrl(projectId || '', versionId, 'results')}>{text('查看此版本的训练结果', 'View this version’s training results')}</Link>}
     {!versions.current && <p className="workspace-message">{versions.loading ? t('common.loading') : text('此版本不存在或不可访问。', 'This version does not exist or is unavailable.')}</p>}
   </div>;
-  return <div className="training-studio project-workspace" onClickCapture={handleInternalLink} aria-busy={savingNavigation}>
+  return <div className="training-studio project-workspace" aria-busy={savingNavigation}>
     {project ? <ProjectWorkspaceHeader project={project} versionId={versionId} versions={versions.versions} current={versions.current} active="train" refresh={versions.refresh} beforeAction={flushDraft} status={draftStatus} error={versions.error}/> : <div className="project-heading-placeholder">{text('训练参数', 'Training parameters')}{draftStatus}</div>}
     {error && <div role="alert" className="studio-error">{error}<button type="button" onClick={() => { setError(''); if (!loaded) setReload(v => v + 1); }}>{loaded ? text('关闭', 'Dismiss') : t('common.retry')}</button></div>}
-    <div className="training-toolbar">
+    {recoveredDraft && loaded && <p className="workspace-message" role="status">{text('已恢复此版本上次未保存的草稿。', 'Recovered the unsaved draft for this version.')}</p>}
+    {Object.keys(auxiliaryErrors).length>0 && <div role="alert" className="studio-error" data-testid="training-auxiliary-error"><div>{Object.entries(auxiliaryErrors).map(([key,message])=><p key={key}>{key==='presets'?text('预设列表读取失败','Preset list could not be loaded'):text('模型库读取失败','Model registry could not be loaded')}: {message}</p>)}<p>{text('本版本配置仍可编辑；重试不会替换当前草稿。','The version configuration remains editable. Retrying will preserve the current draft.')}</p></div><button type="button" disabled={auxiliaryLoading} onClick={()=>setAuxiliaryReload(value=>value+1)}>{text('重试辅助信息','Retry supporting data')}</button></div>}
+    <div className="training-toolbar" ref={toolbarRef}>
       <div className="training-toolbar-title"><h2>{text('训练参数', 'Training parameters')}</h2><span className="family-chip">{config.model?.family || '…'}</span></div>
       <label className="config-search"><Search size={15}/><input aria-label={text('搜索训练参数', 'Search training parameters')} placeholder={text('搜索参数名称或关键字…', 'Search parameters…')} value={search} onChange={event => setSearch(event.target.value)} />{search && <button aria-label={text('清空搜索', 'Clear search')} onClick={() => setSearch('')}>×</button>}</label>
       <div className="toolbar-actions"><label className="advanced-toggle"><input type="checkbox" checked={showAdvanced} onChange={event => setShowAdvanced(event.target.checked)}/>{t('train.advanced')}</label>
-        <select aria-label={t('train.loadPreset')} disabled={!loaded} defaultValue="" onChange={event => { const preset = presets.find(item => item.name === event.target.value); if (preset) handleApplyPreset(preset); }}><option value="">{t('train.loadPreset')}</option>{presets.map(preset => <option key={preset.name}>{preset.name}</option>)}</select>
+        <StudioSelect aria-label={t('train.loadPreset')} disabled={!loaded || savingNavigation} value="" onValueChange={name => {const preset=presets.find(item=>item.name===name);if(preset)handleApplyPreset(preset);}} options={[{value:'',label:t('train.loadPreset'),disabled:true},...presets.map(preset=>({value:preset.name,label:preset.name}))]}/>
+        <button className="studio-secondary save-draft" disabled={!loaded || !dirty || savingNavigation} onClick={() => void saveDraftNow()}>{savingNavigation ? text('保存中…','Saving…') : text('保存草稿','Save draft')}</button>
         <details className="config-tools"><summary><Settings2 size={14}/>{text('配置工具', 'Config tools')}</summary><div className="config-tools-menu">
           <div className="preset-save"><input aria-label={t('train.presetName')} placeholder={t('train.presetName')} value={presetName} onChange={event => setPresetName(event.target.value)} /><button disabled={!loaded || savingPreset || !presetName.trim()} onClick={handleSavePreset}>{t('train.savePreset')}</button></div>
           <button disabled={!loaded} onClick={() => setImportOpen(value => !value)}>{t('train.importToml')}</button><button disabled={!loaded} onClick={handleExport}>{t('train.exportToml')}</button><button disabled={!loaded} onClick={() => { if (window.confirm(t('train.resetConfirm'))) setConfig(structuredClone(defaults)); }}>{t('train.resetDefaults')}</button>

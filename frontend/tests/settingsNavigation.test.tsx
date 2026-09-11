@@ -13,6 +13,7 @@ const config = { paths: { data_root: 'D:/studio', models_dir: 'D:/models', cache
 beforeEach(async () => {
   await i18n.changeLanguage('zh-CN');
   vi.spyOn(apiClient, 'get').mockImplementation(async endpoint => {
+    if (endpoint === '/credentials') return {huggingface:{configured:false},modelscope:{configured:false},danbooru:{configured:false},gelbooru:{configured:false}} as any;
     if (endpoint === '/settings') return config as any;
     if (endpoint === '/system/info') return { ypuddin: 'test' } as any;
     throw new Error(`Unexpected GET ${endpoint}`);
@@ -58,4 +59,17 @@ describe('settings drawer content navigation', () => {
     expect(document.getElementById('preferences-service')).toHaveFocus();
     expect(within(index).getByRole('button', { name: i18n.t('settings.server') })).toHaveAttribute('aria-current', 'location');
   });
+  it('opens the independent access-keys page with all four providers and preserves drawer context',async()=>{
+    show('/settings/environment?tab=runtime');
+    fireEvent.click(screen.getByRole('tab',{name:'访问密钥'}));
+    expect(await screen.findByTestId('access-keys-settings')).toBeInTheDocument();
+    expect(screen.getByRole('tab',{name:'访问密钥'})).toHaveAttribute('aria-selected','true');
+    expect(screen.getByTestId('location')).toHaveTextContent('/settings/environment?tab=credentials');
+    expect(screen.getByTestId('location')).toHaveTextContent('backgroundLocation');
+    expect(screen.getByLabelText('Danbooru 用户名')).toHaveValue('');
+    expect(screen.getByLabelText('Gelbooru 用户 ID')).toHaveValue('');
+    expect(screen.queryByTestId('embedded-models')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('runtime-panel')).not.toBeInTheDocument();
+  });
+
 });

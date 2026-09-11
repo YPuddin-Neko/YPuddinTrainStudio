@@ -9,10 +9,12 @@ import i18n from '../src/i18n';
 vi.mock('../src/pages/ProjectDetail/ProjectDataImport',()=>({default:({defaultIsReg}:{defaultIsReg:boolean})=><div>{defaultIsReg?'Import regularization data':'Import training data'}</div>}));
 const task = (extra: Partial<RegularizationTask> = {}): RegularizationTask => ({id:'reg_123',source:'ai',status:'running',phase:'generating',done:1,total:2,logs:[],error:null,created_at:1,can_cancel:true,dataset_id:null,path:null,images:0,duplicates:0,...extra});
 let snapshot: {path:string;images:number;operations:RegularizationTask[]};
+let keyConfigured = true;
 beforeEach(async()=>{
   await i18n.changeLanguage('zh-CN');
   snapshot={path:'D:/studio/project/dogs/v1/reg',images:0,operations:[]};
-  vi.spyOn(apiClient,'get').mockImplementation(async()=>snapshot as any);
+  keyConfigured = true;
+  vi.spyOn(apiClient,'get').mockImplementation(async endpoint=>endpoint === '/credentials' ? {huggingface:{configured:false},modelscope:{configured:false},danbooru:{configured:keyConfigured},gelbooru:{configured:keyConfigured}} as any : snapshot as any);
 });
 afterEach(()=>vi.restoreAllMocks());
 function show(readOnly=false) {
@@ -43,20 +45,34 @@ describe('regularization preparation',()=>{
     expect(changed).toHaveBeenCalledOnce();
   });
 
-  it('sends a site query and one-use credentials, then clears the secret',async()=>{
+  it('uses stored site credentials without putting keys in the form or task body',async()=>{
     vi.spyOn(apiClient,'post').mockResolvedValue(task({source:'gelbooru'}) as any);
     show(); await screen.findByRole('button',{name:'生成正则图'});
     fireEvent.click(screen.getByRole('combobox',{name:'图片来源'}));
     fireEvent.click(screen.getByRole('option',{name:'Gelbooru'}));
+    await screen.findByText('gelbooru 访问密钥已配置');
     fireEvent.change(screen.getByRole('textbox',{name:'站点检索标签'}),{target:{value:'dog solo'}});
-    fireEvent.click(screen.getByText('站点凭据（可选）'));
-    fireEvent.change(screen.getByRole('textbox',{name:'用户名或用户 ID'}),{target:{value:'123'}});
-    const secret=screen.getByLabelText('API Key');
-    fireEvent.change(secret,{target:{value:'test-registry-key'}});
+    expect(screen.queryByLabelText('API Key')).not.toBeInTheDocument();
+    expect(document.querySelector('input[type="password"]')).toBeNull();
+    expect(screen.getByRole('link',{name:'管理访问密钥'})).toHaveAttribute('href','/settings/environment?tab=credentials#credentials-gelbooru');
     fireEvent.click(screen.getByRole('button',{name:'收集正则图'}));
-    await waitFor(()=>expect(apiClient.post).toHaveBeenCalledWith(expect.any(String),expect.objectContaining({source:'gelbooru',prompt:'dog solo',username:'123',api_key:'test-registry-key'}),{silent:true}));
-    await waitFor(()=>expect(secret).toHaveValue(''));
-    expect(screen.queryByText('test-registry-key')).not.toBeInTheDocument();
+    await waitFor(()=>expect(apiClient.post).toHaveBeenCalledWith(expect.any(String),expect.objectContaining({source:'gelbooru',prompt:'dog solo'}),{silent:true}));
+    const body=vi.mocked(apiClient.post).mock.calls[0][1] as Record<string,unknown>;
+    expect(body).not.toHaveProperty('api_key'); expect(body).not.toHaveProperty('username'); expect(body).not.toHaveProperty('user_id');
+  });
+
+  it('requires Gelbooru setup and refreshes configured status after saving in Settings',async()=>{
+    keyConfigured=false; show();
+    await screen.findByRole('button',{name:'生成正则图'});
+    fireEvent.click(screen.getByRole('combobox',{name:'图片来源'}));
+    fireEvent.click(screen.getByRole('option',{name:'Gelbooru'}));
+    await screen.findByText('Gelbooru 需要先配置用户 ID 和 API Key。');
+    fireEvent.change(screen.getByRole('textbox',{name:'站点检索标签'}),{target:{value:'dog'}});
+    expect(screen.getByRole('button',{name:'收集正则图'})).toBeDisabled();
+    keyConfigured=true;
+    await act(async()=>{window.dispatchEvent(new Event('credentials.changed'));});
+    await screen.findByText('gelbooru 访问密钥已配置');
+    expect(screen.getByRole('button',{name:'收集正则图'})).toBeEnabled();
   });
 
   it('shows cancellation and a failed preparation without claiming images were registered',async()=>{

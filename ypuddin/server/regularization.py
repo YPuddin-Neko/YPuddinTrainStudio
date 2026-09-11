@@ -28,6 +28,7 @@ from .db import new_id, now
 from .environment import maintenance_blocked
 from .errors import ApiError, NotFound
 from .hardware import gpu_info
+from .model_credentials import ModelCredentials
 
 TERMINAL = {"completed", "failed", "cancelled"}
 RESERVATION = "regularization.reservation"
@@ -91,8 +92,9 @@ def decoded_image(data: bytes | Path) -> Image.Image:
 
 
 class RegularizationManager:
-    def __init__(self, context, *, opener=None):
+    def __init__(self, context, *, opener=None, credentials=None):
         self.c = context
+        self.credentials = credentials or ModelCredentials(context.data_root)
         self.opener = opener  # Test seam; production always uses the provider-restricted opener.
         self.pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="regularization")
         self.cancel_events: dict[str, threading.Event] = {}
@@ -233,6 +235,7 @@ class RegularizationManager:
             raise ApiError(
                 "Enter a non-empty class prompt or search query", status=422, code="regularization.prompt"
             )
+        credentials = ("", "")
         if request.source != "ai":
             tags = request.prompt.split()
             if not tags or len(tags) > 12 or any(not re.fullmatch(r"[\w()\-]+", tag) for tag in tags):
@@ -241,11 +244,21 @@ class RegularizationManager:
                     status=422,
                     code="regularization.query",
                 )
-            if request.source == "gelbooru" and not (
-                (request.user_id or request.username).isdigit() and request.api_key.get_secret_value()
-            ):
+            # Legacy API clients may still supply one-use credentials. Never mix a
+            # partial override with an account/key taken from the central store.
+            if request.user_id or request.username or request.api_key.get_secret_value():
+                credentials = (request.user_id or request.username, request.api_key.get_secret_value())
+                if not all(credentials):
+                    raise ApiError(
+                        "Supply both site account and API key, or configure access keys in Settings",
+                        status=422,
+                        code="regularization.credentials",
+                    )
+            else:
+                credentials = self.credentials.site(request.source)
+            if request.source == "gelbooru" and not (credentials[0].isdigit() and credentials[1]):
                 raise ApiError(
-                    "Gelbooru requires a numeric user ID and API key",
+                    "Configure the Gelbooru user ID and API key in Settings → Access keys",
                     status=422,
                     code="regularization.credentials",
                 )
@@ -329,7 +342,6 @@ class RegularizationManager:
                 )
                 event = threading.Event()
                 self.cancel_events[oid] = event
-                credentials = (request.user_id or request.username, request.api_key.get_secret_value())
                 self.pool.submit(self._run, oid, payload, credentials, event, lease)
             except BaseException:
                 self.cancel_events.pop(oid, None)

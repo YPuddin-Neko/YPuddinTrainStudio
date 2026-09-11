@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from .context import ServiceContext
 from .db import new_id, now
@@ -23,6 +23,14 @@ from .model_catalog import TAGGER_FILES
 from .model_credentials import ModelCredentials, Provider
 
 ACTIVE = {"queued", "downloading"}
+
+
+class DownloadVerification(BaseModel):
+    """Immutable checks copied into each attempt, independent of later catalog edits."""
+
+    id: str
+    size: int = Field(gt=0)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class ModelDownloadRequest(BaseModel):
@@ -62,6 +70,9 @@ class ModelDownload(BaseModel):
     finished_at: float | None = None
     dtype: str | None = None
     is_default: bool = True
+    recommendation_id: str | None = None
+    expected_size: int | None = None
+    sha256: str | None = None
 
 
 def resolve_source(body: ModelDownloadRequest) -> tuple[str, str]:
@@ -244,24 +255,30 @@ class ModelDownloads:
             self._persist()
             self.context.bus.publish("model.download", dict(self.tasks[id_]))
 
-    def start(self, body: ModelDownloadRequest) -> dict[str, Any]:
+    def start(self, body: ModelDownloadRequest, *, recommendation=None) -> dict[str, Any]:
+        if recommendation is not None:
+            recommendation = DownloadVerification(
+                id=recommendation.id, size=recommendation.size, sha256=recommendation.sha256
+            )
         source, filename = resolve_source(body)
         root = Path(self.context.settings()["paths"]["models_dir"]).resolve()
         if not self.context.is_allowed(root):
             raise ApiError("model directory is outside allowed storage roots", status=403)
-        folder = root / body.family / body.kind / hashlib.sha256(source.encode()).hexdigest()[:12]
+        identity = recommendation.sha256 if recommendation else hashlib.sha256(source.encode()).hexdigest()
+        folder = root / body.family / body.kind / identity[:12]
         target = folder / filename
         with self.lock:
             if self.closed:
                 raise Conflict("download service is stopping")
-            if target.exists() or target.is_symlink():
+            if target.exists() or target.is_symlink() or folder.exists() or folder.is_symlink():
                 raise Conflict(
                     "target file already exists; register the existing path instead",
                     code="download.exists",
                     details={"path": str(target)},
                 )
             if any(
-                row["target_path"] == str(target) and row["status"] in ACTIVE for row in self.tasks.values()
+                Path(row["target_path"]).parent == folder and row["status"] in ACTIVE
+                for row in self.tasks.values()
             ):
                 raise Conflict("this model file is already downloading", code="download.active")
             if not target.resolve().is_relative_to(root):
@@ -280,6 +297,9 @@ class ModelDownloads:
                 created_at=now(),
                 dtype=body.dtype,
                 is_default=body.is_default,
+                recommendation_id=recommendation.id if recommendation else None,
+                expected_size=recommendation.size if recommendation else None,
+                sha256=recommendation.sha256 if recommendation else None,
             ).model_dump()
             self.tasks[id_] = row
             self.cancelled[id_] = threading.Event()
@@ -319,7 +339,20 @@ class ModelDownloads:
                 dtype=row["dtype"],
                 is_default=row["is_default"],
             )
-            return self.start(body)
+            recommendation = None
+            if row.get("recommendation_id") or row.get("sha256") or row.get("expected_size"):
+                try:
+                    recommendation = DownloadVerification(
+                        id=row.get("recommendation_id"),
+                        size=row.get("expected_size"),
+                        sha256=row.get("sha256"),
+                    )
+                except ValidationError:
+                    raise Conflict(
+                        "saved recommendation verification is incomplete; start from the catalog again",
+                        code="download.verification",
+                    ) from None
+            return self.start(body, recommendation=recommendation)
 
     def _run(self, id_: str, root: Path) -> None:
         row = self.tasks[id_]
@@ -345,7 +378,12 @@ class ModelDownloads:
                     )
             done, last = 0, time.monotonic()
             bundle = row["kind"] == "tagger"
-            files = TAGGER_FILES if bundle else {row["filename"]: {}}
+            verified = bool(row.get("sha256"))
+            files = (
+                TAGGER_FILES
+                if bundle
+                else {row["filename"]: {"size": row.get("expected_size"), "sha256": row.get("sha256")}}
+            )
             if bundle:
                 self._update(id_, total_bytes=sum(meta["size"] for meta in files.values()))
             for filename, meta in files.items():
@@ -374,7 +412,7 @@ class ModelDownloads:
                         file.write(chunk)
                         received += len(chunk)
                         done += len(chunk)
-                        if bundle:
+                        if bundle or verified:
                             digest.update(chunk)
                             if received > meta["size"]:
                                 raise ValueError("catalog file exceeds its verified size")
@@ -383,7 +421,9 @@ class ModelDownloads:
                             last = time.monotonic()
                     if not received or total is not None and received != total:
                         raise ValueError(f"incomplete download: received {received} of {total} bytes")
-                    if bundle and (received != meta["size"] or digest.hexdigest() != meta["sha256"]):
+                    if (bundle or verified) and (
+                        received != meta["size"] or digest.hexdigest() != meta["sha256"]
+                    ):
                         raise ValueError(f"catalog integrity check failed for {filename}")
                     file.flush()
                     os.fsync(file.fileno())
@@ -409,6 +449,10 @@ class ModelDownloads:
                     raise FileExistsError(f"download destination already exists: {target.parent}")
                 partial.parent.rename(target.parent)
                 published = True
+                if verified:
+                    from .model_recommendations import remember_verified_file
+
+                    remember_verified_file(self.context, target, row["sha256"])
                 from .routes_core import ModelBody, add_model
 
                 asset = add_model(
@@ -437,7 +481,7 @@ class ModelDownloads:
                 message = f"HTTP {error.code}: check the repository/file and your network access."
                 if error.code in (401, 403):
                     provider = "ModelScope" if row["provider"] == "modelscope" else "Hugging Face"
-                    message += f" For gated/private files, accept the repository license on {provider}, then save its access token in Settings → Models → Credentials and retry."
+                    message += f" For gated/private files, accept the repository license on {provider}, then save its access token in Settings → Access keys and retry."
                     if row["mirror"] != "official":
                         message += " Mirrors are anonymous; switch to the official source for authenticated downloads."
                 elif error.code == 429:

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Cpu, HardDrive, FolderCog, Palette } from 'lucide-react';
+import { Cpu, HardDrive, FolderCog, Palette, KeyRound } from 'lucide-react';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import '../../styles/settings.css';
 
@@ -9,12 +9,13 @@ export default function Settings() {
   const location = useLocation();
   const navigate = useNavigate();
   const params = new URLSearchParams(location.search);
-  const selected = location.pathname.endsWith('/preferences') ? params.get('section') === 'interface' ? 'interface' : 'storage' : params.get('tab') === 'models' ? 'models' : 'runtime';
+  const selected = location.pathname.endsWith('/preferences') ? params.get('section') === 'interface' ? 'interface' : 'storage' : params.get('tab') === 'credentials' ? 'credentials' : params.get('tab') === 'models' ? 'models' : 'runtime';
   const scroll = React.useRef<HTMLDivElement>(null);
   React.useEffect(() => { if (scroll.current) scroll.current.scrollTop = 0; }, [selected]);
   const tabs = [
     { id: 'runtime', label: text('运行环境', 'Runtime'), Icon: Cpu },
     { id: 'models', label: text('模型权重', 'Model weights'), Icon: HardDrive },
+    { id: 'credentials', label: text('访问密钥', 'Access keys'), Icon: KeyRound },
     { id: 'storage', label: text('存储路径', 'Storage'), Icon: FolderCog },
     { id: 'interface', label: text('界面与服务', 'Appearance & service'), Icon: Palette },
   ];

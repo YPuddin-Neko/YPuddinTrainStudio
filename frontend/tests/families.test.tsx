@@ -58,37 +58,32 @@ describe('FE-M7: family-driven SchemaForm', () => {
     const { rerender } = render(
       <SchemaForm schema={trainSchema as any} value={baseConfig} onChange={() => {}} family={krea2Family} />
     );
-    let select = screen.getByTestId('adapter-preset-select') as HTMLSelectElement;
-    let options = Array.from(select.querySelectorAll('option')).map((o) => o.value);
-    expect(options).toEqual(['all-linear', 'attn-mlp', 'attn-only']);
-    expect(select.value).toBe('all-linear');
-
-    // 切到 anima：选项应变为 anima 的预设
-    rerender(
-      <SchemaForm schema={trainSchema as any} value={baseConfig} onChange={() => {}} family={animaFamily} />
-    );
-    select = screen.getByTestId('adapter-preset-select') as HTMLSelectElement;
-    options = Array.from(select.querySelectorAll('option')).map((o) => o.value);
-    expect(options).toEqual(['attn-mlp', 'full-linear']);
+    const select = screen.getByTestId('adapter-preset-select');
+    expect(select).toHaveTextContent('all-linear');
+    fireEvent.click(select);
+    expect(screen.getAllByRole('option').map(option=>option.textContent?.split(' — ')[0])).toEqual(['all-linear','attn-mlp','attn-only']);
+    fireEvent.keyDown(select,{key:'Escape'});
+    rerender(<SchemaForm schema={trainSchema as any} value={baseConfig} onChange={()=>{}} family={animaFamily}/>);
+    fireEvent.click(screen.getByTestId('adapter-preset-select'));
+    expect(screen.getAllByRole('option').map(option=>option.textContent?.split(' — ')[0])).toEqual(['attn-mlp','full-linear']);
   });
 
   it('2. krea2 下 text_encoding 无 online 选项并显示提示', () => {
     render(
       <SchemaForm schema={trainSchema as any} value={baseConfig} onChange={() => {}} family={krea2Family} />
     );
-    const select = screen.getByTestId('text-encoding-select') as HTMLSelectElement;
-    const options = Array.from(select.querySelectorAll('option')).map((o) => o.value);
-    expect(options).toEqual(['auto', 'cached']);
-    expect(options).not.toContain('online');
+    fireEvent.click(screen.getByTestId('text-encoding-select'));
+    expect(screen.getAllByRole('option')).toHaveLength(2);
+    expect(screen.queryByRole('option',{name:/online|在线/i})).not.toBeInTheDocument();
   });
 
   it('3. anima 下 text_encoding 含 online', () => {
     render(
       <SchemaForm schema={trainSchema as any} value={baseConfig} onChange={() => {}} family={animaFamily} />
     );
-    const select = screen.getByTestId('text-encoding-select') as HTMLSelectElement;
-    const options = Array.from(select.querySelectorAll('option')).map((o) => o.value);
-    expect(options).toContain('online');
+    fireEvent.click(screen.getByTestId('text-encoding-select'));
+    expect(screen.getAllByRole('option')).toHaveLength(3);
+    expect(screen.getByRole('option',{name:/online|在线/i})).toBeInTheDocument();
   });
 
   it('4. krea2 的 sampling.shift 显示"自动（按分辨率）"占位', () => {
@@ -123,19 +118,10 @@ describe('FE-M7: TrainConfig 预设联动（MSW）', () => {
       </QueryClientProvider>
     );
 
-    // 等预设加载
-    await waitFor(() => {
-      const select = document.querySelector('select') as HTMLSelectElement;
-      expect(Array.from(select.querySelectorAll('option')).map((o) => o.value)).toContain('krea2-lokr-default');
-    });
-
-    const presetSelect = document.querySelector('select') as HTMLSelectElement;
-    fireEvent.change(presetSelect, { target: { value: 'krea2-lokr-default' } });
-
-    // 预设应用后：adapter.preset 下拉应显示 all-linear（krea2 族）
-    await waitFor(() => {
-      const presetSel = screen.getByTestId('adapter-preset-select') as HTMLSelectElement;
-      expect(presetSel.value).toBe('all-linear');
-    });
+    const picker = await screen.findByRole('combobox',{name:/加载预设/});
+    await waitFor(()=>expect(picker).toBeEnabled());
+    fireEvent.click(picker);
+    fireEvent.click(await screen.findByRole('option',{name:'krea2-lokr-default'}));
+    await waitFor(()=>expect(screen.getByTestId('adapter-preset-select')).toHaveTextContent('all-linear'));
   });
 });

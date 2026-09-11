@@ -982,23 +982,57 @@ def list_jobs(
     page: int = 1,
     page_size: int = 50,
     c: ServiceContext = Depends(ctx),
+    group: Literal["active", "waiting", "history"] | None = None,
+    type: Literal["train", "cache"] | None = None,
+    q: str | None = None,
 ) -> dict[str, Any]:
-    sql, params = "SELECT * FROM jobs", []
+    sql = " FROM jobs j LEFT JOIN projects p ON p.id=j.project_id LEFT JOIN project_versions v ON v.id=j.version_id"
+    params = []
     conds = []
     if status:
-        conds.append("status IN ({})".format(",".join("?" for _ in status.split(","))))
+        conds.append("j.status IN ({})".format(",".join("?" for _ in status.split(","))))
         params += status.split(",")
+    if group:
+        groups = {
+            "active": ("running", "pausing", "cancelling", "paused"),
+            "waiting": ("queued", "scheduled"),
+            "history": ("completed", "failed", "cancelled"),
+        }
+        conds.append("j.status IN ({})".format(",".join("?" for _ in groups[group])))
+        params += groups[group]
+    if type:
+        conds.append("j.type=?")
+        params.append(type)
     if project_id:
-        conds.append("project_id=?")
+        conds.append("j.project_id=?")
         params.append(project_id)
     if version_id:
-        conds.append("version_id=?")
+        conds.append("j.version_id=?")
         params.append(version_id)
+    if q and q.strip():
+        # instr treats user input literally, including SQL LIKE wildcard characters.
+        conds.append(
+            "instr(lower(j.name || ' ' || j.id || ' ' || coalesce(p.name,'') || ' ' || coalesce(j.project_id,'') || ' ' || coalesce(v.name,'')), lower(?)) > 0"
+        )
+        params.append(q.strip())
     if conds:
         sql += " WHERE " + " AND ".join(conds)
-    sql += " ORDER BY CASE status WHEN 'running' THEN 0 WHEN 'pausing' THEN 0 WHEN 'queued' THEN 1 WHEN 'scheduled' THEN 2 ELSE 3 END, priority DESC, created_at DESC"
-    rows = [_job_row(r) for r in c.db.fetchall(sql, tuple(params))]
-    return _page(rows, page, page_size)
+    page, page_size = max(1, page), max(1, min(200, page_size))
+    total = c.db.fetchone("SELECT count(*) AS n" + sql, tuple(params))["n"]
+    order = (
+        "j.created_at DESC, j.id DESC"
+        if group == "history"
+        else "CASE j.status WHEN 'running' THEN 0 WHEN 'pausing' THEN 0 WHEN 'cancelling' THEN 0 WHEN 'queued' THEN 1 WHEN 'scheduled' THEN 2 ELSE 3 END, j.priority DESC, CASE WHEN j.status IN ('queued','scheduled') THEN j.created_at END ASC, j.created_at DESC, j.id ASC"
+    )
+    rows = c.db.fetchall(
+        "SELECT j.*, p.name AS project_name, v.name AS version_name, v.number AS version_number"
+        + sql
+        + " ORDER BY "
+        + order
+        + " LIMIT ? OFFSET ?",
+        (*params, page_size, (page - 1) * page_size),
+    )
+    return {"items": [_job_row(r) for r in rows], "total": total, "page": page, "page_size": page_size}
 
 
 @router.post("/jobs", status_code=201, response_model=m.Job, response_model_exclude_unset=True)
@@ -1263,17 +1297,35 @@ def job_file(jid: str, path: str, kind: str = "sample", c: ServiceContext = Depe
 
 
 @router.get("/jobs/{jid}/log", response_model=m.JobLog, response_model_exclude_unset=True)
-def job_log(jid: str, offset: int = 0, limit: int = 2000, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+def job_log(
+    jid: str, offset: int = 0, limit: int = 2000, c: ServiceContext = Depends(ctx), tail: bool = False
+) -> dict[str, Any]:
     r = _get_job(c, jid)
     p = Path(r["run_dir"]) / "run.log"
     if not p.exists():
-        return {"lines": [], "next_offset": 0}
-    data = p.read_bytes()
-    chunk = data[offset:]
-    text = chunk.decode("utf-8", errors="replace")
-    lines = text.splitlines()
-    lines = lines[:limit]
-    consumed = len("\n".join(lines).encode("utf-8")) + (1 if lines else 0)
+        return {"lines": [], "next_offset": 0, "has_more": False}
+    limit = max(1, min(2000, limit))
+    with p.open("rb") as stream:
+        size = p.stat().st_size
+        if tail:
+            # Latest view is bounded even when a run has produced gigabytes of logs.
+            stream.seek(max(0, size - 512 * 1024))
+            if stream.tell():
+                stream.readline(512 * 1024)
+            lines = stream.read(512 * 1024).decode("utf-8", errors="replace").splitlines()[-limit:]
+        else:
+            stream.seek(min(size, max(0, offset)))
+            lines = []
+            start = stream.tell()
+            for _ in range(limit):
+                line = stream.readline(512 * 1024)
+                if not line:
+                    break
+                lines.append(line.decode("utf-8", errors="replace").rstrip("\r\n"))
+                if stream.tell() - start >= 512 * 1024:
+                    break
+        next_offset = stream.tell()
+        has_more = bool(stream.read(1))
     out = []
     for ln in lines:
         level = "info"
@@ -1281,9 +1333,9 @@ def job_log(jid: str, offset: int = 0, limit: int = 2000, c: ServiceContext = De
         if " error" in low or "traceback" in low or "exception" in low:
             level = "error"
         elif "warn" in low:
-            level = "warning"
+            level = "warn"
         out.append({"ts": None, "level": level, "msg": ln})
-    return {"lines": out, "next_offset": min(len(data), offset + consumed)}
+    return {"lines": out, "next_offset": next_offset, "has_more": has_more}
 
 
 # --------------------------------------------------------------------------- queue settings

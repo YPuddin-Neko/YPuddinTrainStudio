@@ -1,206 +1,167 @@
 import React from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
-import { Download, ExternalLink, FolderSearch, HardDrive, Loader2, Plus, RefreshCw, Settings2, Star, Trash2, X } from 'lucide-react';
+import { Check, Download, ExternalLink, FolderSearch, KeyRound, Loader2, Plus, RefreshCw, Search, Star, Trash2 } from 'lucide-react';
 import { apiClient } from '../../api/client';
-import { ModelAsset, ModelDownload, ModelDownloadRequest, Settings } from '../../api/types';
-import { useFamilies, familyByName } from '../../api/hooks/useFamilies';
+import type { ModelAsset, ModelDownload, ModelDownloadRequest, Settings } from '../../api/types';
+import { useFamilies } from '../../api/hooks/useFamilies';
 import { PathInput } from '../../components/PathBrowser';
+import StudioSelect from '../../components/StudioSelect';
+import Dialog from '../../components/Dialog';
 import { formatBytes } from '../../utils/format';
 import { formatApiError } from '../../utils/errors';
-import { SettingsSections } from '../Settings/SettingsSections';
-import ModelCredentials from './ModelCredentials';
-
-const FIELD_KIND: Record<string, string> = { dit_path: 'dit', text_encoder_path: 'text_encoder', vae_path: 'vae', tokenizer_path: 'tokenizer' };
-const KIND_LABEL: Record<string, string> = { dit: '主模型 / DiT', text_encoder: '文本编码器', vae: 'VAE', tokenizer: '分词器目录' };
-const input = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900';
-const panel = 'settings-model-panel';
-const secondary = 'inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:hover:bg-slate-700';
-const primary = 'inline-flex items-center justify-center gap-1.5 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50';
-const active = (d: ModelDownload) => d.status === 'queued' || d.status === 'downloading';
-// Publisher file pages verified 2026-09-11. Selecting a source only fills the download form.
-const SOURCES: Record<string, Record<string, { label: string; url: string; size: string; dtype: ModelDownloadRequest['dtype'] }>> = {
-  anima: {
-    dit: { label: 'Anima Base 1.0', url: 'https://huggingface.co/circlestone-labs/Anima/blob/main/split_files/diffusion_models/anima-base-v1.0.safetensors', size: '4.18 GB', dtype: 'bf16' },
-    text_encoder: { label: 'Qwen3 0.6B Base', url: 'https://huggingface.co/circlestone-labs/Anima/blob/main/split_files/text_encoders/qwen_3_06b_base.safetensors', size: '1.19 GB', dtype: 'bf16' },
-    vae: { label: 'Qwen Image VAE', url: 'https://huggingface.co/circlestone-labs/Anima/blob/main/split_files/vae/qwen_image_vae.safetensors', size: '254 MB', dtype: 'bf16' },
-  },
-  krea2: {
-    dit: { label: 'Krea 2 Raw · FP8 scaled', url: 'https://huggingface.co/Comfy-Org/Krea-2/blob/main/diffusion_models/krea2_raw_fp8_scaled.safetensors', size: '13.1 GB', dtype: 'fp8' },
-    text_encoder: { label: 'Qwen3-VL 4B · BF16', url: 'https://huggingface.co/Comfy-Org/Krea-2/blob/main/text_encoders/qwen3vl_4b_bf16.safetensors', size: '8.88 GB', dtype: 'bf16' },
-    vae: { label: 'Qwen Image VAE', url: 'https://huggingface.co/circlestone-labs/Anima/blob/main/split_files/vae/qwen_image_vae.safetensors', size: '254 MB', dtype: 'bf16' },
-  },
-};
+import { useWorkspaceText } from '../../utils/workspaceText';
+import './models.css';
 
 type Provider = 'huggingface' | 'modelscope';
-function sourceUrl(url: string, provider: Provider) {
-  if (provider === 'huggingface') return url;
-  const parts = new URL(url).pathname.split('/').filter(Boolean);
-  return `https://modelscope.cn/api/v1/models/${parts[0]}/${parts[1]}/repo?${new URLSearchParams({ Revision: 'master', FilePath: parts.slice(4).join('/') })}`;
-}
+type Recommendation = {
+  id: string; family: string; kind: string; name: string; dtype: string; size: number;
+  recommended: boolean; model_id: string | null; available_path: string | null; is_default: boolean;
+  sources: { provider: Provider; repo_id: string; filename: string; revision: string; url: string }[];
+};
+const isActive = (task: ModelDownload) => ['queued', 'downloading'].includes(task.status);
+const basename = (path: string) => path.split(/[\\/]/).pop() || path;
+const primary = 'model-button model-button-primary';
+const secondary = 'model-button';
+const kinds = ['dit', 'text_encoder', 'vae'];
 
 export default function Models({ embedded = false }: { embedded?: boolean }) {
-  const { t } = useTranslation();
+  const text = useWorkspaceText();
   const location = useLocation();
-  const [params] = useSearchParams();
-  const { data: families } = useFamilies();
-  const [family, setFamily] = React.useState(params.get('family') || 'anima');
+  const [params, setParams] = useSearchParams();
+  const { data: families = [] } = useFamilies();
+  const family = params.get('family') || 'anima';
+  const view = ['library', 'downloads'].includes(params.get('view') || '') ? params.get('view')! : 'prepare';
   const [models, setModels] = React.useState<ModelAsset[]>([]);
   const [downloads, setDownloads] = React.useState<ModelDownload[]>([]);
+  const [catalog, setCatalog] = React.useState<Recommendation[]>([]);
   const [settings, setSettings] = React.useState<Settings | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState('');
+  const [loadErrors, setLoadErrors] = React.useState<Record<string, string>>({});
   const [notice, setNotice] = React.useState('');
   const [busy, setBusy] = React.useState(false);
-  const [addOpen, setAddOpen] = React.useState(false);
-  const [downloadOpen, setDownloadOpen] = React.useState(false);
-  const sourceRef = React.useRef<HTMLElement>(null);
-  const errorRef = React.useRef<HTMLDivElement>(null);
-  React.useEffect(() => {
-    if (!addOpen && !downloadOpen) return;
-    sourceRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
-    sourceRef.current?.querySelector<HTMLElement>('input:not([type=checkbox]),select')?.focus({ preventScroll: true });
-  }, [addOpen, downloadOpen]);
-  React.useEffect(() => { if (error) errorRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }); }, [error]);
+  const [provider, setProvider] = React.useState<Provider>('huggingface');
+  const [query, setQuery] = React.useState('');
+  const [page, setPage] = React.useState(1);
+  const [dialog, setDialog] = React.useState<'local' | 'download' | null>(null);
+  const [formError, setFormError] = React.useState('');
   const [kind, setKind] = React.useState('dit');
   const [path, setPath] = React.useState('');
   const [dtype, setDtype] = React.useState('bf16');
   const [isDefault, setIsDefault] = React.useState(true);
-  const [provider, setProvider] = React.useState<Provider>('huggingface');
-  const [mirror, setMirror] = React.useState<'official' | 'hf-mirror'>('official');
-  const [sourceMode, setSourceMode] = React.useState<'url' | 'repo'>('url');
+  const [sourceMode, setSourceMode] = React.useState<'repo' | 'url'>('repo');
   const [url, setUrl] = React.useState('');
   const [repo, setRepo] = React.useState('');
   const [filename, setFilename] = React.useState('');
-  const [revision, setRevision] = React.useState('main');
-  const [cancelling, setCancelling] = React.useState<string[]>([]);
-  const currentFamily = familyByName(families, family);
-  const kinds = (currentFamily?.weights || []).map(w => FIELD_KIND[w.field]).filter(Boolean);
-  const kindOptions = kinds.length ? kinds : ['dit', 'text_encoder', 'vae', 'tokenizer'];
-  const label = (k: string) => t(`models.kind_${k}`, KIND_LABEL[k] || k);
-
+  const [revision, setRevision] = React.useState('');
+  const [mirror, setMirror] = React.useState<'official' | 'hf-mirror'>('official');
+  const [remove, setRemove] = React.useState<ModelAsset | null>(null);
+  const label = (kind: string) => ({ dit: text('主模型 / DiT', 'Base model / DiT'), text_encoder: text('文本编码器', 'Text encoder'), vae: 'VAE', tokenizer: text('分词器目录', 'Tokenizer directory') }[kind] || kind);
+  const updateParams = (values: Record<string, string>) => {
+    const next = new URLSearchParams(params); Object.entries(values).forEach(([key, value]) => next.set(key, value));
+    setParams(next, { replace: true, state: location.state }); setPage(1); setQuery('');
+  };
   const refresh = React.useCallback(async (silent = false) => {
-    try {
-      const [assets, tasks, config] = await Promise.all([
-        apiClient.get<ModelAsset[]>('/models', { silent }),
-        apiClient.get<ModelDownload[]>('/models/downloads', { silent }),
-        apiClient.get<Settings>('/settings', { silent }),
+      const [assets, tasks, config, recommendations] = await Promise.allSettled([
+        apiClient.get<ModelAsset[]>('/models', { silent }), apiClient.get<ModelDownload[]>('/models/downloads', { silent }),
+        apiClient.get<Settings>('/settings', { silent }), apiClient.get<Recommendation[]>('/models/recommendations', { silent }),
       ]);
-      setModels(assets); setDownloads(tasks); setSettings(config); if (!silent) setError('');
-    } catch (e) { if (!silent) setError(formatApiError(e)); }
-    finally { setLoading(false); }
+      if (assets.status === 'fulfilled') setModels(assets.value);
+      if (tasks.status === 'fulfilled') setDownloads(tasks.value);
+      if (config.status === 'fulfilled') setSettings(config.value);
+      if (recommendations.status === 'fulfilled') setCatalog(recommendations.value);
+      const failures: Record<string, string> = {};
+      for (const [key, result] of [['library', assets], ['downloads', tasks], ['settings', config], ['prepare', recommendations]] as const) {
+        if (result.status === 'rejected') failures[key] = formatApiError(result.reason);
+      }
+      setLoadErrors(failures); setLoading(false);
   }, []);
-  React.useEffect(() => {
-    void refresh();
-    const timer = window.setInterval(() => { void refresh(true); }, 2000);
-    return () => window.clearInterval(timer);
-  }, [refresh]);
-  const action = async (fn: () => Promise<unknown>) => {
-    setBusy(true); setError(''); setNotice('');
-    try { await fn(); await refresh(); }
-    catch (e) { setError(formatApiError(e)); }
+  React.useEffect(() => { void refresh(); const timer = window.setInterval(() => void refresh(true), 2500); return () => clearInterval(timer); }, [refresh]);
+  const action = async (operation: () => Promise<void>, inForm = false) => {
+    setBusy(true); setError(''); setFormError(''); setNotice('');
+    try { await operation(); await refresh(); window.dispatchEvent(new Event('studio-models-changed')); }
+    catch (error) { (inForm ? setFormError : setError)(formatApiError(error)); }
     finally { setBusy(false); }
   };
-  const openDownload = (k = 'dit') => {
-    setKind(k); setDownloadOpen(true); setAddOpen(false); setError('');
-    const source = SOURCES[family]?.[k];
-    if (source) { setUrl(sourceUrl(source.url, provider)); setRevision(provider === 'modelscope' ? 'master' : 'main'); setSourceMode('url'); setDtype(source.dtype || ''); }
+  const openForm = (mode: 'local' | 'download', component = 'dit') => {
+    setKind(component); setPath(''); setUrl(''); setRepo(''); setFilename(''); setRevision('');
+    setDtype('bf16'); setIsDefault(!models.some(item => item.family === family && item.kind === component && item.is_default));
+    setDialog(mode); setFormError(''); setSourceMode('repo'); setMirror('official');
   };
-  const local = (k = 'dit') => { setKind(k); setAddOpen(true); setDownloadOpen(false); setPath(''); setError(''); };
-  const changeDownloadKind = (next: string) => {
-    const wasSuggested = sourceMode === 'url' && (!url.trim() || url === (SOURCES[family]?.[kind] ? sourceUrl(SOURCES[family][kind].url, provider) : ''));
-    setKind(next);
-    if (wasSuggested) {
-      const source = SOURCES[family]?.[next];
-      setUrl(source ? sourceUrl(source.url, provider) : ''); setDtype(source?.dtype || '');
-    } else {
-      setNotice(t('models.customSourceKept', '已保留你填写的来源，请确认它属于当前选择的组件。'));
-    }
+  const closeForm = () => { if (!busy) setDialog(null); };
+  const selected = models.filter(model => model.family === family);
+  const entries = catalog.filter(entry => entry.family === family);
+  const tasks = downloads.filter(task => task.family === family);
+  const ready = kinds.filter(kind => selected.some(model => model.kind === kind && model.is_default && model.exists));
+  const missing = kinds.filter(kind => !ready.includes(kind)).map(kind => entries.find(entry => entry.kind === kind && entry.recommended)).filter((entry): entry is Recommendation => Boolean(entry));
+  const taskFor = (entry: Recommendation) => tasks.find(task => isActive(task) && (task.recommendation_id === entry.id || entry.sources.some(source => basename(source.filename) === task.filename)));
+  const startEntry = async (entry: Recommendation) => {
+    if (entry.available_path) await apiClient.post(`/models/recommendations/${entry.id}/use`, {});
+    else await apiClient.post(`/models/recommendations/${entry.id}/download`, { provider, is_default: !ready.includes(entry.kind) });
   };
-  const changeProvider = (next: Provider) => {
-    setProvider(next); setMirror('official'); setRevision(next === 'modelscope' ? 'master' : 'main');
-    const source = SOURCES[family]?.[kind];
-    if (sourceMode === 'url' && source && (!url.trim() || url === sourceUrl(source.url, provider))) setUrl(sourceUrl(source.url, next));
-    else setNotice('已切换来源；请确认仓库、文件与 Revision 在新来源存在。');
-  };
-  const start = () => action(async () => {
-    const body: ModelDownloadRequest = {
-      provider, mirror, family: family as ModelDownloadRequest['family'], kind: kind as ModelDownloadRequest['kind'],
-      is_default: isDefault, dtype: (dtype || null) as ModelDownloadRequest['dtype'], revision: revision.trim() || (provider === 'modelscope' ? 'master' : 'main'),
-      ...(sourceMode === 'url' ? { url: url.trim() } : { repo_id: repo.trim(), filename: filename.trim(), revision: revision.trim() || (provider === 'modelscope' ? 'master' : 'main') }),
-    };
-    await apiClient.post<ModelDownload>('/models/downloads', body);
-    setDownloadOpen(false); setNotice(t('models.downloadStarted', '下载已加入列表，完成后自动注册到本族模型库。'));
-  });
-  const selected = models.filter(m => m.family === family);
-  const tasks = downloads.filter(d => d.family === family);
-  const ready = ['dit', 'text_encoder', 'vae'].filter(k => selected.some(m => m.kind === k && m.exists && m.is_default)).length;
+  const searchValue = query.trim().toLocaleLowerCase();
+  const filteredModels = selected.filter(model => `${model.path} ${label(model.kind)}`.toLocaleLowerCase().includes(searchValue));
+  const filteredTasks = tasks.filter(task => `${task.filename} ${task.id}`.toLocaleLowerCase().includes(searchValue));
+  const count = view === 'library' ? filteredModels.length : filteredTasks.length;
+  const pages = Math.max(1, Math.ceil(count / 12));
+  const currentPage = Math.min(page, pages);
+  const slice = <T,>(items: T[]) => items.slice((currentPage - 1) * 12, currentPage * 12);
+  const settingsLink = (tab: string) => `/settings/environment?tab=${tab}&family=${family}`;
+  const tabs = [{ key: 'prepare', label: text('准备模型', 'Prepare models') }, { key: 'library', label: `${text('本地模型', 'Local models')} · ${selected.length}` }, { key: 'downloads', label: `${text('下载记录', 'Downloads')}${tasks.some(isActive) ? ` · ${tasks.filter(isActive).length} ${text('进行中', 'active')}` : ''}` }];
+  const statusLabel = (task: ModelDownload) => ({ queued: text('排队中', 'Queued'), downloading: text('下载中', 'Downloading'), completed: text('已就绪', 'Ready'), failed: text('下载失败', 'Failed'), cancelled: text('已取消', 'Cancelled') }[task.status]);
 
-  return <div data-testid="models-page"><SettingsSections sections={[
-    { id: 'models-components', label: t('models.components', '模型组件') },
-    ...(addOpen || downloadOpen ? [{ id: 'models-source', label: t('models.source', '添加来源') }] : []),
-    ...(tasks.length ? [{ id: 'models-downloads', label: t('models.downloads', '下载列表') }] : []),
-    { id: 'models-credentials', label: '下载令牌' },
-    { id: 'models-library', label: t('models.registeredFiles', '已登记模型') },
-  ]}>
-    <section id="models-components" data-settings-section tabIndex={-1} className="settings-section">
-    <div className="settings-section-heading">
-      <div><h2 className={`flex items-center gap-2 font-bold ${embedded ? 'text-base' : 'text-2xl'}`}>{!embedded && <HardDrive className="h-6 w-6 text-blue-500" />}{t('models.title')}</h2></div>
-      <div className="flex flex-wrap gap-2">
-        {params.get('project') && <Link className={secondary} to={`/projects/${encodeURIComponent(params.get('project')!)}`}>{t('models.backProject', '返回项目')}</Link>}
-        {!embedded && <Link to="/settings/preferences?section=storage" replace state={location.state} className={secondary}><Settings2 size={16} />{t('models.storageSettings', '目录与默认设置')}</Link>}
-        <button className={secondary} onClick={() => local()} data-testid="add-model-btn"><Plus size={16} />{t('models.addModel')}</button>
-        {family !== 'toy' && <button className={primary} onClick={() => openDownload()} data-testid="download-model-btn"><Download size={16} />{t('models.download', '下载模型')}</button>}
+  return <div className="models-workspace" data-testid="models-page">
+    <div className="models-toolbar">
+      <div className="models-heading"><div><h2>{text('模型权重', 'Model weights')}</h2>{!embedded && <p>{text('准备模型组件，供项目选择。', 'Prepare components for your projects.')}</p>}</div>
+        <div className="model-actions"><Link to={settingsLink('credentials')} replace state={location.state} className={secondary}><KeyRound size={14}/>{text('访问密钥', 'Access keys')}</Link><button className={secondary} onClick={() => void refresh()} aria-label={text('刷新模型', 'Refresh models')}><RefreshCw size={14}/></button></div>
+      </div>
+      <div className="models-filters"><StudioSelect aria-label={text('模型系列', 'Model family')} value={family} options={(families.length ? families : [{ name: 'anima', label: 'Anima' }, { name: 'krea2', label: 'Krea 2' }]).map(item => ({ value: item.name, label: item.label }))} onValueChange={family => updateParams({ family })}/>
+        <div className="models-view-tabs" role="tablist" aria-label={text('模型管理视图', 'Model management views')}>{tabs.map(tab => <button key={tab.key} role="tab" aria-selected={view === tab.key} onClick={() => updateParams({ view: tab.key })}>{tab.label}</button>)}</div>
       </div>
     </div>
-    <div className="settings-model-family">{(families || []).map(f => <button key={f.name} aria-pressed={family === f.name} onClick={() => { setFamily(f.name); setDownloadOpen(false); setAddOpen(false); }}>{f.label}</button>)}{family !== 'toy' && <span className="ml-auto text-xs text-slate-500">{t('models.defaultReady', '已设默认组件')} {ready} / 3</span>}</div>
-    {error && <div ref={errorRef} role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/20 dark:text-red-300">{error}<button onClick={() => void refresh()} className="ml-3 underline">{t('common.retry', '重试')}</button></div>}
-    {notice && <div role="status" className="rounded-lg bg-blue-50 p-3 text-sm text-blue-700 dark:bg-blue-950/30 dark:text-blue-300">{notice}</div>}
-
-    {family !== 'toy' && <><div className="settings-model-list">{['dit', 'text_encoder', 'vae'].map(k => {
-      const chosen = selected.find(m => m.kind === k && m.is_default); const source = SOURCES[family]?.[k];
-      return <section key={k} className="settings-model-component" data-testid={`model-component-${k}`}>
-        <div><h3>{label(k)}</h3><span className={`text-xs ${chosen?.exists ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500'}`}>{chosen?.exists ? t('models.defaultSelected', '已选默认') : t('models.needsSetup', '待设置')}</span></div>
-        <div className="settings-model-choice">
-          <select className={input} aria-label={`${label(k)} ${t('models.setDefault')}`} value={chosen?.id || ''} disabled={busy} onChange={e => { const id = e.target.value; if (id) void action(() => apiClient.patch(`/models/${id}`, { is_default: true })); else if (chosen) void action(() => apiClient.patch(`/models/${chosen.id}`, { is_default: false })); }}><option value="">{t('models.chooseDefault', '选择本地默认模型')}</option>{selected.filter(m => m.kind === k).map(m => <option key={m.id} value={m.id} disabled={!m.exists}>{m.path.split(/[\\/]/).pop()} {!m.exists ? `(${t('models.missing')})` : ''}</option>)}</select>
-          {chosen && <p className="settings-model-path">{chosen.dtype || '—'} · {chosen.path}</p>}
-          {source && <p className="settings-note">{source.label} · {source.size}</p>}
-          <div className="settings-model-actions"><button className={secondary} onClick={() => local(k)}><Plus size={13} />{t('models.useLocal', '已有文件')}</button><button className={secondary} onClick={() => openDownload(k)}><Download size={13} />{t('models.getComponent', '获取组件')}</button>{source && <a href={source.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-600">{t('models.publisher', '发布页')}<ExternalLink size={12} /></a>}</div>
-        </div>
-      </section>;
-    })}</div><details className="settings-inline-details"><summary>{t('models.componentDetails', '组件与分词器说明')}</summary><p>{t('models.componentHelp', '标准单文件配套的默认配置与分词器已内置，无需另下 tokenizer。自定义文本编码器可登记完整 HF 目录（含 config、tokenizer 和全部权重分片）；可选分词器目录可通过“添加本地模型”登记。Anima 与 Krea 2 可登记同一个 Qwen Image VAE 文件。默认路径用于后续项目/任务，已有显式配置保留。')}</p></details></>}
-    </section>
-
-    {addOpen && <section ref={sourceRef} id="models-source" data-settings-section tabIndex={-1} className={`${panel} space-y-4`} data-testid="add-model-modal"><h3 className="text-lg font-semibold">{t('models.addModel')}</h3><p className="text-xs text-slate-500">{t('models.localPathHelp', '选择运行训练服务的电脑上的文件或完整文本编码器目录。')}</p>
-      <div className="settings-model-form"><label className="space-y-1 text-xs">{t('models.family')}<select className={input} value={family} onChange={e => setFamily(e.target.value)} data-testid="model-family-select">{(families || []).map(f => <option key={f.name} value={f.name}>{f.label}</option>)}</select></label><label className="space-y-1 text-xs">{t('models.kind')}<select className={input} value={kind} onChange={e => setKind(e.target.value)} data-testid="model-kind-select">{[...new Set([...kindOptions, 'tokenizer'])].map(k => <option key={k} value={k}>{label(k)}</option>)}</select></label></div>
-      <div className="settings-field"><p className="settings-field-label">{t('models.pathLabel')}</p><PathInput ariaLabel={t('models.pathLabel')} value={path} onChange={setPath} placeholder={t('models.pathPlaceholder')} /></div><div className="flex items-center gap-3"><label className="text-xs">{t('models.dtype')}<select className={input} value={dtype} onChange={e => setDtype(e.target.value)}>{['bf16', 'fp16', 'fp32', 'fp8', ''].map(d => <option key={d} value={d}>{d || t('models.dtypeUnknown', '未知')}</option>)}</select></label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={isDefault} onChange={e => setIsDefault(e.target.checked)} />{t('models.setDefault')}</label></div>
-      <div className="flex justify-end gap-2"><button className={secondary} onClick={() => setAddOpen(false)}>{t('common.cancel')}</button><button className={primary} disabled={busy || !path.trim()} data-testid="add-model-submit" onClick={() => void action(async () => { await apiClient.post('/models', { family, kind, path: path.trim(), dtype: dtype || null, is_default: isDefault }); setAddOpen(false); })}>{busy ? t('models.adding') : t('models.add')}</button></div>
-    </section>}
-
-    {downloadOpen && <section ref={sourceRef} id="models-source" data-settings-section tabIndex={-1} className={panel} data-testid="download-model-form"><div className="mb-4 flex items-center justify-between"><h3 className="font-semibold">{t('models.download', '下载模型')} · {label(kind)}</h3><button onClick={() => setDownloadOpen(false)} aria-label={t('common.close', '关闭')}><X size={18} /></button></div>
-      <form className="space-y-4 settings-model-form" onSubmit={e => { e.preventDefault(); void start(); }}>
-        <button type="button" className="text-xs text-blue-600 hover:underline" onClick={() => openDownload(kind)}>{t('models.fillSuggestedSource', '填入当前组件的标准来源')}</button>
-        <div className="settings-model-form"><label className="space-y-1 text-xs">{t('models.kind')}<select className={input} value={kind} onChange={e => changeDownloadKind(e.target.value)}>{['dit', 'text_encoder', 'vae'].map(k => <option key={k} value={k}>{label(k)}</option>)}</select></label><label className="space-y-1 text-xs">{t('models.sourceMode', '来源格式')}<select className={input} value={sourceMode} onChange={e => setSourceMode(e.target.value as 'url' | 'repo')}><option value="url">文件 URL</option><option value="repo">{t('models.repoAndFile', '仓库 + 文件名')}</option></select></label><label className="space-y-1 text-xs">{t('models.dtype')}<select className={input} value={dtype} onChange={e => setDtype(e.target.value)}>{['bf16', 'fp16', 'fp32', 'fp8', ''].map(d => <option key={d} value={d}>{d || t('models.dtypeUnknown', '未知')}</option>)}</select></label></div>
-        <div className="settings-model-form"><label className="space-y-1 text-xs">下载来源<select className={input} value={provider} onChange={e => changeProvider(e.target.value as Provider)} data-testid="model-provider"><option value="huggingface">Hugging Face</option><option value="modelscope">魔搭 ModelScope</option></select></label>{provider === 'huggingface' && <label className="space-y-1 text-xs">连接方式<select className={input} value={mirror} onChange={e => setMirror(e.target.value as 'official' | 'hf-mirror')}><option value="official">官方（可使用令牌）</option><option value="hf-mirror">HF-Mirror（仅匿名）</option></select></label>}</div>
-        {sourceMode === 'url' ? <label className="block space-y-1 text-xs">{t('models.fileUrl', '文件下载链接')}<input autoFocus className={input} value={url} onChange={e => setUrl(e.target.value)} placeholder={provider === 'modelscope' ? 'https://modelscope.cn/api/v1/models/owner/repo/repo?Revision=master&FilePath=model.safetensors' : 'https://huggingface.co/owner/repo/blob/main/model.safetensors'} required data-testid="model-download-url" /></label> : <div className="settings-model-form"><label className="space-y-1 text-xs">Repository<input className={input} value={repo} onChange={e => setRepo(e.target.value)} placeholder="owner/repository" required /></label><label className="space-y-1 text-xs">{t('models.repositoryFile', '仓库内文件名')}<input className={input} value={filename} onChange={e => setFilename(e.target.value)} placeholder="folder/model.safetensors" required /></label><label className="space-y-1 text-xs">Revision<input className={input} value={revision} onChange={e => setRevision(e.target.value)} placeholder="main" required /></label></div>}
-        <p className="break-all text-xs leading-6 text-slate-500">{t('models.downloadDestination', '保存目录')}：{settings?.paths.models_dir} <Link className="ml-2 text-blue-600 underline dark:text-blue-400" to="/settings/preferences?section=storage" replace state={location.state}>{t('models.changeDownloadDir', '更改保存目录')}</Link><br />支持完整 safetensors 单文件，检查完成后自动登记。中断重试从头下载，已有文件保留。受限仓库须先取得访问许可，并在下方“下载令牌”保存对应凭证。{mirror === 'hf-mirror' && <strong> 镜像仅匿名；需要认证时请选择官方连接。</strong>}</p>
-        <div className="flex flex-wrap items-center justify-between gap-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={isDefault} onChange={e => setIsDefault(e.target.checked)} />{t('models.defaultAfterDownload', '完成后设为本族默认组件')}</label><button className={primary} disabled={busy} type="submit" data-testid="model-download-start">{busy ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}{t('models.startDownload', '开始下载')}</button></div>
-      </form>
-    </section>}
-
-    {tasks.length > 0 && <section id="models-downloads" data-settings-section tabIndex={-1} className="settings-section" data-testid="model-downloads"><div className="mb-4 flex items-center justify-between"><h3 className="font-semibold">{t('models.downloads', '下载列表')}</h3><button onClick={() => void refresh()} className="text-slate-500" aria-label={t('common.refresh', '刷新')}><RefreshCw size={16} /></button></div><div className="divide-y dark:divide-slate-700">{tasks.slice(0, 15).map(d => <div key={d.id} className="space-y-2 py-3">
-      <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="break-all text-sm font-medium">{d.filename}</p><p className="mt-1 text-xs text-slate-500">{d.provider === 'modelscope' ? '魔搭' : d.mirror === 'hf-mirror' ? 'HF-Mirror' : 'Hugging Face'} · {label(d.kind)} · {t(`models.downloadStatus_${d.status}`, { queued: '等待下载', downloading: '正在下载', completed: '已下载并注册', failed: '下载失败', cancelled: '已取消' }[d.status])} · {formatBytes(d.downloaded_bytes)}{d.total_bytes ? ` / ${formatBytes(d.total_bytes)}` : ''}</p></div>
-        {active(d) ? <button className={secondary} disabled={cancelling.includes(d.id)} onClick={() => { setCancelling(v => [...v, d.id]); void action(() => apiClient.post(`/models/downloads/${d.id}/cancel`, {})).finally(() => setCancelling(v => v.filter(id => id !== d.id))); }}>{t('common.cancel')}</button> : d.status !== 'completed' && <div className="flex shrink-0 flex-wrap gap-2"><button className={secondary} disabled={busy} onClick={() => void action(() => apiClient.post(`/models/downloads/${d.id}/retry`, {}))}>{t('models.retryDownload', '重新下载')}</button><button className={secondary} disabled={busy} onClick={() => { setKind(d.kind); setProvider(d.provider); setMirror(d.mirror); setUrl(d.source_url); setDtype(d.dtype || ''); setIsDefault(d.is_default); setSourceMode('url'); setDownloadOpen(true); setAddOpen(false); }}>更换来源</button></div>}</div>
-      {active(d) && <progress className="h-2 w-full accent-blue-600" value={d.total_bytes ? d.downloaded_bytes : undefined} max={d.total_bytes || undefined} aria-label={t('models.downloadProgress', '下载进度')} />}<p className="break-all text-xs text-slate-400">{d.target_path}</p>{d.error && <p role="alert" className="break-words text-xs text-red-600 dark:text-red-400">{d.error}</p>}
-    </div>)}</div></section>}
-
-    <ModelCredentials />
-    <section id="models-library" data-settings-section tabIndex={-1} className="settings-section settings-model-library"><div className="mb-4 flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">{t('models.registeredFiles', '已登记模型')} · {selected.length}</h3><button className={secondary} disabled={busy} onClick={() => void action(async () => { const found = await apiClient.post<ModelAsset[]>('/models/scan', { family }); setNotice(`${t('models.scanAdded', '新登记文件')}：${found.length}`); })}><FolderSearch size={16} />{t('models.scanDirectory')}</button></div>
-      {loading ? <p className="py-8 text-center text-sm text-slate-500">{t('common.loading')}</p> : selected.length === 0 ? <div className="space-y-3 py-8 text-center"><p className="text-sm text-slate-500">{family === 'toy' ? t('models.toyNoFiles', 'Toy 测试模型已内置，无需下载权重。') : t('models.emptySetup', '还没有本地模型。准备好三个组件即可在项目里使用。')}</p><button className={secondary} onClick={() => local()}><Plus size={16} />{t('models.useLocal', '已有文件')}</button></div> : <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="text-xs text-slate-400"><tr><th className="pb-3 pr-3">{t('models.kind')}</th><th className="pb-3">{t('models.pathLabel')}</th><th className="pb-3 px-3">{t('models.dtype')}</th><th className="pb-3 text-right">{t('models.status', '状态 / 操作')}</th></tr></thead><tbody className="divide-y dark:divide-slate-700">{selected.map(m => <tr key={m.id}>
-        <td className="py-3 pr-3 whitespace-nowrap">{label(m.kind)}</td><td className="py-3"><div className="max-w-xl break-all font-mono text-xs">{m.path}</div><p className="mt-1 text-xs text-slate-400">{formatBytes(m.size)}</p></td><td className="px-3 text-xs">{m.dtype || '—'}</td><td className="py-3"><div className="flex items-center justify-end gap-2 whitespace-nowrap"><span className={`text-xs ${m.exists ? 'text-emerald-600' : 'text-red-500'}`}>{m.exists ? t('models.exists') : t('models.missing')}</span><button disabled={busy || !m.exists} className={`rounded p-2 disabled:opacity-40 ${m.is_default ? 'text-amber-500' : 'text-slate-400'}`} title={m.is_default ? t('models.default') : t('models.setDefault')} aria-label={`${t('models.setDefault')} ${m.path}`} onClick={() => void action(() => apiClient.patch(`/models/${m.id}`, { is_default: !m.is_default }))}><Star size={16} fill={m.is_default ? 'currentColor' : 'none'} /></button><button disabled={busy} className="rounded p-2 text-slate-400 hover:text-red-500" title={t('common.remove')} onClick={() => { if (window.confirm(t('models.removeRecord', '只移除这条模型登记，磁盘文件会保留。继续吗？'))) void action(() => apiClient.delete(`/models/${m.id}`)); }}><Trash2 size={16} /></button></div></td>
-      </tr>)}</tbody></table></div>}
-    </section>
-
-
-  </SettingsSections></div>;
+    {error && <div role="alert" className="settings-alert">{error}<button className={secondary} onClick={() => void refresh()}>{text('重试', 'Retry')}</button></div>}
+    {Object.keys(loadErrors).length > 0 && <div role="alert" className="settings-alert"><div>{Object.entries(loadErrors).map(([key, message]) => <p key={key}>{({ library: text('本地模型', 'Local models'), downloads: text('下载记录', 'Downloads'), settings: text('存储设置', 'Storage settings'), prepare: text('推荐模型', 'Recommended models') })[key]}：{message}</p>)}</div><button className={secondary} onClick={() => void refresh()}>{text('重新读取', 'Reload')}</button></div>}
+    {notice && <p className="model-notice" role="status">{notice}</p>}
+    {loading ? <p role="status" className="model-empty">{text('正在读取模型…', 'Loading models…')}</p> : loadErrors[view] ? <p className="model-empty">{text('此列表暂时无法读取，请重试。其他视图仍可查看。', 'This list is unavailable. Retry or open another view.')}</p> : view === 'prepare' ? <>
+      {family === 'toy' ? <p className="model-empty">{text('Toy 测试模型已内置，无需下载权重。', 'The Toy test model is built in; no weights required.')}</p> : <>
+        <div className="models-source-bar"><label>{text('下载来源', 'Download source')}<StudioSelect value={provider} aria-label={text('下载来源', 'Download source')} data-testid="model-provider" options={[{ value: 'huggingface', label: 'Hugging Face' }, { value: 'modelscope', label: '魔搭 ModelScope' }]} onValueChange={value => setProvider(value as Provider)}/></label><span>{text('默认组件', 'Default components')} {ready.length} / 3</span><button className={primary} disabled={busy || !!loadErrors.library || !!loadErrors.downloads || missing.length === 0 || missing.every(entry => taskFor(entry))} onClick={() => void action(async () => { for (const entry of missing) if (!taskFor(entry)) await startEntry(entry); setNotice(text('缺失组件已开始准备，可在下载记录查看进度。', 'Missing components are being prepared. See Downloads for progress.')); })}><Download size={14}/>{text('准备缺失组件', 'Prepare missing components')}</button></div>
+        {kinds.map(kind => <section className="model-component" key={kind} data-testid={`model-component-${kind}`}>
+          <header><h3>{label(kind)}</h3><button className={secondary} onClick={() => openForm('local', kind)}><Plus size={13}/>{text('已有文件', 'Local file')}</button></header>
+          {entries.filter(entry => entry.kind === kind).map(entry => {
+            const task = taskFor(entry); const source = entry.sources.find(source => source.provider === provider);
+            return <div className="model-catalog-row" key={entry.id}><div className="model-catalog-description"><strong>{entry.name}</strong><div><span>{formatBytes(entry.size)}</span>{entry.recommended && <span className="model-tag">{text('推荐', 'Recommended')}</span>}<a href={source?.url} target="_blank" rel="noreferrer">{text('发布页', 'Source')}<ExternalLink size={11}/></a></div>{task && <progress aria-label={`${entry.name} ${text('下载进度', 'download progress')}`} max={task.total_bytes || undefined} value={task.total_bytes ? task.downloaded_bytes : undefined}/>}</div>
+              <div className="model-catalog-action">{entry.is_default && entry.available_path ? <span className="model-ready"><Check size={14}/>{text('当前默认', 'Current default')}</span> : task ? <button className={secondary} onClick={() => updateParams({ view: 'downloads' })}>{statusLabel(task)}{task.total_bytes ? ` ${Math.min(100, Math.round(task.downloaded_bytes / task.total_bytes * 100))}%` : ''}</button> : <button className={entry.available_path ? secondary : primary} disabled={busy || !source || !!loadErrors.library || !!loadErrors.downloads} onClick={() => void action(async () => { await startEntry(entry); setNotice(entry.available_path ? text('已设为默认组件。', 'Default component selected.') : text('已开始下载，完成后自动登记。', 'Download started. The file will be registered when complete.')); })}>{entry.available_path ? <Check size={14}/> : <Download size={14}/>} {entry.available_path ? text('设为默认', 'Use as default') : text('下载', 'Download')}</button>}</div>
+            </div>;
+          })}
+          {selected.some(model => model.kind === kind) && <div className="model-default-row"><label>{text('本地默认', 'Local default')}</label><StudioSelect aria-label={`${label(kind)} ${text('默认模型', 'default model')}`} value={selected.find(model => model.kind === kind && model.is_default)?.id || ''} options={[{ value: '', label: text('尚未选择', 'Not selected') }, ...selected.filter(model => model.kind === kind).map(model => ({ value: model.id, label: `${basename(model.path)}${!model.exists ? text('（文件缺失）', ' (missing)') : ''}`, disabled: !model.exists }))]} disabled={busy} onValueChange={id => void action(async () => { const previous = selected.find(model => model.kind === kind && model.is_default); if (id) await apiClient.patch(`/models/${id}`, { is_default: true }); else if (previous) await apiClient.patch(`/models/${previous.id}`, { is_default: false }); })}/></div>}
+        </section>)}
+        <div className="model-actions"><button className={secondary} data-testid="download-model-btn" onClick={() => openForm('download')}><Plus size={14}/>{text('自定义下载', 'Custom download')}</button><button className={secondary} data-testid="add-model-btn" onClick={() => openForm('local')}><Plus size={14}/>{text('添加本地模型', 'Add local model')}</button></div>
+        <details className="model-help"><summary>{text('默认组件与下载说明', 'Defaults and downloads')}</summary><p>{text('默认组件用于新配置，已有项目的明确路径会保留。标准单文件的配置与分词器已内置；自定义编码器可登记完整 HF 目录。Anima 与 Krea 2 的 VAE 可共用已有文件。', 'Defaults fill new configurations; existing explicit paths are retained. Standard single-file configurations and tokenizers are bundled. Custom encoders can use a complete local HF directory. Anima and Krea 2 can share an existing VAE.')}</p><p>{text('目录中的文件会校验大小、SHA-256 和组件类型，再加入模型库。中断后的重新下载从头开始。', 'Catalog downloads are checked for size, SHA-256 and component type before registration. Retrying an interrupted download restarts from the beginning.')}</p></details>
+      </>}
+    </> : <>
+      <div className="models-list-toolbar"><label className="model-search"><Search size={15}/><input value={query} aria-label={text('搜索模型或下载', 'Search models or downloads')} placeholder={text('搜索名称、路径或任务 ID', 'Search name, path or task ID')} onChange={event => { setQuery(event.target.value); setPage(1); }}/></label><div className="model-actions">{view === 'library' && <><button className={secondary} onClick={() => openForm('local')}><Plus size={14}/>{text('本地文件', 'Local file')}</button><button className={secondary} disabled={busy} onClick={() => void action(async () => { const found = await apiClient.post<ModelAsset[]>('/models/scan', { family }); setNotice(`${text('新登记文件', 'Newly registered files')}：${found.length}`); })}><FolderSearch size={14}/>{text('扫描模型目录', 'Scan model directory')}</button></>}</div></div>
+      <div className="models-pagination"><span>{count} {text('项', 'items')}</span><button className={secondary} disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>{text('上一页', 'Previous')}</button><span>{currentPage} / {pages}</span><button className={secondary} disabled={currentPage === pages} onClick={() => setPage(currentPage + 1)}>{text('下一页', 'Next')}</button></div>
+      {count === 0 ? <p className="model-empty">{text('没有匹配的记录。', 'No matching records.')}</p> : view === 'library' ? <div className="model-library-list">{slice(filteredModels).map(model => <div className="model-library-row" key={model.id}><div><strong>{basename(model.path)}</strong><p>{label(model.kind)} · {model.dtype || '—'} · {formatBytes(model.size)} · {model.exists ? text('可用', 'Available') : text('文件缺失', 'Missing file')}</p><details><summary>{text('文件路径', 'File path')}</summary><code>{model.path}</code></details></div><div className="model-actions"><button className={secondary} disabled={busy || !model.exists} aria-label={`${text('设为默认', 'Set default')} ${basename(model.path)}`} onClick={() => void action(async () => { await apiClient.patch(`/models/${model.id}`, { is_default: !model.is_default }); })}><Star size={14} fill={model.is_default ? 'currentColor' : 'none'}/>{model.is_default ? text('默认', 'Default') : text('设为默认', 'Set default')}</button><button className={secondary} disabled={busy} onClick={() => setRemove(model)} aria-label={`${text('移除登记', 'Remove registration')} ${basename(model.path)}`}><Trash2 size={14}/></button></div></div>)}</div> : <div data-testid="model-downloads" className="model-download-list">{slice(filteredTasks).map(task => <div className="model-download-row" key={task.id}><div className="model-download-heading"><div><strong>{task.filename}</strong><p>{task.provider === 'modelscope' ? 'ModelScope' : task.mirror === 'hf-mirror' ? 'HF-Mirror' : 'Hugging Face'} · {statusLabel(task)} · {formatBytes(task.downloaded_bytes)}{task.total_bytes ? ` / ${formatBytes(task.total_bytes)}` : ''}</p></div><div className="model-actions">{isActive(task) ? <button className={secondary} disabled={busy} onClick={() => void action(async () => { await apiClient.post(`/models/downloads/${task.id}/cancel`, {}); })}>{text('取消', 'Cancel')}</button> : task.status !== 'completed' && <><button className={secondary} disabled={busy} onClick={() => void action(async () => { await apiClient.post(`/models/downloads/${task.id}/retry`, {}); })}>{text('重新下载', 'Restart download')}</button><button className={secondary} onClick={() => { openForm('download', task.kind); setProvider(task.provider); setMirror(task.mirror); setSourceMode('url'); setUrl(task.source_url); setDtype(task.dtype || ''); }}>{text('更换来源', 'Change source')}</button></>}</div></div>{isActive(task) && <progress aria-label={text('下载进度', 'Download progress')} max={task.total_bytes || undefined} value={task.total_bytes ? task.downloaded_bytes : undefined}/>}{task.error && <p className="model-download-error">{task.error}</p>}<details><summary>{text('保存位置与任务信息', 'Destination and task details')}</summary><code>{task.target_path}</code><p>{task.id}</p></details></div>)}</div>}
+    </>}
+    <p className="models-storage-note">{text('模型目录', 'Model directory')}：<span title={settings?.paths.models_dir}>{settings?.paths.models_dir}</span><Link to="/settings/preferences?section=storage" replace state={location.state}>{text('更改', 'Change')}</Link></p>
+    {dialog && <Dialog title={dialog === 'local' ? text('添加本地模型', 'Add local model') : text('自定义下载', 'Custom download')} onClose={closeForm} closeDisabled={busy} wide><form className="model-source-form" data-testid={dialog === 'local' ? 'add-model-modal' : 'download-model-form'} onSubmit={event => { event.preventDefault(); void action(async () => {
+      if (dialog === 'local') await apiClient.post('/models', { family, kind, path: path.trim(), dtype: dtype || null, is_default: isDefault });
+      else await apiClient.post('/models/downloads', { family, kind, provider, mirror, dtype: dtype || null, is_default: isDefault, ...(sourceMode === 'url' ? { url: url.trim() } : { repo_id: repo.trim(), filename: filename.trim(), revision: revision.trim() || (provider === 'modelscope' ? 'master' : 'main') }) } as ModelDownloadRequest);
+      setDialog(null); updateParams({ view: dialog === 'local' ? 'library' : 'downloads' }); setNotice(text('已提交。', 'Submitted.'));
+    }, true); }}>
+      <fieldset disabled={busy}><p className="model-help-text">{dialog === 'local' ? text('选择训练服务所在电脑的文件或完整编码器目录。', 'Choose a file or complete encoder directory on the training computer.') : text('从对应平台填写仓库和完整文件路径，或粘贴单文件链接。', 'Enter a repository and complete file path on the selected platform, or paste a single-file URL.')}</p>
+        <div className="model-form-grid"><label>{text('组件', 'Component')}<StudioSelect data-testid="model-kind-select" aria-label={text('组件', 'Component')} value={kind} onValueChange={setKind} options={[...kinds, ...(dialog === 'local' ? ['tokenizer'] : [])].map(value => ({ value, label: label(value) }))}/></label><label>{text('权重精度', 'Weight precision')}<StudioSelect aria-label={text('权重精度', 'Weight precision')} value={dtype} onValueChange={setDtype} options={['bf16', 'fp16', 'fp32', 'fp8', ''].map(value => ({ value, label: value.toUpperCase() || text('未知', 'Unknown') }))}/></label></div>
+        {dialog === 'local' ? <label>{text('文件路径', 'File path')}<PathInput ariaLabel={text('文件路径', 'File path')} value={path} onChange={setPath}/></label> : <>
+          <div className="model-form-grid"><label>{text('下载平台', 'Download platform')}<StudioSelect aria-label={text('下载平台', 'Download platform')} value={provider} onValueChange={value => { setProvider(value as Provider); setMirror('official'); setRevision(''); }} options={[{ value: 'huggingface', label: 'Hugging Face' }, { value: 'modelscope', label: '魔搭 ModelScope' }]}/></label><label>{text('来源格式', 'Source format')}<StudioSelect aria-label={text('来源格式', 'Source format')} value={sourceMode} onValueChange={value => setSourceMode(value as 'repo' | 'url')} options={[{ value: 'repo', label: text('仓库与文件', 'Repository and file') }, { value: 'url', label: text('文件链接', 'File URL') }]}/></label></div>
+          {sourceMode === 'url' ? <label>{text('文件下载链接', 'File URL')}<input required data-testid="model-download-url" value={url} onChange={event => setUrl(event.target.value)} placeholder="https://…"/></label> : <><label>{text('仓库 ID', 'Repository ID')}<input required value={repo} onChange={event => setRepo(event.target.value)} placeholder="owner/repository"/></label><label>{text('仓库内文件路径', 'File path in repository')}<input required value={filename} onChange={event => setFilename(event.target.value)} placeholder="folder/model.safetensors"/></label><label>{text('分支 / Revision', 'Branch / revision')}<input value={revision} onChange={event => setRevision(event.target.value)} placeholder={provider === 'modelscope' ? 'master' : 'main'}/></label></>}
+          {provider === 'huggingface' && <details><summary>{text('连接选项', 'Connection options')}</summary><StudioSelect aria-label={text('连接方式', 'Connection mode')} value={mirror} onValueChange={value => setMirror(value as 'official' | 'hf-mirror')} options={[{ value: 'official', label: text('官方（使用已保存令牌）', 'Official (saved token)') }, { value: 'hf-mirror', label: 'HF-Mirror · ' + text('仅匿名', 'anonymous only') }]}/></details>}
+          <p className="model-help-text">{text('仅下载完整 safetensors 单文件；分片模型请登记完整本地目录。受限仓库使用设置里保存的访问密钥。', 'Only complete safetensors files are downloaded; register a full local directory for sharded models. Restricted repositories use the access keys saved in Settings.')}</p>
+        </>}
+        <label className="model-checkbox"><input type="checkbox" checked={isDefault} onChange={event => setIsDefault(event.target.checked)}/>{text('完成后设为本系列默认组件', 'Set as the default component when ready')}</label>
+      </fieldset>
+      {formError && <div role="alert" className="settings-alert">{formError}</div>}
+      <footer><button type="button" className={secondary} disabled={busy} onClick={closeForm}>{text('取消', 'Cancel')}</button><button className={primary} data-testid={dialog === 'local' ? 'add-model-submit' : 'model-download-start'} disabled={busy || (dialog === 'local' && !path.trim())} type="submit">{busy && <Loader2 size={14} className="animate-spin"/>}{dialog === 'local' ? text('添加模型', 'Add model') : text('开始下载', 'Start download')}</button></footer>
+    </form></Dialog>}
+    {remove && <Dialog title={text('移除模型登记', 'Remove model registration')} onClose={() => !busy && setRemove(null)} closeDisabled={busy}><div className="model-source-form"><p>{text('移除后不再显示在模型库，磁盘文件会保留。已有项目路径不会改变。', 'The entry will be removed from the library. Its file and existing project paths are retained.')}</p><code>{remove.path}</code><footer><button className={secondary} disabled={busy} onClick={() => setRemove(null)}>{text('取消', 'Cancel')}</button><button className={primary} disabled={busy} onClick={() => void action(async () => { await apiClient.delete(`/models/${remove.id}`); setRemove(null); })}>{text('移除登记', 'Remove registration')}</button></footer></div></Dialog>}
+  </div>;
 }

@@ -17,7 +17,7 @@ it('draws a source-pixel rectangle, enforces a ratio and submits actual geometry
   expect(screen.getByLabelText('裁剪高度')).toHaveValue(25);
   fireEvent.click(screen.getByRole('button',{name:'应用此裁剪'}));
   expect(apply).toHaveBeenLastCalledWith({x:10,y:5,width:40,height:25});
-  fireEvent.change(screen.getByLabelText('裁剪比例'),{target:{value:'1'}});
+  fireEvent.click(screen.getByRole('combobox',{name:'裁剪比例'}));fireEvent.click(screen.getByRole('option',{name:'1:1'}));
   expect(screen.getByLabelText('裁剪宽度')).toHaveValue(25);
   expect(screen.getByLabelText('裁剪高度')).toHaveValue(25);
   fireEvent.click(screen.getByRole('button',{name:'重置区域'}));
