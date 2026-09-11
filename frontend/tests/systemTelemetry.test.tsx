@@ -65,6 +65,25 @@ describe('stable system telemetry', () => {
     expect(screen.getByLabelText('GPU 功率')).toHaveTextContent(/^—$/);
   });
 
+  it('retains dedicated number and unit slots from missing readings through zero and three digits', () => {
+    const { rerender } = render(<SystemTelemetry stats={null}/>);
+    const power = screen.getByLabelText('GPU 功率');
+    const numberSlot = power.querySelector('.telemetry-number');
+    const unitSlot = power.querySelector('.telemetry-unit');
+    expect(numberSlot).toHaveTextContent('—');
+    expect(unitSlot).toBeEmptyDOMElement();
+    for (const value of [0, 9, 99, 100, 999]) {
+      const data = snapshot(); data.gpus[0].power_w = value; data.cpu_pct = value > 100 ? 100 : value;
+      rerender(<SystemTelemetry stats={data}/>);
+      expect(power.querySelector('.telemetry-number')).toBe(numberSlot);
+      expect(power.querySelector('.telemetry-unit')).toBe(unitSlot);
+      expect(numberSlot).toHaveTextContent(String(value));
+      expect(unitSlot).toHaveTextContent('W');
+      expect(screen.getByLabelText('CPU 占用率').querySelector('.telemetry-unit')).toHaveTextContent('%');
+    }
+    expect(screen.getByTestId('telemetry-memory')).toHaveAttribute('title', expect.stringContaining('12.0 / 32.0 GiB'));
+  });
+
   it('keeps the selected GPU identity across reordered updates and falls back when it disappears', () => {
     const data = snapshot(); const second = { ...data.gpus[0], index: 3, name: 'Second GPU', power_w: 280, util_pct: 85 };
     data.gpus.push(second);

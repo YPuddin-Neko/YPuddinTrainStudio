@@ -126,9 +126,22 @@ def _events(path):
 
 
 @pytest.mark.parametrize("text_mode", ["online", "cached"])
-def test_anima_trainer_end_to_end_on_cpu(tiny_models, tiny_vae_loader, image_dataset, tmp_path, text_mode):
+@pytest.mark.parametrize("resolution_mode", ["bucket", "native"])
+def test_anima_trainer_end_to_end_on_cpu(
+    tiny_models, tiny_vae_loader, image_dataset, tmp_path, text_mode, resolution_mode
+):
     out = tmp_path / text_mode
-    cfg = _cfg(tiny_models, image_dataset, out, dataset={"text_encoding": text_mode})
+    cfg = _cfg(
+        tiny_models,
+        image_dataset,
+        out,
+        dataset={
+            "text_encoding": text_mode,
+            "resolution_mode": resolution_mode,
+            "native_max_pixels": 8192,
+            "masked_loss": resolution_mode == "native",
+        },
+    )
     trainer = Trainer(cfg, device="cpu")
     assert trainer.run() == "finished"
     events = _events(out / "events.jsonl")

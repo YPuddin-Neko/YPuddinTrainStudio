@@ -123,3 +123,36 @@ def test_nvml_without_uuid_uses_unique_name_not_cuda_index(cuda, monkeypatch):
     assert hw.gpu_info()[0]["power_w"] == 180
     nvml.nvmlDeviceGetName = lambda i: b"RTX Test"
     assert hw.gpu_info()[0]["power_w"] is None  # Duplicate names without identity stay unknown.
+
+
+@pytest.mark.parametrize("mps", [False, True])
+def test_ram_and_mps_use_available_memory_from_one_snapshot(monkeypatch, tmp_path, mps):
+    from ypuddin.server.routes_core import system_stats
+
+    memory = Mock(return_value=SimpleNamespace(total=100 * 2**20, available=75 * 2**20, used=19 * 2**20))
+    monkeypatch.setattr(hw.psutil, "virtual_memory", memory)
+    monkeypatch.setattr(hw.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(hw.torch.backends.mps, "is_available", lambda: mps)
+    monkeypatch.setattr(hw, "_apple_name", lambda: "Apple Test GPU")
+    monkeypatch.setattr(hw, "_nvidia_smi", lambda: [])
+
+    stats = system_stats(tmp_path)
+    assert stats["ram"] == {"used_mb": 25, "total_mb": 100}
+    memory.assert_called_once_with()
+    if mps:
+        gpu = stats["gpus"][0]
+        assert gpu["mem_used_mb"] == stats["ram"]["used_mb"]
+        assert gpu["mem_total_mb"] == stats["ram"]["total_mb"]
+        assert gpu["mem_free_mb"] == 75 and gpu["memory_scope"] == "unified_system"
+    else:
+        assert stats["gpus"] == []
+
+
+def test_standalone_mps_inventory_still_samples_system_memory(monkeypatch):
+    memory = Mock(return_value=SimpleNamespace(total=100 * 2**20, available=75 * 2**20))
+    monkeypatch.setattr(hw.psutil, "virtual_memory", memory)
+    monkeypatch.setattr(hw.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(hw.torch.backends.mps, "is_available", lambda: True)
+    monkeypatch.setattr(hw, "_apple_name", lambda: "Apple Test GPU")
+    assert hw.gpu_info()[0]["mem_used_mb"] == 25
+    memory.assert_called_once_with()

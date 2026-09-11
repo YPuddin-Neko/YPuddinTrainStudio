@@ -656,7 +656,7 @@
           "default": [
             1024
           ],
-          "description": "训练分辩率（基准边长，可多个）",
+          "description": "训练分辨率（基准边长，可多个）",
           "items": {
             "type": "integer"
           },
@@ -665,7 +665,67 @@
           "x-ui": {
             "control": "tags",
             "group": "dataset",
-            "order": 10
+            "order": 10,
+            "show_when": "dataset.resolution_mode == 'bucket'"
+          }
+        },
+        "resolution_mode": {
+          "default": "bucket",
+          "description": "分桶：统一基准面积；原生：保留每图独立尺寸，仅在超预算时缩小，不放大小图",
+          "enum": [
+            "bucket",
+            "native"
+          ],
+          "title": "Resolution Mode",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "dataset",
+            "order": 5
+          }
+        },
+        "native_max_pixels": {
+          "default": 1048576,
+          "description": "原生模式单图及一次前向的像素上限；1048576 = 1024²。不同尺寸分组前向后按图片数累积梯度，像素预算不保证整体显存不会溢出",
+          "maximum": 67108864,
+          "minimum": 1024,
+          "title": "Native Max Pixels",
+          "type": "integer",
+          "x-ui": {
+            "group": "dataset",
+            "order": 11,
+            "show_when": "dataset.resolution_mode == 'native'"
+          }
+        },
+        "native_max_side": {
+          "default": 4096,
+          "description": "原生模式单边上限；超限时等比缩小后裁去尺寸对齐边缘，或按策略报错",
+          "maximum": 8192,
+          "minimum": 32,
+          "title": "Native Max Side",
+          "type": "integer",
+          "x-ui": {
+            "advanced": true,
+            "group": "dataset",
+            "order": 12,
+            "show_when": "dataset.resolution_mode == 'native'"
+          }
+        },
+        "native_overflow": {
+          "default": "downscale",
+          "description": "超出像素或单边预算：等比缩小，或报错要求调整；不会悄悄跳过图片",
+          "enum": [
+            "downscale",
+            "error"
+          ],
+          "title": "Native Overflow",
+          "type": "string",
+          "x-ui": {
+            "advanced": true,
+            "control": "select",
+            "group": "dataset",
+            "order": 13,
+            "show_when": "dataset.resolution_mode == 'native'"
           }
         },
         "aspect_ratio_limit": {

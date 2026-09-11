@@ -6,6 +6,7 @@ import { apiClient } from '../../api/client';
 import { Job, Plan, Preset, ModelAsset, DatasetInfo } from '../../api/types';
 import { useFamilies, familyByName } from '../../api/hooks/useFamilies';
 import { mergeConfig } from '../../utils/config';
+import { applyTrainingPreset, reusableTrainingPreset } from '../../utils/trainingPresets';
 import { formatApiError } from '../../utils/errors';
 import { fillDefaultModels, changeModelFamily, matchingTrainingDatasets } from '../../utils/workspaceConfig';
 import { useWorkspaceText } from '../../utils/workspaceText';
@@ -214,7 +215,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
 
   const handleApplyPreset = (preset: Preset) => {
     setError('');
-    setConfig((prev) => fillDefaultModels(mergeConfig(prev, preset.config), registeredModels));
+    setConfig((prev) => fillDefaultModels(applyTrainingPreset(prev, preset.config), registeredModels));
   };
 
   const handleConfigChange = (next: Record<string, any>) => {
@@ -227,7 +228,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     setSavingPreset(true);
     setError('');
     try {
-      await apiClient.post('/presets', { name: presetName.trim(), config }, { silent: true });
+      await apiClient.post('/presets', { name: presetName.trim(), config: reusableTrainingPreset(config) }, { silent: true });
       setPresets(await apiClient.get<Preset[]>('/presets'));
       setPresetName('');
     } catch (err: unknown) { setError(formatApiError(err)); }

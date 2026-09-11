@@ -99,7 +99,39 @@ class DatasetConfig(_Strict):
         default_factory=list, help="数据源列表", ui_=ui("dataset", order=0)
     )
     resolutions: list[int] = F(
-        [1024], help="训练分辩率（基准边长，可多个）", ui_=ui("dataset", order=10, control="tags")
+        [1024],
+        help="训练分辨率（基准边长，可多个）",
+        ui_=ui("dataset", order=10, control="tags", show_when="dataset.resolution_mode == 'bucket'"),
+    )
+    resolution_mode: Literal["bucket", "native"] = F(
+        "bucket",
+        help="分桶：统一基准面积；原生：保留每图独立尺寸，仅在超预算时缩小，不放大小图",
+        ui_=ui("dataset", order=5, control="select"),
+    )
+    native_max_pixels: int = F(
+        1_048_576,
+        ge=1024,
+        le=67_108_864,
+        help="原生模式单图及一次前向的像素上限；1048576 = 1024²。不同尺寸分组前向后按图片数累积梯度，像素预算不保证整体显存不会溢出",
+        ui_=ui("dataset", order=11, show_when="dataset.resolution_mode == 'native'"),
+    )
+    native_max_side: int = F(
+        4096,
+        ge=32,
+        le=8192,
+        help="原生模式单边上限；超限时等比缩小后裁去尺寸对齐边缘，或按策略报错",
+        ui_=ui("dataset", order=12, show_when="dataset.resolution_mode == 'native'", advanced=True),
+    )
+    native_overflow: Literal["downscale", "error"] = F(
+        "downscale",
+        help="超出像素或单边预算：等比缩小，或报错要求调整；不会悄悄跳过图片",
+        ui_=ui(
+            "dataset",
+            order=13,
+            control="select",
+            show_when="dataset.resolution_mode == 'native'",
+            advanced=True,
+        ),
     )
     aspect_ratio_limit: float = F(2.0, ge=1.0, help="分桶允许的最大长宽比", ui_=ui("dataset", order=20))
     area_tolerance: float = F(

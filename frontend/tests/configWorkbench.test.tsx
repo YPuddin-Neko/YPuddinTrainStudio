@@ -6,6 +6,7 @@ import {SchemaForm} from '../src/schema/SchemaForm/SchemaForm';
 import BucketInspector from '../src/pages/TrainConfig/BucketInspector';
 import type {Plan} from '../src/api/types';
 import '../src/i18n';
+import trainSchema from '../src/schema/train-schema.json';
 
 describe('compact configuration workbench contracts', () => {
   it('normalizes FastAPI locations and translates required components without crashing', () => {
@@ -47,5 +48,31 @@ describe('compact configuration workbench contracts', () => {
     fireEvent.click(screen.getByRole('button',{name:'分桶明细表'}));
     expect(screen.getByRole('table')).toHaveTextContent('512 × 768104');
     expect(screen.getByRole('table')).toHaveTextContent('768 × 51262');
+  });
+
+  it('switches native and bucket controls without deleting retained settings or hiding legacy defaults', () => {
+    function Harness() { const [value, setValue] = React.useState<Record<string, any>>({ dataset: { resolutions: [768], aspect_ratio_limit: 2 } }); return <><SchemaForm schema={trainSchema} value={value} onChange={setValue} compact showAdvanced groupFilter={['dataset']}/><output data-testid="native-config">{JSON.stringify(value)}</output></>; }
+    render(<Harness/>);
+    expect(screen.getByTestId('field-dataset.resolutions')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox', {name:'分辨率模式'}), {target:{value:'native'}});
+    for (const name of ['resolutions','aspect_ratio_limit','area_tolerance','bucket_step','bucket_no_upscale']) expect(screen.queryByTestId(`field-dataset.${name}`)).not.toBeInTheDocument();
+    expect(screen.getByRole('spinbutton',{name:'原生像素预算'})).toHaveValue(1048576);
+    expect(screen.getByRole('option',{name:'等比缩小到预算内'})).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('spinbutton',{name:'原生最长边'}),{target:{value:'2048'}});
+    fireEvent.change(screen.getByRole('combobox', {name:'分辨率模式'}), {target:{value:'bucket'}});
+    expect(screen.queryByRole('spinbutton',{name:'原生像素预算'})).not.toBeInTheDocument();
+    expect(screen.getByRole('spinbutton',{name:'最大长宽比'})).toHaveValue(2);
+    expect(JSON.parse(screen.getByTestId('native-config').textContent!).dataset).toEqual({resolution_mode:'bucket',resolutions:[768],aspect_ratio_limit:2,native_max_side:2048});
+  });
+
+  it('distinguishes native forwards from logical batches in the plan', () => {
+    const plan = {ok:true,images:4,items:8,captioned:4,total_steps:4,steps_per_epoch:2,buckets:[{w:512,h:768,items:8,batches:4}],native:{images:4,downscaled:1,sizes:1,logical_batches:2,max_pixels:1048576,alignment:32,batch_size:4,forward_groups:4}} as Plan;
+    render(<BucketInspector plan={plan} loading={false} onData={()=>{}}/>);
+    expect(screen.getByText('原生尺寸分布')).toBeInTheDocument();
+    expect(screen.getByText('逻辑批次 / 轮').nextElementSibling).toHaveTextContent('2');
+    expect(screen.getByText('分组前向 / 轮').nextElementSibling).toHaveTextContent('4');
+    fireEvent.click(screen.getByRole('button',{name:'分桶明细表'}));
+    expect(screen.getByRole('columnheader',{name:'前向次数'})).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader',{name:'批次'})).not.toBeInTheDocument();
   });
 });

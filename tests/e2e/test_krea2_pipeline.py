@@ -136,9 +136,22 @@ def _events(path):
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def test_krea2_trainer_end_to_end_on_cpu(tiny_models, tiny_vae_loader, image_dataset, tmp_path):
+@pytest.mark.parametrize("resolution_mode", ["bucket", "native"])
+def test_krea2_trainer_end_to_end_on_cpu(
+    tiny_models, tiny_vae_loader, image_dataset, tmp_path, resolution_mode
+):
     out = tmp_path / "run"
-    cfg = _cfg(tiny_models, image_dataset, out)
+    cfg = _cfg(
+        tiny_models,
+        image_dataset,
+        out,
+        dataset={
+            "resolution_mode": resolution_mode,
+            "native_max_pixels": 8192,
+            "cache_latents": resolution_mode != "native",
+            "masked_loss": resolution_mode == "native",
+        },
+    )
     trainer = Trainer(cfg, device="cpu")
     assert trainer.run() == "finished"
     events = _events(out / "events.jsonl")

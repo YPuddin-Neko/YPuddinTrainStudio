@@ -185,7 +185,6 @@ export default function Layout() {
         {/* Topbar：实时系统状态 + 训练中胶囊 */}
         <header className="app-topbar bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800" data-testid="app-topbar">
           <button className="topbar-menu p-1.5" aria-label={t('hardware.openMenu')} onClick={() => setMenuOpen(true)}><Menu className="w-5 h-5" /></button>
-          <SystemTelemetry stats={stats} />
           <div className="topbar-job-slot">
             {runningJob && (
               <Link
@@ -202,6 +201,7 @@ export default function Layout() {
               </Link>
             )}
           </div>
+          <SystemTelemetry stats={stats} />
           <div className="topbar-feedback-slot">
             {telemetryError ? <button className="text-amber-600" onClick={() => void refreshTelemetry()} title={telemetryError} aria-label={text('硬件状态读取失败，点击重试', 'Hardware status failed; retry')}><RefreshCw size={15}/><span className="sr-only" role="alert">{telemetryError}</span></button> : connectionStatus !== 'connected' && <span role="status" data-testid="event-connection" title={t(`connection.${connectionStatus}`)} className="text-amber-600">{connectionStatus === 'disconnected' ? <WifiOff size={15}/> : <Loader2 size={15} className="animate-spin"/>}<span className="sr-only">{t(`connection.${connectionStatus}`)}</span></span>}
           </div>

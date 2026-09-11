@@ -31,7 +31,7 @@ const input = 'rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm
 const busyStatus = (op: Operation) => ['planning', 'installing', 'verifying'].includes(op.status);
 const backendNames: Record<string, string> = { auto: 'Auto · PyTorch SDPA', sdpa: 'PyTorch SDPA', xformers: 'xFormers', flash_attn: 'FlashAttention 2', sage: 'SageAttention' };
 
-export function EnvironmentManagerPanel() {
+export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: string } = {}) {
   const { i18n, t } = useTranslation();
   const en = i18n.resolvedLanguage?.startsWith('en');
   const copy = (zh: string, english: string) => en ? english : zh;
@@ -53,6 +53,12 @@ export function EnvironmentManagerPanel() {
     if (failure) { observedFailures.current.add(failure.id); setExpanded(failure.id); }
   }, [operations]);
   const [uploading, setUploading] = React.useState(false);
+  const focusAvailable = !!focusPackage && !!status?.packages.some(pkg => pkg.name === focusPackage);
+  React.useEffect(() => {
+    if (!focusAvailable || !focusPackage) return;
+    setSelected(focusPackage);
+    document.getElementById(`environment-package-${focusPackage}`)?.scrollIntoView?.({ block: 'start' });
+  }, [focusAvailable, focusPackage]);
 
   const refresh = React.useCallback(async (probe = false) => {
     setLoading(true);
@@ -114,6 +120,7 @@ export function EnvironmentManagerPanel() {
     tensorboard: copy('训练曲线与本地 TensorBoard 日志', 'Training curves and local TensorBoard logs'),
     wandb: copy('可选云端训练日志，启用任务时需自行登录', 'Optional cloud logs; sign in when enabling a run'),
     schedulefree: copy('Schedule-free 优化器', 'Schedule-free optimizers'),
+    onnxruntime: copy('本地 WD14 自动打标 · CPU 通用版，无需 CUDA', 'Local WD14 tagging · CPU runtime, no CUDA required'),
   }[name] || '');
   const reason = (pkg: PackageStatus) => {
     if (pkg.reason === 'protected_runtime') return copy('保留当前 Torch / CUDA', 'Keep current Torch / CUDA');
@@ -151,7 +158,7 @@ export function EnvironmentManagerPanel() {
       <details className="settings-inline-details"><summary>{copy('解释器与显卡诊断', 'Interpreter & GPU diagnostics')}</summary><p className="font-mono">{status.runtime.python_executable}</p>
         {status.runtime.gpus.some(g => g.telemetry_source) && <p>{status.runtime.gpus.map(g => `${g.name}: ${g.telemetry_source || '—'}${g.telemetry_note ? ` (${t(`hardware.${g.telemetry_note}`)})` : ''}`).join(' / ')}</p>}
       </details>
-      {(status.running_jobs || status.restart_required) && <p role="status" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">{status.running_jobs ? copy('训练或缓存任务正在运行。暂停并等待工作进程退出后，才能修改环境。', 'A training or cache job is running. Pause it and wait for its worker to exit before changing dependencies.') : copy('环境已发生变更，请停止并重新启动 Studio。重启前队列不会启动新任务；如安装失败，可先在这里修复或卸载。', 'The environment changed. Stop and restart Studio before new queued jobs can start. Failed packages can be repaired or removed here first.')}</p>}
+      {(status.running_jobs || status.restart_required) && <p role="status" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">{status.running_jobs ? copy('训练、缓存或本地打标任务正在运行。等待任务完成或停止、工作进程退出后，才能修改环境。', 'Training, caching or local tagging is running. Wait for the task to finish or stop and its worker to exit before changing dependencies.') : copy('环境已发生变更，请停止并重新启动 Studio。重启前队列不会启动新任务；如安装失败，可先在这里修复或卸载。', 'The environment changed. Stop and restart Studio before new queued jobs can start. Failed packages can be repaired or removed here first.')}</p>}
     </>}
     </section>
     {status && <>
@@ -164,7 +171,7 @@ export function EnvironmentManagerPanel() {
       <section id="environment-packages" data-settings-section tabIndex={-1} className="settings-section">
       <div className="settings-section-heading"><div><h2>{copy('计算与扩展', 'Compute & extensions')}</h2><p className="settings-note">{copy('展开条目管理版本，安装前先检查变更计划。', 'Expand an extension to manage it. Review the package plan before applying.')}</p></div></div>
       <div className="settings-dependencies">{status.packages.map(pkg => <div key={pkg.name} className="settings-dependency">
-        <div className="settings-dependency-row" data-testid={`environment-package-${pkg.name}`}>
+        <div id={`environment-package-${pkg.name}`} className="settings-dependency-row" data-testid={`environment-package-${pkg.name}`}>
           <div><button type="button" disabled={uploading || busy} className="settings-dependency-name disabled:opacity-50" aria-expanded={selected === pkg.name} aria-controls={`environment-details-${pkg.name}`} onClick={() => { setSelected(selected === pkg.name ? null : pkg.name); setVersion(''); setWheel(null); }}>{selected === pkg.name ? <ChevronDown size={13} /> : <ChevronRight size={13} />}{pkg.name}</button><p className="settings-dependency-purpose">{purpose(pkg.name)}</p></div>
           <span className="settings-dependency-version break-all font-mono text-xs">{pkg.version || '—'}</span>
           <span className={`settings-dependency-state text-xs ${pkg.available ? 'text-emerald-600 dark:text-emerald-400' : pkg.error && pkg.supported ? 'text-amber-600' : 'text-slate-500'}`}>{reason(pkg)}</span>

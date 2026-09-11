@@ -10,7 +10,7 @@ import { formatApiError } from '../utils/errors';
 function browseDirectory(value: string): string {
   const path = value.trim() || '/';
   if (/^[a-z]:$/i.test(path)) return `${path}\\`;
-  if (!/\.(safetensors|ckpt|pt|pth|bin|gguf|onnx|json|toml|yaml|yml|txt|png|jpe?g|webp|bmp|tiff?|zip)$/i.test(path)) return path;
+  if (!/\.(safetensors|ckpt|pt|pth|bin|gguf|onnx|csv|json|toml|yaml|yml|txt|png|jpe?g|webp|bmp|tiff?|zip)$/i.test(path)) return path;
   const separator = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
   if (separator < 0) return '.';
   if (separator === 0) return path[0];

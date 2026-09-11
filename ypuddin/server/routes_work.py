@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import re
 import shutil
 import tempfile
 from contextlib import nullcontext
@@ -192,12 +193,56 @@ def get_project_config(
 def put_project_config(
     pid: str, body: dict[str, Any], c: ServiceContext = Depends(ctx), version_id: str | None = None
 ) -> dict[str, Any]:
+    reindex = []
     with c.db.lock:
         version = assert_version_writable(c, pid, version_id)
+        configured = {}
+        for section in ("dataset", "validation"):
+            value = body.get(section)
+            for source in value.get("sources", []) if isinstance(value, dict) else []:
+                if isinstance(source, dict) and source.get("path"):
+                    path = str(Path(source["path"]).expanduser().resolve())
+                    extension = _validate_caption_extension(source.get("caption_ext", ".txt"))
+                    if path in configured and configured[path] != extension:
+                        raise ApiError(
+                            "one source folder cannot have conflicting training/validation caption extensions",
+                            code="dataset.caption_ext",
+                        )
+                    configured[path] = extension
+        for dataset in c.db.fetchall(
+            "SELECT id,path,caption_ext FROM datasets WHERE project_id=? AND version_id=?",
+            (pid, version["id"]),
+        ):
+            extension = configured.get(str(Path(dataset["path"]).expanduser().resolve()))
+            if extension is not None and extension != dataset["caption_ext"]:
+                reindex.append((dataset["id"], extension))
+        if reindex:
+            assert_version_writable(c, pid, version["id"], data=True)
         _write_project_config(c, pid, body, version["id"])
+        for did, extension in reindex:
+            c.db.update("datasets", did, {"caption_ext": extension, "index_status": "indexing"})
+            _records_path(c, did).unlink(missing_ok=True)
         c.db.update("project_versions", version["id"], {"updated_at": now()})
         c.db.update("projects", pid, {"updated_at": now()})
+    for did, _ in reindex:
+        _index_dataset(c, did)
     return body
+
+
+def _validate_caption_extension(value: str) -> str:
+    from ypuddin.data.index import IMAGE_EXTS
+
+    if (
+        not isinstance(value, str)
+        or not re.fullmatch(r"\.[A-Za-z0-9][A-Za-z0-9._-]{0,31}", value)
+        or value.lower() in IMAGE_EXTS
+        or value.lower() in {".mask", ".mask.png"}
+    ):
+        raise ApiError(
+            "caption_ext must be a text sidecar suffix such as .txt or .caption, not an image, mask or path",
+            code="dataset.caption_ext",
+        )
+    return value
 
 
 def _write_project_config(
@@ -368,6 +413,7 @@ def _register_dataset(
             for item in matching:
                 item.update(explicit)  # Preserve each source's role and all unedited advanced settings.
             source = {key: matching[0].get(key, value) for key, value in source.items()}
+        _validate_caption_extension(source["caption_ext"])
         c.db.execute("BEGIN IMMEDIATE")
         written = False
         try:
@@ -528,7 +574,7 @@ def _cache_stats(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
         bm = BucketManager(
             sorted({resolution for src in ds.sources for resolution in (src.resolutions or ds.resolutions)}),
             align=family.spec.latent.align,
-            step=ds.bucket_step,
+            step=family.spec.latent.align if ds.resolution_mode == "native" else ds.bucket_step,
             aspect_ratio_limit=ds.aspect_ratio_limit,
             area_tolerance=ds.area_tolerance,
             no_upscale=ds.bucket_no_upscale,
@@ -546,14 +592,10 @@ def _cache_stats(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
         with fingerprint_cache(cache_root / "fingerprints"):
             latent_identity = family.latent_fingerprint(cfg.model, dtype=dtype)
         lc = LatentCache(cache_root / "latents")
+        from ypuddin.data.dataset import item_latent_key
+
         keys = {
-            LatentCache.key(
-                it.record.content_hash,
-                it.bucket.width,
-                it.bucket.height,
-                latent_identity,
-                flip,
-            )
+            item_latent_key(it, latent_identity, flip)
             for it in items
             for flip in ((False, True) if ds.flip else (False,))
         }
@@ -774,6 +816,7 @@ def get_caption(did: str, h: str, c: ServiceContext = Depends(ctx)) -> dict[str,
 def put_caption(did: str, h: str, body: CaptionBody, c: ServiceContext = Depends(ctx)) -> dict[str, str]:
     row = _get_dataset(c, did)
     with c.versions.mutation(row["project_id"], row["version_id"]):
+        row = _get_dataset(c, did)
         r = _record_by_hash(c, did, h)
         cap_path = (
             Path(r["caption_path"]) if r["caption_path"] else Path(r["path"]).with_suffix(row["caption_ext"])
@@ -801,6 +844,7 @@ def tags_batch(did: str, body: TagBatch, c: ServiceContext = Depends(ctx)) -> di
 
     row = _get_dataset(c, did)
     with c.versions.mutation(row["project_id"], row["version_id"]):
+        row = _get_dataset(c, did)
         changed = 0
         created = 0
         wanted = set(body.hashes)

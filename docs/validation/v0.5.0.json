@@ -1,0 +1,590 @@
+{
+  "version": "0.5.0",
+  "date": "2026-09-11",
+  "reference": {
+    "version": "0.27.0",
+    "commit": "3d9d2e86045b879cd19c01ac4aa2337f45a283ab",
+    "validation": "Read local call chains and ran isolated reference UI: project, curate, preprocess crop and caption stages. Reference source unchanged; independent implementation."
+  },
+  "backend": {
+    "total": 486,
+    "passed": 483,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 3,
+    "skip_reasons": [
+      {
+        "test": "test_accelerator_train_resume_and_preview[0-cuda]",
+        "reason": "CUDA unavailable"
+      },
+      {
+        "test": "test_accelerator_train_resume_and_preview[2-cuda]",
+        "reason": "CUDA unavailable"
+      },
+      {
+        "test": "test_cpu_noise_generator_matches_on_all_devices[cuda]",
+        "reason": "CUDA unavailable"
+      }
+    ],
+    "junit_sha256": "30d5b51551b8960e8b3e3c9e3015a86d73bf1c3c3f6356490cba1b503330be4f"
+  },
+  "frontend": {
+    "total": 176,
+    "passed": 176,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "skip_reasons": [],
+    "junit_sha256": "4351bb0acb6bcf2632205c359257c8f0d9470bccc52ca269e00db5598f32e058"
+  },
+  "checks": {
+    "production_build": {
+      "sha256": "44bf25f2a229d895c21bcc9e0ec856625afee37029c82d9c9ac3a24af524f4c5",
+      "result": "passed"
+    },
+    "frontend_lint": {
+      "sha256": "3c4b7fc8824dd14937b6f91393882b42806f46a0225077eb3ec88d326e429353",
+      "result": "passed"
+    },
+    "python_lint": {
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+      "result": "passed"
+    },
+    "changed_python_format": {
+      "sha256": "3e8c2dbca935b383c59c039636d312f0fa02f46e79ad8aca0b66c972c27bad86",
+      "result": "passed"
+    }
+  },
+  "browser": {
+    "production_ui": true,
+    "compiled_layout": {
+      "documentWidth": 1440,
+      "gaps": [
+        12,
+        12,
+        12,
+        12
+      ],
+      "scripts": [
+        "/assets/index-Cf7lVijY.js"
+      ],
+      "telemetry": [
+        {
+          "centerDelta": 0.0078125,
+          "label": "CPU",
+          "labelY": 9,
+          "readingY": 24
+        },
+        {
+          "centerDelta": 0.0078125,
+          "label": "内存",
+          "labelY": 9,
+          "readingY": 24
+        },
+        {
+          "centerDelta": 0.0078125,
+          "label": "占用",
+          "labelY": 9,
+          "readingY": 24
+        },
+        {
+          "centerDelta": 0.0078125,
+          "label": "统一内存",
+          "labelY": 9,
+          "readingY": 24
+        },
+        {
+          "centerDelta": 0.0078125,
+          "label": "功率",
+          "labelY": 9,
+          "readingY": 24
+        },
+        {
+          "centerDelta": 0.0078125,
+          "label": "温度",
+          "labelY": 9,
+          "readingY": 24
+        },
+        {
+          "centerDelta": 0.0078125,
+          "label": "硬盘",
+          "labelY": 9,
+          "readingY": 24
+        }
+      ],
+      "width": 1440
+    },
+    "mobile": {
+      "viewport": [
+        390,
+        844
+      ],
+      "document_width": 390
+    },
+    "telemetry_width_1000": {
+      "max_label_reading_center_error_px": 0.008,
+      "shared_rows": true,
+      "missing_unit_width_px": 0,
+      "independent_fixture_values": [
+        null,
+        0,
+        9,
+        100,
+        999
+      ]
+    },
+    "themes": [
+      "light",
+      "dark"
+    ],
+    "settings_drawer_restores_workspace": true,
+    "runtime_console_errors": [],
+    "service_restart_event_stream_reconnected": true
+  },
+  "pipeline": {
+    "real_import": {
+      "image_files": 10,
+      "decodable": 9,
+      "captions": 7,
+      "sidecar_masks": 3,
+      "broken_files": 1,
+      "duplicate_groups": 1
+    },
+    "exclude_and_restore": true,
+    "duplicate_prefers_masked_copy": true,
+    "visual_crop": {
+      "original": [
+        101,
+        79
+      ],
+      "crop_rect": [
+        22,
+        0,
+        57,
+        57
+      ],
+      "mask_pixel_match": true,
+      "undo_restored_original_bytes": true
+    },
+    "manual_caption_template_and_undo": true,
+    "cache_job": "j_437e6e23f1ea",
+    "cache_status": "completed",
+    "v2_independent_caption": {
+      "v1": "native_flow, no humans, gradient background, blue background, comic, border, simple background, sky, green background, blue sky, text focus\n",
+      "v2": "v2_native_budget, native_flow, no humans, gradient background, blue background, comic, border, simple background, sky, green background, blue sky, text focus\n",
+      "independent_files": true
+    },
+    "v2_independent_image_and_mask_copies": true
+  },
+  "native_training": [
+    {
+      "job": {
+        "id": "j_e6bda3f08f3c",
+        "type": "train",
+        "name": "原生尺寸 MPS · 在线 VAE · Mask",
+        "project_id": "p_a14c4774ee0b",
+        "version_id": "v_10c2dc3d4a1d",
+        "status": "completed",
+        "priority": 0,
+        "scheduled_at": null,
+        "created_at": 1789118732.047246,
+        "started_at": 1789118732.177635,
+        "finished_at": 1789118736.197411,
+        "run_dir": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio/projects/p_a14c4774ee0b/versions/v_10c2dc3d4a1d/runs/j_e6bda3f08f3c",
+        "progress": {
+          "phase": "finalizing",
+          "step": 6,
+          "total_steps": 6,
+          "steps_per_epoch": 2,
+          "epoch": 2,
+          "eta_s": 0.0,
+          "it_s": 24.582305508025428,
+          "vram_peak_mb": 0.822998046875,
+          "vram_metric": "current_allocated",
+          "device": "mps",
+          "estimated_peak_mb": 513.0,
+          "wait_reason": "",
+          "cache_done": 8,
+          "cache_total": 8,
+          "cache_kind": "index",
+          "preparing": false
+        },
+        "latest": {
+          "loss": 1.3607102036476135,
+          "loss_ema": 1.534487447272487,
+          "lr": {
+            "w1": 0.0,
+            "w2": 0.0
+          }
+        },
+        "error": null,
+        "resume_from": null,
+        "pid": 14935,
+        "exit_code": 0
+      },
+      "pixel_budget": 16384,
+      "downscaled_images": 0,
+      "images": 8,
+      "logical_batch": 3,
+      "gradient_accumulation": 2,
+      "epochs": 3,
+      "samples_seen": 24,
+      "mask": true,
+      "online_vae": true,
+      "samples": [
+        {
+          "step": 0,
+          "prompt_index": 0,
+          "prompt": "colorful gradient, validation image",
+          "seed": 0,
+          "url": "/api/jobs/j_e6bda3f08f3c/files?path=initial_00_0.png&kind=sample",
+          "width": 64,
+          "height": 64,
+          "created_at": 1789118733.303002
+        },
+        {
+          "step": 2,
+          "prompt_index": 0,
+          "prompt": "colorful gradient, validation image",
+          "seed": 0,
+          "url": "/api/jobs/j_e6bda3f08f3c/files?path=epoch1_00_0.png&kind=sample",
+          "width": 64,
+          "height": 64,
+          "created_at": 1789118735.636671
+        },
+        {
+          "step": 4,
+          "prompt_index": 0,
+          "prompt": "colorful gradient, validation image",
+          "seed": 0,
+          "url": "/api/jobs/j_e6bda3f08f3c/files?path=epoch2_00_0.png&kind=sample",
+          "width": 64,
+          "height": 64,
+          "created_at": 1789118735.809804
+        },
+        {
+          "step": 6,
+          "prompt_index": 0,
+          "prompt": "colorful gradient, validation image",
+          "seed": 0,
+          "url": "/api/jobs/j_e6bda3f08f3c/files?path=epoch3_00_0.png&kind=sample",
+          "width": 64,
+          "height": 64,
+          "created_at": 1789118735.997025
+        }
+      ],
+      "downloads": [
+        {
+          "kind": "sample",
+          "file": "initial_00_0.png",
+          "sha256": "91d0563de837da6278750b7ad7faf567a64baf08506269f723b22cc52f1ef6f6",
+          "bytes": 533
+        },
+        {
+          "kind": "sample",
+          "file": "epoch1_00_0.png",
+          "sha256": "8928f675caab69f1592f7d53b4029b4d554f41ef00366f2a1a4e9d0eae31cf66",
+          "bytes": 531
+        },
+        {
+          "kind": "sample",
+          "file": "epoch2_00_0.png",
+          "sha256": "b695124ca1dc7881c59f33e394dc34444d27c9f485faaa0ae205ede70f1cf9a8",
+          "bytes": 533
+        },
+        {
+          "kind": "sample",
+          "file": "epoch3_00_0.png",
+          "sha256": "b695124ca1dc7881c59f33e394dc34444d27c9f485faaa0ae205ede70f1cf9a8",
+          "bytes": 533
+        },
+        {
+          "kind": "checkpoint",
+          "file": "lora-epoch0001.safetensors",
+          "sha256": "c0bf25354ad66754d81d2bb218c3d968f290bdb355f431735d1bf7eaf67b5046",
+          "bytes": 25392
+        },
+        {
+          "kind": "checkpoint",
+          "file": "lora-epoch0002.safetensors",
+          "sha256": "2f036ec64c3e0b92b5535bf06a55a86dc5d0b6df1afaa79bf1cb41971c3aa852",
+          "bytes": 25392
+        },
+        {
+          "kind": "checkpoint",
+          "file": "lora-epoch0003.safetensors",
+          "sha256": "0e2453a42faa53a34d386ee2ce4ece53709b67d2534bcbe5072a88e4e8a96388",
+          "bytes": 25392
+        },
+        {
+          "kind": "checkpoint",
+          "file": "lora-final.safetensors",
+          "sha256": "178c7b80f8568d37b3abb9a61b722e431d6654a4d905a747d0a3460046f4b9e4",
+          "bytes": 25392
+        }
+      ]
+    },
+    {
+      "job": {
+        "id": "j_ef6cfe39d25d",
+        "type": "train",
+        "name": "原生尺寸 MPS · 超预算缩小 · 版本隔离",
+        "project_id": "p_a14c4774ee0b",
+        "version_id": "v_60222013b69b",
+        "status": "completed",
+        "priority": 0,
+        "scheduled_at": null,
+        "created_at": 1789121629.963328,
+        "started_at": 1789121630.387245,
+        "finished_at": 1789121632.9014452,
+        "run_dir": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio/projects/p_a14c4774ee0b/versions/v_60222013b69b/runs/j_ef6cfe39d25d",
+        "progress": {
+          "phase": "finalizing",
+          "step": 6,
+          "total_steps": 6,
+          "steps_per_epoch": 2,
+          "epoch": 2,
+          "eta_s": 0.0,
+          "it_s": 26.80090987504235,
+          "vram_peak_mb": 0.822998046875,
+          "vram_metric": "current_allocated",
+          "device": "mps",
+          "estimated_peak_mb": 513.0,
+          "wait_reason": "",
+          "cache_done": 8,
+          "cache_total": 8,
+          "cache_kind": "index",
+          "preparing": false
+        },
+        "latest": {
+          "loss": 1.542233943939209,
+          "loss_ema": 1.4836671675529614,
+          "lr": {
+            "w1": 0.0,
+            "w2": 0.0
+          }
+        },
+        "error": null,
+        "resume_from": null,
+        "pid": 30947,
+        "exit_code": 0
+      },
+      "pixel_budget": 8192,
+      "downscaled_images": 6,
+      "images": 8,
+      "logical_batch": 3,
+      "gradient_accumulation": 2,
+      "epochs": 3,
+      "samples_seen": 24,
+      "mask": true,
+      "online_vae": true,
+      "samples": [
+        {
+          "step": 0,
+          "prompt_index": 0,
+          "prompt": "colorful gradient, validation image",
+          "seed": 0,
+          "url": "/api/jobs/j_ef6cfe39d25d/files?path=initial_00_0.png&kind=sample",
+          "width": 64,
+          "height": 64,
+          "created_at": 1789121631.6778932
+        },
+        {
+          "step": 2,
+          "prompt_index": 0,
+          "prompt": "colorful gradient, validation image",
+          "seed": 0,
+          "url": "/api/jobs/j_ef6cfe39d25d/files?path=epoch1_00_0.png&kind=sample",
+          "width": 64,
+          "height": 64,
+          "created_at": 1789121632.5342479
+        },
+        {
+          "step": 4,
+          "prompt_index": 0,
+          "prompt": "colorful gradient, validation image",
+          "seed": 0,
+          "url": "/api/jobs/j_ef6cfe39d25d/files?path=epoch2_00_0.png&kind=sample",
+          "width": 64,
+          "height": 64,
+          "created_at": 1789121632.684949
+        },
+        {
+          "step": 6,
+          "prompt_index": 0,
+          "prompt": "colorful gradient, validation image",
+          "seed": 0,
+          "url": "/api/jobs/j_ef6cfe39d25d/files?path=epoch3_00_0.png&kind=sample",
+          "width": 64,
+          "height": 64,
+          "created_at": 1789121632.8466601
+        }
+      ],
+      "downloads": [
+        {
+          "kind": "sample",
+          "name": "initial_00_0.png",
+          "bytes": 533,
+          "sha256": "91d0563de837da6278750b7ad7faf567a64baf08506269f723b22cc52f1ef6f6"
+        },
+        {
+          "kind": "sample",
+          "name": "epoch1_00_0.png",
+          "bytes": 532,
+          "sha256": "199406d041f28b56dc599710df5c6ec65823106d21966bdcddbe733c1b9c449e"
+        },
+        {
+          "kind": "sample",
+          "name": "epoch2_00_0.png",
+          "bytes": 532,
+          "sha256": "31734480b4354bffc23fef7da554b06553bc50cbdd01c5915602d9de0eec1450"
+        },
+        {
+          "kind": "sample",
+          "name": "epoch3_00_0.png",
+          "bytes": 532,
+          "sha256": "7d706139f7c662c37648c63df00ffa9fa413c08b1efc8e345e23a645fafe2c33"
+        },
+        {
+          "kind": "weight",
+          "name": "lora-epoch0001.safetensors",
+          "bytes": 25392,
+          "sha256": "8a5369ac2866629a0cd2bfae08b47a078582c51a008ea80d09653d5538f164de"
+        },
+        {
+          "kind": "weight",
+          "name": "lora-epoch0002.safetensors",
+          "bytes": 25392,
+          "sha256": "3524f057b85401c7cf63cf5e9c9a983a6ddc973ba3701c998b373dac2f27de1a"
+        },
+        {
+          "kind": "weight",
+          "name": "lora-epoch0003.safetensors",
+          "bytes": 25392,
+          "sha256": "80946483939962c551ac447c66010e02d6cc10deb6189b5ec753133e740bcc95"
+        },
+        {
+          "kind": "weight",
+          "name": "lora-final.safetensors",
+          "bytes": 25392,
+          "sha256": "d6ad39b2ce3acdd008e81766f5af34318775f4b2df0aecede8047d2a3acd0d66"
+        }
+      ]
+    }
+  ],
+  "local_tagger": {
+    "runtime": "onnxruntime 1.30.0 CPU",
+    "model": "SmilingWolf/wd-swinv2-tagger-v3",
+    "revision": "627aef95638667ddcaa3ac8ae625e88ea5b02f51",
+    "download_bytes": 467769446,
+    "both_file_sha256_verified": true,
+    "real_inference": true,
+    "real_inference_test": {
+      "total": 1,
+      "passed": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "skip_reasons": [],
+      "junit_sha256": "f7152cac35cbf54674fd60e3582321aa22e62cd4165d44a6c0b1067ac14fdee8"
+    },
+    "browser_modes": [
+      "fill_missing",
+      "append_unique"
+    ],
+    "cancel_during_load": true,
+    "undo_restores_original_bytes": true,
+    "corrupt_backup_rejected": true,
+    "temporary_process_cwd_cleaned": true,
+    "dependency_maintenance_mutual_exclusion": true,
+    "image_uploads": false
+  },
+  "model_sources": {
+    "providers": [
+      "Hugging Face",
+      "ModelScope"
+    ],
+    "modelscope_official_small_file_download": true,
+    "modelscope_official_file_metadata_checked": true,
+    "browser_source_switch_verified": true,
+    "token_write_only_save_clear_and_redirect_tests": true,
+    "real_private_token_authentication_tested": false
+  },
+  "screenshots": {
+    "environment.png": {
+      "size": [
+        1440,
+        1000
+      ],
+      "sha256": "653a2d37cc1fed250f25682eacc712af526d218b23123afec2765471cc5b5bc6"
+    },
+    "model-tokens.png": {
+      "size": [
+        1440,
+        1000
+      ],
+      "sha256": "211615f1232e058a1ba647de653c01c2afd65051c9462892d9c28ab9b0019752"
+    },
+    "modelscope-download.png": {
+      "size": [
+        1440,
+        1000
+      ],
+      "sha256": "b78059ee4f3450e4271c039ec82284b2773007d415d4968c4e490a23a303d538"
+    },
+    "native-job-samples.png": {
+      "size": [
+        1440,
+        900
+      ],
+      "sha256": "81042b7b7cb44960142d46a17dc3a10dc6b78018ab5b63722a88c75087c644cc"
+    },
+    "tagging.png": {
+      "size": [
+        1440,
+        1000
+      ],
+      "sha256": "6fec42f741ade61a699f09412885f2b69b9cc01f841f98c9e47ed785b4f3efba"
+    },
+    "telemetry-1000.png": {
+      "size": [
+        816,
+        48
+      ],
+      "sha256": "76e3459a862832af324ab188a6ee56dc0f5003cd8c0f307685a6ab29b851482b"
+    },
+    "training-advanced-dark.png": {
+      "size": [
+        1440,
+        1000
+      ],
+      "sha256": "8f93d450317f6e86dc9fdb4e9b8b3e7a27b15ad080cbd1fa0a947da0574f0ce7"
+    },
+    "training-advanced.png": {
+      "size": [
+        1440,
+        900
+      ],
+      "sha256": "6ff62ebea1810f5df6ba870b07de5ade331bf990f547d74bb0ca6121d4130c2c"
+    },
+    "training-mobile.png": {
+      "size": [
+        390,
+        844
+      ],
+      "sha256": "07fee779cfe43bbfd6a48c29ec68cd76c7d22531aa7eda659206f99d43ff4ca4"
+    }
+  },
+  "package": {
+    "filename": "YPuddinTrainStudio-v0.5.0-2026-09-11.zip",
+    "verification": "Archive-side JSON records source commit, SHA256, extraction integrity and build fingerprints. Runtime data, secrets, environments and weights are excluded."
+  },
+  "not_validated": [
+    "Windows NVIDIA GPU telemetry and CUDA training",
+    "Actual CUDA extension wheel installation and WD14 CUDA provider",
+    "Official full-size Anima/Krea2 model training quality",
+    "ComfyUI loading of generated weights",
+    "Native-vs-bucket or sequence-packing performance and DDP"
+  ],
+  "npm_audit": "Cancelled by user; not run."
+}

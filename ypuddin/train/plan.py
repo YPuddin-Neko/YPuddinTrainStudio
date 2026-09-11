@@ -14,6 +14,7 @@ from ypuddin.adapters import inject
 from ypuddin.config import TrainConfig
 from ypuddin.data import IndexDB
 from ypuddin.data.dataset import DataConfigError, prepare_data_layout
+from ypuddin.data.native import NativeBatchSampler, microbatch_indices, native_size
 from ypuddin.models import get_family
 
 DTYPE_BYTES = {"bf16": 2, "fp16": 2, "fp32": 4, "fp8_e4m3": 1, "fp8_e5m2": 1, "keep": 2, "auto": 2}
@@ -140,7 +141,12 @@ def plan(
     counts: dict[tuple[int, int], int] = {}
     for it in items:
         counts[it.bucket.key] = counts.get(it.bucket.key, 0) + 1
-    batches = sum(math.ceil(n / ds.batch_size) for n in counts.values())
+    native = ds.resolution_mode == "native"
+    batches = (
+        math.ceil(len(items) / ds.batch_size)
+        if native
+        else sum(math.ceil(n / ds.batch_size) for n in counts.values())
+    )
     steps_per_epoch = math.ceil(batches / cfg.loop.grad_accum) if batches else 0
     by_epochs = (cfg.loop.epochs or 10**9) * steps_per_epoch
     total_steps = min(by_epochs, cfg.loop.max_steps or 10**9) if steps_per_epoch else 0
@@ -159,6 +165,47 @@ def plan(
             "epochs": cfg.loop.epochs,
         }
     )
+    if native:
+        shape_keys = [item.bucket.key for item in items]
+        forward_counts: dict[tuple[int, int], int] = {}
+        for batch in NativeBatchSampler(shape_keys, ds.batch_size, seed=cfg.loop.seed).plan():
+            shapes = [shape_keys[index] for index in batch]
+            for group in microbatch_indices(shapes, ds.native_max_pixels):
+                key = shapes[group[0]]
+                forward_counts[key] = forward_counts.get(key, 0) + 1
+        for bucket in out["buckets"]:
+            bucket["batches"] = forward_counts.get((bucket["w"], bucket["h"]), 0)
+        resized = (
+            sum(
+                native_size(
+                    record.width,
+                    record.height,
+                    align=family.spec.latent.align,
+                    max_pixels=ds.native_max_pixels,
+                    max_side=ds.native_max_side,
+                    overflow=ds.native_overflow,
+                ).downscaled
+                for record in records
+            )
+            if items
+            else 0
+        )
+        out["native"] = {
+            "images": len(records),
+            "downscaled": resized,
+            "sizes": len(counts),
+            "logical_batches": batches,
+            "max_pixels": ds.native_max_pixels,
+            "alignment": family.spec.latent.align,
+            "batch_size": ds.batch_size,
+            "forward_groups": sum(forward_counts.values()),
+        }
+        out["warnings"].append(
+            {
+                "code": "native.execution",
+                "msg": "native resolution uses pixel-bounded shape groups and image-weighted gradient accumulation; pixel budget is not a VRAM guarantee",
+            }
+        )
     uncaptioned = len(records) - out["captioned"]
     if uncaptioned and not any(s.class_prompt for s in ds.sources):
         out["warnings"].append(
@@ -167,7 +214,7 @@ def plan(
                 "msg": f"{uncaptioned} images have no caption file and no class_prompt",
             }
         )
-    if any(n < ds.batch_size for n in counts.values()):
+    if not native and any(n < ds.batch_size for n in counts.values()):
         out["warnings"].append(
             {
                 "code": "buckets.small",
@@ -240,7 +287,12 @@ def plan(
                         ]
                     )
                     per_block = tokens * hidden * activation_bytes * (2 if ckpt else 14)
-                    act = per_block * n_blocks * ds.batch_size / 2**20
+                    forward_batch = (
+                        min(ds.batch_size, max(1, ds.native_max_pixels // (w * h)))
+                        if native
+                        else ds.batch_size
+                    )
+                    act = per_block * n_blocks * forward_batch / 2**20
                     act_by_bucket.append({"w": w, "h": h, "mb": round(act)})
                 swapped_mb = 0.0
                 if layout and cfg.memory.blocks_to_swap and layout.blocks and device_type != "mps":

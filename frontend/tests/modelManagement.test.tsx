@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import Models from '../src/pages/Models/Models';
+import ModelCredentials from '../src/pages/Models/ModelCredentials';
 import Preferences from '../src/pages/Settings/Preferences';
 import { ModelAsset, ModelDownload, Settings } from '../src/api/types';
 import i18n from '../src/i18n';
@@ -33,6 +34,8 @@ beforeEach(async () => {
   patch = vi.fn(); download = vi.fn(); cancel = vi.fn();
   server.use(
     http.get('/api/families', () => HttpResponse.json(['anima', 'krea2'].map(name => ({ name, label: name === 'anima' ? 'Anima' : 'Krea 2', weights: [{ field: 'dit_path' }, { field: 'text_encoder_path' }, { field: 'vae_path' }] })))),
+    http.get('/api/models/credentials', () => HttpResponse.json({ huggingface: { configured: false }, modelscope: { configured: false } })),
+    http.get('/api/models/catalog', () => HttpResponse.json([])),
     http.get('/api/models', () => HttpResponse.json(models)),
     http.get('/api/settings', () => HttpResponse.json(settings)),
     http.put('/api/settings', async ({ request }) => { settings = await request.json() as Settings; return HttpResponse.json(settings); }),
@@ -47,7 +50,7 @@ beforeEach(async () => {
     http.post('/api/models/downloads', async ({ request }) => {
       const body = await request.json() as { url: string; family: string; kind: string };
       download(body);
-      downloads = [{ id: 'dl1', family: body.family, kind: body.kind, source_url: body.url, filename: 'encoder.safetensors', target_path: 'D:\\models\\encoder.safetensors', status: 'downloading', downloaded_bytes: 500, total_bytes: 1000, error: null, model_id: null, dtype: 'bf16', is_default: true, created_at: 1, finished_at: null }];
+      downloads = [{ id: 'dl1', provider: 'huggingface', mirror: 'official', family: body.family, kind: body.kind, source_url: body.url, filename: 'encoder.safetensors', target_path: 'D:\\models\\encoder.safetensors', status: 'downloading', downloaded_bytes: 500, total_bytes: 1000, error: null, model_id: null, dtype: 'bf16', is_default: true, created_at: 1, finished_at: null }];
       return HttpResponse.json(downloads[0], { status: 202 });
     }),
     http.post('/api/models/downloads/:id/cancel', ({ params }) => { cancel(params.id); downloads = downloads.map(d => ({ ...d, status: 'cancelled' })); return HttpResponse.json(downloads[0]); }),
@@ -146,5 +149,64 @@ describe('real model management UI contracts', () => {
     fireEvent.click(screen.getByTestId('model-download-start'));
     expect(await screen.findByText(/Only a Hugging Face model file URL is accepted/)).toBeInTheDocument();
     expect(screen.getByTestId('download-model-form')).toBeInTheDocument();
+  });
+
+  it('switches suggested components to real ModelScope file URLs and submits its provider', async () => {
+    mount(<Models />);
+    fireEvent.click(await screen.findByTestId('download-model-btn'));
+    fireEvent.change(screen.getByTestId('model-provider'), { target: { value: 'modelscope' } });
+    const url = new URL((screen.getByTestId('model-download-url') as HTMLInputElement).value);
+    expect(url.hostname).toBe('modelscope.cn');
+    expect(url.searchParams.get('FilePath')).toBe('split_files/diffusion_models/anima-base-v1.0.safetensors');
+    expect(url.searchParams.get('Revision')).toBe('master');
+    fireEvent.click(screen.getByTestId('model-download-start'));
+    await waitFor(() => expect(download).toHaveBeenCalledWith(expect.objectContaining({ provider: 'modelscope', mirror: 'official' })));
+  });
+
+  it('retries failed tasks through the service without losing their source', async () => {
+    const retry = vi.fn();
+    downloads = [{ id: 'failed', family: 'anima', kind: 'dit', provider: 'modelscope', mirror: 'official', source_url: 'https://modelscope.cn/file', filename: 'model.safetensors', target_path: '/models/model.safetensors', status: 'failed', downloaded_bytes: 0, error: 'HTTP 403: save credentials', model_id: null, dtype: 'bf16', is_default: true, created_at: 1, finished_at: 2, total_bytes: null }];
+    server.use(http.post('/api/models/downloads/failed/retry', () => { retry(); return HttpResponse.json({ ...downloads[0], id: 'retry', status: 'queued' }, { status: 202 }); }));
+    mount(<Models />);
+    fireEvent.click(await screen.findByRole('button', { name: '重新下载' }));
+    await waitFor(() => expect(retry).toHaveBeenCalledOnce());
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it('saves and clears provider tokens without filling stored secrets back into the form', async () => {
+    let configured = true;
+    const save = vi.fn(); const clear = vi.fn();
+    server.use(
+      http.get('/api/models/credentials', () => HttpResponse.json({ huggingface: { configured }, modelscope: { configured: false } })),
+      http.put('/api/models/credentials/huggingface', async ({ request }) => { save(await request.json()); configured = true; return HttpResponse.json({ configured }); }),
+      http.delete('/api/models/credentials/huggingface', () => { clear(); configured = false; return HttpResponse.json({ configured }); }),
+    );
+    mount(<ModelCredentials />);
+    const input = screen.getByLabelText(/Hugging Face/);
+    expect(input).toHaveAttribute('type', 'password');
+    expect(input).toHaveValue('');
+    await screen.findByText('已配置');
+    fireEvent.change(input, { target: { value: 'hf_new_secret' } });
+    const form = input.closest('form')!;
+    fireEvent.click(within(form).getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ token: 'hf_new_secret' }));
+    await waitFor(() => expect(input).toHaveValue(''));
+    expect(document.body.textContent).not.toContain('hf_new_secret');
+    fireEvent.click(within(form).getByRole('button', { name: '清除' }));
+    await waitFor(() => expect(clear).toHaveBeenCalledOnce());
+    await waitFor(() => expect(within(form).getByText('未配置')).toBeInTheDocument());
+  });
+
+  it('redacts credential errors and prevents global error events containing a token', async () => {
+    const events = vi.fn(); window.addEventListener('api.error', events);
+    server.use(http.put('/api/models/credentials/modelscope', () => HttpResponse.json({ error: { code: 'old-server', message: 'invalid secret_for_test' } }, { status: 400 })));
+    mount(<ModelCredentials />);
+    const input = screen.getByLabelText(/魔搭/);
+    fireEvent.change(input, { target: { value: 'secret_for_test' } });
+    fireEvent.click(within(input.closest('form')!).getByRole('button', { name: '保存' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('[已隐藏]');
+    expect(document.body.textContent).not.toContain('secret_for_test');
+    expect(events).not.toHaveBeenCalled();
+    window.removeEventListener('api.error', events);
   });
 });

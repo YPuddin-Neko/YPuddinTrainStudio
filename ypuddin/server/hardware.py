@@ -158,7 +158,8 @@ def _apple_name() -> str:
     return "Apple Silicon GPU"
 
 
-def gpu_info(*, include_unavailable: bool = False) -> list[dict[str, Any]]:
+def gpu_info(*, include_unavailable: bool = False, system_memory: Any | None = None) -> list[dict[str, Any]]:
+    """Read accelerators, optionally reusing the caller's system-memory snapshot for MPS."""
     if torch.cuda.is_available():
         out = []
         for i in range(torch.cuda.device_count()):
@@ -221,7 +222,7 @@ def gpu_info(*, include_unavailable: bool = False) -> list[dict[str, Any]]:
                 entry["telemetry_note"] = "nvidia_power_unavailable"
         return out
     if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
-        vm = psutil.virtual_memory()
+        vm = system_memory if system_memory is not None else psutil.virtual_memory()
         # This is system unified-memory usage, not a fabricated GPU-process allocation.
         return [
             {

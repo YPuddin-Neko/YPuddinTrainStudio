@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "YPuddin Train Studio",
-    "version": "0.4.0"
+    "version": "0.5.0"
   },
   "paths": {
     "/api/health": {
@@ -3111,6 +3111,228 @@
         }
       }
     },
+    "/api/models/downloads/{download_id}/retry": {
+      "post": {
+        "summary": "Retry Download",
+        "operationId": "retry_download_api_models_downloads__download_id__retry_post",
+        "parameters": [
+          {
+            "name": "download_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Download Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelDownload"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/models/credentials": {
+      "get": {
+        "summary": "Credential States",
+        "operationId": "credential_states_api_models_credentials_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialStates"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/models/credentials/{provider}": {
+      "put": {
+        "summary": "Save Credential",
+        "operationId": "save_credential_api_models_credentials__provider__put",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "huggingface",
+                "modelscope"
+              ],
+              "type": "string",
+              "title": "Provider"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Clear Credential",
+        "operationId": "clear_credential_api_models_credentials__provider__delete",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "huggingface",
+                "modelscope"
+              ],
+              "type": "string",
+              "title": "Provider"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/models/catalog": {
+      "get": {
+        "summary": "Model Catalog",
+        "operationId": "model_catalog_api_models_catalog_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ModelCatalogEntry"
+                  },
+                  "type": "array",
+                  "title": "Response Model Catalog Api Models Catalog Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/models/catalog/{catalog_id}/download": {
+      "post": {
+        "summary": "Download Catalog",
+        "operationId": "download_catalog_api_models_catalog__catalog_id__download_post",
+        "parameters": [
+          {
+            "name": "catalog_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Catalog Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogDownloadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelDownload"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/datasets/{did}/images/{h}/mask/info": {
       "get": {
         "summary": "Mask Info",
@@ -3365,6 +3587,305 @@
             "description": "Source image in training orientation",
             "content": {
               "image/png": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{pid}/versions/{vid}/pipeline": {
+      "get": {
+        "summary": "Get Pipeline",
+        "operationId": "get_pipeline_api_projects__pid__versions__vid__pipeline_get",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineSnapshot"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{pid}/versions/{vid}/pipeline/operations": {
+      "post": {
+        "summary": "Start Operation",
+        "operationId": "start_operation_api_projects__pid__versions__vid__pipeline_operations_post",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PipelineRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineOperation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset-pipeline/operations/{oid}": {
+      "get": {
+        "summary": "Get Operation",
+        "operationId": "get_operation_api_dataset_pipeline_operations__oid__get",
+        "parameters": [
+          {
+            "name": "oid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Oid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineOperation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset-pipeline/operations/{oid}/cancel": {
+      "post": {
+        "summary": "Cancel Operation",
+        "operationId": "cancel_operation_api_dataset_pipeline_operations__oid__cancel_post",
+        "parameters": [
+          {
+            "name": "oid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Oid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineOperation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset-pipeline/operations/{oid}/retry": {
+      "post": {
+        "summary": "Retry Operation",
+        "operationId": "retry_operation_api_dataset_pipeline_operations__oid__retry_post",
+        "parameters": [
+          {
+            "name": "oid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Oid"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineOperation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset-tagging/status": {
+      "get": {
+        "summary": "Tagging Status",
+        "operationId": "tagging_status_api_dataset_tagging_status_get",
+        "parameters": [
+          {
+            "name": "model_path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model Path"
+            }
+          },
+          {
+            "name": "tags_path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tags Path"
+            }
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "cpu",
+                "cuda"
+              ],
+              "type": "string",
+              "default": "cpu",
+              "title": "Provider"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaggingStatus"
+                }
+              }
             }
           },
           "422": {
@@ -4361,6 +4882,53 @@
         "type": "object",
         "title": "CaptionConfig"
       },
+      "CaptionOptions": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "fill_missing",
+              "append",
+              "remove",
+              "replace"
+            ],
+            "title": "Mode",
+            "default": "fill_missing"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 32000,
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "CaptionOptions"
+      },
+      "CatalogDownloadRequest": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "const": "huggingface",
+            "title": "Provider",
+            "default": "huggingface"
+          },
+          "mirror": {
+            "type": "string",
+            "enum": [
+              "official",
+              "hf-mirror"
+            ],
+            "title": "Mirror",
+            "default": "official"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CatalogDownloadRequest"
+      },
       "CheckpointConfig": {
         "properties": {
           "output_dir": {
@@ -4644,6 +5212,83 @@
         ],
         "title": "ConvertBody"
       },
+      "CredentialState": {
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          }
+        },
+        "type": "object",
+        "required": [
+          "configured"
+        ],
+        "title": "CredentialState"
+      },
+      "CredentialStates": {
+        "properties": {
+          "huggingface": {
+            "$ref": "#/components/schemas/CredentialState"
+          },
+          "modelscope": {
+            "$ref": "#/components/schemas/CredentialState"
+          }
+        },
+        "type": "object",
+        "required": [
+          "huggingface",
+          "modelscope"
+        ],
+        "title": "CredentialStates"
+      },
+      "CredentialUpdate": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "format": "password",
+            "title": "Token",
+            "writeOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "title": "CredentialUpdate"
+      },
+      "CropRectangle": {
+        "properties": {
+          "x": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "X"
+          },
+          "y": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Y"
+          },
+          "width": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Height"
+          }
+        },
+        "type": "object",
+        "required": [
+          "x",
+          "y",
+          "width",
+          "height"
+        ],
+        "title": "CropRectangle"
+      },
       "DatasetBody": {
         "properties": {
           "version_id": {
@@ -4722,14 +5367,74 @@
             },
             "type": "array",
             "title": "Resolutions",
-            "description": "训练分辩率（基准边长，可多个）",
+            "description": "训练分辨率（基准边长，可多个）",
             "default": [
               1024
             ],
             "x-ui": {
               "control": "tags",
               "group": "dataset",
-              "order": 10
+              "order": 10,
+              "show_when": "dataset.resolution_mode == 'bucket'"
+            }
+          },
+          "resolution_mode": {
+            "type": "string",
+            "enum": [
+              "bucket",
+              "native"
+            ],
+            "title": "Resolution Mode",
+            "description": "分桶：统一基准面积；原生：保留每图独立尺寸，仅在超预算时缩小，不放大小图",
+            "default": "bucket",
+            "x-ui": {
+              "control": "select",
+              "group": "dataset",
+              "order": 5
+            }
+          },
+          "native_max_pixels": {
+            "type": "integer",
+            "maximum": 67108864.0,
+            "minimum": 1024.0,
+            "title": "Native Max Pixels",
+            "description": "原生模式单图及一次前向的像素上限；1048576 = 1024²。不同尺寸分组前向后按图片数累积梯度，像素预算不保证整体显存不会溢出",
+            "default": 1048576,
+            "x-ui": {
+              "group": "dataset",
+              "order": 11,
+              "show_when": "dataset.resolution_mode == 'native'"
+            }
+          },
+          "native_max_side": {
+            "type": "integer",
+            "maximum": 8192.0,
+            "minimum": 32.0,
+            "title": "Native Max Side",
+            "description": "原生模式单边上限；超限时等比缩小后裁去尺寸对齐边缘，或按策略报错",
+            "default": 4096,
+            "x-ui": {
+              "advanced": true,
+              "group": "dataset",
+              "order": 12,
+              "show_when": "dataset.resolution_mode == 'native'"
+            }
+          },
+          "native_overflow": {
+            "type": "string",
+            "enum": [
+              "downscale",
+              "error"
+            ],
+            "title": "Native Overflow",
+            "description": "超出像素或单边预算：等比缩小，或报错要求调整；不会悄悄跳过图片",
+            "default": "downscale",
+            "x-ui": {
+              "advanced": true,
+              "control": "select",
+              "group": "dataset",
+              "order": 13,
+              "show_when": "dataset.resolution_mode == 'native'"
             }
           },
           "aspect_ratio_limit": {
@@ -5374,7 +6079,8 @@
               "nvidia-ml-py",
               "tensorboard",
               "wandb",
-              "schedulefree"
+              "schedulefree",
+              "onnxruntime"
             ],
             "title": "Package"
           },
@@ -6928,6 +7634,34 @@
         ],
         "title": "JobSample"
       },
+      "LocalTaggingModel": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "model_path": {
+            "type": "string",
+            "title": "Model Path"
+          },
+          "tags_path": {
+            "type": "string",
+            "title": "Tags Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "path",
+          "model_path",
+          "tags_path"
+        ],
+        "title": "LocalTaggingModel"
+      },
       "LogLine": {
         "properties": {
           "ts": {
@@ -7366,7 +8100,8 @@
             "enum": [
               "anima",
               "krea2",
-              "toy"
+              "toy",
+              "tagger"
             ],
             "title": "Family"
           },
@@ -7376,7 +8111,8 @@
               "dit",
               "text_encoder",
               "vae",
-              "tokenizer"
+              "tokenizer",
+              "tagger"
             ],
             "title": "Kind"
           },
@@ -7408,6 +8144,85 @@
           "path"
         ],
         "title": "ModelBody"
+      },
+      "ModelCatalogEntry": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "const": "tagger",
+            "title": "Role"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "repo_id": {
+            "type": "string",
+            "title": "Repo Id"
+          },
+          "revision": {
+            "type": "string",
+            "title": "Revision"
+          },
+          "files": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Files"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "ready": {
+            "type": "boolean",
+            "title": "Ready"
+          },
+          "providers": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "huggingface",
+                "modelscope"
+              ]
+            },
+            "type": "array",
+            "title": "Providers"
+          },
+          "license": {
+            "type": "string",
+            "title": "License"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "name",
+          "repo_id",
+          "revision",
+          "files",
+          "path",
+          "ready",
+          "providers",
+          "license",
+          "size",
+          "url"
+        ],
+        "title": "ModelCatalogEntry"
       },
       "ModelConfig": {
         "properties": {
@@ -7563,6 +8378,24 @@
             "type": "string",
             "title": "Kind"
           },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "huggingface",
+              "modelscope"
+            ],
+            "title": "Provider",
+            "default": "huggingface"
+          },
+          "mirror": {
+            "type": "string",
+            "enum": [
+              "official",
+              "hf-mirror"
+            ],
+            "title": "Mirror",
+            "default": "official"
+          },
           "source_url": {
             "type": "string",
             "title": "Source Url"
@@ -7675,7 +8508,8 @@
             "type": "string",
             "enum": [
               "anima",
-              "krea2"
+              "krea2",
+              "tagger"
             ],
             "title": "Family"
           },
@@ -7684,9 +8518,28 @@
             "enum": [
               "dit",
               "text_encoder",
-              "vae"
+              "vae",
+              "tagger"
             ],
             "title": "Kind"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "huggingface",
+              "modelscope"
+            ],
+            "title": "Provider",
+            "default": "huggingface"
+          },
+          "mirror": {
+            "type": "string",
+            "enum": [
+              "official",
+              "hf-mirror"
+            ],
+            "title": "Mirror",
+            "default": "official"
           },
           "url": {
             "anyOf": [
@@ -7722,9 +8575,15 @@
             "title": "Filename"
           },
           "revision": {
-            "type": "string",
-            "title": "Revision",
-            "default": "main"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
           },
           "dtype": {
             "anyOf": [
@@ -7756,6 +8615,55 @@
           "kind"
         ],
         "title": "ModelDownloadRequest"
+      },
+      "NativePlan": {
+        "properties": {
+          "images": {
+            "type": "integer",
+            "title": "Images"
+          },
+          "downscaled": {
+            "type": "integer",
+            "title": "Downscaled"
+          },
+          "sizes": {
+            "type": "integer",
+            "title": "Sizes"
+          },
+          "logical_batches": {
+            "type": "integer",
+            "title": "Logical Batches"
+          },
+          "max_pixels": {
+            "type": "integer",
+            "title": "Max Pixels"
+          },
+          "alignment": {
+            "type": "integer",
+            "title": "Alignment"
+          },
+          "batch_size": {
+            "type": "integer",
+            "title": "Batch Size"
+          },
+          "forward_groups": {
+            "type": "integer",
+            "title": "Forward Groups"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "images",
+          "downscaled",
+          "sizes",
+          "logical_batches",
+          "max_pixels",
+          "alignment",
+          "batch_size",
+          "forward_groups"
+        ],
+        "title": "NativePlan"
       },
       "ObjectiveConfig": {
         "properties": {
@@ -8134,6 +9042,316 @@
         "type": "object",
         "title": "OptimizerConfig"
       },
+      "PipelineImage": {
+        "properties": {
+          "dataset_id": {
+            "type": "string",
+            "title": "Dataset Id"
+          },
+          "rel_path": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Rel Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dataset_id",
+          "rel_path"
+        ],
+        "title": "PipelineImage"
+      },
+      "PipelineOperation": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "version_id": {
+            "type": "string",
+            "title": "Version Id"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "phase": {
+            "type": "string",
+            "title": "Phase"
+          },
+          "done": {
+            "type": "integer",
+            "title": "Done"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "number",
+            "title": "Updated At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "request": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Request"
+          },
+          "result": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Result"
+          },
+          "logs": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Logs"
+          },
+          "can_undo": {
+            "type": "boolean",
+            "title": "Can Undo"
+          },
+          "can_cancel": {
+            "type": "boolean",
+            "title": "Can Cancel"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "version_id",
+          "action",
+          "status",
+          "phase",
+          "done",
+          "total",
+          "created_at",
+          "updated_at",
+          "request",
+          "result",
+          "logs",
+          "can_undo",
+          "can_cancel"
+        ],
+        "title": "PipelineOperation"
+      },
+      "PipelineRequest": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "inspect",
+              "exclude",
+              "restore",
+              "preprocess",
+              "captions",
+              "tag",
+              "prepare"
+            ],
+            "title": "Action"
+          },
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/PipelineImage"
+            },
+            "type": "array",
+            "maxItems": 20000,
+            "title": "Images"
+          },
+          "restore_operation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restore Operation Id"
+          },
+          "preprocess": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PreprocessOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "captions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaptionOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tagging": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaggingOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "title": "PipelineRequest"
+      },
+      "PipelineSnapshot": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "version_id": {
+            "type": "string",
+            "title": "Version Id"
+          },
+          "signature": {
+            "type": "string",
+            "title": "Signature"
+          },
+          "inspection": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inspection"
+          },
+          "plan": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/PipelineOperation"
+            },
+            "type": "array",
+            "title": "Operations"
+          },
+          "datasets": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Datasets"
+          },
+          "busy": {
+            "type": "boolean",
+            "title": "Busy"
+          },
+          "archived": {
+            "type": "boolean",
+            "title": "Archived"
+          },
+          "ready_to_train": {
+            "type": "boolean",
+            "title": "Ready To Train"
+          },
+          "prepared_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prepared Job Id"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "version_id",
+          "signature",
+          "inspection",
+          "plan",
+          "operations",
+          "datasets",
+          "busy",
+          "archived",
+          "ready_to_train",
+          "prepared_job_id",
+          "stale"
+        ],
+        "title": "PipelineSnapshot"
+      },
       "Plan": {
         "properties": {
           "ok": {
@@ -8213,6 +9431,16 @@
               }
             ],
             "title": "Text Encoding"
+          },
+          "native": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NativePlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": true,
@@ -8380,6 +9608,51 @@
         "type": "object",
         "title": "PlanParams",
         "description": "Empty (all zeros) when the family cannot build a meta backbone for the config."
+      },
+      "PreprocessOptions": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "resize",
+              "center_crop",
+              "crop_rect"
+            ],
+            "title": "Mode",
+            "default": "resize"
+          },
+          "width": {
+            "type": "integer",
+            "maximum": 8192.0,
+            "minimum": 16.0,
+            "title": "Width",
+            "default": 1024
+          },
+          "height": {
+            "type": "integer",
+            "maximum": 8192.0,
+            "minimum": 16.0,
+            "title": "Height",
+            "default": 1024
+          },
+          "allow_upscale": {
+            "type": "boolean",
+            "title": "Allow Upscale",
+            "default": false
+          },
+          "crop": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CropRectangle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "PreprocessOptions"
       },
       "Preset": {
         "properties": {
@@ -9401,6 +10674,188 @@
           "changed"
         ],
         "title": "TagBatchResult"
+      },
+      "TaggingOptions": {
+        "properties": {
+          "model_path": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Model Path"
+          },
+          "tags_path": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Tags Path"
+          },
+          "general_threshold": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "General Threshold",
+            "default": 0.35
+          },
+          "character_threshold": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Character Threshold",
+            "default": 0.85
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "cpu",
+              "cuda"
+            ],
+            "title": "Provider",
+            "default": "cpu"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "missing",
+              "append",
+              "overwrite"
+            ],
+            "title": "Mode",
+            "default": "missing"
+          },
+          "trigger_word": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Trigger Word",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_path",
+          "tags_path"
+        ],
+        "title": "TaggingOptions"
+      },
+      "TaggingStatus": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "runtime_available": {
+            "type": "boolean",
+            "title": "Runtime Available"
+          },
+          "runtime_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Version"
+          },
+          "runtime_providers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Runtime Providers"
+          },
+          "providers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Providers"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "cpu",
+              "cuda"
+            ],
+            "title": "Provider"
+          },
+          "model_exists": {
+            "type": "boolean",
+            "title": "Model Exists"
+          },
+          "tags_exists": {
+            "type": "boolean",
+            "title": "Tags Exists"
+          },
+          "model_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Path"
+          },
+          "tags_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags Path"
+          },
+          "input_size": {
+            "type": "integer",
+            "title": "Input Size"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/LocalTaggingModel"
+            },
+            "type": "array",
+            "title": "Models"
+          },
+          "recommended_model_dir": {
+            "type": "string",
+            "title": "Recommended Model Dir"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "available",
+          "runtime_available",
+          "runtime_version",
+          "runtime_providers",
+          "providers",
+          "provider",
+          "model_exists",
+          "tags_exists",
+          "model_path",
+          "tags_path",
+          "input_size",
+          "models",
+          "recommended_model_dir",
+          "errors",
+          "notes"
+        ],
+        "title": "TaggingStatus"
       },
       "TrainConfig": {
         "properties": {

@@ -5,13 +5,18 @@ import { ChevronDown, ChevronRight, Plus, Trash2, ArrowUp, ArrowDown, FolderOpen
 import { PathInput, PathPickerModal } from '../../components/PathBrowser';
 import { apiClient } from '../../api/client';
 import { FamilyInfo } from '../../api/types';
-import { configFieldLabel } from '../../utils/configPresentation';
+import { configFieldLabel, configOptionLabel } from '../../utils/configPresentation';
+import NumericControl from './NumericControl';
 
 interface SchemaProperty {
   type?: string;
   title?: string;
   description?: string;
   default?: any;
+  minimum?: number;
+  maximum?: number;
+  exclusiveMinimum?: number;
+  exclusiveMaximum?: number;
   enum?: any[];
   anyOf?: SchemaProperty[];
   items?: SchemaProperty;
@@ -666,11 +671,13 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   const { t, i18n } = useTranslation();
   const english = i18n.resolvedLanguage?.startsWith('en') || false;
   const groups: Record<string, { order: number; fields: React.ReactNode[] }> = {};
+  const conditionValue = { ...value, dataset: { resolution_mode: 'bucket', ...value.dataset } };
 
   const renderField = (key: string, prop: SchemaProperty, parentPath: string[] = []) => {
     const path = [...parentPath, key];
     const fullPathKey = path.join('.');
     const ui = { ...(prop['x-ui'] || {}), ...(compact && fullPathKey === 'dataset.batch_size' ? {group:'loop'} : {}) };
+    if (conditionValue.dataset.resolution_mode === 'native' && ['dataset.resolutions', 'dataset.aspect_ratio_limit', 'dataset.area_tolerance', 'dataset.bucket_step', 'dataset.bucket_no_upscale'].includes(fullPathKey)) return null;
     if (compact && !showAdvanced && fullPathKey === 'adapter.rules' && !value.adapter?.rules?.length) return null;
 
     const nested = prop.$ref ? resolveRef(schema, prop.$ref) : prop;
@@ -679,6 +686,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       return null;
     }
     const fieldLabel = configFieldLabel(fullPathKey, t(`fields.${key}`, prop.title || key), english);
+    const fieldId = `config-${fullPathKey}`;
     const currentGroup = ui.group || parentPath[0] || 'default';
     if (groupFilter && !groupFilter.includes(currentGroup)) return null;
     if (search && !`${fieldLabel} ${fullPathKey} ${prop.description || ''}`.toLowerCase().includes(search.toLowerCase())) return null;
@@ -686,7 +694,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (ui.advanced && !showAdvanced) return null;
     if (ui.show_when) {
       try {
-        if (!evaluateShowWhen(ui.show_when, value)) return null;
+        if (!evaluateShowWhen(ui.show_when, conditionValue)) return null;
       } catch (err) {
         console.error(`[SchemaForm] Failed to evaluate show_when for ${fullPathKey}: "${ui.show_when}"`, err);
         // On evaluation error, default to showing the field
@@ -696,6 +704,11 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const errorItem = errors.find((e) => e.loc === fullPathKey || e.loc?.startsWith(`${fullPathKey}.`));
     const fieldValue = getNestedValue(value, path) !== undefined ? getNestedValue(value, path) : prop.default;
     const groupName = ui.group || (parentPath.length > 0 ? parentPath[0] : 'default');
+    // These fields are probabilities/fractions, unlike EMA decay, timesteps, and
+    // warmup's mixed steps-or-ratio contract, which retain their native units.
+    const percentage = ['adapter.dropout', 'adapter.rank_dropout', 'adapter.module_dropout', 'dataset.area_tolerance', 'dataset.caption.tag_dropout', 'dataset.caption.caption_dropout', 'scheduler.min_lr_ratio', 'validation.split_ratio'].includes(fullPathKey);
+    const numericMin = ui.min ?? prop.minimum ?? prop.exclusiveMinimum;
+    const numericMax = ui.max ?? prop.maximum ?? prop.exclusiveMaximum;
 
     let control = null;
 
@@ -836,7 +849,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           onChange={(e) => onChange(setNestedValue(value, path, e.target.value))}
         >
           {prop.enum.map((opt: any) => (
-            <option key={opt} value={opt}>{String(opt)}</option>
+            <option key={opt} value={opt}>{configOptionLabel(fullPathKey, String(opt), english)}</option>
           ))}
         </select>
       );
@@ -850,18 +863,10 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         />
       );
     } else if (prop.type === 'integer' || prop.type === 'number') {
-      if (!compact && ui.control === 'slider' && ui.min !== undefined && ui.max !== undefined) {
-        control = (
-          <input
-            type="range"
-            className="w-full"
-            min={ui.min}
-            max={ui.max}
-            step={ui.step || 1}
-            value={fieldValue ?? ui.min}
-            onChange={(e) => onChange(setNestedValue(value, path, Number(e.target.value)))}
-          />
-        );
+      if ((percentage || ui.control === 'slider') && numericMin !== undefined && numericMax !== undefined) {
+        control = <NumericControl id={fieldId} label={fieldLabel} value={fieldValue} percentage={percentage} unit={ui.unit}
+          min={numericMin} max={numericMax} step={ui.step ?? (prop.type === 'integer' ? 1 : 0.01)} invalid={!!errorItem}
+          sliderLabel={english ? 'slider' : '滑条'} onChange={next => onChange(setNestedValue(value, path, next))}/>;
       } else {
         // sampling.steps / cfg / shift 用族默认做 placeholder（shift=null 时显示"自动（按分辨率）"）
         let placeholder: string | undefined;
@@ -878,9 +883,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
             type="number"
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:bg-slate-900 dark:border-slate-600"
             value={fieldValue ?? ''}
-            min={ui.min}
-            max={ui.max}
-            step={ui.step}
+            min={numericMin}
+            max={numericMax}
+            step={ui.step ?? (prop.type === 'integer' ? 1 : 'any')}
             placeholder={placeholder}
             onChange={(e) => {
               const val = e.target.value === '' ? undefined : Number(e.target.value);
@@ -922,7 +927,6 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         ? (family.weights || []).find((w) => w.field === key)
         : undefined;
 
-    const fieldId = `config-${fullPathKey}`;
     const wide = ['sources', 'rules', 'prompts', 'resolutions', 'args', 'group_lr'].includes(key) || ui.control === 'path' || key.endsWith('_path') || key === 'output_dir';
     if (React.isValidElement(control) && typeof control.type === 'string') {
       control = React.cloneElement(control as React.ReactElement<any>, {id: fieldId, 'aria-label': (control.props as any)['aria-label'] || fieldLabel, 'aria-invalid': !!errorItem});
@@ -933,7 +937,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         <div className="flex justify-between items-center">
           <label htmlFor={fieldId} className="text-sm font-medium text-slate-700 dark:text-slate-300">
             {compact ? fieldLabel : weightMeta?.label || fieldLabel}
-            {ui.unit && <span className="ml-1 text-xs text-slate-500">({ui.unit})</span>}
+            {ui.unit && !percentage && ui.control !== 'slider' && <span className="ml-1 text-xs text-slate-500">({ui.unit})</span>}
           </label>
           {compact && help && <details className="config-help"><summary aria-label={`${fieldLabel} ${english ? 'help' : '说明'}`}><HelpCircle size={13} /></summary><p>{help}</p></details>}
         </div>

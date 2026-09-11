@@ -232,7 +232,7 @@ git pull
 ./studio.sh          # 依赖签名（pyproject.toml）或前端源码变了会自动重装 / 重建
 ```
 
-更新前备份服务数据与外部输出目录。v0.4 启动包含事务式版本迁移：补充 `project_versions` 与归属列，把旧项目/数据源/任务关联到兼容 v1，产物沿原任务归属；不搬迁文件或重写任务快照。这是明确的兼容迁移，不是任意版本都适用的通用数据迁移工具；更换版本同时阅读 `HANDOVER.md` 与 [本轮报告](UI_VERSIONS_2026-09-11.md)。
+更新前备份服务数据与外部输出目录。v0.4 启动包含事务式版本迁移：补充 `project_versions` 与归属列，把旧项目/数据源/任务关联到兼容 v1，产物沿原任务归属；不搬迁文件或重写任务快照。这是明确的兼容迁移，不是任意版本都适用的通用数据迁移工具；更换版本同时阅读 `HANDOVER.md` 与 [当前报告](UI_PIPELINE_2026-09-11.md)。
 
 本轮完整训练状态升级为 **state v2**，另存原始可训练参数、scalar、优化器/调度器、采样器、RNG（含 DataLoader 独立生成器）与 EMA。推理 `.safetensors` 的用途仍是加载/分发模型适配器。
 
@@ -288,3 +288,13 @@ ypuddin serve    --port 8765 --data-root studio_data
 运行环境页可检查并管理 xformers、flash-attn、SageAttention、NVML 采集、TensorBoard、W&B 与 Schedule-Free。操作先生成 wheel / 版本变更计划，确认应用后显示安装日志。基础 Torch/CUDA/NumPy 受保护；没有兼容预编译 wheel 时显示具体原因，不会隐式启动源码编译。Windows FlashAttention 可上传匹配当前 Python、Torch、CUDA 的 wheel。依赖实际修改后必须重启训练器，维护状态在重启前阻止训练与预缓存任务启动。
 
 本机使用 Apple GPU，CUDA 扩展安装及真实 NVIDIA 功率读数未在本机验证。需要 CUDA 的选项显示原因并禁用；Apple MPS 不提供功率数据，不显示虚构的瓦数。
+
+### v0.5 更新与本地自动标注
+
+停止训练器服务后更新源码，再运行 `studio.bat` 或 `studio.sh`。启动器沿用依赖与前端源码指纹检测：依赖变化时补安装，前端过期时重建；已启动的旧 Python 进程仍需重启。保留 `studio_data`、已有模型目录和自定义配置，更新包不包含这些运行数据。
+
+新增原生分辨率是可选模式，旧分桶配置不会自动切换。到「训练参数 → 数据与分桶」选择原生模式并查看实际尺寸分组、缩小图片数和训练步数。更换分辨率模式或修改素材后重新检查准备状态。
+
+使用 WD14 时，在「设置 → 模型权重」下载推荐的本地打标模型和标签表，在「设置 → 运行环境」安装 ONNX Runtime，按提示重启服务。随后进入项目版本「训练数据 → 标签与遮罩」，选择图片并生成标签；取消、重试和恢复均在操作记录中。可选依赖也可在停服后通过本项目解释器执行 `python -m pip install -e '.[tagging]'` 安装。运行环境页会保护已有 GPU 版 ONNX Runtime；使用该 GPU 版时无需再安装 CPU 包。
+
+Hugging Face 与 ModelScope 令牌在模型权重页分别管理，保存到运行数据目录的 `secrets.json`。更新代码时保留该文件，分享源码或打包时排除它。完整用法和本轮验证边界见 [v0.5 验收报告](UI_PIPELINE_2026-09-11.md)。

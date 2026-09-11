@@ -14,6 +14,8 @@ class EventStreamManager {
   private lastEventId: string = '';
   private reconnectTimer: any = null;
   private isConnecting: boolean = false;
+  private activityTimer: ReturnType<typeof setInterval> | null = null;
+  private lastActivityAt = 0;
 
   private status: ConnectionStatus = 'connecting';
   private statusListeners = new Set<(status: ConnectionStatus) => void>();
@@ -37,7 +39,26 @@ class EventStreamManager {
     this.isConnecting = false;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
+    if (this.activityTimer) clearInterval(this.activityTimer);
+    this.activityTimer = null;
     this.status = 'disconnected';
+  }
+
+  private reconnect(source: EventSource) {
+    // Late callbacks from a discarded connection must not close its replacement.
+    if (this.eventSource !== source) return;
+    source.close();
+    this.eventSource = null;
+    this.isConnecting = false;
+    if (this.activityTimer) clearInterval(this.activityTimer);
+    this.activityTimer = null;
+    this.setStatus('disconnected');
+    if (!this.reconnectTimer) {
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null;
+        this.ensureConnection();
+      }, 3000);
+    }
   }
 
   private constructor() {}
@@ -100,9 +121,18 @@ class EventStreamManager {
     }
 
     try {
-      this.eventSource = new EventSource(url.toString());
+      const source = new EventSource(url.toString());
+      this.eventSource = source;
+      this.lastActivityAt = Date.now();
+      // The server sends system.stats every 2.5 seconds. A proxy can retain an
+      // apparently open stream after a server restart without firing onerror.
+      this.activityTimer = setInterval(() => {
+        if (Date.now() - this.lastActivityAt >= 20_000) this.reconnect(source);
+      }, 5000);
 
-      this.eventSource.onopen = () => {
+      source.onopen = () => {
+        if (this.eventSource !== source) return;
+        this.lastActivityAt = Date.now();
         this.isConnecting = false;
         this.setStatus('connected');
         if (this.reconnectTimer) {
@@ -113,7 +143,9 @@ class EventStreamManager {
 
       // 监听所有预定义的事件类型
       Object.values(EVENT_TYPES).forEach((eventType) => {
-        this.eventSource?.addEventListener(eventType, (e: MessageEvent) => {
+        source.addEventListener(eventType, (e: MessageEvent) => {
+          if (this.eventSource !== source) return;
+          this.lastActivityAt = Date.now();
           if (e.lastEventId) {
             this.lastEventId = e.lastEventId;
           }
@@ -126,19 +158,7 @@ class EventStreamManager {
         });
       });
 
-      this.eventSource.onerror = () => {
-        this.isConnecting = false;
-        this.setStatus('disconnected');
-        this.eventSource?.close();
-        this.eventSource = null;
-        // 断线 3 秒重连
-        if (!this.reconnectTimer) {
-          this.reconnectTimer = setTimeout(() => {
-            this.reconnectTimer = null;
-            this.ensureConnection();
-          }, 3000);
-        }
-      };
+      source.onerror = () => this.reconnect(source);
     } catch {
       this.isConnecting = false;
       this.setStatus('disconnected');

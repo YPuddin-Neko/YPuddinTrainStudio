@@ -124,9 +124,12 @@ class IndexDB:
 
 def probe_image(path: Path) -> tuple[int, int, bool]:
     with Image.open(path) as im:
+        width, height = im.size
+        if im.getexif().get(274) in (5, 6, 7, 8):
+            width, height = height, width
         return (
-            im.width,
-            im.height,
+            width,
+            height,
             im.mode in ("RGBA", "LA", "P") and ("transparency" in im.info or im.mode != "P"),
         )
 
@@ -144,7 +147,9 @@ def scan_sources(
     total = len(paths)
     for i, (si, p, src) in enumerate(paths):
         st = p.stat()
-        signature = json.dumps((st.st_mtime_ns, st.st_ctime_ns, st.st_size, st.st_ino, st.st_dev))
+        signature = json.dumps(
+            ("exif-size-v1", st.st_mtime_ns, st.st_ctime_ns, st.st_size, st.st_ino, st.st_dev)
+        )
         cached = (
             index_db.lookup(str(p), st.st_mtime, st.st_size, stat_signature=signature) if index_db else None
         )

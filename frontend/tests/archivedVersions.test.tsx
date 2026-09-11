@@ -33,6 +33,11 @@ function fixture(archived = false) {
     http.get('/api/projects/p_archive', () => HttpResponse.json(state.project)),
     http.get('/api/projects/p_archive/versions', () => HttpResponse.json(state.versions)),
     http.get('/api/projects/p_archive/versions/:vid', ({ params }) => HttpResponse.json(state.versions.find(item => item.id === params.vid))),
+    http.get('/api/projects/p_archive/versions/:vid/pipeline', ({ params }) => HttpResponse.json({
+      signature: 'archive-fixture', inspection: null, plan: null, operations: [], busy: false,
+      archived: state.versions.find(item => item.id === params.vid)?.archived ?? false,
+      stale: false, ready_to_train: false, prepared_job_id: null,
+    })),
     http.patch('/api/projects/p_archive/versions/:vid', async ({ request, params }) => {
       const body = await request.json() as any; const target = state.versions.find(item => item.id === params.vid)!;
       state.writes.push({ method: 'PATCH', path: `/versions/${params.vid}`, body });

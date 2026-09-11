@@ -1,4 +1,4 @@
-"""Managed single-file Hugging Face downloads, with durable status and atomic registration."""
+"""Managed HF/ModelScope single-file downloads with durable status and atomic registration."""
 
 from __future__ import annotations
 
@@ -19,18 +19,22 @@ from pydantic import BaseModel, ConfigDict, model_validator
 from .context import ServiceContext
 from .db import new_id, now
 from .errors import ApiError, Conflict, NotFound
+from .model_catalog import TAGGER_FILES, TAGGER_ID, TAGGER_REPO, TAGGER_REVISION
+from .model_credentials import ModelCredentials, Provider
 
 ACTIVE = {"queued", "downloading"}
 
 
 class ModelDownloadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    family: Literal["anima", "krea2"]
-    kind: Literal["dit", "text_encoder", "vae"]
+    family: Literal["anima", "krea2", "tagger"]
+    kind: Literal["dit", "text_encoder", "vae", "tagger"]
+    provider: Provider = "huggingface"
+    mirror: Literal["official", "hf-mirror"] = "official"
     url: str | None = None
     repo_id: str | None = None
     filename: str | None = None
-    revision: str = "main"
+    revision: str | None = None
     dtype: Literal["bf16", "fp16", "fp32", "fp8"] | None = None
     is_default: bool = True
 
@@ -44,6 +48,8 @@ class ModelDownload(BaseModel):
     id: str
     family: str
     kind: str
+    provider: Provider = "huggingface"
+    mirror: Literal["official", "hf-mirror"] = "official"
     source_url: str
     filename: str
     target_path: str
@@ -59,18 +65,54 @@ class ModelDownload(BaseModel):
 
 
 def resolve_source(body: ModelDownloadRequest) -> tuple[str, str]:
-    """Accept only HF file URLs, not arbitrary servers, user credentials or query tokens."""
-    repo, filename, revision = body.repo_id, body.filename, body.revision
+    """Canonicalize explicitly selected, allowlisted providers; never accept URL credentials.
+
+    ModelScope's official file endpoint is /api/v1/models/{repo}/repo with Revision
+    and FilePath query parameters (modelscope.hub.file_download.get_file_download_url).
+    """
+    repo, filename = body.repo_id, body.filename
+    revision = body.revision or ("master" if body.provider == "modelscope" else "main")
+    if body.provider == "modelscope" and body.mirror != "official":
+        raise ValueError("HF-Mirror is only available for Hugging Face")
     if body.url:
         if repo or filename:
-            raise ValueError("use a Hugging Face URL or repo_id + filename, not both")
+            raise ValueError("use a file URL or repo_id + filename, not both")
         parsed = urllib.parse.urlsplit(body.url.strip())
-        if parsed.scheme != "https" or parsed.netloc.lower() != "huggingface.co":
-            raise ValueError("only https://huggingface.co file URLs are supported")
+        hosts = (
+            {"modelscope.cn", "www.modelscope.cn"}
+            if body.provider == "modelscope"
+            else {"huggingface.co", "hf-mirror.com"}
+        )
+        if parsed.scheme != "https" or parsed.netloc.lower() not in hosts:
+            raise ValueError("file URL must use the selected provider's official HTTPS domain (or HF-Mirror)")
+        query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
         parts = urllib.parse.unquote(parsed.path).strip("/").split("/")
-        if len(parts) < 5 or parts[2] not in {"resolve", "blob"}:
-            raise ValueError("paste a Hugging Face file URL containing /resolve/ or /blob/")
-        repo, revision, filename = "/".join(parts[:2]), parts[3], "/".join(parts[4:])
+        if body.provider == "modelscope":
+            if len(parts) != 6 or parts[:3] != ["api", "v1", "models"] or parts[5] != "repo":
+                raise ValueError(
+                    "use a ModelScope /api/v1/models/owner/repo/repo?Revision=master&FilePath=... URL, or repository + filename"
+                )
+            if (
+                set(query) - {"Revision", "FilePath"}
+                or any(len(v) != 1 for v in query.values())
+                or "FilePath" not in query
+            ):
+                raise ValueError(
+                    "ModelScope file URL needs FilePath and optional Revision; tokens belong in credentials settings"
+                )
+            repo = "/".join(parts[3:5])
+            revision = query.get("Revision", [revision])[0]
+            filename = query["FilePath"][0]
+        else:
+            if set(query) - {"download"}:
+                raise ValueError(
+                    "URL query credentials are not supported; save tokens in credentials settings"
+                )
+            if len(parts) < 5 or parts[2] not in {"resolve", "blob"}:
+                raise ValueError("paste a Hugging Face file URL containing /resolve/ or /blob/")
+            repo, revision, filename = "/".join(parts[:2]), parts[3], "/".join(parts[4:])
+            if parsed.netloc.lower() == "hf-mirror.com" and body.mirror != "hf-mirror":
+                raise ValueError("select HF-Mirror before using its URL")
     if not repo or not re.fullmatch(r"[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+", repo) or ".." in repo:
         raise ValueError("repo_id must be owner/repository")
     if not revision or not re.fullmatch(r"[A-Za-z0-9_.-]+", revision) or revision in {".", ".."}:
@@ -92,21 +134,40 @@ def resolve_source(body: ModelDownloadRequest) -> tuple[str, str]:
         for p in path.parts
     ):
         raise ValueError("filename is not portable to Windows")
-    if path.suffix.lower() != ".safetensors":
+    if body.kind == "tagger" or body.family == "tagger":
+        if (body.kind, body.family, body.provider, repo, revision, filename) != (
+            "tagger",
+            "tagger",
+            "huggingface",
+            TAGGER_REPO,
+            TAGGER_REVISION,
+            "model.onnx",
+        ):
+            raise ValueError("tagger downloads must use the reviewed catalog entry and pinned revision")
+        if body.is_default:
+            raise ValueError("tagger assets cannot be training defaults")
+    elif path.suffix.lower() != ".safetensors":
         raise ValueError("download a complete .safetensors file; register local HF directories separately")
     if re.search(r"-\d{5}-of-\d{5}\.safetensors$", path.name):
         raise ValueError("this is one weight shard; register the complete local HF directory instead")
-    url = f"https://huggingface.co/{repo}/resolve/{revision}/{urllib.parse.quote(filename, safe='/')}"
+    if body.provider == "modelscope":
+        url = f"https://modelscope.cn/api/v1/models/{repo}/repo?{urllib.parse.urlencode({'Revision': revision, 'FilePath': filename})}"
+    else:
+        host = "hf-mirror.com" if body.mirror == "hf-mirror" else "huggingface.co"
+        url = f"https://{host}/{repo}/resolve/{revision}/{urllib.parse.quote(filename, safe='/')}"
     return url, path.name
 
 
 class _Redirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
-        if urllib.parse.urlsplit(newurl).scheme != "https":
+        destination = urllib.parse.urlsplit(newurl)
+        if destination.scheme != "https" or destination.username or destination.password:
             raise ValueError("download redirected to a non-HTTPS destination")
         if redirected and urllib.parse.urlsplit(newurl).netloc != urllib.parse.urlsplit(req.full_url).netloc:
-            redirected.remove_header("Authorization")
+            for name in list(redirected.headers) + list(redirected.unredirected_hdrs):
+                if name.lower() in {"authorization", "cookie", "proxy-authorization"}:
+                    redirected.remove_header(name)
         return redirected
 
 
@@ -144,6 +205,7 @@ def check_component(weights: Any, family: str, kind: str) -> None:
 class ModelDownloads:
     def __init__(self, context: ServiceContext):
         self.context = context
+        self.credentials = ModelCredentials(context.data_root)
         self.lock = threading.RLock()
         self.tasks: dict[str, dict[str, Any]] = {
             row["id"]: row for row in context.db.get_kv("model_downloads", [])
@@ -153,6 +215,8 @@ class ModelDownloads:
         self.opener = urllib.request.build_opener(_Redirect())
         self.closed = False
         for row in self.tasks.values():
+            row.setdefault("provider", "huggingface")
+            row.setdefault("mirror", "official")
             if row["status"] in ACTIVE:
                 row.update(
                     status="failed",
@@ -168,6 +232,8 @@ class ModelDownloads:
                     if partial.resolve().is_relative_to(root.resolve()):
                         try:
                             partial.unlink(missing_ok=True)
+                            if row["kind"] == "tagger":
+                                (stage / "selected_tags.csv").unlink(missing_ok=True)
                             if stage.exists():
                                 stage.rmdir()
                         except OSError:
@@ -196,6 +262,8 @@ class ModelDownloads:
         if not self.context.is_allowed(root):
             raise ApiError("model directory is outside allowed storage roots", status=403)
         folder = root / body.family / body.kind / hashlib.sha256(source.encode()).hexdigest()[:12]
+        if body.kind == "tagger":
+            folder = root / "tagger" / TAGGER_ID / TAGGER_REVISION
         target = folder / filename
         with self.lock:
             if self.closed:
@@ -217,6 +285,8 @@ class ModelDownloads:
                 id=id_,
                 family=body.family,
                 kind=body.kind,
+                provider=body.provider,
+                mirror=body.mirror,
                 source_url=source,
                 filename=filename,
                 target_path=str(target),
@@ -231,6 +301,30 @@ class ModelDownloads:
             self.pool.submit(self._run, id_, root)
             return dict(row)
 
+    def catalog(self) -> list[dict[str, Any]]:
+        root = Path(self.context.settings()["paths"]["models_dir"]).resolve()
+        path = root / "tagger" / TAGGER_ID / TAGGER_REVISION
+        ready = all(
+            (path / name).is_file() and (path / name).stat().st_size == meta["size"]
+            for name, meta in TAGGER_FILES.items()
+        )
+        return [
+            {
+                "id": TAGGER_ID,
+                "role": "tagger",
+                "name": "WD SwinV2 Tagger v3",
+                "repo_id": TAGGER_REPO,
+                "revision": TAGGER_REVISION,
+                "files": list(TAGGER_FILES),
+                "path": str(path),
+                "ready": ready,
+                "providers": ["huggingface"],
+                "license": "Apache-2.0",
+                "size": sum(f["size"] for f in TAGGER_FILES.values()),
+                "url": f"https://huggingface.co/{TAGGER_REPO}",
+            }
+        ]
+
     def cancel(self, id_: str) -> dict[str, Any]:
         with self.lock:
             if id_ not in self.tasks:
@@ -239,12 +333,31 @@ class ModelDownloads:
                 self.cancelled[id_].set()
             return dict(self.tasks[id_])
 
+    def retry(self, id_: str) -> dict[str, Any]:
+        with self.lock:
+            row = self.tasks.get(id_)
+            if row is None:
+                raise NotFound("download not found", code="download.not_found")
+            if row["status"] not in {"failed", "cancelled"}:
+                raise Conflict("only failed or cancelled downloads can be retried", code="download.retry")
+            body = ModelDownloadRequest(
+                family=row["family"],
+                kind=row["kind"],
+                provider=row["provider"],
+                mirror=row["mirror"],
+                url=row["source_url"],
+                dtype=row["dtype"],
+                is_default=row["is_default"],
+            )
+            return self.start(body)
+
     def _run(self, id_: str, root: Path) -> None:
         row = self.tasks[id_]
         event = self.cancelled[id_]
         partial = root / ".downloads" / id_ / row["filename"]
         target = Path(row["target_path"])
         published = False
+        token = None
         try:
             if event.is_set():
                 raise _Cancelled()
@@ -252,51 +365,68 @@ class ModelDownloads:
                 raise ValueError("temporary download directory escapes model storage")
             partial.parent.mkdir(parents=True, exist_ok=True)
             self._update(id_, status="downloading")
-            headers = {"User-Agent": "YPuddinTrainStudio/0.1", "Accept-Encoding": "identity"}
-            # Tokens stay in the HF credential store/environment; never persist in status or URLs.
-            try:
-                from huggingface_hub import get_token
-
-                token = get_token()
+            headers = {"User-Agent": "YPuddinTrainStudio", "Accept-Encoding": "identity"}
+            # Third-party mirrors are anonymous. Sensitive headers are also stripped on redirects.
+            if row["mirror"] == "official":
+                token = self.credentials.token(row["provider"])
                 if token:
-                    headers["Authorization"] = f"Bearer {token}"
-            except ImportError:
-                pass
-            request = urllib.request.Request(row["source_url"], headers=headers)
+                    headers["Cookie" if row["provider"] == "modelscope" else "Authorization"] = (
+                        f"m_session_id={token}" if row["provider"] == "modelscope" else f"Bearer {token}"
+                    )
             done, last = 0, time.monotonic()
-            with self.opener.open(request, timeout=15) as response, partial.open("xb") as file:
-                if response.status != 200:
-                    raise ValueError(f"unexpected download HTTP status {response.status}")
-                total = (
-                    int(response.headers["Content-Length"])
-                    if response.headers.get("Content-Length")
-                    else None
-                )
-                self._update(id_, total_bytes=total)
-                while True:
-                    if event.is_set():
-                        raise _Cancelled()
-                    chunk = response.read(256 * 1024)
-                    if not chunk:
-                        break
-                    file.write(chunk)
-                    done += len(chunk)
-                    if time.monotonic() - last >= 0.4:
-                        self._update(id_, downloaded_bytes=done)
-                        last = time.monotonic()
-                if not done or total is not None and done != total:
-                    raise ValueError(f"incomplete download: received {done} of {total} bytes")
-                file.flush()
-                os.fsync(file.fileno())
+            bundle = row["kind"] == "tagger"
+            files = TAGGER_FILES if bundle else {row["filename"]: {}}
+            if bundle:
+                self._update(id_, total_bytes=sum(meta["size"] for meta in files.values()))
+            for filename, meta in files.items():
+                source = row["source_url"].rsplit("/", 1)[0] + "/" + filename if bundle else row["source_url"]
+                request = urllib.request.Request(source, headers=headers)
+                received, digest = 0, hashlib.sha256()
+                with (
+                    self.opener.open(request, timeout=15) as response,
+                    (partial.parent / filename).open("xb") as file,
+                ):
+                    if response.status != 200:
+                        raise ValueError(f"unexpected download HTTP status {response.status}")
+                    total = (
+                        int(response.headers["Content-Length"])
+                        if response.headers.get("Content-Length")
+                        else None
+                    )
+                    if not bundle:
+                        self._update(id_, total_bytes=total)
+                    while True:
+                        if event.is_set():
+                            raise _Cancelled()
+                        chunk = response.read(256 * 1024)
+                        if not chunk:
+                            break
+                        file.write(chunk)
+                        received += len(chunk)
+                        done += len(chunk)
+                        if bundle:
+                            digest.update(chunk)
+                            if received > meta["size"]:
+                                raise ValueError("catalog file exceeds its verified size")
+                        if time.monotonic() - last >= 0.4:
+                            self._update(id_, downloaded_bytes=done)
+                            last = time.monotonic()
+                    if not received or total is not None and received != total:
+                        raise ValueError(f"incomplete download: received {received} of {total} bytes")
+                    if bundle and (received != meta["size"] or digest.hexdigest() != meta["sha256"]):
+                        raise ValueError(f"catalog integrity check failed for {filename}")
+                    file.flush()
+                    os.fsync(file.fileno())
             self._update(id_, downloaded_bytes=done)
             from safetensors import safe_open
 
             # Header/offset validation mmaps the file; no GPU allocation or full tensor loading.
-            with safe_open(partial, framework="pt", device="cpu") as weights:
-                keys = weights.keys()
-                if not keys or all(k.startswith(("lora_", "lycoris_")) for k in keys):
-                    raise ValueError("expected a base model component, not empty or adapter weights")
-                check_component(weights, row["family"], row["kind"])
+            if not bundle:
+                with safe_open(partial, framework="pt", device="cpu") as weights:
+                    keys = weights.keys()
+                    if not keys or all(k.startswith(("lora_", "lycoris_")) for k in keys):
+                        raise ValueError("expected a base model component, not empty or adapter weights")
+                    check_component(weights, row["family"], row["kind"])
             with self.lock:
                 if event.is_set() or self.closed:
                     raise _Cancelled()
@@ -315,7 +445,7 @@ class ModelDownloads:
                     ModelBody(
                         family=row["family"],
                         kind=row["kind"],
-                        path=str(target),
+                        path=str(target.parent if bundle else target),
                         dtype=row["dtype"],
                         is_default=row["is_default"],
                     ),
@@ -327,12 +457,21 @@ class ModelDownloads:
         except Exception as error:
             if published:
                 target.unlink(missing_ok=True)
+                if row["kind"] == "tagger":
+                    (target.parent / "selected_tags.csv").unlink(missing_ok=True)
                 target.parent.rmdir()
             message = str(error)
+            if token:
+                message = message.replace(token, "[redacted]")
             if isinstance(error, urllib.error.HTTPError):
                 message = f"HTTP {error.code}: check the repository/file and your network access."
                 if error.code in (401, 403):
-                    message += " For gated/private files, accept the license and sign in with hf auth login on the server."
+                    provider = "ModelScope" if row["provider"] == "modelscope" else "Hugging Face"
+                    message += f" For gated/private files, accept the repository license on {provider}, then save its access token in Settings → Models → Credentials and retry."
+                    if row["mirror"] != "official":
+                        message += " Mirrors are anonymous; switch to the official source for authenticated downloads."
+                elif error.code == 429:
+                    message += " Rate limited: save the official source token or wait before retrying."
             self._update(
                 id_,
                 status="cancelled" if event.is_set() else "failed",
@@ -341,6 +480,8 @@ class ModelDownloads:
             )
         finally:
             partial.unlink(missing_ok=True)
+            if row["kind"] == "tagger":
+                (partial.parent / "selected_tags.csv").unlink(missing_ok=True)
             if partial.parent.exists():
                 partial.parent.rmdir()
 

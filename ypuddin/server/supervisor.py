@@ -289,6 +289,10 @@ class JobSupervisor:
             self._merge_progress(job_id, {"phase": ev.get("phase")})
             self.bus.publish("job.phase", data)
         elif t == "cache.progress":
+            self._merge_progress(
+                job_id,
+                {"cache_done": ev.get("done"), "cache_total": ev.get("total"), "cache_kind": ev.get("kind")},
+            )
             self.bus.publish("job.cache_progress", data)
         elif t == "sample.progress":
             self.bus.publish("job.sample_progress", data)

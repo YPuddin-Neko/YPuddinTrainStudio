@@ -17,15 +17,21 @@ const Gpu = createLucideIcon('Gpu', [
 ]);
 
 const known = (value: number | null | undefined): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
-const percent = (value: number | null | undefined) => known(value) ? `${Math.round(value)}%` : '—';
 const ratio = (used: number | null | undefined, total: number | null | undefined) => known(used) && known(total) && total > 0 ? used / total * 100 : null;
-const reading = (value: number | null | undefined, unit: string) => known(value) ? `${Math.round(value)} ${unit}` : '—';
 const capacity = (used: number | null | undefined, total: number | null | undefined, divisor = 1) => {
   const unit = known(total) && total / divisor >= 1024 ? 'TiB' : 'GiB';
   const scale = divisor * (unit === 'TiB' ? 1024 : 1);
   const format = (value: number | null | undefined) => known(value) ? (value / scale).toFixed(1) : '—';
   return `${format(used)} / ${format(total)} ${unit}`;
 };
+
+function Reading({ value, unit = '%', label, testId }: { value: number | null | undefined; unit?: string; label: string; testId?: string }) {
+  const available = known(value);
+  return <strong className="telemetry-reading" aria-label={label} data-testid={testId}>
+    <span className="telemetry-number">{available ? Math.round(value) : '—'}</span>
+    {available && unit !== '%' ? ' ' : ''}<span className="telemetry-unit">{available ? unit : ''}</span>
+  </strong>;
+}
 
 export default function SystemTelemetry({ stats }: { stats: SystemStats | null }) {
   const text = useWorkspaceText();
@@ -43,23 +49,23 @@ export default function SystemTelemetry({ stats }: { stats: SystemStats | null }
   return <div className="system-telemetry" role="group" aria-label={text('系统硬件状态，可横向滚动', 'System hardware status, horizontally scrollable')} tabIndex={0}>
     <div className="telemetry-strip">
       <div className="telemetry-group telemetry-cpu" role="group" aria-label="CPU" data-testid="telemetry-cpu">
-        <Cpu size={16} aria-hidden="true" /><div className="telemetry-value"><span className="telemetry-label">CPU</span><strong aria-label={text('CPU 占用率', 'CPU utilization')}>{percent(stats?.cpu_pct)}</strong></div>
+        <Cpu size={16} aria-hidden="true" /><div className="telemetry-value"><span className="telemetry-label">CPU</span><Reading value={stats?.cpu_pct} label={text('CPU 占用率', 'CPU utilization')}/></div>
       </div>
-      <div className="telemetry-group telemetry-memory" role="group" aria-label={text('内存', 'Memory')} title={text('系统内存使用量 / 总容量', 'System memory used / total')} data-testid="telemetry-memory">
-        <MemoryStick size={16} aria-hidden="true" /><div className="telemetry-value"><span className="telemetry-heading"><span className="telemetry-label">{text('内存', 'Memory')}</span><strong aria-label={text('内存占用率', 'Memory utilization')}>{percent(ratio(ram?.used_mb, ram?.total_mb))}</strong></span><span className="telemetry-capacity">{capacity(ram?.used_mb, ram?.total_mb, 1024)}</span></div>
+      <div className="telemetry-group telemetry-memory" role="group" aria-label={text('内存', 'Memory')} title={`${text('系统内存使用量 / 总容量', 'System memory used / total')} · ${capacity(ram?.used_mb, ram?.total_mb, 1024)}`} data-testid="telemetry-memory">
+        <MemoryStick size={16} aria-hidden="true" /><div className="telemetry-value"><span className="telemetry-label">{text('内存', 'Memory')}</span><Reading value={ratio(ram?.used_mb, ram?.total_mb)} label={text('内存占用率', 'Memory utilization')}/></div>
       </div>
       <div className="telemetry-group telemetry-gpu" role="group" aria-label="GPU" title={gpuDescription} data-testid="telemetry-gpu">
         <Gpu size={18} aria-hidden="true" />
         <div className="telemetry-device">{gpus.length > 1 ? <select aria-label={text('选择监控显卡', 'Choose monitored GPU')} value={gpu?.index} onChange={event => setSelectedGpu(Number(event.target.value))}>{gpus.map(item => <option key={item.index} value={item.index}>GPU {item.index} · {item.name}</option>)}</select> : <span className="telemetry-label">GPU{gpu ? '' : ' —'}</span>}<span className="telemetry-device-kind">{unified ? 'MPS' : gpu?.kind === 'cuda' ? 'CUDA' : ''}</span></div>
         <div className="telemetry-gpu-readings">
-          <div><span className="telemetry-label">{text('占用', 'Load')}</span><strong aria-label={text('GPU 占用率', 'GPU utilization')} data-testid="topbar-gpu-util">{percent(gpu?.util_pct)}</strong></div>
-          <div title={`${memoryLabel} · ${gpuMemory}`}><span className="telemetry-label">{memoryLabel}</span><strong aria-label={unified ? text('系统统一内存占用率', 'System unified memory utilization') : text('显存占用率', 'VRAM utilization')} data-testid="topbar-gpu-memory">{percent(ratio(gpu?.mem_used_mb, gpu?.mem_total_mb))}</strong></div>
-          <div><span className="telemetry-label">{text('功率', 'Power')}</span><strong aria-label={text('GPU 功率', 'GPU power')} data-testid="topbar-gpu-power">{reading(gpu?.power_w, 'W')}</strong></div>
-          <div><span className="telemetry-label">{text('温度', 'Temp')}</span><strong aria-label={text('GPU 温度', 'GPU temperature')} data-testid="topbar-gpu-temperature">{reading(gpu?.temp_c, '°C')}</strong></div>
+          <div><span className="telemetry-label">{text('占用', 'Load')}</span><Reading value={gpu?.util_pct} label={text('GPU 占用率', 'GPU utilization')} testId="topbar-gpu-util"/></div>
+          <div title={`${memoryLabel} · ${gpuMemory}`}><span className="telemetry-label">{memoryLabel}</span><Reading value={ratio(gpu?.mem_used_mb, gpu?.mem_total_mb)} label={unified ? text('系统统一内存占用率', 'System unified memory utilization') : text('显存占用率', 'VRAM utilization')} testId="topbar-gpu-memory"/></div>
+          <div><span className="telemetry-label">{text('功率', 'Power')}</span><Reading value={gpu?.power_w} unit="W" label={text('GPU 功率', 'GPU power')} testId="topbar-gpu-power"/></div>
+          <div><span className="telemetry-label">{text('温度', 'Temp')}</span><Reading value={gpu?.temp_c} unit="°C" label={text('GPU 温度', 'GPU temperature')} testId="topbar-gpu-temperature"/></div>
         </div>
       </div>
-      <div className="telemetry-group telemetry-disk" role="group" aria-label={text('硬盘', 'Disk')} title={disk ? `${text('项目数据所在磁盘', 'Project data disk')} · ${disk.path}` : text('磁盘信息不可用', 'Disk information unavailable')} data-testid="telemetry-disk">
-        <HardDrive size={16} aria-hidden="true" /><div className="telemetry-value"><span className="telemetry-heading"><span className="telemetry-label">{text('硬盘', 'Disk')}</span><strong aria-label={text('硬盘占用率', 'Disk utilization')}>{percent(ratio(disk?.used_gb, disk?.total_gb))}</strong></span><span className="telemetry-capacity">{capacity(disk?.used_gb, disk?.total_gb)}</span></div>
+      <div className="telemetry-group telemetry-disk" role="group" aria-label={text('硬盘', 'Disk')} title={disk ? `${text('项目数据所在磁盘', 'Project data disk')} · ${disk.path} · ${capacity(disk.used_gb, disk.total_gb)}` : text('磁盘信息不可用', 'Disk information unavailable')} data-testid="telemetry-disk">
+        <HardDrive size={16} aria-hidden="true" /><div className="telemetry-value"><span className="telemetry-label">{text('硬盘', 'Disk')}</span><Reading value={ratio(disk?.used_gb, disk?.total_gb)} label={text('硬盘占用率', 'Disk utilization')}/></div>
       </div>
     </div>
   </div>;

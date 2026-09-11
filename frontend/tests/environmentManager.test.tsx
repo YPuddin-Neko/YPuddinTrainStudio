@@ -29,6 +29,7 @@ function environment() {
       pkg('xformers', 'xformers', null),
       { ...pkg('flash-attn', 'flash_attn', null), wheel_required: true },
       pkg('tensorboard', null, null),
+      pkg('onnxruntime', null, null),
     ],
     attention_default: 'auto', restart_required: false, maintenance: false, running_jobs: false, probe_deferred: false,
   };
@@ -56,6 +57,17 @@ beforeEach(async () => {
 });
 
 describe('real environment management UI contracts', () => {
+  it('deep-links to the CPU tagger runtime and keeps install as a reviewed plan', async () => {
+    runtime.runtime.cuda_available = false;
+    render(<EnvironmentManagerPanel focusPackage="onnxruntime" />);
+    await screen.findByLabelText('onnxruntime 版本');
+    expect(screen.getByText(/本地 WD14 自动打标/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '检查安装计划' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: '检查安装计划' }));
+    await waitFor(() => expect(create).toHaveBeenCalledWith({ package: 'onnxruntime', action: 'install' }));
+    expect(apply).not.toHaveBeenCalled();
+    expect(await screen.findByRole('button', { name: '确认并执行此计划' })).toBeInTheDocument();
+  });
   it('shows the target runtime and requires plan review before mutation', async () => {
     render(<EnvironmentManagerPanel />);
     expect(await screen.findByText('2.5.1+cu128')).toBeInTheDocument();
@@ -78,7 +90,7 @@ describe('real environment management UI contracts', () => {
   it('blocks modifications while training and only enables tested attention defaults', async () => {
     runtime.running_jobs = true; runtime.probe_deferred = true;
     render(<EnvironmentManagerPanel />);
-    expect(await screen.findByText(/训练或缓存任务正在运行/)).toBeInTheDocument();
+    expect(await screen.findByText(/训练、缓存或本地打标任务正在运行/)).toBeInTheDocument();
     expect(within(screen.getByTestId('environment-package-xformers')).getByRole('button', { name: '安装' })).toBeDisabled();
     expect(screen.getByRole('option', { name: 'xFormers' })).toBeDisabled();
     expect(screen.getByRole('option', { name: 'PyTorch SDPA' })).toBeEnabled();

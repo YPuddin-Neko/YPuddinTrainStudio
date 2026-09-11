@@ -73,12 +73,16 @@ def install(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def _validation(_req: Request, exc: RequestValidationError):
+        errors = exc.errors()
+        if _req.url.path.startswith("/api/models"):
+            # Model credentials and pasted source URLs must never be echoed on validation errors.
+            errors = [{k: v for k, v in error.items() if k in {"loc", "msg", "type"}} for error in errors]
         return JSONResponse(
             status_code=422,
             content=envelope(
                 "validation",
                 "request validation failed",
-                {"errors": jsonable_encoder(exc.errors(), custom_encoder={ValueError: str})},
+                {"errors": jsonable_encoder(errors, custom_encoder={ValueError: str})},
             ),
         )
 

@@ -17,12 +17,15 @@ from . import (
     errors,
     routes_core,
     routes_dataset_masks,
+    routes_dataset_pipeline,
+    routes_dataset_tagging,
     routes_environment,
     routes_model_downloads,
     routes_work,
 )
 from .bus import EventBus
 from .context import ServiceContext
+from .dataset_pipeline import DatasetPipeline
 from .db import Database
 from .environment import EnvironmentManager
 from .model_downloads import ModelDownloads
@@ -45,6 +48,7 @@ def create_app(
     context = ServiceContext(data_root=root, db=db, bus=bus, supervisor=supervisor)
     model_downloads = ModelDownloads(context)
     environment = EnvironmentManager(context)
+    dataset_pipeline = DatasetPipeline(context)
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -58,6 +62,7 @@ def create_app(
             await supervisor.stop()
             await asyncio.to_thread(model_downloads.close)
             await asyncio.to_thread(environment.close)
+            await asyncio.to_thread(dataset_pipeline.close)
             await asyncio.to_thread(context.versions.close)
             db.close()
 
@@ -71,6 +76,7 @@ def create_app(
     app.state.ctx = context
     app.state.model_downloads = model_downloads
     app.state.environment = environment
+    app.state.dataset_pipeline = dataset_pipeline
     errors.install(app)
     app.add_middleware(
         CORSMiddleware,
@@ -83,6 +89,8 @@ def create_app(
     app.include_router(routes_work.router, prefix="/api")
     app.include_router(routes_model_downloads.router, prefix="/api")
     app.include_router(routes_dataset_masks.router, prefix="/api")
+    app.include_router(routes_dataset_pipeline.router, prefix="/api")
+    app.include_router(routes_dataset_tagging.router, prefix="/api")
     app.include_router(routes_environment.router, prefix="/api")
 
     dist = Path(frontend_dist) if frontend_dist else Path(__file__).resolve().parents[2] / "frontend" / "dist"

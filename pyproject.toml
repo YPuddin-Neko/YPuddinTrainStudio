@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ypuddin"
-version = "0.4.0"
+version = "0.5.0"
 description = "YPuddin Train Studio - a modular diffusion LoRA/LoKr trainer (Anima-first) with a service API"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -30,6 +30,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Local WD14/WDv3 ONNX caption generation. GPU runtime remains an explicit user choice.
+tagging = ["onnxruntime>=1.17,<2"]
 # Model loading for real families (Qwen3 tokenizer/text encoder, HF hub).
 models = [
     "transformers>=4.51",

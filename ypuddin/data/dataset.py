@@ -25,8 +25,17 @@ from .captions import (
     transform_caption,
     transform_caption_deterministic,
 )
-from .images import load_alpha, load_mask, load_rgb, pil_to_tensor, to_bucket
-from .index import ImageRecord, IndexDB, dataset_fingerprint, mask_for, record_content_key, scan_sources
+from .images import load_alpha, load_mask, load_rgb, pil_to_tensor, to_bucket, to_native
+from .index import (
+    ImageRecord,
+    IndexDB,
+    dataset_fingerprint,
+    mask_for,
+    probe_image,
+    record_content_key,
+    scan_sources,
+)
+from .native import native_size
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +48,15 @@ class Item:
     caption_cfg: CaptionConfig
     is_reg: bool
     weight: float
+    native_scale: float | None = None
+
+
+def item_latent_key(item: Item, fingerprint: str, flip: bool) -> str:
+    if item.native_scale is not None:
+        rw = round(item.record.width * item.native_scale)
+        rh = round(item.record.height * item.native_scale)
+        fingerprint += f"|native-crop-v1:{rw}x{rh}"
+    return LatentCache.key(item.record.content_hash, item.bucket.width, item.bucket.height, fingerprint, flip)
 
 
 @dataclass
@@ -79,11 +97,44 @@ def expand_items(
         src = sources[r.source_index]
         resolutions = src.resolutions or ds.resolutions
         cap_cfg = src.caption or ds.caption
-        for base in resolutions:
-            bucket = bm.assign(r.width, r.height, base)
+        if ds.resolution_mode == "native" and ds.masked_loss and r.mask_path:
+            try:
+                mask_width, mask_height, _ = probe_image(Path(r.mask_path))
+                if (mask_width, mask_height) != (r.width, r.height):
+                    raise ValueError(
+                        f"native mask must match the oriented image dimensions {r.width}x{r.height}; "
+                        f"received {mask_width}x{mask_height}"
+                    )
+            except (OSError, ValueError) as error:
+                raise DataConfigError("dataset.masked_loss", f"{Path(r.path).name}: {error}") from error
+        for base in [0] if ds.resolution_mode == "native" else resolutions:
+            try:
+                size = (
+                    native_size(
+                        r.width,
+                        r.height,
+                        align=bm.align,
+                        max_pixels=ds.native_max_pixels,
+                        max_side=ds.native_max_side,
+                        overflow=ds.native_overflow,
+                    )
+                    if ds.resolution_mode == "native"
+                    else None
+                )
+                bucket = Bucket(size.width, size.height, 0) if size else bm.assign(r.width, r.height, base)
+            except ValueError as error:
+                raise DataConfigError("dataset.native_max_pixels", f"{Path(r.path).name}: {error}") from error
             for _ in range(src.repeats):
                 items.append(
-                    Item(r, bucket, src, cap_cfg, src.is_reg, src.prior_weight if src.is_reg else 1.0)
+                    Item(
+                        r,
+                        bucket,
+                        src,
+                        cap_cfg,
+                        src.is_reg,
+                        src.prior_weight if src.is_reg else 1.0,
+                        size.scale if size else None,
+                    )
                 )
     return items
 
@@ -167,30 +218,36 @@ class TrainDataset(Dataset):
         return random.Random((self.seed * 7_919 + self.epoch) * 1_000_003 + index)
 
     def cache_key(self, item: Item, flip: bool) -> str:
-        return LatentCache.key(
-            item.record.content_hash,
-            item.bucket.width,
-            item.bucket.height,
-            self.latent_spec.fingerprint,
-            flip,
-        )
+        return item_latent_key(item, self.latent_spec.fingerprint, flip)
 
     def load_pixels(
         self, item: Item, flip: bool, *, include_mask: bool = True
     ) -> tuple[Tensor, Tensor | None]:
         im, alpha = load_rgb(item.record.path)
-        px = pil_to_tensor(to_bucket(im, item.bucket.width, item.bucket.height, flip=flip))
+        fitted = (
+            to_bucket(im, item.bucket.width, item.bucket.height, flip=flip)
+            if item.native_scale is None
+            else to_native(im, item.bucket.width, item.bucket.height, scale=item.native_scale, flip=flip)
+        )
+        px = pil_to_tensor(fitted)
         mask = None
         if self.masked_loss and include_mask:
             mask = load_mask(
-                mask_for(Path(item.record.path)), alpha, item.bucket.width, item.bucket.height, flip=flip
+                mask_for(Path(item.record.path)),
+                alpha,
+                item.bucket.width,
+                item.bucket.height,
+                flip=flip,
+                native_scale=item.native_scale,
             )
         return px, mask
 
     def current_mask(self, item: Item, flip: bool) -> Tensor | None:
         path = mask_for(Path(item.record.path))
         alpha = load_alpha(item.record.path) if path is None and item.record.has_alpha else None
-        return load_mask(path, alpha, item.bucket.width, item.bucket.height, flip=flip)
+        return load_mask(
+            path, alpha, item.bucket.width, item.bucket.height, flip=flip, native_scale=item.native_scale
+        )
 
     def __getitem__(self, index: int) -> dict[str, Any]:
         item = self.items[index]
@@ -300,7 +357,7 @@ def prepare_data_layout(
         bm = BucketManager(
             sorted(resolutions, reverse=True),
             align=latent_spec.align,
-            step=ds.bucket_step,
+            step=latent_spec.align if ds.resolution_mode == "native" else ds.bucket_step,
             aspect_ratio_limit=ds.aspect_ratio_limit,
             area_tolerance=ds.area_tolerance,
             no_upscale=ds.bucket_no_upscale,
@@ -402,7 +459,15 @@ def build_data(
             records + [item.record for item in layout.validation_items],
             layout.sources,
             settings={
-                "dataset": ds.model_dump(mode="json", exclude={"sources", "cache_dir", "num_workers"}),
+                "dataset": ds.model_dump(
+                    mode="json",
+                    exclude={"sources", "cache_dir", "num_workers"}
+                    | (
+                        {"resolution_mode", "native_max_pixels", "native_max_side", "native_overflow"}
+                        if ds.resolution_mode == "bucket"
+                        else set()
+                    ),
+                ),
                 "validation": cfg.validation.model_dump(mode="json", exclude={"sources"}),
                 "validation_content": [item.record.content_hash for item in layout.validation_items],
             },

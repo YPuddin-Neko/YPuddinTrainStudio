@@ -3,6 +3,8 @@ const labels: Record<string, string> = {
   'model.family': '模型系列', 'model.dit_path': '主模型 / DiT', 'model.text_encoder_path': '文本编码器',
   'model.vae_path': 'VAE', 'model.tokenizer_path': '分词器目录', 'model.dtype': '计算精度', 'model.attention': '注意力后端',
   'dataset.sources': '训练数据源', 'dataset.resolutions': '训练分辨率', 'dataset.aspect_ratio_limit': '最大长宽比',
+  'dataset.resolution_mode': '分辨率模式', 'dataset.native_max_pixels': '原生像素预算',
+  'dataset.native_max_side': '原生最长边', 'dataset.native_overflow': '超出预算时',
   'dataset.area_tolerance': '面积容差', 'dataset.bucket_step': '分桶步长', 'dataset.bucket_no_upscale': '不放大小图',
   'dataset.batch_size': '批大小', 'dataset.flip': '随机水平翻转', 'dataset.masked_loss': '遮罩加权训练',
   'dataset.num_workers': '数据加载线程', 'dataset.cache_dir': '缓存目录', 'dataset.cache_latents': '缓存图像潜变量',
@@ -47,6 +49,14 @@ const labels: Record<string, string> = {
 
 export function configFieldLabel(path: string, fallback: string, english = false) {
   return english ? fallback : labels[path] || fallback;
+}
+
+export function configOptionLabel(path: string, option: string, english = false) {
+  const options: Record<string, Record<string, [string, string]>> = {
+    'dataset.resolution_mode': { bucket: ['分桶 · 统一基准面积', 'Buckets · target area'], native: ['原生 · 每图独立尺寸', 'Native · individual image sizes'] },
+    'dataset.native_overflow': { downscale: ['等比缩小到预算内', 'Downscale to fit budget'], error: ['报错并停止', 'Stop with an error'] },
+  };
+  return options[path]?.[option]?.[english ? 1 : 0] || option;
 }
 
 export type ConfigTab = 'train' | 'data' | 'model' | 'advanced';
@@ -97,5 +107,6 @@ export function presentPlanWarning(code: string, fallback: string, english = fal
     'device.mps_fp32': 'Apple GPU 使用 FP32 训练，不启用混合精度。',
     'captions.missing': '部分图片没有标签，可到数据集补充标签或设置类别提示词。',
     'buckets.small': '部分分桶不足一个完整批次，最后一个批次会使用较少的图片。',
+    'native.execution': '不同尺寸按像素预算分组前向，按图片数累积梯度；像素上限并非整体显存保证。',
   } as Record<string, string>)[code] || fallback;
 }

@@ -28,6 +28,8 @@ node_modules/
 *.pt
 *.pth
 *.npz
+*.onnx
+*.ses
 *.log
 studio_data/
 

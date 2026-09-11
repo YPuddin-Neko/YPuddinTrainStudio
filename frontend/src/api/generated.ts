@@ -895,6 +895,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/models/downloads/{download_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Download */
+        post: operations["retry_download_api_models_downloads__download_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/models/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Credential States */
+        get: operations["credential_states_api_models_credentials_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/models/credentials/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save Credential */
+        put: operations["save_credential_api_models_credentials__provider__put"];
+        post?: never;
+        /** Clear Credential */
+        delete: operations["clear_credential_api_models_credentials__provider__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/models/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Model Catalog */
+        get: operations["model_catalog_api_models_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/models/catalog/{catalog_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Download Catalog */
+        post: operations["download_catalog_api_models_catalog__catalog_id__download_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/datasets/{did}/images/{h}/mask/info": {
         parameters: {
             query?: never;
@@ -939,6 +1025,108 @@ export interface paths {
         };
         /** Mask Source */
         get: operations["mask_source_api_datasets__did__images__h__mask_source_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{pid}/versions/{vid}/pipeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Pipeline */
+        get: operations["get_pipeline_api_projects__pid__versions__vid__pipeline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{pid}/versions/{vid}/pipeline/operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Operation */
+        post: operations["start_operation_api_projects__pid__versions__vid__pipeline_operations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset-pipeline/operations/{oid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Operation */
+        get: operations["get_operation_api_dataset_pipeline_operations__oid__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset-pipeline/operations/{oid}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Operation */
+        post: operations["cancel_operation_api_dataset_pipeline_operations__oid__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset-pipeline/operations/{oid}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Operation */
+        post: operations["retry_operation_api_dataset_pipeline_operations__oid__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset-tagging/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tagging Status */
+        get: operations["tagging_status_api_dataset_tagging_status_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1334,6 +1522,32 @@ export interface components {
              */
             cache_variants: number;
         };
+        /** CaptionOptions */
+        CaptionOptions: {
+            /**
+             * Mode
+             * @default fill_missing
+             * @enum {string}
+             */
+            mode: "fill_missing" | "append" | "remove" | "replace";
+            /** Text */
+            text: string;
+        };
+        /** CatalogDownloadRequest */
+        CatalogDownloadRequest: {
+            /**
+             * Provider
+             * @default huggingface
+             * @constant
+             */
+            provider: "huggingface";
+            /**
+             * Mirror
+             * @default official
+             * @enum {string}
+             */
+            mirror: "official" | "hf-mirror";
+        };
         /** CheckpointConfig */
         CheckpointConfig: {
             /**
@@ -1449,6 +1663,35 @@ export interface components {
             /** Format */
             format: string;
         };
+        /** CredentialState */
+        CredentialState: {
+            /** Configured */
+            configured: boolean;
+        };
+        /** CredentialStates */
+        CredentialStates: {
+            huggingface: components["schemas"]["CredentialState"];
+            modelscope: components["schemas"]["CredentialState"];
+        };
+        /** CredentialUpdate */
+        CredentialUpdate: {
+            /**
+             * Token
+             * Format: password
+             */
+            token: string;
+        };
+        /** CropRectangle */
+        CropRectangle: {
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+        };
         /** DatasetBody */
         DatasetBody: {
             /** Version Id */
@@ -1487,12 +1730,38 @@ export interface components {
             sources?: components["schemas"]["DatasetSourceConfig"][];
             /**
              * Resolutions
-             * @description 训练分辩率（基准边长，可多个）
+             * @description 训练分辨率（基准边长，可多个）
              * @default [
              *       1024
              *     ]
              */
             resolutions: number[];
+            /**
+             * Resolution Mode
+             * @description 分桶：统一基准面积；原生：保留每图独立尺寸，仅在超预算时缩小，不放大小图
+             * @default bucket
+             * @enum {string}
+             */
+            resolution_mode: "bucket" | "native";
+            /**
+             * Native Max Pixels
+             * @description 原生模式单图及一次前向的像素上限；1048576 = 1024²。不同尺寸分组前向后按图片数累积梯度，像素预算不保证整体显存不会溢出
+             * @default 1048576
+             */
+            native_max_pixels: number;
+            /**
+             * Native Max Side
+             * @description 原生模式单边上限；超限时等比缩小后裁去尺寸对齐边缘，或按策略报错
+             * @default 4096
+             */
+            native_max_side: number;
+            /**
+             * Native Overflow
+             * @description 超出像素或单边预算：等比缩小，或报错要求调整；不会悄悄跳过图片
+             * @default downscale
+             * @enum {string}
+             */
+            native_overflow: "downscale" | "error";
             /**
              * Aspect Ratio Limit
              * @description 分桶允许的最大长宽比
@@ -1759,7 +2028,7 @@ export interface components {
              * Package
              * @enum {string}
              */
-            package: "xformers" | "flash-attn" | "sageattention" | "nvidia-ml-py" | "tensorboard" | "wandb" | "schedulefree";
+            package: "xformers" | "flash-attn" | "sageattention" | "nvidia-ml-py" | "tensorboard" | "wandb" | "schedulefree" | "onnxruntime";
             /**
              * Action
              * @default install
@@ -2238,6 +2507,17 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** LocalTaggingModel */
+        LocalTaggingModel: {
+            /** Name */
+            name: string;
+            /** Path */
+            path: string;
+            /** Model Path */
+            model_path: string;
+            /** Tags Path */
+            tags_path: string;
+        };
         /** LogLine */
         LogLine: {
             /** Ts */
@@ -2424,12 +2704,12 @@ export interface components {
              * Family
              * @enum {string}
              */
-            family: "anima" | "krea2" | "toy";
+            family: "anima" | "krea2" | "toy" | "tagger";
             /**
              * Kind
              * @enum {string}
              */
-            kind: "dit" | "text_encoder" | "vae" | "tokenizer";
+            kind: "dit" | "text_encoder" | "vae" | "tokenizer" | "tagger";
             /** Path */
             path: string;
             /** Dtype */
@@ -2439,6 +2719,36 @@ export interface components {
              * @default false
              */
             is_default: boolean;
+        };
+        /** ModelCatalogEntry */
+        ModelCatalogEntry: {
+            /** Id */
+            id: string;
+            /**
+             * Role
+             * @constant
+             */
+            role: "tagger";
+            /** Name */
+            name: string;
+            /** Repo Id */
+            repo_id: string;
+            /** Revision */
+            revision: string;
+            /** Files */
+            files: string[];
+            /** Path */
+            path: string;
+            /** Ready */
+            ready: boolean;
+            /** Providers */
+            providers: ("huggingface" | "modelscope")[];
+            /** License */
+            license: string;
+            /** Size */
+            size: number;
+            /** Url */
+            url: string;
         };
         /** ModelConfig */
         ModelConfig: {
@@ -2497,6 +2807,18 @@ export interface components {
             family: string;
             /** Kind */
             kind: string;
+            /**
+             * Provider
+             * @default huggingface
+             * @enum {string}
+             */
+            provider: "huggingface" | "modelscope";
+            /**
+             * Mirror
+             * @default official
+             * @enum {string}
+             */
+            mirror: "official" | "hf-mirror";
             /** Source Url */
             source_url: string;
             /** Filename */
@@ -2537,23 +2859,32 @@ export interface components {
              * Family
              * @enum {string}
              */
-            family: "anima" | "krea2";
+            family: "anima" | "krea2" | "tagger";
             /**
              * Kind
              * @enum {string}
              */
-            kind: "dit" | "text_encoder" | "vae";
+            kind: "dit" | "text_encoder" | "vae" | "tagger";
+            /**
+             * Provider
+             * @default huggingface
+             * @enum {string}
+             */
+            provider: "huggingface" | "modelscope";
+            /**
+             * Mirror
+             * @default official
+             * @enum {string}
+             */
+            mirror: "official" | "hf-mirror";
             /** Url */
             url?: string | null;
             /** Repo Id */
             repo_id?: string | null;
             /** Filename */
             filename?: string | null;
-            /**
-             * Revision
-             * @default main
-             */
-            revision: string;
+            /** Revision */
+            revision?: string | null;
             /** Dtype */
             dtype?: ("bf16" | "fp16" | "fp32" | "fp8") | null;
             /**
@@ -2561,6 +2892,27 @@ export interface components {
              * @default true
              */
             is_default: boolean;
+        };
+        /** NativePlan */
+        NativePlan: {
+            /** Images */
+            images: number;
+            /** Downscaled */
+            downscaled: number;
+            /** Sizes */
+            sizes: number;
+            /** Logical Batches */
+            logical_batches: number;
+            /** Max Pixels */
+            max_pixels: number;
+            /** Alignment */
+            alignment: number;
+            /** Batch Size */
+            batch_size: number;
+            /** Forward Groups */
+            forward_groups: number;
+        } & {
+            [key: string]: unknown;
         };
         /** ObjectiveConfig */
         ObjectiveConfig: {
@@ -2751,6 +3103,106 @@ export interface components {
                 [key: string]: number;
             };
         };
+        /** PipelineImage */
+        PipelineImage: {
+            /** Dataset Id */
+            dataset_id: string;
+            /** Rel Path */
+            rel_path: string;
+        };
+        /** PipelineOperation */
+        PipelineOperation: {
+            /** Id */
+            id: string;
+            /** Project Id */
+            project_id: string;
+            /** Version Id */
+            version_id: string;
+            /** Action */
+            action: string;
+            /** Status */
+            status: string;
+            /** Phase */
+            phase: string;
+            /** Done */
+            done: number;
+            /** Total */
+            total: number;
+            /** Error */
+            error?: string | null;
+            /** Job Id */
+            job_id?: string | null;
+            /** Created At */
+            created_at: number;
+            /** Updated At */
+            updated_at: number;
+            /** Finished At */
+            finished_at?: number | null;
+            /** Request */
+            request: {
+                [key: string]: unknown;
+            };
+            /** Result */
+            result: {
+                [key: string]: unknown;
+            };
+            /** Logs */
+            logs: {
+                [key: string]: unknown;
+            }[];
+            /** Can Undo */
+            can_undo: boolean;
+            /** Can Cancel */
+            can_cancel: boolean;
+        };
+        /** PipelineRequest */
+        PipelineRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "inspect" | "exclude" | "restore" | "preprocess" | "captions" | "tag" | "prepare";
+            /** Images */
+            images?: components["schemas"]["PipelineImage"][];
+            /** Restore Operation Id */
+            restore_operation_id?: string | null;
+            preprocess?: components["schemas"]["PreprocessOptions"] | null;
+            captions?: components["schemas"]["CaptionOptions"] | null;
+            tagging?: components["schemas"]["TaggingOptions"] | null;
+        };
+        /** PipelineSnapshot */
+        PipelineSnapshot: {
+            /** Project Id */
+            project_id: string;
+            /** Version Id */
+            version_id: string;
+            /** Signature */
+            signature: string;
+            /** Inspection */
+            inspection: {
+                [key: string]: unknown;
+            } | null;
+            /** Plan */
+            plan: {
+                [key: string]: unknown;
+            } | null;
+            /** Operations */
+            operations: components["schemas"]["PipelineOperation"][];
+            /** Datasets */
+            datasets: {
+                [key: string]: unknown;
+            }[];
+            /** Busy */
+            busy: boolean;
+            /** Archived */
+            archived: boolean;
+            /** Ready To Train */
+            ready_to_train: boolean;
+            /** Prepared Job Id */
+            prepared_job_id: string | null;
+            /** Stale */
+            stale: boolean;
+        };
         /** Plan */
         Plan: {
             /** Ok */
@@ -2792,6 +3244,7 @@ export interface components {
             memory?: components["schemas"]["PlanMemory"];
             /** Text Encoding */
             text_encoding?: string | null;
+            native?: components["schemas"]["NativePlan"] | null;
         } & {
             [key: string]: unknown;
         };
@@ -2891,6 +3344,31 @@ export interface components {
             };
         } & {
             [key: string]: unknown;
+        };
+        /** PreprocessOptions */
+        PreprocessOptions: {
+            /**
+             * Mode
+             * @default resize
+             * @enum {string}
+             */
+            mode: "resize" | "center_crop" | "crop_rect";
+            /**
+             * Width
+             * @default 1024
+             */
+            width: number;
+            /**
+             * Height
+             * @default 1024
+             */
+            height: number;
+            /**
+             * Allow Upscale
+             * @default false
+             */
+            allow_upscale: boolean;
+            crop?: components["schemas"]["CropRectangle"] | null;
         };
         /** Preset */
         Preset: {
@@ -3296,6 +3774,76 @@ export interface components {
             changed: number;
         } & {
             [key: string]: unknown;
+        };
+        /** TaggingOptions */
+        TaggingOptions: {
+            /** Model Path */
+            model_path: string;
+            /** Tags Path */
+            tags_path: string;
+            /**
+             * General Threshold
+             * @default 0.35
+             */
+            general_threshold: number;
+            /**
+             * Character Threshold
+             * @default 0.85
+             */
+            character_threshold: number;
+            /**
+             * Provider
+             * @default cpu
+             * @enum {string}
+             */
+            provider: "cpu" | "cuda";
+            /**
+             * Mode
+             * @default missing
+             * @enum {string}
+             */
+            mode: "missing" | "append" | "overwrite";
+            /**
+             * Trigger Word
+             * @default
+             */
+            trigger_word: string;
+        };
+        /** TaggingStatus */
+        TaggingStatus: {
+            /** Available */
+            available: boolean;
+            /** Runtime Available */
+            runtime_available: boolean;
+            /** Runtime Version */
+            runtime_version: string | null;
+            /** Runtime Providers */
+            runtime_providers: string[];
+            /** Providers */
+            providers: string[];
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "cpu" | "cuda";
+            /** Model Exists */
+            model_exists: boolean;
+            /** Tags Exists */
+            tags_exists: boolean;
+            /** Model Path */
+            model_path: string | null;
+            /** Tags Path */
+            tags_path: string | null;
+            /** Input Size */
+            input_size: number;
+            /** Models */
+            models: components["schemas"]["LocalTaggingModel"][];
+            /** Recommended Model Dir */
+            recommended_model_dir: string;
+            /** Errors */
+            errors: string[];
+            /** Notes */
+            notes: string[];
         };
         /** TrainConfig */
         TrainConfig: {
@@ -5774,6 +6322,178 @@ export interface operations {
             };
         };
     };
+    retry_download_api_models_downloads__download_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                download_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelDownload"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    credential_states_api_models_credentials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CredentialStates"];
+                };
+            };
+        };
+    };
+    save_credential_api_models_credentials__provider__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "huggingface" | "modelscope";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CredentialUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CredentialState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_credential_api_models_credentials__provider__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "huggingface" | "modelscope";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CredentialState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    model_catalog_api_models_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelCatalogEntry"][];
+                };
+            };
+        };
+    };
+    download_catalog_api_models_catalog__catalog_id__download_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                catalog_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CatalogDownloadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelDownload"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     mask_info_api_datasets__did__images__h__mask_info_get: {
         parameters: {
             query?: {
@@ -5905,6 +6625,200 @@ export interface operations {
                 };
                 content: {
                     "image/png": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_pipeline_api_projects__pid__versions__vid__pipeline_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+                vid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_operation_api_projects__pid__versions__vid__pipeline_operations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+                vid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PipelineRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineOperation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_operation_api_dataset_pipeline_operations__oid__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                oid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineOperation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_operation_api_dataset_pipeline_operations__oid__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                oid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineOperation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_operation_api_dataset_pipeline_operations__oid__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                oid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineOperation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tagging_status_api_dataset_tagging_status_get: {
+        parameters: {
+            query?: {
+                model_path?: string | null;
+                tags_path?: string | null;
+                provider?: "cpu" | "cuda";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaggingStatus"];
                 };
             };
             /** @description Validation Error */

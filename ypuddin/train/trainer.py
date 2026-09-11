@@ -13,7 +13,7 @@ import time
 from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import replace
-from functools import wraps
+from functools import partial, wraps
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +33,7 @@ from ypuddin.data import (
     cache_latents,
     collate,
 )
+from ypuddin.data.native import NativeBatchSampler, collate_native
 from ypuddin.memory import BlockSwapper
 from ypuddin.models import LoadedModel, ModelFamily, TextCond, get_family
 from ypuddin.objectives import Objective
@@ -194,7 +195,7 @@ class Trainer:
                 self.bundle,
                 self.loaded.latent.encode,
                 device=self.device,
-                batch_size=max(1, cfg.dataset.batch_size),
+                batch_size=1 if cfg.dataset.resolution_mode == "native" else max(1, cfg.dataset.batch_size),
                 dtype=model_dtype,
                 progress=lambda d, t: self.emit("cache.progress", kind="latents", done=d, total=t),
             )
@@ -271,13 +272,17 @@ class Trainer:
         self.optimizer = build_optimizer(cfg.optimizer, groups)
         if is_schedule_free(cfg.optimizer):
             self.optimizer.train()
-        self.sampler = BucketBatchSampler(
+        native = cfg.dataset.resolution_mode == "native"
+        sampler_type = NativeBatchSampler if native else BucketBatchSampler
+        self.sampler = sampler_type(
             self.bundle.train.bucket_keys(), cfg.dataset.batch_size, seed=cfg.loop.seed
         )
         self.loader = DataLoader(
             self.bundle.train,
             batch_sampler=self.sampler,
-            collate_fn=collate,
+            collate_fn=partial(collate_native, max_pixels=cfg.dataset.native_max_pixels)
+            if native
+            else collate,
             num_workers=cfg.dataset.num_workers,
             pin_memory=self.device.type == "cuda",
             generator=self.loader_gen,
@@ -453,18 +458,27 @@ class Trainer:
 
     def _adapter_metadata(self) -> dict[str, str]:
         _, targets = self.adapters.export_state()
-        return build_metadata(
+        metadata = build_metadata(
             targets=targets,
             adapter_cfg=self.cfg.adapter.model_dump(mode="json"),
             family=self.family.spec.name,
             architecture=f"{self.family.spec.architecture}/{self.cfg.adapter.algo}",
             title=self.cfg.checkpoint.name,
-            resolution=",".join(str(r) for r in self.cfg.dataset.resolutions),
+            resolution=(
+                None
+                if self.cfg.dataset.resolution_mode == "native"
+                else ",".join(str(r) for r in self.cfg.dataset.resolutions)
+            ),
             config_hash=self.config_hash,
             dataset_fingerprint=self.bundle.plan.fingerprint,
             steps=self.progress.step,
             epoch=self.progress.epoch,
         )
+        if self.cfg.dataset.resolution_mode == "native":
+            metadata["ypuddin.resolution_mode"] = "native"
+            metadata["ypuddin.native_max_pixels"] = str(self.cfg.dataset.native_max_pixels)
+            metadata["ypuddin.native_max_side"] = str(self.cfg.dataset.native_max_side)
+        return metadata
 
     @evaluation
     def save_weights(self, tag: str) -> Path:
@@ -681,6 +695,9 @@ class Trainer:
         return req
 
     def _run_epoch(self) -> None:
+        if self.cfg.dataset.resolution_mode == "native":
+            self._run_native_epoch()
+            return
         cfg = self.cfg
         epoch = self.progress.epoch
         self.sampler.set_epoch(epoch)
@@ -726,6 +743,86 @@ class Trainer:
                         if p.grad is not None:
                             p.grad.mul_(accum / micro)
                 self._optimizer_step(group_loss * accum / micro, time.perf_counter() - t0)
+        if self.progress.step >= self.progress.total_steps and self.progress.batch_in_epoch < len(
+            self.sampler.plan()
+        ):
+            return
+        self.progress.epoch += 1
+        self.progress.batch_in_epoch = 0
+        self.emit("epoch.finished", epoch=epoch, step=self.progress.step)
+        self._epoch_hooks(epoch + 1)
+
+    def _run_native_epoch(self) -> None:
+        """A logical batch may contain many sizes; backward releases each group's graph.
+
+        Normalise by the actual image count across accumulation, including tails.
+        Thus a singleton shape does not outweigh a group containing several images.
+        All model/loss/Mask/precision paths still go through compute_loss.
+        """
+        cfg = self.cfg
+        epoch = self.progress.epoch
+        self.sampler.set_epoch(epoch)
+        self.sampler.set_position(self.progress.batch_in_epoch)
+        self.bundle.train.set_epoch(epoch)
+        self.emit(
+            "epoch.started",
+            epoch=epoch,
+            batches=len(self.sampler.plan()),
+            position=self.progress.batch_in_epoch,
+        )
+        target = cfg.loop.grad_accum * cfg.dataset.batch_size
+        batches, images, loss_sum = 0, 0, 0.0
+        t0 = time.perf_counter()
+
+        def step() -> None:
+            for group in self.optimizer.param_groups:
+                for parameter in group["params"]:
+                    if parameter.grad is not None:
+                        parameter.grad.mul_(target / images)
+            self._optimizer_step(loss_sum / images, time.perf_counter() - t0)
+
+        for batch in self.loader:
+            self.progress.batch_in_epoch += 1
+            self.progress.samples_seen += len(batch["caption"])
+            invalid = False
+            for part in batch["microbatches"]:
+                count = len(part["caption"])
+                loss, _, _ = self.compute_loss(part)
+                if not torch.isfinite(loss):
+                    self.progress.nan_skips += 1
+                    self.emit(
+                        "warning",
+                        code="loss.nonfinite",
+                        step=self.progress.step,
+                        skips=self.progress.nan_skips,
+                    )
+                    # A partially backpropagated logical batch must never be committed.
+                    self.optimizer.zero_grad(set_to_none=True)
+                    if self.swapper is not None:
+                        self.swapper.release_all()
+                    if self.progress.nan_skips >= cfg.loop.nan_skip_limit:
+                        raise RuntimeError(f"{self.progress.nan_skips} consecutive non-finite losses")
+                    invalid = True
+                    break
+                (loss * (count / target)).backward()
+                if self.swapper is not None:
+                    self.swapper.release_all()
+                loss_sum += loss.item() * count
+                images += count
+                del loss
+            if invalid:
+                batches, images, loss_sum, t0 = 0, 0, 0.0, time.perf_counter()
+                continue
+            batches += 1
+            if batches < cfg.loop.grad_accum:
+                continue
+            step()
+            batches, images, loss_sum, t0 = 0, 0, 0.0, time.perf_counter()
+            if self.progress.step >= self.progress.total_steps:
+                break
+        else:
+            if images:
+                step()
         if self.progress.step >= self.progress.total_steps and self.progress.batch_in_epoch < len(
             self.sampler.plan()
         ):
@@ -857,8 +954,13 @@ class Trainer:
             by_bucket.setdefault(it.bucket.key, []).append(i)
         bs = max(1, self.cfg.dataset.batch_size)
         for indices in by_bucket.values():
-            for s in range(0, len(indices), bs):
-                batch = collate([ds[i] for i in indices[s : s + bs]])
+            effective_bs = bs
+            if self.cfg.dataset.resolution_mode == "native":
+                effective_bs = min(
+                    bs, max(1, self.cfg.dataset.native_max_pixels // ds.items[indices[0]].bucket.area)
+                )
+            for s in range(0, len(indices), effective_bs):
+                batch = collate([ds[i] for i in indices[s : s + effective_bs]])
                 for q, t_val in zip(vcfg.timesteps, ts.tolist(), strict=True):
                     gen = torch.Generator().manual_seed(
                         vcfg.seed * 100003 + int(q * 1000) + int(batch["index"][0])

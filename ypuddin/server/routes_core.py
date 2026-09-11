@@ -50,9 +50,11 @@ def system_stats(data_root: Path) -> dict[str, Any]:
         pass
     return {
         "cpu_pct": psutil.cpu_percent(interval=None),
-        "ram": {"used_mb": round(vm.used / 2**20), "total_mb": round(vm.total / 2**20)},
+        # Available memory accounts for reclaimable caches consistently across platforms.
+        # MPS reports this same system pool, so both tiles use one snapshot and definition.
+        "ram": {"used_mb": round((vm.total - vm.available) / 2**20), "total_mb": round(vm.total / 2**20)},
         "disks": disks,
-        "gpus": gpu_info(include_unavailable=True),
+        "gpus": gpu_info(include_unavailable=True, system_memory=vm),
     }
 
 
@@ -486,8 +488,8 @@ def import_toml(body: dict[str, str]) -> dict[str, Any]:
 
 # --------------------------------------------------------------------------- models
 class ModelBody(BaseModel):
-    family: Literal["anima", "krea2", "toy"]
-    kind: Literal["dit", "text_encoder", "vae", "tokenizer"]
+    family: Literal["anima", "krea2", "toy", "tagger"]
+    kind: Literal["dit", "text_encoder", "vae", "tokenizer", "tagger"]
     path: str
     dtype: str | None = None
     is_default: bool = False
@@ -505,6 +507,10 @@ def list_models(c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
 
 @router.post("/models", response_model=m.ModelAsset, response_model_exclude_unset=True)
 def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+    if (body.family == "tagger") != (body.kind == "tagger") or body.kind == "tagger" and body.is_default:
+        raise ApiError(
+            "tagger assets have their own family/role and cannot be training defaults", code="model.role"
+        )
     p = Path(body.path).expanduser().resolve()
     if not p.exists():
         raise NotFound(f"model path not found: {p}", code="model.not_found")
@@ -514,6 +520,10 @@ def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, An
         raise ApiError("DiT and VAE paths must point to a weight file", code="model.path")
     if body.kind == "tokenizer" and not p.is_dir():
         raise ApiError("tokenizer path must point to a complete tokenizer directory", code="model.path")
+    if body.kind == "tagger" and not (
+        p.is_dir() and (p / "model.onnx").is_file() and (p / "selected_tags.csv").is_file()
+    ):
+        raise ApiError("tagger directory needs model.onnx and selected_tags.csv together", code="model.path")
     size = (
         p.stat().st_size
         if p.is_file()
@@ -565,6 +575,8 @@ def patch_model(model_id: str, body: ModelDefaultPatch, c: ServiceContext = Depe
         row = c.db.fetchone("SELECT * FROM models WHERE id=?", (model_id,))
         if row is None:
             raise NotFound("model not found", code="model.not_found")
+        if row["kind"] == "tagger" and body.is_default:
+            raise ApiError("tagger assets cannot be training defaults", code="model.role")
         if body.is_default and not Path(row["path"]).exists():
             raise NotFound(
                 "the model file is missing; register its new location first", code="model.not_found"

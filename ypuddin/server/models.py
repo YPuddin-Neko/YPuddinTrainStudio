@@ -168,6 +168,17 @@ class PlanMemory(_Out):
     suggestions: list[str] = Field(default_factory=list)
 
 
+class NativePlan(_Out):
+    images: int
+    downscaled: int
+    sizes: int
+    logical_batches: int
+    max_pixels: int
+    alignment: int
+    batch_size: int
+    forward_groups: int
+
+
 class Plan(_Out):
     ok: bool
     errors: list[ConfigError]
@@ -182,6 +193,7 @@ class Plan(_Out):
     params: PlanParams = Field(default_factory=PlanParams)
     memory: PlanMemory = Field(default_factory=PlanMemory)
     text_encoding: str | None = None
+    native: NativePlan | None = None
 
 
 class Preset(_Out):

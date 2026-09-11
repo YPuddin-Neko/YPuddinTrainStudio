@@ -327,7 +327,7 @@ export default function JobDetail() {
   };
   const phase = job?.progress?.phase || '';
   const rawPhase = ['starting', 'loading', 'indexing', 'injecting', 'prepared'].includes(phase) ? 'preparing' : phase.startsWith('caching_') ? 'caching' : phase;
-  const currentPhaseIndex = PHASE_KEYS.findIndex((k) => k === rawPhase);
+  const currentPhaseIndex = job?.status === 'completed' ? PHASE_KEYS.length : PHASE_KEYS.findIndex((k) => k === rawPhase);
 
   // 任务状态徽章（文案 + 颜色）
   const statusLabels: Record<string, string> = {

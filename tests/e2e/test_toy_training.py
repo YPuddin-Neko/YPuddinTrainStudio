@@ -79,6 +79,46 @@ def test_full_run_produces_artifacts_and_events(image_dataset, tmp_path):
     assert val[-1]["mean"] < val[0]["mean"]
 
 
+@pytest.mark.parametrize("cached", [True, False])
+def test_native_mixed_sizes_exact_resume_and_plan(image_dataset, tmp_path, cached):
+    from ypuddin.train.plan import plan
+
+    dataset = {
+        "resolution_mode": "native",
+        "native_max_pixels": 8192,
+        "batch_size": 5,
+        "masked_loss": True,
+        "cache_latents": cached,
+        "text_encoding": "cached" if cached else "online",
+    }
+    cfg = _cfg(
+        image_dataset,
+        tmp_path / "ref",
+        dataset=dataset,
+        loop={"epochs": 4, "grad_accum": 2},
+        checkpoint={"save_state_every_steps": 2, "save_every_epochs": None},
+        validation={"enabled": False},
+        sampling={"enabled": False},
+    )
+    reference = Trainer(cfg, device="cpu")
+    assert reference.run() == "finished"
+    estimate = plan(cfg, device="cpu")
+    assert estimate["steps_per_epoch"] == reference.progress.steps_per_epoch == 2
+    assert reference.progress.samples_seen == 48
+    assert estimate["native"]["sizes"] == 4
+    resumed_cfg = cfg.model_copy(deep=True)
+    resumed_cfg.checkpoint.output_dir = str(tmp_path / "resumed")
+    resumed_cfg.checkpoint.resume = str(tmp_path / "ref" / "state-2")
+    resumed_cfg.dataset.cache_dir = str(tmp_path / "ref" / "cache")
+    resumed = Trainer(resumed_cfg, device="cpu")
+    assert resumed.run() == "finished"
+    assert resumed.progress.samples_seen == reference.progress.samples_seen
+    actual, _ = resumed.adapters.export_state()
+    expected, _ = reference.adapters.export_state()
+    for key in expected:
+        torch.testing.assert_close(actual[key], expected[key], rtol=0, atol=0)
+
+
 @pytest.mark.parametrize(
     "adapter",
     [

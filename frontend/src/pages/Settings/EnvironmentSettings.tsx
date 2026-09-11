@@ -8,6 +8,6 @@ export default function EnvironmentSettings() {
   const text = useWorkspaceText();
   const [params] = useSearchParams();
   return <div data-testid="environment-settings"><React.Suspense fallback={<p role="status" className="settings-note">{text('正在加载…', 'Loading…')}</p>}>
-    {params.get('tab') === 'models' ? <Models embedded /> : <EnvironmentManagerPanel />}
+    {params.get('tab') === 'models' ? <Models embedded /> : <EnvironmentManagerPanel focusPackage={params.get('package') || undefined} />}
   </React.Suspense></div>;
 }

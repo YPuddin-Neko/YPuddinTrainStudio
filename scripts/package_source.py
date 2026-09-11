@@ -51,6 +51,9 @@ def package(output: Path) -> dict:
         ".ckpt",
         ".pt",
         ".pth",
+        ".onnx",
+        ".npz",
+        ".ses",
         ".sqlite",
         ".db",
         ".tsbuildinfo",
@@ -61,6 +64,7 @@ def package(output: Path) -> dict:
         if not (set(p.parts) & forbidden_parts)
         and p.suffix not in forbidden_suffixes
         and p.name not in {".DS_Store", ".env", "secrets.json"}
+        and not (p.name.startswith(".env.") and p.name not in {".env.example", ".env.sample"})
         and not (ROOT / p).is_symlink()
     }
     required = {
@@ -76,6 +80,31 @@ def package(output: Path) -> dict:
             "docs/UI_REDESIGN_2026-09-11.md",
             "docs/UI_VERSIONS_2026-09-11.md",
             "docs/validation/v0.4.0.json",
+            "docs/validation/v0.5.0.json",
+            "docs/UI_PIPELINE_2026-09-11.md",
+            "docs/native-resolution.md",
+            "ypuddin/data/native.py",
+            "ypuddin/server/dataset_pipeline.py",
+            "ypuddin/server/routes_dataset_pipeline.py",
+            "ypuddin/server/dataset_tagging.py",
+            "ypuddin/server/routes_dataset_tagging.py",
+            "ypuddin/server/model_catalog.py",
+            "ypuddin/server/model_credentials.py",
+            "frontend/src/components/datasets/DatasetPipelinePanel.tsx",
+            "frontend/src/components/datasets/VisualCropEditor.tsx",
+            "frontend/src/components/datasets/TaggingPanel.tsx",
+            "frontend/src/components/datasets/tagging-panel.css",
+            "frontend/src/components/datasets/dataset-pipeline.css",
+            "frontend/src/pages/Models/TaggerModels.tsx",
+            "frontend/src/pages/Models/ModelCredentials.tsx",
+            "frontend/src/schema/SchemaForm/NumericControl.tsx",
+            "frontend/src/utils/trainingPresets.ts",
+            "tests/unit/test_native_resolution.py",
+            "tests/unit/test_dataset_pipeline.py",
+            "tests/unit/test_dataset_tagging.py",
+            "tests/e2e/test_dataset_tagging_live.py",
+            "frontend/tests/taggingPanel.test.tsx",
+            "frontend/tests/percentageControls.test.tsx",
             "docs/api/openapi.json",
             "frontend/dist/index.html",
             "frontend/dist/.source-manifest.json",
