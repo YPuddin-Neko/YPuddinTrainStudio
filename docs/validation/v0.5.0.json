@@ -548,10 +548,10 @@
     },
     "telemetry-1000.png": {
       "size": [
-        816,
-        48
+        1000,
+        775
       ],
-      "sha256": "76e3459a862832af324ab188a6ee56dc0f5003cd8c0f307685a6ab29b851482b"
+      "sha256": "16a50858846a227abf8f7be5c324764f89bf20e09abdf9a8fb6a227de75f881b"
     },
     "training-advanced-dark.png": {
       "size": [
