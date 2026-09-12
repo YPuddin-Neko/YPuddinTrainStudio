@@ -1,5 +1,5 @@
-.dataset-pipeline { --pipeline-border:#e2e8f0; --pipeline-muted:#64748b; --pipeline-bg:#f8fafc; min-width:0; display:grid; gap:16px; }
-.dark .dataset-pipeline { --pipeline-border:#334155; --pipeline-muted:#94a3b8; --pipeline-bg:#0f172a; }
+.dataset-pipeline { --pipeline-border:var(--studio-line); --pipeline-muted:#64748b; --pipeline-bg:#f8fafc; min-width:0; display:grid; gap:16px; }
+.dark .dataset-pipeline { --pipeline-border:var(--studio-line); --pipeline-muted:#94a3b8; --pipeline-bg:#0f172a; }
 /* Base controls must not override nested forms, primary actions or visually hidden file inputs. */
 :where(.dataset-pipeline) button,:where(.dataset-pipeline) select,:where(.dataset-pipeline) input:where(:not([type=checkbox])),:where(.dataset-pipeline) textarea { border:1px solid var(--pipeline-border);border-radius:7px;background:transparent;font:inherit;font-size:13px;padding:7px 10px; }
 :where(.dataset-pipeline) button { display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer; }
@@ -31,7 +31,7 @@
 @media(max-width:650px){.pipeline-visual-crop {grid-template-columns:1fr;}.pipeline-crop-controls {max-width:none;}}
 
 .dataset-pipeline { --pipeline-nav-height:42px; gap:12px; }
-.pipeline-navigation { position:sticky; top:var(--workspace-head-height, 0px); z-index:25; display:flex; align-items:center; gap:8px; min-width:0; padding:0 0 6px; border-bottom:1px solid var(--pipeline-border); background:var(--workspace-surface,var(--studio-panel)); }
+.pipeline-navigation { position:sticky; top:var(--workspace-head-height, 0px); z-index:25; display:flex; align-items:center; gap:8px; min-width:0; padding:0 0 6px; border-bottom:1px solid var(--studio-line); background:var(--studio-canvas); }
 .pipeline-stages { display:flex; flex:1; min-width:0; overflow-x:auto; gap:2px; scrollbar-width:thin; }
 .dataset-pipeline .pipeline-stages button { flex:none; justify-content:center; flex-wrap:nowrap; white-space:nowrap; gap:5px; padding:6px 9px; min-width:0; min-height:32px; font-size:12px; border-color:transparent; background:transparent; }
 .dataset-pipeline .pipeline-stages button[aria-current] { background:var(--studio-accent-soft,#eff6ff); color:var(--studio-accent,#2563eb); }

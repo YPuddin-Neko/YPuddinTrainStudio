@@ -99,7 +99,7 @@ describe('training dataset destinations and saved navigation', () => {
     fireEvent.change(epochs, { target: { value: '7' } });
     await waitFor(() => expect(writes).toHaveLength(1), { timeout: 2000 });
     fireEvent.change(epochs, { target: { value: '9' } });
-    fireEvent.click(screen.getByRole('link', { name: /^2\s*模型准备$/ }));
+    fireEvent.click(screen.getByRole('link', { name: /^3\s*训练结果$/ }));
     expect(await screen.findByText('正在保存草稿…')).toBeInTheDocument();
     expect(screen.queryByText(/Destination/)).not.toBeInTheDocument();
     expect(writes).toHaveLength(1);
@@ -112,7 +112,7 @@ describe('training dataset destinations and saved navigation', () => {
     expect(writes[2].config.loop.epochs).toBe(11);
     expect(screen.queryByText(/Destination/)).not.toBeInTheDocument();
     writes[2].finish();
-    await screen.findByText('Destination /projects/p_nav?step=models');
+    await screen.findByText('Destination /projects/p_nav?step=results');
     await screen.findByText('Saved epochs: 11');
     expect(state.config.loop.epochs).toBe(11);
   });
@@ -127,13 +127,13 @@ describe('training dataset destinations and saved navigation', () => {
     show();
     const epochs = await screen.findByRole('spinbutton', { name: 'loop.epochs' });
     fireEvent.change(epochs, { target: { value: '13' } });
-    fireEvent.click(screen.getByRole('link', { name: /^2\s*模型准备$/ }));
+    fireEvent.click(screen.getByRole('link', { name: /^3\s*训练结果$/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Disk is full');
     expect(screen.getByRole('alert')).toHaveTextContent('已留在当前页面');
     expect(epochs).toHaveValue(13);
     expect(screen.queryByText(/Destination/)).not.toBeInTheDocument();
     fail = false;
-    fireEvent.click(screen.getByRole('link', { name: /^2\s*模型准备$/ }));
+    fireEvent.click(screen.getByRole('link', { name: /^3\s*训练结果$/ }));
     await screen.findByText('Saved epochs: 13');
   });
 
@@ -192,7 +192,7 @@ describe('training dataset destinations and saved navigation', () => {
     show();
     fireEvent.change(await screen.findByRole('spinbutton',{name:'loop.epochs'}),{target:{value:'31'}});
     const closing=new Event('beforeunload',{cancelable:true});window.dispatchEvent(closing);expect(closing.defaultPrevented).toBe(true);
-    const outside=document.createElement('a');outside.href='/projects/p_nav?step=models';outside.textContent='Application navigation';document.body.append(outside);
+    const outside=document.createElement('a');outside.href='/projects/p_nav?step=results';outside.textContent='Application navigation';document.body.append(outside);
     try {
       fireEvent.click(outside);
       await waitFor(()=>expect(complete).toBeDefined());
@@ -206,7 +206,7 @@ describe('training dataset destinations and saved navigation', () => {
     fixtures(); show();
     const epochs = await screen.findByRole('spinbutton', { name: 'loop.epochs' });
     fireEvent.change(epochs, { target: { value: '17' } });
-    const link = screen.getByRole('link', { name: /^2\s*模型准备$/ });
+    const link = screen.getByRole('link', { name: /^3\s*训练结果$/ });
     const prevented: boolean[] = [];
     // Observe after React's capture handler, then suppress jsdom's real navigation.
     link.addEventListener('click', event => { prevented.push(event.defaultPrevented); event.preventDefault(); });

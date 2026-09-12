@@ -1,4 +1,4 @@
-import { projectUrl, versionConfigUrl, type ProjectVersion, type VersionedProject } from '../../utils/projectVersions';
+import { modelConfigUrl, projectUrl, versionConfigUrl, type ProjectVersion, type VersionedProject } from '../../utils/projectVersions';
 import React from 'react';
 import { Link, useParams, useNavigate, useLocation, UNSAFE_DataRouterContext } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -360,7 +360,7 @@ function DatasetContent({id}: {id?:string}) {
         <div className="dataset-overview-actions">
           {canEdit && info?.source.project_id && <Link to={projectUrl(info.source.project_id, info.source.version_id, 'data')}>{text('添加数据', 'Add data')}</Link>}
           <button disabled={!canEdit || busyAction === 'mask-enable'} onClick={() => { setBusyAction('mask-enable'); setActionError(''); void enableMaskedTraining().catch(error => setActionError(formatApiError(error))).finally(() => setBusyAction(null)); }} className="dataset-primary-action">{text('启用遮罩并前往训练', 'Enable masks and open training')}</button>
-          {info?.source.project_id && <NextStepLink to={projectUrl(info.source.project_id, info.source.version_id, 'models')}>{text('模型准备', 'Model setup')}</NextStepLink>}
+          {info?.source.project_id && <NextStepLink to={modelConfigUrl(info.source.project_id, info.source.version_id)}>{text('选择训练模型', 'Choose training model')}</NextStepLink>}
           <button type="button" aria-expanded={showDistribution} aria-controls="dataset-distribution" onClick={() => setShowDistribution(value => !value)}><Layers size={13}/>{text('分布与分桶', 'Distribution & buckets')}</button>
           <button onClick={handlePrecache} disabled={!canEdit || busyAction === 'precache'} title={t('dataset.precache')} aria-label={busyAction === 'precache' ? t('dataset.enqueuing') : t('dataset.precache')}><Zap size={14}/></button>
           <button onClick={handleRescan} disabled={!canEdit || busyAction === 'rescan'} title={t('dataset.rescan')} aria-label={t('dataset.rescan')}><RefreshCcw size={14}/></button>

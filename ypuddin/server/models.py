@@ -279,6 +279,27 @@ class Project(_Out):
     version_count: int = 1
     layout_version: int = 1
     stats: ProjectStats
+    category: str | None = None
+    cover_url: str | None = None
+    active_family: str | None = None
+
+
+class ProjectPage(_Out):
+    items: list[Project]
+    total: int
+    page: int
+    page_size: int
+
+
+class ProjectCategory(_Out):
+    name: str
+    count: int
+
+
+class ProjectCategories(_Out):
+    items: list[ProjectCategory]
+    uncategorized: int
+    total: int
 
 
 class VersionProgress(_Out):
@@ -325,6 +346,7 @@ class ProjectVersion(_Out):
     paths: VersionPaths
     stats: VersionStats
     progress: VersionProgress
+    family: str | None = None
 
 
 class DatasetSource(_Out):
@@ -477,6 +499,7 @@ class JobSample(_Out):
     width: int
     height: int
     created_at: float
+    loss: float | None = Field(description="Actual training loss at this exact step; null when unavailable.")
 
 
 class JobCheckpoint(_Out):

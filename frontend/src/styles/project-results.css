@@ -61,7 +61,7 @@
 .results-sample-toolbar .studio-select { max-width:450px; }
 .results-output-selector .studio-select { max-width:320px; min-height:32px; padding:5px 8px; }
 .results-job-table .results-row-actions { flex-wrap:wrap; }
-.results-selection-controls { position:sticky; top:var(--workspace-head-height,0px); z-index:20; background:var(--studio-panel); padding:8px 0; }
+.results-selection-controls { position:sticky; top:var(--workspace-head-height,0px); z-index:20; background:var(--studio-canvas); padding:8px 0; }
 .results-sample-toolbar label { flex:1 1 300px; }
 .results-sample-toolbar label > span { flex:none; white-space:nowrap; }
 .results-sample-toolbar label > .studio-select { width:auto; flex:1; min-width:0; }

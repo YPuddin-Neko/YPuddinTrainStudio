@@ -2,10 +2,10 @@ import React from 'react';
 import * as echarts from 'echarts/core';
 import { LineChart } from 'echarts/charts';
 import {
-  DataZoomInsideComponent,
   DataZoomSliderComponent,
   GridComponent,
   LegendComponent,
+  LegendScrollComponent,
   TooltipComponent,
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
@@ -17,7 +17,7 @@ echarts.use([
   GridComponent,
   TooltipComponent,
   LegendComponent,
-  DataZoomInsideComponent,
+  LegendScrollComponent,
   DataZoomSliderComponent,
   CanvasRenderer,
 ]);

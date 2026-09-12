@@ -5,6 +5,7 @@ preview shift, GQA expansion in the shared attention helper and the Qwen3-VL tex
 from __future__ import annotations
 
 import shutil
+from copy import deepcopy
 
 import pytest
 import torch
@@ -227,7 +228,10 @@ def test_presets_on_official_geometry_and_default():
     assert counts == {"all-linear": 264, "attn-mlp": 224, "attn-only": 140, "attn-mlp-text": 259}
     assert fam.default_preset() == "attn-mlp"
     assert fam.spec.adapter_prefix == "lora_unet" and "online_text" not in fam.spec.capabilities
-    layout = fam.memory_layout_meta(fam.meta_backbone(type("Cfg", (), {"dit_path": None})()))
+    with torch.device("meta"):
+        backbone = fam.meta_backbone(type("Cfg", (), {"dit_path": None})())
+    assert all(parameter.is_meta for parameter in backbone.parameters())
+    layout = fam.memory_layout_meta(backbone)
     assert len(layout.blocks) == 28 and layout.block_param_bytes > 0
     assert "txtfusion*" in layout.keep_high_precision and "*mod*" in layout.keep_high_precision
 
@@ -390,8 +394,37 @@ def test_krea2_text_single_file_matches_hf_directory(tiny_qwen3vl):
     b = single.encode_for_cache(["hello world"])[0]["embeds"]
     torch.testing.assert_close(a, b)
     assert not hasattr(single.encoder, "visual")  # only the decoder is instantiated
+    assert all(not value.is_meta for value in (*single.encoder.parameters(), *single.encoder.buffers()))
+    for name, parameter in single.encoder.named_parameters():
+        torch.testing.assert_close(parameter, ref.encoder.get_parameter(name), rtol=0, atol=0)
+    for name, buffer in single.encoder.named_buffers():
+        torch.testing.assert_close(buffer, ref.encoder.get_buffer(name), rtol=0, atol=0)
     single.unload()
     assert single.encoder is None
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+def test_krea2_text_single_file_preserves_eager_decoder_results(tiny_qwen3vl, dtype):
+    from ypuddin.models.krea2.text import Krea2Text
+
+    options = dict(
+        tokenizer_path=tiny_qwen3vl["hf"], dtype=dtype, device="cpu", max_len=16, select_layers=(1, 2, 3)
+    )
+    expected = Krea2Text(tiny_qwen3vl["single"], **options)
+    # The eager fixture has the exact stored weights and CPU-initialized RoPE.
+    # Convert its buffers as the old single-file loader did; HF from_pretrained
+    # keeps some buffers fp32, so bf16 HF equivalence is a different contract.
+    expected.encoder = deepcopy(tiny_qwen3vl["model"].model.language_model).to(dtype)
+    expected.encoder.config.use_cache = False
+    expected.encoder.requires_grad_(False).eval()
+    actual = Krea2Text(tiny_qwen3vl["single"], **options)
+    reference = expected.encode_for_cache(["hello world", "a cat"])
+    result = actual.encode_for_cache(["hello world", "a cat"])
+    for a, b in zip(result, reference, strict=True):
+        torch.testing.assert_close(a["embeds"], b["embeds"], rtol=0, atol=0)
+    for name, buffer in actual.encoder.named_buffers():
+        assert not buffer.is_meta
+        torch.testing.assert_close(buffer, expected.encoder.get_buffer(name), rtol=0, atol=0)
 
 
 def test_krea2_text_fp8_scaled_single_file_dequantizes(tiny_qwen3vl, tmp_path):
@@ -429,11 +462,46 @@ def test_krea2_text_fp8_scaled_single_file_dequantizes(tiny_qwen3vl, tmp_path):
     assert (a - b).norm() / a.norm() < 5e-2
 
 
-def test_krea2_text_single_file_geometry_mismatch_is_explained(tiny_qwen3vl, tmp_path):
+def test_krea2_text_single_file_geometry_mismatch_is_explained(tiny_qwen3vl, tmp_path, monkeypatch):
+    from transformers import Qwen3VLTextModel
+
     from ypuddin.models.krea2.text import Krea2Text
 
+    original_init = Qwen3VLTextModel.__init__
+    constructed = []
+
+    def check_meta_init(self, config):
+        # Fail before allocating any 4B tensors if the loader regresses to CPU init.
+        assert torch.empty(0).is_meta
+        original_init(self, config)
+        constructed.append(sum(parameter.numel() for parameter in self.parameters()))
+        assert all(parameter.is_meta for parameter in self.parameters())
+
+    monkeypatch.setattr(Qwen3VLTextModel, "__init__", check_meta_init)
     lone = tmp_path / "lone.safetensors"
     shutil.copy(tiny_qwen3vl["single"], lone)  # no config.json next to it -> 4B geometry assumed
     tp = Krea2Text(lone, tokenizer_path=tiny_qwen3vl["hf"], dtype=torch.float32, device="cpu", max_len=16)
     with pytest.raises(RuntimeError, match="config.json"):
         tp.encode_for_cache(["x"])
+    assert len(constructed) == 1 and constructed[0] > 3_000_000_000
+    assert tp.encoder is None
+
+
+@pytest.mark.parametrize("defect", ["missing", "unexpected"])
+def test_krea2_text_single_file_rejects_incomplete_checkpoint(tiny_qwen3vl, tmp_path, defect):
+    from safetensors.torch import load_file
+
+    from ypuddin.models.krea2.text import Krea2Text
+
+    state = load_file(str(tiny_qwen3vl["single"]))
+    if defect == "missing":
+        del state["model.embed_tokens.weight"]
+    else:
+        state["model.unexpected.weight"] = torch.ones(1)
+    path = tmp_path / "incomplete.safetensors"
+    save_file(state, str(path))
+    shutil.copy(tiny_qwen3vl["hf"] / "config.json", tmp_path / "config.json")
+    text = Krea2Text(path, tokenizer_path=tiny_qwen3vl["hf"], device="cpu", select_layers=(1, 2, 3))
+    with pytest.raises(RuntimeError, match=f"{defect}=\\['"):
+        text.encode_for_cache(["x"])
+    assert text.encoder is None

@@ -16,6 +16,7 @@ import {
   Code,
   CheckCircle2,
   Loader2,
+  ChevronDown,
 } from 'lucide-react';
 import { shapeValidationSeries, mergeValidationPoint, appendCapped, smoothLoss, appendMetricStep } from '../../utils/metrics';
 import { formatBytes, formatBytesMB, formatEta, formatTime } from '../../utils/format';
@@ -24,8 +25,11 @@ import { projectUrl, type ProjectVersion } from '../../utils/projectVersions';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import StudioSelect from '../../components/StudioSelect';
 import { JobActions } from '../Queue/jobPresentation';
+import SampleLoss from '../../components/SampleLoss';
+import { metricChartBase, metricLabels } from './metricPresentation';
 import '../Queue/queue.css';
 import './job-detail.css';
+import './job-metrics.css';
 
 type VersionedJob = Job & { version_id?: string | null };
 
@@ -72,7 +76,7 @@ function logLevelColor(level: string): string {
 
 export default function JobDetail() {
   const { id } = useParams<{ id: string }>();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const text = useWorkspaceText();
   const navigate = useNavigate();
   const location = useLocation();
@@ -95,6 +99,9 @@ export default function JobDetail() {
   const setActiveTab = (tab: string) => { const next = new URLSearchParams(params); next.set('tab', tab); setParams(next, { state: location.state }); };
   const [xAxisMode, setXAxisMode] = React.useState<'step' | 'epoch'>('step');
   const [emaAlpha, setEmaAlpha] = React.useState<number>(0.9);
+  const [showDiagnostics, setShowDiagnostics] = React.useState(false);
+  const chinese = (i18n.resolvedLanguage || i18n.language).startsWith('zh');
+  const labels = React.useMemo(() => metricLabels(chinese), [chinese]);
   const [logFilter, setLogFilter] = React.useState<string>('all');
   const [autoScrollLog, setAutoScrollLog] = React.useState<boolean>(true);
   const [logMode, setLogMode] = React.useState<'live' | 'history'>('live');
@@ -243,109 +250,61 @@ export default function JobDetail() {
   const useEpoch = xAxisMode === 'epoch' && !!stepsPerEpoch;
   const xAxisName = useEpoch ? epochLabel : stepLabel;
 
-  // 图 1：Loss（原始 + EMA + Grad Norm + 各参数组 lr）
-  const lossChartOption = React.useMemo(() => {
-    if (!metrics || metrics.steps.length === 0) return {};
-    const steps = useEpoch && stepsPerEpoch ? metrics.steps.map((step) => step / stepsPerEpoch) : metrics.steps;
-    const smoothed = smoothLoss(metrics.loss, emaAlpha);
-    const lrSeries = Object.entries(metrics.lr || {}).map(([group, values], i) => ({
-      name: `lr:${group}`,
-      type: 'line' as const,
-      yAxisIndex: 1,
-      showSymbol: false,
-      sampling: 'lttb' as const,
-      data: values.map((v, idx) => [steps[idx], v] as [number, number]),
-      lineStyle: { width: 1, type: 'dashed' as const, color: LR_COLORS[i % LR_COLORS.length] },
-    }));
-    return {
-      tooltip: { trigger: 'axis' },
-      legend: { textStyle: { color: '#888' } },
-      grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
-      xAxis: { type: 'value', name: xAxisName, splitLine: { show: false } },
-      yAxis: [
-        { type: 'value', name: 'Loss', scale: true, splitLine: { lineStyle: { color: '#33333320' } } },
-        { type: 'value', name: 'LR', scale: true, splitLine: { show: false } },
-      ],
-      dataZoom: [{ type: 'inside' }, { type: 'slider' }],
-      series: [
-        {
-          name: 'Loss', type: 'line', showSymbol: false, sampling: 'lttb',
-          data: steps.map((s, i) => [s, metrics.loss[i]] as [number, number | null]),
-          lineStyle: { width: 1.2, color: '#93c5fd' },
-        },
-        {
-          name: 'Loss (EMA)', type: 'line', showSymbol: false, sampling: 'lttb',
-          data: steps.map((s, i) => [s, smoothed[i]] as [number, number | null]),
-          lineStyle: { width: 2, color: '#2563eb' },
-        },
-        {
-          name: 'Grad Norm', type: 'line', showSymbol: false, sampling: 'lttb',
-          data: steps.map((s, i) => [s, metrics.grad_norm[i]] as [number, number | null]),
-          lineStyle: { width: 1, color: '#eab308' },
-        },
-        ...lrSeries,
-      ],
-    };
-  }, [metrics, xAxisName, useEpoch, stepsPerEpoch, emaAlpha]);
+  const metricSteps = React.useMemo(() => useEpoch && stepsPerEpoch ? metrics?.steps.map(step => step / stepsPerEpoch) || [] : metrics?.steps || [], [metrics, useEpoch, stepsPerEpoch]);
+  const lossChartOption = React.useMemo(() => ({
+    ...metricChartBase(xAxisName, labels.loss),
+    series: [
+      { name: labels.raw, type: 'line', showSymbol: false, sampling: 'lttb', data: metricSteps.map((step, index) => [step, metrics?.loss[index] ?? null]), lineStyle: { width: 1.2, color: '#93c5fd' }, itemStyle: {color:'#93c5fd'} },
+      { name: labels.ema, type: 'line', showSymbol: false, sampling: 'lttb', data: smoothLoss(metrics?.loss || [], emaAlpha).map((loss, index) => [metricSteps[index], loss]), lineStyle: { width: 2, color: '#2563eb' }, itemStyle: {color:'#2563eb'} },
+    ],
+  }), [metrics, metricSteps, xAxisName, labels, emaAlpha]);
+  const learningRateChartOption = React.useMemo(() => ({
+    ...metricChartBase(xAxisName, labels.lr),
+    series: Object.entries(metrics?.lr || {}).map(([group, values], index) => ({
+      name: `${labels.lr} · ${group}`, type: 'line', showSymbol: false, sampling: 'lttb',
+      data: metricSteps.map((step, point) => [step, values[point] ?? null]),
+      lineStyle: { width: 1.5, color: LR_COLORS[index % LR_COLORS.length] }, itemStyle: {color:LR_COLORS[index % LR_COLORS.length]},
+    })),
+  }), [metrics, metricSteps, xAxisName, labels]);
+  const gradientChartOption = React.useMemo(() => ({
+    ...metricChartBase(xAxisName, labels.gradient),
+    series: [{name:labels.gradient,type:'line',showSymbol:false,sampling:'lttb',data:metricSteps.map((step,index) => [step,metrics?.grad_norm[index] ?? null]),lineStyle:{width:1.5,color:'#d97706'},itemStyle:{color:'#d97706'}}],
+  }), [metrics, metricSteps, xAxisName, labels]);
 
-  // 图 2：Validation（每个固定时间步一条线 + 均值）
   const validationChartOption = React.useMemo(() => {
-    if (!metrics || !metrics.validation || metrics.validation.length === 0) return null;
+    if (!metrics?.validation?.length) return null;
     const { series } = shapeValidationSeries(metrics.validation);
     return {
-      tooltip: { trigger: 'axis' },
-      legend: { textStyle: { color: '#888' } },
-      grid: { left: '3%', right: '4%', bottom: '12%', containLabel: true },
-      xAxis: { type: 'value', name: stepLabel, splitLine: { show: false } },
-      yAxis: { type: 'value', name: 'val loss', scale: true, splitLine: { lineStyle: { color: '#33333320' } } },
-      series: series.map((s, i) => ({
-        name: s.name,
-        type: 'line' as const,
-        showSymbol: true,
-        data: s.data,
-        lineStyle: {
-          width: s.name === 'mean' ? 2.5 : 1.2,
-          color: s.name === 'mean' ? '#f43f5e' : LR_COLORS[i % LR_COLORS.length],
-        },
+      ...metricChartBase(xAxisName, labels.validation),
+      series: series.map((series, index) => ({
+        name: series.name === 'mean' ? labels.mean : `${labels.timestep} ${series.name}`,
+        type: 'line', showSymbol: true,
+        data: series.data.map(([step, loss]) => [useEpoch && stepsPerEpoch ? step / stepsPerEpoch : step, loss]),
+        lineStyle: { width: series.name === 'mean' ? 2.5 : 1.2, color: series.name === 'mean' ? '#f43f5e' : LR_COLORS[index % LR_COLORS.length] },
+        itemStyle: {color:series.name === 'mean' ? '#f43f5e' : LR_COLORS[index % LR_COLORS.length]},
       })),
     };
-  }, [metrics, stepLabel]);
+  }, [metrics, xAxisName, useEpoch, stepsPerEpoch, labels]);
 
   const vramMetric = job?.progress?.vram_metric ?? metrics?.vram_metric;
   const currentAllocated = vramMetric === 'current_allocated';
   const chartVramMetric = metrics?.vram_metric ?? vramMetric;
   const memorySeriesLabel = chartVramMetric === 'current_allocated'
     ? `${t('job.currentTrainingAllocated')} (GB)`
-    : chartVramMetric === 'peak_allocated' ? `${t('job.vramPeak')} (GB)` : 'VRAM (GB)';
+    : chartVramMetric === 'peak_allocated' ? `${t('job.vramPeak')} (GB)` : labels.memory;
 
-  // Memory values retain the backend metric: current MPS allocation or CUDA peak.
+  // Keep the backend's MPS current-allocation / CUDA peak semantics.
   const perfChartOption = React.useMemo(() => {
-    if (!metrics || metrics.steps.length === 0) return {};
-    const steps = useEpoch && stepsPerEpoch ? metrics.steps.map((step) => step / stepsPerEpoch) : metrics.steps;
+    const base = metricChartBase(xAxisName, 'it/s');
     return {
-      tooltip: { trigger: 'axis' },
-      legend: { textStyle: { color: '#888' } },
-      grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
-      xAxis: { type: 'value', name: xAxisName, splitLine: { show: false } },
-      yAxis: [
-        { type: 'value', name: 'it/s', scale: true, splitLine: { lineStyle: { color: '#33333320' } } },
-        { type: 'value', name: memorySeriesLabel, scale: true, splitLine: { show: false } },
-      ],
-      dataZoom: [{ type: 'inside' }, { type: 'slider' }],
+      ...base,
+      yAxis: [base.yAxis, {...base.yAxis, name:'GB', splitLine:{show:false}}],
       series: [
-        {
-          name: 'Speed (it/s)', type: 'line', showSymbol: false, sampling: 'lttb',
-          data: steps.map((s, i) => [s, metrics.it_s[i]] as [number, number | null]),
-          lineStyle: { width: 1.5, color: '#10b981' },
-        },
-        {
-          name: memorySeriesLabel, type: 'line', yAxisIndex: 1, showSymbol: false, sampling: 'lttb',
-          data: steps.map((s, i) => [s, metrics.vram_mb[i] == null ? null : metrics.vram_mb[i]! / 1024] as [number, number | null]),
-          lineStyle: { width: 1.2, color: '#ec4899' },
-        },
+        { name:labels.speed,type:'line',showSymbol:false,sampling:'lttb',data:metricSteps.map((step,index)=>[step,metrics?.it_s[index] ?? null]),lineStyle:{width:1.5,color:'#10b981'},itemStyle:{color:'#10b981'} },
+        { name:memorySeriesLabel,type:'line',yAxisIndex:1,showSymbol:false,sampling:'lttb',data:metricSteps.map((step,index)=>[step,metrics?.vram_mb[index] == null ? null : metrics.vram_mb[index]! / 1024]),lineStyle:{width:1.2,color:'#ec4899'},itemStyle:{color:'#ec4899'} },
       ],
     };
-  }, [metrics, xAxisName, useEpoch, stepsPerEpoch, memorySeriesLabel]);
+  }, [metrics, metricSteps, xAxisName, memorySeriesLabel, labels]);
 
   const filteredLogs = logs.filter(line => (logFilter === 'all' || (line.level === 'warning' ? 'warn' : line.level) === logFilter) && (!logQuery || line.msg.toLocaleLowerCase().includes(logQuery.toLocaleLowerCase())));
   const filteredSamples = [...samples].reverse().filter(sample => !sampleStep || String(sample.step) === sampleStep);
@@ -515,60 +474,30 @@ export default function JobDetail() {
       {/* 3. 详细内容区域 */}
       <div role="tabpanel" id={`job-panel-${activeTab}`} aria-labelledby={`job-tab-${activeTab}`}>
       {activeTab === 'metrics' && (
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 space-y-4">
-          <div className="flex justify-between items-center">
-            <div className="flex space-x-2 text-xs">
-              <button
-                onClick={() => setXAxisMode('step')}
-                className={`px-2.5 py-1 rounded ${xAxisMode === 'step' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-700'}`}
-              >
-                {stepLabel}
-              </button>
-              <button
-                onClick={() => setXAxisMode('epoch')} disabled={!stepsPerEpoch} title={!stepsPerEpoch ? t('job.epochUnavailable') : undefined}
-                className={`px-2.5 py-1 rounded ${xAxisMode === 'epoch' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-700'}`}
-              >
-                {epochLabel}
-              </button>
+        <div className="job-metrics">
+          <div className="job-metrics-toolbar">
+            <div className="job-metrics-axis" aria-label={text('横轴单位','Horizontal axis')}>
+              <button aria-pressed={xAxisMode === 'step'} onClick={() => setXAxisMode('step')}>{stepLabel}</button>
+              <button aria-pressed={xAxisMode === 'epoch'} onClick={() => setXAxisMode('epoch')} disabled={!stepsPerEpoch} title={!stepsPerEpoch ? t('job.epochUnavailable') : undefined}>{epochLabel}</button>
             </div>
-            <div className="flex items-center space-x-2 text-xs text-slate-500">
-              <span>{t('job.emaAlpha')}:</span>
-              <input
-                aria-label={t('job.emaAlpha')}
-                type="range"
-                min="0.1"
-                max="0.99"
-                step="0.05"
-                value={emaAlpha}
-                onChange={(e) => setEmaAlpha(Number(e.target.value))}
-              />
-              <span className="font-mono">{emaAlpha}</span>
-            </div>
+            <label className="job-metrics-smoothing">{text('显示 EMA 系数','Display EMA coefficient')}<input aria-label={text('显示 EMA 系数','Display EMA coefficient')} type="range" min="0" max="0.99" step="0.01" value={emaAlpha} onChange={event => setEmaAlpha(Number(event.target.value))}/><output>{emaAlpha.toFixed(2)}</output></label>
           </div>
-
-          {!metrics || metrics.steps.length === 0 ? (
-            <EmptyState
-              icon={Activity}
-              title={t('job.noMetrics', '暂无训练指标')}
-              hint={t('job.noMetricsHint', '任务产出 step 数据后，Loss / 吞吐图表会显示在这里。')}
-            />
-          ) : (
-            <>
-              <EChart option={lossChartOption} style={{ height: 310 }} />
-
-              {validationChartOption && (
-                <div className="pt-4 border-t dark:border-slate-700">
-                  <div className="text-xs text-slate-400 mb-2">{t('job.validationTitle')}</div>
-                  <EChart option={validationChartOption} style={{ height: 260 }} />
-                </div>
-              )}
-
-              <div className="pt-4 border-t dark:border-slate-700">
-                <div className="text-xs text-slate-400 mb-2">{t(chartVramMetric === 'current_allocated' ? 'job.currentMemoryPerfTitle' : 'job.perfTitle')}</div>
-                <EChart option={perfChartOption} style={{ height: 280 }} />
-              </div>
-            </>
-          )}
+          {!metrics?.steps.length ? <EmptyState icon={Activity} title={t('job.noMetrics', '暂无训练指标')} hint={text('任务记录训练步数后，损失曲线会显示在这里。','Loss appears here when the job records training steps.')}/> : <>
+            <section className="job-metrics-chart" aria-label={labels.loss}>
+              <h2>{labels.loss}</h2><p>{text('原始损失来自训练记录；显示 EMA 仅平滑这张图，系数越大越平稳，不改变训练参数或权重 EMA。','Raw loss comes from training records. Display EMA smooths only this chart; a larger coefficient is smoother. It changes neither training parameters nor weight EMA.')}</p>
+              <p>{text('拖动图下方滑块缩放或调整查看范围。', 'Drag the slider below a chart to zoom or adjust the visible range.')}</p>
+              <EChart option={lossChartOption} style={{ height: 320 }}/>
+            </section>
+            <section className="job-metrics-diagnostics">
+              <button className="job-metrics-diagnostics-toggle" aria-expanded={showDiagnostics} aria-controls="job-metrics-diagnostic-charts" onClick={() => setShowDiagnostics(value => !value)}>{text('学习率、梯度与性能诊断','Learning rate, gradients and performance')}<ChevronDown size={15}/></button>
+              {showDiagnostics && <div id="job-metrics-diagnostic-charts">
+                <section className="job-metrics-chart" aria-label={labels.lr}><h2>{labels.lr}</h2><p>{text('lr 表示学习率，每条线对应优化器的一个参数组。LoKr 的 w1 / w2 是两组矩阵参数，可使用不同学习率。','lr means learning rate. Each line is an optimizer parameter group. In LoKr, w1 / w2 are two matrix parameter groups that can use different learning rates.')}</p><EChart option={learningRateChartOption} style={{height:300}}/></section>
+                <section className="job-metrics-chart" aria-label={labels.gradient}><h2>{labels.gradient}</h2><p>{text('衡量训练步的梯度大小，用于观察更新是否稳定；与损失使用独立刻度。','Measures gradient magnitude at each recorded step to help inspect update stability. It uses a separate scale from loss.')}</p><EChart option={gradientChartOption} style={{height:280}}/></section>
+                {validationChartOption && <section className="job-metrics-chart" aria-label={labels.validation}><h2>{t('job.validationTitle')}</h2><EChart option={validationChartOption} style={{height:280}}/></section>}
+                <section className="job-metrics-chart" aria-label={text('吞吐与内存诊断','Throughput and memory diagnostics')}><h2>{t(chartVramMetric === 'current_allocated' ? 'job.currentMemoryPerfTitle' : 'job.perfTitle')}</h2><EChart option={perfChartOption} style={{height:300}}/></section>
+              </div>}
+            </section>
+          </>}
         </div>
       )}
 
@@ -589,7 +518,7 @@ export default function JobDetail() {
                   <span className="font-mono">{t('job.step')} {s.step}</span>
                   <span className="text-slate-400 font-mono">{t('job.seed')} {s.seed}</span>
                 </div>
-                <p className="text-slate-500 line-clamp-2" title={s.prompt}>{s.prompt}</p>
+                <SampleLoss sample={s}/><p className="text-slate-500 line-clamp-2" title={s.prompt}>{s.prompt}</p>
               </div>
             </div>
           ))}

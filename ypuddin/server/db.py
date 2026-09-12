@@ -80,6 +80,8 @@ class Database:
                     UNIQUE(project_id, name))""")
                 for table, column, declaration in (
                     ("projects", "layout_version", "INTEGER NOT NULL DEFAULT 1"),
+                    ("projects", "category", "TEXT"),
+                    ("projects", "cover_key", "TEXT"),
                     ("project_versions", "number", "INTEGER"),
                     ("jobs", "samples_dir", "TEXT"),
                 ):

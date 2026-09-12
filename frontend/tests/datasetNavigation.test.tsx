@@ -45,7 +45,7 @@ function WorkspaceRoutes() {
   const location = useLocation(); const navigate = useNavigate();
   const background = (location.state as {backgroundLocation?:RouterLocation}|null)?.backgroundLocation;
   return <><Routes location={background || location}><Route element={<Layout/>}>
-    <Route path="/datasets/:id" element={<Dataset/>}/><Route path="/projects/:id/v/:versionId" element={<p>Version destination</p>}/>
+    <Route path="/projects/:id/v/:versionId/train" element={<p>Version destination</p>}/><Route path="/datasets/:id" element={<Dataset/>}/><Route path="/projects/:id/v/:versionId" element={<p>Version destination</p>}/>
   </Route></Routes>{background && <SettingsDrawer onClose={() => navigate(`${background.pathname}${background.search}`, {replace:true})}><p>Preferences fixture</p></SettingsDrawer>}</>;
 }
 async function editCaption() {
@@ -89,23 +89,23 @@ describe('dataset project sidebar and navigation protection', () => {
     }));
     show(); await screen.findByRole('combobox', { name: '项目版本' }); await editCaption();
     const stages = screen.getByRole('navigation', { name: '项目训练步骤' });
-    fireEvent.click(within(stages).getByRole('link', { name: /^2\s*模型准备$/ }));
+    fireEvent.click(within(stages).getByRole('link', { name: /^2\s*训练参数$/ }));
     expect(await within(screen.getByRole('dialog', { name: '编辑图片标签' })).findByRole('alert')).toHaveTextContent('Caption changed on disk');
     expect(screen.getByTestId('route')).toHaveTextContent('/datasets/d_known');
     expect(screen.getByTestId('tag-chip-1')).toHaveTextContent('blue eyes'); expect(updateCaption).not.toHaveBeenCalled();
-    fail = false; fireEvent.click(within(stages).getByRole('link', { name: /^2\s*模型准备$/ }));
-    await screen.findByText('Version destination'); expect(screen.getByTestId('route')).toHaveTextContent('/projects/p_dataset/v/v2?step=models');
+    fail = false; fireEvent.click(within(stages).getByRole('link', { name: /^2\s*训练参数$/ }));
+    await screen.findByText('Version destination'); expect(screen.getByTestId('route')).toHaveTextContent('/projects/p_dataset/v/v2/train');
     expect(writes).toEqual([{ caption: 'cat, blue eyes' }, { caption: 'cat, blue eyes' }]);
   });
 
   it('requires closing or saving the mask editor before using sidebar navigation', async () => {
     show(); await screen.findByRole('combobox', { name: '项目版本' });
     fireEvent.click(await screen.findByRole('button', { name: '编辑遮罩' }));
-    fireEvent.click(within(screen.getByRole('navigation', { name: '项目训练步骤' })).getByRole('link', { name: /^2\s*模型准备$/ }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: '项目训练步骤' })).getByRole('link', { name: /^2\s*训练参数$/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent('请先在遮罩编辑器中保存或关闭');
     expect(screen.getByTestId('route')).toHaveTextContent('/datasets/d_known'); expect(screen.getByRole('dialog', { name: 'Mask draft' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Close mask draft' }));
-    fireEvent.click(within(screen.getByRole('navigation', { name: '项目训练步骤' })).getByRole('link', { name: /^2\s*模型准备$/ }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: '项目训练步骤' })).getByRole('link', { name: /^2\s*训练参数$/ }));
     await screen.findByText('Version destination');
   });
 

@@ -33,14 +33,14 @@ beforeEach(async()=>{
 function show(train=false){return render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter initialEntries={[`/projects/p_isolation/v/v2${train?'/train':'?step=models'}`]}><Routes><Route path="/projects/:id/v/:versionId" element={<ProjectDetail/>}/><Route path="/projects/:id/v/:versionId/train" element={<TrainConfig/>}/></Routes></MemoryRouter></QueryClientProvider>);}
 
 describe('workspace request isolation',()=>{
-  it('keeps real model config editable when jobs or dataset list fails, and retries jobs without replacing a typed model path',async()=>{
-    let failed=true;server.use(http.get('/api/jobs',({request})=>{expect(new URL(request.url).searchParams.get('status')).toBe('running,pausing,cancelling');return failed?fail('jobs offline'):HttpResponse.json({items:[],total:0,page:1,page_size:5});}),http.get('/api/projects/p_isolation/datasets',()=>fail('dataset listing offline')));
+  it('keeps model paths editable on the merged page when the registry fails and retries without replacing edits',async()=>{
+    let failed=true;server.use(http.get('/api/models',()=>failed?fail('registry offline'):HttpResponse.json([])));
     show();const path=await screen.findByDisplayValue('/models/explicit.safetensors');await waitFor(()=>expect(path).toBeEnabled());
-    expect(await screen.findByText(/jobs offline/)).toBeInTheDocument();expect(screen.getByText(/dataset listing offline/)).toBeInTheDocument();expect(screen.queryByTestId('datasets-empty')).not.toBeInTheDocument();
-    fireEvent.change(path,{target:{value:'/models/user-choice.safetensors'}});failed=false;fireEvent.click(screen.getByRole('button',{name:'重试 · 活动任务读取失败'}));
-    await waitFor(()=>expect(screen.queryByText(/jobs offline/)).not.toBeInTheDocument());expect(path).toHaveValue('/models/user-choice.safetensors');
-    fireEvent.click(screen.getByRole('button',{name:'保存选择'}));await waitFor(()=>expect(saved).toHaveLength(1));
-    expect(saved[0]).toMatchObject({model:{dit_path:'/models/user-choice.safetensors'},loop:{epochs:17},dataset:{sources:[{path:'/version/photos',repeats:3}]}});
+    expect(await screen.findByTestId('training-auxiliary-error')).toHaveTextContent('registry offline');
+    fireEvent.change(path,{target:{value:'/models/user-choice.safetensors'}});failed=false;fireEvent.click(screen.getByRole('button',{name:'重试辅助信息'}));
+    await waitFor(()=>expect(screen.queryByTestId('training-auxiliary-error')).not.toBeInTheDocument());expect(path).toHaveValue('/models/user-choice.safetensors');
+    fireEvent.click(screen.getByRole('button',{name:'保存草稿'}));await screen.findByTestId('draft-saved');
+    expect(saved.at(-1)).toMatchObject({model:{dit_path:'/models/user-choice.safetensors'},loop:{epochs:17},dataset:{sources:[{path:'/version/photos',repeats:3}]}});
   });
   it('never mounts mutable model/data forms when the version config fails',async()=>{
     server.use(http.get('/api/projects/p_isolation/config',()=>fail('config unavailable')));show();

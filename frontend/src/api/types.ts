@@ -6,6 +6,8 @@ type S = components['schemas'];
 export type SystemStats = S['SystemStats'];
 export type GpuStats = S['GpuStats'];
 export type Project = S['Project'];
+export type ProjectPage = S['ProjectPage'];
+export type ProjectCategories = S['ProjectCategories'];
 export type Job = S['Job'];
 export type JobProgress = S['JobProgress'];
 export type JobMetrics = Pick<S['JobMetrics'], 'steps' | 'loss' | 'loss_ema' | 'grad_norm' | 'vram_mb' | 'vram_metric' | 'it_s' | 'validation'> & {
@@ -106,6 +108,8 @@ export class ApiError extends Error {
 }
 
 // ---- SSE 事件 payload（openapi 未覆盖） ----
+
+export type JobSampleEvent = JobSample & { job_id: string };
 
 export interface SampleProgressEvent {
   job_id: string;

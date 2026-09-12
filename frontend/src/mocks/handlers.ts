@@ -508,7 +508,7 @@ export const handlers = [
   http.get('/api/jobs/:id/samples', () => {
     const samples: JobSample[] = [
       {
-        step: 100, prompt_index: 0, prompt: '1girl, anime', seed: 42,
+        step: 100, prompt_index: 0, prompt: '1girl, anime', seed: 42, loss: null,
         url: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=512&auto=format&fit=crop',
         width: 512, height: 512, created_at: 1789000000,
       },

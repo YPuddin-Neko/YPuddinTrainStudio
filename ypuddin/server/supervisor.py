@@ -18,6 +18,7 @@ from .bus import EventBus
 from .db import Database, new_id, now
 from .environment import maintenance_blocked
 from .hardware import gpu_info
+from .sample_events import sample_event_loss
 
 log = logging.getLogger(__name__)
 
@@ -299,9 +300,16 @@ class JobSupervisor:
         elif t == "validation":
             self.bus.publish("job.validation", data)
         elif t == "sample.saved":
+            row = self.db.fetchone("SELECT run_dir FROM jobs WHERE id=?", (job_id,))
+            events_path = Path(row["run_dir"]) / "events.jsonl" if row and row["run_dir"] else None
             self.bus.publish(
                 "job.sample",
-                {**data, "url": f"/api/jobs/{job_id}/files?path={Path(ev['path']).name}&kind=sample"},
+                {
+                    **data,
+                    "url": f"/api/jobs/{job_id}/files?path={Path(ev['path']).name}&kind=sample",
+                    "created_at": ev.get("ts"),
+                    "loss": sample_event_loss(ev, events_path),
+                },
             )
         elif t == "checkpoint.saved":
             if ev.get("kind") == "weights":

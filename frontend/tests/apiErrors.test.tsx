@@ -6,7 +6,7 @@ import { apiClient } from '../src/api/client';
 import { ApiError } from '../src/api/types';
 import { ApiErrorNotice } from '../src/components/ApiErrorNotice';
 import { formatApiError } from '../src/utils/errors';
-import '../src/i18n';
+import i18n from '../src/i18n';
 
 const server = setupServer();
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
@@ -14,6 +14,13 @@ afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
 describe('API validation error presentation', () => {
+  it('turns transport failures into a localized service recovery instruction', async () => {
+    await i18n.changeLanguage('zh-CN');
+    expect(formatApiError(new TypeError('Failed to fetch'))).toBe('暂时无法连接训练服务，请确认服务已启动后重试。');
+    await i18n.changeLanguage('en');
+    expect(formatApiError(new TypeError('Load failed'))).toContain('Check that it is running');
+    await i18n.changeLanguage('zh-CN');
+  });
   it('formats string and array field locations and retains plain errors', () => {
     const error = new ApiError(400, { code: 'config.invalid', message: 'invalid config', details: { errors: [
       { loc: ['sampling', 'prompts', 0, 'steps'], msg: 'Input should be greater than 0' },

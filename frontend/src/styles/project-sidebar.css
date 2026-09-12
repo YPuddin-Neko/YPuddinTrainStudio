@@ -20,7 +20,8 @@
 .project-sidebar .sidebar-project-stages .project-workflow .step-number { display:none; }
 .project-sidebar .sidebar-project-stages .project-workflow svg { display:block; flex-shrink:0; }
 .project-sidebar-fallback { width:184px; max-width:100%; }
-.workspace-navigation.workspace-page-heading { display:flex; flex-direction:row; align-items:center; justify-content:space-between; gap:12px; min-height:36px; padding:0 0 6px; margin:0; box-shadow:none; }
+.workspace-navigation.workspace-page-heading { display:flex; flex-direction:row; align-items:center; justify-content:space-between; gap:12px; min-height:36px; padding:0 0 6px; margin:0; border:0; background:var(--studio-canvas); box-shadow:none; }
+.workspace-page-heading::before { content:""; position:absolute; inset:calc(-1 * var(--page-inset,16px)) 0 auto; height:var(--page-inset,16px); background:inherit; pointer-events:none; }
 .workspace-page-heading > h1 { margin:0; font-size:16px; line-height:24px; font-weight:650; }
 .workspace-page-heading .project-heading-status { min-width:0; font-size:11px; }
 .project-workspace { --workspace-head-height:36px; }
@@ -34,3 +35,6 @@
   .workspace-navigation.workspace-page-heading { gap:8px; }
   .workspace-page-heading > h1 { font-size:15px; }
 }
+
+.project-sidebar-model { padding:4px 1px 2px; color:var(--studio-dim); font-size:10px; overflow-wrap:anywhere; }
+.version-family-note { font-size:12px; color:var(--studio-dim); line-height:1.6; margin-top:-5px; }

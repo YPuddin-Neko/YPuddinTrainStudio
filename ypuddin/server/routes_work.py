@@ -8,11 +8,12 @@ import json
 import re
 import shutil
 import tempfile
+import unicodedata
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, field_validator
@@ -27,6 +28,8 @@ from .dataset_uploads import UploadBatch, read_upload, staged_upload
 from .db import new_id, now
 from .errors import ApiError, NotFound
 from .hardware import gpu_info
+from .project_covers import cover_path, cover_url, read_cover_upload, remove_cover, replace_cover, thumbnail
+from .sample_events import read_events, samples_with_loss
 from .versions import ACTIVE_JOBS, assert_version_writable, version_row
 
 router = APIRouter()
@@ -51,6 +54,13 @@ class ProjectBody(BaseModel):
     id: str | None = Field(None, min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_]+$")
     name: str
     note: str = ""
+    category: str | None = Field(None, max_length=64)
+    family: Literal["anima", "krea2", "toy"] = "anima"
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def normalize_category(cls, value):
+        return _category(value)
 
     @field_validator("id")
     @classmethod
@@ -65,14 +75,34 @@ class ProjectPatch(BaseModel):
     note: str | None = None
     archived: bool | None = None
     active_version_id: str | None = None
+    category: str | None = Field(None, max_length=64)
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def normalize_category(cls, value):
+        return _category(value)
+
+
+def _category(value: Any) -> Any:
+    if value is None or not isinstance(value, str):
+        return value
+    value = unicodedata.normalize("NFC", value).strip()
+    if any(unicodedata.category(char).startswith("C") for char in value):
+        raise ValueError("category cannot contain control characters")
+    return value or None
 
 
 def _project_row(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
+    from .family_config import version_family
+
     ds = c.db.fetchall("SELECT id FROM datasets WHERE version_id=?", (r["active_version_id"],))
     jobs = c.db.fetchone("SELECT COUNT(*) AS n FROM jobs WHERE project_id=?", (r["id"],))["n"]
     arts = c.db.fetchone("SELECT COUNT(*) AS n FROM artifacts WHERE project_id=?", (r["id"],))["n"]
     return {
-        **r,
+        **{key: value for key, value in r.items() if key != "cover_key"},
+        "category": r.get("category"),
+        "cover_url": cover_url(c, r),
+        "active_family": version_family(c, c.resolve_version(r["id"], r["active_version_id"])),
         "archived": bool(r["archived"]),
         "dataset_ids": [d["id"] for d in ds],
         "version_count": c.db.fetchone(
@@ -82,14 +112,62 @@ def _project_row(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@router.get("/projects", response_model=list[m.Project], response_model_exclude_unset=True)
-def list_projects(include_archived: bool = False, c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
-    rows = c.db.fetchall(
-        "SELECT * FROM projects"
-        + ("" if include_archived else " WHERE archived=0")
-        + " ORDER BY created_at DESC"
-    )
-    return [_project_row(c, r) for r in rows]
+@router.get("/projects", response_model=list[m.Project] | m.ProjectPage, response_model_exclude_unset=True)
+def list_projects(
+    include_archived: bool = False,
+    q: str = Query("", max_length=500),
+    category: str | None = Query(None, max_length=64),
+    uncategorized: bool = False,
+    archived: bool | None = None,
+    page: int | None = Query(None, ge=1),
+    page_size: int = Query(24, ge=1, le=200),
+    c: ServiceContext = Depends(ctx),
+) -> list[dict[str, Any]] | dict[str, Any]:
+    where, values = [], []
+    if archived is not None or not include_archived:
+        where.append("archived=?")
+        values.append(int(bool(archived)))
+    if q.strip():
+        where.append("(name LIKE ? ESCAPE '\\' OR id LIKE ? ESCAPE '\\' OR note LIKE ? ESCAPE '\\')")
+        pattern = "%" + q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        values.extend([pattern] * 3)
+    try:
+        normalized = _category(category)
+    except ValueError as exc:
+        raise ApiError(str(exc), code="project.category") from exc
+    if normalized and uncategorized:
+        raise ApiError("choose one category filter", code="project.category")
+    if normalized:
+        where.append("category=?")
+        values.append(normalized)
+    elif uncategorized:
+        where.append("category IS NULL")
+    sql = " FROM projects" + (" WHERE " + " AND ".join(where) if where else "")
+    with c.db.lock:
+        total = c.db.fetchone("SELECT count(*) n" + sql, tuple(values))["n"]
+        ordered = "SELECT *" + sql + " ORDER BY created_at DESC,id"
+        rows = c.db.fetchall(
+            ordered + (" LIMIT ? OFFSET ?" if page is not None else ""),
+            tuple(values) + ((page_size, (page - 1) * page_size) if page is not None else ()),
+        )
+        items = [_project_row(c, row) for row in rows]
+        return (
+            {"items": items, "total": total, "page": page, "page_size": page_size}
+            if page is not None
+            else items
+        )
+
+
+@router.get("/project-categories", response_model=m.ProjectCategories)
+def project_categories(c: ServiceContext = Depends(ctx)) -> dict:
+    with c.db.lock:
+        return {
+            "items": c.db.fetchall(
+                "SELECT category name,count(*) count FROM projects WHERE category IS NOT NULL GROUP BY category ORDER BY lower(category),category"
+            ),
+            "uncategorized": c.db.fetchone("SELECT count(*) n FROM projects WHERE category IS NULL")["n"],
+            "total": c.db.fetchone("SELECT count(*) n FROM projects")["n"],
+        }
 
 
 @router.post("/projects", status_code=201, response_model=m.Project, response_model_exclude_unset=True)
@@ -116,6 +194,7 @@ def create_project(body: ProjectBody, c: ServiceContext = Depends(ctx)) -> dict[
                     "id": pid,
                     "name": body.name,
                     "note": body.note,
+                    "category": body.category,
                     "archived": 0,
                     "layout_version": 2,
                     "created_at": t,
@@ -141,7 +220,17 @@ def create_project(body: ProjectBody, c: ServiceContext = Depends(ctx)) -> dict[
             root = c.version_dir(pid, vid)
             for name in ("traindata", "reg", "samples", "output", "cache"):
                 (root / name).mkdir(parents=True, exist_ok=True)
-            _write_project_config(c, pid, get_project_config(pid, c, vid), vid)
+            from .family_config import initial_family_config
+
+            initial = initial_family_config(c, body.family)
+            initial = deep_merge(
+                initial,
+                {
+                    "checkpoint": {"output_dir": str(c.default_runs_dir(pid, vid))},
+                    "dataset": {"cache_dir": str(c.cache_dir(pid, vid))},
+                },
+            )
+            _write_project_config(c, pid, initial, vid)
             c.db.execute("RELEASE SAVEPOINT create_project")
         except BaseException:
             c.db.execute("ROLLBACK TO SAVEPOINT create_project")
@@ -171,10 +260,80 @@ def patch_project(pid: str, body: ProjectPatch, c: ServiceContext = Depends(ctx)
         fields = {
             k: (int(v) if isinstance(v, bool) else v) for k, v in body.model_dump().items() if v is not None
         }
+        if "category" in body.model_fields_set:
+            fields["category"] = body.category
         if body.active_version_id:
             assert_version_writable(c, pid, body.active_version_id)
         fields["updated_at"] = now()
         c.db.update("projects", pid, fields)
+        return _project_row(c, _get_project(c, pid))
+
+
+@router.post(
+    "/projects/{pid}/cover",
+    response_model=m.Project,
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "multipart/form-data": {
+                    "schema": {
+                        "type": "object",
+                        "required": ["file"],
+                        "properties": {"file": {"type": "string", "format": "binary"}},
+                    }
+                }
+            },
+        }
+    },
+)
+async def upload_project_cover(pid: str, request: Request, c: ServiceContext = Depends(ctx)) -> dict:
+    original = _get_project(c, pid)
+    data = await read_cover_upload(request)
+    encoded = await run_in_threadpool(thumbnail, data)
+
+    def save():
+        with c.db.lock:
+            row = _get_project(c, pid)
+            if row["created_at"] != original["created_at"]:
+                raise ApiError(
+                    "project was replaced during upload; retry", code="project.cover_conflict", status=409
+                )
+            try:
+                replace_cover(c, row, encoded)
+            except OSError as exc:
+                raise ApiError(
+                    "could not save the cover; the existing cover is preserved",
+                    code="project.cover_write",
+                    status=500,
+                ) from exc
+            return _project_row(c, _get_project(c, pid))
+
+    return await run_in_threadpool(save)
+
+
+@router.get(
+    "/projects/{pid}/cover",
+    response_class=Response,
+    responses={200: {"content": {"image/webp": {"schema": {"type": "string", "format": "binary"}}}}},
+)
+def get_project_cover(pid: str, c: ServiceContext = Depends(ctx)) -> Response:
+    with c.db.lock:
+        path = cover_path(c, _get_project(c, pid))
+        if path is None:
+            raise NotFound("project has no cover", code="project.cover_not_found")
+        data = path.read_bytes()
+    return Response(
+        data,
+        media_type="image/webp",
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
+@router.delete("/projects/{pid}/cover", response_model=m.Project)
+def delete_project_cover(pid: str, c: ServiceContext = Depends(ctx)) -> dict:
+    with c.db.lock:
+        remove_cover(c, _get_project(c, pid))
         return _project_row(c, _get_project(c, pid))
 
 
@@ -317,6 +476,7 @@ class VersionBody(BaseModel):
     source_version_id: str | None = None
     data_mode: Literal["copy", "empty"] = "copy"
     copy_config: bool = True
+    family: Literal["anima", "krea2", "toy"] | None = None
 
 
 class VersionPatch(BaseModel):
@@ -337,7 +497,13 @@ def list_versions(pid: str, include_archived: bool = True, c: ServiceContext = D
 @router.post("/projects/{pid}/versions", status_code=202, response_model=m.ProjectVersion)
 def create_version(pid: str, body: VersionBody, c: ServiceContext = Depends(ctx)) -> dict:
     return c.versions.create(
-        pid, body.name.strip(), body.note, body.source_version_id, body.data_mode, body.copy_config
+        pid,
+        body.name.strip(),
+        body.note,
+        body.source_version_id,
+        body.data_mode,
+        body.copy_config,
+        family=body.family,
     )
 
 
@@ -1183,16 +1349,7 @@ def job_config(jid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
 
 def _events_file(c: ServiceContext, jid: str) -> list[dict[str, Any]]:
     r = _get_job(c, jid)
-    p = Path(r["run_dir"]) / "events.jsonl"
-    if not p.exists():
-        return []
-    out = []
-    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
-        try:
-            out.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
-    return out
+    return read_events(Path(r["run_dir"]) / "events.jsonl")
 
 
 @router.get("/jobs/{jid}/metrics", response_model=m.JobMetrics, response_model_exclude_unset=True)
@@ -1230,21 +1387,21 @@ def job_metrics(jid: str, since_step: int = 0, c: ServiceContext = Depends(ctx))
 @router.get("/jobs/{jid}/samples", response_model=list[m.JobSample], response_model_exclude_unset=True)
 def job_samples(jid: str, c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
     out = []
-    for ev in _events_file(c, jid):
-        if ev.get("type") == "sample.saved":
-            name = Path(ev["path"]).name
-            out.append(
-                {
-                    "step": ev["step"],
-                    "prompt_index": ev["prompt_index"],
-                    "prompt": ev["prompt"],
-                    "seed": ev["seed"],
-                    "url": f"/api/jobs/{jid}/files?path={name}&kind=sample",
-                    "width": ev["width"],
-                    "height": ev["height"],
-                    "created_at": ev["ts"],
-                }
-            )
+    for ev, loss in samples_with_loss(_events_file(c, jid)):
+        name = Path(ev["path"]).name
+        out.append(
+            {
+                "step": ev["step"],
+                "prompt_index": ev["prompt_index"],
+                "prompt": ev["prompt"],
+                "seed": ev["seed"],
+                "url": f"/api/jobs/{jid}/files?path={name}&kind=sample",
+                "width": ev["width"],
+                "height": ev["height"],
+                "created_at": ev["ts"],
+                "loss": loss,
+            }
+        )
     return out
 
 

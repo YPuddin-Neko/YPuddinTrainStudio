@@ -80,3 +80,5 @@
   .queue-priority-cell { text-align:right; }
   .queue-priority-cell::before { content:attr(data-label); margin-right:6px; color:var(--studio-dim); font-size:11px; }
 }
+
+.queue-controls::before { content:""; position:absolute; inset:calc(-1 * var(--page-inset,16px)) -1px auto; height:var(--page-inset,16px); background:var(--studio-canvas); pointer-events:none; }

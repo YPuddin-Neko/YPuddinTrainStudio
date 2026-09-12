@@ -106,6 +106,7 @@ describe('dataset pipeline', () => {
     expect(screen.getByRole('progressbar')).toHaveAttribute('value','2');
     expect(screen.getByRole('button',{name:'检查并构建训练缓存'})).toBeDisabled();
     expect(screen.getByRole('link',{name:'进入训练参数'})).toHaveAttribute('href','/projects/p_1/v/v_2/train');
+    expect(screen.getByRole('link',{name:'选择训练模型'})).toHaveAttribute('href','/projects/p_1/v/v_2/train?tab=model');
     fireEvent.click(screen.getByRole('button',{name:'取消'}));
     await waitFor(() => expect(submitted[0]?.url).toBe('/dataset-pipeline/operations/dp_1/cancel'));
   });

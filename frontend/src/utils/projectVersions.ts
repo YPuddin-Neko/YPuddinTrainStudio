@@ -3,6 +3,7 @@ import type { Project } from '../api/types';
 export type VersionedProject = Project & { active_version_id?: string | null; version_count?: number; layout_version?: number };
 export interface ProjectVersion {
   id: string; project_id: string; number?: number; name: string; note: string; archived: boolean;
+  family?: string;
   parent_version_id?: string | null; status: 'copying' | 'ready' | 'failed';
   created_at: number; updated_at: number; dataset_ids: string[]; busy?: boolean;
   progress?: { phase: string; files_done: number; files_total: number; bytes_done: number; bytes_total: number };
@@ -16,6 +17,9 @@ export function projectUrl(projectId: string, versionId?: string | null, step?: 
 }
 export function versionConfigUrl(projectId: string, versionId?: string | null) {
   return `/projects/${projectId}/config${versionId ? `?version_id=${encodeURIComponent(versionId)}` : ''}`;
+}
+export function modelConfigUrl(projectId: string, versionId?: string | null) {
+  return `${projectUrl(projectId, versionId, 'train')}?tab=model`;
 }
 export function configDifferences(left: unknown, right: unknown, prefix = ''): { path: string; before: unknown; after: unknown }[] {
   if (JSON.stringify(left) === JSON.stringify(right)) return [];

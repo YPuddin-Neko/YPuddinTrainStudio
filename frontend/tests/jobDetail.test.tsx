@@ -15,7 +15,7 @@ afterAll(() => server.close());
 
 // Mock 轻量 EChart 封装，避免 jsdom 下 canvas / ResizeObserver 问题
 vi.mock('../src/components/EChart', () => ({
-  EChart: () => <div data-testid="echarts-mock">Chart</div>,
+  EChart: ({ option }: { option: { dataZoom: { type: string }[] } }) => <div data-testid="echarts-mock" data-zoom-types={option.dataZoom.map(zoom => zoom.type).join(',')}>Chart</div>,
 }));
 
 import JobDetail from '../src/pages/JobDetail/JobDetail';
@@ -49,9 +49,14 @@ describe('JobDetail Page (B1, B2, B3, B4)', () => {
     expect(screen.getByText('准备')).toBeInTheDocument();
     expect(screen.getByText('训练')).toBeInTheDocument();
     
-    // 检查 mock 图表是否正常注入（loss + validation + throughput 三张图）
+    // 默认只呈现主损失，诊断图按需加载，避免隐藏容器初始化。
     const charts = screen.getAllByTestId('echarts-mock');
-    expect(charts.length).toBeGreaterThanOrEqual(3);
+    expect(charts).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: '学习率、梯度与性能诊断' }));
+    expect(screen.getAllByTestId('echarts-mock').length).toBeGreaterThanOrEqual(4);
+    for (const chart of screen.getAllByTestId('echarts-mock')) expect(chart).toHaveAttribute('data-zoom-types', 'slider');
+    expect(screen.getByText('拖动图下方滑块缩放或调整查看范围。')).toBeInTheDocument();
+    expect(screen.queryByText(/Ctrl.*滚轮/)).not.toBeInTheDocument();
   });
 
   it('shows an archived version name after a separate lookup without delaying the job or Chinese sample tab', async () => {
@@ -89,7 +94,7 @@ describe('JobDetail Page (B1, B2, B3, B4)', () => {
     await waitFor(() => expect(lookedUp).toBe(true));
     expect(screen.getByTitle('v_legacy')).toHaveTextContent('所属版本');
     expect(screen.queryByText('Version metadata unavailable')).not.toBeInTheDocument();
-    expect(screen.getAllByTestId('echarts-mock').length).toBeGreaterThanOrEqual(3);
+    expect(screen.getAllByTestId('echarts-mock')).toHaveLength(1);
   });
 });
 

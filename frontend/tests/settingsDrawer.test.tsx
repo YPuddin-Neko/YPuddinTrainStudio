@@ -31,7 +31,7 @@ function Location() { const location = useLocation(); return <output data-testid
 
 describe('settings drawer workspace context', () => {
   it.each(['close button', 'Escape'])('keeps the version workspace mounted through settings tabs and returns to it using $0', async close => {
-    render(<MemoryRouter initialEntries={[{ pathname: '/projects/p1/v/v2', search: '?step=models', hash: '#weights', state: { origin: 'saved-context' } }]}><AppRoutes/><Location/></MemoryRouter>);
+    render(<MemoryRouter initialEntries={[{ pathname: '/projects/p1/v/v2', search: '?step=data', hash: '#images', state: { origin: 'saved-context' } }]}><AppRoutes/><Location/></MemoryRouter>);
     const draft = await screen.findByRole('textbox', { name: 'Workspace draft' });
     fireEvent.change(draft, { target: { value: 'Unsubmitted version notes' } });
     fireEvent.click(screen.getByRole('link', { name: 'Open settings' }));
@@ -48,7 +48,7 @@ describe('settings drawer workspace context', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Workspace draft' })).toBe(draft);
     expect(draft).toHaveValue('Unsubmitted version notes');
-    expect(screen.getByTestId('location')).toHaveTextContent('/projects/p1/v/v2?step=models#weights');
+    expect(screen.getByTestId('location')).toHaveTextContent('/projects/p1/v/v2?step=data#images');
     expect(screen.getByTestId('location')).toHaveTextContent('saved-context');
     expect(screen.getByTestId('background-project').closest('.route-surface')).not.toHaveAttribute('inert');
   });

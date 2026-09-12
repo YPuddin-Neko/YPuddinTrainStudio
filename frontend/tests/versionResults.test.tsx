@@ -18,7 +18,7 @@ vi.mock('../src/events/useEventStream', async () => {
 });
 const emit = (type: string, data: any) => act(() => listeners.get(type)?.forEach(listener => listener(data)));
 const job = (id: string, version = 'v1') => ({ ...mockJobs[0], id, name: `Run ${id}`, project_id: 'p1', version_id: version, type: 'train', status: 'running', created_at: 1700000000, progress: { step: 1, total_steps: 10 }, latest: { loss: 0.5 } });
-const sample = (id: string, step = 10): JobSample => ({ step, prompt_index: 0, prompt: `${id} prompt`, seed: 7, width: 640, height: 480, created_at: 1700000010, url: `/api/jobs/${id}/files?path=sample-${step}.png&kind=sample` });
+const sample = (id: string, step = 10): JobSample => ({ step, loss: null, prompt_index: 0, prompt: `${id} prompt`, seed: 7, width: 640, height: 480, created_at: 1700000010, url: `/api/jobs/${id}/files?path=sample-${step}.png&kind=sample` });
 const artifact = (id: string, version = 'v1', jobId = 'j1') => ({ id, project_id: 'p1', version_id: version, job_id: jobId, name: `${id}.safetensors`, path: `D:/outputs/${id}.safetensors`, kind: 'weights', created_at: 1700000010, step: 10, size: 512, metadata: { version } });
 let jobs: ReturnType<typeof job>[];
 let artifacts: ReturnType<typeof artifact>[];

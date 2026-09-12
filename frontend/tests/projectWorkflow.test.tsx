@@ -85,9 +85,11 @@ describe('project training workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: '新建项目' }));
     fireEvent.change(screen.getByTestId('project-name-input'), { target: { value: 'Character workspace' } });
     fireEvent.change(screen.getByTestId('project-id-input'), { target: { value: 'p_work' } });
+    await waitFor(() => expect(within(screen.getByTestId('create-project-modal')).getByRole('button', { name: '创建' })).toBeEnabled());
     fireEvent.click(within(screen.getByTestId('create-project-modal')).getByRole('button', { name: '创建' }));
     await screen.findByTestId('project-data-import');
-    expect(screen.getByRole('navigation', { name: '项目训练步骤' })).toBeInTheDocument();
+    expect(within(screen.getByRole('navigation', { name: '项目训练步骤' })).getAllByRole('link')).toHaveLength(3);
+    expect(screen.queryByRole('link', { name: /模型准备/ })).not.toBeInTheDocument();
     const image = new File(['image bytes'], 'portrait.png', { type: 'image/png' });
     const caption = new File(['a character'], 'portrait.txt', { type: 'text/plain' });
     const discarded = new File(['unused'], 'discard.png', { type: 'image/png' });
@@ -101,10 +103,11 @@ describe('project training workspace', () => {
     expect(uploadText).not.toContain('discard.png');
     expect(uploadText).toContain('name="repeats"\r\n\r\n3');
     expect(await screen.findByTestId('dataset-card-d_uploaded')).toHaveTextContent('1 张图片');
-    fireEvent.click(screen.getByRole('link', { name: /^2\s*模型准备$/ }));
-    expect(await screen.findByRole('combobox', { name: '模型系列' })).toHaveTextContent('Anima');
+    fireEvent.click(screen.getByRole('link', { name: /^2\s*训练参数$/ }));
+    fireEvent.click(await screen.findByRole('tab', { name: '模型与输出' }));
+    expect(await screen.findByRole('combobox', { name: 'model.family' })).toHaveTextContent(/anima/i);
     await waitFor(() => expect(screen.getByDisplayValue('D:/models/anima.safetensors')).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: '训练参数' }));
+    fireEvent.click(screen.getByRole('tab', { name: '训练参数' }));
     await screen.findByTestId('field-loop.epochs');
     expect(screen.queryByRole('region', {name:'常用训练参数'})).not.toBeInTheDocument();
     fireEvent.change(screen.getByRole('spinbutton', { name: 'loop.epochs' }), { target: { value: '4' } });
@@ -172,11 +175,11 @@ describe('project training workspace', () => {
     const backend = workspaceHandlers();
     show('/projects/p_work?step=models');
     await waitFor(() => expect(screen.getByDisplayValue('D:/models/anima.safetensors')).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('combobox', { name: '模型系列' }));
-    fireEvent.click(await screen.findByRole('option', { name: /Krea 2/ }));
+    fireEvent.click(screen.getByRole('combobox', { name: 'model.family' }));
+    fireEvent.click(await screen.findByRole('option', { name: /krea/i }));
     expect(await screen.findByDisplayValue('D:/models/krea.safetensors')).toBeInTheDocument();
     expect(screen.queryByDisplayValue('D:/models/qwen3.safetensors')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '保存选择' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存草稿' }));
     await waitFor(() => expect(backend.config().model).toMatchObject({ family: 'krea2', dit_path: 'D:/models/krea.safetensors', text_encoder_path: null, vae_path: null }));
   });
 

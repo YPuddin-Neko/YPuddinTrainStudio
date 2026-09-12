@@ -100,10 +100,13 @@ describe('archived versions remain readable without write actions', () => {
     expect(screen.getByTestId('dataset-card-d_archive')).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/projects/p_archive/v/v1');
     expect(state.project.active_version_id).toBe('v2');
-    fireEvent.click(screen.getByRole('link', { name: /^2\s*模型准备$/ }));
-    expect(screen.queryByTestId('project-model-setup')).not.toBeInTheDocument();
-    expect(screen.getByText('此版本的模型配置只读，可通过版本比较查看参数差异。')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('link', { name: /^4\s*训练结果$/ }));
+    const configReadsBeforeTrain = [...state.configReads];
+    fireEvent.click(screen.getByRole('link', { name: /^2\s*训练参数$/ }));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/projects/p_archive/v/v1/train'));
+    expect(screen.queryByRole('spinbutton', { name: 'loop.epochs' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '开始训练' })).not.toBeInTheDocument();
+    expect(state.configReads).toEqual(configReadsBeforeTrain);
+    fireEvent.click(screen.getByRole('link', { name: /^3\s*训练结果$/ }));
     expect(await screen.findByTestId('version-results')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '配置并启动训练' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: '模型权重' }));

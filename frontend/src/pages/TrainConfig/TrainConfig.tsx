@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, useParams, useNavigate, useLocation, Navigate } from 'react-router-dom';
+import { Link, useParams, useNavigate, useLocation, useSearchParams, Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { SchemaForm, ValidationError } from '../../schema/SchemaForm/SchemaForm';
 import { apiClient } from '../../api/client';
@@ -41,7 +41,7 @@ function restoreDraftChanges(current: unknown, base: unknown, draft: unknown): u
 function readTrainingDraft(key: string) {
   try {
     const saved: unknown = JSON.parse(sessionStorage.getItem(key) || 'null');
-    if (isConfigObject(saved) && saved.version === 1 && isConfigObject(saved.base) && isConfigObject(saved.draft)) return saved;
+    if (isConfigObject(saved) && saved.version === 1 && isConfigObject(saved.base) && isConfigObject(saved.draft)) return { version: 1, base: saved.base, draft: saved.draft };
   } catch { /* Storage can be unavailable or contain an obsolete draft. */ }
   return null;
 }
@@ -73,7 +73,15 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const location = useLocation();
   const navigate = useNavigate();
   const { data: families } = useFamilies();
-  const [activeTab, setActiveTab] = React.useState<ConfigTab>('train');
+  const familiesRef = React.useRef(families);
+  React.useLayoutEffect(() => { familiesRef.current = families; }, [families]);
+  const [tabParams, setTabParams] = useSearchParams();
+  const requestedTab = tabParams.get('tab');
+  const activeTab: ConfigTab = requestedTab && Object.prototype.hasOwnProperty.call(CONFIG_TAB_GROUPS, requestedTab) ? requestedTab as ConfigTab : 'train';
+  const setActiveTab = (tab: ConfigTab) => {
+    const next = new URLSearchParams(tabParams); next.set('tab', tab);
+    setTabParams(next, { state: location.state });
+  };
   const [search, setSearch] = React.useState('');
   const previousTab = React.useRef(activeTab);
   React.useLayoutEffect(() => {
@@ -225,7 +233,24 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       initialConfigRef.current = JSON.stringify(next);
       lastSavedRef.current = JSON.stringify(next);
       const saved = projectId ? readTrainingDraft(trainingDraftKey(projectId, versionId)) : null;
-      const restored = saved ? restoreDraftChanges(next, saved.base, saved.draft) as Record<string, any> : next;
+      let restored: Record<string, any> = saved ? restoreDraftChanges(next, saved.base, saved.draft) as Record<string, any> : next;
+      // Move drafts from the retired model page into the same version's training draft.
+      // A newer model edit in the training draft takes precedence; unrelated fields survive.
+      if (projectId) {
+        const legacyKey = `model-draft:${projectId}:${versionId || 'legacy'}`;
+        try {
+          const model = JSON.parse(sessionStorage.getItem(legacyKey) || 'null');
+          if (isConfigObject(model) && typeof model.family === 'string') {
+            if (!saved || JSON.stringify(saved.base.model) === JSON.stringify(saved.draft.model)) {
+              restored = { ...restored, model: { ...next.model, ...model } };
+              if (model.family !== next.model?.family) restored = { ...restored, adapter: { ...restored.adapter, preset: familyByName(familiesRef.current, model.family)?.default_preset ?? restored.adapter?.preset }, dataset: { ...restored.dataset, text_encoding: 'auto' } };
+            }
+            const key = trainingDraftKey(projectId, versionId);
+            rememberTrainingDraft(key, restored, JSON.stringify(next));
+            if (JSON.stringify(restored) === JSON.stringify(next) || JSON.stringify(readTrainingDraft(key)?.draft) === JSON.stringify(restored)) sessionStorage.removeItem(legacyKey);
+          }
+        } catch { /* Leave the old draft intact if storage is unavailable. */ }
+      }
       setRecoveredDraft(JSON.stringify(restored) !== JSON.stringify(next));
       setConfig(restored);
       setLoaded(true);
@@ -426,11 +451,12 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     }));
   };
   const trainingDatasets = matchingTrainingDatasets(config, datasets);
+  const indexedStats = trainingDatasets.length && trainingDatasets.every(item => item.index_status === 'ready' && Number.isFinite(item.stats?.images) && Number.isFinite(item.stats?.captioned)) ? trainingDatasets.reduce((stats, item) => ({images:stats.images + item.stats.images, captioned:stats.captioned + item.stats.captioned}), {images:0, captioned:0}) : undefined;
   const dataUrl = trainingDatasets.length === 1 ? `/datasets/${trainingDatasets[0].source.id}` : projectUrl(projectId || '', versionId, 'data');
   const dataAction = trainingDatasets.length === 1 ? text('标签与遮罩编辑', 'Captions & masks') : trainingDatasets.length > 1 ? text('选择数据集编辑标签与遮罩', 'Choose dataset for captions & masks') : text('导入数据后编辑标签与遮罩', 'Import dataset for captions & masks');
   const modelUrl = `/settings/environment?tab=models&family=${encodeURIComponent(config.model?.family || 'anima')}${projectId ? `&project=${encodeURIComponent(projectId)}` : ''}`;
 
-  if (!versionId && project?.active_version_id) return <Navigate replace to={projectUrl(project.id, project.active_version_id, 'train')}/>;
+  if (!versionId && project?.active_version_id) return <Navigate replace to={`${projectUrl(project.id, project.active_version_id, 'train')}${location.search}${location.hash}`} state={location.state}/>;
   const dirty = loaded && JSON.stringify(config) !== lastSavedRef.current;
   const draftStatus = <span className="draft-indicator" data-testid={savedAt && !dirty ? 'draft-saved' : undefined}>{savingNavigation ? <><Loader2 size={12} className="animate-spin"/>{text('正在保存草稿…', 'Saving draft…')}</> : dirty ? text('有未保存修改', 'Unsaved changes') : savedAt ? <><CheckCircle2 size={12}/>{t('train.draftSaved', { time: savedAt })}</> : loaded ? text('修改自动保存', 'Changes save automatically') : text('正在加载…', 'Loading…')}</span>;
   if (versionId && (versions.current?.status !== 'ready' || archived)) return <div className="training-studio project-workspace">
@@ -470,7 +496,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
           {!loaded ? <p className="p-6 text-sm text-slate-500">{t('common.loading')}</p> : <SchemaForm key={revealVersion} compact schema={schema} value={config} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} groupFilter={search ? undefined : CONFIG_TAB_GROUPS[activeTab]} search={search} errors={issues.map(issue => ({loc:issue.path,msg:issue.message}))} family={familyByName(families, config?.model?.family)} families={families} />}
         </div>
       </div>
-      <aside className="training-inspector"><BucketInspector plan={plan} loading={validating} onData={() => {setActiveTab('data');setSearch('');}}/>
+      <aside className="training-inspector"><BucketInspector plan={plan} loading={validating} hasSources={!!config.dataset?.sources?.length} indexed={indexedStats || undefined} onIssues={() => setIssuesOpen(true)} onData={() => {setActiveTab('data');setSearch('');}}/>
         {!!plan?.warnings?.length && <details className="plan-notes"><summary><AlertCircle size={13}/>{text('配置提示', 'Configuration notes')} · {plan.warnings.length}</summary><ul>{plan.warnings.map((warning,index) => <li key={index}>{presentPlanWarning(warning.code,warning.msg,english)}</li>)}</ul></details>}
       </aside>
     </div>

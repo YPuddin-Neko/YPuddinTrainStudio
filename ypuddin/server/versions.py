@@ -15,6 +15,7 @@ from typing import Any
 
 from .db import new_id, now
 from .errors import ApiError, NotFound
+from .family_config import change_config_family, initial_family_config, version_family
 
 ACTIVE_JOBS = "('queued','scheduled','running','pausing','cancelling')"
 
@@ -53,6 +54,7 @@ def version_row(c: Any, row: dict) -> dict:
         **{k: v for k, v in row.items() if k not in {"progress_json", "legacy_layout", "busy"}},
         "archived": bool(row["archived"]),
         "busy": bool(row["busy"]),
+        "family": version_family(c, row),
         "progress": json.loads(row["progress_json"] or "{}"),
         "dataset_ids": [r["id"] for r in datasets],
         "stats": {
@@ -159,7 +161,15 @@ class VersionManager:
             c.db.execute("UPDATE project_versions SET busy=NULL WHERE id=? AND busy=?", (row["id"], token))
 
     def create(
-        self, pid: str, name: str, note: str, source_id: str | None, data_mode: str, copy_config: bool = True
+        self,
+        pid: str,
+        name: str,
+        note: str,
+        source_id: str | None,
+        data_mode: str,
+        copy_config: bool = True,
+        *,
+        family: str | None = None,
     ) -> dict:
         from .routes_work import get_project_config
 
@@ -180,6 +190,12 @@ class VersionManager:
                 config["model"]["attention"] = environment_attention_default(c)
                 if data_mode != "empty":
                     raise ApiError("copy_config=false requires data_mode=empty", code="version.invalid")
+            if family is not None:
+                config = (
+                    change_config_family(c, config, family)
+                    if copy_config
+                    else initial_family_config(c, family)
+                )
             datasets = c.db.fetchall("SELECT * FROM datasets WHERE version_id=?", (source["id"],))
             if any(row["index_status"] == "indexing" for row in datasets):
                 raise ApiError(

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -30,6 +30,7 @@ afterEach(() => { server.resetHandlers(); vi.restoreAllMocks(); });
 afterAll(() => server.close());
 const emit = (type: string, data: any) => act(() => subscriptions.get(type)?.forEach((callback) => callback(data)));
 const chart = () => JSON.parse(screen.getAllByTestId('chart-option')[0].textContent!);
+const lrChart = () => JSON.parse(screen.getAllByTestId('chart-option')[1].textContent!);
 const perfChart = () => JSON.parse(screen.getAllByTestId('chart-option').at(-1)!.textContent!);
 
 function showJob(vramMetric?: string, versionId?: string) {
@@ -47,7 +48,9 @@ function showJob(vramMetric?: string, versionId?: string) {
 describe('training monitor interactions and events', () => {
   it('recomputes EMA from raw loss and converts actual x values to epochs', async () => {
     showJob();
-    await waitFor(() => expect(screen.getAllByTestId('chart-option').length).toBe(2));
+    await waitFor(() => expect(screen.getAllByTestId('chart-option').length).toBe(1));
+    expect(chart().series.map((series: any) => series.name)).toEqual(['原始损失', '显示 EMA']);
+    expect(screen.getByText(/不改变训练参数或权重 EMA/)).toBeInTheDocument();
     expect(chart().series[1].data).toEqual([[1, 1], [2, 0.9]]);
     fireEvent.change(screen.getByRole('slider'), { target: { value: '0.5' } });
     expect(chart().series[1].data).toEqual([[1, 1], [2, 0.5]]);
@@ -55,15 +58,33 @@ describe('training monitor interactions and events', () => {
     expect(chart().series[0].data).toEqual([[0.1, 1], [0.2, 0]]);
   });
 
+  it('uses each sample exact-step training loss, including live zero, without substituting nearby curve values', async () => {
+    const sample = (step: number, loss: number | null) => ({step,loss,prompt_index:0,prompt:`loss sample ${step}`,seed:7,url:`/api/jobs/job_01/files?path=loss-${step}.png&kind=sample`,width:64,height:64,created_at:step+1});
+    server.use(http.get('/api/jobs/job_01/samples', () => HttpResponse.json([sample(0,null),sample(2,null),sample(3,0.123456789)])));
+    showJob(); fireEvent.click(await screen.findByRole('tab', {name:'采样图 (3)'}));
+    const card = (step:number) => within(screen.getByRole('img',{name:`loss sample ${step}`}).closest('a')!.parentElement!);
+    expect(card(0).getByText('初始采样 · 未训练')).toBeInTheDocument();
+    expect(card(2).getByText('未记录')).toBeInTheDocument();
+    expect(card(3).getByText('0.12346')).toBeInTheDocument();
+    emit('job.sample', {...sample(4,0),job_id:'job_01'});
+    expect(card(4).getByText('0')).toBeInTheDocument();
+    expect(card(4).getByTitle(/不是这张采样图的质量评分/)).toBeInTheDocument();
+  });
+
   it('updates header progress, LR series and phase from SSE, ignoring replayed steps', async () => {
     showJob();
     await screen.findByText('2 / 100');
-    await waitFor(() => expect(screen.getAllByTestId('chart-option').length).toBe(2));
-    emit('job.step', { job_id: 'job_01', step: 3, epoch: 0, loss: 0.2, loss_ema: 0.3, lr: { default: 0.001, new_group: 0.002 }, it_s: 4, eta_s: 12, vram_mb: 50 });
+    await waitFor(() => expect(screen.getAllByTestId('chart-option').length).toBe(1));
+    fireEvent.click(screen.getByRole('button', { name: '学习率、梯度与性能诊断' }));
+    emit('job.step', { job_id: 'job_01', step: 3, epoch: 0, loss: 0.2, loss_ema: 0.3, lr: { default: 0.001, new_group: 0.002, w1:0.0001, w2:0.0002 }, it_s: 4, eta_s: 12, vram_mb: 50 });
     expect(screen.getByText('3 / 100')).toBeInTheDocument();
     expect(screen.getByText('4.00 it/s')).toBeInTheDocument();
-    expect(chart().series.find((item: any) => item.name === 'lr:default').data).toEqual([[1, 0.01], [2, 0.005], [3, 0.001]]);
-    expect(chart().series.find((item: any) => item.name === 'lr:new_group').data).toEqual([[1, null], [2, null], [3, 0.002]]);
+    expect(lrChart().series.find((item: any) => item.name === '学习率 · default').data).toEqual([[1, 0.01], [2, 0.005], [3, 0.001]]);
+    expect(lrChart().series.find((item: any) => item.name === '学习率 · new_group').data).toEqual([[1, null], [2, null], [3, 0.002]]);
+    expect(lrChart().series.find((item: any) => item.name === '学习率 · w1').data.at(-1)).toEqual([3,0.0001]);
+    expect(lrChart().series.find((item: any) => item.name === '学习率 · w2').data.at(-1)).toEqual([3,0.0002]);
+    expect(screen.getByText(/LoKr 的 w1 \/ w2 是两组矩阵参数/)).toBeInTheDocument();
+    expect(chart().series).toHaveLength(2);
     emit('job.step', { job_id: 'job_01', step: 2, loss: 100 });
     expect(screen.getByText('3 / 100')).toBeInTheDocument();
     expect(chart().series[0].data).toHaveLength(3);
@@ -76,7 +97,8 @@ describe('training monitor interactions and events', () => {
   it('shows MPS current allocation from the API and updates a decreasing value from SSE', async () => {
     showJob('current_allocated');
     await screen.findByText('2 / 100');
-    await waitFor(() => expect(screen.getAllByTestId('chart-option').length).toBe(2));
+    await waitFor(() => expect(screen.getAllByTestId('chart-option').length).toBe(1));
+    fireEvent.click(screen.getByRole('button', { name: '学习率、梯度与性能诊断' }));
     expect(screen.getByText('当前分配').parentElement).toHaveTextContent('2.0 GB');
     expect(screen.queryByText('显存峰值')).not.toBeInTheDocument();
     expect(screen.getByText('吞吐与当前训练分配量')).toBeInTheDocument();
@@ -92,14 +114,15 @@ describe('training monitor interactions and events', () => {
   it('retains legacy peak behavior and switches chart labels when CUDA metric metadata arrives', async () => {
     showJob();
     await screen.findByText('2 / 100');
-    await waitFor(() => expect(screen.getAllByTestId('chart-option').length).toBe(2));
-    expect(perfChart().series[1].name).toBe('VRAM (GB)');
+    await waitFor(() => expect(screen.getAllByTestId('chart-option').length).toBe(1));
+    fireEvent.click(screen.getByRole('button', { name: '学习率、梯度与性能诊断' }));
+    expect(perfChart().series[1].name).toBe('显存 (GB)');
     emit('job.step', { job_id: 'job_01', step: 3, vram_mb: 1024 });
     expect(screen.getByText('显存峰值').parentElement).toHaveTextContent('2.0 GB');
     emit('job.step', { job_id: 'job_01', step: 4, vram_mb: 4096, vram_metric: 'peak_allocated' });
     expect(screen.getByText('显存峰值').parentElement).toHaveTextContent('4.0 GB');
     expect(perfChart().series[1].name).toBe('显存峰值 (GB)');
-    expect(perfChart().yAxis[1].name).toBe('显存峰值 (GB)');
+    expect(perfChart().yAxis[1].name).toBe('GB');
     emit('job.step', { job_id: 'job_01', step: 5, vram_mb: null, vram_metric: 'peak_allocated' });
     expect(perfChart().series[1].data.at(-1)).toEqual([5, null]);
   });

@@ -1,12 +1,12 @@
 # YPuddin Train Studio — 项目交接报告
 
 > 写给接手本项目的模型/工程师。本文自洽：读完这一份 + 点开的几个文件，就能不需要前任任何上下文地继续开发。
-> 日期：2026-09-12 · 仓库：`xiangmuyuanma/` · 当前源码与前端版本为 0.5.3；本轮设计审查与发布验收状态见下述最新报告，不复用旧版测试总数。
+> 日期：2026-09-12 · 仓库：`xiangmuyuanma/` · 当前源码与前端版本为 0.5.4；本轮设计审查与发布验收状态见下述最新报告，不复用旧版测试总数。
 
 ## 0. 先读这三个文件
 
 1. 本文。
-2. `docs/UI_WORKSPACE_V053_2026-09-12.md` —— 最新 v0.5.3 侧栏工作区、紧凑项目/导入/结果与移动叠层；`docs/USER_REQUIREMENTS_AUDIT_2026-09-12.md` 逐项对应历史要求。`docs/UI_DESIGN_REVIEW_2026-09-12.md` 保留 v0.5.2 中央访问密钥、官方模型候选、队列/版本结果、导航标签与请求隔离。`docs/UI_SIMPLIFICATION_2026-09-12.md` 保留 v0.5.1 项目目录、正则图及自动打标移除记录；`docs/native-resolution.md` 解释原生尺寸与梯度规则。UI_PIPELINE、UI_VERSIONS、UI_WORKFLOW、UI_REDESIGN、FIX_REPORT 与 COMPLETION_AUDIT 是历史证据。
+2. `docs/UI_WORKSPACE_V054_2026-09-12.md` —— 本轮三阶段导航、边框吸顶、采样参数/损失、项目分类封面、版本模型族与错误恢复；最终浏览器矩阵和全量统计待统一验收补齐。`docs/UI_WORKSPACE_V053_2026-09-12.md` 保留 v0.5.3 侧栏、导入、结果及移动叠层证据；`docs/USER_REQUIREMENTS_AUDIT_2026-09-12.md` 逐项对应历史要求并追加本轮变化。`docs/UI_DESIGN_REVIEW_2026-09-12.md` 保留 v0.5.2 中央访问密钥、官方模型候选、队列/版本结果、导航标签与请求隔离。`docs/UI_SIMPLIFICATION_2026-09-12.md` 保留 v0.5.1 项目目录、正则图及自动打标移除记录；`docs/native-resolution.md` 解释原生尺寸与梯度规则。UI_PIPELINE、UI_VERSIONS、UI_WORKFLOW、UI_REDESIGN、FIX_REPORT 与 COMPLETION_AUDIT 是历史证据。
 3. `docs/design/03-status.md` —— 逐组件状态表与运行方式。
 
 ## 1. 项目定位
@@ -18,9 +18,13 @@
 - **形态**：Python 包 `ypuddin`（CLI + FastAPI 服务）+ `frontend/`（React/Vite 界面，可选）。一键脚本 `studio.sh` / `studio.bat`。
 - 许可证 Apache-2.0（参考项目里 diffusion-pipe 与 AnimaLoraStudio 是 GPL——只读不抄；sd-scripts / musubi-tuner 是 Apache-2.0，vendor 的代码见 §7）。
 
-## 2. 当前状态（v0.5.3 工作区布局复查）
+## 2. 当前状态（v0.5.4 工作区与项目管理）
 
-v0.5.3 的本轮测试、生产构建与实际浏览器检查见 `docs/validation/v0.5.3.json`、`docs/screenshots/v0.5.3/` 和 [工作区复查报告](docs/UI_WORKSPACE_V053_2026-09-12.md)。主要变化是统一侧栏项目/版本/阶段、紧凑列表和表单、结果及队列工具、样式覆盖修正、标签导航保存保护。最终提交与 ZIP 独立解包校验写入发布包旁的 `*.verification.json`。
+v0.5.4 将项目流程合并为“训练数据 → 训练参数 → 训练结果”，模型配置进入训练参数分区；统一标题/工具条边框与吸顶遮盖，重排采样字段。任务图表将主损失与学习率/梯度诊断分开，显示 EMA 只影响图表；采样 REST/SSE 携带精确同训练步 loss，未知与初始采样明确标记。项目增加分类与手动封面，新项目/版本可指定已接入模型族，跨族重建默认训练配置但保留数据准备设置。RouteError 提供资源加载失败恢复入口；Plan 未就绪时只使用明确来源的 ready 索引数量，不伪造分桶或训练估算。详见[本轮变更报告](docs/UI_WORKSPACE_V054_2026-09-12.md)；浏览器矩阵和最终全量统计由统一验收补齐。
+
+Flux/SDXL 当前未接入并禁选；Toy 是测试族。旧项目元数据迁移不移动目录，封面不进入训练数据；同族版本保留配置，跨族只使用目标族有效默认模型路径，不自动启用 FP8/CUDA。Windows/NVIDIA、完整 Anima/Krea 2 模型质量与新机部署仍无本轮实机验收；QA 生成夹具不能作为生产质量证据。
+
+**历史 v0.5.3**：测试、生产构建与实际浏览器检查见 `docs/validation/v0.5.3.json`、`docs/screenshots/v0.5.3/` 和 [工作区复查报告](docs/UI_WORKSPACE_V053_2026-09-12.md)。当时变化是统一侧栏项目/版本/阶段、紧凑列表和表单、结果及队列工具、样式覆盖修正、标签导航保存保护。该版提交与 ZIP 独立解包校验见发布包旁的 `*.verification.json`，不是本轮 v0.5.4 的验收证明。
 
 **历史 v0.5.2**：后端 562 passed / 3 CUDA skipped（565 收集），前端 45 文件 / 263 测试通过，Ruff/ESLint/TypeScript/生产构建通过。本轮没有改训练后端，也没有将旧后端总数作为新一轮重跑结果。旧 v0.5.1 的 536/3、前端 220 同样仅供追溯。
 

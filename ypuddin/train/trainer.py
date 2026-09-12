@@ -860,6 +860,9 @@ class Trainer:
         self._update_ema()
         self._loss_ema = group_loss if self._loss_ema is None else 0.98 * self._loss_ema + 0.02 * group_loss
         step = self.progress.step
+        # Sampling may run between sparse log events. Keep the actual optimizer-step loss,
+        # including its step identity, in checkpointed progress rather than reusing an EMA.
+        self.progress.extra["train_loss"] = {"step": step, "loss": group_loss}
         if step % cfg.loop.log_every == 0 or step == self.progress.total_steps:
             lrs = {g.get("name", str(i)): g["lr"] for i, g in enumerate(self.optimizer.param_groups)}
             remaining = self.progress.total_steps - step
@@ -990,6 +993,23 @@ class Trainer:
         )
         out_dir.mkdir(parents=True, exist_ok=True)
         paths: list[Path] = []
+        last_loss = self.progress.extra.get("train_loss")
+        loss = last_loss.get("loss") if isinstance(last_loss, dict) else None
+        if (
+            self.progress.step <= 0
+            or not isinstance(last_loss, dict)
+            or last_loss.get("step") != self.progress.step
+            or isinstance(loss, bool)
+            or not isinstance(loss, (int, float))
+        ):
+            loss = None
+        if loss is not None:
+            try:
+                loss = float(loss)
+            except OverflowError:
+                loss = None
+        if loss is not None and not math.isfinite(loss):
+            loss = None
         stride = self.family.spec.latent.stride
         patch = self.family.spec.latent.patch
         for i, p in enumerate(prompts):
@@ -1050,6 +1070,7 @@ class Trainer:
                 path=str(path),
                 width=w,
                 height=h,
+                loss=loss,
             )
         return paths
 

@@ -54,6 +54,48 @@ function trainingFixture() {
 }
 
 describe('explicit project version actions', () => {
+  it('creates a different model type without losing the chosen data inheritance', async () => {
+    let submitted: unknown;
+    server.use(
+      http.get('/api/families', () => HttpResponse.json([{name:'anima',label:'Anima 2B'}, {name:'krea2',label:'Krea2'}])),
+      http.post('/api/projects/p_versions/versions', async ({request}) => { submitted = await request.json(); return HttpResponse.json({...version('v3'),family:'krea2'}); }),
+    );
+    const source = {...version('v1'),family:'anima'};
+    render(wrap(<ProjectWorkspaceHeader project={project} versionId="v1" versions={[source]} current={source} active="data" refresh={vi.fn().mockResolvedValue(undefined)}/>));
+    fireEvent.click(screen.getByRole('button',{name:'新版本'}));
+    const dialog = await screen.findByRole('dialog',{name:'新建实验版本'});
+    await waitFor(() => expect(within(dialog).getByRole('combobox',{name:'训练模型类型'})).toHaveTextContent('Anima 2B'));
+    expect(within(dialog).getByText('配置和完整数据副本')).toBeInTheDocument();
+    expect(within(dialog).getByText('保留实验参数，清空数据来源。')).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('combobox',{name:'训练模型类型'}));
+    expect(screen.getByRole('option',{name:'Flux · 暂未接入'})).toHaveAttribute('aria-disabled','true');
+    fireEvent.click(screen.getByRole('option',{name:'Krea2'}));
+    expect(within(dialog).getByText(/模型类型不同：/)).toBeInTheDocument();
+    expect(within(dialog).getByRole('radio', {name:/复制数据，使用新模型配置/})).toBeChecked();
+    expect(within(dialog).getByRole('radio', {name:/使用新模型配置，重新准备数据/})).not.toBeChecked();
+    expect(within(dialog).getByText('按所选模型类型重建默认参数，清空数据来源。')).toBeInTheDocument();
+    expect(within(dialog).queryByText('保留实验参数，清空数据来源。')).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button',{name:'创建版本'}));
+    await waitFor(() => expect(submitted).toEqual(expect.objectContaining({family:'krea2',source_version_id:'v1',data_mode:'copy',copy_config:true})));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/projects/p_versions/v/v3'));
+  });
+
+  it('keeps the selected model type and version name after creation fails', async () => {
+    server.use(
+      http.get('/api/families', () => HttpResponse.json([{name:'anima',label:'Anima 2B'}, {name:'krea2',label:'Krea2'}])),
+      http.post('/api/projects/p_versions/versions', () => HttpResponse.json({error:{message:'Copy failed'}},{status:409})),
+    );
+    const source = {...version('v1'),family:'krea2'};
+    render(wrap(<ProjectWorkspaceHeader project={project} versionId="v1" versions={[source]} current={source} active="data" refresh={vi.fn()}/>));
+    fireEvent.click(screen.getByRole('button',{name:'新版本'}));
+    const dialog = await screen.findByRole('dialog',{name:'新建实验版本'});
+    fireEvent.change(within(dialog).getByRole('textbox',{name:'版本名称'}),{target:{value:'画风实验'}});
+    fireEvent.click(within(dialog).getByRole('button',{name:'创建版本'}));
+    await within(dialog).findByRole('alert');
+    expect(within(dialog).getByRole('textbox',{name:'版本名称'})).toHaveValue('画风实验');
+    expect(within(dialog).getByRole('combobox',{name:'训练模型类型'})).toHaveTextContent('Krea2');
+  });
+
   it.each([false,true])('shows actual version folder paths with legacy fallback (modern=%s)', async modern => {
     const current={...versions[0],number:1,paths:{...versions[0].paths,...(modern?{root:'D:/studio/project/Character/v1',traindata:'D:/studio/project/Character/v1/traindata',reg:'D:/studio/project/Character/v1/reg',samples:'D:/studio/project/Character/v1/samples',output:'E:/custom/Character/v1/output'}:{})}};
     render(wrap(<ProjectWorkspaceHeader project={project} versionId="v1" versions={[current]} current={current} active="data" refresh={vi.fn().mockResolvedValue(undefined)}/>));
@@ -189,8 +231,9 @@ describe('explicit project version actions', () => {
     vi.spyOn(window, 'alert').mockImplementation(() => {});
     render(wrap(<Routes><Route path="/datasets/:id" element={<Dataset/>}/><Route path="/projects/:id/v/:versionId/train" element={<p>Version training destination</p>}/></Routes>, '/datasets/d_v2'));
     const workflow = await screen.findByRole('navigation', { name: '项目训练步骤' });
-    expect(within(workflow).getByRole('link', { name: /^3\s*训练参数$/ })).toHaveAttribute('href', '/projects/p_versions/v/v2/train');
-    expect(within(workflow).getByRole('link', { name: /^4\s*训练结果$/ })).toHaveAttribute('href', '/projects/p_versions/v/v2?step=results');
+    expect(within(workflow).getByRole('link', { name: /^2\s*训练参数$/ })).toHaveAttribute('href', '/projects/p_versions/v/v2/train');
+    expect(screen.getByRole('link', { name: '选择训练模型' })).toHaveAttribute('href', '/projects/p_versions/v/v2/train?tab=model');
+    expect(within(workflow).getByRole('link', { name: /^3\s*训练结果$/ })).toHaveAttribute('href', '/projects/p_versions/v/v2?step=results');
     fireEvent.click(screen.getByRole('button', { name: i18n.t('dataset.precache') }));
     await waitFor(() => expect(submitted).toHaveLength(1));
     expect(submitted[0]).toMatchObject({ type: 'cache', project_id: project.id, version_id: 'v2' });

@@ -104,7 +104,7 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
       <label className="reg-prompt">{source === 'ai' ? text('类别提示词','Class prompt') : text('站点检索标签','Site search tags')}
         <textarea rows={2} required maxLength={4000} value={prompt} disabled={locked} onChange={event=>setPrompt(event.target.value)} placeholder={source === 'ai' ? text('例如：a photo of a dog；不要写训练主体的触发词','For example: a photo of a dog; omit the subject’s trigger word') : text('例如：dog solo；用空格分隔站点标签','For example: dog solo; separate site tags with spaces')}/>
       </label>
-      <p className="reg-note">{source === 'ai' ? text('使用当前版本的底模权重生成，不加载 LoRA；请先在“模型”步骤设置完整权重。','Uses this version’s base weights without LoRA. Configure the weights in the Model step first.') : text('只收集站点标记为全年龄的图片，保存原站点标签并去重。需遵守来源站点的使用规则。','Collects only images rated safe by the source, saves source tags and skips duplicates. Follow the source site’s usage rules.')}</p>
+      <p className="reg-note">{source === 'ai' ? text('使用当前版本的底模权重生成，不加载 LoRA；请先在“训练参数 → 模型与输出”中设置完整权重。','Uses this version’s base weights without LoRA. Configure the weights in Training parameters → Model & output first.') : text('只收集站点标记为全年龄的图片，保存原站点标签并去重。需遵守来源站点的使用规则。','Collects only images rated safe by the source, saves source tags and skips duplicates. Follow the source site’s usage rules.')}</p>
       <details className="reg-options"><summary>{text('生成与训练选项','Generation and training options')}</summary><div className="reg-form-grid reg-grid-three">
         {source === 'ai' && <>
           <label>{text('宽度','Width')}<input type="number" min={64} max={2048} step={32} value={width} disabled={locked} onChange={event=>setWidth(Number(event.target.value))}/></label>

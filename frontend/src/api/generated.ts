@@ -388,6 +388,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/project-categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Project Categories */
+        get: operations["project_categories_api_project_categories_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{pid}": {
         parameters: {
             query?: never;
@@ -405,6 +422,25 @@ export interface paths {
         head?: never;
         /** Patch Project */
         patch: operations["patch_project_api_projects__pid__patch"];
+        trace?: never;
+    };
+    "/api/projects/{pid}/cover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Project Cover */
+        get: operations["get_project_cover_api_projects__pid__cover_get"];
+        put?: never;
+        /** Upload Project Cover */
+        post: operations["upload_project_cover_api_projects__pid__cover_post"];
+        /** Delete Project Cover */
+        delete: operations["delete_project_cover_api_projects__pid__cover_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/projects/{pid}/config": {
@@ -2699,6 +2735,11 @@ export interface components {
             height: number;
             /** Created At */
             created_at: number;
+            /**
+             * Loss
+             * @description Actual training loss at this exact step; null when unavailable.
+             */
+            loss: number | null;
         } & {
             [key: string]: unknown;
         };
@@ -3619,6 +3660,12 @@ export interface components {
              */
             layout_version: number;
             stats: components["schemas"]["ProjectStats"];
+            /** Category */
+            category?: string | null;
+            /** Cover Url */
+            cover_url?: string | null;
+            /** Active Family */
+            active_family?: string | null;
         } & {
             [key: string]: unknown;
         };
@@ -3633,6 +3680,47 @@ export interface components {
              * @default
              */
             note: string;
+            /** Category */
+            category?: string | null;
+            /**
+             * Family
+             * @default anima
+             * @enum {string}
+             */
+            family: "anima" | "krea2" | "toy";
+        };
+        /** ProjectCategories */
+        ProjectCategories: {
+            /** Items */
+            items: components["schemas"]["ProjectCategory"][];
+            /** Uncategorized */
+            uncategorized: number;
+            /** Total */
+            total: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ProjectCategory */
+        ProjectCategory: {
+            /** Name */
+            name: string;
+            /** Count */
+            count: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ProjectPage */
+        ProjectPage: {
+            /** Items */
+            items: components["schemas"]["Project"][];
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+        } & {
+            [key: string]: unknown;
         };
         /** ProjectPatch */
         ProjectPatch: {
@@ -3644,6 +3732,8 @@ export interface components {
             archived?: boolean | null;
             /** Active Version Id */
             active_version_id?: string | null;
+            /** Category */
+            category?: string | null;
         };
         /** ProjectStats */
         ProjectStats: {
@@ -3691,6 +3781,8 @@ export interface components {
             paths: components["schemas"]["VersionPaths"];
             stats: components["schemas"]["VersionStats"];
             progress: components["schemas"]["VersionProgress"];
+            /** Family */
+            family?: string | null;
         } & {
             [key: string]: unknown;
         };
@@ -4319,6 +4411,8 @@ export interface components {
              * @default true
              */
             copy_config: boolean;
+            /** Family */
+            family?: ("anima" | "krea2" | "toy") | null;
         };
         /** VersionPatch */
         VersionPatch: {
@@ -5196,6 +5290,12 @@ export interface operations {
         parameters: {
             query?: {
                 include_archived?: boolean;
+                q?: string;
+                category?: string | null;
+                uncategorized?: boolean;
+                archived?: boolean | null;
+                page?: number | null;
+                page_size?: number;
             };
             header?: never;
             path?: never;
@@ -5209,7 +5309,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Project"][];
+                    "application/json": components["schemas"]["Project"][] | components["schemas"]["ProjectPage"];
                 };
             };
             /** @description Validation Error */
@@ -5252,6 +5352,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    project_categories_api_project_categories_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectCategories"];
                 };
             };
         };
@@ -5334,6 +5454,106 @@ export interface operations {
                 "application/json": components["schemas"]["ProjectPatch"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_project_cover_api_projects__pid__cover_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/webp": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_project_cover_api_projects__pid__cover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_project_cover_api_projects__pid__cover_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

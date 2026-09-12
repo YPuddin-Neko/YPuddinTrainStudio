@@ -302,7 +302,7 @@ const SourcesEditor: React.FC<{
   return (
     <div className="space-y-3" data-testid="sources-editor">
       {value.map((src, idx) => (
-        <div key={idx} className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
+        <div key={idx} role="group" aria-label={t('train.promptN', { n: idx + 1 })} className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
           <div className="flex justify-between items-center">
             <span className="font-semibold text-slate-700 dark:text-slate-300">
               {t('train.sourceN', { n: idx + 1, defaultValue: '数据源 #{n}' })}
@@ -423,7 +423,7 @@ const PromptsEditor: React.FC<{
             <span className="font-semibold text-slate-700 dark:text-slate-300">
               {t('train.promptN', { n: idx + 1, defaultValue: '提示词 #{n}' })}
             </span>
-            <button type="button" onClick={() => removePrompt(idx)} className="text-red-500 hover:text-red-700">
+            <button type="button" aria-label={`${t('common.delete')} ${t('train.promptN', { n: idx + 1 })}`} onClick={() => removePrompt(idx)} className="text-red-500 hover:text-red-700">
               <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -514,17 +514,20 @@ const ModelPathInput: React.FC<{
   familyName?: string;
 }> = ({ value, kind, onChange, label, familyName }) => {
   const { t } = useTranslation();
-  const [models, setModels] = React.useState<Array<{ id: string; path: string; kind: string; family: string }>>([]);
+  const [models, setModels] = React.useState<Array<{ id: string; path: string; kind: string; family: string; exists?: boolean }>>([]);
 
   React.useEffect(() => {
     if (!kind) return;
-    apiClient
-      .get<Array<{ id: string; path: string; kind: string; family: string }>>('/models')
-      .then((list) => setModels(Array.isArray(list) ? list : []))
-      .catch(() => setModels([]));
+    let active = true;
+    const refresh = () => void apiClient
+      .get<Array<{ id: string; path: string; kind: string; family: string; exists?: boolean }>>('/models', { silent: true })
+      .then((list) => { if (active) setModels(Array.isArray(list) ? list : []); })
+      .catch(() => { if (active) setModels([]); });
+    refresh(); window.addEventListener('studio-models-changed', refresh); window.addEventListener('focus', refresh);
+    return () => { active = false; window.removeEventListener('studio-models-changed', refresh); window.removeEventListener('focus', refresh); };
   }, [kind]);
 
-  const matched = kind ? models.filter((m) => m.kind === kind && (!familyName || m.family === familyName)) : [];
+  const matched = kind ? models.filter((m) => m.exists !== false && m.kind === kind && (!familyName || m.family === familyName)) : [];
 
   return (
     <div className="space-y-1.5">
@@ -564,7 +567,19 @@ const SchemaValueInput: React.FC<{
   const resolved = branch.$ref ? { ...resolveRef(schema, branch.$ref), ...branch } : branch;
   const prop: SchemaProperty = { ...property, ...resolved };
   const cls = 'w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:bg-slate-900 dark:border-slate-600';
-  const initialValue = () => prop.default ?? (prop.type === 'object' ? {} : prop.type === 'boolean' ? false : prop.type === 'string' ? '' : prop.type === 'array' ? [] : 0);
+  const initialValue = () => {
+    if (prop.default != null) return prop.default;
+    if (prop.type === 'object') return {};
+    if (prop.type === 'boolean') return false;
+    if (prop.type === 'string') return '';
+    if (prop.type === 'array') return [];
+    const familyDefault = placeholder?.trim() ? Number(placeholder) : Number.NaN;
+    if (Number.isFinite(familyDefault)) return familyDefault;
+    const minimum = prop.minimum ?? prop['x-ui']?.min ?? 0;
+    return prop.exclusiveMinimum != null && minimum <= prop.exclusiveMinimum
+      ? prop.exclusiveMinimum + (prop['x-ui']?.step || 1)
+      : minimum;
+  };
   let input: React.ReactNode;
   if (prop.type === 'object' && prop.properties) {
     input = value == null ? null : <div className="space-y-3 border-l pl-3 dark:border-slate-600">
@@ -656,6 +671,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const fullPathKey = path.join('.');
     // Keep legacy cloud-log data in the draft, but do not expose controls that enable it.
     if (fullPathKey === 'logging.wandb' || fullPathKey.startsWith('logging.wandb.')) return null;
+    // The service assigns a separate samples/<job_id> destination when starting a task.
+    if (fullPathKey === 'sampling.output_dir') return null;
     const ui = { ...(prop['x-ui'] || {}), ...(compact && fullPathKey === 'dataset.batch_size' ? {group:'loop'} : {}) };
     if (conditionValue.dataset.resolution_mode === 'native' && ['dataset.resolutions', 'dataset.aspect_ratio_limit', 'dataset.area_tolerance', 'dataset.bucket_step', 'dataset.bucket_no_upscale'].includes(fullPathKey)) return null;
     if (compact && !showAdvanced && fullPathKey === 'adapter.rules' && !value.adapter?.rules?.length) return null;
@@ -778,7 +795,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       );
     } else if (prop.anyOf) {
       control = <SchemaValueInput schema={schema} property={prop} value={fieldValue} name={fullPathKey} compact={compact}
-        placeholder={family && fullPathKey === 'sampling.shift' ? (family.sampling?.shift != null ? String(family.sampling.shift) : t('sampling.shiftAuto')) : undefined}
+        placeholder={family && fullPathKey.startsWith('sampling.') && ['steps', 'cfg', 'shift'].includes(key) ? (family.sampling?.[key as 'steps' | 'cfg' | 'shift'] != null ? String(family.sampling[key as 'steps' | 'cfg' | 'shift']) : key === 'shift' ? t('sampling.shiftAuto') : undefined) : undefined}
         onChange={(val) => onChange(setNestedValue(value, path, val))} />;
     } else if (fullPathKey === 'model.family' && families?.length) {
       control = <StudioSelect aria-label="model.family" value={fieldValue || families[0].name}
@@ -944,7 +961,11 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     <div className={compact ? 'compact-schema' : 'space-y-6'} data-testid="schema-form">
       {sortedGroups.map(([groupName, groupData]) => (
         <FieldGroup key={groupName} title={t(`groups.${groupName}`, groupName)} count={groupData.fields.length} compact={compact} groupKey={groupName}>
-          {groupData.fields}
+          {compact && groupName === 'sampling' ? [...groupData.fields].sort((a, b) => {
+            const order = ['enabled', 'at_start', 'every_steps', 'every_epochs', 'prompts', 'width', 'height', 'steps', 'cfg', 'shift', 'seed', 'sampler', 'prompts_file'];
+            const rank = (node: React.ReactNode) => { const index = order.indexOf(String((node as React.ReactElement).key).split('.').pop() || ''); return index < 0 ? order.length : index; };
+            return rank(a) - rank(b);
+          }) : groupData.fields}
         </FieldGroup>
       ))}
       {sortedGroups.length === 0 && <p className="p-6 text-sm text-slate-500">{english ? 'No matching parameters.' : '没有匹配的参数。'}</p>}

@@ -1,16 +1,15 @@
 import { Link } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Database, Box, SlidersHorizontal, Activity } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Database, SlidersHorizontal, Activity } from 'lucide-react';
 import { projectUrl } from '../utils/projectVersions';
 import { useWorkspaceText } from '../utils/workspaceText';
 import '../styles/project-workspace.css';
 
-export type WorkspaceStep = 'data' | 'models' | 'train' | 'results';
+export type WorkspaceStep = 'data' | 'train' | 'results';
 
 export function ProjectWorkflow({ projectId, versionId, active, sidebar = false }: { projectId: string; versionId?: string | null; active: WorkspaceStep; sidebar?: boolean }) {
   const text = useWorkspaceText();
   const steps = [
     { key: 'data', label: text('训练数据', 'Training data'), detail: text('上传图片与标签', 'Images and captions'), icon: Database, url: projectUrl(projectId, versionId, 'data') },
-    { key: 'models', label: text('模型准备', 'Model setup'), detail: text('选择底模与组件', 'Base model and components'), icon: Box, url: projectUrl(projectId, versionId, 'models') },
     { key: 'train', label: text('训练参数', 'Training parameters'), detail: text('设置参数，检查并启动', 'Configure, validate and start'), icon: SlidersHorizontal, url: projectUrl(projectId, versionId, 'train') },
     { key: 'results', label: text('训练结果', 'Training results'), detail: text('本版本的产物、采样与训练记录', 'Outputs, samples and training history in this version'), icon: Activity, url: projectUrl(projectId, versionId, 'results') },
   ];

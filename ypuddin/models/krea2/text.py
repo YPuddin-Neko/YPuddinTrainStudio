@@ -129,7 +129,11 @@ def _load_language_model(path: str | Path, dtype: torch.dtype, device: torch.dev
         from safetensors.torch import load_file
 
         text_cfg = text_config_for(p)
-        model = Qwen3VLTextModel(text_cfg)
+        # A lone file uses the official 4B geometry. Build only its shapes until the
+        # checkpoint has passed validation; allocating/randomizing that model first
+        # wastes many GiB even when a tiny or incompatible file will be rejected.
+        with torch.device("meta"):
+            model = Qwen3VLTextModel(text_cfg)
         sd = _dequant_fp8_scaled(_strip_comfy_prefixes(load_file(str(p))), dtype)
         try:
             missing, unexpected = model.load_state_dict(sd, strict=False, assign=True)
@@ -143,6 +147,16 @@ def _load_language_model(path: str | Path, dtype: torch.dtype, device: torch.dev
             raise RuntimeError(
                 f"Qwen3-VL text encoder checkpoint does not match: missing={missing[:5]} unexpected={unexpected[:5]}"
             )
+        # RoPE frequencies are derived non-persistent buffers, absent from the
+        # checkpoint. Recreate this small module on CPU, using the installed
+        # transformers implementation (including its original/dynamic frequencies).
+        with torch.device("cpu"):
+            model.rotary_emb = type(model.rotary_emb)(config=text_cfg)
+        remaining = [
+            name for name, tensor in (*model.named_parameters(), *model.named_buffers()) if tensor.is_meta
+        ]
+        if remaining:
+            raise RuntimeError(f"Qwen3-VL text encoder has uninitialized tensors: {remaining[:5]}")
         model = model.to(dtype)
     model.config.use_cache = False
     model.requires_grad_(False)
