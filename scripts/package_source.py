@@ -111,6 +111,8 @@ def package(output: Path) -> dict:
             "tests/unit/test_apple_sensors.py",
             "docs/MAC_GPU_SENSORS_2026-09-12.md",
             "docs/validation/v0.5.8.json",
+            "docs/ADAPTER_FORM_LAYOUT_2026-09-12.md",
+            "docs/validation/v0.5.9.json",
             "ypuddin/server/output_binding.py",
             "ypuddin/server/model_inspection.py",
             "tests/unit/test_source_roles.py",

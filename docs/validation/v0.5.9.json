@@ -1,0 +1,283 @@
+{
+  "version": "0.5.9",
+  "recorded_at": "2026-09-12T08:24:24.126570+00:00",
+  "scope": "Shared adapter parameter form layout and LoKr rank mode transitions",
+  "backend": {
+    "tests_rerun": false,
+    "full_suite_rerun": false,
+    "previous_record": "docs/validation/v0.5.8.json",
+    "note": "Training backend unchanged; previous hardware tests are not counted as current tests."
+  },
+  "frontend": {
+    "test_files": 5,
+    "tests_passed": 40,
+    "tests_failed": 0,
+    "typescript_exit": 0,
+    "eslint_exit": 0,
+    "build_exit": 0,
+    "frontend_stale": false,
+    "test_command": "./node_modules/.bin/vitest run tests/lokrParameterMode.test.tsx tests/schemaForm.test.tsx tests/presetManagement.test.tsx tests/families.test.tsx tests/nullableSchema.test.tsx --maxWorkers=2",
+    "manifest_sha256": "32da3289c0e428f17e7259ef4f2b29bac9cdc781a86b6724895274a458045816",
+    "outputs": {
+      "assets/AccessKeys-Bi123ZdL.css": "89335a656a3221f49e74a00b7207cf2832e3053751a4cae12e6df3cf027535be",
+      "assets/AccessKeys-GQXtSBxu.js": "2ef2ed40c5a28f66d85597c2178db124e5db39ba14c05d92a494c659e260e11c",
+      "assets/CaptionFormatSelect-Ds0NK8X-.js": "5f3034c93993093cc2f3c1d4869b9b01ffbec07ce0ab8be2c0e182073ae10c05",
+      "assets/ConfigHelp-Cgcx16FZ.css": "128d546ff3ce1f0115eeeffc64b6d17ffbc12409f5efa90770e124e16440bbcb",
+      "assets/ConfigHelp-Dkycz6_A.js": "f16830e60a2f87d7aa0fb4b18a0303c67ed8c84a2eb65193820081849db68c77",
+      "assets/Dashboard-BBTYjb_X.js": "55727ef7dbe06db68781b828fe570b2b9476a3849bf53ec21f92698564b70d9d",
+      "assets/Dashboard-BHkS85HI.css": "5224b8c8c36e0a3debc4e8a3a0b3b6018cc5dda9e867dd8ffeed24b01154abbf",
+      "assets/Dataset-CSLy5NfI.css": "44206fa6960b0562a113a3a08e53ab885357120e2940cff1e43abb509bf2f5fb",
+      "assets/Dataset-D4eKovvX.js": "ad07faab8a7c5d2283af910c3c82843f22184f9c7aeeb2d57fc2df7be80418c5",
+      "assets/DatasetNavigationGuard-8VdwR1sv.js": "2f9634647926661614e1c11c751bfde5921dc6bbc9058bb384db29518696d7bb",
+      "assets/DatasetNavigationGuard-TWC3Exyv.css": "74cbe0df6a18ecb5321a603452d0fc3e85c4ec033c89ba58116eebf2459b29de",
+      "assets/Dialog-BeINKxAa.js": "c04ef177a53e58a6ed2249bf1fc7f7faa2668db35232c748f6abd0900444e2cb",
+      "assets/Dialog-waVbvSgd.css": "639dc7c3be7c1506f7be36f06224120f1c3bfc33fd147549178afc312d51549c",
+      "assets/EnvironmentSettings-BpPS-yWd.js": "b94a28c66692b6ce1a6a1548cc680f8a55658e703de0deee27db81b4c30e0f07",
+      "assets/JobDetail-D76snWKx.css": "b13113288980c03e068c4ee5eddcdee9fcf5aed8b8b3e91ae950efac5a17e2bc",
+      "assets/JobDetail-pwZuSDZm.js": "693e2ea0551acb1e64f3f7f75e341efad515866f377a8aeb1447f155e9635e3c",
+      "assets/Models-7D4-OQeP.js": "287b1af09f3b99c2f6f27d088fe7584b625ec5302f8eef36f92551dc93984058",
+      "assets/Models-BPnHeJcA.css": "1d671486cd77ef72f1d80eaa14e0b9bc378977652bb6b5c1035df7746c9318bb",
+      "assets/PathBrowser-CqGPUKsE.js": "2d36c827e81c12c531e8409bf5efc327c93463008813b94e266081fdb406d98d",
+      "assets/Preferences-C6gh4Pxg.js": "8dda1925848b70822e3286aaa937dfde30ead3bc315cb38cd51dcbe6c5121b39",
+      "assets/Presets-COf_QxTy.css": "d6f7bdc8f5a866d1c684ec4aabf0a0718aa18d55d78f99140449b04b0a042fa9",
+      "assets/Presets-CgZ2k7OZ.js": "19b8c23bc0c9ca5bbfbaea7eaf7d0301e51b4ff24e2284fd6f30442f9c21fd79",
+      "assets/ProjectDetail-CipqzjGe.js": "9b36e2aa77d4dc2f2924ca21fc8674342c9cfa683c2ce0a9722c3ecb71cd045d",
+      "assets/ProjectDetail-DPyczg2a.css": "660ff57bd36f34c9b8dc81f757ab293770b8881f5b1a2e8af7e1fc9663500ab3",
+      "assets/ProjectWorkspaceHeader-D1laT5Cw.js": "0359713531abc5188d19655aa4205af56616904b779cf05fc3eea6f73068700f",
+      "assets/Projects-Cr4hNmvm.css": "c6e193bf860fbc7febf4c72792f14c64abe39ba7a2b481311d75a98230715ff2",
+      "assets/Projects-ke9zUHRm.js": "7581d3173ad5e1eaea0fa02a8c8783f870eb3932ccc66115a22451927979a0f2",
+      "assets/Queue-Ns6_BmNl.js": "8c9d50b33de509055f954f658588b14e3b5dabdbaf6ca0db74aef146252ae36f",
+      "assets/SampleLoss-BAPfJ8ej.js": "a56ac7b3a9cb4ad924da371a8a5fa03c2872918a8df1536adb8756d6feee5fd5",
+      "assets/SampleLoss-CozgRlmt.css": "17c78fca87ce8b63e5fa36cf4a2aea6b50b0c4b2a477025de4b53aa454675bbc",
+      "assets/Settings-CNCOkICO.js": "f7397d5494a613ec343432d8e5a7f76d5f1fbe2072cee78c19099b5b2a32f5e4",
+      "assets/Settings-sVm9yzQt.css": "3b12cdb234a59bdd8576d3adc81c9a9be94d53fa7095a9226f1bd74b39804640",
+      "assets/SettingsSections-C-wPPubO.js": "14e553960a52ecb53f78e1715e5a2e755b14ae2742aece72c35c289155df6408",
+      "assets/TrainConfig-BO3FEd_0.js": "c03f97276de64e652ddcc992d1eabfdd779cafcf4b3d870fa76e13bbaa9bbcc9",
+      "assets/TrainConfig-CjJxrVGG.css": "6beecfba37749d3de672c2290e6ad94e2c9da3851f3ae5a44f3c2da5ed67643f",
+      "assets/echarts-N-Z4Wyhr.js": "c66735c92c55bc0c1f094ff900769d985ecf1c8197dd8a9b251f80b49c4e318d",
+      "assets/format-9G9_RQcA.js": "c0bb8f6085b5e23aaa0d05dd8e68b91adb3e2c6fcc8e93ef0b6b705fb7dda795",
+      "assets/i18nInstance-IqJxknJP.js": "bf1b7befe07d7afaeb902c1ea9bd10352758619925c1bd389711aa77cf1bcb2f",
+      "assets/index-C9GRsGoA.css": "edcfdc0216d5fdd6bee2045deda9e159bb4a6a6455f3344eae70c99d03977f33",
+      "assets/index-baJHFAiy.js": "1e66ea9d1871e045123e557e1afdc210efc6fa0a094aefd6a5c6be13db76d669",
+      "assets/jobPresentation-CtyAVIBZ.js": "f9dcc5d4e0415b63d6858dea7950f03381646f46a29fb227f8c695bd695a02a9",
+      "assets/queue-xpHjUxjS.css": "d5dcd7531cb50094a02eb30255fa25a7f3587d355b0e986d58568c4c828bc3c7",
+      "assets/rolldown-runtime-hePW80VL.js": "580ad8c58061a4dde99bde0a56905e382f0568516ee2f5b84dbfb52085709021",
+      "assets/trainingFamilies-4TOLGs_3.css": "d44d47c3045a60aa12cdaa4af01e72e70deecffc1b3704844ead8ae2926f7f98",
+      "assets/trainingFamilies-CRhqlJs4.js": "4252a2a0b9dc621343f61ea8ef088dc60f9887994f027cdb01d0555a27c9cc64",
+      "assets/trainingPresets-BRJdq5Le.js": "24cca79e2fa7e52372b47f8cceedd930f060a30033559b657fa53944c7912fc9",
+      "assets/useFamilies-D7JEAlUm.js": "28e840fba3db36819daed9c1fed808d9c70989f1bd787148339fc6480259c840",
+      "assets/useProjectVersions-Ut_0NMU4.js": "4389e12359fd9d511c625bb815c6c75f54b05a9e0c9637e16e28c491e3c6700e",
+      "assets/vendor-Bb9fVEeA.js": "f288797d1db9abd80531bbd593732f9a8bad48800953a279ebf2043c3eecc9be",
+      "index.html": "2031bb624fa07811cc964b9271532e76fb1039cfa1ddcda344c85564c4145de1",
+      "licenses/lucide-gpu.txt": "9558e922c3aa8d34b212e208272536492537cfa1b82a62c9185e1242d540cd95",
+      "mockServiceWorker.js": "26171599d94d5445297303f3a1f1cedec26835ea3d0057dcfa92ec520cb35cca",
+      "studio.svg": "23f7b605f15c74ceb33d019746d6ba0f9408b81443f2452be8dec4515d883618"
+    },
+    "note": "Final change after behavior tests was an adapter-only select height CSS override; production build and browser rechecked afterward."
+  },
+  "browser": {
+    "tool": "Codex CUA in-app browser",
+    "qa_data_root": "/private/tmp/ypuddin-v059-ui-qa",
+    "qa_status": "passed",
+    "presets": {
+      "url": "http://127.0.0.1:8894/presets",
+      "viewport_height": 773,
+      "two_column_widths": [
+        787,
+        1004,
+        1280
+      ],
+      "single_column_widths": [
+        375
+      ],
+      "document_horizontal_overflow": false,
+      "basic_controls_height_px": 34,
+      "basic_field_height_px": 62,
+      "switch_row_height_px": 30,
+      "cases": [
+        "Algorithm/target layer, mode/factor, Rank/Alpha paired in visual rows",
+        "Rank32 to Full hides numeric Rank and Alpha; low rank restores32 and Alpha16",
+        "Full to LoRA restores32, hides LoKr controls",
+        "QA-only preset saved and reloaded, Rank32 and Alpha16 retained"
+      ],
+      "saved_config_no_parameter_mode_key": true
+    },
+    "project_training": {
+      "url": "http://127.0.0.1:8894/projects/p_layout_qa/v/v_79ecc972e82a/train?tab=train",
+      "viewport": {
+        "width": 1004,
+        "height": 773
+      },
+      "columns": 2,
+      "column_width_px": 238,
+      "basic_controls_height_px": 34,
+      "basic_field_height_px": 62,
+      "document_horizontal_overflow": false,
+      "cases": [
+        "Rank7 to Full to LoRA restores7 and Alpha16; autosave/reload retained7",
+        "Final build resolves training-page 31px dropdown override; all basic inputs/selects34px",
+        "Advanced toggles share compact row; fields and sidebar remain separate"
+      ]
+    },
+    "formal_recheck": {
+      "status": "passed",
+      "url": "http://127.0.0.1:8876/presets",
+      "viewport": {
+        "width": 787,
+        "height": 773
+      },
+      "columns": 2,
+      "column_width_px": 258,
+      "basic_field_height_px": 62,
+      "switch_row_height_px": 30,
+      "document_horizontal_overflow": false,
+      "new_page_navigation_performed": true,
+      "formal_config_edited": false,
+      "estimated_gpu_power_w_observed": 0.73,
+      "gpu_mean_c_observed": 63.8
+    },
+    "screenshots": [],
+    "cleanup": {
+      "temporary_tab_13_closed": true,
+      "viewport_override_reset": true,
+      "temporary_qa_pid_55897_stopped": true,
+      "formal_pid_58866_preserved": true,
+      "user_tabs_untouched": true,
+      "vite_8893_untouched": true
+    }
+  },
+  "service": {
+    "version": "0.5.9",
+    "verified_at": "2026-09-12T08:26:39.069508+00:00",
+    "success": true,
+    "url": "http://127.0.0.1:8876",
+    "data_root": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio",
+    "command": [
+      "venv/bin/ypuddin",
+      "serve",
+      "--data-root",
+      "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "8876"
+    ],
+    "cwd": "/Volumes/Service/Dev/YPuddinTrainStudio/xiangmuyuanma",
+    "previous_pid": 51932,
+    "pid": 58866,
+    "session_id": 2710,
+    "log": "/private/tmp/ypuddin-v059-main-service.log",
+    "before_snapshot": "/private/tmp/ypuddin-v059-main-before.json",
+    "after_snapshot": "/private/tmp/ypuddin-v059-main-after.json",
+    "preservation": {
+      "before": "/private/tmp/ypuddin-v059-main-before.json",
+      "after": "/private/tmp/ypuddin-v059-main-after.json",
+      "preserved": true,
+      "differences": {}
+    },
+    "static_proof": "/private/tmp/ypuddin-v059-main-static-proof.json",
+    "telemetry_proof": "/private/tmp/ypuddin-v059-main-telemetry-proof.json",
+    "telemetry": {
+      "timestamp": "2026-09-12T08:25:55.589788+00:00",
+      "url": "http://127.0.0.1:8876/api/system/stats",
+      "gpu": {
+        "index": 0,
+        "kind": "mps",
+        "name": "Apple M4 GPU",
+        "util_pct": 55.0,
+        "mem_used_mb": 30795,
+        "mem_total_mb": 32768,
+        "temp_c": 73.32609176635742,
+        "power_w": 0.8559730413618859,
+        "power_source": "ioreport",
+        "power_estimated": true,
+        "power_sample_seconds": 0.25843954109586775,
+        "temperature_source": "smc",
+        "temp_max_c": 76.07444763183594,
+        "temp_sensor_count": 8,
+        "telemetry_source": "ioreg",
+        "telemetry_note": null,
+        "device": "mps",
+        "mem_free_mb": 1973,
+        "memory_scope": "unified_system"
+      },
+      "ram": {
+        "used_mb": 30795,
+        "total_mb": 32768
+      },
+      "valid_utilization_0_100": true,
+      "power_actual_reading_present": true,
+      "power_estimation_metadata_valid": true,
+      "temperature_actual_reading_present": true,
+      "temperature_aggregate_valid": true,
+      "memory_matches_system_ram": true,
+      "scope": "system GPU; power is IOReport estimate over reported sample interval; temperature is mean of valid GPU-region SMC sensors with maximum reported separately; not per-training-process metrics"
+    },
+    "health_version": "0.5.9",
+    "frontend_stale": false,
+    "business_counts": {
+      "projects": 1,
+      "project_versions": 3,
+      "datasets": 3,
+      "jobs": 3,
+      "artifacts": 8,
+      "models": 1
+    },
+    "business_files_hashed": 194,
+    "configured_credential_providers": 1,
+    "input_hashes_checked": 137,
+    "output_hashes_checked": 53,
+    "spa_routes": {
+      "/": 200,
+      "/presets": 200,
+      "/settings/environment?tab=credentials": 200
+    },
+    "backend_tests_rerun": false,
+    "notes": [
+      "A fresh snapshot was taken before this UI-only release upgrade; no earlier baseline was reused.",
+      "No active jobs or operations before restart; queue, settings, credentials and all business records/files unchanged.",
+      "Credentials compared using hashes and configured states only; no plaintext in proof.",
+      "Live sensor API was verified; no backend test suite was rerun during this deployment.",
+      "Readings describe one system sampling instant, not persistent load or training-process attribution.",
+      "User browser and other services were not changed."
+    ],
+    "proof_sha256": "7cac9a9152dbe1130dc42f1f237565726e3bfb48704c11823a337f75f3757238"
+  },
+  "evidence": [
+    {
+      "path": "/private/tmp/ypuddin-adapter-layout-tests.log",
+      "bytes": 439,
+      "sha256": "7a642f5a32efaf542e912ab96f15ef38c4260eddae53ebef25063e6c0a3c7d92"
+    },
+    {
+      "path": "/private/tmp/ypuddin-adapter-layout-eslint.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/private/tmp/ypuddin-adapter-layout-tsc.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/private/tmp/ypuddin-v059-build.log",
+      "bytes": 4560,
+      "sha256": "23a16504aa7962942960c47ead703ca8d57abe6b8ee34c0da75701b7d4532fb4"
+    }
+  ],
+  "limitations": [
+    "Targeted frontend regression only; no full backend suite or model training.",
+    "Browser editing used isolated QA project/preset; formal projects and presets were not edited.",
+    "Native sensor implementation unchanged from v0.5.8; service and package contract checks are recorded separately."
+  ],
+  "code_review": {
+    "independent_review": "passed",
+    "focus": [
+      "Rank validity across algorithm changes",
+      "temporary memory cleared on external preset replacement",
+      "existing configuration fields retained",
+      "adapter scoped CSS"
+    ],
+    "tests_rerun_by_reviewer": false
+  }
+}

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "YPuddin Train Studio",
-    "version": "0.5.8"
+    "version": "0.5.9"
   },
   "paths": {
     "/api/health": {

@@ -243,6 +243,16 @@
 .config-field-toggle > div:first-child { flex:1; }
 .config-field-toggle > .mt-1 { margin:0 0 0 6px; }
 .config-field-toggle > p { grid-column:1 / -1; }
+/* Adapter controls form explicit pairs without changing other schema groups. */
+.config-adapter-group { container:adapter-fields / inline-size; }
+.config-adapter-fields { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.config-adapter-fields .config-field input:not([type=checkbox]):not([type=range]), .config-adapter-fields .config-number-control > input[type=range] { height:34px; }
+.config-adapter-group .config-adapter-fields .config-field .studio-select { height:34px; min-height:34px; }
+.config-adapter-switches { grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:start; gap:6px 18px; }
+.config-adapter-switches > .config-field-toggle { align-self:start; min-height:30px; padding:0; border:0; border-radius:0; background:transparent; gap:8px; }
+.config-adapter-switches > .config-field-toggle > div:first-child { gap:8px; }
+.config-adapter-switches > .config-field-toggle > .mt-1 { margin:0; }
+@container adapter-fields (max-width:420px) { .config-adapter-fields { grid-template-columns:minmax(0,1fr); } }
 .training-toolbar { position:sticky; top:0; z-index:12; padding:6px 0; background:var(--studio-muted); }
 .config-tabs { position:sticky; top:46px; z-index:11; background:var(--studio-muted); }
 .training-inspector { top:52px; }

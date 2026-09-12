@@ -626,7 +626,7 @@ const FieldGroup: React.FC<{
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = React.useState(true);
   return (
-    <section data-group={groupKey} className={compact ? `config-group ${['model', 'dataset', 'caption', 'sampling', 'validation'].includes(groupKey || '') ? 'config-group-wide' : ''}` : 'border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800'}>
+    <section data-group={groupKey} className={`${groupKey === 'adapter' ? 'config-adapter-group ' : ''}${compact ? `config-group ${['model', 'dataset', 'caption', 'sampling', 'validation'].includes(groupKey || '') ? 'config-group-wide' : ''}` : 'border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800'}`}>
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
@@ -643,7 +643,7 @@ const FieldGroup: React.FC<{
           {isOpen ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
         </span>
       </button>
-      {isOpen && <div className={compact ? 'config-fields' : 'p-4 space-y-4'}>{children}</div>}
+      {isOpen && <div className={groupKey === 'adapter' ? 'config-fields config-adapter-fields' : compact ? 'config-fields' : 'p-4 space-y-4'}>{children}</div>}
     </section>
   );
 };
@@ -668,15 +668,29 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   const english = i18n.resolvedLanguage?.startsWith('en') || false;
   const [editCaptionOverrides, setEditCaptionOverrides] = React.useState(false);
   const [editOutput, setEditOutput] = React.useState(false);
+  const lastLowRank = React.useRef<number | null>(null);
+  const lastEmittedConfig = React.useRef<Record<string, any> | null>(null);
+  React.useEffect(() => {
+    // Only retain a rank across changes emitted by this editor. Selecting another
+    // preset or loading an external draft must not inherit this temporary value.
+    if (value !== lastEmittedConfig.current) lastLowRank.current = null;
+    lastEmittedConfig.current = null;
+  }, [value]);
   const captionOverrideKeys = ['prefix', 'suffix', 'trigger_word'];
   const hasCaptionOverrides = captionOverrideKeys.some(key => !!value.dataset?.caption?.[key]);
-  const onChange = readOnly ? () => {} : onValueChange;
+  const onChange = (next: Record<string, any>) => {
+    if (readOnly) return;
+    lastEmittedConfig.current = next;
+    onValueChange(next);
+  };
+  const lokrModeLabel = english ? 'LoKr parameter mode' : 'LoKr 参数形式';
   const groups: Record<string, { order: number; fields: React.ReactNode[] }> = {};
   const conditionValue = { ...value, dataset: { resolution_mode: 'bucket', ...value.dataset } };
 
   const renderField = (key: string, prop: SchemaProperty, parentPath: string[] = []) => {
     const path = [...parentPath, key];
     const fullPathKey = path.join('.');
+    const lokrRank = fullPathKey === 'adapter.rank' && value.adapter?.algo === 'lokr';
     // Keep legacy cloud-log data in the draft, but do not expose controls that enable it.
     if (fullPathKey === 'logging.wandb' || fullPathKey.startsWith('logging.wandb.')) return null;
     // The service assigns a separate samples/<job_id> destination when starting a task.
@@ -696,7 +710,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const fieldId = `config-${fullPathKey}`;
     const currentGroup = ui.group || parentPath[0] || 'default';
     if (groupFilter && !groupFilter.includes(currentGroup)) return null;
-    if (search && !`${fieldLabel} ${fullPathKey} ${prop.description || ''}`.toLowerCase().includes(search.toLowerCase())) return null;
+    if (search && !`${fieldLabel} ${fullPathKey} ${prop.description || ''} ${lokrRank ? lokrModeLabel : ''}`.toLowerCase().includes(search.toLowerCase())) return null;
 
     const captionOverride = fullPathKey.startsWith('dataset.caption.') && captionOverrideKeys.includes(key);
     if ((ui.advanced || captionOverride) && !showAdvanced && !(captionOverride && editCaptionOverrides) && !(editOutput && ['checkpoint.output_dir', 'checkpoint.name'].includes(fullPathKey))) return null;
@@ -712,6 +726,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const errorItem = errors.find((e) => e.loc === fullPathKey || e.loc?.startsWith(`${fullPathKey}.`));
     const fieldValue = getNestedValue(value, path) !== undefined ? getNestedValue(value, path) : prop.default;
     const groupName = ui.group || (parentPath.length > 0 ? parentPath[0] : 'default');
+    const compactField = compact || groupName === 'adapter';
     // These fields are probabilities/fractions, unlike EMA decay, timesteps, and
     // warmup's mixed steps-or-ratio contract, which retain their native units.
     const percentage = ['adapter.dropout', 'adapter.rank_dropout', 'adapter.module_dropout', 'dataset.area_tolerance', 'dataset.caption.tag_dropout', 'dataset.caption.caption_dropout', 'scheduler.min_lr_ratio', 'validation.split_ratio'].includes(fullPathKey);
@@ -807,16 +822,15 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           onChange={(val) => onChange(setNestedValue(value, path, val === '' && prop.anyOf?.some((p) => p.type === 'null') ? null : val))}
         />
       );
-    } else if (fullPathKey === 'adapter.rank' && value.adapter?.algo === 'lokr') {
-      control = <div className="space-y-2"><StudioSelect aria-label={english ? 'LoKr parameter mode' : 'LoKr 参数形式'} value={fieldValue === 'full' ? 'full' : 'low_rank'}
-        onValueChange={next=>onChange(setNestedValue(value,path,next==='full'?'full':16))} options={[
-          {value:'full',label:english?'Full · full factor matrices':'Full · 完整因子矩阵'},
-          {value:'low_rank',label:english?'Low rank · factor decomposition':'低秩 · 分解因子矩阵'},
-        ]}/>
-        {fieldValue !== 'full' ? <input type="number" aria-label={fieldLabel} min="1" step="1" value={fieldValue ?? 16} onChange={event=>onChange(setNestedValue(value,path,Number(event.target.value)))}/> : <p className="text-xs text-slate-500">{english?'Retains the LoKr structure; does not fine-tune the whole model. Alpha is not used in this mode.':'仍保留 LoKr 结构，不是全量微调；此模式不使用 Alpha 缩放。'}</p>}
-      </div>;
+    } else if (fullPathKey === 'adapter.rank') {
+      control = <input type="number" aria-label={fieldLabel} min="1" step="1" value={fieldValue === 'full' ? '' : fieldValue ?? 16}
+        onChange={event => {
+          const rank = event.target.value === '' ? undefined : Number(event.target.value);
+          if (typeof rank === 'number' && Number.isInteger(rank) && rank > 0) lastLowRank.current = rank;
+          onChange(setNestedValue(value, path, rank));
+        }}/>;
     } else if (prop.anyOf) {
-      control = <SchemaValueInput schema={schema} property={prop} value={fieldValue} name={fullPathKey} compact={compact}
+      control = <SchemaValueInput schema={schema} property={prop} value={fieldValue} name={fullPathKey} compact={compactField}
         placeholder={family && fullPathKey.startsWith('sampling.') && ['steps', 'cfg', 'shift'].includes(key) ? (family.sampling?.[key as 'steps' | 'cfg' | 'shift'] != null ? String(family.sampling[key as 'steps' | 'cfg' | 'shift']) : key === 'shift' ? t('sampling.shiftAuto') : undefined) : undefined}
         onChange={(val) => onChange(setNestedValue(value, path, val))} />;
     } else if (fullPathKey === 'model.family' && families?.length) {
@@ -850,7 +864,13 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     } else if (prop.enum) {
       control = (
         <StudioSelect aria-label={fieldLabel} value={fieldValue == null ? '' : String(fieldValue)}
-          onValueChange={next => onChange(setNestedValue(value,path,prop.enum!.find(option=>String(option)===next)))}
+          onValueChange={next => {
+            const updated = setNestedValue(value, path, prop.enum!.find(option => String(option) === next));
+            // A full LoKr factor matrix is not a valid numeric rank for LoRA/LoHa.
+            onChange(fullPathKey === 'adapter.algo' && next !== 'lokr' && value.adapter?.rank === 'full'
+              ? setNestedValue(updated, ['adapter', 'rank'], lastLowRank.current ?? 16)
+              : updated);
+          }}
           options={prop.enum.map(option=>({value:String(option),label:configOptionLabel(fullPathKey,String(option),english)}))}/>
 
       );
@@ -928,22 +948,22 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         ? (family.weights || []).find((w) => w.field === key)
         : undefined;
 
-    const wide = ['sources', 'rules', 'prompts', 'resolutions', 'args', 'group_lr'].includes(key) || ui.control === 'path' || key.endsWith('_path') || key === 'output_dir';
+    const wide = ['sources', 'rules', 'prompts', 'resolutions', 'args', 'group_lr'].includes(key) || ui.control === 'path' || key.endsWith('_path') || key === 'output_dir' || fullPathKey === 'adapter.lr_scale';
     if (React.isValidElement(control) && (typeof control.type === 'string' || control.type === StudioSelect)) {
       control = React.cloneElement(control as React.ReactElement<any>, {id: fieldId, 'aria-label': (control.props as any)['aria-label'] || fieldLabel, 'aria-invalid': !!errorItem});
     }
     const help = [prop.description, weightMeta?.hint].filter(Boolean).join('\n');
     const label = (
-      <div key={fullPathKey} id={`field-${fullPathKey}`} data-testid={`field-${fullPathKey}`} className={compact ? `config-field ${prop.type === 'boolean' ? 'config-field-toggle' : ''} ${wide ? 'config-field-wide' : ''} ${errorItem ? 'config-field-invalid' : ''}` : `flex flex-col space-y-1 p-2 rounded ${errorItem ? 'bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800' : ''}`}>
+      <div key={fullPathKey} id={`field-${fullPathKey}`} data-testid={`field-${fullPathKey}`} data-control-kind={prop.type === 'boolean' ? 'toggle' : undefined} className={compactField ? `config-field ${prop.type === 'boolean' ? 'config-field-toggle' : ''} ${wide ? 'config-field-wide' : ''} ${errorItem ? 'config-field-invalid' : ''}` : `flex flex-col space-y-1 p-2 rounded ${errorItem ? 'bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800' : ''}`}>
         <div className="flex justify-between items-center">
           <label htmlFor={fieldId} className="text-sm font-medium text-slate-700 dark:text-slate-300">
-            {compact ? fieldLabel : weightMeta?.label || fieldLabel}
+            {compactField ? fieldLabel : weightMeta?.label || fieldLabel}
             {ui.unit && !percentage && ui.control !== 'slider' && <span className="ml-1 text-xs text-slate-500">({ui.unit})</span>}
           </label>
-          {compact && help && <ConfigHelp label={`${fieldLabel} ${english ? 'help' : '说明'}`}>{help}</ConfigHelp>}
+          {compactField && help && <ConfigHelp label={`${fieldLabel} ${english ? 'help' : '说明'}`}>{help}</ConfigHelp>}
         </div>
-        {!compact && prop.description && <p className="text-xs text-slate-500 dark:text-slate-400">{prop.description}</p>}
-        {!compact && weightMeta?.hint && (
+        {!compactField && prop.description && <p className="text-xs text-slate-500 dark:text-slate-400">{prop.description}</p>}
+        {!compactField && weightMeta?.hint && (
           <p className="text-[11px] text-slate-400 dark:text-slate-500" data-testid={`weight-hint-${key}`}>
             {weightMeta.hint}
           </p>
@@ -956,7 +976,27 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (!groups[groupName]) {
       groups[groupName] = { order: ui.order || 0, fields: [] };
     }
-    groups[groupName].fields.push(label);
+    if (lokrRank) {
+      const modeId = 'config-adapter-parameter-mode';
+      groups[groupName].fields.push(<div key="adapter.parameter_mode" id={fieldValue === 'full' ? 'field-adapter.rank' : 'field-adapter.parameter_mode'} data-testid="field-adapter.parameter_mode" className={`config-field ${fieldValue === 'full' && errorItem ? 'config-field-invalid' : ''}`}>
+        <div className="flex justify-between items-center">
+          <label htmlFor={modeId} className="text-sm font-medium text-slate-700 dark:text-slate-300">{lokrModeLabel}</label>
+          <ConfigHelp label={`${lokrModeLabel} ${english ? 'help' : '说明'}`}>{english ? 'Full retains the complete LoKr factor matrices; it does not fine-tune the whole model and does not use Alpha. Low rank decomposes the factors using Rank and Alpha.' : 'Full 保留 LoKr 完整因子矩阵，不是全量微调，也不使用 Alpha。低秩模式通过 Rank 和 Alpha 设置因子分解与缩放。'}</ConfigHelp>
+        </div>
+        <div className="mt-1"><StudioSelect id={modeId} aria-label={lokrModeLabel} disabled={readOnly} value={fieldValue === 'full' ? 'full' : 'low_rank'}
+          aria-invalid={fieldValue === 'full' && !!errorItem}
+          onValueChange={next => {
+            if (typeof fieldValue === 'number' && Number.isInteger(fieldValue) && fieldValue > 0) lastLowRank.current = fieldValue;
+            const defaultRank = typeof prop.default === 'number' && Number.isInteger(prop.default) && prop.default > 0 ? prop.default : 16;
+            onChange(setNestedValue(value, path, next === 'full' ? 'full' : lastLowRank.current ?? defaultRank));
+          }} options={[
+            {value: 'full', label: english ? 'Full · full factor matrices' : 'Full · 完整因子矩阵'},
+            {value: 'low_rank', label: english ? 'Low rank · factor decomposition' : '低秩 · 分解因子矩阵'},
+          ]}/></div>
+        {fieldValue === 'full' && errorItem && <p>{errorItem.msg}</p>}
+      </div>);
+    }
+    if (!lokrRank || fieldValue !== 'full') groups[groupName].fields.push(label);
   };
 
   if (schema?.properties) {
@@ -1007,7 +1047,18 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
             })}
           </div>}
           {groupName === 'caption' && hasCaptionOverrides && !showAdvanced && !editCaptionOverrides && <div className="caption-override-notice" role="status"><span>{english ? 'This configuration adds text to your existing captions.' : '当前配置会额外改写已有标签。'}</span><button type="button" onClick={() => setEditCaptionOverrides(true)}>{english ? 'Edit extra caption changes' : '编辑额外标签改写'}</button></div>}
-          {compact && groupName === 'sampling' ? [...groupData.fields].sort((a, b) => {
+          {groupName === 'adapter' ? (() => {
+            const order = ['algo', 'preset', 'parameter_mode', 'factor', 'rank', 'alpha', 'init', 'mode', 'param_dtype', 'dropout', 'rank_dropout', 'module_dropout', 'lr_scale', 'rules', 'resume_weights'];
+            const isToggle = (node: React.ReactNode) => (node as React.ReactElement).props['data-control-kind'] === 'toggle';
+            const fields = groupData.fields.filter(node => !isToggle(node)).sort((a, b) => {
+              const rank = (node: React.ReactNode) => { const index = order.indexOf(String((node as React.ReactElement).key).split('.').pop() || ''); return index < 0 ? order.length : index; };
+              return rank(a) - rank(b);
+            });
+            const switches = groupData.fields.filter(isToggle);
+            const advancedIndex = fields.findIndex(node => !['algo', 'preset', 'parameter_mode', 'factor', 'rank', 'alpha'].includes(String((node as React.ReactElement).key).split('.').pop() || ''));
+            const split = advancedIndex < 0 ? fields.length : advancedIndex;
+            return <>{fields.slice(0, split)}{switches.length > 0 && <div className="config-adapter-switches">{switches}</div>}{fields.slice(split)}</>;
+          })() : compact && groupName === 'sampling' ? [...groupData.fields].sort((a, b) => {
             const order = ['enabled', 'at_start', 'every_steps', 'every_epochs', 'prompts', 'width', 'height', 'steps', 'cfg', 'shift', 'seed', 'sampler', 'scheduler', 'er_sde_order', 'er_sde_s_noise', 'prompts_file'];
             const rank = (node: React.ReactNode) => { const index = order.indexOf(String((node as React.ReactElement).key).split('.').pop() || ''); return index < 0 ? order.length : index; };
             return rank(a) - rank(b);
