@@ -105,7 +105,7 @@ describe('stable system telemetry', () => {
     expect(screen.getByLabelText('系统统一内存占用率')).toHaveTextContent('50%');
     expect(screen.queryByLabelText('显存占用率')).not.toBeInTheDocument();
     expect(screen.getByTestId('telemetry-gpu')).toHaveAttribute('title', expect.stringContaining('并非 GPU 专用显存或训练进程分配量'));
-    expect(screen.getByLabelText('GPU 功率')).toHaveTextContent(/^—$/);
+    expect(screen.getByLabelText('GPU 估算功率')).toHaveTextContent(/^—$/);
   });
 
   it.each([0, 46])('shows Apple GPU driver utilization %s while missing power and temperature stay independent', value => {
@@ -118,9 +118,9 @@ describe('stable system telemetry', () => {
     expect(group).toHaveAttribute('title',expect.stringContaining('IORegistry'));
     expect(group.getAttribute('title')).not.toContain('不提供');
     expect(group.getAttribute('title')).not.toContain('未取得 GPU 利用率');
-    expect(screen.getByLabelText('GPU 功率')).toHaveTextContent(/^—$/);
-    expect(screen.getByLabelText('GPU 功率').parentElement).toHaveAttribute('title','当前未取得 GPU 功率读数。');
-    expect(screen.getByLabelText('GPU 温度').parentElement).toHaveAttribute('title','当前未取得 GPU 温度读数。');
+    expect(screen.getByLabelText('GPU 估算功率')).toHaveTextContent(/^—$/);
+    expect(screen.getByLabelText('GPU 估算功率').parentElement).toHaveAttribute('title','当前未取得 GPU 功率读数。');
+    expect(screen.getByLabelText('GPU 均温').parentElement).toHaveAttribute('title','当前未取得 GPU 温度读数。');
     rerender(<SystemTelemetry stats={{...data,gpus:[{...data.gpus[0],telemetry_source:'mps',util_pct:null}]}}/>);
     expect(screen.getByLabelText('全系统 GPU 占用率')).toHaveTextContent(/^—$/);
     expect(group.getAttribute('title')).toContain('当前未取得 GPU 利用率读数');
@@ -134,9 +134,50 @@ describe('stable system telemetry', () => {
     render(<SystemTelemetry stats={data}/>);
     expect(screen.getByLabelText('System GPU utilization')).toHaveTextContent('46%');
     expect(screen.getByTestId('telemetry-gpu').getAttribute('title')).toContain('including the desktop and other applications');
-    expect(screen.getByLabelText('GPU power').parentElement).toHaveAttribute('title','No GPU power reading is currently available.');
-    expect(screen.getByLabelText('GPU temperature').parentElement).toHaveAttribute('title','No GPU temperature reading is currently available.');
+    expect(screen.getByLabelText('Estimated GPU power').parentElement).toHaveAttribute('title','No GPU power reading is currently available.');
+    expect(screen.getByLabelText('Mean GPU temperature').parentElement).toHaveAttribute('title','No GPU temperature reading is currently available.');
     expect(screen.getByTestId('telemetry-gpu').getAttribute('title')).not.toContain('does not expose');
+  });
+
+  it.each([[0,'0'],[0.37,'0.37'],[0.004,'<0.01']])('shows Apple estimated watts %s without rounding positive idle readings to zero', (power, displayed) => {
+    const data=snapshot(); data.gpus[0]={...data.gpus[0],kind:'mps',telemetry_source:'ioreg',power_w:power as number,power_source:'ioreport',power_estimated:true,power_sample_seconds:1.25,temp_c:45.64,temp_max_c:49.83,temp_sensor_count:8,temperature_source:'smc'};
+    render(<SystemTelemetry stats={data}/>);
+    expect(screen.getByLabelText('GPU 估算功率')).toHaveTextContent(`${displayed} W`);
+    expect(screen.getByText('估算功率')).toBeInTheDocument();
+    const powerCell=screen.getByLabelText('GPU 估算功率').parentElement!;
+    expect(powerCell).toHaveAttribute('title',expect.stringContaining('IOReport'));
+    expect(powerCell).toHaveAttribute('title',expect.stringContaining('平均采样区间：1.25 秒'));
+    expect(powerCell).toHaveAttribute('title',expect.stringContaining('不是整机输入功率'));
+    expect(screen.getByText('均温')).toBeInTheDocument();
+    const temperature=screen.getByLabelText('GPU 均温');
+    expect(temperature).toHaveTextContent('45.6 °C');
+    expect(temperature.parentElement).toHaveAttribute('title',expect.stringContaining('最高温：49.8 °C'));
+    expect(temperature.parentElement).toHaveAttribute('title',expect.stringContaining('有效传感器：8 个'));
+    expect(temperature.parentElement).toHaveAttribute('title',expect.stringContaining('不是 GPU 核心数'));
+    expect(temperature.parentElement).toHaveAttribute('title',expect.stringContaining('SMC'));
+  });
+
+  it('keeps sensor failures independent and does not fabricate missing sampling metadata', () => {
+    const data=snapshot(); data.gpus[0]={...data.gpus[0],kind:'mps',power_w:0.37,power_estimated:true,power_sample_seconds:null,power_source:'ioreport',temp_c:null,temp_max_c:null,temp_sensor_count:null,temperature_source:null};
+    const {rerender}=render(<SystemTelemetry stats={data}/>);
+    expect(screen.getByLabelText('GPU 估算功率')).toHaveTextContent('0.37 W');
+    expect(screen.getByLabelText('GPU 估算功率').parentElement).toHaveAttribute('title',expect.stringContaining('平均采样区间未取得'));
+    expect(screen.getByLabelText('GPU 均温')).toHaveTextContent(/^—$/);
+    rerender(<SystemTelemetry stats={{...data,gpus:[{...data.gpus[0],power_w:null,temp_c:44.1}]}}/>);
+    expect(screen.getByLabelText('GPU 估算功率')).toHaveTextContent(/^—$/);
+    expect(screen.getByLabelText('GPU 均温')).toHaveTextContent('44.1 °C');
+    expect(screen.getByLabelText('GPU 均温').parentElement).toHaveAttribute('title',expect.stringContaining('最高温未取得'));
+    expect(screen.getByLabelText('GPU 均温').parentElement).toHaveAttribute('title',expect.stringContaining('有效传感器数量未取得'));
+  });
+
+  it('keeps CUDA integer readings and labels without Apple sensor explanations', () => {
+    render(<SystemTelemetry stats={snapshot()}/>);
+    expect(screen.getByLabelText('GPU 功率')).toHaveTextContent('193 W');
+    expect(screen.getByLabelText('GPU 温度')).toHaveTextContent('58 °C');
+    expect(screen.queryByText('估算功率')).not.toBeInTheDocument();
+    expect(screen.queryByText('均温')).not.toBeInTheDocument();
+    const tip=screen.getByTestId('telemetry-gpu').getAttribute('title');
+    expect(tip).not.toMatch(/Apple|IOReport|SMC|均温|估算平均功率/);
   });
 
   it('removes normal connection text, keeps disconnect feedback, and updates live readings', async () => {

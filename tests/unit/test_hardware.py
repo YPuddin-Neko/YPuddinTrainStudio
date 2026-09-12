@@ -9,6 +9,11 @@ import pytest
 from ypuddin.server import hardware as hw
 
 
+@pytest.fixture(autouse=True)
+def isolate_native_apple_sensors(monkeypatch):
+    monkeypatch.setattr(hw, "_apple_gpu_sensors", lambda: {"power_w": None, "temp_c": None})
+
+
 @pytest.fixture
 def cuda(monkeypatch):
     monkeypatch.setattr(hw.torch.cuda, "is_available", lambda: True)

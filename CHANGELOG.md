@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.8（2026-09-12 Apple GPU 功率与温度）
+
+本轮接入 Mac GPU 功率和温度：`power_w` 表示 IOReport 估算的 GPU 功率，`temp_c` 表示 SMC 中可用 GPU 区域传感器的平均温度。它们与 GPU 利用率、系统统一内存各自独立，不能解释为训练进程功耗或单一芯片热点温度。无法采集时保留未知，不通过利用率推算或填零。
+
+来源说明、最高温度/有效传感器数量与兼容边界以 [Mac GPU 传感器说明](docs/MAC_GPU_SENSORS_2026-09-12.md) 和 `docs/validation/v0.5.8.json` 为准。Apple M4 的 QA 页面及正式服务均已读取到功率和温度；正式升级重新采集并核对了 194 个业务文件、数据库、设置与凭据状态。其他芯片、系统版本与正式大模型训练不由本次遥测验收推断。提交与归档校验以发布包旁的 verification JSON 为准。
+
 ## 0.5.7（2026-09-12 Apple GPU 占用监控）
 
 Apple Silicon 的 GPU 占用不再固定显示未知：从 macOS IORegistry 中唯一可识别的 AGX 加速器读取驱动提供的 `Device Utilization %`，使用 2 秒缓存与 2 秒探测超时。缺少字段、来源不唯一、无效数值或探测失败仍返回未知，不保留过期读数、不使用统一内存占用冒充 GPU 利用率。

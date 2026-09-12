@@ -45,6 +45,12 @@ class GpuStats(_Out):
     temp_c: float | None = None
     power_w: float | None = None
     power_limit_w: float | None = None
+    power_source: str | None = None
+    power_estimated: bool | None = None
+    power_sample_seconds: float | None = None
+    temperature_source: str | None = None
+    temp_max_c: float | None = None
+    temp_sensor_count: int | None = None
     telemetry_source: str | None = None
     telemetry_note: str | None = None
     cuda_available: bool | None = None

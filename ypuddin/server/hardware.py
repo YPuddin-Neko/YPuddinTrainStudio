@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import math
 import os
 import plistlib
@@ -24,6 +25,74 @@ _smi_lock = threading.Lock()
 _smi_cache: tuple[float, list[dict[str, Any]]] = (0, [])
 _apple_gpu_lock = threading.Lock()
 _apple_gpu_cache: tuple[float, float | None] | None = None
+_apple_sensors_lock = threading.Lock()
+_apple_sensors_cache: tuple[float, dict[str, Any]] | None = None
+
+
+def _apple_gpu_sensors() -> dict[str, Any]:
+    """Bound native sensor reads to a disposable process, shared for two seconds.
+
+    IOReport/SMC are private interfaces. A missing symbol, native crash or hung
+    driver must not crash the web server or prevent other telemetry from updating.
+    The standard-library-only worker uses this interpreter, without sudo/helpers.
+    """
+    empty = {
+        "power_w": None,
+        "temp_c": None,
+        "temp_max_c": None,
+        "temp_sensor_count": 0,
+        "power_sample_seconds": None,
+    }
+    if sys.platform != "darwin":
+        return empty
+    global _apple_sensors_cache
+    with _apple_sensors_lock:
+        if _apple_sensors_cache is not None and time.monotonic() - _apple_sensors_cache[0] < 2:
+            return dict(_apple_sensors_cache[1])
+        reading = dict(empty)
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-I",
+                    str(Path(__file__).with_name("apple_sensors.py")),
+                    "--chip",
+                    _apple_name(),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=True,
+            )
+            data = json.loads(result.stdout)
+            if isinstance(data, dict):
+
+                def valid(value: Any, low: float, high: float = math.inf) -> bool:
+                    return (
+                        isinstance(value, (int, float))
+                        and not isinstance(value, bool)
+                        and math.isfinite(value)
+                        and low <= value <= high
+                    )
+
+                interval = data.get("power_sample_seconds")
+                if valid(data.get("power_w"), 0) and valid(interval, 0.01, 5):
+                    reading["power_w"] = data["power_w"]
+                    reading["power_sample_seconds"] = interval
+                count = data.get("temp_sensor_count")
+                mean, peak = data.get("temp_c"), data.get("temp_max_c")
+                if (
+                    type(count) is int
+                    and 1 <= count <= 128
+                    and valid(mean, 0.01, 150)
+                    and valid(peak, 0.01, 150)
+                    and peak >= mean
+                ):
+                    reading.update(temp_c=mean, temp_max_c=peak, temp_sensor_count=count)
+        except (OSError, subprocess.SubprocessError, ValueError, TypeError, OverflowError):
+            pass
+        _apple_sensors_cache = (time.monotonic(), reading)
+        return dict(reading)
 
 
 def _apple_gpu_utilization() -> float | None:
@@ -54,8 +123,7 @@ def _apple_gpu_utilization() -> float | None:
                 apple = [
                     entry
                     for entry in entries
-                    if isinstance(entry, dict)
-                    and str(entry.get("IOClass", "")).startswith("AGXAccelerator")
+                    if isinstance(entry, dict) and str(entry.get("IOClass", "")).startswith("AGXAccelerator")
                 ]
                 if len(apple) == 1:
                     stats = apple[0].get("PerformanceStatistics")
@@ -276,6 +344,7 @@ def gpu_info(*, include_unavailable: bool = False, system_memory: Any | None = N
     if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
         vm = system_memory if system_memory is not None else psutil.virtual_memory()
         utilization = _apple_gpu_utilization()
+        sensors = _apple_gpu_sensors()
         # This is system unified-memory usage, not a fabricated GPU-process allocation.
         return [
             {
@@ -288,10 +357,12 @@ def gpu_info(*, include_unavailable: bool = False, system_memory: Any | None = N
                 "mem_free_mb": round(vm.available / 2**20),
                 "memory_scope": "unified_system",
                 "util_pct": utilization,
-                "temp_c": None,
-                "power_w": None,
+                **sensors,
+                "power_source": "ioreport" if sensors["power_w"] is not None else None,
+                "power_estimated": True if sensors["power_w"] is not None else None,
+                "temperature_source": "smc" if sensors["temp_c"] is not None else None,
                 "telemetry_source": "ioreg" if utilization is not None else "mps",
-                "telemetry_note": "mps_power_unavailable",
+                "telemetry_note": "mps_power_unavailable" if sensors["power_w"] is None else None,
             }
         ]
     if include_unavailable:

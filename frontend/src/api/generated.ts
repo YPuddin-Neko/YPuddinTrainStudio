@@ -2637,6 +2637,18 @@ export interface components {
             power_w?: number | null;
             /** Power Limit W */
             power_limit_w?: number | null;
+            /** Power Source */
+            power_source?: string | null;
+            /** Power Estimated */
+            power_estimated?: boolean | null;
+            /** Power Sample Seconds */
+            power_sample_seconds?: number | null;
+            /** Temperature Source */
+            temperature_source?: string | null;
+            /** Temp Max C */
+            temp_max_c?: number | null;
+            /** Temp Sensor Count */
+            temp_sensor_count?: number | null;
             /** Telemetry Source */
             telemetry_source?: string | null;
             /** Telemetry Note */

@@ -30,10 +30,31 @@ describe('GPU telemetry presentation', () => {
     rerender(<MemoryRouter><GpuCard gpu={{...gpu,util_pct:null,power_w:22,temp_c:45}}/></MemoryRouter>);
     expect(screen.getByText('全系统 GPU 占用率').nextElementSibling).toHaveTextContent('—');
     expect(screen.getByTestId('gpu-power')).toHaveTextContent('22W');
-    expect(screen.getByText('温度').nextElementSibling).toHaveTextContent('45°');
+    expect(screen.getByText('GPU 均温').nextElementSibling).toHaveTextContent('45 °C');
     expect(screen.getByText('当前未取得 GPU 利用率读数。')).toBeInTheDocument();
     expect(screen.queryByText(/当前未取得 GPU 功率读数/)).not.toBeInTheDocument();
     expect(screen.queryByText(/当前未取得 GPU 温度读数/)).not.toBeInTheDocument();
+  });
+
+  it.each([0,0.37])('labels Apple watts %s as an interval estimate and temperature as sensor mean',power=>{
+    render(<MemoryRouter><GpuCard gpu={{index:0,name:'Apple M4 GPU',kind:'mps',power_w:power,power_source:'ioreport',power_estimated:true,power_sample_seconds:1.25,temp_c:45.64,temp_max_c:49.83,temp_sensor_count:8,temperature_source:'smc'}}/></MemoryRouter>);
+    expect(screen.getByText('GPU 估算功率')).toBeInTheDocument();
+    expect(screen.getByTestId('gpu-power')).toHaveTextContent(`${power}W`);
+    expect(screen.getByTestId('gpu-power').parentElement).toHaveAttribute('title',expect.stringContaining('平均采样区间：1.25 秒'));
+    expect(screen.getByTestId('gpu-power').parentElement).toHaveAttribute('title',expect.stringContaining('不是整机输入功率'));
+    expect(screen.getByText('GPU 均温').nextElementSibling).toHaveTextContent('45.6 °C');
+    expect(screen.getByText('GPU 均温').parentElement).toHaveAttribute('title',expect.stringContaining('最高温：49.8 °C'));
+    expect(screen.getByText('GPU 均温').parentElement).toHaveAttribute('title',expect.stringContaining('有效传感器：8 个'));
+  });
+
+  it('renders estimated power and averaged temperatures in English',async()=>{
+    await i18n.changeLanguage('en');
+    render(<MemoryRouter><GpuCard gpu={{index:0,name:'Apple M4 GPU',kind:'mps',power_w:0.37,power_source:'ioreport',power_estimated:true,power_sample_seconds:2,temp_c:40.3,temp_max_c:44.2,temp_sensor_count:6,temperature_source:'smc'}}/></MemoryRouter>);
+    expect(screen.getByText('Estimated GPU power')).toBeInTheDocument();
+    expect(screen.getByTestId('gpu-power')).toHaveTextContent('0.37W');
+    expect(screen.getByTestId('gpu-power').parentElement).toHaveAttribute('title',expect.stringContaining('Averaged over 2 seconds'));
+    expect(screen.getByText('Mean GPU temperature').parentElement).toHaveAttribute('title',expect.stringContaining('not the GPU core count'));
+    expect(screen.getByText('Mean GPU temperature').parentElement).toHaveAttribute('title',expect.stringContaining('Maximum: 44.2 °C'));
   });
 
 });

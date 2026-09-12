@@ -1,12 +1,12 @@
 # YPuddin Train Studio — 项目交接报告
 
 > 写给接手本项目的模型/工程师。本文自洽：读完这一份 + 点开的几个文件，就能不需要前任任何上下文地继续开发。
-> 日期：2026-09-12 · 仓库：`xiangmuyuanma/` · 当前源码、前端与正式 8876 服务版本为 0.5.7；升级证据以最新验证记录为准，不复用旧版测试总数。
+> 日期：2026-09-12 · 仓库：`xiangmuyuanma/` · 当前源码、前端与正式 8876 服务版本为 0.5.8；升级证据以最新验证记录为准，不复用旧版测试总数。
 
 ## 0. 先读这三个文件
 
 1. 本文。
-   本轮补丁先读 `docs/MAC_GPU_TELEMETRY_2026-09-12.md` 与 `docs/validation/v0.5.7.json`，下面的 v0.5.6 报告保留上一轮完整架构与工作流说明。
+   本轮补丁先读 `docs/MAC_GPU_SENSORS_2026-09-12.md` 与 `docs/validation/v0.5.8.json`。`docs/MAC_GPU_TELEMETRY_2026-09-12.md` 保留 v0.5.7 利用率采集记录，下面的 v0.5.6 报告保留完整架构与工作流说明。
 2. `docs/UI_REVIEW_V056_2026-09-12.md` —— 本轮来源用途自动识别、整图保留、图像绘制、输出绑定、模型检测与运行环境说明；`docs/TRAINING_PARAMETERS.md`、`docs/JSON_CAPTIONS.md` 给出实际参数与格式契约。`docs/UI_PARAMETERS_V055_2026-09-12.md` 保留独立预设、加载保护、Help 浮层、JSON 标签、优化器/LoKr 与 ER-SDE 的历史实现和验证。`docs/UI_WORKSPACE_V054_2026-09-12.md` 保留三阶段导航、边框吸顶、采样参数/损失、项目分类封面、版本模型族与错误恢复的历史验收。`docs/UI_WORKSPACE_V053_2026-09-12.md` 保留 v0.5.3 侧栏、导入、结果及移动叠层证据；`docs/USER_REQUIREMENTS_AUDIT_2026-09-12.md` 逐项对应历史要求并追加本轮变化。`docs/UI_DESIGN_REVIEW_2026-09-12.md` 保留 v0.5.2 中央访问密钥、官方模型候选、队列/版本结果、导航标签与请求隔离。`docs/UI_SIMPLIFICATION_2026-09-12.md` 保留 v0.5.1 项目目录、正则图及自动打标移除记录；`docs/native-resolution.md` 解释原生尺寸与梯度规则。UI_PIPELINE、UI_VERSIONS、UI_WORKFLOW、UI_REDESIGN、FIX_REPORT 与 COMPLETION_AUDIT 是历史证据。
 3. `docs/design/03-status.md` —— 逐组件状态表与运行方式。
 
@@ -19,7 +19,13 @@
 - **形态**：Python 包 `ypuddin`（CLI + FastAPI 服务）+ `frontend/`（React/Vite 界面，可选）。一键脚本 `studio.sh` / `studio.bat`。
 - 许可证 Apache-2.0（参考项目里 diffusion-pipe 与 AnimaLoraStudio 是 GPL——只读不抄；sd-scripts / musubi-tuner 是 Apache-2.0，vendor 的代码见 §7）。
 
-## 2. 当前状态（v0.5.7 Apple GPU 占用监控）
+## 2. 当前状态（v0.5.8 Apple GPU 功率与温度）
+
+本轮将 `power_w` 接到 IOReport 的 GPU 功率估算，将 `temp_c` 接到 SMC 可用 GPU 区域传感器的均温；最高温度与有效传感器数量供解释读数。功率不是插座电表实测，均温不是单一热点温度，二者也不是训练进程专属指标。采集与界面保留未知值及来源说明，不能由 GPU 占用或统一内存比例推算。最终实现、实机边界与验证见本轮传感器说明和验证记录；发布包校验以相邻 verification JSON 为准。
+
+正式 8876 已使用原数据根升级到 0.5.8。本次新鲜快照的 194 个业务文件、六张业务表、设置与凭据状态完整保留，137 个源码输入及 53 个构建输出哈希匹配。正式 API 验收时读到 IOReport 估算功率约 0.96 W（采样约 0.261 秒），SMC 均温约 80.94°C、最高 83.85°C、8 个有效 GPU 区域传感器，来源与元数据均匹配。读数只表示该次采样，不代表持续负载；本机升级证明为 `/private/tmp/ypuddin-v058-service-proof.json`。
+
+### 上轮 v0.5.7 Apple GPU 占用监控
 
 MPS 设备通过无 sudo 的 `ioreg` 读取唯一 AGX 加速器的驱动利用率，2 秒缓存、2 秒超时；无法读取或无法唯一对应设备时返回 `null`，失败后不沿用上次成功数值。界面明确这是全系统 GPU 利用率，不是训练进程利用率，也不是统一内存比例；驱动统计窗口未知，功率和温度仍分别保留不可用状态。本轮只改遥测采集与说明，不修改训练调度、项目配置或素材。验收进度与限制见[补丁说明](docs/MAC_GPU_TELEMETRY_2026-09-12.md)和[验证记录](docs/validation/v0.5.7.json)。
 

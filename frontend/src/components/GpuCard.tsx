@@ -2,6 +2,7 @@ import { Cpu, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import type { GpuStats } from '../api/types';
+import { formatGpuPower, formatGpuTemperature, gpuPowerDescription, gpuTemperatureDescription } from '../utils/gpuTelemetry';
 import { formatBytesMB } from '../utils/format';
 
 const known = (value: number | null | undefined): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
@@ -21,12 +22,12 @@ export function GpuCard({ gpu }: { gpu: GpuStats }) {
         <span className="text-[11px] text-slate-500 font-mono shrink-0">{apple ? 'MPS' : `GPU ${gpu.index}`} · {gpu.telemetry_source || '—'}</span>
       </div>
       <div className="grid grid-cols-3 gap-3 mt-5">
-        <div><div className="text-xs text-slate-500 flex items-center gap-1"><Zap className="w-3.5 h-3.5" />{t('hardware.power')}</div>
-          <div className="mt-1 text-2xl font-semibold tabular-nums" data-testid="gpu-power">{known(gpu.power_w) ? <>{Math.round(gpu.power_w)}<span className="ml-1 text-sm font-normal text-slate-500">W</span></> : <span className="text-sm text-slate-500">{t('hardware.unavailable')}</span>}</div>
+        <div title={gpuPowerDescription(gpu,t)}><div className="text-xs text-slate-500 flex items-center gap-1"><Zap className="w-3.5 h-3.5" />{t(apple ? 'hardware.estimatedGpuPower' : 'hardware.power')}</div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums" data-testid="gpu-power">{known(gpu.power_w) ? <>{formatGpuPower(gpu)}<span className="ml-1 text-sm font-normal text-slate-500">W</span></> : <span className="text-sm text-slate-500">{t('hardware.unavailable')}</span>}</div>
           {known(gpu.power_limit_w) && <div className="text-[11px] text-slate-500">{t('hardware.powerLimit', { value: Math.round(gpu.power_limit_w) })}</div>}
         </div>
         <div><div className="text-xs text-slate-500">{t(apple ? 'hardware.systemGpuUtilization' : 'hardware.utilization')}</div><div className="mt-1 text-2xl font-semibold tabular-nums">{known(gpu.util_pct) ? `${Math.round(gpu.util_pct)}%` : '—'}</div></div>
-        <div><div className="text-xs text-slate-500">{t('hardware.temperature')}</div><div className="mt-1 text-2xl font-semibold tabular-nums">{known(gpu.temp_c) ? `${Math.round(gpu.temp_c)}°` : '—'}</div></div>
+        <div title={gpuTemperatureDescription(gpu,t)}><div className="text-xs text-slate-500">{t(apple ? 'hardware.meanGpuTemperature' : 'hardware.temperature')}</div><div className="mt-1 text-2xl font-semibold tabular-nums">{known(gpu.temp_c) ? `${formatGpuTemperature(gpu)}${apple ? ' °C' : '°'}` : '—'}</div></div>
       </div>
       <div className="mt-4 flex justify-between gap-2 text-xs text-slate-500" title={apple ? t('hardware.unifiedMemoryScope') : undefined}><span>{t(apple ? 'dashboard.unifiedMemory' : 'dashboard.vram')}</span><span className="font-mono">{formatBytesMB(gpu.mem_used_mb)} / {formatBytesMB(gpu.mem_total_mb)}</span></div>
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-blue-500 transition-[width]" style={{ width: `${usedPercent}%` }} /></div>

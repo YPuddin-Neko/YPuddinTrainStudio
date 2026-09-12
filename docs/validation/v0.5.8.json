@@ -1,0 +1,261 @@
+{
+  "version": "0.5.8",
+  "recorded_at": "2026-09-12T08:00:15.321773+00:00",
+  "scope": "Apple GPU estimated power and SMC temperature regions, API and UI integration",
+  "backend": {
+    "hardware_integration_tests_passed": 60,
+    "native_sensor_tests_passed": 69,
+    "tests_passed": 129,
+    "tests_failed": 0,
+    "exit_code": 0,
+    "ruff_exit": 0,
+    "full_suite_rerun": false
+  },
+  "frontend": {
+    "test_files": 3,
+    "tests_passed": 26,
+    "tests_failed": 0,
+    "typescript_exit": 0,
+    "eslint_exit": 0,
+    "build_exit": 0,
+    "frontend_stale": false,
+    "manifest_sha256": "a355357c43e1ad1c91c4e084c814c866c3108674affa14fe5117eb2f44d5d319",
+    "outputs": {
+      "assets/AccessKeys-Bi123ZdL.css": "89335a656a3221f49e74a00b7207cf2832e3053751a4cae12e6df3cf027535be",
+      "assets/AccessKeys-Cs9nT5o5.js": "f52c8b7fc50f6c70f1746dfc77b7f81eacabb20d61d3d6a7d9936520e4795545",
+      "assets/CaptionFormatSelect-B-BuP4Wa.js": "4174822aeb5e1054a44219a4f5b7bad451fbb707467082eb996055750e34c51b",
+      "assets/ConfigHelp-Cgcx16FZ.css": "128d546ff3ce1f0115eeeffc64b6d17ffbc12409f5efa90770e124e16440bbcb",
+      "assets/ConfigHelp-Dkycz6_A.js": "f16830e60a2f87d7aa0fb4b18a0303c67ed8c84a2eb65193820081849db68c77",
+      "assets/Dashboard-BHkS85HI.css": "5224b8c8c36e0a3debc4e8a3a0b3b6018cc5dda9e867dd8ffeed24b01154abbf",
+      "assets/Dashboard-D1S-m1qi.js": "0270d7eef689459626db8410c9b6d75cd1f3667e7b69bb9a1e6cbada452ff657",
+      "assets/Dataset-CSLy5NfI.css": "44206fa6960b0562a113a3a08e53ab885357120e2940cff1e43abb509bf2f5fb",
+      "assets/Dataset-C_PpViF_.js": "587cb94556f66ed564ba7f18aee7975b1637940514096eec07286fe7b35be831",
+      "assets/DatasetNavigationGuard-2KT1e-yb.js": "4ab1fc292acc05df7cf438fc2113c175240b15feb13b57e06a024eaf07ccc4b9",
+      "assets/DatasetNavigationGuard-TWC3Exyv.css": "74cbe0df6a18ecb5321a603452d0fc3e85c4ec033c89ba58116eebf2459b29de",
+      "assets/Dialog-DmSjhqIJ.js": "89550563a3b1f23c0f26188b2142999c4e6152f0a95f3b76af45ea972a4da2b8",
+      "assets/Dialog-waVbvSgd.css": "639dc7c3be7c1506f7be36f06224120f1c3bfc33fd147549178afc312d51549c",
+      "assets/EnvironmentSettings-q1GjJHnY.js": "0a30de391e1b3319622fd5d50da14acc68b845c58b5037a3942c5f21d38df661",
+      "assets/JobDetail-BxAWqKXb.js": "4c600b75ebc4b9926fc4e2458740fc97578b2e79e58c8681970b970cae0a5e96",
+      "assets/JobDetail-D76snWKx.css": "b13113288980c03e068c4ee5eddcdee9fcf5aed8b8b3e91ae950efac5a17e2bc",
+      "assets/Models-BPnHeJcA.css": "1d671486cd77ef72f1d80eaa14e0b9bc378977652bb6b5c1035df7746c9318bb",
+      "assets/Models-oH0M03an.js": "4edd7d15c4618698c99302bb01affa36e8d730ea0e84fb82a2389b265d86a3ce",
+      "assets/PathBrowser-CTu2bPno.js": "66e92e0b9062ea9e07fccf3c19ee52a367f8ca4317722f98ebda46ee83869cde",
+      "assets/Preferences-Dv_qdKlF.js": "381fd79b7e2b7398f13346ed4279816811caf0dc5372bcc512fa1ce5d4cf9f2a",
+      "assets/Presets-BY7U2jaR.js": "6c50400f4589d341ccc06e6e0be917b80159e7bee0560bc97c8a13012e34cba7",
+      "assets/Presets-COf_QxTy.css": "d6f7bdc8f5a866d1c684ec4aabf0a0718aa18d55d78f99140449b04b0a042fa9",
+      "assets/ProjectDetail-DPyczg2a.css": "660ff57bd36f34c9b8dc81f757ab293770b8881f5b1a2e8af7e1fc9663500ab3",
+      "assets/ProjectDetail-yaYX6m_O.js": "3bf2c614860ba26f6393dffc45742e008b00c7ef7640eeec45c8ecab76c72032",
+      "assets/ProjectWorkspaceHeader-T-ZtRUHf.js": "618effd0241d2f92815b15100f6e8d81ab83b5db1490a99b3214ad3f821d3dcd",
+      "assets/Projects-Cr4hNmvm.css": "c6e193bf860fbc7febf4c72792f14c64abe39ba7a2b481311d75a98230715ff2",
+      "assets/Projects-D_hN00NQ.js": "8a7f3c3aefdb29ffedd0d67e8c3dea0a6302aa127f29b85b8c59f85b30c8e2d8",
+      "assets/Queue-Cgl3Js8N.js": "1ab8d41b5e151c79b7e7f2bd88d413e5c264c4d7a87f6a4e1260b87093102c09",
+      "assets/SampleLoss-CX8xa3TA.js": "91150fd5ec56a53f0c27eb5ac9b5dd45bb2a8382d0dff94966c691a1e2fc6ea3",
+      "assets/SampleLoss-CozgRlmt.css": "17c78fca87ce8b63e5fa36cf4a2aea6b50b0c4b2a477025de4b53aa454675bbc",
+      "assets/Settings-BL7dsq9R.js": "a91adafb22b8046c069282635a1e914ff7e7df5de7fb906dcbe662a9ebf845bc",
+      "assets/Settings-sVm9yzQt.css": "3b12cdb234a59bdd8576d3adc81c9a9be94d53fa7095a9226f1bd74b39804640",
+      "assets/SettingsSections-CH8CXHns.js": "857190db8bf4b680b02fcedeacc7c98917996449d631bc16a495211dda972359",
+      "assets/TrainConfig-CjJxrVGG.css": "6beecfba37749d3de672c2290e6ad94e2c9da3851f3ae5a44f3c2da5ed67643f",
+      "assets/TrainConfig-aaTbtsnK.js": "66a9909b4bf1f5648330bac2de52877e6a4ba8c9056a41d9c18766c2380598bf",
+      "assets/echarts-N-Z4Wyhr.js": "c66735c92c55bc0c1f094ff900769d985ecf1c8197dd8a9b251f80b49c4e318d",
+      "assets/format-9G9_RQcA.js": "c0bb8f6085b5e23aaa0d05dd8e68b91adb3e2c6fcc8e93ef0b6b705fb7dda795",
+      "assets/i18nInstance-IqJxknJP.js": "bf1b7befe07d7afaeb902c1ea9bd10352758619925c1bd389711aa77cf1bcb2f",
+      "assets/index-CxIBjN19.js": "85bafdf6e5107a3616e03c054040ebf1d1a40ba155426e68cdb0590702fbb22a",
+      "assets/index-D3Aek0YE.css": "3164dc6994ff5c12d4bf67f6baa1c3e357d9dca37a2e45d050edcb71fc1a1090",
+      "assets/jobPresentation-Dh1LS23U.js": "f20c77adeff7195d7fcd6ca12dfc6fa503e24fe163f7a86c810087ae61179f4e",
+      "assets/queue-xpHjUxjS.css": "d5dcd7531cb50094a02eb30255fa25a7f3587d355b0e986d58568c4c828bc3c7",
+      "assets/rolldown-runtime-hePW80VL.js": "580ad8c58061a4dde99bde0a56905e382f0568516ee2f5b84dbfb52085709021",
+      "assets/trainingFamilies-4TOLGs_3.css": "d44d47c3045a60aa12cdaa4af01e72e70deecffc1b3704844ead8ae2926f7f98",
+      "assets/trainingFamilies-CRhqlJs4.js": "4252a2a0b9dc621343f61ea8ef088dc60f9887994f027cdb01d0555a27c9cc64",
+      "assets/trainingPresets-BcKLInhJ.js": "6de292afe33d44c59486d5b9515cfcf1d1098ede13ada2db09d5c71323883774",
+      "assets/useFamilies-CIYAJng8.js": "e6b90e87e47b20a68cf2866444a4be1d4a87527b2c04919c953706ad1b94296d",
+      "assets/useProjectVersions-DTz-gQ3H.js": "c0b89354e5bb46f791473bb1233b8e28a94cf5aa7ba778f3963b7bc98946f41f",
+      "assets/vendor-Bb9fVEeA.js": "f288797d1db9abd80531bbd593732f9a8bad48800953a279ebf2043c3eecc9be",
+      "index.html": "adefbe32dae777903fcae55d7a9eae14836967a72c42db17de35f34b2a837845",
+      "licenses/lucide-gpu.txt": "9558e922c3aa8d34b212e208272536492537cfa1b82a62c9185e1242d540cd95",
+      "mockServiceWorker.js": "26171599d94d5445297303f3a1f1cedec26835ea3d0057dcfa92ec520cb35cca",
+      "studio.svg": "23f7b605f15c74ceb33d019746d6ba0f9408b81443f2452be8dec4515d883618"
+    }
+  },
+  "browser": {
+    "tool": "Codex CUA in-app browser",
+    "qa_url": "http://127.0.0.1:8894/presets",
+    "qa_status": "passed",
+    "observed": {
+      "estimated_gpu_w": 18.1,
+      "mean_gpu_c": 82.6,
+      "maximum_gpu_c": 85.4,
+      "gpu_sensor_count": 8,
+      "power_sample_seconds": 0.26
+    },
+    "viewport": {
+      "width": 1004,
+      "height": 773,
+      "document_scroll_width": 1004,
+      "gpu_cells_no_text_overflow": true
+    },
+    "formal_recheck": {
+      "status": "passed",
+      "url": "http://127.0.0.1:8876/presets",
+      "estimated_gpu_w": 16.9,
+      "mean_gpu_c": 95.8,
+      "maximum_gpu_c": 98.7,
+      "gpu_sensor_count": 8,
+      "power_sample_seconds": 0.26,
+      "source_and_scope_tooltips_correct": true,
+      "reload_performed": true
+    },
+    "screenshots": [],
+    "cleanup": {
+      "temporary_tab_12_closed": true,
+      "viewport_override_reset": true,
+      "temporary_qa_pid_50458_stopped": true,
+      "formal_pid_51932_preserved": true,
+      "user_tabs_untouched": true,
+      "vite_8893_untouched": true
+    }
+  },
+  "service": {
+    "version": "0.5.8",
+    "verified_at": "2026-09-12T07:59:01.001141+00:00",
+    "success": true,
+    "url": "http://127.0.0.1:8876",
+    "data_root": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio",
+    "command": [
+      "venv/bin/ypuddin",
+      "serve",
+      "--data-root",
+      "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "8876"
+    ],
+    "cwd": "/Volumes/Service/Dev/YPuddinTrainStudio/xiangmuyuanma",
+    "previous_pid": 46150,
+    "pid": 51932,
+    "session_id": 42501,
+    "log": "/private/tmp/ypuddin-v058-main-service.log",
+    "before_snapshot": "/private/tmp/ypuddin-v058-main-before.json",
+    "after_snapshot": "/private/tmp/ypuddin-v058-main-after.json",
+    "preservation": {
+      "before": "/private/tmp/ypuddin-v058-main-before.json",
+      "after": "/private/tmp/ypuddin-v058-main-after.json",
+      "preserved": true,
+      "differences": {}
+    },
+    "static_proof": "/private/tmp/ypuddin-v058-main-static-proof.json",
+    "telemetry_proof": "/private/tmp/ypuddin-v058-main-telemetry-proof.json",
+    "telemetry": {
+      "timestamp": "2026-09-12T07:58:40.240232+00:00",
+      "url": "http://127.0.0.1:8876/api/system/stats",
+      "gpu": {
+        "index": 0,
+        "kind": "mps",
+        "name": "Apple M4 GPU",
+        "util_pct": 45.0,
+        "mem_used_mb": 30975,
+        "mem_total_mb": 32768,
+        "temp_c": 80.9356861114502,
+        "power_w": 0.9605213713602994,
+        "power_source": "ioreport",
+        "power_estimated": true,
+        "power_sample_seconds": 0.2614796250127256,
+        "temperature_source": "smc",
+        "temp_max_c": 83.85282897949219,
+        "temp_sensor_count": 8,
+        "telemetry_source": "ioreg",
+        "telemetry_note": null,
+        "device": "mps",
+        "mem_free_mb": 1793,
+        "memory_scope": "unified_system"
+      },
+      "ram": {
+        "used_mb": 30975,
+        "total_mb": 32768
+      },
+      "valid_utilization_0_100": true,
+      "power_actual_reading_present": true,
+      "power_estimation_metadata_valid": true,
+      "temperature_actual_reading_present": true,
+      "temperature_aggregate_valid": true,
+      "memory_matches_system_ram": true,
+      "scope": "system GPU; power is IOReport estimate over reported sample interval; temperature is mean of valid GPU-region SMC sensors, with maximum reported separately; not per-training-process metrics"
+    },
+    "health_version": "0.5.8",
+    "frontend_stale": false,
+    "business_counts": {
+      "projects": 1,
+      "project_versions": 3,
+      "datasets": 3,
+      "jobs": 3,
+      "artifacts": 8,
+      "models": 1
+    },
+    "business_files_hashed": 194,
+    "configured_credential_providers": 1,
+    "input_hashes_checked": 137,
+    "output_hashes_checked": 53,
+    "spa_routes": {
+      "/": 200,
+      "/presets": 200,
+      "/settings/environment?tab=credentials": 200
+    },
+    "notes": [
+      "A fresh baseline was taken immediately before this upgrade; old snapshots were not reused.",
+      "No active jobs or operations before restart; queue, settings, credentials and all business records/files unchanged.",
+      "Credentials compared using hashes and configured states only; no plaintext in proof.",
+      "Power and temperature were actually observed from IOReport and SMC; values describe the sampling instant, not persistent load or training-process attribution.",
+      "User browser, QA 8894 and Vite 8893 were not changed."
+    ],
+    "proof_sha256": "66e81294ac4371b87cabf61b5c1f8084c48348246af9cc0372b00873381e9dfa"
+  },
+  "evidence": [
+    {
+      "path": "/private/tmp/ypuddin-v058-hardware-tests.log",
+      "bytes": 80,
+      "sha256": "9352925e5e271773731e7ca3a390daf15479f6b144d2d059ca8d677d62821619"
+    },
+    {
+      "path": "/private/tmp/ypuddin-apple-sensors-tests.log",
+      "bytes": 99,
+      "sha256": "954e14d650fe32a757943b905657e2b6ffa7b47965ba63f721889ee63b5fe81e"
+    },
+    {
+      "path": "/private/tmp/ypuddin-apple-sensors-ruff.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": "/private/tmp/ypuddin-apple-sensors-native.json",
+      "bytes": 145,
+      "sha256": "db9437b12264a773b41446ee40b13fc805a09a6566eaf568ed2c7cd7ce33910b"
+    },
+    {
+      "path": "/private/tmp/ypuddin-apple-sensors-frontend.log",
+      "bytes": 595,
+      "sha256": "b47e52441f56681aca45bd58366934bddaa8fa881f256fbc165804d08a396b36"
+    },
+    {
+      "path": "/private/tmp/ypuddin-apple-sensors-eslint.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/private/tmp/ypuddin-apple-sensors-tsc.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/private/tmp/ypuddin-v058-build.log",
+      "bytes": 4560,
+      "sha256": "4d9babe3a34640aeba56379c36b02d00e95cd1b89600efd26f00d016d12556c2"
+    }
+  ],
+  "limitations": [
+    "Targeted regression only; no full-suite rerun or model training.",
+    "Native hardware tested on this M4 only; other chips and NVIDIA use source/unit coverage.",
+    "IOReport power is model-estimated interval-average GPU power, not wall power or per-process power.",
+    "SMC readings are GPU thermal regions, not per-core temperatures.",
+    "No sudo, privileged helper installation, native sensor writes or npm audit."
+  ]
+}
