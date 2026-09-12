@@ -1,0 +1,322 @@
+{
+  "version": "0.5.5",
+  "recorded_at": "2026-09-12T03:28:27.331413+00:00",
+  "scope": "Parameter usability, independent presets, help overlays, JSON captions across import/edit/train/cache, actual ER-SDE and flow schedules.",
+  "frontend": {
+    "tests_passed": 331,
+    "tests_failed": 0,
+    "test_files": 57,
+    "test_command": "npm test -- --run --reporter=json --outputFile=/private/tmp/ypuddin-v055-frontend-final.json",
+    "eslint_exit": 0,
+    "build_exit": 0,
+    "typescript": "Passed via production tsc build",
+    "frontend_stale": false,
+    "manifest_sha256": "cc974acaff8b48b903f491a40f6674a541b0e6edaf4ba2d8a14dfe2e1eefff2b",
+    "outputs": {
+      "assets/AccessKeys-BDUMkMgF.js": "9480d3af650efe20592cb59855e8269e1451de00b193234869d37ce77c4f3149",
+      "assets/AccessKeys-Bi123ZdL.css": "89335a656a3221f49e74a00b7207cf2832e3053751a4cae12e6df3cf027535be",
+      "assets/CaptionFormatSelect-BRtEmQsW.js": "1725c68da8051361441c62bc72c59071dda030bb24f540c21375f7dc97797645",
+      "assets/CaptionFormatSelect-Cgcx16FZ.css": "128d546ff3ce1f0115eeeffc64b6d17ffbc12409f5efa90770e124e16440bbcb",
+      "assets/Dashboard-BHkS85HI.css": "5224b8c8c36e0a3debc4e8a3a0b3b6018cc5dda9e867dd8ffeed24b01154abbf",
+      "assets/Dashboard-Bgvp6rkb.js": "f9d2894a6c3f734b44cc4b8d3541db223fe8b89e01d457e7d79244191ad944f3",
+      "assets/Dataset-ByyBj_1B.js": "687f14372ff46e8fd44b0f97704596deaea01ab44586bfb3029320056ad03d37",
+      "assets/Dataset-CSLy5NfI.css": "44206fa6960b0562a113a3a08e53ab885357120e2940cff1e43abb509bf2f5fb",
+      "assets/Dialog-BhSrbpFK.js": "b092f93bfec4f5840c14a3de4c01c6a961d7e6c41027ecc4df0e3afe00ff7a74",
+      "assets/Dialog-waVbvSgd.css": "639dc7c3be7c1506f7be36f06224120f1c3bfc33fd147549178afc312d51549c",
+      "assets/EnvironmentSettings-B9is-Lp8.js": "a722c909b8ef6fd31c06ecf4ba2f16c70c6d8e5747aa9bbdc1b789fca10d97a5",
+      "assets/JobDetail-B-gKGcZW.js": "d1d9fe6b0332793d7178fab5df53ce76978a2b316b8d354908906d70f7ff77fe",
+      "assets/JobDetail-BHLisE11.css": "5b1a32ad86b20059fdbcb30502f0528f5df39b6a1e2720b04a831255348c47a4",
+      "assets/Models-BPnHeJcA.css": "1d671486cd77ef72f1d80eaa14e0b9bc378977652bb6b5c1035df7746c9318bb",
+      "assets/Models-COPed5HG.js": "011afe9d93e05c6ae75e2a2af48963647fd63f490b1e06d748f316abbd3d6932",
+      "assets/PathBrowser-BmPSCPKS.js": "3a411ac05337d9bdc36f05d2d334add39ac38ce0840c49e3a314af92d7fbfd1e",
+      "assets/Preferences-DH9cctJG.js": "3be4f86c7d976b973646cfde2a2403c6fa4b76a5407c365c1e8cd7383c36ff61",
+      "assets/Presets-Bjg4oQc8.js": "45e24e442af18c4b0bdcc32f3760306b89e497030d37cbd8f856fe441b37a012",
+      "assets/Presets-CNEJ6EjG.css": "00e236ceaf105ebdb57535a9830ea7b3d9d9de38d875167c7d9b4b7f1d895b23",
+      "assets/ProjectDetail-DPyczg2a.css": "660ff57bd36f34c9b8dc81f757ab293770b8881f5b1a2e8af7e1fc9663500ab3",
+      "assets/ProjectDetail-Q8zu1LIF.js": "0dcd1e52afb068cb2bf164b2039b3893acc62a985679a1c8367562ed26064db9",
+      "assets/ProjectWorkspaceHeader-lG8YBL0l.js": "a5f25652c00ae09f138fb3268cf90e5e8f9ff128fa670abde44d235a445f0ff1",
+      "assets/Projects-Cr4hNmvm.css": "c6e193bf860fbc7febf4c72792f14c64abe39ba7a2b481311d75a98230715ff2",
+      "assets/Projects-DXF884x8.js": "fd2e8b6f6390b98b6c889b3f806b58ee0ae0f32a25ffc188f8e29845301b3a31",
+      "assets/Queue-C2IKPESh.js": "1aaac3e9d56ffa9a679791905d2c4c33587b100363c970646e9bb7095ecdded0",
+      "assets/SampleLoss-CozgRlmt.css": "17c78fca87ce8b63e5fa36cf4a2aea6b50b0c4b2a477025de4b53aa454675bbc",
+      "assets/SampleLoss-X9bDetcR.js": "065b07ad36d416079f05dd652c0e94fa084ee8183eafe7959976089e9b74e704",
+      "assets/Settings-CglHA45v.js": "68d04d1b43fb8c45739b911ee704b8dcb65e2ea08d59209a0b453f9d4f9eeae9",
+      "assets/Settings-sVm9yzQt.css": "3b12cdb234a59bdd8576d3adc81c9a9be94d53fa7095a9226f1bd74b39804640",
+      "assets/SettingsSections-DTugWhHx.js": "fcf3f031ae7bd1540652bdf7e261dd99b8daf5fb6f27a37996c253f95d6a1836",
+      "assets/TrainConfig-CbHWAuOW.css": "7fd8bee6d7c423bbfd4b54e58838e921a3f25a1d3e1d9e653e7037d7b5094d45",
+      "assets/TrainConfig-CxtDIISj.js": "8ac988db108854b101a3c15ed4da2a5cdd84cb76867298a292e5cef3d72eb3d5",
+      "assets/echarts-N-Z4Wyhr.js": "c66735c92c55bc0c1f094ff900769d985ecf1c8197dd8a9b251f80b49c4e318d",
+      "assets/format-9G9_RQcA.js": "c0bb8f6085b5e23aaa0d05dd8e68b91adb3e2c6fcc8e93ef0b6b705fb7dda795",
+      "assets/i18nInstance-IqJxknJP.js": "bf1b7befe07d7afaeb902c1ea9bd10352758619925c1bd389711aa77cf1bcb2f",
+      "assets/index-DxerPG3r.css": "d5f64dbde0ed5ffea82123d74d60c323678a3fd970c81b2f30283f77d3265087",
+      "assets/index-g9nQDUh9.js": "2ce4ac1c009c229f6b2dc9b6549e9799b95bd0a2bb47f0dbf6324b6ee872e498",
+      "assets/jobPresentation-B6YRIq5J.js": "d38fd0d782d76522627b17aedd091b849e259700233665df1627bf009acc2126",
+      "assets/queue-xpHjUxjS.css": "d5dcd7531cb50094a02eb30255fa25a7f3587d355b0e986d58568c4c828bc3c7",
+      "assets/rolldown-runtime-hePW80VL.js": "580ad8c58061a4dde99bde0a56905e382f0568516ee2f5b84dbfb52085709021",
+      "assets/trainingFamilies-4TOLGs_3.css": "d44d47c3045a60aa12cdaa4af01e72e70deecffc1b3704844ead8ae2926f7f98",
+      "assets/trainingFamilies-CRhqlJs4.js": "4252a2a0b9dc621343f61ea8ef088dc60f9887994f027cdb01d0555a27c9cc64",
+      "assets/trainingPresets-DMMBLNa3.js": "01ca9e8c4db4e0d4d661d3915d004574a1909f0ae4555d65c2a71ab932b6fd40",
+      "assets/useFamilies-aaogXMev.js": "42ed7a11bc157ad9aea4b014601384c434e65a88fea4f69b2542216206f92f3b",
+      "assets/useProjectVersions-CgE9qbMr.js": "2bc11195a3c6e14b5aa88025a44636460c0e16f868d019959c8ce8be81bde738",
+      "assets/vendor-kOzQoOk3.js": "853968314ae97849a5d2534e56a8ebfb3f8c057255d4e28e6afb7760df148988",
+      "index.html": "dc9a6b7f9d5fa13b77fcbd4d1c4010f4fd9bd5d485630fbf5341c4275ac00596",
+      "licenses/lucide-gpu.txt": "9558e922c3aa8d34b212e208272536492537cfa1b82a62c9185e1242d540cd95",
+      "mockServiceWorker.js": "26171599d94d5445297303f3a1f1cedec26835ea3d0057dcfa92ec520cb35cca",
+      "studio.svg": "4831f2cbe6f99f562201b74e8e204d923dbba42daf111d8a3b05537ddcb12274"
+    },
+    "input_count": 128,
+    "test_report_sha256": "70e289ec02e5050e96e8b6e6aeca4d12f56649d9b4c8f3db357dd2ffd9152304",
+    "final_css_note": "Final230px caption-control width visually rechecked and production rebuilt after behavior tests; no behavior changes afterward."
+  },
+  "backend": {
+    "tests": 774,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 3,
+    "passed": 771,
+    "seconds": 134.143,
+    "exit_code": 0,
+    "version": "0.5.5",
+    "skips": [
+      {
+        "test": "tests.e2e.test_toy_training.test_accelerator_train_resume_and_preview[0-cuda]",
+        "reason": "CUDA unavailable"
+      },
+      {
+        "test": "tests.e2e.test_toy_training.test_accelerator_train_resume_and_preview[2-cuda]",
+        "reason": "CUDA unavailable"
+      },
+      {
+        "test": "tests.unit.test_objectives.test_cpu_noise_generator_matches_on_all_devices[cuda]",
+        "reason": "CUDA unavailable"
+      }
+    ],
+    "evidence": {
+      "/private/tmp/ypuddin-v055-backend-final.xml": {
+        "sha256": "ac5f8fa7f77dc27ac3f745460515b7d76fa18dc222950d15b66759e015fcdc15",
+        "bytes": 102843
+      },
+      "/private/tmp/ypuddin-v055-backend-final.log": {
+        "sha256": "4243a111fbb80cf9ce0b15620a90aaea29c52cf415ec3c14be13e61d69aa3608",
+        "bytes": 2672
+      }
+    }
+  },
+  "ruff_exit": 0,
+  "api_schema": "TrainConfig docs and frontend fallback identical; exported OpenAPI0.5.5 updated.",
+  "browser": {
+    "tool": "Codex CUA in-app browser",
+    "viewports": [
+      [
+        1004,
+        773
+      ],
+      [
+        390,
+        844
+      ]
+    ],
+    "qa_url": "http://127.0.0.1:8894",
+    "formal_url": "http://127.0.0.1:8876/presets",
+    "tests": [
+      {
+        "case": "Independent presets",
+        "result": "pass",
+        "evidence": "Created qa_v055_anima in /presets via browser, changed LR to 0.0003, saved and reopened. Built-ins read-only, help remains interactive."
+      },
+      {
+        "case": "Preset preview",
+        "result": "pass",
+        "evidence": "Cancel kept LR 0.0001. Apply changed it to 0.0003 and selected LoKr Full. Cross-family options disabled. Automated workflow tests compare all preserved paths."
+      },
+      {
+        "case": "Preset layout",
+        "result": "pass",
+        "evidence": "Review dialog 740px maximum, footer buttons separate and reachable. At 390x844 dialog bounds x12..378 and document width390; library layout inspected at390 and1004."
+      },
+      {
+        "case": "Help popovers",
+        "result": "pass",
+        "evidence": "1004px help bounds x192..512 within main content; 390px bounds x8..328. Outside click and Escape close; automated tests cover singleton, scroll and route dismiss."
+      },
+      {
+        "case": "Sampling controls",
+        "result": "pass",
+        "evidence": "Actual ER-SDE and Simple selection persisted in QA draft, order/noise controls appear when applicable; paired field layout inspected at1004."
+      },
+      {
+        "case": "Optimizer and LoKr",
+        "result": "pass",
+        "evidence": "Eleven built-in optimizers use themed choices. LoKr mode switches full/low rank and full hides Alpha; visible help explains structural full factors."
+      },
+      {
+        "case": "JSON/TXT upload",
+        "result": "pass",
+        "evidence": "Uploaded two generated images with one JSON and one TXT in auto mode; 2 images and 2 captions indexed. Uploaded nl JSON separately and preview displayed tags plus natural language."
+      },
+      {
+        "case": "JSON editor",
+        "result": "pass",
+        "evidence": "Added qa_reviewed via real browser tag editor and saved. On-disk JSON retained nl sentence and quality_meta; text field contained tags only."
+      },
+      {
+        "case": "Source controls",
+        "result": "pass",
+        "evidence": "Local path 5_caption_qa suggested5 repeats; clicking suggestion changed1 to5. Regularization controls appeared only after checkbox. Full auto-format label fits230px."
+      },
+      {
+        "case": "Formal service",
+        "result": "pass",
+        "evidence": "After upgrade actual http://127.0.0.1:8876/presets loaded, built-in preset opened, readonly Full mode displayed, 390px page had no horizontal overflow."
+      }
+    ]
+  },
+  "service_restart": {
+    "version": "0.5.5",
+    "timestamp": "2026-09-12T03:26:15.423759+00:00",
+    "url": "http://127.0.0.1:8876",
+    "previous_pid": 74765,
+    "pid": 23958,
+    "session_id": 35940,
+    "data_root": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio",
+    "command": "venv/bin/ypuddin serve --data-root /private/tmp/ypuddin-v040-ui-iynrkk8w/studio --host 127.0.0.1 --port 8876",
+    "service_log": "/private/tmp/ypuddin-v055-main-service.log",
+    "health_version": "0.5.5",
+    "build": {
+      "exit_code": 0,
+      "log": "/private/tmp/ypuddin-v055-production-build.log",
+      "includes_final_caption_select_css": true
+    },
+    "preservation": {
+      "unchanged": true,
+      "differences": {},
+      "tables": {
+        "projects": 1,
+        "project_versions": 3,
+        "datasets": 3,
+        "jobs": 3,
+        "artifacts": 8,
+        "models": 1
+      },
+      "hashed_business_files": 192,
+      "credential_provider_count": 4,
+      "configured_provider_count": 1,
+      "settings_unchanged": true,
+      "queue": {
+        "held": false,
+        "max_concurrent": 1
+      },
+      "operations_empty_before_and_after": true,
+      "operation_history_unchanged": true
+    },
+    "static": {
+      "health_version": "0.5.5",
+      "frontend_stale": false,
+      "spa_routes": {
+        "/": 200,
+        "/presets": 200,
+        "/settings/environment?tab=credentials": 200
+      },
+      "input_hashes_checked": 128,
+      "output_hashes_checked": 50,
+      "presets_chunks": [
+        "assets/Presets-Bjg4oQc8.js",
+        "assets/Presets-CNEJ6EjG.css",
+        "assets/trainingPresets-DMMBLNa3.js"
+      ]
+    },
+    "evidence": {
+      "/private/tmp/ypuddin-v055-main-before.json": {
+        "sha256": "d502b5e284a88dca1209ebdb0b9261dcb2fae3795eb5290beb925fe71ca78dd2",
+        "bytes": 41791
+      },
+      "/private/tmp/ypuddin-v055-main-after.json": {
+        "sha256": "3b5607c541c85c2b725319cda057e285fcdf14c9835fb182fc2deba5e39aff9f",
+        "bytes": 41791
+      },
+      "/private/tmp/ypuddin-v055-main-preservation.json": {
+        "sha256": "c3c7562e5359f153472f91d9f6af80d3524d21f247dc8db059572b1774ee3322",
+        "bytes": 159
+      },
+      "/private/tmp/ypuddin-v055-main-static-proof.json": {
+        "sha256": "31690aa0f792b508445b26d72c960c1a1884c8a19c3db3b1a213c6b68e006d85",
+        "bytes": 5619
+      },
+      "/private/tmp/ypuddin-v055-production-build.log": {
+        "sha256": "67f83435288cb2199de4b8fd9fb90eead4907f187470eab483a9118c4b8e5c6e",
+        "bytes": 4276
+      }
+    },
+    "scope": "Local service restart and HTTP resource checks. Browser visual acceptance is recorded separately by the root task. No commit or source archive was created."
+  },
+  "screenshots": [
+    {
+      "path": "docs/screenshots/v0.5.5/help-1004.png",
+      "bytes": 86845,
+      "sha256": "b76b1ffdc2dae60212343139b1fb213213bbe1770c27eb985db11655da11a2b5"
+    },
+    {
+      "path": "docs/screenshots/v0.5.5/help-390.png",
+      "bytes": 35668,
+      "sha256": "5f02059c20c44521e6b254bc6387a1f3ea27af033d1e769d613386d4e66b199a"
+    },
+    {
+      "path": "docs/screenshots/v0.5.5/json-caption-editor.png",
+      "bytes": 46977,
+      "sha256": "3836c7196c7ce1d2bb47a8abaa89d1a4fc9bb5bf5c2777e5b7dda1dec0576e1d"
+    },
+    {
+      "path": "docs/screenshots/v0.5.5/json-caption-view.png",
+      "bytes": 51507,
+      "sha256": "518f98ec3560a183f92195afc44e8d23c30ac9e9b684ca8c33a6feed73f3cdfa"
+    },
+    {
+      "path": "docs/screenshots/v0.5.5/optimizer-options.png",
+      "bytes": 73038,
+      "sha256": "78491e3eb49afb27f1085d28ff5c9fd1d55f9a3861e1b746c891cc05852d757d"
+    },
+    {
+      "path": "docs/screenshots/v0.5.5/preset-review-390.png",
+      "bytes": 29741,
+      "sha256": "ad9b5b823d01bae13dd4f685e213039e2078ac7b39faf14bdcf9558fbae80f95"
+    },
+    {
+      "path": "docs/screenshots/v0.5.5/preset-review.png",
+      "bytes": 45281,
+      "sha256": "0225e1d6db1569a803e4a74783543d5da7b35994f34736959a9140daf99500b0"
+    },
+    {
+      "path": "docs/screenshots/v0.5.5/preset-saved.png",
+      "bytes": 79981,
+      "sha256": "64ff2692830c68bd785ec8564f56156783b5b9c826e488420a60ca6cafacb9d6"
+    },
+    {
+      "path": "docs/screenshots/v0.5.5/presets-390.png",
+      "bytes": 39257,
+      "sha256": "e3e1ed61c0999769caa4a93795f30d6ca449ee610741fce21bba9140ae72b5ec"
+    },
+    {
+      "path": "docs/screenshots/v0.5.5/presets-formal.png",
+      "bytes": 77082,
+      "sha256": "2a132fd850f73f39bff3a7c8b79e66d7756b9ab716ddf4634cf9588d9a045ecd"
+    },
+    {
+      "path": "docs/screenshots/v0.5.5/sampler-scheduler.png",
+      "bytes": 78681,
+      "sha256": "e9f06dee4ff920a90c3ef3a668290efe1061b41ebf62d0bde968cca13188eaf8"
+    },
+    {
+      "path": "docs/screenshots/v0.5.5/source-auto-repeats.png",
+      "bytes": 66925,
+      "sha256": "50a932c324b289e874a9e121d726fe7ef7de56e772a245cca52f7579b0d9fc03"
+    }
+  ],
+  "limits": [
+    "Windows NVIDIA full-model training and clean dependency installation not validated on this Mac.",
+    "ER-SDE numerical and Toy training tests validate implementation behavior, not production image quality or training performance.",
+    "No full model download or internet regularization collection executed in this iteration.",
+    "Flux and SDXL training engines remain unavailable; no additional support is implied.",
+    "No claim that this iteration constitutes complete production acceptance."
+  ],
+  "npm_audit_run": false
+}

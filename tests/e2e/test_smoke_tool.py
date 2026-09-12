@@ -7,6 +7,19 @@ import pytest
 from ypuddin.cli import main
 
 
+def test_smoke_recipe_keeps_selected_sampling_algorithm(tmp_path):
+    from ypuddin.config import TrainConfig
+    from ypuddin.tools.smoke import smoke_config
+
+    cfg = TrainConfig.model_validate(
+        {"sampling": {"sampler": "er_sde", "scheduler": "simple", "er_sde_order": 2, "er_sde_s_noise": 0.2}}
+    )
+    tiny = smoke_config(cfg, out=tmp_path / "run", steps=1, resolution=64, sample_size=64, sample_steps=2)
+    for name in ("sampler", "scheduler", "er_sde_order", "er_sde_s_noise"):
+        assert getattr(tiny.sampling, name) == getattr(cfg.sampling, name)
+    assert tiny.sampling.prompts[0].steps == 2
+
+
 @pytest.mark.parametrize("algo", ["lokr", "lora", "loha", "full"])
 def test_smoke_cli_toy_family(tmp_path, capsys, algo):
     out = tmp_path / "smoke"

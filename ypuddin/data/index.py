@@ -51,9 +51,59 @@ def content_hash(path: str | Path, chunk: int = 1 << 20) -> str:
     return h.hexdigest()
 
 
-def _sidecar(path: Path, ext: str) -> str | None:
-    p = path.with_suffix(ext) if ext.startswith(".") else path.with_name(path.stem + ext)
-    return str(p) if p.exists() else None
+def caption_for(
+    path: str | Path,
+    ext: str = "auto",
+    *,
+    directory_cache: dict[Path, dict[str, dict[str, Path]]] | None = None,
+) -> str | None:
+    """Select one caption sidecar. Auto prefers JSON; explicit suffixes never fall back."""
+    path = Path(path)
+    siblings = None
+    if directory_cache is not None:
+        if path.parent not in directory_cache:
+            directory_cache[path.parent] = _caption_siblings(path.parent)
+        siblings = directory_cache[path.parent]
+    return _caption_for(path, ext, siblings)
+
+
+def _caption_for(path: Path, ext: str, siblings: dict[str, dict[str, Path]] | None = None) -> str | None:
+    for suffix in (".json", ".txt") if ext.lower() == "auto" else (ext,):
+        candidate = path.with_suffix(suffix) if suffix.startswith(".") else path.with_name(path.stem + suffix)
+        # Preserve exact image stem matching on case-sensitive systems; only suffix case varies.
+        if siblings is None:
+            siblings = _caption_siblings(path.parent)
+        matches = siblings.get(path.stem + suffix.lower())
+        if matches:
+            return str(matches.get(candidate.name) or matches[min(matches)])
+        if candidate.is_file():  # Existing custom suffixes keep their original lookup behavior.
+            return str(candidate)
+    return None
+
+
+def _caption_siblings(directory: Path) -> dict[str, dict[str, Path]]:
+    # One directory enumeration per scan, including the common auto+TXT-only case.
+    entries: dict[str, dict[str, Path]] = {}
+    if directory.is_dir():
+        for entry in directory.iterdir():
+            if entry.is_file():
+                entries.setdefault(entry.stem + entry.suffix.lower(), {})[entry.name] = entry
+    return entries
+
+
+def caption_target(
+    path: str | Path,
+    ext: str = "auto",
+    *,
+    directory_cache: dict[Path, dict[str, dict[str, Path]]] | None = None,
+) -> Path:
+    """Use the selected existing caption; a missing auto caption is created as TXT."""
+    path = Path(path)
+    existing = caption_for(path, ext, directory_cache=directory_cache)
+    if existing:
+        return Path(existing)
+    suffix = ".txt" if ext.lower() == "auto" else ext
+    return path.with_suffix(suffix) if suffix.startswith(".") else path.with_name(path.stem + suffix)
 
 
 def mask_for(path: Path) -> str | None:
@@ -145,6 +195,7 @@ def scan_sources(
     for si, src in enumerate(sources):
         paths.extend((si, p, src) for p in iter_images(src.path))
     total = len(paths)
+    caption_directories: dict[Path, dict[str, dict[str, Path]]] = {}
     for i, (si, p, src) in enumerate(paths):
         st = p.stat()
         signature = json.dumps(
@@ -164,6 +215,8 @@ def scan_sources(
                 index_db.store(str(p), st.st_mtime, st.st_size, digest, w, h, alpha, stat_signature=signature)
         else:
             digest, w, h, alpha = cached
+        if p.parent not in caption_directories:
+            caption_directories[p.parent] = _caption_siblings(p.parent)
         records.append(
             ImageRecord(
                 path=str(p),
@@ -171,7 +224,7 @@ def scan_sources(
                 content_hash=digest,
                 width=w,
                 height=h,
-                caption_path=_sidecar(p, src.caption_ext),
+                caption_path=_caption_for(p, src.caption_ext, caption_directories[p.parent]),
                 mask_path=mask_for(p),
                 has_alpha=alpha,
             )
@@ -185,10 +238,15 @@ def scan_sources(
 
 def record_content_key(record: ImageRecord) -> tuple[int, str, str, str]:
     """Semantic ordering: renaming/moving an image and its sidecars keeps its sampler position."""
+    caption_hash = content_hash(record.caption_path) if record.caption_path else ""
+    if record.caption_path and Path(record.caption_path).suffix.lower() == ".json":
+        # Existing TXT fingerprints and resume ordering are unchanged. JSON previously
+        # trained as raw file text must not silently resume with new structured semantics.
+        caption_hash = "structured-json-v1:" + caption_hash
     return (
         record.source_index,
         record.content_hash,
-        content_hash(record.caption_path) if record.caption_path else "",
+        caption_hash,
         content_hash(record.mask_path) if record.mask_path else "",
     )
 

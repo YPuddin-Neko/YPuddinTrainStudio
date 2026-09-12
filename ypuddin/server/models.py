@@ -395,6 +395,10 @@ class DatasetImage(_Out):
     width: int
     height: int
     caption: str
+    caption_tags: str | None = None
+    caption_description: str | None = None
+    caption_format: str | None = None
+    caption_error: str | None = None
     has_mask: bool
 
 

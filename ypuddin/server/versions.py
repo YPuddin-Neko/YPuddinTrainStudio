@@ -340,7 +340,7 @@ class VersionManager:
                         "path": str(final / entry["relative"]),
                         "origin_path": entry["origin_path"],
                         "repeats": item.get("repeats", 1),
-                        "caption_ext": item.get("caption_ext", ".txt"),
+                        "caption_ext": item.get("caption_ext", "auto"),
                         "is_reg": int(item.get("is_reg", False)),
                         "prior_weight": item.get("prior_weight", 1.0),
                         "class_prompt": item.get("class_prompt"),
@@ -401,21 +401,25 @@ class VersionManager:
                 )
             did = new_id("d")
             is_reg = body.is_reg
-            if "is_reg" not in body.model_fields_set:
-                config = get_project_config(pid, c, vid)
-                match = next(
-                    (
-                        item
-                        for item in [
-                            *config.get("dataset", {}).get("sources", []),
-                            *config.get("validation", {}).get("sources", []),
-                        ]
-                        if Path(item["path"]).expanduser().resolve() == source
-                    ),
-                    None,
-                )
-                if match:
-                    is_reg = bool(match.get("is_reg"))
+            config = get_project_config(pid, c, vid)
+            match = next(
+                (
+                    item
+                    for item in [
+                        *config.get("dataset", {}).get("sources", []),
+                        *config.get("validation", {}).get("sources", []),
+                    ]
+                    if Path(item["path"]).expanduser().resolve() == source
+                ),
+                None,
+            )
+            if match and "is_reg" not in body.model_fields_set:
+                is_reg = bool(match.get("is_reg"))
+            # Match _register_dataset: explicitly supplied options override the existing
+            # source; omitted fields inherit it. Preflight must inspect that same format.
+            caption_ext = body.caption_ext
+            if match and "caption_ext" not in body.model_fields_set:
+                caption_ext = match.get("caption_ext", body.caption_ext)
             root = c.dataset_dir(pid, vid, is_reg=is_reg)
             if root.resolve().is_relative_to(source):
                 raise ApiError(
@@ -430,6 +434,19 @@ class VersionManager:
             promoted = False
             try:
                 copy_source(source, staging / "data", file_manifest(source))
+                # Validate the selected structured sidecars before promoting a copied
+                # folder or recording it in this version. JSON bytes are never captions.
+                from ypuddin.data.captions import read_training_caption
+                from ypuddin.data.index import caption_for, iter_images
+
+                try:
+                    caption_directories = {}
+                    for image in iter_images(staging / "data"):
+                        caption = caption_for(image, caption_ext, directory_cache=caption_directories)
+                        if caption and Path(caption).suffix.lower() == ".json":
+                            read_training_caption(caption)
+                except ValueError as error:
+                    raise ApiError(str(error), code="dataset.caption_invalid", status=400) from error
                 (staging / "data").rename(target)
                 promoted = True
                 _register_dataset(

@@ -38,7 +38,7 @@ from ypuddin.memory import BlockSwapper
 from ypuddin.models import LoadedModel, ModelFamily, TextCond, get_family
 from ypuddin.objectives import Objective
 from ypuddin.optim import build_optimizer, build_scheduler, is_schedule_free
-from ypuddin.sampling import euler_sample
+from ypuddin.sampling import sample
 
 from .events import Emitter, NullEmitter
 from .logging import TrainingLogs
@@ -1043,9 +1043,13 @@ class Trainer:
                     total=n,
                 )
 
-            latents = euler_sample(
+            latents = sample(
                 predict,
                 shape,
+                sampler=scfg.sampler,
+                scheduler=scfg.scheduler,
+                er_sde_order=scfg.er_sde_order,
+                er_sde_s_noise=scfg.er_sde_s_noise,
                 steps=steps,
                 shift=shift,
                 cfg=cfg_scale,
@@ -1071,6 +1075,13 @@ class Trainer:
                 width=w,
                 height=h,
                 loss=loss,
+                sampler=scfg.sampler,
+                scheduler=scfg.scheduler,
+                steps=steps,
+                cfg=cfg_scale,
+                shift=shift,
+                er_sde_order=scfg.er_sde_order,
+                er_sde_s_noise=scfg.er_sde_s_noise,
             )
         return paths
 

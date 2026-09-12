@@ -2,9 +2,11 @@
 
 一个面向扩散模型的**模块化适配器训练器**，包含 LoRA / LoKr / LoHa / DoRA、数据缓存、任务队列、服务 API 与 Web 界面。已接入 **Anima**（Cosmos-Predict2 风格 DiT + Qwen3-0.6B + Qwen-Image VAE）和 **Krea 2**（单流 MMDiT + Qwen3-VL-4B + Qwen-Image VAE）。训练核心与两族模型通过统一接口连接；模型组件包含按 Apache-2.0 引入的上游实现，来源见各 `vendor/NOTICE.md`。
 
-当前处于集成验证阶段：已有 CPU 玩具模型与缩小版真实组件的训练、暂停恢复、采样和服务回归测试；**Windows/NVIDIA 实机、官方完整权重训练、实际 ComfyUI 加载与质量验收、速度和显存基准仍待完成**。本轮范围与验证边界见[v0.5.4 工作区变更报告](docs/UI_WORKSPACE_V054_2026-09-12.md)，功能状态见 [`docs/design/03-status.md`](docs/design/03-status.md)。参考项目分析保存在 `docs/reference/`，不作为性能优于参考实现的结论；QA 生成夹具也不代表生产训练质量。
+当前处于集成验证阶段：已有 CPU 玩具模型与缩小版真实组件的训练、暂停恢复、采样和服务回归测试；**Windows/NVIDIA 实机、官方完整权重训练、实际 ComfyUI 加载与质量验收、速度和显存基准仍待完成**。本轮范围与验证边界见[v0.5.5 参数与数据变更报告](docs/UI_PARAMETERS_V055_2026-09-12.md)，功能状态见 [`docs/design/03-status.md`](docs/design/03-status.md)。参考项目分析保存在 `docs/reference/`，不作为性能优于参考实现的结论；QA 生成夹具也不代表生产训练质量。
 
-当前版本 **v0.5.4**：项目侧栏采用“训练数据 → 训练参数 → 训练结果”，模型配置合入参数页；统一边框与吸顶底色，改进采样字段、损失/诊断图表与精确同 step 训练损失展示。项目卡片支持分类和手动封面，新建版本可选择已接入模型族并安全处理跨族默认配置；增加页面加载错误恢复和数据索引回退说明。**Flux、SDXL 尚未接入，界面禁选。** HF/魔搭下载、集中访问密钥和旧项目目录继续保留。最终浏览器矩阵与全量验证记录正在统一补齐，详见[本轮报告](docs/UI_WORKSPACE_V054_2026-09-12.md)和[用户要求逐项核对](docs/USER_REQUIREMENTS_AUDIT_2026-09-12.md)。
+当前版本 **v0.5.5**：新增独立参数预设管理、加载前差异预览和项目路径保护；修复帮助浮层裁剪与关闭交互。JSON 标签贯通导入、查看、编辑、缓存和训练；优化器提供实际选项，LoKr Full/低秩区分显示。采样实际支持 Euler、Heun、ER-SDE 及独立噪声调度器，保留原 Euler+uniform 默认。具体含义见[训练参数说明](docs/TRAINING_PARAMETERS.md)与[JSON 标签说明](docs/JSON_CAPTIONS.md)。本轮前端 **57 个文件、331 项通过**，后端 **771 通过 / 3 CUDA 跳过**，检查与构建通过。正式 8876 服务已按原数据根升级，192 个业务文件、六张业务表、设置与凭据配置状态保持；证据见[本轮报告](docs/UI_PARAMETERS_V055_2026-09-12.md)。
+
+三阶段项目侧栏、精确同 step 采样损失、分类与手动封面、版本模型族兼容继续保留。**Flux、SDXL 尚未接入，界面禁选。** HF/魔搭下载、集中访问密钥和旧目录沿用既有契约，历史变化见[v0.5.4 报告](docs/UI_WORKSPACE_V054_2026-09-12.md)，需求对应见[逐项核对](docs/USER_REQUIREMENTS_AUDIT_2026-09-12.md)。
 
 项目继续采用独立显示名称和手填 ID，按 `project/<id>/vN/` 保存训练图、正则图、各任务采样与产物，支持自定义输出根。正则图支持本地底模生成、网站收集与已有图片导入；标签页查看/编辑已有 caption，不提供 WD14 自动打标。环境页保留计算后端和注意力加速，常规依赖由启动器补齐。[目录规则](docs/UI_SIMPLIFICATION_2026-09-12.md)、[原生分辨率训练](docs/native-resolution.md)、Mask 和版本隔离继续保留。
 

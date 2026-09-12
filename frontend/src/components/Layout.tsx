@@ -3,7 +3,7 @@ import { ACTIVE_JOB_STATUSES, mergeJobEvent } from '../utils/jobs';
 import React from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Activity, Folder, Layers, Settings as SettingsIcon, Moon, Sun, Monitor, Globe, PlayCircle, Menu, X, Plus, WifiOff, Loader2, RefreshCw } from 'lucide-react';
+import { Activity, Folder, Layers, SlidersHorizontal, Settings as SettingsIcon, Moon, Sun, Monitor, Globe, PlayCircle, Menu, X, Plus, WifiOff, Loader2, RefreshCw } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { SystemStats, Job, JobListResponse, Settings } from '../api/types';
 import { useEventStream, useEventStreamStatus } from '../events/useEventStream';
@@ -141,6 +141,7 @@ export default function Layout() {
     { to: '/', icon: Activity, label: t('nav.dashboard') },
     { to: '/projects', icon: Folder, label: t('nav.projects') },
     { to: '/queue', icon: Layers, label: t('nav.queue') },
+    { to: '/presets', icon: SlidersHorizontal, label: text('参数预设', 'Training presets') },
     { to: '/settings', icon: SettingsIcon, label: t('nav.settings') },
   ];
 

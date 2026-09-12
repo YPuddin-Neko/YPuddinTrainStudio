@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import platform
 import sys
+import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any, Literal
@@ -236,9 +239,15 @@ def schema_train() -> dict[str, Any]:
 
 
 @router.get("/config/defaults", response_model=TrainConfig)
-def config_defaults(c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+def config_defaults(
+    family: Literal["anima", "krea2", "toy"] | None = None, c: ServiceContext = Depends(ctx)
+) -> dict[str, Any]:
     from .environment import environment_attention_default
 
+    if family is not None:
+        from .family_config import initial_family_config
+
+        return initial_family_config(c, family)
     defaults = TrainConfig().to_dict()
     defaults["model"]["attention"] = environment_attention_default(c)
     return defaults
@@ -415,25 +424,62 @@ class PresetBody(BaseModel):
     config: dict[str, Any]
 
 
+_preset_lock = threading.RLock()
+
+
+def _preset_path(name: str, c: ServiceContext) -> Path:
+    reserved = {"con", "prn", "aux", "nul"} | {f"{prefix}{i}" for prefix in ("com", "lpt") for i in range(1, 10)}
+    if len(name) > 128 or not name.replace("-", "").replace("_", "").isalnum() or name.casefold() in reserved:
+        raise ApiError("preset name must be 1–128 letters or numbers with - or _", code="preset.bad_name")
+    return _preset_dir(c) / f"{name}.json"
+
+
+def _write_preset(name: str, body: PresetBody, c: ServiceContext, *, create: bool) -> dict[str, Any]:
+    if name.casefold() in {item.casefold() for item in BUILTIN_PRESETS}:
+        raise ApiError("builtin presets are read-only", code="preset.readonly", status=403)
+    path = _preset_path(name, c)
+    # Validate partial presets against the appropriate family without persisting
+    # expanded defaults or requiring any project data/model files to exist.
+    from .family_config import initial_family_config
+
+    family = body.config.get("model", {}).get("family", "anima") if isinstance(body.config.get("model", {}), dict) else "anima"
+    if not isinstance(family, str):
+        raise ApiError(
+            "invalid config", code="config.invalid",
+            details={"errors": [{"loc": "model.family", "msg": "family must be a string"}]},
+        )
+    _validated_or_error(deep_merge(initial_family_config(c, family), body.config))
+    with _preset_lock:
+        collision = next((f for f in path.parent.glob("*.json") if f.stem.casefold() == name.casefold()), None)
+        if create and collision is not None:
+            raise ApiError("a preset with this name already exists", code="preset.duplicate", status=409)
+        if not create and (collision is None or collision.name != path.name):
+            raise NotFound(f"preset {name} not found", code="preset.not_found")
+        data = {"description": body.description, "config": body.config}
+        temporary: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile("w", dir=path.parent, prefix=".preset-", suffix=".tmp", encoding="utf-8", delete=False) as handle:
+                temporary = handle.name
+                json.dump(data, handle, indent=2, ensure_ascii=False)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, path)
+        finally:
+            if temporary is not None:
+                Path(temporary).unlink(missing_ok=True)
+        return _preset_row(name, data, False, path.stat().st_mtime)
+
+
 @router.post("/presets", response_model=m.Preset, response_model_exclude_unset=True)
 def create_preset(body: PresetBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    if not body.name.replace("-", "").replace("_", "").isalnum():
-        raise ApiError("preset name must be alphanumeric with - or _", code="preset.bad_name")
-    f = _preset_dir(c) / f"{body.name}.json"
-    f.write_text(
-        json.dumps({"description": body.description, "config": body.config}, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    return _preset_row(
-        body.name, {"description": body.description, "config": body.config}, False, f.stat().st_mtime
-    )
+    return _write_preset(body.name, body, c, create=True)
 
 
 @router.get("/presets/{name}", response_model=m.Preset, response_model_exclude_unset=True)
 def get_preset(name: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     if name in BUILTIN_PRESETS:
         return _preset_row(name, BUILTIN_PRESETS[name], True, None)
-    f = _preset_dir(c) / f"{name}.json"
+    f = _preset_path(name, c)
     if not f.exists():
         raise NotFound(f"preset {name} not found", code="preset.not_found")
     return _preset_row(name, json.loads(f.read_text(encoding="utf-8")), False, f.stat().st_mtime)
@@ -441,19 +487,18 @@ def get_preset(name: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
 
 @router.put("/presets/{name}", response_model=m.Preset, response_model_exclude_unset=True)
 def put_preset(name: str, body: PresetBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    if name in BUILTIN_PRESETS:
-        raise ApiError("builtin presets are read-only", code="preset.readonly", status=403)
-    return create_preset(PresetBody(name=name, description=body.description, config=body.config), c)
+    return _write_preset(name, body, c, create=False)
 
 
 @router.delete("/presets/{name}", response_model=m.Ok, response_model_exclude_unset=True)
 def delete_preset(name: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     if name in BUILTIN_PRESETS:
         raise ApiError("builtin presets are read-only", code="preset.readonly", status=403)
-    f = _preset_dir(c) / f"{name}.json"
-    if not f.exists():
-        raise NotFound(f"preset {name} not found", code="preset.not_found")
-    f.unlink()
+    f = _preset_path(name, c)
+    with _preset_lock:
+        if not f.exists():
+            raise NotFound(f"preset {name} not found", code="preset.not_found")
+        f.unlink()
     return {"ok": True}
 
 

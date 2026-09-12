@@ -7,6 +7,7 @@ import { projectUrl } from './utils/projectVersions';
 
 const Dashboard = React.lazy(() => import('./pages/Dashboard/Dashboard'));
 const Projects = React.lazy(() => import('./pages/Projects/Projects'));
+const Presets = React.lazy(() => import('./pages/Presets/Presets'));
 const ProjectDetail = React.lazy(() => import('./pages/ProjectDetail/ProjectDetail'));
 const Dataset = React.lazy(() => import('./pages/Dataset/Dataset'));
 const TrainConfig = React.lazy(() => import('./pages/TrainConfig/TrainConfig'));
@@ -38,6 +39,7 @@ export default function AppRoutes() {
     <div className="route-surface" aria-hidden={background ? true : undefined} {...(background ? {inert:''} : {})}><Routes location={background || location}>
       <Route path="/" element={<Layout/>}>
         <Route index element={<Dashboard/>}/><Route path="projects" element={<Projects/>}/>
+        <Route path="presets" element={<Presets/>}/>
         <Route path="projects/:id" element={<ProjectDetail/>}/><Route path="projects/:id/train" element={<TrainConfig/>}/>
         <Route path="projects/:id/v/:versionId" element={<ProjectDetail/>}/><Route path="projects/:id/v/:versionId/train" element={<TrainConfig/>}/>
         <Route path="datasets/:id" element={<Dataset/>}/><Route path="queue" element={<Queue/>}/><Route path="jobs/:id" element={<JobDetail/>}/>

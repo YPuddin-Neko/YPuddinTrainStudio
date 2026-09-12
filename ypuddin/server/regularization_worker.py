@@ -12,13 +12,14 @@ def generate(request: dict, output: Path, emit, cancelled) -> None:
     import torch
     from PIL import Image
 
-    from ypuddin.config import MemoryConfig, ModelConfig
+    from ypuddin.config import MemoryConfig, ModelConfig, SamplingConfig
     from ypuddin.models import get_family
     from ypuddin.models.fingerprints import fingerprint_cache
-    from ypuddin.sampling.euler import euler_sample
+    from ypuddin.sampling import sample
 
     torch.set_num_threads(min(torch.get_num_threads(), 4))
     model = ModelConfig.model_validate(request["model"])
+    sampling = SamplingConfig.model_validate(request.get("sampling", {}))
     family = get_family(model.family)
     device = torch.device(request["device"])
     dtype = (
@@ -78,9 +79,13 @@ def generate(request: dict, output: Path, emit, cancelled) -> None:
                 check()
                 emit(phase="generating", done=image_index, sample_step=done, sample_steps=total)
 
-            latents = euler_sample(
+            latents = sample(
                 predict,
                 (1, family.spec.latent.channels, height // stride, width // stride),
+                sampler=sampling.sampler,
+                scheduler=sampling.scheduler,
+                er_sde_order=sampling.er_sde_order,
+                er_sde_s_noise=sampling.er_sde_s_noise,
                 steps=request["steps"],
                 shift=shift,
                 cfg=request["cfg"],
@@ -98,7 +103,21 @@ def generate(request: dict, output: Path, emit, cancelled) -> None:
             name = f"prior_{index:04d}_{seed}.png"
             Image.fromarray(array).save(output / name)
             (output / name).with_suffix(".txt").write_text(prompt, encoding="utf-8")
-            manifest.append({"file": name, "prompt": prompt, "seed": seed, "model_family": model.family})
+            manifest.append(
+                {
+                    "file": name,
+                    "prompt": prompt,
+                    "seed": seed,
+                    "model_family": model.family,
+                    "sampler": sampling.sampler,
+                    "scheduler": sampling.scheduler,
+                    "steps": request["steps"],
+                    "cfg": request["cfg"],
+                    "shift": shift,
+                    "er_sde_order": sampling.er_sde_order,
+                    "er_sde_s_noise": sampling.er_sde_s_noise,
+                }
+            )
             loaded.latent.to("cpu")
             if index + 1 < request["count"]:
                 loaded.backbone.to(device)

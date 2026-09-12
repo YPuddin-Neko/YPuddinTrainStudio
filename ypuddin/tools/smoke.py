@@ -80,6 +80,11 @@ def smoke_config(
     )
     data["validation"] = {"enabled": False}
     data["sampling"] = {
+        **{
+            key: data["sampling"][key]
+            for key in ("sampler", "scheduler", "er_sde_order", "er_sde_s_noise")
+            if key in data["sampling"]
+        },
         "enabled": True,
         "every_steps": None,
         "every_epochs": None,

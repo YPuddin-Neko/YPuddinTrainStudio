@@ -93,6 +93,8 @@ describe('project training workspace', () => {
     const image = new File(['image bytes'], 'portrait.png', { type: 'image/png' });
     const caption = new File(['a character'], 'portrait.txt', { type: 'text/plain' });
     const discarded = new File(['unused'], 'discard.png', { type: 'image/png' });
+    expect(screen.getByRole('combobox', { name: '标签格式' })).toHaveTextContent('自动');
+    expect(screen.queryByRole('spinbutton', { name: '正则损失权重' })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('选择训练文件'), { target: { files: [image, caption, discarded] } });
     fireEvent.click(screen.getByRole('button', { name: '移除 discard.png' }));
     fireEvent.change(screen.getByRole('spinbutton', { name: '每张图片重复次数' }), { target: { value: '3' } });
@@ -102,6 +104,7 @@ describe('project training workspace', () => {
     expect(uploadText).toContain('filename="portrait.txt"');
     expect(uploadText).not.toContain('discard.png');
     expect(uploadText).toContain('name="repeats"\r\n\r\n3');
+    expect(uploadText).toContain('name="caption_ext"\r\n\r\nauto');
     expect(await screen.findByTestId('dataset-card-d_uploaded')).toHaveTextContent('1 张图片');
     fireEvent.click(screen.getByRole('link', { name: /^2\s*训练参数$/ }));
     fireEvent.click(await screen.findByRole('tab', { name: '模型与输出' }));
@@ -151,10 +154,10 @@ describe('project training workspace', () => {
     expect(screen.getByRole('checkbox',{name:'这是正则化数据集（先验保持）'})).toBeDisabled();
     fireEvent.change(screen.getByLabelText('选择训练文件'),{target:{files:[new File(['image'],'class.png'),new File(['a person'],'class.txt')]}});
     fireEvent.change(screen.getByRole('textbox',{name:'类别提示词'}),{target:{value:'a person'}});
-    fireEvent.change(screen.getByRole('spinbutton',{name:'先验保持权重'}),{target:{value:'0.5'}});
+    fireEvent.change(screen.getByRole('spinbutton',{name:'正则损失权重'}),{target:{value:'0.5'}});
     fireEvent.click(screen.getByRole('button',{name:'上传并添加到项目'}));
     await waitFor(()=>expect(imported).toHaveBeenCalledOnce());
-    expect(scope).toBe('v2');expect(fields).toEqual({is_reg:'true',prior_weight:'0.5',class_prompt:'a person',repeats:'1',caption_ext:'.txt'});
+    expect(scope).toBe('v2');expect(fields).toEqual({is_reg:'true',prior_weight:'0.5',class_prompt:'a person',repeats:'1',caption_ext:'auto'});
   });
 
   it('imports a training-machine path and includes regularization fields', async () => {
@@ -165,10 +168,10 @@ describe('project training workspace', () => {
     fireEvent.change(within(screen.getByRole('group', { name: '训练图片文件夹路径' })).getByRole('textbox'), { target: { value: 'D:\\photos\\regularization' } });
     fireEvent.click(screen.getByRole('checkbox', { name: '这是正则化数据集（先验保持）' }));
     fireEvent.change(screen.getByRole('textbox', { name: '类别提示词' }), { target: { value: 'a person' } });
-    fireEvent.change(screen.getByRole('spinbutton', { name: '先验保持权重' }), { target: { value: '0.5' } });
+    fireEvent.change(screen.getByRole('spinbutton', { name: '正则损失权重' }), { target: { value: '0.5' } });
     fireEvent.click(screen.getByRole('button', { name: '导入文件夹' }));
     await screen.findByRole('link', { name: '查看图片与标签' });
-    expect(body).toMatchObject({ path: 'D:\\photos\\regularization', is_reg: true, prior_weight: 0.5, class_prompt: 'a person', caption_ext: '.txt' });
+    expect(body).toMatchObject({ path: 'D:\\photos\\regularization', is_reg: true, prior_weight: 0.5, class_prompt: 'a person', caption_ext: 'auto' });
   });
 
   it('changes model families without carrying old component paths into the new family', async () => {

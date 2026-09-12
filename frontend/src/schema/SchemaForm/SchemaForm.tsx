@@ -1,13 +1,15 @@
 import React from 'react';
 import { evaluateShowWhen } from '../showWhen';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, ChevronRight, Plus, Trash2, ArrowUp, ArrowDown, FolderOpen, HelpCircle } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Trash2, ArrowUp, ArrowDown, FolderOpen } from 'lucide-react';
 import { PathInput, PathPickerModal } from '../../components/PathBrowser';
 import { apiClient } from '../../api/client';
 import { FamilyInfo } from '../../api/types';
 import { configFieldLabel, configOptionLabel } from '../../utils/configPresentation';
 import NumericControl from './NumericControl';
 import StudioSelect from '../../components/StudioSelect';
+import ConfigHelp from '../../components/ConfigHelp';
+import CaptionFormatSelect from '../../components/CaptionFormatSelect';
 
 interface SchemaProperty {
   type?: string;
@@ -36,6 +38,8 @@ interface SchemaProperty {
     min?: number;
     max?: number;
     step?: number;
+    options?: string[];
+    allow_custom?: boolean;
   };
 }
 
@@ -54,6 +58,7 @@ interface SchemaFormProps {
   family?: FamilyInfo;
   families?: FamilyInfo[];
   compact?: boolean;
+  readOnly?: boolean;
   groupFilter?: string[];
   search?: string;
 }
@@ -279,13 +284,14 @@ const SourcesEditor: React.FC<{
   value: any[];
   onChange: (val: any[]) => void;
 }> = ({ value = [], onChange }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const text = (zh: string, en: string) => i18n.language.startsWith("en") ? en : zh;
   const [modalIndex, setModalIndex] = React.useState<number | null>(null);
 
   const addSource = () => {
     onChange([
       ...value,
-      { path: '', repeats: 1, caption_ext: '.txt', is_reg: false, prior_weight: 1.0, class_prompt: '' },
+      { path: '', repeats: 1, caption_ext: 'auto', is_reg: false, prior_weight: 1.0, class_prompt: '' },
     ]);
   };
 
@@ -328,48 +334,13 @@ const SourcesEditor: React.FC<{
               <span>{t('common.browse')}</span>
             </button>
           </div>
-          <label className="block space-y-1"><span className="text-[10px] text-slate-400">{t('projectDetail.classPrompt')}</span>
-            <input type="text" value={src.class_prompt ?? ''} onChange={(e) => updateSource(idx, 'class_prompt', e.target.value || null)} className="w-full px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600" />
-          </label>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <div>
-              <label className="text-[10px] text-slate-400">{t('dataset.repeats')}</label>
-              <input
-                type="number"
-                value={src.repeats ?? 1}
-                onChange={(e) => updateSource(idx, 'repeats', Number(e.target.value))}
-                className="w-full px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] text-slate-400">{t('projectDetail.captionExt')}</label>
-              <input
-                type="text"
-                value={src.caption_ext || '.txt'}
-                onChange={(e) => updateSource(idx, 'caption_ext', e.target.value)}
-                className="w-full px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] text-slate-400">{t('projectDetail.priorWeight')}</label>
-              <input
-                type="number"
-                step="0.1"
-                value={src.prior_weight ?? 1.0}
-                onChange={(e) => updateSource(idx, 'prior_weight', Number(e.target.value))}
-                className="w-full px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
-              />
-            </div>
-            <div className="flex items-center space-x-2 pt-3">
-              <input
-                type="checkbox"
-                checked={!!src.is_reg}
-                onChange={(e) => updateSource(idx, 'is_reg', e.target.checked)}
-                className="rounded text-blue-600"
-              />
-              <span className="text-[11px]">{t('projectDetail.regularization')}</span>
-            </div>
+          <div className="source-settings-grid">
+            <label><span>{text('标签格式', 'Caption format')}<ConfigHelp label={text('标签格式说明','Caption format help')}>{text('自动按每张图片查找同名 JSON，再查 TXT；可以混用。指定格式时仅使用该扩展名，坏 JSON 会报错，不会静默改用 TXT。旧数据源保留原来的选择。','Auto checks each image for a matching JSON before TXT and supports mixed datasets. An explicit format restricts selection to that suffix. Invalid JSON is reported rather than silently replaced by TXT. Existing sources retain their selection.')}</ConfigHelp></span><CaptionFormatSelect value={src.caption_ext || 'auto'} onChange={next=>updateSource(idx,'caption_ext',next)} label={text(`标签格式 ${idx+1}`,`Caption format ${idx+1}`)}/></label>
+            <label><span>{t('dataset.repeats')}<ConfigHelp label={text('重复次数说明','Repeats help')}>{text('每轮让这组图片出现几次；默认 1。例如 20 张图重复 5 次计为 100 个样本，不复制文件。增加次数会增加训练占比和总步数，也可能过拟合。图片本身不能决定这个数值。','How often these images appear per epoch; default 1. Twenty images repeated five times count as 100 samples without copying files. More repeats increase their training share and step count, and may overfit. The image itself cannot determine this setting.')}</ConfigHelp></span><input aria-label={text(`重复次数 ${idx+1}`,`Repeats ${idx+1}`)} type="number" min="1" step="1" value={src.repeats ?? 1} onChange={event=>updateSource(idx,'repeats',Number(event.target.value))}/></label>
+            <label className="source-reg-toggle"><input type="checkbox" checked={!!src.is_reg} onChange={event=>updateSource(idx,'is_reg',event.target.checked)}/><span>{text('这是正则集','Regularization dataset')}</span><ConfigHelp label={text('正则集说明','Regularization dataset help')}>{text('一般人物或场景等类别图片，用于先验保持。与目标训练图片区分；默认不会加入目标触发词。是否作为正则集需要你明确指定，不能自动从图片判断。','Class images, such as general people or scenes, for prior preservation. They are distinct from target training examples and do not receive the target trigger by default. This purpose must be explicitly chosen, not inferred from images.')}</ConfigHelp></label>
+            {src.is_reg && <label><span>{text('正则损失权重','Regularization loss weight')}<ConfigHelp label={text('正则损失权重说明','Regularization loss weight help')}>{text('只对正则图片的损失生效。默认 1；0.5 表示这些图片的损失乘以一半，0 则不贡献训练梯度。它不是生成正则图片的数量。','Applies only to regularization-image losses. Default 1; 0.5 halves their contribution, while 0 contributes no training gradient. This is not the number of images to generate.')}</ConfigHelp></span><input aria-label={text(`正则损失权重 ${idx+1}`,`Regularization loss weight ${idx+1}`)} type="number" min="0" step="0.1" value={src.prior_weight ?? 1} onChange={event=>updateSource(idx,'prior_weight',Number(event.target.value))}/></label>}
           </div>
+          <details className="source-fallback"><summary>{text('缺少标签时的默认描述（可选）','Fallback description when captions are missing (optional)')}</summary><input aria-label={text(`默认描述 ${idx+1}`,`Fallback description ${idx+1}`)} value={src.class_prompt ?? ''} onChange={event=>updateSource(idx,'class_prompt',event.target.value || null)} placeholder={text('例如：a person；不生成或修改标签文件','For example: a person; does not create or edit caption files')}/></details>
         </div>
       ))}
       <button
@@ -624,7 +595,7 @@ const FieldGroup: React.FC<{
   compact?: boolean;
   groupKey?: string;
 }> = ({ title, count, children, compact = false, groupKey }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [isOpen, setIsOpen] = React.useState(true);
   return (
     <section data-group={groupKey} className={compact ? `config-group ${['model', 'dataset', 'caption', 'sampling', 'validation'].includes(groupKey || '') ? 'config-group-wide' : ''}` : 'border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800'}>
@@ -644,7 +615,7 @@ const FieldGroup: React.FC<{
           {isOpen ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
         </span>
       </button>
-      {isOpen && <div className={compact ? 'config-fields' : 'p-4 space-y-4'}>{children}</div>}
+      {isOpen && <div className={compact ? 'config-fields' : 'p-4 space-y-4'}>{groupKey === 'caption' && <p className="config-caption-explanation">{i18n.language.startsWith('en') ? 'TXT and structured JSON are supported. Choose automatic detection in the data source. JSON shuffle preserves category order and the final natural-language description; malformed JSON blocks training.' : '支持 TXT 与结构化 JSON，在数据源中选择自动检测。JSON 打乱只作用于各分类内部，固定标签和末尾自然语言描述保持顺序；格式错误会阻止训练。'}</p>}{children}</div>}
     </section>
   );
 };
@@ -652,17 +623,19 @@ const FieldGroup: React.FC<{
 export const SchemaForm: React.FC<SchemaFormProps> = ({
   schema,
   value,
-  onChange,
+  onChange: onValueChange,
   showAdvanced = false,
   errors = [],
   family,
   families,
   compact = false,
+  readOnly = false,
   groupFilter,
   search = '',
 }) => {
   const { t, i18n } = useTranslation();
   const english = i18n.resolvedLanguage?.startsWith('en') || false;
+  const onChange = readOnly ? () => {} : onValueChange;
   const groups: Record<string, { order: number; fields: React.ReactNode[] }> = {};
   const conditionValue = { ...value, dataset: { resolution_mode: 'bucket', ...value.dataset } };
 
@@ -673,6 +646,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (fullPathKey === 'logging.wandb' || fullPathKey.startsWith('logging.wandb.')) return null;
     // The service assigns a separate samples/<job_id> destination when starting a task.
     if (fullPathKey === 'sampling.output_dir') return null;
+    if (fullPathKey === 'adapter.alpha' && value.adapter?.algo === 'lokr' && value.adapter?.rank === 'full') return null;
     const ui = { ...(prop['x-ui'] || {}), ...(compact && fullPathKey === 'dataset.batch_size' ? {group:'loop'} : {}) };
     if (conditionValue.dataset.resolution_mode === 'native' && ['dataset.resolutions', 'dataset.aspect_ratio_limit', 'dataset.area_tolerance', 'dataset.bucket_step', 'dataset.bucket_no_upscale'].includes(fullPathKey)) return null;
     if (compact && !showAdvanced && fullPathKey === 'adapter.rules' && !value.adapter?.rules?.length) return null;
@@ -793,6 +767,14 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           onChange={(val) => onChange(setNestedValue(value, path, val === '' && prop.anyOf?.some((p) => p.type === 'null') ? null : val))}
         />
       );
+    } else if (fullPathKey === 'adapter.rank' && value.adapter?.algo === 'lokr') {
+      control = <div className="space-y-2"><StudioSelect aria-label={english ? 'LoKr parameter mode' : 'LoKr 参数形式'} value={fieldValue === 'full' ? 'full' : 'low_rank'}
+        onValueChange={next=>onChange(setNestedValue(value,path,next==='full'?'full':16))} options={[
+          {value:'full',label:english?'Full · full factor matrices':'Full · 完整因子矩阵'},
+          {value:'low_rank',label:english?'Low rank · factor decomposition':'低秩 · 分解因子矩阵'},
+        ]}/>
+        {fieldValue !== 'full' ? <input type="number" aria-label={fieldLabel} min="1" step="1" value={fieldValue ?? 16} onChange={event=>onChange(setNestedValue(value,path,Number(event.target.value)))}/> : <p className="text-xs text-slate-500">{english?'Retains the LoKr structure; does not fine-tune the whole model. Alpha is not used in this mode.':'仍保留 LoKr 结构，不是全量微调；此模式不使用 Alpha 缩放。'}</p>}
+      </div>;
     } else if (prop.anyOf) {
       control = <SchemaValueInput schema={schema} property={prop} value={fieldValue} name={fullPathKey} compact={compact}
         placeholder={family && fullPathKey.startsWith('sampling.') && ['steps', 'cfg', 'shift'].includes(key) ? (family.sampling?.[key as 'steps' | 'cfg' | 'shift'] != null ? String(family.sampling[key as 'steps' | 'cfg' | 'shift']) : key === 'shift' ? t('sampling.shiftAuto') : undefined) : undefined}
@@ -819,6 +801,12 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           )}
         </div>
       );
+    } else if (ui.options?.length) {
+      control = <div className="space-y-2"><StudioSelect aria-label={fieldLabel} value={ui.options.includes(fieldValue) ? fieldValue : '__custom__'}
+        onValueChange={next => onChange(setNestedValue(value,path,next === '__custom__' ? '' : next))}
+        options={[...ui.options.map(option=>({value:option,label:configOptionLabel(fullPathKey,option,english)})),...(ui.allow_custom ? [{value:'__custom__',label:english?'Custom Python class…':'自定义 Python 类…'}] : [])]}/>
+        {ui.allow_custom && !ui.options.includes(fieldValue) && <input aria-label={`${fieldLabel} ${english?'custom class':'自定义类'}`} value={fieldValue || ''} placeholder="package.module.OptimizerClass" onChange={event=>onChange(setNestedValue(value,path,event.target.value))}/>}
+      </div>;
     } else if (prop.enum) {
       control = (
         <StudioSelect aria-label={fieldLabel} value={fieldValue == null ? '' : String(fieldValue)}
@@ -912,7 +900,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
             {compact ? fieldLabel : weightMeta?.label || fieldLabel}
             {ui.unit && !percentage && ui.control !== 'slider' && <span className="ml-1 text-xs text-slate-500">({ui.unit})</span>}
           </label>
-          {compact && help && <details className="config-help"><summary aria-label={`${fieldLabel} ${english ? 'help' : '说明'}`}><HelpCircle size={13} /></summary><p>{help}</p></details>}
+          {compact && help && <ConfigHelp label={`${fieldLabel} ${english ? 'help' : '说明'}`}>{help}</ConfigHelp>}
         </div>
         {!compact && prop.description && <p className="text-xs text-slate-500 dark:text-slate-400">{prop.description}</p>}
         {!compact && weightMeta?.hint && (
@@ -920,7 +908,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
             {weightMeta.hint}
           </p>
         )}
-        <div className="mt-1">{control}</div>
+        <div className="mt-1">{readOnly ? <fieldset disabled style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>{control}</fieldset> : control}</div>
         {errorItem && <p className="text-xs text-red-600 dark:text-red-400">{errorItem.msg}</p>}
       </div>
     );
@@ -962,7 +950,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       {sortedGroups.map(([groupName, groupData]) => (
         <FieldGroup key={groupName} title={t(`groups.${groupName}`, groupName)} count={groupData.fields.length} compact={compact} groupKey={groupName}>
           {compact && groupName === 'sampling' ? [...groupData.fields].sort((a, b) => {
-            const order = ['enabled', 'at_start', 'every_steps', 'every_epochs', 'prompts', 'width', 'height', 'steps', 'cfg', 'shift', 'seed', 'sampler', 'prompts_file'];
+            const order = ['enabled', 'at_start', 'every_steps', 'every_epochs', 'prompts', 'width', 'height', 'steps', 'cfg', 'shift', 'seed', 'sampler', 'scheduler', 'er_sde_order', 'er_sde_s_noise', 'prompts_file'];
             const rank = (node: React.ReactNode) => { const index = order.indexOf(String((node as React.ReactElement).key).split('.').pop() || ''); return index < 0 ? order.length : index; };
             return rank(a) - rank(b);
           }) : groupData.fields}

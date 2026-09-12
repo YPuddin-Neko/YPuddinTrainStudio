@@ -6,18 +6,21 @@ import type { DatasetInfo } from '../../api/types';
 import { PathInput } from '../../components/PathBrowser';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatApiError } from '../../utils/errors';
+import CaptionFormatSelect from '../../components/CaptionFormatSelect';
+import ConfigHelp from '../../components/ConfigHelp';
 import { formatBytes } from '../../utils/format';
 import './project-data-import.css';
 
 export default function ProjectDataImport({ projectId, versionId, onImported, defaultIsReg = false }: { projectId: string; versionId?: string; onImported: () => void; defaultIsReg?: boolean }) {
   const text = useWorkspaceText();
+  const repeatsId = React.useId();
   const [mode, setMode] = React.useState<'upload' | 'path'>('upload');
   const [files, setFiles] = React.useState<File[]>([]);
   const [name, setName] = React.useState('');
   const [path, setPath] = React.useState('');
   const [repeats, setRepeats] = React.useState(1);
   const [isReg, setIsReg] = React.useState(defaultIsReg);
-  const [captionExt, setCaptionExt] = React.useState('.txt');
+  const [captionExt, setCaptionExt] = React.useState('auto');
   const [priorWeight, setPriorWeight] = React.useState(1);
   const [classPrompt, setClassPrompt] = React.useState('');
   const [busy, setBusy] = React.useState(false);
@@ -33,6 +36,8 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
     if (fileInput.current) fileInput.current.value = '';
     if (folderInput.current) folderInput.current.value = '';
   };
+  const folderName = mode === 'path' ? path.replace(/\\/g,'/').split('/').filter(Boolean).pop() : files[0]?.webkitRelativePath?.split('/').slice(0,-1)[0];
+  const detectedRepeats = folderName?.match(/^([1-9]\d{0,5})[_-]/)?.[1];
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (busy || !Number.isInteger(repeats) || repeats < 1 || (mode === 'upload' ? files.length === 0 : !path.trim())) return;
@@ -44,7 +49,7 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
         files.forEach((file) => form.append('files', file, file.webkitRelativePath || file.name));
         form.append('name', name.trim()); form.append('repeats', String(repeats));
         form.append('is_reg', String(isReg)); form.append('prior_weight', String(priorWeight));
-        form.append('class_prompt', classPrompt.trim()); form.append('caption_ext', '.txt');
+        form.append('class_prompt', classPrompt.trim()); form.append('caption_ext', captionExt);
         result = await apiClient.post<DatasetInfo>(`/projects/${projectId}/datasets/upload`, form, { params: { version_id: versionId }, silent: true });
         setFiles([]);
         if (fileInput.current) fileInput.current.value = '';
@@ -71,12 +76,12 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
     {created && <div role="status" className="project-import-message project-import-success"><CheckCircle2 size={15}/>{text('已添加到当前版本。', 'Added to this version.')}<Link to={`/datasets/${created.source.id}`}>{text('查看图片与标签', 'Review images and captions')}</Link></div>}
     {mode === 'upload' ? <>
       <div className="project-import-dropzone" data-dragging={dragging} onDragOver={event => { event.preventDefault(); if (!busy) setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={event => { event.preventDefault(); setDragging(false); if (!busy) selectFiles(Array.from(event.dataTransfer.files)); }}>
-        <div className="project-import-drop-copy"><Upload size={20}/><div><strong>{text('拖入图片、标签文件，或一个 ZIP 压缩包', 'Drop images, captions, or one ZIP archive')}</strong><p>{text('图片、同名 .txt / 遮罩按目录导入当前版本；最多 2 GiB、5,000 个文件。', 'Import images and matching .txt / masks with their folders into this version. Up to 2 GiB / 5,000 files.')}</p></div></div>
+        <div className="project-import-drop-copy"><Upload size={20}/><div><strong>{text('拖入图片、标签文件，或一个 ZIP 压缩包', 'Drop images, captions, or one ZIP archive')}</strong><p>{text('图片、同名 JSON / TXT 标签与遮罩按目录导入当前版本；最多 2 GiB、5,000 个文件。', 'Import images and matching JSON / TXT captions and masks with their folders into this version. Up to 2 GiB / 5,000 files.')}</p></div></div>
         <div className="project-import-file-actions">
           <button type="button" disabled={busy} onClick={() => fileInput.current?.click()} className="project-import-button project-import-primary">{text('选择图片 / ZIP', 'Choose images / ZIP')}</button>
           <button type="button" disabled={busy} onClick={() => folderInput.current?.click()} className="project-import-button"><FolderOpen size={14}/>{text('选择整个文件夹', 'Choose a folder')}</button>
         </div>
-        <input ref={fileInput} className="sr-only" type="file" multiple accept="image/*,.txt,.zip" aria-label={text('选择训练文件', 'Choose training files')} disabled={busy} onChange={event => selectFiles(Array.from(event.target.files || []))}/>
+        <input ref={fileInput} className="sr-only" type="file" multiple accept="image/*,.txt,.json,.zip" aria-label={text('选择训练文件', 'Choose training files')} disabled={busy} onChange={event => selectFiles(Array.from(event.target.files || []))}/>
         <input ref={folderInput} className="sr-only" type="file" multiple {...{ webkitdirectory: '' }} aria-label={text('选择训练文件夹', 'Choose training folder')} disabled={busy} onChange={event => selectFiles(Array.from(event.target.files || []))}/>
       </div>
       {files.length > 0 && <div className="project-import-selected"><div className="project-import-selection-summary"><span>{text(`已选 ${files.length} 个文件`, `${files.length} files selected`)} · {formatBytes(files.reduce((total, file) => total + file.size, 0))}</span><button type="button" disabled={busy} onClick={() => selectFiles([])}>{text('清空选择', 'Clear selection')}</button></div>
@@ -89,11 +94,13 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
     <div className="project-import-configuration">
       <div className="project-import-options">
         <div className="project-import-fields">
-          {mode === 'upload' ? <label className="project-import-field project-import-name">{text('数据集名称（可选）', 'Dataset name (optional)')}<input className={inputClass} value={name} onChange={event => setName(event.target.value)} disabled={busy} placeholder={text('例如：角色正面照', 'For example: character portraits')}/></label> : <label className="project-import-field project-import-caption">{text('标签文件扩展名', 'Caption file extension')}<input className={inputClass} value={captionExt} onChange={event => setCaptionExt(event.target.value)} required disabled={busy}/></label>}
-          <label className="project-import-field project-import-repeats">{text('每张图片重复次数', 'Repeats per image')}<input className={inputClass} type="number" min="1" step="1" required value={repeats} onChange={event => setRepeats(Number(event.target.value))} disabled={busy}/></label>
+          {mode === 'upload' ? <label className="project-import-field project-import-name">{text('数据集名称（可选）', 'Dataset name (optional)')}<input className={inputClass} value={name} onChange={event => setName(event.target.value)} disabled={busy} placeholder={text('例如：角色正面照', 'For example: character portraits')}/></label> : null}
+          <label className="project-import-field project-import-caption">{text('标签格式', 'Caption format')}<CaptionFormatSelect value={captionExt} onChange={setCaptionExt} disabled={busy}/></label>
+          <div className="project-import-field project-import-repeats"><div className="project-import-field-label"><label htmlFor={repeatsId}>{text('每张图片重复次数', 'Repeats per image')}</label><ConfigHelp label={text('重复次数说明','Repeats help')}>{text('默认每轮使用每张图一次。次数越高，这组图片的训练占比越大，不复制文件。可从形如 5_character 的目录名读取 5；没有命名约定时不猜测。','Each image is used once per epoch by default. More repeats increase this dataset’s share without copying files. A folder named 5_character can suggest 5 repeats; otherwise no value is inferred.')}</ConfigHelp></div><input id={repeatsId} className={inputClass} type="number" min="1" step="1" required value={repeats} onChange={event => setRepeats(Number(event.target.value))} disabled={busy}/></div>
           <label className="project-import-reg"><input type="checkbox" disabled={busy || defaultIsReg} checked={isReg} onChange={event => setIsReg(event.target.checked)}/>{text('这是正则化数据集（先验保持）', 'Regularization dataset (prior preservation)')}</label>
         </div>
-        {isReg && <div className="project-import-reg-options"><label className="project-import-field project-import-prompt">{text('类别提示词', 'Class prompt')}<input className={inputClass} disabled={busy} value={classPrompt} onChange={event => setClassPrompt(event.target.value)}/></label><label className="project-import-field project-import-prior">{text('先验保持权重', 'Prior preservation weight')}<input className={inputClass} type="number" min="0" step="0.1" disabled={busy} value={priorWeight} onChange={event => setPriorWeight(Number(event.target.value))}/></label></div>}
+        {detectedRepeats && Number(detectedRepeats)!==repeats && <button type="button" disabled={busy} onClick={()=>setRepeats(Number(detectedRepeats))}>{text(`目录名检测到重复 ${detectedRepeats} 次，应用`, `Folder name suggests ${detectedRepeats} repeats — apply`)}</button>}
+        {isReg && <div className="project-import-reg-options"><label className="project-import-field project-import-prompt">{text('类别提示词', 'Class prompt')}<input className={inputClass} disabled={busy} value={classPrompt} onChange={event => setClassPrompt(event.target.value)}/></label><label className="project-import-field project-import-prior">{text('正则损失权重', 'Regularization loss weight')}<input className={inputClass} type="number" min="0" step="0.1" disabled={busy} value={priorWeight} onChange={event => setPriorWeight(Number(event.target.value))}/></label></div>}
       </div>
       <button type="submit" disabled={busy || repeats < 1 || (mode === 'upload' ? files.length === 0 : !path.trim())} className="project-import-button project-import-primary project-import-submit">{busy && <Loader2 size={14} className="animate-spin"/>}{busy ? text('正在传输并登记，请稍候…', 'Transferring and registering…') : mode === 'upload' ? text('上传并添加到项目', 'Upload and add to project') : text('导入文件夹', 'Import folder')}</button>
     </div>

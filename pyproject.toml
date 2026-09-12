@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ypuddin"
-version = "0.5.4"
+version = "0.5.5"
 description = "YPuddin Train Studio - a modular diffusion LoRA/LoKr trainer (Anima-first) with a service API"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"

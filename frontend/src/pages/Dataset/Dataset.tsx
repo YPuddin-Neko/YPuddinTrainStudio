@@ -202,8 +202,8 @@ function DatasetContent({id}: {id?:string}) {
     const img = images.items.find((i) => i.hash === hash);
     if (!img) return;
     setActiveImage(hash);
-    setEditCaption(img.caption || '');
-    setCaptionBase(img.caption || '');
+    setEditCaption(img.caption_tags ?? img.caption ?? '');
+    setCaptionBase(img.caption_tags ?? img.caption ?? '');
   };
 
   const saveCaption = async () => {
@@ -582,7 +582,9 @@ function DatasetContent({id}: {id?:string}) {
               </div>
               <div className="space-y-3">
                 {canEdit && <button type="button" disabled={savingCaption} onClick={() => { if (activeImg) {void (editCaption!==captionBase?saveCaption():Promise.resolve()).then(()=>{setMaskImage({ hash: activeImg.hash, relPath: activeImg.rel_path });setActiveImage(null);}).catch(()=>{});} }} className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600"><Brush className="h-4 w-4" />{text('编辑这张图片的训练遮罩', 'Edit this image’s training mask')}</button>}
-                <div className="text-xs text-slate-400">{t('dataset.captionEditorTitle')}</div>
+                <div className="text-xs text-slate-400">{t('dataset.captionEditorTitle')}{activeImg?.caption_format && ` · ${activeImg.caption_format.toUpperCase()}`}</div>
+                {activeImg?.caption_description && <div className="text-xs text-slate-500"><p>{text('JSON 自然语言描述（保留原文）','JSON natural-language description (preserved)')}</p><p className="whitespace-pre-wrap">{activeImg.caption_description}</p></div>}
+                {activeImg?.caption_error && <p role="alert">{activeImg.caption_error}</p>}
                 {actionError && <p role="alert" className="text-sm text-red-600">{actionError}</p>}
                 {canEdit ? <fieldset disabled={savingCaption}><TagChips caption={editCaption} onChange={setEditCaption} readOnly={savingCaption}/></fieldset> : <p className="whitespace-pre-wrap text-sm">{editCaption || t('dataset.noCaption', '（无 caption）')}</p>}
                 <div className="flex justify-end space-x-2 pt-2">

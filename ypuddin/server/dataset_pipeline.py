@@ -413,9 +413,12 @@ class DatasetPipeline:
         return self.start(row["project_id"], row["version_id"], row["request"])
 
     def _resolve_images(self, pid: str, vid: str, refs: list[dict]) -> list[dict]:
+        from ypuddin.data.index import caption_target
+
         from .routes_work import _get_dataset, _validate_caption_extension
 
         resolved, seen = [], set()
+        caption_directories = {}
         managed_roots = (self.c.dataset_dir(pid, vid), self.c.reg_dir(pid, vid))
         sources = {source["dataset_id"]: source for source in self._sources(pid, vid)}
         for ref in refs:
@@ -462,8 +465,10 @@ class DatasetPipeline:
             if str(path) in seen:
                 continue
             seen.add(str(path))
-            caption = path.with_suffix(
-                _validate_caption_extension(sources.get(row["id"], row).get("caption_ext", ".txt"))
+            caption = caption_target(
+                path,
+                _validate_caption_extension(sources.get(row["id"], row).get("caption_ext", "auto")),
+                directory_cache=caption_directories,
             )
             mask = mask_for(path)
             for sidecar in (caption, Path(mask) if mask else None):
@@ -484,7 +489,11 @@ class DatasetPipeline:
         return resolved
 
     def _inspect(self, oid: str, pid: str, vid: str) -> dict:
+        from ypuddin.data.captions import read_caption
+        from ypuddin.data.index import caption_target
+
         signature = self.signature(pid, vid)
+        caption_directories = {}
         files, global_issues = [], []
         for source in self._sources(pid, vid):
             root = Path(source["path"])
@@ -503,7 +512,9 @@ class DatasetPipeline:
         for index, (source, path) in enumerate(files):
             self._cancelled(oid)
             relative = path.relative_to(source["path"]).as_posix()
-            caption = path.with_suffix(source.get("caption_ext", ".txt"))
+            caption = caption_target(
+                path, source.get("caption_ext", "auto"), directory_cache=caption_directories
+            )
             mask = mask_for(path)
             record = {
                 "dataset_id": source["dataset_id"],
@@ -545,7 +556,7 @@ class DatasetPipeline:
                 )
             try:
                 if caption.is_file():
-                    record["caption"] = caption.read_text(encoding="utf-8-sig").strip()
+                    record["caption"] = read_caption(str(caption), None)
                 if not record["caption"] and not source.get("class_prompt"):
                     record["issues"].append(
                         {
@@ -554,7 +565,7 @@ class DatasetPipeline:
                             "message": "Caption is empty or missing",
                         }
                     )
-            except (UnicodeError, OSError) as exc:
+            except (UnicodeError, OSError, ValueError) as exc:
                 record["issues"].append(
                     {"severity": "error", "code": "caption_encoding", "message": str(exc)}
                 )
@@ -769,6 +780,8 @@ class DatasetPipeline:
         return changes
 
     def _captions(self, oid: str, work: Path, images: list[dict], options: dict) -> list[dict]:
+        from ypuddin.data.captions import caption_content, read_editable_caption
+
         changes = []
         seen = set()
         for index, record in enumerate(images):
@@ -778,7 +791,7 @@ class DatasetPipeline:
             if path in seen:
                 continue
             seen.add(path)
-            previous = path.read_text(encoding="utf-8-sig").strip() if path.exists() else ""
+            previous = read_editable_caption(str(path), None) if path.exists() else ""
             text = (
                 options["text"]
                 .replace("{filename}", record["path"].stem)
@@ -799,7 +812,7 @@ class DatasetPipeline:
                 continue
             staged = work / "staged" / f"caption-{index}"
             staged.parent.mkdir(parents=True, exist_ok=True)
-            staged.write_text(text.strip() + "\n", encoding="utf-8")
+            staged.write_text(caption_content(path, text), encoding="utf-8")
             changes.append(self._change(work, path, staged))
             self._progress(oid, "captions", index + 1, len(images), record["rel_path"])
         return changes

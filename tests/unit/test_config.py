@@ -26,6 +26,88 @@ def test_defaults_validate_and_roundtrip(tmp_path):
     assert config_hash(cfg) == config_hash(cfg2)
 
 
+def test_sampling_algorithms_roundtrip_and_keep_legacy_defaults(tmp_path):
+    # Omitting the new options must retain the original Euler/linear-grid preview.
+    legacy = TrainConfig.model_validate({"sampling": {"steps": 12, "shift": 3}})
+    assert legacy.sampling.sampler == "euler"
+    assert legacy.sampling.scheduler == "uniform"
+    cfg = load_config(
+        overrides=[
+            "sampling.sampler=er_sde",
+            "sampling.scheduler=sgm_uniform",
+            "sampling.er_sde_order=2",
+            "sampling.er_sde_s_noise=0.4",
+        ]
+    )
+    path = tmp_path / "sampling.toml"
+    path.write_text(dump_toml(cfg), encoding="utf-8")
+    assert load_config(path) == cfg
+    assert TrainConfig.model_validate_json(cfg.model_dump_json()) == cfg
+    assert cfg.scheduler == legacy.scheduler  # The optimizer LR schedule is a separate setting.
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("sampler", "unknown"),
+        ("scheduler", "cosine"),
+        ("er_sde_order", 0),
+        ("er_sde_order", 4),
+        ("er_sde_s_noise", -0.01),
+        ("er_sde_s_noise", 1.01),
+        *[
+            (field, value)
+            for field in ("er_sde_s_noise", "cfg", "shift")
+            for value in (float("nan"), float("inf"), -float("inf"))
+        ],
+    ],
+)
+def test_invalid_sampling_algorithm_options_rejected(field, value):
+    with pytest.raises(ValidationError):
+        TrainConfig.model_validate({"sampling": {field: value}})
+
+
+def test_sampling_advanced_options_only_visible_for_enabled_er_sde():
+    properties = TrainConfig.json_schema()["$defs"]["SamplingConfig"]["properties"]
+    assert properties["sampler"]["enum"] == ["euler", "heun", "er_sde"]
+    assert properties["scheduler"]["enum"] == ["uniform", "simple", "sgm_uniform", "normal"]
+    for field in ("er_sde_order", "er_sde_s_noise"):
+        hints = properties[field]["x-ui"]
+        assert hints["advanced"]
+        for enabled, sampler, visible in (
+            (True, "er_sde", True),
+            (False, "er_sde", False),
+            (True, "euler", False),
+        ):
+            assert (
+                evaluate(hints["show_when"], {"sampling": {"enabled": enabled, "sampler": sampler}})
+                is visible
+            )
+
+
+def test_optimizer_select_lists_actual_registry_and_preserves_custom_paths():
+    from ypuddin.config import OptimizerConfig
+    from ypuddin.optim.factory import _BUILTIN
+
+    properties = TrainConfig.json_schema()["$defs"]["OptimizerConfig"]["properties"]
+    hints = properties["type"]["x-ui"]
+    assert set(hints["options"]) == set(_BUILTIN)
+    assert hints["control"] == "select" and hints["allow_custom"]
+    assert "enum" not in properties["type"]  # Suggestions must not prohibit a valid custom class.
+    assert OptimizerConfig(type="torch.optim.SGD").type == "torch.optim.SGD"
+    assert not evaluate(properties["betas"]["x-ui"]["show_when"], {"optimizer": {"type": "sgd"}})
+    assert evaluate(properties["betas"]["x-ui"]["show_when"], {"optimizer": {"type": "adamw"}})
+    assert not evaluate(properties["eps"]["x-ui"]["show_when"], {"optimizer": {"type": "adafactor"}})
+
+
+def test_caption_auto_is_only_a_default_not_a_legacy_config_migration():
+    from ypuddin.config import DatasetSourceConfig
+
+    assert DatasetSourceConfig(path="/dataset").caption_ext == "auto"
+    assert DatasetSourceConfig(path="/dataset", caption_ext=".txt").caption_ext == ".txt"
+    assert DatasetSourceConfig(path="/dataset", caption_ext=".caption").caption_ext == ".caption"
+
+
 def test_unknown_key_rejected():
     with pytest.raises(ValidationError):
         TrainConfig.model_validate({"adapter": {"algo": "lokr", "bogus": 1}})

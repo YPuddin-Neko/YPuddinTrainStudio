@@ -1,0 +1,38 @@
+.presets-page { color:var(--studio-text); font-size:13px; }
+.presets-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px; }
+.presets-heading h1 { font-size:21px; font-weight:650; }
+.presets-heading p { color:var(--studio-dim); font-size:12px; margin-top:4px; }
+.presets-columns { display:grid; grid-template-columns:270px minmax(0,1fr); gap:16px; align-items:start; }
+.presets-library { position:sticky; top:0; max-height:calc(100dvh - 90px); overflow:auto; border:1px solid var(--studio-line); border-radius:8px; background:var(--studio-panel); }
+.presets-library-tools { position:sticky; top:0; padding:10px; display:grid; gap:7px; background:var(--studio-panel); border-bottom:1px solid var(--studio-line); z-index:1; }
+.presets-library-tools > label, .presets-field-search { display:flex; align-items:center; gap:7px; border:1px solid var(--studio-line); border-radius:5px; padding:5px 8px; background:var(--studio-panel); }
+.presets-library-tools input, .presets-field-search input { min-width:0; width:100%; background:transparent; border:0; font-size:12px; }
+.presets-library section { padding:8px; }
+.presets-library h2 { color:var(--studio-dim); font-size:11px; font-weight:600; padding:2px 5px 5px; }
+.preset-list-item { display:block; width:100%; text-align:left; padding:9px; border:1px solid transparent; border-radius:6px; margin:3px 0; overflow-wrap:anywhere; }
+.preset-list-item:hover, .preset-list-item.selected { background:var(--studio-muted); border-color:var(--studio-line); }
+.preset-list-item.selected { border-color:var(--studio-accent); }
+.preset-list-item > span { display:flex; justify-content:space-between; gap:8px; }
+.preset-list-item strong { font-size:12px; }
+.preset-list-item small { color:var(--studio-dim); font-size:10px; }
+.preset-list-item p { font-size:11px; margin:4px 0; color:var(--studio-dim); }
+.presets-editor { min-width:0; }
+.presets-editor-actions { display:flex; gap:6px; align-items:center; flex-wrap:wrap; position:sticky; top:0; z-index:15; padding:8px 0; background:var(--studio-canvas); margin-bottom:8px; }
+.presets-editor-actions > strong { font-size:12px; }.presets-editor-actions > span { flex:1; }
+.presets-meta { display:grid; grid-template-columns:1fr 1fr; gap:12px; border:0; padding:0; min-width:0; }
+.presets-meta > label { display:grid; gap:5px; min-width:0; font-size:12px; }
+.presets-meta input, .presets-meta textarea { width:100%; border:1px solid var(--studio-line); border-radius:6px; padding:7px 9px; background:var(--studio-panel); color:var(--studio-text); }
+.presets-meta input[readonly] { color:var(--studio-dim); }
+.presets-description { grid-column:1/-1; }.presets-meta:disabled { opacity:.85; }
+.preset-parameter-summary { margin:10px 0; font-size:12px; color:var(--studio-dim); overflow-wrap:anywhere; }
+.presets-form-toolbar { display:flex; gap:10px; align-items:center; justify-content:space-between; margin:8px 0; }
+.presets-form-toolbar [role=tablist] { display:flex; overflow-x:auto; min-width:0; }
+.presets-form-toolbar [role=tab] { padding:7px 9px; white-space:nowrap; border-bottom:2px solid transparent; font-size:12px; }
+.presets-form-toolbar [role=tab][aria-selected=true] { color:var(--studio-accent); border-bottom-color:var(--studio-accent); }
+.presets-form-toolbar > label { display:flex; gap:5px; align-items:center; flex-shrink:0; font-size:12px; }
+.presets-field-search { margin-bottom:10px; }
+.presets-schema { min-width:0; border:0; padding:0; margin:0; }.presets-schema:disabled { opacity:.8; }
+.presets-empty { padding:24px 14px; color:var(--studio-dim); line-height:1.8; font-size:12px; }
+.presets-notice { margin-bottom:10px; color:var(--studio-accent); }.presets-confirm-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; margin-top:18px; }
+@media(max-width:1100px) { .presets-columns { grid-template-columns:230px minmax(0,1fr); gap:12px; }.presets-form-toolbar { align-items:flex-start; flex-direction:column; } }
+@media(max-width:700px) { .presets-heading { align-items:flex-start; }.presets-heading h1 { font-size:18px; }.presets-columns { grid-template-columns:minmax(0,1fr); }.presets-library { position:static; max-height:280px; }.presets-meta { grid-template-columns:minmax(0,1fr); }.presets-editor-actions { gap:5px; }.presets-editor-actions > strong { width:100%; }.presets-description { grid-column:auto; } }

@@ -16,10 +16,13 @@ import { projectUrl, versionConfigUrl, type VersionedProject } from '../../utils
 import '../../styles/project-workspace.css';
 import BucketInspector from './BucketInspector';
 import StudioSelect from '../../components/StudioSelect';
+import PresetPreview from '../../components/PresetPreview';
 import { useWorkspaceHeight } from '../../components/projects/useWorkspaceHeight';
 import './training-workspace.css';
 import { CONFIG_TAB_GROUPS, ConfigTab, ConfigIssue, presentConfigIssues, presentPlanWarning } from '../../utils/configPresentation';
 import { AlertCircle, CheckCircle2, ChevronRight, Search, SlidersHorizontal, Play, Settings2, Brush, Database, Box, Sparkles, Loader2 } from 'lucide-react';
+
+const presetFamily = (preset: Preset): string | undefined => { const model = preset.config.model; return model && typeof model === 'object' && 'family' in model && typeof model.family === 'string' ? model.family : undefined; };
 
 const trainingDraftKey = (projectId: string, versionId?: string) => `training-draft:${projectId}:${versionId || 'legacy'}`;
 const isConfigObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -120,6 +123,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const [jobName, setJobName] = React.useState('');
   const [priority, setPriority] = React.useState(0);
   const [scheduledAt, setScheduledAt] = React.useState('');
+  const [pendingPreset, setPendingPreset] = React.useState<Preset | null>(null);
   const [presetName, setPresetName] = React.useState('');
   const [savingPreset, setSavingPreset] = React.useState(false);
   const [importText, setImportText] = React.useState('');
@@ -362,8 +366,10 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   }, [config, loaded]);
 
   const handleApplyPreset = (preset: Preset) => {
+    if (presetFamily(preset) && presetFamily(preset) !== config.model?.family) return;
     setError('');
     setConfig((prev) => fillDefaultModels(applyTrainingPreset(prev, preset.config), registeredModels));
+    setPendingPreset(null);
   };
 
   const handleConfigChange = (next: Record<string, any>) => {
@@ -473,14 +479,16 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       <div className="training-toolbar-title"><h2>{text('训练参数', 'Training parameters')}</h2><span className="family-chip">{config.model?.family || '…'}</span></div>
       <label className="config-search"><Search size={15}/><input aria-label={text('搜索训练参数', 'Search training parameters')} placeholder={text('搜索参数名称或关键字…', 'Search parameters…')} value={search} onChange={event => setSearch(event.target.value)} />{search && <button aria-label={text('清空搜索', 'Clear search')} onClick={() => setSearch('')}>×</button>}</label>
       <div className="toolbar-actions"><label className="advanced-toggle"><input type="checkbox" checked={showAdvanced} onChange={event => setShowAdvanced(event.target.checked)}/>{t('train.advanced')}</label>
-        <StudioSelect aria-label={t('train.loadPreset')} disabled={!loaded || savingNavigation} value="" onValueChange={name => {const preset=presets.find(item=>item.name===name);if(preset)handleApplyPreset(preset);}} options={[{value:'',label:t('train.loadPreset'),disabled:true},...presets.map(preset=>({value:preset.name,label:preset.name}))]}/>
+        <StudioSelect aria-label={t('train.loadPreset')} disabled={!loaded || savingNavigation} value="" onValueChange={name => {const preset=presets.find(item=>item.name===name);if(preset)setPendingPreset(preset);}} options={[{value:'',label:t('train.loadPreset'),disabled:true},...presets.map(preset=>({value:preset.name,label:`${preset.name}${presetFamily(preset) && presetFamily(preset)!==config.model?.family ? ` · ${text('适用于','For')} ${presetFamily(preset)}` : ''}`,disabled:!!presetFamily(preset) && presetFamily(preset)!==config.model?.family}))]}/>
         <button className="studio-secondary save-draft" disabled={!loaded || !dirty || savingNavigation} onClick={() => void saveDraftNow()}>{savingNavigation ? text('保存中…','Saving…') : text('保存草稿','Save draft')}</button>
         <details className="config-tools"><summary><Settings2 size={14}/>{text('配置工具', 'Config tools')}</summary><div className="config-tools-menu">
+          <Link to="/presets">{text('管理参数预设','Manage parameter presets')}</Link>
           <div className="preset-save"><input aria-label={t('train.presetName')} placeholder={t('train.presetName')} value={presetName} onChange={event => setPresetName(event.target.value)} /><button disabled={!loaded || savingPreset || !presetName.trim()} onClick={handleSavePreset}>{t('train.savePreset')}</button></div>
           <button disabled={!loaded} onClick={() => setImportOpen(value => !value)}>{t('train.importToml')}</button><button disabled={!loaded} onClick={handleExport}>{t('train.exportToml')}</button><button disabled={!loaded} onClick={() => { if (window.confirm(t('train.resetConfirm'))) setConfig(structuredClone(defaults)); }}>{t('train.resetDefaults')}</button>
         </div></details>
       </div>
     </div>
+    {pendingPreset && <PresetPreview preset={pendingPreset} current={config} onClose={()=>setPendingPreset(null)} onApply={()=>handleApplyPreset(pendingPreset)}/>}
     {importOpen && <section className="config-import"><div className="flex items-center justify-between"><h2>{t('train.importToml')}</h2><button onClick={() => setImportOpen(false)}>{text('关闭', 'Close')}</button></div><input type="file" accept=".toml,text/plain" aria-label={t('train.importFile')} onChange={event => { const file = event.target.files?.[0]; if (file) file.text().then(setImportText).catch(err => setError(formatApiError(err))); }}/><textarea aria-label={t('train.importContent')} value={importText} onChange={event => setImportText(event.target.value)} /><button className="studio-primary" disabled={importing || !importText.trim()} onClick={handleImport}>{t('train.applyImport')}</button></section>}
     <div className="training-columns">
       <div className="training-editor">

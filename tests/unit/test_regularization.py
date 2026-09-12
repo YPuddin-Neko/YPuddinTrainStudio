@@ -127,7 +127,15 @@ def assert_unpublished(api):
     assert app.state.ctx.db.fetchall("SELECT * FROM datasets") == []
 
 
-def test_real_toy_manager_publishes_images_captions_and_trainable_source(api):
+@pytest.mark.parametrize(
+    "algorithm",
+    [None, {"sampler": "er_sde", "scheduler": "normal", "er_sde_order": 2, "er_sde_s_noise": 0.3}],
+)
+def test_real_toy_manager_publishes_images_captions_and_trainable_source(api, algorithm):
+    if algorithm:
+        config = api[0].get(f"/api/projects/{api[2]}/config").json()
+        config["sampling"].update(**algorithm, steps=77, cfg=9, seed=987)
+        assert api[0].put(f"/api/projects/{api[2]}/config", json=config).status_code == 200
     response = start(
         api,
         prompt="dog, instance_trigger\ncat",
@@ -143,7 +151,20 @@ def test_real_toy_manager_publishes_images_captions_and_trainable_source(api):
     assert path.parent == api[1].state.ctx.reg_dir(api[2], api[3])
     assert {p.read_text() for p in path.glob("*.txt")} == {"dog", "cat"}
     assert [Image.open(p).size for p in path.glob("*.png")] == [(64, 64), (64, 64)]
-    assert len(json.loads((path / "manifest.json").read_text())) == 2
+    manifest = json.loads((path / "manifest.json").read_text())
+    assert len(manifest) == 2
+    expected = algorithm or {
+        "sampler": "euler",
+        "scheduler": "uniform",
+        "er_sde_order": 3,
+        "er_sde_s_noise": 1.0,
+    }
+    for item in manifest:
+        assert {key: item[key] for key in expected} == expected
+        assert item["steps"] == 2 and item["cfg"] == 1
+    payload = json.loads(api[1].state.regularization._row(task["id"])["request_json"])
+    assert {key: payload["sampling"][key] for key in expected} == expected
+    assert [item["seed"] for item in manifest] == [payload["seed"], payload["seed"] + 1]
     config = api[0].get(f"/api/projects/{api[2]}/config").json()
     source = config["dataset"]["sources"][0]
     assert source["is_reg"] and source["prior_weight"] == 0.3 and source["repeats"] == 2

@@ -322,6 +322,7 @@ class RegularizationManager:
                     devices = gpu_info() if model.family != "toy" else []
                     payload.update(
                         model=model.model_dump(mode="json"),
+                        sampling=config.get("sampling", {}),
                         device=devices[0]["device"] if devices else "cpu",
                         fingerprint_cache=str(self.c.cache_dir(pid, version["id"]) / "fingerprints"),
                     )

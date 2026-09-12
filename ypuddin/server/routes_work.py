@@ -406,7 +406,7 @@ def put_project_config(
             for source in value.get("sources", []) if isinstance(value, dict) else []:
                 if isinstance(source, dict) and source.get("path"):
                     path = str(Path(source["path"]).expanduser().resolve())
-                    extension = _validate_caption_extension(source.get("caption_ext", ".txt"))
+                    extension = _validate_caption_extension(source.get("caption_ext", "auto"))
                     if path in configured and configured[path] != extension:
                         raise ApiError(
                             "one source folder cannot have conflicting training/validation caption extensions",
@@ -436,6 +436,8 @@ def put_project_config(
 def _validate_caption_extension(value: str) -> str:
     from ypuddin.data.index import IMAGE_EXTS
 
+    if value == "auto":
+        return value
     if (
         not isinstance(value, str)
         or not re.fullmatch(r"\.[A-Za-z0-9][A-Za-z0-9._-]{0,31}", value)
@@ -443,7 +445,7 @@ def _validate_caption_extension(value: str) -> str:
         or value.lower() in {".mask", ".mask.png"}
     ):
         raise ApiError(
-            "caption_ext must be a text sidecar suffix such as .txt or .caption, not an image, mask or path",
+            "caption_ext must be auto or a sidecar suffix such as .txt or .json, not an image, mask or path",
             code="dataset.caption_ext",
         )
     return value
@@ -560,7 +562,7 @@ class DatasetBody(BaseModel):
     version_id: str | None = None
     path: str
     repeats: int = Field(1, ge=1, le=1_000_000)
-    caption_ext: str = ".txt"
+    caption_ext: str = "auto"
     is_reg: bool = False
     prior_weight: float = Field(1.0, ge=0)
     class_prompt: str | None = None
@@ -886,7 +888,7 @@ def add_dataset(
                             "is_reg": {"type": "boolean", "default": False},
                             "prior_weight": {"type": "number", "minimum": 0, "default": 1},
                             "class_prompt": {"type": "string"},
-                            "caption_ext": {"type": "string", "default": ".txt"},
+                            "caption_ext": {"type": "string", "default": "auto"},
                         },
                     }
                 }
@@ -979,13 +981,25 @@ def _records(c: ServiceContext, did: str) -> list[dict[str, Any]]:
 def list_images(
     did: str, page: int = 1, page_size: int = 50, q: str = "", c: ServiceContext = Depends(ctx)
 ) -> dict[str, Any]:
-    from ypuddin.data import read_caption
+    from ypuddin.data.caption_json import StructuredCaption, render, unique
+    from ypuddin.data.captions import read_training_caption
 
     row = _get_dataset(c, did)
     root = Path(row["path"])
     items = []
     for r in _records(c, did):
-        cap = read_caption(r["caption_path"], row["class_prompt"])
+        error = None
+        try:
+            raw = read_training_caption(r["caption_path"], row["class_prompt"])
+            cap = raw.text() if isinstance(raw, StructuredCaption) else raw
+            editable = (
+                render(unique((raw.trigger, *raw.fixed, *raw.appearance, *raw.tags, *raw.environment)), "")
+                if isinstance(raw, StructuredCaption)
+                else cap
+            )
+            description = raw.nl if isinstance(raw, StructuredCaption) else ""
+        except (ValueError, OSError) as exc:
+            cap, error, editable, description = "", str(exc), "", ""
         if q and q.lower() not in cap.lower() and q.lower() not in r["path"].lower():
             continue
         items.append(
@@ -997,6 +1011,12 @@ def list_images(
                 "width": r["width"],
                 "height": r["height"],
                 "caption": cap,
+                "caption_tags": editable,
+                "caption_description": description,
+                "caption_format": Path(r["caption_path"]).suffix.lower().lstrip(".")
+                if r["caption_path"]
+                else None,
+                "caption_error": error,
                 "has_mask": bool(r["mask_path"]),
             }
         )
@@ -1043,19 +1063,30 @@ def get_caption(did: str, h: str, c: ServiceContext = Depends(ctx)) -> dict[str,
 
     row = _get_dataset(c, did)
     r = _record_by_hash(c, did, h)
-    return {"caption": read_caption(r["caption_path"], row["class_prompt"])}
+    try:
+        return {"caption": read_caption(r["caption_path"], row["class_prompt"])}
+    except (ValueError, OSError) as exc:
+        raise ApiError(str(exc), code="dataset.caption_invalid", status=422) from exc
 
 
 @router.put("/datasets/{did}/images/{h}/caption", response_model=m.Caption, response_model_exclude_unset=True)
 def put_caption(did: str, h: str, body: CaptionBody, c: ServiceContext = Depends(ctx)) -> dict[str, str]:
+    from ypuddin.data.captions import write_caption
+    from ypuddin.data.index import caption_target
+
     row = _get_dataset(c, did)
     with c.versions.mutation(row["project_id"], row["version_id"]):
         row = _get_dataset(c, did)
         r = _record_by_hash(c, did, h)
         cap_path = (
-            Path(r["caption_path"]) if r["caption_path"] else Path(r["path"]).with_suffix(row["caption_ext"])
+            Path(r["caption_path"])
+            if r["caption_path"]
+            else caption_target(Path(r["path"]), row["caption_ext"])
         )
-        cap_path.write_text(body.caption.strip() + "\n", encoding="utf-8")
+        try:
+            write_caption(cap_path, body.caption)
+        except (ValueError, OSError) as exc:
+            raise ApiError(str(exc), code="dataset.caption_invalid", status=422) from exc
         if not r["caption_path"]:
             recs = _records(c, did)
             for rec in recs:
@@ -1074,7 +1105,10 @@ class TagBatch(BaseModel):
 
 @router.post("/datasets/{did}/tags/batch", response_model=m.TagBatchResult, response_model_exclude_unset=True)
 def tags_batch(did: str, body: TagBatch, c: ServiceContext = Depends(ctx)) -> dict[str, int]:
-    from ypuddin.data import read_caption
+    import os
+
+    from ypuddin.data.captions import caption_content, read_editable_caption
+    from ypuddin.data.index import caption_target
 
     row = _get_dataset(c, did)
     with c.versions.mutation(row["project_id"], row["version_id"]):
@@ -1083,32 +1117,118 @@ def tags_batch(did: str, body: TagBatch, c: ServiceContext = Depends(ctx)) -> di
         created = 0
         wanted = set(body.hashes)
         recs = _records(c, did)
-        for r in recs:
-            if r["content_hash"] not in wanted:
-                continue
-            cap_path = (
-                Path(r["caption_path"])
-                if r["caption_path"]
-                else Path(r["path"]).with_suffix(row["caption_ext"])
-            )
-            tags = [
-                t.strip()
-                for t in read_caption(r["caption_path"], row["class_prompt"]).split(",")
-                if t.strip()
-            ]
-            tags = [t for t in tags if t not in body.remove]
-            for t in body.add:
-                if t not in tags:
-                    tags.append(t)
-            cap_path.write_text(", ".join(tags) + "\n", encoding="utf-8")
-            if not r["caption_path"]:
-                r["caption_path"] = str(
-                    cap_path
-                )  # a freshly created caption file must be found on the next read
-                created += 1
-            changed += 1
-        if created:
-            _records_path(c, did).write_text(json.dumps(recs), encoding="utf-8")
+        updates: dict[Path, dict[str, Any]] = {}
+        caption_directories = {}
+        staged_files: set[Path] = set()
+        applied: list[dict[str, Any]] = []
+
+        def stage(path: Path, content: bytes) -> Path:
+            # Same-directory staging keeps both publication and rollback atomic per file,
+            # including legacy data that lives on another filesystem.
+            with tempfile.NamedTemporaryFile(
+                prefix=f".{path.name}.batch-", suffix=".tmp", dir=path.parent, delete=False
+            ) as stream:
+                temporary = Path(stream.name)
+                staged_files.add(temporary)
+                stream.write(content)
+                stream.flush()
+                os.fsync(stream.fileno())
+            return temporary
+
+        try:
+            # Parse and serialize every selected caption before changing even the first file.
+            for r in recs:
+                if r["content_hash"] not in wanted:
+                    continue
+                cap_path = (
+                    Path(r["caption_path"])
+                    if r["caption_path"]
+                    else caption_target(
+                        Path(r["path"]), row["caption_ext"], directory_cache=caption_directories
+                    )
+                )
+                if cap_path not in updates:
+                    original = cap_path.read_bytes() if cap_path.exists() else None
+                    tags = [
+                        t.strip()
+                        for t in read_editable_caption(cap_path, row["class_prompt"]).split(",")
+                        if t.strip()
+                    ]
+                    tags = [t for t in tags if t not in body.remove]
+                    for tag in body.add:
+                        if tag not in tags:
+                            tags.append(tag)
+                    updates[cap_path] = {
+                        "path": cap_path,
+                        "before": original,
+                        "after": caption_content(cap_path, ", ".join(tags)).encode("utf-8"),
+                    }
+                if not r["caption_path"]:
+                    r["caption_path"] = str(cap_path)
+                    created += 1
+                changed += 1
+            if created:
+                index_path = _records_path(c, did)
+                updates[index_path] = {
+                    "path": index_path,
+                    "before": index_path.read_bytes() if index_path.exists() else None,
+                    "after": json.dumps(recs).encode("utf-8"),
+                }
+            # Prepare rollback bytes before publication; an I/O error here leaves data intact.
+            for update in updates.values():
+                update["staged"] = stage(update["path"], update["after"])
+                if update["before"] is not None:
+                    update["backup"] = stage(update["path"], update["before"])
+            for update in updates.values():
+                path = update["path"]
+                current = path.read_bytes() if path.exists() else None
+                if current != update["before"]:
+                    raise ApiError(
+                        "A caption changed outside the editor; reload and retry",
+                        code="dataset.caption_conflict",
+                        status=409,
+                    )
+                os.replace(update["staged"], path)
+                applied.append(update)
+        except (OSError, ValueError, ApiError) as exc:
+            recovery = {}
+            for update in reversed(applied):
+                path = update["path"]
+                try:
+                    if path.read_bytes() != update["after"]:
+                        raise OSError("file changed after publication")
+                    if update["before"] is None:
+                        path.unlink()
+                    else:
+                        os.replace(update["backup"], path)
+                except OSError:
+                    # Do not erase recovery copies or overwrite a concurrent external edit.
+                    backup = update.get("backup")
+                    if backup:
+                        staged_files.discard(backup)
+                    recovery[str(path)] = (
+                        str(backup) if backup else "remove the newly created caption after reviewing it"
+                    )
+            if recovery:
+                raise ApiError(
+                    "Caption update failed and some files need recovery from the retained backups",
+                    code="dataset.caption_recovery",
+                    status=500,
+                    details={"recovery": recovery},
+                ) from exc
+            if isinstance(exc, ApiError):
+                raise
+            raise ApiError(
+                f"Could not update captions: {exc}",
+                code="dataset.caption_invalid" if isinstance(exc, ValueError) else "dataset.caption_io",
+                status=422,
+            ) from exc
+        finally:
+            for temporary in staged_files:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass  # Cleanup must not hide the original error; these are isolated temp files.
         if changed:
             c.bus.publish("dataset.changed", {"dataset_id": did, "reason": "tags"})
         return {"changed": changed}

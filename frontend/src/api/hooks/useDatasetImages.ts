@@ -74,7 +74,7 @@ export function useDatasetImages(datasetId: string | undefined, pageSize = 60) {
   }, [items]);
 
   const updateCaption = React.useCallback((hash: string, caption: string) => {
-    setItems((prev) => prev.map((i) => (i.hash === hash ? { ...i, caption } : i)));
+    setItems((prev) => prev.map((i) => (i.hash === hash ? { ...i, caption_tags: caption, caption: i.caption_description ? `${caption}${caption ? ". " : ""}${i.caption_description}` : caption } : i)));
   }, []);
 
   return {

@@ -81,7 +81,7 @@ class UploadBatch:
     is_reg: bool = False
     prior_weight: float = 1.0
     class_prompt: str | None = None
-    caption_ext: str = ".txt"
+    caption_ext: str = "auto"
 
 
 @asynccontextmanager
@@ -153,7 +153,7 @@ async def read_upload(request: Request) -> AsyncIterator[UploadBatch]:
                     "is_reg": form.get("is_reg", "false"),
                     "prior_weight": form.get("prior_weight", "1"),
                     "class_prompt": form.get("class_prompt") or None,
-                    "caption_ext": form.get("caption_ext") or ".txt",
+                    "caption_ext": form.get("caption_ext") or "auto",
                 }
             )
             _validate_caption_extension(options.caption_ext)
@@ -196,7 +196,7 @@ def relative_upload_path(name: str) -> Path:
     path = Path(*parts)
     if path.name.lower().endswith(".mask.png"):
         path = path.with_name(path.name[:-9] + ".mask.png")
-    elif path.suffix.lower() in {".txt", ".mask"}:
+    elif path.suffix.lower() in {".txt", ".json", ".mask"}:
         path = path.with_suffix(path.suffix.lower())
     return path
 
@@ -205,8 +205,10 @@ def _ignored(path: Path) -> bool:
     return any(part == "__MACOSX" or part == ".DS_Store" or part.startswith("._") for part in path.parts)
 
 
-def _file_limit(path: Path, caption_ext: str = ".txt") -> int:
-    if path.name.endswith(caption_ext):
+def _file_limit(path: Path, caption_ext: str = "auto") -> int:
+    if path.suffix.lower() in {".txt", ".json"} or (
+        caption_ext != "auto" and path.name.endswith(caption_ext)
+    ):
         return MAX_CAPTION_BYTES
     if path.suffix.lower() in IMAGE_EXTS or path.name.endswith(".mask"):
         return MAX_FILE_BYTES
@@ -227,16 +229,23 @@ def _copy_file(source: BinaryIO, destination: Path, limit: int, budget: list[int
             output.write(chunk)
 
 
-def _validate_files(paths: list[Path], caption_ext: str = ".txt") -> None:
+def _validate_files(paths: list[Path], caption_ext: str = "auto") -> None:
     images: dict[Path, Path] = {}
     sidecars = []
     for path in paths:
-        if path.name.endswith(caption_ext):
+        if path.suffix.lower() in {".txt", ".json"} or (
+            caption_ext != "auto" and path.name.endswith(caption_ext)
+        ):
             try:
                 path.read_text(encoding="utf-8-sig")
-            except UnicodeError as exc:
-                raise ApiError(f"caption must be UTF-8: {path.name}", code="upload.caption") from exc
-            sidecars.append((path, path.with_name(path.name[: -len(caption_ext)])))
+                if path.suffix.lower() == ".json":
+                    from ypuddin.data.captions import read_caption
+
+                    read_caption(str(path), None)
+            except (UnicodeError, ValueError) as exc:
+                raise ApiError(f"invalid caption {path.name}: {exc}", code="upload.caption") from exc
+            suffix = path.suffix if path.suffix.lower() in {".txt", ".json"} else caption_ext
+            sidecars.append((path, path.with_name(path.name[: -len(suffix)])))
             continue
         try:
             with warnings.catch_warnings():

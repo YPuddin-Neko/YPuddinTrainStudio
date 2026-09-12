@@ -469,7 +469,10 @@ def test_compile_is_ignored_off_cuda_and_rejected_with_block_swap(image_dataset,
         Trainer(bad, device="cpu").prepare()
 
 
-def test_initial_preview_preserves_training_rng_and_unloads_vae(image_dataset, tmp_path, monkeypatch):
+@pytest.mark.parametrize("sampler", ["euler", "heun", "er_sde"])
+def test_initial_preview_preserves_training_rng_and_unloads_vae(
+    image_dataset, tmp_path, monkeypatch, sampler
+):
     outs = []
     for at_start in (False, True):
         cfg = _cfg(
@@ -478,7 +481,13 @@ def test_initial_preview_preserves_training_rng_and_unloads_vae(image_dataset, t
             adapter={"module_dropout": 0.2},
             loop={"epochs": 1},
             validation={"enabled": False},
-            sampling={"enabled": True, "at_start": at_start, "every_epochs": None, "every_steps": None},
+            sampling={
+                "enabled": True,
+                "at_start": at_start,
+                "every_epochs": None,
+                "every_steps": None,
+                "sampler": sampler,
+            },
         )
         trainer = Trainer(cfg, device="cpu")
         trainer.prepare()
@@ -495,8 +504,14 @@ def test_initial_preview_preserves_training_rng_and_unloads_vae(image_dataset, t
         torch.testing.assert_close(outs[0][key], outs[1][key], rtol=0, atol=0)
 
 
-def test_sampling_exception_restores_training_mode_and_unloads_vae(image_dataset, tmp_path, monkeypatch):
-    trainer = Trainer(_cfg(image_dataset, tmp_path / "run", memory={"blocks_to_swap": 2}), device="cpu")
+@pytest.mark.parametrize("sampler", ["euler", "er_sde"])
+def test_sampling_exception_restores_training_mode_and_unloads_vae(
+    image_dataset, tmp_path, monkeypatch, sampler
+):
+    trainer = Trainer(
+        _cfg(image_dataset, tmp_path / "run", memory={"blocks_to_swap": 2}, sampling={"sampler": sampler}),
+        device="cpu",
+    )
     trainer.prepare()
     trainer.loaded.backbone.train()
     unloaded = []
@@ -509,6 +524,104 @@ def test_sampling_exception_restores_training_mode_and_unloads_vae(image_dataset
     with pytest.raises(RuntimeError, match="decode failed"):
         trainer.sample_images("broken")
     assert unloaded and trainer.loaded.backbone.training and not trainer.swapper.forward_only
+
+
+@pytest.mark.parametrize(
+    "sampler,scheduler", [("euler", "uniform"), ("heun", "simple"), ("er_sde", "sgm_uniform")]
+)
+def test_preview_dispatch_uses_resolved_parameters_and_records_them(
+    image_dataset, tmp_path, monkeypatch, sampler, scheduler
+):
+    import ypuddin.train.trainer as trainer_module
+
+    cfg = _cfg(
+        image_dataset,
+        tmp_path / "run",
+        sampling={
+            "sampler": sampler,
+            "scheduler": scheduler,
+            "steps": 8,
+            "cfg": 7,
+            "er_sde_order": 2,
+            "er_sde_s_noise": 0.25,
+            "shift": 2.5,
+            "prompts": [{"prompt": "preview", "steps": 2, "cfg": 0, "seed": 19}],
+        },
+    )
+    trainer = Trainer(cfg, device="cpu")
+    trainer.prepare()
+    calls = []
+    dispatch = trainer_module.sample
+
+    def record(predict, shape, **kwargs):
+        calls.append(kwargs)
+        return dispatch(predict, shape, **kwargs)
+
+    monkeypatch.setattr(trainer_module, "sample", record)
+    paths = trainer.sample_images("selected")
+    assert len(paths) == len(calls) == 1 and paths[0].is_file()
+    expected = {
+        "sampler": sampler,
+        "scheduler": scheduler,
+        "steps": 2,
+        "cfg": 0.0,
+        "shift": 2.5,
+        "er_sde_order": 2,
+        "er_sde_s_noise": 0.25,
+    }
+    assert {key: calls[0][key] for key in expected} == expected
+    assert calls[0]["generator"].device.type == "cpu" and calls[0]["generator"].initial_seed() == 19
+    saved = next(e for e in _events(trainer.run_dir / "events.jsonl") if e["type"] == "sample.saved")
+    assert {key: saved[key] for key in expected} == expected
+    assert saved["seed"] == 19 and saved["loss"] is None
+
+
+@pytest.mark.parametrize("sampler", ["euler", "er_sde"])
+def test_periodic_preview_and_weights_are_identical_after_resume(image_dataset, tmp_path, sampler):
+    cfg = _cfg(
+        image_dataset,
+        tmp_path / "reference",
+        adapter={"module_dropout": 0.2},
+        loop={"epochs": None, "max_steps": 4},
+        validation={"enabled": False},
+        sampling={"sampler": sampler, "at_start": True, "every_steps": 2, "every_epochs": None},
+        checkpoint={"save_state_every_steps": 2, "save_every_epochs": None},
+    )
+    reference = Trainer(cfg, device="cpu")
+    assert reference.run() == "finished"
+    resumed_cfg = cfg.model_copy(deep=True)
+    resumed_cfg.checkpoint.output_dir = str(tmp_path / "resumed")
+    resumed_cfg.checkpoint.resume = str(reference.run_dir / "state-2")
+    resumed = Trainer(resumed_cfg, device="cpu")
+    assert resumed.run() == "finished"
+    for key, expected in reference.adapters.training_state_dict().items():
+        torch.testing.assert_close(resumed.adapters.training_state_dict()[key], expected, rtol=0, atol=0)
+    original_samples = [e for e in _events(reference.run_dir / "events.jsonl") if e["type"] == "sample.saved"]
+    resumed_samples = [e for e in _events(resumed.run_dir / "events.jsonl") if e["type"] == "sample.saved"]
+    assert [e["step"] for e in original_samples] == [0, 2, 4]
+    assert [e["step"] for e in resumed_samples] == [
+        4
+    ]  # Never regenerate an already completed initial preview.
+    assert Path(original_samples[-1]["path"]).read_bytes() == Path(resumed_samples[0]["path"]).read_bytes()
+
+
+def test_default_preview_matches_legacy_euler_pixels(image_dataset, tmp_path, monkeypatch):
+    import ypuddin.train.trainer as trainer_module
+    from ypuddin.sampling.euler import euler_sample
+
+    trainer = Trainer(_cfg(image_dataset, tmp_path / "run"), device="cpu")
+    trainer.prepare()
+    actual = trainer.sample_images("current")[0].read_bytes()
+
+    def legacy(predict, shape, **kwargs):
+        assert kwargs.pop("sampler") == "euler"
+        assert kwargs.pop("scheduler") == "uniform"
+        kwargs.pop("er_sde_order")
+        kwargs.pop("er_sde_s_noise")
+        return euler_sample(predict, shape, **kwargs)
+
+    monkeypatch.setattr(trainer_module, "sample", legacy)
+    assert trainer.sample_images("legacy")[0].read_bytes() == actual
 
 
 @pytest.mark.parametrize("cache_only", [False, True])

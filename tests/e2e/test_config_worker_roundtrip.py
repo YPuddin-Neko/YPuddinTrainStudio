@@ -4,12 +4,16 @@ import json
 import subprocess
 import sys
 
+import pytest
 from PIL import Image
 
 from ypuddin.config import TrainConfig, load_config, write_config
 
 
-def test_cli_worker_preserves_null_epoch_hooks(tmp_path):
+@pytest.mark.parametrize(
+    "sampler,scheduler", [("euler", "uniform"), ("heun", "simple"), ("er_sde", "normal")]
+)
+def test_cli_worker_preserves_null_epoch_hooks(tmp_path, sampler, scheduler):
     training = tmp_path / "data"
     training.mkdir()
     for i, color in enumerate(("red", "green")):
@@ -31,6 +35,10 @@ def test_cli_worker_preserves_null_epoch_hooks(tmp_path):
             "loop": {"epochs": None, "max_steps": 3, "mixed_precision": "no"},
             "checkpoint": {"output_dir": str(output), "save_every_epochs": None},
             "sampling": {
+                "sampler": sampler,
+                "scheduler": scheduler,
+                "er_sde_order": 2,
+                "er_sde_s_noise": 0.2,
                 "enabled": True,
                 "at_start": True,
                 "every_epochs": None,
@@ -64,5 +72,7 @@ def test_cli_worker_preserves_null_epoch_hooks(tmp_path):
     samples = [event for event in events if event["type"] == "sample.saved"]
     assert len(samples) == 2, samples  # initial + step3, with no implicit epoch previews
     assert all("epoch" not in event["path"] for event in samples)
+    assert all(event["sampler"] == sampler and event["scheduler"] == scheduler for event in samples)
+    assert all(event["er_sde_order"] == 2 and event["er_sde_s_noise"] == 0.2 for event in samples)
     assert len([event for event in events if event["type"] == "validation"]) == 1
     assert list(output.glob("*-epoch*.safetensors")) == []

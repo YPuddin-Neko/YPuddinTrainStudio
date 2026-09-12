@@ -12,6 +12,8 @@ const labels: Record<string, string> = {
   'dataset.caption.trigger_word': '触发词', 'dataset.caption.keep_tokens': '保留前几个标签', 'dataset.caption.shuffle': '打乱标签顺序',
   'dataset.caption.tag_dropout': '单个标签丢弃率', 'dataset.caption.caption_dropout': '整条标签丢弃率',
   'dataset.caption.separator': '标签分隔符', 'dataset.caption.wildcard': '启用通配符',
+  'dataset.caption.cache_variants': '预缓存标签变体数',
+  'sampling.scheduler': '采样调度器', 'sampling.er_sde_order': 'ER-SDE 求解阶数', 'sampling.er_sde_s_noise': 'ER-SDE 随机噪声强度',
   'adapter.algo': '适配器算法', 'adapter.rank': 'Rank / 秩', 'adapter.alpha': 'Alpha / 缩放', 'adapter.factor': 'LoKr 分解因子',
   'adapter.decompose_both': '双矩阵低秩分解', 'adapter.rs_lora': 'Rank 稳定缩放', 'adapter.dora': '启用 DoRA',
   'adapter.init': '初始化方式', 'adapter.dropout': '输出丢弃率', 'adapter.rank_dropout': '秩丢弃率',
@@ -53,6 +55,9 @@ export function configFieldLabel(path: string, fallback: string, english = false
 
 export function configOptionLabel(path: string, option: string, english = false) {
   const options: Record<string, Record<string, [string, string]>> = {
+    'sampling.sampler': { euler:['Euler · 一阶', 'Euler · first order'], heun:['Heun · 二阶', 'Heun · second order'], er_sde:['ER-SDE · 随机微分方程', 'ER-SDE · stochastic solver'] },
+    'sampling.scheduler': { uniform:['Uniform · 连续等间隔', 'Uniform · continuous'], simple:['Simple · 离散网格', 'Simple · discrete grid'], sgm_uniform:['SGM Uniform', 'SGM Uniform'], normal:['Normal · 包含末端', 'Normal · includes low endpoint'] },
+    'optimizer.type': {adamw:['AdamW','AdamW'],adam:['Adam','Adam'],sgd:['SGD','SGD'],adamw8bit:['AdamW 8-bit','AdamW 8-bit'],lion:['Lion','Lion'],lion8bit:['Lion 8-bit','Lion 8-bit'],prodigy:['Prodigy','Prodigy'],prodigy_plus_sf:['Prodigy Plus Schedule-Free','Prodigy Plus Schedule-Free'],adafactor:['Adafactor','Adafactor'],came:['CAME','CAME'],adamw_sf:['AdamW Schedule-Free','AdamW Schedule-Free']},
     'dataset.resolution_mode': { bucket: ['分桶 · 统一基准面积', 'Buckets · target area'], native: ['原生 · 每图独立尺寸', 'Native · individual image sizes'] },
     'dataset.native_overflow': { downscale: ['等比缩小到预算内', 'Downscale to fit budget'], error: ['报错并停止', 'Stop with an error'] },
   };
