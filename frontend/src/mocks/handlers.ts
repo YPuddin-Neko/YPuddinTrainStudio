@@ -317,9 +317,26 @@ export const handlers = [
   http.post('/api/config/export', () => HttpResponse.json({ error: { code: 'mock.real_backend_required', message: 'TOML export requires the real backend (VITE_USE_MOCK=false).' } }, { status: 501 })),
   http.post('/api/presets', async ({ request }) => {
     const body = await request.json() as any;
+    if (customPresets.some(preset => preset.name.toLocaleLowerCase() === String(body.name).toLocaleLowerCase())) {
+      return HttpResponse.json({ error: { code: 'preset.duplicate', message: 'Preset already exists.' } }, { status: 409 });
+    }
     const preset = { ...body, builtin: false, updated_at: Date.now() / 1000 } as Preset;
     customPresets.push(preset);
     return HttpResponse.json(preset);
+  }),
+  http.put('/api/presets/:name', async ({ request, params }) => {
+    const index = customPresets.findIndex(preset => preset.name === params.name);
+    if (index < 0) return HttpResponse.json({ error: { code: 'preset.not_found', message: 'Preset not found.' } }, { status: 404 });
+    const body = await request.json() as any;
+    const preset = { ...body, name: String(params.name), builtin: false, updated_at: Date.now() / 1000 } as Preset;
+    customPresets[index] = preset;
+    return HttpResponse.json(preset);
+  }),
+  http.delete('/api/presets/:name', ({ params }) => {
+    const index = customPresets.findIndex(preset => preset.name === params.name);
+    if (index < 0) return HttpResponse.json({ error: { code: 'preset.not_found', message: 'Preset not found.' } }, { status: 404 });
+    customPresets.splice(index, 1);
+    return HttpResponse.json({ ok: true });
   }),
 
   http.get('/api/projects/:id/config', () => {
@@ -327,6 +344,18 @@ export const handlers = [
       model: { family: 'toy', dtype: 'fp32' },
       dataset: { resolutions: [64], batch_size: 2 },
     });
+  }),
+
+  // Explicit mock mode cannot infer filesystem ancestry. Keep fixture metadata.
+  http.post('/api/projects/:id/source-roles', async ({ request }) => {
+    const { config } = await request.json() as {config:Record<string, any>};
+    return HttpResponse.json(['dataset','validation'].flatMap(section => (config[section]?.sources || []).filter((source:any) => source.path).map((source:any) => ({path:source.path,section,is_reg:!!source.is_reg,managed:false,root:null,origin:'external',images:null}))));
+  }),
+  http.post('/api/projects/:id/output-binding', async ({ request, params }) => {
+    const { config } = await request.json() as {config:Record<string, any>};
+    const checkpoint = config.checkpoint || {};
+    const automatic = !checkpoint.name || checkpoint.name === 'lora';
+    return HttpResponse.json({directory_template:`/mock/projects/${params.id}/v1/output/{job_id}`,name:automatic ? `${params.id}_v1` : checkpoint.name,automatic_name:automatic,inherits_output_dir:!checkpoint.output_dir || checkpoint.output_dir === 'outputs/run'});
   }),
 
   // ---- Datasets ----
@@ -601,34 +630,7 @@ export const handlers = [
     return HttpResponse.json(converted);
   }),
 
-  http.get('/api/presets', () => {
-    const presets: Preset[] = [
-      {
-        name: 'toy-smoke', description: 'CPU 玩具模型冒烟测试',
-        config: { model: { family: 'toy', dtype: 'fp32' }, dataset: { resolutions: [64], bucket_step: 16, batch_size: 2 }, loop: { epochs: 1, mixed_precision: 'no' } },
-        builtin: true, updated_at: null,
-      },
-      {
-        name: 'krea2-lokr-default', description: 'Krea 2 LoKr 默认（all-linear，rank 32 / alpha 32）',
-        config: {
-          model: { family: 'krea2', dtype: 'bf16' },
-          adapter: { algo: 'lokr', rank: 32, alpha: 32, preset: 'all-linear' },
-          optimizer: { type: 'adamw', lr: 0.0001 },
-        },
-        builtin: true, updated_at: null,
-      },
-      {
-        name: 'krea2-lora-32', description: 'Krea 2 LoRA rank 32',
-        config: {
-          model: { family: 'krea2', dtype: 'bf16' },
-          adapter: { algo: 'lora', rank: 32, alpha: 32, preset: 'attn-mlp' },
-          optimizer: { type: 'adamw', lr: 0.0002 },
-        },
-        builtin: true, updated_at: null,
-      },
-    ];
-    return HttpResponse.json([...presets, ...customPresets]);
-  }),
+  http.get('/api/presets', () => HttpResponse.json(customPresets)),
 
   // ---- Models ----
   http.get('/api/families', () => HttpResponse.json(mockFamilies)),

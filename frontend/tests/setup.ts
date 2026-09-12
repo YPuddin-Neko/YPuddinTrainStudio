@@ -1,5 +1,11 @@
 import '@testing-library/jest-dom/vitest';
 
+// Non-motion tests use the supported reduced-motion path. Motion lifecycle tests
+// explicitly override this preference and exercise the exit timer.
+if (typeof window.matchMedia === 'undefined') {
+  window.matchMedia = query => ({matches: query === '(prefers-reduced-motion: reduce)',media:query,onchange:null,addListener:()=>{},removeListener:()=>{},addEventListener:()=>{},removeEventListener:()=>{},dispatchEvent:()=>false});
+}
+
 // jsdom 无 ResizeObserver：EChart 容器尺寸监听降级为空实现
 if (typeof globalThis.ResizeObserver === 'undefined') {
   globalThis.ResizeObserver = class {

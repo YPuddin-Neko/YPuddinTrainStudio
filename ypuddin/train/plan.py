@@ -3,25 +3,244 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import torch
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 from torch import nn
 
 from ypuddin.adapters import inject
-from ypuddin.config import TrainConfig
+from ypuddin.config import DatasetConfig, LoopConfig, TrainConfig, ValidationConfig
 from ypuddin.data import IndexDB
-from ypuddin.data.dataset import DataConfigError, prepare_data_layout
+from ypuddin.data.dataset import DataConfigError, item_geometry, prepare_data_layout
 from ypuddin.data.native import NativeBatchSampler, microbatch_indices, native_size
 from ypuddin.models import get_family
+from ypuddin.models.base import LatentSpec
 
 DTYPE_BYTES = {"bf16": 2, "fp16": 2, "fp32": 4, "fp8_e4m3": 1, "fp8_e5m2": 1, "keep": 2, "auto": 2}
 
 
 def _count_params(module: nn.Module) -> int:
     return sum(p.numel() for p in module.parameters())
+
+
+@dataclass(frozen=True)
+class _LayoutInputs:
+    """Only the validated fields consumed by prepare_data_layout, never a training config."""
+
+    dataset: DatasetConfig
+    validation: ValidationConfig
+
+
+def _append_data_plan(
+    out: dict[str, Any],
+    cfg: TrainConfig | _LayoutInputs,
+    latent: LatentSpec,
+    *,
+    loop: LoopConfig | None,
+    seed: int | None,
+    index_db_path: str | Path | None,
+) -> dict[tuple[int, int], int]:
+    """Share exact image selection and geometry between full plans and incomplete drafts."""
+    ds = cfg.dataset
+    records = []
+    items = []
+    validation_images = 0
+    index = None
+    layout = None
+    try:
+        index = IndexDB(index_db_path) if index_db_path else None
+        layout = prepare_data_layout(cfg, latent, index_db=index)
+        records, items = layout.records, layout.items
+        validation_images = len(layout.validation_items)
+    except DataConfigError as e:
+        out["errors"].append({"loc": e.loc, "msg": str(e)})
+    except (OSError, ValueError) as e:
+        out["errors"].append({"loc": "dataset.sources", "msg": str(e)})
+    finally:
+        if index is not None:
+            index.close()
+    if layout is None and isinstance(cfg, _LayoutInputs):
+        return {}
+    counts: dict[tuple[int, int], int] = {}
+    for it in items:
+        counts[it.bucket.key] = counts.get(it.bucket.key, 0) + 1
+    native = ds.resolution_mode == "native"
+    batches = (
+        math.ceil(len(items) / ds.batch_size)
+        if native
+        else sum(math.ceil(n / ds.batch_size) for n in counts.values())
+    )
+    out.update(
+        {
+            "images": len(records),
+            "items": len(items),
+            "captioned": sum(1 for r in records if r.caption_path),
+            "validation_images": validation_images,
+            "buckets": [
+                {"w": w, "h": h, "items": n, "batches": math.ceil(n / ds.batch_size)}
+                for (w, h), n in sorted(counts.items())
+            ],
+        }
+    )
+    if loop is not None:
+        steps_per_epoch = math.ceil(batches / loop.grad_accum) if batches else 0
+        by_epochs = (loop.epochs or 10**9) * steps_per_epoch
+        total_steps = min(by_epochs, loop.max_steps or 10**9) if steps_per_epoch else 0
+        out.update(steps_per_epoch=steps_per_epoch, total_steps=total_steps, epochs=loop.epochs)
+    geometry = {}
+    padded_images, cropped_images = set(), set()
+    padding_pixels = total_pixels = 0
+    for item in items:
+        key = (item.record.path, item.bucket.key, item.max_scale)
+        if key not in geometry:
+            geometry[key] = item_geometry(item)
+        entry = geometry[key]
+        total_pixels += item.bucket.area
+        padding_pixels += entry["padding_pixels"]
+        if entry["padding_pixels"]:
+            padded_images.add(item.record.path)
+        if entry["cropped_pixels"]:
+            cropped_images.add(item.record.path)
+    out["image_fit"] = {
+        "mode": ds.image_fit,
+        "padded_images": len(padded_images),
+        "cropped_images": len(cropped_images),
+        "padding_pixels": padding_pixels,
+        "total_pixels": total_pixels,
+        "padding_fraction": padding_pixels / total_pixels if total_pixels else 0.0,
+        "total_shapes": len(geometry),
+        "truncated": len(geometry) > 100,
+        "items": list(geometry.values())[:100],
+    }
+    if padding_pixels:
+        out["warnings"].append(
+            {
+                "code": "images.padding",
+                "msg": f"{len(padded_images)} images preserve the complete frame with padding "
+                f"({padding_pixels / total_pixels:.1%} of training canvas pixels); padding is excluded from "
+                "direct loss but remains visible context. Native mode or wider aspect buckets can reduce it.",
+            }
+        )
+    if native:
+        shape_keys = [item.bucket.key for item in items]
+        forward_counts: dict[tuple[int, int], int] = {}
+        if seed is not None:
+            for batch in NativeBatchSampler(shape_keys, ds.batch_size, seed=seed).plan():
+                shapes = [shape_keys[index] for index in batch]
+                for group in microbatch_indices(shapes, ds.native_max_pixels):
+                    key = shapes[group[0]]
+                    forward_counts[key] = forward_counts.get(key, 0) + 1
+        for bucket in out["buckets"]:
+            bucket["batches"] = (
+                forward_counts.get((bucket["w"], bucket["h"]), 0) if seed is not None else None
+            )
+        resized = (
+            sum(
+                native_size(
+                    record.width,
+                    record.height,
+                    align=latent.align,
+                    max_pixels=ds.native_max_pixels,
+                    max_side=ds.native_max_side,
+                    overflow=ds.native_overflow,
+                    image_fit=ds.image_fit,
+                ).downscaled
+                for record in records
+            )
+            if items
+            else 0
+        )
+        out["native"] = {
+            "images": len(records),
+            "downscaled": resized,
+            "sizes": len(counts),
+            "logical_batches": batches,
+            "max_pixels": ds.native_max_pixels,
+            "alignment": latent.align,
+            "batch_size": ds.batch_size,
+            "forward_groups": sum(forward_counts.values()) if seed is not None else None,
+        }
+        out["warnings"].append(
+            {
+                "code": "native.execution",
+                "msg": "native resolution uses pixel-bounded shape groups and image-weighted gradient accumulation; pixel budget is not a VRAM guarantee",
+            }
+        )
+    uncaptioned = len(records) - out["captioned"]
+    if uncaptioned and not any(s.class_prompt for s in ds.sources):
+        out["warnings"].append(
+            {
+                "code": "captions.missing",
+                "msg": f"{uncaptioned} images have no caption file and no class_prompt",
+            }
+        )
+    if not native and any(n < ds.batch_size for n in counts.values()):
+        out["warnings"].append(
+            {
+                "code": "buckets.small",
+                "msg": "some buckets have fewer images than batch_size (tail batches will be smaller)",
+            }
+        )
+
+    return counts
+
+
+def _preview_invalid_config(
+    raw: dict[str, Any], out: dict[str, Any], *, index_db_path: str | Path | None
+) -> None:
+    """Add data-only results without repairing the draft or weakening its training errors."""
+    model = raw.get("model")
+    family_name = model.get("family") if isinstance(model, dict) else None
+    if not isinstance(family_name, str) or not family_name:
+        out["errors"].append({"loc": "model.family", "msg": "model.family is required for a data preview"})
+        return
+    try:
+        family = get_family(family_name)
+    except KeyError as error:
+        out["errors"].append({"loc": "model.family", "msg": str(error)})
+        return
+    fields: dict[str, Any] = {}
+    for name, schema in (("dataset", DatasetConfig), ("validation", ValidationConfig)):
+        try:
+            fields[name] = schema.model_validate(raw.get(name, {}))
+        except ValidationError as error:
+            for entry in error.errors():
+                issue = {"loc": ".".join([name, *(str(part) for part in entry["loc"])]), "msg": entry["msg"]}
+                if issue not in out["errors"]:
+                    out["errors"].append(issue)
+    if len(fields) != 2:
+        return
+    validation = fields["validation"]
+    if validation.enabled and validation.split_ratio == 0 and not validation.sources:
+        out["errors"].append(
+            {"loc": "validation", "msg": "validation.enabled requires split_ratio > 0 or explicit sources"}
+        )
+        return
+    try:
+        loop = LoopConfig.model_validate(raw.get("loop", {}))
+    except ValidationError:
+        # A bad stop condition or accumulation value cannot produce an honest step estimate.
+        loop = None
+    try:
+        loop_raw = raw.get("loop", {})
+        seed = TypeAdapter(int).validate_python(
+            loop_raw.get("seed", LoopConfig.model_fields["seed"].default)
+            if isinstance(loop_raw, dict)
+            else None
+        )
+    except ValidationError:
+        seed = None
+    _append_data_plan(
+        out,
+        _LayoutInputs(**fields),
+        family.spec.latent,
+        loop=loop,
+        seed=seed,
+        index_db_path=index_db_path,
+    )
 
 
 def plan(
@@ -40,14 +259,17 @@ def plan(
     try:
         cfg = TrainConfig.model_validate(cfg)
     except ValidationError as e:
-        return {
-            "ok": False,
-            "errors": [
+        out.update(
+            ok=False,
+            errors=[
                 {"loc": ".".join(str(part) for part in error["loc"]), "msg": error["msg"]}
                 for error in e.errors()
             ],
-            "warnings": [],
-        }
+        )
+        raw = cfg.to_dict() if isinstance(cfg, TrainConfig) else cfg
+        if isinstance(raw, dict):
+            _preview_invalid_config(raw, out, index_db_path=index_db_path)
+        return out
     try:
         family = get_family(cfg.model.family)
     except KeyError as e:
@@ -66,9 +288,9 @@ def plan(
             "family does not support block swap",
         ),
         (
-            cfg.dataset.masked_loss and "masked_loss" not in caps,
+            (cfg.dataset.masked_loss or cfg.dataset.image_fit == "pad") and "masked_loss" not in caps,
             "dataset.masked_loss",
-            "family does not support masked loss",
+            "family does not support masked loss, required to exclude image padding",
         ),
         (
             cfg.dataset.text_encoding == "online" and "online_text" not in caps,
@@ -122,105 +344,15 @@ def plan(
 
     # ---- data
     ds = cfg.dataset
-    records = []
-    items = []
-    validation_images = 0
-    index = None
-    try:
-        index = IndexDB(index_db_path) if index_db_path else None
-        layout = prepare_data_layout(cfg, family.spec.latent, index_db=index)
-        records, items = layout.records, layout.items
-        validation_images = len(layout.validation_items)
-    except DataConfigError as e:
-        out["errors"].append({"loc": e.loc, "msg": str(e)})
-    except (OSError, ValueError) as e:
-        out["errors"].append({"loc": "dataset.sources", "msg": str(e)})
-    finally:
-        if index is not None:
-            index.close()
-    counts: dict[tuple[int, int], int] = {}
-    for it in items:
-        counts[it.bucket.key] = counts.get(it.bucket.key, 0) + 1
     native = ds.resolution_mode == "native"
-    batches = (
-        math.ceil(len(items) / ds.batch_size)
-        if native
-        else sum(math.ceil(n / ds.batch_size) for n in counts.values())
+    counts = _append_data_plan(
+        out,
+        cfg,
+        family.spec.latent,
+        loop=cfg.loop,
+        seed=cfg.loop.seed,
+        index_db_path=index_db_path,
     )
-    steps_per_epoch = math.ceil(batches / cfg.loop.grad_accum) if batches else 0
-    by_epochs = (cfg.loop.epochs or 10**9) * steps_per_epoch
-    total_steps = min(by_epochs, cfg.loop.max_steps or 10**9) if steps_per_epoch else 0
-    out.update(
-        {
-            "images": len(records),
-            "items": len(items),
-            "captioned": sum(1 for r in records if r.caption_path),
-            "validation_images": validation_images,
-            "buckets": [
-                {"w": w, "h": h, "items": n, "batches": math.ceil(n / ds.batch_size)}
-                for (w, h), n in sorted(counts.items())
-            ],
-            "steps_per_epoch": steps_per_epoch,
-            "total_steps": total_steps,
-            "epochs": cfg.loop.epochs,
-        }
-    )
-    if native:
-        shape_keys = [item.bucket.key for item in items]
-        forward_counts: dict[tuple[int, int], int] = {}
-        for batch in NativeBatchSampler(shape_keys, ds.batch_size, seed=cfg.loop.seed).plan():
-            shapes = [shape_keys[index] for index in batch]
-            for group in microbatch_indices(shapes, ds.native_max_pixels):
-                key = shapes[group[0]]
-                forward_counts[key] = forward_counts.get(key, 0) + 1
-        for bucket in out["buckets"]:
-            bucket["batches"] = forward_counts.get((bucket["w"], bucket["h"]), 0)
-        resized = (
-            sum(
-                native_size(
-                    record.width,
-                    record.height,
-                    align=family.spec.latent.align,
-                    max_pixels=ds.native_max_pixels,
-                    max_side=ds.native_max_side,
-                    overflow=ds.native_overflow,
-                ).downscaled
-                for record in records
-            )
-            if items
-            else 0
-        )
-        out["native"] = {
-            "images": len(records),
-            "downscaled": resized,
-            "sizes": len(counts),
-            "logical_batches": batches,
-            "max_pixels": ds.native_max_pixels,
-            "alignment": family.spec.latent.align,
-            "batch_size": ds.batch_size,
-            "forward_groups": sum(forward_counts.values()),
-        }
-        out["warnings"].append(
-            {
-                "code": "native.execution",
-                "msg": "native resolution uses pixel-bounded shape groups and image-weighted gradient accumulation; pixel budget is not a VRAM guarantee",
-            }
-        )
-    uncaptioned = len(records) - out["captioned"]
-    if uncaptioned and not any(s.class_prompt for s in ds.sources):
-        out["warnings"].append(
-            {
-                "code": "captions.missing",
-                "msg": f"{uncaptioned} images have no caption file and no class_prompt",
-            }
-        )
-    if not native and any(n < ds.batch_size for n in counts.values()):
-        out["warnings"].append(
-            {
-                "code": "buckets.small",
-                "msg": "some buckets have fewer images than batch_size (tail batches will be smaller)",
-            }
-        )
 
     # ---- parameters (meta device, no weights)
     params: dict[str, Any] = {}

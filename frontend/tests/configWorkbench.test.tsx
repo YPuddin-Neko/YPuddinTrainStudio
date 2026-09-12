@@ -77,4 +77,16 @@ describe('compact configuration workbench contracts', () => {
     expect(screen.getByRole('columnheader',{name:'前向次数'})).toBeInTheDocument();
     expect(screen.queryByRole('columnheader',{name:'批次'})).not.toBeInTheDocument();
   });
+  it('retains native geometry without inventing forward counts for an invalid seed', () => {
+    const plan = {ok:false,images:8,items:8,captioned:8,buckets:[{w:64,h:80,items:8,batches:null}],native:{images:8,downscaled:2,sizes:1,logical_batches:3,max_pixels:4096,alignment:16,batch_size:3,forward_groups:null}} as unknown as Plan;
+    render(<BucketInspector plan={plan} loading={false} onData={()=>{}}/>);
+    expect(screen.getByText('原生尺寸分布')).toBeInTheDocument();
+    expect(screen.getByText('分组前向 / 轮').nextElementSibling).toHaveTextContent('—');
+    expect(screen.getByText('总训练步数').nextElementSibling).toHaveTextContent('—');
+    fireEvent.click(screen.getByRole('button',{name:'64 × 80, 8 样本'}));
+    expect(screen.getByText('8 样本 · — 前向 / 轮')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button',{name:'分桶明细表'}));
+    expect(screen.getByRole('table')).toHaveTextContent('64 × 808—');
+  });
+
 });

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useBlocker, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Copy, Plus, Save, Search, Trash2 } from 'lucide-react';
+import { Copy, Plus, Save, Search, Trash2, SlidersHorizontal } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import type { FamilyInfo, Preset } from '../../api/types';
 import Dialog from '../../components/Dialog';
@@ -33,14 +33,13 @@ export default function Presets() {
   const [error, setError] = React.useState('');
   const [notice, setNotice] = React.useState('');
   const [errors, setErrors] = React.useState<ValidationError[]>([]);
-  const [filter, setFilter] = React.useState('');
-  const [familyFilter, setFamilyFilter] = React.useState('');
   const [search, setSearch] = React.useState('');
   const [advanced, setAdvanced] = React.useState(false);
   const [tab, setTab] = React.useState<ConfigTab>('train');
   const [pending, setPending] = React.useState<(() => void) | null>(null);
   const [deleting, setDeleting] = React.useState(false);
   const startingConfig = React.useRef('');
+  const userPresets = React.useMemo(() => (list.data || []).filter(item => !item.builtin).sort((a,b) => (b.updated_at || 0) - (a.updated_at || 0) || a.name.localeCompare(b.name)), [list.data]);
   const dirty = !!draft && !draft.builtin && JSON.stringify(presetPayload(draft)) !== saved;
   const blocker = useBlocker(({ currentLocation, nextLocation }) => {
     const background = (nextLocation.state as { backgroundLocation?: { pathname?: string } } | null)?.backgroundLocation;
@@ -63,10 +62,10 @@ export default function Presets() {
         for (let i = 2; list.data?.some(item => item.name.toLocaleLowerCase() === name.toLocaleLowerCase()); i += 1) name = `${base}-${i}`;
       }
       const existing = preset && !copy && !newDraft;
-      const next: Draft = { name, description: preset?.description || '', config: reusableTrainingPreset(mergeConfig(defaults, preset?.config || {})), originalName: existing ? preset.name : null, builtin: !!preset?.builtin && !copy && !newDraft };
+      const next: Draft = { name, description: preset?.description || '', config: reusableTrainingPreset(mergeConfig(defaults, preset?.config || {})), originalName: existing ? preset.name : null, builtin: false };
       next.config.model = { ...next.config.model, family };
       startingConfig.current = JSON.stringify(next.config);
-      setDraft(next); setSaved(existing ? JSON.stringify(presetPayload(next)) : '');
+      setDraft(next); setSaved(existing ? JSON.stringify(presetPayload(next)) : JSON.stringify(presetPayload({...next,name:'',description:''})));
       setErrors([]); setSearch(''); setTab('train');
     } catch (failure) { setError(formatApiError(failure)); }
     finally { setBusy(false); }
@@ -74,17 +73,17 @@ export default function Presets() {
   const requestAction = (action: () => void) => { if (busy) return; if (dirty) setPending(() => action); else action(); };
   const initial = React.useRef(false);
   React.useEffect(() => {
-    if (!list.data || initial.current) return;
+    if (!list.data || !families.data || initial.current) return;
     initial.current = true;
     const name = params.get('name');
     if (name) {
-      const selected = list.data.find(item => item.name === name);
+      const selected = userPresets.find(item => item.name === name);
       if (selected) void begin(selected);
-      else setError(text('找不到指定预设，请从列表选择。', 'The requested preset was not found. Choose one from the list.'));
-    }
+      else setError(text('找不到指定预设，请选择已有预设或新建。', 'The requested preset was not found. Choose another or create one.'));
+    } else void begin(userPresets[0], false, userPresets[0] ? presetFamily(userPresets[0].config) : families.data.find(item=>item.name==='anima')?.name || families.data[0]?.name || 'anima');
     // A list refresh must never replace an editor's unsaved draft.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [list.data]);
+  }, [list.data, families.data]);
 
   const save = async (): Promise<boolean> => {
     if (!draft || draft.builtin || busy) return false;
@@ -98,7 +97,7 @@ export default function Presets() {
       const item = draft.originalName
         ? await apiClient.put<Preset>(`/presets/${encodeURIComponent(draft.originalName)}`, body, { silent: true })
         : await apiClient.post<Preset>('/presets', body, { silent: true });
-      const next = { ...draft, name: item.name, description: item.description, config: item.config, originalName: item.name, builtin: item.builtin };
+      const next = { ...draft, name: item.name, description: item.description, config: item.config, originalName: item.name, builtin: false };
       setDraft(next); setSaved(JSON.stringify(presetPayload(next)));
       queryClient.setQueryData<Preset[]>(KEY, previous => [...(previous || []).filter(row => row.name !== item.name), item]);
       setNotice(text('预设已保存，可在项目训练参数中加载。', 'Preset saved. It is available in project training parameters.'));
@@ -116,7 +115,10 @@ export default function Presets() {
     try {
       await apiClient.delete(`/presets/${encodeURIComponent(draft.originalName)}`, { silent: true });
       queryClient.setQueryData<Preset[]>(KEY, previous => previous?.filter(item => item.name !== draft.originalName));
-      setDraft(null); setSaved(''); setDeleting(false); setNotice(text('预设已删除。', 'Preset deleted.'));
+      const next = userPresets.find(item => item.name !== draft.originalName);
+      setDraft(null); setSaved(''); setDeleting(false);
+      await begin(next);
+      setNotice(text('预设已删除。', 'Preset deleted.'));
     } catch (failure) { setError(formatApiError(failure)); }
     finally { setBusy(false); }
   };
@@ -126,35 +128,41 @@ export default function Presets() {
   };
   const cancelLeave = () => { setPending(null); if (blocker.state === 'blocked') blocker.reset(); };
   const familyName = (name: string) => families.data?.find(item => item.name === name)?.label || (name || text('通用', 'General'));
-  const visible = (list.data || []).filter(item => (!familyFilter || presetFamily(item.config) === familyFilter) && `${item.name} ${item.description}`.toLocaleLowerCase().includes(filter.toLocaleLowerCase()));
-  const groups = [...new Set(visible.map(item => presetFamily(item.config)))];
   const family = families.data?.find(item => item.name === draft?.config.model?.family);
   const tabs: [ConfigTab, string][] = [['train', text('训练参数', 'Training')], ['data', text('数据与标签', 'Data and captions')], ['model', text('精度与保存', 'Precision and saving')], ['advanced', text('采样与高级', 'Sampling and advanced')]];
 
+  const options = [
+    ...(!draft?.originalName ? [{value:'',label:text('新预设', 'New preset'),disabled:true}] : []),
+    ...userPresets.map(item=>({value:item.name,label:`${item.name} · ${familyName(presetFamily(item.config))}`})),
+  ];
   return <section className="presets-page">
-    <header className="presets-heading"><div><h1>{text('参数预设', 'Training presets')}</h1><p>{text('独立管理可复用参数，项目的数据、模型文件和输出目录保持独立。', 'Manage reusable parameters independently from project data, model files and output folders.')}</p></div><button className="studio-primary" disabled={busy || !schema.data || !families.data} onClick={() => requestAction(() => void begin())}><Plus size={15}/>{text('新建预设', 'New preset')}</button></header>
+    <header className="presets-toolbar">
+      <h1>{text('参数预设', 'Presets')}</h1>
+      <div className="presets-switcher"><StudioSelect searchable aria-label={text('选择预设', 'Choose preset')} value={draft?.originalName || ''} disabled={busy || !userPresets.length} options={options} onValueChange={name=>{const item=userPresets.find(row=>row.name===name);if(item && name!==draft?.originalName)requestAction(()=>void begin(item));}}/></div>
+      <div className="presets-actions">
+        <button className="studio-secondary" disabled={busy || !schema.data || !families.data || list.isPending || list.isError} onClick={() => requestAction(() => void begin())}><Plus size={15}/>{text('新建预设', 'New preset')}</button>
+        {draft?.originalName && <><button className="studio-secondary presets-icon-action" aria-label={text('复制为新预设', 'Duplicate')} title={text('复制为新预设', 'Duplicate')} disabled={busy} onClick={() => requestAction(() => void begin({name:draft.name,description:draft.description,config:draft.config,builtin:false,updated_at:null},true))}><Copy size={15}/></button><button className="studio-secondary presets-icon-action" aria-label={text('删除预设', 'Delete preset')} title={text('删除预设', 'Delete preset')} disabled={busy} onClick={()=>setDeleting(true)}><Trash2 size={15}/></button></>}
+        <button className="studio-primary" disabled={busy || !dirty || !editorSchema} onClick={()=>void save()}><Save size={15}/>{busy ? text('保存中…', 'Saving…') : text('保存预设', 'Save preset')}</button>
+      </div>
+    </header>
     {error && !deleting && <div role="alert" className="studio-error">{error}</div>}
     {notice && <p role="status" className="presets-notice">{notice}</p>}
     {[list, schema, families].some(query => query.isError) && <div role="alert" className="studio-error"><span>{[list, schema, families].filter(query => query.error).map(query => formatApiError(query.error)).join('\n')}</span><button onClick={() => { for (const query of [list, schema, families]) if (query.isError) void query.refetch(); }}>{text('重新加载', 'Reload')}</button></div>}
-    <div className="presets-columns">
-      <aside className="presets-library" aria-label={text('预设列表', 'Preset library')}>
-        <div className="presets-library-tools"><label><Search size={14}/><input aria-label={text('搜索预设', 'Search presets')} placeholder={text('搜索名称或描述', 'Search name or description')} value={filter} onChange={event => setFilter(event.target.value)}/></label><StudioSelect aria-label={text('按模型筛选预设', 'Filter presets by model')} value={familyFilter} onValueChange={setFamilyFilter} options={[{value:'',label:text('全部模型', 'All models')},...(families.data || []).map(item => ({value:item.name,label:item.label}))]}/></div>
-        {list.isPending && <p role="status">{text('正在读取预设…', 'Loading presets…')}</p>}
-        {!list.isPending && !visible.length && <p className="presets-empty">{text('暂无匹配预设。', 'No matching presets.')}</p>}
-        {groups.map(group => <section key={group}><h2>{familyName(group)}</h2>{visible.filter(item => presetFamily(item.config) === group).map(item => <button key={item.name} disabled={busy} className={`preset-list-item ${draft?.originalName === item.name ? 'selected' : ''}`} onClick={() => requestAction(() => void begin(item))} aria-label={`${text('打开预设', 'Open preset')} ${item.name}`}><span><strong>{item.name}</strong><small>{item.builtin ? text('内置', 'Built-in') : text('自定义', 'Custom')}</small></span><p>{item.description || text('暂无描述', 'No description')}</p><small>{presetSummary(item.config, english)}</small></button>)}</section>)}
-      </aside>
-      <div className="presets-editor">
-        {!draft && <div className="presets-empty">{text('从列表打开预设，或新建一份参数配置。内置预设可以查看和复制。', 'Open a preset or create a new configuration. Built-in presets can be viewed and copied.')}</div>}
-        {draft && <>
-          <div className="presets-editor-actions"><strong>{draft.builtin ? text('内置预设 · 只读', 'Built-in preset · read only') : dirty ? text('有未保存的修改', 'Unsaved changes') : text('已保存', 'Saved')}</strong><span/>{draft.originalName && <button className="studio-secondary" disabled={busy} onClick={() => requestAction(() => void begin({name:draft.name,description:draft.description,config:draft.config,builtin:draft.builtin,updated_at:null},true))}><Copy size={14}/>{text('复制为新预设', 'Duplicate')}</button>}{!draft.builtin && draft.originalName && <button className="studio-secondary" disabled={busy} onClick={() => setDeleting(true)}><Trash2 size={14}/>{text('删除预设', 'Delete preset')}</button>}{!draft.builtin && <button className="studio-primary" disabled={busy || !dirty || !editorSchema} onClick={() => void save()}><Save size={14}/>{busy ? text('正在保存…', 'Saving…') : text('保存预设', 'Save preset')}</button>}</div>
-          <fieldset disabled={busy || draft.builtin} className="presets-meta"><label>{text('预设名称', 'Preset name')}<input aria-label={text('预设名称', 'Preset name')} value={draft.name} readOnly={!!draft.originalName} onChange={event => setDraft({...draft,name:event.target.value})}/></label><label>{text('适用模型', 'Model family')}<StudioSelect aria-label={text('适用模型', 'Model family')} disabled={busy || draft.builtin || !!draft.originalName} value={draft.config.model.family} onValueChange={target => { const change = () => { void begin({name:draft.name,description:draft.description,config:{model:{family:target}},builtin:false,updated_at:null},false,target,true); }; if (JSON.stringify(draft.config) !== startingConfig.current) requestAction(change); else change(); }} options={(families.data || []).map(item => ({value:item.name,label:item.label}))}/></label><label className="presets-description">{text('用途与说明', 'Description')}<textarea rows={2} aria-label={text('用途与说明', 'Description')} value={draft.description} onChange={event => setDraft({...draft,description:event.target.value})}/></label></fieldset>
-          <p className="preset-parameter-summary">{presetSummary(draft.config, english)}</p>
-          <div className="presets-form-toolbar"><div role="tablist" aria-label={text('预设参数分区', 'Preset parameter sections')}>{tabs.map(([key,label])=><button key={key} role="tab" aria-selected={tab===key} onClick={()=>setTab(key)}>{label}</button>)}</div><label><input type="checkbox" checked={advanced} onChange={event=>setAdvanced(event.target.checked)}/>{text('高级选项', 'Advanced')}</label></div>
-          <label className="presets-field-search"><Search size={14}/><input aria-label={text('搜索预设参数', 'Search preset parameters')} placeholder={text('搜索参数', 'Search parameters')} value={search} onChange={event=>setSearch(event.target.value)}/></label>
-          {editorSchema && <div className="presets-schema"><SchemaForm readOnly={busy || draft.builtin} schema={editorSchema} value={draft.config} onChange={config=>{setDraft({...draft,config});setErrors([]);}} compact showAdvanced={advanced} groupFilter={search ? undefined : CONFIG_TAB_GROUPS[tab]} search={search} family={family} families={families.data} errors={errors}/></div>}
-        </>}
+    {!draft && !error && <p role="status" className="presets-loading">{text('正在读取参数…', 'Loading parameters…')}</p>}
+    {draft && <div className="presets-editor">
+      <fieldset disabled={busy} className="presets-meta">
+        <label>{text('预设名称', 'Preset name')}<input aria-label={text('预设名称', 'Preset name')} placeholder={text('例如：人物_LoKr', 'For example: character_LoKr')} value={draft.name} readOnly={!!draft.originalName} onChange={event=>setDraft({...draft,name:event.target.value})}/></label>
+        <label>{text('适用模型', 'Model family')}<StudioSelect aria-label={text('适用模型', 'Model family')} disabled={busy || !!draft.originalName} value={draft.config.model.family} onValueChange={target=>{const change=()=>{void begin({name:draft.name,description:draft.description,config:{model:{family:target}},builtin:false,updated_at:null},false,target,true);};if(JSON.stringify(draft.config)!==startingConfig.current)requestAction(change);else change();}} options={(families.data || []).filter(item=>item.name!=='toy'||draft.config.model.family==='toy').map(item=>({value:item.name,label:item.label}))}/></label>
+        <label className="presets-description">{text('用途与说明', 'Description')}<input aria-label={text('用途与说明', 'Description')} placeholder={text('可选，记录用途或参数取舍', 'Optional: purpose or parameter choices')} value={draft.description} onChange={event=>setDraft({...draft,description:event.target.value})}/></label>
+      </fieldset>
+      <div className="presets-context"><span>{!draft.originalName ? text('填写名称并编辑参数后保存。', 'Name and edit the preset, then save.') : presetSummary(draft.config, english)}</span><span className={dirty ? 'presets-dirty' : ''}>{dirty ? text('有未保存修改', 'Unsaved changes') : draft.originalName ? text('已保存', 'Saved') : text('尚未创建', 'Not created yet')}</span></div>
+      <div className="presets-form-toolbar">
+        <div role="tablist" aria-label={text('预设参数分区', 'Preset parameter sections')}>{tabs.map(([key,label])=><button key={key} role="tab" aria-selected={tab===key} onClick={()=>setTab(key)}>{label}</button>)}</div>
+        <label className="presets-field-search"><Search size={14}/><input aria-label={text('搜索预设参数', 'Search preset parameters')} placeholder={text('搜索参数', 'Search parameters')} value={search} onChange={event=>setSearch(event.target.value)}/></label>
+        <label className="presets-advanced"><input type="checkbox" checked={advanced} onChange={event=>setAdvanced(event.target.checked)}/><SlidersHorizontal size={13}/>{text('高级选项', 'Advanced')}</label>
       </div>
-    </div>
+      {editorSchema && <div className="presets-schema" role="tabpanel" aria-label={tabs.find(([key])=>key===tab)?.[1]}><SchemaForm readOnly={busy} schema={editorSchema} value={draft.config} onChange={config=>{setDraft({...draft,config});setErrors([]);}} compact showAdvanced={advanced} groupFilter={search ? undefined : CONFIG_TAB_GROUPS[tab]} search={search} family={family} families={families.data} errors={errors}/></div>}
+    </div>}
     {(pending || blocker.state === 'blocked') && <Dialog title={text('保存预设修改？', 'Save preset changes?')} onClose={cancelLeave} closeDisabled={busy}><p>{text('当前预设尚未保存。可以先保存，或放弃这些修改。', 'This preset has unsaved changes. Save them or discard the draft.')}</p>{error && <p role="alert" className="studio-error">{error}</p>}<div className="presets-confirm-actions"><button className="studio-secondary" disabled={busy} onClick={cancelLeave}>{text('继续编辑', 'Keep editing')}</button><button className="studio-secondary" disabled={busy} onClick={proceed}>{text('放弃修改', 'Discard changes')}</button><button className="studio-primary" disabled={busy} onClick={()=>{void save().then(ok=>{if(ok)proceed();});}}>{text('保存并继续', 'Save and continue')}</button></div></Dialog>}
     {deleting && <Dialog title={text('删除预设', 'Delete preset')} onClose={()=>setDeleting(false)} closeDisabled={busy}><p>{text('删除后不会改变任何已有项目配置。确定删除', 'Existing project configurations will remain unchanged. Delete')} “{draft?.name}”?</p>{error&&<p role="alert" className="studio-error">{error}</p>}<div className="presets-confirm-actions"><button className="studio-secondary" disabled={busy} onClick={()=>setDeleting(false)}>{text('取消', 'Cancel')}</button><button className="studio-primary" disabled={busy} onClick={()=>void remove()}>{text('确认删除', 'Confirm deletion')}</button></div></Dialog>}
   </section>;

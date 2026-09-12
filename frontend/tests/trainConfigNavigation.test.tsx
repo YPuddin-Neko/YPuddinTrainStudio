@@ -31,7 +31,7 @@ function Destination() {
 
 function show() {
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <MemoryRouter initialEntries={['/projects/p_nav/train']}><Routes>
+    <MemoryRouter initialEntries={['/projects/p_nav/train?tab=train']}><Routes>
       <Route path="/projects/:id/train" element={<TrainConfig />} />
       <Route path="/projects/:id" element={<Destination />} />
       <Route path="/datasets/:id" element={<Destination />} />
@@ -234,7 +234,7 @@ describe('training dataset destinations and saved navigation', () => {
     const key = 'training-draft:p_nav:v2';
     const otherDraft = JSON.stringify({version:1,base:state.config,draft:{...state.config,loop:{...state.config.loop,epochs:91}}});
     sessionStorage.setItem('training-draft:p_nav:v1',otherDraft);
-    render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter initialEntries={['/history','/projects/p_nav/v/v2/train']} initialIndex={1}><HistoryButtons/><Routes>
+    render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter initialEntries={['/history','/projects/p_nav/v/v2/train?tab=train']} initialIndex={1}><HistoryButtons/><Routes>
       <Route path="/history" element={<p>Earlier page</p>}/><Route path="/projects/:id/v/:versionId/train" element={<TrainConfig/>}/>
     </Routes></MemoryRouter></QueryClientProvider>);
     const epochs = await screen.findByRole('spinbutton',{name:'loop.epochs'});

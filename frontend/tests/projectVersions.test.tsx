@@ -27,7 +27,7 @@ const version = (id: string): ProjectVersion => ({ id, project_id: project.id, n
 const versions = [version('v1'), version('v2')];
 function Location() { const location = useLocation(); return <output data-testid="location">{location.pathname}{location.search}</output>; }
 function wrap(children: React.ReactNode, path = '/projects/p_versions/v/v1/train') {
-  return <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter initialEntries={[path]}>{children}<Location/></MemoryRouter></QueryClientProvider>;
+  return <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter initialEntries={[path.endsWith('/train') ? `${path}?tab=train` : path]}>{children}<Location/></MemoryRouter></QueryClientProvider>;
 }
 function trainingFixture() {
   const configs = { v1: schemaDefaults(trainSchema), v2: schemaDefaults(trainSchema) };

@@ -136,7 +136,7 @@ class PlanBucket(_Out):
     w: int
     h: int
     items: int
-    batches: int
+    batches: int | None
 
 
 class PlanParams(_Out):
@@ -177,7 +177,35 @@ class NativePlan(_Out):
     max_pixels: int
     alignment: int
     batch_size: int
-    forward_groups: int
+    forward_groups: int | None
+
+
+class ImageFitGeometry(_Out):
+    path: str
+    source_width: int
+    source_height: int
+    width: int
+    height: int
+    resized_width: int
+    resized_height: int
+    left: int
+    top: int
+    right: int
+    bottom: int
+    padding_pixels: int
+    cropped_pixels: int
+
+
+class ImageFitPlan(_Out):
+    mode: Literal["crop", "pad"]
+    padded_images: int
+    cropped_images: int
+    padding_pixels: int
+    total_pixels: int
+    padding_fraction: float
+    total_shapes: int
+    truncated: bool
+    items: list[ImageFitGeometry]
 
 
 class Plan(_Out):
@@ -195,6 +223,7 @@ class Plan(_Out):
     memory: PlanMemory = Field(default_factory=PlanMemory)
     text_encoding: str | None = None
     native: NativePlan | None = None
+    image_fit: ImageFitPlan | None = None
 
 
 class Preset(_Out):
@@ -439,6 +468,9 @@ class JobProgress(_Out):
 
 
 class JobLatest(_Out):
+    loss_mean: float | None = None
+    loss_count: int | None = None
+    loss_mean_scope: Literal["run", "since_resume"] | None = None
     loss: float | None = None
     loss_ema: float | None = None
     lr: dict[str, float] | None = None

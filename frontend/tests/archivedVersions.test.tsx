@@ -140,6 +140,7 @@ describe('archived versions remain readable without write actions', () => {
     expect(state.configReads).toEqual(['v2', 'v1']); expect(state.writes).toEqual([]);
     fireEvent.click(within(dialog).getByRole('button', { name: '关闭' }));
     fireEvent.click(screen.getByRole('button', { name: '恢复版本' }));
+    fireEvent.click(await screen.findByRole('tab',{name:'训练参数'}));
     expect(await screen.findByRole('spinbutton', { name: 'loop.epochs' })).toHaveValue(2);
     expect(screen.getByRole('button', { name: '开始训练' })).toBeInTheDocument();
     expect(state.writes.filter(write => write.method !== 'PATCH')).toEqual([]);

@@ -3,11 +3,13 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import './dialog.css';
 import { useWorkspaceText } from '../utils/workspaceText';
+import { useAnimatedClose } from './useAnimatedClose';
 
 export default function Dialog({ title, onClose, children, wide = false, closeDisabled = false }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean; closeDisabled?: boolean }) {
   const text = useWorkspaceText();
   const panel = React.useRef<HTMLDivElement>(null);
-  const closeRef = React.useRef(onClose); closeRef.current = () => { if (!closeDisabled) onClose(); };
+  const {closing,requestClose}=useAnimatedClose(onClose,closeDisabled);
+  const closeRef = React.useRef(requestClose); closeRef.current = requestClose;
   const id = React.useId();
   React.useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -25,5 +27,5 @@ export default function Dialog({ title, onClose, children, wide = false, closeDi
     element?.addEventListener('keydown', keydown);
     return () => { element?.removeEventListener('keydown', keydown); previous?.focus(); };
   }, []);
-  return createPortal(<div className="workspace-dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) closeRef.current(); }}><div ref={panel} role="dialog" aria-modal="true" aria-labelledby={id} className={`workspace-dialog ${wide ? 'workspace-dialog-wide' : ''}`}><header><h2 id={id}>{title}</h2><button type="button" disabled={closeDisabled} aria-label={text('关闭','Close')} onClick={() => closeRef.current()}><X size={18}/></button></header>{children}</div></div>, document.body);
+  return createPortal(<div className={`workspace-dialog-backdrop${closing ? ' is-closing' : ''}`} onMouseDown={event => { if (event.target === event.currentTarget) closeRef.current(); }}><div ref={panel} role="dialog" aria-modal="true" aria-labelledby={id} className={`workspace-dialog ${wide ? 'workspace-dialog-wide' : ''}`}><header><h2 id={id}>{title}</h2><button type="button" disabled={closeDisabled} aria-label={text('关闭','Close')} onClick={() => closeRef.current()}><X size={18}/></button></header>{children}</div></div>, document.body);
 }

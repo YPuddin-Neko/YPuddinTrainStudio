@@ -19,19 +19,20 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { shapeValidationSeries, mergeValidationPoint, appendCapped, smoothLoss, appendMetricStep } from '../../utils/metrics';
-import { formatBytes, formatBytesMB, formatEta, formatTime } from '../../utils/format';
+import { formatBytes, formatEta, formatTime } from '../../utils/format';
 import { formatApiError } from '../../utils/errors';
 import { projectUrl, type ProjectVersion } from '../../utils/projectVersions';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import StudioSelect from '../../components/StudioSelect';
 import { JobActions } from '../Queue/jobPresentation';
 import SampleLoss from '../../components/SampleLoss';
+import ConfigHelp from '../../components/ConfigHelp';
 import { metricChartBase, metricLabels } from './metricPresentation';
 import '../Queue/queue.css';
 import './job-detail.css';
 import './job-metrics.css';
 
-type VersionedJob = Job & { version_id?: string | null };
+type VersionedJob = Job & { version_id?: string | null; latest: Job['latest'] & {loss_mean?:number|null; loss_count?:number|null; loss_mean_scope?:string|null} };
 
 const LR_COLORS = ['#a78bfa', '#f59e0b', '#22d3ee', '#fb7185', '#84cc16', '#e879f9'];
 
@@ -45,14 +46,8 @@ function mergeSamples(previous: JobSample[], incoming: JobSample[]): JobSample[]
   return [...samples.values()].sort((a, b) => a.step - b.step || a.created_at - b.created_at || a.prompt_index - b.prompt_index);
 }
 
-/** 大数字指标卡：label 小写 xs + 值 2xl font-mono */
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg min-w-0">
-      <div className="text-xs lowercase text-slate-400 truncate">{label}</div>
-      <div className="text-2xl font-bold font-mono mt-1 truncate">{value}</div>
-    </div>
-  );
+function StatCard({ label, value, hint }: { label: string; value: React.ReactNode; hint?:string }) {
+  return <div className="job-stat"><div className="job-stat-label">{label}{hint && <ConfigHelp label={`${label} · 说明`}>{hint}</ConfigHelp>}</div><div className="job-stat-value">{value}</div></div>;
 }
 
 /** 空态：lucide 图标 + 标题 + 一行提示 */
@@ -87,6 +82,12 @@ export default function JobDetail() {
   const [resuming, setResuming] = React.useState(false);
 
   const [job, setJob] = React.useState<VersionedJob | null>(null);
+  const [clock, setClock] = React.useState(() => Date.now() / 1000);
+  React.useEffect(() => {
+    if (!job?.started_at || !['running','pausing','cancelling'].includes(job.status)) return;
+    const timer = window.setInterval(() => setClock(Date.now() / 1000), 1000);
+    return () => window.clearInterval(timer);
+  }, [job?.started_at, job?.status]);
   const [resolvedVersion, setResolvedVersion] = React.useState<{ projectId: string; versionId: string; name: string } | null>(null);
   const [metrics, setMetrics] = React.useState<JobMetrics | null>(null);
   const [samples, setSamples] = React.useState<JobSample[]>([]);
@@ -174,7 +175,10 @@ export default function JobDetail() {
   useEventStream(EVENT_TYPES.JOB_STATE, (data: any) => {
     if (data.job_id === id) {
       setJob((prev) => prev ? mergeJobEvent(prev, data) : null);
-      if (['completed', 'failed', 'cancelled', 'paused'].includes(data.status)) void refreshSamples();
+      if (['completed', 'failed', 'cancelled', 'paused'].includes(data.status)) {
+        void refreshSamples();
+        void apiClient.get<VersionedJob>(`/jobs/${id}`, {silent:true}).then(updated => setJob(previous => previous?.id === updated.id ? updated : previous)).catch(() => {});
+      }
     }
   });
 
@@ -287,7 +291,6 @@ export default function JobDetail() {
   }, [metrics, xAxisName, useEpoch, stepsPerEpoch, labels]);
 
   const vramMetric = job?.progress?.vram_metric ?? metrics?.vram_metric;
-  const currentAllocated = vramMetric === 'current_allocated';
   const chartVramMetric = metrics?.vram_metric ?? vramMetric;
   const memorySeriesLabel = chartVramMetric === 'current_allocated'
     ? `${t('job.currentTrainingAllocated')} (GB)`
@@ -378,27 +381,39 @@ export default function JobDetail() {
     finally { setResuming(false); }
   };
 
+  const lossNumber = (value: number | null | undefined) => typeof value === 'number' && Number.isFinite(value) ? value.toFixed(4) : '—';
+  const recordedLosses = metrics?.loss.filter((value): value is number => typeof value === 'number' && Number.isFinite(value)) || [];
+  const meanLoss = job?.latest?.loss_mean ?? (recordedLosses.length ? recordedLosses.reduce((sum,value) => sum + value, 0) / recordedLosses.length : null);
+  const meanScope = job?.latest?.loss_mean != null ? (job.latest.loss_mean_scope === 'since_resume' ? text('从此次恢复训练起，所有已完成训练步的损失平均值。','Mean loss over completed steps since this training was resumed.') : text('所有已完成训练步的损失平均值。','Mean loss over all completed optimizer steps.')) : text('旧任务没有完整累计值，显示已有日志中训练步的平均值。','This legacy run has no complete accumulator; this is the mean of recorded steps.');
+  const learningRates = Object.entries(job?.latest?.lr || {}).filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]));
+  const epochProgress = stepsPerEpoch && job?.progress?.step != null ? (job.progress.step / stepsPerEpoch).toFixed(2).replace(/\.00$/, '') : job?.progress?.epoch != null ? String(job.progress.epoch + 1) : '—';
+  const totalEpochs = stepsPerEpoch && job?.progress?.total_steps != null ? Math.ceil(job.progress.total_steps / stepsPerEpoch) : configSnapshot?.loop?.epochs;
+  const elapsed = job?.started_at != null ? Math.max(0, (job.finished_at ?? (['running','pausing','cancelling'].includes(job.status) ? clock : job.started_at)) - job.started_at) : null;
+  const configurationName = job?.version_name || versionName || job?.name;
+
   return (
     <div className="job-monitor task-workspace" data-testid="job-detail-page">
       <div className="job-monitor-bar"><div className="job-monitor-links"><Link to={queueReturnTo}>← {text('全局训练队列', 'Training queue')}</Link>
       {job?.project_id && <Link to={projectUrl(job.project_id, job.version_id, 'results')} className="inline-flex flex-wrap gap-1 text-sm text-blue-600 hover:underline">← {job.project_id} · {text('训练结果', 'Training results')}{job.version_id && <span className="break-words text-xs" title={job.version_id}> · {versionName ? `${text('版本', 'Version')} ${versionName}` : text('所属版本', 'Version')}</span>}</Link>}
       </div><div className="job-monitor-identity"><div><h1>{job?.name || text('读取任务…', 'Loading job…')}</h1><small>{id} · {job?.type === 'cache' ? text('缓存任务', 'Cache job') : text('训练任务', 'Training job')}</small></div><span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${statusBadgeClass}`}>{statusText}</span>{job && <JobActions key={job.id} job={job} onUpdated={updated => { if (updated.id === job.id) setJob(updated); else navigate(`/jobs/${updated.id}`); }}/>}</div></div>
+      <dl className="job-run-metadata" aria-label={text('运行信息','Run information')}>
+        <div><dt>{text('开始时间','Started')}</dt><dd>{formatTime(job?.started_at)}</dd></div>
+        <div><dt>{text('训练时长','Elapsed')}</dt><dd>{formatEta(elapsed)}</dd></div>
+        <div><dt>{text('训练配置','Training configuration')}</dt><dd>{configurationName ? `${configurationName} · ${text('参数快照','snapshot')}` : '—'}</dd></div>
+        <div><dt>{text('运行 ID','Run ID')}</dt><dd><code>{job?.id || id}</code></dd></div>
+      </dl>
       {dataError && <div className="task-error" role="alert">{dataError}</div>}
       {(actionError || job?.error) && <div role="alert" className="whitespace-pre-line break-words rounded bg-red-50 text-red-700 p-3 dark:bg-red-950 dark:text-red-300">{actionError || job?.error}</div>}
       {/* 1. 头部指标与阶段时间线 */}
       <div className="job-monitor-summary bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 space-y-3">
-        {/* 大数字指标 StatCard */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatCard
-            label={t('job.progress')}
-            value={`${job?.progress?.step ?? 0} / ${job?.progress?.total_steps ?? 0}`}
-          />
-          <StatCard
-            label={t('job.speed')}
-            value={job?.progress?.it_s != null ? `${Number(job.progress.it_s).toFixed(2)} it/s` : '--'}
-          />
-          <StatCard label={t(currentAllocated ? 'job.currentAllocated' : 'job.vramPeak')} value={formatBytesMB(job?.progress?.vram_peak_mb)} />
-          <StatCard label={t('job.eta')} value={formatEta(job?.progress?.eta_s)} />
+        <div className="job-stat-grid" aria-label={text('训练核心指标','Training metrics')}>
+          <StatCard label={text('步数','Steps')} value={`${job?.progress?.step ?? '—'} / ${job?.progress?.total_steps ?? '—'}`}/>
+          <StatCard label={text('轮次','Epochs')} value={`${epochProgress} / ${totalEpochs ?? '—'}`}/>
+          <StatCard label="Loss" value={lossNumber(job?.latest?.loss)} />
+          <StatCard label={text('平均 Loss','Mean loss')} value={lossNumber(meanLoss)} hint={meanScope}/>
+          <StatCard label={text('学习率','Learning rate')} value={learningRates.length ? <div className="job-learning-rates">{learningRates.map(([name, rate]) => <span key={name}>{learningRates.length > 1 && <small>{name}</small>}{rate.toExponential(2)}</span>)}</div> : '—'}/>
+          <StatCard label={t('job.speed')} value={job?.progress?.it_s != null ? `${Number(job.progress.it_s).toFixed(2)} it/s` : '—'}/>
+          <StatCard label={t('job.eta')} value={job?.status === 'completed' ? '0s' : formatEta(job?.progress?.eta_s)}/>
         </div>
 
         {/* 阶段时间线 */}
@@ -525,52 +540,13 @@ export default function JobDetail() {
         </div></section>
       )}
 
-      {activeTab === 'checkpoints' && (
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-x-auto">
-          {checkpoints.length === 0 ? (
-            <EmptyState
-              icon={Layers}
-              title={t('job.noCheckpoints', '暂无检查点')}
-              hint={t('job.noCheckpointsHint', '训练到保存步数后会自动生成检查点。')}
-            />
-          ) : (
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 dark:bg-slate-800/50 text-xs text-slate-400 border-b dark:border-slate-700">
-                <tr>
-                  <th className="p-4">{t('job.stepCol')}</th>
-                  <th className="p-4">{t('job.kind')}</th>
-                  <th className="p-4">{t('job.path')}</th>
-                  <th className="p-4">{t('job.size')}</th>
-                  <th className="p-4">{t('queue.created')}</th>
-                  <th className="p-4 text-right">{t('common.actions')}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                {checkpoints.map((cp, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-750">
-                    <td className="p-4 font-semibold font-mono">{cp.step}</td>
-                    <td className="p-4">{checkpointKindLabel(cp.kind)}{cp.ema ? ' (EMA)' : ''}</td>
-                    <td className="p-4 font-mono text-xs text-slate-500">{cp.path}</td>
-                    <td className="p-4 font-mono">{formatBytes(cp.size)}</td>
-                    <td className="p-4 text-xs text-slate-500 whitespace-nowrap">{formatTime(cp.created_at)}</td>
-                    <td className="p-4 text-right space-x-2">
-                      {cp.kind === 'full' ? (
-                        <button disabled={resuming || !configSnapshot} onClick={() => resumeCheckpoint(cp)} className="px-2.5 py-1 text-xs bg-blue-600 text-white rounded disabled:opacity-50">
-                          {t('job.continueTraining')}
-                        </button>
-                      ) : cp.artifact_id ? (
-                        <a href={apiUrl(`/artifacts/${cp.artifact_id}/download`)} className="px-2.5 py-1 text-xs bg-slate-100 dark:bg-slate-700 rounded inline-flex items-center space-x-1">
-                          <Download className="w-3.5 h-3.5" /><span>{t('job.download')}</span>
-                        </a>
-                      ) : <span className="text-xs text-slate-400">{t('job.downloadUnavailable')}</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
+      {activeTab === 'checkpoints' && <section className="job-checkpoints" aria-label={text('训练权重与恢复状态','Weights and training states')}>
+        {checkpoints.length === 0 ? <EmptyState icon={Layers} title={t('job.noCheckpoints')} hint={t('job.noCheckpointsHint')}/> : checkpoints.map((cp,index) => <article key={`${cp.path}-${index}`} className="job-checkpoint">
+          <div className="job-checkpoint-file"><strong>{cp.path.replace(/\\/g,'/').split('/').pop()}</strong><div><span>{checkpointKindLabel(cp.kind)}{cp.ema ? ' · EMA' : ''}</span><span>{text('步','Step')} {cp.step}</span>{stepsPerEpoch && <span>{text('轮','Epoch')} {(cp.step/stepsPerEpoch).toFixed(2).replace(/\.00$/,'')}</span>}<span>{formatBytes(cp.size)}</span></div></div>
+          <div className="job-checkpoint-actions">{cp.kind === 'full' ? <button disabled={resuming || !configSnapshot} onClick={() => resumeCheckpoint(cp)} className="task-button">{t('job.continueTraining')}</button> : cp.artifact_id ? <a href={apiUrl(`/artifacts/${cp.artifact_id}/download`)} className="task-button"><Download size={14}/>{t('job.download')}</a> : <span>{t('job.downloadUnavailable')}</span>}</div>
+          <details className="job-checkpoint-details"><summary>{text('文件详情','File details')}</summary><dl><div><dt>{text('保存时间','Saved')}</dt><dd>{formatTime(cp.created_at)}</dd></div><div><dt>{text('本机位置','Local location')}</dt><dd><code>{cp.path}</code></dd></div></dl></details>
+        </article>)}
+      </section>}
 
       {activeTab === 'logs' && (
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3">

@@ -300,6 +300,20 @@ def config_export(body: ConfigExportBody) -> dict[str, str]:
 class ConfigBody(BaseModel):
     config: dict[str, Any]
     dataset_ids: list[str] | None = None
+    project_id: str | None = None
+    version_id: str | None = None
+
+
+def _scoped_config(body: ConfigBody, c: ServiceContext) -> dict[str, Any]:
+    if body.version_id and not body.project_id:
+        raise ApiError("version_id requires project_id", code="version.project_required", status=422)
+    if body.project_id:
+        from .output_binding import bind_output_name
+        from .source_roles import normalize_source_roles
+
+        config = normalize_source_roles(c, body.project_id, body.config, body.version_id)
+        return bind_output_name(c, body.project_id, config, body.version_id)
+    return body.config
 
 
 def _validate(config: dict[str, Any]) -> tuple[TrainConfig | None, list[dict[str, str]]]:
@@ -312,16 +326,15 @@ def _validate(config: dict[str, Any]) -> tuple[TrainConfig | None, list[dict[str
 
 
 @router.post("/config/validate", response_model=m.ValidateResult, response_model_exclude_unset=True)
-def config_validate(body: ConfigBody) -> dict[str, Any]:
-    cfg, errors = _validate(body.config)
+def config_validate(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+    cfg, errors = _validate(_scoped_config(body, c))
     return {"ok": cfg is not None, "errors": errors, "warnings": []}
 
 
 @router.post("/plan", response_model=m.Plan, response_model_exclude_unset=True)
 def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    cfg, errors = _validate(body.config)
-    if cfg is None:
-        return {"ok": False, "errors": errors, "warnings": []}
+    # plan keeps full validation errors while previewing independently valid data fields.
+    cfg = _scoped_config(body, c)
     gpus = gpu_info()
     return make_plan(
         cfg,
@@ -331,68 +344,6 @@ def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str,
 
 
 # --------------------------------------------------------------------------- presets
-BUILTIN_PRESETS: dict[str, dict[str, Any]] = {
-    "anima-lokr-default": {
-        "description": "Anima LoKr：全矩阵 W2、factor 8、注意力+MLP",
-        "config": {
-            "model": {"family": "anima"},
-            "adapter": {"algo": "lokr", "rank": "full", "alpha": 1.0, "factor": 8, "preset": "attn-mlp"},
-            "optimizer": {"type": "adamw", "lr": 1e-4},
-            "scheduler": {"type": "cosine", "warmup_steps": 0.05},
-        },
-    },
-    "anima-lora-16": {
-        "description": "Anima LoRA rank 16 / alpha 16",
-        "config": {
-            "model": {"family": "anima"},
-            "adapter": {"algo": "lora", "rank": 16, "alpha": 16.0, "preset": "attn-mlp"},
-            "optimizer": {"type": "adamw", "lr": 2e-4},
-        },
-    },
-    "krea2-lokr-default": {
-        "description": "Krea 2 LoKr：fp8 底模 + 分块重计算 + 分辨率自适应时间步，注意力+SwiGLU",
-        "config": {
-            "model": {"family": "krea2", "dtype": "bf16"},
-            "dataset": {"resolutions": [1024], "text_encoding": "cached", "batch_size": 1},
-            "adapter": {"algo": "lokr", "rank": "full", "alpha": 1.0, "factor": 8, "preset": "attn-mlp"},
-            "objective": {
-                "timestep_sampling": "resolution_shift",
-                "res_shift_tokens": [256, 6400],
-                "res_shift_mu": [0.5, 1.15],
-            },
-            "memory": {
-                "base_precision": "fp8_e4m3",
-                "activation_checkpointing": "block",
-                "blocks_to_swap": 0,
-            },
-            "optimizer": {"type": "adamw", "lr": 1e-4},
-            "scheduler": {"type": "cosine", "warmup_steps": 0.05},
-            "sampling": {"steps": 28, "cfg": 5.5, "width": 1024, "height": 1024},
-        },
-    },
-    "krea2-lora-32": {
-        "description": "Krea 2 LoRA rank 32 / alpha 32（官方默认：全部 Linear）",
-        "config": {
-            "model": {"family": "krea2", "dtype": "bf16"},
-            "dataset": {"resolutions": [1024], "text_encoding": "cached", "batch_size": 1},
-            "adapter": {"algo": "lora", "rank": 32, "alpha": 32.0, "preset": "all-linear"},
-            "objective": {"timestep_sampling": "resolution_shift", "res_shift_tokens": [256, 6400]},
-            "memory": {"base_precision": "fp8_e4m3", "activation_checkpointing": "block"},
-            "optimizer": {"type": "adamw", "lr": 1e-4},
-            "sampling": {"steps": 28, "cfg": 5.5, "width": 1024, "height": 1024},
-        },
-    },
-    "toy-smoke": {
-        "description": "CPU 玩具模型冒烟测试",
-        "config": {
-            "model": {"family": "toy", "dtype": "fp32"},
-            "dataset": {"resolutions": [64], "bucket_step": 16, "batch_size": 2, "num_workers": 0},
-            "loop": {"epochs": 1, "mixed_precision": "no"},
-        },
-    },
-}
-
-
 def _preset_dir(c: ServiceContext) -> Path:
     d = c.data_root / "presets"
     d.mkdir(parents=True, exist_ok=True)
@@ -411,7 +362,7 @@ def _preset_row(name: str, data: dict[str, Any], builtin: bool, updated_at: floa
 
 @router.get("/presets", response_model=list[m.Preset], response_model_exclude_unset=True)
 def list_presets(c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
-    out = [_preset_row(n, d, True, None) for n, d in BUILTIN_PRESETS.items()]
+    out = []
     for f in sorted(_preset_dir(c).glob("*.json")):
         data = json.loads(f.read_text(encoding="utf-8"))
         out.append(_preset_row(f.stem, data, False, f.stat().st_mtime))
@@ -428,29 +379,36 @@ _preset_lock = threading.RLock()
 
 
 def _preset_path(name: str, c: ServiceContext) -> Path:
-    reserved = {"con", "prn", "aux", "nul"} | {f"{prefix}{i}" for prefix in ("com", "lpt") for i in range(1, 10)}
+    reserved = {"con", "prn", "aux", "nul"} | {
+        f"{prefix}{i}" for prefix in ("com", "lpt") for i in range(1, 10)
+    }
     if len(name) > 128 or not name.replace("-", "").replace("_", "").isalnum() or name.casefold() in reserved:
         raise ApiError("preset name must be 1–128 letters or numbers with - or _", code="preset.bad_name")
     return _preset_dir(c) / f"{name}.json"
 
 
 def _write_preset(name: str, body: PresetBody, c: ServiceContext, *, create: bool) -> dict[str, Any]:
-    if name.casefold() in {item.casefold() for item in BUILTIN_PRESETS}:
-        raise ApiError("builtin presets are read-only", code="preset.readonly", status=403)
     path = _preset_path(name, c)
     # Validate partial presets against the appropriate family without persisting
     # expanded defaults or requiring any project data/model files to exist.
     from .family_config import initial_family_config
 
-    family = body.config.get("model", {}).get("family", "anima") if isinstance(body.config.get("model", {}), dict) else "anima"
+    family = (
+        body.config.get("model", {}).get("family", "anima")
+        if isinstance(body.config.get("model", {}), dict)
+        else "anima"
+    )
     if not isinstance(family, str):
         raise ApiError(
-            "invalid config", code="config.invalid",
+            "invalid config",
+            code="config.invalid",
             details={"errors": [{"loc": "model.family", "msg": "family must be a string"}]},
         )
     _validated_or_error(deep_merge(initial_family_config(c, family), body.config))
     with _preset_lock:
-        collision = next((f for f in path.parent.glob("*.json") if f.stem.casefold() == name.casefold()), None)
+        collision = next(
+            (f for f in path.parent.glob("*.json") if f.stem.casefold() == name.casefold()), None
+        )
         if create and collision is not None:
             raise ApiError("a preset with this name already exists", code="preset.duplicate", status=409)
         if not create and (collision is None or collision.name != path.name):
@@ -458,7 +416,9 @@ def _write_preset(name: str, body: PresetBody, c: ServiceContext, *, create: boo
         data = {"description": body.description, "config": body.config}
         temporary: str | None = None
         try:
-            with tempfile.NamedTemporaryFile("w", dir=path.parent, prefix=".preset-", suffix=".tmp", encoding="utf-8", delete=False) as handle:
+            with tempfile.NamedTemporaryFile(
+                "w", dir=path.parent, prefix=".preset-", suffix=".tmp", encoding="utf-8", delete=False
+            ) as handle:
                 temporary = handle.name
                 json.dump(data, handle, indent=2, ensure_ascii=False)
                 handle.flush()
@@ -477,8 +437,6 @@ def create_preset(body: PresetBody, c: ServiceContext = Depends(ctx)) -> dict[st
 
 @router.get("/presets/{name}", response_model=m.Preset, response_model_exclude_unset=True)
 def get_preset(name: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    if name in BUILTIN_PRESETS:
-        return _preset_row(name, BUILTIN_PRESETS[name], True, None)
     f = _preset_path(name, c)
     if not f.exists():
         raise NotFound(f"preset {name} not found", code="preset.not_found")
@@ -492,8 +450,6 @@ def put_preset(name: str, body: PresetBody, c: ServiceContext = Depends(ctx)) ->
 
 @router.delete("/presets/{name}", response_model=m.Ok, response_model_exclude_unset=True)
 def delete_preset(name: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    if name in BUILTIN_PRESETS:
-        raise ApiError("builtin presets are read-only", code="preset.readonly", status=403)
     f = _preset_path(name, c)
     with _preset_lock:
         if not f.exists():
@@ -610,6 +566,36 @@ def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, An
     return _model_row(c.db.fetchone("SELECT * FROM models WHERE id=?", (mid,)))
 
 
+class ModelInspectionBody(BaseModel):
+    path: str
+
+
+class ModelInspection(BaseModel):
+    path: str
+    family: str | None
+    family_candidates: list[str]
+    kind: str | None
+    dtype: str | None
+    dtypes: dict[str, int]
+    confidence: Literal["high", "partial", "unknown"]
+    evidence: list[str]
+    warnings: list[str]
+    files_inspected: int
+
+
+@router.post("/models/inspect", response_model=ModelInspection)
+def inspect_local_model(body: ModelInspectionBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+    from .model_inspection import inspect_model
+
+    path = Path(body.path).expanduser().resolve()
+    if not c.is_allowed(path):
+        raise ApiError("model path is outside allowed storage roots", code="model.path", status=403)
+    try:
+        return inspect_model(path, allowed=c.is_allowed)
+    except (ValueError, OSError, OverflowError) as error:
+        raise ApiError(f"Cannot inspect model: {error}", code="model.inspect", status=422) from error
+
+
 class ModelDefaultPatch(BaseModel):
     is_default: bool
 
@@ -649,7 +635,9 @@ class ScanBody(BaseModel):
 
 @router.post("/models/scan", response_model=list[m.ModelAsset], response_model_exclude_unset=True)
 def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
-    root = Path(body.path or c.settings()["paths"]["models_dir"]).expanduser()
+    root = Path(body.path or c.settings()["paths"]["models_dir"]).expanduser().resolve()
+    if not c.is_allowed(root):
+        raise ApiError("model path is outside allowed storage roots", code="model.path", status=403)
     if not root.is_dir():
         raise NotFound(f"directory not found: {root}", code="fs.not_found")
     found = []
@@ -659,16 +647,18 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
             continue  # Never register files from download staging or other hidden working directories.
         if str(f) in known:
             continue
-        name = f.name.lower()
-        kind = (
-            "vae"
-            if "vae" in name
-            else "text_encoder"
-            if any(k in name for k in ("qwen", "t5", "clip", "text"))
-            else "dit"
-        )
-        # DiT files name their family (``krea2_fp8_scaled``, ``anima-base``); shared parts (VAE) fall back to the body
-        family = "krea2" if "krea" in name else "anima" if "anima" in name else body.family
+        from .model_inspection import inspect_model
+
+        try:
+            detected = inspect_model(f, allowed=c.is_allowed)
+        except (ValueError, OSError, OverflowError):
+            continue
+        kind = detected["kind"]
+        family = detected["family"]
+        if family is None and body.family in detected["family_candidates"]:
+            family = body.family  # Explicit target for recognized shared components.
+        if not kind or not family:
+            continue  # Unknown assets need an explicit review in the local-file dialog.
         mid = new_id("m")
         c.db.insert(
             "models",
@@ -678,7 +668,7 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
                 "kind": kind,
                 "path": str(f),
                 "size": f.stat().st_size,
-                "dtype": "fp8" if "fp8" in name else None,
+                "dtype": detected["dtype"],
                 "is_default": 0,
                 "created_at": now(),
             },

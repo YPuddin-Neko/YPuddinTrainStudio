@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useParams, useNavigate, useLocation, useSearchParams, Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { SchemaForm, ValidationError } from '../../schema/SchemaForm/SchemaForm';
+import { SchemaForm, ValidationError, SourceRoleInfo, OutputBindingInfo } from '../../schema/SchemaForm/SchemaForm';
 import { apiClient } from '../../api/client';
 import { Job, Plan, Preset, ModelAsset, DatasetInfo } from '../../api/types';
 import { useFamilies, familyByName } from '../../api/hooks/useFamilies';
@@ -80,7 +80,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   React.useLayoutEffect(() => { familiesRef.current = families; }, [families]);
   const [tabParams, setTabParams] = useSearchParams();
   const requestedTab = tabParams.get('tab');
-  const activeTab: ConfigTab = requestedTab && Object.prototype.hasOwnProperty.call(CONFIG_TAB_GROUPS, requestedTab) ? requestedTab as ConfigTab : 'train';
+  const activeTab: ConfigTab = requestedTab && Object.prototype.hasOwnProperty.call(CONFIG_TAB_GROUPS, requestedTab) ? requestedTab as ConfigTab : 'model';
   const setActiveTab = (tab: ConfigTab) => {
     const next = new URLSearchParams(tabParams); next.set('tab', tab);
     setTabParams(next, { state: location.state });
@@ -96,6 +96,8 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const versionStatus = versions.current?.status;
   const archived = !!versions.current?.archived;
   const [datasets, setDatasets] = React.useState<DatasetInfo[]>([]);
+  const [sourceRoles, setSourceRoles] = React.useState<SourceRoleInfo[]>([]);
+  const [outputBinding, setOutputBinding] = React.useState<OutputBindingInfo | null>(null);
   const [revealVersion, setRevealVersion] = React.useState(0);
   const [issuesOpen, setIssuesOpen] = React.useState(false);
   const [config, setConfig] = React.useState<Record<string, any>>({});
@@ -267,7 +269,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     setAuxiliaryLoading(true);
     const clear=(key:string)=>setAuxiliaryErrors(previous=>{const next={...previous};delete next[key];return next;});
     const requests=[
-      apiClient.get<Preset[]>('/presets',{silent:true}).then(items=>{if(active){setPresets(items);clear('presets');}}).catch(error=>{if(active)setAuxiliaryErrors(previous=>({...previous,presets:formatApiError(error)}));}),
+      apiClient.get<Preset[]>('/presets',{silent:true}).then(items=>{if(active){setPresets(items.filter(item=>!item.builtin));clear('presets');}}).catch(error=>{if(active)setAuxiliaryErrors(previous=>({...previous,presets:formatApiError(error)}));}),
       apiClient.get<ModelAsset[]>('/models',{silent:true}).then(models=>{
         if(!active)return;
         registeredModelsRef.current=models;setRegisteredModels(models);clear('models');
@@ -348,12 +350,39 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     if (!loaded) return;
     const controller = new AbortController();
     setValidating(true);
+    setOutputBinding(null);
+    const supporting = <T,>(key: string, request: Promise<T>, fallback: T): Promise<T> => request.then(result => {
+      if (!controller.signal.aborted) setAuxiliaryErrors(previous => {const next={...previous};delete next[key];return next;});
+      return result;
+    }).catch(error => {
+      if (!controller.signal.aborted) setAuxiliaryErrors(previous => ({...previous,[key]:formatApiError(error)}));
+      return fallback;
+    });
     const timer = setTimeout(() => {
       Promise.all([
-        apiClient.post<Plan>('/plan', { config }, { signal: controller.signal, silent: true }),
-        apiClient.post<{ errors: ValidationError[] }>('/config/validate', { config }, { signal: controller.signal, silent: true }),
-      ]).then(([nextPlan, validation]) => {
+        apiClient.post<Plan>('/plan', { config, project_id: projectId || undefined, version_id: versionId }, { signal: controller.signal, silent: true }),
+        apiClient.post<{ errors: ValidationError[] }>('/config/validate', { config, project_id: projectId || undefined, version_id: versionId }, { signal: controller.signal, silent: true }),
+        projectId ? supporting('sources', apiClient.post<SourceRoleInfo[]>(`/projects/${projectId}/source-roles`, { config }, { params: {version_id:versionId}, signal: controller.signal, silent: true }), []) : Promise.resolve([]),
+        projectId ? supporting<OutputBindingInfo | null>('output', apiClient.post<OutputBindingInfo>(`/projects/${projectId}/output-binding`, { config }, { params: {version_id:versionId}, signal: controller.signal, silent: true }), null) : Promise.resolve(null),
+      ]).then(([nextPlan, validation, roles, binding]) => {
         if (controller.signal.aborted) return;
+        setSourceRoles(roles);
+        setOutputBinding(binding);
+        setConfig(previous => {
+          let changed = false;
+          const next = {...previous};
+          for (const section of ['dataset','validation']) {
+            if (!Array.isArray(previous[section]?.sources)) continue;
+            const sources = previous[section].sources.map((source:any) => {
+              const role = roles.find(item => item.managed && item.section === section && item.path === source.path);
+              if (!role || source.is_reg === role.is_reg) return source;
+              changed = true;
+              return {...source,is_reg:role.is_reg};
+            });
+            next[section] = {...previous[section],sources};
+          }
+          return changed ? next : previous;
+        });
         setPlan(nextPlan);
         setValidatedConfig(JSON.stringify(config));
         setValidationErrors([...validation.errors, ...(nextPlan.errors || [])].filter((item, index, all) => all.findIndex((x) => x.loc === item.loc && x.msg === item.msg) === index));
@@ -363,7 +392,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       });
     }, 500);
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [config, loaded]);
+  }, [config, loaded, projectId, versionId, auxiliaryReload]);
 
   const handleApplyPreset = (preset: Preset) => {
     if (presetFamily(preset) && presetFamily(preset) !== config.model?.family) return;
@@ -383,7 +412,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     setError('');
     try {
       await apiClient.post('/presets', { name: presetName.trim(), config: reusableTrainingPreset(config) }, { silent: true });
-      setPresets(await apiClient.get<Preset[]>('/presets'));
+      setPresets((await apiClient.get<Preset[]>('/presets')).filter(item=>!item.builtin));
       setPresetName('');
     } catch (err: unknown) { setError(formatApiError(err)); }
     finally { setSavingPreset(false); }
@@ -441,9 +470,9 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const issues = presentConfigIssues(validationErrors, english);
   const ready = (!versions.enabled || versions.current?.status === 'ready') && loaded && !validating && validatedConfig === JSON.stringify(config) && plan?.ok === true && issues.length === 0;
   const tabs: {id: ConfigTab; label: string; icon: typeof SlidersHorizontal}[] = [
+    { id: 'model', label: text('底模与输出', 'Model & output'), icon: Box },
     { id: 'train', label: text('训练参数', 'Training'), icon: SlidersHorizontal },
     { id: 'data', label: text('数据与分桶', 'Dataset & buckets'), icon: Database },
-    { id: 'model', label: text('模型与输出', 'Model & output'), icon: Box },
     { id: 'advanced', label: text('采样与高级', 'Sampling & advanced'), icon: Sparkles },
   ];
   const goToIssue = (issue: ConfigIssue) => {
@@ -474,7 +503,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     {project ? <ProjectWorkspaceHeader project={project} versionId={versionId} versions={versions.versions} current={versions.current} active="train" refresh={versions.refresh} beforeAction={flushDraft} status={draftStatus} error={versions.error}/> : <div className="project-heading-placeholder">{text('训练参数', 'Training parameters')}{draftStatus}</div>}
     {error && <div role="alert" className="studio-error">{error}<button type="button" onClick={() => { setError(''); if (!loaded) setReload(v => v + 1); }}>{loaded ? text('关闭', 'Dismiss') : t('common.retry')}</button></div>}
     {recoveredDraft && loaded && <p className="workspace-message" role="status">{text('已恢复此版本上次未保存的草稿。', 'Recovered the unsaved draft for this version.')}</p>}
-    {Object.keys(auxiliaryErrors).length>0 && <div role="alert" className="studio-error" data-testid="training-auxiliary-error"><div>{Object.entries(auxiliaryErrors).map(([key,message])=><p key={key}>{key==='presets'?text('预设列表读取失败','Preset list could not be loaded'):text('模型库读取失败','Model registry could not be loaded')}: {message}</p>)}<p>{text('本版本配置仍可编辑；重试不会替换当前草稿。','The version configuration remains editable. Retrying will preserve the current draft.')}</p></div><button type="button" disabled={auxiliaryLoading} onClick={()=>setAuxiliaryReload(value=>value+1)}>{text('重试辅助信息','Retry supporting data')}</button></div>}
+    {Object.keys(auxiliaryErrors).length>0 && <div role="alert" className="studio-error" data-testid="training-auxiliary-error"><div>{Object.entries(auxiliaryErrors).map(([key,message])=><p key={key}>{key==='presets'?text('预设列表读取失败','Preset list could not be loaded'):key==='sources'?text('数据目录用途读取失败','Dataset directory ownership could not be loaded'):key==='output'?text('权重保存位置读取失败','Weight output binding could not be loaded'):text('模型库读取失败','Model registry could not be loaded')}: {message}</p>)}<p>{text('本版本配置仍可编辑；重试不会替换当前草稿。','The version configuration remains editable. Retrying will preserve the current draft.')}</p></div><button type="button" disabled={auxiliaryLoading} onClick={()=>setAuxiliaryReload(value=>value+1)}>{text('重试辅助信息','Retry supporting data')}</button></div>}
     <div className="training-toolbar" ref={toolbarRef}>
       <div className="training-toolbar-title"><h2>{text('训练参数', 'Training parameters')}</h2><span className="family-chip">{config.model?.family || '…'}</span></div>
       <label className="config-search"><Search size={15}/><input aria-label={text('搜索训练参数', 'Search training parameters')} placeholder={text('搜索参数名称或关键字…', 'Search parameters…')} value={search} onChange={event => setSearch(event.target.value)} />{search && <button aria-label={text('清空搜索', 'Clear search')} onClick={() => setSearch('')}>×</button>}</label>
@@ -501,7 +530,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
           {search && <p className="section-context">{text('搜索所有分区，包含高级参数', 'Searching every section, including advanced parameters')}</p>}
           {!search && activeTab === 'data' && <div className="config-context-card"><div><strong><Database size={14}/>{text('训练数据与遮罩', 'Dataset and masks')}</strong><p>{text('上传图片与标签，检查分桶；需要局部训练时，在图片编辑器绘制白色训练区域。', 'Upload images and captions, inspect buckets, and paint white training regions in the image editor.')}</p></div><div className="context-actions"><Link to={projectUrl(projectId || '', versionId, 'data')} className="studio-secondary">{text('添加数据', 'Add dataset')}</Link><Link to={dataUrl} className="studio-secondary"><Brush size={13}/>{dataAction}</Link></div>{config.dataset?.masked_loss && <p className="mask-context-note">{text('遮罩已启用：白色参与训练，黑色忽略。未制作遮罩且没有 alpha 通道的图片仍按整张图训练。', 'Masking enabled: white trains, black is ignored. Images without a mask or alpha still train the full image.')}</p>}</div>}
           {!search && activeTab === 'model' && <div className="config-context-card"><div><strong><Box size={14}/>{text('选择训练机上的模型', 'Models on the training machine')}</strong><p>{text('在环境设置中下载或注册模型，这里选择本次训练使用的权重。', 'Download or register models in environment settings, then choose weights for this training run.')}</p></div><Link to={modelUrl} className="studio-secondary">{text('管理与下载模型', 'Manage & download models')}<ChevronRight size={13}/></Link></div>}
-          {!loaded ? <p className="p-6 text-sm text-slate-500">{t('common.loading')}</p> : <SchemaForm key={revealVersion} compact schema={schema} value={config} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} groupFilter={search ? undefined : CONFIG_TAB_GROUPS[activeTab]} search={search} errors={issues.map(issue => ({loc:issue.path,msg:issue.message}))} family={familyByName(families, config?.model?.family)} families={families} />}
+          {!loaded ? <p className="p-6 text-sm text-slate-500">{t('common.loading')}</p> : <SchemaForm key={revealVersion} compact schema={schema} value={config} sourceRoles={sourceRoles} outputBinding={outputBinding} versionSources={!!projectId} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} groupFilter={search ? undefined : CONFIG_TAB_GROUPS[activeTab]} search={search} errors={issues.map(issue => ({loc:issue.path,msg:issue.message}))} family={familyByName(families, config?.model?.family)} families={families} />}
         </div>
       </div>
       <aside className="training-inspector"><BucketInspector plan={plan} loading={validating} hasSources={!!config.dataset?.sources?.length} indexed={indexedStats || undefined} onIssues={() => setIssuesOpen(true)} onData={() => {setActiveTab('data');setSearch('');}}/>

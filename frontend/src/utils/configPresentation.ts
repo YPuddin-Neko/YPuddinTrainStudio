@@ -1,14 +1,14 @@
 
 const labels: Record<string, string> = {
   'model.family': '模型系列', 'model.dit_path': '主模型 / DiT', 'model.text_encoder_path': '文本编码器',
-  'model.vae_path': 'VAE', 'model.tokenizer_path': '分词器目录', 'model.dtype': '计算精度', 'model.attention': '注意力后端',
+  'model.vae_path': 'VAE', 'model.tokenizer_path': '分词器目录', 'model.dtype': '底模加载精度', 'model.attention': '注意力后端',
   'dataset.sources': '训练数据源', 'dataset.resolutions': '训练分辨率', 'dataset.aspect_ratio_limit': '最大长宽比',
-  'dataset.resolution_mode': '分辨率模式', 'dataset.native_max_pixels': '原生像素预算',
+  'dataset.resolution_mode': '分辨率模式', 'dataset.image_fit': '图片适配方式', 'dataset.native_max_pixels': '原生像素预算',
   'dataset.native_max_side': '原生最长边', 'dataset.native_overflow': '超出预算时',
   'dataset.area_tolerance': '面积容差', 'dataset.bucket_step': '分桶步长', 'dataset.bucket_no_upscale': '不放大小图',
   'dataset.batch_size': '批大小', 'dataset.flip': '随机水平翻转', 'dataset.masked_loss': '遮罩加权训练',
-  'dataset.num_workers': '数据加载线程', 'dataset.cache_dir': '缓存目录', 'dataset.cache_latents': '缓存图像潜变量',
-  'dataset.text_encoding': '文本编码方式', 'dataset.caption.prefix': '标签前缀', 'dataset.caption.suffix': '标签后缀',
+  'dataset.num_workers': '数据加载线程', 'dataset.cache_dir': '缓存目录', 'dataset.cache_latents': '训练图像缓存',
+  'dataset.text_encoding': '标签处理方式', 'dataset.caption.prefix': '标签前缀', 'dataset.caption.suffix': '标签后缀',
   'dataset.caption.trigger_word': '触发词', 'dataset.caption.keep_tokens': '保留前几个标签', 'dataset.caption.shuffle': '打乱标签顺序',
   'dataset.caption.tag_dropout': '单个标签丢弃率', 'dataset.caption.caption_dropout': '整条标签丢弃率',
   'dataset.caption.separator': '标签分隔符', 'dataset.caption.wildcard': '启用通配符',
@@ -35,7 +35,7 @@ const labels: Record<string, string> = {
   'memory.compile': '编译模型', 'memory.allow_tf32': '允许 TF32', 'loop.max_steps': '最大训练步数',
   'loop.epochs': '训练轮数', 'loop.grad_accum': '梯度累积', 'loop.mixed_precision': '混合精度', 'loop.seed': '随机种子',
   'loop.ema': '启用 EMA', 'loop.ema_decay': 'EMA 衰减', 'loop.nan_skip_limit': '无效梯度跳过上限', 'loop.log_every': '日志间隔',
-  'checkpoint.output_dir': '输出目录', 'checkpoint.name': '权重文件前缀', 'checkpoint.save_every_steps': '每隔几步保存',
+  'checkpoint.output_dir': '训练权重保存位置', 'checkpoint.name': '权重文件名', 'checkpoint.save_every_steps': '每隔几步保存',
   'checkpoint.save_every_epochs': '每隔几轮保存', 'checkpoint.save_state_every_steps': '完整状态保存间隔',
   'checkpoint.keep_last_n': '保留最近几个状态', 'checkpoint.save_dtype': '权重保存精度', 'checkpoint.save_on_finish': '结束时保存权重',
   'checkpoint.resume': '恢复完整训练状态', 'sampling.enabled': '生成训练预览', 'sampling.every_steps': '每隔几步预览',
@@ -55,10 +55,11 @@ export function configFieldLabel(path: string, fallback: string, english = false
 
 export function configOptionLabel(path: string, option: string, english = false) {
   const options: Record<string, Record<string, [string, string]>> = {
-    'sampling.sampler': { euler:['Euler · 一阶', 'Euler · first order'], heun:['Heun · 二阶', 'Heun · second order'], er_sde:['ER-SDE · 随机微分方程', 'ER-SDE · stochastic solver'] },
-    'sampling.scheduler': { uniform:['Uniform · 连续等间隔', 'Uniform · continuous'], simple:['Simple · 离散网格', 'Simple · discrete grid'], sgm_uniform:['SGM Uniform', 'SGM Uniform'], normal:['Normal · 包含末端', 'Normal · includes low endpoint'] },
+    'sampling.sampler': { euler:['Euler', 'Euler'], heun:['Heun', 'Heun'], er_sde:['ER-SDE', 'ER-SDE'] },
+    'sampling.scheduler': { uniform:['Uniform', 'Uniform'], simple:['Simple', 'Simple'], sgm_uniform:['SGM Uniform', 'SGM Uniform'], normal:['Normal', 'Normal'] },
     'optimizer.type': {adamw:['AdamW','AdamW'],adam:['Adam','Adam'],sgd:['SGD','SGD'],adamw8bit:['AdamW 8-bit','AdamW 8-bit'],lion:['Lion','Lion'],lion8bit:['Lion 8-bit','Lion 8-bit'],prodigy:['Prodigy','Prodigy'],prodigy_plus_sf:['Prodigy Plus Schedule-Free','Prodigy Plus Schedule-Free'],adafactor:['Adafactor','Adafactor'],came:['CAME','CAME'],adamw_sf:['AdamW Schedule-Free','AdamW Schedule-Free']},
     'dataset.resolution_mode': { bucket: ['分桶 · 统一基准面积', 'Buckets · target area'], native: ['原生 · 每图独立尺寸', 'Native · individual image sizes'] },
+    'dataset.image_fit': { pad: ['保留完整画面', 'Preserve the whole image'], crop: ['裁切填满（旧模式）', 'Crop to fill (legacy)'] },
     'dataset.native_overflow': { downscale: ['等比缩小到预算内', 'Downscale to fit budget'], error: ['报错并停止', 'Stop with an error'] },
   };
   return options[path]?.[option]?.[english ? 1 : 0] || option;

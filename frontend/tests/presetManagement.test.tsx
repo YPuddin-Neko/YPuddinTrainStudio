@@ -17,121 +17,235 @@ afterAll(() => server.close());
 afterEach(() => server.resetHandlers());
 beforeEach(async () => { await i18n.changeLanguage('zh-CN'); });
 
-function show(initial = '/presets') {
-  const rows: Preset[] = [
-    { name: 'builtin-anima', description: '内置人物训练参数', config: { model:{family:'anima'}, loop:{epochs:2}, optimizer:{lr:0.0002}, adapter:{rank:16,algo:'lora'} }, builtin:true, updated_at:null },
-    { name: 'my-style', description: '自定义风格', config: { model:{family:'anima'}, loop:{epochs:4} }, builtin:false, updated_at:1 },
-    { name: 'krea-base', description: 'Krea风格参数', config: { model:{family:'krea2'}, loop:{epochs:3} }, builtin:true, updated_at:null },
+const legacyBuiltin: Preset = {
+  name: 'builtin-anima', description: '旧 API 内置人物参数',
+  config: { model: { family: 'anima' }, loop: { epochs: 99 } }, builtin: true, updated_at: 999,
+};
+function presetRows(): Preset[] {
+  return [
+    legacyBuiltin,
+    { name: 'krea-base', description: 'Krea 风格参数', config: { model: { family: 'krea2' }, loop: { epochs: 3 } }, builtin: false, updated_at: 10 },
+    { name: 'my-style', description: '自定义风格', config: { model: { family: 'anima' }, loop: { epochs: 4 }, optimizer: { lr: 0.0002 }, adapter: { rank: 16, algo: 'lora' } }, builtin: false, updated_at: 20 },
   ];
-  const writes: {method:string;name?:string;body:any}[] = [];
+}
+function show(seed = presetRows()) {
+  const rows = structuredClone(seed);
+  const writes: { method: string; name?: string; body: any }[] = [];
   const requestedFamilies: string[] = [];
+  let timestamp = 30;
   server.use(
-    http.get('/api/presets',()=>HttpResponse.json(rows)),
-    http.get('/api/config/defaults',({request})=>{
-      const family = new URL(request.url).searchParams.get('family') || 'anima'; requestedFamilies.push(family);
-      const config = schemaDefaults(trainSchema); config.model.family=family;
-      config.model.dit_path='/registered/dit'; config.model.tokenizer_path='/registered/tokenizer';
-      config.dataset.sources=[{path:'/project/images'}]; config.dataset.cache_dir='/project/cache';
-      config.sampling.output_dir='/project/samples'; config.sampling.prompts_file='/project/prompts'; config.adapter.resume_weights='/project/old-adapter';
-      if(family==='krea2'){config.sampling.steps=28;config.sampling.cfg=5.5;config.dataset.text_encoding='cached';}
+    http.get('/api/presets', () => HttpResponse.json(rows)),
+    http.get('/api/config/defaults', ({ request }) => {
+      const family = new URL(request.url).searchParams.get('family') || 'anima';
+      requestedFamilies.push(family);
+      const config = schemaDefaults(trainSchema); config.model.family = family;
+      config.model.dit_path = '/registered/dit'; config.model.tokenizer_path = '/registered/tokenizer';
+      config.dataset.sources = [{ path: '/project/images' }]; config.dataset.cache_dir = '/project/cache';
+      config.sampling.output_dir = '/project/samples'; config.sampling.prompts_file = '/project/prompts';
+      config.adapter.resume_weights = '/project/old-adapter';
+      if (family === 'krea2') { config.sampling.steps = 28; config.sampling.cfg = 5.5; config.dataset.text_encoding = 'cached'; }
       return HttpResponse.json(config);
     }),
-    http.post('/api/presets',async({request})=>{const body=await request.json() as any;writes.push({method:'POST',body});const row={...body,builtin:false,updated_at:2};rows.push(row);return HttpResponse.json(row);}),
-    http.put('/api/presets/:name',async({request,params})=>{const body=await request.json() as any;writes.push({method:'PUT',name:String(params.name),body});return HttpResponse.json({...body,name:params.name,builtin:false,updated_at:3});}),
-    http.delete('/api/presets/:name',({params})=>{writes.push({method:'DELETE',name:String(params.name),body:null});return HttpResponse.json({ok:true});}),
+    http.post('/api/presets', async ({ request }) => {
+      const body = await request.json() as any; writes.push({ method: 'POST', body });
+      const row = { ...body, builtin: false, updated_at: timestamp++ }; rows.push(row);
+      return HttpResponse.json(row);
+    }),
+    http.put('/api/presets/:name', async ({ request, params }) => {
+      const body = await request.json() as any; writes.push({ method: 'PUT', name: String(params.name), body });
+      const row = { ...body, name: String(params.name), builtin: false, updated_at: timestamp++ };
+      const index = rows.findIndex(item => item.name === params.name);
+      if (index >= 0) rows[index] = row;
+      return HttpResponse.json(row);
+    }),
+    http.delete('/api/presets/:name', ({ params }) => {
+      writes.push({ method: 'DELETE', name: String(params.name), body: null });
+      const index = rows.findIndex(item => item.name === params.name);
+      if (index >= 0) rows.splice(index, 1);
+      return HttpResponse.json({ ok: true });
+    }),
   );
-  const router=createMemoryRouter([{path:'/presets',element:<><Presets/><Link to="/projects">离开预设</Link></>},{path:'/projects',element:<div>项目列表页</div>}],{initialEntries:[initial]});
-  const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
-  render(<QueryClientProvider client={client}><RouterProvider router={router}/></QueryClientProvider>);
-  return {rows,writes,requestedFamilies,router,client};
+  const router = createMemoryRouter([
+    { path: '/presets', element: <><Presets /><Link to="/projects">离开预设</Link></> },
+    { path: '/projects', element: <div>项目列表页</div> },
+  ], { initialEntries: ['/presets'] });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
+  return { rows, writes, requestedFamilies, router, client };
 }
-async function open(name: string) {
-  fireEvent.click(await screen.findByRole('button',{name:`打开预设 ${name}`}));
-  return screen.findByRole('spinbutton',{name:'loop.epochs'});
+async function ready(name = 'my-style') {
+  await waitFor(() => expect(screen.getByRole('textbox', { name: '预设名称' })).toHaveValue(name));
+  return screen.findByRole('spinbutton', { name: 'loop.epochs' });
+}
+async function choose(name: string) {
+  fireEvent.click(await screen.findByRole('combobox', { name: '选择预设' }));
+  fireEvent.click(await screen.findByRole('option', { name: new RegExp(`^${name} · `) }));
 }
 
-describe('independent preset management',()=>{
-  it('groups/searches presets by family and shows descriptions and actual parameter summaries',async()=>{
-    show();
-    const anima=await screen.findByRole('button',{name:'打开预设 builtin-anima'});
-    expect(anima).toHaveTextContent('内置人物训练参数');expect(anima).toHaveTextContent('Rank 16');expect(anima).toHaveTextContent('LR 0.0002');
-    fireEvent.click(screen.getByRole('combobox',{name:'按模型筛选预设'}));fireEvent.click(screen.getByRole('option',{name:/Krea/}));
-    expect(screen.queryByRole('button',{name:'打开预设 builtin-anima'})).not.toBeInTheDocument();
-    expect(screen.getByRole('button',{name:'打开预设 krea-base'})).toBeInTheDocument();
-    fireEvent.change(screen.getByRole('textbox',{name:'搜索预设'}),{target:{value:'没有此名称'}});
-    expect(screen.getByText('暂无匹配预设。')).toBeInTheDocument();
+describe('compact user preset management', () => {
+  it('opens the most recently updated user preset and keeps the library inside a searchable picker', async () => {
+    const state = show(); const epochs = await ready();
+    expect(epochs).toHaveValue(4);
+    expect(screen.getByRole('textbox', { name: '用途与说明' })).toHaveValue('自定义风格');
+    expect(screen.getByRole('combobox', { name: '适用模型' })).toHaveTextContent('Anima');
+    expect(screen.queryByRole('complementary', { name: '预设列表' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: '按模型筛选预设' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('searchbox', { name: '选择预设 · 搜索' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('combobox', { name: '选择预设' }));
+    expect(screen.queryByRole('option', { name: /builtin-anima/ })).not.toBeInTheDocument();
+    const search = screen.getByRole('searchbox', { name: '选择预设 · 搜索' });
+    fireEvent.change(search, { target: { value: '没有此名称' } });
+    expect(screen.queryByRole('option')).not.toBeInTheDocument();
+    expect(screen.getByText('没有匹配的选项')).toBeInTheDocument();
+    fireEvent.change(search, { target: { value: 'Krea' } });
+    expect(screen.getAllByRole('option')).toHaveLength(1);
+    fireEvent.keyDown(search, { key: 'Enter' });
+    await ready('krea-base');
+    expect(screen.getByRole('spinbutton', { name: 'loop.epochs' })).toHaveValue(3);
+    expect(screen.queryByRole('searchbox', { name: '选择预设 · 搜索' })).not.toBeInTheDocument();
+    expect(state.writes).toEqual([]);
   });
 
-  it('keeps built-ins read only, then duplicates into editable schema fields without project files',async()=>{
-    const state=show();const epochs=await open('builtin-anima');expect(epochs).toBeDisabled();
-    const help=within(screen.getByTestId('field-loop.epochs')).getByRole('button',{name:/说明|help/});
-    expect(help).toBeEnabled();fireEvent.click(help);expect(screen.getByRole('tooltip')).toBeInTheDocument();fireEvent.keyDown(document,{key:'Escape'});
-    const group=screen.getByTestId('field-loop.epochs').closest('.config-group')!;
-    const heading=within(group as HTMLElement).getByRole('button',{expanded:true});
-    fireEvent.click(heading);expect(screen.queryByRole('spinbutton',{name:'loop.epochs'})).not.toBeInTheDocument();
-    fireEvent.click(heading);expect(screen.getByRole('spinbutton',{name:'loop.epochs'})).toBeDisabled();
-    expect(screen.queryByRole('button',{name:'保存预设'})).not.toBeInTheDocument();
-    expect(screen.queryByRole('button',{name:'删除预设'})).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button',{name:'复制为新预设'}));
-    await waitFor(()=>expect(screen.getByRole('spinbutton',{name:'loop.epochs'})).toBeEnabled());
-    expect(screen.getByRole('textbox',{name:'预设名称'})).toHaveValue('builtin-anima-copy');
-    fireEvent.change(screen.getByRole('spinbutton',{name:'loop.epochs'}),{target:{value:'7'}});
-    fireEvent.click(screen.getByRole('button',{name:'保存预设'}));
-    await screen.findByText('预设已保存，可在项目训练参数中加载。');
-    expect(state.writes).toHaveLength(1);expect(state.writes[0].method).toBe('POST');
-    const body=state.writes[0].body;expect(body.config.loop.epochs).toBe(7);expect(body.config.model.family).toBe('anima');
-    for(const [group,key] of [['model','dit_path'],['model','tokenizer_path'],['dataset','sources'],['dataset','cache_dir'],['sampling','output_dir'],['sampling','prompts_file'],['adapter','resume_weights']])expect(body.config[group]).not.toHaveProperty(key);
-    expect(state.rows[0].config.loop).toEqual({epochs:2});
-    fireEvent.click(screen.getByRole('tab',{name:'精度与保存'}));
-    expect(screen.queryByTestId('field-model.dit_path')).not.toBeInTheDocument();expect(screen.queryByTestId('field-checkpoint.resume')).not.toBeInTheDocument();
-  });
-
-  it('creates a Krea preset from actual family defaults while retaining its entered name',async()=>{
-    const state=show();await screen.findByRole('button',{name:'打开预设 krea-base'});
-    fireEvent.click(screen.getByRole('button',{name:'新建预设'}));await screen.findByRole('textbox',{name:'预设名称'});
-    fireEvent.change(screen.getByRole('textbox',{name:'预设名称'}),{target:{value:'新的_Krea参数'}});
-    fireEvent.click(screen.getByRole('combobox',{name:'适用模型'}));fireEvent.click(screen.getByRole('option',{name:/Krea/}));
-    await waitFor(()=>expect(screen.getByRole('combobox',{name:'适用模型'})).toHaveTextContent('Krea'));
+  it.each([['empty', []], ['legacy built-ins only', [legacyBuiltin]]] as const)('starts %s libraries as a clean unnamed form without saving or blocking navigation', async (_label, seed) => {
+    const state = show([...seed]); await ready('');
+    expect(screen.getByRole('textbox', { name: '用途与说明' })).toHaveValue('');
+    expect(screen.getByRole('combobox', { name: '适用模型' })).toHaveTextContent('Anima');
+    expect(screen.getByRole('spinbutton', { name: 'loop.epochs' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '保存预设' })).toBeDisabled();
+    expect(screen.queryByText('builtin-anima')).not.toBeInTheDocument();
+    expect(state.writes).toEqual([]);
+    await act(async () => { await state.router.navigate('/projects'); });
+    await screen.findByText('项目列表页');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(screen.getByRole('textbox',{name:'预设名称'})).toHaveValue('新的_Krea参数');
-    fireEvent.click(screen.getByRole('button',{name:'保存预设'}));await screen.findByText('预设已保存，可在项目训练参数中加载。');
-    expect(state.requestedFamilies).toEqual(['anima','krea2']);expect(state.writes[0].body.config).toMatchObject({model:{family:'krea2'},sampling:{steps:28,cfg:5.5},dataset:{text_encoding:'cached'}});
+    expect(state.writes).toEqual([]);
   });
 
-  it('retains failed edits and reports field errors, then explicitly updates the existing preset',async()=>{
-    const state=show();const epochs=await open('my-style');
-    let fail=true;server.use(http.put('/api/presets/my-style',async({request})=>{const body=await request.json() as any;if(fail)return HttpResponse.json({error:{code:'config.invalid',message:'invalid config',details:{errors:[{loc:'loop.epochs',msg:'must be positive'}]}}},{status:400});state.writes.push({method:'PUT',body,name:'my-style'});return HttpResponse.json({...body,builtin:false,updated_at:3});}));
-    fireEvent.change(epochs,{target:{value:'8'}});fireEvent.change(screen.getByRole('textbox',{name:'用途与说明'}),{target:{value:'保留我的描述'}});
-    fireEvent.click(screen.getByRole('button',{name:'保存预设'}));
-    expect(await screen.findByRole('alert')).toHaveTextContent('loop.epochs: must be positive');expect(epochs).toHaveValue(8);expect(screen.getByRole('textbox',{name:'用途与说明'})).toHaveValue('保留我的描述');
-    fail=false;fireEvent.click(screen.getByRole('button',{name:'保存预设'}));await screen.findByText('预设已保存，可在项目训练参数中加载。');
-    expect(state.writes).toHaveLength(1);expect(state.writes[0]).toMatchObject({method:'PUT',name:'my-style',body:{description:'保留我的描述',config:{loop:{epochs:8}}}});
+  it('duplicates a user preset into editable fields without changing its source or retaining project files', async () => {
+    const state = show(); await ready();
+    fireEvent.click(screen.getByRole('button', { name: '复制为新预设' }));
+    const epochs = await ready('my-style-copy'); expect(epochs).toBeEnabled();
+    fireEvent.change(epochs, { target: { value: '7' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存预设' }));
+    await screen.findByText('预设已保存，可在项目训练参数中加载。');
+    expect(state.writes).toHaveLength(1); expect(state.writes[0].method).toBe('POST');
+    const body = state.writes[0].body;
+    expect(body.config.loop.epochs).toBe(7); expect(body.config.model.family).toBe('anima');
+    for (const [group, key] of [['model', 'dit_path'], ['model', 'tokenizer_path'], ['dataset', 'sources'], ['dataset', 'cache_dir'], ['sampling', 'output_dir'], ['sampling', 'prompts_file'], ['adapter', 'resume_weights']]) expect(body.config[group]).not.toHaveProperty(key);
+    expect(state.rows.find(row => row.name === 'my-style')?.config.loop).toEqual({ epochs: 4 });
+    fireEvent.click(screen.getByRole('tab', { name: '精度与保存' }));
+    expect(screen.queryByTestId('field-model.dit_path')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('field-checkpoint.resume')).not.toBeInTheDocument();
   });
 
-  it('blocks real navigation until the draft is saved, preserves it on failure and permits retry',async()=>{
-    const state=show();const epochs=await open('my-style');fireEvent.change(epochs,{target:{value:'9'}});
-    let fail=true;server.use(http.put('/api/presets/my-style',async({request})=>fail?HttpResponse.json({error:{message:'Disk full',code:'storage.error'}},{status:500}):HttpResponse.json({...await request.json() as any,builtin:false,updated_at:3})));
-    await act(async()=>{await state.router.navigate('/projects');});
-    const dialog=await screen.findByRole('dialog',{name:'保存预设修改？'});fireEvent.click(within(dialog).getByRole('button',{name:'保存并继续'}));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Disk full');expect(state.router.state.location.pathname).toBe('/presets');expect(epochs).toHaveValue(9);
-    fail=false;fireEvent.click(within(dialog).getByRole('button',{name:'保存并继续'}));await screen.findByText('项目列表页');expect(state.router.state.location.pathname).toBe('/projects');
+  it('creates a Krea preset from family defaults while retaining the entered name', async () => {
+    const state = show(); await ready();
+    fireEvent.click(screen.getByRole('button', { name: '新建预设' })); await ready('');
+    fireEvent.change(screen.getByRole('textbox', { name: '预设名称' }), { target: { value: '新的_Krea参数' } });
+    fireEvent.click(screen.getByRole('combobox', { name: '适用模型' }));
+    fireEvent.click(screen.getByRole('option', { name: /Krea/ }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '适用模型' })).toHaveTextContent('Krea'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '预设名称' })).toHaveValue('新的_Krea参数');
+    fireEvent.click(screen.getByRole('button', { name: '保存预设' }));
+    await screen.findByText('预设已保存，可在项目训练参数中加载。');
+    expect(state.requestedFamilies).toContain('krea2');
+    expect(state.writes[0].body.config).toMatchObject({ model: { family: 'krea2' }, sampling: { steps: 28, cfg: 5.5 }, dataset: { text_encoding: 'cached' } });
   });
 
-  it('does not overwrite an edited draft when family defaults fail on a different preset',async()=>{
-    show();const epochs=await open('my-style');fireEvent.change(epochs,{target:{value:'11'}});
-    fireEvent.click(screen.getByRole('button',{name:'打开预设 krea-base'}));
-    server.use(http.get('/api/config/defaults',()=>HttpResponse.json({error:{code:'read.failed',message:'defaults unavailable'}},{status:500})));
-    fireEvent.click(screen.getByRole('button',{name:'放弃修改'}));
-    expect(await screen.findByRole('alert')).toHaveTextContent('defaults unavailable');expect(epochs).toHaveValue(11);
-    expect(screen.getByRole('textbox',{name:'预设名称'})).toHaveValue('my-style');
+  it('retains failed edits and field errors, then explicitly updates the existing preset', async () => {
+    const state = show(); const epochs = await ready();
+    let fail = true;
+    server.use(http.put('/api/presets/my-style', async ({ request }) => {
+      const body = await request.json() as any;
+      if (fail) return HttpResponse.json({ error: { code: 'config.invalid', message: 'invalid config', details: { errors: [{ loc: 'loop.epochs', msg: 'must be positive' }] } } }, { status: 400 });
+      state.writes.push({ method: 'PUT', body, name: 'my-style' });
+      return HttpResponse.json({ ...body, builtin: false, updated_at: 30 });
+    }));
+    fireEvent.change(epochs, { target: { value: '8' } });
+    fireEvent.change(screen.getByRole('textbox', { name: '用途与说明' }), { target: { value: '保留我的描述' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存预设' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('loop.epochs: must be positive');
+    expect(epochs).toHaveValue(8); expect(screen.getByRole('textbox', { name: '用途与说明' })).toHaveValue('保留我的描述');
+    fail = false; fireEvent.click(screen.getByRole('button', { name: '保存预设' }));
+    await screen.findByText('预设已保存，可在项目训练参数中加载。');
+    expect(state.writes).toEqual([{ method: 'PUT', name: 'my-style', body: expect.objectContaining({ description: '保留我的描述', config: expect.objectContaining({ loop: expect.objectContaining({ epochs: 8 }) }) }) }]);
   });
 
-  it('requires deletion confirmation and only removes the chosen custom preset after success',async()=>{
-    const state=show();await open('my-style');fireEvent.click(screen.getByRole('button',{name:'删除预设'}));
-    expect(state.writes).toHaveLength(0);fireEvent.click(screen.getByRole('button',{name:'取消'}));
-    expect(screen.getByRole('textbox',{name:'预设名称'})).toHaveValue('my-style');
-    fireEvent.click(screen.getByRole('button',{name:'删除预设'}));fireEvent.click(screen.getByRole('button',{name:'确认删除'}));
-    await screen.findByText('预设已删除。');expect(state.writes).toEqual([{method:'DELETE',name:'my-style',body:null}]);
-    expect(screen.queryByRole('button',{name:'打开预设 my-style'})).not.toBeInTheDocument();expect(screen.getByRole('button',{name:'打开预设 builtin-anima'})).toBeInTheDocument();
+  it('waits for saving before switching presets and lets Keep editing cancel a switch', async () => {
+    const state = show(); const epochs = await ready(); fireEvent.change(epochs, { target: { value: '9' } });
+    await choose('krea-base');
+    let dialog = await screen.findByRole('dialog', { name: '保存预设修改？' });
+    fireEvent.click(within(dialog).getByRole('button', { name: '继续编辑' }));
+    expect(epochs).toHaveValue(9); expect(state.writes).toEqual([]); await ready();
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    server.use(http.put('/api/presets/my-style', async ({ request }) => {
+      const body = await request.json() as any; state.writes.push({ method: 'PUT', name: 'my-style', body });
+      await pending; return HttpResponse.json({ ...body, builtin: false, updated_at: 30 });
+    }));
+    await choose('krea-base'); dialog = await screen.findByRole('dialog', { name: '保存预设修改？' });
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存并继续' }));
+    await waitFor(() => expect(state.writes).toHaveLength(1));
+    expect(screen.getByRole('textbox', { name: '预设名称' })).toHaveValue('my-style'); expect(epochs).toHaveValue(9);
+    await act(async () => { release(); });
+    await ready('krea-base'); expect(screen.getByRole('spinbutton', { name: 'loop.epochs' })).toHaveValue(3);
+    expect(state.writes[0].body.config.loop.epochs).toBe(9);
+  });
+
+  it('blocks navigation on a save failure, preserves the draft and permits retry', async () => {
+    const state = show(); const epochs = await ready(); fireEvent.change(epochs, { target: { value: '9' } });
+    let fail = true;
+    server.use(http.put('/api/presets/my-style', async ({ request }) => fail
+      ? HttpResponse.json({ error: { message: 'Disk full', code: 'storage.error' } }, { status: 500 })
+      : HttpResponse.json({ ...await request.json() as any, builtin: false, updated_at: 30 })));
+    await act(async () => { await state.router.navigate('/projects'); });
+    const dialog = await screen.findByRole('dialog', { name: '保存预设修改？' });
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存并继续' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Disk full');
+    expect(state.router.state.location.pathname).toBe('/presets'); expect(epochs).toHaveValue(9);
+    fail = false; fireEvent.click(within(dialog).getByRole('button', { name: '保存并继续' }));
+    await screen.findByText('项目列表页'); expect(state.router.state.location.pathname).toBe('/projects');
+  });
+
+  it('does not overwrite an edited draft when loading defaults for a different preset fails', async () => {
+    const state = show(); const epochs = await ready(); fireEvent.change(epochs, { target: { value: '11' } });
+    await choose('krea-base');
+    server.use(http.get('/api/config/defaults', () => HttpResponse.json({ error: { code: 'read.failed', message: 'defaults unavailable' } }, { status: 500 })));
+    fireEvent.click(screen.getByRole('button', { name: '放弃修改' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('defaults unavailable');
+    expect(epochs).toHaveValue(11); expect(screen.getByRole('textbox', { name: '预设名称' })).toHaveValue('my-style');
+    expect(state.writes).toEqual([]);
+  });
+
+  it('keeps the current draft visible when refreshing the library fails', async () => {
+    const state = show(); const epochs = await ready(); fireEvent.change(epochs, { target: { value: '12' } });
+    server.use(http.get('/api/presets', () => HttpResponse.json({ error: { code: 'list.failed', message: 'preset list unavailable' } }, { status: 500 })));
+    await act(async () => { await state.client.invalidateQueries(); });
+    expect(await screen.findByRole('alert')).toHaveTextContent('preset list unavailable');
+    expect(screen.getByRole('textbox', { name: '预设名称' })).toHaveValue('my-style'); expect(epochs).toHaveValue(12);
+    expect(state.writes).toEqual([]);
+  });
+
+  it('confirms deletion and opens the most recent remaining user preset only after success', async () => {
+    const state = show(); await ready(); fireEvent.click(screen.getByRole('button', { name: '删除预设' }));
+    expect(state.writes).toHaveLength(0); fireEvent.click(screen.getByRole('button', { name: '取消' })); await ready();
+    fireEvent.click(screen.getByRole('button', { name: '删除预设' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' })); await ready('krea-base');
+    expect(state.writes).toEqual([{ method: 'DELETE', name: 'my-style', body: null }]);
+    fireEvent.click(screen.getByRole('combobox', { name: '选择预设' }));
+    expect(screen.queryByRole('option', { name: /my-style|builtin-anima/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /^krea-base · / })).toBeInTheDocument();
+  });
+
+  it('returns to a clean new form after deleting the last user preset, without resurrecting built-ins', async () => {
+    const state = show(presetRows().filter(row => row.name !== 'krea-base')); await ready();
+    fireEvent.click(screen.getByRole('button', { name: '删除预设' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' })); await ready('');
+    expect(screen.getByRole('button', { name: '保存预设' })).toBeDisabled();
+    expect(screen.queryByText('builtin-anima')).not.toBeInTheDocument();
+    await act(async () => { await state.router.navigate('/projects'); });
+    await screen.findByText('项目列表页'); expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(state.writes).toEqual([{ method: 'DELETE', name: 'my-style', body: null }]);
   });
 });

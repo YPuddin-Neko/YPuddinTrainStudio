@@ -379,7 +379,9 @@ def get_project_config(
         raise ApiError("version configuration is not ready", code="version.not_ready", status=409)
     f = c.config_path(pid, version_id)
     if f.exists():
-        return json.loads(f.read_text(encoding="utf-8"))
+        from .source_roles import normalize_source_roles
+
+        return normalize_source_roles(c, pid, json.loads(f.read_text(encoding="utf-8")), version["id"])
     from .environment import environment_attention_default
 
     cfg = TrainConfig()
@@ -400,7 +402,11 @@ def put_project_config(
     reindex = []
     with c.db.lock:
         version = assert_version_writable(c, pid, version_id)
+        from .source_roles import normalize_source_roles
+
+        body = normalize_source_roles(c, pid, body, version["id"])
         configured = {}
+        purposes = {}
         for section in ("dataset", "validation"):
             value = body.get(section)
             for source in value.get("sources", []) if isinstance(value, dict) else []:
@@ -413,6 +419,14 @@ def put_project_config(
                             code="dataset.caption_ext",
                         )
                     configured[path] = extension
+                    if "is_reg" in source:
+                        purpose = bool(source["is_reg"])
+                        if path in purposes and purposes[path] != purpose:
+                            raise ApiError(
+                                "one source folder cannot have conflicting training/validation purposes",
+                                code="dataset.purpose",
+                            )
+                        purposes[path] = purpose
         for dataset in c.db.fetchall(
             "SELECT id,path,caption_ext FROM datasets WHERE project_id=? AND version_id=?",
             (pid, version["id"]),
@@ -423,6 +437,12 @@ def put_project_config(
         if reindex:
             assert_version_writable(c, pid, version["id"], data=True)
         _write_project_config(c, pid, body, version["id"])
+        for dataset in c.db.fetchall(
+            "SELECT id,path FROM datasets WHERE project_id=? AND version_id=?", (pid, version["id"])
+        ):
+            purpose = purposes.get(str(Path(dataset["path"]).expanduser().resolve()))
+            if purpose is not None:
+                c.db.update("datasets", dataset["id"], {"is_reg": int(purpose)})
         for did, extension in reindex:
             c.db.update("datasets", did, {"caption_ext": extension, "index_status": "indexing"})
             _records_path(c, did).unlink(missing_ok=True)
@@ -431,6 +451,45 @@ def put_project_config(
     for did, _ in reindex:
         _index_dataset(c, did)
     return body
+
+
+class SourceRoleBody(BaseModel):
+    config: dict[str, Any]
+
+
+class SourceRole(BaseModel):
+    path: str
+    section: str
+    is_reg: bool
+    managed: bool
+    root: str | None
+    origin: str
+    images: int | None
+
+
+@router.post("/projects/{pid}/source-roles", response_model=list[SourceRole])
+def project_source_roles(
+    pid: str, body: SourceRoleBody, c: ServiceContext = Depends(ctx), version_id: str | None = None
+) -> list[dict]:
+    from .source_roles import describe_source_roles
+
+    return describe_source_roles(c, pid, body.config, version_id)
+
+
+class OutputBinding(BaseModel):
+    directory_template: str
+    name: str
+    automatic_name: bool
+    inherits_output_dir: bool
+
+
+@router.post("/projects/{pid}/output-binding", response_model=OutputBinding)
+def project_output_binding(
+    pid: str, body: SourceRoleBody, c: ServiceContext = Depends(ctx), version_id: str | None = None
+) -> dict[str, Any]:
+    from .output_binding import output_binding
+
+    return output_binding(c, pid, body.config, version_id)
 
 
 def _validate_caption_extension(value: str) -> str:
@@ -628,6 +687,14 @@ def _register_dataset(
                 item.update(explicit)  # Preserve each source's role and all unedited advanced settings.
             source = {key: matching[0].get(key, value) for key, value in source.items()}
         _validate_caption_extension(source["caption_ext"])
+        from .source_roles import managed_source_role
+
+        role = managed_source_role(c, pid, version["id"], str(p))
+        if role is not None:
+            source["is_reg"] = role[0]
+            for item in [*sources, *config.get("validation", {}).get("sources", [])]:
+                if _same_source(item.get("path"), str(p)):
+                    item["is_reg"] = role[0]
         if caption is not None:
             from ypuddin.config.schema import CaptionConfig
 
@@ -748,6 +815,9 @@ def _index_dataset(c: ServiceContext, did: str) -> None:
 
 
 def _dataset_row(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
+    from .source_roles import managed_source_role
+
+    role = managed_source_role(c, r["project_id"], r.get("version_id"), r["path"])
     source = {
         "id": r["id"],
         "project_id": r["project_id"],
@@ -755,7 +825,7 @@ def _dataset_row(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
         "path": r["path"],
         "repeats": r["repeats"],
         "caption_ext": r["caption_ext"],
-        "is_reg": bool(r["is_reg"]),
+        "is_reg": role[0] if role is not None else bool(r["is_reg"]),
         "prior_weight": r["prior_weight"],
         "class_prompt": r["class_prompt"],
         "created_at": r["created_at"],
@@ -1334,6 +1404,12 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
         config = get_project_config(body.project_id, c, vid)
     if config is None:
         raise ApiError("config is required", code="job.no_config")
+    if body.project_id:
+        from .output_binding import bind_output_name
+        from .source_roles import normalize_source_roles
+
+        config = normalize_source_roles(c, body.project_id, config, vid)
+        config = bind_output_name(c, body.project_id, config, vid)
     jid = new_id("j")
     run_dir = c.job_output_dir(body.project_id, vid, jid, config.get("checkpoint", {}).get("output_dir"))
     samples_dir = c.samples_dir(body.project_id, vid) / jid if body.project_id else run_dir / "samples"

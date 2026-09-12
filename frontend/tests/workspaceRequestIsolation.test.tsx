@@ -30,7 +30,7 @@ beforeEach(async()=>{
     http.get('/api/jobs',()=>HttpResponse.json({items:[],page:1,page_size:5,total:0})),
   );
 });
-function show(train=false){return render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter initialEntries={[`/projects/p_isolation/v/v2${train?'/train':'?step=models'}`]}><Routes><Route path="/projects/:id/v/:versionId" element={<ProjectDetail/>}/><Route path="/projects/:id/v/:versionId/train" element={<TrainConfig/>}/></Routes></MemoryRouter></QueryClientProvider>);}
+function show(train=false){return render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter initialEntries={[`/projects/p_isolation/v/v2${train?'/train?tab=train':'?step=models'}`]}><Routes><Route path="/projects/:id/v/:versionId" element={<ProjectDetail/>}/><Route path="/projects/:id/v/:versionId/train" element={<TrainConfig/>}/></Routes></MemoryRouter></QueryClientProvider>);}
 
 describe('workspace request isolation',()=>{
   it('keeps model paths editable on the merged page when the registry fails and retries without replacing edits',async()=>{

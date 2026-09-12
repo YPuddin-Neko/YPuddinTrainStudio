@@ -60,6 +60,7 @@ def initial_family_config(c: Any, family: str) -> dict[str, Any]:
     model_family = get_family(family)
     spec = model_family.spec
     config = TrainConfig().to_dict()
+    config["dataset"]["image_fit"] = "pad"
     config["model"].update(family=family, attention=environment_attention_default(c))
     config["adapter"]["preset"] = model_family.default_preset()
     config["sampling"].update(
@@ -93,6 +94,9 @@ def change_config_family(c: Any, config: dict[str, Any], family: str) -> dict[st
     text_encoding = changed["dataset"]["text_encoding"]
     for section in ("dataset", "validation"):
         changed[section].update(deepcopy(config.get(section, {})))
+    # Family changes retain the previous data transform, including legacy files
+    # with no explicit image_fit; only an actually new recipe defaults to padding.
+    changed["dataset"]["image_fit"] = config.get("dataset", {}).get("image_fit", "crop")
     # The text-conditioning implementation belongs to the target family, not the copied images.
     changed["dataset"]["text_encoding"] = text_encoding
     return changed

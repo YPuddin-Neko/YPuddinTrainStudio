@@ -365,6 +365,7 @@
           "title": "Prefix",
           "type": "string",
           "x-ui": {
+            "advanced": true,
             "group": "caption",
             "order": 0
           }
@@ -375,6 +376,7 @@
           "title": "Suffix",
           "type": "string",
           "x-ui": {
+            "advanced": true,
             "group": "caption",
             "order": 10
           }
@@ -392,6 +394,7 @@
           "description": "触发词：放在最前且不参与洗牌/丢弃",
           "title": "Trigger Word",
           "x-ui": {
+            "advanced": true,
             "group": "caption",
             "order": 20
           }
@@ -404,7 +407,8 @@
           "type": "integer",
           "x-ui": {
             "group": "caption",
-            "order": 30
+            "order": 30,
+            "show_when": "dataset.caption.shuffle == true || dataset.caption.tag_dropout > 0"
           }
         },
         "shuffle": {
@@ -503,13 +507,14 @@
         },
         "name": {
           "default": "lora",
-          "description": "产物文件名前缀，不含目录或路径分隔符",
+          "description": "产物文件名前缀，不含目录或路径分隔符。默认 lora 在项目任务入队时自动按项目显示名和版本生成；非默认自定义名称保留。独立 CLI 仍按此名称保存。",
           "maxLength": 150,
           "minLength": 1,
           "pattern": "^[^/\\\\:*?\"<>|\\x00-\\x1f\\x7f]+$",
           "title": "Name",
           "type": "string",
           "x-ui": {
+            "advanced": true,
             "group": "checkpoint",
             "order": 10
           }
@@ -599,6 +604,7 @@
           "title": "Save Dtype",
           "type": "string",
           "x-ui": {
+            "advanced": true,
             "control": "select",
             "group": "checkpoint",
             "order": 60
@@ -628,6 +634,7 @@
           "description": "从完整 state 目录恢复训练，默认留空从头开始；会校验数据和模型身份。只有 .safetensors 权重时应使用适配器热启动，无法据此恢复优化器和数据进度。",
           "title": "Resume",
           "x-ui": {
+            "advanced": true,
             "control": "path",
             "group": "checkpoint",
             "order": 80
@@ -671,7 +678,7 @@
         },
         "resolution_mode": {
           "default": "bucket",
-          "description": "分桶按接近原图的长宽比选择训练尺寸，等比缩放后中心裁剪；原生保留每图尺寸，仅裁去模型对齐所需的边缘，超预算时按策略缩小或报错，不放大小图。",
+          "description": "分桶按接近原图的长宽比选择训练尺寸；原生按每图尺寸和预算分组，不放大小图。是否保留完整画面由下方图像适配方式控制，超预算按策略缩小或报错。",
           "enum": [
             "bucket",
             "native"
@@ -682,6 +689,21 @@
             "control": "select",
             "group": "dataset",
             "order": 5
+          }
+        },
+        "image_fit": {
+          "default": "crop",
+          "description": "保留完整画面：等比缩放后补齐尺寸，补边不计入直接训练损失，但仍是模型看到的上下文。裁切填满尺寸：使用旧版等比覆盖后中心裁剪。新项目默认保留完整画面；缺少此字段的旧配置继续裁切，不改变历史训练。",
+          "enum": [
+            "crop",
+            "pad"
+          ],
+          "title": "Image Fit",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "dataset",
+            "order": 6
           }
         },
         "native_max_pixels": {
@@ -699,7 +721,7 @@
         },
         "native_max_side": {
           "default": 4096,
-          "description": "原生模式单边上限；超限时等比缩小后裁去尺寸对齐边缘，或按策略报错",
+          "description": "原生模式包含对齐补边在内的单边上限；超限时等比缩小，或按策略报错。旧裁切模式沿用向下对齐。",
           "maximum": 8192,
           "minimum": 32,
           "title": "Native Max Side",
@@ -730,7 +752,7 @@
         },
         "aspect_ratio_limit": {
           "default": 2.0,
-          "description": "分桶最大长边/短边比，默认 2 对应最宽 2:1、最高 1:2。更狭长的原图仍会进入最近的桶并裁剪；大量长图可提高此值或改用原生模式。",
+          "description": "分桶最大长边/短边比，默认 2 对应最宽 2:1、最高 1:2。更狭长的原图进入最近的桶，按适配方式补边或裁切；大量长图可提高此值或改用原生模式减少补边。",
           "minimum": 1.0,
           "title": "Aspect Ratio Limit",
           "type": "number",
@@ -860,10 +882,11 @@
         },
         "cache_latents": {
           "default": true,
-          "description": "预编码并缓存 latents",
+          "description": "训练开始前在本机自动准备图像编码缓存，后续可复用；关闭后每批在本机处理图像。",
           "title": "Cache Latents",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "dataset",
             "order": 110
@@ -871,7 +894,7 @@
         },
         "text_encoding": {
           "default": "auto",
-          "description": "文本编码：online 每步在线编码（支持 caption 增强），cached 预缓存后卸载编码器",
+          "description": "自动按模型选择。每步处理标签支持每步变化；训练前缓存标签先计算结果并卸载编码器以降低驻留显存。两种都在训练电脑本地处理。",
           "enum": [
             "auto",
             "online",
@@ -880,6 +903,7 @@
           "title": "Text Encoding",
           "type": "string",
           "x-ui": {
+            "advanced": true,
             "control": "select",
             "group": "dataset",
             "order": 120
@@ -1231,6 +1255,7 @@
           "title": "Offload Text Encoder",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "memory",
             "order": 30
@@ -1367,6 +1392,7 @@
           "title": "Dtype",
           "type": "string",
           "x-ui": {
+            "advanced": true,
             "control": "select",
             "group": "model",
             "order": 50
@@ -2068,7 +2094,7 @@
         },
         "sampler": {
           "default": "euler",
-          "description": "预览图的数值求解算法，默认 Euler 保持旧行为；Heun 在非末步增加一次预测做修正，ER-SDE 使用带历史项的随机求解。改变它不改变训练目标，应固定种子与调度器做效果对比。",
+          "description": "预览图的计算方式，默认 Euler 每步评估一次速度；Heun 先预测再校正，除末步外通常多评估一次；ER-SDE 使用历史结果与随机噪声，默认阶数由内部逐步处理，无需按阶数挑质量档位。开启提示词引导时，每次评估还可能分别计算正向与负向条件。改变算法不改变训练目标。",
           "enum": [
             "euler",
             "heun",

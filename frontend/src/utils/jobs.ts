@@ -23,7 +23,7 @@ export function mergeJobEvent(job: Job, event: Record<string, any>): Job {
   }
   const latest = { ...(job.latest || {}) };
   if (event.step == null || event.step >= currentStep) {
-    for (const key of ['loss', 'loss_ema', 'lr']) {
+    for (const key of ['loss', 'loss_ema', 'lr', 'loss_mean', 'loss_count', 'loss_mean_scope']) {
       if (event[key] !== undefined) (latest as any)[key] = event[key];
     }
   }

@@ -108,6 +108,11 @@ class EnvironmentRuntime(BaseModel):
     cxx11_abi: bool | None = None
     gpus: list[dict[str, Any]]
     virtual_environment: bool
+    cuda_device_count: int = 0
+    distributed_available: bool = False
+    nccl_available: bool = False
+    multi_gpu_training: bool = False
+    training_device_policy: Literal["single_device"] = "single_device"
 
 
 class EnvironmentPackage(BaseModel):
@@ -195,6 +200,9 @@ def runtime_info() -> dict[str, Any]:
     from .hardware import gpu_info
 
     cuda = torch.cuda.is_available()
+    distributed = getattr(torch, "distributed", None)
+    distributed_available = bool(distributed and distributed.is_available())
+    nccl_available = bool(distributed_available and distributed.is_nccl_available())
     return {
         "python": platform.python_version(),
         "python_executable": sys.executable,
@@ -203,6 +211,12 @@ def runtime_info() -> dict[str, Any]:
         "torch": str(torch.__version__),
         "cuda_runtime": torch.version.cuda,
         "cuda_available": cuda,
+        "cuda_device_count": torch.cuda.device_count() if cuda else 0,
+        "distributed_available": distributed_available,
+        "nccl_available": nccl_available,
+        # The supervisor launches one worker with one --device; no process group.
+        "multi_gpu_training": False,
+        "training_device_policy": "single_device",
         "mps_available": bool(hasattr(torch.backends, "mps") and torch.backends.mps.is_available()),
         "gpu_capability": list(torch.cuda.get_device_capability()) if cuda else None,
         "cxx11_abi": bool(torch.compiled_with_cxx11_abi())

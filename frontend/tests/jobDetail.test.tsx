@@ -25,7 +25,7 @@ describe('JobDetail Page (B1, B2, B3, B4)', () => {
   it('does not report an unknown phase as running after the job has failed', async () => {
     server.use(http.get('/api/jobs/job_01', () => HttpResponse.json({ ...mockJobs[0], status: 'failed', progress: { step: 3, total_steps: 10 }, error: 'model unavailable' })));
     render(<MemoryRouter initialEntries={['/jobs/job_01']}><Routes><Route path="/jobs/:id" element={<JobDetail/>}/></Routes></MemoryRouter>);
-    await screen.findByText(/chara-v1/i);
+    await screen.findByRole('heading',{name:/chara-v1/i});
     expect(screen.queryByText('进行中')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '重新训练' })).toBeInTheDocument();
   });
@@ -42,7 +42,7 @@ describe('JobDetail Page (B1, B2, B3, B4)', () => {
     // 等待头部信息加载
     await waitFor(() => {
       expect(screen.getByTestId('job-detail-page')).toBeInTheDocument();
-      expect(screen.getByText(/chara-v1/i)).toBeInTheDocument();
+      expect(screen.getByRole('heading',{name:/chara-v1/i})).toBeInTheDocument();
     });
 
     // 检查阶段时间线（i18n 中文文案）
@@ -71,7 +71,7 @@ describe('JobDetail Page (B1, B2, B3, B4)', () => {
       http.get('/api/jobs/job_01/samples', () => HttpResponse.json([0, 5, 10].map(step => ({ step, prompt_index: 0, prompt: `sample ${step}`, seed: 7, url: `/api/jobs/job_01/files?path=${step}.png&kind=sample`, width: 64, height: 64, created_at: 1 })))),
     );
     render(<MemoryRouter initialEntries={['/jobs/job_01']}><Routes><Route path="/jobs/:id" element={<JobDetail/>}/></Routes></MemoryRouter>);
-    await screen.findByText(/chara-v1/i);
+    await screen.findByRole('heading',{name:/chara-v1/i});
     const samples = await screen.findByRole('tab', { name: '采样图 (3)' });
     await waitFor(() => expect(requested?.searchParams.get('include_archived')).toBe('true'));
     expect(screen.queryByText(/v_original/)).not.toBeInTheDocument();
@@ -90,7 +90,7 @@ describe('JobDetail Page (B1, B2, B3, B4)', () => {
       http.get('/api/projects/proj_01/versions', () => { lookedUp = true; return outcome === 'missing' ? HttpResponse.json([]) : HttpResponse.json({ error: { message: 'Version metadata unavailable' } }, { status: 500 }); }),
     );
     render(<MemoryRouter initialEntries={['/jobs/job_01']}><Routes><Route path="/jobs/:id" element={<JobDetail/>}/></Routes></MemoryRouter>);
-    await screen.findByText(/chara-v1/i);
+    await screen.findByRole('heading',{name:/chara-v1/i});
     await waitFor(() => expect(lookedUp).toBe(true));
     expect(screen.getByTitle('v_legacy')).toHaveTextContent('所属版本');
     expect(screen.queryByText('Version metadata unavailable')).not.toBeInTheDocument();

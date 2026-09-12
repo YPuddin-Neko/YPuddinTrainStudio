@@ -15,7 +15,7 @@ export function ProjectWorkflow({ projectId, versionId, active, sidebar = false 
   ];
   const currentIndex = steps.findIndex(step => step.key === active);
   return <div className={`project-stage-navigation${sidebar ? ' sidebar-project-stages' : ''}`}><nav aria-label={text('项目训练步骤', 'Project training steps')} className="project-workflow">
-    {steps.map((step, index) => <Link key={step.key} to={step.url} aria-current={active === step.key ? 'step' : undefined} title={step.detail}>
+    {steps.map((step, index) => <Link key={step.key} to={step.url} aria-label={`${index + 1} ${step.label}`} aria-current={active === step.key ? 'step' : undefined} title={`${step.label} · ${step.detail}`}>
       <span className="step-number">{index + 1}</span><step.icon size={14}/><span>{step.label}</span>
     </Link>)}
   </nav>{!sidebar && <div className="project-stage-actions" aria-label={text('前后训练阶段', 'Previous and next training stages')}>

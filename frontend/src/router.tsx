@@ -37,7 +37,7 @@ export default function AppRoutes() {
   const closeSettings = () => { if(background)navigate(`${background.pathname}${background.search}${background.hash}`,{replace:true,state:background.state}); };
   return <>
     <div className="route-surface" aria-hidden={background ? true : undefined} {...(background ? {inert:''} : {})}><Routes location={background || location}>
-      <Route path="/" element={<Layout/>}>
+      <Route path="/" element={<Layout navigationKey={location.key}/>}>
         <Route index element={<Dashboard/>}/><Route path="projects" element={<Projects/>}/>
         <Route path="presets" element={<Presets/>}/>
         <Route path="projects/:id" element={<ProjectDetail/>}/><Route path="projects/:id/train" element={<TrainConfig/>}/>

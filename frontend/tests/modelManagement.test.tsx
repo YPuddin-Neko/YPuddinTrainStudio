@@ -144,8 +144,11 @@ describe('real model management UI contracts',()=>{
     const list=await screen.findByTestId('model-downloads');expect(within(list).getByRole('progressbar')).toHaveAttribute('value','500');expect(cancel).not.toHaveBeenCalled();
   });
   it('registers local files through a dialog and keeps the selected family and actual path',async()=>{
+    server.use(http.post('/api/models/inspect',()=>HttpResponse.json({path:'D:\\shared\\vae.safetensors',family:null,family_candidates:['anima','krea2'],kind:'vae',dtype:'fp32',dtypes:{F32:100},confidence:'partial',evidence:['Shared VAE'],warnings:[],files_inspected:1})));
     mount(<Models embedded/>);fireEvent.click(await screen.findByTestId('add-model-btn'));const dialog=screen.getByRole('dialog',{name:'添加本地模型'});
-    choose('组件','VAE');fireEvent.change(within(dialog).getByRole('textbox',{name:'文件路径'}),{target:{value:'D:\\shared\\vae.safetensors'}});
+    fireEvent.change(within(dialog).getByRole('textbox',{name:'文件路径'}),{target:{value:'D:\\shared\\vae.safetensors'}});
+    await waitFor(()=>expect(screen.getByTestId('add-model-submit')).toBeEnabled());
+    expect(within(dialog).getByRole('combobox',{name:'组件'})).toHaveTextContent('VAE');
     fireEvent.click(screen.getByTestId('add-model-submit'));
     await waitFor(()=>expect(register).toHaveBeenCalledWith(expect.objectContaining({family:'anima',kind:'vae',path:'D:\\shared\\vae.safetensors'})));
     await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());expect(screen.getByTestId('model-location')).toHaveTextContent('view=library');

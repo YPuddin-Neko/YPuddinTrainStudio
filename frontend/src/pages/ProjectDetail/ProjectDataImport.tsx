@@ -19,7 +19,7 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
   const [name, setName] = React.useState('');
   const [path, setPath] = React.useState('');
   const [repeats, setRepeats] = React.useState(1);
-  const [isReg, setIsReg] = React.useState(defaultIsReg);
+  const isReg = defaultIsReg;
   const [captionExt, setCaptionExt] = React.useState('auto');
   const [priorWeight, setPriorWeight] = React.useState(1);
   const [classPrompt, setClassPrompt] = React.useState('');
@@ -97,7 +97,7 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
           {mode === 'upload' ? <label className="project-import-field project-import-name">{text('数据集名称（可选）', 'Dataset name (optional)')}<input className={inputClass} value={name} onChange={event => setName(event.target.value)} disabled={busy} placeholder={text('例如：角色正面照', 'For example: character portraits')}/></label> : null}
           <label className="project-import-field project-import-caption">{text('标签格式', 'Caption format')}<CaptionFormatSelect value={captionExt} onChange={setCaptionExt} disabled={busy}/></label>
           <div className="project-import-field project-import-repeats"><div className="project-import-field-label"><label htmlFor={repeatsId}>{text('每张图片重复次数', 'Repeats per image')}</label><ConfigHelp label={text('重复次数说明','Repeats help')}>{text('默认每轮使用每张图一次。次数越高，这组图片的训练占比越大，不复制文件。可从形如 5_character 的目录名读取 5；没有命名约定时不猜测。','Each image is used once per epoch by default. More repeats increase this dataset’s share without copying files. A folder named 5_character can suggest 5 repeats; otherwise no value is inferred.')}</ConfigHelp></div><input id={repeatsId} className={inputClass} type="number" min="1" step="1" required value={repeats} onChange={event => setRepeats(Number(event.target.value))} disabled={busy}/></div>
-          <label className="project-import-reg"><input type="checkbox" disabled={busy || defaultIsReg} checked={isReg} onChange={event => setIsReg(event.target.checked)}/>{text('这是正则化数据集（先验保持）', 'Regularization dataset (prior preservation)')}</label>
+          <p className="project-import-reg">{isReg ? text('正则集 · 导入当前版本 reg 目录', 'Regularization · import into this version’s reg folder') : text('训练集 · 导入当前版本 traindata 目录', 'Training · import into this version’s traindata folder')}</p>
         </div>
         {detectedRepeats && Number(detectedRepeats)!==repeats && <button type="button" disabled={busy} onClick={()=>setRepeats(Number(detectedRepeats))}>{text(`目录名检测到重复 ${detectedRepeats} 次，应用`, `Folder name suggests ${detectedRepeats} repeats — apply`)}</button>}
         {isReg && <div className="project-import-reg-options"><label className="project-import-field project-import-prompt">{text('类别提示词', 'Class prompt')}<input className={inputClass} disabled={busy} value={classPrompt} onChange={event => setClassPrompt(event.target.value)}/></label><label className="project-import-field project-import-prior">{text('正则损失权重', 'Regularization loss weight')}<input className={inputClass} type="number" min="0" step="0.1" disabled={busy} value={priorWeight} onChange={event => setPriorWeight(Number(event.target.value))}/></label></div>}

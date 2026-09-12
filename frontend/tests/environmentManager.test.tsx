@@ -23,7 +23,7 @@ let apply = vi.fn<(id: unknown) => void>();
 function environment() {
   const pkg = (name: string, backend: string | null, version: string | null) => ({ name, backend, version, supported: true, reason: 'supported', available: !!version, importable: !!version, kernel_tested: !!backend && !!version, wheel_required: false, error: null, docs_url: 'https://example.com/docs' });
   return {
-    runtime: { python: '3.12.1', python_executable: 'C:\\Studio\\venv\\Scripts\\python.exe', platform: 'Windows', machine: 'AMD64', torch: '2.5.1+cu128', cuda_runtime: '12.8', cuda_available: true, mps_available: false, gpu_capability: [8, 9], gpus: [{ name: 'RTX test', telemetry_source: 'nvml' }], virtual_environment: true },
+    runtime: { python: '3.12.1', python_executable: 'C:\\Studio\\venv\\Scripts\\python.exe', platform: 'Windows', machine: 'AMD64', torch: '2.5.1+cu128', cuda_runtime: '12.8', cuda_available: true, mps_available: false, gpu_capability: [8, 9], gpus: [{ name: 'RTX test', telemetry_source: 'nvml' }], virtual_environment: true, cuda_device_count: 2, distributed_available: true, nccl_available: true, multi_gpu_training: false, training_device_policy: 'single_device' },
     packages: [
       { ...pkg('torch', null, '2.5.1'), supported: false, reason: 'protected_runtime' },
       pkg('xformers', 'xformers', null),
@@ -209,4 +209,12 @@ describe('real environment management UI contracts', () => {
     expect(await screen.findByLabelText('Default attention for new jobs')).toBeInTheDocument();
     expect(screen.getByTestId('environment-manager').textContent).not.toMatch(/[\u4e00-\u9fff]/);
   });
+});
+
+it('reports Torch multi-device capability separately from single-device trainer support', async () => {
+  render(<EnvironmentManagerPanel/>);
+  const info=await screen.findByTestId('environment-training-devices');
+  expect(info).toHaveTextContent('PyTorch 可用 CUDA 显卡：2 张');
+  expect(info).toHaveTextContent('单任务多卡训练（DDP）尚未接入');
+  expect(info).toHaveTextContent('NCCL: 已编译');
 });

@@ -30,14 +30,14 @@ afterEach(() => vi.restoreAllMocks());
 describe('dataset pipeline', () => {
   it('persists the selected stage in URL and per-version memory with browser back support', async()=>{
     const first=show();
-    fireEvent.click(screen.getByRole('button',{name:/预处理/}));
-    expect(screen.getByTestId('pipeline-location')).toHaveTextContent('data_step=preprocess');
+    fireEvent.click(screen.getByRole('button',{name:/涂抹与遮罩/}));
+    expect(screen.getByTestId('pipeline-location')).toHaveTextContent('data_step=paint');
     fireEvent.click(screen.getByRole('button',{name:/标签查看/}));
     fireEvent.click(screen.getByRole('button',{name:'Browser back'}));
-    expect(screen.getByRole('button',{name:/预处理/})).toHaveAttribute('aria-current','step');
+    expect(screen.getByRole('button',{name:/涂抹与遮罩/})).toHaveAttribute('aria-current','step');
     first.unmount();
     const second=show();
-    expect(screen.getByRole('button',{name:/预处理/})).toHaveAttribute('aria-current','step');
+    expect(screen.getByRole('button',{name:/涂抹与遮罩/})).toHaveAttribute('aria-current','step');
     second.unmount();
     show({versionId:'v_3'});
     expect(screen.getByText('Upload files')).toBeInTheDocument();
@@ -59,17 +59,14 @@ describe('dataset pipeline', () => {
     fireEvent.click(screen.getByRole('button',{name:'排除 1 张选中图片'}));
     await waitFor(() => expect(submitted[0]).toEqual({url:'/projects/p_1/versions/v_2/pipeline/operations',body:{action:'exclude',images:[{dataset_id:'d_1',rel_path:'b.png'}]}}));
   });
-  it('keeps native preprocessing optional and submits crop geometry only for selected images', async () => {
-    show(); fireEvent.click(screen.getByRole('button',{name:/预处理/}));
-    expect(screen.getByText(/当前为原生分辨率模式/)).toBeInTheDocument();
-    expect(screen.getByRole('button',{name:'处理 0 张选中图片'})).toBeDisabled();
-    fireEvent.click(await screen.findByRole('checkbox',{name:'选择 a.png'}));
-    fireEvent.click(screen.getByRole('combobox',{name:'处理方式'}));
-    fireEvent.click(screen.getByRole('option',{name:'中心裁剪到指定比例'}));
-    fireEvent.change(screen.getByLabelText('处理宽度'),{target:{value:'512'}});
-    fireEvent.change(screen.getByLabelText('处理高度'),{target:{value:'768'}});
-    fireEvent.click(screen.getByRole('button',{name:'处理 1 张选中图片'}));
-    await waitFor(() => expect(submitted[0]?.body).toEqual({action:'preprocess',images:[{dataset_id:'d_1',rel_path:'a.png'}],preprocess:{mode:'center_crop',width:512,height:768,allow_upscale:false}}));
+  it('opens paint and masks without a prior inspection or crop controls', async () => {
+    state.inspection=null;
+    show();fireEvent.click(screen.getByRole('button',{name:/涂抹与遮罩/}));
+    await screen.findByRole('button',{name:'打开涂抹与遮罩编辑器'});
+    expect(screen.queryByRole('button',{name:'检查数据'})).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox',{name:'处理方式'})).not.toBeInTheDocument();
+    expect(submitted).toEqual([]);
+    expect(apiClient.get).toHaveBeenCalledWith('/projects/p_1/datasets',expect.objectContaining({params:{version_id:'v_2'}}));
   });
   it('views existing captions without an inspection or mutation and preserves recovery of old operations', async () => {
     state.inspection=null;
@@ -89,15 +86,14 @@ describe('dataset pipeline', () => {
     fireEvent.click(screen.getByRole('button',{name:'重试'}));
     await waitFor(() => expect(submitted[1]?.url).toBe('/dataset-pipeline/operations/dp_failed/retry'));
   });
-  it('connects visual crop pixels to the same version operation', async () => {
-    show(); fireEvent.click(screen.getByRole('button',{name:/预处理/}));
-    fireEvent.click(await screen.findByRole('checkbox',{name:'选择 a.png'}));
-    fireEvent.click(screen.getByRole('button',{name:'单图可视裁剪'}));
-    fireEvent.change(screen.getByLabelText('裁剪宽度'),{target:{value:'300'}});
-    fireEvent.change(screen.getByLabelText('裁剪高度'),{target:{value:'200'}});
-    fireEvent.change(screen.getByLabelText('裁剪 X'),{target:{value:'20'}});
-    fireEvent.click(screen.getByRole('button',{name:'应用此裁剪'}));
-    await waitFor(() => expect(submitted[0]?.body).toEqual({action:'preprocess',images:[{dataset_id:'d_1',rel_path:'a.png'}],preprocess:{mode:'crop_rect',crop:{x:20,y:0,width:300,height:200}}}));
+  it('maps the remembered preprocessing stage to the paint workspace',async()=>{
+    sessionStorage.setItem('studio.pipeline.stage.p_1.v_2','preprocess');
+    show();
+    expect(screen.getByRole('button',{name:/涂抹与遮罩/})).toHaveAttribute('aria-current','step');
+    expect(await screen.findByRole('button',{name:'打开涂抹与遮罩编辑器'})).toBeEnabled();
+    expect(screen.queryByRole('button',{name:'单图可视裁剪'})).not.toBeInTheDocument();
+    expect(sessionStorage.getItem('studio.pipeline.stage.p_1.v_2')).toBe('paint');
+    expect(submitted).toEqual([]);
   });
   it('shows cache progress and cancellation while keeping direct training available', async () => {
     state.operations=[{...operation,action:'prepare',status:'running',phase:'cache',done:2,total:7,can_undo:false,can_cancel:true,job_id:'j_cache'}];
@@ -118,4 +114,23 @@ describe('dataset pipeline', () => {
     expect(screen.getByRole('checkbox',{name:'选择 a.png'})).toBeDisabled();
     expect(screen.getByRole('button',{name:'复制为可处理的新版本'})).toBeDisabled();
   });
+});
+
+it('names failed painting and returns to its editor instead of posting an unsupported retry', async()=>{
+  state.operations=[{...operation,action:'paint',status:'failed',can_undo:false,error:'disk full',result:{rolled_back:true}}];
+  show();
+  expect(await screen.findByText('图像涂抹与遮罩')).toBeInTheDocument();
+  expect(screen.queryByRole('button',{name:'重试'})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'返回涂抹与遮罩'}));
+  expect(screen.getByTestId('pipeline-location')).toHaveTextContent('data_step=paint');
+  expect(await screen.findByRole('button',{name:'打开涂抹与遮罩编辑器'})).toBeEnabled();
+  expect(apiClient.get).toHaveBeenCalledWith('/projects/p_1/datasets',expect.objectContaining({params:{version_id:'v_2'}}));
+  expect(submitted).toEqual([]);
+});
+
+it('shows the real paint staging phase in readable language',async()=>{
+  state.operations=[{...operation,action:'paint',status:'running',phase:'staging',can_undo:false}];
+  show();
+  expect(await screen.findByText('准备绘制文件')).toBeInTheDocument();
+  expect(screen.getByText('准备绘制文件').closest('[role="status"]')).toHaveTextContent('图像涂抹与遮罩');
 });

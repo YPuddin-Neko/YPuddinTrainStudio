@@ -197,6 +197,14 @@ class VersionManager:
                     else initial_family_config(c, family)
                 )
             datasets = c.db.fetchall("SELECT * FROM datasets WHERE version_id=?", (source["id"],))
+            from .source_roles import managed_source_role
+
+            # Registry-only sources also follow the source version's real directory
+            # ownership. Keep historical rows untouched while planning this copy.
+            for dataset in datasets:
+                role = managed_source_role(c, pid, source["id"], dataset["path"])
+                if role is not None:
+                    dataset["is_reg"] = role[0]
             if any(row["index_status"] == "indexing" for row in datasets):
                 raise ApiError(
                     "wait for dataset indexing before creating a snapshot", code="version.busy", status=409
@@ -415,6 +423,11 @@ class VersionManager:
             )
             if match and "is_reg" not in body.model_fields_set:
                 is_reg = bool(match.get("is_reg"))
+            from .source_roles import managed_source_role
+
+            role = managed_source_role(c, pid, vid, str(source))
+            if role is not None:
+                is_reg = role[0]
             # Match _register_dataset: explicitly supplied options override the existing
             # source; omitted fields inherit it. Preflight must inspect that same format.
             caption_ext = body.caption_ext
@@ -452,7 +465,7 @@ class VersionManager:
                 _register_dataset(
                     c,
                     pid,
-                    body.model_copy(update={"path": str(target)}),
+                    body.model_copy(update={"path": str(target), "is_reg": is_reg}),
                     did=did,
                     version_id=vid,
                     internal=True,

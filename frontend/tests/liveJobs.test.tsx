@@ -5,6 +5,7 @@ import { setupServer } from 'msw/node';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { handlers } from '../src/mocks/handlers';
 import { mockJobs } from '../src/mocks/mockStore';
+import { mergeJobEvent } from '../src/utils/jobs';
 import '../src/i18n';
 
 const subscriptions = vi.hoisted(() => new Map<string, Set<(data: any) => void>>());
@@ -99,15 +100,15 @@ describe('training monitor interactions and events', () => {
     await screen.findByText('2 / 100');
     await waitFor(() => expect(screen.getAllByTestId('chart-option').length).toBe(1));
     fireEvent.click(screen.getByRole('button', { name: '学习率、梯度与性能诊断' }));
-    expect(screen.getByText('当前分配').parentElement).toHaveTextContent('2.0 GB');
+    expect(perfChart().series[1].data).toEqual([[1,10/1024],[2,20/1024]]);
     expect(screen.queryByText('显存峰值')).not.toBeInTheDocument();
     expect(screen.getByText('吞吐与当前训练分配量')).toBeInTheDocument();
     expect(perfChart().series[1].name).toBe('当前训练分配量 (GB)');
     emit('job.step', { job_id: 'job_01', step: 3, vram_mb: 1024, vram_metric: 'current_allocated' });
-    expect(screen.getByText('当前分配').parentElement).toHaveTextContent('1.0 GB');
     expect(perfChart().series[1].data.at(-1)).toEqual([3, 1]);
     emit('job.step', { job_id: 'job_01', step: 2, vram_mb: 4096, vram_metric: 'peak_allocated' });
-    expect(screen.getByText('当前分配').parentElement).toHaveTextContent('1.0 GB');
+    expect(perfChart().series[1].data.at(-1)).toEqual([3, 1]);
+    expect(perfChart().series[1].data).toHaveLength(3);
     expect(perfChart().series[1].name).toBe('当前训练分配量 (GB)');
   });
 
@@ -118,9 +119,13 @@ describe('training monitor interactions and events', () => {
     fireEvent.click(screen.getByRole('button', { name: '学习率、梯度与性能诊断' }));
     expect(perfChart().series[1].name).toBe('显存 (GB)');
     emit('job.step', { job_id: 'job_01', step: 3, vram_mb: 1024 });
-    expect(screen.getByText('显存峰值').parentElement).toHaveTextContent('2.0 GB');
+    expect(perfChart().series[1].data.at(-1)).toEqual([3,1]);
+    const previous={...mockJobs[0],progress:{step:2,vram_peak_mb:2048}};
+    const updated=mergeJobEvent(previous,{job_id:previous.id,step:3,vram_mb:1024});
+    expect(updated.progress?.vram_peak_mb).toBe(2048);
     emit('job.step', { job_id: 'job_01', step: 4, vram_mb: 4096, vram_metric: 'peak_allocated' });
-    expect(screen.getByText('显存峰值').parentElement).toHaveTextContent('4.0 GB');
+    expect(perfChart().series[1].data.at(-1)).toEqual([4,4]);
+    expect(mergeJobEvent(updated,{job_id:updated.id,step:4,vram_mb:4096,vram_metric:'peak_allocated'}).progress?.vram_peak_mb).toBe(4096);
     expect(perfChart().series[1].name).toBe('显存峰值 (GB)');
     expect(perfChart().yAxis[1].name).toBe('GB');
     emit('job.step', { job_id: 'job_01', step: 5, vram_mb: null, vram_metric: 'peak_allocated' });
@@ -145,7 +150,12 @@ describe('training monitor interactions and events', () => {
     emit('job.checkpoint', { job_id: 'job_01', step: 10 });
     fireEvent.click(screen.getByRole('tab', { name: /检查点/ }));
     expect(await screen.findByRole('link', { name: '下载' })).toHaveAttribute('href', 'http://localhost:3000/api/artifacts/art_test/download');
-    expect(screen.getByText('仅权重 (EMA)')).toBeInTheDocument();
+    const weights=screen.getByText('weights.safetensors').closest('article')!;
+    expect(within(weights).getByText('仅权重 · EMA')).toBeInTheDocument();
+    expect(within(weights).getByText('步 10')).toBeInTheDocument();
+    expect(within(weights).getByText('轮 1')).toBeInTheDocument();
+    fireEvent.click(within(weights).getByText('文件详情',{selector:'summary'}));
+    expect(within(weights).getByText('/weights.safetensors')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '从此状态继续训练' }));
     await waitFor(() => expect(body?.config?.checkpoint?.resume).toBe('/state-10'));
     expect(body.config.dataset.sources).toEqual([{ path: '/images' }]);

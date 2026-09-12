@@ -331,6 +331,10 @@ class DatasetPipeline:
     def start(self, pid: str, vid: str, request: dict) -> dict:
         # Historic automatic-tagging operations remain readable/undoable, but
         # retry must not resurrect a removed inference capability.
+        if request["action"] == "paint":
+            raise ApiError(
+                "reopen the image editor to retry painting", code="pipeline.paint_retry", status=409
+            )
         if request["action"] == "tag":
             raise ApiError(
                 "automatic tagging is no longer available; existing captions can be viewed and edited",
@@ -838,6 +842,10 @@ class DatasetPipeline:
             else:
                 if action == "restore":
                     original = self.operation(request["restore_operation_id"])
+                    if original["action"] == "paint":
+                        from .routes_dataset_paint import _restore_guards
+
+                        _restore_guards(self, original)
                     changes = []
                     for index, change in enumerate(original["result"]["changes"]):
                         self._cancelled(oid)
@@ -903,11 +911,6 @@ class DatasetPipeline:
                     _index_dataset(self.c, did)
                 result["inspection"] = self._inspect(oid, pid, vid)
                 self._cancelled(oid)
-                if action == "restore":
-                    original_result = original["result"] | {"undone_by": oid}
-                    self.c.db.update(
-                        "dataset_pipeline_operations", original["id"], {"result_json": _dump(original_result)}
-                    )
             if request["action"] == "prepare":
                 if result["inspection"]["errors"]:
                     raise ApiError(
@@ -953,17 +956,32 @@ class DatasetPipeline:
                     if self._get(oid)["cancel_requested"] or self.stopping.is_set():
                         self.c.supervisor.request(job["id"], "cancel")
                 return
-            self.c.db.update(
-                "dataset_pipeline_operations",
-                oid,
-                {
-                    "status": "completed",
-                    "phase": "completed",
-                    "result_json": _dump(result),
-                    "finished_at": now(),
-                    "updated_at": now(),
-                },
-            )
+            with self.c.db.lock:
+                # Commit Undo's marker with its completion. If the service stops
+                # first, recovery rolls files back and the original stays undoable.
+                self.c.db.execute("BEGIN IMMEDIATE")
+                try:
+                    if action == "restore":
+                        self.c.db.update(
+                            "dataset_pipeline_operations",
+                            original["id"],
+                            {"result_json": _dump(original["result"] | {"undone_by": oid})},
+                        )
+                    self.c.db.update(
+                        "dataset_pipeline_operations",
+                        oid,
+                        {
+                            "status": "completed",
+                            "phase": "completed",
+                            "result_json": _dump(result),
+                            "finished_at": now(),
+                            "updated_at": now(),
+                        },
+                    )
+                    self.c.db.execute("COMMIT")
+                except BaseException:
+                    self.c.db.execute("ROLLBACK")
+                    raise
         except Exception as exc:
             status = "cancelled" if isinstance(exc, PipelineCancelled) else "failed"
             error = str(exc)

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "YPuddin Train Studio",
-    "version": "0.5.5"
+    "version": "0.5.6"
   },
   "paths": {
     "/api/health": {
@@ -772,6 +772,44 @@
         }
       }
     },
+    "/api/models/inspect": {
+      "post": {
+        "summary": "Inspect Local Model",
+        "operationId": "inspect_local_model_api_models_inspect_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelInspectionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelInspection"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/models/{model_id}": {
       "patch": {
         "summary": "Patch Model",
@@ -1505,6 +1543,140 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Put Project Config Api Projects  Pid  Config Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{pid}/source-roles": {
+      "post": {
+        "summary": "Project Source Roles",
+        "operationId": "project_source_roles_api_projects__pid__source_roles_post",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "version_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceRoleBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SourceRole"
+                  },
+                  "title": "Response Project Source Roles Api Projects  Pid  Source Roles Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{pid}/output-binding": {
+      "post": {
+        "summary": "Project Output Binding",
+        "operationId": "project_output_binding_api_projects__pid__output_binding_post",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "version_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceRoleBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutputBinding"
                 }
               }
             }
@@ -4069,6 +4241,268 @@
         }
       }
     },
+    "/api/datasets/{did}/images/{h}/paint/info": {
+      "get": {
+        "summary": "Paint Info",
+        "operationId": "paint_info_api_datasets__did__images__h__paint_info_get",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Did"
+            }
+          },
+          {
+            "name": "h",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "H"
+            }
+          },
+          {
+            "name": "rel_path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rel Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaintInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/datasets/{did}/images/{h}/paint/source": {
+      "get": {
+        "summary": "Paint Source",
+        "operationId": "paint_source_api_datasets__did__images__h__paint_source_get",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Did"
+            }
+          },
+          {
+            "name": "h",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "H"
+            }
+          },
+          {
+            "name": "rel_path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rel Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Oriented source RGBA pixels",
+            "content": {
+              "image/png": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/datasets/{did}/images/{h}/paint": {
+      "put": {
+        "summary": "Save Paint",
+        "operationId": "save_paint_api_datasets__did__images__h__paint_put",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Did"
+            }
+          },
+          {
+            "name": "h",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "H"
+            }
+          },
+          {
+            "name": "rel_path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rel Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaintSaved"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/datasets/{did}/images/{h}/paint/restore": {
+      "post": {
+        "summary": "Restore Paint",
+        "operationId": "restore_paint_api_datasets__did__images__h__paint_restore_post",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Did"
+            }
+          },
+          {
+            "name": "h",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "H"
+            }
+          },
+          {
+            "name": "rel_path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rel Path"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaintRestore"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaintSaved"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{pid}/versions/{vid}/pipeline": {
       "get": {
         "summary": "Get Pipeline",
@@ -5547,6 +5981,7 @@
             "description": "加在 caption 前的文本",
             "default": "",
             "x-ui": {
+              "advanced": true,
               "group": "caption",
               "order": 0
             }
@@ -5557,6 +5992,7 @@
             "description": "加在 caption 后的文本",
             "default": "",
             "x-ui": {
+              "advanced": true,
               "group": "caption",
               "order": 10
             }
@@ -5573,6 +6009,7 @@
             "title": "Trigger Word",
             "description": "触发词：放在最前且不参与洗牌/丢弃",
             "x-ui": {
+              "advanced": true,
               "group": "caption",
               "order": 20
             }
@@ -5585,7 +6022,8 @@
             "default": 0,
             "x-ui": {
               "group": "caption",
-              "order": 30
+              "order": 30,
+              "show_when": "dataset.caption.shuffle == true || dataset.caption.tag_dropout > 0"
             }
           },
           "shuffle": {
@@ -5735,9 +6173,10 @@
             "minLength": 1,
             "pattern": "^[^/\\\\:*?\"<>|\\x00-\\x1f\\x7f]+$",
             "title": "Name",
-            "description": "产物文件名前缀，不含目录或路径分隔符",
+            "description": "产物文件名前缀，不含目录或路径分隔符。默认 lora 在项目任务入队时自动按项目显示名和版本生成；非默认自定义名称保留。独立 CLI 仍按此名称保存。",
             "default": "lora",
             "x-ui": {
+              "advanced": true,
               "group": "checkpoint",
               "order": 10
             }
@@ -5824,6 +6263,7 @@
             "description": "导出权重文件的精度，默认 bf16；不会改变当前训练参数或完整恢复状态的精度。选择 fp32 会增大文件，可用于减少导出舍入。",
             "default": "bf16",
             "x-ui": {
+              "advanced": true,
               "control": "select",
               "group": "checkpoint",
               "order": 60
@@ -5852,6 +6292,7 @@
             "title": "Resume",
             "description": "从完整 state 目录恢复训练，默认留空从头开始；会校验数据和模型身份。只有 .safetensors 权重时应使用适配器热启动，无法据此恢复优化器和数据进度。",
             "x-ui": {
+              "advanced": true,
               "control": "path",
               "group": "checkpoint",
               "order": 80
@@ -5882,6 +6323,28 @@
               }
             ],
             "title": "Dataset Ids"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
           }
         },
         "type": "object",
@@ -6195,12 +6658,27 @@
               "native"
             ],
             "title": "Resolution Mode",
-            "description": "分桶按接近原图的长宽比选择训练尺寸，等比缩放后中心裁剪；原生保留每图尺寸，仅裁去模型对齐所需的边缘，超预算时按策略缩小或报错，不放大小图。",
+            "description": "分桶按接近原图的长宽比选择训练尺寸；原生按每图尺寸和预算分组，不放大小图。是否保留完整画面由下方图像适配方式控制，超预算按策略缩小或报错。",
             "default": "bucket",
             "x-ui": {
               "control": "select",
               "group": "dataset",
               "order": 5
+            }
+          },
+          "image_fit": {
+            "type": "string",
+            "enum": [
+              "crop",
+              "pad"
+            ],
+            "title": "Image Fit",
+            "description": "保留完整画面：等比缩放后补齐尺寸，补边不计入直接训练损失，但仍是模型看到的上下文。裁切填满尺寸：使用旧版等比覆盖后中心裁剪。新项目默认保留完整画面；缺少此字段的旧配置继续裁切，不改变历史训练。",
+            "default": "crop",
+            "x-ui": {
+              "control": "select",
+              "group": "dataset",
+              "order": 6
             }
           },
           "native_max_pixels": {
@@ -6221,7 +6699,7 @@
             "maximum": 8192.0,
             "minimum": 32.0,
             "title": "Native Max Side",
-            "description": "原生模式单边上限；超限时等比缩小后裁去尺寸对齐边缘，或按策略报错",
+            "description": "原生模式包含对齐补边在内的单边上限；超限时等比缩小，或按策略报错。旧裁切模式沿用向下对齐。",
             "default": 4096,
             "x-ui": {
               "advanced": true,
@@ -6251,7 +6729,7 @@
             "type": "number",
             "minimum": 1.0,
             "title": "Aspect Ratio Limit",
-            "description": "分桶最大长边/短边比，默认 2 对应最宽 2:1、最高 1:2。更狭长的原图仍会进入最近的桶并裁剪；大量长图可提高此值或改用原生模式。",
+            "description": "分桶最大长边/短边比，默认 2 对应最宽 2:1、最高 1:2。更狭长的原图进入最近的桶，按适配方式补边或裁切；大量长图可提高此值或改用原生模式减少补边。",
             "default": 2.0,
             "x-ui": {
               "group": "dataset",
@@ -6378,9 +6856,10 @@
           "cache_latents": {
             "type": "boolean",
             "title": "Cache Latents",
-            "description": "预编码并缓存 latents",
+            "description": "训练开始前在本机自动准备图像编码缓存，后续可复用；关闭后每批在本机处理图像。",
             "default": true,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "dataset",
               "order": 110
@@ -6394,9 +6873,10 @@
               "cached"
             ],
             "title": "Text Encoding",
-            "description": "文本编码：online 每步在线编码（支持 caption 增强），cached 预缓存后卸载编码器",
+            "description": "自动按模型选择。每步处理标签支持每步变化；训练前缓存标签先计算结果并卸载编码器以降低驻留显存。两种都在训练电脑本地处理。",
             "default": "auto",
             "x-ui": {
+              "advanced": true,
               "control": "select",
               "group": "dataset",
               "order": 120
@@ -7057,6 +7537,32 @@
           "virtual_environment": {
             "type": "boolean",
             "title": "Virtual Environment"
+          },
+          "cuda_device_count": {
+            "type": "integer",
+            "title": "Cuda Device Count",
+            "default": 0
+          },
+          "distributed_available": {
+            "type": "boolean",
+            "title": "Distributed Available",
+            "default": false
+          },
+          "nccl_available": {
+            "type": "boolean",
+            "title": "Nccl Available",
+            "default": false
+          },
+          "multi_gpu_training": {
+            "type": "boolean",
+            "title": "Multi Gpu Training",
+            "default": false
+          },
+          "training_device_policy": {
+            "type": "string",
+            "const": "single_device",
+            "title": "Training Device Policy",
+            "default": "single_device"
           }
         },
         "type": "object",
@@ -7725,6 +8231,141 @@
         ],
         "title": "Health"
       },
+      "ImageFitGeometry": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "source_width": {
+            "type": "integer",
+            "title": "Source Width"
+          },
+          "source_height": {
+            "type": "integer",
+            "title": "Source Height"
+          },
+          "width": {
+            "type": "integer",
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height"
+          },
+          "resized_width": {
+            "type": "integer",
+            "title": "Resized Width"
+          },
+          "resized_height": {
+            "type": "integer",
+            "title": "Resized Height"
+          },
+          "left": {
+            "type": "integer",
+            "title": "Left"
+          },
+          "top": {
+            "type": "integer",
+            "title": "Top"
+          },
+          "right": {
+            "type": "integer",
+            "title": "Right"
+          },
+          "bottom": {
+            "type": "integer",
+            "title": "Bottom"
+          },
+          "padding_pixels": {
+            "type": "integer",
+            "title": "Padding Pixels"
+          },
+          "cropped_pixels": {
+            "type": "integer",
+            "title": "Cropped Pixels"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "path",
+          "source_width",
+          "source_height",
+          "width",
+          "height",
+          "resized_width",
+          "resized_height",
+          "left",
+          "top",
+          "right",
+          "bottom",
+          "padding_pixels",
+          "cropped_pixels"
+        ],
+        "title": "ImageFitGeometry"
+      },
+      "ImageFitPlan": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "crop",
+              "pad"
+            ],
+            "title": "Mode"
+          },
+          "padded_images": {
+            "type": "integer",
+            "title": "Padded Images"
+          },
+          "cropped_images": {
+            "type": "integer",
+            "title": "Cropped Images"
+          },
+          "padding_pixels": {
+            "type": "integer",
+            "title": "Padding Pixels"
+          },
+          "total_pixels": {
+            "type": "integer",
+            "title": "Total Pixels"
+          },
+          "padding_fraction": {
+            "type": "number",
+            "title": "Padding Fraction"
+          },
+          "total_shapes": {
+            "type": "integer",
+            "title": "Total Shapes"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ImageFitGeometry"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "mode",
+          "padded_images",
+          "cropped_images",
+          "padding_pixels",
+          "total_pixels",
+          "padding_fraction",
+          "total_shapes",
+          "truncated",
+          "items"
+        ],
+        "title": "ImageFitPlan"
+      },
       "ImagePage": {
         "properties": {
           "items": {
@@ -8123,6 +8764,43 @@
       },
       "JobLatest": {
         "properties": {
+          "loss_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loss Mean"
+          },
+          "loss_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loss Count"
+          },
+          "loss_mean_scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "run",
+                  "since_resume"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loss Mean Scope"
+          },
           "loss": {
             "anyOf": [
               {
@@ -8910,6 +9588,7 @@
             "description": "在线编码标签时，在每次编码后把文本编码器移到 CPU，默认关闭；可减少驻留显存但增加传输。cached 文本模式已预编码并卸载编码器，无需依靠此开关。",
             "default": false,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "memory",
               "order": 30
@@ -9234,6 +9913,7 @@
             "description": "CUDA 上加载模型时使用的精度，默认 bf16；应与显卡和权重兼容。CPU/MPS 实际按 fp32 加载。训练算子的混合精度另由训练设置控制，冻结权重存储精度另由显存设置控制。",
             "default": "bf16",
             "x-ui": {
+              "advanced": true,
               "control": "select",
               "group": "model",
               "order": 50
@@ -9559,6 +10239,115 @@
         ],
         "title": "ModelDownloadRequest"
       },
+      "ModelInspection": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family"
+          },
+          "family_candidates": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Family Candidates"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "dtype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dtype"
+          },
+          "dtypes": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Dtypes"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "high",
+              "partial",
+              "unknown"
+            ],
+            "title": "Confidence"
+          },
+          "evidence": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Evidence"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "files_inspected": {
+            "type": "integer",
+            "title": "Files Inspected"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "family",
+          "family_candidates",
+          "kind",
+          "dtype",
+          "dtypes",
+          "confidence",
+          "evidence",
+          "warnings",
+          "files_inspected"
+        ],
+        "title": "ModelInspection"
+      },
+      "ModelInspectionBody": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "title": "ModelInspectionBody"
+      },
       "NativePlan": {
         "properties": {
           "images": {
@@ -9590,7 +10379,14 @@
             "title": "Batch Size"
           },
           "forward_groups": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Forward Groups"
           }
         },
@@ -10001,6 +10797,182 @@
         "type": "object",
         "title": "OptimizerConfig"
       },
+      "OutputBinding": {
+        "properties": {
+          "directory_template": {
+            "type": "string",
+            "title": "Directory Template"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "automatic_name": {
+            "type": "boolean",
+            "title": "Automatic Name"
+          },
+          "inherits_output_dir": {
+            "type": "boolean",
+            "title": "Inherits Output Dir"
+          }
+        },
+        "type": "object",
+        "required": [
+          "directory_template",
+          "name",
+          "automatic_name",
+          "inherits_output_dir"
+        ],
+        "title": "OutputBinding"
+      },
+      "PaintInfo": {
+        "properties": {
+          "width": {
+            "type": "integer",
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height"
+          },
+          "revision": {
+            "type": "string",
+            "title": "Revision"
+          },
+          "image_id": {
+            "type": "string",
+            "title": "Image Id"
+          },
+          "rel_path": {
+            "type": "string",
+            "title": "Rel Path"
+          },
+          "has_mask": {
+            "type": "boolean",
+            "title": "Has Mask"
+          },
+          "mask_source": {
+            "type": "string",
+            "enum": [
+              "sidecar",
+              "alpha",
+              "full"
+            ],
+            "title": "Mask Source"
+          },
+          "can_restore": {
+            "type": "boolean",
+            "title": "Can Restore"
+          },
+          "last_operation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Operation Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "width",
+          "height",
+          "revision",
+          "image_id",
+          "rel_path",
+          "has_mask",
+          "mask_source",
+          "can_restore"
+        ],
+        "title": "PaintInfo"
+      },
+      "PaintRestore": {
+        "properties": {
+          "revision": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Revision"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revision"
+        ],
+        "title": "PaintRestore"
+      },
+      "PaintSaved": {
+        "properties": {
+          "width": {
+            "type": "integer",
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height"
+          },
+          "revision": {
+            "type": "string",
+            "title": "Revision"
+          },
+          "image_id": {
+            "type": "string",
+            "title": "Image Id"
+          },
+          "rel_path": {
+            "type": "string",
+            "title": "Rel Path"
+          },
+          "has_mask": {
+            "type": "boolean",
+            "title": "Has Mask"
+          },
+          "mask_source": {
+            "type": "string",
+            "enum": [
+              "sidecar",
+              "alpha",
+              "full"
+            ],
+            "title": "Mask Source"
+          },
+          "can_restore": {
+            "type": "boolean",
+            "title": "Can Restore"
+          },
+          "last_operation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Operation Id"
+          },
+          "operation_id": {
+            "type": "string",
+            "title": "Operation Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "width",
+          "height",
+          "revision",
+          "image_id",
+          "rel_path",
+          "has_mask",
+          "mask_source",
+          "can_restore",
+          "operation_id"
+        ],
+        "title": "PaintSaved"
+      },
       "PipelineImage": {
         "properties": {
           "dataset_id": {
@@ -10389,6 +11361,16 @@
                 "type": "null"
               }
             ]
+          },
+          "image_fit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImageFitPlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": true,
@@ -10439,7 +11421,14 @@
             "title": "Items"
           },
           "batches": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Batches"
           }
         },
@@ -11907,7 +12896,7 @@
               "er_sde"
             ],
             "title": "Sampler",
-            "description": "预览图的数值求解算法，默认 Euler 保持旧行为；Heun 在非末步增加一次预测做修正，ER-SDE 使用带历史项的随机求解。改变它不改变训练目标，应固定种子与调度器做效果对比。",
+            "description": "预览图的计算方式，默认 Euler 每步评估一次速度；Heun 先预测再校正，除末步外通常多评估一次；ER-SDE 使用历史结果与随机噪声，默认阶数由内部逐步处理，无需按阶数挑质量档位。开启提示词引导时，每次评估还可能分别计算正向与负向条件。改变算法不改变训练目标。",
             "default": "euler",
             "x-ui": {
               "control": "select",
@@ -12194,6 +13183,77 @@
           "theme"
         ],
         "title": "SettingsUi"
+      },
+      "SourceRole": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "section": {
+            "type": "string",
+            "title": "Section"
+          },
+          "is_reg": {
+            "type": "boolean",
+            "title": "Is Reg"
+          },
+          "managed": {
+            "type": "boolean",
+            "title": "Managed"
+          },
+          "root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root"
+          },
+          "origin": {
+            "type": "string",
+            "title": "Origin"
+          },
+          "images": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Images"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "section",
+          "is_reg",
+          "managed",
+          "root",
+          "origin",
+          "images"
+        ],
+        "title": "SourceRole"
+      },
+      "SourceRoleBody": {
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config"
+          }
+        },
+        "type": "object",
+        "required": [
+          "config"
+        ],
+        "title": "SourceRoleBody"
       },
       "SystemInfo": {
         "properties": {

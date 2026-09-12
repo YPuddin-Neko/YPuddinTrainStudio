@@ -320,8 +320,8 @@ class Trainer:
             problems.append("memory.blocks_to_swap requires the block_swap capability")
         if cfg.memory.base_precision.startswith("fp8") and self.device.type != "cuda":
             problems.append("fp8 base precision requires CUDA")
-        if cfg.dataset.masked_loss and "masked_loss" not in caps:
-            problems.append("dataset.masked_loss is not supported by this family")
+        if (cfg.dataset.masked_loss or cfg.dataset.image_fit == "pad") and "masked_loss" not in caps:
+            problems.append("masked loss (including image padding exclusion) is not supported by this family")
         if cfg.dataset.text_encoding == "online" and "online_text" not in caps:
             problems.append(
                 "dataset.text_encoding='online' is not supported by this family (its text encoder is too large to "
@@ -624,6 +624,8 @@ class Trainer:
         x_t, target, _ = self.objective.prepare(x0, t.to(self.device), generator=gen)
         mask = batch.get("mask")
         if mask is not None:
+            # Includes mandatory whole-image validity even when user masks are disabled.
+            # Area coverage excludes fully padded latent cells and weights boundary cells.
             mask = torch.nn.functional.interpolate(
                 mask[:, None].to(self.device), size=x0.shape[-2:], mode="area"
             )[:, 0]
@@ -863,6 +865,14 @@ class Trainer:
         # Sampling may run between sparse log events. Keep the actual optimizer-step loss,
         # including its step identity, in checkpointed progress rather than reusing an EMA.
         self.progress.extra["train_loss"] = {"step": step, "loss": group_loss}
+        if "loss_sum" not in self.progress.extra or "loss_count" not in self.progress.extra:
+            self.progress.extra.update(
+                loss_sum=0.0, loss_count=0, loss_mean_scope="since_resume" if step > 1 else "run"
+            )
+        self.progress.extra["loss_sum"] += group_loss
+        self.progress.extra["loss_count"] += 1
+        loss_count = self.progress.extra["loss_count"]
+        loss_mean = self.progress.extra["loss_sum"] / loss_count
         if step % cfg.loop.log_every == 0 or step == self.progress.total_steps:
             lrs = {g.get("name", str(i)): g["lr"] for i, g in enumerate(self.optimizer.param_groups)}
             remaining = self.progress.total_steps - step
@@ -873,6 +883,9 @@ class Trainer:
                 epoch=self.progress.epoch,
                 loss=group_loss,
                 loss_ema=self._loss_ema,
+                loss_mean=loss_mean,
+                loss_count=loss_count,
+                loss_mean_scope=self.progress.extra.get("loss_mean_scope", "run"),
                 lr=lrs,
                 grad_norm=grad_norm,
                 it_s=it_s,

@@ -17,7 +17,7 @@ from ypuddin.config import CaptionConfig, DatasetConfig, DatasetSourceConfig, Tr
 from ypuddin.config.schema import MAX_SIDE
 from ypuddin.models import LatentSpec
 
-from .buckets import Bucket, BucketManager
+from .buckets import Bucket, BucketManager, fit_crop, fit_pad
 from .cache import LatentCache, build_latent_cache
 from .caption_json import StructuredCaption
 from .captions import (
@@ -26,7 +26,16 @@ from .captions import (
     transform_caption,
     transform_caption_deterministic,
 )
-from .images import load_alpha, load_mask, load_rgb, pil_to_tensor, to_bucket, to_native
+from .images import (
+    load_alpha,
+    load_mask,
+    load_rgb,
+    pil_to_tensor,
+    to_bucket,
+    to_native,
+    to_padded,
+    valid_image_mask,
+)
 from .index import (
     ImageRecord,
     IndexDB,
@@ -50,14 +59,62 @@ class Item:
     is_reg: bool
     weight: float
     native_scale: float | None = None
+    image_fit: str = "crop"
+    no_upscale: bool = False
+
+    @property
+    def max_scale(self) -> float | None:
+        return self.native_scale if self.native_scale is not None else 1.0 if self.no_upscale else None
 
 
 def item_latent_key(item: Item, fingerprint: str, flip: bool) -> str:
-    if item.native_scale is not None:
+    if item.image_fit == "pad":
+        rw, rh, *_ = fit_pad(
+            item.record.width,
+            item.record.height,
+            item.bucket.width,
+            item.bucket.height,
+            max_scale=item.max_scale,
+        )
+        fingerprint += f"|whole-image-pad-v1:{rw}x{rh}:edge"
+    elif item.native_scale is not None:
         rw = round(item.record.width * item.native_scale)
         rh = round(item.record.height * item.native_scale)
         fingerprint += f"|native-crop-v1:{rw}x{rh}"
     return LatentCache.key(item.record.content_hash, item.bucket.width, item.bucket.height, fingerprint, flip)
+
+
+def item_geometry(item: Item) -> dict[str, Any]:
+    """Actual shared pixel geometry for the plan; coordinates are on the resized canvas."""
+    w, h = item.bucket.key
+    sw, sh = item.record.width, item.record.height
+    padding = cropped = 0
+    if item.image_fit == "pad":
+        rw, rh, left, top, right, bottom = fit_pad(sw, sh, w, h, max_scale=item.max_scale)
+        padding = w * h - rw * rh
+    elif item.native_scale is not None:
+        rw, rh = max(w, round(sw * item.native_scale)), max(h, round(sh * item.native_scale))
+        left, top = (rw - w) // 2, (rh - h) // 2
+        right, bottom = left + w, top + h
+        cropped = rw * rh - w * h
+    else:
+        rw, rh, left, top, right, bottom = fit_crop(sw, sh, w, h)
+        cropped = rw * rh - w * h
+    return {
+        "path": item.record.path,
+        "source_width": sw,
+        "source_height": sh,
+        "width": w,
+        "height": h,
+        "resized_width": rw,
+        "resized_height": rh,
+        "left": left,
+        "top": top,
+        "right": right,
+        "bottom": bottom,
+        "padding_pixels": padding,
+        "cropped_pixels": cropped,
+    }
 
 
 @dataclass
@@ -100,12 +157,12 @@ def expand_items(
         # Class-prior captions describe the base class, without the training trigger.
         # An explicit source caption configuration still takes precedence.
         cap_cfg = src.caption if src.caption is not None else CaptionConfig() if src.is_reg else ds.caption
-        if ds.resolution_mode == "native" and ds.masked_loss and r.mask_path:
+        if (ds.resolution_mode == "native" or ds.image_fit == "pad") and ds.masked_loss and r.mask_path:
             try:
                 mask_width, mask_height, _ = probe_image(Path(r.mask_path))
                 if (mask_width, mask_height) != (r.width, r.height):
                     raise ValueError(
-                        f"native mask must match the oriented image dimensions {r.width}x{r.height}; "
+                        f"mask must match the oriented image dimensions {r.width}x{r.height}; "
                         f"received {mask_width}x{mask_height}"
                     )
             except (OSError, ValueError) as error:
@@ -120,6 +177,7 @@ def expand_items(
                         max_pixels=ds.native_max_pixels,
                         max_side=ds.native_max_side,
                         overflow=ds.native_overflow,
+                        image_fit=ds.image_fit,
                     )
                     if ds.resolution_mode == "native"
                     else None
@@ -137,6 +195,8 @@ def expand_items(
                         src.is_reg,
                         src.prior_weight if src.is_reg else 1.0,
                         size.scale if size else None,
+                        ds.image_fit,
+                        ds.bucket_no_upscale,
                     )
                 )
     return items
@@ -227,14 +287,23 @@ class TrainDataset(Dataset):
         self, item: Item, flip: bool, *, include_mask: bool = True
     ) -> tuple[Tensor, Tensor | None]:
         im, alpha = load_rgb(item.record.path)
-        fitted = (
-            to_bucket(im, item.bucket.width, item.bucket.height, flip=flip)
-            if item.native_scale is None
-            else to_native(im, item.bucket.width, item.bucket.height, scale=item.native_scale, flip=flip)
-        )
+        if item.image_fit == "pad":
+            fitted = to_padded(im, item.bucket.width, item.bucket.height, max_scale=item.max_scale, flip=flip)
+        else:
+            fitted = (
+                to_bucket(im, item.bucket.width, item.bucket.height, flip=flip)
+                if item.native_scale is None
+                else to_native(im, item.bucket.width, item.bucket.height, scale=item.native_scale, flip=flip)
+            )
         px = pil_to_tensor(fitted)
         mask = None
-        if self.masked_loss and include_mask:
+        if include_mask:
+            mask = self._image_mask(item, flip, alpha)
+        return px, mask
+
+    def _image_mask(self, item: Item, flip: bool, alpha) -> Tensor | None:
+        mask = None
+        if self.masked_loss:
             mask = load_mask(
                 mask_for(Path(item.record.path)),
                 alpha,
@@ -242,15 +311,30 @@ class TrainDataset(Dataset):
                 item.bucket.height,
                 flip=flip,
                 native_scale=item.native_scale,
+                image_fit=item.image_fit,
+                max_scale=item.max_scale,
+                source_size=(item.record.width, item.record.height),
             )
-        return px, mask
+        if item.image_fit == "pad":
+            valid = valid_image_mask(
+                item.record.width,
+                item.record.height,
+                item.bucket.width,
+                item.bucket.height,
+                max_scale=item.max_scale,
+                flip=flip,
+            )
+            mask = valid if mask is None else mask * valid
+        return mask
 
     def current_mask(self, item: Item, flip: bool) -> Tensor | None:
-        path = mask_for(Path(item.record.path))
-        alpha = load_alpha(item.record.path) if path is None and item.record.has_alpha else None
-        return load_mask(
-            path, alpha, item.bucket.width, item.bucket.height, flip=flip, native_scale=item.native_scale
+        path = mask_for(Path(item.record.path)) if self.masked_loss else None
+        alpha = (
+            load_alpha(item.record.path)
+            if self.masked_loss and path is None and item.record.has_alpha
+            else None
         )
+        return self._image_mask(item, flip, alpha)
 
     def __getitem__(self, index: int) -> dict[str, Any]:
         item = self.items[index]
@@ -272,7 +356,7 @@ class TrainDataset(Dataset):
             out["latents"] = entry["latents"]
             # Ignore masks in pre-v2 cache entries. Sidecars can change independently of the
             # image/VAE key, including being added after an unmasked pre-cache job.
-            if self.masked_loss:
+            if self.masked_loss or item.image_fit == "pad":
                 mask = self.current_mask(item, flip)
                 if mask is not None:
                     out["mask"] = mask
@@ -476,6 +560,7 @@ def build_data(
                 "dataset": ds.model_dump(
                     mode="json",
                     exclude={"sources", "cache_dir", "num_workers"}
+                    | ({"image_fit"} if ds.image_fit == "crop" else set())
                     | (
                         {"resolution_mode", "native_max_pixels", "native_max_side", "native_overflow"}
                         if ds.resolution_mode == "bucket"

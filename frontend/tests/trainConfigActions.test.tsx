@@ -16,7 +16,7 @@ afterEach(() => { server.resetHandlers(); vi.restoreAllMocks(); });
 afterAll(() => server.close());
 function showConfig() {
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <MemoryRouter initialEntries={['/projects/p_test/train']}><Routes>
+    <MemoryRouter initialEntries={['/projects/p_test/train?tab=train']}><Routes>
       <Route path="/projects/:id/train" element={<TrainConfig />} />
       <Route path="/jobs/:id" element={<div>Created job</div>} />
     </Routes></MemoryRouter>
@@ -68,7 +68,8 @@ describe('training configuration actions', () => {
     fireEvent.click(screen.getByRole('button', { name: '校验并应用' }));
     await waitFor(() => expect(screen.queryByRole('button', { name: '校验并应用' })).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole('tab', {name:'数据与分桶'}));
-    await waitFor(() => expect(screen.getByRole('textbox', { name: 'dataset.caption.trigger_word' })).toHaveValue('from_toml'));
+    fireEvent.click(screen.getByRole('checkbox',{name:'高级选项'}));
+    await waitFor(() => expect(within(screen.getByTestId('field-dataset.caption.trigger_word')).getByRole('textbox')).toHaveValue('from_toml'));
     expect(imported.format).toBe('toml');
     fireEvent.change(screen.getByRole('textbox', { name: '新预设名称' }), { target: { value: 'my-preset' } });
     fireEvent.click(screen.getByRole('button', { name: '另存为预设' }));
@@ -87,13 +88,38 @@ describe('training configuration actions', () => {
     expect(screen.queryByText('Weight file is missing')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', {name:'1 项待配置'}));
     fireEvent.click(screen.getByRole('button', {name:'配置主模型 / DiT'}));
-    await waitFor(() => expect(screen.getByRole('tab', {name:'模型与输出'})).toHaveAttribute('aria-selected','true'));
+    await waitFor(() => expect(screen.getByRole('tab', {name:'底模与输出'})).toHaveAttribute('aria-selected','true'));
     expect(screen.getAllByText('找不到指定文件，请检查训练机上的路径').length).toBeGreaterThan(0);
     fireEvent.click(screen.getByText('配置工具', {selector:'summary'}));
     expect(enqueue()).toBeDisabled();
     server.use(http.post('/api/config/export', () => HttpResponse.json({ error: { code: 'config.invalid', message: 'Export validation failed' } }, { status: 400 })));
     fireEvent.click(screen.getByRole('button', { name: '导出 TOML' }));
     expect(await screen.findByText('Export validation failed')).toBeInTheDocument();
+  });
+
+  it('shows valid buckets while empty sampling prompts keep validation visible and training disabled', async () => {
+    const issue = {loc: '', msg: 'Value error, sampling.enabled requires sampling.prompts or sampling.prompts_file'};
+    const config = schemaDefaults(trainSchema);
+    config.model.family = 'toy';
+    config.dataset.sources = [{path:'/data/eight-images', repeats:1}];
+    config.sampling = {...config.sampling, enabled:true, prompts:[], prompts_file:null};
+    const createJob = vi.fn();
+    server.use(
+      http.get('/api/projects/p_test/config', () => HttpResponse.json(config)),
+      http.post('/api/config/validate', () => HttpResponse.json({ok:false, errors:[issue], warnings:[]})),
+      http.post('/api/plan', () => HttpResponse.json({ok:false, errors:[issue], warnings:[], images:8,items:8,captioned:8,buckets:[{w:64,h:64,items:8,batches:4}],steps_per_epoch:4,total_steps:12})),
+      http.post('/api/jobs', () => {createJob();return HttpResponse.json({id:'should-not-exist'});}),
+    );
+    showConfig();
+    await screen.findByRole('button', {name:'64 × 64, 8 样本'});
+    expect(screen.getByRole('button', {name:'1 项待配置'})).toBeInTheDocument();
+    expect(enqueue()).toBeDisabled();
+    fireEvent.click(enqueue());
+    expect(createJob).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', {name:'分桶明细表'}));
+    expect(screen.getByRole('table')).toHaveTextContent('64 × 6484');
+    fireEvent.click(screen.getByRole('button', {name:'1 项待配置'}));
+    expect(screen.getByRole('region', {name:'训练前检查'})).toHaveTextContent(/采样|sampling/);
   });
 
   it('shows the invalid TOML field and reason while retaining the import text and current draft', async () => {
@@ -108,7 +134,8 @@ describe('training configuration actions', () => {
     fireEvent.click(screen.getByText('配置工具', {selector:'summary'}));
     await waitFor(() => expect(screen.getByRole('button', { name: '导入 TOML' })).toBeEnabled());
     fireEvent.click(screen.getByRole('tab', {name:'数据与分桶'}));
-    const trigger = screen.getByRole('textbox', { name: 'dataset.caption.trigger_word' });
+    fireEvent.click(screen.getByRole('checkbox',{name:'高级选项'}));
+    const trigger = within(screen.getByTestId('field-dataset.caption.trigger_word')).getByRole('textbox');
     fireEvent.change(trigger, { target: { value: 'keep_draft' } });
     fireEvent.click(screen.getByRole('button', { name: '导入 TOML' }));
     fireEvent.change(screen.getByRole('textbox', { name: 'TOML 配置内容' }), { target: { value: badToml } });

@@ -318,6 +318,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/models/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Inspect Local Model */
+        post: operations["inspect_local_model_api_models_inspect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/models/{model_id}": {
         parameters: {
             query?: never;
@@ -455,6 +472,40 @@ export interface paths {
         /** Put Project Config */
         put: operations["put_project_config_api_projects__pid__config_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{pid}/source-roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Project Source Roles */
+        post: operations["project_source_roles_api_projects__pid__source_roles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{pid}/output-binding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Project Output Binding */
+        post: operations["project_output_binding_api_projects__pid__output_binding_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1120,6 +1171,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/datasets/{did}/images/{h}/paint/info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Paint Info */
+        get: operations["paint_info_api_datasets__did__images__h__paint_info_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/datasets/{did}/images/{h}/paint/source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Paint Source */
+        get: operations["paint_source_api_datasets__did__images__h__paint_source_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/datasets/{did}/images/{h}/paint": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save Paint */
+        put: operations["save_paint_api_datasets__did__images__h__paint_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/datasets/{did}/images/{h}/paint/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore Paint */
+        post: operations["restore_paint_api_datasets__did__images__h__paint_restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{pid}/versions/{vid}/pipeline": {
         parameters: {
             query?: never;
@@ -1756,7 +1875,7 @@ export interface components {
             output_dir: string;
             /**
              * Name
-             * @description 产物文件名前缀，不含目录或路径分隔符
+             * @description 产物文件名前缀，不含目录或路径分隔符。默认 lora 在项目任务入队时自动按项目显示名和版本生成；非默认自定义名称保留。独立 CLI 仍按此名称保存。
              * @default lora
              */
             name: string;
@@ -1808,6 +1927,10 @@ export interface components {
             };
             /** Dataset Ids */
             dataset_ids?: string[] | null;
+            /** Project Id */
+            project_id?: string | null;
+            /** Version Id */
+            version_id?: string | null;
         };
         /** ConfigError */
         ConfigError: {
@@ -1946,11 +2069,18 @@ export interface components {
             resolutions: number[];
             /**
              * Resolution Mode
-             * @description 分桶按接近原图的长宽比选择训练尺寸，等比缩放后中心裁剪；原生保留每图尺寸，仅裁去模型对齐所需的边缘，超预算时按策略缩小或报错，不放大小图。
+             * @description 分桶按接近原图的长宽比选择训练尺寸；原生按每图尺寸和预算分组，不放大小图。是否保留完整画面由下方图像适配方式控制，超预算按策略缩小或报错。
              * @default bucket
              * @enum {string}
              */
             resolution_mode: "bucket" | "native";
+            /**
+             * Image Fit
+             * @description 保留完整画面：等比缩放后补齐尺寸，补边不计入直接训练损失，但仍是模型看到的上下文。裁切填满尺寸：使用旧版等比覆盖后中心裁剪。新项目默认保留完整画面；缺少此字段的旧配置继续裁切，不改变历史训练。
+             * @default crop
+             * @enum {string}
+             */
+            image_fit: "crop" | "pad";
             /**
              * Native Max Pixels
              * @description 原生模式单图及一次前向的像素上限；1048576 = 1024²。不同尺寸分组前向后按图片数累积梯度，像素预算不保证整体显存不会溢出
@@ -1959,7 +2089,7 @@ export interface components {
             native_max_pixels: number;
             /**
              * Native Max Side
-             * @description 原生模式单边上限；超限时等比缩小后裁去尺寸对齐边缘，或按策略报错
+             * @description 原生模式包含对齐补边在内的单边上限；超限时等比缩小，或按策略报错。旧裁切模式沿用向下对齐。
              * @default 4096
              */
             native_max_side: number;
@@ -1972,7 +2102,7 @@ export interface components {
             native_overflow: "downscale" | "error";
             /**
              * Aspect Ratio Limit
-             * @description 分桶最大长边/短边比，默认 2 对应最宽 2:1、最高 1:2。更狭长的原图仍会进入最近的桶并裁剪；大量长图可提高此值或改用原生模式。
+             * @description 分桶最大长边/短边比，默认 2 对应最宽 2:1、最高 1:2。更狭长的原图进入最近的桶，按适配方式补边或裁切；大量长图可提高此值或改用原生模式减少补边。
              * @default 2
              */
             aspect_ratio_limit: number;
@@ -2026,13 +2156,13 @@ export interface components {
             cache_dir?: string | null;
             /**
              * Cache Latents
-             * @description 预编码并缓存 latents
+             * @description 训练开始前在本机自动准备图像编码缓存，后续可复用；关闭后每批在本机处理图像。
              * @default true
              */
             cache_latents: boolean;
             /**
              * Text Encoding
-             * @description 文本编码：online 每步在线编码（支持 caption 增强），cached 预缓存后卸载编码器
+             * @description 自动按模型选择。每步处理标签支持每步变化；训练前缓存标签先计算结果并卸载编码器以降低驻留显存。两种都在训练电脑本地处理。
              * @default auto
              * @enum {string}
              */
@@ -2284,6 +2414,32 @@ export interface components {
             }[];
             /** Virtual Environment */
             virtual_environment: boolean;
+            /**
+             * Cuda Device Count
+             * @default 0
+             */
+            cuda_device_count: number;
+            /**
+             * Distributed Available
+             * @default false
+             */
+            distributed_available: boolean;
+            /**
+             * Nccl Available
+             * @default false
+             */
+            nccl_available: boolean;
+            /**
+             * Multi Gpu Training
+             * @default false
+             */
+            multi_gpu_training: boolean;
+            /**
+             * Training Device Policy
+             * @default single_device
+             * @constant
+             */
+            training_device_policy: "single_device";
         };
         /** EnvironmentSettings */
         EnvironmentSettings: {
@@ -2517,6 +2673,63 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** ImageFitGeometry */
+        ImageFitGeometry: {
+            /** Path */
+            path: string;
+            /** Source Width */
+            source_width: number;
+            /** Source Height */
+            source_height: number;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+            /** Resized Width */
+            resized_width: number;
+            /** Resized Height */
+            resized_height: number;
+            /** Left */
+            left: number;
+            /** Top */
+            top: number;
+            /** Right */
+            right: number;
+            /** Bottom */
+            bottom: number;
+            /** Padding Pixels */
+            padding_pixels: number;
+            /** Cropped Pixels */
+            cropped_pixels: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ImageFitPlan */
+        ImageFitPlan: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "crop" | "pad";
+            /** Padded Images */
+            padded_images: number;
+            /** Cropped Images */
+            cropped_images: number;
+            /** Padding Pixels */
+            padding_pixels: number;
+            /** Total Pixels */
+            total_pixels: number;
+            /** Padding Fraction */
+            padding_fraction: number;
+            /** Total Shapes */
+            total_shapes: number;
+            /** Truncated */
+            truncated: boolean;
+            /** Items */
+            items: components["schemas"]["ImageFitGeometry"][];
+        } & {
+            [key: string]: unknown;
+        };
         /** ImagePage */
         ImagePage: {
             /** Items */
@@ -2626,6 +2839,12 @@ export interface components {
         };
         /** JobLatest */
         JobLatest: {
+            /** Loss Mean */
+            loss_mean?: number | null;
+            /** Loss Count */
+            loss_count?: number | null;
+            /** Loss Mean Scope */
+            loss_mean_scope?: ("run" | "since_resume") | null;
             /** Loss */
             loss?: number | null;
             /** Loss Ema */
@@ -3132,6 +3351,39 @@ export interface components {
              */
             is_default: boolean;
         };
+        /** ModelInspection */
+        ModelInspection: {
+            /** Path */
+            path: string;
+            /** Family */
+            family: string | null;
+            /** Family Candidates */
+            family_candidates: string[];
+            /** Kind */
+            kind: string | null;
+            /** Dtype */
+            dtype: string | null;
+            /** Dtypes */
+            dtypes: {
+                [key: string]: number;
+            };
+            /**
+             * Confidence
+             * @enum {string}
+             */
+            confidence: "high" | "partial" | "unknown";
+            /** Evidence */
+            evidence: string[];
+            /** Warnings */
+            warnings: string[];
+            /** Files Inspected */
+            files_inspected: number;
+        };
+        /** ModelInspectionBody */
+        ModelInspectionBody: {
+            /** Path */
+            path: string;
+        };
         /** NativePlan */
         NativePlan: {
             /** Images */
@@ -3149,7 +3401,7 @@ export interface components {
             /** Batch Size */
             batch_size: number;
             /** Forward Groups */
-            forward_groups: number;
+            forward_groups: number | null;
         } & {
             [key: string]: unknown;
         };
@@ -3342,6 +3594,72 @@ export interface components {
                 [key: string]: number;
             };
         };
+        /** OutputBinding */
+        OutputBinding: {
+            /** Directory Template */
+            directory_template: string;
+            /** Name */
+            name: string;
+            /** Automatic Name */
+            automatic_name: boolean;
+            /** Inherits Output Dir */
+            inherits_output_dir: boolean;
+        };
+        /** PaintInfo */
+        PaintInfo: {
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+            /** Revision */
+            revision: string;
+            /** Image Id */
+            image_id: string;
+            /** Rel Path */
+            rel_path: string;
+            /** Has Mask */
+            has_mask: boolean;
+            /**
+             * Mask Source
+             * @enum {string}
+             */
+            mask_source: "sidecar" | "alpha" | "full";
+            /** Can Restore */
+            can_restore: boolean;
+            /** Last Operation Id */
+            last_operation_id?: string | null;
+        };
+        /** PaintRestore */
+        PaintRestore: {
+            /** Revision */
+            revision: string;
+        };
+        /** PaintSaved */
+        PaintSaved: {
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+            /** Revision */
+            revision: string;
+            /** Image Id */
+            image_id: string;
+            /** Rel Path */
+            rel_path: string;
+            /** Has Mask */
+            has_mask: boolean;
+            /**
+             * Mask Source
+             * @enum {string}
+             */
+            mask_source: "sidecar" | "alpha" | "full";
+            /** Can Restore */
+            can_restore: boolean;
+            /** Last Operation Id */
+            last_operation_id?: string | null;
+            /** Operation Id */
+            operation_id: string;
+        };
         /** PipelineImage */
         PipelineImage: {
             /** Dataset Id */
@@ -3483,6 +3801,7 @@ export interface components {
             /** Text Encoding */
             text_encoding?: string | null;
             native?: components["schemas"]["NativePlan"] | null;
+            image_fit?: components["schemas"]["ImageFitPlan"] | null;
         } & {
             [key: string]: unknown;
         };
@@ -3506,7 +3825,7 @@ export interface components {
             /** Items */
             items: number;
             /** Batches */
-            batches: number;
+            batches: number | null;
         } & {
             [key: string]: unknown;
         };
@@ -4126,7 +4445,7 @@ export interface components {
             seed: number;
             /**
              * Sampler
-             * @description 预览图的数值求解算法，默认 Euler 保持旧行为；Heun 在非末步增加一次预测做修正，ER-SDE 使用带历史项的随机求解。改变它不改变训练目标，应固定种子与调度器做效果对比。
+             * @description 预览图的计算方式，默认 Euler 每步评估一次速度；Heun 先预测再校正，除末步外通常多评估一次；ER-SDE 使用历史结果与随机噪声，默认阶数由内部逐步处理，无需按阶数挑质量档位。开启提示词引导时，每次评估还可能分别计算正向与负向条件。改变算法不改变训练目标。
              * @default euler
              * @enum {string}
              */
@@ -4255,6 +4574,30 @@ export interface components {
             theme: "light" | "dark" | "system";
         } & {
             [key: string]: unknown;
+        };
+        /** SourceRole */
+        SourceRole: {
+            /** Path */
+            path: string;
+            /** Section */
+            section: string;
+            /** Is Reg */
+            is_reg: boolean;
+            /** Managed */
+            managed: boolean;
+            /** Root */
+            root: string | null;
+            /** Origin */
+            origin: string;
+            /** Images */
+            images: number | null;
+        };
+        /** SourceRoleBody */
+        SourceRoleBody: {
+            /** Config */
+            config: {
+                [key: string]: unknown;
+            };
         };
         /** SystemInfo */
         SystemInfo: {
@@ -5195,6 +5538,39 @@ export interface operations {
             };
         };
     };
+    inspect_local_model_api_models_inspect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelInspectionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelInspection"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     delete_model_api_models__model_id__delete: {
         parameters: {
             query?: never;
@@ -5677,6 +6053,80 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    project_source_roles_api_projects__pid__source_roles_post: {
+        parameters: {
+            query?: {
+                version_id?: string | null;
+            };
+            header?: never;
+            path: {
+                pid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceRoleBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceRole"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    project_output_binding_api_projects__pid__output_binding_post: {
+        parameters: {
+            query?: {
+                version_id?: string | null;
+            };
+            header?: never;
+            path: {
+                pid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceRoleBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutputBinding"];
                 };
             };
             /** @description Validation Error */
@@ -7330,6 +7780,146 @@ export interface operations {
                 };
                 content: {
                     "image/png": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    paint_info_api_datasets__did__images__h__paint_info_get: {
+        parameters: {
+            query?: {
+                rel_path?: string | null;
+            };
+            header?: never;
+            path: {
+                did: string;
+                h: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaintInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    paint_source_api_datasets__did__images__h__paint_source_get: {
+        parameters: {
+            query?: {
+                rel_path?: string | null;
+            };
+            header?: never;
+            path: {
+                did: string;
+                h: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Oriented source RGBA pixels */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_paint_api_datasets__did__images__h__paint_put: {
+        parameters: {
+            query?: {
+                rel_path?: string | null;
+            };
+            header?: never;
+            path: {
+                did: string;
+                h: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaintSaved"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_paint_api_datasets__did__images__h__paint_restore_post: {
+        parameters: {
+            query?: {
+                rel_path?: string | null;
+            };
+            header?: never;
+            path: {
+                did: string;
+                h: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaintRestore"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaintSaved"];
                 };
             };
             /** @description Validation Error */

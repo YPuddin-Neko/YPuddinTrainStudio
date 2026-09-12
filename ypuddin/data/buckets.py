@@ -102,3 +102,30 @@ def fit_crop(src_w: int, src_h: int, dst_w: int, dst_h: int) -> tuple[int, int, 
     left = (rw - dst_w) // 2
     top = (rh - dst_h) // 2
     return rw, rh, left, top, left + dst_w, top + dst_h
+
+
+def fit_pad(
+    src_w: int, src_h: int, dst_w: int, dst_h: int, *, max_scale: float | None = None
+) -> tuple[int, int, int, int, int, int]:
+    """Contain the complete image; return resized size and its rectangle on the canvas.
+
+    The optional scale ceiling preserves small/native images without upscaling. Integer
+    rounding is shared by RGB, masks, cache identity and planning, never inferred twice.
+    """
+    if min(src_w, src_h, dst_w, dst_h) <= 0:
+        raise ValueError("image and canvas dimensions must be positive")
+    scale = min(dst_w / src_w, dst_h / src_h)
+    if max_scale is not None:
+        if not math.isfinite(max_scale) or max_scale <= 0:
+            raise ValueError("maximum image scale must be positive and finite")
+        # A native planner budgets the rounded pixel dimensions. Preserve its scale
+        # when rounding fits, rather than shrinking again at a half-pixel boundary.
+        scale = (
+            max_scale
+            if round(src_w * max_scale) <= dst_w and round(src_h * max_scale) <= dst_h
+            else min(scale, max_scale)
+        )
+    rw = max(1, min(dst_w, round(src_w * scale)))
+    rh = max(1, min(dst_h, round(src_h * scale)))
+    left, top = (dst_w - rw) // 2, (dst_h - rh) // 2
+    return rw, rh, left, top, left + rw, top + rh

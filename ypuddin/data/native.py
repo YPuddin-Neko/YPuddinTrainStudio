@@ -2,7 +2,8 @@
 
 Unlike sequence packing, this path does not change the model's attention operator.
 One logical image batch is evaluated as homogeneous microbatches; the trainer
-weights their gradients by image count. No image padding or repeated tail samples.
+weights their gradients by image count. Legacy crop and whole-image padding use
+separate geometry; neither path repeats tail samples to fill a batch.
 """
 
 from __future__ import annotations
@@ -35,13 +36,16 @@ def native_size(
     max_pixels: int,
     max_side: int,
     overflow: str = "downscale",
+    image_fit: str = "crop",
 ) -> NativeSize:
-    """Preserve source scale unless a budget is exceeded, then align by cropping.
+    """Preserve source scale unless a budget is exceeded, then align as requested.
 
-    Never enlarge, pad, distort the aspect ratio, or silently drop an oversized
-    image. The caller applies resize-to-cover plus an alignment-only centre crop.
-    Pixel budgets bound tensor geometry, not total model/GPU memory.
+    The legacy default floor-aligns with a centre crop. Whole-image mode ceil-aligns
+    and excludes padding from loss. Neither enlarges the source or silently drops
+    oversized images. Pixel budgets bound canvas geometry, not total model/GPU memory.
     """
+    if image_fit == "pad":
+        return _native_pad_size(width, height, align, max_pixels, max_side, overflow)
     if min(width, height) < align:
         raise ValueError(f"image {width}x{height} is smaller than model alignment {align}")
     if max_pixels < align * align or max_side < align:
@@ -60,6 +64,41 @@ def native_size(
             f"image {width}x{height} cannot fit the native budget without enlarging its short side"
         )
     return NativeSize(target_w, target_h, scale)
+
+
+def _native_pad_size(
+    width: int, height: int, align: int, max_pixels: int, max_side: int, overflow: str
+) -> NativeSize:
+    """Ceil-align the whole image, budgeting the canvas including its padding."""
+    if min(width, height, align) <= 0:
+        raise ValueError("native image dimensions and alignment must be positive")
+    if max_pixels < align * align or max_side < align:
+        raise ValueError("native resolution budget is smaller than model alignment")
+
+    def canvas(scale: float) -> tuple[int, int]:
+        return tuple(((max(1, round(side * scale)) + align - 1) // align) * align for side in (width, height))
+
+    def fits(size: tuple[int, int]) -> bool:
+        return size[0] * size[1] <= max_pixels and max(size) <= max_side
+
+    original_canvas = canvas(1.0)
+    if fits(original_canvas):
+        return NativeSize(*original_canvas, 1.0)
+    if overflow == "error":
+        raise ValueError(
+            f"image {width}x{height} including alignment padding exceeds native budget "
+            f"{max_pixels} pixels / {max_side}px side"
+        )
+    # Canvas dimensions are monotone stair functions of scale. Search the greatest
+    # supported scale; rounding/filling above is identical to the pixel transform.
+    low, high = 0.0, 1.0
+    for _ in range(60):
+        middle = (low + high) / 2
+        if fits(canvas(middle)):
+            low = middle
+        else:
+            high = middle
+    return NativeSize(*canvas(low), low)
 
 
 class NativeBatchSampler(BucketBatchSampler):

@@ -48,6 +48,8 @@ def package(output: Path) -> dict:
         ".pyc",
         ".log",
         ".safetensors",
+        ".bin",
+        ".gguf",
         ".ckpt",
         ".pt",
         ".pth",
@@ -56,6 +58,10 @@ def package(output: Path) -> dict:
         ".ses",
         ".sqlite",
         ".db",
+        ".db-wal",
+        ".db-shm",
+        ".sqlite-wal",
+        ".sqlite-shm",
         ".tsbuildinfo",
     }
     files = {
@@ -63,7 +69,7 @@ def package(output: Path) -> dict:
         for p in files
         if not (set(p.parts) & forbidden_parts)
         and p.suffix not in forbidden_suffixes
-        and p.name not in {".DS_Store", ".env", "secrets.json"}
+        and p.name not in {".DS_Store", ".env", "secrets.json", "credentials.json"}
         and not (p.name.startswith(".env.") and p.name not in {".env.example", ".env.sample"})
         and not (ROOT / p).is_symlink()
     }
@@ -78,6 +84,36 @@ def package(output: Path) -> dict:
             "ypuddin/sampling/ER_SDE_LICENSE.txt",
             "ypuddin/sampling/ER_SDE_PROVENANCE.md",
             "ypuddin/data/caption_json.py",
+            "ypuddin/server/source_roles.py",
+            "ypuddin/server/routes_dataset_paint.py",
+            "tests/unit/test_dataset_paint.py",
+            "tests/unit/test_image_fit.py",
+            "tests/unit/test_training_loss_mean.py",
+            "frontend/src/components/BrandMark.tsx",
+            "frontend/src/components/masks/ImageEditor.tsx",
+            "frontend/src/components/masks/image-editor.css",
+            "frontend/src/components/masks/paintApi.ts",
+            "frontend/src/components/masks/paintDocument.ts",
+            "frontend/src/components/useAnimatedClose.ts",
+            "frontend/src/styles/motion.css",
+            "frontend/tests/captionPainting.test.tsx",
+            "frontend/tests/captionParameterLayout.test.tsx",
+            "frontend/tests/imageEditor.test.tsx",
+            "frontend/tests/jobSummary.test.tsx",
+            "frontend/tests/paintDocument.test.ts",
+            "frontend/tests/surfaceMotion.test.tsx",
+            "docs/UI_REVIEW_V056_2026-09-12.md",
+            "docs/validation/v0.5.6.json",
+            "ypuddin/server/output_binding.py",
+            "ypuddin/server/model_inspection.py",
+            "tests/unit/test_source_roles.py",
+            "tests/unit/test_plan_preview.py",
+            "tests/unit/test_output_binding.py",
+            "tests/unit/test_model_inspection.py",
+            "tests/unit/test_runtime_training_devices.py",
+            "frontend/src/pages/Models/LocalModelRegistration.tsx",
+            "frontend/tests/sourceRoles.test.tsx",
+            "frontend/tests/localModelInspection.test.tsx",
             "tests/unit/test_er_sde.py",
             "tests/unit/test_sampling_schedule_dispatch.py",
             "tests/unit/test_caption_json.py",

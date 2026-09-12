@@ -44,7 +44,7 @@ class ModelConfig(_Strict):
     dtype: DType = F(
         "bf16",
         help="CUDA 上加载模型时使用的精度，默认 bf16；应与显卡和权重兼容。CPU/MPS 实际按 fp32 加载。训练算子的混合精度另由训练设置控制，冻结权重存储精度另由显存设置控制。",
-        ui_=ui("model", order=50, control="select"),
+        ui_=ui("model", order=50, control="select", advanced=True),
     )
     attention: Literal["auto", "sdpa", "sage", "xformers", "flash_attn"] = F(
         "auto",
@@ -55,10 +55,21 @@ class ModelConfig(_Strict):
 
 # --------------------------------------------------------------------------- dataset
 class CaptionConfig(_Strict):
-    prefix: str = F("", help="加在 caption 前的文本", ui_=ui("caption", order=0))
-    suffix: str = F("", help="加在 caption 后的文本", ui_=ui("caption", order=10))
-    trigger_word: str | None = F(None, help="触发词：放在最前且不参与洗牌/丢弃", ui_=ui("caption", order=20))
-    keep_tokens: int = F(0, ge=0, help="前 N 个 tag 固定不洗牌", ui_=ui("caption", order=30))
+    prefix: str = F("", help="加在 caption 前的文本", ui_=ui("caption", order=0, advanced=True))
+    suffix: str = F("", help="加在 caption 后的文本", ui_=ui("caption", order=10, advanced=True))
+    trigger_word: str | None = F(
+        None, help="触发词：放在最前且不参与洗牌/丢弃", ui_=ui("caption", order=20, advanced=True)
+    )
+    keep_tokens: int = F(
+        0,
+        ge=0,
+        help="前 N 个 tag 固定不洗牌",
+        ui_=ui(
+            "caption",
+            order=30,
+            show_when="dataset.caption.shuffle == true || dataset.caption.tag_dropout > 0",
+        ),
+    )
     shuffle: bool = F(False, help="随机打乱 tag 顺序", ui_=ui("caption", order=40, control="switch"))
     tag_dropout: float = F(
         0.0,
@@ -123,8 +134,13 @@ class DatasetConfig(_Strict):
     )
     resolution_mode: Literal["bucket", "native"] = F(
         "bucket",
-        help="分桶按接近原图的长宽比选择训练尺寸，等比缩放后中心裁剪；原生保留每图尺寸，仅裁去模型对齐所需的边缘，超预算时按策略缩小或报错，不放大小图。",
+        help="分桶按接近原图的长宽比选择训练尺寸；原生按每图尺寸和预算分组，不放大小图。是否保留完整画面由下方图像适配方式控制，超预算按策略缩小或报错。",
         ui_=ui("dataset", order=5, control="select"),
+    )
+    image_fit: Literal["crop", "pad"] = F(
+        "crop",
+        help="保留完整画面：等比缩放后补齐尺寸，补边不计入直接训练损失，但仍是模型看到的上下文。裁切填满尺寸：使用旧版等比覆盖后中心裁剪。新项目默认保留完整画面；缺少此字段的旧配置继续裁切，不改变历史训练。",
+        ui_=ui("dataset", order=6, control="select"),
     )
     native_max_pixels: int = F(
         1_048_576,
@@ -137,7 +153,7 @@ class DatasetConfig(_Strict):
         4096,
         ge=32,
         le=8192,
-        help="原生模式单边上限；超限时等比缩小后裁去尺寸对齐边缘，或按策略报错",
+        help="原生模式包含对齐补边在内的单边上限；超限时等比缩小，或按策略报错。旧裁切模式沿用向下对齐。",
         ui_=ui("dataset", order=12, show_when="dataset.resolution_mode == 'native'", advanced=True),
     )
     native_overflow: Literal["downscale", "error"] = F(
@@ -154,7 +170,7 @@ class DatasetConfig(_Strict):
     aspect_ratio_limit: float = F(
         2.0,
         ge=1.0,
-        help="分桶最大长边/短边比，默认 2 对应最宽 2:1、最高 1:2。更狭长的原图仍会进入最近的桶并裁剪；大量长图可提高此值或改用原生模式。",
+        help="分桶最大长边/短边比，默认 2 对应最宽 2:1、最高 1:2。更狭长的原图进入最近的桶，按适配方式补边或裁切；大量长图可提高此值或改用原生模式减少补边。",
         ui_=ui("dataset", order=20, show_when="dataset.resolution_mode == 'bucket'"),
     )
     area_tolerance: float = F(
@@ -198,11 +214,15 @@ class DatasetConfig(_Strict):
         help="缓存目录（默认 <output_dir>/cache）",
         ui_=ui("dataset", order=100, control="path", advanced=True),
     )
-    cache_latents: bool = F(True, help="预编码并缓存 latents", ui_=ui("dataset", order=110, control="switch"))
+    cache_latents: bool = F(
+        True,
+        help="训练开始前在本机自动准备图像编码缓存，后续可复用；关闭后每批在本机处理图像。",
+        ui_=ui("dataset", order=110, control="switch", advanced=True),
+    )
     text_encoding: Literal["auto", "online", "cached"] = F(
         "auto",
-        help="文本编码：online 每步在线编码（支持 caption 增强），cached 预缓存后卸载编码器",
-        ui_=ui("dataset", order=120, control="select"),
+        help="自动按模型选择。每步处理标签支持每步变化；训练前缓存标签先计算结果并卸载编码器以降低驻留显存。两种都在训练电脑本地处理。",
+        ui_=ui("dataset", order=120, control="select", advanced=True),
     )
 
     @field_validator("resolutions")
@@ -574,7 +594,7 @@ class MemoryConfig(_Strict):
     offload_text_encoder: bool = F(
         False,
         help="在线编码标签时，在每次编码后把文本编码器移到 CPU，默认关闭；可减少驻留显存但增加传输。cached 文本模式已预编码并卸载编码器，无需依靠此开关。",
-        ui_=ui("memory", order=30, control="switch"),
+        ui_=ui("memory", order=30, control="switch", advanced=True),
     )
     compile: bool = F(
         False,
@@ -658,8 +678,8 @@ class CheckpointConfig(_Strict):
         min_length=1,
         max_length=150,
         pattern=r'^[^/\\:*?"<>|\x00-\x1f\x7f]+$',
-        help="产物文件名前缀，不含目录或路径分隔符",
-        ui_=ui("checkpoint", order=10),
+        help="产物文件名前缀，不含目录或路径分隔符。默认 lora 在项目任务入队时自动按项目显示名和版本生成；非默认自定义名称保留。独立 CLI 仍按此名称保存。",
+        ui_=ui("checkpoint", order=10, advanced=True),
     )
     save_every_steps: int | None = F(
         None,
@@ -688,7 +708,7 @@ class CheckpointConfig(_Strict):
     save_dtype: DType = F(
         "bf16",
         help="导出权重文件的精度，默认 bf16；不会改变当前训练参数或完整恢复状态的精度。选择 fp32 会增大文件，可用于减少导出舍入。",
-        ui_=ui("checkpoint", order=60, control="select"),
+        ui_=ui("checkpoint", order=60, control="select", advanced=True),
     )
     save_on_finish: bool = F(
         True, help="结束时保存最终权重", ui_=ui("checkpoint", order=70, control="switch")
@@ -696,7 +716,7 @@ class CheckpointConfig(_Strict):
     resume: str | None = F(
         None,
         help="从完整 state 目录恢复训练，默认留空从头开始；会校验数据和模型身份。只有 .safetensors 权重时应使用适配器热启动，无法据此恢复优化器和数据进度。",
-        ui_=ui("checkpoint", order=80, control="path"),
+        ui_=ui("checkpoint", order=80, control="path", advanced=True),
     )
 
     @field_validator("name")
@@ -800,7 +820,7 @@ class SamplingConfig(_Strict):
     )
     sampler: Literal["euler", "heun", "er_sde"] = F(
         "euler",
-        help="预览图的数值求解算法，默认 Euler 保持旧行为；Heun 在非末步增加一次预测做修正，ER-SDE 使用带历史项的随机求解。改变它不改变训练目标，应固定种子与调度器做效果对比。",
+        help="预览图的计算方式，默认 Euler 每步评估一次速度；Heun 先预测再校正，除末步外通常多评估一次；ER-SDE 使用历史结果与随机噪声，默认阶数由内部逐步处理，无需按阶数挑质量档位。开启提示词引导时，每次评估还可能分别计算正向与负向条件。改变算法不改变训练目标。",
         ui_=ui("sampling", order=120, control="select", show_when="sampling.enabled == true"),
     )
     scheduler: Literal["uniform", "simple", "sgm_uniform", "normal"] = F(

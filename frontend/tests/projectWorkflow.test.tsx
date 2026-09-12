@@ -107,7 +107,7 @@ describe('project training workspace', () => {
     expect(uploadText).toContain('name="caption_ext"\r\n\r\nauto');
     expect(await screen.findByTestId('dataset-card-d_uploaded')).toHaveTextContent('1 张图片');
     fireEvent.click(screen.getByRole('link', { name: /^2\s*训练参数$/ }));
-    fireEvent.click(await screen.findByRole('tab', { name: '模型与输出' }));
+    fireEvent.click(await screen.findByRole('tab', { name: '底模与输出' }));
     expect(await screen.findByRole('combobox', { name: 'model.family' })).toHaveTextContent(/anima/i);
     await waitFor(() => expect(screen.getByDisplayValue('D:/models/anima.safetensors')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('tab', { name: '训练参数' }));
@@ -150,8 +150,8 @@ describe('project training workspace', () => {
       return HttpResponse.json({...indexed,source:{...source,is_reg:true,version_id:'v2'}});
     }));
     render(<MemoryRouter><ProjectDataImport projectId="p_work" versionId="v2" defaultIsReg onImported={imported}/></MemoryRouter>);
-    expect(screen.getByRole('checkbox',{name:'这是正则化数据集（先验保持）'})).toBeChecked();
-    expect(screen.getByRole('checkbox',{name:'这是正则化数据集（先验保持）'})).toBeDisabled();
+    expect(screen.getByText('正则集 · 导入当前版本 reg 目录')).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /正则/ })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('选择训练文件'),{target:{files:[new File(['image'],'class.png'),new File(['a person'],'class.txt')]}});
     fireEvent.change(screen.getByRole('textbox',{name:'类别提示词'}),{target:{value:'a person'}});
     fireEvent.change(screen.getByRole('spinbutton',{name:'正则损失权重'}),{target:{value:'0.5'}});
@@ -163,10 +163,11 @@ describe('project training workspace', () => {
   it('imports a training-machine path and includes regularization fields', async () => {
     const backend = workspaceHandlers(); let body: any;
     server.use(http.post('/api/projects/p_work/datasets', async ({ request }) => { body = await request.json(); backend.addSource(); return HttpResponse.json(indexed); }));
-    show(); await screen.findByTestId('project-data-import');
+    render(<MemoryRouter><ProjectDataImport projectId="p_work" defaultIsReg onImported={backend.addSource}/></MemoryRouter>);
+    expect(screen.getByText('正则集 · 导入当前版本 reg 目录')).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /正则/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '导入本机目录' }));
     fireEvent.change(within(screen.getByRole('group', { name: '训练图片文件夹路径' })).getByRole('textbox'), { target: { value: 'D:\\photos\\regularization' } });
-    fireEvent.click(screen.getByRole('checkbox', { name: '这是正则化数据集（先验保持）' }));
     fireEvent.change(screen.getByRole('textbox', { name: '类别提示词' }), { target: { value: 'a person' } });
     fireEvent.change(screen.getByRole('spinbutton', { name: '正则损失权重' }), { target: { value: '0.5' } });
     fireEvent.click(screen.getByRole('button', { name: '导入文件夹' }));
@@ -194,7 +195,7 @@ describe('project training workspace', () => {
 
   it('saves parameter changes when immediately navigating back to another project step', async () => {
     const backend = workspaceHandlers();
-    show('/projects/p_work/train');
+    show('/projects/p_work/train?tab=train');
     await screen.findByRole('spinbutton', { name: '学习率' });
     fireEvent.change(screen.getByRole('spinbutton', { name: '学习率' }), { target: { value: '0.0007' } });
     fireEvent.click(screen.getByRole('link', { name: /^1\s*训练数据$/ }));

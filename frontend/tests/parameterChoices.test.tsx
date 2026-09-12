@@ -26,18 +26,20 @@ it('selects a supported optimizer and preserves the explicit custom-class escape
 it('pairs independent inference choices and shows ER controls only for ER-SDE',()=>{
   render(<Editor initial={{sampling:{enabled:true,sampler:'euler',scheduler:'uniform'}}} groups={['sampling']}/>);
   expect(screen.queryByRole('combobox',{name:'ER-SDE 求解阶数'})).not.toBeInTheDocument();
-  select('采样器','ER-SDE · 随机微分方程');select('采样调度器','SGM Uniform');
+  select('采样器','ER-SDE');select('采样调度器','SGM Uniform');
   expect(value().sampling).toMatchObject({sampler:'er_sde',scheduler:'sgm_uniform'});
   select('ER-SDE 求解阶数','2');expect(value().sampling.er_sde_order).toBe(2);
-  select('采样器','Heun · 二阶');expect(screen.queryByRole('combobox',{name:'ER-SDE 求解阶数'})).not.toBeInTheDocument();
+  select('采样器','Heun');expect(screen.queryByRole('combobox',{name:'ER-SDE 求解阶数'})).not.toBeInTheDocument();
 });
 
-it('keeps legacy TXT selection and only presents prior weighting for a regularization source',()=>{
+it('keeps prior weighting out of training sources and exposes it through external-source compatibility settings',()=>{
   render(<Editor initial={{dataset:{sources:[{path:'/dataset',repeats:1,caption_ext:'.txt',is_reg:false,prior_weight:.5}]}}} groups={['dataset']}/>);
-  expect(screen.getByRole('combobox',{name:'标签格式 1'})).toHaveTextContent('仅 TXT');
+  expect(screen.queryByRole('combobox',{name:'标签格式 1'})).not.toBeInTheDocument();
   expect(screen.queryByRole('spinbutton',{name:'正则损失权重 1'})).not.toBeInTheDocument();
-  select('标签格式 1','自动 · JSON 优先，其次 TXT');
-  expect(value().dataset.sources[0].caption_ext).toBe('auto');
-  fireEvent.click(screen.getByRole('checkbox',{name:'这是正则集'}));
+  expect(screen.queryByRole('checkbox',{name:'这是正则集'})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByText('高级来源设置'));
+  fireEvent.click(screen.getByText('外部 / 旧版来源兼容设置'));
+  fireEvent.click(screen.getByRole('checkbox',{name:'外部来源用于正则训练'}));
   expect(screen.getByRole('spinbutton',{name:'正则损失权重 1'})).toHaveValue(.5);
+  expect(value().dataset.sources[0]).toMatchObject({path:'/dataset',caption_ext:'.txt',is_reg:true,prior_weight:.5});
 });

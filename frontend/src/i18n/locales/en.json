@@ -470,9 +470,9 @@
   },
   "textMode": {
     "auto": "Auto",
-    "cached": "Cached",
-    "online": "Online",
-    "autoOnly": "This family only supports auto/cached (online not available)"
+    "cached": "Cache captions before training",
+    "online": "Process captions each step",
+    "autoOnly": "This model caches captions before training and releases the text encoder afterward."
   },
   "sampling": {
     "shiftAuto": "Auto (per resolution)"

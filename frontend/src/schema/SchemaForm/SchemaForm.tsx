@@ -48,6 +48,23 @@ export interface ValidationError {
   msg: string;
 }
 
+export interface SourceRoleInfo {
+  path: string;
+  section: string;
+  is_reg: boolean;
+  managed: boolean;
+  root: string | null;
+  origin: string;
+  images?: number | null;
+}
+
+export interface OutputBindingInfo {
+  directory_template: string;
+  name: string;
+  automatic_name: boolean;
+  inherits_output_dir: boolean;
+}
+
 interface SchemaFormProps {
   schema: any;
   value: Record<string, any>;
@@ -61,6 +78,9 @@ interface SchemaFormProps {
   readOnly?: boolean;
   groupFilter?: string[];
   search?: string;
+  sourceRoles?: SourceRoleInfo[];
+  outputBinding?: OutputBindingInfo | null;
+  versionSources?: boolean;
 }
 
 const resolveRef = (rootSchema: any, refPath: string) => {
@@ -283,7 +303,10 @@ const KeyValueEditor: React.FC<{
 const SourcesEditor: React.FC<{
   value: any[];
   onChange: (val: any[]) => void;
-}> = ({ value = [], onChange }) => {
+  sourceRoles?: SourceRoleInfo[];
+  section: string;
+  versionSources?: boolean;
+}> = ({ value = [], onChange, sourceRoles = [], section, versionSources = false }) => {
   const { t, i18n } = useTranslation();
   const text = (zh: string, en: string) => i18n.language.startsWith("en") ? en : zh;
   const [modalIndex, setModalIndex] = React.useState<number | null>(null);
@@ -307,16 +330,20 @@ const SourcesEditor: React.FC<{
 
   return (
     <div className="space-y-3" data-testid="sources-editor">
-      {value.map((src, idx) => (
-        <div key={idx} role="group" aria-label={t('train.promptN', { n: idx + 1 })} className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
+      {value.map((src, idx) => {
+        const role = sourceRoles.find(item => item.path === src.path && item.section === section);
+        const isReg = role?.managed ? role.is_reg : src.is_reg === undefined ? !!role?.is_reg : !!src.is_reg;
+        const folder = String(src.path || '').replace(/\\/g,'/').split('/').filter(Boolean).pop() || text('未选择文件夹','No folder selected');
+        return (
+        <div key={idx} role="group" aria-label={t('train.sourceN', { n: idx + 1 })} className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
           <div className="flex justify-between items-center">
             <span className="font-semibold text-slate-700 dark:text-slate-300">
-              {t('train.sourceN', { n: idx + 1, defaultValue: '数据源 #{n}' })}
+              {folder}
             </span>
-            <button type="button" onClick={() => removeSource(idx)} className="text-red-500 hover:text-red-700">
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
+            <span>{isReg ? text('正则集','Regularization') : text('训练集','Training')} · {role?.images == null ? text('图片数待索引','Count pending indexing') : text(`${role.images} 张图片`,`${role.images} images`)}</span>
           </div>
+          <p>{role?.managed ? text(`当前版本 / ${role.is_reg ? 'reg' : 'traindata'}`,`Current version / ${role.is_reg ? 'reg' : 'traindata'}`) : versionSources && !role ? text('目录用途待核对','Directory ownership pending') : text('外部 / 旧版来源','External / legacy source')} · {text(`每图重复 ${src.repeats ?? 1} 次`,`Repeats ${src.repeats ?? 1}`)}{isReg ? text(` · 正则权重 ${src.prior_weight ?? 1}`,` · Prior weight ${src.prior_weight ?? 1}`) : ''}</p>
+          <details><summary>{text('高级来源设置','Advanced source settings')}</summary>
           <div className="flex space-x-2">
             <input
               type="text"
@@ -335,15 +362,17 @@ const SourcesEditor: React.FC<{
             </button>
           </div>
           <div className="source-settings-grid">
-            <label><span>{text('标签格式', 'Caption format')}<ConfigHelp label={text('标签格式说明','Caption format help')}>{text('自动按每张图片查找同名 JSON，再查 TXT；可以混用。指定格式时仅使用该扩展名，坏 JSON 会报错，不会静默改用 TXT。旧数据源保留原来的选择。','Auto checks each image for a matching JSON before TXT and supports mixed datasets. An explicit format restricts selection to that suffix. Invalid JSON is reported rather than silently replaced by TXT. Existing sources retain their selection.')}</ConfigHelp></span><CaptionFormatSelect value={src.caption_ext || 'auto'} onChange={next=>updateSource(idx,'caption_ext',next)} label={text(`标签格式 ${idx+1}`,`Caption format ${idx+1}`)}/></label>
             <label><span>{t('dataset.repeats')}<ConfigHelp label={text('重复次数说明','Repeats help')}>{text('每轮让这组图片出现几次；默认 1。例如 20 张图重复 5 次计为 100 个样本，不复制文件。增加次数会增加训练占比和总步数，也可能过拟合。图片本身不能决定这个数值。','How often these images appear per epoch; default 1. Twenty images repeated five times count as 100 samples without copying files. More repeats increase their training share and step count, and may overfit. The image itself cannot determine this setting.')}</ConfigHelp></span><input aria-label={text(`重复次数 ${idx+1}`,`Repeats ${idx+1}`)} type="number" min="1" step="1" value={src.repeats ?? 1} onChange={event=>updateSource(idx,'repeats',Number(event.target.value))}/></label>
-            <label className="source-reg-toggle"><input type="checkbox" checked={!!src.is_reg} onChange={event=>updateSource(idx,'is_reg',event.target.checked)}/><span>{text('这是正则集','Regularization dataset')}</span><ConfigHelp label={text('正则集说明','Regularization dataset help')}>{text('一般人物或场景等类别图片，用于先验保持。与目标训练图片区分；默认不会加入目标触发词。是否作为正则集需要你明确指定，不能自动从图片判断。','Class images, such as general people or scenes, for prior preservation. They are distinct from target training examples and do not receive the target trigger by default. This purpose must be explicitly chosen, not inferred from images.')}</ConfigHelp></label>
-            {src.is_reg && <label><span>{text('正则损失权重','Regularization loss weight')}<ConfigHelp label={text('正则损失权重说明','Regularization loss weight help')}>{text('只对正则图片的损失生效。默认 1；0.5 表示这些图片的损失乘以一半，0 则不贡献训练梯度。它不是生成正则图片的数量。','Applies only to regularization-image losses. Default 1; 0.5 halves their contribution, while 0 contributes no training gradient. This is not the number of images to generate.')}</ConfigHelp></span><input aria-label={text(`正则损失权重 ${idx+1}`,`Regularization loss weight ${idx+1}`)} type="number" min="0" step="0.1" value={src.prior_weight ?? 1} onChange={event=>updateSource(idx,'prior_weight',Number(event.target.value))}/></label>}
+            <div className="source-reg-toggle"><span>{isReg ? text('正则集','Regularization') : text('训练集','Training')}</span><ConfigHelp label={text('数据用途说明','Dataset purpose help')}>{text('当前版本 traindata 中的图片自动作为训练集，reg 中的图片自动作为正则集。正则图用于类别先验保持，默认不继承训练触发词。外部与旧版来源保留已有用途。','Images inside this version’s traindata are training examples; images inside reg are regularization examples. Class priors do not inherit the training trigger by default. External and legacy sources retain their existing purpose.')}</ConfigHelp></div>
+            {isReg && <label><span>{text('正则损失权重','Regularization loss weight')}<ConfigHelp label={text('正则损失权重说明','Regularization loss weight help')}>{text('只对正则图片的损失生效。默认 1；0.5 表示这些图片的损失乘以一半，0 则不贡献训练梯度。它不是生成正则图片的数量。','Applies only to regularization-image losses. Default 1; 0.5 halves their contribution, while 0 contributes no training gradient. This is not the number of images to generate.')}</ConfigHelp></span><input aria-label={text(`正则损失权重 ${idx+1}`,`Regularization loss weight ${idx+1}`)} type="number" min="0" step="0.1" value={src.prior_weight ?? 1} onChange={event=>updateSource(idx,'prior_weight',Number(event.target.value))}/></label>}
           </div>
+          {role?.managed ? <p>{text('目录归属：当前版本','Directory: current version')} / <strong>{role.is_reg ? 'reg' : 'traindata'}</strong><br/><code className="break-all">{role.root}</code></p> : versionSources && !role ? <p>{text('正在核对目录归属；保留当前用途。','Checking directory ownership; retaining the current purpose.')}</p> : <details><summary>{text('外部 / 旧版来源兼容设置','External / legacy source compatibility')}</summary><p>{text('此路径不属于当前版本的 traindata 或 reg，文件保持原位置。仅为已有外部训练配置显式设置用途。','This path is outside this version’s traindata and reg. Files stay in place; adjust purpose only for existing external training configurations.')}</p><label><input type="checkbox" checked={isReg} onChange={event=>updateSource(idx,'is_reg',event.target.checked)}/>{text('外部来源用于正则训练','Use external source for regularization')}</label></details>}
           <details className="source-fallback"><summary>{text('缺少标签时的默认描述（可选）','Fallback description when captions are missing (optional)')}</summary><input aria-label={text(`默认描述 ${idx+1}`,`Fallback description ${idx+1}`)} value={src.class_prompt ?? ''} onChange={event=>updateSource(idx,'class_prompt',event.target.value || null)} placeholder={text('例如：a person；不生成或修改标签文件','For example: a person; does not create or edit caption files')}/></details>
+          <button type="button" onClick={() => removeSource(idx)} className="text-red-500 hover:text-red-700">{text('从本次配置移除来源（保留文件）','Remove from this configuration (keep files)')}</button>
+          </details>
         </div>
-      ))}
-      <button
+      );})}
+      <details><summary>{text('高级：引用已有数据目录','Advanced: reference an existing dataset folder')}</summary><p>{text('管理、上传或导入图片请使用项目的训练数据步骤。此处仅为兼容已有外部配置。','Manage, upload and import images in the project’s training-data step. This option supports existing external configurations.')}</p><button
         type="button"
         onClick={addSource}
         data-testid="add-source"
@@ -352,6 +381,7 @@ const SourcesEditor: React.FC<{
         <Plus className="w-3.5 h-3.5" />
         <span>{t('train.addSource', '添加数据集源')}</span>
       </button>
+      </details>
 
       {modalIndex !== null && (
         <PathPickerModal
@@ -513,8 +543,6 @@ const ModelPathInput: React.FC<{
 };
 
 function ResolutionInput({value, onChange, label}: {value: number[] | string; onChange: (next: number[] | string) => void; label: string}) {
-  const {i18n} = useTranslation();
-  const english = i18n.language.startsWith('en');
   const encoded = Array.isArray(value) ? value.join(', ') : String(value || '');
   const [draft, setDraft] = React.useState(encoded);
   React.useEffect(() => setDraft(encoded), [encoded]);
@@ -523,7 +551,7 @@ function ResolutionInput({value, onChange, label}: {value: number[] | string; on
     const tokens = raw.replace(/[\u005b\u005d]/g, '').split(/[,，\s]+/).filter(Boolean);
     onChange(tokens.length && tokens.every(token => /^\d+$/.test(token)) ? tokens.map(Number) : raw);
   };
-  return <div className="resolution-editor"><input aria-label={label} value={draft} onChange={event => update(event.target.value)} placeholder="512, 768, 1024"/><div>{[512,768,1024].map(size => <button type="button" key={size} aria-label={`${english ? 'Use resolution' : '使用分辨率'} ${size}`} onClick={() => update(String(size))}>{size}</button>)}</div><span>{english ? 'Separate multiple resolutions with commas.' : '多个分辨率用逗号分隔'}</span></div>;
+  return <div className="resolution-editor"><input aria-label={label} inputMode="numeric" value={draft} onChange={event => update(event.target.value)} placeholder="1024"/></div>;
 }
 
 /** Nullable unions retain their actual scalar/object type and explicit null value. */
@@ -595,7 +623,7 @@ const FieldGroup: React.FC<{
   compact?: boolean;
   groupKey?: string;
 }> = ({ title, count, children, compact = false, groupKey }) => {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = React.useState(true);
   return (
     <section data-group={groupKey} className={compact ? `config-group ${['model', 'dataset', 'caption', 'sampling', 'validation'].includes(groupKey || '') ? 'config-group-wide' : ''}` : 'border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800'}>
@@ -615,7 +643,7 @@ const FieldGroup: React.FC<{
           {isOpen ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
         </span>
       </button>
-      {isOpen && <div className={compact ? 'config-fields' : 'p-4 space-y-4'}>{groupKey === 'caption' && <p className="config-caption-explanation">{i18n.language.startsWith('en') ? 'TXT and structured JSON are supported. Choose automatic detection in the data source. JSON shuffle preserves category order and the final natural-language description; malformed JSON blocks training.' : '支持 TXT 与结构化 JSON，在数据源中选择自动检测。JSON 打乱只作用于各分类内部，固定标签和末尾自然语言描述保持顺序；格式错误会阻止训练。'}</p>}{children}</div>}
+      {isOpen && <div className={compact ? 'config-fields' : 'p-4 space-y-4'}>{children}</div>}
     </section>
   );
 };
@@ -632,9 +660,16 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   readOnly = false,
   groupFilter,
   search = '',
+  sourceRoles,
+  outputBinding,
+  versionSources = false,
 }) => {
   const { t, i18n } = useTranslation();
   const english = i18n.resolvedLanguage?.startsWith('en') || false;
+  const [editCaptionOverrides, setEditCaptionOverrides] = React.useState(false);
+  const [editOutput, setEditOutput] = React.useState(false);
+  const captionOverrideKeys = ['prefix', 'suffix', 'trigger_word'];
+  const hasCaptionOverrides = captionOverrideKeys.some(key => !!value.dataset?.caption?.[key]);
   const onChange = readOnly ? () => {} : onValueChange;
   const groups: Record<string, { order: number; fields: React.ReactNode[] }> = {};
   const conditionValue = { ...value, dataset: { resolution_mode: 'bucket', ...value.dataset } };
@@ -646,6 +681,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (fullPathKey === 'logging.wandb' || fullPathKey.startsWith('logging.wandb.')) return null;
     // The service assigns a separate samples/<job_id> destination when starting a task.
     if (fullPathKey === 'sampling.output_dir') return null;
+    if (versionSources && ['checkpoint.output_dir', 'checkpoint.name'].includes(fullPathKey) && !showAdvanced && !editOutput) return null;
     if (fullPathKey === 'adapter.alpha' && value.adapter?.algo === 'lokr' && value.adapter?.rank === 'full') return null;
     const ui = { ...(prop['x-ui'] || {}), ...(compact && fullPathKey === 'dataset.batch_size' ? {group:'loop'} : {}) };
     if (conditionValue.dataset.resolution_mode === 'native' && ['dataset.resolutions', 'dataset.aspect_ratio_limit', 'dataset.area_tolerance', 'dataset.bucket_step', 'dataset.bucket_no_upscale'].includes(fullPathKey)) return null;
@@ -662,7 +698,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (groupFilter && !groupFilter.includes(currentGroup)) return null;
     if (search && !`${fieldLabel} ${fullPathKey} ${prop.description || ''}`.toLowerCase().includes(search.toLowerCase())) return null;
 
-    if (ui.advanced && !showAdvanced) return null;
+    const captionOverride = fullPathKey.startsWith('dataset.caption.') && captionOverrideKeys.includes(key);
+    if ((ui.advanced || captionOverride) && !showAdvanced && !(captionOverride && editCaptionOverrides) && !(editOutput && ['checkpoint.output_dir', 'checkpoint.name'].includes(fullPathKey))) return null;
     if (ui.show_when) {
       try {
         if (!evaluateShowWhen(ui.show_when, conditionValue)) return null;
@@ -731,6 +768,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         <SourcesEditor
           value={fieldValue || []}
           onChange={(val) => onChange(setNestedValue(value, path, val))}
+          sourceRoles={sourceRoles}
+          section={parentPath[0] || 'dataset'}
+          versionSources={versionSources}
         />
       );
     } else if (key === 'betas' || (prop.type === 'array' && (prop as any).maxItems === 2)) {
@@ -781,7 +821,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         onChange={(val) => onChange(setNestedValue(value, path, val))} />;
     } else if (fullPathKey === 'model.family' && families?.length) {
       control = <StudioSelect aria-label="model.family" value={fieldValue || families[0].name}
-        onValueChange={next => onChange(setNestedValue(value,path,next))} options={families.map(item=>({value:item.name,label:item.label || item.name}))}/>;
+        onValueChange={next => onChange(setNestedValue(value,path,next))} options={families.filter(item=>item.name!=='toy'||fieldValue==='toy').map(item=>({value:item.name,label:item.label || item.name}))}/>;
     } else if (fullPathKey === 'adapter.preset' && family) {
       // 族内预设下拉：name — description（N 层）
       control = (
@@ -935,6 +975,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     });
   }
 
+  const captionSources = Array.isArray(value.dataset?.sources) ? value.dataset.sources : [];
+  const showCaptionFormats = captionSources.length > 0 && (!groupFilter || groupFilter.includes('caption')) && (!search || /标签|格式|caption|format|json|txt/i.test(search));
+  if (showCaptionFormats && !groups.caption) groups.caption = {order: 0, fields: []};
   const groupOrder = groupFilter || schema?.['x-ui-groups'] || [];
   const sortedGroups = Object.entries(groups).sort(([keyA, groupA], [keyB, groupB]) => {
     const indexA = groupOrder.indexOf(keyA);
@@ -949,6 +992,21 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     <div className={compact ? 'compact-schema' : 'space-y-6'} data-testid="schema-form">
       {sortedGroups.map(([groupName, groupData]) => (
         <FieldGroup key={groupName} title={t(`groups.${groupName}`, groupName)} count={groupData.fields.length} compact={compact} groupKey={groupName}>
+          {groupName === 'checkpoint' && versionSources && <div className="output-binding-summary">
+            <div className="output-binding-heading"><strong>{english ? 'Training weights' : '训练权重'}</strong><button type="button" onClick={() => setEditOutput(previous => !previous)}>{editOutput ? (english ? 'Collapse custom settings' : '收起自定义设置') : (english ? 'Customize save location or name' : '自定义保存位置或名称')}</button></div>
+            {outputBinding ? <><div><span>{english ? 'File name' : '文件名'}</span><code>{outputBinding.name}-final.safetensors</code></div><div><span>{english ? 'Save location' : '保存位置'}</span><code>{outputBinding.directory_template.replace('{job_id}', english ? '<run ID>' : '<运行 ID>')}</code></div></> : <p>{english ? 'Resolving the save location…' : '正在读取保存位置…'}</p>}
+          </div>}
+          {groupName === 'caption' && showCaptionFormats && <div className="caption-source-formats">
+            {captionSources.map((source: any, index: number) => {
+              const name = String(source.path || '').split(/[\\/]/).filter(Boolean).pop() || `${english ? 'Data source' : '数据源'} ${index + 1}`;
+              const label = `${english ? 'Caption format' : '标签格式'} · ${name}`;
+              return <div className="caption-source-format" key={`${index}-${source.path}`}>
+                <span className="caption-source-name" title={source.path}>{name}</span>
+                <label><span>{english ? 'Caption format' : '标签格式'}</span><CaptionFormatSelect label={label} value={source.caption_ext || 'auto'} disabled={readOnly} onChange={caption_ext => onChange(setNestedValue(value, ['dataset', 'sources'], captionSources.map((item: any, itemIndex: number) => itemIndex === index ? {...item, caption_ext} : item)))}/></label>
+              </div>;
+            })}
+          </div>}
+          {groupName === 'caption' && hasCaptionOverrides && !showAdvanced && !editCaptionOverrides && <div className="caption-override-notice" role="status"><span>{english ? 'This configuration adds text to your existing captions.' : '当前配置会额外改写已有标签。'}</span><button type="button" onClick={() => setEditCaptionOverrides(true)}>{english ? 'Edit extra caption changes' : '编辑额外标签改写'}</button></div>}
           {compact && groupName === 'sampling' ? [...groupData.fields].sort((a, b) => {
             const order = ['enabled', 'at_start', 'every_steps', 'every_epochs', 'prompts', 'width', 'height', 'steps', 'cfg', 'shift', 'seed', 'sampler', 'scheduler', 'er_sde_order', 'er_sde_s_noise', 'prompts_file'];
             const rank = (node: React.ReactNode) => { const index = order.indexOf(String((node as React.ReactElement).key).split('.').pop() || ''); return index < 0 ? order.length : index; };

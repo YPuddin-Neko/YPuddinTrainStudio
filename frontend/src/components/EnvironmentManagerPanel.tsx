@@ -16,7 +16,9 @@ interface EnvironmentStatus {
     python: string; python_executable: string; platform: string; machine: string; torch: string;
     cuda_runtime: string | null; cuda_available: boolean; mps_available: boolean;
     gpu_capability: number[] | null; virtual_environment: boolean;
-    gpus: { name: string; telemetry_source?: string; telemetry_note?: string; driver_version?: string }[];
+    cuda_device_count?: number; distributed_available?: boolean; nccl_available?: boolean;
+    multi_gpu_training?: boolean; training_device_policy?: string;
+    gpus: { name: string; device?: string | null; cuda_available?: boolean; memory_scope?: string; mem_total_mb?: number; telemetry_source?: string; telemetry_note?: string; driver_version?: string }[];
   };
   packages: PackageStatus[]; attention_default: string; restart_required: boolean;
   maintenance: boolean; running_jobs: boolean; probe_deferred: boolean;
@@ -136,6 +138,7 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     if (pkg.available) return pkg.backend ? copy('已通过 CUDA 内核检测', 'CUDA kernel probe passed') : copy('可用', 'Available');
     return copy('检测失败，展开查看', 'Probe failed; expand for details');
   };
+  const textUnavailable = () => copy(' · 驱动可见，当前 PyTorch 不可用',' · visible to driver, unavailable to current PyTorch');
   const locked = busy || uploading || operations.some(busyStatus) || !!status?.running_jobs;
   const computeBackend = status?.runtime.cuda_available
     ? `CUDA ${status.runtime.cuda_runtime || ''}`.trim()
@@ -143,6 +146,8 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
   const facts = status && [
     ['Python', status.runtime.python],
     ['PyTorch', status.runtime.torch],
+    [copy('CUDA 构建', 'CUDA build'), status.runtime.cuda_runtime || copy('未编译 CUDA', 'No CUDA build')],
+    [copy('CUDA 可用', 'CUDA available'), status.runtime.cuda_available ? copy('是', 'Yes') : copy('否', 'No')],
     [copy('计算后端', 'Compute backend'), computeBackend],
     [copy('设备', 'Device'), status.runtime.gpus.map(g => g.name).join(' / ') || (status.runtime.mps_available ? 'Apple GPU' : 'CPU')],
   ];
@@ -161,6 +166,8 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     {loading && !status && <p role="status" className="flex items-center gap-2 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" />{copy('检测当前环境与已安装扩展…', 'Checking runtime and installed extensions…')}</p>}
     {status && <>
       <dl className="settings-facts">{facts?.map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 break-words text-sm font-medium">{value}</dd></div>)}</dl>
+      {status.runtime.gpus.length>0&&<ul className="settings-note" aria-label={copy('已检测设备','Detected devices')}>{status.runtime.gpus.map((gpu,index)=><li key={`${gpu.device||index}:${gpu.name}`}><strong>{gpu.device||`GPU ${index+1}`}</strong> · {gpu.name}{gpu.mem_total_mb!=null?` · ${(gpu.mem_total_mb/1024).toFixed(1)} GiB ${gpu.memory_scope==='unified_system'?copy('统一内存','unified memory'):copy('设备内存','device memory')}`:''}{gpu.cuda_available===false?textUnavailable():''}</li>)}</ul>}
+      <div className="settings-note" data-testid="environment-training-devices"><p><strong>{copy('训练设备', 'Training devices')}</strong> · {copy(`PyTorch 可用 CUDA 显卡：${status.runtime.cuda_device_count ?? 0} 张`, `CUDA GPUs available to PyTorch: ${status.runtime.cuda_device_count ?? 0}`)}</p><p>{copy('当前每个任务使用一张卡；多张显卡可分配给不同任务。单任务多卡训练（DDP）尚未接入。', 'Each task currently uses one device. Multiple GPUs can run separate tasks; multi-GPU training for a single task (DDP) is not implemented.')}</p><p>torch.distributed: {status.runtime.distributed_available ? copy('可用', 'available') : copy('不可用', 'unavailable')} · NCCL: {status.runtime.nccl_available ? copy('已编译', 'compiled') : copy('未编译', 'not compiled')}</p><p>{copy('这两项只表示 PyTorch 构建能力，不代表已运行多卡通信测试。', 'These indicate PyTorch build capabilities, not a completed multi-GPU communication test.')}</p></div>
       <details className="settings-inline-details"><summary>{copy('解释器与显卡诊断', 'Interpreter & GPU diagnostics')}</summary><p className="font-mono break-all">{status.runtime.python_executable}</p><p>{status.runtime.platform} · {status.runtime.machine}</p><p>{copy('PyTorch / CUDA 随启动环境统一管理，运行时不替换。修复后重新启动 Studio。', 'PyTorch / CUDA are managed by the launcher and are not replaced while running. Restart Studio after repairing the runtime.')}</p>
         {status.runtime.gpus.some(g => g.telemetry_source) && <p>{status.runtime.gpus.map(g => `${g.name}: ${g.telemetry_source || '—'}${g.telemetry_note ? ` (${t(`hardware.${g.telemetry_note}`)})` : ''}`).join(' / ')}</p>}
       </details>

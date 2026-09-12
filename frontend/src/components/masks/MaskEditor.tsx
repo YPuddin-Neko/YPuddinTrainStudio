@@ -5,11 +5,15 @@ import { formatApiError } from '../../utils/errors';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { MaskDocument, imagePoint, paintSegment, type MaskOperation, type MaskPoint } from './maskDocument';
 import { loadMask, maskEndpoint, saveMask, type MaskInfo } from './maskApi';
+import ImageEditor from './ImageEditor';
 
-interface Props { datasetId: string; imageId: string; relPath: string; onClose: () => void; onSaved: () => void; onEnableTraining: () => Promise<void> }
+interface Props { datasetId: string; imageId: string; relPath: string; onClose: () => void; onSaved: () => void; onEnableTraining: () => Promise<void>; allowPaint?: boolean }
 const control = 'inline-flex items-center justify-center gap-1.5 min-h-8 rounded-md border border-slate-300 dark:border-slate-600 px-2.5 py-1.5 text-xs hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40';
 
-export function MaskEditor({ datasetId, imageId, relPath, onClose, onSaved, onEnableTraining }: Props) {
+export function MaskEditor(props: Props) {
+  return props.allowPaint ? <ImageEditor {...props} onReloadList={props.onSaved} /> : <TrainingMaskEditor {...props} />;
+}
+function TrainingMaskEditor({ datasetId, imageId, relPath, onClose, onSaved, onEnableTraining }: Props) {
   const text = useWorkspaceText();
   const [info, setInfo] = React.useState<MaskInfo | null>(null);
   const [loading, setLoading] = React.useState(true);

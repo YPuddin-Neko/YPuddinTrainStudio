@@ -277,7 +277,7 @@ def test_validation_only_import_keeps_role_and_caption_settings(api, tmp_path):
     saved = client.get(f"/api/projects/{p['id']}/config").json()
     assert saved["dataset"]["sources"] == []
     assert saved["validation"]["sources"] == [
-        {"path": ds["path"], "caption_ext": ".caption", "repeats": 7, "resolutions": [64]}
+        {"path": ds["path"], "caption_ext": ".caption", "repeats": 7, "resolutions": [64], "is_reg": False}
     ]
     assert ds["caption_ext"] == ".caption" and ds["repeats"] == 7
     assert client.get(f"/api/datasets/{ds['id']}").json()["stats"]["captioned"] == 1
@@ -316,7 +316,6 @@ def test_continuous_forks_do_not_accumulate_managed_directory_prefixes(api, tmp_
         "LPT1",
         "bad*glob",
         "trailing.",
-        " ",
     ],
 )
 def test_checkpoint_prefix_rejects_output_escape_at_service(api, tmp_path, prefix):

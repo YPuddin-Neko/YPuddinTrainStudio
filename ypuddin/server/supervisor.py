@@ -267,7 +267,10 @@ class JobSupervisor:
                     "vram_metric": ev.get("vram_metric"),
                 }
             )
-            latest = {"loss": ev.get("loss"), "loss_ema": ev.get("loss_ema"), "lr": ev.get("lr")}
+            latest = {
+                key: ev.get(key)
+                for key in ("loss", "loss_ema", "lr", "loss_mean", "loss_count", "loss_mean_scope")
+            }
             self.db.update(
                 "jobs", job_id, {"progress_json": json.dumps(progress), "latest_json": json.dumps(latest)}
             )

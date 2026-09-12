@@ -1,12 +1,12 @@
 # YPuddin Train Studio — 项目交接报告
 
 > 写给接手本项目的模型/工程师。本文自洽：读完这一份 + 点开的几个文件，就能不需要前任任何上下文地继续开发。
-> 日期：2026-09-12 · 仓库：`xiangmuyuanma/` · 当前源码与前端版本为 0.5.5；本轮设计审查与发布验收状态见下述最新报告，不复用旧版测试总数。
+> 日期：2026-09-12 · 仓库：`xiangmuyuanma/` · 当前源码、前端与正式 8876 服务版本为 0.5.6；本轮设计审查与发布验收状态见下述最新报告，不复用旧版测试总数。
 
 ## 0. 先读这三个文件
 
 1. 本文。
-2. `docs/UI_PARAMETERS_V055_2026-09-12.md` —— 本轮独立预设、加载保护、Help 浮层、JSON 标签、优化器/LoKr 与 ER-SDE 的实现和验证；`docs/TRAINING_PARAMETERS.md`、`docs/JSON_CAPTIONS.md` 给出实际参数与格式契约。`docs/UI_WORKSPACE_V054_2026-09-12.md` 保留三阶段导航、边框吸顶、采样参数/损失、项目分类封面、版本模型族与错误恢复的历史验收。`docs/UI_WORKSPACE_V053_2026-09-12.md` 保留 v0.5.3 侧栏、导入、结果及移动叠层证据；`docs/USER_REQUIREMENTS_AUDIT_2026-09-12.md` 逐项对应历史要求并追加本轮变化。`docs/UI_DESIGN_REVIEW_2026-09-12.md` 保留 v0.5.2 中央访问密钥、官方模型候选、队列/版本结果、导航标签与请求隔离。`docs/UI_SIMPLIFICATION_2026-09-12.md` 保留 v0.5.1 项目目录、正则图及自动打标移除记录；`docs/native-resolution.md` 解释原生尺寸与梯度规则。UI_PIPELINE、UI_VERSIONS、UI_WORKFLOW、UI_REDESIGN、FIX_REPORT 与 COMPLETION_AUDIT 是历史证据。
+2. `docs/UI_REVIEW_V056_2026-09-12.md` —— 本轮来源用途自动识别、整图保留、图像绘制、输出绑定、模型检测与运行环境说明；`docs/TRAINING_PARAMETERS.md`、`docs/JSON_CAPTIONS.md` 给出实际参数与格式契约。`docs/UI_PARAMETERS_V055_2026-09-12.md` 保留独立预设、加载保护、Help 浮层、JSON 标签、优化器/LoKr 与 ER-SDE 的历史实现和验证。`docs/UI_WORKSPACE_V054_2026-09-12.md` 保留三阶段导航、边框吸顶、采样参数/损失、项目分类封面、版本模型族与错误恢复的历史验收。`docs/UI_WORKSPACE_V053_2026-09-12.md` 保留 v0.5.3 侧栏、导入、结果及移动叠层证据；`docs/USER_REQUIREMENTS_AUDIT_2026-09-12.md` 逐项对应历史要求并追加本轮变化。`docs/UI_DESIGN_REVIEW_2026-09-12.md` 保留 v0.5.2 中央访问密钥、官方模型候选、队列/版本结果、导航标签与请求隔离。`docs/UI_SIMPLIFICATION_2026-09-12.md` 保留 v0.5.1 项目目录、正则图及自动打标移除记录；`docs/native-resolution.md` 解释原生尺寸与梯度规则。UI_PIPELINE、UI_VERSIONS、UI_WORKFLOW、UI_REDESIGN、FIX_REPORT 与 COMPLETION_AUDIT 是历史证据。
 3. `docs/design/03-status.md` —— 逐组件状态表与运行方式。
 
 ## 1. 项目定位
@@ -18,7 +18,13 @@
 - **形态**：Python 包 `ypuddin`（CLI + FastAPI 服务）+ `frontend/`（React/Vite 界面，可选）。一键脚本 `studio.sh` / `studio.bat`。
 - 许可证 Apache-2.0（参考项目里 diffusion-pipe 与 AnimaLoraStudio 是 GPL——只读不抄；sd-scripts / musubi-tuner 是 Apache-2.0，vendor 的代码见 §7）。
 
-## 2. 当前状态（v0.5.5 参数、预设与 JSON 标签）
+## 2. 当前状态（v0.5.6 数据与训练参数复查）
+
+版本内来源按真实 `traindata` / `reg` 目录归属自动确定用途；外部与旧目录保留原元数据，不移动原文件。新建任务的默认权重名使用安全化项目名称与版本号，保存位置绑定到版本的 `output/<job_id>`，旧任务与自定义名称保持。新项目默认整图保留，旧配置仍按既有裁剪语义读取；图像绘制与遮罩有独立保存、恢复和冲突保护。模型检测只读取受限大小的 safetensors 头部与配置，不执行 pickle；无法识别的字段需手动确认。环境显示真实 PyTorch/CUDA/设备与 distributed/NCCL 能力，当前每个训练任务仍只用一张卡，没有 DDP 训练实现。
+
+本轮后端 **858 passed / 3 CUDA skipped（861 收集）**，前端 **65 个文件、388 项通过**，Ruff、ESLint、TypeScript 与生产构建通过。正式 8876 已在原数据根升级到 **0.5.6**：192 个业务文件、六张业务表、设置与凭据配置状态完整保留，136 个源码输入及 53 个构建输出哈希一致。升级未刷新用户页面或修改队列设置。实际浏览器证据及 Windows/NVIDIA、完整大模型训练等未验证边界见[本轮报告](docs/UI_REVIEW_V056_2026-09-12.md)和[验证记录](docs/validation/v0.5.6.json)；本机升级证明为 `/private/tmp/ypuddin-v056-service-proof.json`。提交和发布包校验以包旁验证文件为准。
+
+以下 v0.5.5 及更早段落为历史版本记录，不代表本轮测试计数或当前预设入口：
 
 v0.5.5 新增独立 `/presets` 管理页，使用真实 SchemaForm 创建、编辑、复制和删除参数预设；内置只读仍可展开分组和查看帮助。项目加载先显示描述和参数差异，同族确认后应用，跨族禁用；模型文件、数据来源、缓存、恢复和运行输出路径不会被预设替换。后端校验、内置保护、并发写入与失败保留同时接通。
 
@@ -32,9 +38,9 @@ v0.5.5 新增独立 `/presets` 管理页，使用真实 SchemaForm 创建、编�
 
 Flux/SDXL 当前未接入并禁选；Toy 是测试族。旧项目元数据迁移不移动目录，封面不进入训练数据；同族版本保留配置，跨族只使用目标族有效默认模型路径，不自动启用 FP8/CUDA。Windows/NVIDIA、完整 Anima/Krea 2 模型质量与新机部署仍无本轮实机验收；QA 生成夹具不能作为生产质量证据。
 
-**历史 v0.5.3**：测试、生产构建与实际浏览器检查见 `docs/validation/v0.5.3.json`、`docs/screenshots/v0.5.3/` 和 [工作区复查报告](docs/UI_WORKSPACE_V053_2026-09-12.md)。当时变化是统一侧栏项目/版本/阶段、紧凑列表和表单、结果及队列工具、样式覆盖修正、标签导航保存保护。该版提交与 ZIP 独立解包校验见发布包旁的 `*.verification.json`，不是本轮 v0.5.5 的验收证明。
+**历史 v0.5.3**：测试、生产构建与实际浏览器检查见 `docs/validation/v0.5.3.json`、`docs/screenshots/v0.5.3/` 和 [工作区复查报告](docs/UI_WORKSPACE_V053_2026-09-12.md)。当时变化是统一侧栏项目/版本/阶段、紧凑列表和表单、结果及队列工具、样式覆盖修正、标签导航保存保护。该版提交与 ZIP 独立解包校验见发布包旁的 `*.verification.json`，不是本轮 v0.5.6 的验收证明。
 
-**历史 v0.5.2**：后端 562 passed / 3 CUDA skipped（565 收集），前端 45 文件 / 263 测试通过，Ruff/ESLint/TypeScript/生产构建通过。当时没有改训练后端；这些历史总数不作为 v0.5.5 的重跑结果。旧 v0.5.1 的 536/3、前端 220 同样仅供追溯。
+**历史 v0.5.2**：后端 562 passed / 3 CUDA skipped（565 收集），前端 45 文件 / 263 测试通过，Ruff/ESLint/TypeScript/生产构建通过。当时没有改训练后端；这些历史总数不作为 v0.5.6 的重跑结果。旧 v0.5.1 的 536/3、前端 220 同样仅供追溯。
 
 当前是具备实际训练、数据上传到训练启动的 Web 工作流的集成验证版本；官方 Anima / Krea 2 全尺寸权重和 NVIDIA 路径仍待验收，不能称为所有功能已完成。
 

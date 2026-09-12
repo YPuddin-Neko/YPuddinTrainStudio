@@ -70,22 +70,26 @@ describe('FE-M7: family-driven SchemaForm', () => {
     expect(screen.getAllByRole('option').map(option=>option.textContent?.split(' — ')[0])).toEqual(['attn-mlp','full-linear']);
   });
 
-  it('2. krea2 下 text_encoding 无 online 选项并显示提示', () => {
+  it('2. krea2 高级标签处理方式仅提供受支持的缓存选项', () => {
     render(
-      <SchemaForm schema={trainSchema as any} value={baseConfig} onChange={() => {}} family={krea2Family} />
+      <SchemaForm schema={trainSchema as any} value={baseConfig} onChange={() => {}} family={krea2Family} showAdvanced />
     );
     fireEvent.click(screen.getByTestId('text-encoding-select'));
     expect(screen.getAllByRole('option')).toHaveLength(2);
-    expect(screen.queryByRole('option',{name:/online|在线/i})).not.toBeInTheDocument();
+    expect(screen.getByRole('option',{name:'训练前缓存标签'})).toBeInTheDocument();
+    expect(screen.queryByRole('option',{name:'每步处理标签'})).not.toBeInTheDocument();
   });
 
-  it('3. anima 下 text_encoding 含 online', () => {
+  it('3. anima 高级标签处理方式使用易懂中文且仍写入 online 枚举', () => {
+    let changed: any;
     render(
-      <SchemaForm schema={trainSchema as any} value={baseConfig} onChange={() => {}} family={animaFamily} />
+      <SchemaForm schema={trainSchema as any} value={baseConfig} onChange={next => { changed = next; }} family={animaFamily} showAdvanced />
     );
     fireEvent.click(screen.getByTestId('text-encoding-select'));
     expect(screen.getAllByRole('option')).toHaveLength(3);
-    expect(screen.getByRole('option',{name:/online|在线/i})).toBeInTheDocument();
+    expect(screen.queryByRole('option',{name:/在线|预缓存/})).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('option',{name:'每步处理标签'}));
+    expect(changed.dataset.text_encoding).toBe('online');
   });
 
   it('4. krea2 的 sampling.shift 显示"自动（按分辨率）"占位', () => {
@@ -129,13 +133,13 @@ describe('FE-M7: TrainConfig 预设联动（MSW）', () => {
       http.get('/api/projects/p_test/config',()=>HttpResponse.json(config)),
       http.put('/api/projects/p_test/config',async({request})=>{config=await request.json() as any;return HttpResponse.json(config);}),
       http.get('/api/models',()=>HttpResponse.json([])),
-      http.get('/api/presets',()=>HttpResponse.json([preset,{name:'krea2-lokr-default',description:'Krea only',builtin:true,updated_at:null,config:{model:{family:'krea2'},adapter:{preset:'all-linear'}}}])),
+      http.get('/api/presets',()=>HttpResponse.json([preset,{name:'krea2-own',description:'Krea only',builtin:false,updated_at:2,config:{model:{family:'krea2'},adapter:{preset:'all-linear'}}},{name:'legacy-builtin',description:'Hidden legacy preset',builtin:true,updated_at:999,config:{model:{family:'anima'},loop:{epochs:99}}}])),
     );
     const { default: TrainConfig } = await import('../src/pages/TrainConfig/TrainConfig');
     const qc = new QueryClient({defaultOptions:{queries:{retry:false}}});
     render(
       <QueryClientProvider client={qc}>
-        <MemoryRouter initialEntries={['/projects/p_test/train']}>
+        <MemoryRouter initialEntries={['/projects/p_test/train?tab=train']}>
           <Routes>
             <Route path="/projects/:id/train" element={<TrainConfig />} />
           </Routes>
@@ -152,7 +156,8 @@ describe('FE-M7: TrainConfig 预设联动（MSW）', () => {
   it('明确禁用另一模型族的预设，点击不会打开预览或更换当前模型', async () => {
     const {picker,config,original}=await showTrainingPresetPage();
     fireEvent.click(picker);
-    const other=await screen.findByRole('option',{name:'krea2-lokr-default · 适用于 krea2'});
+    expect(screen.queryByRole('option',{name:/legacy-builtin/})).not.toBeInTheDocument();
+    const other=await screen.findByRole('option',{name:'krea2-own · 适用于 krea2'});
     expect(other).toHaveAttribute('aria-disabled','true');
     fireEvent.click(other);
     expect(screen.queryByRole('dialog',{name:'加载预设前确认参数'})).not.toBeInTheDocument();

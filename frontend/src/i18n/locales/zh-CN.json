@@ -138,11 +138,11 @@
     "bucketsHint": "点击「分桶预览」计算。",
     "bucketPreview": "分桶预览",
     "computing": "计算中…",
-    "precache": "预缓存",
+    "precache": "准备训练缓存",
     "enqueuing": "入队中…",
     "rescan": "重新扫描",
     "remove": "移除注册",
-    "precacheEnqueued": "预缓存任务已入队。",
+    "precacheEnqueued": "训练缓存准备任务已入队。",
     "deleteConfirm": "确定移除数据集「{path}」的注册吗？磁盘文件不会被删除。",
     "filterPlaceholder": "按 tag / caption 过滤…",
     "selected": "已选 {n} 张",
@@ -470,9 +470,9 @@
   },
   "textMode": {
     "auto": "自动",
-    "cached": "预缓存",
-    "online": "在线编码",
-    "autoOnly": "该模型族仅支持 自动/预缓存（不支持在线编码）"
+    "cached": "训练前缓存标签",
+    "online": "每步处理标签",
+    "autoOnly": "该模型会在训练前缓存标签，准备完成后释放文本编码器占用。"
   },
   "sampling": {
     "shiftAuto": "自动（按分辨率）"

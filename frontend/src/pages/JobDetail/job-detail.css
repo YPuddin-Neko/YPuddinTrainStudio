@@ -7,6 +7,19 @@
 .job-monitor-identity small { font-size:10px; color:var(--studio-dim); }
 .job-monitor-identity .task-actions-wrap { flex-shrink:0; }
 .job-monitor-summary .text-2xl { font-size:20px; }
+.job-run-metadata{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;font-size:12px;padding:0 2px}
+.job-run-metadata dt{color:var(--studio-dim);font-size:11px;margin-bottom:4px}.job-run-metadata dd{overflow-wrap:anywhere}.job-run-metadata code{font-size:11px}
+.job-stat-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.job-stat{min-width:0;background:var(--studio-canvas);border-radius:7px;padding:10px 12px}
+.job-stat-label{display:flex;gap:5px;align-items:center;font-size:11px;color:var(--studio-dim)}
+.job-stat-value{font-size:19px;line-height:1.5;font-weight:600;font-variant-numeric:tabular-nums;margin-top:4px;overflow-wrap:anywhere}
+.job-learning-rates{display:flex;gap:3px 12px;flex-wrap:wrap;font-size:15px}.job-learning-rates>span{display:flex;align-items:baseline;gap:5px}.job-learning-rates small{font-size:10px;font-weight:400;color:var(--studio-dim)}
+.job-checkpoints{min-width:0;border:1px solid var(--studio-line);border-radius:8px;background:var(--studio-panel);overflow:hidden}
+.job-checkpoint{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 14px;padding:14px 16px;border-bottom:1px solid var(--studio-line);font-size:12px}.job-checkpoint:last-child{border:0}
+.job-checkpoint-file{min-width:0}.job-checkpoint-file strong{font-size:13px;overflow-wrap:anywhere}.job-checkpoint-file>div{display:flex;flex-wrap:wrap;gap:5px 15px;color:var(--studio-dim);margin-top:6px}.job-checkpoint-actions{align-self:center}.job-checkpoint-actions a{display:flex;align-items:center;gap:5px}
+.job-checkpoint-details{grid-column:1/-1;min-width:0;color:var(--studio-dim);font-size:11px}.job-checkpoint-details summary{cursor:pointer;width:max-content}.job-checkpoint-details dl{display:grid;gap:8px;margin-top:8px}.job-checkpoint-details dl>div{display:grid;grid-template-columns:65px minmax(0,1fr);gap:8px}.job-checkpoint-details code{white-space:normal;overflow-wrap:anywhere}
+@media(min-width:1400px){.job-stat-grid{grid-template-columns:repeat(7,minmax(0,1fr))}}
+@media(max-width:650px){.job-run-metadata,.job-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.job-stat-value{font-size:17px}.job-checkpoint{padding:12px}}
 .job-monitor-tabs { overflow:auto; }
 .job-log-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-size:12px; }
 .job-log-toolbar > input { flex:1 1 180px; padding:7px 9px; border:1px solid var(--studio-line); background:var(--studio-panel); border-radius:5px; font-size:12px; }
