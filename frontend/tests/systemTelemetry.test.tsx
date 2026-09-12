@@ -104,8 +104,39 @@ describe('stable system telemetry', () => {
     render(<SystemTelemetry stats={data}/>);
     expect(screen.getByLabelText('系统统一内存占用率')).toHaveTextContent('50%');
     expect(screen.queryByLabelText('显存占用率')).not.toBeInTheDocument();
-    expect(screen.getByTestId('telemetry-gpu')).toHaveAttribute('title', expect.stringContaining('并非训练进程分配量'));
+    expect(screen.getByTestId('telemetry-gpu')).toHaveAttribute('title', expect.stringContaining('并非 GPU 专用显存或训练进程分配量'));
     expect(screen.getByLabelText('GPU 功率')).toHaveTextContent(/^—$/);
+  });
+
+  it.each([0, 46])('shows Apple GPU driver utilization %s while missing power and temperature stay independent', value => {
+    const data = snapshot();
+    data.gpus[0] = {index:0, kind:'mps', name:'Apple M4 GPU', telemetry_source:'ioreg', telemetry_note:'mps_power_unavailable', util_pct:value, power_w:null, temp_c:null, mem_used_mb:8192, mem_total_mb:16384};
+    const {rerender}=render(<SystemTelemetry stats={data}/>);
+    expect(screen.getByLabelText('全系统 GPU 占用率')).toHaveTextContent(`${value}%`);
+    const group=screen.getByTestId('telemetry-gpu');
+    expect(group).toHaveAttribute('title',expect.stringContaining('全系统 Apple GPU 活动'));
+    expect(group).toHaveAttribute('title',expect.stringContaining('IORegistry'));
+    expect(group.getAttribute('title')).not.toContain('不提供');
+    expect(group.getAttribute('title')).not.toContain('未取得 GPU 利用率');
+    expect(screen.getByLabelText('GPU 功率')).toHaveTextContent(/^—$/);
+    expect(screen.getByLabelText('GPU 功率').parentElement).toHaveAttribute('title','当前未取得 GPU 功率读数。');
+    expect(screen.getByLabelText('GPU 温度').parentElement).toHaveAttribute('title','当前未取得 GPU 温度读数。');
+    rerender(<SystemTelemetry stats={{...data,gpus:[{...data.gpus[0],telemetry_source:'mps',util_pct:null}]}}/>);
+    expect(screen.getByLabelText('全系统 GPU 占用率')).toHaveTextContent(/^—$/);
+    expect(group.getAttribute('title')).toContain('当前未取得 GPU 利用率读数');
+    expect(group.getAttribute('title')).not.toContain('IORegistry');
+    expect(screen.getByLabelText('系统统一内存占用率')).toHaveTextContent('50%');
+  });
+
+  it('explains Apple readings in English without claiming MPS cannot expose them', async () => {
+    await i18n.changeLanguage('en');
+    const data=snapshot(); data.gpus[0]={...data.gpus[0],kind:'mps',telemetry_source:'ioreg',telemetry_note:'mps_power_unavailable',util_pct:46,power_w:null,temp_c:null};
+    render(<SystemTelemetry stats={data}/>);
+    expect(screen.getByLabelText('System GPU utilization')).toHaveTextContent('46%');
+    expect(screen.getByTestId('telemetry-gpu').getAttribute('title')).toContain('including the desktop and other applications');
+    expect(screen.getByLabelText('GPU power').parentElement).toHaveAttribute('title','No GPU power reading is currently available.');
+    expect(screen.getByLabelText('GPU temperature').parentElement).toHaveAttribute('title','No GPU temperature reading is currently available.');
+    expect(screen.getByTestId('telemetry-gpu').getAttribute('title')).not.toContain('does not expose');
   });
 
   it('removes normal connection text, keeps disconnect feedback, and updates live readings', async () => {

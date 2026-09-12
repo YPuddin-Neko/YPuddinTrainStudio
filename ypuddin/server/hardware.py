@@ -6,19 +6,71 @@ import csv
 import io
 import math
 import os
+import plistlib
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from xml.parsers.expat import ExpatError
 
 import psutil
 import torch
 
 _smi_lock = threading.Lock()
 _smi_cache: tuple[float, list[dict[str, Any]]] = (0, [])
+_apple_gpu_lock = threading.Lock()
+_apple_gpu_cache: tuple[float, float | None] | None = None
+
+
+def _apple_gpu_utilization() -> float | None:
+    """Apple's driver percentage for the whole GPU, not the Python process.
+
+    IORegistry is readable without sudo. The key is a driver-provided percentage,
+    not a cumulative counter; its averaging window is unspecified. Cache failures
+    as well as readings, and never carry an old reading across a failed probe.
+    """
+    if sys.platform != "darwin":
+        return None
+    global _apple_gpu_cache
+    with _apple_gpu_lock:
+        if _apple_gpu_cache is not None and time.monotonic() - _apple_gpu_cache[0] < 2:
+            return _apple_gpu_cache[1]
+        utilization = None
+        try:
+            result = subprocess.run(
+                ["/usr/sbin/ioreg", "-r", "-c", "IOAccelerator", "-d", "1", "-a"],
+                capture_output=True,
+                timeout=2,
+                check=True,
+            )
+            entries = plistlib.loads(result.stdout)
+            if isinstance(entries, list):
+                # MPS does not identify a registry device. Only an unambiguous
+                # Apple AGX accelerator can be assigned to its single GPU row.
+                apple = [
+                    entry
+                    for entry in entries
+                    if isinstance(entry, dict)
+                    and str(entry.get("IOClass", "")).startswith("AGXAccelerator")
+                ]
+                if len(apple) == 1:
+                    stats = apple[0].get("PerformanceStatistics")
+                    value = stats.get("Device Utilization %") if isinstance(stats, dict) else None
+                    if (
+                        isinstance(value, (int, float))
+                        and not isinstance(value, bool)
+                        and math.isfinite(value)
+                        and 0 <= value <= 100
+                    ):
+                        utilization = float(value)
+        except (OSError, subprocess.SubprocessError, ValueError, TypeError, OverflowError, ExpatError):
+            pass
+        _apple_gpu_cache = (time.monotonic(), utilization)
+        return utilization
 
 
 def _number(value: str) -> float | None:
@@ -223,6 +275,7 @@ def gpu_info(*, include_unavailable: bool = False, system_memory: Any | None = N
         return out
     if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
         vm = system_memory if system_memory is not None else psutil.virtual_memory()
+        utilization = _apple_gpu_utilization()
         # This is system unified-memory usage, not a fabricated GPU-process allocation.
         return [
             {
@@ -234,10 +287,10 @@ def gpu_info(*, include_unavailable: bool = False, system_memory: Any | None = N
                 "mem_used_mb": round((vm.total - vm.available) / 2**20),
                 "mem_free_mb": round(vm.available / 2**20),
                 "memory_scope": "unified_system",
-                "util_pct": None,
+                "util_pct": utilization,
                 "temp_c": None,
                 "power_w": None,
-                "telemetry_source": "mps",
+                "telemetry_source": "ioreg" if utilization is not None else "mps",
                 "telemetry_note": "mps_power_unavailable",
             }
         ]

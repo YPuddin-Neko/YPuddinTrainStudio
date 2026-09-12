@@ -44,7 +44,11 @@ export default function SystemTelemetry({ stats }: { stats: SystemStats | null }
   const ram = stats?.ram;
   const disk = stats?.disks?.[0];
   const memoryLabel = unified ? text('统一内存', 'Unified') : text('显存', 'VRAM');
-  const gpuDescription = [gpu?.name || text('未检测到显卡', 'No GPU detected'), gpu?.telemetry_note ? t(`hardware.${gpu.telemetry_note}`) : '', unified ? text('此处为全系统统一内存使用量，并非训练进程分配量。', 'This is system unified memory use, not a training process allocation.') : ''].filter(Boolean).join(' · ');
+  const gpuNote = gpu?.telemetry_note && !(unified && gpu.telemetry_note === 'mps_power_unavailable') ? t(`hardware.${gpu.telemetry_note}`) : '';
+  const utilizationDescription = [unified ? t('hardware.systemGpuScope') : '', unified && gpu?.telemetry_source === 'ioreg' ? t('hardware.appleGpuDriverSource') : '', !known(gpu?.util_pct) ? t('hardware.gpuUtilizationMissing') : ''].filter(Boolean).join(' ');
+  const powerDescription = !known(gpu?.power_w) ? t('hardware.gpuPowerMissing') : undefined;
+  const temperatureDescription = !known(gpu?.temp_c) ? t('hardware.gpuTemperatureMissing') : undefined;
+  const gpuDescription = [gpu?.name || text('未检测到显卡', 'No GPU detected'), gpuNote, utilizationDescription, powerDescription, temperatureDescription, unified ? t('hardware.unifiedMemoryScope') : ''].filter(Boolean).join(' · ');
   const gpuMemory = capacity(gpu?.mem_used_mb, gpu?.mem_total_mb, 1024);
 
   return <div className="system-telemetry" role="group" aria-label={text('系统硬件状态，可横向滚动', 'System hardware status, horizontally scrollable')} tabIndex={0}>
@@ -59,10 +63,10 @@ export default function SystemTelemetry({ stats }: { stats: SystemStats | null }
         <Gpu size={18} aria-hidden="true" />
         <div className="telemetry-device">{gpus.length > 1 ? <StudioSelect className="telemetry-gpu-select" aria-label={text('选择监控显卡', 'Choose monitored GPU')} value={String(gpu?.index ?? 0)} onValueChange={value => setSelectedGpu(Number(value))} options={gpus.map(item => ({value:String(item.index), label:`GPU ${item.index} · ${item.name}`}))}/> : <span className="telemetry-label">GPU{gpu ? '' : ' —'}</span>}<span className="telemetry-device-kind">{unified ? 'MPS' : gpu?.kind === 'cuda' ? 'CUDA' : ''}</span></div>
         <div className="telemetry-gpu-readings">
-          <div><span className="telemetry-label">{text('占用', 'Load')}</span><Reading value={gpu?.util_pct} label={text('GPU 占用率', 'GPU utilization')} testId="topbar-gpu-util"/></div>
+          <div title={utilizationDescription || undefined}><span className="telemetry-label">{text('占用', 'Load')}</span><Reading value={gpu?.util_pct} label={unified ? t('hardware.systemGpuUtilization') : text('GPU 占用率', 'GPU utilization')} testId="topbar-gpu-util"/></div>
           <div title={`${memoryLabel} · ${gpuMemory}`}><span className="telemetry-label">{memoryLabel}</span><Reading value={ratio(gpu?.mem_used_mb, gpu?.mem_total_mb)} label={unified ? text('系统统一内存占用率', 'System unified memory utilization') : text('显存占用率', 'VRAM utilization')} testId="topbar-gpu-memory"/></div>
-          <div><span className="telemetry-label">{text('功率', 'Power')}</span><Reading value={gpu?.power_w} unit="W" label={text('GPU 功率', 'GPU power')} testId="topbar-gpu-power"/></div>
-          <div><span className="telemetry-label">{text('温度', 'Temp')}</span><Reading value={gpu?.temp_c} unit="°C" label={text('GPU 温度', 'GPU temperature')} testId="topbar-gpu-temperature"/></div>
+          <div title={powerDescription}><span className="telemetry-label">{text('功率', 'Power')}</span><Reading value={gpu?.power_w} unit="W" label={text('GPU 功率', 'GPU power')} testId="topbar-gpu-power"/></div>
+          <div title={temperatureDescription}><span className="telemetry-label">{text('温度', 'Temp')}</span><Reading value={gpu?.temp_c} unit="°C" label={text('GPU 温度', 'GPU temperature')} testId="topbar-gpu-temperature"/></div>
         </div>
       </div>
       <div className="telemetry-group telemetry-disk" role="group" aria-label={text('硬盘', 'Disk')} title={disk ? `${text('项目数据所在磁盘', 'Project data disk')} · ${disk.path} · ${capacity(disk.used_gb, disk.total_gb)}` : text('磁盘信息不可用', 'Disk information unavailable')} data-testid="telemetry-disk">

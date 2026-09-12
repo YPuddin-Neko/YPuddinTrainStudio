@@ -1,0 +1,233 @@
+{
+  "version": "0.5.7",
+  "recorded_at": "2026-09-12T07:23:32.921280+00:00",
+  "scope": "Apple Silicon system GPU utilization from IORegistry, independently reported from unified RAM; accurate unavailable sensor wording.",
+  "frontend": {
+    "test_scope": "systemTelemetry, gpuPower, appleSilicon targeted regression",
+    "test_files": 3,
+    "tests_passed": 18,
+    "tests_failed": 0,
+    "typescript_exit": 0,
+    "eslint_exit": 0,
+    "build_exit": 0,
+    "frontend_stale": false,
+    "manifest_sha256": "bcdc1f81f2878a5620c358dbba6049ce37f4080dca0ccf0dedd6a020d384e260",
+    "outputs": {
+      "assets/AccessKeys-Bi123ZdL.css": "89335a656a3221f49e74a00b7207cf2832e3053751a4cae12e6df3cf027535be",
+      "assets/AccessKeys-CrzHshzv.js": "0cfa76832712535099274e1994e6b27f1a95adc1c3580b7c773b7a0528763965",
+      "assets/CaptionFormatSelect-BhdXnRuq.js": "97ca335ec5b05c1f2709a7ee670daf1361073125abd13a673e81c3ea6d1ffb18",
+      "assets/ConfigHelp-Cgcx16FZ.css": "128d546ff3ce1f0115eeeffc64b6d17ffbc12409f5efa90770e124e16440bbcb",
+      "assets/ConfigHelp-Dkycz6_A.js": "f16830e60a2f87d7aa0fb4b18a0303c67ed8c84a2eb65193820081849db68c77",
+      "assets/Dashboard-BHkS85HI.css": "5224b8c8c36e0a3debc4e8a3a0b3b6018cc5dda9e867dd8ffeed24b01154abbf",
+      "assets/Dashboard-BqTUVitl.js": "630b5b161c24c222701e67894ea9dd70b68694cb6e163453948e21606bc6e4dd",
+      "assets/Dataset-CSLy5NfI.css": "44206fa6960b0562a113a3a08e53ab885357120e2940cff1e43abb509bf2f5fb",
+      "assets/Dataset-DUlR7sxB.js": "28e4ad5d6e185d1c7c5641ab8c2da3eed1416a596d4b6298ed22c88ef3e8de42",
+      "assets/DatasetNavigationGuard-D7mlKpwy.js": "41497dca52ad28626943d25049b54481dd30a13d7d668a17fcfb1760d96a5073",
+      "assets/DatasetNavigationGuard-TWC3Exyv.css": "74cbe0df6a18ecb5321a603452d0fc3e85c4ec033c89ba58116eebf2459b29de",
+      "assets/Dialog-Q6MpeXkS.js": "d1e443a28b0476d209e0dbdbc21a4eb7f38b6bfc8d54cd5dd1a1b9bab7487cc6",
+      "assets/Dialog-waVbvSgd.css": "639dc7c3be7c1506f7be36f06224120f1c3bfc33fd147549178afc312d51549c",
+      "assets/EnvironmentSettings-EU_n61np.js": "1c1acc98ffdb429d8dd4990fc014fbdc27bd3a7f2d8c84b2c32896d28dc86179",
+      "assets/JobDetail-D76snWKx.css": "b13113288980c03e068c4ee5eddcdee9fcf5aed8b8b3e91ae950efac5a17e2bc",
+      "assets/JobDetail-Do-eASA_.js": "dc0cce9901bedd634413bc38065146df34ced99eea7ae03cf36d51e1da055fd6",
+      "assets/Models-BPnHeJcA.css": "1d671486cd77ef72f1d80eaa14e0b9bc378977652bb6b5c1035df7746c9318bb",
+      "assets/Models-C2iXT400.js": "fa5635d5f1c8d995904f08c867f81784f76fa687e5a9ccccc7d9de8f37cb45bb",
+      "assets/PathBrowser-B99QzpjK.js": "5ec3a0d386770cf48e87911e512f3314574146935b9e94d364c7faf2f373ca91",
+      "assets/Preferences-3Y7JdZ7z.js": "870066fb5b310560802a5c2c401c09f1e2c4dd9a1c1812afa05cfc944c48c1a9",
+      "assets/Presets-BnEWWK4p.js": "bf955098aeb197a5cf944fdefdbf9896971329d3d5409922a7d3f0057146dd0b",
+      "assets/Presets-COf_QxTy.css": "d6f7bdc8f5a866d1c684ec4aabf0a0718aa18d55d78f99140449b04b0a042fa9",
+      "assets/ProjectDetail-DPyczg2a.css": "660ff57bd36f34c9b8dc81f757ab293770b8881f5b1a2e8af7e1fc9663500ab3",
+      "assets/ProjectDetail-DhVJPBT-.js": "d2e3bc61605e5b990309de3f5036d36f1952f3c0a49202297248ddbdb2e338c2",
+      "assets/ProjectWorkspaceHeader-D3Itli_I.js": "d4fc87b37faf0c8db4bc0678779d9e258031dd611bc3a0e360a1b59dc2c23a77",
+      "assets/Projects-Cr4hNmvm.css": "c6e193bf860fbc7febf4c72792f14c64abe39ba7a2b481311d75a98230715ff2",
+      "assets/Projects-D5CH37ij.js": "201050575417388953d5afdebb55ffad4c2a10914bb9565a262da070c145cca5",
+      "assets/Queue-CFLjICsX.js": "5e97ca73dad649767a1ca0caeb7d30afd0b46fbb564a3c40a91cee5038745cb5",
+      "assets/SampleLoss-BbV8UWkG.js": "65cdeb44c8d163aafbfef8d89958e1145141098b3a98f2ab2221e93a9c0f6ce0",
+      "assets/SampleLoss-CozgRlmt.css": "17c78fca87ce8b63e5fa36cf4a2aea6b50b0c4b2a477025de4b53aa454675bbc",
+      "assets/Settings-Dt-fgF6N.js": "6619ad7867552199db4bd2472916172598878b171338cb38bdd0f84035d7ebbc",
+      "assets/Settings-sVm9yzQt.css": "3b12cdb234a59bdd8576d3adc81c9a9be94d53fa7095a9226f1bd74b39804640",
+      "assets/SettingsSections-Bkb008Rj.js": "d84c5c578b368badfdc947f9645760611872ad18309de88904d212da82357c71",
+      "assets/TrainConfig-BeSUtQXN.js": "c277b9ccea614858da23b314687ee69b0133931d26757f21c38f887a270f690f",
+      "assets/TrainConfig-CjJxrVGG.css": "6beecfba37749d3de672c2290e6ad94e2c9da3851f3ae5a44f3c2da5ed67643f",
+      "assets/echarts-N-Z4Wyhr.js": "c66735c92c55bc0c1f094ff900769d985ecf1c8197dd8a9b251f80b49c4e318d",
+      "assets/format-9G9_RQcA.js": "c0bb8f6085b5e23aaa0d05dd8e68b91adb3e2c6fcc8e93ef0b6b705fb7dda795",
+      "assets/i18nInstance-IqJxknJP.js": "bf1b7befe07d7afaeb902c1ea9bd10352758619925c1bd389711aa77cf1bcb2f",
+      "assets/index-CQ3aW_3f.js": "e5b3d5f4e8d078480405ca6177601a6bf7544c4d210a00d177e8ec0c375c3eb0",
+      "assets/index-D3Aek0YE.css": "3164dc6994ff5c12d4bf67f6baa1c3e357d9dca37a2e45d050edcb71fc1a1090",
+      "assets/jobPresentation-CqWAeE7_.js": "e76e2f70833e0f41c5e2a48018823147ef135a8eb9c22f1741b9ce66470da751",
+      "assets/queue-xpHjUxjS.css": "d5dcd7531cb50094a02eb30255fa25a7f3587d355b0e986d58568c4c828bc3c7",
+      "assets/rolldown-runtime-hePW80VL.js": "580ad8c58061a4dde99bde0a56905e382f0568516ee2f5b84dbfb52085709021",
+      "assets/trainingFamilies-4TOLGs_3.css": "d44d47c3045a60aa12cdaa4af01e72e70deecffc1b3704844ead8ae2926f7f98",
+      "assets/trainingFamilies-CRhqlJs4.js": "4252a2a0b9dc621343f61ea8ef088dc60f9887994f027cdb01d0555a27c9cc64",
+      "assets/trainingPresets-z522gr8X.js": "e0ab9e430c0e5de9b98ab8f9c0313ed027b652356190330f402d4a3352afaaea",
+      "assets/useFamilies-DxstyQib.js": "50f5a59a046f00cc4289fedd5eec9cd9229d2800d1a2e154ecbb160a8aa8bb2a",
+      "assets/useProjectVersions-iKvxqW0o.js": "2dbbe0e0567dc3999a78121c3de3a02acab008d5f9ca27811be3a16cd93c80d0",
+      "assets/vendor-Bb9fVEeA.js": "f288797d1db9abd80531bbd593732f9a8bad48800953a279ebf2043c3eecc9be",
+      "index.html": "719b84af5ac29c80aeab6dfc0b8f54b24a0d78f46e61041e2e9d8669ce911cb6",
+      "licenses/lucide-gpu.txt": "9558e922c3aa8d34b212e208272536492537cfa1b82a62c9185e1242d540cd95",
+      "mockServiceWorker.js": "26171599d94d5445297303f3a1f1cedec26835ea3d0057dcfa92ec520cb35cca",
+      "studio.svg": "23f7b605f15c74ceb33d019746d6ba0f9408b81443f2452be8dec4515d883618"
+    }
+  },
+  "backend": {
+    "test_scope": "test_apple_telemetry and test_hardware targeted regression",
+    "tests_passed": 36,
+    "tests_failed": 0,
+    "exit_code": 0,
+    "ruff_exit": 0,
+    "full_suite_rerun": false,
+    "previous_full_suite_record": "v0.5.6.json"
+  },
+  "browser": {
+    "tool": "Codex CUA in-app browser",
+    "qa_url": "http://127.0.0.1:8894/presets",
+    "cases": [
+      {
+        "case": "M4 driver telemetry reaches topbar",
+        "result": "pass",
+        "evidence": "Initial accessibility snapshot GPU utilization41%, unified memory91%; subsequent screenshot GPU54%, unified memory91%. Tooltip identifies system-wide GPU activity and IORegistry."
+      },
+      {
+        "case": "Actual HTTP and function telemetry",
+        "result": "pass",
+        "evidence": "gpu_info returned31.0% and API /system/stats59.0%; source=ioreg, power/temp null, unified memory independently reported."
+      }
+    ],
+    "formal_recheck": {
+      "status": "passed",
+      "url": "http://127.0.0.1:8876/presets",
+      "gpu_utilization_percent": 52,
+      "unified_memory_percent": 91,
+      "source_tooltip": "macOS GPU 驱动（IORegistry）",
+      "scope_tooltip": "全系统 Apple GPU 活动，包括桌面与其他应用",
+      "unknown_power_and_temperature": true,
+      "reload_performed": true,
+      "note": "Initial navigation showed old tooltip; own temporary tab reload displayed current wording and source. User tab was not reloaded or edited."
+    },
+    "screenshots": [],
+    "cleanup": {
+      "temporary_tab_11_closed": true,
+      "temporary_qa_pid_45816_stopped": true,
+      "formal_pid_46150_preserved": true,
+      "user_tabs_untouched": true,
+      "vite_8893_untouched": true
+    }
+  },
+  "service": {
+    "version": "0.5.7",
+    "verified_at": "2026-09-12T07:19:11.606626+00:00",
+    "success": true,
+    "url": "http://127.0.0.1:8876",
+    "data_root": "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio",
+    "command": [
+      "venv/bin/ypuddin",
+      "serve",
+      "--data-root",
+      "/private/tmp/ypuddin-v040-ui-iynrkk8w/studio",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "8876"
+    ],
+    "cwd": "/Volumes/Service/Dev/YPuddinTrainStudio/xiangmuyuanma",
+    "previous_pid": 38570,
+    "pid": 46150,
+    "session_id": 74803,
+    "log": "/private/tmp/ypuddin-v057-main-service.log",
+    "before_snapshot": "/private/tmp/ypuddin-v057-main-before.json",
+    "after_snapshot": "/private/tmp/ypuddin-v057-main-after.json",
+    "preservation": {
+      "before": "/private/tmp/ypuddin-v057-main-before.json",
+      "after": "/private/tmp/ypuddin-v057-main-after.json",
+      "preserved": true,
+      "differences": {}
+    },
+    "static_proof": "/private/tmp/ypuddin-v057-main-static-proof.json",
+    "telemetry_proof": "/private/tmp/ypuddin-v057-main-telemetry-proof.json",
+    "telemetry": {
+      "timestamp": "2026-09-12T07:18:44.349869+00:00",
+      "url": "http://127.0.0.1:8876/api/system/stats",
+      "gpu": {
+        "index": 0,
+        "kind": "mps",
+        "name": "Apple M4 GPU",
+        "util_pct": 54.0,
+        "mem_used_mb": 29842,
+        "mem_total_mb": 32768,
+        "temp_c": null,
+        "power_w": null,
+        "telemetry_source": "ioreg",
+        "telemetry_note": "mps_power_unavailable",
+        "device": "mps",
+        "mem_free_mb": 2926,
+        "memory_scope": "unified_system"
+      },
+      "ram": {
+        "used_mb": 29842,
+        "total_mb": 32768
+      },
+      "valid_utilization_0_100": true,
+      "memory_matches_system_ram": true,
+      "scope": "system GPU driver utilization; not per-training-process utilization",
+      "power_temperature_unavailable": true
+    },
+    "health_version": "0.5.7",
+    "frontend_stale": false,
+    "business_counts": {
+      "projects": 1,
+      "project_versions": 3,
+      "datasets": 3,
+      "jobs": 3,
+      "artifacts": 8,
+      "models": 1
+    },
+    "business_files_hashed": 194,
+    "configured_credential_providers": 1,
+    "input_hashes_checked": 136,
+    "output_hashes_checked": 53,
+    "spa_routes": {
+      "/": 200,
+      "/presets": 200,
+      "/settings/environment?tab=credentials": 200
+    },
+    "notes": [
+      "Fresh 194-file baseline taken for this upgrade; previous releases had a different snapshot and were not reused.",
+      "No active jobs or operations before restart; queue, preferences, credentials and runtime paths preserved.",
+      "Credentials compared using hashes and configured states only; no plaintext in proof.",
+      "GPU reading is the system driver utilization, not a process-specific training metric.",
+      "User browser, QA 8894 and Vite 8893 were not changed."
+    ],
+    "proof_sha256": "2c064e8be1557be5d4053ab3470623675cc135f31fe3f258c1c77b0a6a765c6e"
+  },
+  "evidence": {
+    "/private/tmp/ypuddin-mac-gpu-tests.log": {
+      "bytes": 80,
+      "sha256": "12a9a4a8915fb8d2bb5b4227220247cde267c1a0620203589fe47280d5be4a7f"
+    },
+    "/private/tmp/ypuddin-apple-gpu-frontend.log": {
+      "bytes": 606,
+      "sha256": "264b080f76a4abb3b98ee9c902b76d06f0f3d6ccb1b5d8363fadc3926b176e88"
+    },
+    "/private/tmp/ypuddin-apple-gpu-eslint.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "/private/tmp/ypuddin-apple-gpu-tsc.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "/private/tmp/ypuddin-v057-build.log": {
+      "bytes": 4560,
+      "sha256": "e3bb295ab084219e4c80310fd86664fc61ab7ba12f1186510c0ff7cb7a8ec5b7"
+    }
+  },
+  "limits": [
+    "Driver-provided system-wide percentage, not training-process GPU utilization.",
+    "Driver averaging window is unspecified; percentage is not recomputed from cumulative counters.",
+    "Power and temperature not collected by this probe; remain null rather than inferred from utilization.",
+    "Unreadable registry, malformed output, missing/invalid metric or ambiguous multiple AGX devices return null.",
+    "No sudo or privileged helper required for normal macOS service; command ran as ordinary user501 outside the agent sandbox.",
+    "Native integration verified on Apple M4 only; Windows/NVIDIA code was regression-tested with mocks, not new hardware acceptance.",
+    "No new full-suite run, GPU stress test, model training or npm audit."
+  ],
+  "npm_audit_run": false
+}

@@ -16,7 +16,7 @@
     "systemStatus": "System Status",
     "noGpu": "No CUDA GPU",
     "appleGpu": "Apple GPU",
-    "appleGpuWip": "Apple GPU · MPS (adapting)"
+    "appleGpuWip": "Apple GPU · MPS"
   },
   "dashboard": {
     "gpu": "GPU",
@@ -42,7 +42,7 @@
     "viewAll": "View All",
     "appleGpu": "Apple GPU · MPS",
     "appleGpuTitle": "Apple Silicon GPU",
-    "appleGpuDesc": "MPS adaptation in progress — utilization/power will appear once the backend reports them.",
+    "appleGpuDesc": "Shows Apple GPU readings available on the training computer. Utilization covers the whole GPU, and memory is system unified memory.",
     "unifiedMemory": "System unified memory"
   },
   "common": {
@@ -528,7 +528,14 @@
     "temperature": "Temperature",
     "checkEnvironment": "View environment",
     "nvidia_power_unavailable": "The driver did not return power. Check the NVIDIA driver and NVML; some GPUs do not expose this reading.",
-    "mps_power_unavailable": "Apple MPS does not expose power, temperature or utilization. Memory shown is system unified memory.",
+    "mps_power_unavailable": "No GPU power reading is currently available.",
+    "appleGpuDriverSource": "Source: macOS GPU driver (IORegistry).",
+    "unifiedMemoryScope": "This is system unified memory use, not dedicated GPU memory or a training process allocation.",
+    "systemGpuUtilization": "System GPU utilization",
+    "systemGpuScope": "Utilization covers all Apple GPU activity, including the desktop and other applications, not just this training job.",
+    "gpuUtilizationMissing": "No GPU utilization reading is currently available.",
+    "gpuPowerMissing": "No GPU power reading is currently available.",
+    "gpuTemperatureMissing": "No GPU temperature reading is currently available.",
     "cuda_runtime_unavailable": "NVIDIA hardware detected, but this PyTorch runtime cannot use CUDA.",
     "startTraining": "Start training",
     "workspaceHint": "Upload data, prepare models, edit parameters and start training in a project.",

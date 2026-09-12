@@ -16,7 +16,7 @@
     "systemStatus": "系统状态",
     "noGpu": "无 CUDA 显卡",
     "appleGpu": "Apple GPU",
-    "appleGpuWip": "Apple GPU · MPS（适配中）"
+    "appleGpuWip": "Apple GPU · MPS"
   },
   "dashboard": {
     "gpu": "显卡",
@@ -42,7 +42,7 @@
     "viewAll": "查看全部",
     "appleGpu": "Apple GPU · MPS",
     "appleGpuTitle": "Apple Silicon GPU",
-    "appleGpuDesc": "MPS 适配开发中，利用率/功耗上报由后端提供后将自动显示。",
+    "appleGpuDesc": "显示训练机实际取得的 Apple GPU 读数；利用率是全系统 GPU 活动，内存是系统统一内存。",
     "unifiedMemory": "系统统一内存"
   },
   "common": {
@@ -528,7 +528,14 @@
     "temperature": "温度",
     "checkEnvironment": "查看环境",
     "nvidia_power_unavailable": "驱动暂未返回功率。请检查 NVIDIA 驱动和 NVML；部分显卡不提供这一读数。",
-    "mps_power_unavailable": "Apple MPS 不提供功率、温度和利用率读数；上方内存为系统统一内存。",
+    "mps_power_unavailable": "当前未取得 GPU 功率读数。",
+    "appleGpuDriverSource": "来源：macOS GPU 驱动（IORegistry）。",
+    "unifiedMemoryScope": "此处为全系统统一内存使用量，并非 GPU 专用显存或训练进程分配量。",
+    "systemGpuUtilization": "全系统 GPU 占用率",
+    "systemGpuScope": "利用率表示全系统 Apple GPU 活动，包括桌面与其他应用，并非当前训练任务独占用量。",
+    "gpuUtilizationMissing": "当前未取得 GPU 利用率读数。",
+    "gpuPowerMissing": "当前未取得 GPU 功率读数。",
+    "gpuTemperatureMissing": "当前未取得 GPU 温度读数。",
     "cuda_runtime_unavailable": "已检测到 NVIDIA 显卡，但当前 PyTorch 无法使用 CUDA。",
     "startTraining": "开始训练",
     "workspaceHint": "在项目中上传数据、准备模型、编辑参数并启动训练。",
