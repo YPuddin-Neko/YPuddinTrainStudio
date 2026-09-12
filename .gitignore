@@ -9,7 +9,13 @@ venv/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.tox/
+.nox/
+.cache/
+.vite/
 .coverage
+.coverage.*
+coverage/
 htmlcov/
 
 # Frontend
@@ -18,34 +24,101 @@ frontend/dist/
 frontend/.vite/
 node_modules/
 
-# Runtime data at the repo root (projects, caches, checkpoints, logs, weights)
-/data/
-/models/
-/outputs/
-/runs/
-*.safetensors
-*.ckpt
-*.pt
-*.pth
-*.npz
-*.onnx
-*.ses
-*.log
-studio_data/
+# Runtime directories: root-anchored so similarly named source modules stay visible.
+# Character classes also cover Windows/macOS names with different casing.
+/[Dd][Aa][Tt][Aa]/
+/[Pp][Rr][Oo][Jj][Ee][Cc][Tt]/
+/[Pp][Rr][Oo][Jj][Ee][Cc][Tt][Ss]/
+/[Dd][Aa][Tt][Aa][Ss][Ee][Tt]/
+/[Dd][Aa][Tt][Aa][Ss][Ee][Tt][Ss]/
+/[Mm][Oo][Dd][Ee][Ll][Ss]/
+/[Ww][Ee][Ii][Gg][Hh][Tt][Ss]/
+/[Oo][Uu][Tt][Pp][Uu][Tt]/
+/[Oo][Uu][Tt][Pp][Uu][Tt][Ss]/
+/[Rr][Uu][Nn][Ss]/
+/[Cc][Aa][Cc][Hh][Ee]/
+/[Cc][Aa][Cc][Hh][Ee][Ss]/
+/[Cc][Hh][Ee][Cc][Kk][Pp][Oo][Ii][Nn][Tt]/
+/[Cc][Hh][Ee][Cc][Kk][Pp][Oo][Ii][Nn][Tt][Ss]/
+/[Ll][Oo][Gg][Ss]/
+/[Ss][Aa][Mm][Pp][Ll][Ee][Ss]/
+/[Ee][Nn][Vv][Ii][Rr][Oo][Nn][Mm][Ee][Nn][Tt]/
+/[Tt][Hh][Uu][Mm][Bb][Ss]/
+/[Tt][Rr][Aa][Ii][Nn][Dd][Aa][Tt][Aa]/
+/[Rr][Ee][Gg]/
+/[Pp][Rr][Ee][Ss][Ee][Tt][Ss]/
+/[Ss][Ee][Tt][Tt][Ii][Nn][Gg][Ss].[Jj][Ss][Oo][Nn]
+/[Ss][Oo][Uu][Rr][Cc][Ee]_[Mm][Aa][Nn][Ii][Ff][Ee][Ss][Tt].[Jj][Ss][Oo][Nn]
+# The dedicated Studio runtime folder may also be nested in another local folder.
+[Ss][Tt][Uu][Dd][Ii][Oo]_[Dd][Aa][Tt][Aa]/
+
+# Model weights, generated arrays, and logs (at any depth).
+*.[Ss][Aa][Ff][Ee][Tt][Ee][Nn][Ss][Oo][Rr][Ss]
+*.[Cc][Kk][Pp][Tt]
+*.[Pp][Tt]
+*.[Pp][Tt][Hh]
+*.[Nn][Pp][Zz]
+*.[Oo][Nn][Nn][Xx]
+*.[Gg][Gg][Uu][Ff]
+*.[Bb][Ii][Nn]
+*.[Ss][Ee][Ss]
+*.[Ll][Oo][Gg]
+*.[Tt][Mm][Pp]
+*.[Pp][Aa][Rr][Tt]
+*.[Pp][Aa][Rr][Tt][Ii][Aa][Ll]
+[Ee][Vv][Ee][Nn][Tt][Ss].[Oo][Uu][Tt].[Tt][Ff][Ee][Vv][Ee][Nn][Tt][Ss].*
+
+# SQLite databases and their write-ahead logs, shared memory, and rollback journals.
+*.[Dd][Bb]
+*.[Ss][Qq][Ll][Ii][Tt][Ee]
+*.[Ss][Qq][Ll][Ii][Tt][Ee]3
+*.[Dd][Bb]-[Ww][Aa][Ll]
+*.[Dd][Bb]-[Ss][Hh][Mm]
+*.[Dd][Bb]-[Jj][Oo][Uu][Rr][Nn][Aa][Ll]
+*.[Ss][Qq][Ll][Ii][Tt][Ee]-[Ww][Aa][Ll]
+*.[Ss][Qq][Ll][Ii][Tt][Ee]-[Ss][Hh][Mm]
+*.[Ss][Qq][Ll][Ii][Tt][Ee]-[Jj][Oo][Uu][Rr][Nn][Aa][Ll]
+*.[Ss][Qq][Ll][Ii][Tt][Ee]3-[Ww][Aa][Ll]
+*.[Ss][Qq][Ll][Ii][Tt][Ee]3-[Ss][Hh][Mm]
+*.[Ss][Qq][Ll][Ii][Tt][Ee]3-[Jj][Oo][Uu][Rr][Nn][Aa][Ll]
+
+# Delivery/download archives are artifacts, not source files.
+*.[Zz][Ii][Pp]
+*.7[Zz]
+*.[Rr][Aa][Rr]
+*.[Tt][Aa][Rr]
+*.[Tt][Aa][Rr].[Gg][Zz]
+*.[Tt][Gg][Zz]
+*.[Tt][Aa][Rr].[Bb][Zz]2
+*.[Tt][Aa][Rr].[Xx][Zz]
 
 # OS / editor
-.DS_Store
-Thumbs.db
+.[Dd][Ss]_[Ss][Tt][Oo][Rr][Ee]
+[Tt][Hh][Uu][Mm][Bb][Ss].[Dd][Bb]
+[Dd][Ee][Ss][Kk][Tt][Oo][Pp].[Ii][Nn][Ii]
 .idea/
 .vscode/
-*.swp
+*.[Ss][Ww][Pp]
+*.[Ss][Ww][Oo]
 
 # Local secrets
-.env
-secrets.json
+.[Ee][Nn][Vv]
+.[Ee][Nn][Vv].*
+[Ss][Ee][Cc][Rr][Ee][Tt][Ss].[Jj][Ss][Oo][Nn]
+[Ss][Ee][Cc][Rr][Ee][Tt][Ss].[Jj][Ss][Oo][Nn].*
+[Cc][Rr][Ee][Dd][Ee][Nn][Tt][Ii][Aa][Ll][Ss].[Jj][Ss][Oo][Nn]
+[Cc][Rr][Ee][Dd][Ee][Nn][Tt][Ii][Aa][Ll][Ss].[Jj][Ss][Oo][Nn].*
+.[Ss][Ee][Cc][Rr][Ee][Tt][Ss]-*
+.[Nn][Pp][Mm][Rr][Cc]
+.[Pp][Yy][Pp][Ii][Rr][Cc]
+.[Nn][Ee][Tt][Rr][Cc]
+_[Nn][Ee][Tt][Rr][Cc]
+# Keep only these two environment-template basenames (at any depth).
+!.[Ee][Nn][Vv].[Ee][Xx][Aa][Mm][Pp][Ll][Ee]
+!.[Ee][Nn][Vv].[Ss][Aa][Mm][Pp][Ll][Ee]
 
 # TypeScript incremental build cache
-frontend/tsconfig.tsbuildinfo
+*.[Tt][Ss][Bb][Uu][Ii][Ll][Dd][Ii][Nn][Ff][Oo]
 
 # Agent 协作交接文件（本机工作区状态，不分发）
 .handoff/

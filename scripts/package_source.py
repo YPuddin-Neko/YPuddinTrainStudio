@@ -8,31 +8,51 @@ import importlib.util
 import json
 import subprocess
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
 PREFIX = "YPuddinTrainStudio"
 
 
-def package(output: Path) -> dict:
-    output = output.expanduser().resolve()
-    if output.exists():
-        raise FileExistsError(f"refusing to overwrite existing archive: {output}")
-    spec = importlib.util.spec_from_file_location("studio_bootstrap", ROOT / "scripts/bootstrap.py")
-    bootstrap = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(bootstrap)
-    if bootstrap.frontend_stale():
-        raise ValueError("frontend is stale; build the current UI before packaging")
-    inventory = (
-        subprocess.check_output(
-            ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], cwd=ROOT
-        )
-        .decode()
-        .split("\0")
-    )
-    files = {Path(name) for name in inventory if name and (ROOT / name).is_file()}
-    files.update(p.relative_to(ROOT) for p in (ROOT / "frontend/dist").rglob("*") if p.is_file())
-    forbidden_parts = {
+def excluded_reason(name: str | Path, *, built_ui: bool = False) -> str | None:
+    """Classify repository-relative names without reading potentially private files."""
+    normalized = str(name).replace("\\", "/")
+    path = PurePosixPath(normalized)
+    parts = tuple(part.casefold() for part in path.parts)
+    if not parts or path.is_absolute() or ".." in parts or ":" in parts[0]:
+        return "invalid repository-relative path"
+    filename = parts[-1]
+    if parts[0] in {
+        "data",
+        "models",
+        "weights",
+        "project",
+        "projects",
+        "dataset",
+        "datasets",
+        "output",
+        "outputs",
+        "runs",
+        "cache",
+        "caches",
+        "checkpoint",
+        "checkpoints",
+        "logs",
+        "samples",
+        "thumbs",
+        "environment",
+        "traindata",
+        "reg",
+        "presets",
+    }:
+        return "root runtime directory"
+    if "studio_data" in parts:
+        return "Studio runtime data"
+    build_output = built_ui and parts[:2] == ("frontend", "dist")
+    directories = parts[:-1]
+    if build_output:
+        directories = directories[2:]
+    if set(directories) & {
         "venv",
         ".venv",
         "node_modules",
@@ -41,11 +61,43 @@ def package(output: Path) -> dict:
         "__pycache__",
         ".pytest_cache",
         ".ruff_cache",
-        "studio_data",
-    }
-    forbidden_suffixes = {
+        ".mypy_cache",
+        ".tox",
+        ".nox",
+        ".cache",
+        ".vite",
+        ".idea",
+        ".vscode",
+        "build",
+        "dist",
+        "htmlcov",
+        "coverage",
+    } or any(part.endswith(".egg-info") for part in directories):
+        return "local environment, tooling or build output"
+    if filename in {".ds_store", "thumbs.db", "desktop.ini", ".coverage"} or filename.startswith(
+        ".coverage."
+    ):
+        return "local OS or coverage file"
+    if filename in {".env", "secrets.json", "credentials.json", ".netrc", "_netrc", ".npmrc", ".pypirc"}:
+        return "local credentials or environment"
+    if filename.startswith((".secrets-", "secrets.json.", "credentials.json.")):
+        return "local credential backup or temporary file"
+    if filename.startswith(".env.") and filename not in {".env.example", ".env.sample"}:
+        return "local environment override"
+    if len(parts) == 1 and filename in {"settings.json", "source_manifest.json"}:
+        return "generated local settings or package manifest"
+    suffixes = (
         ".zip",
+        ".7z",
+        ".rar",
+        ".tar",
+        ".tgz",
+        ".tar.gz",
+        ".tar.bz2",
+        ".tar.xz",
         ".pyc",
+        ".pyo",
+        ".pyd",
         ".log",
         ".safetensors",
         ".bin",
@@ -56,29 +108,127 @@ def package(output: Path) -> dict:
         ".onnx",
         ".npz",
         ".ses",
-        ".sqlite",
-        ".db",
-        ".db-wal",
-        ".db-shm",
-        ".sqlite-wal",
-        ".sqlite-shm",
         ".tsbuildinfo",
-    }
-    files = {
+        ".swp",
+        ".swo",
+        ".tmp",
+        ".part",
+        ".partial",
+    )
+    if filename.endswith(suffixes) or filename.startswith("events.out.tfevents."):
+        return "archive, model, cache or generated file"
+    if any(
+        filename.endswith(extension + sidecar)
+        for extension in (".db", ".sqlite", ".sqlite3")
+        for sidecar in ("", "-wal", "-shm", "-journal")
+    ):
+        return "local database or journal"
+    return None
+
+
+def has_studio_database(directory: Path) -> bool:
+    """Identify the service's data root by its database filename, never its contents."""
+    if not directory.is_dir() or directory.is_symlink():
+        return False
+    return any(child.name.casefold() == "studio.db" and child.is_file() for child in directory.iterdir())
+
+
+def runtime_roots(root: Path, names: list[str]) -> set[tuple[str, ...]]:
+    # The DB itself is ignored and will not appear in Git's untracked inventory.
+    # Check candidate ancestors once, without recursively scanning environments/data.
+    parents = {parent for name in names for parent in Path(name).parents if parent != Path(".")}
+    found: set[tuple[str, ...]] = set()
+    for parent in sorted(parents, key=lambda p: (len(p.parts), str(p))):
+        parts = tuple(part.casefold() for part in parent.parts)
+        if any(parts[: len(known)] == known for known in found):
+            continue  # Do not inspect a potentially large image directory below a known data root.
+        if not any((root / p).is_symlink() for p in (parent, *parent.parents)) and has_studio_database(
+            root / parent
+        ):
+            found.add(parts)
+    return found
+
+
+def runtime_reason(name: str | Path, roots: set[tuple[str, ...]]) -> str | None:
+    parts = tuple(part.casefold() for part in PurePosixPath(str(name).replace("\\", "/")).parts)
+    if any(parts[: len(parent)] == parent for parent in roots):
+        return "custom Studio runtime directory (studio.db present)"
+    return None
+
+
+def tracked_violations(root: Path = ROOT) -> list[dict[str, str]]:
+    """Inspect the Git index; ignored tracked files need explicit untracking."""
+
+    def names(*args: str) -> list[str]:
+        return [
+            name
+            for name in subprocess.check_output(["git", "ls-files", "-z", *args], cwd=root)
+            .decode("utf-8", errors="surrogateescape")
+            .split("\0")
+            if name
+        ]
+
+    ignored = set(names("--cached", "--ignored", "--exclude-standard"))
+    tracked = names("--cached")
+    roots = runtime_roots(root, tracked)
+    violations = []
+    for name in sorted(tracked):
+        reason = excluded_reason(name) or runtime_reason(name, roots)
+        if reason or name in ignored:
+            violations.append({"path": name, "reason": reason or "tracked despite Git ignore rules"})
+    return violations
+
+
+def collect_files(root: Path) -> set[Path]:
+    inventory = (
+        subprocess.check_output(
+            ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], cwd=root
+        )
+        .decode()
+        .split("\0")
+    )
+    files = {Path(name) for name in inventory if name and (root / name).is_file()}
+    files.update(p.relative_to(root) for p in (root / "frontend/dist").rglob("*") if p.is_file())
+    roots = runtime_roots(root, [str(p) for p in files])
+    return {
         p
         for p in files
-        if not (set(p.parts) & forbidden_parts)
-        and p.suffix not in forbidden_suffixes
-        and p.name not in {".DS_Store", ".env", "secrets.json", "credentials.json"}
-        and not (p.name.startswith(".env.") and p.name not in {".env.example", ".env.sample"})
-        and not (ROOT / p).is_symlink()
+        if excluded_reason(p, built_ui=True) is None
+        and runtime_reason(p, roots) is None
+        and not any((root / parent).is_symlink() for parent in (p, *p.parents))
     }
+
+
+def package(output: Path) -> dict:
+    output = output.expanduser().resolve()
+    if output.exists():
+        raise FileExistsError(f"refusing to overwrite existing archive: {output}")
+    if has_studio_database(ROOT):
+        raise ValueError(
+            "Source root also contains studio.db; separate the Studio data root before packaging"
+        )
+    if violations := tracked_violations(ROOT):
+        raise ValueError(
+            "Runtime/local files are tracked by Git; remove them from the index while preserving "
+            f"local data before packaging: {json.dumps(violations, ensure_ascii=True)}"
+        )
+    spec = importlib.util.spec_from_file_location("studio_bootstrap", ROOT / "scripts/bootstrap.py")
+    bootstrap = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bootstrap)
+    if bootstrap.frontend_stale():
+        raise ValueError("frontend is stale; build the current UI before packaging")
+    files = collect_files(ROOT)
     required = {
         Path(name)
         for name in (
             "studio.sh",
             "studio.bat",
             "pyproject.toml",
+            ".gitignore",
+            "scripts/package_source.py",
+            "tests/unit/test_repository_content.py",
+            "docs/REPOSITORY_CONTENT_2026-09-12.md",
+            "docs/validation/repository-content-2026-09-12.json",
             "ypuddin/sampling/er_sde.py",
             "ypuddin/sampling/dispatch.py",
             "ypuddin/sampling/ER_SDE_LICENSE.txt",
@@ -319,5 +469,15 @@ def package(output: Path) -> dict:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("output", type=Path)
-    print(json.dumps(package(parser.parse_args().output), indent=2))
+    parser.add_argument("output", type=Path, nargs="?")
+    parser.add_argument(
+        "--check-git", action="store_true", help="Check tracked files without building or packaging"
+    )
+    args = parser.parse_args()
+    if args.check_git:
+        violations = tracked_violations(ROOT)
+        print(json.dumps({"success": not violations, "violations": violations}, indent=2))
+        raise SystemExit(1 if violations else 0)
+    if args.output is None:
+        parser.error("output is required unless --check-git is used")
+    print(json.dumps(package(args.output), indent=2))

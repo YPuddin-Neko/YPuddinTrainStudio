@@ -5,6 +5,8 @@
 
 ## 0. 先读这三个文件
 
+2026-09-12 仓库内容补修：先看 `docs/REPOSITORY_CONTENT_2026-09-12.md`。Git 忽略补齐本机数据/凭据/数据库/归档及大小写变体；`python scripts/package_source.py --check-git` 检查索引，打包前会自动阻断误跟踪的本机文件。运行程序仍为 v0.5.9；本次内容规则验收单独记录，不覆盖该版本的 UI 和服务验收。
+
 1. 本文。
    本轮补丁先读 `docs/ADAPTER_FORM_LAYOUT_2026-09-12.md` 与 `docs/validation/v0.5.9.json`。`docs/MAC_GPU_SENSORS_2026-09-12.md` 和 `docs/MAC_GPU_TELEMETRY_2026-09-12.md` 保留功率、温度及利用率采集记录，下面的 v0.5.6 报告保留完整架构与工作流说明。
 2. `docs/UI_REVIEW_V056_2026-09-12.md` —— 本轮来源用途自动识别、整图保留、图像绘制、输出绑定、模型检测与运行环境说明；`docs/TRAINING_PARAMETERS.md`、`docs/JSON_CAPTIONS.md` 给出实际参数与格式契约。`docs/UI_PARAMETERS_V055_2026-09-12.md` 保留独立预设、加载保护、Help 浮层、JSON 标签、优化器/LoKr 与 ER-SDE 的历史实现和验证。`docs/UI_WORKSPACE_V054_2026-09-12.md` 保留三阶段导航、边框吸顶、采样参数/损失、项目分类封面、版本模型族与错误恢复的历史验收。`docs/UI_WORKSPACE_V053_2026-09-12.md` 保留 v0.5.3 侧栏、导入、结果及移动叠层证据；`docs/USER_REQUIREMENTS_AUDIT_2026-09-12.md` 逐项对应历史要求并追加本轮变化。`docs/UI_DESIGN_REVIEW_2026-09-12.md` 保留 v0.5.2 中央访问密钥、官方模型候选、队列/版本结果、导航标签与请求隔离。`docs/UI_SIMPLIFICATION_2026-09-12.md` 保留 v0.5.1 项目目录、正则图及自动打标移除记录；`docs/native-resolution.md` 解释原生尺寸与梯度规则。UI_PIPELINE、UI_VERSIONS、UI_WORKFLOW、UI_REDESIGN、FIX_REPORT 与 COMPLETION_AUDIT 是历史证据。
