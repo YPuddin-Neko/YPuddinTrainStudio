@@ -20,6 +20,7 @@ from tests.unit.test_krea2_family import (  # noqa: F401
 from ypuddin.adapters.frozen import FrozenLinear
 from ypuddin.config import MemoryConfig, ModelConfig, TrainConfig
 from ypuddin.models.anima.vendor import qwen_image_vae_2d
+from ypuddin.models.base import LoadedModel
 from ypuddin.models.krea2 import family as krea_module
 from ypuddin.models.krea2.family import Krea2Family, load_dit
 from ypuddin.server import create_app
@@ -34,6 +35,87 @@ def one_thread():
     torch.set_num_threads(1)
     yield
     torch.set_num_threads(old)
+
+
+@pytest.mark.parametrize(
+    "device,requested,blocks,free_delta,expected,reason",
+    [
+        ("cuda:2", "cpu", 8, 0, "cuda:2", "cuda_staging_before_host_masters"),
+        ("cuda:2", "cpu", 8, 1, "cuda:2", "cuda_staging_before_host_masters"),
+        ("cuda:2", "cpu", 8, -1, "cpu", "insufficient_cuda_headroom"),
+        ("cuda:2", "cpu", 8, None, "cpu", "cuda_memory_unavailable"),
+        ("cpu", "cpu", 8, None, "cpu", "requested_placement"),
+        ("mps", "cpu", 8, None, "cpu", "requested_placement"),
+        ("cuda:2", "cpu", 0, None, "cpu", "requested_placement"),
+        ("cuda:2", "cuda:2", 8, None, "cuda:2", "requested_placement"),
+        ("cuda:2", "mps", 8, None, "mps", "requested_placement"),
+    ],
+)
+def test_cuda_staging_requires_real_header_budget_and_two_gib_headroom(
+    monkeypatch, device, requested, blocks, free_delta, expected, reason
+):
+    weight_bytes, calls = 123456, []
+    loaded = LoadedModel(
+        None,
+        None,
+        None,
+        torch.device(device),
+        torch.bfloat16,
+        extra={
+            "backbone_device": requested,
+            "blocks_to_swap": blocks,
+            "dit_path": Path("explicit.safetensors"),
+        },
+    )
+
+    def budget(path, dtype):
+        assert path == loaded.extra["dit_path"] and dtype == loaded.dtype
+        calls.append("header")
+        return weight_bytes
+
+    def available(target):
+        assert target == torch.device(device)
+        calls.append("cuda")
+        if free_delta is None:
+            raise RuntimeError("device query unavailable")
+        free = weight_bytes + krea_module.CUDA_STAGING_MARGIN + free_delta
+        return free, free * 2
+
+    monkeypatch.setattr(krea_module, "_checkpoint_storage_bytes", budget)
+    monkeypatch.setattr(torch.cuda, "mem_get_info", available)
+    assert krea_module._materialization_device(loaded) == torch.device(expected)
+    assert loaded.extra["materialization_placement"]["reason"] == reason
+    assert loaded.extra["backbone_device"] == requested and loaded.extra["blocks_to_swap"] == blocks
+    assert calls == ([] if reason == "requested_placement" else ["header", "cuda"])
+
+
+def test_materialize_uses_admitted_device_after_encoders_unload(assets, monkeypatch):
+    family = Krea2Family()
+    loaded = family.load(
+        assets, MemoryConfig(blocks_to_swap=8), device="cpu", dtype=torch.float32, backbone_device="cpu"
+    )
+    # Only placement selection is emulated; the loader still executes the
+    # actual reduced FP8 checkpoint on CPU in this GPU-free integration test.
+    loaded.device = torch.device("cuda:1")
+    size = krea_module._checkpoint_storage_bytes(Path(assets.dit_path), loaded.dtype)
+    monkeypatch.setattr(
+        torch.cuda, "mem_get_info", lambda device: (size + krea_module.CUDA_STAGING_MARGIN, 16 * 1024**3)
+    )
+    original = krea_module.load_dit
+    observed = []
+
+    def load(path, *, device, dtype):
+        assert loaded.text.encoder is None and loaded.latent.vae is None
+        observed.append(str(device))
+        return original(path, device="cpu", dtype=dtype)
+
+    monkeypatch.setattr(krea_module, "load_dit", load)
+    family.materialize_backbone(loaded)
+    family.materialize_backbone(loaded)
+    assert observed == ["cuda:1"]
+    assert loaded.extra["materialization_placement"]["device"] == "cuda:1"
+    assert loaded.extra["blocks_to_swap"] == 8 and loaded.extra["materialized"] is True
+    assert sum(isinstance(layer, FrozenLinear) and layer.is_fp8 for layer in loaded.backbone.modules()) == 16
 
 
 @pytest.fixture

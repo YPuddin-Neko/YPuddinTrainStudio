@@ -81,13 +81,22 @@ class BlockSwapper:
         self._stream = torch.cuda.Stream(device=self.device) if self.device.type == "cuda" else None
         self._handles: list[torch.utils.hooks.RemovableHandle] = []
         self.forward_only = False
+        had_cuda_sources = False
         for i in self.swapped_idx:
             tensors = _swappable_tensors(self.blocks[i])
+            had_cuda_sources |= any(t.device.type == "cuda" for t in tensors)
             masters = _make_host_masters(tensors, pin_memory=self.pin)
             for t, host in zip(tensors, masters, strict=True):
                 t.data = host  # block lives on the host until fetched
             self._tensors[i] = tensors
             self._masters[i] = masters
+        if had_cuda_sources and self.device.type == "cuda":
+            # Host copies above are blocking. Release the now-unused CUDA
+            # allocations from temporary full-model staging before training;
+            # live tensors and stream-dependent allocations remain protected
+            # by PyTorch's allocator. CPU-loaded models do not need this flush.
+            with torch.cuda.device(self.device):
+                torch.cuda.empty_cache()
         self.bytes_per_block = (
             sum(t.numel() * t.element_size() for t in self._masters[self.swapped_idx[0]])
             if self.swapped_idx

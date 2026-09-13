@@ -202,6 +202,80 @@ def test_fp8_scales_release_safetensors_views_when_weights_move(tmp_path, monkey
         swapper.remove()
 
 
+@pytest.mark.parametrize("filename", ["bare.safetensors", "fp8.safetensors"])
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32])
+def test_checkpoint_storage_budget_uses_header_and_real_loaded_dtypes(
+    checkpoints, monkeypatch, filename, dtype
+):
+    import safetensors.torch
+
+    from ypuddin.models.krea2.family import _checkpoint_storage_bytes
+
+    path = checkpoints / filename
+    model, _ = load_dit(path, device="cpu", dtype=dtype)
+    actual = sum(t.numel() * t.element_size() for t in list(model.parameters()) + list(model.buffers()))
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("The materialization budget must not read the checkpoint payload")
+
+    monkeypatch.setattr(safetensors.torch, "load_file", forbidden)
+    assert _checkpoint_storage_bytes(path, dtype) == actual
+
+
+def test_storage_budget_matches_loader_scale_and_nonstandard_dtype_conversion(tmp_path):
+    from ypuddin.models.krea2.family import _checkpoint_storage_bytes, _read_state_dict
+
+    dtypes = (
+        torch.float8_e4m3fn,
+        torch.float8_e5m2,
+        torch.float8_e4m3fnuz,
+        torch.float8_e5m2fnuz,
+        torch.float16,
+        torch.float64,
+        torch.complex64,
+        torch.int64,
+        torch.uint8,
+        torch.bool,
+    )
+    state = {f"extra_{index}": torch.zeros(3, dtype=dtype) for index, dtype in enumerate(dtypes)}
+    state["model.diffusion_model.layer.weight_scale"] = torch.tensor([0.125], dtype=torch.bfloat16)
+    state["scaled_fp8"] = torch.zeros((), dtype=torch.float8_e4m3fn)
+    path = tmp_path / "budget.safetensors"
+    save_file(state, str(path))
+    weights, scales = _read_state_dict(path, torch.bfloat16)
+    actual = sum(tensor.numel() * tensor.element_size() for tensor in [*weights.values(), *scales.values()])
+    assert _checkpoint_storage_bytes(path, torch.bfloat16) == actual
+
+
+def test_load_dit_releases_temporary_state_dicts_before_device_move(checkpoints, monkeypatch):
+    from ypuddin.models.krea2 import family as module
+
+    destroyed = []
+
+    class TrackedDict(dict):
+        def __init__(self, label, contents):
+            super().__init__(contents)
+            self.label = label
+
+        def __del__(self):
+            destroyed.append(self.label)
+
+    read, move = module._read_state_dict, SingleStreamDiT.to
+
+    def read_tracked(*args, **kwargs):
+        weights, scales = read(*args, **kwargs)
+        return TrackedDict("weights", weights), TrackedDict("scales", scales)
+
+    def move_observed(self, *args, **kwargs):
+        assert sorted(destroyed) == ["scales", "weights"]
+        return move(self, *args, **kwargs)
+
+    monkeypatch.setattr(module, "_read_state_dict", read_tracked)
+    monkeypatch.setattr(SingleStreamDiT, "to", move_observed)
+    model, _ = load_dit(checkpoints / "fp8.safetensors", device="cpu", dtype=torch.float32)
+    assert sum(isinstance(layer, FrozenLinear) for layer in model.modules()) == 16
+
+
 def test_missing_tensor_is_an_error(tmp_path):
     sd = _tiny_state_dict()
     del sd["blocks.1.mlp.down.weight"]

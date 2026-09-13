@@ -45,6 +45,7 @@ log = logging.getLogger(__name__)
 MU_TOKENS = (256, 6400)
 MU_RANGE = (0.5, 1.15)
 SCALE_SUFFIXES = (".scale_weight", ".weight_scale")
+CUDA_STAGING_MARGIN = 2 * 1024**3
 
 
 # --------------------------------------------------------------------------- loading
@@ -75,6 +76,87 @@ def _config_from_header(path: str | Path):
 def _checkpoint_signature(path: Path) -> tuple[int, ...]:
     stat = path.stat()
     return stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns, stat.st_ino, stat.st_dev
+
+
+def _checkpoint_storage_bytes(path: Path, dtype: torch.dtype) -> int:
+    """Target storage from the actual header, without reading tensor payloads."""
+    from safetensors import safe_open
+
+    compute_bytes = torch.empty((), dtype=dtype).element_size()
+    unchanged_sizes = {
+        "BOOL": 1,
+        "U8": 1,
+        "I8": 1,
+        "U16": 2,
+        "I16": 2,
+        "U32": 4,
+        "I32": 4,
+        "U64": 8,
+        "I64": 8,
+        "C64": 8,
+    }
+    total = 0
+    with safe_open(str(path), framework="pt") as checkpoint:
+        for key in checkpoint.keys():
+            if _strip_prefix(key) == "scaled_fp8":
+                continue
+            tensor = checkpoint.get_slice(key)
+            count = math.prod(tensor.get_shape())
+            source_dtype = tensor.get_dtype()
+            if key.endswith(SCALE_SUFFIXES):
+                if count != 1:
+                    raise ValueError(f"Krea 2 FP8 scale {key} must contain exactly one value")
+                total += 4  # _read_state_dict normalizes checkpoint scales to FP32
+            elif source_dtype in {"F8_E4M3", "F8_E4M3FN", "F8_E5M2"}:
+                total += count  # preserve the checkpoint's FP8 storage
+            elif source_dtype in {"F64", "F32", "F16", "BF16", "F8_E4M3FNUZ", "F8_E5M2FNUZ"}:
+                total += count * compute_bytes
+            elif source_dtype in unchanged_sizes:
+                total += count * unchanged_sizes[source_dtype]
+            else:
+                raise ValueError(f"Unsupported Krea 2 checkpoint dtype: {source_dtype}")
+    return total
+
+
+def _materialization_device(loaded: LoadedModel) -> torch.device:
+    """Avoid overlapping a complete source mmap with pinned masters when CUDA has room.
+
+    This is only a temporary placement for a CUDA block-swap job. A CPU/MPS job,
+    or a model that needs swapping to fit at all, keeps its requested placement.
+    The free-memory observation is conservative admission, not an OOM guarantee.
+    """
+    requested = torch.device(loaded.extra["backbone_device"])
+    decision: dict[str, Any] = {"device": str(requested), "reason": "requested_placement"}
+    loaded.extra["materialization_placement"] = decision
+    if loaded.device.type != "cuda" or requested.type != "cpu" or not loaded.extra.get("blocks_to_swap"):
+        return requested
+    size = _checkpoint_storage_bytes(loaded.extra["dit_path"], loaded.dtype)
+    decision.update(weight_bytes=size, margin_bytes=CUDA_STAGING_MARGIN)
+    try:
+        free, _ = torch.cuda.mem_get_info(loaded.device)
+    except (RuntimeError, OSError) as error:
+        decision.update(reason="cuda_memory_unavailable")
+        log.warning("Krea 2: keeping CPU materialization; CUDA free-memory query failed: %s", error)
+        return requested
+    decision["free_cuda_bytes"] = free
+    if free < size + CUDA_STAGING_MARGIN:
+        decision["reason"] = "insufficient_cuda_headroom"
+        log.info(
+            "Krea 2: keeping CPU materialization (weights %d + margin %d > free CUDA %d bytes)",
+            size,
+            CUDA_STAGING_MARGIN,
+            free,
+        )
+        return requested
+    decision.update(device=str(loaded.device), reason="cuda_staging_before_host_masters")
+    log.info(
+        "Krea 2: materializing on %s before block swap to release the source mmap before pinned allocation (weights %d, free %d, margin %d bytes)",
+        loaded.device,
+        size,
+        free,
+        CUDA_STAGING_MARGIN,
+    )
+    return loaded.device
 
 
 def _read_state_dict(
@@ -148,6 +230,10 @@ def load_dit(
     leftover = [n for n, p in model.named_parameters() if p.device.type == "meta"]
     if leftover:
         raise RuntimeError(f"parameters still on meta after load: {leftover[:5]}")
+    # Parameters/FrozenLinear buffers now own all required storages. Retaining
+    # the input dictionaries would keep every old mmap view until after the
+    # device move, even when the corresponding module tensor has moved.
+    del weights, scales
     model.to(device)
     model.requires_grad_(False)
     model.eval()
@@ -302,6 +388,7 @@ class Krea2Family(ModelFamily):
                 "dit_path": path,
                 "dit_signature": signature,
                 "backbone_device": backbone_device or device,
+                "blocks_to_swap": memory.blocks_to_swap,
                 "checkpointing": memory.activation_checkpointing != "none",
                 "attention": attention,
                 "materialized": False,
@@ -317,7 +404,7 @@ class Krea2Family(ModelFamily):
         path = loaded.extra["dit_path"]
         if _checkpoint_signature(path) != loaded.extra["dit_signature"]:
             raise RuntimeError("Krea 2 checkpoint changed after metadata loading; restart this operation")
-        dit, config = load_dit(path, device=loaded.extra["backbone_device"], dtype=loaded.dtype)
+        dit, config = load_dit(path, device=_materialization_device(loaded), dtype=loaded.dtype)
         if config != loaded.extra["dit_config"]:
             raise RuntimeError("Krea 2 checkpoint geometry changed after metadata loading")
         if loaded.extra["checkpointing"]:

@@ -117,7 +117,11 @@ def test_one_final_allocation_per_dtype_and_no_intermediate_tensor_copies(monkey
         torch.testing.assert_close(host, source, rtol=0, atol=0)
 
 
-def test_block_pools_preserve_tensor_identity_and_are_independent_between_blocks():
+def test_block_pools_preserve_tensor_identity_and_are_independent_between_blocks(monkeypatch):
+    def forbidden_flush():
+        pytest.fail("CPU source tensors must not flush CUDA allocations")
+
+    monkeypatch.setattr(torch.cuda, "empty_cache", forbidden_flush)
     blocks = [torch.nn.Linear(4, 3).requires_grad_(False) for _ in range(2)]
     identities = [[id(t) for t in block.parameters()] for block in blocks]
     original = [[t.detach().clone() for t in block.parameters()] for block in blocks]
@@ -140,7 +144,7 @@ def test_block_pools_preserve_tensor_identity_and_are_independent_between_blocks
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required for actual pinned memory")
 @pytest.mark.parametrize("source_device", ["cpu", "cuda"])
-def test_cuda_pinned_master_fetch_release_and_remove_preserve_frozen_values(source_device):
+def test_cuda_pinned_master_fetch_release_and_remove_preserve_frozen_values(source_device, monkeypatch):
     block = torch.nn.Linear(5, 3, device=source_device, dtype=torch.bfloat16).requires_grad_(False)
     block.register_buffer("scale", torch.tensor(0.125, device=source_device))
     block.register_buffer(
@@ -150,7 +154,17 @@ def test_cuda_pinned_master_fetch_release_and_remove_preserve_frozen_values(sour
     adapter = block.adapter
     frozen = [p for p in block.parameters() if not p.requires_grad] + list(block.buffers())
     expected = [tensor.detach().float().cpu().clone() for tensor in frozen]
+    original_flush, flushes = torch.cuda.empty_cache, []
+
+    def flush():
+        # Every source has already been rebound after a completed host copy.
+        assert all(tensor.device.type == "cpu" for tensor in frozen)
+        flushes.append(True)
+        original_flush()
+
+    monkeypatch.setattr(torch.cuda, "empty_cache", flush)
     swapper = BlockSwapper([block], num_swap=1, device="cuda", prefetch=False)
+    assert len(flushes) == int(source_device == "cuda")
     try:
         masters = swapper._masters[0]
         assert len(masters) == len(expected)
