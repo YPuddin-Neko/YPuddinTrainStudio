@@ -1,10 +1,60 @@
 """`ypuddin smoke` on the toy family: the same path a GPU machine uses to validate Anima."""
 
 import json
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
 from ypuddin.cli import main
+
+
+@pytest.mark.parametrize("outcome", ["stopped", "paused"])
+@pytest.mark.parametrize("completed_steps", [0, 1])
+def test_interrupted_smoke_writes_partial_report_without_sampling_or_exporting(
+    tmp_path, monkeypatch, capsys, outcome, completed_steps
+):
+    instances = []
+
+    class InterruptedTrainer:
+        def __init__(self, cfg, *, device, emitter):
+            self.device = device
+            self.emitter = emitter
+            self.event_file = emitter._file
+            self.loaded = SimpleNamespace(extra={})
+            self.family = SimpleNamespace(spec=SimpleNamespace(name="toy", adapter_prefix="lora_unet"))
+            self.adapters = SimpleNamespace(
+                layers=["layer"], summary=lambda: {"trainable_params": 1, "by_algo": {"lora": 1}}
+            )
+            self.progress = SimpleNamespace(total_steps=cfg.loop.max_steps)
+            self.prepare = Mock()
+            self.sample_images = Mock(side_effect=AssertionError("sampling continued after interruption"))
+            self.save_weights = Mock(side_effect=AssertionError("export continued after interruption"))
+            instances.append(self)
+
+        def run(self):
+            for step in range(completed_steps):
+                self.emitter.emit("step", step=step + 1, loss=0.5, grad_norm=0.2, it_s=2)
+            return outcome
+
+    monkeypatch.setattr("ypuddin.train.Trainer", InterruptedTrainer)
+    out = tmp_path / "interrupted-smoke"
+    rc = main(["smoke", "--set", "model.family=toy", "--device", "cpu", "--out", str(out)])
+    report = json.loads((out / "smoke-report.json").read_text(encoding="utf-8"))
+    assert rc == 1 and report["ok"] is False and report["outcome"] == outcome
+    assert report["losses"] == [0.5] * completed_steps
+    assert report["total_steps"] == 3
+    assert {"prepare", "train"} <= report["timings_s"].keys()
+    assert "sample" not in report["timings_s"] and "sample" not in report and "export" not in report
+    assert "error" not in report and "traceback" not in report
+    checks = {check["name"]: check["ok"] for check in report["checks"]}
+    assert checks["training finished"] is False
+    assert "sample saved" not in checks and "adapter file round-trips" not in checks
+    trainer = instances[0]
+    trainer.sample_images.assert_not_called()
+    trainer.save_weights.assert_not_called()
+    assert trainer.event_file.closed and trainer.emitter._file is None
+    assert f"outcome={outcome}" in capsys.readouterr().out
 
 
 def test_smoke_recipe_keeps_selected_sampling_algorithm(tmp_path):

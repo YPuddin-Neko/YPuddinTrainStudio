@@ -206,45 +206,46 @@ def run_smoke(
         if step_times:
             report["timings_s"]["per_step_median"] = round(sorted(step_times)[len(step_times) // 2], 3)
 
-        t0 = time.perf_counter()
-        samples = trainer.sample_images("smoke")
-        report["timings_s"]["sample"] = round(time.perf_counter() - t0, 2)
-        ok_sample = bool(samples) and all(p.exists() and p.stat().st_size > 0 for p in samples)
-        detail = f"{samples[0]}" if samples else "no sample produced"
-        if ok_sample:
-            from PIL import Image
+        if outcome == "finished":
+            t0 = time.perf_counter()
+            samples = trainer.sample_images("smoke")
+            report["timings_s"]["sample"] = round(time.perf_counter() - t0, 2)
+            ok_sample = bool(samples) and all(p.exists() and p.stat().st_size > 0 for p in samples)
+            detail = f"{samples[0]}" if samples else "no sample produced"
+            if ok_sample:
+                from PIL import Image
 
-            im = Image.open(samples[0]).convert("RGB")
-            px = list(im.resize((16, 16)).getdata())
-            flat = [c for p in px for c in p]
-            spread = max(flat) - min(flat)
-            report["sample"] = {"path": str(samples[0]), "size": im.size, "value_spread": spread}
-            detail += f" size={im.size} value_spread={spread}"
-            check("sample is not a flat image", spread > 8, detail)
-        check("sample saved", ok_sample, detail)
+                im = Image.open(samples[0]).convert("RGB")
+                px = list(im.resize((16, 16)).getdata())
+                flat = [c for p in px for c in p]
+                spread = max(flat) - min(flat)
+                report["sample"] = {"path": str(samples[0]), "size": im.size, "value_spread": spread}
+                detail += f" size={im.size} value_spread={spread}"
+                check("sample is not a flat image", spread > 8, detail)
+            check("sample saved", ok_sample, detail)
 
-        path = trainer.save_weights("smoke")
-        tensors, meta = load_adapter_file(path)
-        prefix = trainer.family.spec.adapter_prefix + "_"
-        bad = [k for k in tensors if not k.startswith(prefix)]
-        modules = {k.partition(".")[0] for k in tensors}
-        report["export"] = {
-            "path": str(path),
-            "tensors": len(tensors),
-            "modules": len(modules),
-            "metadata_keys": sorted(meta)[:40],
-            "example_keys": sorted(tensors)[:6],
-        }
-        check(
-            "adapter file keys use the family prefix",
-            not bad,
-            f"{len(tensors)} tensors, {len(modules)} modules, e.g. {sorted(tensors)[:2]}",
-        )
-        check(
-            "adapter file round-trips",
-            len(modules) == len(trainer.adapters.layers),
-            f"{len(modules)} modules on disk vs {len(trainer.adapters.layers)} injected",
-        )
+            path = trainer.save_weights("smoke")
+            tensors, meta = load_adapter_file(path)
+            prefix = trainer.family.spec.adapter_prefix + "_"
+            bad = [k for k in tensors if not k.startswith(prefix)]
+            modules = {k.partition(".")[0] for k in tensors}
+            report["export"] = {
+                "path": str(path),
+                "tensors": len(tensors),
+                "modules": len(modules),
+                "metadata_keys": sorted(meta)[:40],
+                "example_keys": sorted(tensors)[:6],
+            }
+            check(
+                "adapter file keys use the family prefix",
+                not bad,
+                f"{len(tensors)} tensors, {len(modules)} modules, e.g. {sorted(tensors)[:2]}",
+            )
+            check(
+                "adapter file round-trips",
+                len(modules) == len(trainer.adapters.layers),
+                f"{len(modules)} modules on disk vs {len(trainer.adapters.layers)} injected",
+            )
         if cuda:
             report["memory_mb"]["peak"] = round(torch.cuda.max_memory_allocated(trainer.device) / 2**20)
             report["memory_mb"]["peak_reserved"] = round(
