@@ -149,7 +149,11 @@ Krea 2 是 12.9B 参数的单流 MMDiT，文本编码器是 Qwen3-VL-4B-Instruct
 | `model.text_encoder_path` | `Qwen/Qwen3-VL-4B-Instruct` HF 目录（推荐），或 ComfyUI 的单文件 `qwen_3vl_4b*.safetensors`（bf16 或 fp8_scaled 均可） | 只加载语言模型部分（视觉塔不参与）；单文件时把模型的 `config.json` 放在同一目录（没有则按 4B 几何假定），分词器缺失时用内置的 Qwen3 分词器 |
 | `model.vae_path` | `qwen_image_vae.safetensors` | 与 Anima 使用相同 VAE 架构；仅当实际权重指纹、预处理和缓存精度等条件一致时可复用 latent 缓存 |
 
-Krea 2 的文本编码只支持 **cached 模式**（`dataset.text_encoding = "auto"` 会自动选 cached）：训练前编码所有需要的 caption 变体和采样提示词，保存缓存后释放文本编码器。两族的主干先在 CPU 加载，完成缓存准备后再按设备和 Block Swap 设置放置；VAE 在 latent 缓存阶段后释放，采样时临时使用。分阶段加载减少准备阶段与训练阶段的资源重叠，但不保证特定显存容量可运行。内置预设 `krea2-lokr-default` / `krea2-lora-32` 提供起点，应先运行 Plan 和 smoke。
+Krea 2 的文本编码只支持 **cached 模式**（`dataset.text_encoding = "auto"` 会自动选 cached）。启用图片缓存时，程序先用 VAE 缓存图片并卸载 VAE，再缓存描述和采样提示词并卸载文本编码器，最后才加载 DiT 主模型的真实权重。全部缓存命中时无需加载对应编码器；“只构建缓存”不会加载 DiT 权重张量。训练预览会按需重新加载 VAE，结束后再次卸载。
+
+CUDA 分块换出任务还会检查当前空闲显存：能够放下所选文件的实际权重，并额外留下 **2 GiB** 时，先临时上传完整 DiT，释放 CPU 文件映射后，再建立需要换出的主机缓存；余量不足时保持原 CPU 加载路径。它不会修改换出块数或训练参数。FP8 文件的缩放值保留原值，同时解除过去会拖住整份文件映射的多余引用。CPU RAM 与 GPU 显存仍需分别留出空间，准备阶段的搬运峰值也要观察，不能仅靠降低分辨率判断是否够用。加载顺序、暂存条件和 FP8 修复详见 [Krea 2 缓存与内存说明](KREA2_MEMORY.md)。
+
+文本缓存默认每批最多编码 16 条文字，与训练 batch 无关。内置预设 `krea2-lokr-default` / `krea2-lora-32` 提供配置起点，应先运行 Plan 和短程 smoke；分阶段加载与显存估算都不是容量保证。
 
 下面是 CUDA fp8 路径的自检示例；MPS 当前强制 FP32、关闭 autocast，并用系统统一内存作保守预算。CPU/MPS 不支持显式 `memory.base_precision=fp8_*`、SageAttention 或 8-bit 优化器；不能把 CPU 与 MPS 之间的 Block Swap 当作独立显存和内存之间的等额腾挪。
 
@@ -175,7 +179,7 @@ Krea 2 的文本编码只支持 **cached 模式**（`dataset.text_encoding = "au
 # 显存紧张：追加 --set memory.blocks_to_swap=10 --set dataset.text_encoding=cached --resolution 512
 ```
 
-它会用真实训练器跑 3 步、出一张 512 预览、保存并回读适配器，最后打印每项检查的通过情况、耗时、可用的设备内存指标，并写 `outputs/smoke/smoke-report.json`（失败时含完整 traceback）。该命令是验收入口；当前并未完成官方完整 Anima / Krea 2 权重的 NVIDIA 验收或对比 benchmark，已有自动化测试结果和数量见[本轮修复报告](FIX_REPORT_2026-09-11.md)。
+它会用真实训练器跑 3 步、出一张 512 预览、保存并回读适配器，最后打印每项检查的通过情况、耗时、可用的设备内存指标，并写 `outputs/smoke/smoke-report.json`（失败时含完整 traceback）。这是本机配置的短程验收入口：通过表示这组加载、训练、预览与保存流程能够完成，长时间训练稳定性、其他分辨率和图像质量仍需分别验证。历史自动化修复记录见 [2026-09-11 修复报告](FIX_REPORT_2026-09-11.md)。
 
 MPS 可先用 `--device mps --set model.dtype=fp32 --set loop.mixed_precision=no` 自检。默认配置中的 bf16 在 MPS 上会告警并按 FP32 执行；这条路径仍需完整模型的耗时、内存和图像质量验证。
 
