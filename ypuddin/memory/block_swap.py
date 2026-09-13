@@ -32,16 +32,29 @@ def _swappable_tensors(block: nn.Module) -> list[Tensor]:
     return out
 
 
-def _make_host_master(tensor: Tensor, *, pin_memory: bool) -> Tensor:
-    """Copy directly into one independent host allocation.
+def _make_host_masters(tensors: list[Tensor], *, pin_memory: bool) -> list[Tensor]:
+    """Pack a block's frozen tensors into one independent CPU pool per dtype.
 
-    CPU-copy-then-pin briefly retains both an ordinary host copy and its pinned
-    replacement, in addition to the source checkpoint storage. Allocate the final
-    master first; the blocking copy also makes CUDA sources ready before rebinding.
+    PyTorch rounds each pinned allocation up to a power of two. Grouping a block
+    avoids rounding every projection separately, without casting FP8 weights or
+    their scales. The final pools are allocated directly; blocking copies make
+    CUDA sources ready before rebinding. Views are contiguous, retain each input's
+    shape and values (including strided inputs), and never overlap.
     """
-    host = torch.empty_like(tensor, device="cpu", pin_memory=pin_memory)
-    host.copy_(tensor.detach())
-    return host
+    groups: dict[torch.dtype, list[tuple[int, Tensor]]] = {}
+    for index, tensor in enumerate(tensors):
+        groups.setdefault(tensor.dtype, []).append((index, tensor))
+    masters: dict[int, Tensor] = {}
+    for dtype, group in groups.items():
+        pool = torch.empty(sum(t.numel() for _, t in group), dtype=dtype, device="cpu", pin_memory=pin_memory)
+        offset = 0
+        for index, tensor in group:
+            count = tensor.numel()
+            host = pool.narrow(0, offset, count).view(tensor.shape)
+            host.copy_(tensor.detach())
+            masters[index] = host
+            offset += count
+    return [masters[index] for index in range(len(tensors))]
 
 
 class BlockSwapper:
@@ -70,10 +83,8 @@ class BlockSwapper:
         self.forward_only = False
         for i in self.swapped_idx:
             tensors = _swappable_tensors(self.blocks[i])
-            masters = []
-            for t in tensors:
-                host = _make_host_master(t, pin_memory=self.pin)
-                masters.append(host)
+            masters = _make_host_masters(tensors, pin_memory=self.pin)
+            for t, host in zip(tensors, masters, strict=True):
                 t.data = host  # block lives on the host until fetched
             self._tensors[i] = tensors
             self._masters[i] = masters
