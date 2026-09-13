@@ -1,3 +1,4 @@
+import { apiClient } from '../api/client';
 import type { Project } from '../api/types';
 
 export type VersionedProject = Project & { active_version_id?: string | null; version_count?: number; layout_version?: number };
@@ -32,7 +33,6 @@ const activationQueues = new Map<string, Promise<unknown>>();
 const latestActivation = new Map<string, string>();
 /** Serialize remembered-version writes; explicit route/API scopes remain authoritative. */
 export async function activateProjectVersion(projectId: string, versionId: string) {
-  const { apiClient } = await import('../api/client');
   latestActivation.set(projectId,versionId);
   const next = (activationQueues.get(projectId) || Promise.resolve()).catch(() => {}).then(async () => {
     if(latestActivation.get(projectId) !== versionId) return;
