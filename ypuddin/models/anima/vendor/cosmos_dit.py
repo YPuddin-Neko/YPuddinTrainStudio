@@ -813,6 +813,24 @@ class PatchEmbed(nn.Module):
         return x
 
 
+def _adaln_projection(module: nn.Module, embedding: torch.Tensor, use_fp32: bool) -> torch.Tensor:
+    # Local modification: disabled autocast would also disable the caller's BF16
+    # AMP, leaving FP32 timestep features incompatible with BF16 Linear weights.
+    if not use_fp32:
+        return module(embedding)
+    # FP16's overflow protection needs actual FP32 math: autocast(dtype=float32)
+    # is unsupported on CUDA and does not promote stored half-precision weights.
+    # Functional execution preserves adapted module forwards/gradients without
+    # changing parameter identities, storage precision or block-swap references.
+    state = {
+        name: value.float()
+        for name, value in (*module.named_parameters(), *module.named_buffers())
+        if value.is_floating_point() and value.dtype != torch.float32
+    }
+    with torch.autocast(device_type=embedding.device.type, enabled=False):
+        return torch.func.functional_call(module, state, (embedding.float(),))
+
+
 # Final Layer
 class FinalLayer(nn.Module):
     """Final layer with AdaLN modulation + unpatchify."""
@@ -865,14 +883,11 @@ class FinalLayer(nn.Module):
         use_fp32: bool = False,
     ):
         # Compute AdaLN modulation parameters (in float32 when fp16 to avoid overflow in Linear layers)
-        with torch.autocast(device_type=x_B_T_H_W_D.device.type, dtype=torch.float32, enabled=use_fp32):
-            if self.use_adaln_lora:
-                assert adaln_lora_B_T_3D is not None
-                shift_B_T_D, scale_B_T_D = (
-                    self.adaln_modulation(emb_B_T_D) + adaln_lora_B_T_3D[:, :, : 2 * self.hidden_size]
-                ).chunk(2, dim=-1)
-            else:
-                shift_B_T_D, scale_B_T_D = self.adaln_modulation(emb_B_T_D).chunk(2, dim=-1)
+        modulation = _adaln_projection(self.adaln_modulation, emb_B_T_D, use_fp32)
+        if self.use_adaln_lora:
+            assert adaln_lora_B_T_3D is not None
+            modulation = modulation + adaln_lora_B_T_3D[:, :, : 2 * self.hidden_size]
+        shift_B_T_D, scale_B_T_D = modulation.chunk(2, dim=-1)
 
         shift_B_T_1_1_D = rearrange(shift_B_T_D, "b t d -> b t 1 1 d")
         scale_B_T_1_1_D = rearrange(scale_B_T_D, "b t d -> b t 1 1 d")
@@ -1000,25 +1015,16 @@ class Block(nn.Module):
             x_B_T_H_W_D = x_B_T_H_W_D + extra_per_block_pos_emb
 
         # Compute AdaLN modulation parameters (in float32 when fp16 to avoid overflow in Linear layers)
-        with torch.autocast(device_type=x_B_T_H_W_D.device.type, dtype=torch.float32, enabled=use_fp32):
-            if self.use_adaln_lora:
-                shift_self_attn_B_T_D, scale_self_attn_B_T_D, gate_self_attn_B_T_D = (
-                    self.adaln_modulation_self_attn(emb_B_T_D) + adaln_lora_B_T_3D
-                ).chunk(3, dim=-1)
-                shift_cross_attn_B_T_D, scale_cross_attn_B_T_D, gate_cross_attn_B_T_D = (
-                    self.adaln_modulation_cross_attn(emb_B_T_D) + adaln_lora_B_T_3D
-                ).chunk(3, dim=-1)
-                shift_mlp_B_T_D, scale_mlp_B_T_D, gate_mlp_B_T_D = (self.adaln_modulation_mlp(emb_B_T_D) + adaln_lora_B_T_3D).chunk(
-                    3, dim=-1
-                )
-            else:
-                shift_self_attn_B_T_D, scale_self_attn_B_T_D, gate_self_attn_B_T_D = self.adaln_modulation_self_attn(
-                    emb_B_T_D
-                ).chunk(3, dim=-1)
-                shift_cross_attn_B_T_D, scale_cross_attn_B_T_D, gate_cross_attn_B_T_D = self.adaln_modulation_cross_attn(
-                    emb_B_T_D
-                ).chunk(3, dim=-1)
-                shift_mlp_B_T_D, scale_mlp_B_T_D, gate_mlp_B_T_D = self.adaln_modulation_mlp(emb_B_T_D).chunk(3, dim=-1)
+        self_modulation = _adaln_projection(self.adaln_modulation_self_attn, emb_B_T_D, use_fp32)
+        cross_modulation = _adaln_projection(self.adaln_modulation_cross_attn, emb_B_T_D, use_fp32)
+        mlp_modulation = _adaln_projection(self.adaln_modulation_mlp, emb_B_T_D, use_fp32)
+        if self.use_adaln_lora:
+            self_modulation = self_modulation + adaln_lora_B_T_3D
+            cross_modulation = cross_modulation + adaln_lora_B_T_3D
+            mlp_modulation = mlp_modulation + adaln_lora_B_T_3D
+        shift_self_attn_B_T_D, scale_self_attn_B_T_D, gate_self_attn_B_T_D = self_modulation.chunk(3, dim=-1)
+        shift_cross_attn_B_T_D, scale_cross_attn_B_T_D, gate_cross_attn_B_T_D = cross_modulation.chunk(3, dim=-1)
+        shift_mlp_B_T_D, scale_mlp_B_T_D, gate_mlp_B_T_D = mlp_modulation.chunk(3, dim=-1)
 
         # Reshape for broadcasting: (B, T, D) -> (B, T, 1, 1, D)
         shift_self_attn_B_T_1_1_D = rearrange(shift_self_attn_B_T_D, "b t d -> b t 1 1 d")

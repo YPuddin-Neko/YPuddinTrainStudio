@@ -70,6 +70,14 @@ and with sd-scripts / ComfyUI / diffusion-pipe LoRA key conventions.
    both settings -- the larger value is pure extrapolation head-room for high-resolution training, exactly as in
    AnimaLoraStudio / diffusion-pipe. Verified by `tests/unit/test_anima_vendor.py::test_max_img_size_is_pure_extrapolation`.
 6. Module docstring documenting the training / sampling forward-call contract; `__all__`; `# ruff: noqa`.
+7. **AdaLN precision boundary (2026-09-13)**: block and final-layer modulation preserve the caller's
+   BF16 autocast context instead of disabling it when `use_fp32=False`. This permits the family's FP32
+   timestep features to reach BF16 stored weights through normal autocast. For FP16's existing overflow
+   protection, `_adaln_projection` explicitly disables autocast and computes with FP32 inputs and temporary
+   FP32 parameter/buffer tensors through `torch.func.functional_call`; requesting CUDA autocast with
+   `dtype=float32` does not itself promote half-precision weights. Module forwards (including injected
+   adapters), gradients, state-dict keys, parameter identities and stored dtypes are retained, including
+   block-swap references. Regression coverage uses tiny CPU checkpoints; official CUDA validation is separate.
 
 ### `attention.py` (from `attention.py`)
 
