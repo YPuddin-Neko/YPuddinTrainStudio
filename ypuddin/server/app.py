@@ -25,6 +25,7 @@ from . import (
     routes_model_recommendations,
     routes_regularization,
     routes_work,
+    routes_xyz,
 )
 from .bus import EventBus
 from .context import ServiceContext
@@ -93,6 +94,7 @@ def create_app(
         expose_headers=["X-Trace-Id"],
     )
     app.include_router(routes_core.router, prefix="/api")
+    app.include_router(routes_xyz.router, prefix="/api")
     app.include_router(routes_work.router, prefix="/api")
     app.include_router(routes_model_downloads.router, prefix="/api")
     app.include_router(routes_model_recommendations.router, prefix="/api")

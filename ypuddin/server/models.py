@@ -309,6 +309,8 @@ class ModelAsset(_Out):
     size: int
     dtype: str | None
     is_default: bool
+    purpose: Literal["training", "inference"] = "training"
+    variant: Literal["raw", "turbo"] | None = None
     exists: bool
     unsupported_reason: str | None = None  # Live admission projection; retained DB defaults are unchanged.
     created_at: float
@@ -512,6 +514,11 @@ JobStatus = Literal[
 
 class JobProgress(_Out):
     phase: str | None = None
+    done: int | None = None
+    total: int | None = None
+    cell_index: int | None = None
+    sample_step: int | None = None
+    sample_steps: int | None = None
     step: int | None = None
     total_steps: int | None = None
     steps_per_epoch: int | None = None

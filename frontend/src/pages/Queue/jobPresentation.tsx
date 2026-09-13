@@ -38,10 +38,10 @@ export function JobActions({ job, onUpdated }: { job: Job; onUpdated: (updated: 
     finally { if (current.current === id) setBusy(''); }
   };
   const actions: { key: string; label: string; Icon: typeof Play }[] = [];
-  if (['running', 'queued', 'scheduled'].includes(job.status)) actions.push({ key: 'pause', label: text('暂停', 'Pause'), Icon: Pause });
-  if (job.status === 'paused') actions.push({ key: 'resume', label: text('继续', 'Resume'), Icon: Play });
-  if (job.status === 'running' && job.type !== 'cache') actions.push({ key: 'save', label: text('保存检查点', 'Save checkpoint'), Icon: Save });
+  if (job.type !== 'xyz' && ['running', 'queued', 'scheduled'].includes(job.status)) actions.push({ key: 'pause', label: text('暂停', 'Pause'), Icon: Pause });
+  if (job.type !== 'xyz' && job.status === 'paused') actions.push({ key: 'resume', label: text('继续', 'Resume'), Icon: Play });
+  if (job.status === 'running' && job.type === 'train') actions.push({ key: 'save', label: text('保存检查点', 'Save checkpoint'), Icon: Save });
   if (['running', 'queued', 'scheduled', 'paused', 'pausing'].includes(job.status)) actions.push({ key: 'cancel', label: text('取消', 'Cancel'), Icon: XCircle });
-  if (['failed', 'cancelled', 'completed'].includes(job.status)) actions.push({ key: 'retry', label: job.type === 'cache' ? text('重新准备', 'Prepare again') : text('重新训练', 'Run again'), Icon: RotateCcw });
+  if (['failed', 'cancelled', 'completed'].includes(job.status)) actions.push({ key: 'retry', label: job.type === 'xyz' ? text('重新生成', 'Generate again') : job.type === 'cache' ? text('重新准备', 'Prepare again') : text('重新训练', 'Run again'), Icon: RotateCcw });
   return <div className="task-actions-wrap"><div className="task-actions">{actions.map(({ key, label, Icon }) => <button key={key} type="button" className="task-button" disabled={!!busy} data-testid={`job-${key}-${job.id}`} onClick={() => void run(key)}>{busy === key ? <Loader2 size={13} className="animate-spin"/> : <Icon size={13}/>}<span>{label}</span></button>)}</div>{error && <p className="task-inline-error" role="alert">{error}</p>}</div>;
 }

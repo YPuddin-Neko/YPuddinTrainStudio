@@ -90,6 +90,7 @@ const mockModels: ModelAsset[] = [
     dtype: 'bf16',
     exists: true,
     is_default: true,
+    purpose: 'training',
     created_at: 1789000000,
   },
   {
@@ -101,6 +102,7 @@ const mockModels: ModelAsset[] = [
     dtype: 'bf16',
     exists: true,
     is_default: true,
+    purpose: 'training',
     created_at: 1789000000,
   },
   {
@@ -108,10 +110,12 @@ const mockModels: ModelAsset[] = [
     family: 'krea2',
     kind: 'dit',
     path: '/models/krea2_fp8_scaled.safetensors',
+    variant: 'raw',
     size: 13000000000,
     dtype: 'fp8',
     exists: true,
     is_default: true,
+    purpose: 'training',
     created_at: 1789000000,
   },
 ];
@@ -716,6 +720,7 @@ export const handlers = [
       dtype: body.dtype ?? null,
       exists: true,
       is_default: body.is_default ?? false,
+      purpose: body.purpose ?? 'training',
       created_at: Date.now() / 1000,
     } as ModelAsset;
     mockModels.push(asset);

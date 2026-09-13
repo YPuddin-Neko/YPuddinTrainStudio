@@ -32,13 +32,29 @@ class RecommendedModel(BaseModel):
     size: int = Field(gt=0)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     recommended: bool = True
+    purpose: Literal["training", "inference"] = "training"
+    variant: Literal["raw", "turbo"] | None = None
     sources: list[RecommendedSource]
     model_id: str | None = None
     available_path: str | None = None
     is_default: bool = False
 
 
-def _entry(id_, family, kind, name, dtype, size, sha256, repo, filename, recommended=True):
+def _entry(
+    id_,
+    family,
+    kind,
+    name,
+    dtype,
+    size,
+    sha256,
+    repo,
+    filename,
+    recommended=True,
+    *,
+    purpose="training",
+    variant=None,
+):
     return RecommendedModel(
         id=id_,
         family=family,
@@ -48,6 +64,8 @@ def _entry(id_, family, kind, name, dtype, size, sha256, repo, filename, recomme
         size=size,
         sha256=sha256,
         recommended=recommended,
+        purpose=purpose,
+        variant=variant,
         sources=[
             RecommendedSource(
                 provider="huggingface",
@@ -70,6 +88,45 @@ def _entry(id_, family, kind, name, dtype, size, sha256, repo, filename, recomme
 ANIMA = "circlestone-labs/Anima"
 KREA = "Comfy-Org/Krea-2"
 RECOMMENDATIONS = [
+    *[
+        RecommendedModel(
+            id=f"krea2-turbo-{dtype}",
+            family="krea2",
+            kind="dit",
+            name=f"Krea 2 Turbo · {label} · 仅采样",
+            dtype=dtype,
+            size=size,
+            sha256=digest,
+            purpose="inference",
+            variant="turbo",
+            recommended=dtype == "fp8",
+            sources=[
+                RecommendedSource(
+                    provider="huggingface",
+                    repo_id=KREA,
+                    filename=f"diffusion_models/{filename}",
+                    revision="e5ea8b4dd7f38f348b138eb0fe29f92c0e367e96",
+                    url=f"https://huggingface.co/{KREA}/blob/e5ea8b4dd7f38f348b138eb0fe29f92c0e367e96/diffusion_models/{filename}",
+                )
+            ],
+        )
+        for dtype, label, filename, size, digest in (
+            (
+                "bf16",
+                "BF16",
+                "krea2_turbo_bf16.safetensors",
+                26283332608,
+                "78bbf8f4165eda19cea3cb06c78089221932a39e2eed8af9da741f942c47ffb3",
+            ),
+            (
+                "fp8",
+                "FP8 scaled",
+                "krea2_turbo_fp8_scaled.safetensors",
+                13141730784,
+                "eb4dd8c612cfd10f64f25b057e6e6bbcb5737c94a7372177e456dbf7579502f1",
+            ),
+        )
+    ],
     RecommendedModel(
         id="sdxl-illustrious-v01",
         family="sdxl",
@@ -132,6 +189,7 @@ RECOMMENDATIONS = [
         "f99bb0ff8e362b77342bc4994e0c50906fe7ef7074864b181b7d48d2fa6d03d7",
         KREA,
         "diffusion_models/krea2_raw_bf16.safetensors",
+        variant="raw",
     ),
     _entry(
         "krea2-raw-fp8",
@@ -144,6 +202,7 @@ RECOMMENDATIONS = [
         KREA,
         "diffusion_models/krea2_raw_fp8_scaled.safetensors",
         False,
+        variant="raw",
     ),
     _entry(
         "krea2-qwen3vl",
@@ -195,6 +254,9 @@ def cached_sha256(context, path: Path) -> str | None:
 def remember_verified_file(context, path: Path, sha256: str) -> None:
     """Record a completed download's already-verified bytes after their final rename."""
     context.db.set_kv(_verification_key(path), {"signature": _signature(path), "sha256": sha256})
+    from ypuddin.models.krea2.variants import record_verified_variant
+
+    record_verified_variant(path, sha256)
 
 
 def verify_local_model(context, entry: RecommendedModel, path: Path) -> None:
@@ -224,6 +286,7 @@ def verify_local_model(context, entry: RecommendedModel, path: Path) -> None:
                 "local model SHA-256 does not match the recommendation; the file was preserved",
                 code="model.integrity",
             )
+        remember_verified_file(context, path, digest)
     except OSError:
         raise ApiError("cannot read the local model for verification", code="model.read") from None
 
@@ -262,7 +325,12 @@ def available_models(context) -> list[RecommendedModel]:
                 update={
                     "model_id": own["id"] if own else None,
                     "available_path": available["path"] if available else None,
-                    "is_default": bool(own and own["is_default"] and own["path"] in verified_paths),
+                    "is_default": bool(
+                        entry.purpose == "training"
+                        and own
+                        and own["is_default"]
+                        and own["path"] in verified_paths
+                    ),
                 }
             )
         )

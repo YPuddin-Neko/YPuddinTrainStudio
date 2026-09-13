@@ -29,13 +29,13 @@ const entries = [
   {id:'anima-vae',family:'anima',kind:'vae',name:'Shared VAE',filename:'vae.safetensors'},
 ];
 function task(overrides: Partial<ModelDownload> = {}): ModelDownload {
-  return {id:'dl1',provider:'huggingface',mirror:'official',family:'anima',kind:'text_encoder',source_url:'https://huggingface.co/official/anima/resolve/main/encoder.safetensors',filename:'encoder.safetensors',target_path:'D:\\models\\encoder.safetensors',status:'downloading',downloaded_bytes:500,total_bytes:1000,error:null,model_id:null,dtype:'bf16',is_default:true,created_at:1,finished_at:null,...overrides};
+  return {id:'dl1',provider:'huggingface',mirror:'official',family:'anima',kind:'text_encoder',source_url:'https://huggingface.co/official/anima/resolve/main/encoder.safetensors',filename:'encoder.safetensors',target_path:'D:\\models\\encoder.safetensors',status:'downloading',downloaded_bytes:500,total_bytes:1000,error:null,model_id:null,dtype:'bf16',is_default:true,purpose:'training',created_at:1,finished_at:null,...overrides};
 }
 beforeEach(async () => {
   await i18n.changeLanguage('zh-CN');
   models = [
-    {id:'a',family:'anima',kind:'dit',path:'C:\\models\\anima.safetensors',dtype:'bf16',exists:true,is_default:false,size:1024,created_at:1},
-    {id:'k',family:'krea2',kind:'dit',path:'C:\\models\\krea2.safetensors',dtype:'bf16',exists:true,is_default:true,size:1024,created_at:1},
+    {id:'a',family:'anima',kind:'dit',path:'C:\\models\\anima.safetensors',dtype:'bf16',exists:true,is_default:false,purpose:'training',size:1024,created_at:1},
+    {id:'k',family:'krea2',kind:'dit',path:'C:\\models\\krea2.safetensors',dtype:'bf16',exists:true,is_default:true,purpose:'training',variant:'raw',size:1024,created_at:1},
   ];
   downloads=[];
   settings={paths:{data_root:'C:\\studio',models_dir:'D:\\models',cache_dir:'D:\\cache',output_dir:'D:\\runs',output_mode:'project'},server:{host:'127.0.0.1',port:8765},ui:{language:'zh-CN',theme:'light'}};
@@ -82,6 +82,45 @@ async function openCustom(){fireEvent.click(await screen.findByTestId('download-
 function enterRepo(){fireEvent.change(screen.getByRole('textbox',{name:'仓库 ID'}),{target:{value:'my/weights'}});fireEvent.change(screen.getByRole('textbox',{name:'仓库内文件路径'}),{target:{value:'weights/custom.safetensors'}});}
 
 describe('real model management UI contracts',()=>{
+  it('clears the DiT variant when switching a custom download to a shared VAE',async()=>{
+    mount(<Models/>,'/models?family=krea2');
+    const dialog=await openCustom();
+    choose('Krea 2 版本 / 用途','Turbo · 仅采样');
+    expect(within(dialog).getByRole('checkbox')).toBeDisabled();
+    choose('组件','VAE');
+    expect(within(dialog).getByRole('checkbox')).toBeEnabled();
+    fireEvent.click(within(dialog).getByRole('checkbox'));
+    enterRepo();
+    fireEvent.click(screen.getByTestId('model-download-start'));
+    await waitFor(()=>expect(download).toHaveBeenCalledWith(expect.objectContaining({family:'krea2',kind:'vae',is_default:true})));
+    expect(download.mock.calls[0][0]).not.toHaveProperty('variant');
+  });
+  it('labels Turbo as sampling only and blocks setting it as a training default',async()=>{
+    models.push({...models[1],id:'turbo',path:'C:\\models\\turbo.safetensors',is_default:false,purpose:'inference',variant:'turbo'} as ModelAsset);
+    mount(<Models/>,'/models?family=krea2&view=library');
+    expect(await screen.findByText('turbo.safetensors')).toBeInTheDocument();
+    expect(screen.getByText('仅采样')).toBeInTheDocument();
+    expect(screen.getByRole('button',{name:'设为默认 turbo.safetensors'})).toBeDisabled();
+    expect(screen.getByRole('button',{name:'设为默认 krea2.safetensors'})).toBeEnabled();
+    fireEvent.click(screen.getByRole('tab',{name:/准备模型/}));
+    const card=await screen.findByTestId('model-component-dit');
+    fireEvent.click(within(card).getByRole('combobox'));
+    expect(screen.queryByRole('option',{name:'turbo.safetensors'})).not.toBeInTheDocument();
+    expect(screen.getByRole('option',{name:'krea2.safetensors'})).toBeInTheDocument();
+  });
+  it('requires an explicit local Krea variant and registers Turbo without a training default',async()=>{
+    server.use(http.post('/api/models/inspect',()=>HttpResponse.json({path:'D:\\unknown.safetensors',family:'krea2',family_candidates:['krea2'],kind:'dit',dtype:'bf16',dtypes:{BF16:100},confidence:'high',evidence:[],warnings:[],files_inspected:1,variant:null,purpose:null})));
+    mount(<Models/>,'/models?family=krea2');
+    fireEvent.click(await screen.findByTestId('add-model-btn'));
+    const dialog=screen.getByRole('dialog',{name:'添加本地模型'});
+    fireEvent.change(within(dialog).getByRole('textbox',{name:'文件路径'}),{target:{value:'D:\\unknown.safetensors'}});
+    await screen.findByRole('combobox',{name:'Krea 2 版本 / 用途'});
+    expect(screen.getByTestId('add-model-submit')).toBeDisabled();
+    choose('Krea 2 版本 / 用途','Turbo · 仅采样');
+    expect(within(dialog).getByRole('checkbox')).toBeDisabled();
+    fireEvent.click(screen.getByTestId('add-model-submit'));
+    await waitFor(()=>expect(register).toHaveBeenCalledWith(expect.objectContaining({family:'krea2',kind:'dit',variant:'turbo',purpose:'inference',is_default:false})));
+  });
   it('keeps local files and downloads usable when the recommendation list fails, then clears the recovered error',async()=>{
     let failing=true;
     downloads=[task()];

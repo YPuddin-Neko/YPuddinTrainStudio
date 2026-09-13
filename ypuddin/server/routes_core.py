@@ -512,6 +512,8 @@ class ModelBody(BaseModel):
     path: str
     dtype: str | None = None
     is_default: bool = False
+    purpose: Literal["training", "inference"] | None = None
+    variant: Literal["raw", "turbo"] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -573,6 +575,15 @@ def _check_model_admission(path: Path, family: str, kind: str, c: ServiceContext
 def _model_row(r: dict[str, Any], c: ServiceContext) -> dict[str, Any]:
     p = Path(r["path"])
     projected = {**r, "exists": p.exists(), "is_default": bool(r["is_default"])}
+    if r["family"] == "krea2" and r["kind"] == "dit":
+        from ypuddin.models.krea2.variants import verified_variant
+
+        variant = verified_variant(p) or r.get("variant")
+        projected.update(
+            variant=variant, purpose="inference" if variant == "turbo" else r.get("purpose", "training")
+        )
+        if projected["purpose"] == "inference":
+            projected["is_default"] = False
     if r["family"] in {"flux", "flux2"}:
         try:
             _check_model_admission(p.expanduser().resolve(), r["family"], r["kind"], c)
@@ -618,6 +629,25 @@ def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, An
         existing = c.db.fetchone(
             "SELECT * FROM models WHERE family=? AND kind=? AND path=?", (body.family, body.kind, str(p))
         )
+        variant = body.variant or (existing.get("variant") if existing else None)
+        purpose = body.purpose or (existing.get("purpose", "training") if existing else "training")
+        if body.family == "krea2" and body.kind == "dit":
+            from ypuddin.models.krea2.variants import verified_variant
+
+            known = verified_variant(p)
+            if known and variant and known != variant:
+                raise ApiError("所选 Raw/Turbo 与已验证的模型记录不符。", code="model.variant", status=422)
+            variant = known or variant
+            if variant is None:
+                raise ApiError(
+                    "Krea 2 Raw/Turbo 形状相同，请按发布说明确认模型版本。", code="model.variant", status=422
+                )
+            if variant == "turbo":
+                purpose = "inference"
+        elif variant is not None:
+            raise ApiError("Raw/Turbo 版本只适用于 Krea 2 DiT。", code="model.variant", status=422)
+        if purpose == "inference" and body.is_default:
+            raise ApiError("仅采样模型不能设为训练默认组件。", code="model.purpose", status=422)
         mid = existing["id"] if existing else new_id("m")
         if body.is_default:
             c.db.execute("UPDATE models SET is_default=0 WHERE family=? AND kind=?", (body.family, body.kind))
@@ -628,7 +658,9 @@ def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, An
                 {
                     "size": size,
                     "dtype": body.dtype,
-                    "is_default": int(body.is_default or existing["is_default"]),
+                    "is_default": int(purpose == "training" and (body.is_default or existing["is_default"])),
+                    "purpose": purpose,
+                    "variant": variant,
                 },
             )
         else:
@@ -642,6 +674,8 @@ def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, An
                     "size": size,
                     "dtype": body.dtype,
                     "is_default": int(body.is_default),
+                    "purpose": purpose,
+                    "variant": variant,
                     "created_at": now(),
                 },
             )
@@ -663,6 +697,8 @@ class ModelInspection(BaseModel):
     evidence: list[str]
     warnings: list[str]
     files_inspected: int
+    variant: Literal["raw", "turbo"] | None = None
+    purpose: Literal["training", "inference"] | None = None
 
 
 @router.post("/models/inspect", response_model=ModelInspection)
@@ -695,6 +731,8 @@ def patch_model(model_id: str, body: ModelDefaultPatch, c: ServiceContext = Depe
                 "the model file is missing; register its new location first", code="model.not_found"
             )
         if body.is_default:
+            if _model_row(row, c).get("purpose") == "inference":
+                raise ApiError("仅采样模型不能设为训练默认组件。", code="model.purpose", status=422)
             _check_model_admission(Path(row["path"]).expanduser().resolve(), row["family"], row["kind"], c)
             c.db.execute(
                 "UPDATE models SET is_default=0 WHERE family=? AND kind=?", (row["family"], row["kind"])
@@ -777,6 +815,8 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
             continue  # Unknown assets need an explicit review in the local-file dialog.
         if training_rejection(detected, family):
             continue
+        if family == "krea2" and kind == "dit" and not detected.get("variant"):
+            continue  # Raw/Turbo have identical shapes; local registration asks the user.
         if family == "flux2":
             try:
                 _check_model_admission(Path(detected["path"]), family, kind, c, detected=detected)
@@ -807,6 +847,8 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
                 "size": size,
                 "dtype": detected["dtype"],
                 "is_default": 0,
+                "purpose": detected.get("purpose") or "training",
+                "variant": detected.get("variant"),
                 "created_at": now(),
             },
         )

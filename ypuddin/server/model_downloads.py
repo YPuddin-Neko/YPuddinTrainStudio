@@ -32,6 +32,8 @@ class DownloadVerification(BaseModel):
     id: str
     size: int = Field(gt=0)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    purpose: Literal["training", "inference"] = "training"
+    variant: Literal["raw", "turbo"] | None = None
 
 
 class ModelDownloadRequest(BaseModel):
@@ -46,6 +48,8 @@ class ModelDownloadRequest(BaseModel):
     revision: str | None = None
     dtype: Literal["bf16", "fp16", "fp32", "fp8"] | None = None
     is_default: bool = True
+    purpose: Literal["training", "inference"] = "training"
+    variant: Literal["raw", "turbo"] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -58,6 +62,12 @@ class ModelDownloadRequest(BaseModel):
 
     @model_validator(mode="after")
     def source(self):
+        if self.variant is not None and (self.family != "krea2" or self.kind != "dit"):
+            raise ValueError("Raw/Turbo variant only applies to Krea 2 DiT")
+        if self.family == "krea2" and self.kind == "dit" and self.variant is None:
+            raise ValueError(
+                "Krea 2 Raw/Turbo have identical geometry; confirm the variant before downloading"
+            )
         if self.family == "flux2" and self.kind == "text_encoder":
             raise ValueError(
                 "FLUX.2 text encoders require a complete local HF directory with tokenizer assets; register that directory instead of downloading a single weight file"
@@ -84,6 +94,8 @@ class ModelDownload(BaseModel):
     finished_at: float | None = None
     dtype: str | None = None
     is_default: bool = True
+    purpose: Literal["training", "inference"] = "training"
+    variant: Literal["raw", "turbo"] | None = None
     recommendation_id: str | None = None
     expected_size: int | None = None
     sha256: str | None = None
@@ -313,8 +325,16 @@ class ModelDownloads:
     def start(self, body: ModelDownloadRequest, *, recommendation=None) -> dict[str, Any]:
         if recommendation is not None:
             recommendation = DownloadVerification(
-                id=recommendation.id, size=recommendation.size, sha256=recommendation.sha256
+                id=recommendation.id,
+                size=recommendation.size,
+                sha256=recommendation.sha256,
+                purpose=recommendation.purpose,
+                variant=recommendation.variant,
             )
+        purpose = recommendation.purpose if recommendation else body.purpose
+        variant = recommendation.variant if recommendation else body.variant
+        if variant == "turbo":
+            purpose = "inference"
         source, filename = resolve_source(body)
         root = Path(self.context.settings()["paths"]["models_dir"]).resolve()
         if not self.context.is_allowed(root):
@@ -351,7 +371,9 @@ class ModelDownloads:
                 status="queued",
                 created_at=now(),
                 dtype=body.dtype,
-                is_default=body.is_default,
+                is_default=body.is_default and purpose == "training",
+                purpose=purpose,
+                variant=variant,
                 recommendation_id=recommendation.id if recommendation else None,
                 expected_size=recommendation.size if recommendation else None,
                 sha256=recommendation.sha256 if recommendation else None,
@@ -389,6 +411,17 @@ class ModelDownloads:
                 raise ApiError(FLUX1_RETIRED_REASON, status=410, code="download.retired")
             if row["status"] not in {"failed", "cancelled"}:
                 raise Conflict("only failed or cancelled downloads can be retried", code="download.retry")
+            variant = row.get("variant")
+            if row["family"] == "krea2" and row["kind"] == "dit" and variant is None:
+                from ypuddin.models.krea2.variants import KNOWN_VARIANTS
+
+                variant = KNOWN_VARIANTS.get(row.get("sha256"))
+                if variant is None:
+                    raise Conflict(
+                        "旧 Krea 2 下载未记录 Raw/Turbo，请在自定义下载中确认版本后重新提交。",
+                        code="download.variant",
+                    )
+            purpose = "inference" if variant == "turbo" else row.get("purpose", "training")
             body = ModelDownloadRequest(
                 family=row["family"],
                 kind=row["kind"],
@@ -397,6 +430,8 @@ class ModelDownloads:
                 url=row["source_url"],
                 dtype=row["dtype"],
                 is_default=row["is_default"],
+                purpose=purpose,
+                variant=variant,
             )
             recommendation = None
             if row.get("recommendation_id") or row.get("sha256") or row.get("expected_size"):
@@ -405,6 +440,8 @@ class ModelDownloads:
                         id=row.get("recommendation_id"),
                         size=row.get("expected_size"),
                         sha256=row.get("sha256"),
+                        purpose=purpose,
+                        variant=variant,
                     )
                 except ValidationError:
                     raise Conflict(
@@ -533,6 +570,8 @@ class ModelDownloads:
                         path=str(target.parent if bundle else target),
                         dtype=row["dtype"],
                         is_default=row["is_default"],
+                        purpose=row.get("purpose", "training"),
+                        variant=row.get("variant"),
                     ),
                     self.context,
                 )
@@ -542,6 +581,7 @@ class ModelDownloads:
         except Exception as error:
             if published:
                 target.unlink(missing_ok=True)
+                target.with_name(target.name + ".ypuddin.json").unlink(missing_ok=True)
                 if row["kind"] == "tagger":
                     (target.parent / "selected_tags.csv").unlink(missing_ok=True)
                 target.parent.rmdir()

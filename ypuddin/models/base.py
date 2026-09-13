@@ -259,6 +259,10 @@ class ModelFamily(ABC):
         """Resolved model variant defaults; explicit user preview settings take precedence."""
         return self.spec.sampling
 
+    def sampling_needs_uncond(self, loaded: LoadedModel, cfg: float) -> bool:
+        """Whether the family's public CFG convention needs negative conditioning."""
+        return cfg != 1.0
+
     def sampling_shift_for_model(
         self, loaded: LoadedModel, num_tokens: int, objective: Any | None = None, *, steps: int | None = None
     ) -> float:

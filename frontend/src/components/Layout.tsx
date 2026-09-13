@@ -162,6 +162,7 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
   useEventStream(EVENT_TYPES.JOB_STATE, fetchJobs);
   useEventStream(EVENT_TYPES.JOB_STEP, (data: any) => setRunningJobs((jobs) => jobs.map((job) => mergeJobEvent(job, data))));
   useEventStream(EVENT_TYPES.JOB_PHASE, (data: any) => setRunningJobs((jobs) => jobs.map((job) => mergeJobEvent(job, data))));
+  useEventStream(EVENT_TYPES.JOB_XYZ_PROGRESS, (data: any) => setRunningJobs((jobs) => jobs.map((job) => mergeJobEvent(job, data))));
 
   const changeUi = async (ui: Partial<Settings['ui']>) => {
     setSavingUi(true);
@@ -238,8 +239,9 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
                 data-testid="topbar-running-job"
               >
                 <PlayCircle className="w-3.5 h-3.5 animate-pulse" />
-                <span className="topbar-job-name">{runningJob.name}</span><span className="sr-only">{text('训练', 'Training')}</span>
-                {runningJob.progress?.step != null && runningJob.progress?.total_steps != null && (
+                <span className="topbar-job-name">{runningJob.name}</span><span className="sr-only">{runningJob.type === 'xyz' ? text('XYZ 采样', 'XYZ sampling') : runningJob.type === 'cache' ? text('缓存', 'Cache') : text('训练', 'Training')}</span>
+                {runningJob.type === 'xyz' && runningJob.progress?.total != null && <span className="topbar-job-progress">{runningJob.progress.done ?? 0}/{runningJob.progress.total}</span>}
+                {runningJob.type !== 'xyz' && runningJob.progress?.step != null && runningJob.progress?.total_steps != null && (
                   <span className="topbar-job-progress">{runningJob.progress.step}/{runningJob.progress.total_steps}</span>
                 )}
               </Link>

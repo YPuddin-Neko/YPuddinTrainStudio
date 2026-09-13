@@ -191,6 +191,21 @@ describe('training monitor interactions and events', () => {
 });
 
 describe('queue pagination', () => {
+  it('tracks XYZ image progress and offers only supported actions', async () => {
+    server.use(http.get('/api/jobs', () => HttpResponse.json({ items: [{ ...mockJobs[0], id: 'xyz-run', type: 'xyz', name: 'XYZ grid', status: 'running', progress: { done: 1, total: 8 } }], total: 1, page: 1, page_size: 50 })));
+    render(<MemoryRouter><Queue /></MemoryRouter>);
+    const row = await screen.findByTestId('job-row-xyz-run');
+    expect(within(row).getByText('1 / 8 张')).toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: '暂停' })).not.toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: '保存检查点' })).not.toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: '取消' })).toBeEnabled();
+    emit('job.xyz_progress', { job_id: 'xyz-run', done: 3, total: 8, sample_step: 2, sample_steps: 8 });
+    expect(within(row).getByText('3 / 8 张')).toBeInTheDocument();
+    emit('job.xyz_progress', { job_id: 'xyz-run', done: 1, total: 8 });
+    expect(within(row).getByText('3 / 8 张')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('combobox', { name: '任务类型' }));
+    expect(screen.getByRole('option', { name: 'XYZ 采样' })).toBeInTheDocument();
+  });
   it('loads subsequent pages and applies server-side status filters', async () => {
     const requests: URL[] = [];
     server.use(http.get('/api/jobs', ({ request }) => {

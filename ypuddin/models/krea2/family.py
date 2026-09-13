@@ -7,12 +7,13 @@ Conventions verified against musubi-tuner / ComfyUI / diffusers:
 * text conditioning = ``(B, L, 12, 2560)`` stacked Qwen3-VL hidden states + boolean mask
 * checkpoints: bare keys (official / ComfyUI ``diffusion_models``), ``model.diffusion_model.`` prefixed
   files, and Comfy-Org ``fp8_scaled`` files (fp8 ``weight`` + ``scale_weight``) -> frozen fp8 layers
-* inference shift ``exp(mu)``, ``mu`` linear in the image token count between (256, 0.5) and (6400, 1.15)
+* Raw inference shift ``exp(mu)`` is resolution dependent; Turbo fixes ``mu=1.15``
 """
 
 from __future__ import annotations
 
 import logging
+import math
 from pathlib import Path
 from typing import Any
 
@@ -166,6 +167,12 @@ class Krea2Family(ModelFamily):
     # ----------------------------------------------------------------- loading
     def validate_config(self, cfg: ModelConfig) -> list[str]:
         problems = []
+        from .variants import resolve_variant
+
+        try:
+            resolve_variant(cfg.dit_path, cfg.krea2_variant)
+        except ValueError as error:
+            problems.append(str(error))
         for field in ("dit_path", "text_encoder_path", "vae_path"):
             value = getattr(cfg, field)
             if not value:
@@ -173,6 +180,37 @@ class Krea2Family(ModelFamily):
             elif not Path(value).expanduser().exists():
                 problems.append(f"model.{field} does not exist: {value}")
         return problems
+
+    def training_options_errors(self, cfg):
+        from .variants import TURBO_TRAINING_ERROR, resolve_variant
+
+        problems = super().training_options_errors(cfg)
+        try:
+            if resolve_variant(cfg.model.dit_path, cfg.model.krea2_variant) == "turbo":
+                problems.append({"loc": "model.krea2_variant", "msg": TURBO_TRAINING_ERROR})
+        except ValueError as error:
+            problems.append({"loc": "model.krea2_variant", "msg": str(error)})
+        return problems
+
+    def sampling_defaults(self, loaded):
+        if loaded.extra.get("variant") == "turbo":
+            # Official Krea sampling.py: distilled weights were trained at fixed mu=1.15.
+            return SamplingDefaults(steps=8, cfg=0.0, shift=math.exp(1.15), sampler="euler")
+        return self.spec.sampling
+
+    def sampling_needs_uncond(self, loaded, cfg):
+        return cfg > 0 if loaded.extra.get("variant") == "turbo" else cfg != 1.0
+
+    def sample_latents(self, loaded, predict, shape, **options):
+        if loaded.extra.get("variant") == "turbo":
+            # Krea's g=0 means cond; shared Flow uses uncond+s*(cond-uncond).
+            # Thus s=g+1, preserving explicit positive Turbo guidance as well.
+            guidance = options.get("cfg", 0.0)
+            if not math.isfinite(guidance) or guidance < 0:
+                raise ValueError("Turbo guidance must be finite and nonnegative")
+            options["cfg"] = guidance + 1.0
+            options.setdefault("shift", self.sampling_defaults(loaded).shift)
+        return super().sample_latents(loaded, predict, shape, **options)
 
     def latent_fingerprint(self, cfg: ModelConfig, *, dtype: torch.dtype) -> str:
         return AnimaLatent(cfg.vae_path, dtype=dtype).fingerprint
@@ -186,6 +224,8 @@ class Krea2Family(ModelFamily):
         dtype: torch.dtype,
         backbone_device: torch.device | str | None = None,
     ) -> LoadedModel:
+        from .variants import resolve_variant
+
         problems = self.validate_config(cfg)
         if problems:
             raise FileNotFoundError("; ".join(problems))
@@ -225,7 +265,7 @@ class Krea2Family(ModelFamily):
             latent=latent,
             device=torch.device(device),
             dtype=dtype,
-            extra={"dit_config": config},
+            extra={"dit_config": config, "variant": resolve_variant(cfg.dit_path, cfg.krea2_variant)},
         )
 
     @staticmethod
@@ -261,7 +301,9 @@ class Krea2Family(ModelFamily):
         )
         mask = torch.cat([torch.ones(b, hp * wp, device=device, dtype=torch.bool), txt_mask], dim=1)
         with sampling_attention(not dit.training):
-            out = dit(img=img, context=context, t=t.to(device=device, dtype=torch.float32), pos=pos, mask=mask)
+            out = dit(
+                img=img, context=context, t=t.to(device=device, dtype=torch.float32), pos=pos, mask=mask
+            )
         return out.reshape(b, hp, wp, c, patch, patch).permute(0, 3, 1, 4, 2, 5).reshape(b, c, h, w)
 
     # ----------------------------------------------------------------- sampling

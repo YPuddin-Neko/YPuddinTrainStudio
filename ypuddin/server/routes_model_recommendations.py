@@ -48,6 +48,8 @@ def download_recommendation(
             filename=source.filename,
             revision=source.revision,
             is_default=body.is_default,
+            purpose=entry.purpose,
+            variant=entry.variant,
         ),
         recommendation=entry,
     )
@@ -67,7 +69,9 @@ def use_recommendation(model_id: str, context: ServiceContext = Depends(ctx)):
             kind=entry.kind,
             path=entry.available_path,
             dtype=entry.dtype,
-            is_default=True,
+            is_default=entry.purpose == "training",
+            purpose=entry.purpose,
+            variant=entry.variant,
         ),
         context,
     )

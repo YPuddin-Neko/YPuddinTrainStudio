@@ -1601,7 +1601,7 @@ def list_jobs(
     page_size: int = 50,
     c: ServiceContext = Depends(ctx),
     group: Literal["active", "waiting", "history"] | None = None,
-    type: Literal["train", "cache"] | None = None,
+    type: Literal["train", "cache", "xyz"] | None = None,
     q: str | None = None,
 ) -> dict[str, Any]:
     sql = " FROM jobs j LEFT JOIN projects p ON p.id=j.project_id LEFT JOIN project_versions v ON v.id=j.version_id"

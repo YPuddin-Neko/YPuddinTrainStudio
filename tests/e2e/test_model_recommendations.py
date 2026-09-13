@@ -91,6 +91,72 @@ def test_recommended_download_verifies_bytes_and_explicit_provider_mapping(tiny,
     assert client.post(f"/api/models/recommendations/{entry.id}/use", json={}).json()["id"] == job["model_id"]
 
 
+def test_turbo_download_and_reuse_keep_raw_training_default(tiny, monkeypatch):
+    from ypuddin.models.krea2 import variants
+    from ypuddin.server.family_config import initial_family_config
+
+    client, control, root, app, _ = tiny
+    control.payload = save(
+        {
+            "first.weight": torch.zeros(2, 64),
+            "txtfusion.projector.weight": torch.zeros(1, 12),
+            "blocks.0.attn.wq.weight": torch.zeros(2, 2),
+        }
+    )
+    entry = recommendation(control.payload, id_="tiny-turbo", family="krea2").model_copy(
+        update={"purpose": "inference", "variant": "turbo"}
+    )
+    monkeypatch.setattr(catalog, "RECOMMENDATIONS", [entry])
+    monkeypatch.setitem(variants.KNOWN_VARIANTS, entry.sha256, "turbo")
+    raw = root / "existing-raw.safetensors"
+    raw.parent.mkdir(parents=True, exist_ok=True)
+    raw.write_bytes(
+        save(
+            {
+                "first.weight": torch.ones(2, 64),
+                "txtfusion.projector.weight": torch.ones(1, 12),
+                "blocks.0.attn.wq.weight": torch.ones(2, 2),
+            }
+        )
+    )
+    registered = client.post(
+        "/api/models",
+        json={"family": "krea2", "kind": "dit", "path": str(raw), "variant": "raw", "is_default": True},
+    )
+    assert registered.status_code == 200, registered.text
+
+    original = control.payload
+    control.payload = original[:-1] + bytes([original[-1] ^ 1])
+    # Even an old client sending is_default=True cannot promote a catalog Turbo.
+    started = client.post(
+        f"/api/models/recommendations/{entry.id}/download",
+        json={"provider": "huggingface", "is_default": True},
+    )
+    assert started.status_code == 202, started.text
+    failed = wait_for(client, started.json()["id"])
+    assert failed["status"] == "failed", failed
+    # Pre-feature persisted attempts retain trusted catalog identity through SHA256.
+    old = app.state.model_downloads.tasks[failed["id"]]
+    old.pop("variant", None)
+    old.pop("purpose", None)
+    control.payload = original
+    retry = client.post(f"/api/models/downloads/{failed['id']}/retry")
+    assert retry.status_code == 202, retry.text
+    completed = wait_for(client, retry.json()["id"])
+    assert completed["status"] == "completed", completed
+    assert completed["purpose"] == "inference" and completed["variant"] == "turbo"
+    assert not completed["is_default"]
+    target = Path(completed["target_path"])
+    assert variants.verified_variant(target) == "turbo"
+    available = client.get("/api/models/recommendations").json()[0]
+    assert available["available_path"] == str(target) and not available["is_default"]
+    reused = client.post(f"/api/models/recommendations/{entry.id}/use", json={})
+    assert reused.status_code == 200, reused.text
+    assert reused.json()["purpose"] == "inference" and not reused.json()["is_default"]
+    assert initial_family_config(app.state.ctx, "krea2")["model"]["dit_path"] == str(raw)
+    assert len(control.requests) == 2
+
+
 def test_same_bytes_from_two_providers_share_destination_and_conflict_while_running(tiny):
     client, control, _, _, entry = tiny
     control.mode = "race"

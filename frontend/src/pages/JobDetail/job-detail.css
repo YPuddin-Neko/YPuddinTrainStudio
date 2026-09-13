@@ -42,3 +42,7 @@
 .job-checkpoint-details,.job-log-toolbar label { font-size:12px; }
 .job-log-toolbar > input { min-height:38px; font-size:13px; }
 @container(max-width:700px) { .job-run-metadata,.job-stat-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }.job-monitor-bar { position:relative; }.job-monitor-identity .task-actions-wrap { flex-basis:100%; }.job-checkpoint { padding:14px; }.job-monitor-identity h1 { font-size:20px; } }
+
+.job-monitor[data-view=xyz] { gap:12px; }
+.job-monitor[data-view=xyz] > .job-run-metadata,.job-monitor[data-view=xyz] > .job-monitor-summary { display:none; }
+.job-monitor[data-view=xyz] > .job-monitor-bar { position:relative; }

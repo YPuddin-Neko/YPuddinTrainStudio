@@ -41,7 +41,7 @@ const flow: FamilyInfo = {
 };
 const asset = (kind: string, patch: Partial<ModelAsset> = {}): ModelAsset => ({
   id: kind, family: 'sdxl', kind, path: `/models/${kind}.safetensors`, exists: true,
-  is_default: true, dtype: 'bf16', size: 2048, created_at: 1, ...patch,
+  is_default: true, purpose: 'training', dtype: 'bf16', size: 2048, created_at: 1, ...patch,
 });
 const server = setupServer(...handlers);
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));

@@ -66,7 +66,7 @@ function configured(name: string, variant = 'auto') {
 
 const retiredAsset: ModelAsset & { unsupported_reason: string } = {
   id: 'retired', family: 'flux2', kind: 'dit', path: 'J:/models/unrelated-filename.safetensors', exists: true,
-  is_default: true, dtype: 'bf16', size: 1024, created_at: 1, unsupported_reason: 'FLUX.2 dev 已停用',
+  is_default: true, purpose: 'training', dtype: 'bf16', size: 1024, created_at: 1, unsupported_reason: 'FLUX.2 dev 已停用',
 };
 const kleinAsset: ModelAsset = { ...retiredAsset, id: 'klein', path: 'J:/models/klein.safetensors', is_default: false, unsupported_reason: null };
 

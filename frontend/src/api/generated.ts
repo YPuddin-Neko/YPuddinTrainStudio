@@ -387,6 +387,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/{source}/xyz/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Options */
+        get: operations["options_api_jobs__source__xyz_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{source}/xyz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** History */
+        get: operations["history_api_jobs__source__xyz_get"];
+        put?: never;
+        /** Create */
+        post: operations["create_api_jobs__source__xyz_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/xyz/{jid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Task */
+        get: operations["task_api_xyz__jid__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/xyz/{jid}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel */
+        post: operations["cancel_api_xyz__jid__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/xyz/{jid}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** File */
+        get: operations["file_api_xyz__jid__file_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects": {
         parameters: {
             query?: never;
@@ -3114,6 +3200,16 @@ export interface components {
         JobProgress: {
             /** Phase */
             phase?: string | null;
+            /** Done */
+            done?: number | null;
+            /** Total */
+            total?: number | null;
+            /** Cell Index */
+            cell_index?: number | null;
+            /** Sample Step */
+            sample_step?: number | null;
+            /** Sample Steps */
+            sample_steps?: number | null;
             /** Step */
             step?: number | null;
             /** Total Steps */
@@ -3338,6 +3434,14 @@ export interface components {
             dtype: string | null;
             /** Is Default */
             is_default: boolean;
+            /**
+             * Purpose
+             * @default training
+             * @enum {string}
+             */
+            purpose: "training" | "inference";
+            /** Variant */
+            variant?: ("raw" | "turbo") | null;
             /** Exists */
             exists: boolean;
             /** Unsupported Reason */
@@ -3368,6 +3472,10 @@ export interface components {
              * @default false
              */
             is_default: boolean;
+            /** Purpose */
+            purpose?: ("training" | "inference") | null;
+            /** Variant */
+            variant?: ("raw" | "turbo") | null;
         };
         /** ModelCatalogEntry */
         ModelCatalogEntry: {
@@ -3473,6 +3581,13 @@ export interface components {
              * @enum {string}
              */
             flux2_variant: "auto" | "dev" | "klein-base-4b" | "klein-base-9b";
+            /**
+             * Krea2 Variant
+             * @description Raw 用于训练；Turbo 是仅采样的蒸馏模型。自动识别需要已校验的下载记录，不能从相同的权重形状或文件名判断。
+             * @default raw
+             * @enum {string}
+             */
+            krea2_variant: "raw" | "auto" | "turbo";
         };
         /** ModelDefaultPatch */
         ModelDefaultPatch: {
@@ -3532,6 +3647,14 @@ export interface components {
              * @default true
              */
             is_default: boolean;
+            /**
+             * Purpose
+             * @default training
+             * @enum {string}
+             */
+            purpose: "training" | "inference";
+            /** Variant */
+            variant?: ("raw" | "turbo") | null;
             /** Recommendation Id */
             recommendation_id?: string | null;
             /** Expected Size */
@@ -3578,6 +3701,14 @@ export interface components {
              * @default true
              */
             is_default: boolean;
+            /**
+             * Purpose
+             * @default training
+             * @enum {string}
+             */
+            purpose: "training" | "inference";
+            /** Variant */
+            variant?: ("raw" | "turbo") | null;
         };
         /** ModelInspection */
         ModelInspection: {
@@ -3606,6 +3737,10 @@ export interface components {
             warnings: string[];
             /** Files Inspected */
             files_inspected: number;
+            /** Variant */
+            variant?: ("raw" | "turbo") | null;
+            /** Purpose */
+            purpose?: ("training" | "inference") | null;
         };
         /** ModelInspectionBody */
         ModelInspectionBody: {
@@ -4412,6 +4547,14 @@ export interface components {
              * @default true
              */
             recommended: boolean;
+            /**
+             * Purpose
+             * @default training
+             * @enum {string}
+             */
+            purpose: "training" | "inference";
+            /** Variant */
+            variant?: ("raw" | "turbo") | null;
             /** Sources */
             sources: components["schemas"]["RecommendedSource"][];
             /** Model Id */
@@ -5104,6 +5247,163 @@ export interface components {
             run_name?: string | null;
             /** Entity */
             entity?: string | null;
+        };
+        /** XyzAxis */
+        XyzAxis: {
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "steps" | "cfg" | "seed" | "sampler" | "scheduler" | "shift" | "adapter_scale" | "checkpoint";
+            /** Values */
+            values: unknown[];
+        };
+        /** XyzManifest */
+        XyzManifest: {
+            /** Cells */
+            cells?: {
+                [key: string]: unknown;
+            }[];
+            /** Grids */
+            grids?: {
+                [key: string]: unknown;
+            }[];
+            /** Axes */
+            axes?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Complete
+             * @default false
+             */
+            complete: boolean;
+        };
+        /** XyzOptions */
+        XyzOptions: {
+            /** Family */
+            family: string;
+            /** Defaults */
+            defaults: {
+                [key: string]: unknown;
+            };
+            /** Axes */
+            axes: {
+                [key: string]: unknown;
+            }[];
+            /** Checkpoints */
+            checkpoints: {
+                [key: string]: unknown;
+            }[];
+            /** Sampling Models */
+            sampling_models: {
+                [key: string]: unknown;
+            }[];
+            /** Limits */
+            limits: {
+                [key: string]: number;
+            };
+        };
+        /** XyzRequest */
+        XyzRequest: {
+            /**
+             * Name
+             * @default XYZ comparison
+             */
+            name: string;
+            /** Prompt */
+            prompt: string;
+            /**
+             * Negative
+             * @default
+             */
+            negative: string;
+            /**
+             * Width
+             * @default 512
+             */
+            width: number;
+            /**
+             * Height
+             * @default 512
+             */
+            height: number;
+            /**
+             * Steps
+             * @default 20
+             */
+            steps: number;
+            /**
+             * Cfg
+             * @default 4
+             */
+            cfg: number;
+            /**
+             * Seed
+             * @default 1
+             */
+            seed: number;
+            /**
+             * Sampler
+             * @default euler
+             */
+            sampler: string;
+            /**
+             * Scheduler
+             * @default uniform
+             */
+            scheduler: string;
+            /** Shift */
+            shift?: number | null;
+            /** Guidance */
+            guidance?: number | null;
+            /**
+             * Adapter Scale
+             * @default 1
+             */
+            adapter_scale: number;
+            /** Checkpoint Id */
+            checkpoint_id?: string | null;
+            /** Sampling Model Id */
+            sampling_model_id?: string | null;
+            x: components["schemas"]["XyzAxis"];
+            y?: components["schemas"]["XyzAxis"] | null;
+            z?: components["schemas"]["XyzAxis"] | null;
+        };
+        /** XyzTask */
+        XyzTask: {
+            /** Id */
+            id: string;
+            /** Job Id */
+            job_id: string;
+            /** Source Job Id */
+            source_job_id: string;
+            /** Status */
+            status: string;
+            /** Phase */
+            phase: string;
+            /** Done */
+            done: number;
+            /** Total */
+            total: number;
+            /** Cell Index */
+            cell_index?: number | null;
+            /** Sample Step */
+            sample_step?: number | null;
+            /** Sample Steps */
+            sample_steps?: number | null;
+            /** Error */
+            error: string | null;
+            /** Created At */
+            created_at: number;
+            /** Finished At */
+            finished_at: number | null;
+            /** Request */
+            request: {
+                [key: string]: unknown;
+            };
+            manifest: components["schemas"]["XyzManifest"];
+            /** Can Cancel */
+            can_cancel: boolean;
         };
     };
     responses: never;
@@ -5921,6 +6221,198 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    options_api_jobs__source__xyz_options_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["XyzOptions"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    history_api_jobs__source__xyz_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["XyzTask"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_api_jobs__source__xyz_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["XyzRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["XyzTask"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    task_api_xyz__jid__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["XyzTask"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_api_xyz__jid__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["XyzTask"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    file_api_xyz__jid__file_get: {
+        parameters: {
+            query: {
+                name: string;
+            };
+            header?: never;
+            path: {
+                jid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": string;
                 };
             };
             /** @description Validation Error */
@@ -7010,7 +7502,7 @@ export interface operations {
                 page?: number;
                 page_size?: number;
                 group?: ("active" | "waiting" | "history") | null;
-                type?: ("train" | "cache") | null;
+                type?: ("train" | "cache" | "xyz") | null;
                 q?: string | null;
             };
             header?: never;

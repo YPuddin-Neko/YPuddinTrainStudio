@@ -532,7 +532,7 @@ const ModelPathInput: React.FC<{
     return () => { active = false; window.removeEventListener('studio-models-changed', refresh); window.removeEventListener('focus', refresh); };
   }, [kind]);
 
-  const matched = kind ? models.filter((m) => m.exists !== false && !modelAssetUnsupportedReason(m) && m.kind === kind && (!familyName || m.family === familyName)) : [];
+  const matched = kind ? models.filter((m) => m.exists !== false && (m as typeof m & {purpose?:string}).purpose !== 'inference' && !modelAssetUnsupportedReason(m) && m.kind === kind && (!familyName || m.family === familyName)) : [];
 
   return (
     <div className={`model-path-control ${matched.length > 0 ? 'has-registry' : ''}`}>

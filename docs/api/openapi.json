@@ -984,6 +984,262 @@
         }
       }
     },
+    "/api/jobs/{source}/xyz/options": {
+      "get": {
+        "summary": "Options",
+        "operationId": "options_api_jobs__source__xyz_options_get",
+        "parameters": [
+          {
+            "name": "source",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Source"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/XyzOptions"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{source}/xyz": {
+      "post": {
+        "summary": "Create",
+        "operationId": "create_api_jobs__source__xyz_post",
+        "parameters": [
+          {
+            "name": "source",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Source"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/XyzRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/XyzTask"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "History",
+        "operationId": "history_api_jobs__source__xyz_get",
+        "parameters": [
+          {
+            "name": "source",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Source"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/XyzTask"
+                  },
+                  "title": "Response History Api Jobs  Source  Xyz Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/xyz/{jid}": {
+      "get": {
+        "summary": "Task",
+        "operationId": "task_api_xyz__jid__get",
+        "parameters": [
+          {
+            "name": "jid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Jid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/XyzTask"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/xyz/{jid}/cancel": {
+      "post": {
+        "summary": "Cancel",
+        "operationId": "cancel_api_xyz__jid__cancel_post",
+        "parameters": [
+          {
+            "name": "jid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Jid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/XyzTask"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/xyz/{jid}/file": {
+      "get": {
+        "summary": "File",
+        "operationId": "file_api_xyz__jid__file_get",
+        "parameters": [
+          {
+            "name": "jid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Jid"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects": {
       "get": {
         "summary": "List Projects",
@@ -2860,7 +3116,8 @@
                 {
                   "enum": [
                     "train",
-                    "cache"
+                    "cache",
+                    "xyz"
                   ],
                   "type": "string"
                 },
@@ -9664,6 +9921,61 @@
             ],
             "title": "Phase"
           },
+          "done": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Done"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          },
+          "cell_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cell Index"
+          },
+          "sample_step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Step"
+          },
+          "sample_steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Steps"
+          },
           "step": {
             "anyOf": [
               {
@@ -10260,6 +10572,30 @@
             "type": "boolean",
             "title": "Is Default"
           },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "training",
+              "inference"
+            ],
+            "title": "Purpose",
+            "default": "training"
+          },
+          "variant": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "raw",
+                  "turbo"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant"
+          },
           "exists": {
             "type": "boolean",
             "title": "Exists"
@@ -10340,6 +10676,36 @@
             "type": "boolean",
             "title": "Is Default",
             "default": false
+          },
+          "purpose": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "training",
+                  "inference"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purpose"
+          },
+          "variant": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "raw",
+                  "turbo"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant"
           }
         },
         "type": "object",
@@ -10633,6 +10999,23 @@
               "order": 5,
               "show_when": "model.family == 'flux2'"
             }
+          },
+          "krea2_variant": {
+            "type": "string",
+            "enum": [
+              "raw",
+              "auto",
+              "turbo"
+            ],
+            "title": "Krea2 Variant",
+            "description": "Raw 用于训练；Turbo 是仅采样的蒸馏模型。自动识别需要已校验的下载记录，不能从相同的权重形状或文件名判断。",
+            "default": "raw",
+            "x-ui": {
+              "control": "select",
+              "group": "model",
+              "order": 5,
+              "show_when": "model.family == 'krea2'"
+            }
           }
         },
         "additionalProperties": false,
@@ -10775,6 +11158,30 @@
             "type": "boolean",
             "title": "Is Default",
             "default": true
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "training",
+              "inference"
+            ],
+            "title": "Purpose",
+            "default": "training"
+          },
+          "variant": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "raw",
+                  "turbo"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant"
           },
           "recommendation_id": {
             "anyOf": [
@@ -10928,6 +11335,30 @@
             "type": "boolean",
             "title": "Is Default",
             "default": true
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "training",
+              "inference"
+            ],
+            "title": "Purpose",
+            "default": "training"
+          },
+          "variant": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "raw",
+                  "turbo"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant"
           }
         },
         "additionalProperties": false,
@@ -11017,6 +11448,36 @@
           "files_inspected": {
             "type": "integer",
             "title": "Files Inspected"
+          },
+          "variant": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "raw",
+                  "turbo"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant"
+          },
+          "purpose": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "training",
+                  "inference"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purpose"
           }
         },
         "type": "object",
@@ -12913,6 +13374,30 @@
             "title": "Recommended",
             "default": true
           },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "training",
+              "inference"
+            ],
+            "title": "Purpose",
+            "default": "training"
+          },
+          "variant": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "raw",
+                  "turbo"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant"
+          },
           "sources": {
             "items": {
               "$ref": "#/components/schemas/RecommendedSource"
@@ -14655,6 +15140,397 @@
         "additionalProperties": false,
         "type": "object",
         "title": "WandbConfig"
+      },
+      "XyzAxis": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "steps",
+              "cfg",
+              "seed",
+              "sampler",
+              "scheduler",
+              "shift",
+              "adapter_scale",
+              "checkpoint"
+            ],
+            "title": "Key"
+          },
+          "values": {
+            "items": {},
+            "type": "array",
+            "maxItems": 12,
+            "minItems": 1,
+            "title": "Values"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "values"
+        ],
+        "title": "XyzAxis"
+      },
+      "XyzManifest": {
+        "properties": {
+          "cells": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Cells"
+          },
+          "grids": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Grids"
+          },
+          "axes": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Axes"
+          },
+          "complete": {
+            "type": "boolean",
+            "title": "Complete",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "XyzManifest"
+      },
+      "XyzOptions": {
+        "properties": {
+          "family": {
+            "type": "string",
+            "title": "Family"
+          },
+          "defaults": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Defaults"
+          },
+          "axes": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Axes"
+          },
+          "checkpoints": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Checkpoints"
+          },
+          "sampling_models": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Sampling Models"
+          },
+          "limits": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Limits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "family",
+          "defaults",
+          "axes",
+          "checkpoints",
+          "sampling_models",
+          "limits"
+        ],
+        "title": "XyzOptions"
+      },
+      "XyzRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "default": "XYZ comparison"
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Prompt"
+          },
+          "negative": {
+            "type": "string",
+            "maxLength": 8000,
+            "title": "Negative",
+            "default": ""
+          },
+          "width": {
+            "type": "integer",
+            "maximum": 2048.0,
+            "minimum": 32.0,
+            "title": "Width",
+            "default": 512
+          },
+          "height": {
+            "type": "integer",
+            "maximum": 2048.0,
+            "minimum": 32.0,
+            "title": "Height",
+            "default": 512
+          },
+          "steps": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Steps",
+            "default": 20
+          },
+          "cfg": {
+            "type": "number",
+            "maximum": 30.0,
+            "minimum": 0.0,
+            "title": "Cfg",
+            "default": 4
+          },
+          "seed": {
+            "type": "integer",
+            "exclusiveMaximum": 9.223372036854776e+18,
+            "minimum": 0.0,
+            "title": "Seed",
+            "default": 1
+          },
+          "sampler": {
+            "type": "string",
+            "title": "Sampler",
+            "default": "euler"
+          },
+          "scheduler": {
+            "type": "string",
+            "title": "Scheduler",
+            "default": "uniform"
+          },
+          "shift": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shift"
+          },
+          "guidance": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 30.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guidance"
+          },
+          "adapter_scale": {
+            "type": "number",
+            "maximum": 4.0,
+            "minimum": -4.0,
+            "title": "Adapter Scale",
+            "default": 1
+          },
+          "checkpoint_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint Id"
+          },
+          "sampling_model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sampling Model Id"
+          },
+          "x": {
+            "$ref": "#/components/schemas/XyzAxis"
+          },
+          "y": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/XyzAxis"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "z": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/XyzAxis"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "prompt",
+          "x"
+        ],
+        "title": "XyzRequest"
+      },
+      "XyzTask": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "source_job_id": {
+            "type": "string",
+            "title": "Source Job Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "phase": {
+            "type": "string",
+            "title": "Phase"
+          },
+          "done": {
+            "type": "integer",
+            "title": "Done"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "cell_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cell Index"
+          },
+          "sample_step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Step"
+          },
+          "sample_steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Steps"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "request": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Request"
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/XyzManifest"
+          },
+          "can_cancel": {
+            "type": "boolean",
+            "title": "Can Cancel"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "job_id",
+          "source_job_id",
+          "status",
+          "phase",
+          "done",
+          "total",
+          "error",
+          "created_at",
+          "finished_at",
+          "request",
+          "manifest",
+          "can_cancel"
+        ],
+        "title": "XyzTask"
       }
     }
   }

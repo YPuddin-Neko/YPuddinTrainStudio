@@ -7,6 +7,7 @@ export const EVENT_TYPES = {
   JOB_VALIDATION: 'job.validation',
   JOB_SAMPLE: 'job.sample',
   JOB_SAMPLE_PROGRESS: 'job.sample_progress',
+  JOB_XYZ_PROGRESS: 'job.xyz_progress',
   JOB_CHECKPOINT: 'job.checkpoint',
   JOB_WARNING: 'job.warning',
   JOB_EVENT: 'job.event',

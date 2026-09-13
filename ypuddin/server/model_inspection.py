@@ -766,6 +766,15 @@ def inspect_model(path: Path, *, allowed=None, _budget: dict[str, int] | None = 
         warnings.append("未识别浮点权重精度，保留未知。")
     if unsupported_reason:
         warnings.append(unsupported_reason)
+    variant = None
+    purpose = None
+    if family == "krea2" and kind == "dit":
+        from ypuddin.models.krea2.variants import verified_variant
+
+        variant = verified_variant(files[0] if len(files) == 1 else path)
+        purpose = ("inference" if variant == "turbo" else "training") if variant else None
+        if not variant:
+            warnings.append("Raw 与 Turbo 权重形状相同；请按模型发布说明确认用途，不能根据文件名自动判断。")
     return {
         "path": str(
             files[0]
@@ -785,4 +794,6 @@ def inspect_model(path: Path, *, allowed=None, _budget: dict[str, int] | None = 
         "warnings": warnings,
         "files_inspected": len(files),
         "unsupported_reason": unsupported_reason,
+        "variant": variant,
+        "purpose": purpose,
     }

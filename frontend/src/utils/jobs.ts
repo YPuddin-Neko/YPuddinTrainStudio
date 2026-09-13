@@ -11,6 +11,11 @@ export function mergeJobEvent(job: Job, event: Record<string, any>): Job {
     if (event[key] !== undefined) (progress as any)[key] = event[key];
   }
   const currentStep = job.progress?.step ?? -1;
+  if (typeof event.done === 'number' && event.done >= (job.progress?.done ?? -1)) {
+    for (const key of ['done', 'total', 'cell_index', 'sample_step', 'sample_steps']) {
+      if (event[key] !== undefined) (progress as any)[key] = event[key];
+    }
+  }
   if (typeof event.step === 'number' && event.step >= currentStep) {
     progress.phase = event.phase ?? 'training';
     for (const key of ['step', 'epoch', 'eta_s', 'it_s', 'vram_metric']) {

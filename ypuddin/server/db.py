@@ -84,6 +84,8 @@ class Database:
                     ("projects", "cover_key", "TEXT"),
                     ("project_versions", "number", "INTEGER"),
                     ("jobs", "samples_dir", "TEXT"),
+                    ("models", "purpose", "TEXT NOT NULL DEFAULT 'training'"),
+                    ("models", "variant", "TEXT"),
                 ):
                     columns = {row[1] for row in self.conn.execute(f"PRAGMA table_info({table})")}
                     if column not in columns:

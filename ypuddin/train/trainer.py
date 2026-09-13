@@ -225,6 +225,9 @@ class Trainer:
             path_fields.add("training_guidance")
         if self.family.spec.name != "flux2":
             path_fields.add("flux2_variant")
+        # Raw is the historical Krea2 training behavior; the new inference-only
+        # variant field must not invalidate existing full-state checkpoints.
+        path_fields.add("krea2_variant")
         payload = {
             "version": 1,
             "family": self.family.spec.name,

@@ -32,7 +32,7 @@ def _default_model_paths(c: Any, family: str) -> dict[str, str]:
     """Only reuse registered defaults whose role and current filesystem type still match."""
     paths: dict[str, str] = {}
     for row in c.db.fetchall(
-        "SELECT kind,path FROM models WHERE family=? AND is_default=1 ORDER BY created_at DESC,id",
+        "SELECT kind,path FROM models WHERE family=? AND is_default=1 AND purpose='training' ORDER BY created_at DESC,id",
         (family,),
     ):
         kind = row["kind"]
@@ -49,6 +49,11 @@ def _default_model_paths(c: Any, family: str) -> dict[str, str]:
                 else path.is_file() or path.is_dir()
             )
             if valid and c.is_allowed(path):
+                if family == "krea2" and kind == "dit":
+                    from ypuddin.models.krea2.variants import verified_variant
+
+                    if verified_variant(path) == "turbo":
+                        continue
                 if family == "flux2":
                     from .model_inspection import inspect_model, training_rejection
 

@@ -78,6 +78,11 @@ class ModelConfig(_Strict):
         help="完整 FLUX.2 目录会读取模型配置。Klein 单文件无法从权重尺寸区分基础版和蒸馏版，请按模型发布说明选择对应基础版；当前不支持 Klein 蒸馏版训练。",
         ui_=ui("model", order=5, control="select", show_when="model.family == 'flux2'"),
     )
+    krea2_variant: Literal["raw", "auto", "turbo"] = F(
+        "raw",
+        help="Raw 用于训练；Turbo 是仅采样的蒸馏模型。自动识别需要已校验的下载记录，不能从相同的权重形状或文件名判断。",
+        ui_=ui("model", order=5, control="select", show_when="model.family == 'krea2'"),
+    )
 
     @model_validator(mode="after")
     def check_prediction_schedule(self):
@@ -782,9 +787,7 @@ class SamplingConfig(_Strict):
         ge=0,
         le=30,
         help="FLUX 模型内部的预览引导强度；留空使用对应模型默认值。这项不参与训练步的加噪或损失。",
-        ui_=ui(
-            "sampling", order=95, show_when="sampling.enabled == true && model.family == 'flux'"
-        ),
+        ui_=ui("sampling", order=95, show_when="sampling.enabled == true && model.family == 'flux'"),
     )
     # Service-owned destination. Omitted for CLI compatibility (<run_dir>/samples).
     output_dir: str | None = None

@@ -1499,6 +1499,23 @@
             "order": 5,
             "show_when": "model.family == 'flux2'"
           }
+        },
+        "krea2_variant": {
+          "default": "raw",
+          "description": "Raw 用于训练；Turbo 是仅采样的蒸馏模型。自动识别需要已校验的下载记录，不能从相同的权重形状或文件名判断。",
+          "enum": [
+            "raw",
+            "auto",
+            "turbo"
+          ],
+          "title": "Krea2 Variant",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "model",
+            "order": 5,
+            "show_when": "model.family == 'krea2'"
+          }
         }
       },
       "title": "ModelConfig",

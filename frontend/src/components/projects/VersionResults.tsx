@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Activity, Box, ChevronLeft, ChevronRight, Download, ExternalLink, Image as ImageIcon, Loader2, RefreshCw, X } from 'lucide-react';
+import { Activity, Box, Grid2X2, ChevronLeft, ChevronRight, Download, ExternalLink, Image as ImageIcon, Loader2, RefreshCw, X } from 'lucide-react';
 import { apiClient, apiUrl } from '../../api/client';
 import type { Job, JobSample, JobListResponse } from '../../api/types';
 import { ApiError } from '../../api/types';
@@ -15,11 +15,12 @@ import { projectUrl } from '../../utils/projectVersions';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import StudioSelect from '../StudioSelect';
 import Artifacts from '../../pages/Artifacts/Artifacts';
+import XyzSampling from '../sampling/XyzSampling';
 import '../../styles/project-results.css';
 
 interface VersionResultsProps { projectId: string; versionId?: string; readOnly?: boolean }
 type VersionedJob = Job & { version_id?: string | null };
-type ResultTab = 'jobs' | 'samples' | 'artifacts';
+type ResultTab = 'jobs' | 'samples' | 'artifacts' | 'xyz';
 const PAGE_SIZE = 50;
 const fileUrl = (url: string) => url.startsWith('/api/') ? apiUrl(url.slice(4)) : url;
 
@@ -32,7 +33,7 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
   const { t } = useTranslation();
   const text = useWorkspaceText();
   const [params, setParams] = useSearchParams();
-  const tab: ResultTab = ['jobs', 'samples', 'artifacts'].includes(params.get('result_tab') || '') ? params.get('result_tab') as ResultTab : 'artifacts';
+  const tab: ResultTab = ['jobs', 'samples', 'artifacts', 'xyz'].includes(params.get('result_tab') || '') ? params.get('result_tab') as ResultTab : 'artifacts';
   const setTab = (value: ResultTab) => { const next = new URLSearchParams(params); next.set('result_tab', value); setParams(next); };
   // Keep only the chosen job, so paging the task list does not erase its label or filter.
   const [artifactJob, setArtifactJob] = React.useState<Pick<VersionedJob, 'id' | 'name'> | null>(null);
@@ -140,6 +141,7 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
   const tabs: { id: ResultTab; label: string; icon: typeof Activity }[] = [
     { id: 'artifacts', label: text('模型权重', 'Model weights'), icon: Box },
     { id: 'samples', label: text('采样图', 'Samples'), icon: ImageIcon },
+    { id: 'xyz', label: text('XYZ 对比', 'XYZ comparison'), icon: Grid2X2 },
     { id: 'jobs', label: text('训练记录', 'Training records'), icon: Activity },
   ];
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -150,7 +152,7 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
     <div className="results-toolbar"><div className="results-tabs" role="tablist" aria-label={text('版本训练结果', 'Version training results')}>{tabs.map((item, index) => <button type="button" key={item.id} role="tab" id={`results-tab-${item.id}`} aria-controls={`results-panel-${item.id}`} aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} onClick={() => setTab(item.id)} onKeyDown={event => {
       const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1;
       if (next >= 0) { event.preventDefault(); setTab(tabs[next].id); document.getElementById(`results-tab-${tabs[next].id}`)?.focus(); }
-    }}><item.icon size={14}/>{item.label}</button>)}</div><div className="results-overview"><span>{text(`共 ${total} 次训练`, `${total} training runs`)}</span><Link to={`/queue?project_id=${encodeURIComponent(projectId)}`} title={text('在全局队列管理调度', 'Manage scheduling in the queue')}>{text('全局队列', 'Queue')}<ExternalLink size={12}/></Link></div>{tab !== 'artifacts' && <button type="button" className="results-refresh" disabled={tab === 'jobs' ? jobsLoading : samplesLoading} onClick={() => void (tab === 'samples' ? fetchSamples() : fetchJobs())}><RefreshCw size={13} className={(tab === 'jobs' ? jobsLoading : samplesLoading) ? 'animate-spin' : ''}/>{t('common.refresh')}</button>}</div>
+    }}><item.icon size={14}/>{item.label}</button>)}</div><div className="results-overview"><span>{text(`共 ${total} 次训练`, `${total} training runs`)}</span><Link to={`/queue?project_id=${encodeURIComponent(projectId)}`} title={text('在全局队列管理调度', 'Manage scheduling in the queue')}>{text('全局队列', 'Queue')}<ExternalLink size={12}/></Link></div>{tab !== 'artifacts' && tab !== 'xyz' && <button type="button" className="results-refresh" disabled={tab === 'jobs' ? jobsLoading : samplesLoading} onClick={() => void (tab === 'samples' ? fetchSamples() : fetchJobs())}><RefreshCw size={13} className={(tab === 'jobs' ? jobsLoading : samplesLoading) ? 'animate-spin' : ''}/>{t('common.refresh')}</button>}</div>
     {jobsError && <div className="results-error" role="alert">{jobsError}<button type="button" onClick={() => void fetchJobs()}>{t('common.retry')}</button></div>}
 
     {tab === 'jobs' && <div role="tabpanel" id="results-panel-jobs" aria-labelledby="results-tab-jobs">{pagination}
@@ -174,6 +176,8 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
         <div className="results-sample-description"><div><strong>{text('步数', 'Step')} {sample.step}</strong><span>Seed {sample.seed}</span></div><SampleLoss sample={sample}/><p title={sample.prompt}>{sample.prompt}</p><div><time>{formatTime(sample.created_at)}</time><a href={fileUrl(sample.url)} download aria-label={text(`下载第 ${sample.step} 步采样图`, `Download step ${sample.step} sample`)}><Download size={13}/></a></div></div>
       </article>)}</div>}
     </div>}
+
+    {tab === 'xyz' && <div role="tabpanel" id="results-panel-xyz" aria-labelledby="results-tab-xyz"><div className="results-sample-toolbar results-output-selector"><label><span>{text('训练任务', 'Training run')}</span><StudioSelect searchable aria-label={text('XYZ 来源任务', 'XYZ source run')} value={selectedJobId} onValueChange={setSelectedJobId} disabled={jobsLoading} options={sampleJobs.length ? sampleJobs.map(job => ({ value: job.id, label: job.name })) : [{ value: '', label: text('还没有训练任务', 'No training runs yet') }]}/></label>{pagination}</div>{selectedJobId ? <XyzSampling sourceJobId={selectedJobId} readOnly={readOnly}/> : <div className="results-empty"><Grid2X2 size={24}/><p>{text('完成训练并保存权重后，可在这里生成参数与权重对比图。', 'Train and save checkpoints to compare weights and sampling settings here.')}</p></div>}</div>}
 
     {tab === 'artifacts' && <div role="tabpanel" id="results-panel-artifacts" aria-labelledby="results-tab-artifacts"><div className="results-sample-toolbar results-output-selector"><label><span>{text('训练任务', 'Training job')}</span><StudioSelect aria-label={text('权重所属任务', 'Weight source job')} value={artifactJobId} onValueChange={chooseArtifactJob} options={[{ value: '', label: text('此版本全部训练', 'All training runs in this version') }, ...artifactJobs.map(job => ({ value: job.id, label: job.name }))]}/></label>{artifactJobId && <Link to={`/jobs/${artifactJobId}?tab=checkpoints`}>{text('查看此任务检查点', 'View job checkpoints')}</Link>}{pagination}</div><Artifacts embedded projectId={projectId} versionId={versionId} jobId={artifactJobId || undefined} readOnly={readOnly}/></div>}
 

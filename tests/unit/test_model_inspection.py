@@ -211,7 +211,7 @@ def test_rejects_pickle_invalid_headers_and_symlink_escape(tmp_path):
         inspect_model(folder)
 
 
-def test_inspect_api_and_scan_do_not_register_unknown_or_filename_guesses(tmp_path):
+def test_inspect_api_and_scan_do_not_register_unknown_or_filename_guesses(tmp_path, monkeypatch):
     model_dir = tmp_path / "models"
     model_dir.mkdir()
     known = weights(model_dir / "random_name.safetensors", "krea2", torch.float16)
@@ -222,10 +222,23 @@ def test_inspect_api_and_scan_do_not_register_unknown_or_filename_guesses(tmp_pa
         response = client.post("/api/models/inspect", json={"path": str(known)})
         assert response.status_code == 200, response.text
         assert response.json()["family"] == "krea2"
+        assert response.json()["variant"] is None
         assert client.get("/api/models").json() == []
         scanned = client.post("/api/models/scan", json={"path": str(model_dir), "family": "anima"})
         assert scanned.status_code == 200, scanned.text
-        assert [(x["family"], x["dtype"]) for x in scanned.json()] == [("krea2", "fp16")]
+        assert scanned.json() == []  # Geometry alone cannot distinguish Krea Raw from Turbo.
+        import hashlib
+
+        from ypuddin.models.krea2 import variants
+
+        digest = hashlib.sha256(known.read_bytes()).hexdigest()
+        monkeypatch.setitem(variants.KNOWN_VARIANTS, digest, "raw")
+        variants.record_verified_variant(known, digest)
+        verified = client.post("/api/models/scan", json={"path": str(model_dir), "family": "anima"})
+        assert verified.status_code == 200, verified.text
+        assert [(x["family"], x["dtype"], x["variant"]) for x in verified.json()] == [
+            ("krea2", "fp16", "raw")
+        ]
         assert client.post("/api/models/inspect", json={"path": str(tmp_path / "missing")}).status_code == 422
     finally:
         app.state.regularization.close()

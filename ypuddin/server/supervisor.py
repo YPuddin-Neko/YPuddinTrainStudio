@@ -189,22 +189,38 @@ class JobSupervisor:
         job_id = job["id"]
         run_dir = Path(job["run_dir"])
         run_dir.mkdir(parents=True, exist_ok=True)
-        cfg = absolute_paths(TrainConfig.model_validate(json.loads(job["config_json"])))
-        if job.get("resume_from"):
-            cfg = cfg.model_copy(
-                update={"checkpoint": cfg.checkpoint.model_copy(update={"resume": job["resume_from"]})}
-            )
-        cfg.logging.events_path = str(run_dir / "events.jsonl")
         for command in ("pause", "stop", "save"):
             (run_dir / "control" / command).unlink(missing_ok=True)
-        cfg_path = run_dir / "job-config.toml"
-        write_config(cfg, cfg_path)
+        resume_from = None
+        if job["type"] == "xyz":
+            import psutil
+
+            payload = json.loads(job["config_json"])
+            payload.update(
+                device=device or "cpu",
+                fingerprint_cache=str(self.data_root / "cache" / "xyz-fingerprints"),
+                parent_pid=os.getpid(),
+                parent_created=psutil.Process().create_time(),
+            )
+            cfg_path = run_dir / "xyz-request.json"
+            cfg_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            cmd = [self.python, "-m", "ypuddin.server.xyz_worker", str(cfg_path)]
+        else:
+            cfg = absolute_paths(TrainConfig.model_validate(json.loads(job["config_json"])))
+            if job.get("resume_from"):
+                cfg = cfg.model_copy(
+                    update={"checkpoint": cfg.checkpoint.model_copy(update={"resume": job["resume_from"]})}
+                )
+            cfg.logging.events_path = str(run_dir / "events.jsonl")
+            cfg_path = run_dir / "job-config.toml"
+            write_config(cfg, cfg_path)
+            sub = {"train": "train", "cache": "cache"}[job["type"]]
+            cmd = [self.python, "-m", "ypuddin.cli", sub, str(cfg_path)]
+            if device:
+                cmd += ["--device", device]
+            resume_from = cfg.checkpoint.resume
         events_path = run_dir / "events.jsonl"
         self._offsets[job_id] = events_path.stat().st_size if events_path.exists() else 0
-        sub = {"train": "train", "cache": "cache"}[job["type"]]
-        cmd = [self.python, "-m", "ypuddin.cli", sub, str(cfg_path)]
-        if device:
-            cmd += ["--device", device]
         env = dict(os.environ, PYTHONUNBUFFERED="1")
         kwargs: dict[str, Any] = {}
         if os.name == "nt":  # pragma: no cover
@@ -217,7 +233,7 @@ class JobSupervisor:
         self._devices[job_id] = device or "cpu"
         self._merge_progress(job_id, {"device": device or "cpu", "phase": "starting", "wait_reason": ""})
         self._outcome_seen.discard(job_id)
-        self._set_status(job_id, "running", started_at=now(), pid=proc.pid, resume_from=cfg.checkpoint.resume)
+        self._set_status(job_id, "running", started_at=now(), pid=proc.pid, resume_from=resume_from)
         self.bus.publish("job.phase", {"job_id": job_id, "phase": "starting"})
 
     # ----------------------------------------------------------------- events
@@ -300,6 +316,9 @@ class JobSupervisor:
             self.bus.publish("job.cache_progress", data)
         elif t == "sample.progress":
             self.bus.publish("job.sample_progress", data)
+        elif t == "xyz.progress":
+            self._merge_progress(job_id, {k: v for k, v in data.items() if k != "job_id"})
+            self.bus.publish("job.xyz_progress", data)
         elif t == "validation":
             self.bus.publish("job.validation", data)
         elif t == "sample.saved":
@@ -423,6 +442,10 @@ class JobSupervisor:
         job = self.db.fetchone("SELECT * FROM jobs WHERE id=?", (job_id,))
         if not job:
             raise KeyError(job_id)
+        if job["type"] == "xyz" and command not in {"cancel", "retry"}:
+            raise ValueError(
+                "XYZ comparisons support cancel and retry; training pause/resume/save do not apply"
+            )
         if command in {"resume", "retry"}:
             self._check_job_version(job)
         status = job["status"]

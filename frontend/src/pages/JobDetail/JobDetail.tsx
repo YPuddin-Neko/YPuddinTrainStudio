@@ -10,6 +10,7 @@ import { EVENT_TYPES } from '../../events/eventTypes';
 import {
   Activity,
   Layers,
+  Grid2X2,
   Image as ImageIcon,
   Download,
   Terminal,
@@ -26,6 +27,7 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import StudioSelect from '../../components/StudioSelect';
 import { JobActions } from '../Queue/jobPresentation';
 import SampleLoss from '../../components/SampleLoss';
+import XyzSampling from '../../components/sampling/XyzSampling';
 import ConfigHelp from '../../components/ConfigHelp';
 import { metricChartBase, metricLabels } from './metricPresentation';
 import '../Queue/queue.css';
@@ -96,7 +98,9 @@ export default function JobDetail() {
   const [configSnapshot, setConfigSnapshot] = React.useState<any>(null);
   const [sampleProgress, setSampleProgress] = React.useState<{ step: number; promptIndex: number; prompts: number; done: number; total: number } | null>(null);
 
-  const activeTab = ['metrics', 'samples', 'checkpoints', 'logs', 'config'].includes(params.get('tab') || '') ? params.get('tab')! : 'metrics';
+  const requestedTab = params.get('tab') || '';
+  const allowedTabs = job?.type === 'xyz' ? ['xyz', 'logs', 'config'] : ['metrics', 'samples', 'checkpoints', 'logs', 'config', 'xyz'];
+  const activeTab = allowedTabs.includes(requestedTab) ? requestedTab : job?.type === 'xyz' ? 'xyz' : 'metrics';
   const setActiveTab = (tab: string) => { const next = new URLSearchParams(params); next.set('tab', tab); setParams(next, { state: location.state }); };
   const [xAxisMode, setXAxisMode] = React.useState<'step' | 'epoch'>('step');
   const [emaAlpha, setEmaAlpha] = React.useState<number>(0.9);
@@ -362,10 +366,11 @@ export default function JobDetail() {
   const tabs = [
     { key: 'metrics', icon: Activity, label: t('job.tabMetrics') },
     { key: 'samples', icon: ImageIcon, label: `${t('job.tabSamples')} (${samples.length})` },
+    ...(job?.type === 'train' || job?.type === 'xyz' ? [{ key: 'xyz', icon: Grid2X2, label: text('XYZ 对比', 'XYZ comparison') }] : []),
     { key: 'checkpoints', icon: Layers, label: `${t('job.tabCheckpoints')} (${checkpoints.length})` },
     { key: 'logs', icon: Terminal, label: t('job.tabLogs') },
     { key: 'config', icon: Code, label: t('job.tabConfig') },
-  ] as const;
+  ].filter(tab => allowedTabs.includes(tab.key));
 
   const resumeCheckpoint = async (checkpoint: JobCheckpoint) => {
     if (!job || !configSnapshot || resuming) return;
@@ -392,10 +397,10 @@ export default function JobDetail() {
   const configurationName = job?.version_name || versionName || job?.name;
 
   return (
-    <div className="job-monitor task-workspace" data-testid="job-detail-page">
+    <div className="job-monitor task-workspace" data-view={activeTab} data-testid="job-detail-page">
       <div className="job-monitor-bar"><div className="job-monitor-links"><Link to={queueReturnTo}>← {text('全局训练队列', 'Training queue')}</Link>
       {job?.project_id && <Link to={projectUrl(job.project_id, job.version_id, 'results')} title={job.project_id} className="inline-flex flex-wrap gap-1 text-sm hover:underline">← {job.project_name || text('所属项目', 'Project')} · {text('训练结果', 'Training results')}{job.version_id && <span className="break-words text-xs" title={job.version_id}> · {versionName ? `${text('版本', 'Version')} ${versionName}` : text('所属版本', 'Version')}</span>}</Link>}
-      </div><div className="job-monitor-identity"><div><h1>{job?.name || text('读取任务…', 'Loading job…')}</h1><small>{id} · {job?.type === 'cache' ? text('缓存任务', 'Cache job') : text('训练任务', 'Training job')}</small></div><span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${statusBadgeClass}`}>{statusText}</span>{job && <JobActions key={job.id} job={job} onUpdated={updated => { if (updated.id === job.id) setJob(updated); else navigate(`/jobs/${updated.id}`); }}/>}</div></div>
+      </div><div className="job-monitor-identity"><div><h1>{job?.name || text('读取任务…', 'Loading job…')}</h1><small>{id} · {job?.type === 'xyz' ? text('XYZ 对比采样', 'XYZ comparison') : job?.type === 'cache' ? text('缓存任务', 'Cache job') : text('训练任务', 'Training job')}</small></div><span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${statusBadgeClass}`}>{statusText}</span>{job && <JobActions key={job.id} job={job} onUpdated={updated => { if (updated.id === job.id) setJob(updated); else navigate(`/jobs/${updated.id}`); }}/>}</div></div>
       <dl className="job-run-metadata" aria-label={text('运行信息','Run information')}>
         <div><dt>{text('开始时间','Started')}</dt><dd>{formatTime(job?.started_at)}</dd></div>
         <div><dt>{text('训练时长','Elapsed')}</dt><dd>{formatEta(elapsed)}</dd></div>
@@ -516,6 +521,7 @@ export default function JobDetail() {
         </div>
       )}
 
+      {activeTab === 'xyz' && id && (job?.type === 'train' ? <XyzSampling sourceJobId={id}/> : job?.type === 'xyz' && configSnapshot?.xyz?.source_job_id ? <XyzSampling sourceJobId={configSnapshot.xyz.source_job_id} initialTaskId={id}/> : null)}
       {activeTab === 'samples' && (
         <section><div className="job-sample-controls"><StudioSelect aria-label={text('采样步数', 'Sample step')} value={sampleStep} options={[{ value: '', label: text('全部步数', 'All steps') }, ...[...new Set(samples.map(sample => sample.step))].sort((a,b) => b-a).map(step => ({ value: String(step), label: `${text('步数', 'Step')} ${step}` }))]} onValueChange={value => { setSampleStep(value); setSamplePage(1); }}/><span>{text(`共 ${filteredSamples.length} 张 · 每页 24 张`, `${filteredSamples.length} samples · 24 per page`)}</span>{samplePages > 1 && <div className="task-actions"><button className="task-button" disabled={samplePage <= 1} onClick={() => setSamplePage(page => page - 1)}>{text('上一页', 'Previous')}</button><span>{samplePage} / {samplePages}</span><button className="task-button" disabled={samplePage >= samplePages} onClick={() => setSamplePage(page => page + 1)}>{text('下一页', 'Next')}</button></div>}</div><div className="job-sample-gallery" data-testid="samples-gallery">
           {samples.length === 0 && (
