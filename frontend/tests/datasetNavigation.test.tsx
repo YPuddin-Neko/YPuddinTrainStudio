@@ -35,11 +35,11 @@ function fixture() {
 }
 function Location() {
   const location = useLocation(); const navigate = useNavigate();
-  return <><output data-testid="route">{location.pathname}{location.search}</output><button onClick={() => navigate('/datasets/d_missing')}>Open missing dataset</button></>;
+  return <><output data-testid="route">{location.pathname}{location.search}{location.hash}</output><button onClick={() => navigate('/datasets/d_missing')}>Open missing dataset</button></>;
 }
-function show() {
+function show(path = '/datasets/d_known') {
   fixture();
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter initialEntries={['/datasets/d_known']}><WorkspaceRoutes/><Location/></MemoryRouter></QueryClientProvider>);
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter initialEntries={[path]}><WorkspaceRoutes/><Location/></MemoryRouter></QueryClientProvider>);
 }
 function WorkspaceRoutes() {
   const location = useLocation(); const navigate = useNavigate();
@@ -56,6 +56,45 @@ async function editCaption() {
 }
 
 describe('dataset project sidebar and navigation protection', () => {
+  it('returns to the same version dataset library after removing a dataset', async () => {
+    let deleted = false;
+    server.use(http.delete('/api/datasets/d_known', () => { deleted = true; return HttpResponse.json({ ok: true }); }));
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    show('/datasets/d_known?project=p_wrong&version=v_wrong');
+    await screen.findByRole('combobox', { name: '项目版本' });
+    const remove = screen.getByRole('button', { name: String(i18n.t('dataset.remove')) });
+    await waitFor(() => expect(remove).toBeEnabled());
+    fireEvent.click(remove);
+    await screen.findByText('Version destination');
+    expect(deleted).toBe(true);
+    expect(screen.getByTestId('route')).toHaveTextContent('/projects/p_dataset/v/v2?step=data&data_step=import#version-datasets');
+  });
+
+  it('rebuilds the explicit dataset return route from metadata after a direct visit, overriding stale query context', async () => {
+    show('/datasets/d_known?project=p_wrong&version=v_wrong');
+    await screen.findByRole('combobox',{name:'项目版本'});
+    const back=screen.getByRole('link',{name:'返回本版本数据集'});
+    expect(back).toHaveAttribute('href','/projects/p_dataset/v/v2?step=data&data_step=import#version-datasets');
+    expect(back.parentElement).toHaveClass('dataset-workspace-navigation');
+    fireEvent.click(back);
+    await screen.findByText('Version destination');
+    expect(screen.getByTestId('route')).toHaveTextContent('/projects/p_dataset/v/v2?step=data&data_step=import');
+  });
+
+  it('saves a dirty caption before following the visible return link and stays on failure', async () => {
+    let fail=true; let release=()=>{};
+    server.use(http.put('/api/datasets/d_known/images/image1/caption',async()=>{if(fail)return HttpResponse.json({error:{message:'Save failed'}},{status:409}); await new Promise<void>(resolve=>{release=resolve;});return HttpResponse.json({ok:true});}));
+    show(); await screen.findByRole('combobox',{name:'项目版本'}); await editCaption();
+    fireEvent.click(screen.getByRole('link',{name:'返回本版本数据集'}));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Save failed');
+    expect(screen.getByTestId('route')).toHaveTextContent('/datasets/d_known');
+    fail=false; fireEvent.click(screen.getByRole('link',{name:'返回本版本数据集'}));
+    await waitFor(()=>expect(screen.getByTestId('caption-save-btn')).toBeDisabled());
+    expect(screen.getByTestId('route')).toHaveTextContent('/datasets/d_known');
+    await act(async()=>release()); await screen.findByText('Version destination');
+    expect(updateCaption).toHaveBeenCalledExactlyOnceWith('image1','cat, blue eyes');
+  });
+
   it('uses the dataset owner/version and waits for its caption PUT before switching versions', async () => {
     let release = () => {}; const writes: unknown[] = [];
     server.use(http.put('/api/datasets/d_known/images/image1/caption', async ({ request }) => {

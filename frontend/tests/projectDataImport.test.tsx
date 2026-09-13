@@ -108,7 +108,8 @@ describe('project import with browser folder collection and actual multipart req
       await act(async () => { finishUpload(); });
       await screen.findByRole('link', { name: '查看图片与标签' });
       expect(onImported).toHaveBeenCalledOnce();
-      expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
+      expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '继续添加' })).toBeEnabled();
       expect(polled).not.toHaveBeenCalled();
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     } finally { finishUpload(); vi.stubGlobal('crypto', originalCrypto); }
@@ -137,8 +138,9 @@ describe('project import with browser folder collection and actual multipart req
     expect(onImported).not.toHaveBeenCalled();
     await act(async () => { finishUpload(); });
     await screen.findByRole('link', { name: '查看图片与标签' });
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
-    expect(screen.getByText('导入与登记已完成')).toBeInTheDocument();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '继续添加' })).toBeEnabled();
+    expect(screen.getByText('已导入当前版本，共 1 组图片。')).toBeInTheDocument();
     expect(screen.queryByText('检查已完成')).not.toBeInTheDocument();
     expect(onImported).toHaveBeenCalledOnce();
   });
@@ -153,7 +155,8 @@ describe('project import with browser folder collection and actual multipart req
     fireEvent.change(screen.getByRole('textbox', { name: '文件或目录路径' }), { target: { value: '/qa/训练图' } }); submit();
     await screen.findByRole('link', { name: '查看图片与标签' });
     expect(requestId).toMatch(/^[\da-f-]{36}$/);
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '继续添加' })).toBeEnabled();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
@@ -214,6 +217,7 @@ describe('project import with browser folder collection and actual multipart req
     fireEvent.change(screen.getByLabelText('选择训练文件夹'), { target: { files: [file] } });
     submit();
     await screen.findByRole('link', { name: '查看图片与标签' });
+    fireEvent.click(screen.getByRole('button', { name: '继续添加' }));
     fireEvent.change(screen.getByLabelText('选择训练文件'), { target: { files: [new File(['archive'], '多概念数据.zip')] } });
     submit();
     await waitFor(() => expect(names).toHaveLength(2));
@@ -231,6 +235,8 @@ describe('project import with browser folder collection and actual multipart req
     expect(screen.getByRole('link', { name: 'character' })).toHaveAttribute('href', '/datasets/d_character');
     expect(screen.getByRole('link', { name: '画风' })).toHaveAttribute('href', '/datasets/d_style');
     expect(onImported).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('button', { name: '导入当前版本' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '继续添加' }));
     expect(screen.getByRole('button', { name: '导入当前版本' })).toBeDisabled();
   });
 

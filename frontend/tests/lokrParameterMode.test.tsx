@@ -50,11 +50,18 @@ describe('LoKr parameter mode', () => {
 
   it.each([true, false])('orders paired controls and separates switches in compact=%s', compact => {
     const {rerender} = render(<Editor rank={7} compact={compact}/>);
-    expect(fields()).toEqual(['field-adapter.algo', 'field-adapter.preset', 'field-adapter.parameter_mode', 'field-adapter.factor', 'field-adapter.rank', 'field-adapter.alpha', 'config-adapter-switches', ...(compact ? [] : ['field-adapter.rules'])]);
+    if (compact) {
+      const structure = screen.getByRole('heading', {name: '训练结构'}).parentElement!;
+      const capacity = screen.getByRole('heading', {name: '参数规模'}).parentElement!;
+      expect(structure).toContainElement(screen.getByTestId('field-adapter.algo'));
+      expect(structure).toContainElement(screen.getByTestId('field-adapter.preset'));
+      for (const key of ['parameter_mode', 'factor', 'rank', 'alpha']) expect(capacity).toContainElement(screen.getByTestId(`field-adapter.${key}`));
+    } else expect(fields()).toEqual(['field-adapter.algo', 'field-adapter.preset', 'field-adapter.parameter_mode', 'field-adapter.factor', 'field-adapter.rank', 'field-adapter.alpha', 'config-adapter-switches', 'field-adapter.rules']);
     expect(screen.getByTestId('field-adapter.dora').parentElement).toHaveClass('config-adapter-switches');
     expect(numeric('rank')).toHaveValue(7);
     rerender(<Editor rank={7} compact={compact} advanced/>);
-    expect(fields().slice(0, 7)).toEqual(['field-adapter.algo', 'field-adapter.preset', 'field-adapter.parameter_mode', 'field-adapter.factor', 'field-adapter.rank', 'field-adapter.alpha', 'config-adapter-switches']);
+    if (compact) expect(screen.getByRole('heading', {name: '初始化与正则'}).parentElement).toContainElement(screen.getByTestId('field-adapter.dropout'));
+    else expect(fields().slice(0, 7)).toEqual(['field-adapter.algo', 'field-adapter.preset', 'field-adapter.parameter_mode', 'field-adapter.factor', 'field-adapter.rank', 'field-adapter.alpha', 'config-adapter-switches']);
     expect(screen.getByTestId('field-adapter.rs_lora').parentElement).toHaveClass('config-adapter-switches');
     expect(screen.getByTestId('field-adapter.decompose_both').parentElement).toHaveClass('config-adapter-switches');
     expect(screen.getByTestId('field-adapter.lr_scale')).toHaveClass('config-field-wide');

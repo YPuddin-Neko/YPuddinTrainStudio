@@ -65,7 +65,7 @@ function ProjectCacheProbe() {
   const { data } = useQuery<{ active_version_id: string }>({ queryKey: ['project', 'p_archive'], queryFn: () => apiClient.get('/projects/p_archive', { silent: true }), enabled: false });
   return <span data-testid="remembered-version">{data?.active_version_id}</span>;
 }
-function show(path = '/projects/p_archive/v/v1') {
+function show(path = '/projects/p_archive/v/v1?step=data') {
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter initialEntries={[path]}><Routes>
     <Route path="/projects/:id/v/:versionId" element={<ProjectDetail/>}/><Route path="/projects/:id/v/:versionId/train" element={<TrainConfig/>}/><Route path="/datasets/:id" element={<Dataset/>}/>
   </Routes><Location/><ProjectCacheProbe/></MemoryRouter></QueryClientProvider>);

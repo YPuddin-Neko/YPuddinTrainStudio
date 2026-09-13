@@ -87,8 +87,10 @@ describe('project training workspace', () => {
     fireEvent.change(screen.getByTestId('project-id-input'), { target: { value: 'p_work' } });
     await waitFor(() => expect(within(screen.getByTestId('create-project-modal')).getByRole('button', { name: '创建' })).toBeEnabled());
     fireEvent.click(within(screen.getByTestId('create-project-modal')).getByRole('button', { name: '创建' }));
+    await screen.findByTestId('project-overview');
+    fireEvent.click(screen.getByRole('link', { name: /^1\s*训练数据$/ }));
     await screen.findByTestId('project-data-import');
-    expect(within(screen.getByRole('navigation', { name: '项目训练步骤' })).getAllByRole('link')).toHaveLength(3);
+    expect(within(screen.getByRole('navigation', { name: '项目训练步骤' })).getAllByRole('link')).toHaveLength(4);
     expect(screen.queryByRole('link', { name: /模型准备/ })).not.toBeInTheDocument();
     const image = new File(['image bytes'], 'portrait.png', { type: 'image/png' });
     const caption = new File(['a character'], 'portrait.txt', { type: 'text/plain' });
@@ -132,6 +134,8 @@ describe('project training workspace', () => {
     workspaceHandlers();
     server.use(http.post('/api/projects/p_work/datasets/upload', () => HttpResponse.json({ error: { code: 'upload.invalid', message: 'ZIP contains no supported images' } }, { status: 400 })));
     show();
+    await screen.findByTestId('project-overview');
+    fireEvent.click(screen.getByRole('link', { name: /^1\s*训练数据$/ }));
     await screen.findByTestId('project-data-import');
     fireEvent.change(screen.getByLabelText('选择训练文件'), { target: { files: [new File(['zip'], 'empty.zip', { type: 'application/zip' })] } });
     fireEvent.click(screen.getByRole('button', { name: '导入当前版本' }));

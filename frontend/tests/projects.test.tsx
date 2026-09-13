@@ -72,12 +72,36 @@ it('restores the list search and page after opening a project and using browser 
   show('/projects?q=%E6%A0%B7%E6%9C%AC&page=2&archived=1');
   const card = await screen.findByTestId('project-card-p24');
   fireEvent.click(within(card).getByRole('link', { name: '打开项目：样本 024' }));
-  expect(screen.getByTestId('project-location')).toHaveTextContent('/projects/p24');
+  expect(screen.getByTestId('project-location')).toHaveTextContent('/projects/p24?step=overview');
   fireEvent.click(screen.getByRole('button', { name: 'Browser back' }));
   await screen.findByTestId('project-card-p24');
   expect(screen.getByRole('textbox', { name: '搜索项目' })).toHaveValue('样本');
   expect(screen.getByLabelText('当前页')).toHaveTextContent('2 / 4');
   expect(screen.getAllByTestId(/^project-card-/)).toHaveLength(24);
+});
+
+it('preserves filtering when changing display density and sorts actual projects by name', async () => {
+  projects = [{ ...projects[0], name: 'Zebra' }, { ...projects[2], name: 'Alpha' }];
+  show('/projects?archived=1');
+  await screen.findByTestId('project-card-p0');
+  fireEvent.click(screen.getByRole('button', { name: '列表视图' }));
+  expect(screen.getByRole('button', { name: '列表视图' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('list', { name: '项目列表' })).toHaveClass('projects-list-view');
+  expect(screen.getByTestId('project-location')).toHaveTextContent('archived=1');
+  select('项目排序', '名称排序');
+  expect(screen.getAllByRole('listitem')[0]).toHaveAttribute('data-testid', 'project-card-p2');
+  expect(screen.getByRole('link', { name: '打开项目：Alpha' })).toHaveAttribute('href', '/projects/p2?step=overview');
+});
+
+it('provides a direct first-project action and does not show an empty library when loading failed', async () => {
+  projects = [];
+  vi.mocked(apiClient.get).mockRejectedValueOnce(new Error('Library offline'));
+  show();
+  expect(await screen.findByRole('alert')).toHaveTextContent('Library offline');
+  expect(screen.queryByTestId('projects-empty')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '重试' }));
+  fireEvent.click(await screen.findByRole('button', { name: '创建第一个项目' }));
+  expect(screen.getByRole('dialog', { name: '新建项目' })).toBeInTheDocument();
 });
 
 it('clamps an empty last page after deleting its final record', async () => {
@@ -160,7 +184,7 @@ it('shows a compact cover card with one entry link, inline metadata and no empty
   show();
   const row = await screen.findByRole('listitem');
   expect(within(row).getAllByRole('link')).toHaveLength(1);
-  expect(within(row).getByRole('link', { name: '打开项目：样本 000' })).toHaveAttribute('href', '/projects/p0');
+  expect(within(row).getByRole('link', { name: '打开项目：样本 000' })).toHaveAttribute('href', '/projects/p0?step=overview');
   expect(within(row).getByLabelText('版本: 3')).toBeInTheDocument();
   expect(within(row).getByLabelText(`${i18n.t('projects.datasets')}: 2`)).toBeInTheDocument();
   expect(within(row).getByLabelText(`${i18n.t('projects.jobs')}: 7`)).toBeInTheDocument();

@@ -6,6 +6,7 @@ import Artifacts from '../src/pages/Artifacts/Artifacts';
 import { apiClient } from '../src/api/client';
 import { mockJobs } from '../src/mocks/mockStore';
 import type { JobSample } from '../src/api/types';
+import { ApiError } from '../src/api/types';
 import i18n from '../src/i18n';
 
 const listeners = vi.hoisted(() => new Map<string, Set<(data: any) => void>>());
@@ -237,4 +238,57 @@ it('opens weights by default and scopes weights to a chosen training record with
   await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith('/artifacts', expect.objectContaining({ params: { project_id: 'p1', version_id: 'v1', job_id: 'j1' } })));
   expect(screen.getByRole('combobox', { name: '权重所属任务' })).toHaveTextContent('Run j1');
   expect(screen.getByTestId('location')).toHaveTextContent('result_tab=artifacts');
+});
+
+it('opens this version training records from the empty weights action', async () => {
+  artifacts = [];
+  render(<MemoryRouter initialEntries={['/projects/p1/v/v1?step=results']}><VersionResults projectId="p1" versionId="v1"/><Location/></MemoryRouter>);
+  const openJobs = await screen.findByRole('link', { name: '查看训练任务' });
+  expect(screen.getByRole('tab', { name: '模型权重' })).toHaveAttribute('aria-selected', 'true');
+  fireEvent.click(openJobs);
+  expect(screen.getByRole('tab', { name: '训练记录' })).toHaveAttribute('aria-selected', 'true');
+  expect(screen.getByTestId('location')).toHaveTextContent('/projects/p1/v/v1?step=results&result_tab=jobs');
+  expect(await screen.findByTestId('result-job-j1')).toHaveTextContent('Run j1');
+});
+
+it('keeps the chosen weight job and its name when paging the task selector', async () => {
+  const original = vi.mocked(apiClient.get).getMockImplementation()!;
+  vi.mocked(apiClient.get).mockImplementation(async (url, options) => {
+    if (url === '/jobs') return { items: [job(options?.params?.page === 2 ? 'j2' : 'j1')], total: 51, page: options?.params?.page, page_size: 50, type: 'train' } as any;
+    if (url === '/jobs/j1') return job('j1') as any;
+    return original(url, options);
+  });
+  render(<MemoryRouter><VersionResults projectId="p1" versionId="v1"/></MemoryRouter>);
+  await screen.findByTestId('artifact-row-a1');
+  fireEvent.click(screen.getByRole('combobox', { name: '权重所属任务' }));
+  fireEvent.click(screen.getByRole('option', { name: 'Run j1' }));
+  await screen.findByTestId('artifact-row-a1');
+  fireEvent.click(screen.getByRole('button', { name: '下一页任务' }));
+  await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith('/jobs/j1', expect.anything()));
+  expect(screen.getByRole('combobox', { name: '权重所属任务' })).toHaveTextContent('Run j1');
+  expect(screen.getByTestId('artifact-row-a1')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: '查看此任务检查点' })).toHaveAttribute('href', '/jobs/j1?tab=checkpoints');
+  fireEvent.click(screen.getByRole('combobox', { name: '权重所属任务' }));
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['此版本全部训练', 'Run j1', 'Run j2']);
+});
+
+it('retains a paged-out weight selection on a connection failure and clears only a confirmed deleted job', async () => {
+  const original = vi.mocked(apiClient.get).getMockImplementation()!;
+  let deleted = false;
+  vi.mocked(apiClient.get).mockImplementation(async (url, options) => {
+    if (url === '/jobs') return { items: [job(options?.params?.page === 2 ? 'j2' : 'j1')], total: 51, page: options?.params?.page, page_size: 50, type: 'train' } as any;
+    if (url === '/jobs/j1') throw deleted ? new ApiError(404, { code: 'job.not_found', message: 'Deleted' }) : new Error('Failed to fetch');
+    return original(url, options);
+  });
+  render(<MemoryRouter><VersionResults projectId="p1" versionId="v1"/></MemoryRouter>);
+  await screen.findByTestId('artifact-row-a1');
+  fireEvent.click(screen.getByRole('combobox', { name: '权重所属任务' }));
+  fireEvent.click(screen.getByRole('option', { name: 'Run j1' }));
+  fireEvent.click(screen.getByRole('button', { name: '下一页任务' }));
+  await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith('/jobs/j1', expect.anything()));
+  expect(screen.getByRole('combobox', { name: '权重所属任务' })).toHaveTextContent('Run j1');
+  deleted = true; emit('queue.changed', {});
+  await waitFor(() => expect(screen.getByRole('combobox', { name: '权重所属任务' })).toHaveTextContent('此版本全部训练'));
+  expect(screen.queryByRole('link', { name: '查看此任务检查点' })).not.toBeInTheDocument();
+  expect(apiClient.get).toHaveBeenCalledWith('/artifacts', expect.objectContaining({ params: { project_id: 'p1', version_id: 'v1' } }));
 });

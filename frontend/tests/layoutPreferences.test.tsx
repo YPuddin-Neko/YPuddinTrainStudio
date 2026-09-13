@@ -236,7 +236,7 @@ it('closes preferences on keyboard route navigation without moving focus back to
   const settingsLink=screen.getByRole('link',{name:'系统设置'});
   act(()=>settingsLink.focus());
   await user.keyboard('{Enter}'); // No pointerdown: route changes must also dismiss the fixed popup.
-  expect(screen.getByTestId('route')).toHaveTextContent('/settings');
+  await waitFor(()=>expect(screen.getByTestId('route')).toHaveTextContent('/settings'));
   expect(screen.queryByRole('combobox',{name:'主题'})).not.toBeInTheDocument();
   expect(trigger).toHaveAttribute('aria-expanded','false');
   expect(trigger).not.toHaveFocus();

@@ -83,9 +83,40 @@ async function choose(name: string) {
 }
 
 describe('compact user preset management', () => {
+  it('searches advanced parameters across sections and restores the selected section after clearing', async () => {
+    show(); await ready();
+    const search = screen.getByRole('textbox', {name: '搜索预设参数'});
+    expect(screen.queryByTestId('field-adapter.rs_lora')).not.toBeInTheDocument();
+    fireEvent.change(search, {target: {value: 'adapter.rs_lora'}});
+    expect(screen.getByTestId('field-adapter.rs_lora')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', {name: '高级选项'})).not.toBeChecked();
+    fireEvent.change(search, {target: {value: '不存在的参数123'}});
+    expect(screen.getByText('没有匹配的参数。')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', {name: '返回参数分区'}));
+    expect(search).toHaveValue(''); expect(search).toHaveFocus();
+    expect(screen.getByRole('tab', {name: '训练参数'})).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByTestId('field-adapter.rs_lora')).not.toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole('tab', {name: '训练参数'}), {key: 'ArrowRight'});
+    expect(screen.getByRole('tab', {name: '数据与标签'})).toHaveFocus();
+    expect(screen.getByRole('tabpanel')).toHaveAccessibleName('数据与标签');
+  });
+
+  it('locates a server validation error in another section without discarding draft edits', async () => {
+    show(); const epochs = await ready();
+    server.use(http.put('/api/presets/my-style', () => HttpResponse.json({error: {code: 'config.invalid', message: 'invalid config', details: {errors: [{loc: 'checkpoint.save_dtype', msg: 'unsupported precision'}]}}}, {status: 400})));
+    fireEvent.change(epochs, {target: {value: '12'}});
+    fireEvent.click(screen.getByRole('button', {name: '保存预设'}));
+    fireEvent.click(await screen.findByRole('button', {name: '定位 权重保存精度'}));
+    await waitFor(() => expect(screen.getByRole('tab', {name: '精度与保存'})).toHaveAttribute('aria-selected', 'true'));
+    await waitFor(() => expect(within(screen.getByTestId('field-checkpoint.save_dtype')).getByRole('combobox')).toHaveFocus());
+    fireEvent.click(screen.getByRole('tab', {name: '训练参数'}));
+    expect(screen.getByRole('spinbutton', {name: 'loop.epochs'})).toHaveValue(12);
+  });
+
   it('opens the most recently updated user preset and keeps the library inside a searchable picker', async () => {
     const state = show(); const epochs = await ready();
     expect(epochs).toHaveValue(4);
+    fireEvent.click(screen.getByRole('button', { name: '编辑用途与说明' }));
     expect(screen.getByRole('textbox', { name: '用途与说明' })).toHaveValue('自定义风格');
     expect(screen.getByRole('combobox', { name: '适用模型' })).toHaveTextContent('Anima');
     expect(screen.queryByRole('complementary', { name: '预设列表' })).not.toBeInTheDocument();
@@ -109,6 +140,7 @@ describe('compact user preset management', () => {
 
   it.each([['empty', []], ['legacy built-ins only', [legacyBuiltin]]] as const)('starts %s libraries as a clean unnamed form without saving or blocking navigation', async (_label, seed) => {
     const state = show([...seed]); await ready('');
+    fireEvent.click(screen.getByRole('button', { name: '编辑用途与说明' }));
     expect(screen.getByRole('textbox', { name: '用途与说明' })).toHaveValue('');
     expect(screen.getByRole('combobox', { name: '适用模型' })).toHaveTextContent('Anima');
     expect(screen.getByRole('spinbutton', { name: 'loop.epochs' })).toBeEnabled();
@@ -119,6 +151,25 @@ describe('compact user preset management', () => {
     await screen.findByText('项目列表页');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(state.writes).toEqual([]);
+  });
+
+  it('keeps description edits when collapsed and saves them with the parameter draft', async () => {
+    const state = show(); await ready();
+    const toggle = screen.getByRole('button', { name: '编辑用途与说明' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('textbox', { name: '用途与说明' })).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    const description = screen.getByRole('textbox', { name: '用途与说明' });
+    await waitFor(() => expect(description).toHaveFocus());
+    fireEvent.change(description, { target: { value: '更适合细节训练' } });
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('textbox', { name: '用途与说明' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '保存预设' }));
+    await screen.findByText('预设已保存，可在项目训练参数中加载。');
+    expect(state.writes[0].body.description).toBe('更适合细节训练');
+    fireEvent.click(toggle);
+    expect(screen.getByRole('textbox', { name: '用途与说明' })).toHaveValue('更适合细节训练');
   });
 
   it('duplicates a user preset into editable fields without changing its source or retaining project files', async () => {
@@ -163,6 +214,7 @@ describe('compact user preset management', () => {
       return HttpResponse.json({ ...body, builtin: false, updated_at: 30 });
     }));
     fireEvent.change(epochs, { target: { value: '8' } });
+    fireEvent.click(screen.getByRole('button', { name: '编辑用途与说明' }));
     fireEvent.change(screen.getByRole('textbox', { name: '用途与说明' }), { target: { value: '保留我的描述' } });
     fireEvent.click(screen.getByRole('button', { name: '保存预设' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('loop.epochs: must be positive');

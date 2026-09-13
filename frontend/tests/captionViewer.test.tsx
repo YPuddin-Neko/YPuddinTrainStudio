@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
@@ -27,13 +27,26 @@ beforeEach(async()=>{
 });
 afterEach(()=>vi.restoreAllMocks());
 describe('existing caption viewer',()=>{
+  it('filters directory names in the selector without sending them as image search terms',async()=>{
+    show(); await screen.findByTestId('existing-caption');
+    const scope=screen.getByRole('group',{name:'选择图片目录'});
+    expect(within(scope).getByRole('combobox',{name:'图片目录'})).toBeInTheDocument();
+    expect(within(screen.getByRole('search',{name:'筛选当前目录图片'})).getByRole('textbox',{name:'搜索文件名或标签'})).toBeInTheDocument();
+    fireEvent.click(within(scope).getByRole('combobox',{name:'图片目录'}));
+    const before=calls.length;
+    fireEvent.change(screen.getByRole('searchbox',{name:'图片目录 · 搜索'}),{target:{value:'d_b'}});
+    expect(screen.getAllByRole('option')).toHaveLength(1); expect(calls).toHaveLength(before);
+    fireEvent.click(screen.getByRole('option',{name:'d_b'}));
+    await waitFor(()=>expect(screen.getByTestId('existing-caption')).toHaveTextContent('another dataset'));
+    expect(calls.at(-1)).toEqual({url:'/datasets/d_b/images',params:{page:1,page_size:40,q:undefined}});
+  });
   it('reads the selected version and shows full unchanged captions with their images, including missing captions',async()=>{
     show('v_2',true);
     const original=await screen.findByTestId('existing-caption');
     expect(original.textContent).toBe(caption);
     expect(calls[0]).toEqual({url:'/projects/p_1/datasets',params:{version_id:'v_2'}});
     expect(screen.getByRole('img',{name:'大图: first.png'})).toHaveAttribute('src',apiUrl('/datasets/d_a/images/first/file'));
-    expect(screen.getByRole('link',{name:'查看数据集详情'})).toHaveAttribute('href','/datasets/d_a');
+    expect(screen.getByRole('link',{name:'查看数据集详情'})).toHaveAttribute('href','/datasets/d_a?project=p_1&version=v_2');
     fireEvent.click(screen.getByRole('button',{name:'下一张'}));
     expect(screen.getByTestId('existing-caption')).toHaveTextContent('此图片暂无标签');
     expect(screen.getByRole('img',{name:'大图: second.png'})).toHaveAttribute('src',apiUrl('/datasets/d_a/images/second/file'));
@@ -50,11 +63,11 @@ describe('existing caption viewer',()=>{
     fireEvent.click(screen.getByRole('button',{name:'搜索'}));
     await waitFor(()=>expect(screen.getByTestId('existing-caption')).toHaveTextContent('match 蓝色'));
     expect(calls.at(-1)).toEqual({url:'/datasets/d_a/images',params:{page:1,page_size:40,q:'蓝色'}});
-    fireEvent.click(screen.getByRole('combobox',{name:'数据集'}));
+    fireEvent.click(screen.getByRole('combobox',{name:'图片目录'}));
     fireEvent.click(screen.getByRole('option',{name:'d_b'}));
     await waitFor(()=>expect(screen.getByTestId('existing-caption')).toHaveTextContent('another dataset'));
     expect(calls.at(-1)?.url).toBe('/datasets/d_b/images');
-    expect(screen.getByRole('link',{name:'打开逐图标签 / 遮罩编辑器'})).toHaveAttribute('href','/datasets/d_b');
+    expect(screen.getByRole('link',{name:'打开逐图标签 / 遮罩编辑器'})).toHaveAttribute('href','/datasets/d_b?project=p_1&version=v_2');
     expect(apiClient.post).not.toHaveBeenCalled();expect(apiClient.put).not.toHaveBeenCalled();
   });
   it('resets page, search and selection before querying a reused viewer in another version',async()=>{

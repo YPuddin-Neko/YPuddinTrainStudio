@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Activity, Box, ChevronLeft, ChevronRight, Download, ExternalLink, Image as ImageIcon, Loader2, RefreshCw, X } from 'lucide-react';
 import { apiClient, apiUrl } from '../../api/client';
 import type { Job, JobSample, JobListResponse } from '../../api/types';
+import { ApiError } from '../../api/types';
 import SampleLoss from '../SampleLoss';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
@@ -33,7 +34,9 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
   const [params, setParams] = useSearchParams();
   const tab: ResultTab = ['jobs', 'samples', 'artifacts'].includes(params.get('result_tab') || '') ? params.get('result_tab') as ResultTab : 'artifacts';
   const setTab = (value: ResultTab) => { const next = new URLSearchParams(params); next.set('result_tab', value); setParams(next); };
-  const [artifactJobId, setArtifactJobId] = React.useState('');
+  // Keep only the chosen job, so paging the task list does not erase its label or filter.
+  const [artifactJob, setArtifactJob] = React.useState<Pick<VersionedJob, 'id' | 'name'> | null>(null);
+  const artifactJobId = artifactJob?.id || '';
   const [samplePage, setSamplePage] = React.useState(1);
 
   const [page, setPage] = React.useState(1);
@@ -55,6 +58,8 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
   const lightboxOpener = React.useRef<HTMLButtonElement | null>(null);
   const selectedJob = jobs.find(job => job.id === selectedJobId);
   const sampleJobs = jobs.filter(job => job.type !== 'cache');
+  const artifactJobs = artifactJob && !sampleJobs.some(job => job.id === artifactJob.id) ? [artifactJob, ...sampleJobs] : sampleJobs;
+  const chooseArtifactJob = (id: string) => setArtifactJob(artifactJobs.find(job => job.id === id) || null);
 
   const fetchJobs = React.useCallback(async () => {
     jobsRequest.current?.abort(); const controller = new AbortController(); jobsRequest.current = controller;
@@ -77,6 +82,24 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
     void fetchJobs();
     return () => { jobsRequest.current?.abort(); if (refreshTimer.current) clearTimeout(refreshTimer.current); };
   }, [fetchJobs]);
+  React.useEffect(() => {
+    if (!artifactJobId || jobsLoading) return;
+    const current = jobs.find(job => job.id === artifactJobId);
+    if (current) {
+      setArtifactJob(previous => previous?.id === current.id && previous.name !== current.name ? { id: current.id, name: current.name } : previous);
+      return;
+    }
+    // Absence from a page is not deletion. Check the single selected record before clearing it.
+    const controller = new AbortController();
+    void apiClient.get<VersionedJob>(`/jobs/${encodeURIComponent(artifactJobId)}`, { signal: controller.signal, silent: true }).then(job => {
+      if (controller.signal.aborted) return;
+      const own = job.project_id === projectId && (!versionId || job.version_id === versionId);
+      setArtifactJob(previous => previous?.id !== artifactJobId ? previous : !own ? null : previous.name === job.name ? previous : { id: job.id, name: job.name });
+    }).catch(error => {
+      if (!controller.signal.aborted && error instanceof ApiError && error.status === 404) setArtifactJob(previous => previous?.id === artifactJobId ? null : previous);
+    });
+    return () => controller.abort();
+  }, [artifactJobId, jobs, jobsLoading, projectId, versionId]);
   const scheduleJobsRefresh = () => {
     if (refreshTimer.current) clearTimeout(refreshTimer.current);
     refreshTimer.current = setTimeout(() => { refreshTimer.current = null; void fetchJobs(); }, 250);
@@ -136,7 +159,7 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
         <td><span className="results-job-status" data-status={job.status}>{status(job)}</span>{job.error && <span className="results-job-error" title={job.error}>{job.error}</span>}</td>
         <td className="results-progress">{job.progress?.step ?? '—'} / {job.progress?.total_steps ?? '—'}{job.latest?.loss != null && <small>Loss {Number(job.latest.loss).toFixed(4)}</small>}</td>
         <td><time>{formatTime(job.created_at)}</time></td>
-        <td><div className="results-row-actions"><Link to={`/jobs/${encodeURIComponent(job.id)}`}>{text('监控与日志', 'Monitor & logs')}</Link><button type="button" onClick={() => { setArtifactJobId(job.id); setTab('artifacts'); }}>{text('查看权重', 'View weights')}</button>{job.type !== 'cache' && <button type="button" onClick={() => { setSelectedJobId(job.id); setTab('samples'); }}>{text('查看采样图', 'View samples')}</button>}</div></td>
+        <td><div className="results-row-actions"><Link to={`/jobs/${encodeURIComponent(job.id)}`}>{text('监控与日志', 'Monitor & logs')}</Link><button type="button" onClick={() => { setArtifactJob({ id: job.id, name: job.name }); setTab('artifacts'); }}>{text('查看权重', 'View weights')}</button>{job.type !== 'cache' && <button type="button" onClick={() => { setSelectedJobId(job.id); setTab('samples'); }}>{text('查看采样图', 'View samples')}</button>}</div></td>
       </tr>)}</tbody></table></div>}
     </div>}
 
@@ -152,7 +175,7 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
       </article>)}</div>}
     </div>}
 
-    {tab === 'artifacts' && <div role="tabpanel" id="results-panel-artifacts" aria-labelledby="results-tab-artifacts"><div className="results-sample-toolbar results-output-selector"><label><span>{text('训练任务', 'Training job')}</span><StudioSelect aria-label={text('权重所属任务', 'Weight source job')} value={artifactJobId} onValueChange={setArtifactJobId} options={[{ value: '', label: text('此版本全部训练', 'All training runs in this version') }, ...sampleJobs.map(job => ({ value: job.id, label: job.name }))]}/></label>{artifactJobId && <Link to={`/jobs/${artifactJobId}?tab=checkpoints`}>{text('查看此任务检查点', 'View job checkpoints')}</Link>}{pagination}</div><Artifacts embedded projectId={projectId} versionId={versionId} jobId={artifactJobId || undefined} readOnly={readOnly}/></div>}
+    {tab === 'artifacts' && <div role="tabpanel" id="results-panel-artifacts" aria-labelledby="results-tab-artifacts"><div className="results-sample-toolbar results-output-selector"><label><span>{text('训练任务', 'Training job')}</span><StudioSelect aria-label={text('权重所属任务', 'Weight source job')} value={artifactJobId} onValueChange={chooseArtifactJob} options={[{ value: '', label: text('此版本全部训练', 'All training runs in this version') }, ...artifactJobs.map(job => ({ value: job.id, label: job.name }))]}/></label>{artifactJobId && <Link to={`/jobs/${artifactJobId}?tab=checkpoints`}>{text('查看此任务检查点', 'View job checkpoints')}</Link>}{pagination}</div><Artifacts embedded projectId={projectId} versionId={versionId} jobId={artifactJobId || undefined} readOnly={readOnly}/></div>}
 
     {lightbox && <div className="results-lightbox" onClick={() => setLightbox(null)}><div role="dialog" aria-modal="true" aria-label={text('采样图预览', 'Sample preview')} className="results-lightbox-content" onClick={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Escape') setLightbox(null); }}><header><strong>{selectedJob?.name} · {text('步数', 'Step')} {lightbox.step}</strong><button ref={closeLightbox} type="button" onClick={() => setLightbox(null)} aria-label={t('common.close')}><X size={18}/></button></header><img src={fileUrl(lightbox.url)} alt={lightbox.prompt}/><footer><p>{lightbox.prompt}</p><SampleLoss sample={lightbox}/><span>{lightbox.width} × {lightbox.height} · Seed {lightbox.seed} · {formatTime(lightbox.created_at)}</span><a href={fileUrl(lightbox.url)} download><Download size={14}/>{t('common.download')}</a></footer></div></div>}
   </section>;

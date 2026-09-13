@@ -55,7 +55,7 @@ describe('model choices share the training configuration workspace', () => {
     expect(screen.getByTestId('route')).toHaveTextContent('/projects/p_model/v/v2/train?tab=model');
     expect(screen.getByTestId('route')).toHaveTextContent('"origin":"kept"');
     expect(screen.getByRole('tab',{name:'底模与输出'})).toHaveAttribute('aria-selected','true');
-    expect(within(screen.getByRole('navigation',{name:'项目训练步骤'})).getAllByRole('link').map(link => link.textContent)).toEqual(['1训练数据','2训练参数','3训练结果']);
+    expect(within(screen.getByRole('navigation',{name:'项目训练步骤'})).getAllByRole('link').map(link => link.textContent)).toEqual(['项目概览','1训练数据','2训练参数','3训练结果']);
     fireEvent.click(screen.getByRole('button',{name:'保存草稿'})); await screen.findByTestId('draft-saved');
     expect(writes.at(-1)).toMatchObject({model:{dit_path:'/models/unsaved.safetensors'},loop:{epochs:19}});
     expect(sessionStorage.getItem('model-draft:p_model:v2')).toBeNull();

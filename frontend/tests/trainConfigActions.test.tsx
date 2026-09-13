@@ -25,6 +25,21 @@ function showConfig() {
 const enqueue = () => screen.getByRole('button', { name: '开始训练' });
 
 describe('training configuration actions', () => {
+  it('recovers from an empty search and exposes a plan disclosure without changing the draft', async () => {
+    showConfig();
+    const search = screen.getByRole('textbox', {name: '搜索训练参数'});
+    await screen.findByTestId('field-loop.epochs');
+    fireEvent.change(search, {target: {value: '不存在的参数123'}});
+    expect(screen.getByText('没有匹配的参数。')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', {name: '返回参数分区'}));
+    expect(search).toHaveValue(''); expect(search).toHaveFocus();
+    const toggle = screen.getByRole('button', {name: /训练估算与分桶/});
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('field-loop.epochs')).toBeInTheDocument();
+  });
+
   it('keeps one title with its model badge and groups search, advanced options and configuration actions', async () => {
     showConfig();
     const badge = await screen.findByTestId('training-family-badge');

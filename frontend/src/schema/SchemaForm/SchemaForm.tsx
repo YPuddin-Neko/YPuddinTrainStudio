@@ -10,6 +10,7 @@ import NumericControl from './NumericControl';
 import StudioSelect from '../../components/StudioSelect';
 import ConfigHelp from '../../components/ConfigHelp';
 import CaptionFormatSelect from '../../components/CaptionFormatSelect';
+import './config-fields.css';
 
 interface SchemaProperty {
   type?: string;
@@ -78,6 +79,7 @@ interface SchemaFormProps {
   readOnly?: boolean;
   groupFilter?: string[];
   search?: string;
+  onClearSearch?: () => void;
   sourceRoles?: SourceRoleInfo[];
   outputBinding?: OutputBindingInfo | null;
   versionSources?: boolean;
@@ -531,7 +533,7 @@ const ModelPathInput: React.FC<{
   const matched = kind ? models.filter((m) => m.exists !== false && m.kind === kind && (!familyName || m.family === familyName)) : [];
 
   return (
-    <div className="space-y-1.5">
+    <div className={`model-path-control ${matched.length > 0 ? 'has-registry' : ''}`}>
       <PathInput ariaLabel={label} value={value} onChange={onChange} />
       {matched.length > 0 && (
         <StudioSelect aria-label={`${label || kind} · ${t('models.fromRegistry')}`} value="" onValueChange={onChange} data-testid="model-registry-select"
@@ -660,6 +662,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   readOnly = false,
   groupFilter,
   search = '',
+  onClearSearch,
   sourceRoles,
   outputBinding,
   versionSources = false,
@@ -710,7 +713,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const fieldId = `config-${fullPathKey}`;
     const currentGroup = ui.group || parentPath[0] || 'default';
     if (groupFilter && !groupFilter.includes(currentGroup)) return null;
-    if (search && !`${fieldLabel} ${fullPathKey} ${prop.description || ''} ${lokrRank ? lokrModeLabel : ''}`.toLowerCase().includes(search.toLowerCase())) return null;
+    if (search.trim() && !`${fieldLabel} ${fullPathKey} ${prop.description || ''} ${lokrRank ? lokrModeLabel : ''}`.toLowerCase().includes(search.trim().toLowerCase())) return null;
 
     const captionOverride = fullPathKey.startsWith('dataset.caption.') && captionOverrideKeys.includes(key);
     if ((ui.advanced || captionOverride) && !showAdvanced && !(captionOverride && editCaptionOverrides) && !(editOutput && ['checkpoint.output_dir', 'checkpoint.name'].includes(fullPathKey))) return null;
@@ -954,7 +957,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     }
     const help = [prop.description, weightMeta?.hint].filter(Boolean).join('\n');
     const label = (
-      <div key={fullPathKey} id={`field-${fullPathKey}`} data-testid={`field-${fullPathKey}`} data-control-kind={prop.type === 'boolean' ? 'toggle' : undefined} className={compactField ? `config-field ${prop.type === 'boolean' ? 'config-field-toggle' : ''} ${wide ? 'config-field-wide' : ''} ${errorItem ? 'config-field-invalid' : ''}` : `flex flex-col space-y-1 p-2 rounded ${errorItem ? 'bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800' : ''}`}>
+      <div key={fullPathKey} id={`field-${fullPathKey}`} data-testid={`field-${fullPathKey}`} data-field-path={fullPathKey} data-control-kind={prop.type === 'boolean' ? 'toggle' : undefined} className={compactField ? `config-field ${prop.type === 'boolean' ? 'config-field-toggle' : ''} ${wide ? 'config-field-wide' : ''} ${errorItem ? 'config-field-invalid' : ''}` : `flex flex-col space-y-1 p-2 rounded ${errorItem ? 'bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800' : ''}`}>
         <div className="flex justify-between items-center">
           <label htmlFor={fieldId} className="text-sm font-medium text-slate-700 dark:text-slate-300">
             {compactField ? fieldLabel : weightMeta?.label || fieldLabel}
@@ -978,7 +981,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     }
     if (lokrRank) {
       const modeId = 'config-adapter-parameter-mode';
-      groups[groupName].fields.push(<div key="adapter.parameter_mode" id={fieldValue === 'full' ? 'field-adapter.rank' : 'field-adapter.parameter_mode'} data-testid="field-adapter.parameter_mode" className={`config-field ${fieldValue === 'full' && errorItem ? 'config-field-invalid' : ''}`}>
+      groups[groupName].fields.push(<div key="adapter.parameter_mode" id={fieldValue === 'full' ? 'field-adapter.rank' : 'field-adapter.parameter_mode'} data-testid="field-adapter.parameter_mode" data-field-path="adapter.parameter_mode" className={`config-field ${fieldValue === 'full' && errorItem ? 'config-field-invalid' : ''}`}>
         <div className="flex justify-between items-center">
           <label htmlFor={modeId} className="text-sm font-medium text-slate-700 dark:text-slate-300">{lokrModeLabel}</label>
           <ConfigHelp label={`${lokrModeLabel} ${english ? 'help' : '说明'}`}>{english ? 'Full retains the complete LoKr factor matrices; it does not fine-tune the whole model and does not use Alpha. Low rank decomposes the factors using Rank and Alpha.' : 'Full 保留 LoKr 完整因子矩阵，不是全量微调，也不使用 Alpha。低秩模式通过 Rank 和 Alpha 设置因子分解与缩放。'}</ConfigHelp>
@@ -1030,8 +1033,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
 
   return (
     <div className={compact ? 'compact-schema' : 'space-y-6'} data-testid="schema-form">
+      {search.trim() && sortedGroups.length > 0 && <p className="config-search-results" role="status">{english ? `${sortedGroups.reduce((count, [, group]) => count + group.fields.length, 0)} matching parameters · ${sortedGroups.length} sections` : `${sortedGroups.reduce((count, [, group]) => count + group.fields.length, 0)} 个匹配参数 · ${sortedGroups.length} 个分组`}</p>}
       {sortedGroups.map(([groupName, groupData]) => (
-        <FieldGroup key={groupName} title={t(`groups.${groupName}`, groupName)} count={groupData.fields.length} compact={compact} groupKey={groupName}>
+        <FieldGroup key={`${groupName}:${search.trim()}`} title={t(`groups.${groupName}`, groupName)} count={groupData.fields.length} compact={compact} groupKey={groupName}>
           {groupName === 'checkpoint' && versionSources && <div className="output-binding-summary">
             <div className="output-binding-heading"><strong>{english ? 'Training weights' : '训练权重'}</strong><button type="button" onClick={() => setEditOutput(previous => !previous)}>{editOutput ? (english ? 'Collapse custom settings' : '收起自定义设置') : (english ? 'Customize save location or name' : '自定义保存位置或名称')}</button></div>
             {outputBinding ? <><div><span>{english ? 'File name' : '文件名'}</span><code>{outputBinding.name}-final.safetensors</code></div><div><span>{english ? 'Save location' : '保存位置'}</span><code>{outputBinding.directory_template.replace('{job_id}', english ? '<run ID>' : '<运行 ID>')}</code></div></> : <p>{english ? 'Resolving the save location…' : '正在读取保存位置…'}</p>}
@@ -1047,7 +1051,13 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
             })}
           </div>}
           {groupName === 'caption' && hasCaptionOverrides && !showAdvanced && !editCaptionOverrides && <div className="caption-override-notice" role="status"><span>{english ? 'This configuration adds text to your existing captions.' : '当前配置会额外改写已有标签。'}</span><button type="button" onClick={() => setEditCaptionOverrides(true)}>{english ? 'Edit extra caption changes' : '编辑额外标签改写'}</button></div>}
-          {groupName === 'adapter' ? (() => {
+          {compact && groupName === 'model' ? (() => {
+            const order = ['model.family', 'model.dtype', 'model.attention', 'model.dit_path', 'model.text_encoder_path', 'model.vae_path', 'model.tokenizer_path'];
+            return [...groupData.fields].sort((a, b) => {
+              const rank = (node: React.ReactNode) => { const index = order.indexOf(String((node as React.ReactElement).key)); return index < 0 ? order.length : index; };
+              return rank(a) - rank(b);
+            });
+          })() : groupName === 'adapter' ? (() => {
             const order = ['algo', 'preset', 'parameter_mode', 'factor', 'rank', 'alpha', 'init', 'mode', 'param_dtype', 'dropout', 'rank_dropout', 'module_dropout', 'lr_scale', 'rules', 'resume_weights'];
             const isToggle = (node: React.ReactNode) => (node as React.ReactElement).props['data-control-kind'] === 'toggle';
             const fields = groupData.fields.filter(node => !isToggle(node)).sort((a, b) => {
@@ -1055,9 +1065,12 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
               return rank(a) - rank(b);
             });
             const switches = groupData.fields.filter(isToggle);
-            const advancedIndex = fields.findIndex(node => !['algo', 'preset', 'parameter_mode', 'factor', 'rank', 'alpha'].includes(String((node as React.ReactElement).key).split('.').pop() || ''));
-            const split = advancedIndex < 0 ? fields.length : advancedIndex;
-            return <>{fields.slice(0, split)}{switches.length > 0 && <div className="config-adapter-switches">{switches}</div>}{fields.slice(split)}</>;
+            const fieldName = (node: React.ReactNode) => String((node as React.ReactElement).key).split('.').pop() || '';
+            const structure = fields.filter(node => ['algo', 'preset'].includes(fieldName(node)));
+            const capacity = fields.filter(node => ['parameter_mode', 'factor', 'rank', 'alpha'].includes(fieldName(node)));
+            const tuning = fields.filter(node => !['algo', 'preset', 'parameter_mode', 'factor', 'rank', 'alpha'].includes(fieldName(node)));
+            if (!compact) return <>{structure}{capacity}{switches.length > 0 && <div className="config-adapter-switches">{switches}</div>}{tuning}</>;
+            return <>{structure.length > 0 && <div className="config-field-section config-adapter-structure"><h3>{english ? 'Training structure' : '训练结构'}</h3>{structure}</div>}{capacity.length > 0 && <div className="config-field-section config-adapter-capacity"><h3>{english ? 'Parameter size' : '参数规模'}</h3>{capacity}</div>}{(tuning.length > 0 || switches.length > 0) && <div className="config-field-section config-adapter-tuning"><h3>{english ? 'Initialization and regularization' : '初始化与正则'}</h3>{switches.length > 0 && <div className="config-adapter-switches">{switches}</div>}{tuning}</div>}</>;
           })() : compact && groupName === 'sampling' ? [...groupData.fields].sort((a, b) => {
             const order = ['enabled', 'at_start', 'every_steps', 'every_epochs', 'prompts', 'width', 'height', 'steps', 'cfg', 'shift', 'seed', 'sampler', 'scheduler', 'er_sde_order', 'er_sde_s_noise', 'prompts_file'];
             const rank = (node: React.ReactNode) => { const index = order.indexOf(String((node as React.ReactElement).key).split('.').pop() || ''); return index < 0 ? order.length : index; };
@@ -1065,7 +1078,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           }) : groupData.fields}
         </FieldGroup>
       ))}
-      {sortedGroups.length === 0 && <p className="p-6 text-sm text-slate-500">{english ? 'No matching parameters.' : '没有匹配的参数。'}</p>}
+      {sortedGroups.length === 0 && <div className="config-search-empty" role="status"><strong>{english ? 'No matching parameters.' : '没有匹配的参数。'}</strong><p>{search.trim() ? (english ? 'Try a parameter name, keyword or configuration path.' : '试试参数名称、关键词或配置字段路径。') : (english ? 'This section has no available parameters for the current configuration.' : '当前配置在此分区没有可用参数。')}</p>{search.trim() && onClearSearch && <button type="button" className="studio-secondary" onClick={onClearSearch}>{english ? 'Return to parameter sections' : '返回参数分区'}</button>}</div>}
     </div>
   );
 };

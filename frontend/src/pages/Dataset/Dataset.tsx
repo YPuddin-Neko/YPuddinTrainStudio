@@ -15,6 +15,7 @@ import './dataset-workspace.css';
 import { NextStepLink } from '../../components/ProjectWorkflow';
 import ProjectWorkspaceHeader from '../../components/projects/ProjectWorkspaceHeader';
 import DatasetNavigationGuard from '../../components/datasets/DatasetNavigationGuard';
+import { useWorkspaceHeight } from '../../components/projects/useWorkspaceHeight';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import {
   RefreshCcw,
@@ -28,11 +29,12 @@ import {
   Square,
   Zap,
   Brush,
+  ArrowLeft,
 } from 'lucide-react';
 
 const THUMB_SIZE = 256;
-const CARD_W = 176;
-const CARD_H = 260;
+const CARD_W = 200;
+const CARD_H = 286;
 const GAP = 12;
 
 function Histogram({ data, label, barColor }: { data: Array<{ name: string; count: number }>; label: string; barColor: string }) {
@@ -63,6 +65,7 @@ function DatasetContent({id}: {id?:string}) {
   const allowedDestination = React.useRef<string | null>(null);
   const { t } = useTranslation();
   const text = useWorkspaceText();
+  const navigationRef = useWorkspaceHeight('--workspace-head-height');
   const contextProblem = text('无法确认此数据集所属的项目版本。','The dataset project/version could not be verified.');
 
   // locales 占位符为单花括号（{n}），i18next 默认插值（{{}}）不处理，需手工替换
@@ -171,7 +174,8 @@ function DatasetContent({id}: {id?:string}) {
 
   // 虚拟滚动窗口计算
   const containerWidth = Math.max(1, viewportW);
-  const cols = Math.max(1, Math.floor((containerWidth + GAP) / (CARD_W + GAP)));
+  const cols = Math.max(1, Math.floor(containerWidth / (CARD_W + GAP)));
+  const cardWidth = Math.min(260, Math.max(1, (containerWidth - GAP - (cols - 1) * GAP) / cols));
   const rows = Math.ceil(images.items.length / cols);
   const rowH = CARD_H + GAP;
   const startRow = Math.max(0, Math.floor(scrollTop / rowH) - 2);
@@ -276,7 +280,7 @@ function DatasetContent({id}: {id?:string}) {
     if (window.confirm(tt('dataset.deleteConfirm', { path: info.source.path }))) {
       setBusyAction('delete');
       apiClient.delete(`/datasets/${id}`)
-        .then(() => navigate(projectUrl(info.source.project_id || '', info.source.version_id)))
+        .then(() => navigate(returnUrl))
         .catch(console.error)
         .finally(() => setBusyAction(null));
     }
@@ -326,6 +330,12 @@ function DatasetContent({id}: {id?:string}) {
   const activeImg = activeImage ? images.items.find((i) => i.hash === activeImage) : undefined;
   const activeSize = activeImg?.size;
   const datasetName = info?.source.path.replace(/[\\/]+$/, '').split(/[\\/]/).pop()?.replace(/^(?:d_[0-9a-f]+-)+/i, '') || id;
+  const returnQuery = new URLSearchParams(location.search);
+  // Metadata remains authoritative after a direct visit or refresh; query context
+  // keeps the return link usable while the dataset request is still loading.
+  const returnProject = info?.source.project_id || returnQuery.get('project');
+  const returnVersion = info?.source.project_id ? info.source.version_id : returnQuery.get('version');
+  const returnUrl = returnProject ? `${projectUrl(returnProject, returnVersion, 'data')}&data_step=import#version-datasets` : '/projects';
 
   return (
     <div className="dataset-workspace space-y-3" data-testid="dataset-page">
@@ -333,7 +343,10 @@ function DatasetContent({id}: {id?:string}) {
         if(allowedDestination.current === `${destination.pathname}${destination.search}${destination.hash}`){allowedDestination.current=null;return false;}
         return leaveRef.current.dirty;
       }} beforeLeave={() => leaveRef.current.beforeNavigation()} onError={error => setActionError(formatApiError(error))}/>}
-      {projectContext && !infoError ? <ProjectWorkspaceHeader project={projectContext.project} versionId={info?.source.version_id || undefined} versions={projectContext.versions} current={projectContext.current} active="data" title={datasetName} refresh={refreshProjectContext} beforeAction={beforeNavigation}/> : <h1 className="text-base font-semibold" title={info?.source.path}>{info && !infoError ? datasetName : text('图片、标签与遮罩','Images, captions and masks')}</h1>}
+      <div className="dataset-workspace-navigation" ref={navigationRef}>
+        <Link className="dataset-workspace-return" to={returnUrl}><ArrowLeft size={17}/>{returnProject ? text('返回本版本数据集', 'Back to version datasets') : text('返回项目', 'Back to projects')}</Link>
+        {projectContext && !infoError ? <ProjectWorkspaceHeader project={projectContext.project} versionId={info?.source.version_id || undefined} versions={projectContext.versions} current={projectContext.current} active="data" title={datasetName} refresh={refreshProjectContext} beforeAction={beforeNavigation}/> : <h1 className="text-base font-semibold" title={info?.source.path}>{info && !infoError ? datasetName : text('图片、标签与遮罩','Images, captions and masks')}</h1>}
+      </div>
       {(infoError || contextError) && <div role="alert" className="workspace-message error">{infoError || contextError}<button onClick={()=>{fetchInfo();void refreshProjectContext();}}>{t('common.retry')}</button></div>}
       {versionKey && !canEdit && <div className="flex flex-wrap items-center gap-2 rounded border border-slate-300 bg-slate-50 px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-900" role={versionAccess?.key === versionKey && versionAccess.error ? 'alert' : 'status'}>
         <span>{versionAccess?.key !== versionKey ? text('正在确认版本状态，暂以只读方式查看。', 'Checking version status. Viewing in read-only mode.') : versionAccess.error ? `${text('无法确认版本状态，编辑已暂停：', 'Cannot verify version status; editing is paused: ')}${versionAccess.error}` : versionAccess.archived ? text('此版本已归档，图片、标签和遮罩只读。', 'This version is archived. Images, captions and masks are read only.') : text('此版本暂不可编辑，当前为只读查看。', 'This version is not editable yet. Viewing in read-only mode.')}</span>
@@ -426,59 +439,21 @@ function DatasetContent({id}: {id?:string}) {
           </div>
       </div>}
 
-      {/* 搜索与批量操作条 */}
-      <div className="dataset-browser-toolbar flex flex-wrap items-center gap-2 px-3 py-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
-        <div className="flex items-center space-x-2 flex-1 min-w-0 basis-52">
-          <Search className="w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            value={images.q}
-            onChange={(e) => images.setQ(e.target.value)}
-            placeholder={t('dataset.filterPlaceholder')}
-            className="min-w-0 flex-1 px-2 py-1 text-xs bg-transparent outline-none"
-            data-testid="dataset-search"
-          />
+      <div className="dataset-browser-toolbar">
+        <div className="dataset-browser-filter-row" role="search" aria-label={text('筛选当前目录图片', 'Filter images in this folder')}>
+          <label className="dataset-browser-search"><span>{text('图片筛选', 'Image filter')}</span><div><Search size={17}/><input type="text" aria-label={text('搜索文件名或标签', 'Search filenames or captions')} value={images.q} onChange={event => images.setQ(event.target.value)} placeholder={t('dataset.filterPlaceholder')} data-testid="dataset-search"/>{images.q && <button type="button" aria-label={text('清除图片筛选', 'Clear image filter')} onClick={() => images.setQ('')}><X size={16}/></button>}</div></label>
+          <span className="dataset-browser-result-count">{tt('dataset.imagesTotal', { n: images.total })}</span>
         </div>
-        <div className="text-xs text-slate-400">
-          {images.selected.size > 0
-            ? tt('dataset.selected', { n: images.selected.size })
-            : tt('dataset.imagesTotal', { n: images.total })}
+        <div className="dataset-browser-selection" role="group" aria-label={text('图片选择', 'Image selection')}>
+          <span>{tt('dataset.selected', { n: images.selected.size })}</span>
+          <button disabled={!canEdit} onClick={images.selectAll}><CheckSquare size={17}/>{t('dataset.selectAll')}</button>
+          <button disabled={!canEdit || !images.selected.size} onClick={images.clearSelection}><Square size={17}/>{t('dataset.selectNone')}</button>
         </div>
-        <button disabled={!canEdit} onClick={images.selectAll} className="text-xs px-2 py-1.5 bg-slate-100 dark:bg-slate-700 rounded hover:bg-slate-200 flex items-center space-x-1">
-          <CheckSquare className="w-3.5 h-3.5" />
-          <span>{t('dataset.selectAll')}</span>
-        </button>
-        <button disabled={!canEdit} onClick={images.clearSelection} className="text-xs px-2 py-1.5 bg-slate-100 dark:bg-slate-700 rounded hover:bg-slate-200 flex items-center space-x-1">
-          <Square className="w-3.5 h-3.5" />
-          <span>{t('dataset.selectNone')}</span>
-        </button>
-        {canEdit && images.selected.size > 0 && (
-          <>
-            <input
-              type="text"
-              value={batchAdd}
-              onChange={(e) => setBatchAdd(e.target.value)}
-              placeholder={t('dataset.addTagsPlaceholder')}
-              className="px-2 py-1.5 text-xs border rounded dark:bg-slate-900 dark:border-slate-600 w-36"
-              data-testid="batch-add-input"
-            />
-            <input
-              type="text"
-              value={batchRemove}
-              onChange={(e) => setBatchRemove(e.target.value)}
-              placeholder={t('dataset.removeTagsPlaceholder')}
-              className="px-2 py-1.5 text-xs border rounded dark:bg-slate-900 dark:border-slate-600 w-36"
-            />
-            <button
-              onClick={applyBatchTags}
-              disabled={busyAction === 'batch'}
-              className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-              data-testid="batch-apply-btn"
-            >
-              {busyAction === 'batch' ? t('dataset.applying') : t('dataset.applyToSelection')}
-            </button>
-          </>
-        )}
+        {canEdit && images.selected.size > 0 && <fieldset className="dataset-browser-batch" disabled={busyAction === 'batch'}><legend>{text('批量修改已选图片的标签', 'Edit captions of selected images')}</legend>
+          <label>{text('添加标签', 'Add tags')}<input type="text" value={batchAdd} onChange={event => setBatchAdd(event.target.value)} placeholder={t('dataset.addTagsPlaceholder')} data-testid="batch-add-input"/></label>
+          <label>{text('移除标签', 'Remove tags')}<input type="text" value={batchRemove} onChange={event => setBatchRemove(event.target.value)} placeholder={t('dataset.removeTagsPlaceholder')}/></label>
+          <button onClick={applyBatchTags} disabled={!batchAdd.trim() && !batchRemove.trim()} className="dataset-primary-action" data-testid="batch-apply-btn">{busyAction === 'batch' ? t('dataset.applying') : t('dataset.applyToSelection')}</button>
+        </fieldset>}
       </div>
 
       {/* 虚拟滚动图片网格 */}
@@ -496,7 +471,7 @@ function DatasetContent({id}: {id?:string}) {
               left: 0,
               right: 0,
               display: 'grid',
-              gridTemplateColumns: `repeat(${cols}, ${CARD_W}px)`,
+              gridTemplateColumns: `repeat(${cols}, ${cardWidth}px)`,
               gap: GAP,
               justifyContent: 'center',
               padding: GAP / 2,
@@ -510,26 +485,23 @@ function DatasetContent({id}: {id?:string}) {
                   className={`relative rounded-lg overflow-hidden border cursor-pointer group ${
                     selected ? 'border-blue-500 ring-2 ring-blue-500/40' : 'border-slate-200 dark:border-slate-700'
                   }`}
-                  style={{ width: CARD_W, height: CARD_H }}
+                  style={{ width: cardWidth, height: CARD_H }}
                   data-testid={`image-card-${img.hash}`}
                 >
                   <button type="button" onClick={() => openEditor(img.hash)} aria-label={`${canEdit ? text('编辑标签', 'Edit caption') : text('查看图片与标签', 'View image and caption')}: ${img.rel_path}`} className="block w-full">
-                    <img src={apiUrl(`/datasets/${id}/images/${img.hash}/thumb?size=${THUMB_SIZE}`)} alt={img.rel_path} loading="lazy" className="w-full h-[170px] object-cover bg-slate-100 dark:bg-slate-900" />
+                    <img src={apiUrl(`/datasets/${id}/images/${img.hash}/thumb?size=${THUMB_SIZE}`)} alt={img.rel_path} loading="lazy" className="w-full h-[170px] object-contain bg-slate-100 dark:bg-slate-900" />
                   </button>
                   <button
                     disabled={!canEdit}
                     aria-label={`${text('选择图片', 'Select image')}: ${img.rel_path}`}
                     onClick={() => images.toggleSelect(img.hash)}
-                    className={`absolute top-1.5 left-1.5 w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold ${
-                      selected ? 'bg-blue-600 text-white' : 'bg-black/40 text-white opacity-0 group-hover:opacity-100'
-                    }`}
+                    aria-pressed={selected}
+                    className={`dataset-image-select ${selected ? 'is-selected' : ''}`}
                   >
-                    {selected ? '✓' : ''}
+                    {selected ? <CheckSquare size={18}/> : <Square size={18}/>}
                   </button>
-                  <div className="p-1.5 text-[10px] text-slate-500 truncate" title={img.caption}>
-                    <span className="font-mono">{img.width}×{img.height}</span> · {img.caption || t('dataset.noCaption', '（无 caption）')}
-                  </div>
-                  {canEdit && <button type="button" onClick={() => setMaskImage({ hash: img.hash, relPath: img.rel_path })} className="mx-1.5 flex min-h-9 w-[calc(100%-12px)] items-center justify-center gap-1 rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700"><Brush className="h-3.5 w-3.5" />{img.has_mask ? text('编辑遮罩 · 已有文件', 'Edit mask · saved') : text('编辑遮罩', 'Edit mask')}</button>}
+                  <div className="dataset-image-caption"><strong title={img.rel_path}>{img.rel_path}</strong><span title={img.caption}>{img.width} × {img.height} · {img.caption || t('dataset.noCaption', '（无 caption）')}</span></div>
+                  {canEdit && <button type="button" onClick={() => setMaskImage({ hash: img.hash, relPath: img.rel_path })} className="dataset-image-mask mx-1.5 flex min-h-9 w-[calc(100%-12px)] items-center justify-center gap-1 rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700"><Brush className="h-3.5 w-3.5" />{img.has_mask ? text('编辑遮罩 · 已有文件', 'Edit mask · saved') : text('编辑遮罩', 'Edit mask')}</button>}
                 </div>
               );
             })}

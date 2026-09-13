@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Upload, FolderOpen, X, Loader2, CheckCircle2 } from 'lucide-react';
+import { Upload, FolderOpen, X, Loader2, CheckCircle2, Plus, ChevronUp } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import type { DatasetInfo } from '../../api/types';
 import { PathInput } from '../../components/PathBrowser';
@@ -8,7 +8,7 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatApiError } from '../../utils/errors';
 import CaptionFormatSelect from '../../components/CaptionFormatSelect';
 import ConfigHelp from '../../components/ConfigHelp';
-import { formatBytes } from '../../utils/format';
+import { formatBytes, formatEta } from '../../utils/format';
 import { filesFromDrop, filesFromSelection, type DatasetUploadFile } from '../../utils/datasetFiles';
 import { formatDatasetImportError } from '../../utils/datasetImportErrors';
 import { useDatasetImportProgress } from '../../utils/useDatasetImportProgress';
@@ -31,6 +31,7 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
   const [dragging, setDragging] = React.useState(false);
   const [error, setError] = React.useState('');
   const [created, setCreated] = React.useState<DatasetInfo[]>([]);
+  const [showForm, setShowForm] = React.useState(true);
   const selectionGeneration = React.useRef(0);
   const importGeneration = React.useRef(0);
   const healthRequest = React.useRef<AbortController | null>(null);
@@ -93,7 +94,7 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
         setPath('');
       }
       finishProgress('completed');
-      setCreated(result.datasets || [result]); onImported();
+      setCreated(result.datasets || [result]); setShowForm(false); onImported();
     } catch (failure) {
       if (!current()) return;
       finishProgress('failed');
@@ -113,16 +114,17 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
     finally { if (current()) setBusy(false); }
   };
 
-  return <form onSubmit={submit} className="project-data-import" data-testid="project-data-import" aria-busy={locked}>
+  return <form onSubmit={submit} className="project-data-import" data-testid="project-data-import" aria-busy={locked} data-completed={!showForm}>
     <header className="project-import-heading">
       <h3>{defaultIsReg ? text('添加已有正则图', 'Add existing regularization images') : text('添加训练图片', 'Add training images')}</h3>
-      <div className="project-import-modes" role="group" aria-label={text('数据导入方式', 'Data import method')}>
+      {showForm ? <div className="project-import-modes" role="group" aria-label={text('数据导入方式', 'Data import method')}>
         {[['upload', text('上传文件或文件夹', 'Upload files or folders')], ['path', text('从训练电脑导入', 'Import from training computer')]].map(([key, label]) => <button key={key} type="button" disabled={locked} onClick={() => { setMode(key as typeof mode); setError(''); setCreated([]); resetProgress(); }} aria-pressed={mode === key}>{label}</button>)}
-      </div>
+      </div> : <button type="button" className="project-import-button" onClick={() => setShowForm(true)}><Plus size={16}/>{text('继续添加', 'Add more')}</button>}
     </header>
-    {operation && <DatasetImportProgress operation={operation}/>}
+    {operation && operation.state !== 'completed' && <DatasetImportProgress operation={operation}/>}
     {error && <div role="alert" className="project-import-message project-import-error">{error}</div>}
-    {created.length > 0 && <div role="status" className="project-import-message project-import-success"><CheckCircle2 size={15}/>{text(`已导入当前版本，共 ${created.length} 组图片。`, `Imported ${created.length} image groups into this version.`)}{created.map(dataset => <Link key={dataset.source.id} to={`/datasets/${dataset.source.id}`}>{created.length === 1 ? text('查看图片与标签', 'Review images and captions') : dataset.source.path.replace(/\\/g, '/').split('/').pop()}</Link>)}</div>}
+    {created.length > 0 && <div role="status" className="project-import-message project-import-success"><CheckCircle2 size={20}/><div><strong>{text(`已导入当前版本，共 ${created.length} 组图片。`, `Imported ${created.length} image groups into this version.`)}</strong><div className="project-import-result-links">{created.map(dataset => <Link key={dataset.source.id} to={`/datasets/${dataset.source.id}`}>{created.length === 1 ? text('查看图片与标签', 'Review images and captions') : dataset.source.path.replace(/\\/g, '/').split('/').pop()}</Link>)}</div></div>{operation && <span className="project-import-elapsed">{text('用时', 'Elapsed')} {operation.elapsed < 1 ? text('不足 1 秒', '<1s') : formatEta(operation.elapsed)}</span>}</div>}
+    {showForm && <>
     {mode === 'upload' ? <>
       <div className="project-import-dropzone" data-testid="dataset-dropzone" data-dragging={dragging} onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = locked ? 'none' : 'copy'; if (!locked) setDragging(true); }} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }} onDrop={event => { event.preventDefault(); event.stopPropagation(); setDragging(false); if (!locked) void dropFiles(event.dataTransfer); }}>
         <div className="project-import-drop-copy">{reading ? <Loader2 size={20} className="animate-spin"/> : <Upload size={20}/>}<div><strong>{reading ? text('正在读取文件夹…', 'Reading folders…') : text('拖入文件夹、图片或 ZIP 压缩包', 'Drop folders, images or a ZIP archive')}</strong><p>{text('已有文件夹按原结构同步；只有散图片时自动创建目录。', 'Existing folders keep their structure. Loose images get a new folder automatically.')}</p></div></div>
@@ -152,6 +154,8 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
         {isReg && <div className="project-import-reg-options"><label className="project-import-field project-import-prompt">{text('类别提示词', 'Class prompt')}<input className={inputClass} disabled={busy} value={classPrompt} onChange={event => setClassPrompt(event.target.value)}/></label><label className="project-import-field project-import-prior">{text('正则损失权重', 'Regularization loss weight')}<input className={inputClass} type="number" min="0" step="0.1" disabled={busy} value={priorWeight} onChange={event => setPriorWeight(Number(event.target.value))}/></label></div>}
       </details>
       <button type="submit" disabled={locked || !Number.isInteger(repeats) || repeats < 1 || (mode === 'upload' ? files.length === 0 : !path.trim())} className="project-import-button project-import-primary project-import-submit">{busy && <Loader2 size={14} className="animate-spin"/>}{busy ? text('正在导入…', 'Importing…') : text('导入当前版本', 'Import into this version')}</button>
+      {created.length > 0 && <button type="button" className="project-import-button" disabled={locked} onClick={() => setShowForm(false)}><ChevronUp size={14}/>{text('收起', 'Collapse')}</button>}
     </div>
+    </>}
   </form>;
 }

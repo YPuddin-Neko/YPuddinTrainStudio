@@ -38,6 +38,31 @@ beforeEach(async () => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('independent caption workspace', () => {
+  it('keeps folder-name search separate from image filters and resets filters when changing directories', async () => {
+    show(); await screen.findByRole('img', { name: '大图：folderA/one.png' });
+    const folderControls=screen.getByRole('group',{name:'选择图片目录'});
+    const imageFilters=screen.getByRole('search',{name:'筛选当前目录图片'});
+    expect(within(folderControls).getByRole('combobox',{name:'图片目录'})).toBeInTheDocument();
+    expect(within(folderControls).queryByRole('textbox')).not.toBeInTheDocument();
+    fireEvent.change(within(imageFilters).getByRole('textbox',{name:'搜索文件名或标签'}),{target:{value:'blue'}});
+    fireEvent.click(within(imageFilters).getByRole('button',{name:'搜索'}));
+    await waitFor(()=>expect(requests.at(-1)?.params?.q).toBe('blue'));
+    fireEvent.click(within(imageFilters).getByRole('button',{name:'缺少标签8'}));
+    await waitFor(()=>expect(requests.at(-1)?.params?.caption_status).toBe('missing'));
+    fireEvent.click(within(folderControls).getByRole('combobox',{name:'图片目录'}));
+    const countBeforeSearch=requests.length;
+    fireEvent.change(screen.getByRole('searchbox',{name:'图片目录 · 搜索'}),{target:{value:'second'}});
+    expect(screen.getAllByRole('option')).toHaveLength(1);
+    expect(requests).toHaveLength(countBeforeSearch);
+    fireEvent.click(screen.getByRole('option',{name:'d_second'}));
+    await waitFor(()=>expect(requests.some(request=>request.url==='/datasets/d_second/images')).toBe(true));
+    const request=[...requests].reverse().find(request=>request.url==='/datasets/d_second/images');
+    expect(request?.params).toMatchObject({page:1,page_size:30});
+    expect(request?.params?.q).toBeUndefined();expect(request?.params?.caption_status).toBeUndefined();
+    expect(within(imageFilters).getByRole('textbox',{name:'搜索文件名或标签'})).toHaveValue('');
+    expect(within(imageFilters).getByRole('button',{name:'全部图片90'})).toHaveAttribute('aria-pressed','true');
+  });
+
   it('shows whole-dataset statistics rather than counts from the current image page and sends exact tag/status filters', async () => {
     show(); await screen.findByRole('img', { name: '大图：folderA/one.png' });
     expect(screen.getByText('整个目录 90 张图片 · 2 个不同标签')).toBeInTheDocument();

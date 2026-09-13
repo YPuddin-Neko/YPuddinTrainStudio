@@ -1,0 +1,106 @@
+.compact-schema[data-testid="schema-form"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+  font-size: 14px;
+  container: config-form / inline-size;
+}
+.compact-schema .config-group { border-radius: 10px; overflow: clip; }
+.compact-schema .config-group-title {
+  min-height: 46px;
+  padding: 10px 16px;
+  gap: 12px;
+  font-size: 14px;
+  text-align: left;
+  background: var(--studio-panel);
+}
+.compact-schema .config-group-title > span:first-child { color: var(--studio-text); font-weight: 650; }
+.compact-schema .config-group-title [data-testid="group-count"] { font-size: 12px; color: var(--studio-dim); }
+.compact-schema .config-group-title svg { width: 15px; height: 15px; }
+.compact-schema .config-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 16px 20px;
+  padding: 16px;
+}
+.compact-schema .config-field { display: flex; flex-direction: column; gap: 6px; }
+.compact-schema .config-field > div:first-child { align-items: flex-start; min-height: 22px; gap: 8px; }
+.compact-schema .config-field > div:first-child > label { font-size: 13px; line-height: 20px; color: var(--studio-text); font-weight: 500; }
+.compact-schema .config-field > div:first-child > label > span { font-size: 12px; }
+.compact-schema .config-field > .mt-1 { margin-top: 0; min-width: 0; }
+.compact-schema .config-field input:not([type="checkbox"]):not([type="range"]),
+.compact-schema .config-field select,
+.compact-schema .config-field .studio-select {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  min-height: 38px;
+  padding: 7px 10px;
+  font-size: 13px;
+  line-height: 22px;
+  border-color: var(--studio-line);
+  background: var(--studio-panel);
+  color: var(--studio-text);
+  border-radius: 6px;
+}
+.compact-schema .config-field textarea { font-size: 13px; line-height: 1.6; min-height: 72px; }
+.compact-schema .config-field input[type="checkbox"] { width: 17px; height: 17px; }
+.compact-schema .config-field input[type="range"] { min-height: 24px; }
+.compact-schema .config-field .config-union { gap: 8px; flex-wrap: nowrap; }
+.compact-schema .config-field .config-union > .studio-select { flex: 1 1 0; min-width: 0; width: 0; }
+.compact-schema .config-field .config-union > input { flex: 1 1 0; width: 0; }
+.compact-schema .config-field .config-union > span { font-size: 12px; }
+.compact-schema .config-field-invalid > p { font-size: 12px; line-height: 1.5; }
+.compact-schema .config-field-toggle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 12px;
+}
+.compact-schema .config-field-toggle > div:first-child { align-items: center; min-height: 0; }
+.compact-schema .config-field-section { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; align-items: start; grid-column: 1 / -1; gap: 14px 18px; min-width: 0; }
+.compact-schema .config-field-section > h3 { grid-column: 1 / -1; margin: 0; color: var(--studio-dim); font-size: 12px; line-height: 20px; font-weight: 600; }
+.compact-schema .config-field-section + .config-field-section { padding-top: 16px; border-top: 1px solid var(--studio-line); }
+.model-path-control { display: grid; gap: 7px; min-width: 0; }
+.compact-schema [data-group="model"] > .config-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.compact-schema [data-field-path="model.text_encoder_path"],
+.compact-schema [data-field-path="model.vae_path"] { grid-column: auto; }
+.compact-schema [data-field-path="model.family"] { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(120px, auto) minmax(180px, 300px); align-items: center; justify-content: start; gap: 14px; }
+.compact-schema [data-field-path="model.family"] > div:first-child { align-items: center; }
+.compact-schema [data-field-path="model.dit_path"] .model-path-control.has-registry { grid-template-columns: minmax(0, 1.3fr) minmax(160px, 1fr); align-items: start; }
+.compact-schema .config-adapter-structure { grid-template-columns: minmax(130px, .65fr) minmax(0, 1.35fr); }
+.compact-schema .config-adapter-capacity [data-field-path="adapter.parameter_mode"] { grid-column: 1 / -1; }
+.compact-schema .config-adapter-capacity [data-field-path="adapter.parameter_mode"] .studio-select { height: auto; min-height: 38px; }
+.compact-schema .config-adapter-capacity [data-field-path="adapter.parameter_mode"] .studio-select > span { white-space: normal; line-height: 22px; text-align: left; }
+.compact-schema .config-adapter-switches { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.compact-schema .config-adapter-switches > .config-field-toggle { min-height: 40px; padding: 6px 10px; border: 1px solid var(--studio-line); background: var(--studio-muted); }
+.compact-schema .config-search-results { margin: 0; font-size: 13px; color: var(--studio-dim); }
+.compact-schema .config-search-empty { display: grid; justify-items: start; gap: 12px; padding: 32px 20px; border: 1px dashed var(--studio-line); border-radius: 10px; background: var(--studio-panel); }
+.compact-schema .config-search-empty strong { font-size: 15px; font-weight: 600; }
+.compact-schema .config-search-empty p { color: var(--studio-dim); font-size: 13px; }
+.compact-schema :is(input, textarea, button, select):focus-visible { outline: 2px solid var(--studio-accent); outline-offset: 2px; }
+@container config-form (min-width: 840px) {
+  .compact-schema .config-fields:not(.config-adapter-fields) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .compact-schema [data-group="model"] > .config-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .compact-schema .config-adapter-structure,
+  .compact-schema .config-adapter-capacity { grid-column: auto; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 0; padding: 0; }
+  .compact-schema .config-adapter-structure > .config-field { grid-column: 1 / -1; }
+  .compact-schema .config-field-section.config-adapter-capacity { border-top: 0; border-left: 1px solid var(--studio-line); padding-top: 0; padding-left: 20px; }
+}
+@container config-form (max-width: 520px) {
+  .compact-schema .config-fields { padding: 14px; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+  .compact-schema .config-field-section,
+  .compact-schema .config-adapter-structure { grid-template-columns: minmax(0, 1fr); }
+  .compact-schema [data-group="model"] > .config-fields,
+  .compact-schema [data-field-path="model.family"],
+  .compact-schema [data-field-path="model.dit_path"] .model-path-control.has-registry { grid-template-columns: minmax(0, 1fr); }
+  .compact-schema [data-field-path="model.family"] { justify-content: stretch; gap: 6px; }
+  .compact-schema .config-adapter-switches { grid-template-columns: minmax(0, 1fr); }
+  .compact-schema .config-field input:not([type="checkbox"]):not([type="range"]),
+  .compact-schema .config-field select,
+  .compact-schema .config-field .studio-select { min-height: 40px; height: 40px; }
+  .compact-schema .config-group-title { padding-inline: 14px; }
+}

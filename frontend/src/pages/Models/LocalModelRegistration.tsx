@@ -47,7 +47,7 @@ export default function LocalModelRegistration({ initialFamily, onClose, onRegis
     setSaving(true);onBusyChange(true);setError('');
     void apiClient.post('/models',{family,kind,path:detected.path,dtype:dtype||null,is_default:isDefault},{silent:true}).then(()=>onRegistered(family)).catch(error=>setError(formatApiError(error))).finally(()=>{setSaving(false);onBusyChange(false);});
   }}>
-    <p className="model-help-text">{text('选择本机权重文件或完整编码器目录后自动检测；只读文件头和配置，不加载整个模型。','Select a local weight file or complete encoder directory to inspect headers and configuration without loading the model.')}</p>
+    <p className="model-help-text">{text('选择权重文件或完整编码器目录，自动识别模型系列、组件和权重精度。','Select a weight file or complete encoder directory to detect its model family, component and precision.')}</p>
     <fieldset disabled={saving}>
       <label>{text('文件路径','File path')}<PathInput ariaLabel={text('文件路径','File path')} value={path} onChange={value=>{setPath(value);setDetected(null);inspectedPath.current='';}}/></label>
       {detecting&&<p role="status"><Loader2 size={14} className="animate-spin"/>{text('正在检测模型…','Inspecting model…')}</p>}

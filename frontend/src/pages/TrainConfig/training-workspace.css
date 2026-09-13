@@ -1,61 +1,83 @@
-.training-studio { --training-toolbar-height:46px; --training-launch-height:56px; max-width:1240px; margin-inline:auto; gap:10px; container:training-workspace / inline-size; }
-.training-studio .workspace-page-heading, .training-studio .project-heading-placeholder { justify-content:flex-start; flex-wrap:wrap; align-items:center; gap:8px; min-height:36px; }
-.training-studio .workspace-page-heading h1, .training-studio .project-heading-placeholder h1 { flex-shrink:0; margin:0; font-size:16px; line-height:24px; font-weight:650; }
-.training-studio .project-heading-status, .training-studio .project-heading-placeholder>.draft-indicator { margin-left:auto; }
-.training-studio .family-chip { max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-transform:none; letter-spacing:0; font-weight:500; }
-.training-studio .training-toolbar { top:var(--workspace-head-height,0px); z-index:26; margin:0; padding:6px 0; background:var(--studio-canvas); justify-content:flex-start; flex-wrap:wrap; gap:8px 12px; }
-.training-toolbar-filters { display:flex; align-items:center; gap:12px; min-width:0; flex:1 1 280px; max-width:470px; }
-.training-studio .config-search { flex:1; min-width:0; max-width:none; margin:0; }
-.training-studio .config-search>svg, .training-studio .config-search>button { flex-shrink:0; }
-.training-studio .toolbar-actions { position:relative; min-width:0; width:auto; justify-content:flex-start; flex-wrap:wrap; gap:7px; }
-.training-studio .toolbar-actions>.studio-select { width:160px; min-width:100px; font-size:12px; }
-.training-studio .config-tools { position:static; }
-.training-studio .config-tools-menu { top:calc(100% + 4px); width:320px; max-width:100%; }
-.training-studio .save-draft { min-height:34px; }
-.training-studio .save-draft:disabled { opacity:.5; }
-.training-studio .training-columns { grid-template-columns:minmax(0,1fr) 280px; gap:16px; }
-.training-studio .training-editor { container:training-editor / inline-size; }
-.training-studio .config-fields { grid-template-columns:repeat(2,minmax(0,1fr)); }
-.training-studio [id="field-model.text_encoder_path"], .training-studio [id="field-model.vae_path"] { grid-column:auto; }
-.training-studio .config-tabs { top:calc(var(--workspace-head-height,0px) + var(--training-toolbar-height)); z-index:24; overflow-x:auto; scrollbar-width:thin; background:var(--studio-canvas); }
-.training-studio .config-tabs button { flex:none; padding:10px 12px; font-size:12px; }
-.training-studio .config-tabs svg { display:block; flex-shrink:0; }
-.training-studio .training-inspector { top:calc(var(--workspace-head-height,0px) + var(--training-toolbar-height) + 8px); max-height:calc(100dvh - var(--workspace-head-height,0px) - var(--training-toolbar-height) - var(--training-launch-height) - 96px); overflow:auto; scrollbar-gutter:stable; }
-.training-studio .training-launch-bar { z-index:31; margin-top:8px; padding:10px 0; background:var(--studio-canvas); }
-.training-studio .config-field { scroll-margin-top:calc(var(--workspace-head-height,0px) + var(--training-toolbar-height) + 55px); scroll-margin-bottom:calc(var(--training-launch-height) + 24px); }
-.training-studio .config-field .studio-select { width:100%; min-height:31px; height:31px; padding:5px 8px; font-size:12px; }
-.training-studio .config-field-invalid .studio-select { border-color:#d97706; }
-.training-studio .config-union>.studio-select { flex:1; min-width:48px; width:0; order:-1; }
-.training-studio .context-actions { min-width:0; max-width:100%; flex-wrap:wrap; }
-.training-studio .context-actions>a { min-width:0; white-space:normal; }
-@container training-editor (min-width:850px) {
-  .training-studio .config-fields:not(.config-adapter-fields) { grid-template-columns:repeat(3,minmax(0,1fr)); }
-  .training-studio [data-group=model]>.config-fields { grid-template-columns:repeat(2,minmax(0,1fr)); }
+/* The page follows the shell width; fields and the plan respond to their own space. */
+.training-studio { --training-toolbar-height: 52px; --training-launch-height: 64px; max-width: none; width: 100%; margin-inline: auto; gap: 14px; container: training-workspace / inline-size; }
+.training-studio .workspace-page-heading, .training-studio .project-heading-placeholder { justify-content: flex-start; flex-wrap: wrap; align-items: center; gap: 10px; min-height: 40px; }
+.training-studio .workspace-page-heading h1, .training-studio .project-heading-placeholder h1 { margin: 0; font-size: 22px; line-height: 30px; font-weight: 650; }
+.training-studio .project-heading-status, .training-studio .project-heading-placeholder > .draft-indicator { margin-left: auto; }
+.training-studio .family-chip { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; letter-spacing: 0; font-weight: 500; }
+.training-studio .training-toolbar { top: var(--workspace-head-height, 0px); z-index: 26; margin: 0; padding: 8px 0; background: var(--studio-canvas); justify-content: space-between; flex-wrap: wrap; gap: 10px 16px; border-bottom: 1px solid var(--studio-line); }
+.training-toolbar-filters { display: flex; align-items: center; gap: 14px; min-width: 0; flex: 1 1 340px; }
+.training-studio .config-search { flex: 1; min-width: 0; max-width: 440px; min-height: 38px; margin: 0; font-size: 13px; padding: 7px 10px; }
+.training-studio .config-search input { font-size: 13px; }
+.training-studio .config-search > svg, .training-studio .config-search > button { flex-shrink: 0; }
+.training-studio .config-search > button { display: grid; place-items: center; width: 28px; min-height: 28px; margin: -4px; color: var(--studio-dim); }
+.training-studio .advanced-toggle { min-height: 38px; font-size: 13px; gap: 7px; }
+.training-studio .toolbar-actions { position: relative; min-width: 0; width: auto; justify-content: flex-start; flex-wrap: wrap; gap: 8px; }
+.training-studio .toolbar-actions > .studio-select { width: 170px; min-width: 120px; min-height: 38px; font-size: 13px; }
+.training-studio .config-tools { position: static; }
+.training-studio .config-tools > summary { min-height: 38px; padding: 8px 10px; font-size: 13px; }
+.training-studio .config-tools-menu { top: calc(100% + 5px); width: 340px; max-width: 100%; padding: 12px; }
+.training-studio .config-tools-menu :is(button, input, a) { min-height: 36px; font-size: 13px; }
+.training-studio .save-draft { min-height: 38px; font-size: 13px; }
+.training-studio .save-draft:disabled { opacity: .5; }
+.training-studio .training-columns { grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; }
+.training-studio .training-editor { min-width: 0; }
+.training-studio .config-tabs { top: calc(var(--workspace-head-height, 0px) + var(--training-toolbar-height)); z-index: 24; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; overflow: visible; margin-bottom: 14px; padding: 4px; border: 1px solid var(--studio-line); border-radius: 8px; background: var(--studio-canvas); }
+.training-studio .config-tabs button { min-width: 0; min-height: 42px; margin: 0; padding: 9px 10px; font-size: 13px; line-height: 20px; border: 0; border-radius: 5px; white-space: normal; }
+.training-studio .config-tabs button[aria-selected=true] { background: var(--studio-panel); color: var(--studio-accent); box-shadow: 0 1px 3px #00000012; font-weight: 650; }
+.training-studio .config-tabs svg { display: block; flex-shrink: 0; }
+.training-studio .training-inspector { top: calc(var(--workspace-head-height, 0px) + var(--training-toolbar-height) + 8px); max-height: calc(100dvh - var(--workspace-head-height, 0px) - var(--training-toolbar-height) - var(--training-launch-height) - 80px); overflow: auto; scrollbar-gutter: stable; }
+.training-studio .inspector-heading { min-height: 46px; padding: 12px 14px; }
+.training-studio .inspector-heading h3 { font-size: 14px; }
+.training-studio .inspector-content { padding: 14px; }
+.training-studio .dataset-metrics { gap: 14px; }
+.training-studio .dataset-metrics dt, .training-studio .estimate-block dt, .training-studio .bucket-heading h4 { font-size: 12px; }
+.training-studio .dataset-metrics dd { font-size: 20px; line-height: 28px; }
+.training-studio .inspector-note, .training-studio .bucket-empty, .training-studio .plan-notes { font-size: 12px; line-height: 1.6; }
+.training-studio .bucket-size { font-size: 11px; }
+.training-studio .segmented-small button { min-width: 32px; min-height: 32px; }
+.training-studio .training-launch-bar { z-index: 31; margin-top: 2px; padding: 12px 0; gap: 12px; border-top: 1px solid var(--studio-line); background: var(--studio-canvas); }
+.training-studio .training-launch-bar :is(button, input, summary) { min-height: 38px; font-size: 13px; }
+.training-studio .launch-status { font-size: 13px; }
+.training-studio .start-training { min-width: 124px; }
+.training-studio .config-field { scroll-margin-top: calc(var(--workspace-head-height, 0px) + var(--training-toolbar-height) + 72px); scroll-margin-bottom: calc(var(--training-launch-height) + 24px); }
+.training-studio .context-actions { min-width: 0; max-width: 100%; flex-wrap: wrap; gap: 8px; }
+.training-studio .context-actions > a { min-width: 0; white-space: normal; }
+.training-studio .config-context-card { gap: 12px; padding: 14px 16px; margin-bottom: 16px; border-left: 3px solid var(--studio-accent); }
+.training-studio .config-context-card strong { font-size: 14px; }
+.training-studio .config-context-card p { font-size: 13px; line-height: 1.6; }
+.training-studio .training-section-note { margin: 0 0 16px; color: var(--studio-dim); font-size: 13px; line-height: 1.65; }
+.training-studio #training-parameters { scroll-margin-top: calc(var(--workspace-head-height, 0px) + var(--training-toolbar-height) + 62px); }
+.training-studio [data-testid=prompts-editor] textarea[rows="1"] { min-height: 40px; }
+.training-plan-toggle { display: none; }
+@container training-workspace (min-width: 1450px) { .training-studio .training-columns { grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; } }
+@container training-workspace (max-width: 1040px) {
+  .training-studio .training-columns { grid-template-columns: minmax(0, 1fr); }
+  .training-studio .training-inspector { position: static; order: -1; max-height: none; overflow: visible; }
+  .training-studio .training-inspector:not(.is-open) { display: none; }
+  .training-plan-toggle { display: flex; align-items: center; justify-content: space-between; min-height: 42px; gap: 12px; padding: 9px 12px; border: 1px solid var(--studio-line); border-radius: 7px; background: var(--studio-panel); font-size: 13px; text-align: left; }
+  .training-plan-toggle > span { display: flex; align-items: center; gap: 8px; }
+  .training-plan-toggle > span:last-child { color: var(--studio-dim); font-size: 12px; }
+  .training-plan-toggle[aria-expanded=true] > span:last-child svg { transform: rotate(180deg); }
+  .training-studio .bucket-grid { grid-template-columns: repeat(auto-fit, minmax(76px, 1fr)); }
 }
-@container training-workspace (max-width:920px) {
-  .training-studio .training-columns { grid-template-columns:minmax(0,1fr); }
-  .training-studio .training-inspector { position:static; max-height:none; overflow:visible; }
+@container training-workspace (max-width: 700px) {
+  .training-toolbar-filters { flex-basis: 100%; gap: 10px; }
+  .training-studio .config-search { max-width: none; }
+  .training-studio .toolbar-actions { width: 100%; }
+  .training-studio .toolbar-actions > .studio-select { flex: 1; max-width: none; }
+  .training-studio .config-tabs { gap: 2px; }
+  .training-studio .config-tabs button { padding: 8px 4px; font-size: 13px; }
+  .training-studio .config-tabs svg { display: none; }
+  .training-studio .training-launch-bar { flex-wrap: wrap; gap: 8px; }
+  .training-studio .launch-status { flex: 1 1 160px; }
+  .training-studio .launch-estimate { display: none; }
+  .training-studio .launch-name { order: 1; flex: 1 1 180px; width: auto; min-width: 0; }
+  .training-studio .launch-schedule { order: 2; }
+  .training-studio .start-training { margin-left: auto; }
+  .training-studio .config-context-card { align-items: flex-start; flex-direction: column; }
+  .training-studio .context-actions > a { min-height: 40px; font-size: 13px; }
 }
-@container training-workspace (max-width:700px) {
-  .training-toolbar-filters { flex-basis:100%; max-width:none; gap:8px; }
-  .training-studio .toolbar-actions { width:100%; }
-  .training-studio .toolbar-actions>.studio-select { flex:1; max-width:none; }
-  .training-studio .config-tabs button { padding:10px 8px; font-size:11px; }
-  .training-studio .config-tabs svg { display:none; }
-  .training-studio .training-launch-bar { flex-wrap:wrap; gap:8px; }
-  .training-studio .launch-status { flex:1 1 180px; }
-  .training-studio .launch-estimate { display:none; }
-  .training-studio .launch-name { order:1; flex:1 1 180px; width:auto; min-width:0; }
-  .training-studio .launch-schedule { order:2; }
-  .training-studio .start-training { margin-left:auto; }
-}
-@container training-editor (max-width:480px) {
-  .training-studio .config-fields { grid-template-columns:minmax(0,1fr); }
-}
-@media(max-width:767px) { .training-studio .training-launch-bar { bottom:-12px; } }
-.training-studio #training-parameters { scroll-margin-top:calc(var(--workspace-head-height,0px) + var(--training-toolbar-height) + 44px); }
-.training-studio .config-tabs { overflow-y:hidden; }
-.training-studio [data-testid=prompts-editor] textarea[rows="1"] { min-height:34px; }
+@media (max-width: 767px) { .training-studio .training-launch-bar { bottom: -12px; } }
 .source-settings-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:start}
 .source-settings-grid>label{min-width:0;display:flex;flex-direction:column;gap:6px}
 .source-settings-grid>label>span{display:flex;align-items:center;justify-content:space-between;gap:6px}
@@ -89,3 +111,6 @@
 .preset-preview-actions{display:flex;justify-content:flex-end;align-items:center;gap:8px;flex-shrink:0;padding-top:14px;border-top:1px solid var(--studio-border,#d9e2ef)}
 .preset-preview-actions button{min-height:34px;padding:6px 12px;border:1px solid var(--studio-border,#d9e2ef);border-radius:6px}
 .preset-preview-actions button.studio-primary{border-color:#2563eb}
+
+.training-studio .model-context-card { min-height: 42px; padding: 7px 12px; margin-bottom: 14px; border-left-width: 1px; align-items: center; flex-direction: row; flex-wrap: wrap; }
+.training-studio .model-context-card > .studio-secondary { min-height: 32px; padding: 5px 8px; font-size: 12px; }

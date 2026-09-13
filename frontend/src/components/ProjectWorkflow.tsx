@@ -1,10 +1,10 @@
 import { Link } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Database, SlidersHorizontal, Activity } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Database, SlidersHorizontal, Activity, LayoutDashboard } from 'lucide-react';
 import { projectUrl } from '../utils/projectVersions';
 import { useWorkspaceText } from '../utils/workspaceText';
 import '../styles/project-workspace.css';
 
-export type WorkspaceStep = 'data' | 'train' | 'results';
+export type WorkspaceStep = 'overview' | 'data' | 'train' | 'results';
 
 export function ProjectWorkflow({ projectId, versionId, active, sidebar = false }: { projectId: string; versionId?: string | null; active: WorkspaceStep; sidebar?: boolean }) {
   const text = useWorkspaceText();
@@ -15,6 +15,7 @@ export function ProjectWorkflow({ projectId, versionId, active, sidebar = false 
   ];
   const currentIndex = steps.findIndex(step => step.key === active);
   return <div className={`project-stage-navigation${sidebar ? ' sidebar-project-stages' : ''}`}><nav aria-label={text('项目训练步骤', 'Project training steps')} className="project-workflow">
+    <Link to={projectUrl(projectId, versionId, 'overview')} aria-label={text('项目概览', 'Project overview')} aria-current={active === 'overview' ? 'page' : undefined}><LayoutDashboard size={14}/><span>{text('项目概览', 'Overview')}</span></Link>
     {steps.map((step, index) => <Link key={step.key} to={step.url} aria-label={`${index + 1} ${step.label}`} aria-current={active === step.key ? 'step' : undefined} title={`${step.label} · ${step.detail}`}>
       <span className="step-number">{index + 1}</span><step.icon size={14}/><span>{step.label}</span>
     </Link>)}

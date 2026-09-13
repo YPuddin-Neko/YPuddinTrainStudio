@@ -20,7 +20,7 @@ import PresetPreview from '../../components/PresetPreview';
 import { useWorkspaceHeight } from '../../components/projects/useWorkspaceHeight';
 import './training-workspace.css';
 import { CONFIG_TAB_GROUPS, ConfigTab, ConfigIssue, presentConfigIssues, presentPlanWarning } from '../../utils/configPresentation';
-import { AlertCircle, CheckCircle2, ChevronRight, Search, SlidersHorizontal, Play, Settings2, Brush, Database, Box, Sparkles, Loader2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronRight, ChevronDown, Search, SlidersHorizontal, Play, Settings2, Brush, Database, Box, Sparkles, Loader2, BarChart3, X } from 'lucide-react';
 
 const presetFamily = (preset: Preset): string | undefined => { const model = preset.config.model; return model && typeof model === 'object' && 'family' in model && typeof model.family === 'string' ? model.family : undefined; };
 
@@ -85,6 +85,9 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     setTabParams(next, { state: location.state });
   };
   const [search, setSearch] = React.useState('');
+  const searchRef = React.useRef<HTMLInputElement>(null);
+  const [inspectorOpen, setInspectorOpen] = React.useState(false);
+  const clearSearch = () => { setSearch(''); searchRef.current?.focus(); };
   const previousTab = React.useRef(activeTab);
   React.useLayoutEffect(() => {
     if (previousTab.current !== activeTab) document.getElementById('training-parameters')?.scrollIntoView?.({block:'start'});
@@ -483,7 +486,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       let path = issue.path;
       let target = document.getElementById(`field-${path}`);
       while (!target && path.includes('.')) { path = path.slice(0, path.lastIndexOf('.')); target = document.getElementById(`field-${path}`); }
-      target?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+      target?.scrollIntoView?.({ behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
       const control = target?.querySelector<HTMLElement>('input:not(:disabled):not([readonly]):not([type="hidden"]),select:not(:disabled),textarea:not(:disabled):not([readonly]),[role="combobox"]:not(:disabled):not([aria-disabled="true"])')
         || target?.querySelector<HTMLElement>('button:not(:disabled):not([aria-disabled="true"]):not(.config-help-trigger)');
       control?.focus({ preventScroll: true });
@@ -512,7 +515,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     {Object.keys(auxiliaryErrors).length>0 && <div role="alert" className="studio-error" data-testid="training-auxiliary-error"><div>{Object.entries(auxiliaryErrors).map(([key,message])=><p key={key}>{key==='presets'?text('预设列表读取失败','Preset list could not be loaded'):key==='sources'?text('数据目录用途读取失败','Dataset directory ownership could not be loaded'):key==='output'?text('权重保存位置读取失败','Weight output binding could not be loaded'):text('模型库读取失败','Model registry could not be loaded')}: {message}</p>)}<p>{text('本版本配置仍可编辑；重试不会替换当前草稿。','The version configuration remains editable. Retrying will preserve the current draft.')}</p></div><button type="button" disabled={auxiliaryLoading} onClick={()=>setAuxiliaryReload(value=>value+1)}>{text('重试辅助信息','Retry supporting data')}</button></div>}
     <div className="training-toolbar" ref={toolbarRef} role="group" aria-label={text('训练参数工具栏', 'Training parameter controls')}>
       <div className="training-toolbar-filters">
-      <label className="config-search"><Search size={15}/><input aria-label={text('搜索训练参数', 'Search training parameters')} placeholder={text('搜索参数名称或关键字…', 'Search parameters…')} value={search} onChange={event => setSearch(event.target.value)} />{search && <button aria-label={text('清空搜索', 'Clear search')} onClick={() => setSearch('')}>×</button>}</label>
+      <label className="config-search"><Search size={16}/><input ref={searchRef} aria-label={text('搜索训练参数', 'Search training parameters')} placeholder={text('搜索参数名称或关键字…', 'Search parameters…')} value={search} onChange={event => setSearch(event.target.value)} />{search && <button type="button" aria-label={text('清空搜索', 'Clear search')} onClick={clearSearch}><X size={15}/></button>}</label>
       <label className="advanced-toggle"><input type="checkbox" checked={showAdvanced} onChange={event => setShowAdvanced(event.target.checked)}/>{t('train.advanced')}</label>
       </div>
       <div className="toolbar-actions">
@@ -527,6 +530,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     </div>
     {pendingPreset && <PresetPreview preset={pendingPreset} current={config} onClose={()=>setPendingPreset(null)} onApply={()=>handleApplyPreset(pendingPreset)}/>}
     {importOpen && <section className="config-import"><div className="flex items-center justify-between"><h2>{t('train.importToml')}</h2><button onClick={() => setImportOpen(false)}>{text('关闭', 'Close')}</button></div><input type="file" accept=".toml,text/plain" aria-label={t('train.importFile')} onChange={event => { const file = event.target.files?.[0]; if (file) file.text().then(setImportText).catch(err => setError(formatApiError(err))); }}/><textarea aria-label={t('train.importContent')} value={importText} onChange={event => setImportText(event.target.value)} /><button className="studio-primary" disabled={importing || !importText.trim()} onClick={handleImport}>{t('train.applyImport')}</button></section>}
+    <button type="button" className="training-plan-toggle" aria-expanded={inspectorOpen} aria-controls="training-plan-panel" onClick={() => setInspectorOpen(open => !open)}><span><BarChart3 size={16}/>{text('训练估算与分桶', 'Estimates and buckets')}</span><span>{validating ? text('正在更新…', 'Updating…') : plan?.total_steps != null ? text(`${plan.total_steps} 步`, `${plan.total_steps} steps`) : text('等待配置', 'Waiting for configuration')}<ChevronDown size={16}/></span></button>
     <div className="training-columns">
       <div className="training-editor">
         <div className="config-tabs" role="tablist" aria-label={text('参数分区', 'Parameter sections')}>{tabs.map(tab => <button role="tab" aria-label={tab.label} tabIndex={tab.id === activeTab ? 0 : -1} onKeyDown={event => {
@@ -537,11 +541,13 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
         <div id="training-parameters" role="tabpanel" aria-labelledby={search ? undefined : `tab-${activeTab}`}>
           {search && <p className="section-context">{text('搜索所有分区，包含高级参数', 'Searching every section, including advanced parameters')}</p>}
           {!search && activeTab === 'data' && <div className="config-context-card"><div><strong><Database size={14}/>{text('训练数据与遮罩', 'Dataset and masks')}</strong><p>{text('上传图片与标签，检查分桶；需要局部训练时，在图片编辑器绘制白色训练区域。', 'Upload images and captions, inspect buckets, and paint white training regions in the image editor.')}</p></div><div className="context-actions"><Link to={`${dataUrl}&data_step=import`} className="studio-secondary">{text('添加数据', 'Add dataset')}</Link><Link to={`${dataUrl}&data_step=captions${sourceQuery}`} className="studio-secondary">{text('标签编辑', 'Caption editor')}</Link><Link to={`${dataUrl}&data_step=paint${sourceQuery}`} className="studio-secondary"><Brush size={13}/>{text('涂抹与遮罩', 'Paint & masks')}</Link></div>{config.dataset?.masked_loss && <p className="mask-context-note">{text('遮罩已启用：白色参与训练，黑色忽略。未制作遮罩且没有 alpha 通道的图片仍按整张图训练。', 'Masking enabled: white trains, black is ignored. Images without a mask or alpha still train the full image.')}</p>}</div>}
-          {!search && activeTab === 'model' && <div className="config-context-card"><div><strong><Box size={14}/>{text('选择训练机上的模型', 'Models on the training machine')}</strong><p>{text('在环境设置中下载或注册模型，这里选择本次训练使用的权重。', 'Download or register models in environment settings, then choose weights for this training run.')}</p></div><Link to={modelUrl} className="studio-secondary">{text('管理与下载模型', 'Manage & download models')}<ChevronRight size={13}/></Link></div>}
-          {!loaded ? <p className="p-6 text-sm text-slate-500">{t('common.loading')}</p> : <SchemaForm key={revealVersion} compact schema={schema} value={config} sourceRoles={sourceRoles} outputBinding={outputBinding} versionSources={!!projectId} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} groupFilter={search ? undefined : CONFIG_TAB_GROUPS[activeTab]} search={search} errors={issues.map(issue => ({loc:issue.path,msg:issue.message}))} family={familyByName(families, config?.model?.family)} families={families} />}
+          {!search && activeTab === 'model' && <div className="config-context-card model-context-card"><strong><Box size={14}/>{text('选择训练机上的模型', 'Models on the training machine')}</strong><Link to={modelUrl} className="studio-secondary">{text('管理与下载模型', 'Manage & download models')}<ChevronRight size={13}/></Link></div>}
+          {!search && activeTab === 'train' && <p className="training-section-note">{text('先设置适配器与参数规模，再调整训练步数、学习率和优化器。', 'Choose the adapter and parameter size, then set training duration, learning rate and optimizer.')}</p>}
+          {!search && activeTab === 'advanced' && <p className="training-section-note">{text('设置训练中的采样预览、验证与运行选项。展开高级选项查看完整配置。', 'Configure sample previews, validation and runtime options. Enable advanced options for the full configuration.')}</p>}
+          {!loaded ? <p className="p-6 text-sm text-slate-500">{t('common.loading')}</p> : <SchemaForm key={revealVersion} compact schema={schema} value={config} sourceRoles={sourceRoles} outputBinding={outputBinding} versionSources={!!projectId} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} groupFilter={search ? undefined : CONFIG_TAB_GROUPS[activeTab]} search={search} onClearSearch={clearSearch} errors={issues.map(issue => ({loc:issue.path,msg:issue.message}))} family={familyByName(families, config?.model?.family)} families={families} />}
         </div>
       </div>
-      <aside className="training-inspector"><BucketInspector plan={plan} loading={validating} hasSources={!!config.dataset?.sources?.length} indexed={indexedStats || undefined} onIssues={() => setIssuesOpen(true)} onData={() => {setActiveTab('data');setSearch('');}}/>
+      <aside id="training-plan-panel" className={`training-inspector ${inspectorOpen ? 'is-open' : ''}`} aria-label={text('训练计划', 'Training plan')}><BucketInspector plan={plan} loading={validating} hasSources={!!config.dataset?.sources?.length} indexed={indexedStats || undefined} onIssues={() => setIssuesOpen(true)} onData={() => {setActiveTab('data');setSearch('');setInspectorOpen(false);}}/>
         {!!plan?.warnings?.length && <details className="plan-notes"><summary><AlertCircle size={13}/>{text('配置提示', 'Configuration notes')} · {plan.warnings.length}</summary><ul>{plan.warnings.map((warning,index) => <li key={index}>{presentPlanWarning(warning.code,warning.msg,english)}</li>)}</ul></details>}
       </aside>
     </div>
