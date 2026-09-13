@@ -6,6 +6,7 @@
 .project-import-modes > button[aria-pressed=true] { color:var(--studio-accent); background:var(--studio-muted); border-color:var(--studio-line); }
 .project-import-dropzone { min-width:0; display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:12px; border:1px dashed var(--studio-line); border-radius:5px; background:var(--studio-muted); }
 .project-import-dropzone[data-dragging=true] { border-color:var(--studio-accent); }
+.project-import-limit { margin:0; font-size:11px; line-height:1.5; color:var(--studio-dim); }
 .project-import-drop-copy { display:flex; align-items:center; gap:10px; min-width:0; flex:1 1 280px; }
 .project-import-drop-copy > svg { flex:none; color:var(--studio-accent); }
 .project-import-drop-copy strong { display:block; font-size:12px; font-weight:500; }
@@ -25,7 +26,10 @@
 .project-import-location { min-width:0; display:grid; gap:7px; }
 .project-import-location > fieldset { min-width:0; border:0; margin:0; padding:0; }
 .project-import-configuration { display:flex; align-items:flex-end; gap:12px; min-width:0; }
-.project-import-options { flex:1; min-width:0; display:grid; gap:8px; }
+.project-import-options { flex:1; min-width:0; }
+.project-import-options > summary { padding:7px 0; cursor:pointer; font-size:12px; color:var(--studio-dim); }
+.project-import-options[open] > summary { margin-bottom:8px; }
+.project-import-options > .project-import-reg-options { margin-top:10px; }
 .project-import-fields,.project-import-reg-options { display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; min-width:0; }
 .project-import-field { display:flex; flex-direction:column; gap:4px; min-width:0; font-size:11px; color:var(--studio-dim); }
 .project-import-input { width:100%; min-width:0; height:32px; padding:5px 8px; border:1px solid var(--studio-line); border-radius:4px; background:var(--studio-panel); color:var(--studio-text); font-size:12px; }

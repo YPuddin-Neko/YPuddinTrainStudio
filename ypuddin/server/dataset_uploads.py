@@ -130,7 +130,7 @@ async def read_upload(request: Request) -> AsyncIterator[UploadBatch]:
             raise ApiError("upload option fields must occur at most once", code="upload.invalid")
         if any(not isinstance(form.get(key, ""), str) for key in fields):
             raise ApiError("upload options must be text fields", code="upload.invalid")
-        name = form.get("name", "upload")
+        name = form.get("name", "")
         repeats = form.get("repeats", "1")
         if not isinstance(name, str) or not isinstance(repeats, str):
             raise ApiError("name and repeats must be text fields", code="upload.invalid")
@@ -276,32 +276,166 @@ def _validate_files(paths: list[Path], caption_ext: str = "auto") -> None:
             )
 
 
+def _same_bytes(left: Path, right: Path) -> bool:
+    if left.stat().st_size != right.stat().st_size:
+        return False
+    with left.open("rb") as a, right.open("rb") as b:
+        while chunk := a.read(CHUNK):
+            if chunk != b.read(CHUNK):
+                return False
+        return not b.read(1)
+
+
+def _destination_path(
+    root: Path, relative: Path, children: dict[Path, dict[str, str]], *, directory: bool = False
+) -> Path:
+    """Reject links, file/directory clashes and case aliases before publishing any files."""
+    parent = root
+    for index, name in enumerate(relative.parts):
+        candidate = parent / name
+        if parent.is_dir():
+            if parent not in children:
+                children[parent] = {
+                    unicodedata.normalize("NFC", p.name).casefold(): p.name for p in parent.iterdir()
+                }
+            alias = children[parent].get(name.casefold())
+            if alias is not None and alias != name:
+                raise ApiError(
+                    f"upload path conflicts with existing spelling: {relative}",
+                    code="upload.conflict",
+                    status=409,
+                )
+        if candidate.is_symlink():
+            raise ApiError(f"upload target contains a symbolic link: {relative}", code="upload.path")
+        if candidate.exists() and candidate.is_dir() != (index < len(relative.parts) - 1 or directory):
+            raise ApiError(
+                f"upload file and directory names conflict: {relative}",
+                code="upload.conflict",
+                status=409,
+            )
+        parent = candidate
+    return parent
+
+
+@contextmanager
+def merge_dataset_files(
+    root: Path, temporary: Path, paths: list[Path], *, loose_name: str = ""
+) -> Iterator[list[Path]]:
+    """Merge a verified snapshot; the caller registers sources before this context commits."""
+    created_files: list[Path] = []
+    created_dirs: list[Path] = []
+    completed = False
+    try:
+        # Only loose images need a new container. Real directory names, including
+        # those inside an archive, are kept exactly as supplied by the user.
+        loose = [path for path in paths if path.parent == temporary]
+        if loose:
+            base = re.sub(r"[^\w-]+", "-", loose_name, flags=re.UNICODE).strip("-_")[:60] or "images"
+            occupied = {p.name.casefold() for p in [*root.iterdir(), *temporary.iterdir()]}
+            name, number = base, 2
+            while name.casefold() in occupied:
+                name, number = f"{base}-{number}", number + 1
+            container = temporary / name
+            container.mkdir()
+            for path in loose:
+                replacement = container / path.name
+                path.rename(replacement)
+                paths[paths.index(path)] = replacement
+
+        directories = sorted(root / path.name for path in temporary.iterdir() if path.is_dir())
+        pending: list[tuple[Path, Path]] = []
+        children: dict[Path, dict[str, str]] = {}
+        caption_stems: dict[Path, dict[str, set[str]]] = {}
+        for directory in directories:
+            _destination_path(root, directory.relative_to(root), children, directory=True)
+        for source in paths:
+            relative = source.relative_to(temporary)
+            destination = _destination_path(root, relative, children)
+            if source.suffix.lower() in IMAGE_EXTS and not source.name.endswith(".mask.png"):
+                if destination.parent not in caption_stems:
+                    siblings: dict[str, set[str]] = {}
+                    for name in children.get(destination.parent, {}).values():
+                        existing = Path(name)
+                        if existing.suffix.lower() in IMAGE_EXTS and not name.lower().endswith(".mask.png"):
+                            siblings.setdefault(existing.stem.casefold(), set()).add(name)
+                    caption_stems[destination.parent] = siblings
+                matches = caption_stems[destination.parent].get(destination.stem.casefold(), set())
+                if matches - {destination.name}:
+                    raise ApiError(
+                        f"an existing image already uses this caption name: {relative}",
+                        code="upload.conflict",
+                        status=409,
+                    )
+            if destination.exists():
+                if not destination.is_file() or not _same_bytes(source, destination):
+                    raise ApiError(
+                        f"existing file has different content: {relative}; rename it before importing",
+                        code="upload.conflict",
+                        status=409,
+                    )
+                continue
+            pending.append((source, destination))
+
+        for directory in directories:
+            if not directory.exists():
+                directory.mkdir()
+                created_dirs.append(directory)
+        for source, destination in pending:
+            missing = []
+            parent = destination.parent
+            while parent != root and not parent.exists():
+                missing.append(parent)
+                parent = parent.parent
+            for directory in reversed(missing):
+                directory.mkdir()
+                created_dirs.append(directory)
+            # Exclusive creation also protects against a target appearing after preflight.
+            with destination.open("xb") as output:
+                created_files.append(destination)
+                with source.open("rb") as stream:
+                    shutil.copyfileobj(stream, output, CHUNK)
+            shutil.copystat(source, destination)
+        yield directories
+        completed = True
+    finally:
+        if not completed:
+            for path in reversed(created_files):
+                path.unlink(missing_ok=True)
+            for path in reversed(created_dirs):
+                try:
+                    path.rmdir()
+                except OSError:
+                    pass  # Never remove preexisting or concurrently added user files.
+
+
 @contextmanager
 def staged_upload(
-    project_dir: Path, dataset_id: str, batch: UploadBatch, *, dataset_root: Path | None = None
-) -> Iterator[Path]:
-    """Promote a validated batch once; remove only this batch if registration fails."""
+    project_dir: Path, batch: UploadBatch, *, dataset_root: Path | None = None
+) -> Iterator[list[Path]]:
+    """Merge validated folders without wrappers; roll back only newly published data."""
     root = dataset_root or project_dir / "datasets"
     root.mkdir(parents=True, exist_ok=True)
     if root.is_symlink() or not root.resolve().is_relative_to(project_dir.resolve()):
         raise ApiError("managed dataset directory must remain inside its project", code="upload.path")
-    slug = re.sub(r"[^\w-]+", "-", batch.name, flags=re.UNICODE).strip("-_")[:60] or "upload"
-    destination = root / f"{dataset_id}-{slug}"
     temporary = Path(tempfile.mkdtemp(prefix=".upload-", dir=root))
-    promoted = False
-    completed = False
     try:
         names = [relative_upload_path(item.filename or "") for item in batch.files]
         zip_inputs = [i for i, path in enumerate(names) if path.suffix.lower() == ".zip"]
         budget = [0]
         paths = []
         seen = set()
+        spellings: dict[str, str] = {}
 
         def target(path: Path) -> Path:
             key = path.as_posix().casefold()
             if key in seen:
                 raise ApiError(f"duplicate upload path: {path}", code="upload.duplicate")
             seen.add(key)
+            for count in range(1, len(path.parts) + 1):
+                prefix = Path(*path.parts[:count]).as_posix()
+                previous = spellings.setdefault(prefix.casefold(), prefix)
+                if previous != prefix:
+                    raise ApiError(f"upload paths differ only by case: {path}", code="upload.duplicate")
             result = temporary / path
             paths.append(result)
             return result
@@ -353,17 +487,12 @@ def staged_upload(
                 upload.file.seek(0)
                 _copy_file(upload.file, target(path), limit, budget)
         _validate_files(paths, batch.caption_ext)
-        if destination.exists():
-            raise ApiError("dataset destination already exists", code="upload.duplicate", status=409)
-        temporary.rename(destination)
-        promoted = True
-        yield destination
-        completed = True
+
+        with merge_dataset_files(root, temporary, paths, loose_name=batch.name) as directories:
+            yield directories
     except ApiError:
         raise
     except (OSError, ValueError, zipfile.BadZipFile, RuntimeError) as exc:
         raise ApiError(f"could not import upload: {exc}", code="upload.invalid") from exc
     finally:
         shutil.rmtree(temporary, ignore_errors=True)
-        if promoted and not completed:
-            shutil.rmtree(destination, ignore_errors=True)

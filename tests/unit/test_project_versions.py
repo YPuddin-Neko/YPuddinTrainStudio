@@ -283,21 +283,22 @@ def test_validation_only_import_keeps_role_and_caption_settings(api, tmp_path):
     assert client.get(f"/api/datasets/{ds['id']}").json()["stats"]["captioned"] == 1
 
 
-def test_continuous_forks_do_not_accumulate_managed_directory_prefixes(api, tmp_path):
+def test_continuous_forks_preserve_directory_names_and_allow_idempotent_sync(api, tmp_path):
     client, c, p = api
     original = data(tmp_path / "d_deadbeef-d_1234-角色训练集")
     source = client.post(f"/api/projects/{p['id']}/datasets", json={"path": str(original)}).json()["source"]
-    assert Path(source["path"]).name == source["id"] + "-角色训练集"
+    assert Path(source["path"]).name == original.name
     previous = p["active_version_id"]
     for i in range(3):
         v = fork(api, name=f"fork-{i}", source_version_id=previous)
         assert v["status"] == "ready", v
         ds = client.get(f"/api/projects/{p['id']}/datasets?version_id={v['id']}").json()[0]["source"]
-        assert Path(ds["path"]).name == ds["id"] + "-角色训练集"
+        assert Path(ds["path"]).name == original.name
         duplicate = client.post(
             f"/api/projects/{p['id']}/datasets?version_id={v['id']}", json={"path": str(original)}
         )
-        assert duplicate.status_code == 409, duplicate.text
+        assert duplicate.status_code == 201, duplicate.text
+        assert duplicate.json()["source"]["id"] == ds["id"]
         assert c.db.fetchone("SELECT origin_path FROM datasets WHERE id=?", (ds["id"],))[
             "origin_path"
         ] == str(original)

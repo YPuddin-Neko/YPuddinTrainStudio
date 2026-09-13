@@ -2301,6 +2301,21 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** DatasetUploadInfo */
+        DatasetUploadInfo: {
+            source: components["schemas"]["DatasetSource"];
+            stats: components["schemas"]["DatasetStats"];
+            /** Index Status */
+            index_status: ("indexing" | "ready" | "failed" | "stale") | string;
+            /** Cache */
+            cache: {
+                [key: string]: unknown;
+            };
+            /** Datasets */
+            datasets: components["schemas"]["DatasetInfo"][];
+        } & {
+            [key: string]: unknown;
+        };
         /** DiskStats */
         DiskStats: {
             /** Path */
@@ -5947,6 +5962,11 @@ export interface operations {
                 "multipart/form-data": {
                     /** Format: binary */
                     file: string;
+                    /**
+                     * @description Optional JSON object with normalized x, y, width and height (0–1), relative to the EXIF-oriented image.
+                     * @example {"x":0,"y":0.1,"width":1,"height":0.8}
+                     */
+                    crop?: string;
                 };
             };
         };
@@ -6393,7 +6413,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DatasetInfo"];
+                    "application/json": components["schemas"]["DatasetUploadInfo"];
                 };
             };
             /** @description Validation Error */

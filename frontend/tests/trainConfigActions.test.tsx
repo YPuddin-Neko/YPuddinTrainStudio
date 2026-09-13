@@ -97,6 +97,20 @@ describe('training configuration actions', () => {
     expect(await screen.findByText('Export validation failed')).toBeInTheDocument();
   });
 
+  it.each([
+    ['model.text_encoder_path', '文本编码器', 'textbox'],
+    ['optimizer.type', '优化器', 'combobox'],
+  ])('focuses the editable control for %s instead of its help button', async (path, label, role) => {
+    server.use(http.post('/api/plan', () => HttpResponse.json({ ok: false, errors: [{ loc: path, msg: 'Field required' }], warnings: [] })));
+    showConfig();
+    fireEvent.click(await screen.findByRole('button', { name: '1 项待配置' }));
+    fireEvent.click(screen.getByRole('button', { name: `配置${label}` }));
+    const field = await screen.findByTestId(`field-${path}`);
+    const input = within(field).getByRole(role);
+    await waitFor(() => expect(input).toHaveFocus());
+    expect(within(field).getByRole('button', { name: `${label} 说明` })).not.toHaveFocus();
+  });
+
   it('shows valid buckets while empty sampling prompts keep validation visible and training disabled', async () => {
     const issue = {loc: '', msg: 'Value error, sampling.enabled requires sampling.prompts or sampling.prompts_file'};
     const config = schemaDefaults(trainSchema);

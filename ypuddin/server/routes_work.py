@@ -707,7 +707,8 @@ def _register_dataset(
         matching = [
             item
             for item in [*sources, *config.get("validation", {}).get("sources", [])]
-            if _same_source(item.get("path"), origin_path or str(p))
+            if _same_source(item.get("path"), str(p))
+            or (origin_path is not None and _same_source(item.get("path"), origin_path))
         ]
         if not matching:
             sources.append(source)
@@ -761,31 +762,145 @@ def _register_dataset(
     return did
 
 
-def _register_upload(c: ServiceContext, pid: str, batch: UploadBatch, version_id: str | None = None) -> str:
-    did = new_id("d")
+def _register_upload(
+    c: ServiceContext, pid: str, batch: UploadBatch, version_id: str | None = None
+) -> list[str]:
     with c.versions.mutation(pid, version_id) as version:
         with staged_upload(
             c.version_dir(pid, version["id"]),
-            did,
             batch,
             dataset_root=c.dataset_dir(pid, version["id"], is_reg=batch.is_reg),
-        ) as directory:
-            _register_dataset(
-                c,
-                pid,
-                DatasetBody(
-                    path=str(directory),
-                    repeats=batch.repeats,
-                    is_reg=batch.is_reg,
-                    prior_weight=batch.prior_weight,
-                    class_prompt=batch.class_prompt,
-                    caption_ext=batch.caption_ext,
-                ),
-                did=did,
-                version_id=version["id"],
-                internal=True,
-            )
-    return did
+        ) as directories:
+            with c.db.lock:
+                managed_root = c.dataset_dir(pid, version["id"], is_reg=batch.is_reg).resolve()
+                config, sources = _dataset_config(c, pid, version["id"])
+                previous = json.loads(json.dumps(config))
+                rows = c.db.fetchall("SELECT * FROM datasets WHERE version_id=?", (version["id"],))
+                configured = [*sources, *config.get("validation", {}).get("sources", [])]
+                selected: dict[str, dict] = {}
+                additions = []
+                for directory in directories:
+                    directory = directory.resolve()
+                    # An existing source already recurses into this directory. Reuse
+                    # it and keep its caption/repeat/regularization options unchanged.
+                    ancestors = [row for row in rows if directory.is_relative_to(Path(row["path"]).resolve())]
+                    if len(ancestors) > 1:
+                        raise ApiError(
+                            f"overlapping dataset sources already cover {directory.name}",
+                            code="dataset.overlap",
+                            status=409,
+                        )
+                    if ancestors:
+                        if not Path(ancestors[0]["path"]).resolve().is_relative_to(managed_root):
+                            raise ApiError(
+                                "an existing source spans the training and regularization directories",
+                                code="dataset.overlap",
+                                status=409,
+                            )
+                        selected[ancestors[0]["id"]] = ancestors[0]
+                        continue
+                    if any(Path(row["path"]).resolve().is_relative_to(directory) for row in rows):
+                        raise ApiError(
+                            f"a child of {directory.name} is already a dataset; import that child folder instead",
+                            code="dataset.overlap",
+                            status=409,
+                        )
+                    matching = [
+                        source
+                        for source in configured
+                        if isinstance(source.get("path"), str)
+                        and source["path"].strip()
+                        and directory.is_relative_to(Path(source["path"]).expanduser().resolve())
+                    ]
+                    # A draft may already reference the managed root without an index
+                    # record. Index that same source instead of adding a duplicate child.
+                    source_path = directory
+                    if matching:
+                        paths = {Path(source["path"]).expanduser().resolve() for source in matching}
+                        if len(paths) != 1:
+                            raise ApiError(
+                                f"overlapping configured sources cover {directory.name}",
+                                code="dataset.overlap",
+                                status=409,
+                            )
+                        source_path = paths.pop()
+                        if not source_path.is_relative_to(managed_root):
+                            raise ApiError(
+                                "a configured source spans the training and regularization directories",
+                                code="dataset.overlap",
+                                status=409,
+                            )
+                        if any(Path(row["path"]).resolve().is_relative_to(source_path) for row in rows):
+                            raise ApiError(
+                                f"configured source {source_path.name} overlaps an indexed child dataset",
+                                code="dataset.overlap",
+                                status=409,
+                            )
+                        existing = next(
+                            (row for row in selected.values() if Path(row["path"]) == source_path), None
+                        )
+                        if existing:
+                            continue
+                    elif any(
+                        isinstance(source.get("path"), str)
+                        and source["path"].strip()
+                        and Path(source["path"]).expanduser().resolve().is_relative_to(directory)
+                        for source in configured
+                    ):
+                        raise ApiError(
+                            f"a child of {directory.name} is already configured; import that child folder instead",
+                            code="dataset.overlap",
+                            status=409,
+                        )
+                    source = DatasetBody(
+                        path=str(source_path),
+                        repeats=batch.repeats,
+                        is_reg=batch.is_reg,
+                        prior_weight=batch.prior_weight,
+                        class_prompt=batch.class_prompt,
+                        caption_ext=batch.caption_ext,
+                    ).model_dump(exclude={"version_id"})
+                    if matching:
+                        source.update({key: matching[0][key] for key in source if key in matching[0]})
+                        source["path"] = str(source_path)
+                        source["is_reg"] = batch.is_reg
+                    else:
+                        sources.append(source)
+                    _validate_caption_extension(source["caption_ext"])
+                    row = {
+                        "id": new_id("d"),
+                        "project_id": pid,
+                        "version_id": version["id"],
+                        "origin_path": None,
+                        **source,
+                        "is_reg": int(source["is_reg"]),
+                        "created_at": now(),
+                        "index_status": "indexing",
+                        "stats_json": "{}",
+                    }
+                    additions.append(row)
+                    selected[row["id"]] = row
+                # One transaction covers every concept and the draft. The staging
+                # context restores only this upload's new files if registration fails.
+                c.db.execute("BEGIN IMMEDIATE")
+                written = False
+                try:
+                    for row in additions:
+                        c.db.insert("datasets", row)
+                    for did in selected:
+                        c.db.update("datasets", did, {"index_status": "indexing"})
+                    _write_project_config(c, pid, config, version["id"])
+                    written = True
+                    c.db.update("projects", pid, {"updated_at": now()})
+                    c.db.execute("COMMIT")
+                except BaseException:
+                    c.db.execute("ROLLBACK")
+                    if written:
+                        _write_project_config(c, pid, previous, version["id"])
+                    raise
+    for did in selected:
+        c.bus.publish("dataset.changed", {"dataset_id": did, "project_id": pid, "reason": "imported"})
+    return list(selected)
 
 
 def _records_path(c: ServiceContext, did: str) -> Path:
@@ -971,7 +1086,7 @@ def add_dataset(
 
 @router.post(
     "/projects/{pid}/datasets/upload",
-    response_model=m.DatasetInfo,
+    response_model=m.DatasetUploadInfo,
     response_model_exclude_unset=True,
     openapi_extra={
         "requestBody": {
@@ -1005,9 +1120,12 @@ async def upload_dataset(
 ) -> dict[str, Any]:
     version = assert_version_writable(c, pid, version_id, data=True)
     async with read_upload(request) as batch:
-        did = await run_in_threadpool(_register_upload, c, pid, batch, version["id"])
-    background_tasks.add_task(_index_dataset, c, did)
-    return _dataset_row(c, _get_dataset(c, did))
+        ids = await run_in_threadpool(_register_upload, c, pid, batch, version["id"])
+    datasets = []
+    for did in ids:
+        background_tasks.add_task(_index_dataset, c, did)
+        datasets.append(_dataset_row(c, _get_dataset(c, did)))
+    return {**datasets[0], "datasets": datasets}
 
 
 def _get_dataset(c: ServiceContext, did: str) -> dict[str, Any]:

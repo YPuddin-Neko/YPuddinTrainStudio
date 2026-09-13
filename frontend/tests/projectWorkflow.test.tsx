@@ -93,12 +93,13 @@ describe('project training workspace', () => {
     const image = new File(['image bytes'], 'portrait.png', { type: 'image/png' });
     const caption = new File(['a character'], 'portrait.txt', { type: 'text/plain' });
     const discarded = new File(['unused'], 'discard.png', { type: 'image/png' });
+    fireEvent.click(screen.getByText('导入选项'));
     expect(screen.getByRole('combobox', { name: '标签格式' })).toHaveTextContent('自动');
     expect(screen.queryByRole('spinbutton', { name: '正则损失权重' })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('选择训练文件'), { target: { files: [image, caption, discarded] } });
     fireEvent.click(screen.getByRole('button', { name: '移除 discard.png' }));
     fireEvent.change(screen.getByRole('spinbutton', { name: '每张图片重复次数' }), { target: { value: '3' } });
-    fireEvent.click(screen.getByRole('button', { name: '上传并添加到项目' }));
+    fireEvent.click(screen.getByRole('button', { name: '导入当前版本' }));
     await screen.findByRole('link', { name: '查看图片与标签' });
     expect(uploadText).toContain('filename="portrait.png"');
     expect(uploadText).toContain('filename="portrait.txt"');
@@ -133,12 +134,12 @@ describe('project training workspace', () => {
     show();
     await screen.findByTestId('project-data-import');
     fireEvent.change(screen.getByLabelText('选择训练文件'), { target: { files: [new File(['zip'], 'empty.zip', { type: 'application/zip' })] } });
-    fireEvent.click(screen.getByRole('button', { name: '上传并添加到项目' }));
+    fireEvent.click(screen.getByRole('button', { name: '导入当前版本' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('ZIP contains no supported images');
     expect(screen.getByText('empty.zip')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '上传并添加到项目' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '导入当前版本' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: '清空选择' }));
-    expect(screen.getByRole('button', { name: '上传并添加到项目' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '导入当前版本' })).toBeDisabled();
   });
 
   it('uploads regularization images into the explicit version with source metadata', async () => {
@@ -150,12 +151,13 @@ describe('project training workspace', () => {
       return HttpResponse.json({...indexed,source:{...source,is_reg:true,version_id:'v2'}});
     }));
     render(<MemoryRouter><ProjectDataImport projectId="p_work" versionId="v2" defaultIsReg onImported={imported}/></MemoryRouter>);
-    expect(screen.getByText('正则集 · 导入当前版本 reg 目录')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '添加已有正则图' })).toBeInTheDocument();
+    fireEvent.click(screen.getByText('导入选项'));
     expect(screen.queryByRole('checkbox', { name: /正则/ })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('选择训练文件'),{target:{files:[new File(['image'],'class.png'),new File(['a person'],'class.txt')]}});
     fireEvent.change(screen.getByRole('textbox',{name:'类别提示词'}),{target:{value:'a person'}});
     fireEvent.change(screen.getByRole('spinbutton',{name:'正则损失权重'}),{target:{value:'0.5'}});
-    fireEvent.click(screen.getByRole('button',{name:'上传并添加到项目'}));
+    fireEvent.click(screen.getByRole('button',{name:'导入当前版本'}));
     await waitFor(()=>expect(imported).toHaveBeenCalledOnce());
     expect(scope).toBe('v2');expect(fields).toEqual({is_reg:'true',prior_weight:'0.5',class_prompt:'a person',repeats:'1',caption_ext:'auto'});
   });
@@ -164,13 +166,14 @@ describe('project training workspace', () => {
     const backend = workspaceHandlers(); let body: any;
     server.use(http.post('/api/projects/p_work/datasets', async ({ request }) => { body = await request.json(); backend.addSource(); return HttpResponse.json(indexed); }));
     render(<MemoryRouter><ProjectDataImport projectId="p_work" defaultIsReg onImported={backend.addSource}/></MemoryRouter>);
-    expect(screen.getByText('正则集 · 导入当前版本 reg 目录')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '添加已有正则图' })).toBeInTheDocument();
+    fireEvent.click(screen.getByText('导入选项'));
     expect(screen.queryByRole('checkbox', { name: /正则/ })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '导入本机目录' }));
+    fireEvent.click(screen.getByRole('button', { name: '从训练电脑导入' }));
     fireEvent.change(within(screen.getByRole('group', { name: '训练图片文件夹路径' })).getByRole('textbox'), { target: { value: 'D:\\photos\\regularization' } });
     fireEvent.change(screen.getByRole('textbox', { name: '类别提示词' }), { target: { value: 'a person' } });
     fireEvent.change(screen.getByRole('spinbutton', { name: '正则损失权重' }), { target: { value: '0.5' } });
-    fireEvent.click(screen.getByRole('button', { name: '导入文件夹' }));
+    fireEvent.click(screen.getByRole('button', { name: '导入当前版本' }));
     await screen.findByRole('link', { name: '查看图片与标签' });
     expect(body).toMatchObject({ path: 'D:\\photos\\regularization', is_reg: true, prior_weight: 0.5, class_prompt: 'a person', caption_ext: 'auto' });
   });

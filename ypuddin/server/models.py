@@ -424,6 +424,10 @@ class DatasetInfo(_Out):
     cache: dict[str, Any]
 
 
+class DatasetUploadInfo(DatasetInfo):
+    datasets: list[DatasetInfo]
+
+
 class DatasetImage(_Out):
     hash: str
     rel_path: str

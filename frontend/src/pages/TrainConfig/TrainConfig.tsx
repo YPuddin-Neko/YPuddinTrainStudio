@@ -482,7 +482,9 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       let target = document.getElementById(`field-${path}`);
       while (!target && path.includes('.')) { path = path.slice(0, path.lastIndexOf('.')); target = document.getElementById(`field-${path}`); }
       target?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
-      target?.querySelector<HTMLElement>('input,select,textarea,button')?.focus({ preventScroll: true });
+      const control = target?.querySelector<HTMLElement>('input:not(:disabled):not([readonly]):not([type="hidden"]),select:not(:disabled),textarea:not(:disabled):not([readonly]),[role="combobox"]:not(:disabled):not([aria-disabled="true"])')
+        || target?.querySelector<HTMLElement>('button:not(:disabled):not([aria-disabled="true"]):not(.config-help-trigger)');
+      control?.focus({ preventScroll: true });
     }));
   };
   const trainingDatasets = matchingTrainingDatasets(config, datasets);

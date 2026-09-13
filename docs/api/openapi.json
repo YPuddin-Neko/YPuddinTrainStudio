@@ -1353,6 +1353,11 @@
                   "file": {
                     "type": "string",
                     "format": "binary"
+                  },
+                  "crop": {
+                    "type": "string",
+                    "description": "Optional JSON object with normalized x, y, width and height (0–1), relative to the EXIF-oriented image.",
+                    "example": "{\"x\":0,\"y\":0.1,\"width\":1,\"height\":0.8}"
                   }
                 }
               }
@@ -2057,7 +2062,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DatasetInfo"
+                  "$ref": "#/components/schemas/DatasetUploadInfo"
                 }
               }
             }
@@ -7219,6 +7224,55 @@
         "additionalProperties": true,
         "type": "object",
         "title": "DatasetStats"
+      },
+      "DatasetUploadInfo": {
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/DatasetSource"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/DatasetStats"
+          },
+          "index_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "indexing",
+                  "ready",
+                  "failed",
+                  "stale"
+                ]
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Index Status"
+          },
+          "cache": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Cache"
+          },
+          "datasets": {
+            "items": {
+              "$ref": "#/components/schemas/DatasetInfo"
+            },
+            "type": "array",
+            "title": "Datasets"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "source",
+          "stats",
+          "index_status",
+          "cache",
+          "datasets"
+        ],
+        "title": "DatasetUploadInfo"
       },
       "DiskStats": {
         "properties": {

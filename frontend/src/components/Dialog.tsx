@@ -16,6 +16,9 @@ export default function Dialog({ title, onClose, children, wide = false, closeDi
     const element = panel.current;
     element?.querySelector<HTMLElement>('input,select,button,textarea')?.focus();
     const keydown = (event: KeyboardEvent) => {
+      // A nested path picker handles its own Escape and focus loop. This native
+      // listener runs before React's delegated handler, so leave that event alone.
+      if (!(event.target instanceof Element) || event.target.closest('[role="dialog"]') !== element) return;
       if (event.key === 'Escape' && (event.target as HTMLElement).closest('[role="combobox"][aria-expanded="true"]')) return;
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeRef.current(); }
       if (event.key !== 'Tab') return;

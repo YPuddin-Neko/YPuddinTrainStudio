@@ -241,10 +241,15 @@ def test_mps_stats_are_unified_memory_without_fake_telemetry(monkeypatch):
         hardware.psutil, "virtual_memory", lambda: SimpleNamespace(total=16 * 2**30, available=10 * 2**30)
     )
     monkeypatch.setattr(hardware, "_apple_name", lambda: "Apple Test GPU")
+    # Exercise unavailable sensors explicitly; real Apple hosts now expose native telemetry.
+    monkeypatch.setattr(hardware, "_apple_gpu_utilization", lambda: None)
+    monkeypatch.setattr(hardware, "_apple_gpu_sensors", lambda: {"power_w": None, "temp_c": None})
     stats = hardware.gpu_info()[0]
     assert stats["device"] == "mps" and stats["memory_scope"] == "unified_system"
     assert stats["mem_used_mb"] == 6144 and stats["mem_free_mb"] == 10240
     assert stats["util_pct"] is None and stats["temp_c"] is None and stats["power_w"] is None
+    assert stats["power_source"] is None and stats["temperature_source"] is None
+    assert stats["telemetry_source"] == "mps"
 
 
 def test_memory_metric_survives_rest_and_rotated_files_are_hidden(api, image_dataset):

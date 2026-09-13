@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
 import tempfile
 from collections.abc import Iterator
@@ -20,9 +19,8 @@ from .family_config import change_config_family, initial_family_config, version_
 ACTIVE_JOBS = "('queued','scheduled','running','pausing','cancelling')"
 
 
-def dataset_directory_name(dataset_id: str, source: Path) -> str:
-    label = re.sub(r"^(?:d_[0-9a-f]+-)+", "", source.name).strip()[:60] or "dataset"
-    return f"{dataset_id}-{label}"
+def dataset_directory_name(source: Path) -> str:
+    return source.name or "dataset"
 
 
 def assert_version_writable(c: Any, pid: str, vid: str | None, *, data: bool = False) -> dict:
@@ -273,7 +271,20 @@ class VersionManager:
                 str(Path(row["path"]).expanduser().resolve()): row.get("origin_path") for row in datasets
             }
             if mode == "copy":
-                for item in [*sources, *validation, *datasets]:
+                items = [*sources, *validation, *datasets]
+                relative_paths = {}
+                reserved = set()
+                for item in items:
+                    path = Path(item["path"]).expanduser().resolve()
+                    is_reg = bool(item.get("is_reg"))
+                    old_root = c.dataset_dir(pid, source_id, is_reg=is_reg).resolve()
+                    if path.is_relative_to(old_root):
+                        relative = c.dataset_dir(pid, vid, is_reg=is_reg).relative_to(
+                            final
+                        ) / path.relative_to(old_root)
+                        relative_paths[str(path)] = relative
+                        reserved.add(relative.as_posix().casefold())
+                for item in items:
                     path = Path(item["path"]).expanduser().resolve()
                     if final.resolve().is_relative_to(path):
                         raise ApiError(
@@ -287,16 +298,32 @@ class VersionManager:
                     key = str(path)
                     if key not in entries:
                         did = new_id("d")
+                        relative = relative_paths.get(key)
+                        if relative is None:
+                            parent = c.dataset_dir(pid, vid, is_reg=bool(item.get("is_reg"))).relative_to(
+                                final
+                            )
+                            name, number = dataset_directory_name(path), 2
+                            relative = parent / name
+                            while relative.as_posix().casefold() in reserved:
+                                relative, number = parent / f"{name}-{number}", number + 1
+                            reserved.add(relative.as_posix().casefold())
+                        if any(
+                            relative.is_relative_to(entry["relative"])
+                            or entry["relative"].is_relative_to(relative)
+                            for entry in entries.values()
+                        ):
+                            raise ApiError(
+                                "dataset sources overlap; keep either the parent source or its children",
+                                code="version.source_overlap",
+                            )
                         entries[key] = {
                             "id": did,
                             "path": path,
                             "source": item,
                             "origin_path": origins.get(key) or key,
                             "manifest": file_manifest(path),
-                            "relative": c.dataset_dir(pid, vid, is_reg=bool(item.get("is_reg"))).relative_to(
-                                final
-                            )
-                            / dataset_directory_name(did, path),
+                            "relative": relative,
                         }
                 progress["files_total"] = sum(len(e["manifest"]) for e in entries.values())
                 progress["bytes_total"] = sum(size for e in entries.values() for _, size, _ in e["manifest"])
@@ -391,6 +418,7 @@ class VersionManager:
             c.bus.publish("version.changed", {"project_id": pid, "version_id": vid})
 
     def import_directory(self, pid: str, vid: str, body: Any) -> str:
+        from .dataset_uploads import merge_dataset_files
         from .routes_work import _register_dataset, get_project_config
 
         c = self.c
@@ -400,13 +428,6 @@ class VersionManager:
         if not c.is_allowed(source):
             raise ApiError("source is outside allowed roots", code="fs.forbidden", status=403)
         with self.mutation(pid, vid):
-            if c.db.fetchone(
-                "SELECT id FROM datasets WHERE version_id=? AND (path=? OR origin_path=?)",
-                (vid, str(source), str(source)),
-            ):
-                raise ApiError(
-                    "this dataset directory is already imported", code="dataset.duplicate", status=409
-                )
             did = new_id("d")
             is_reg = body.is_reg
             config = get_project_config(pid, c, vid)
@@ -442,11 +463,89 @@ class VersionManager:
             root.mkdir(parents=True, exist_ok=True)
             if root.is_symlink():
                 raise ApiError("managed dataset root cannot be a symbolic link", code="version.source_link")
-            target = root / dataset_directory_name(did, source)
+            rows = c.db.fetchall("SELECT * FROM datasets WHERE version_id=?", (vid,))
+            target = root / dataset_directory_name(source)
+            # A previous import may use an older managed name. Synchronize that
+            # same source without moving existing user data or creating a duplicate.
+            origin = next(
+                (
+                    row
+                    for row in rows
+                    if row.get("origin_path") == str(source)
+                    and Path(row["path"]).resolve().is_relative_to(root.resolve())
+                    and Path(row["path"]).resolve() != root.resolve()
+                ),
+                None,
+            )
+            if origin:
+                target = Path(origin["path"])
+            ancestors = [row for row in rows if target.resolve().is_relative_to(Path(row["path"]).resolve())]
+            if len(ancestors) > 1 or (
+                ancestors and not Path(ancestors[0]["path"]).resolve().is_relative_to(root.resolve())
+            ):
+                raise ApiError(
+                    "dataset sources overlap across managed directories", code="dataset.overlap", status=409
+                )
+            existing = ancestors[0] if ancestors else None
+            if not existing and any(
+                Path(row["path"]).resolve().is_relative_to(target.resolve()) for row in rows
+            ):
+                raise ApiError(
+                    "a child directory is already a dataset; import that child instead",
+                    code="dataset.overlap",
+                    status=409,
+                )
+            registration = body.model_copy(update={"path": str(target), "is_reg": is_reg})
+            if existing:
+                caption_ext = existing["caption_ext"]
+            else:
+                configured = [
+                    *config.get("dataset", {}).get("sources", []),
+                    *config.get("validation", {}).get("sources", []),
+                ]
+                parents = {
+                    Path(item["path"]).expanduser().resolve()
+                    for item in configured
+                    if item.get("path")
+                    and target.resolve().is_relative_to(Path(item["path"]).expanduser().resolve())
+                }
+                if len(parents) > 1 or any(not parent.is_relative_to(root.resolve()) for parent in parents):
+                    raise ApiError(
+                        "configured sources overlap across managed directories",
+                        code="dataset.overlap",
+                        status=409,
+                    )
+                if parents:
+                    from .routes_work import DatasetBody
+
+                    parent = parents.pop()
+                    if any(Path(row["path"]).resolve().is_relative_to(parent) for row in rows):
+                        raise ApiError(
+                            "the configured parent overlaps an indexed child dataset",
+                            code="dataset.overlap",
+                            status=409,
+                        )
+                    registration = DatasetBody(path=str(parent), is_reg=is_reg)
+                    caption_ext = next(
+                        item.get("caption_ext", "auto")
+                        for item in configured
+                        if item.get("path") and Path(item["path"]).expanduser().resolve() == parent
+                    )
+                elif any(
+                    item.get("path")
+                    and Path(item["path"]).expanduser().resolve().is_relative_to(target.resolve())
+                    for item in configured
+                ):
+                    raise ApiError(
+                        "a child directory is already configured; import that child instead",
+                        code="dataset.overlap",
+                        status=409,
+                    )
             staging = Path(tempfile.mkdtemp(prefix=".import-", dir=root))
-            promoted = False
             try:
-                copy_source(source, staging / "data", file_manifest(source))
+                snapshot = staging / target.relative_to(root)
+                manifest = file_manifest(source)
+                copy_source(source, snapshot, manifest)
                 # Validate the selected structured sidecars before promoting a copied
                 # folder or recording it in this version. JSON bytes are never captions.
                 from ypuddin.data.captions import read_training_caption
@@ -454,27 +553,28 @@ class VersionManager:
 
                 try:
                     caption_directories = {}
-                    for image in iter_images(staging / "data"):
+                    for image in iter_images(snapshot):
                         caption = caption_for(image, caption_ext, directory_cache=caption_directories)
                         if caption and Path(caption).suffix.lower() == ".json":
                             read_training_caption(caption)
                 except ValueError as error:
                     raise ApiError(str(error), code="dataset.caption_invalid", status=400) from error
-                (staging / "data").rename(target)
-                promoted = True
-                _register_dataset(
-                    c,
-                    pid,
-                    body.model_copy(update={"path": str(target), "is_reg": is_reg}),
-                    did=did,
-                    version_id=vid,
-                    internal=True,
-                    origin_path=str(source),
-                )
+                with merge_dataset_files(root, staging, [snapshot / item[0] for item in manifest]):
+                    if existing:
+                        did = existing["id"]
+                        c.db.update("datasets", did, {"index_status": "indexing"})
+                    else:
+                        _register_dataset(
+                            c,
+                            pid,
+                            registration,
+                            did=did,
+                            version_id=vid,
+                            internal=True,
+                            origin_path=str(source),
+                        )
                 return did
             except BaseException as exc:
-                if promoted:
-                    shutil.rmtree(target, ignore_errors=True)
                 if isinstance(exc, OSError):
                     raise ApiError(f"could not import dataset: {exc}", code="version.import_failed") from exc
                 raise
