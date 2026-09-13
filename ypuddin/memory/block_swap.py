@@ -32,6 +32,18 @@ def _swappable_tensors(block: nn.Module) -> list[Tensor]:
     return out
 
 
+def _make_host_master(tensor: Tensor, *, pin_memory: bool) -> Tensor:
+    """Copy directly into one independent host allocation.
+
+    CPU-copy-then-pin briefly retains both an ordinary host copy and its pinned
+    replacement, in addition to the source checkpoint storage. Allocate the final
+    master first; the blocking copy also makes CUDA sources ready before rebinding.
+    """
+    host = torch.empty_like(tensor, device="cpu", pin_memory=pin_memory)
+    host.copy_(tensor.detach())
+    return host
+
+
 class BlockSwapper:
     def __init__(
         self,
@@ -60,9 +72,7 @@ class BlockSwapper:
             tensors = _swappable_tensors(self.blocks[i])
             masters = []
             for t in tensors:
-                host = t.detach().to("cpu", copy=True)
-                if self.pin:
-                    host = host.pin_memory()
+                host = _make_host_master(t, pin_memory=self.pin)
                 masters.append(host)
                 t.data = host  # block lives on the host until fetched
             self._tensors[i] = tensors

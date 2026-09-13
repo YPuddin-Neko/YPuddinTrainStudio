@@ -57,6 +57,26 @@ def _strip_prefix(key: str) -> str:
     return key
 
 
+def _config_from_header(path: str | Path):
+    """Infer geometry without reading the checkpoint's tensor payload."""
+    from safetensors import safe_open
+
+    from .vendor.krea2_mmdit import infer_config
+
+    with safe_open(str(Path(path).expanduser()), framework="pt") as checkpoint:
+        shapes = {
+            _strip_prefix(key): checkpoint.get_slice(key)
+            for key in checkpoint.keys()
+            if _strip_prefix(key) != "scaled_fp8" and not key.endswith(SCALE_SUFFIXES)
+        }
+        return infer_config(shapes)
+
+
+def _checkpoint_signature(path: Path) -> tuple[int, ...]:
+    stat = path.stat()
+    return stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns, stat.st_ino, stat.st_dev
+
+
 def _read_state_dict(
     path: str | Path, dtype: torch.dtype | None
 ) -> tuple[dict[str, Tensor], dict[str, Tensor]]:
@@ -225,18 +245,26 @@ class Krea2Family(ModelFamily):
         backbone_device: torch.device | str | None = None,
     ) -> LoadedModel:
         from .variants import resolve_variant
+        from .vendor.krea2_mmdit import SingleStreamDiT
 
         problems = self.validate_config(cfg)
         if problems:
             raise FileNotFoundError("; ".join(problems))
-        dit, config = load_dit(cfg.dit_path, device=backbone_device or device, dtype=dtype)
-        if memory.activation_checkpointing != "none":
-            if memory.activation_checkpointing == "unsloth":
-                log.warning(
-                    "krea2: unsloth offloaded checkpointing is not available for this family, using block checkpointing"
-                )
-            dit.enable_gradient_checkpointing()
-        dit.attn_mode = self.resolve_attention(cfg.attention, device)
+        path = Path(cfg.dit_path).expanduser().resolve()
+        signature = _checkpoint_signature(path)
+        geometry = _config_from_header(path)
+        config = geometry.__dict__.copy()
+        # The 4B text encoder and VAE must finish caching before the 12.9B DiT
+        # occupies host memory. Both Trainer and standalone sampling call the
+        # materialization hook after releasing those encoders.
+        with torch.device("meta"):
+            dit = SingleStreamDiT(geometry).to(dtype=dtype)
+        dit.eval().requires_grad_(False)
+        attention = self.resolve_attention(cfg.attention, device)
+        if memory.activation_checkpointing == "unsloth":
+            log.warning(
+                "krea2: unsloth offloaded checkpointing is not available for this family, using block checkpointing"
+            )
         text = Krea2Text(
             cfg.text_encoder_path,
             tokenizer_path=cfg.tokenizer_path,
@@ -253,7 +281,7 @@ class Krea2Family(ModelFamily):
             cfg.vae_path, device=device, dtype=torch.float32 if torch.device(device).type == "cpu" else dtype
         )
         log.info(
-            "loaded Krea 2 DiT: features=%s layers=%s heads=%s/%s",
+            "prepared Krea 2 DiT metadata: features=%s layers=%s heads=%s/%s; weights deferred until after caching",
             config["features"],
             config["layers"],
             config["heads"],
@@ -265,8 +293,35 @@ class Krea2Family(ModelFamily):
             latent=latent,
             device=torch.device(device),
             dtype=dtype,
-            extra={"dit_config": config, "variant": resolve_variant(cfg.dit_path, cfg.krea2_variant)},
+            extra={
+                "dit_config": config,
+                "variant": resolve_variant(cfg.dit_path, cfg.krea2_variant),
+                "dit_path": path,
+                "dit_signature": signature,
+                "backbone_device": backbone_device or device,
+                "checkpointing": memory.activation_checkpointing != "none",
+                "attention": attention,
+                "materialized": False,
+            },
         )
+
+    def materialize_backbone(self, loaded: LoadedModel) -> None:
+        # Manually assembled LoadedModels already contain their real backbone.
+        if loaded.extra.get("materialized", True):
+            return
+        loaded.text.unload()
+        loaded.latent.unload()
+        path = loaded.extra["dit_path"]
+        if _checkpoint_signature(path) != loaded.extra["dit_signature"]:
+            raise RuntimeError("Krea 2 checkpoint changed after metadata loading; restart this operation")
+        dit, config = load_dit(path, device=loaded.extra["backbone_device"], dtype=loaded.dtype)
+        if config != loaded.extra["dit_config"]:
+            raise RuntimeError("Krea 2 checkpoint geometry changed after metadata loading")
+        if loaded.extra["checkpointing"]:
+            dit.enable_gradient_checkpointing()
+        dit.attn_mode = loaded.extra["attention"]
+        loaded.backbone = dit
+        loaded.extra["materialized"] = True
 
     @staticmethod
     def resolve_attention(requested: str, device: torch.device | str) -> str:
@@ -278,6 +333,8 @@ class Krea2Family(ModelFamily):
     def forward(self, loaded: LoadedModel, x_t: Tensor, t: Tensor, cond: TextCond, **extra: Any) -> Tensor:
         from ypuddin.models.anima.vendor.attention import sampling_attention
 
+        if loaded.extra.get("materialized") is False:
+            raise RuntimeError("Call materialize_backbone after caching and before Krea 2 forward")
         dit = loaded.backbone
         patch = int(dit.config.patch)
         b, c, h, w = x_t.shape
@@ -371,21 +428,12 @@ class Krea2Family(ModelFamily):
         )
 
     def meta_backbone(self, cfg: ModelConfig) -> nn.Module:
-        from .vendor.krea2_mmdit import KREA2_CONFIG, SingleStreamDiT, infer_config
+        from .vendor.krea2_mmdit import KREA2_CONFIG, SingleStreamDiT
 
         config = KREA2_CONFIG
         if cfg.dit_path and Path(cfg.dit_path).expanduser().exists():
             try:
-                from safetensors import safe_open
-
-                shapes: dict[str, Any] = {}
-                with safe_open(str(Path(cfg.dit_path).expanduser()), framework="pt") as f:
-                    for k in f.keys():
-                        kk = _strip_prefix(k)
-                        if kk == "scaled_fp8" or kk.endswith(SCALE_SUFFIXES):
-                            continue
-                        shapes[kk] = f.get_slice(k)
-                config = infer_config(shapes)
+                config = _config_from_header(cfg.dit_path)
             except Exception as e:  # noqa: BLE001
                 log.warning("could not infer Krea 2 geometry from %s: %s", cfg.dit_path, e)
         return SingleStreamDiT(config)

@@ -522,3 +522,42 @@ def test_running_xyz_cancellation_stops_real_worker_and_retains_history(api):
     assert task["status"] == "cancelled" and not context.supervisor.is_running(jid), task
     assert not task["manifest"]["complete"] and task["done"] < task["total"]
     assert client.get("/api/jobs/source/xyz").json()[0]["id"] == jid
+
+
+@pytest.mark.parametrize("failure", ["cancel_after_load", "text_error"])
+def test_unmaterialized_backbone_cleanup_preserves_original_failure(api, monkeypatch, failure):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    jid, payload = create(api)
+    context = api[1]
+    output = Path(context.db.fetchone("SELECT samples_dir FROM jobs WHERE id=?", (jid,))["samples_dir"])
+    text = Mock()
+    text.encode.side_effect = ValueError("text encoding failed")
+    latent = Mock()
+    loaded = SimpleNamespace(
+        backbone=torch.nn.Linear(2, 2, device="meta"),
+        extra={"materialized": False},
+        text=text,
+        latent=latent,
+    )
+    has_loaded = False
+
+    def load(*args, **kwargs):
+        nonlocal has_loaded
+        has_loaded = True
+        return loaded
+
+    family = SimpleNamespace(load=load, sampling_needs_uncond=lambda *_: False)
+    monkeypatch.setattr("ypuddin.models.get_family", lambda _: family)
+    expected = InterruptedError if failure == "cancel_after_load" else ValueError
+    message = "XYZ sampling cancelled" if failure == "cancel_after_load" else "text encoding failed"
+    with pytest.raises(expected, match=message):
+        generate(
+            payload, output, lambda *a, **kw: None, lambda: has_loaded and failure == "cancel_after_load"
+        )
+    text.unload.assert_called_once()
+    latent.unload.assert_called_once()
+    manifest = json.loads((output / "manifest.json").read_text())
+    assert manifest["complete"] is False and manifest["cells"] == []
+    assert not list(output.glob("*.tmp"))

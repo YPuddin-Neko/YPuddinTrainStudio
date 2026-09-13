@@ -214,7 +214,7 @@ def generate(payload: dict, output: Path, emit, cancelled):
             swapper.device = torch.device("cpu")
             swapper.remove()
             swapper = None
-        if loaded:
+        if loaded and loaded.extra.get("materialized", True):
             loaded.backbone.to("cpu")
 
     try:

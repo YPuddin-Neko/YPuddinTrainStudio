@@ -6,6 +6,7 @@ import torch
 from ypuddin.adapters import inject
 from ypuddin.config import AdapterConfig
 from ypuddin.memory import BlockSwapper
+from ypuddin.memory.block_swap import _make_host_master
 from ypuddin.models import get_family
 
 DEVICES = (
@@ -13,6 +14,82 @@ DEVICES = (
     + (["mps"] if torch.backends.mps.is_available() else [])
     + (["cuda"] if torch.cuda.is_available() else [])
 )
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16, torch.float8_e4m3fn])
+def test_host_master_is_an_independent_copy_with_original_dtype_and_layout(dtype):
+    source = torch.arange(12, dtype=torch.float32).reshape(3, 4).t().to(dtype)
+    expected = source.float().clone()
+    master = _make_host_master(source, pin_memory=False)
+    assert master.device.type == "cpu" and master.dtype == dtype
+    assert master.shape == source.shape and master.stride() == source.stride()
+    assert master.data_ptr() != source.data_ptr()
+    assert not master.requires_grad
+    source.zero_()
+    torch.testing.assert_close(master.float(), expected, rtol=0, atol=0)
+
+
+def test_pinned_master_allocates_final_buffer_directly_without_intermediate_copy(monkeypatch):
+    """Exercise allocation selection on CPU; real CUDA pinning is covered below."""
+    source = torch.arange(6, dtype=torch.float32, requires_grad=True)
+    empty_like = torch.empty_like
+    allocations = []
+
+    def allocate(tensor, **kwargs):
+        allocations.append(dict(kwargs))
+        # CPU-only test environments have no pinned allocator. Only substitute
+        # the allocation; copying and source independence use real tensors.
+        return empty_like(tensor, **(kwargs | {"pin_memory": False}))
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("A separate CPU copy or pin_memory conversion would recreate the transient allocation")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(torch, "empty_like", allocate)
+        patch.setattr(torch.Tensor, "to", forbidden)
+        patch.setattr(torch.Tensor, "pin_memory", forbidden)
+        master = _make_host_master(source, pin_memory=True)
+    assert allocations == [{"device": "cpu", "pin_memory": True}]
+    assert master.data_ptr() != source.data_ptr()
+    assert not master.requires_grad and master.grad_fn is None
+    torch.testing.assert_close(master, source.detach(), rtol=0, atol=0)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required for actual pinned memory")
+@pytest.mark.parametrize("source_device", ["cpu", "cuda"])
+def test_cuda_pinned_master_fetch_release_and_remove_preserve_frozen_values(source_device):
+    block = torch.nn.Linear(5, 3, device=source_device, dtype=torch.bfloat16).requires_grad_(False)
+    block.register_buffer("scale", torch.tensor(0.125, device=source_device))
+    block.register_buffer(
+        "quantized", torch.arange(8, device=source_device, dtype=torch.float32).to(torch.float8_e4m3fn)
+    )
+    block.register_parameter("adapter", torch.nn.Parameter(torch.ones(3, device=source_device)))
+    adapter = block.adapter
+    frozen = [p for p in block.parameters() if not p.requires_grad] + list(block.buffers())
+    expected = [tensor.detach().float().cpu().clone() for tensor in frozen]
+    swapper = BlockSwapper([block], num_swap=1, device="cuda", prefetch=False)
+    try:
+        masters = swapper._masters[0]
+        assert len(masters) == len(expected)
+        assert all(host.device.type == "cpu" and host.is_pinned() for host in masters)
+        assert all(tensor.data_ptr() == host.data_ptr() for tensor, host in zip(frozen, masters, strict=True))
+        assert all(tensor is not adapter for tensor in swapper._tensors[0])
+        swapper.move_model_to_device(block)
+        assert block.adapter is adapter and adapter.device.type == "cuda"
+        swapper.ensure(0)
+        torch.cuda.synchronize()
+        for tensor, value in zip(frozen, expected, strict=True):
+            assert tensor.device.type == "cuda"
+            torch.testing.assert_close(tensor.float().cpu(), value, rtol=0, atol=0)
+        swapper.release_all()
+        for tensor, host, value in zip(frozen, masters, expected, strict=True):
+            assert tensor.data_ptr() == host.data_ptr()
+            torch.testing.assert_close(tensor.float(), value, rtol=0, atol=0)
+    finally:
+        swapper.remove()
+    for tensor, value in zip(frozen, expected, strict=True):
+        assert tensor.device.type == "cuda"
+        torch.testing.assert_close(tensor.float().cpu(), value, rtol=0, atol=0)
 
 
 @pytest.mark.parametrize("device", DEVICES)
