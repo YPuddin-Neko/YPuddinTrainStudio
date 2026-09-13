@@ -194,7 +194,14 @@ def test_real_xyz_grid_adapter_changes_and_cancel_preserves_cells(api):
     ).read_bytes()
     assert all(Image.open(output / cell["file"]).size == (32, 32) for cell in manifest["cells"])
     detail = client.get(f"/api/xyz/{jid}").json()
-    assert client.get(detail["manifest"]["grids"][0]["url"]).status_code == 200
+    # The same endpoint serves <img> previews and download links. Keep it inline,
+    # while naming each published grid/cell distinctly instead of always file.png.
+    for image in detail["manifest"]["grids"] + detail["manifest"]["cells"][:1]:
+        response = client.get(image["url"])
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
+        assert response.headers["content-disposition"] == f'inline; filename="{jid}-{image["file"]}"'
+        assert response.content == (output / image["file"]).read_bytes()
     assert client.get(f"/api/xyz/{jid}/file?name=../config.json").status_code == 403
     assert client.get("/api/jobs/source/xyz").json()[0]["id"] == jid
     other, payload = create(api)

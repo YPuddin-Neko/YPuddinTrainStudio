@@ -58,4 +58,9 @@ def file(jid: str, name: str, context=Depends(ctx)):
         raise ApiError("XYZ image is outside result storage", code="xyz.path", status=403)
     if not path.is_file():
         raise NotFound("XYZ image not found", code="xyz.file")
-    return FileResponse(path, media_type="image/png")
+    return FileResponse(
+        path,
+        media_type="image/png",
+        filename=f"{task['id']}-{name}",
+        content_disposition_type="inline",
+    )
