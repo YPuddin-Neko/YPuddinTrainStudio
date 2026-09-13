@@ -12,7 +12,7 @@
 .settings-drawer-backdrop.is-closing,.workspace-dialog-backdrop.is-closing{animation:studio-fade-out 180ms ease-in forwards;pointer-events:none}
 .settings-drawer-backdrop.is-closing .settings-drawer{animation:studio-drawer-out 180ms ease-in forwards}
 .workspace-dialog-backdrop.is-closing .workspace-dialog{animation:studio-dialog-out 180ms ease-in forwards}
-.studio-select-menu,.config-help-popover,.sidebar-preferences-popover,.config-tools[open] .config-tools-menu{animation:studio-menu-in var(--motion-quick) var(--motion-ease)}
+.studio-select-menu,.config-help-popover,.config-tools[open] .config-tools-menu{animation:studio-menu-in var(--motion-quick) var(--motion-ease)}
 .app-sidebar{transition:width var(--motion-surface) var(--motion-ease)}
 button,a,input,textarea,.studio-select{transition-property:background-color,border-color,color,box-shadow,opacity;transition-duration:var(--motion-quick);transition-timing-function:var(--motion-ease)}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}

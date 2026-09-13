@@ -156,7 +156,7 @@ describe('dataset project sidebar and navigation protection', () => {
     show(); await screen.findByRole('combobox', { name: '项目版本' }); await editCaption();
     const page = screen.getByTestId('dataset-page');
     const controls = screen.getByRole('region', { name: '当前项目工作区' });
-    fireEvent.click(within(screen.getByRole('navigation', { name: '主导航' })).getByRole('link', { name: '系统设置' }));
+    fireEvent.click(within(screen.getByRole('complementary')).getByRole('link', { name: '系统设置' }));
     await waitFor(() => expect(writes).toEqual([{ caption: 'cat, blue eyes' }]));
     expect(screen.getByTestId('route')).toHaveTextContent('/datasets/d_known');
     expect(screen.queryByRole('dialog', { name: '系统设置' })).not.toBeInTheDocument();

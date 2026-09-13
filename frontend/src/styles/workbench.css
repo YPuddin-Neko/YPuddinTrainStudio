@@ -28,7 +28,6 @@
 .app-shell .project-sidebar > .studio-select { min-height:36px; font-size:13px; }
 .app-shell .project-sidebar-actions > button { height:34px; }
 .app-shell .project-sidebar .sidebar-project-stages .project-workflow a { min-height:39px; font-size:13px; padding:8px; }
-.app-shell .sidebar-preferences-trigger { min-height:40px; font-size:13px; }
 .app-shell .sidebar-collapse-control { height:40px; }
 .app-shell .studio-select-menu { font-size:13px; }
 .app-shell progress { appearance:none; border:0; border-radius:999px; overflow:hidden; background:var(--studio-line); }

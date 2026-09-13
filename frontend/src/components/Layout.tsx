@@ -3,7 +3,7 @@ import { ACTIVE_JOB_STATUSES, mergeJobEvent } from '../utils/jobs';
 import React from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Activity, Folder, Layers, SlidersHorizontal, Settings as SettingsIcon, Moon, Sun, Monitor, Globe, PlayCircle, Menu, X, Plus, WifiOff, Loader2, RefreshCw, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Activity, Folder, Layers, SlidersHorizontal, Settings as SettingsIcon, PlayCircle, Menu, X, Plus, WifiOff, Loader2, RefreshCw, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { SystemStats, Job, JobListResponse, Settings } from '../api/types';
 import { useEventStream, useEventStreamStatus } from '../events/useEventStream';
@@ -11,7 +11,6 @@ import { EVENT_TYPES } from '../events/eventTypes';
 import { formatApiError } from '../utils/errors';
 import { useWorkspaceText } from '../utils/workspaceText';
 import SystemTelemetry from './SystemTelemetry';
-import StudioSelect from './StudioSelect';
 import { ProjectSidebarContext } from './projects/ProjectSidebarContext';
 import '../styles/project-sidebar.css';
 import '../styles/motion.css';
@@ -48,28 +47,7 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
     menuTrigger.current?.focus({ preventScroll: true });
   };
   const [collapsed,setCollapsed]=React.useState(() => {try{return localStorage.getItem('studio.sidebar.collapsed')==='true';}catch{return false;}});
-  const [preferencesOpen,setPreferencesOpen]=React.useState(false);
-  const preferencesRef=React.useRef<HTMLDivElement>(null);
-  const preferencesTrigger=React.useRef<HTMLButtonElement>(null);
-  const closePreferences=React.useCallback((returnFocus=false)=>{
-    setPreferencesOpen(false);
-    if(returnFocus) preferencesTrigger.current?.focus({preventScroll:true});
-  },[]);
   const toggleSidebar=()=>setCollapsed(previous=>{const next=!previous;try{localStorage.setItem('studio.sidebar.collapsed',String(next));}catch{/* Optional browser preference. */}return next;});
-  React.useEffect(()=>{
-    if(!preferencesOpen)return;
-    const outside=(event:PointerEvent)=>{
-      if(!preferencesRef.current?.contains(event.target as Node) && !(event.target as Element)?.closest?.('.studio-select-menu'))closePreferences();
-    };
-    const escape=(event:KeyboardEvent)=>{
-      if(event.key==='Escape'&&!document.querySelector('.studio-select-menu')){
-        event.preventDefault();
-        closePreferences(true);
-      }
-    };
-    document.addEventListener('pointerdown',outside);document.addEventListener('keydown',escape);
-    return()=>{document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',escape);};
-  },[preferencesOpen,closePreferences]);
   const [projectSidebarTarget, setProjectSidebarTarget] = React.useState<HTMLDivElement | null>(null);
   const closeNavigation = React.useCallback(() => setMenuOpen(false), []);
   const projectSidebar = React.useMemo(() => ({ target: projectSidebarTarget, closeNavigation }), [projectSidebarTarget, closeNavigation]);
@@ -80,12 +58,11 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
   const [telemetryError, setTelemetryError] = React.useState('');
   const statsVersionRef = React.useRef(0);
   const previousConnectionRef = React.useRef(connectionStatus);
-  const [savingUi, setSavingUi] = React.useState(false);
   const [runningJobs, setRunningJobs] = React.useState<Job[]>([]);
   // Settings keeps this route's location frozen to preserve the workspace draft.
   // The outer router supplies its real navigation key for transient controls only.
   const currentNavigationKey = navigationKey ?? location.key;
-  React.useLayoutEffect(() => { setMenuOpen(false); closePreferences(); }, [currentNavigationKey, closePreferences]);
+  React.useLayoutEffect(() => { setMenuOpen(false); }, [currentNavigationKey]);
 
   React.useEffect(() => {
     if (isDark) document.documentElement.classList.add('dark');
@@ -164,21 +141,11 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
   useEventStream(EVENT_TYPES.JOB_PHASE, (data: any) => setRunningJobs((jobs) => jobs.map((job) => mergeJobEvent(job, data))));
   useEventStream(EVENT_TYPES.JOB_XYZ_PROGRESS, (data: any) => setRunningJobs((jobs) => jobs.map((job) => mergeJobEvent(job, data))));
 
-  const changeUi = async (ui: Partial<Settings['ui']>) => {
-    setSavingUi(true);
-    try {
-      const settings = await apiClient.put<Settings>('/settings', { ui });
-      window.dispatchEvent(new CustomEvent('studio.settings.changed', { detail: settings }));
-    } catch { /* The shared API notice reports failed saves; keep the saved selection. */ }
-    finally { setSavingUi(false); }
-  };
-
   const navItems = [
     { to: '/', icon: Activity, label: t('nav.dashboard') },
     { to: '/projects', icon: Folder, label: t('nav.projects') },
     { to: '/queue', icon: Layers, label: t('nav.queue') },
     { to: '/presets', icon: SlidersHorizontal, label: text('参数预设', 'Training presets') },
-    { to: '/settings', icon: SettingsIcon, label: t('nav.settings') },
   ];
 
   const runningJob = runningJobs[0];
@@ -204,25 +171,19 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
               icon={item.icon}
               label={item.label}
               active={location.pathname === item.to || (item.to !== '/' && location.pathname.startsWith(item.to))}
-              state={item.to === '/settings' ? (location.pathname.startsWith('/settings') ? location.state?.backgroundLocation ? { backgroundLocation: location.state.backgroundLocation } : undefined : { backgroundLocation: location }) : undefined}
             />
             {item.to === '/projects' && <div ref={setProjectSidebarTarget} className="project-sidebar-slot" data-testid="project-sidebar-slot"/>}
             </React.Fragment>
           ))}
         </nav>
         <div className="sidebar-footer">
-        <div className="sidebar-preferences" ref={preferencesRef} aria-label={text('界面偏好', 'Interface preferences')}>
-          <button ref={preferencesTrigger} type="button" className="sidebar-preferences-trigger" aria-label={text('界面偏好', 'Interface preferences')} title={text('界面偏好', 'Interface preferences')} aria-expanded={preferencesOpen} aria-controls={preferencesOpen?'sidebar-preferences-panel':undefined} onClick={()=>preferencesOpen?closePreferences():setPreferencesOpen(true)}><SlidersHorizontal size={17}/><span>{text('界面偏好','Appearance')}</span></button>
-          {preferencesOpen && <div id="sidebar-preferences-panel" className="sidebar-preferences-popover"><label><span>{t('settings.theme')}</span>
-          <StudioSelect className="sidebar-preference" aria-label={t('settings.theme')} value={theme} disabled={savingUi}
-            icon={theme === 'system' ? <Monitor size={14}/> : theme === 'dark' ? <Moon size={14}/> : <Sun size={14}/>}
-            options={[{value:'system',label:text('自动','Auto')},{value:'light',label:text('浅色','Light')},{value:'dark',label:text('深色','Dark')}]}
-            onValueChange={value => void changeUi({theme:value as Settings['ui']['theme']})}/></label><label><span>{t('settings.language')}</span>
-          <StudioSelect className="sidebar-preference" aria-label={t('settings.language')} value={i18n.resolvedLanguage === 'en' ? 'en' : 'zh-CN'} disabled={savingUi}
-            icon={<Globe size={14}/>} options={[{value:'zh-CN',label:'中文'},{value:'en',label:'EN'}]}
-            onValueChange={value => void changeUi({language:value as Settings['ui']['language']})}/></label></div>}
-        </div>
-        <button type="button" className="sidebar-collapse-control" aria-label={collapsed?text('展开侧边栏','Expand sidebar'):text('收起侧边栏','Collapse sidebar')} title={collapsed?text('展开侧边栏','Expand sidebar'):text('收起侧边栏','Collapse sidebar')} aria-expanded={!collapsed} aria-controls="app-sidebar" onClick={toggleSidebar}>{collapsed?<PanelLeftOpen size={18}/>:<PanelLeftClose size={18}/>}</button>
+          <NavItem to="/settings" icon={SettingsIcon} label={t('nav.settings')}
+            active={location.pathname.startsWith('/settings')}
+            state={location.pathname.startsWith('/settings') ? location.state?.backgroundLocation ? { backgroundLocation: location.state.backgroundLocation } : undefined : { backgroundLocation: location }}/>
+          <button type="button" className="sidebar-collapse-control" aria-label={collapsed?text('展开侧边栏','Expand sidebar'):text('收起侧边栏','Collapse sidebar')} title={collapsed?text('展开侧边栏','Expand sidebar'):text('收起侧边栏','Collapse sidebar')} aria-expanded={!collapsed} aria-controls="app-sidebar" onClick={toggleSidebar}>
+            {collapsed?<PanelLeftOpen size={18}/>:<PanelLeftClose size={18}/>}
+            <span>{collapsed?text('展开侧边栏','Expand sidebar'):text('收起侧边栏','Collapse sidebar')}</span>
+          </button>
         </div>
       </aside>
 

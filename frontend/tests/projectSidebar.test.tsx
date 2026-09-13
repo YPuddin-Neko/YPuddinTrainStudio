@@ -75,7 +75,7 @@ describe('project navigation belongs to the global sidebar',()=>{
   it('keeps the same sidebar and local draft through a settings background drawer',async()=>{
     show();const slot=screen.getByTestId('project-sidebar-slot');const controls=within(slot).getByRole('region',{name:'当前项目工作区'});
     const input=screen.getByRole('textbox',{name:'Local draft'});fireEvent.change(input,{target:{value:'Unsaved local value'}});
-    fireEvent.click(within(screen.getByRole('navigation',{name:'主导航'})).getByRole('link',{name:'系统设置'}));
+    fireEvent.click(within(screen.getByRole('complementary')).getByRole('link',{name:'系统设置'}));
     const drawer=await screen.findByRole('dialog',{name:'系统设置'});
     expect(slot).toContainElement(controls);expect(input).toHaveValue('Unsaved local value');
     fireEvent.click(within(drawer).getByRole('button',{name:'关闭设置，返回工作区'}));

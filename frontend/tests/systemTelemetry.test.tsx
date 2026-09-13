@@ -222,7 +222,7 @@ describe('stable system telemetry', () => {
     await act(async () => finish({ default: () => <Link to="/projects">Open projects</Link> }));
     expect(screen.getByTestId('app-topbar')).toBe(header);
     expect(screen.getByTestId('app-page-frame')).toBe(frame);
-    fireEvent.click(within(screen.getByRole('navigation', { name: '主导航' })).getByRole('link', { name: i18n.t('nav.settings') }));
+    fireEvent.click(within(screen.getByRole('complementary')).getByRole('link', { name: i18n.t('nav.settings') }));
     expect(await screen.findByText('/projects/p1/train')).toBeInTheDocument();
     expect(screen.getByTestId('app-topbar')).toBe(header);
     expect(screen.getByTestId('app-page-frame')).toBe(frame);

@@ -94,7 +94,7 @@ describe('dataset drafts survive actual data-router history navigation', () => {
     const writes: unknown[] = [];
     server.use(http.put('/api/datasets/d_known/images/image1/caption', async ({request}) => {writes.push(await request.json()); return HttpResponse.json({ok:true});}));
     const router = show(); await editCaption(); const page = screen.getByTestId('dataset-page');
-    fireEvent.click(within(screen.getByRole('navigation', {name:'主导航'})).getByRole('link', {name:'系统设置'}));
+    fireEvent.click(within(screen.getByRole('complementary')).getByRole('link', {name:'系统设置'}));
     const drawer = await screen.findByRole('dialog', {name:'系统设置'});
     expect(router.state.location.state.backgroundLocation.pathname).toBe('/datasets/d_known');
     expect(screen.getByTestId('dataset-page')).toBe(page); expect(writes).toEqual([{caption:'cat, blue eyes'}]);
