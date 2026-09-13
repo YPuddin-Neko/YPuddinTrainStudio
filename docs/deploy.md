@@ -23,6 +23,8 @@ studio.bat             # Windows（双击或在 PowerShell 里 .\studio.bat）
 
 第一次运行会依次：创建 `venv` → 选择 PyTorch 安装来源（NVIDIA 按驱动和显卡判断 CUDA 版本；macOS 使用含 MPS 支持的 PyPI 轮子）→ 安装 `ypuddin[models,server,optim,logging]`（NVIDIA 主机再加 `nvidia`，不自动安装注意力扩展）→ 有符合版本要求的 Node 则构建前端 → 启动服务 → 打开浏览器。初始地址为 `http://127.0.0.1:8765/`；保存过 host/port 设置后，下次启动使用保存值，命令行参数优先。后续运行按启动器/依赖签名、实际缺包及前端构建指纹做增量检查，保留已安装的 Torch/CUDA/Numpy 原生栈。
 
+安装完成后，启动器会校验 `venv` 内的独立安装信息，再自动删除根目录的 `ypuddin.egg-info` 构建副本。已有部署更新代码后正常启动即可清理旧残留，无需删除环境或数据。即使依赖安装被跳过，也会执行此清理；Windows 文件被占用时会提示并在下次启动重试。运行所需的 `venv` 内 `.dist-info` 保留，旧式安装先更新为现代 editable 安装再清理。
+
 常用参数（`.sh` 与 `.bat` 一致）：
 
 | 参数 | 作用 |
@@ -79,6 +81,8 @@ macOS 将上面的 PyTorch 安装行改为 `uv pip install --python venv/bin/pyt
 | `dev` | pytest、ruff、httpx（开发） |
 
 启动器默认安装本地日志和常用优化器依赖，无需从环境页逐项安装。W&B 不再提供安装与前端入口，历史配置仍可读取。`optimizer.fused_backward = true` 尚未实现，配置会明确拒绝。
+
+直接运行 `pip/uv pip install -e` 时，setuptools 仍可能生成根目录 `ypuddin.egg-info`；上述自动校验与清理由 `studio.sh/.bat` 启动器执行，不修改包管理器本身的构建行为。
 
 ## 4. 目录与数据
 

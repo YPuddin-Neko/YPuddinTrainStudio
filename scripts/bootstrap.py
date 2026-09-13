@@ -32,6 +32,7 @@ import os
 import platform
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -266,6 +267,71 @@ def installed_versions() -> dict[str, str]:
     )
 
 
+def editable_install_ready() -> bool:
+    """Require independent PEP 660 metadata before removing setuptools' source-tree copy."""
+    code = """
+import importlib.metadata as metadata
+import json, sys, sysconfig
+from pathlib import Path
+from urllib.parse import urlsplit
+from urllib.request import url2pathname
+
+root, environment = (Path(value).resolve() for value in sys.argv[1:])
+ready = False
+if Path(sys.prefix).resolve() == environment:
+    import ypuddin
+    source_matches = Path(ypuddin.__file__).resolve() == (root / 'ypuddin' / '__init__.py').resolve()
+    for location in {sysconfig.get_path('purelib'), sysconfig.get_path('platlib')}:
+        site = Path(location).resolve()
+        if not site.is_relative_to(environment):
+            continue
+        for directory in site.glob('ypuddin-*.dist-info'):
+            if not directory.resolve().is_relative_to(environment):
+                continue
+            dist = metadata.Distribution.at(directory)
+            direct = json.loads(dist.read_text('direct_url.json') or '{}')
+            url = urlsplit(direct.get('url', ''))
+            source = Path(url2pathname(('//' + url.netloc if url.netloc else '') + url.path)).resolve()
+            entrypoint = any(
+                entry.group == 'console_scripts' and entry.name == 'ypuddin'
+                and entry.value == 'ypuddin.cli:main' for entry in dist.entry_points
+            )
+            if (dist.metadata['Name'] == 'ypuddin' and dist.version == ypuddin.__version__
+                and source_matches and entrypoint and url.scheme == 'file' and source == root
+                and direct.get('dir_info', {}).get('editable') is True):
+                ready = True
+print(json.dumps(ready))
+"""
+    try:
+        return bool(venv_json(code, str(ROOT), str(VENV)))
+    except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired):
+        return False
+
+
+def cleanup_build_metadata() -> None:
+    """Called only after verifying venv metadata; never remove runtime dist-info or link targets."""
+    directory = ROOT / "ypuddin.egg-info"
+    try:
+        info = directory.lstat()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        log(f"  未能检查 ypuddin.egg-info（{exc}），下次启动会重试。")
+        return
+    try:
+        # lstat also detects Windows junctions on supported Python versions.
+        if not stat.S_ISDIR(info.st_mode) or getattr(info, "st_file_attributes", 0) & getattr(
+            stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400
+        ):
+            log("  未清理 ypuddin.egg-info：此路径不是普通目录，请检查链接或同名文件。")
+            return
+        shutil.rmtree(directory)
+        log("  已清理根目录 ypuddin.egg-info；运行所需安装信息保留在 venv 中。")
+    except OSError as exc:
+        # An occupied Windows file must not trigger another dependency install.
+        log(f"  未能清理 ypuddin.egg-info（{exc}），下次启动会重试；训练环境已保留。")
+
+
 def dependency_issues(extras: str) -> list[str]:
     """Verify installed requirement metadata (including transitive dependencies) without imports."""
     code = """
@@ -331,16 +397,23 @@ def ensure_venv(torch_tag: str, *, index_mode: str, reinstall: bool, extras: str
         log(f"--reinstall：删除旧的虚拟环境 {VENV}（studio_data/ 不受影响）")
         shutil.rmtree(VENV)
     sig = install_signature(torch_tag, extras)
+    ready = False
     if venv_python().exists() and MARKER.exists():
         try:
             if json.loads(MARKER.read_text()).get("signature") == sig:
                 issues = dependency_issues(extras)
                 if not issues:
-                    log("[2/5] 常规依赖已齐全，跳过安装")
-                    return
-                log("[2/5] 检测到缺失或不满足版本要求的依赖，自动补齐: " + "; ".join(issues[:8]))
+                    ready = editable_install_ready()
+                    if not ready:
+                        log("[2/5] 更新训练器安装信息（保留现有环境和依赖）")
+                else:
+                    log("[2/5] 检测到缺失或不满足版本要求的依赖，自动补齐: " + "; ".join(issues[:8]))
         except Exception:  # noqa: BLE001
             pass
+    if ready:
+        cleanup_build_metadata()
+        log("[2/5] 常规依赖已齐全，跳过安装")
+        return
     uv = uv_path()
     if not venv_python().exists():
         base = find_base_python()
@@ -452,6 +525,9 @@ def ensure_venv(torch_tag: str, *, index_mode: str, reinstall: bool, extras: str
     issues = dependency_issues(extras)
     if issues:
         die("安装后依赖仍不完整：" + "; ".join(issues[:12]) + "；下次启动会重试补齐。")
+    if not editable_install_ready():
+        die("未能验证 venv 中训练器的独立安装信息；保留根目录元数据，未写入成功标记。")
+    cleanup_build_metadata()
     MARKER.write_text(
         json.dumps(
             {

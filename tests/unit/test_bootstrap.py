@@ -7,12 +7,44 @@ from pathlib import Path
 
 import pytest
 
-SPEC = importlib.util.spec_from_file_location(
-    "ypuddin_bootstrap", Path(__file__).resolve().parents[2] / "scripts" / "bootstrap.py"
-)
+SOURCE_ROOT = Path(__file__).resolve().parents[2]
+SPEC = importlib.util.spec_from_file_location("ypuddin_bootstrap", SOURCE_ROOT / "scripts" / "bootstrap.py")
 boot = importlib.util.module_from_spec(SPEC)
 sys.modules["ypuddin_bootstrap"] = boot
 SPEC.loader.exec_module(boot)
+
+
+@pytest.fixture(autouse=True)
+def isolated_bootstrap_root(monkeypatch, tmp_path_factory):
+    root = tmp_path_factory.mktemp("bootstrap-project")
+    (root / "pyproject.toml").write_bytes((SOURCE_ROOT / "pyproject.toml").read_bytes())
+    monkeypatch.setattr(boot, "ROOT", root)
+    monkeypatch.setattr(boot, "VENV", root / "venv")
+    monkeypatch.setattr(boot, "MARKER", root / "venv" / ".ypuddin-install.json")
+    monkeypatch.setattr(boot, "FRONTEND", root / "frontend")
+
+
+def build_metadata():
+    metadata = boot.ROOT / "ypuddin.egg-info"
+    metadata.mkdir()
+    (metadata / "PKG-INFO").write_text("Name: ypuddin\nVersion: 0.5.9\n")
+    return metadata
+
+
+def protected_files():
+    paths = [
+        boot.VENV / "Lib/site-packages/ypuddin-0.5.9.dist-info/METADATA",
+        boot.VENV / "Lib/site-packages/ypuddin-0.5.9.dist-info/RECORD",
+        boot.ROOT / "other.egg-info/PKG-INFO",
+        boot.ROOT / "studio_data/studio.db",
+        boot.ROOT / "custom-training-data/portrait.png",
+        boot.ROOT / "ypuddin/__init__.py",
+        boot.ROOT.parent / "external-training-data/caption.txt",
+    ]
+    for path in paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(f"preserve {path.name}".encode())
+    return {path: path.read_bytes() for path in paths}
 
 
 def fresh_torch(monkeypatch, tag):
@@ -20,6 +52,7 @@ def fresh_torch(monkeypatch, tag):
     snapshots = iter([{}, {"torch": version}, {"torch": version}])
     monkeypatch.setattr(boot, "installed_versions", lambda: next(snapshots))
     monkeypatch.setattr(boot, "dependency_issues", lambda extras: [])
+    monkeypatch.setattr(boot, "editable_install_ready", lambda: True)
     monkeypatch.setattr(
         boot,
         "platform",
@@ -213,6 +246,7 @@ def existing_environment(monkeypatch, tmp_path):
     monkeypatch.setattr(boot, "installed_versions", lambda: versions.copy())
     monkeypatch.setattr(boot, "torch_runtime", lambda: {"version": versions["torch"], "cuda": "12.4"})
     monkeypatch.setattr(boot, "dependency_issues", lambda extras: [])
+    monkeypatch.setattr(boot, "editable_install_ready", lambda: True)
     return versions
 
 
@@ -262,6 +296,8 @@ def test_matching_marker_repairs_a_missing_dependency_and_then_skips_network(mon
 
 def test_unexpected_native_dependency_change_does_not_mark_install_success(monkeypatch, tmp_path):
     versions = existing_environment(monkeypatch, tmp_path)
+    metadata = build_metadata()
+    preserved = protected_files()
 
     def install(command, **kwargs):
         if "-e" in command:
@@ -272,6 +308,193 @@ def test_unexpected_native_dependency_change_does_not_mark_install_success(monke
     with pytest.raises(SystemExit):
         boot.ensure_venv("cpu", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE)
     assert not boot.MARKER.exists()
+    assert (metadata / "PKG-INFO").is_file()
+    assert all(path.read_bytes() == content for path, content in preserved.items())
+
+
+@pytest.mark.parametrize("use_uv", [False, True])
+def test_first_install_cleans_only_root_build_metadata_after_verification(monkeypatch, tmp_path, use_uv):
+    fresh_torch(monkeypatch, "cpu")
+    monkeypatch.setattr(boot, "uv_path", lambda: "uv" if use_uv else None)
+    monkeypatch.setattr(boot, "uv_cache_dir", lambda _: tmp_path)
+    monkeypatch.setattr(boot, "find_base_python", lambda: sys.executable)
+    preserved = protected_files()
+    commands = []
+    installed = False
+
+    def install(command, **kwargs):
+        nonlocal installed
+        commands.append(command)
+        if "venv" in command:
+            boot.venv_python().parent.mkdir(parents=True, exist_ok=True)
+            boot.venv_python().touch()
+        if "-e" in command:
+            build_metadata()
+            installed = True
+        return type("Result", (), {"returncode": 0})()
+
+    def ready():
+        assert installed
+        assert (boot.ROOT / "ypuddin.egg-info/PKG-INFO").exists()
+        assert not boot.MARKER.exists()
+        return True
+
+    monkeypatch.setattr(boot.subprocess, "run", install)
+    monkeypatch.setattr(boot, "editable_install_ready", ready)
+    boot.ensure_venv("cpu", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE)
+    assert any("venv" in command for command in commands)
+    assert any("-e" in command for command in commands)
+    assert not (boot.ROOT / "ypuddin.egg-info").exists()
+    assert boot.MARKER.exists()
+    assert all(path.read_bytes() == content for path, content in preserved.items())
+
+
+def test_healthy_marker_cleans_metadata_without_installing_and_is_repeatable(monkeypatch, tmp_path):
+    existing_environment(monkeypatch, tmp_path)
+    preserved = protected_files()
+    metadata = build_metadata()
+    boot.MARKER.write_text(json.dumps({"signature": boot.install_signature("cpu", boot.EXTRAS_BASE)}))
+    marker_before = boot.MARKER.read_bytes()
+    monkeypatch.setattr(
+        boot.subprocess, "run", lambda *args, **kwargs: pytest.fail("healthy environment must not reinstall")
+    )
+    monkeypatch.setattr(
+        boot, "index_chains", lambda *args: pytest.fail("healthy environment must not probe indexes")
+    )
+
+    boot.ensure_venv("cpu", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE)
+    assert not metadata.exists()
+    boot.ensure_venv("cpu", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE)
+    assert boot.MARKER.read_bytes() == marker_before
+    assert all(path.read_bytes() == content for path, content in preserved.items())
+
+
+def test_legacy_editable_is_reinstalled_before_its_metadata_is_removed(monkeypatch, tmp_path):
+    existing_environment(monkeypatch, tmp_path)
+    metadata = build_metadata()
+    preserved = protected_files()
+    boot.MARKER.write_text(json.dumps({"signature": boot.install_signature("cpu", boot.EXTRAS_BASE)}))
+    modern = False
+    commands = []
+
+    def install(command, **kwargs):
+        nonlocal modern
+        commands.append(command)
+        assert metadata.exists(), "legacy metadata is still needed until modern installation succeeds"
+        if "-e" in command:
+            modern = True
+        return type("Result", (), {"returncode": 0})()
+
+    monkeypatch.setattr(boot, "editable_install_ready", lambda: modern)
+    monkeypatch.setattr(boot.subprocess, "run", install)
+    boot.ensure_venv("cpu", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE)
+    assert any("-e" in command for command in commands)
+    assert not metadata.exists()
+    assert all(path.read_bytes() == content for path, content in preserved.items())
+
+
+@pytest.mark.parametrize("failure", ["installer", "dependencies", "readiness"])
+def test_failed_setup_keeps_root_metadata_and_user_data(monkeypatch, tmp_path, failure):
+    existing_environment(monkeypatch, tmp_path)
+    metadata = build_metadata()
+    preserved = protected_files()
+    monkeypatch.setattr(
+        boot.subprocess,
+        "run",
+        lambda *args, **kwargs: type("Result", (), {"returncode": int(failure == "installer")})(),
+    )
+    monkeypatch.setattr(
+        boot, "dependency_issues", lambda _: ["missing dependency"] if failure == "dependencies" else []
+    )
+    monkeypatch.setattr(boot, "editable_install_ready", lambda: failure != "readiness")
+
+    with pytest.raises(SystemExit):
+        boot.ensure_venv("cpu", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE)
+    assert not boot.MARKER.exists()
+    assert (metadata / "PKG-INFO").is_file()
+    assert all(path.read_bytes() == content for path, content in preserved.items())
+
+
+def test_metadata_symlink_cannot_delete_its_user_data_target(monkeypatch, tmp_path):
+    existing_environment(monkeypatch, tmp_path)
+    preserved = protected_files()
+    metadata = boot.ROOT / "ypuddin.egg-info"
+    try:
+        metadata.symlink_to(boot.ROOT / "studio_data", target_is_directory=True)
+    except OSError:
+        pytest.skip("directory symlinks are unavailable on this host")
+    boot.MARKER.write_text(json.dumps({"signature": boot.install_signature("cpu", boot.EXTRAS_BASE)}))
+    monkeypatch.setattr(
+        boot.subprocess, "run", lambda *args, **kwargs: pytest.fail("cleanup must not reinstall")
+    )
+
+    boot.ensure_venv("cpu", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE)
+    assert metadata.is_symlink()
+    assert all(path.read_bytes() == content for path, content in preserved.items())
+
+
+@pytest.mark.parametrize("kind", ["junction", "file"])
+def test_metadata_cleanup_refuses_windows_reparse_points_and_same_named_files(monkeypatch, tmp_path, kind):
+    existing_environment(monkeypatch, tmp_path)
+    preserved = protected_files()
+    metadata = boot.ROOT / "ypuddin.egg-info"
+    if kind == "file":
+        metadata.write_text("legacy metadata stored in a file")
+    else:
+        build_metadata()
+        info = type("ReparsePoint", (), {"st_mode": metadata.lstat().st_mode, "st_file_attributes": 0x400})()
+        real_lstat = Path.lstat
+        monkeypatch.setattr(
+            Path,
+            "lstat",
+            lambda path, *args, **kwargs: info if path == metadata else real_lstat(path, *args, **kwargs),
+        )
+    boot.MARKER.write_text(json.dumps({"signature": boot.install_signature("cpu", boot.EXTRAS_BASE)}))
+    monkeypatch.setattr(
+        boot.subprocess, "run", lambda *args, **kwargs: pytest.fail("cleanup must not reinstall")
+    )
+    monkeypatch.setattr(
+        boot.shutil,
+        "rmtree",
+        lambda *args, **kwargs: pytest.fail("non-ordinary metadata paths must not be removed"),
+    )
+
+    boot.ensure_venv("cpu", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE)
+    assert metadata.exists()
+    if kind == "file":
+        assert metadata.read_text() == "legacy metadata stored in a file"
+    else:
+        assert (metadata / "PKG-INFO").is_file()
+    assert all(path.read_bytes() == content for path, content in preserved.items())
+
+
+def test_blocked_cleanup_warns_without_reinstalling_and_retries_next_start(monkeypatch, tmp_path, capsys):
+    existing_environment(monkeypatch, tmp_path)
+    metadata = build_metadata()
+    preserved = protected_files()
+    boot.MARKER.write_text(json.dumps({"signature": boot.install_signature("cpu", boot.EXTRAS_BASE)}))
+    marker_before = boot.MARKER.read_bytes()
+    monkeypatch.setattr(
+        boot.subprocess, "run", lambda *args, **kwargs: pytest.fail("cleanup failure must not reinstall")
+    )
+    real_rmtree = boot.shutil.rmtree
+
+    def blocked(path, *args, **kwargs):
+        if Path(path) == metadata:
+            raise PermissionError("metadata is occupied")
+        return real_rmtree(path, *args, **kwargs)
+
+    with monkeypatch.context() as denied:
+        denied.setattr(boot.shutil, "rmtree", blocked)
+        boot.ensure_venv("cpu", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE)
+    assert (metadata / "PKG-INFO").exists()
+    output = capsys.readouterr()
+    assert "ypuddin.egg-info" in output.out + output.err
+    assert "metadata is occupied" in output.out + output.err
+    assert boot.MARKER.read_bytes() == marker_before
+    boot.ensure_venv("cpu", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE)
+    assert not metadata.exists()
+    assert all(path.read_bytes() == content for path, content in preserved.items())
 
 
 @pytest.mark.parametrize("system", ["Windows", "Linux", "Darwin"])
