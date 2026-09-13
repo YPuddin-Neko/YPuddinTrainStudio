@@ -92,30 +92,36 @@ def build_latent_cache(
     written = 0
     done = 0
 
+    def report() -> None:
+        if progress and total:
+            progress(done, total)
+
     def flush(shape: tuple[int, int]) -> None:
-        nonlocal written
+        nonlocal written, done
         items = pending.pop(shape, [])
         if not items:
             return
         pixels = torch.stack([it[1]["pixels"] for it in items]).to(device)
         with torch.no_grad():
             latents = encode(pixels).to(dtype).cpu()
+        if len(latents) != len(items):
+            raise ValueError(f"Latent encoder returned {len(latents)} entries for {len(items)} images")
         for (key, _extra), lat in zip(items, latents, strict=True):
             cache.put(key, {"latents": lat})
             written += 1
+            done += 1
+            report()
 
+    report()
     for key, item in jobs:
-        done += 1
         if cache.has(key):
-            if progress and total:
-                progress(done, total)
+            done += 1
+            report()
             continue
         shape = tuple(item["pixels"].shape[-2:])
         pending.setdefault(shape, []).append((key, item))
         if len(pending[shape]) >= batch_size:
             flush(shape)
-        if progress and total:
-            progress(done, total)
     for shape in list(pending):
         flush(shape)
     return written
@@ -131,31 +137,47 @@ def build_text_cache(
     progress: Callable[[int, int], None] | None = None,
     total: int | None = None,
 ) -> int:
+    """Encode unique missing captions, reporting input occurrences only once their entry is ready."""
     written = 0
-    batch: list[str] = []
     done = 0
+    pending: dict[str, int] = {}
+    completed: set[str] = set()
 
-    def flush() -> None:
-        nonlocal written
-        if not batch:
-            return
-        for cap, entry in zip(batch, encode_for_cache(batch), strict=True):
-            cache.put(TextCache.key(cap, fingerprint), entry)
-            written += 1
-        batch.clear()
-
-    seen: set[str] = set()
-    for cap in captions:
-        done += 1
-        if cap in seen or cache.has(TextCache.key(cap, fingerprint)):
-            if progress and total:
-                progress(done, total)
-            continue
-        seen.add(cap)
-        batch.append(cap)
-        if len(batch) >= batch_size:
-            flush()
+    def report() -> None:
         if progress and total:
             progress(done, total)
+
+    def flush() -> None:
+        nonlocal written, done
+        if not pending:
+            return
+        batch = list(pending)
+        entries = encode_for_cache(batch)
+        # Validate before publishing any entries: an extra encoder result must not
+        # turn a failed batch into a reported 100% completion.
+        if len(entries) != len(batch):
+            raise ValueError(f"Text encoder returned {len(entries)} entries for {len(batch)} captions")
+        for cap, entry in zip(batch, entries, strict=True):
+            cache.put(TextCache.key(cap, fingerprint), entry)
+            written += 1
+            done += pending.pop(cap)
+            completed.add(cap)
+            report()
+
+    report()
+    for cap in captions:
+        if cap in pending:
+            # Repeated captions share one encoding, but none of their occurrences
+            # is complete until that pending entry has actually been written.
+            pending[cap] += 1
+            continue
+        if cap in completed or cache.has(TextCache.key(cap, fingerprint)):
+            completed.add(cap)
+            done += 1
+            report()
+            continue
+        pending[cap] = 1
+        if len(pending) >= batch_size:
+            flush()
     flush()
     return written

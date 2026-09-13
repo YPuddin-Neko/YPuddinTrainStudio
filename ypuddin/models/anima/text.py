@@ -55,21 +55,45 @@ def _load_qwen3(path: str | Path, dtype: torch.dtype, device: torch.device | str
         from safetensors.torch import load_file
 
         config = AutoConfig.from_pretrained(str(ASSETS / "qwen3_06b"))
-        model = AutoModelForCausalLM.from_config(config, dtype=dtype)
+        # The complete decoder is supplied by the checkpoint: allocating and randomly
+        # initializing it first wastes CPU time and a second copy of its weights.
+        with torch.device("meta"):
+            model = AutoModelForCausalLM.from_config(config, dtype=dtype)
         sd = load_file(str(p))
         if not any(k.startswith("model.") for k in sd):
             # bare decoder-stack keys (layers.0...., embed_tokens.weight) -> HF causal-LM layout
             sd = {("lm_head.weight" if k == "lm_head.weight" else f"model.{k}"): v for k, v in sd.items()}
-        missing, unexpected = model.load_state_dict(sd, strict=False)
-        missing = [m for m in missing if not m.startswith("lm_head")]
-        if missing or unexpected:
+        # Safetensors may retain either name of a tied embedding. The decoder's
+        # explicit weight takes precedence; an unused, separate LM head is ignored.
+        embedding_key = "model.embed_tokens.weight"
+        if config.tie_word_embeddings and embedding_key not in sd and "lm_head.weight" in sd:
+            sd[embedding_key] = sd["lm_head.weight"]
+        decoder_sd = {
+            k.removeprefix("model."): v.to(dtype=dtype) if v.is_floating_point() else v
+            for k, v in sd.items()
+            if k != "lm_head.weight"
+        }
+        missing, unexpected = model.model.load_state_dict(decoder_sd, strict=False, assign=True)
+        del sd, decoder_sd
+        if missing:
+            raise ValueError(
+                f"Qwen3 checkpoint is missing required encoder weights: {', '.join(missing[:8])}"
+            )
+        if unexpected:
             log.warning(
-                "Qwen3 load: %d missing, %d unexpected keys (e.g. %s / %s)",
-                len(missing),
+                "Qwen3 load: %d unexpected keys (e.g. %s)",
                 len(unexpected),
-                missing[:2],
                 unexpected[:2],
             )
+        # RoPE frequencies are nonpersistent, so assign=True cannot materialize them.
+        # Rebuild using the installed Transformers implementation, preserving FP32
+        # frequencies and any version-specific original_inv_freq bookkeeping.
+        with torch.device("cpu"):
+            model.model.rotary_emb = type(model.model.rotary_emb)(config=config)
+        if any(t.is_meta for t in (*model.model.parameters(), *model.model.buffers())):
+            raise ValueError("Qwen3 encoder contains unmaterialized parameters or buffers after loading")
+        if config.tie_word_embeddings:
+            model.tie_weights()
     encoder = model.model  # decoder stack without the LM head
     encoder.config.use_cache = False
     encoder.requires_grad_(False)
