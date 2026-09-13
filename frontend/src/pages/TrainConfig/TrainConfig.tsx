@@ -72,7 +72,6 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const { t, i18n } = useTranslation();
   const english = i18n.language.startsWith('en');
   const text = useWorkspaceText();
-  const toolbarRef = useWorkspaceHeight('--training-toolbar-height');
   const location = useLocation();
   const navigate = useNavigate();
   const { data: families } = useFamilies();
@@ -95,6 +94,9 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const versions = useProjectVersions(project, versionId);
   const versionStatus = versions.current?.status;
   const archived = !!versions.current?.archived;
+  const editorVisible = !versionId || (versionStatus === 'ready' && !archived);
+  const toolbarRef = useWorkspaceHeight('--training-toolbar-height', editorVisible);
+  const launchBarRef = useWorkspaceHeight('--training-launch-height', editorVisible);
   const [datasets, setDatasets] = React.useState<DatasetInfo[]>([]);
   const [sourceRoles, setSourceRoles] = React.useState<SourceRoleInfo[]>([]);
   const [outputBinding, setOutputBinding] = React.useState<OutputBindingInfo | null>(null);
@@ -489,27 +491,31 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   };
   const trainingDatasets = matchingTrainingDatasets(config, datasets);
   const indexedStats = trainingDatasets.length && trainingDatasets.every(item => item.index_status === 'ready' && Number.isFinite(item.stats?.images) && Number.isFinite(item.stats?.captioned)) ? trainingDatasets.reduce((stats, item) => ({images:stats.images + item.stats.images, captioned:stats.captioned + item.stats.captioned}), {images:0, captioned:0}) : undefined;
-  const dataUrl = trainingDatasets.length === 1 ? `/datasets/${trainingDatasets[0].source.id}` : projectUrl(projectId || '', versionId, 'data');
-  const dataAction = trainingDatasets.length === 1 ? text('标签与遮罩编辑', 'Captions & masks') : trainingDatasets.length > 1 ? text('选择数据集编辑标签与遮罩', 'Choose dataset for captions & masks') : text('导入数据后编辑标签与遮罩', 'Import dataset for captions & masks');
+  const dataUrl = projectUrl(projectId || '', versionId, 'data');
+  const sourceQuery = trainingDatasets.length === 1 ? `&dataset=${encodeURIComponent(trainingDatasets[0].source.id)}` : '';
   const modelUrl = `/settings/environment?tab=models&family=${encodeURIComponent(config.model?.family || 'anima')}${projectId ? `&project=${encodeURIComponent(projectId)}` : ''}`;
 
   if (!versionId && project?.active_version_id) return <Navigate replace to={`${projectUrl(project.id, project.active_version_id, 'train')}${location.search}${location.hash}`} state={location.state}/>;
   const dirty = loaded && JSON.stringify(config) !== lastSavedRef.current;
+  const familyLabel = familyByName(families, config.model?.family)?.label || config.model?.family;
+  const familyBadge = familyLabel ? <span className="family-chip" data-testid="training-family-badge" title={familyLabel}>{familyLabel}</span> : null;
   const draftStatus = <span className="draft-indicator" data-testid={savedAt && !dirty ? 'draft-saved' : undefined}>{savingNavigation ? <><Loader2 size={12} className="animate-spin"/>{text('正在保存草稿…', 'Saving draft…')}</> : dirty ? text('有未保存修改', 'Unsaved changes') : savedAt ? <><CheckCircle2 size={12}/>{t('train.draftSaved', { time: savedAt })}</> : loaded ? text('修改自动保存', 'Changes save automatically') : text('正在加载…', 'Loading…')}</span>;
   if (versionId && (versions.current?.status !== 'ready' || archived)) return <div className="training-studio project-workspace">
-    {project && <ProjectWorkspaceHeader project={project} versionId={versionId} versions={versions.versions} current={versions.current} active="train" refresh={versions.refresh} error={versions.error}/>}
+    {project && <ProjectWorkspaceHeader project={project} versionId={versionId} versions={versions.versions} current={versions.current} active="train" refresh={versions.refresh} titleBadge={familyBadge} error={versions.error}/>}
     {archived && <Link className="workspace-message" to={projectUrl(projectId || '', versionId, 'results')}>{text('查看此版本的训练结果', 'View this version’s training results')}</Link>}
     {!versions.current && <p className="workspace-message">{versions.loading ? t('common.loading') : text('此版本不存在或不可访问。', 'This version does not exist or is unavailable.')}</p>}
   </div>;
   return <div className="training-studio project-workspace" aria-busy={savingNavigation}>
-    {project ? <ProjectWorkspaceHeader project={project} versionId={versionId} versions={versions.versions} current={versions.current} active="train" refresh={versions.refresh} beforeAction={flushDraft} status={draftStatus} error={versions.error}/> : <div className="project-heading-placeholder">{text('训练参数', 'Training parameters')}{draftStatus}</div>}
+    {project ? <ProjectWorkspaceHeader project={project} versionId={versionId} versions={versions.versions} current={versions.current} active="train" refresh={versions.refresh} beforeAction={flushDraft} status={draftStatus} titleBadge={familyBadge} error={versions.error}/> : <div className="project-heading-placeholder"><h1>{text('训练参数', 'Training parameters')}</h1>{familyBadge}{draftStatus}</div>}
     {error && <div role="alert" className="studio-error">{error}<button type="button" onClick={() => { setError(''); if (!loaded) setReload(v => v + 1); }}>{loaded ? text('关闭', 'Dismiss') : t('common.retry')}</button></div>}
     {recoveredDraft && loaded && <p className="workspace-message" role="status">{text('已恢复此版本上次未保存的草稿。', 'Recovered the unsaved draft for this version.')}</p>}
     {Object.keys(auxiliaryErrors).length>0 && <div role="alert" className="studio-error" data-testid="training-auxiliary-error"><div>{Object.entries(auxiliaryErrors).map(([key,message])=><p key={key}>{key==='presets'?text('预设列表读取失败','Preset list could not be loaded'):key==='sources'?text('数据目录用途读取失败','Dataset directory ownership could not be loaded'):key==='output'?text('权重保存位置读取失败','Weight output binding could not be loaded'):text('模型库读取失败','Model registry could not be loaded')}: {message}</p>)}<p>{text('本版本配置仍可编辑；重试不会替换当前草稿。','The version configuration remains editable. Retrying will preserve the current draft.')}</p></div><button type="button" disabled={auxiliaryLoading} onClick={()=>setAuxiliaryReload(value=>value+1)}>{text('重试辅助信息','Retry supporting data')}</button></div>}
-    <div className="training-toolbar" ref={toolbarRef}>
-      <div className="training-toolbar-title"><h2>{text('训练参数', 'Training parameters')}</h2><span className="family-chip">{config.model?.family || '…'}</span></div>
+    <div className="training-toolbar" ref={toolbarRef} role="group" aria-label={text('训练参数工具栏', 'Training parameter controls')}>
+      <div className="training-toolbar-filters">
       <label className="config-search"><Search size={15}/><input aria-label={text('搜索训练参数', 'Search training parameters')} placeholder={text('搜索参数名称或关键字…', 'Search parameters…')} value={search} onChange={event => setSearch(event.target.value)} />{search && <button aria-label={text('清空搜索', 'Clear search')} onClick={() => setSearch('')}>×</button>}</label>
-      <div className="toolbar-actions"><label className="advanced-toggle"><input type="checkbox" checked={showAdvanced} onChange={event => setShowAdvanced(event.target.checked)}/>{t('train.advanced')}</label>
+      <label className="advanced-toggle"><input type="checkbox" checked={showAdvanced} onChange={event => setShowAdvanced(event.target.checked)}/>{t('train.advanced')}</label>
+      </div>
+      <div className="toolbar-actions">
         <StudioSelect aria-label={t('train.loadPreset')} disabled={!loaded || savingNavigation} value="" onValueChange={name => {const preset=presets.find(item=>item.name===name);if(preset)setPendingPreset(preset);}} options={[{value:'',label:t('train.loadPreset'),disabled:true},...presets.map(preset=>({value:preset.name,label:`${preset.name}${presetFamily(preset) && presetFamily(preset)!==config.model?.family ? ` · ${text('适用于','For')} ${presetFamily(preset)}` : ''}`,disabled:!!presetFamily(preset) && presetFamily(preset)!==config.model?.family}))]}/>
         <button className="studio-secondary save-draft" disabled={!loaded || !dirty || savingNavigation} onClick={() => void saveDraftNow()}>{savingNavigation ? text('保存中…','Saving…') : text('保存草稿','Save draft')}</button>
         <details className="config-tools"><summary><Settings2 size={14}/>{text('配置工具', 'Config tools')}</summary><div className="config-tools-menu">
@@ -530,7 +536,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
         }} id={`tab-${tab.id}`} key={tab.id} aria-selected={!search && tab.id === activeTab} aria-controls="training-parameters" onClick={() => {setActiveTab(tab.id);setSearch('');}}><tab.icon size={15}/>{tab.label}{issues.some(issue => issue.tab === tab.id) && <span className="tab-issue-dot" aria-label={text('有待配置项', 'Needs configuration')}/>}</button>)}</div>
         <div id="training-parameters" role="tabpanel" aria-labelledby={search ? undefined : `tab-${activeTab}`}>
           {search && <p className="section-context">{text('搜索所有分区，包含高级参数', 'Searching every section, including advanced parameters')}</p>}
-          {!search && activeTab === 'data' && <div className="config-context-card"><div><strong><Database size={14}/>{text('训练数据与遮罩', 'Dataset and masks')}</strong><p>{text('上传图片与标签，检查分桶；需要局部训练时，在图片编辑器绘制白色训练区域。', 'Upload images and captions, inspect buckets, and paint white training regions in the image editor.')}</p></div><div className="context-actions"><Link to={projectUrl(projectId || '', versionId, 'data')} className="studio-secondary">{text('添加数据', 'Add dataset')}</Link><Link to={dataUrl} className="studio-secondary"><Brush size={13}/>{dataAction}</Link></div>{config.dataset?.masked_loss && <p className="mask-context-note">{text('遮罩已启用：白色参与训练，黑色忽略。未制作遮罩且没有 alpha 通道的图片仍按整张图训练。', 'Masking enabled: white trains, black is ignored. Images without a mask or alpha still train the full image.')}</p>}</div>}
+          {!search && activeTab === 'data' && <div className="config-context-card"><div><strong><Database size={14}/>{text('训练数据与遮罩', 'Dataset and masks')}</strong><p>{text('上传图片与标签，检查分桶；需要局部训练时，在图片编辑器绘制白色训练区域。', 'Upload images and captions, inspect buckets, and paint white training regions in the image editor.')}</p></div><div className="context-actions"><Link to={`${dataUrl}&data_step=import`} className="studio-secondary">{text('添加数据', 'Add dataset')}</Link><Link to={`${dataUrl}&data_step=captions${sourceQuery}`} className="studio-secondary">{text('标签编辑', 'Caption editor')}</Link><Link to={`${dataUrl}&data_step=paint${sourceQuery}`} className="studio-secondary"><Brush size={13}/>{text('涂抹与遮罩', 'Paint & masks')}</Link></div>{config.dataset?.masked_loss && <p className="mask-context-note">{text('遮罩已启用：白色参与训练，黑色忽略。未制作遮罩且没有 alpha 通道的图片仍按整张图训练。', 'Masking enabled: white trains, black is ignored. Images without a mask or alpha still train the full image.')}</p>}</div>}
           {!search && activeTab === 'model' && <div className="config-context-card"><div><strong><Box size={14}/>{text('选择训练机上的模型', 'Models on the training machine')}</strong><p>{text('在环境设置中下载或注册模型，这里选择本次训练使用的权重。', 'Download or register models in environment settings, then choose weights for this training run.')}</p></div><Link to={modelUrl} className="studio-secondary">{text('管理与下载模型', 'Manage & download models')}<ChevronRight size={13}/></Link></div>}
           {!loaded ? <p className="p-6 text-sm text-slate-500">{t('common.loading')}</p> : <SchemaForm key={revealVersion} compact schema={schema} value={config} sourceRoles={sourceRoles} outputBinding={outputBinding} versionSources={!!projectId} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} groupFilter={search ? undefined : CONFIG_TAB_GROUPS[activeTab]} search={search} errors={issues.map(issue => ({loc:issue.path,msg:issue.message}))} family={familyByName(families, config?.model?.family)} families={families} />}
         </div>
@@ -539,7 +545,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
         {!!plan?.warnings?.length && <details className="plan-notes"><summary><AlertCircle size={13}/>{text('配置提示', 'Configuration notes')} · {plan.warnings.length}</summary><ul>{plan.warnings.map((warning,index) => <li key={index}>{presentPlanWarning(warning.code,warning.msg,english)}</li>)}</ul></details>}
       </aside>
     </div>
-    <footer className="training-launch-bar" id="training-launch">
+    <footer className="training-launch-bar" id="training-launch" ref={launchBarRef}>
       {issuesOpen && issues.length > 0 && <section className="readiness-panel" aria-label={text('训练前检查', 'Preflight checks')}><div className="readiness-heading"><h2>{text('完成以下配置即可启动训练', 'Complete these settings to start training')}</h2><button onClick={() => setIssuesOpen(false)}>{text('收起', 'Collapse')}</button></div>{issues.map((issue,index) => <div className="readiness-item" key={`${issue.path}-${index}`}><button aria-label={text(`配置${issue.label}`, `Configure ${issue.label}`)} onClick={() => goToIssue(issue)}><span>{issue.label}</span><span>{issue.message}</span><ChevronRight size={14}/></button>{issue.message !== issue.detail && <details><summary>{text('技术详情', 'Technical details')}</summary><code>{issue.detail}</code></details>}</div>)}</section>}
       <div className="launch-status" role="status">{validating ? <><Loader2 size={15} className="animate-spin"/><span>{text('正在检查配置…', 'Checking configuration…')}</span></> : ready ? <><CheckCircle2 size={16} className="text-emerald-500"/><span>{text('可以开始训练', 'Ready to train')}</span></> : <button onClick={() => setIssuesOpen(value => !value)} className="readiness-toggle"><AlertCircle size={16}/><span>{issues.length ? text(`${issues.length} 项待配置`, `${issues.length} settings to complete`) : text('尚未通过检查', 'Checks incomplete')}</span><ChevronRight size={14}/></button>}</div>
       <span className="launch-estimate">{plan?.total_steps ?? '—'} <span>{text('步', 'steps')}</span></span>

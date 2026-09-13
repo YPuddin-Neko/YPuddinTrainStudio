@@ -6,6 +6,7 @@ import DatasetPipelinePanel, { type PipelineSnapshot } from '../src/components/d
 import { apiClient } from '../src/api/client';
 import '../src/i18n';
 vi.mock('../src/events/useEventStream', () => ({useEventStream: () => {}}));
+vi.mock('../src/components/datasets/CaptionWorkspace', () => ({default: ({projectId,versionId,readOnly}: {projectId:string;versionId:string;readOnly:boolean}) => <div data-testid="caption-workspace-route">{projectId}/{versionId}/{String(readOnly)}</div>}));
 let state: PipelineSnapshot;
 let submitted: {url:string; body:any}[];
 const image = {dataset_id:'d_1',path:'/data/a.png',hash:'abc',width:640,height:480,caption:'portrait',has_mask:true,roles:['train'],issues:[{severity:'warning' as const,code:'duplicate',message:'duplicate'}],editable:true};
@@ -32,7 +33,7 @@ describe('dataset pipeline', () => {
     const first=show();
     fireEvent.click(screen.getByRole('button',{name:/涂抹与遮罩/}));
     expect(screen.getByTestId('pipeline-location')).toHaveTextContent('data_step=paint');
-    fireEvent.click(screen.getByRole('button',{name:/标签查看/}));
+    fireEvent.click(screen.getByRole('button',{name:/标签编辑/}));
     fireEvent.click(screen.getByRole('button',{name:'Browser back'}));
     expect(screen.getByRole('button',{name:/涂抹与遮罩/})).toHaveAttribute('aria-current','step');
     first.unmount();
@@ -65,21 +66,22 @@ describe('dataset pipeline', () => {
     await screen.findByRole('button',{name:'打开涂抹与遮罩编辑器'});
     expect(screen.queryByRole('button',{name:'检查数据'})).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox',{name:'处理方式'})).not.toBeInTheDocument();
+    expect(screen.queryByTestId('existing-caption')).not.toBeInTheDocument();
+    expect(screen.queryByText('暂无标签')).not.toBeInTheDocument();
     expect(submitted).toEqual([]);
     expect(apiClient.get).toHaveBeenCalledWith('/projects/p_1/datasets',expect.objectContaining({params:{version_id:'v_2'}}));
   });
-  it('views existing captions without an inspection or mutation and preserves recovery of old operations', async () => {
+  it('opens the dedicated caption workspace without inspection and preserves operation recovery', async () => {
     state.inspection=null;
     state.operations=[{...operation,action:'tag'},{...operation,id:'dp_old_tag',action:'tag',status:'failed',can_undo:false,error:'old tagging failed'},{...operation,id:'dp_failed',status:'failed',can_undo:false,error:'disk is full',result:{rolled_back:true}}];
-    show(); fireEvent.click(screen.getByRole('button',{name:/标签查看/}));
-    expect(await screen.findByTestId('existing-caption')).toHaveTextContent('portrait');
+    show(); fireEvent.click(screen.getByRole('button',{name:/标签编辑/}));
+    expect(await screen.findByTestId('caption-workspace-route')).toHaveTextContent('p_1/v_2/false');
     expect(screen.queryByRole('button',{name:'检查数据'})).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox',{name:'标签文本'})).not.toBeInTheDocument();
     expect(screen.queryByRole('form',{name:/WD14/})).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button',{name:'查看标签: b.png'}));
-    expect(screen.getByTestId('existing-caption')).toHaveTextContent('此图片暂无标签');
+    expect(screen.queryByRole('region',{name:'涂抹与遮罩'})).not.toBeInTheDocument();
     expect(submitted).toEqual([]);
-    expect(apiClient.get).toHaveBeenCalledWith('/projects/p_1/datasets',expect.objectContaining({params:{version_id:'v_2'}}));
+    fireEvent.click(await screen.findByText('操作记录'));
     fireEvent.click(screen.getByRole('button',{name:'恢复此操作前的文件'}));
     await waitFor(() => expect(submitted[0]?.body).toEqual({action:'restore',restore_operation_id:'dp_1'}));
     await waitFor(() => expect(screen.getByRole('button',{name:'重试'})).not.toBeDisabled());
@@ -97,11 +99,11 @@ describe('dataset pipeline', () => {
   });
   it('shows cache progress and cancellation while keeping direct training available', async () => {
     state.operations=[{...operation,action:'prepare',status:'running',phase:'cache',done:2,total:7,can_undo:false,can_cancel:true,job_id:'j_cache'}];
-    show(); fireEvent.click(screen.getByRole('button',{name:/训练准备/}));
+    show(); fireEvent.click(screen.getByRole('button',{name:/训练缓存/}));
     expect(await screen.findByText('编码与缓存')).toBeInTheDocument();
-    expect(screen.getByRole('progressbar')).toHaveAttribute('value','2');
-    expect(screen.getByRole('button',{name:'检查并构建训练缓存'})).toBeDisabled();
-    expect(screen.getByRole('link',{name:'进入训练参数'})).toHaveAttribute('href','/projects/p_1/v/v_2/train');
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow','28');
+    expect(screen.getByRole('button',{name:'提前生成缓存（可选）'})).toBeDisabled();
+    expect(screen.getByRole('link',{name:'训练参数'})).toHaveAttribute('href','/projects/p_1/v/v_2/train');
     expect(screen.getByRole('link',{name:'选择训练模型'})).toHaveAttribute('href','/projects/p_1/v/v_2/train?tab=model');
     fireEvent.click(screen.getByRole('button',{name:'取消'}));
     await waitFor(() => expect(submitted[0]?.url).toBe('/dataset-pipeline/operations/dp_1/cancel'));
@@ -119,7 +121,10 @@ describe('dataset pipeline', () => {
 it('names failed painting and returns to its editor instead of posting an unsupported retry', async()=>{
   state.operations=[{...operation,action:'paint',status:'failed',can_undo:false,error:'disk full',result:{rolled_back:true}}];
   show();
-  expect(await screen.findByText('图像涂抹与遮罩')).toBeInTheDocument();
+  await screen.findByText('操作记录');
+  expect(screen.getByText('操作记录').closest('details')).not.toHaveAttribute('open');
+  fireEvent.click(screen.getByText('操作记录'));
+  expect(screen.getByText('图像涂抹与遮罩')).toBeInTheDocument();
   expect(screen.queryByRole('button',{name:'重试'})).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button',{name:'返回涂抹与遮罩'}));
   expect(screen.getByTestId('pipeline-location')).toHaveTextContent('data_step=paint');
@@ -132,5 +137,24 @@ it('shows the real paint staging phase in readable language',async()=>{
   state.operations=[{...operation,action:'paint',status:'running',phase:'staging',can_undo:false}];
   show();
   expect(await screen.findByText('准备绘制文件')).toBeInTheDocument();
-  expect(screen.getByText('准备绘制文件').closest('[role="status"]')).toHaveTextContent('图像涂抹与遮罩');
+  expect(screen.getByRole('region',{name:'图像涂抹与遮罩'})).toHaveTextContent('准备绘制文件');
+});
+
+it('explains concrete inspection checks and keeps read-only logs at the bottom',async()=>{
+  state.operations=[{...operation,action:'inspect',can_undo:false,result:{}}];
+  show();fireEvent.click(screen.getByRole('button',{name:/检查与筛选/}));
+  await screen.findByText('检查哪些内容');
+  fireEvent.click(screen.getByText('检查哪些内容'));
+  expect(screen.getByText(/按文件内容识别完全相同/)).toBeVisible();
+  await screen.findByText('操作记录');
+  const footer=screen.getByTestId('dataset-pipeline').lastElementChild;
+  expect(footer?.tagName).toBe('FOOTER');
+  fireEvent.click(screen.getByText('操作记录'));
+  expect(screen.getByText('只读取数据，未修改文件。')).toBeVisible();
+  expect(screen.queryByRole('button',{name:'恢复此操作前的文件'})).not.toBeInTheDocument();
+});
+it('does not invent a percentage before an operation knows its total',async()=>{
+  state.operations=[{...operation,action:'inspect',status:'running',phase:'inspecting',done:0,total:0,can_undo:false}];
+  show();
+  expect(await screen.findByRole('progressbar')).not.toHaveAttribute('aria-valuenow');
 });

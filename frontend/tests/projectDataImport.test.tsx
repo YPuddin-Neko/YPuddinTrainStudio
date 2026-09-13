@@ -7,7 +7,7 @@ import { File as NodeFile } from 'node:buffer';
 import ProjectDataImport from '../src/pages/ProjectDetail/ProjectDataImport';
 import i18n from '../src/i18n';
 
-const server = setupServer();
+const server = setupServer(http.get('/api/projects/:pid/datasets/import-progress/:progressId', () => HttpResponse.json({}, { status: 404 })));
 beforeAll(async () => {
   const form = await new Request('http://localhost', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: '' }).formData();
   vi.stubGlobal('FormData', form.constructor);
@@ -50,7 +50,131 @@ const show = (onImported = vi.fn()) => ({
 const selectImage = () => fireEvent.change(screen.getByLabelText('选择训练文件'), { target: { files: [image()] } });
 const submit = () => fireEvent.click(screen.getByRole('button', { name: '导入当前版本' }));
 
+const progressSnapshot = (id: string) => ({ id, phase: 'receiving', bytes_done: 1024 ** 2, bytes_total: 2 * 1024 ** 2,
+  files_done: 0, files_total: null, elapsed_seconds: 2, phase_elapsed_seconds: 2, bytes_per_second: 512 * 1024, eta_seconds: 2, error: null });
+
 describe('project import with browser folder collection and actual multipart requests', () => {
+  it.each(['upload', 'path'])('imports via %s on LAN HTTP where crypto.randomUUID is unavailable', async mode => {
+    const originalCrypto = globalThis.crypto;
+    vi.stubGlobal('crypto', { getRandomValues: originalCrypto.getRandomValues.bind(originalCrypto) });
+    let id = '';
+    server.use(http.post(`/api/projects/p_import/datasets${mode === 'upload' ? '/upload' : ''}`, ({ request }) => {
+      id = new URL(request.url).searchParams.get('progress_id') || '';
+      return HttpResponse.json(source());
+    }));
+    try {
+      const { onImported } = show();
+      if (mode === 'upload') selectImage();
+      else {
+        fireEvent.click(screen.getByRole('button', { name: '从训练电脑导入' }));
+        fireEvent.change(screen.getByRole('textbox', { name: '文件或目录路径' }), { target: { value: '/qa/训练图' } });
+      }
+      submit(); await screen.findByRole('link', { name: '查看图片与标签' });
+      expect(id).toMatch(/^[\da-f-]{36}$/);
+      expect(onImported).toHaveBeenCalledOnce();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    } finally { vi.stubGlobal('crypto', originalCrypto); }
+  });
+
+  it.each(['upload', 'path'])('still submits %s without progress_id when cryptographic APIs are absent', async mode => {
+    const originalCrypto = globalThis.crypto;
+    vi.stubGlobal('crypto', undefined);
+    let finishUpload = () => {};
+    const pending = new Promise<void>(resolve => { finishUpload = resolve; });
+    let requestUrl: URL | undefined;
+    const polled = vi.fn();
+    server.use(
+      http.post(`/api/projects/p_import/datasets${mode === 'upload' ? '/upload' : ''}`, async ({ request }) => {
+        requestUrl = new URL(request.url);
+        await pending;
+        return HttpResponse.json(source());
+      }),
+      http.get('/api/projects/p_import/datasets/import-progress/:progressId', () => { polled(); return HttpResponse.json({}); }),
+    );
+    try {
+      const { onImported } = show();
+      if (mode === 'upload') selectImage();
+      else {
+        fireEvent.click(screen.getByRole('button', { name: '从训练电脑导入' }));
+        fireEvent.change(screen.getByRole('textbox', { name: '文件或目录路径' }), { target: { value: '/qa/训练图' } });
+      }
+      submit();
+      await waitFor(() => expect(requestUrl).toBeDefined());
+      expect(requestUrl!.searchParams.has('progress_id')).toBe(false);
+      expect(requestUrl!.searchParams.get('version_id')).toBe('v_import');
+      expect(screen.getByText('暂时无法读取进度，正在等待导入结果')).toBeInTheDocument();
+      expect(screen.getByRole('progressbar')).not.toHaveAttribute('aria-valuenow');
+      expect(onImported).not.toHaveBeenCalled();
+      await act(async () => { finishUpload(); });
+      await screen.findByRole('link', { name: '查看图片与标签' });
+      expect(onImported).toHaveBeenCalledOnce();
+      expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
+      expect(polled).not.toHaveBeenCalled();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    } finally { finishUpload(); vi.stubGlobal('crypto', originalCrypto); }
+  });
+
+  it('displays actual byte progress and speed under the same ID as the upload, then retains confirmed completion', async () => {
+    let finishUpload: () => void = () => {};
+    const upload = new Promise<void>(resolve => { finishUpload = resolve; });
+    let requestId = '';
+    let polledId = '';
+    server.use(
+      http.post('/api/projects/p_import/datasets/upload', async ({ request }) => {
+        requestId = new URL(request.url).searchParams.get('progress_id') || '';
+        await upload; return HttpResponse.json({ ...source(), index_status: 'indexing' });
+      }),
+      http.get('/api/projects/p_import/datasets/import-progress/:progressId', ({ params }) => {
+        polledId = String(params.progressId); return HttpResponse.json(progressSnapshot(polledId));
+      }),
+    );
+    const { onImported } = show(); selectImage(); submit();
+    expect(await screen.findByRole('progressbar', { name: '导入进度 · 上传文件' })).toHaveAttribute('aria-valuenow', '50');
+    expect(screen.getByText('0.50 MiB/s')).toBeInTheDocument();
+    expect(screen.getByText('当前阶段：1.0 MiB / 2.0 MiB')).toBeInTheDocument();
+    await waitFor(() => expect(requestId).toBe(polledId));
+    expect(requestId).toMatch(/^[\da-f-]{36}$/);
+    expect(onImported).not.toHaveBeenCalled();
+    await act(async () => { finishUpload(); });
+    await screen.findByRole('link', { name: '查看图片与标签' });
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
+    expect(screen.getByText('导入与登记已完成')).toBeInTheDocument();
+    expect(screen.queryByText('检查已完成')).not.toBeInTheDocument();
+    expect(onImported).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a fast local-path import successful even if its progress endpoint is unavailable', async () => {
+    let requestId = '';
+    server.use(http.post('/api/projects/p_import/datasets', ({ request }) => {
+      requestId = new URL(request.url).searchParams.get('progress_id') || '';
+      return HttpResponse.json(source());
+    }));
+    show(); fireEvent.click(screen.getByRole('button', { name: '从训练电脑导入' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '文件或目录路径' }), { target: { value: '/qa/训练图' } }); submit();
+    await screen.findByRole('link', { name: '查看图片与标签' });
+    expect(requestId).toMatch(/^[\da-f-]{36}$/);
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('does not publish late upload success or retain polling after the import panel unmounts', async () => {
+    let finishUpload: () => void = () => {};
+    const upload = new Promise<void>(resolve => { finishUpload = resolve; });
+    let started = false;
+    server.use(http.post('/api/projects/p_import/datasets/upload', async () => {
+      started = true; await upload; return HttpResponse.json(source());
+    }));
+    const old = show(); selectImage(); submit();
+    await waitFor(() => expect(started).toBe(true));
+    old.unmount();
+    const next = show(); selectImage();
+    await act(async () => { finishUpload(); await upload; });
+    expect(old.onImported).not.toHaveBeenCalled();
+    expect(next.onImported).not.toHaveBeenCalled();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(screen.getByText('portrait.png')).toBeInTheDocument();
+  });
+
   it('uploads nested drop paths, captions and masks without directory placeholder files', async () => {
     let fields: FormData | undefined;
     let version = '';
@@ -103,7 +227,7 @@ describe('project import with browser folder collection and actual multipart req
     server.use(http.post('/api/projects/p_import/datasets/upload', () => HttpResponse.json({ ...first, datasets: [first, second] })));
     const { onImported } = show();
     selectImage(); submit();
-    expect(await screen.findByRole('status')).toHaveTextContent('已导入当前版本，共 2 组图片。');
+    expect(await screen.findByText('已导入当前版本，共 2 组图片。')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'character' })).toHaveAttribute('href', '/datasets/d_character');
     expect(screen.getByRole('link', { name: '画风' })).toHaveAttribute('href', '/datasets/d_style');
     expect(onImported).toHaveBeenCalledOnce();

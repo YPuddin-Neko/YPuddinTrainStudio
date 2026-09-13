@@ -159,7 +159,7 @@ def _reject_constant(value: str):
     raise ValueError(f"nonfinite JSON value {value} is not allowed")
 
 
-def edited_content(path: Path, text: str) -> str:
+def edited_content(path: Path, text: str, *, description: str | None = None) -> str:
     """Replace editable tags while preserving source metadata and natural-language prose."""
     data, parsed = load_caption(path) if path.exists() else ({}, StructuredCaption())
     # The flat viewer includes prose. An unchanged prose suffix is not a new tag.
@@ -173,6 +173,8 @@ def edited_content(path: Path, text: str) -> str:
         data[ORIGINAL_TAGS] = data["tags"]
     data["tags"] = list(unique(text.split(",")))
     data[EDIT_MARKER] = 1
-    if parsed.nl:
+    if description is not None:
+        data["nl"] = description.strip()
+    elif parsed.nl:
         data["nl"] = parsed.nl
     return json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False) + "\n"

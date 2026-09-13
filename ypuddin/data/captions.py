@@ -44,15 +44,21 @@ def caption_description(path: str | Path | None) -> str:
     return raw.nl if isinstance(raw, StructuredCaption) else ""
 
 
-def caption_content(path: str | Path, text: str) -> str:
+def caption_content(path: str | Path, text: str, *, description: str | None = None) -> str:
     path = Path(path)
-    return edited_content(path, text) if path.suffix.lower() == ".json" else text.strip() + "\n"
+    if description is not None and path.suffix.lower() != ".json":
+        raise ValueError("separate descriptions require a JSON caption")
+    return (
+        edited_content(path, text, description=description)
+        if path.suffix.lower() == ".json"
+        else text.strip() + "\n"
+    )
 
 
-def write_caption(path: str | Path, text: str) -> None:
+def write_caption(path: str | Path, text: str, *, description: str | None = None) -> None:
     """Atomically replace one caption. Each concurrent writer gets its own temporary file."""
     path = Path(path)
-    content = caption_content(path, text)
+    content = caption_content(path, text, description=description)
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="") as stream:

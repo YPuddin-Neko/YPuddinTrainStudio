@@ -39,17 +39,18 @@
 .project-sidebar-model { padding:4px 1px 2px; color:var(--studio-dim); font-size:10px; overflow-wrap:anywhere; }
 .version-family-note { font-size:12px; color:var(--studio-dim); line-height:1.6; margin-top:-5px; }
 .app-shell .app-sidebar{transition-duration:200ms}
-.sidebar-collapse-control{display:grid;place-items:center;width:28px;height:30px;flex-shrink:0;margin-left:auto;border-radius:6px;color:var(--studio-dim)}
+.sidebar-footer{display:grid;gap:4px;flex-shrink:0;padding:8px 12px;border-top:1px solid var(--studio-line)}
+.sidebar-collapse-control{display:grid;place-items:center;justify-self:start;width:40px;height:36px;flex-shrink:0;border-radius:6px;color:var(--studio-dim)}
 .sidebar-collapse-control:hover{background:var(--studio-muted);color:var(--studio-text)}
-.app-sidebar .sidebar-preferences{display:block;position:relative;padding:8px}
-.sidebar-preferences-trigger{display:flex;align-items:center;gap:9px;width:100%;min-height:36px;padding:8px 10px;border-radius:6px;font-size:12px;color:var(--studio-dim)}
+.app-sidebar .sidebar-preferences{display:block;position:relative;min-width:0;padding:0;border:0}
+.sidebar-preferences-trigger{display:flex;align-items:center;gap:9px;width:100%;min-height:36px;padding:8px 11px;border-radius:6px;font-size:12px;color:var(--studio-dim);white-space:nowrap}
+.sidebar-preferences-trigger>svg{flex-shrink:0}
 .sidebar-preferences-trigger:hover,.sidebar-preferences-trigger[aria-expanded=true]{background:var(--studio-muted);color:var(--studio-text)}
-.sidebar-preferences-popover{position:fixed;z-index:85;bottom:58px;left:12px;width:230px;max-width:calc(100vw - 24px);display:grid;gap:12px;padding:14px;background:var(--studio-panel);border:1px solid var(--studio-line);border-radius:10px;box-shadow:0 10px 35px #0f172a25}
+.sidebar-preferences-popover{position:fixed;z-index:85;bottom:100px;left:12px;width:230px;max-width:calc(100vw - 24px);display:grid;gap:12px;padding:14px;background:var(--studio-panel);border:1px solid var(--studio-line);border-radius:10px;box-shadow:0 10px 35px #0f172a25}
 .sidebar-preferences-popover>label{display:grid;grid-template-columns:54px minmax(0,1fr);align-items:center;gap:10px;font-size:12px}
 @media(min-width:768px){
  .sidebar-collapsed .app-sidebar{width:64px}
- .sidebar-collapsed .sidebar-brand-row{justify-content:center;padding:0 12px}.sidebar-collapsed .sidebar-brand{display:none}
- .sidebar-collapsed .sidebar-collapse-control{margin-left:0}
+ .sidebar-collapsed .sidebar-brand-row{justify-content:center;padding:0 12px}.sidebar-collapsed .sidebar-brand-text{display:none}
  .sidebar-collapsed .sidebar-start{padding-inline:12px}.sidebar-collapsed .sidebar-start a{padding-inline:0;min-height:38px}.sidebar-collapsed .sidebar-start span{display:none}
  .sidebar-collapsed .app-sidebar>nav>a,.sidebar-collapsed .app-sidebar>nav>a+div{min-width:0}
  .sidebar-collapsed .app-sidebar>nav>a{justify-content:center;padding-inline:0;min-height:38px}.sidebar-collapsed .app-sidebar>nav>a>span{display:none}
@@ -59,4 +60,4 @@
  .sidebar-collapsed .project-sidebar .project-workflow a{justify-content:center;min-height:36px}.sidebar-collapsed .project-sidebar .project-workflow a>span{display:none}
  .sidebar-collapsed .sidebar-preferences-trigger{justify-content:center;padding:8px}.sidebar-collapsed .sidebar-preferences-trigger>span{display:none}.sidebar-collapsed .sidebar-preferences-popover{left:70px;bottom:12px}
 }
-@media(max-width:767px){.sidebar-collapse-control{display:none}}
+@media(max-width:767px){.sidebar-collapse-control{display:none}.sidebar-footer{gap:0}.sidebar-preferences-popover{bottom:60px}}

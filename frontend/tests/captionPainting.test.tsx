@@ -33,7 +33,7 @@ describe('version-scoped paint entry',()=>{
     fireEvent.click(await screen.findByRole('button',{name:'打开涂抹与遮罩编辑器'}));expect(screen.getByRole('dialog')).toHaveTextContent('d_v2 / hash / person.png');
     indexed=true;fireEvent.click(screen.getByRole('button',{name:'saved pixels'}));
     await waitFor(()=>expect(screen.getByRole('img',{name:'大图: person.png'})).toHaveAttribute('src',expect.stringContaining('/newhash/file')));
-    expect(screen.getByRole('dialog')).toBeInTheDocument();expect(screen.getByTestId('existing-caption')).toHaveTextContent('original caption');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();expect(screen.queryByTestId('existing-caption')).not.toBeInTheDocument();
     expect(vi.mocked(apiClient.get).mock.calls.some(([url])=>url.includes('pipeline'))).toBe(false);expect(apiClient.put).not.toHaveBeenCalled();
   });
   it('retains the editor on browser Back and explains the save-or-close requirement inside it',async()=>{
@@ -49,8 +49,8 @@ describe('version-scoped paint entry',()=>{
     fireEvent.click(await screen.findByRole('button',{name:'打开涂抹与遮罩编辑器'}));fireEvent.click(screen.getByRole('button',{name:'enable masked training'}));
     await screen.findByText('Training parameters');expect(apiClient.put).toHaveBeenCalledWith('/projects/p/config?version_id=v2',{...config,dataset:{...config.dataset,masked_loss:true}},{silent:true});
   });
-  it('does not expose painting for archived versions and preserves the default read-only caption viewer',async()=>{
+  it('keeps archived paint pages read-only without showing a caption editor',async()=>{
     render(<QueryClientProvider client={client()}><MemoryRouter><CaptionViewer projectId="p" versionId="v2" editing readOnly/></MemoryRouter></QueryClientProvider>);
-    await screen.findByTestId('existing-caption');expect(screen.queryByRole('button',{name:'打开涂抹与遮罩编辑器'})).not.toBeInTheDocument();expect(screen.getByRole('link',{name:'查看数据集详情'})).toBeInTheDocument();expect(apiClient.put).not.toHaveBeenCalled();
+    await screen.findByRole('img',{name:'大图: person.png'});expect(screen.queryByTestId('existing-caption')).not.toBeInTheDocument();expect(screen.queryByRole('button',{name:'打开涂抹与遮罩编辑器'})).not.toBeInTheDocument();expect(screen.getByRole('link',{name:'查看数据集详情'})).toBeInTheDocument();expect(apiClient.put).not.toHaveBeenCalled();
   });
 });

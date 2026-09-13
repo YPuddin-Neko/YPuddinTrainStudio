@@ -18,6 +18,7 @@ import {
   QueueSettings,
   FsListResponse,
   DatasetInfo,
+  DatasetImage,
   DatasetImagesPage,
   ModelAsset,
 } from '../api/types';
@@ -237,6 +238,30 @@ const mockCaptions: Record<string, string> = Object.fromEntries(
   mockImages.map((img) => [img.hash, img.caption])
 );
 
+function mockCaptionImages(): DatasetImage[] {
+  return mockImages.map((image) => {
+    const caption = (mockCaptions[image.hash] ?? image.caption).trim();
+    return {
+      ...image,
+      caption,
+      caption_tags: caption,
+      caption_description: '',
+      caption_format: 'txt',
+      caption_error: null,
+      caption_status: caption ? 'captioned' : 'missing',
+    };
+  });
+}
+
+function mockCaptionTags(caption: string): Map<string, string> {
+  const tags = new Map<string, string>();
+  for (const value of caption.split(',')) {
+    const tag = value.trim();
+    if (tag && !tags.has(tag.toLowerCase())) tags.set(tag.toLowerCase(), tag);
+  }
+  return tags;
+}
+
 export const handlers = [
   http.get('/api/system/stats', () => {
     const stats: SystemStats = {
@@ -305,6 +330,8 @@ export const handlers = [
     return HttpResponse.json([mockDatasetInfo.source]);
   }),
 
+  http.get('/api/projects/:id/datasets/import-progress/:progressId', () => HttpResponse.json({}, { status: 404 })),
+
   http.post('/api/projects/:id/datasets', async ({ request }) => {
     const body = (await request.json()) as any;
     return HttpResponse.json({ ...mockDatasetInfo, source: { ...mockDatasetInfo.source, ...body, id: 'ds_new', project_id: 'proj_01' } });
@@ -371,31 +398,67 @@ export const handlers = [
     return HttpResponse.json({ ok: true });
   }),
 
+  http.get('/api/datasets/:id/caption-stats', () => {
+    // These fixtures contain TXT sidecars only; empty saved files are still TXT.
+    const images = mockCaptionImages();
+    const tags = new Map<string, { tag: string; count: number }>();
+    for (const image of images) {
+      for (const [key, tag] of mockCaptionTags(image.caption)) {
+        const current = tags.get(key);
+        if (current) current.count += 1;
+        else tags.set(key, { tag, count: 1 });
+      }
+    }
+    const captioned = images.filter((image) => image.caption_status === 'captioned').length;
+    return HttpResponse.json({
+      images: images.length,
+      captioned,
+      missing: images.length - captioned,
+      invalid: 0,
+      formats: { txt: images.length },
+      unique_tags: tags.size,
+      tags: [...tags.values()].sort((a, b) => b.count - a.count || a.tag.toLowerCase().localeCompare(b.tag.toLowerCase())),
+    });
+  }),
+
   http.get('/api/datasets/:id/images', ({ request }) => {
     const url = new URL(request.url);
     const page = Number(url.searchParams.get('page') || '1');
     const pageSize = Number(url.searchParams.get('page_size') || '60');
     const q = (url.searchParams.get('q') || '').toLowerCase();
-    const filtered = q
-      ? mockImages.filter((img) => (mockCaptions[img.hash] || '').toLowerCase().includes(q))
-      : mockImages;
+    const tag = (url.searchParams.get('tag') || '').trim().toLowerCase();
+    const status = url.searchParams.get('caption_status');
+    if (status && !['captioned', 'missing', 'invalid'].includes(status)) {
+      return HttpResponse.json({ error: { code: 'validation', message: 'Invalid caption status' } }, { status: 422 });
+    }
+    const filtered = mockCaptionImages().filter((image) =>
+      (!q || image.caption.toLowerCase().includes(q) || image.rel_path.toLowerCase().includes(q)) &&
+      (!tag || mockCaptionTags(image.caption).has(tag)) &&
+      (!status || image.caption_status === status)
+    );
     const start = (page - 1) * pageSize;
-    const items = filtered.slice(start, start + pageSize).map((img) => ({
-      ...img,
-      caption: mockCaptions[img.hash] ?? img.caption,
-    }));
+    const items = filtered.slice(start, start + pageSize);
     const resp: DatasetImagesPage = { items, total: filtered.length, page, page_size: pageSize };
     return HttpResponse.json(resp);
   }),
 
-  http.get('/api/datasets/:id/images/:hash/caption', ({ params }) => {
-    return HttpResponse.json({ caption: mockCaptions[String(params.hash)] || '' });
+  http.get('/api/datasets/:id/images/:hash/caption', ({ params, request }) => {
+    const path = new URL(request.url).searchParams.get('rel_path');
+    const image = mockImages.find((item) => item.hash === params.hash && (!path || item.rel_path === path));
+    if (!image) return HttpResponse.json({ error: { code: 'image.not_found', message: 'Image not found' } }, { status: 404 });
+    return HttpResponse.json({ caption: (mockCaptions[image.hash] || '').trim() });
   }),
 
   http.put('/api/datasets/:id/images/:hash/caption', async ({ params, request }) => {
-    const body = (await request.json()) as { caption: string };
-    mockCaptions[String(params.hash)] = body.caption;
-    return HttpResponse.json({ caption: body.caption });
+    const path = new URL(request.url).searchParams.get('rel_path');
+    const image = mockImages.find((item) => item.hash === params.hash && (!path || item.rel_path === path));
+    if (!image) return HttpResponse.json({ error: { code: 'image.not_found', message: 'Image not found' } }, { status: 404 });
+    const body = (await request.json()) as { caption: string; description?: string | null };
+    if (typeof body.caption !== 'string' || body.description != null) {
+      return HttpResponse.json({ error: { code: 'dataset.caption_format', message: 'TXT captions use a single caption field' } }, { status: 422 });
+    }
+    mockCaptions[image.hash] = body.caption.trim();
+    return HttpResponse.json({ caption: body.caption.trim() });
   }),
 
   http.post('/api/datasets/:id/tags/batch', async ({ request }) => {

@@ -428,6 +428,20 @@ class DatasetUploadInfo(DatasetInfo):
     datasets: list[DatasetInfo]
 
 
+class DatasetImportProgress(_Out):
+    id: str
+    phase: Literal["receiving", "extracting", "validating", "copying", "registering", "completed", "failed"]
+    bytes_done: int
+    bytes_total: int | None
+    files_done: int
+    files_total: int | None
+    elapsed_seconds: float
+    phase_elapsed_seconds: float
+    bytes_per_second: float | None
+    eta_seconds: float | None
+    error: str | None
+
+
 class DatasetImage(_Out):
     hash: str
     rel_path: str
@@ -438,6 +452,7 @@ class DatasetImage(_Out):
     caption_description: str | None = None
     caption_format: str | None = None
     caption_error: str | None = None
+    caption_status: Literal["captioned", "missing", "invalid"] = "missing"
     has_mask: bool
 
 
@@ -446,6 +461,21 @@ class ImagePage(_Out):
     total: int
     page: int
     page_size: int
+
+
+class CaptionTagCount(_Out):
+    tag: str
+    count: int
+
+
+class DatasetCaptionStats(_Out):
+    images: int
+    captioned: int
+    missing: int
+    invalid: int
+    formats: dict[str, int]
+    unique_tags: int
+    tags: list[CaptionTagCount]
 
 
 class Caption(_Out):

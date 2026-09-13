@@ -17,8 +17,15 @@
 }
 
 /* Dense desktop workbench: shared surfaces, deliberate field rhythm, no duplicate forms. */
-:root { --studio-canvas:#f8fafc; --studio-panel:#fff; --studio-muted:#f8fafc; --studio-line:#e2e8f0; --studio-text:#334155; --studio-dim:#64748b; --studio-accent:#2563eb; }
-.dark { --studio-canvas:#020617; --studio-panel:#0f172a; --studio-muted:#111c30; --studio-line:#263349; --studio-text:#cbd5e1; --studio-dim:#94a3b8; --studio-accent:#60a5fa; }
+:root { --studio-canvas:#f8fafc; --studio-panel:#fff; --studio-muted:#f8fafc; --studio-line:#e2e8f0; --studio-text:#334155; --studio-dim:#64748b; --studio-accent:#2563eb; --studio-scrollbar-thumb:#94a3b8; --studio-scrollbar-hover:#64748b; }
+.dark { --studio-canvas:#020617; --studio-panel:#0f172a; --studio-muted:#111c30; --studio-line:#263349; --studio-text:#cbd5e1; --studio-dim:#94a3b8; --studio-accent:#60a5fa; --studio-scrollbar-thumb:#64748b; --studio-scrollbar-hover:#94a3b8; }
+/* Keep native scrolling in pages, nested lists and portaled dialogs on the same theme. */
+:where(*) { scrollbar-width:thin; scrollbar-color:var(--studio-scrollbar-thumb) transparent; }
+:where(*):hover { scrollbar-color:var(--studio-scrollbar-hover) transparent; }
+::-webkit-scrollbar { width:8px; height:8px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background:transparent; }
+::-webkit-scrollbar-thumb { border:1px solid transparent; border-radius:8px; background:var(--studio-scrollbar-thumb); background-clip:padding-box; }
+::-webkit-scrollbar-thumb:hover { background:var(--studio-scrollbar-hover); background-clip:padding-box; }
 /* One viewport and page frame keep route changes independent of page length. */
 .app-shell { height:100vh; height:100dvh; }
 .app-main { min-height:0; }
@@ -28,9 +35,7 @@
 .training-studio { width:100%; color:var(--studio-text); }
 .app-topbar { display:flex; align-items:center; gap:12px; height:48px; min-height:48px; padding:0 16px; flex-shrink:0; z-index:10; }
 .topbar-menu { display:none; }
-.system-telemetry { margin-left:auto; flex:0 1 auto; min-width:0; max-width:100%; overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; scrollbar-color:var(--studio-line) transparent; }
-.system-telemetry::-webkit-scrollbar { height:3px; }
-.system-telemetry::-webkit-scrollbar-thumb { background:var(--studio-line); border-radius:2px; }
+.system-telemetry { margin-left:auto; flex:0 1 auto; min-width:0; max-width:100%; overflow-x:auto; overflow-y:hidden; }
 .telemetry-strip { display:grid; grid-template-columns:84px 96px 356px 76px; width:max-content; height:44px; align-items:center; }
 .telemetry-group { display:flex; align-items:center; gap:7px; min-width:0; height:30px; padding:0 10px; border-right:1px solid var(--studio-line); }
 .telemetry-group:first-child { padding-left:0; }
@@ -68,7 +73,6 @@
 .sidebar-brand-text strong { color:var(--studio-text); font-size:14px; line-height:18px; font-weight:700; letter-spacing:-.2px; }
 .sidebar-brand-text > span { color:var(--studio-dim); font-size:10px; line-height:13px; letter-spacing:.3px; }
 .sidebar-menu-close { margin-left:auto; padding:4px; border-radius:5px; color:var(--studio-dim); }
-.sidebar-preferences { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; padding:12px; border-top:1px solid var(--studio-line); }
 .studio-select { display:flex; align-items:center; gap:8px; min-width:0; width:100%; min-height:34px; padding:6px 10px; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-panel); color:var(--studio-text); font-size:12px; line-height:20px; text-align:left; }
 .studio-select:hover:not(:disabled) { border-color:var(--studio-dim); background:var(--studio-muted); }
 .studio-select[aria-expanded=true] { border-color:var(--studio-accent); }

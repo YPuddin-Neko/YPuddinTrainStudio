@@ -1,0 +1,18 @@
+.dataset-operation-progress { min-width:0; padding:12px; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-muted); color:var(--studio-text); }
+.dataset-operation-progress-heading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; min-width:0; font-size:13px; line-height:1.5; }
+.dataset-operation-progress-heading > strong { font-weight:600; overflow-wrap:anywhere; }
+.dataset-operation-progress-percent { flex:none; color:var(--studio-accent); font-size:14px; font-weight:600; font-variant-numeric:tabular-nums; }
+.dataset-operation-progress-phase { margin-top:2px; font-size:12px; line-height:1.5; }
+.dataset-operation-progress-track { height:8px; margin-top:9px; overflow:hidden; border-radius:999px; background:var(--studio-line); }
+.dataset-operation-progress-track > span { display:block; height:100%; min-width:0; border-radius:inherit; background:var(--studio-accent); transition:width 180ms ease; }
+.dataset-operation-progress-track > .is-indeterminate { width:35%; animation:dataset-operation-progress-slide 1.3s ease-in-out infinite; }
+.dataset-operation-progress[data-state=completed] .dataset-operation-progress-track > span { background:#059669; }
+.dataset-operation-progress[data-state=completed] .dataset-operation-progress-percent { color:#059669; }
+.dataset-operation-progress[data-state=failed] .dataset-operation-progress-track > span { background:#dc2626; animation:none; }
+.dataset-operation-progress[data-state=failed] .dataset-operation-progress-percent { color:#dc2626; }
+.dataset-operation-progress-detail { margin:7px 0 0; font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
+.dataset-operation-progress-meta { display:flex; align-items:center; flex-wrap:wrap; gap:4px 16px; margin-top:7px; color:var(--studio-dim); font-size:11px; line-height:1.5; font-variant-numeric:tabular-nums; }
+.dataset-operation-progress-meta strong { color:var(--studio-text); font-weight:500; }
+.dataset-operation-progress-actions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; margin-top:8px; }
+@keyframes dataset-operation-progress-slide { from { transform:translateX(-105%); } to { transform:translateX(390%); } }
+@media(prefers-reduced-motion:reduce) { .dataset-operation-progress-track > span { transition:none; }.dataset-operation-progress-track > .is-indeterminate { animation:none; } }

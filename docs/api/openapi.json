@@ -1989,6 +1989,22 @@
               ],
               "title": "Version Id"
             }
+          },
+          {
+            "name": "progress_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Progress Id"
+            }
           }
         ],
         "requestBody": {
@@ -2008,6 +2024,54 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DatasetInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{pid}/datasets/import-progress/{progress_id}": {
+      "get": {
+        "summary": "Dataset Import Progress",
+        "operationId": "dataset_import_progress_api_projects__pid__datasets_import_progress__progress_id__get",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "progress_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Progress Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetImportProgress"
                 }
               }
             }
@@ -2053,6 +2117,22 @@
                 }
               ],
               "title": "Version Id"
+            }
+          },
+          {
+            "name": "progress_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Progress Id"
             }
           }
         ],
@@ -2243,6 +2323,45 @@
         }
       }
     },
+    "/api/datasets/{did}/caption-stats": {
+      "get": {
+        "summary": "Caption Stats",
+        "operationId": "caption_stats_api_datasets__did__caption_stats_get",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Did"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetCaptionStats"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/datasets/{did}/images": {
       "get": {
         "summary": "List Images",
@@ -2285,6 +2404,43 @@
               "type": "string",
               "default": "",
               "title": "Q"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tag"
+            }
+          },
+          {
+            "name": "caption_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "captioned",
+                    "missing",
+                    "invalid"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Caption Status"
             }
           }
         ],
@@ -2436,6 +2592,22 @@
               "type": "string",
               "title": "H"
             }
+          },
+          {
+            "name": "rel_path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rel Path"
+            }
           }
         ],
         "responses": {
@@ -2481,6 +2653,22 @@
             "schema": {
               "type": "string",
               "title": "H"
+            }
+          },
+          {
+            "name": "rel_path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rel Path"
             }
           }
         ],
@@ -5970,6 +6158,17 @@
           "caption": {
             "type": "string",
             "title": "Caption"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
           }
         },
         "type": "object",
@@ -6136,6 +6335,25 @@
           "text"
         ],
         "title": "CaptionOptions"
+      },
+      "CaptionTagCount": {
+        "properties": {
+          "tag": {
+            "type": "string",
+            "title": "Tag"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "tag",
+          "count"
+        ],
+        "title": "CaptionTagCount"
       },
       "CatalogDownloadRequest": {
         "properties": {
@@ -6625,6 +6843,56 @@
         ],
         "title": "DatasetBody"
       },
+      "DatasetCaptionStats": {
+        "properties": {
+          "images": {
+            "type": "integer",
+            "title": "Images"
+          },
+          "captioned": {
+            "type": "integer",
+            "title": "Captioned"
+          },
+          "missing": {
+            "type": "integer",
+            "title": "Missing"
+          },
+          "invalid": {
+            "type": "integer",
+            "title": "Invalid"
+          },
+          "formats": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Formats"
+          },
+          "unique_tags": {
+            "type": "integer",
+            "title": "Unique Tags"
+          },
+          "tags": {
+            "items": {
+              "$ref": "#/components/schemas/CaptionTagCount"
+            },
+            "type": "array",
+            "title": "Tags"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "images",
+          "captioned",
+          "missing",
+          "invalid",
+          "formats",
+          "unique_tags",
+          "tags"
+        ],
+        "title": "DatasetCaptionStats"
+      },
       "DatasetConfig": {
         "properties": {
           "sources": {
@@ -6958,6 +7226,16 @@
             ],
             "title": "Caption Error"
           },
+          "caption_status": {
+            "type": "string",
+            "enum": [
+              "captioned",
+              "missing",
+              "invalid"
+            ],
+            "title": "Caption Status",
+            "default": "missing"
+          },
           "has_mask": {
             "type": "boolean",
             "title": "Has Mask"
@@ -6974,6 +7252,114 @@
           "has_mask"
         ],
         "title": "DatasetImage"
+      },
+      "DatasetImportProgress": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "receiving",
+              "extracting",
+              "validating",
+              "copying",
+              "registering",
+              "completed",
+              "failed"
+            ],
+            "title": "Phase"
+          },
+          "bytes_done": {
+            "type": "integer",
+            "title": "Bytes Done"
+          },
+          "bytes_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bytes Total"
+          },
+          "files_done": {
+            "type": "integer",
+            "title": "Files Done"
+          },
+          "files_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Files Total"
+          },
+          "elapsed_seconds": {
+            "type": "number",
+            "title": "Elapsed Seconds"
+          },
+          "phase_elapsed_seconds": {
+            "type": "number",
+            "title": "Phase Elapsed Seconds"
+          },
+          "bytes_per_second": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bytes Per Second"
+          },
+          "eta_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta Seconds"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "phase",
+          "bytes_done",
+          "bytes_total",
+          "files_done",
+          "files_total",
+          "elapsed_seconds",
+          "phase_elapsed_seconds",
+          "bytes_per_second",
+          "eta_seconds",
+          "error"
+        ],
+        "title": "DatasetImportProgress"
       },
       "DatasetInfo": {
         "properties": {

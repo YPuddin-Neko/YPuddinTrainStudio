@@ -25,6 +25,27 @@ function showConfig() {
 const enqueue = () => screen.getByRole('button', { name: '开始训练' });
 
 describe('training configuration actions', () => {
+  it('keeps one title with its model badge and groups search, advanced options and configuration actions', async () => {
+    showConfig();
+    const badge = await screen.findByTestId('training-family-badge');
+    const heading = screen.getByRole('heading', { name: '训练参数', level: 1 });
+    expect(heading.parentElement).toContainElement(badge);
+    expect(screen.getAllByRole('heading', { name: '训练参数' })).toHaveLength(1);
+    const toolbar = screen.getByRole('group', { name: '训练参数工具栏' });
+    const search = within(toolbar).getByRole('textbox', { name: '搜索训练参数' });
+    const advanced = within(toolbar).getByRole('checkbox', { name: '高级选项' });
+    expect(search.closest('.training-toolbar-filters')).toContainElement(advanced);
+    expect(within(toolbar).getByRole('button', { name: '保存草稿' })).toBeInTheDocument();
+    expect(within(toolbar).getByRole('combobox', { name: /加载预设/ })).toBeInTheDocument();
+    fireEvent.change(search, { target: { value: 'vae_path' } });
+    expect(await screen.findByTestId('field-model.vae_path')).toBeInTheDocument();
+    expect(screen.getByText('搜索所有分区，包含高级参数')).toBeInTheDocument();
+    fireEvent.click(within(toolbar).getByRole('button', { name: '清空搜索' }));
+    expect(screen.getByRole('tab', { name: '训练参数' })).toHaveAttribute('aria-selected', 'true');
+    expect(search).toHaveValue('');
+    expect(heading.parentElement).toContainElement(badge);
+  });
+
   it('loads the live schema and submits job name, priority and local schedule', async () => {
     const schema: any = structuredClone(trainSchema);
     schema.$defs.LoopConfig.properties.backend_added = { type: 'string', title: 'Backend added field' };

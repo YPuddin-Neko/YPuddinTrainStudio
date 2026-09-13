@@ -23,6 +23,7 @@ from starlette.formparsers import MultiPartException, MultiPartParser
 from ypuddin.data.index import IMAGE_EXTS
 
 from .errors import ApiError
+from .import_progress import ImportProgress
 
 MAX_UPLOAD_BYTES = 2 * 1024**3
 MAX_EXPANDED_BYTES = 4 * 1024**3
@@ -43,6 +44,12 @@ class _UploadParser(MultiPartParser):
 
     spool_max_size = 64 * 1024
     max_file_size = spool_max_size  # Starlette < 0.46 uses this name for its spool threshold.
+    progress: ImportProgress | None = None
+
+    def on_part_end(self) -> None:
+        super().on_part_end()
+        if self.progress and self._current_part.file is not None:
+            self.progress.advance(files_done=1)
 
     def on_part_begin(self) -> None:
         super().on_part_begin()
@@ -85,11 +92,12 @@ class UploadBatch:
 
 
 @asynccontextmanager
-async def read_upload(request: Request) -> AsyncIterator[UploadBatch]:
+async def read_upload(request: Request, progress: ImportProgress | None = None) -> AsyncIterator[UploadBatch]:
     """Parse incrementally; spooled upload files close on every success/error path."""
     if not request.headers.get("content-type", "").lower().startswith("multipart/form-data"):
         raise ApiError("expected multipart/form-data", code="upload.content_type", status=415)
     length = request.headers.get("content-length")
+    declared = None
     if length:
         try:
             declared = int(length)
@@ -97,16 +105,21 @@ async def read_upload(request: Request) -> AsyncIterator[UploadBatch]:
             raise ApiError("invalid Content-Length", code="upload.invalid") from exc
         if declared < 0 or declared > MAX_UPLOAD_BYTES:
             raise ApiError("upload exceeds the 2 GiB request limit", code="upload.too_large", status=413)
+    if progress:
+        progress.set_phase("receiving", bytes_total=declared)
 
     async def bounded_stream():
         total = 0
         async for chunk in request.stream():
             total += len(chunk)
+            if progress:
+                progress.advance(bytes_done=len(chunk))
             if total > MAX_UPLOAD_BYTES:
                 raise _MultipartLimit("upload exceeds the 2 GiB request limit")
             yield chunk
 
     parser = _UploadParser(request.headers, bounded_stream(), max_files=MAX_FILES, max_fields=6)
+    parser.progress = progress
     form = None
     try:
         try:
@@ -215,7 +228,9 @@ def _file_limit(path: Path, caption_ext: str = "auto") -> int:
     raise ApiError(f"unsupported dataset file: {path}", code="upload.file_type")
 
 
-def _copy_file(source: BinaryIO, destination: Path, limit: int, budget: list[int]) -> None:
+def _copy_file(
+    source: BinaryIO, destination: Path, limit: int, budget: list[int], progress: ImportProgress | None = None
+) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     size = 0
     with destination.open("xb") as output:
@@ -227,9 +242,17 @@ def _copy_file(source: BinaryIO, destination: Path, limit: int, budget: list[int
                     "dataset file or expanded upload is too large", code="upload.too_large", status=413
                 )
             output.write(chunk)
+            if progress:
+                progress.advance(bytes_done=len(chunk))
+    if progress:
+        progress.advance(files_done=1)
 
 
-def _validate_files(paths: list[Path], caption_ext: str = "auto") -> None:
+def _validate_files(
+    paths: list[Path], caption_ext: str = "auto", progress: ImportProgress | None = None
+) -> None:
+    if progress:
+        progress.set_phase("validating", files_total=len(paths))
     images: dict[Path, Path] = {}
     sidecars = []
     for path in paths:
@@ -246,6 +269,8 @@ def _validate_files(paths: list[Path], caption_ext: str = "auto") -> None:
                 raise ApiError(f"invalid caption {path.name}: {exc}", code="upload.caption") from exc
             suffix = path.suffix if path.suffix.lower() in {".txt", ".json"} else caption_ext
             sidecars.append((path, path.with_name(path.name[: -len(suffix)])))
+            if progress:
+                progress.advance(files_done=1)
             continue
         try:
             with warnings.catch_warnings():
@@ -267,6 +292,8 @@ def _validate_files(paths: list[Path], caption_ext: str = "auto") -> None:
             if stem in images:
                 raise ApiError(f"image names share a caption stem: {path.name}", code="upload.duplicate")
             images[stem] = path
+        if progress:
+            progress.advance(files_done=1)
     if not images:
         raise ApiError("upload contains no training images", code="upload.no_images")
     for path, stem in sidecars:
@@ -319,7 +346,12 @@ def _destination_path(
 
 @contextmanager
 def merge_dataset_files(
-    root: Path, temporary: Path, paths: list[Path], *, loose_name: str = ""
+    root: Path,
+    temporary: Path,
+    paths: list[Path],
+    *,
+    loose_name: str = "",
+    progress: ImportProgress | None = None,
 ) -> Iterator[list[Path]]:
     """Merge a verified snapshot; the caller registers sources before this context commits."""
     created_files: list[Path] = []
@@ -346,6 +378,8 @@ def merge_dataset_files(
         pending: list[tuple[Path, Path]] = []
         children: dict[Path, dict[str, str]] = {}
         caption_stems: dict[Path, dict[str, set[str]]] = {}
+        if progress:
+            progress.set_phase("validating", files_total=len(paths))
         for directory in directories:
             _destination_path(root, directory.relative_to(root), children, directory=True)
         for source in paths:
@@ -373,9 +407,19 @@ def merge_dataset_files(
                         code="upload.conflict",
                         status=409,
                     )
+                if progress:
+                    progress.advance(files_done=1)
                 continue
             pending.append((source, destination))
+            if progress:
+                progress.advance(files_done=1)
 
+        if progress:
+            progress.set_phase(
+                "copying",
+                bytes_total=sum(source.stat().st_size for source, _ in pending),
+                files_total=len(pending),
+            )
         for directory in directories:
             if not directory.exists():
                 directory.mkdir()
@@ -393,8 +437,13 @@ def merge_dataset_files(
             with destination.open("xb") as output:
                 created_files.append(destination)
                 with source.open("rb") as stream:
-                    shutil.copyfileobj(stream, output, CHUNK)
+                    while chunk := stream.read(CHUNK):
+                        output.write(chunk)
+                        if progress:
+                            progress.advance(bytes_done=len(chunk))
             shutil.copystat(source, destination)
+            if progress:
+                progress.advance(files_done=1)
         yield directories
         completed = True
     finally:
@@ -410,7 +459,11 @@ def merge_dataset_files(
 
 @contextmanager
 def staged_upload(
-    project_dir: Path, batch: UploadBatch, *, dataset_root: Path | None = None
+    project_dir: Path,
+    batch: UploadBatch,
+    *,
+    dataset_root: Path | None = None,
+    progress: ImportProgress | None = None,
 ) -> Iterator[list[Path]]:
     """Merge validated folders without wrappers; roll back only newly published data."""
     root = dataset_root or project_dir / "datasets"
@@ -450,6 +503,17 @@ def staged_upload(
                     raise ApiError("ZIP contains too many entries", code="upload.too_many", status=413)
                 if sum(item.file_size for item in entries) > MAX_EXPANDED_BYTES:
                     raise ApiError("ZIP expands beyond 4 GiB", code="upload.too_large", status=413)
+                if progress:
+                    included = [
+                        item
+                        for item in entries
+                        if not item.is_dir() and not _ignored(relative_upload_path(item.filename))
+                    ]
+                    progress.set_phase(
+                        "extracting",
+                        bytes_total=sum(item.file_size for item in included),
+                        files_total=len(included),
+                    )
                 for item in entries:
                     path = relative_upload_path(item.filename.rstrip("/"))
                     mode = (item.external_attr >> 16) & 0xFFFF
@@ -474,10 +538,20 @@ def staged_upload(
                             status=413,
                         )
                     with archive.open(item) as source:
-                        _copy_file(source, target(path), limit, budget)
+                        _copy_file(source, target(path), limit, budget, progress)
         else:
             if len(batch.files) > MAX_FILES:
                 raise ApiError("too many uploaded files", code="upload.too_many", status=413)
+            if progress:
+                included_uploads = [
+                    upload for upload, path in zip(batch.files, names, strict=True) if not _ignored(path)
+                ]
+                sizes = [upload.size for upload in included_uploads]
+                progress.set_phase(
+                    "copying",
+                    bytes_total=sum(sizes) if all(size is not None for size in sizes) else None,
+                    files_total=len(included_uploads),
+                )
             for upload, path in zip(batch.files, names, strict=True):
                 if _ignored(path):
                     continue
@@ -485,10 +559,12 @@ def staged_upload(
                 if upload.size is not None and upload.size > limit:
                     raise ApiError(f"uploaded file is too large: {path}", code="upload.too_large", status=413)
                 upload.file.seek(0)
-                _copy_file(upload.file, target(path), limit, budget)
-        _validate_files(paths, batch.caption_ext)
+                _copy_file(upload.file, target(path), limit, budget, progress)
+        _validate_files(paths, batch.caption_ext, progress)
 
-        with merge_dataset_files(root, temporary, paths, loose_name=batch.name) as directories:
+        with merge_dataset_files(
+            root, temporary, paths, loose_name=batch.name, progress=progress
+        ) as directories:
             yield directories
     except ApiError:
         raise

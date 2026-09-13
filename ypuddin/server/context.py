@@ -11,6 +11,7 @@ from typing import Any
 
 from .bus import EventBus
 from .db import Database
+from .import_progress import ImportProgressStore
 from .models import Settings
 from .supervisor import JobSupervisor
 
@@ -30,6 +31,7 @@ class ServiceContext:
     allowed_roots: list[Path] = field(default_factory=list)
     _settings_lock: Any = field(default_factory=threading.RLock, init=False, repr=False)
     versions: Any = field(default=None, init=False, repr=False)
+    import_progress: ImportProgressStore = field(default_factory=ImportProgressStore, init=False, repr=False)
 
     def __post_init__(self) -> None:
         from .versions import VersionManager

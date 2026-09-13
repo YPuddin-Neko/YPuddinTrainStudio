@@ -566,6 +566,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{pid}/datasets/import-progress/{progress_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dataset Import Progress */
+        get: operations["dataset_import_progress_api_projects__pid__datasets_import_progress__progress_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{pid}/datasets/upload": {
         parameters: {
             query?: never;
@@ -612,6 +629,23 @@ export interface paths {
         put?: never;
         /** Rescan Dataset */
         post: operations["rescan_dataset_api_datasets__did__rescan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/datasets/{did}/caption-stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Caption Stats */
+        get: operations["caption_stats_api_datasets__did__caption_stats_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1776,6 +1810,8 @@ export interface components {
         CaptionBody: {
             /** Caption */
             caption: string;
+            /** Description */
+            description?: string | null;
         };
         /** CaptionConfig */
         CaptionConfig: {
@@ -1849,6 +1885,15 @@ export interface components {
             mode: "fill_missing" | "append" | "remove" | "replace";
             /** Text */
             text: string;
+        };
+        /** CaptionTagCount */
+        CaptionTagCount: {
+            /** Tag */
+            tag: string;
+            /** Count */
+            count: number;
+        } & {
+            [key: string]: unknown;
         };
         /** CatalogDownloadRequest */
         CatalogDownloadRequest: {
@@ -2052,6 +2097,27 @@ export interface components {
             /** Class Prompt */
             class_prompt?: string | null;
         };
+        /** DatasetCaptionStats */
+        DatasetCaptionStats: {
+            /** Images */
+            images: number;
+            /** Captioned */
+            captioned: number;
+            /** Missing */
+            missing: number;
+            /** Invalid */
+            invalid: number;
+            /** Formats */
+            formats: {
+                [key: string]: number;
+            };
+            /** Unique Tags */
+            unique_tags: number;
+            /** Tags */
+            tags: components["schemas"]["CaptionTagCount"][];
+        } & {
+            [key: string]: unknown;
+        };
         /** DatasetConfig */
         DatasetConfig: {
             /**
@@ -2188,8 +2254,44 @@ export interface components {
             caption_format?: string | null;
             /** Caption Error */
             caption_error?: string | null;
+            /**
+             * Caption Status
+             * @default missing
+             * @enum {string}
+             */
+            caption_status: "captioned" | "missing" | "invalid";
             /** Has Mask */
             has_mask: boolean;
+        } & {
+            [key: string]: unknown;
+        };
+        /** DatasetImportProgress */
+        DatasetImportProgress: {
+            /** Id */
+            id: string;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "receiving" | "extracting" | "validating" | "copying" | "registering" | "completed" | "failed";
+            /** Bytes Done */
+            bytes_done: number;
+            /** Bytes Total */
+            bytes_total: number | null;
+            /** Files Done */
+            files_done: number;
+            /** Files Total */
+            files_total: number | null;
+            /** Elapsed Seconds */
+            elapsed_seconds: number;
+            /** Phase Elapsed Seconds */
+            phase_elapsed_seconds: number;
+            /** Bytes Per Second */
+            bytes_per_second: number | null;
+            /** Eta Seconds */
+            eta_seconds: number | null;
+            /** Error */
+            error: string | null;
         } & {
             [key: string]: unknown;
         };
@@ -6345,6 +6447,7 @@ export interface operations {
         parameters: {
             query?: {
                 version_id?: string | null;
+                progress_id?: string | null;
             };
             header?: never;
             path: {
@@ -6378,10 +6481,43 @@ export interface operations {
             };
         };
     };
+    dataset_import_progress_api_projects__pid__datasets_import_progress__progress_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+                progress_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetImportProgress"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     upload_dataset_api_projects__pid__datasets_upload_post: {
         parameters: {
             query?: {
                 version_id?: string | null;
+                progress_id?: string | null;
             };
             header?: never;
             path: {
@@ -6520,12 +6656,45 @@ export interface operations {
             };
         };
     };
+    caption_stats_api_datasets__did__caption_stats_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                did: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetCaptionStats"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_images_api_datasets__did__images_get: {
         parameters: {
             query?: {
                 page?: number;
                 page_size?: number;
                 q?: string;
+                tag?: string | null;
+                caption_status?: ("captioned" | "missing" | "invalid") | null;
             };
             header?: never;
             path: {
@@ -6623,7 +6792,9 @@ export interface operations {
     };
     get_caption_api_datasets__did__images__h__caption_get: {
         parameters: {
-            query?: never;
+            query?: {
+                rel_path?: string | null;
+            };
             header?: never;
             path: {
                 did: string;
@@ -6655,7 +6826,9 @@ export interface operations {
     };
     put_caption_api_datasets__did__images__h__caption_put: {
         parameters: {
-            query?: never;
+            query?: {
+                rel_path?: string | null;
+            };
             header?: never;
             path: {
                 did: string;

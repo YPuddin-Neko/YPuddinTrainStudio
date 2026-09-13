@@ -192,11 +192,10 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
             <BrandMark/>
             <span className="sidebar-brand-text"><strong>YPuddin</strong><span>Train Studio</span></span>
           </Link>
-          <button type="button" className="sidebar-collapse-control" aria-label={collapsed?text('展开侧边栏','Expand sidebar'):text('收起侧边栏','Collapse sidebar')} title={collapsed?text('展开侧边栏','Expand sidebar'):text('收起侧边栏','Collapse sidebar')} aria-expanded={!collapsed} aria-controls="app-sidebar" onClick={toggleSidebar}>{collapsed?<PanelLeftOpen size={18}/>:<PanelLeftClose size={18}/>}</button>
           <button type="button" onClick={dismissMenu} className="sidebar-menu-close md:hidden" aria-label={t('hardware.closeMenu')}><X className="w-4 h-4" /></button>
         </div>
         <div className="sidebar-start px-3 pt-3"><Link to="/projects" aria-label={t('hardware.startTraining')} title={t('hardware.startTraining')} onClick={() => setMenuOpen(false)} className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 px-3 py-2.5 text-sm font-medium text-white"><Plus className="w-4 h-4" /><span>{t('hardware.startTraining')}</span></Link></div>
-        <nav aria-label={text('主导航', 'Main navigation')} className="flex-1 overflow-y-auto p-2 space-y-1" onClick={event => { if (event.target instanceof Element && event.target.closest('a[href]')) setMenuOpen(false); }}>
+        <nav aria-label={text('主导航', 'Main navigation')} className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1" onClick={event => { if (event.target instanceof Element && event.target.closest('a[href]')) setMenuOpen(false); }}>
           {navItems.map((item) => (
             <React.Fragment key={item.to}>
             <NavItem
@@ -210,6 +209,7 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
             </React.Fragment>
           ))}
         </nav>
+        <div className="sidebar-footer">
         <div className="sidebar-preferences" ref={preferencesRef} aria-label={text('界面偏好', 'Interface preferences')}>
           <button ref={preferencesTrigger} type="button" className="sidebar-preferences-trigger" aria-label={text('界面偏好', 'Interface preferences')} title={text('界面偏好', 'Interface preferences')} aria-expanded={preferencesOpen} aria-controls={preferencesOpen?'sidebar-preferences-panel':undefined} onClick={()=>preferencesOpen?closePreferences():setPreferencesOpen(true)}><SlidersHorizontal size={17}/><span>{text('界面偏好','Appearance')}</span></button>
           {preferencesOpen && <div id="sidebar-preferences-panel" className="sidebar-preferences-popover"><label><span>{t('settings.theme')}</span>
@@ -220,6 +220,8 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
           <StudioSelect className="sidebar-preference" aria-label={t('settings.language')} value={i18n.resolvedLanguage === 'en' ? 'en' : 'zh-CN'} disabled={savingUi}
             icon={<Globe size={14}/>} options={[{value:'zh-CN',label:'中文'},{value:'en',label:'EN'}]}
             onValueChange={value => void changeUi({language:value as Settings['ui']['language']})}/></label></div>}
+        </div>
+        <button type="button" className="sidebar-collapse-control" aria-label={collapsed?text('展开侧边栏','Expand sidebar'):text('收起侧边栏','Collapse sidebar')} title={collapsed?text('展开侧边栏','Expand sidebar'):text('收起侧边栏','Collapse sidebar')} aria-expanded={!collapsed} aria-controls="app-sidebar" onClick={toggleSidebar}>{collapsed?<PanelLeftOpen size={18}/>:<PanelLeftClose size={18}/>}</button>
         </div>
       </aside>
 

@@ -11,6 +11,8 @@ import ConfigHelp from '../../components/ConfigHelp';
 import { formatBytes } from '../../utils/format';
 import { filesFromDrop, filesFromSelection, type DatasetUploadFile } from '../../utils/datasetFiles';
 import { formatDatasetImportError } from '../../utils/datasetImportErrors';
+import { useDatasetImportProgress } from '../../utils/useDatasetImportProgress';
+import DatasetImportProgress from '../../components/datasets/DatasetImportProgress';
 import './project-data-import.css';
 
 export default function ProjectDataImport({ projectId, versionId, onImported, defaultIsReg = false }: { projectId: string; versionId?: string; onImported: () => void; defaultIsReg?: boolean }) {
@@ -30,11 +32,15 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
   const [error, setError] = React.useState('');
   const [created, setCreated] = React.useState<DatasetInfo[]>([]);
   const selectionGeneration = React.useRef(0);
-  React.useEffect(() => () => { selectionGeneration.current += 1; }, []);
+  const importGeneration = React.useRef(0);
+  const healthRequest = React.useRef<AbortController | null>(null);
+  const { operation, start: startProgress, finish: finishProgress, reset: resetProgress } = useDatasetImportProgress(projectId);
+  React.useEffect(() => () => { selectionGeneration.current += 1; importGeneration.current += 1; healthRequest.current?.abort(); }, [projectId, versionId]);
   const fileInput = React.useRef<HTMLInputElement>(null);
   const folderInput = React.useRef<HTMLInputElement>(null);
   const inputClass = 'project-import-input';
   const selectFiles = (incoming: DatasetUploadFile[]) => {
+    resetProgress();
     setError(''); setCreated([]);
     setFiles(incoming);
     if (fileInput.current) fileInput.current.value = '';
@@ -46,6 +52,7 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
   };
   const dropFiles = async (transfer: DataTransfer) => {
     const generation = ++selectionGeneration.current;
+    resetProgress();
     setReading(true); setError(''); setCreated([]);
     try {
       const selected = await filesFromDrop(transfer);
@@ -61,8 +68,11 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (locked || !Number.isInteger(repeats) || repeats < 1 || (mode === 'upload' ? files.length === 0 : !path.trim())) return;
+    const generation = ++importGeneration.current;
+    const current = () => generation === importGeneration.current;
     setBusy(true); setError(''); setCreated([]);
     try {
+      const progressId = startProgress(mode);
       let result: DatasetInfo & { datasets?: DatasetInfo[] };
       if (mode === 'upload') {
         const form = new FormData();
@@ -70,39 +80,47 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
         form.append('name', autoName); form.append('repeats', String(repeats));
         form.append('is_reg', String(isReg)); form.append('prior_weight', String(priorWeight));
         form.append('class_prompt', classPrompt.trim()); form.append('caption_ext', captionExt);
-        result = await apiClient.post<DatasetInfo>(`/projects/${projectId}/datasets/upload`, form, { params: { version_id: versionId }, silent: true });
+        result = await apiClient.post<DatasetInfo>(`/projects/${projectId}/datasets/upload`, form, { params: { version_id: versionId, progress_id: progressId }, silent: true });
+        if (!current()) return;
         setFiles([]);
         if (fileInput.current) fileInput.current.value = '';
         if (folderInput.current) folderInput.current.value = '';
       } else {
         result = await apiClient.post<DatasetInfo>(`/projects/${projectId}/datasets`, {
           path: path.trim(), repeats, caption_ext: captionExt.trim(), is_reg: isReg, prior_weight: priorWeight, class_prompt: classPrompt.trim() || null,
-        }, { params: { version_id: versionId }, silent: true });
+        }, { params: { version_id: versionId, progress_id: progressId }, silent: true });
+        if (!current()) return;
         setPath('');
       }
+      finishProgress('completed');
       setCreated(result.datasets || [result]); onImported();
     } catch (failure) {
+      if (!current()) return;
+      finishProgress('failed');
       const isNetworkFailure = failure instanceof Error && /^(Failed to fetch|Load failed|NetworkError when attempting to fetch resource\.?)$/i.test(failure.message);
       if (mode === 'upload' && isNetworkFailure) {
         const controller = new AbortController();
+        healthRequest.current = controller;
         const timeout = window.setTimeout(() => controller.abort(), 3000);
         try {
           await apiClient.get('/health', { silent: true, signal: controller.signal });
+          if (!current()) return;
           setError(text('训练服务仍可连接，但文件未能发送。请确认文件没有被移动或删除，重新选择文件夹后重试。', 'The training service is reachable, but the files could not be sent. Check that they have not moved or been deleted, then select the folder again.'));
-        } catch { setError(text('上传连接已中断，所选文件已保留。请检查训练服务与网络连接后重试。', 'The upload connection was interrupted. Your selection is retained. Check the training service and network, then retry.')); }
-        finally { window.clearTimeout(timeout); }
+        } catch { if (current()) setError(text('上传连接已中断，所选文件已保留。请检查训练服务与网络连接后重试。', 'The upload connection was interrupted. Your selection is retained. Check the training service and network, then retry.')); }
+        finally { window.clearTimeout(timeout); if (healthRequest.current === controller) healthRequest.current = null; }
       } else setError(formatDatasetImportError(failure));
     }
-    finally { setBusy(false); }
+    finally { if (current()) setBusy(false); }
   };
 
   return <form onSubmit={submit} className="project-data-import" data-testid="project-data-import" aria-busy={locked}>
     <header className="project-import-heading">
       <h3>{defaultIsReg ? text('添加已有正则图', 'Add existing regularization images') : text('添加训练图片', 'Add training images')}</h3>
       <div className="project-import-modes" role="group" aria-label={text('数据导入方式', 'Data import method')}>
-        {[['upload', text('上传文件或文件夹', 'Upload files or folders')], ['path', text('从训练电脑导入', 'Import from training computer')]].map(([key, label]) => <button key={key} type="button" disabled={locked} onClick={() => { setMode(key as typeof mode); setError(''); }} aria-pressed={mode === key}>{label}</button>)}
+        {[['upload', text('上传文件或文件夹', 'Upload files or folders')], ['path', text('从训练电脑导入', 'Import from training computer')]].map(([key, label]) => <button key={key} type="button" disabled={locked} onClick={() => { setMode(key as typeof mode); setError(''); setCreated([]); resetProgress(); }} aria-pressed={mode === key}>{label}</button>)}
       </div>
     </header>
+    {operation && <DatasetImportProgress operation={operation}/>}
     {error && <div role="alert" className="project-import-message project-import-error">{error}</div>}
     {created.length > 0 && <div role="status" className="project-import-message project-import-success"><CheckCircle2 size={15}/>{text(`已导入当前版本，共 ${created.length} 组图片。`, `Imported ${created.length} image groups into this version.`)}{created.map(dataset => <Link key={dataset.source.id} to={`/datasets/${dataset.source.id}`}>{created.length === 1 ? text('查看图片与标签', 'Review images and captions') : dataset.source.path.replace(/\\/g, '/').split('/').pop()}</Link>)}</div>}
     {mode === 'upload' ? <>
@@ -122,7 +140,7 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
       </div>}
     </> : <div className="project-import-location">
       <p>{text('选择运行训练服务的电脑上的目录。浏览器所在电脑的文件，请使用“上传文件或文件夹”。', 'Choose a folder on the computer running the training service. For files on this browser’s computer, use Upload files or folders.')}</p>
-      <fieldset disabled={locked} role="group" aria-label={text('训练图片文件夹路径', 'Training image folder path')}><PathInput value={path} onChange={setPath} placeholder={text('例如 D:\\训练素材\\角色图', 'For example D:\\training-data\\character')}/></fieldset>
+      <fieldset disabled={locked} role="group" aria-label={text('训练图片文件夹路径', 'Training image folder path')}><PathInput value={path} onChange={value => { setPath(value); resetProgress(); setCreated([]); }} placeholder={text('例如 D:\\训练素材\\角色图', 'For example D:\\training-data\\character')}/></fieldset>
     </div>}
     <div className="project-import-configuration">
       <details className="project-import-options"><summary>{text('导入选项', 'Import options')}</summary>

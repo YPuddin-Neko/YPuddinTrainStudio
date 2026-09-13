@@ -100,7 +100,9 @@ def file_manifest(source: Path) -> list[tuple[Path, int, int]]:
     return sorted(result)
 
 
-def copy_source(source: Path, target: Path, manifest: list, progress: Any = None) -> None:
+def copy_source(
+    source: Path, target: Path, manifest: list, progress: Any = None, *, import_progress: Any = None
+) -> None:
     target.mkdir(parents=True, exist_ok=False)
     for relative, size, mtime in manifest:
         original = source / relative
@@ -109,12 +111,21 @@ def copy_source(source: Path, target: Path, manifest: list, progress: Any = None
             raise ApiError(f"source changed during snapshot: {original}", code="version.source_changed")
         dest = target / relative
         dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(original, dest)  # Deliberately never use hard links.
+        if import_progress:
+            with original.open("rb") as stream, dest.open("xb") as output:
+                while chunk := stream.read(1024**2):
+                    output.write(chunk)
+                    import_progress.advance(bytes_done=len(chunk))
+            shutil.copystat(original, dest)
+        else:
+            shutil.copy2(original, dest)  # Deliberately never use hard links.
         after = original.stat()
         if after.st_size != size or after.st_mtime_ns != mtime:
             raise ApiError(f"source changed during snapshot: {original}", code="version.source_changed")
         if progress:
             progress(size)
+        if import_progress:
+            import_progress.advance(files_done=1)
     if file_manifest(source) != manifest:
         raise ApiError(f"source changed during snapshot: {source}", code="version.source_changed")
 
@@ -417,7 +428,7 @@ class VersionManager:
             c.db.execute("UPDATE project_versions SET busy=NULL WHERE id=? AND busy=?", (source_id, vid))
             c.bus.publish("version.changed", {"project_id": pid, "version_id": vid})
 
-    def import_directory(self, pid: str, vid: str, body: Any) -> str:
+    def import_directory(self, pid: str, vid: str, body: Any, *, progress: Any = None) -> str:
         from .dataset_uploads import merge_dataset_files
         from .routes_work import _register_dataset, get_project_config
 
@@ -545,7 +556,11 @@ class VersionManager:
             try:
                 snapshot = staging / target.relative_to(root)
                 manifest = file_manifest(source)
-                copy_source(source, snapshot, manifest)
+                if progress:
+                    progress.set_phase(
+                        "copying", bytes_total=sum(item[1] for item in manifest), files_total=len(manifest)
+                    )
+                copy_source(source, snapshot, manifest, import_progress=progress)
                 # Validate the selected structured sidecars before promoting a copied
                 # folder or recording it in this version. JSON bytes are never captions.
                 from ypuddin.data.captions import read_training_caption
@@ -553,13 +568,22 @@ class VersionManager:
 
                 try:
                     caption_directories = {}
-                    for image in iter_images(snapshot):
+                    images = list(iter_images(snapshot))
+                    if progress:
+                        progress.set_phase("validating", files_total=len(images))
+                    for image in images:
                         caption = caption_for(image, caption_ext, directory_cache=caption_directories)
                         if caption and Path(caption).suffix.lower() == ".json":
                             read_training_caption(caption)
+                        if progress:
+                            progress.advance(files_done=1)
                 except ValueError as error:
                     raise ApiError(str(error), code="dataset.caption_invalid", status=400) from error
-                with merge_dataset_files(root, staging, [snapshot / item[0] for item in manifest]):
+                with merge_dataset_files(
+                    root, staging, [snapshot / item[0] for item in manifest], progress=progress
+                ):
+                    if progress:
+                        progress.set_phase("registering")
                     if existing:
                         did = existing["id"]
                         c.db.update("datasets", did, {"index_status": "indexing"})

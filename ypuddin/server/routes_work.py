@@ -28,6 +28,7 @@ from .dataset_uploads import UploadBatch, read_upload, staged_upload
 from .db import new_id, now
 from .errors import ApiError, NotFound
 from .hardware import gpu_info
+from .import_progress import ImportProgress
 from .project_covers import cover_path, cover_url, read_cover_upload, remove_cover, replace_cover, thumbnail
 from .sample_events import read_events, samples_with_loss
 from .versions import ACTIVE_JOBS, assert_version_writable, version_row
@@ -763,14 +764,21 @@ def _register_dataset(
 
 
 def _register_upload(
-    c: ServiceContext, pid: str, batch: UploadBatch, version_id: str | None = None
+    c: ServiceContext,
+    pid: str,
+    batch: UploadBatch,
+    version_id: str | None = None,
+    progress: ImportProgress | None = None,
 ) -> list[str]:
     with c.versions.mutation(pid, version_id) as version:
         with staged_upload(
             c.version_dir(pid, version["id"]),
             batch,
             dataset_root=c.dataset_dir(pid, version["id"], is_reg=batch.is_reg),
+            progress=progress,
         ) as directories:
+            if progress:
+                progress.set_phase("registering")
             with c.db.lock:
                 managed_root = c.dataset_dir(pid, version["id"], is_reg=batch.is_reg).resolve()
                 config, sources = _dataset_config(c, pid, version["id"])
@@ -1077,11 +1085,20 @@ def add_dataset(
     background_tasks: BackgroundTasks,
     c: ServiceContext = Depends(ctx),
     version_id: str | None = None,
+    progress_id: str | None = None,
 ) -> dict[str, Any]:
-    version = c.resolve_version(pid, version_id or body.version_id)
-    did = c.versions.import_directory(pid, version["id"], body)
+    with c.import_progress.track(pid, progress_id, "validating") as progress:
+        version = c.resolve_version(pid, version_id or body.version_id)
+        did = c.versions.import_directory(pid, version["id"], body, progress=progress)
     background_tasks.add_task(_index_dataset, c, did)
     return _dataset_row(c, c.db.fetchone("SELECT * FROM datasets WHERE id=?", (did,)))
+
+
+@router.get("/projects/{pid}/datasets/import-progress/{progress_id}", response_model=m.DatasetImportProgress)
+async def dataset_import_progress(pid: str, progress_id: str, request: Request) -> dict[str, Any]:
+    # This route intentionally performs no database lookup or thread-pool dependency:
+    # callers can poll while a dataset registration holds the database lock.
+    return request.app.state.ctx.import_progress.get(pid, progress_id)
 
 
 @router.post(
@@ -1117,10 +1134,12 @@ async def upload_dataset(
     background_tasks: BackgroundTasks,
     c: ServiceContext = Depends(ctx),
     version_id: str | None = None,
+    progress_id: str | None = None,
 ) -> dict[str, Any]:
-    version = assert_version_writable(c, pid, version_id, data=True)
-    async with read_upload(request) as batch:
-        ids = await run_in_threadpool(_register_upload, c, pid, batch, version["id"])
+    with c.import_progress.track(pid, progress_id, "receiving") as progress:
+        version = await run_in_threadpool(assert_version_writable, c, pid, version_id, data=True)
+        async with read_upload(request, progress) as batch:
+            ids = await run_in_threadpool(_register_upload, c, pid, batch, version["id"], progress)
     datasets = []
     for did in ids:
         background_tasks.add_task(_index_dataset, c, did)
@@ -1195,55 +1214,146 @@ def _records(c: ServiceContext, did: str) -> list[dict[str, Any]]:
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
 
 
-@router.get("/datasets/{did}/images", response_model=m.ImagePage, response_model_exclude_unset=True)
-def list_images(
-    did: str, page: int = 1, page_size: int = 50, q: str = "", c: ServiceContext = Depends(ctx)
-) -> dict[str, Any]:
+def _image_in_source(row: dict, record: dict) -> bool:
+    root, image = Path(row["path"]), Path(record["path"])
+    try:
+        return (
+            not root.is_symlink()
+            and image.is_relative_to(root)
+            and image.resolve().is_relative_to(root.resolve())
+            and image.is_file()
+        )
+    except (OSError, RuntimeError):
+        return False
+
+
+def _current_caption_path(
+    row: dict, record: dict, directory_cache: dict, *, create: bool = False
+) -> Path | None:
+    from ypuddin.data.index import caption_for, caption_target
+
+    if not _image_in_source(row, record):
+        raise ApiError("image is outside its dataset or no longer exists", code="dataset.image_path")
+    image, root = Path(record["path"]), Path(row["path"]).resolve()
+    selected = (
+        caption_target(image, row["caption_ext"], directory_cache=directory_cache)
+        if create
+        else caption_for(image, row["caption_ext"], directory_cache=directory_cache)
+    )
+    if selected is None:
+        return None
+    path = Path(selected)
+    if path.is_symlink() or not path.resolve().is_relative_to(root):
+        raise ApiError("caption must remain inside its dataset", code="dataset.caption_path")
+    return path
+
+
+def _dataset_image_items(c: ServiceContext, row: dict) -> list[dict]:
     from ypuddin.data.caption_json import StructuredCaption, render, unique
     from ypuddin.data.captions import read_training_caption
 
-    row = _get_dataset(c, did)
     root = Path(row["path"])
     items = []
-    for r in _records(c, did):
-        error = None
-        try:
-            raw = read_training_caption(r["caption_path"], row["class_prompt"])
-            cap = raw.text() if isinstance(raw, StructuredCaption) else raw
-            editable = (
-                render(unique((raw.trigger, *raw.fixed, *raw.appearance, *raw.tags, *raw.environment)), "")
-                if isinstance(raw, StructuredCaption)
-                else cap
-            )
-            description = raw.nl if isinstance(raw, StructuredCaption) else ""
-        except (ValueError, OSError) as exc:
-            cap, error, editable, description = "", str(exc), "", ""
-        if q and q.lower() not in cap.lower() and q.lower() not in r["path"].lower():
+    directory_cache = {}
+    seen = set()
+    for r in _records(c, row["id"]):
+        # Index files are source-local snapshots. Never follow a stale or redirected
+        # record into another source/version, and count each image path once.
+        if r["path"] in seen or not _image_in_source(row, r):
             continue
+        seen.add(r["path"])
+        error = None
+        caption_path = None
+        try:
+            # Rediscover sidecars once per directory so additions/removals and auto
+            # JSON preference are visible immediately, without a metadata rescan.
+            caption_path = _current_caption_path(row, r, directory_cache)
+            raw = read_training_caption(caption_path)
+            cap = raw.text() if isinstance(raw, StructuredCaption) else raw
+            tokens = (
+                unique((raw.trigger, *raw.fixed, *raw.appearance, *raw.tags, *raw.environment))
+                if isinstance(raw, StructuredCaption)
+                else unique(raw.split(","))
+            )
+            editable = render(tokens, "") if isinstance(raw, StructuredCaption) else raw
+            description = raw.nl if isinstance(raw, StructuredCaption) else ""
+            status = "captioned" if cap.strip() else "missing"
+            if not cap:
+                cap = row["class_prompt"] or ""
+        except (ValueError, OSError, ApiError) as exc:
+            cap, editable, description, tokens, status = "", "", "", (), "invalid"
+            error = str(exc) if isinstance(exc, ValueError) else "Could not read this caption safely"
         items.append(
             {
                 "hash": r["content_hash"],
-                "rel_path": str(Path(r["path"]).relative_to(root))
-                if r["path"].startswith(str(root))
-                else r["path"],
+                "rel_path": str(Path(r["path"]).relative_to(root)),
                 "width": r["width"],
                 "height": r["height"],
                 "caption": cap,
                 "caption_tags": editable,
                 "caption_description": description,
-                "caption_format": Path(r["caption_path"]).suffix.lower().lstrip(".")
-                if r["caption_path"]
-                else None,
+                "caption_format": caption_path.suffix.lower().lstrip(".") if caption_path else None,
                 "caption_error": error,
+                "caption_status": status,
+                "_tokens": tokens,
                 "has_mask": bool(r["mask_path"]),
             }
         )
+    return items
+
+
+@router.get("/datasets/{did}/caption-stats", response_model=m.DatasetCaptionStats)
+def caption_stats(did: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+    items = _dataset_image_items(c, _get_dataset(c, did))
+    formats: dict[str, int] = {}
+    counts: dict[str, dict] = {}
+    result = {"images": len(items), "captioned": 0, "missing": 0, "invalid": 0}
+    for item in items:
+        result[item["caption_status"]] += 1
+        if fmt := item["caption_format"]:
+            formats[fmt] = formats.get(fmt, 0) + 1
+        for token in item["_tokens"]:
+            key = token.casefold()
+            entry = counts.setdefault(key, {"tag": token, "count": 0})
+            entry["count"] += 1
+    return {
+        **result,
+        "formats": formats,
+        "unique_tags": len(counts),
+        "tags": sorted(
+            counts.values(), key=lambda item: (-item["count"], item["tag"].casefold(), item["tag"])
+        ),
+    }
+
+
+@router.get("/datasets/{did}/images", response_model=m.ImagePage, response_model_exclude_unset=True)
+def list_images(
+    did: str,
+    page: int = 1,
+    page_size: int = 50,
+    q: str = "",
+    c: ServiceContext = Depends(ctx),
+    tag: str | None = None,
+    caption_status: Literal["captioned", "missing", "invalid"] | None = None,
+) -> dict[str, Any]:
+    items = []
+    query, exact_tag = q.casefold(), tag.strip().casefold() if tag else ""
+    for item in _dataset_image_items(c, _get_dataset(c, did)):
+        if query and query not in item["caption"].casefold() and query not in item["rel_path"].casefold():
+            continue
+        if caption_status and item["caption_status"] != caption_status:
+            continue
+        if exact_tag and exact_tag not in {token.casefold() for token in item["_tokens"]}:
+            continue
+        item.pop("_tokens")
+        items.append(item)
     return _page(items, page, page_size)
 
 
-def _record_by_hash(c: ServiceContext, did: str, h: str) -> dict[str, Any]:
+def _record_by_hash(c: ServiceContext, did: str, h: str, rel_path: str | None = None) -> dict[str, Any]:
+    root = Path(_get_dataset(c, did)["path"]) if rel_path is not None else None
     for r in _records(c, did):
-        if r["content_hash"] == h:
+        if r["content_hash"] == h and (root is None or Path(r["path"]) == root / rel_path):
             return r
     raise NotFound("image not found", code="image.not_found")
 
@@ -1273,42 +1383,46 @@ def image_file(did: str, h: str, c: ServiceContext = Depends(ctx)) -> Response:
 
 class CaptionBody(BaseModel):
     caption: str
+    description: str | None = None
 
 
 @router.get("/datasets/{did}/images/{h}/caption", response_model=m.Caption, response_model_exclude_unset=True)
-def get_caption(did: str, h: str, c: ServiceContext = Depends(ctx)) -> dict[str, str]:
+def get_caption(
+    did: str, h: str, c: ServiceContext = Depends(ctx), rel_path: str | None = None
+) -> dict[str, str]:
     from ypuddin.data import read_caption
 
     row = _get_dataset(c, did)
-    r = _record_by_hash(c, did, h)
+    r = _record_by_hash(c, did, h, rel_path)
     try:
-        return {"caption": read_caption(r["caption_path"], row["class_prompt"])}
+        return {"caption": read_caption(_current_caption_path(row, r, {}), row["class_prompt"])}
     except (ValueError, OSError) as exc:
         raise ApiError(str(exc), code="dataset.caption_invalid", status=422) from exc
 
 
 @router.put("/datasets/{did}/images/{h}/caption", response_model=m.Caption, response_model_exclude_unset=True)
-def put_caption(did: str, h: str, body: CaptionBody, c: ServiceContext = Depends(ctx)) -> dict[str, str]:
+def put_caption(
+    did: str, h: str, body: CaptionBody, c: ServiceContext = Depends(ctx), rel_path: str | None = None
+) -> dict[str, str]:
     from ypuddin.data.captions import write_caption
-    from ypuddin.data.index import caption_target
 
     row = _get_dataset(c, did)
     with c.versions.mutation(row["project_id"], row["version_id"]):
         row = _get_dataset(c, did)
-        r = _record_by_hash(c, did, h)
-        cap_path = (
-            Path(r["caption_path"])
-            if r["caption_path"]
-            else caption_target(Path(r["path"]), row["caption_ext"])
-        )
+        r = _record_by_hash(c, did, h, rel_path)
+        cap_path = _current_caption_path(row, r, {}, create=True)
+        if body.description is not None and cap_path.suffix.lower() != ".json":
+            raise ApiError(
+                "separate descriptions require a JSON caption", code="dataset.caption_format", status=422
+            )
         try:
-            write_caption(cap_path, body.caption)
+            write_caption(cap_path, body.caption, description=body.description)
         except (ValueError, OSError) as exc:
             raise ApiError(str(exc), code="dataset.caption_invalid", status=422) from exc
-        if not r["caption_path"]:
+        if r["caption_path"] != str(cap_path):
             recs = _records(c, did)
             for rec in recs:
-                if rec["content_hash"] == h:
+                if rec["path"] == r["path"]:
                     rec["caption_path"] = str(cap_path)
             _records_path(c, did).write_text(json.dumps(recs), encoding="utf-8")
         c.bus.publish("dataset.changed", {"dataset_id": did, "reason": "caption"})

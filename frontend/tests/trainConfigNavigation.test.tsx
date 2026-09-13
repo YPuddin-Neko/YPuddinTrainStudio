@@ -62,21 +62,21 @@ describe('training dataset destinations and saved navigation', () => {
     fixtures(); show();
     await screen.findByRole('spinbutton', { name: 'loop.epochs' });
     fireEvent.click(screen.getByRole('tab', { name: '数据与分桶' }));
-    const link = await screen.findByRole('link', { name: '标签与遮罩编辑' });
-    expect(link).toHaveAttribute('href', '/datasets/d_B');
+    const link = await screen.findByRole('link', { name: '标签编辑' });
+    expect(link).toHaveAttribute('href', '/projects/p_nav?step=data&data_step=captions&dataset=d_B');
     fireEvent.click(link);
-    await screen.findByText('Destination /datasets/d_B');
+    await screen.findByText('Destination /projects/p_nav?step=data&data_step=captions&dataset=d_B');
   });
 
   it.each([
     { paths: ['D:/outside'], label: '导入数据后编辑标签与遮罩' },
     { paths: ['D:/training/A', 'D:/training/B'], label: '选择数据集编辑标签与遮罩' },
-  ])('uses project source selection when a direct editor would be ambiguous: $label', async ({ paths, label }) => {
+  ])('uses project source selection when a direct editor would be ambiguous: $label', async ({ paths }) => {
     fixtures(paths); show();
     await screen.findByRole('spinbutton', { name: 'loop.epochs' });
     fireEvent.click(screen.getByRole('tab', { name: '数据与分桶' }));
-    expect(await screen.findByRole('link', { name: label })).toHaveAttribute('href', '/projects/p_nav?step=data');
-    expect(screen.queryByRole('link', { name: '标签与遮罩编辑' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: '标签编辑' })).toHaveAttribute('href', '/projects/p_nav?step=data&data_step=captions');
+    expect(screen.getByRole('link', {name:'涂抹与遮罩'})).toHaveAttribute('href','/projects/p_nav?step=data&data_step=paint');
   });
 
   it('normalizes Windows and UNC casing without merging distinct POSIX paths', () => {
