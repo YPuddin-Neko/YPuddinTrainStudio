@@ -2600,12 +2600,61 @@ export interface components {
         };
         /** FamilyInfo */
         FamilyInfo: {
+            /** Attention Backends */
+            attention_backends?: string[];
             /** Name */
             name: string;
             /** Label */
             label: string;
             /** Architecture */
             architecture: string;
+            /**
+             * Objective
+             * @default rectified_flow
+             */
+            objective: string;
+            /**
+             * Sampling Samplers
+             * @default [
+             *       "euler",
+             *       "heun",
+             *       "er_sde"
+             *     ]
+             */
+            sampling_samplers: string[];
+            /**
+             * Sampling Schedulers
+             * @default [
+             *       "uniform",
+             *       "simple",
+             *       "sgm_uniform",
+             *       "normal"
+             *     ]
+             */
+            sampling_schedulers: string[];
+            /**
+             * Objective Timestep Sampling
+             * @default [
+             *       "uniform",
+             *       "logit_normal",
+             *       "shift",
+             *       "resolution_shift",
+             *       "mode",
+             *       "cosmap"
+             *     ]
+             */
+            objective_timestep_sampling: string[];
+            /**
+             * Objective Weighting
+             * @default [
+             *       "none",
+             *       "sigma_sqrt",
+             *       "cosmap",
+             *       "snr_like",
+             *       "cosmos"
+             *     ]
+             */
+            objective_weighting: string[];
             /** Adapter Prefix */
             adapter_prefix: string;
             /** Capabilities */
@@ -2665,6 +2714,8 @@ export interface components {
             shift: number | null;
             /** Sampler */
             sampler: string;
+            /** Guidance */
+            guidance?: number | null;
         } & {
             [key: string]: unknown;
         };
@@ -2676,6 +2727,21 @@ export interface components {
             label: string;
             /** Hint */
             hint: string;
+            /**
+             * Kind
+             * @default
+             */
+            kind: string;
+            /**
+             * Required
+             * @default true
+             */
+            required: boolean;
+            /**
+             * Downloadable
+             * @default true
+             */
+            downloadable: boolean;
         } & {
             [key: string]: unknown;
         };
@@ -3285,12 +3351,12 @@ export interface components {
              * Family
              * @enum {string}
              */
-            family: "anima" | "krea2" | "toy" | "tagger";
+            family: "anima" | "krea2" | "sdxl" | "flux" | "flux2" | "toy" | "tagger";
             /**
              * Kind
              * @enum {string}
              */
-            kind: "dit" | "text_encoder" | "vae" | "tokenizer" | "tagger";
+            kind: "dit" | "text_encoder" | "text_encoder_2" | "vae" | "tokenizer" | "tagger";
             /** Path */
             path: string;
             /** Dtype */
@@ -3335,11 +3401,11 @@ export interface components {
         ModelConfig: {
             /**
              * Family
-             * @description 模型族（anima：Anima 2B；krea2：Krea 2 Raw 12.9B）
+             * @description 模型系列决定主模型、文本编码器和训练方式。
              * @default anima
              * @enum {string}
              */
-            family: "anima" | "krea2" | "toy";
+            family: "anima" | "krea2" | "sdxl" | "flux" | "flux2" | "toy";
             /**
              * Dit Path
              * @description DiT 主干权重（safetensors；支持官方 bf16 与 ComfyUI fp8_scaled 文件）
@@ -3350,6 +3416,11 @@ export interface components {
              * @description 文本编码器（Anima：Qwen3-0.6B；Krea 2：Qwen3-VL-4B-Instruct）——HF 目录或单文件 safetensors
              */
             text_encoder_path?: string | null;
+            /**
+             * Text Encoder 2 Path
+             * @description 第二文本编码器：SDXL 使用 CLIP-G（完整模型通常已内含）；FLUX.1 使用 T5-XXL。
+             */
+            text_encoder_2_path?: string | null;
             /**
              * Vae Path
              * @description VAE 权重
@@ -3374,6 +3445,32 @@ export interface components {
              * @enum {string}
              */
             attention: "auto" | "sdpa" | "sage" | "xformers" | "flash_attn";
+            /**
+             * Prediction Type
+             * @description 按 SDXL 模型的训练方式选择。常规 SDXL 使用 epsilon；只有明确标注 v-prediction 的模型才改成 v_prediction。选错会使训练和预览结果异常。
+             * @default epsilon
+             * @enum {string}
+             */
+            prediction_type: "epsilon" | "v_prediction";
+            /**
+             * Zero Terminal Snr
+             * @description 仅在 SDXL 模型明确要求 zero terminal SNR 时启用，需同时选择 v_prediction。
+             * @default false
+             */
+            zero_terminal_snr: boolean;
+            /**
+             * Training Guidance
+             * @description FLUX 训练时传给模型的引导条件，默认 1；它与正负提示词的 CFG 放大不同。预览引导强度在采样设置中调整。
+             * @default 1
+             */
+            training_guidance: number;
+            /**
+             * Flux2 Variant
+             * @description 完整 FLUX.2 目录会读取模型配置。Klein 单文件无法从权重尺寸区分基础版和蒸馏版，请按模型发布说明选择对应基础版；当前不支持 Klein 蒸馏版训练。
+             * @default auto
+             * @enum {string}
+             */
+            flux2_variant: "auto" | "dev" | "klein-base-4b" | "klein-base-9b";
         };
         /** ModelDefaultPatch */
         ModelDefaultPatch: {
@@ -3446,12 +3543,12 @@ export interface components {
              * Family
              * @enum {string}
              */
-            family: "anima" | "krea2";
+            family: "anima" | "krea2" | "sdxl" | "flux" | "flux2";
             /**
              * Kind
              * @enum {string}
              */
-            kind: "dit" | "text_encoder" | "vae";
+            kind: "dit" | "text_encoder" | "text_encoder_2" | "vae";
             /**
              * Provider
              * @default huggingface
@@ -4143,7 +4240,7 @@ export interface components {
              * @default anima
              * @enum {string}
              */
-            family: "anima" | "krea2" | "toy";
+            family: "anima" | "krea2" | "sdxl" | "flux" | "flux2" | "toy";
         };
         /** ProjectCategories */
         ProjectCategories: {
@@ -4291,19 +4388,19 @@ export interface components {
              * Family
              * @enum {string}
              */
-            family: "anima" | "krea2";
+            family: "anima" | "krea2" | "sdxl" | "flux" | "flux2";
             /**
              * Kind
              * @enum {string}
              */
-            kind: "dit" | "text_encoder" | "vae";
+            kind: "dit" | "text_encoder" | "text_encoder_2" | "vae";
             /** Name */
             name: string;
             /**
              * Dtype
              * @enum {string}
              */
-            dtype: "bf16" | "fp8";
+            dtype: "bf16" | "fp16" | "fp32" | "fp8";
             /** Size */
             size: number;
             /** Sha256 */
@@ -4504,6 +4601,11 @@ export interface components {
         };
         /** SamplingConfig */
         SamplingConfig: {
+            /**
+             * Guidance
+             * @description FLUX 模型内部的预览引导强度；留空使用对应模型默认值。这项不参与训练步的加噪或损失。
+             */
+            guidance?: number | null;
             /** Output Dir */
             output_dir?: string | null;
             /**
@@ -4912,7 +5014,7 @@ export interface components {
              */
             copy_config: boolean;
             /** Family */
-            family?: ("anima" | "krea2" | "toy") | null;
+            family?: ("anima" | "krea2" | "sdxl" | "flux" | "flux2" | "toy") | null;
         };
         /** VersionPatch */
         VersionPatch: {
@@ -5232,7 +5334,7 @@ export interface operations {
     config_defaults_api_config_defaults_get: {
         parameters: {
             query?: {
-                family?: ("anima" | "krea2" | "toy") | null;
+                family?: ("anima" | "krea2" | "sdxl" | "flux" | "flux2" | "toy") | null;
             };
             header?: never;
             path?: never;

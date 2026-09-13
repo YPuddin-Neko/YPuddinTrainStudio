@@ -108,6 +108,7 @@ def absolute_paths(config: TrainConfig) -> TrainConfig:
     fields = [
         (cfg.model, "dit_path"),
         (cfg.model, "text_encoder_path"),
+        (cfg.model, "text_encoder_2_path"),
         (cfg.model, "vae_path"),
         (cfg.model, "tokenizer_path"),
         (cfg.dataset, "cache_dir"),

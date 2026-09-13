@@ -3,6 +3,7 @@ import { mergeConfig } from './config';
 const VERSION_FIELDS = [
   ['model', 'dit_path'],
   ['model', 'text_encoder_path'],
+  ['model', 'text_encoder_2_path'],
   ['model', 'vae_path'],
   ['model', 'tokenizer_path'],
   ['dataset', 'sources'],

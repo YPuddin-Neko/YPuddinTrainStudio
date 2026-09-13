@@ -13,10 +13,11 @@ from ypuddin.models import get_family
 from .environment import environment_attention_default
 from .errors import ApiError
 
-SUPPORTED_FAMILIES = frozenset({"anima", "krea2", "toy"})
+SUPPORTED_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux", "flux2", "toy"})
 MODEL_PATHS = {
     "dit": "dit_path",
     "text_encoder": "text_encoder_path",
+    "text_encoder_2": "text_encoder_2_path",
     "vae": "vae_path",
     "tokenizer": "tokenizer_path",
 }
@@ -42,7 +43,7 @@ def _default_model_paths(c: Any, family: str) -> dict[str, str]:
             path = Path(row["path"]).expanduser().resolve()
             valid = (
                 path.is_file()
-                if kind in {"dit", "vae"}
+                if kind in {"dit", "vae"} and family not in {"sdxl", "flux", "flux2"}
                 else path.is_dir()
                 if kind == "tokenizer"
                 else path.is_file() or path.is_dir()
@@ -62,12 +63,15 @@ def initial_family_config(c: Any, family: str) -> dict[str, Any]:
     config = TrainConfig().to_dict()
     config["dataset"]["image_fit"] = "pad"
     config["model"].update(family=family, attention=environment_attention_default(c))
+    if config["model"]["attention"] not in spec.attention_backends:
+        config["model"]["attention"] = "auto"
     config["adapter"]["preset"] = model_family.default_preset()
     config["sampling"].update(
         steps=spec.sampling.steps,
         cfg=spec.sampling.cfg,
         shift=spec.sampling.shift,
         sampler=spec.sampling.sampler,
+        guidance=spec.sampling.guidance,
     )
     config["dataset"]["text_encoding"] = "auto" if "online_text" in spec.capabilities else "cached"
     if family == "toy":
@@ -75,12 +79,22 @@ def initial_family_config(c: Any, family: str) -> dict[str, Any]:
         config["dataset"].update(resolutions=[64], bucket_step=16, batch_size=2, num_workers=0)
         config["loop"].update(epochs=1, mixed_precision="no")
         config["sampling"].update(width=64, height=64)
-    if spec.sampling.shift is None:
-        config["objective"].update(timestep_sampling="resolution_shift", res_shift_tokens=[256, 6400])
+    if spec.objective == "ddpm":
+        config["objective"].update(timestep_sampling="uniform", weighting="none")
+        config["sampling"].update(shift=1.0, scheduler="uniform")
+        config["dataset"]["text_encoding"] = "cached"
+        config["memory"]["activation_checkpointing"] = "block"
+    elif spec.sampling.shift is None:
+        config["objective"].update(
+            timestep_sampling="resolution_shift", res_shift_tokens=[256, 6400 if family == "krea2" else 4096]
+        )
     else:
         config["objective"].update(timestep_sampling="shift", shift=spec.sampling.shift)
-    if family == "krea2":
+    if family in {"krea2", "flux", "flux2"}:
         config["memory"]["activation_checkpointing"] = "block"
+    if family in {"flux", "flux2"}:
+        # Dev / schnell / Klein defaults depend on the selected checkpoint.
+        config["sampling"].update(steps=None, cfg=None, guidance=None)
     config["model"].update(_default_model_paths(c, family))
     return config
 

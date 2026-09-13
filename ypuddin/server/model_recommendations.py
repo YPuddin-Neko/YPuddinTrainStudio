@@ -1,6 +1,6 @@
-"""Training-compatible single-file weights, independently verified against both publishers.
+"""Training-compatible single-file weights, verified against each listed publisher.
 
-Source metadata checked 2026-09-12 using the Hugging Face tree API and ModelScope
+Source metadata checked 2026-09-13 using the Hugging Face tree API and ModelScope
 repo/files API. Provider mappings are explicit; a matching repository name is never
 assumed by the client. Updated upstream bytes must pass the pinned SHA-256 check.
 """
@@ -25,10 +25,10 @@ class RecommendedSource(BaseModel):
 
 class RecommendedModel(BaseModel):
     id: str
-    family: Literal["anima", "krea2"]
-    kind: Literal["dit", "text_encoder", "vae"]
+    family: Literal["anima", "krea2", "sdxl", "flux", "flux2"]
+    kind: Literal["dit", "text_encoder", "text_encoder_2", "vae"]
     name: str
-    dtype: Literal["bf16", "fp8"]
+    dtype: Literal["bf16", "fp16", "fp32", "fp8"]
     size: int = Field(gt=0)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     recommended: bool = True
@@ -70,6 +70,24 @@ def _entry(id_, family, kind, name, dtype, size, sha256, repo, filename, recomme
 ANIMA = "circlestone-labs/Anima"
 KREA = "Comfy-Org/Krea-2"
 RECOMMENDATIONS = [
+    RecommendedModel(
+        id="sdxl-illustrious-v01",
+        family="sdxl",
+        kind="dit",
+        name="Illustrious-XL（光辉）v0.1 · 完整模型",
+        dtype="fp16",
+        size=6938040760,
+        sha256="3e15ba00387db678ab4a099f75771c4f5ac67fda9e7100a01d263eaf30145aa9",
+        sources=[
+            RecommendedSource(
+                provider="huggingface",
+                repo_id="OnomaAIResearch/Illustrious-xl-early-release-v0",
+                filename="Illustrious-XL-v0.1.safetensors",
+                revision="f08f0826ffe32183ba2d1f4106dd5b32e195a02e",
+                url="https://huggingface.co/OnomaAIResearch/Illustrious-xl-early-release-v0/blob/f08f0826ffe32183ba2d1f4106dd5b32e195a02e/Illustrious-XL-v0.1.safetensors",
+            ),
+        ],
+    ),
     _entry(
         "anima-base-1",
         "anima",
@@ -244,11 +262,7 @@ def available_models(context) -> list[RecommendedModel]:
                 update={
                     "model_id": own["id"] if own else None,
                     "available_path": available["path"] if available else None,
-                    "is_default": bool(
-                        own
-                        and own["is_default"]
-                        and own["path"] in verified_paths
-                    ),
+                    "is_default": bool(own and own["is_default"] and own["path"] in verified_paths),
                 }
             )
         )

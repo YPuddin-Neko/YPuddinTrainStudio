@@ -133,4 +133,12 @@ def test_defaults_follow_family_without_cuda_recommendations(api):
     assert config["dataset"]["text_encoding"] == "cached"
     assert config["memory"]["base_precision"] == "auto"
     assert config["sampling"]["steps"] == 28
-    assert client.get("/api/config/defaults?family=flux").status_code == 422
+    for family in ("flux", "flux2"):
+        response = client.get(f"/api/config/defaults?family={family}")
+        assert response.status_code == 200
+        config = response.json()
+        assert config["model"]["family"] == family
+        assert config["dataset"]["text_encoding"] == "cached"
+        assert config["sampling"]["steps"] is None  # resolved from actual dev/schnell/Klein weights
+        assert config["sampling"]["cfg"] is None
+    assert client.get("/api/config/defaults?family=flux3").status_code == 422

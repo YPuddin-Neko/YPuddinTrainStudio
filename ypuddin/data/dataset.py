@@ -117,6 +117,23 @@ def item_geometry(item: Item) -> dict[str, Any]:
     }
 
 
+def item_conditioning_geometry(item: Item) -> dict[str, tuple[int, int]]:
+    """Size conditioning in (height, width) / (top, left) order.
+
+    Original dimensions are EXIF-oriented, before resizing. Crop coordinates refer to
+    the resized image, as in the actual pixel transform; mirroring happens after the
+    crop and does not move its source rectangle. Whole-image padding has no crop, so
+    its crop origin is (0, 0), not the image's placement offset inside the padding.
+    Target dimensions always describe the final canvas, including any padding.
+    """
+    geometry = item_geometry(item)
+    return {
+        "original_size": (geometry["source_height"], geometry["source_width"]),
+        "crop_top_left": (0, 0) if item.image_fit == "pad" else (geometry["top"], geometry["left"]),
+        "target_size": (geometry["height"], geometry["width"]),
+    }
+
+
 @dataclass
 class DataPlan:
     images: int
@@ -343,6 +360,7 @@ class TrainDataset(Dataset):
         out: dict[str, Any] = {
             "index": index,
             "bucket": item.bucket.key,
+            "geometry": item_conditioning_geometry(item),
             "is_reg": item.is_reg,
             "weight": item.weight,
             "path": item.record.path,
@@ -376,6 +394,10 @@ def collate(samples: list[dict[str, Any]]) -> dict[str, Any]:
         "is_reg": torch.tensor([s["is_reg"] for s in samples]),
         "weight": torch.tensor([s["weight"] for s in samples], dtype=torch.float32),
         "bucket": samples[0]["bucket"],
+        "geometry": {
+            key: torch.tensor([s["geometry"][key] for s in samples], dtype=torch.int64)
+            for key in ("original_size", "crop_top_left", "target_size")
+        },
         "paths": [s["path"] for s in samples],
     }
     if "latents" in samples[0]:

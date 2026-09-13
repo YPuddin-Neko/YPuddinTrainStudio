@@ -1294,10 +1294,13 @@
       "properties": {
         "family": {
           "default": "anima",
-          "description": "模型族（anima：Anima 2B；krea2：Krea 2 Raw 12.9B）",
+          "description": "模型系列决定主模型、文本编码器和训练方式。",
           "enum": [
             "anima",
             "krea2",
+            "sdxl",
+            "flux",
+            "flux2",
             "toy"
           ],
           "title": "Family",
@@ -1342,6 +1345,25 @@
             "control": "path",
             "group": "model",
             "order": 20
+          }
+        },
+        "text_encoder_2_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "第二文本编码器：SDXL 使用 CLIP-G（完整模型通常已内含）；FLUX.1 使用 T5-XXL。",
+          "title": "Text Encoder 2 Path",
+          "x-ui": {
+            "control": "path",
+            "group": "model",
+            "order": 25,
+            "show_when": "model.family in ['sdxl','flux']"
           }
         },
         "vae_path": {
@@ -1415,6 +1437,67 @@
             "control": "select",
             "group": "model",
             "order": 60
+          }
+        },
+        "prediction_type": {
+          "default": "epsilon",
+          "description": "按 SDXL 模型的训练方式选择。常规 SDXL 使用 epsilon；只有明确标注 v-prediction 的模型才改成 v_prediction。选错会使训练和预览结果异常。",
+          "enum": [
+            "epsilon",
+            "v_prediction"
+          ],
+          "title": "Prediction Type",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "model",
+            "order": 70,
+            "show_when": "model.family == 'sdxl'"
+          }
+        },
+        "zero_terminal_snr": {
+          "default": false,
+          "description": "仅在 SDXL 模型明确要求 zero terminal SNR 时启用，需同时选择 v_prediction。",
+          "title": "Zero Terminal Snr",
+          "type": "boolean",
+          "x-ui": {
+            "advanced": true,
+            "control": "switch",
+            "group": "model",
+            "order": 80,
+            "show_when": "model.family == 'sdxl'"
+          }
+        },
+        "training_guidance": {
+          "default": 1.0,
+          "description": "FLUX 训练时传给模型的引导条件，默认 1；它与正负提示词的 CFG 放大不同。预览引导强度在采样设置中调整。",
+          "maximum": 30,
+          "minimum": 0,
+          "title": "Training Guidance",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "model",
+            "order": 90,
+            "show_when": "model.family in ['flux','flux2']"
+          }
+        },
+        "flux2_variant": {
+          "default": "auto",
+          "description": "完整 FLUX.2 目录会读取模型配置。Klein 单文件无法从权重尺寸区分基础版和蒸馏版，请按模型发布说明选择对应基础版；当前不支持 Klein 蒸馏版训练。",
+          "enum": [
+            "auto",
+            "dev",
+            "klein-base-4b",
+            "klein-base-9b"
+          ],
+          "title": "Flux2 Variant",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "model",
+            "order": 5,
+            "show_when": "model.family == 'flux2'"
           }
         }
       },
@@ -1891,6 +1974,26 @@
     "SamplingConfig": {
       "additionalProperties": false,
       "properties": {
+        "guidance": {
+          "anyOf": [
+            {
+              "maximum": 30,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "FLUX 模型内部的预览引导强度；留空使用对应模型默认值。这项不参与训练步的加噪或损失。",
+          "title": "Guidance",
+          "x-ui": {
+            "group": "sampling",
+            "order": 95,
+            "show_when": "sampling.enabled == true && model.family in ['flux','flux2']"
+          }
+        },
         "output_dir": {
           "anyOf": [
             {

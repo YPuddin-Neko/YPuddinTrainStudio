@@ -287,7 +287,7 @@ def test_config_accepts_krea2_family_and_res_shift_fields():
     fam_schema = schema["$defs"]["ModelConfig"]["properties"]["family"]
     assert "krea2" in fam_schema["enum"]
     with pytest.raises(ValueError):
-        TrainConfig.model_validate({"model": {"family": "flux"}, "dataset": {"sources": [{"path": "x"}]}})
+        TrainConfig.model_validate({"model": {"family": "flux3"}, "dataset": {"sources": [{"path": "x"}]}})
 
 
 # ------------------------------------------------------------------------------------------------ GQA attention

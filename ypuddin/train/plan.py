@@ -329,6 +329,7 @@ def plan(
         ),
     ]
     out["errors"].extend({"loc": loc, "msg": message} for failed, loc, message in checks if failed)
+    out["errors"].extend(family.training_options_errors(cfg))
     effective_dtype = "fp32" if device_type in ("cpu", "mps") else cfg.model.dtype
     if device_type == "mps" and (cfg.model.dtype != "fp32" or cfg.loop.mixed_precision != "no"):
         out["warnings"].append(

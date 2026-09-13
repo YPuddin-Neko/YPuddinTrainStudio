@@ -162,7 +162,7 @@ class DatasetPipeline:
         if recipe:
             config = get_project_config(pid, self.c, vid)
             payload.append({key: config.get(key) for key in ("model", "dataset", "validation")})
-            for key in ("dit_path", "vae_path", "text_encoder_path", "tokenizer_path"):
+            for key in ("dit_path", "vae_path", "text_encoder_path", "text_encoder_2_path", "tokenizer_path"):
                 value = config.get("model", {}).get(key)
                 if value:
                     path = Path(value).expanduser()

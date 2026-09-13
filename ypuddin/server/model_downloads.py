@@ -35,8 +35,8 @@ class DownloadVerification(BaseModel):
 
 class ModelDownloadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    family: Literal["anima", "krea2"]
-    kind: Literal["dit", "text_encoder", "vae"]
+    family: Literal["anima", "krea2", "sdxl", "flux", "flux2"]
+    kind: Literal["dit", "text_encoder", "text_encoder_2", "vae"]
     provider: Provider = "huggingface"
     mirror: Literal["official", "hf-mirror"] = "official"
     url: str | None = None
@@ -48,6 +48,10 @@ class ModelDownloadRequest(BaseModel):
 
     @model_validator(mode="after")
     def source(self):
+        if self.family == "flux2" and self.kind == "text_encoder":
+            raise ValueError(
+                "FLUX.2 text encoders require a complete local HF directory with tokenizer assets; register that directory instead of downloading a single weight file"
+            )
         resolve_source(self)
         return self
 
@@ -176,6 +180,10 @@ class _Cancelled(Exception):
 
 def check_component(weights: Any, family: str, kind: str) -> None:
     """Reject recognisable mismatches; complete architectural validation belongs to the loader."""
+    if family == "flux2" and kind in ("text_encoder", "text_encoder_2"):
+        raise ValueError(
+            "FLUX.2 文本编码器需要包含配置、权重和 tokenizer/processor 的完整本地 HF 目录，不支持单文件下载。"
+        )
     names = {}
     for key in weights.keys():
         clean = key
@@ -184,8 +192,21 @@ def check_component(weights: Any, family: str, kind: str) -> None:
                 clean = clean[len(prefix) :]
                 break
         names[clean] = key
+    from .model_inspection import flux_component, sdxl_component
+
+    shapes = {key: weights.get_slice(original).get_shape() for key, original in names.items()}
+    sdxl_kind = sdxl_component(shapes)
+    flux = flux_component(shapes)
     found_family, found_kind = None, None
-    if "x_embedder.proj.1.weight" in names:
+    candidates = []
+    if sdxl_kind == "dit":
+        found_family, found_kind = "sdxl", "dit"
+    elif flux is not None:
+        found_family, found_kind, candidates = flux["family"], flux["kind"], flux["candidates"]
+    elif sdxl_kind:
+        found_family, found_kind = ("sdxl" if sdxl_kind == "dit" else None), sdxl_kind
+        candidates = ["sdxl", "flux"] if sdxl_kind == "text_encoder" else ["sdxl"]
+    elif "x_embedder.proj.1.weight" in names:
         found_family, found_kind = "anima", "dit"
     elif "first.weight" in names and "txtfusion.projector.weight" in names:
         found_family, found_kind = "krea2", "dit"
@@ -197,7 +218,9 @@ def check_component(weights: Any, family: str, kind: str) -> None:
         shape = weights.get_slice(names[key]).get_shape()
         if len(shape) == 2:
             found_family = {1024: "anima", 2560: "krea2"}.get(shape[1])
-    if found_kind is not None and (found_kind != kind or found_family not in (None, family)):
+    if found_kind is not None and (
+        found_kind != kind or found_family not in (None, family) or candidates and family not in candidates
+    ):
         raise ValueError(f"file looks like {found_family or 'shared'} {found_kind}, not {family} {kind}")
 
 

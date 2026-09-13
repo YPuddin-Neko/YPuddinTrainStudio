@@ -532,8 +532,6 @@ def test_sampling_exception_restores_training_mode_and_unloads_vae(
 def test_preview_dispatch_uses_resolved_parameters_and_records_them(
     image_dataset, tmp_path, monkeypatch, sampler, scheduler
 ):
-    import ypuddin.train.trainer as trainer_module
-
     cfg = _cfg(
         image_dataset,
         tmp_path / "run",
@@ -551,13 +549,14 @@ def test_preview_dispatch_uses_resolved_parameters_and_records_them(
     trainer = Trainer(cfg, device="cpu")
     trainer.prepare()
     calls = []
-    dispatch = trainer_module.sample
+    dispatch = trainer.family.sample_latents
 
-    def record(predict, shape, **kwargs):
+    def record(loaded, predict, shape, **kwargs):
+        assert loaded is trainer.loaded
         calls.append(kwargs)
-        return dispatch(predict, shape, **kwargs)
+        return dispatch(loaded, predict, shape, **kwargs)
 
-    monkeypatch.setattr(trainer_module, "sample", record)
+    monkeypatch.setattr(trainer.family, "sample_latents", record)
     paths = trainer.sample_images("selected")
     assert len(paths) == len(calls) == 1 and paths[0].is_file()
     expected = {
@@ -606,21 +605,20 @@ def test_periodic_preview_and_weights_are_identical_after_resume(image_dataset, 
 
 
 def test_default_preview_matches_legacy_euler_pixels(image_dataset, tmp_path, monkeypatch):
-    import ypuddin.train.trainer as trainer_module
     from ypuddin.sampling.euler import euler_sample
 
     trainer = Trainer(_cfg(image_dataset, tmp_path / "run"), device="cpu")
     trainer.prepare()
     actual = trainer.sample_images("current")[0].read_bytes()
 
-    def legacy(predict, shape, **kwargs):
+    def legacy(loaded, predict, shape, **kwargs):
         assert kwargs.pop("sampler") == "euler"
         assert kwargs.pop("scheduler") == "uniform"
         kwargs.pop("er_sde_order")
         kwargs.pop("er_sde_s_noise")
         return euler_sample(predict, shape, **kwargs)
 
-    monkeypatch.setattr(trainer_module, "sample", legacy)
+    monkeypatch.setattr(trainer.family, "sample_latents", legacy)
     assert trainer.sample_images("legacy")[0].read_bytes() == actual
 
 

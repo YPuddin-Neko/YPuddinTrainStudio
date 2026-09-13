@@ -218,7 +218,7 @@ class ToyFamily(ModelFamily):
         text=TextSpec(max_len=MAX_LEN, fingerprint=ToyText.fingerprint, pad_floor=False),
         sampling=SamplingDefaults(steps=8, cfg=2.0, shift=1.0),
         capabilities=frozenset(
-            {"activation_checkpointing", "online_text", "masked_loss", "block_swap", "compile"}
+            {"activation_checkpointing", "online_text", "masked_loss", "block_swap", "compile", "fp8_base"}
         ),
         architecture="toy-dit",
         label="Toy DiT（CPU 自检）",

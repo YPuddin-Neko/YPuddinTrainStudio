@@ -56,7 +56,7 @@ class ProjectBody(BaseModel):
     name: str
     note: str = ""
     category: str | None = Field(None, max_length=64)
-    family: Literal["anima", "krea2", "toy"] = "anima"
+    family: Literal["anima", "krea2", "sdxl", "flux", "flux2", "toy"] = "anima"
 
     @field_validator("category", mode="before")
     @classmethod
@@ -568,7 +568,7 @@ class VersionBody(BaseModel):
     source_version_id: str | None = None
     data_mode: Literal["copy", "empty"] = "copy"
     copy_config: bool = True
-    family: Literal["anima", "krea2", "toy"] | None = None
+    family: Literal["anima", "krea2", "sdxl", "flux", "flux2", "toy"] | None = None
 
 
 class VersionPatch(BaseModel):

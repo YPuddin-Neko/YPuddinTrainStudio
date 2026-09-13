@@ -3,6 +3,12 @@
 > 写给接手本项目的模型/工程师。本文自洽：读完这一份 + 点开的几个文件，就能不需要前任任何上下文地继续开发。
 > 当前验收更新：2026-09-13 · 仓库：`xiangmuyuanma/` · 源码仍为 0.5.9。最新参数布局、导入进度与独立标签页见 [UI 工作区验收](docs/UI_WORKFLOWS_2026-09-13.md)：前端最终 494 项通过，真实浏览器验证四种窗口尺寸、目录/ZIP 导入、TXT/JSON 编辑，分段 HTTP 验证真实进度。此前后端 1085 通过 / 3 CUDA 跳过、前端 456 通过及 MPS 训练记录见 [实际流程验收报告](docs/FULL_ACCEPTANCE_2026-09-13.md)。两轮均使用隔离 8877 QA 服务；旧 8876 记录的数据根已不存在，不能把历史升级记录当作当前正式服务状态。
 
+## 2026-09-13 模型后端新增
+
+优先阅读 [SDXL / FLUX.1 / FLUX.2 接入说明](docs/MODEL_FAMILIES_2026-09-13.md)。当前 registry 已支持这三个模型族；下面历史“Flux、SDXL 尚未接入”的记录已被本节取代。SDXL 默认光辉 v0.1，保留第三方本地模型与 ε/v 选择；FLUX.1 dev/schnell，FLUX.2 dev/Klein base 4B/9B 分别处理条件与采样。
+
+核心新增 `ModelFamily.build_objective/sample_latents/materialize_backbone/sampling_defaults/sampling_shift_for_model`；默认 RF 路径兼容既有模型，SDXL 使用 DDPM，FLUX 主干在编码缓存后物化。FamilyInfo 提供权重角色、可选组件、可下载类型和实际支持的参数选项。配置、版本、预设与正则生成均已接入。新模型小型真实网络测试和外部数值对照不代表完整 GPU 验收；本轮未修改 Windows 服务或下载大模型。
+
 ## 0. 先读这三个文件
 
 2026-09-13 最新入口：先读 `docs/UI_WORKFLOWS_2026-09-13.md`。参数页最大宽度及容器响应式、左下角折叠、主题滚动条、底部操作记录已调整；标签工作区与遮罩页面分开，JSON 自然语言与未知字段保留，同哈希图片编辑使用相对路径。导入进度来自独立后端跟踪器；训练缓存页是可选提前生成，正常训练仍自动准备缓存。本轮未追加官方权重 GPU 训练或 Windows 实测。
@@ -20,7 +26,7 @@
 
 一个桌面化的 diffusion **LoRA / LoKr 训练器**。训练循环、适配器、数据流水线、服务 API 与 CLI 独立实现，模型组件包含按 Apache-2.0 引入的上游代码（见各 `vendor/NOTICE.md`）。`docs/reference/*.md` 保留早期参考审计，不能据此推断参考项目当前版本的状态或本项目性能更好。
 
-- **模型族**：`anima`（Anima 2B，Cosmos-Predict2 DiT + Qwen3-0.6B + Qwen-Image VAE）与 `krea2`（Krea 2 Raw 12.9B 单流 MMDiT + Qwen3-VL-4B + 同款 VAE）是一等公民；另有 `toy` 族供 CPU 测试。新族 = 实现 `ModelFamily` 协议（`ypuddin/models/`）。
+- **模型族**：`anima`（Anima 2B，Cosmos-Predict2 DiT + Qwen3-0.6B + Qwen-Image VAE）、`krea2`（Krea 2 Raw 12.9B 单流 MMDiT + Qwen3-VL-4B + 同款 VAE）、`sdxl`、`flux` 和 `flux2`；另有 `toy` 族供 CPU 测试。新族 = 实现 `ModelFamily` 协议（`ypuddin/models/`）。
 - **适配器**：LoKr（自研，与 LyCORIS 文件格式兼容）、LoRA、LoHa、Full、DoRA 包装。目标选择用 preset + 有序 rules（`ypuddin/adapters/rules.py`）。
 - **形态**：Python 包 `ypuddin`（CLI + FastAPI 服务）+ `frontend/`（React/Vite 界面，可选）。一键脚本 `studio.sh` / `studio.bat`。
 - 许可证 Apache-2.0（参考项目里 diffusion-pipe 与 AnimaLoraStudio 是 GPL——只读不抄；sd-scripts / musubi-tuner 是 Apache-2.0，vendor 的代码见 §7）。
@@ -108,7 +114,7 @@ Flux/SDXL 当前未接入并禁选；Toy 是测试族。旧项目元数据迁移
 ```
 ypuddin/            后端包本体
   adapters/         LoKr/LoRA/LoHa/Full/DoRA、注入、目标规则、IO/格式转换
-  models/           ModelFamily 协议；anima/（含 vendor/）、krea2/（含 vendor/）、toy/
+  models/           ModelFamily 协议；anima/、krea2/、sdxl/、flux/、flux2/、toy/
   data/             数据集注册、分桶、caption 增强、内容哈希缓存
   train/            训练循环、暂停/恢复、验证、采样预览
   memory/           block swap、fp8 与激活卸载

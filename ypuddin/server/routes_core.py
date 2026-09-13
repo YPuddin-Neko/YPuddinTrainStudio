@@ -154,6 +154,12 @@ def family_info(name: str) -> dict[str, Any]:
         "name": spec.name,
         "label": spec.label or spec.name,
         "architecture": spec.architecture,
+        "objective": spec.objective,
+        "attention_backends": list(spec.attention_backends),
+        "sampling_samplers": list(spec.sampling_samplers),
+        "sampling_schedulers": list(spec.sampling_schedulers),
+        "objective_timestep_sampling": list(spec.objective_timestep_sampling),
+        "objective_weighting": list(spec.objective_weighting),
         "adapter_prefix": spec.adapter_prefix,
         "capabilities": sorted(spec.capabilities),
         "text_modes": text_modes,
@@ -164,6 +170,7 @@ def family_info(name: str) -> dict[str, Any]:
             "cfg": spec.sampling.cfg,
             "shift": spec.sampling.shift,
             "sampler": spec.sampling.sampler,
+            "guidance": spec.sampling.guidance,
         },
         "latent": {
             "channels": spec.latent.channels,
@@ -172,7 +179,17 @@ def family_info(name: str) -> dict[str, Any]:
             "align": spec.latent.align,
         },
         "text_max_len": spec.text.max_len,
-        "weights": [{"field": f, "label": lbl, "hint": hint} for f, lbl, hint in spec.weights],
+        "weights": [
+            {
+                "field": f,
+                "label": lbl,
+                "hint": hint,
+                "kind": f.removesuffix("_path"),
+                "required": f not in spec.optional_weights,
+                "downloadable": f not in spec.directory_only_weights,
+            }
+            for f, lbl, hint in spec.weights
+        ],
         "linear_modules": len(names),
     }
     _FAMILY_INFO[name] = info
@@ -240,7 +257,8 @@ def schema_train() -> dict[str, Any]:
 
 @router.get("/config/defaults", response_model=TrainConfig)
 def config_defaults(
-    family: Literal["anima", "krea2", "toy"] | None = None, c: ServiceContext = Depends(ctx)
+    family: Literal["anima", "krea2", "sdxl", "flux", "flux2", "toy"] | None = None,
+    c: ServiceContext = Depends(ctx),
 ) -> dict[str, Any]:
     from .environment import environment_attention_default
 
@@ -489,8 +507,8 @@ def import_toml(body: dict[str, str]) -> dict[str, Any]:
 
 # --------------------------------------------------------------------------- models
 class ModelBody(BaseModel):
-    family: Literal["anima", "krea2", "toy", "tagger"]
-    kind: Literal["dit", "text_encoder", "vae", "tokenizer", "tagger"]
+    family: Literal["anima", "krea2", "sdxl", "flux", "flux2", "toy", "tagger"]
+    kind: Literal["dit", "text_encoder", "text_encoder_2", "vae", "tokenizer", "tagger"]
     path: str
     dtype: str | None = None
     is_default: bool = False
@@ -517,7 +535,7 @@ def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, An
         raise NotFound(f"model path not found: {p}", code="model.not_found")
     if not c.is_allowed(p):
         raise ApiError("model path is outside allowed storage roots", code="model.path", status=403)
-    if body.kind in {"dit", "vae"} and not p.is_file():
+    if body.kind in {"dit", "vae"} and not p.is_file() and body.family not in {"sdxl", "flux", "flux2"}:
         raise ApiError("DiT and VAE paths must point to a weight file", code="model.path")
     if body.kind == "tokenizer" and not p.is_dir():
         raise ApiError("tokenizer path must point to a complete tokenizer directory", code="model.path")
@@ -640,17 +658,50 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
         raise ApiError("model path is outside allowed storage roots", code="model.path", status=403)
     if not root.is_dir():
         raise NotFound(f"directory not found: {root}", code="fs.not_found")
-    found = []
-    known = {r["path"] for r in c.db.fetchall("SELECT path FROM models")}
-    for f in sorted(root.rglob("*.safetensors")):
-        if any(part.startswith(".") for part in f.relative_to(root).parts):
-            continue  # Never register files from download staging or other hidden working directories.
-        if str(f) in known:
-            continue
-        from .model_inspection import inspect_model
+    from .model_inspection import inspect_model
 
+    found = []
+    known = {str(Path(r["path"]).resolve()) for r in c.db.fetchall("SELECT path FROM models")}
+
+    def visible(path: Path) -> bool:
+        return not any(part.startswith(".") for part in path.relative_to(root).parts)
+
+    # A pipeline or sharded model is a single asset. Never fall back to registering
+    # its internal files if its metadata is incomplete or incompatible.
+    directory_markers = (
+        "model_index.json",
+        "model.safetensors.index.json",
+        "diffusion_pytorch_model.safetensors.index.json",
+    )
+    directories = {file.parent for name in directory_markers for file in root.rglob(name) if visible(file)}
+    grouped = {
+        folder
+        for folder in directories
+        if not any(folder != parent and folder.is_relative_to(parent) for parent in directories)
+    }
+    # A plain config may be a component sidecar or unrelated folder metadata.
+    # Only suppress its direct weight files after successfully recognizing the
+    # component; nested independent models are never owned by that plain config.
+    configured = {
+        file.parent
+        for file in root.rglob("config.json")
+        if visible(file) and not any(file.is_relative_to(folder) for folder in grouped)
+    }
+    recognized_components: set[Path] = set()
+    candidates = sorted(grouped | configured, key=str) + [
+        file
+        for file in sorted(root.rglob("*.safetensors"))
+        if visible(file) and not any(file.is_relative_to(folder) for folder in grouped)
+    ]
+    for candidate in candidates:
+        if candidate.is_file() and candidate.parent in recognized_components:
+            continue
+        if str(candidate.resolve()) in known:
+            if candidate in configured:
+                recognized_components.add(candidate)
+            continue
         try:
-            detected = inspect_model(f, allowed=c.is_allowed)
+            detected = inspect_model(candidate, allowed=c.is_allowed)
         except (ValueError, OSError, OverflowError):
             continue
         kind = detected["kind"]
@@ -659,6 +710,20 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
             family = body.family  # Explicit target for recognized shared components.
         if not kind or not family:
             continue  # Unknown assets need an explicit review in the local-file dialog.
+        if candidate in configured:
+            recognized_components.add(candidate)
+        path = Path(detected["path"]).resolve()
+        if str(path) in known:
+            continue
+        size = (
+            path.stat().st_size
+            if path.is_file()
+            else sum(
+                file.stat().st_size
+                for file in path.rglob("*")
+                if file.is_file() and file.resolve().is_relative_to(path) and c.is_allowed(file.resolve())
+            )
+        )
         mid = new_id("m")
         c.db.insert(
             "models",
@@ -666,13 +731,14 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
                 "id": mid,
                 "family": family,
                 "kind": kind,
-                "path": str(f),
-                "size": f.stat().st_size,
+                "path": str(path),
+                "size": size,
                 "dtype": detected["dtype"],
                 "is_default": 0,
                 "created_at": now(),
             },
         )
+        known.add(str(path))
         found.append(_model_row(c.db.fetchone("SELECT * FROM models WHERE id=?", (mid,))))
     return found
 

@@ -36,9 +36,7 @@ from ypuddin.data import (
 from ypuddin.data.native import NativeBatchSampler, collate_native
 from ypuddin.memory import BlockSwapper
 from ypuddin.models import LoadedModel, ModelFamily, TextCond, get_family
-from ypuddin.objectives import Objective
 from ypuddin.optim import build_optimizer, build_scheduler, is_schedule_free
-from ypuddin.sampling import sample
 
 from .events import Emitter, NullEmitter
 from .logging import TrainingLogs
@@ -81,7 +79,7 @@ class Trainer:
         self.loaded: LoadedModel
         self.adapters: AdapterSet
         self.bundle: DataBundle
-        self.objective: Objective
+        self.objective: Any  # family-owned noising, prediction target and loss contract
         self.optimizer: torch.optim.Optimizer
         self.scheduler: Any
         self.sampler: BucketBatchSampler
@@ -177,6 +175,7 @@ class Trainer:
                 cfg.model, cfg.memory, device=self.device, dtype=model_dtype, backbone_device="cpu"
             )
             self.model_identity = self._model_identity()
+        self.objective = self.family.build_objective(self.loaded, cfg.objective)
         self.loaded.text.to(self.device)
         self.loaded.latent.to(self.device)
 
@@ -217,6 +216,14 @@ class Trainer:
         else:
             # The built-in toy has no file: its deterministic initial weights are the base model.
             backbone = sha256_of_tensors(self.loaded.backbone.state_dict())
+        path_fields = {"dit_path", "text_encoder_path", "text_encoder_2_path", "vae_path", "tokenizer_path"}
+        if self.family.spec.objective != "ddpm":
+            # New SDXL-only defaults do not invalidate existing Anima/Krea/Toy checkpoints.
+            path_fields.update({"prediction_type", "zero_terminal_snr"})
+        if self.family.spec.name not in {"flux", "flux2"}:
+            path_fields.add("training_guidance")
+        if self.family.spec.name != "flux2":
+            path_fields.add("flux2_variant")
         payload = {
             "version": 1,
             "family": self.family.spec.name,
@@ -226,15 +233,18 @@ class Trainer:
             "text": self.loaded.text.fingerprint,
             "dtype": str(self.loaded.dtype),
             "base_precision": self.cfg.memory.base_precision,
-            "model": self.cfg.model.model_dump(
-                mode="json", exclude={"dit_path", "text_encoder_path", "vae_path", "tokenizer_path"}
-            ),
-            "dit_config": self.loaded.extra.get("dit_config", {}),
+            "model": self.cfg.model.model_dump(mode="json", exclude=path_fields),
+            "dit_config": {
+                key: value
+                for key, value in self.loaded.extra.get("dit_config", {}).items()
+                if key not in {"_name_or_path", "_diffusers_version", "_use_default_values", "_commit_hash"}
+            },
         }
         return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
 
     def _prepare_training(self) -> None:
         cfg = self.cfg
+        self.family.materialize_backbone(self.loaded)
         self.emit("phase.changed", phase="injecting")
         presets = self.family.presets()
         if cfg.adapter.preset not in presets:
@@ -253,7 +263,24 @@ class Trainer:
             from ypuddin.adapters import load_adapter_file
 
             tensors, _ = load_adapter_file(cfg.adapter.resume_weights)
-            self.adapters.load_state(tensors, strict=False)
+            missing = self.adapters.load_state(tensors, strict=False)
+            matched = len(self.adapters.layers) - len(missing)
+            if matched == 0:
+                raise ValueError(
+                    "adapter.resume_weights matched no adapted layers; check the model family, "
+                    "adapter targets and weight file format"
+                )
+            if missing:
+                self.emit(
+                    "warning",
+                    code="adapter.partial_warm_start",
+                    message=(
+                        f"已加载 {matched}/{len(self.adapters.layers)} 个适配层；"
+                        f"权重文件中缺少其余 {len(missing)} 层，这些层将从初始权重开始训练。"
+                    ),
+                    matched_layers=matched,
+                    missing_layers=len(missing),
+                )
         self.emit("adapters.injected", **self.adapters.summary())
         if cfg.memory.blocks_to_swap > 0:
             blocks = self.family.memory_layout(self.loaded).blocks
@@ -265,7 +292,6 @@ class Trainer:
         if cfg.memory.compile:
             self.compile_blocks()
 
-        self.objective = Objective(cfg.objective)
         groups = self.adapters.param_groups(
             cfg.optimizer.lr, cfg.optimizer.weight_decay, cfg.optimizer.group_lr
         )
@@ -336,6 +362,7 @@ class Trainer:
                 "memory.compile cannot be combined with memory.blocks_to_swap (swap hooks break the graph)"
             )
         problems += self.family.validate_config(cfg.model)
+        problems += [f"{item['loc']}: {item['msg']}" for item in self.family.training_options_errors(cfg)]
         if problems:
             raise ValueError("; ".join(problems))
 
@@ -638,7 +665,9 @@ class Trainer:
             # grad -- adapter parameters alone are invisible to it
             x_in.requires_grad_(True)
         with self._autocast():
-            pred = self.family.forward(self.loaded, x_in, t.to(self.device), cond)
+            pred = self.family.forward(
+                self.loaded, x_in, t.to(self.device), cond, geometry=batch.get("geometry")
+            )
         loss, per_sample = self.objective.loss(
             pred.float(), target, t, mask=mask, sample_weight=batch["weight"]
         )
@@ -1000,7 +1029,7 @@ class Trainer:
             prompts += _load_prompts_file(scfg.prompts_file)
         if not prompts:
             return []
-        defaults = self.family.spec.sampling
+        defaults = self.family.sampling_defaults(self.loaded)
         out_dir = (
             Path(self.cfg.sampling.output_dir) if self.cfg.sampling.output_dir else self.run_dir / "samples"
         )
@@ -1030,8 +1059,9 @@ class Trainer:
             h = (p.height or scfg.height) // self.family.spec.latent.align * self.family.spec.latent.align
             steps = p.steps or scfg.steps or defaults.steps
             cfg_scale = p.cfg if p.cfg is not None else (scfg.cfg if scfg.cfg is not None else defaults.cfg)
-            shift = scfg.shift or self.family.sampling_shift(
-                (h // stride // patch) * (w // stride // patch), self.cfg.objective
+            guidance = scfg.guidance if scfg.guidance is not None else defaults.guidance
+            shift = scfg.shift or self.family.sampling_shift_for_model(
+                self.loaded, (h // stride // patch) * (w // stride // patch), self.cfg.objective, steps=steps
             )
             seed = p.seed if p.seed is not None else scfg.seed + i
             cond = self._text_cond([p.prompt])
@@ -1039,9 +1069,13 @@ class Trainer:
             shape = (1, self.family.spec.latent.channels, h // stride, w // stride)
             model_dtype = self.loaded.dtype if self.device.type != "cpu" else torch.float32
 
-            def predict(x: Tensor, t: Tensor, c: TextCond = cond, dt: torch.dtype = model_dtype) -> Tensor:
+            def predict(
+                x: Tensor, t: Tensor, c: TextCond = cond, dt: torch.dtype = model_dtype, g=guidance
+            ) -> Tensor:
                 with self._autocast():
-                    return self.family.forward(self.loaded, x.to(dt), t.to(self.device), c).float()
+                    return self.family.forward(
+                        self.loaded, x.to(dt), t.to(self.device), c, inference=True, guidance=g
+                    ).float()
 
             def predict_uncond(x: Tensor, t: Tensor, c: TextCond = uncond) -> Tensor:
                 return predict(x, t, c)
@@ -1056,7 +1090,8 @@ class Trainer:
                     total=n,
                 )
 
-            latents = sample(
+            latents = self.family.sample_latents(
+                self.loaded,
                 predict,
                 shape,
                 sampler=scfg.sampler,
@@ -1093,6 +1128,7 @@ class Trainer:
                 steps=steps,
                 cfg=cfg_scale,
                 shift=shift,
+                guidance=guidance,
                 er_sde_order=scfg.er_sde_order,
                 er_sde_s_noise=scfg.er_sde_s_noise,
             )

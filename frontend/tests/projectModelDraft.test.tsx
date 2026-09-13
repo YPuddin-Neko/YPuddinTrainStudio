@@ -77,12 +77,12 @@ describe('model choices share the training configuration workspace', () => {
       {id:'missing',family:'anima',kind:'dit',path:'/models/missing.safetensors',exists:false},
     ])));
     fireEvent(window,new Event('studio-models-changed'));
-    const registered = await screen.findByRole('combobox',{name:/主模型 \/ DiT.*从已注册模型选择/});
+    const registered = await screen.findByRole('combobox',{name:/DiT.*从已注册模型选择/});
     fireEvent.click(registered);
-    expect(screen.getByRole('option',{name:'[anima] /models/downloaded.safetensors'})).toBeInTheDocument();
+    expect(screen.getByRole('option',{name:'downloaded.safetensors'})).toBeInTheDocument();
     expect(screen.queryByRole('option',{name:/missing/})).not.toBeInTheDocument();
     expect(screen.getByDisplayValue('/models/chosen.safetensors')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('option',{name:'[anima] /models/downloaded.safetensors'}));
+    fireEvent.click(screen.getByRole('option',{name:'downloaded.safetensors'}));
     await waitFor(()=>expect(screen.getByDisplayValue('/models/downloaded.safetensors')).toBeInTheDocument());
   });
 });

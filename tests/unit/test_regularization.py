@@ -129,7 +129,17 @@ def assert_unpublished(api):
 
 @pytest.mark.parametrize(
     "algorithm",
-    [None, {"sampler": "er_sde", "scheduler": "normal", "er_sde_order": 2, "er_sde_s_noise": 0.3}],
+    [
+        None,
+        {
+            "sampler": "er_sde",
+            "scheduler": "normal",
+            "er_sde_order": 2,
+            "er_sde_s_noise": 0.3,
+            "shift": 1.75,
+            "guidance": 2.5,
+        },
+    ],
 )
 def test_real_toy_manager_publishes_images_captions_and_trainable_source(api, algorithm):
     if algorithm:
@@ -162,6 +172,8 @@ def test_real_toy_manager_publishes_images_captions_and_trainable_source(api, al
     for item in manifest:
         assert {key: item[key] for key in expected} == expected
         assert item["steps"] == 2 and item["cfg"] == 1
+        if algorithm is None:
+            assert item["guidance"] is None
     payload = json.loads(api[1].state.regularization._row(task["id"])["request_json"])
     assert {key: payload["sampling"][key] for key in expected} == expected
     assert [item["seed"] for item in manifest] == [payload["seed"], payload["seed"] + 1]

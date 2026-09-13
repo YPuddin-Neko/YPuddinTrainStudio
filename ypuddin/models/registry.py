@@ -25,7 +25,7 @@ def get_family(name: str) -> ModelFamily:
 
 
 def available() -> list[str]:
-    for n in ("toy", "anima", "krea2"):
+    for n in ("toy", "anima", "krea2", "sdxl", "flux", "flux2"):
         if n not in _FACTORIES:
             try:
                 _autoload(n)
@@ -41,3 +41,9 @@ def _autoload(name: str) -> None:
         from . import anima  # noqa: F401
     elif name == "krea2":
         from . import krea2  # noqa: F401
+    elif name == "sdxl":
+        from . import sdxl  # noqa: F401
+    elif name == "flux":
+        from . import flux  # noqa: F401
+    elif name == "flux2":
+        from . import flux2  # noqa: F401

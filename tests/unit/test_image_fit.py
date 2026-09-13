@@ -181,7 +181,7 @@ def test_compute_loss_ignores_padded_latents_with_user_masks_disabled(tmp_path):
     prediction = torch.nn.Parameter((1 - latent_valid).expand_as(x0).clone() * 100)
     trainer.loaded = SimpleNamespace(dtype=torch.float32)
     trainer.family = SimpleNamespace(
-        forward=lambda *_: prediction, spec=SimpleNamespace(latent=SimpleNamespace(patch=1))
+        forward=lambda *_, **__: prediction, spec=SimpleNamespace(latent=SimpleNamespace(patch=1))
     )
     trainer.objective = Objective(cfg.objective)
     trainer.objective.prepare = lambda *_args, **_kwargs: (x0, torch.zeros_like(x0), x0)

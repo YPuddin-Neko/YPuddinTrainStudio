@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import LocalModelRegistration, { type ModelInspection } from '../src/pages/Models/LocalModelRegistration';
+import type { FamilyInfo } from '../src/api/types';
 import i18n from '../src/i18n';
 const server=setupServer();
 beforeAll(()=>server.listen({onUnhandledRequest:'error'}));
@@ -10,7 +11,8 @@ afterEach(()=>{cleanup();server.resetHandlers();});
 afterAll(()=>server.close());
 beforeEach(async()=>{await i18n.changeLanguage('zh-CN');});
 const result=(patch:Partial<ModelInspection>={}):ModelInspection=>({path:'/models/real.safetensors',family:'krea2',family_candidates:['krea2'],kind:'dit',dtype:'fp16',dtypes:{F16:12},confidence:'high',evidence:['Krea structure'],warnings:[],files_inspected:1,...patch});
-function mount(){const saved=vi.fn(async()=>{});render(<LocalModelRegistration initialFamily="anima" onClose={vi.fn()} onRegistered={saved} onBusyChange={vi.fn()}/>);return saved;}
+const families = ['anima', 'krea2'].map(name => ({ name, label: name === 'anima' ? 'Anima' : 'Krea 2', weights: [{ field: 'dit_path' }, { field: 'text_encoder_path' }, { field: 'vae_path' }] })) as FamilyInfo[];
+function mount(){const saved=vi.fn(async()=>{});render(<LocalModelRegistration initialFamily="anima" families={families} onClose={vi.fn()} onRegistered={saved} onBusyChange={vi.fn()}/>);return saved;}
 function path(value:string){fireEvent.change(screen.getByRole('textbox',{name:'文件路径'}),{target:{value}});}
 function choose(label:string,option:string){fireEvent.click(screen.getByRole('combobox',{name:label}));fireEvent.click(screen.getByRole('option',{name:option}));}
 it('uses detected family/type/precision and locks identified fields before registering',async()=>{

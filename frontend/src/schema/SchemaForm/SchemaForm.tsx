@@ -6,6 +6,8 @@ import { PathInput, PathPickerModal } from '../../components/PathBrowser';
 import { apiClient } from '../../api/client';
 import { FamilyInfo } from '../../api/types';
 import { configFieldLabel, configOptionLabel } from '../../utils/configPresentation';
+import { MODEL_PATH_FIELDS } from '../../utils/workspaceConfig';
+import { familyParameterOptions, modelFamilyWeights, trainingFamilyOptions } from '../../utils/trainingFamilies';
 import NumericControl from './NumericControl';
 import StudioSelect from '../../components/StudioSelect';
 import ConfigHelp from '../../components/ConfigHelp';
@@ -537,7 +539,7 @@ const ModelPathInput: React.FC<{
       <PathInput ariaLabel={label} value={value} onChange={onChange} />
       {matched.length > 0 && (
         <StudioSelect aria-label={`${label || kind} · ${t('models.fromRegistry')}`} value="" onValueChange={onChange} data-testid="model-registry-select"
-          options={[{value:'',label:t('models.fromRegistry'),disabled:true},...matched.map(model=>({value:model.path,label:`[${model.family}] ${model.path}`}))]}/>
+          options={[{value:'',label:t('models.fromRegistry'),disabled:true},...matched.map(model=>({value:model.path,label:model.path.split(/[\\/]/).pop() || model.path}))]}/>
 
       )}
     </div>
@@ -689,11 +691,19 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   const lokrModeLabel = english ? 'LoKr parameter mode' : 'LoKr 参数形式';
   const groups: Record<string, { order: number; fields: React.ReactNode[] }> = {};
   const conditionValue = { ...value, dataset: { resolution_mode: 'bucket', ...value.dataset } };
+  const weights = modelFamilyWeights(family);
 
   const renderField = (key: string, prop: SchemaProperty, parentPath: string[] = []) => {
     const path = [...parentPath, key];
     const fullPathKey = path.join('.');
     const lokrRank = fullPathKey === 'adapter.rank' && value.adapter?.algo === 'lokr';
+    const weightMeta = parentPath[0] === 'model' ? weights.find(weight => weight.field === key) : undefined;
+    const supportedOptions = familyParameterOptions(family, fullPathKey);
+    if (supportedOptions?.length === 0) return null;
+    if (family?.objective === 'ddpm' && ['sampling.shift', 'sampling.er_sde_order', 'sampling.er_sde_s_noise', 'objective.shift', 'objective.res_shift_tokens', 'objective.res_shift_mu', 'objective.mode_scale', 'objective.snr_gamma'].includes(fullPathKey)) return null;
+    if (parentPath[0] === 'model' && key in MODEL_PATH_FIELDS && weights.length && !weightMeta) return null;
+    if (family?.name === 'sdxl' && weightMeta?.required === false && !showAdvanced) return null;
+    if (fullPathKey === 'model.zero_terminal_snr' && value.model?.prediction_type !== 'v_prediction' && !value.model?.zero_terminal_snr) return null;
     // Keep legacy cloud-log data in the draft, but do not expose controls that enable it.
     if (fullPathKey === 'logging.wandb' || fullPathKey.startsWith('logging.wandb.')) return null;
     // The service assigns a separate samples/<job_id> destination when starting a task.
@@ -709,7 +719,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       Object.entries(nested.properties).forEach(([childKey, child]) => renderField(childKey, child as SchemaProperty, path));
       return null;
     }
-    const fieldLabel = configFieldLabel(fullPathKey, t(`fields.${key}`, prop.title || key), english);
+    const fieldLabel = weightMeta?.label || configFieldLabel(fullPathKey, t(`fields.${key}`, prop.title || key), english);
     const fieldId = `config-${fullPathKey}`;
     const currentGroup = ui.group || parentPath[0] || 'default';
     if (groupFilter && !groupFilter.includes(currentGroup)) return null;
@@ -810,12 +820,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         />
       );
     } else if (ui.control === 'path' || prop.type === 'string' && key.endsWith('path')) {
-      // 模型权重字段（dit_path / text_encoder_path / vae_path / tokenizer_path）支持从注册表快速选择
-      const modelKind = key === 'dit_path' ? 'dit'
-        : key === 'text_encoder_path' ? 'text_encoder'
-        : key === 'vae_path' ? 'vae'
-        : key === 'tokenizer_path' ? 'tokenizer'
-        : null;
+      const modelKind = parentPath[0] === 'model' ? weightMeta?.kind || MODEL_PATH_FIELDS[key as keyof typeof MODEL_PATH_FIELDS] || null : null;
       control = (
         <ModelPathInput
           value={fieldValue || ''}
@@ -836,9 +841,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       control = <SchemaValueInput schema={schema} property={prop} value={fieldValue} name={fullPathKey} compact={compactField}
         placeholder={family && fullPathKey.startsWith('sampling.') && ['steps', 'cfg', 'shift'].includes(key) ? (family.sampling?.[key as 'steps' | 'cfg' | 'shift'] != null ? String(family.sampling[key as 'steps' | 'cfg' | 'shift']) : key === 'shift' ? t('sampling.shiftAuto') : undefined) : undefined}
         onChange={(val) => onChange(setNestedValue(value, path, val))} />;
-    } else if (fullPathKey === 'model.family' && families?.length) {
-      control = <StudioSelect aria-label="model.family" value={fieldValue || families[0].name}
-        onValueChange={next => onChange(setNestedValue(value,path,next))} options={families.filter(item=>item.name!=='toy'||fieldValue==='toy').map(item=>({value:item.name,label:item.label || item.name}))}/>;
+    } else if (fullPathKey === 'model.family' && families) {
+      control = <StudioSelect aria-label="model.family" value={fieldValue || families[0]?.name || ''} disabled={!families.length}
+        onValueChange={next => onChange(setNestedValue(value,path,next))} options={trainingFamilyOptions(families, english, fieldValue)}/>;
     } else if (fullPathKey === 'adapter.preset' && family) {
       // 族内预设下拉：name — description（N 层）
       control = (
@@ -858,6 +863,10 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           )}
         </div>
       );
+    } else if (supportedOptions) {
+      control = <StudioSelect aria-label={fieldLabel} value={fieldValue == null ? '' : String(fieldValue)}
+        onValueChange={next => onChange(setNestedValue(value, path, next))}
+        options={supportedOptions.map(option => ({ value: option, label: configOptionLabel(fullPathKey, option, english) }))}/>;
     } else if (ui.options?.length) {
       control = <div className="space-y-2"><StudioSelect aria-label={fieldLabel} value={ui.options.includes(fieldValue) ? fieldValue : '__custom__'}
         onValueChange={next => onChange(setNestedValue(value,path,next === '__custom__' ? '' : next))}
@@ -870,7 +879,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           onValueChange={next => {
             const updated = setNestedValue(value, path, prop.enum!.find(option => String(option) === next));
             // A full LoKr factor matrix is not a valid numeric rank for LoRA/LoHa.
-            onChange(fullPathKey === 'adapter.algo' && next !== 'lokr' && value.adapter?.rank === 'full'
+            onChange(fullPathKey === 'model.prediction_type' && next !== 'v_prediction'
+              ? setNestedValue(updated, ['model', 'zero_terminal_snr'], false)
+              : fullPathKey === 'adapter.algo' && next !== 'lokr' && value.adapter?.rank === 'full'
               ? setNestedValue(updated, ['adapter', 'rank'], lastLowRank.current ?? 16)
               : updated);
           }}
@@ -945,27 +956,21 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       );
     }
 
-    // 模型族 weights 提示（dit_path / text_encoder_path / vae_path 等）
-    const weightMeta =
-      family && parentPath[0] === 'model'
-        ? (family.weights || []).find((w) => w.field === key)
-        : undefined;
-
     const wide = ['sources', 'rules', 'prompts', 'resolutions', 'args', 'group_lr'].includes(key) || ui.control === 'path' || key.endsWith('_path') || key === 'output_dir' || fullPathKey === 'adapter.lr_scale';
     if (React.isValidElement(control) && (typeof control.type === 'string' || control.type === StudioSelect)) {
       control = React.cloneElement(control as React.ReactElement<any>, {id: fieldId, 'aria-label': (control.props as any)['aria-label'] || fieldLabel, 'aria-invalid': !!errorItem});
     }
-    const help = [prop.description, weightMeta?.hint].filter(Boolean).join('\n');
+    const help = weightMeta?.hint || prop.description;
     const label = (
       <div key={fullPathKey} id={`field-${fullPathKey}`} data-testid={`field-${fullPathKey}`} data-field-path={fullPathKey} data-control-kind={prop.type === 'boolean' ? 'toggle' : undefined} className={compactField ? `config-field ${prop.type === 'boolean' ? 'config-field-toggle' : ''} ${wide ? 'config-field-wide' : ''} ${errorItem ? 'config-field-invalid' : ''}` : `flex flex-col space-y-1 p-2 rounded ${errorItem ? 'bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800' : ''}`}>
         <div className="flex justify-between items-center">
           <label htmlFor={fieldId} className="text-sm font-medium text-slate-700 dark:text-slate-300">
-            {compactField ? fieldLabel : weightMeta?.label || fieldLabel}
+            {fieldLabel}{weightMeta?.required === false && !['flux', 'flux2'].includes(family?.name || '') && <span className="ml-1 text-xs text-slate-500">{english ? '(optional)' : '（可选）'}</span>}
             {ui.unit && !percentage && ui.control !== 'slider' && <span className="ml-1 text-xs text-slate-500">({ui.unit})</span>}
           </label>
           {compactField && help && <ConfigHelp label={`${fieldLabel} ${english ? 'help' : '说明'}`}>{help}</ConfigHelp>}
         </div>
-        {!compactField && prop.description && <p className="text-xs text-slate-500 dark:text-slate-400">{prop.description}</p>}
+        {!compactField && prop.description && !weightMeta?.hint && <p className="text-xs text-slate-500 dark:text-slate-400">{prop.description}</p>}
         {!compactField && weightMeta?.hint && (
           <p className="text-[11px] text-slate-400 dark:text-slate-500" data-testid={`weight-hint-${key}`}>
             {weightMeta.hint}
@@ -1052,7 +1057,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           </div>}
           {groupName === 'caption' && hasCaptionOverrides && !showAdvanced && !editCaptionOverrides && <div className="caption-override-notice" role="status"><span>{english ? 'This configuration adds text to your existing captions.' : '当前配置会额外改写已有标签。'}</span><button type="button" onClick={() => setEditCaptionOverrides(true)}>{english ? 'Edit extra caption changes' : '编辑额外标签改写'}</button></div>}
           {compact && groupName === 'model' ? (() => {
-            const order = ['model.family', 'model.dtype', 'model.attention', 'model.dit_path', 'model.text_encoder_path', 'model.vae_path', 'model.tokenizer_path'];
+            const order = ['model.family', 'model.dit_path', 'model.text_encoder_path', 'model.text_encoder_2_path', 'model.vae_path', 'model.tokenizer_path', 'model.dtype', 'model.attention', 'model.prediction_type', 'model.zero_terminal_snr'];
             return [...groupData.fields].sort((a, b) => {
               const rank = (node: React.ReactNode) => { const index = order.indexOf(String((node as React.ReactElement).key)); return index < 0 ? order.length : index; };
               return rank(a) - rank(b);

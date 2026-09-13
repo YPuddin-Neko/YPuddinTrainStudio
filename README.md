@@ -1,14 +1,14 @@
 # YPuddin Train Studio
 
-一个面向扩散模型的**模块化适配器训练器**，包含 LoRA / LoKr / LoHa / DoRA、数据缓存、任务队列、服务 API 与 Web 界面。已接入 **Anima**（Cosmos-Predict2 风格 DiT + Qwen3-0.6B + Qwen-Image VAE）和 **Krea 2**（单流 MMDiT + Qwen3-VL-4B + Qwen-Image VAE）。训练核心与两族模型通过统一接口连接；模型组件包含按 Apache-2.0 引入的上游实现，来源见各 `vendor/NOTICE.md`。
+一个面向扩散模型的模块化适配器训练器，包含 LoRA / LoKr / LoHa / DoRA、数据缓存、任务队列、服务 API 与 Web 界面。已接入 **Anima、Krea 2、SDXL、FLUX.1 dev/schnell、FLUX.2 dev / Klein base 4B/9B**。训练循环统一，模型的条件编码、目标函数、采样和内存能力分别实现。
 
-当前处于集成验证阶段：已有 CPU 玩具模型与缩小版真实组件的训练、暂停恢复、采样和服务回归测试；**Windows/NVIDIA 实机、官方完整权重训练、实际 ComfyUI 加载与质量验收、速度和显存基准仍待完成**。本轮范围与验证边界见[v0.5.5 参数与数据变更报告](docs/UI_PARAMETERS_V055_2026-09-12.md)，功能状态见 [`docs/design/03-status.md`](docs/design/03-status.md)。参考项目分析保存在 `docs/reference/`，不作为性能优于参考实现的结论；QA 生成夹具也不代表生产训练质量。
+源码版本 **v0.5.9**，2026-09-13 新增模型接入说明见 [SDXL / FLUX 支持范围与验收](docs/MODEL_FAMILIES_2026-09-13.md)。SDXL 默认下载为光辉 Illustrious-XL v0.1，也可手选其他本地 SDXL base 模型，并明确选择 ε / v 预测。FLUX 两代分开选择，完整目录与独立组件均按真实结构检查；Klein 蒸馏版和图像编辑模型不在本次接入范围。
 
-当前版本 **v0.5.5**：新增独立参数预设管理、加载前差异预览和项目路径保护；修复帮助浮层裁剪与关闭交互。JSON 标签贯通导入、查看、编辑、缓存和训练；优化器提供实际选项，LoKr Full/低秩区分显示。采样实际支持 Euler、Heun、ER-SDE 及独立噪声调度器，保留原 Euler+uniform 默认。具体含义见[训练参数说明](docs/TRAINING_PARAMETERS.md)与[JSON 标签说明](docs/JSON_CAPTIONS.md)。本轮前端 **57 个文件、331 项通过**，后端 **771 通过 / 3 CUDA 跳过**，检查与构建通过。正式 8876 服务已按原数据根升级，192 个业务文件、六张业务表、设置与凭据配置状态保持；证据见[本轮报告](docs/UI_PARAMETERS_V055_2026-09-12.md)。
+新增模型已使用缩小的真实网络验证缓存、训练、预览、保存回读及独立权重转换。**完整权重 GPU、实际 ComfyUI 画面、图像质量及速度/显存基准仍需逐模型验证**，不把 CPU 小模型测试当作这些项目通过。FLUX.2 的延迟主干加载和 block swap 不等于逐层文本编码器卸载，不能承诺 dev / Klein 9B 可在 16GB 显卡上运行。
 
-三阶段项目侧栏、精确同 step 采样损失、分类与手动封面、版本模型族兼容继续保留。**Flux、SDXL 尚未接入，界面禁选。** HF/魔搭下载、集中访问密钥和旧目录沿用既有契约，历史变化见[v0.5.4 报告](docs/UI_WORKSPACE_V054_2026-09-12.md)，需求对应见[逐项核对](docs/USER_REQUIREMENTS_AUDIT_2026-09-12.md)。
+界面提供项目概览、独立版本、数据导入、标签与遮罩编辑、训练配置、任务指标和产物管理。最新 UI 流程见 [2026-09-13 工作区验收](docs/UI_WORKFLOWS_2026-09-13.md)；[训练参数](docs/TRAINING_PARAMETERS.md)、[JSON 标签](docs/JSON_CAPTIONS.md)、[整图保留与原生分辨率](docs/native-resolution.md)有对应说明。历史报告中的测试数量、服务路径和“未接入模型”仅代表当时状态。
 
-项目继续采用独立显示名称和手填 ID，按 `project/<id>/vN/` 保存训练图、正则图、各任务采样与产物，支持自定义输出根。正则图支持本地底模生成、网站收集与已有图片导入；标签页查看/编辑已有 caption，不提供 WD14 自动打标。环境页保留计算后端和注意力加速，常规依赖由启动器补齐。[目录规则](docs/UI_SIMPLIFICATION_2026-09-12.md)、[原生分辨率训练](docs/native-resolution.md)、Mask 和版本隔离继续保留。
+项目按 `project/<id>/vN/` 保存训练图、正则图、缓存、采样与产物，支持自定义输出根；已有数据不随代码更新自动迁移。正则图支持本地底模生成、网站收集与已有图片导入；标签页编辑已有 caption，不提供 WD14 自动打标。参考代码分析位于 `docs/reference/`，不能据此宣称性能优于参考实现。
 
 ## 仓库结构
 

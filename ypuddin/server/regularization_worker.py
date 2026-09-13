@@ -15,12 +15,14 @@ def generate(request: dict, output: Path, emit, cancelled) -> None:
     from ypuddin.config import MemoryConfig, ModelConfig, SamplingConfig
     from ypuddin.models import get_family
     from ypuddin.models.fingerprints import fingerprint_cache
-    from ypuddin.sampling import sample
 
     torch.set_num_threads(min(torch.get_num_threads(), 4))
     model = ModelConfig.model_validate(request["model"])
     sampling = SamplingConfig.model_validate(request.get("sampling", {}))
     family = get_family(model.family)
+    errors = family.sampling_errors(sampling)
+    if errors:
+        raise ValueError("; ".join(f"{item['loc']}: {item['msg']}" for item in errors))
     device = torch.device(request["device"])
     dtype = (
         getattr(torch, {"bf16": "bfloat16", "fp16": "float16", "fp32": "float32"}[model.dtype])
@@ -39,7 +41,7 @@ def generate(request: dict, output: Path, emit, cancelled) -> None:
     check()
     emit(phase="loading", done=0, message=f"Loading {model.family} base model without adapters")
     with fingerprint_cache(Path(request["fingerprint_cache"])):
-        loaded = family.load(model, memory, device="cpu", dtype=dtype, backbone_device="cpu")
+        loaded = family.load(model, memory, device=device, dtype=dtype, backbone_device="cpu")
     loaded.backbone.eval().requires_grad_(False)
     prompts = request["prompts"]
     # Encode each unique prompt once, retain CPU conditioning, then unload the encoder.
@@ -50,11 +52,21 @@ def generate(request: dict, output: Path, emit, cancelled) -> None:
         check()
         conditions[prompt] = loaded.text.encode([prompt], device=device).to("cpu")
     loaded.text.unload()
+    family.materialize_backbone(loaded)
+    loaded.backbone.eval().requires_grad_(False)
     loaded.backbone.to(device=device, dtype=dtype)
     loaded.device = device
     stride = family.spec.latent.stride
     patch = family.spec.latent.patch
-    shift = family.sampling_shift((height // stride // patch) * (width // stride // patch))
+    defaults = family.sampling_defaults(loaded)
+    shift = (
+        sampling.shift
+        if sampling.shift is not None
+        else family.sampling_shift_for_model(
+            loaded, (height // stride // patch) * (width // stride // patch), steps=request["steps"]
+        )
+    )
+    guidance = sampling.guidance if sampling.guidance is not None else defaults.guidance
     output.mkdir(parents=True, exist_ok=True)
     manifest = []
     with torch.inference_mode():
@@ -73,13 +85,21 @@ def generate(request: dict, output: Path, emit, cancelled) -> None:
                     else nullcontext()
                 )
                 with precision:
-                    return family.forward(loaded, x.to(dtype), t.to(device), condition).float()
+                    return family.forward(
+                        loaded,
+                        x.to(dtype),
+                        t.to(device),
+                        condition,
+                        inference=True,
+                        guidance=guidance,
+                    ).float()
 
             def step(done, total, image_index=index):
                 check()
                 emit(phase="generating", done=image_index, sample_step=done, sample_steps=total)
 
-            latents = sample(
+            latents = family.sample_latents(
+                loaded,
                 predict,
                 (1, family.spec.latent.channels, height // stride, width // stride),
                 sampler=sampling.sampler,
@@ -113,6 +133,7 @@ def generate(request: dict, output: Path, emit, cancelled) -> None:
                     "scheduler": sampling.scheduler,
                     "steps": request["steps"],
                     "cfg": request["cfg"],
+                    "guidance": guidance,
                     "shift": shift,
                     "er_sde_order": sampling.er_sde_order,
                     "er_sde_s_noise": sampling.er_sde_s_noise,

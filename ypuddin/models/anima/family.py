@@ -220,7 +220,9 @@ class AnimaFamily(ModelFamily):
             ),
             ("text_encoder_path", "Qwen3-0.6B", "HF 目录或单文件 safetensors"),
             ("vae_path", "Qwen-Image VAE", "qwen_image_vae.safetensors"),
+            ("tokenizer_path", "分词器目录", "可选的旧版 T5 分词器；留空使用内置文件"),
         ),
+        optional_weights=("tokenizer_path",),
     )
 
     # ----------------------------------------------------------------- loading

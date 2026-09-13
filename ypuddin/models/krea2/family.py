@@ -158,7 +158,9 @@ class Krea2Family(ModelFamily):
                 "HF 目录（推荐）或 ComfyUI 单文件 qwen_3vl_4b*.safetensors（bf16 / fp8_scaled）",
             ),
             ("vae_path", "Qwen-Image VAE", "qwen_image_vae.safetensors（与 Anima 共用）"),
+            ("tokenizer_path", "分词器目录", "可选的 Qwen3-VL 分词器覆盖目录"),
         ),
+        optional_weights=("tokenizer_path",),
     )
 
     # ----------------------------------------------------------------- loading

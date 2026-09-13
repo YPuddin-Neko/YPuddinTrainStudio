@@ -115,7 +115,7 @@ def test_invalid_data_geometry_keeps_its_error_without_publishing_a_fake_preview
     assert "buckets" not in result and "image_fit" not in result
 
 
-@pytest.mark.parametrize("family", ["unknown", "flux", None])
+@pytest.mark.parametrize("family", ["unknown", "flux3", None])
 def test_unknown_or_missing_family_never_guesses_alignment(images, monkeypatch, family):
     raw = raw_config(images)
     raw["sampling"]["enabled"] = True

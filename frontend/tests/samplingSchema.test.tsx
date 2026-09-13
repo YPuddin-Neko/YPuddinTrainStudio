@@ -23,6 +23,8 @@ const schema = {
 };
 const family = {
   name: 'anima', label: 'Anima', architecture: 'anima', adapter_prefix: 'lora',
+  objective: 'rectified_flow', sampling_samplers: ['euler', 'heun', 'er_sde'], sampling_schedulers: ['uniform', 'simple', 'sgm_uniform', 'normal'],
+  objective_timestep_sampling: ['uniform', 'logit_normal', 'shift', 'resolution_shift', 'mode', 'cosmap'], objective_weighting: ['none', 'sigma_sqrt', 'cosmap', 'snr_like', 'cosmos'],
   capabilities: [], text_modes: [], presets: [], default_preset: '',
   sampling: { steps: 25, cfg: 4, shift: 3, sampler: 'euler' },
   latent: { channels: 16, stride: 8, patch: 2, align: 16 },

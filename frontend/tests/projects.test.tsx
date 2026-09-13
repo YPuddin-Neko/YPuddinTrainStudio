@@ -344,7 +344,7 @@ it('rejects unsupported or oversized cover files without uploading and preserves
   expect(apiClient.post).not.toHaveBeenCalled(); expect(apiClient.patch).not.toHaveBeenCalled();
 });
 
-it('supports the More menu with keyboard focus and exposes unsupported families as disabled', async () => {
+it('supports the More menu with keyboard focus and only offers server-registered families', async () => {
   show(); await screen.findByTestId('project-card-p0');
   const more = within(screen.getByTestId('project-card-p0')).getByRole('button', { name: /更多操作/ }); more.focus();
   fireEvent.keyDown(more, { key: 'ArrowDown' });
@@ -356,9 +356,10 @@ it('supports the More menu with keyboard focus and exposes unsupported families 
   fireEvent.click(screen.getByRole('button', { name: '新建项目' }));
   await waitFor(() => expect(screen.getByRole('combobox', { name: '初始模型类型' })).toHaveTextContent('Anima'));
   fireEvent.click(screen.getByRole('combobox', { name: '初始模型类型' }));
-  expect(screen.getByRole('option', { name: /Flux/ })).toHaveAttribute('aria-disabled', 'true');
-  fireEvent.click(screen.getByRole('option', { name: /SDXL/ }));
-  expect(screen.getByRole('combobox', { name: '初始模型类型' })).toHaveTextContent('Anima');
+  expect(screen.queryByRole('option', { name: /FLUX/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('option', { name: /SDXL/ })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('option', { name: 'Krea 2' }));
+  expect(screen.getByRole('combobox', { name: '初始模型类型' })).toHaveTextContent('Krea 2');
   expect(screen.queryByRole('option', { name: /toy/i })).not.toBeInTheDocument();
 });
 

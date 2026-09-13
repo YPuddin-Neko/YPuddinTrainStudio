@@ -1,7 +1,7 @@
 import { reusableTrainingPreset } from './trainingPresets';
 
 const HIDDEN_FIELDS: Record<string, string[]> = {
-  model: ['family', 'dit_path', 'text_encoder_path', 'vae_path', 'tokenizer_path'],
+  model: ['family', 'dit_path', 'text_encoder_path', 'text_encoder_2_path', 'vae_path', 'tokenizer_path'],
   dataset: ['sources', 'cache_dir'],
   validation: ['sources'],
   checkpoint: ['output_dir', 'resume'],

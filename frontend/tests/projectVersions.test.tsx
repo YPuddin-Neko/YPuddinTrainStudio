@@ -68,7 +68,7 @@ describe('explicit project version actions', () => {
     expect(within(dialog).getByText('配置和完整数据副本')).toBeInTheDocument();
     expect(within(dialog).getByText('保留实验参数，清空数据来源。')).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('combobox',{name:'训练模型类型'}));
-    expect(screen.getByRole('option',{name:'Flux · 暂未接入'})).toHaveAttribute('aria-disabled','true');
+    expect(screen.queryByRole('option',{name:/Flux/})).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('option',{name:'Krea2'}));
     expect(within(dialog).getByText(/模型类型不同：/)).toBeInTheDocument();
     expect(within(dialog).getByRole('radio', {name:/复制数据，使用新模型配置/})).toBeChecked();

@@ -128,7 +128,7 @@ def test_project_and_version_family_api_persist_the_selected_recipe(api, family)
 
 def test_unsupported_family_api_is_rejected_before_any_rows_or_directories(api):
     client, ctx = api
-    for family in ("flux", "sdxl", "unknown"):
+    for family in ("flux3", "sdxl-unknown", "unknown"):
         assert (
             client.post("/api/projects", json={"id": family, "name": family, "family": family}).status_code
             == 422
@@ -136,7 +136,7 @@ def test_unsupported_family_api_is_rejected_before_any_rows_or_directories(api):
     assert client.get("/api/projects").json() == []
     project = create(client)
     before = set(ctx.project_dir(project["id"]).rglob("*"))
-    for family in ("flux", "sdxl", "unknown"):
+    for family in ("flux3", "sdxl-unknown", "unknown"):
         response = client.post(
             f"/api/projects/{project['id']}/versions",
             json={"name": family, "family": family, "data_mode": "empty"},

@@ -252,6 +252,9 @@ class FamilyWeight(_Out):
     field: str  # ModelConfig field name, e.g. "dit_path"
     label: str
     hint: str
+    kind: str = ""
+    required: bool = True
+    downloadable: bool = True
 
 
 class FamilySampling(_Out):
@@ -259,6 +262,7 @@ class FamilySampling(_Out):
     cfg: float
     shift: float | None  # None: resolution dependent (Krea 2), the trainer derives it per preview size
     sampler: str
+    guidance: float | None = None
 
 
 class FamilyLatent(_Out):
@@ -269,9 +273,22 @@ class FamilyLatent(_Out):
 
 
 class FamilyInfo(_Out):
+    attention_backends: list[str] = Field(default_factory=lambda: ["auto", "sdpa", "xformers", "flash_attn"])
     name: str
     label: str
     architecture: str
+    objective: str = "rectified_flow"
+    sampling_samplers: list[str] = ["euler", "heun", "er_sde"]
+    sampling_schedulers: list[str] = ["uniform", "simple", "sgm_uniform", "normal"]
+    objective_timestep_sampling: list[str] = [
+        "uniform",
+        "logit_normal",
+        "shift",
+        "resolution_shift",
+        "mode",
+        "cosmap",
+    ]
+    objective_weighting: list[str] = ["none", "sigma_sqrt", "cosmap", "snr_like", "cosmos"]
     adapter_prefix: str
     capabilities: list[str]
     text_modes: list[str]  # valid values of dataset.text_encoding for this family

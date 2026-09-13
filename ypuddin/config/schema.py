@@ -20,9 +20,9 @@ class _Strict(BaseModel):
 
 # --------------------------------------------------------------------------- model
 class ModelConfig(_Strict):
-    family: Literal["anima", "krea2", "toy"] = F(
+    family: Literal["anima", "krea2", "sdxl", "flux", "flux2", "toy"] = F(
         "anima",
-        help="模型族（anima：Anima 2B；krea2：Krea 2 Raw 12.9B）",
+        help="模型系列决定主模型、文本编码器和训练方式。",
         ui_=ui("model", order=0, control="select"),
     )
     dit_path: str | None = F(
@@ -34,6 +34,11 @@ class ModelConfig(_Strict):
         None,
         help="文本编码器（Anima：Qwen3-0.6B；Krea 2：Qwen3-VL-4B-Instruct）——HF 目录或单文件 safetensors",
         ui_=ui("model", order=20, control="path"),
+    )
+    text_encoder_2_path: str | None = F(
+        None,
+        help="第二文本编码器：SDXL 使用 CLIP-G（完整模型通常已内含）；FLUX.1 使用 T5-XXL。",
+        ui_=ui("model", order=25, control="path", show_when="model.family in ['sdxl','flux']"),
     )
     vae_path: str | None = F(None, help="VAE 权重", ui_=ui("model", order=30, control="path"))
     tokenizer_path: str | None = F(
@@ -51,6 +56,34 @@ class ModelConfig(_Strict):
         help="默认 auto 使用当前模型的自动选择。SDPA 是 PyTorch 内置注意力；xFormers/FlashAttention 需匹配的 CUDA 扩展，Sage 仅用于无梯度推理。通常先用 auto/SDPA，仅在环境检查确认支持后切换扩展。",
         ui_=ui("model", order=60, control="select", advanced=True),
     )
+    prediction_type: Literal["epsilon", "v_prediction"] = F(
+        "epsilon",
+        help="按 SDXL 模型的训练方式选择。常规 SDXL 使用 epsilon；只有明确标注 v-prediction 的模型才改成 v_prediction。选错会使训练和预览结果异常。",
+        ui_=ui("model", order=70, control="select", show_when="model.family == 'sdxl'"),
+    )
+    zero_terminal_snr: bool = F(
+        False,
+        help="仅在 SDXL 模型明确要求 zero terminal SNR 时启用，需同时选择 v_prediction。",
+        ui_=ui("model", order=80, control="switch", advanced=True, show_when="model.family == 'sdxl'"),
+    )
+    training_guidance: float = F(
+        1.0,
+        ge=0,
+        le=30,
+        help="FLUX 训练时传给模型的引导条件，默认 1；它与正负提示词的 CFG 放大不同。预览引导强度在采样设置中调整。",
+        ui_=ui("model", order=90, advanced=True, show_when="model.family in ['flux','flux2']"),
+    )
+    flux2_variant: Literal["auto", "dev", "klein-base-4b", "klein-base-9b"] = F(
+        "auto",
+        help="完整 FLUX.2 目录会读取模型配置。Klein 单文件无法从权重尺寸区分基础版和蒸馏版，请按模型发布说明选择对应基础版；当前不支持 Klein 蒸馏版训练。",
+        ui_=ui("model", order=5, control="select", show_when="model.family == 'flux2'"),
+    )
+
+    @model_validator(mode="after")
+    def check_prediction_schedule(self):
+        if self.zero_terminal_snr and (self.family != "sdxl" or self.prediction_type != "v_prediction"):
+            raise ValueError("zero_terminal_snr requires SDXL v_prediction")
+        return self
 
 
 # --------------------------------------------------------------------------- dataset
@@ -744,6 +777,15 @@ class SamplePrompt(_Strict):
 
 
 class SamplingConfig(_Strict):
+    guidance: float | None = F(
+        None,
+        ge=0,
+        le=30,
+        help="FLUX 模型内部的预览引导强度；留空使用对应模型默认值。这项不参与训练步的加噪或损失。",
+        ui_=ui(
+            "sampling", order=95, show_when="sampling.enabled == true && model.family in ['flux','flux2']"
+        ),
+    )
     # Service-owned destination. Omitted for CLI compatibility (<run_dir>/samples).
     output_dir: str | None = None
     enabled: bool = F(

@@ -28,7 +28,7 @@ export interface ProjectOverviewProps {
 
 const number = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 const fileName = (value: unknown) => typeof value === 'string' ? value.trim().replace(/\\/g, '/').split('/').filter(Boolean).pop() || '' : '';
-const familyName = (family: string) => ({ anima: 'Anima', krea2: 'Krea 2', toy: 'Toy' }[family] || family);
+const familyName = (family: string) => ({ anima: 'Anima', krea2: 'Krea 2', sdxl: 'SDXL', flux: 'FLUX.1', flux2: 'FLUX.2', toy: 'Toy' }[family] || family);
 
 /** Missing, failed and in-progress indexes must never look like an empty dataset. */
 function overviewDatasetStats(datasets: OverviewDataset[]) {

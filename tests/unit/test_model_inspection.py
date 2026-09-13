@@ -1,4 +1,5 @@
 import json
+import math
 
 import pytest
 import torch
@@ -7,6 +8,96 @@ from safetensors.torch import save_file
 
 from ypuddin.server import create_app
 from ypuddin.server.model_inspection import inspect_model
+
+
+def sparse_headers(path, shapes):
+    """Real safetensors headers with sparse zero payloads, without allocating giant CLIP tensors."""
+    header, offset = {}, 0
+    for name, shape in shapes.items():
+        end = offset + math.prod(shape) * 2
+        header[name] = {"dtype": "BF16", "shape": shape, "data_offsets": [offset, end]}
+        offset = end
+    payload = json.dumps(header).encode()
+    payload += b" " * (-len(payload) % 8)
+    with path.open("wb") as stream:
+        stream.write(len(payload).to_bytes(8, "little"))
+        stream.write(payload)
+        stream.truncate(8 + len(payload) + offset)
+    return path
+
+
+SDXL_UNET = {"conv_in.weight": [2, 4, 3, 3], "add_embedding.linear_1.weight": [2, 2816]}
+SDXL_VAE = {
+    "encoder.conv_in.weight": [2, 3, 3, 3],
+    "decoder.conv_out.weight": [3, 2, 3, 3],
+    "quant_conv.weight": [8, 8, 1, 1],
+    "post_quant_conv.weight": [4, 4, 1, 1],
+}
+
+
+def hf_sdxl_directory(root, *, sharded=False):
+    components = {
+        "unet": (
+            "diffusers",
+            "UNet2DConditionModel",
+            SDXL_UNET,
+            {
+                "in_channels": 4,
+                "out_channels": 4,
+                "cross_attention_dim": 2048,
+                "addition_embed_type": "text_time",
+                "projection_class_embeddings_input_dim": 2816,
+            },
+        ),
+        "text_encoder": (
+            "transformers",
+            "CLIPTextModel",
+            {"text_model.embeddings.token_embedding.weight": [49408, 768]},
+            {"hidden_size": 768, "vocab_size": 49408},
+        ),
+        "text_encoder_2": (
+            "transformers",
+            "CLIPTextModelWithProjection",
+            {
+                "text_model.embeddings.token_embedding.weight": [49408, 1280],
+                "text_projection.weight": [1280, 1280],
+            },
+            {"hidden_size": 1280, "vocab_size": 49408, "projection_dim": 1280},
+        ),
+        "vae": ("diffusers", "AutoencoderKL", SDXL_VAE, {"latent_channels": 4}),
+    }
+    root.mkdir()
+    index = {"_class_name": "StableDiffusionXLPipeline"}
+    for name, (library, model_class, shapes, config) in components.items():
+        index[name] = [library, model_class]
+        folder = root / name
+        folder.mkdir()
+        (folder / "config.json").write_text(json.dumps(config))
+        if sharded and name == "unet":
+            mapping = {}
+            for i, (key, shape) in enumerate(shapes.items()):
+                filename = f"diffusion_pytorch_model-{i + 1:05d}-of-00002.safetensors"
+                sparse_headers(folder / filename, {key: shape})
+                mapping[key] = filename
+            (folder / "diffusion_pytorch_model.safetensors.index.json").write_text(
+                json.dumps({"weight_map": mapping})
+            )
+        else:
+            filename = (
+                "model.safetensors"
+                if name.startswith("text_encoder")
+                else "diffusion_pytorch_model.safetensors"
+            )
+            sparse_headers(folder / filename, shapes)
+    for name in ("tokenizer", "tokenizer_2"):
+        index[name] = ["transformers", "CLIPTokenizer"]
+        folder = root / name
+        folder.mkdir()
+        (folder / "tokenizer_config.json").write_text(json.dumps({"tokenizer_class": "CLIPTokenizer"}))
+        (folder / "vocab.json").write_text(json.dumps({"a": 0}))
+        (folder / "merges.txt").write_text("#version: 0.2\na b\n")
+    (root / "model_index.json").write_text(json.dumps(index))
+    return root
 
 
 def weights(path, family="anima", dtype=torch.bfloat16):
@@ -142,3 +233,194 @@ def test_inspect_api_and_scan_do_not_register_unknown_or_filename_guesses(tmp_pa
         app.state.ctx.versions.close()
         client.close()
         app.state.ctx.db.close()
+
+
+def test_sdxl_bundle_takes_priority_over_embedded_vae_and_both_clips(tmp_path, monkeypatch):
+    from safetensors import safe_open
+
+    from ypuddin.server.model_downloads import check_component
+
+    shapes = {
+        "model.diffusion_model.input_blocks.0.0.weight": [2, 4, 3, 3],
+        "model.diffusion_model.label_emb.0.0.weight": [2, 2816],
+        **{f"first_stage_model.{key}": value for key, value in SDXL_VAE.items()},
+        "conditioner.embedders.0.transformer.text_model.embeddings.token_embedding.weight": [49408, 768],
+        "conditioner.embedders.1.model.token_embedding.weight": [49408, 1280],
+        "conditioner.embedders.1.model.text_projection": [1280, 1280],
+    }
+    path = sparse_headers(tmp_path / "misleading_vae.safetensors", shapes)
+    monkeypatch.setattr(torch, "load", lambda *a, **k: pytest.fail("pickle must not be loaded"))
+    import safetensors.torch
+
+    monkeypatch.setattr(
+        safetensors.torch, "load_file", lambda *a, **k: pytest.fail("no tensor payload loads")
+    )
+    assert inspect_model(path)["family"] == "sdxl"
+    assert inspect_model(path)["kind"] == "dit"
+    with safe_open(str(path), framework="pt", device="cpu") as weights:
+        check_component(weights, "sdxl", "dit")
+        for family, kind in (("sdxl", "vae"), ("anima", "dit"), ("krea2", "dit")):
+            with pytest.raises(ValueError, match="looks like sdxl dit"):
+                check_component(weights, family, kind)
+
+
+@pytest.mark.parametrize(
+    "role,shapes",
+    [
+        ("text_encoder", {"text_model.embeddings.token_embedding.weight": [49408, 768]}),
+        ("text_encoder", {"embeddings.token_embedding.weight": [49408, 768]}),
+        (
+            "text_encoder",
+            {
+                "conditioner.embedders.0.transformer.text_model.embeddings.token_embedding.weight": [
+                    49408,
+                    768,
+                ]
+            },
+        ),
+        (
+            "text_encoder_2",
+            {
+                "text_model.embeddings.token_embedding.weight": [49408, 1280],
+                "text_projection.weight": [1280, 1280],
+            },
+        ),
+        ("text_encoder_2", {"token_embedding.weight": [49408, 1280], "text_projection": [1280, 1280]}),
+        (
+            "text_encoder_2",
+            {
+                "conditioner.embedders.1.model.token_embedding.weight": [49408, 1280],
+                "conditioner.embedders.1.model.text_projection": [1280, 1280],
+            },
+        ),
+    ],
+)
+def test_clip_roles_match_download_checker_without_guessing_family(tmp_path, role, shapes):
+    from safetensors import safe_open
+
+    from ypuddin.server.model_downloads import check_component
+
+    path = sparse_headers(tmp_path / "clip.safetensors", shapes)
+    result = inspect_model(path)
+    assert result["kind"] == role
+    assert result["family_candidates"] == (["sdxl", "flux"] if role == "text_encoder" else ["sdxl"])
+    assert result["family"] is None  # CLIP-L/G are shared beyond SDXL.
+    with safe_open(str(path), framework="pt", device="cpu") as weights:
+        check_component(weights, "sdxl", role)
+        if role == "text_encoder":
+            check_component(weights, "flux", role)
+        else:
+            with pytest.raises(ValueError, match="looks like shared"):
+                check_component(weights, "flux", role)
+        with pytest.raises(ValueError, match="looks like shared"):
+            check_component(weights, "sdxl", "text_encoder" if role == "text_encoder_2" else "text_encoder_2")
+
+
+def test_wrong_unet_and_clip_projection_geometry_are_not_sdxl(tmp_path):
+    from ypuddin.server.model_inspection import sdxl_component
+
+    assert sdxl_component({**SDXL_UNET, "add_embedding.linear_1.weight": [2, 2560]}) is None
+    assert sdxl_component({**SDXL_UNET, "conv_in.weight": [2, 9, 3, 3]}) is None
+    path = sparse_headers(
+        tmp_path / "clip_g.safetensors",
+        {
+            "text_model.embeddings.token_embedding.weight": [49408, 1280],
+            "text_projection.weight": [768, 1280],
+        },
+    )
+    assert inspect_model(path)["kind"] is None
+
+
+@pytest.mark.parametrize("sharded", [False, True])
+def test_complete_hf_sdxl_directory_and_components_preserve_directory_path(tmp_path, sharded):
+    root = hf_sdxl_directory(tmp_path / "sdxl", sharded=sharded)
+    result = inspect_model(root)
+    assert result["family"] == "sdxl" and result["kind"] == "dit"
+    assert result["path"] == str(root) and result["confidence"] == "high"
+    assert result["files_inspected"] == (5 if sharded else 4)
+    assert result["dtype"] == "bf16"
+    for role in ("unet", "vae"):
+        assert inspect_model(root / role)["path"] == str(root / role)
+
+
+@pytest.mark.parametrize(
+    "missing",
+    [
+        "unet/config.json",
+        "text_encoder/model.safetensors",
+        "text_encoder_2/model.safetensors",
+        "vae/diffusion_pytorch_model.safetensors",
+        "tokenizer/merges.txt",
+        "tokenizer_2/vocab.json",
+    ],
+)
+def test_hf_sdxl_directory_rejects_missing_local_components(tmp_path, missing):
+    root = hf_sdxl_directory(tmp_path / "sdxl")
+    (root / missing).unlink()
+    with pytest.raises(ValueError, match="SDXL"):
+        inspect_model(root)
+
+
+def test_hf_sdxl_rejects_pickle_only_component_and_bad_config(tmp_path, monkeypatch):
+    root = hf_sdxl_directory(tmp_path / "sdxl")
+    model = root / "text_encoder/model.safetensors"
+    model.rename(model.with_suffix(".bin"))
+    monkeypatch.setattr(torch, "load", lambda *a, **k: pytest.fail("pickle must not be loaded"))
+    with pytest.raises(ValueError, match="safetensors"):
+        inspect_model(root)
+    (root / "unet/config.json").write_text(json.dumps({"in_channels": 9}))
+    with pytest.raises(ValueError, match="incompatible"):
+        inspect_model(root)
+
+
+def test_diffusers_shard_index_validates_actual_tensor_locations_and_missing_shards(tmp_path):
+    root = hf_sdxl_directory(tmp_path / "sdxl", sharded=True)
+    index = root / "unet/diffusion_pytorch_model.safetensors.index.json"
+    payload = json.loads(index.read_text())
+    keys = list(payload["weight_map"])
+    payload["weight_map"][keys[0]], payload["weight_map"][keys[1]] = (
+        payload["weight_map"][keys[1]],
+        payload["weight_map"][keys[0]],
+    )
+    index.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match="tensor locations"):
+        inspect_model(root)
+    (index.parent / payload["weight_map"][keys[0]]).unlink()
+    with pytest.raises(ValueError, match="missing or outside"):
+        inspect_model(root)
+
+
+@pytest.mark.parametrize("asset", ["model_index.json", "unet/config.json", "tokenizer_2/vocab.json"])
+def test_hf_metadata_symlinks_cannot_escape_selected_directory(tmp_path, asset):
+    root = hf_sdxl_directory(tmp_path / "sdxl")
+    outside = tmp_path / "outside.json"
+    (root / asset).replace(outside)
+    try:
+        (root / asset).symlink_to(outside)
+    except OSError:
+        pytest.skip("symlinks unavailable")
+    with pytest.raises(ValueError, match="outside"):
+        inspect_model(root)
+
+
+def test_hf_tokenizer_json_format_and_allowed_component_boundary(tmp_path):
+    root = hf_sdxl_directory(tmp_path / "sdxl")
+    for name in ("tokenizer", "tokenizer_2"):
+        (root / name / "vocab.json").unlink()
+        (root / name / "merges.txt").unlink()
+        (root / name / "tokenizer.json").write_text(json.dumps({"model": {"type": "BPE", "vocab": {"a": 0}}}))
+    assert inspect_model(root)["family"] == "sdxl"
+    forbidden = root / "text_encoder_2"
+    with pytest.raises(ValueError, match="outside"):
+        inspect_model(root, allowed=lambda path: not path.is_relative_to(forbidden))
+
+
+@pytest.mark.parametrize(
+    "filename", ["../escape.safetensors", "C:\\weights\\outside.safetensors", "weights.bin"]
+)
+def test_diffusers_index_rejects_unsafe_or_pickle_shards(tmp_path, filename):
+    (tmp_path / "diffusion_pytorch_model.safetensors.index.json").write_text(
+        json.dumps({"weight_map": {"conv_in.weight": filename}})
+    )
+    with pytest.raises(ValueError, match="missing or outside"):
+        inspect_model(tmp_path)

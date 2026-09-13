@@ -1,8 +1,8 @@
 """Rectified-flow objective: ``x_t = (1-t)·x0 + t·ε``, target ``v = ε − x0``, plus timestep samplers,
 loss functions and per-timestep weighting.
 
-Invariants (shared with every model family): ``t ∈ (0, 1)``, ``t = 1`` is pure noise, ``t`` is
-fp32 and the backbone receives it unscaled.
+Rectified-flow conventions: ``t ∈ (0, 1)``, ``t = 1`` is pure noise, ``t`` is fp32.
+Other objectives own their noising schedule and backbone timestep conversion.
 """
 
 from __future__ import annotations

@@ -311,7 +311,7 @@ class RegularizationManager:
                             status=422,
                             code="regularization.dimensions",
                         )
-                    for field in ("dit_path", "text_encoder_path", "vae_path", "tokenizer_path"):
+                    for field in ("dit_path", "text_encoder_path", "text_encoder_2_path", "vae_path", "tokenizer_path"):
                         path = getattr(model, field)
                         if path and not self.c.is_allowed(Path(path)):
                             raise ApiError(

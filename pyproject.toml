@@ -33,6 +33,9 @@ dependencies = [
 # Model loading for real families (Qwen3 tokenizer/text encoder, HF hub).
 models = [
     "transformers>=4.57",
+    "torchvision>=0.19",
+    "diffusers>=0.40,<0.41",
+    "accelerate>=1.10,<2",
     "huggingface-hub>=0.25",
     "sentencepiece>=0.2",
     "protobuf>=4.0",
@@ -75,6 +78,9 @@ ypuddin = "ypuddin.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["ypuddin*"]
+
+[tool.setuptools.package-data]
+"*" = ["assets/**/*", "*.txt", "*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

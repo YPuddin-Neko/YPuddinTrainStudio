@@ -42,7 +42,7 @@ def wait_ready(c, pid, vid):
     pytest.fail("version snapshot did not finish")
 
 
-@pytest.mark.parametrize("family", ["anima", "krea2", "toy"])
+@pytest.mark.parametrize("family", ["anima", "krea2", "sdxl", "flux", "flux2", "toy"])
 def test_initial_recipe_uses_family_contract_without_cuda_assumptions(api, family):
     _, c, _ = api
     recipe = initial_family_config(c, family)
@@ -50,8 +50,8 @@ def test_initial_recipe_uses_family_contract_without_cuda_assumptions(api, famil
     TrainConfig.model_validate(recipe)
     assert recipe["model"]["family"] == family
     assert recipe["adapter"]["preset"] == get_family(family).default_preset()
-    assert recipe["sampling"]["steps"] == spec.sampling.steps
-    assert recipe["sampling"]["cfg"] == spec.sampling.cfg
+    assert recipe["sampling"]["steps"] == (None if family in {"flux", "flux2"} else spec.sampling.steps)
+    assert recipe["sampling"]["cfg"] == (None if family in {"flux", "flux2"} else spec.sampling.cfg)
     assert recipe["sampling"]["shift"] == spec.sampling.shift
     assert recipe["memory"]["base_precision"] == "auto"
     assert recipe["memory"]["blocks_to_swap"] == 0
@@ -212,7 +212,7 @@ def test_cross_family_snapshot_copies_sidecars_and_never_rewrites_old_config_or_
     assert empty_config["validation"]["sources"] == []
 
 
-@pytest.mark.parametrize("family", ["flux", "sdxl", "unknown"])
+@pytest.mark.parametrize("family", ["flux3", "sdxl-unknown", "unknown"])
 def test_unsupported_family_leaves_no_version_or_busy_source(api, family):
     _, c, p = api
     before = c.db.fetchall("SELECT * FROM project_versions")
@@ -230,7 +230,7 @@ def test_version_family_handles_legacy_pending_and_malformed_configs(api):
     path.unlink()
     assert version_family(c, row) == "anima"
     assert version_family(c, {**row, "status": "copying"}) is None
-    for content in ("{broken", "[]", '{"model":null}', '{"model":{"family":"sdxl"}}'):
+    for content in ("{broken", "[]", '{"model":null}', '{"model":{"family":"unknown"}}'):
         path.write_text(content)
         assert version_family(c, row) is None
         assert version_row(c, row)["family"] is None

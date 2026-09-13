@@ -251,6 +251,9 @@
                   "enum": [
                     "anima",
                     "krea2",
+                    "sdxl",
+                    "flux",
+                    "flux2",
                     "toy"
                   ],
                   "type": "string"
@@ -8125,6 +8128,13 @@
       },
       "FamilyInfo": {
         "properties": {
+          "attention_backends": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Attention Backends"
+          },
           "name": {
             "type": "string",
             "title": "Name"
@@ -8136,6 +8146,65 @@
           "architecture": {
             "type": "string",
             "title": "Architecture"
+          },
+          "objective": {
+            "type": "string",
+            "title": "Objective",
+            "default": "rectified_flow"
+          },
+          "sampling_samplers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sampling Samplers",
+            "default": [
+              "euler",
+              "heun",
+              "er_sde"
+            ]
+          },
+          "sampling_schedulers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sampling Schedulers",
+            "default": [
+              "uniform",
+              "simple",
+              "sgm_uniform",
+              "normal"
+            ]
+          },
+          "objective_timestep_sampling": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Objective Timestep Sampling",
+            "default": [
+              "uniform",
+              "logit_normal",
+              "shift",
+              "resolution_shift",
+              "mode",
+              "cosmap"
+            ]
+          },
+          "objective_weighting": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Objective Weighting",
+            "default": [
+              "none",
+              "sigma_sqrt",
+              "cosmap",
+              "snr_like",
+              "cosmos"
+            ]
           },
           "adapter_prefix": {
             "type": "string",
@@ -8300,6 +8369,17 @@
           "sampler": {
             "type": "string",
             "title": "Sampler"
+          },
+          "guidance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guidance"
           }
         },
         "additionalProperties": true,
@@ -8325,6 +8405,21 @@
           "hint": {
             "type": "string",
             "title": "Hint"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "default": ""
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required",
+            "default": true
+          },
+          "downloadable": {
+            "type": "boolean",
+            "title": "Downloadable",
+            "default": true
           }
         },
         "additionalProperties": true,
@@ -10197,6 +10292,9 @@
             "enum": [
               "anima",
               "krea2",
+              "sdxl",
+              "flux",
+              "flux2",
               "toy",
               "tagger"
             ],
@@ -10207,6 +10305,7 @@
             "enum": [
               "dit",
               "text_encoder",
+              "text_encoder_2",
               "vae",
               "tokenizer",
               "tagger"
@@ -10328,10 +10427,13 @@
             "enum": [
               "anima",
               "krea2",
+              "sdxl",
+              "flux",
+              "flux2",
               "toy"
             ],
             "title": "Family",
-            "description": "模型族（anima：Anima 2B；krea2：Krea 2 Raw 12.9B）",
+            "description": "模型系列决定主模型、文本编码器和训练方式。",
             "default": "anima",
             "x-ui": {
               "control": "select",
@@ -10371,6 +10473,24 @@
               "control": "path",
               "group": "model",
               "order": 20
+            }
+          },
+          "text_encoder_2_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Encoder 2 Path",
+            "description": "第二文本编码器：SDXL 使用 CLIP-G（完整模型通常已内含）；FLUX.1 使用 T5-XXL。",
+            "x-ui": {
+              "control": "path",
+              "group": "model",
+              "order": 25,
+              "show_when": "model.family in ['sdxl','flux']"
             }
           },
           "vae_path": {
@@ -10442,6 +10562,67 @@
               "control": "select",
               "group": "model",
               "order": 60
+            }
+          },
+          "prediction_type": {
+            "type": "string",
+            "enum": [
+              "epsilon",
+              "v_prediction"
+            ],
+            "title": "Prediction Type",
+            "description": "按 SDXL 模型的训练方式选择。常规 SDXL 使用 epsilon；只有明确标注 v-prediction 的模型才改成 v_prediction。选错会使训练和预览结果异常。",
+            "default": "epsilon",
+            "x-ui": {
+              "control": "select",
+              "group": "model",
+              "order": 70,
+              "show_when": "model.family == 'sdxl'"
+            }
+          },
+          "zero_terminal_snr": {
+            "type": "boolean",
+            "title": "Zero Terminal Snr",
+            "description": "仅在 SDXL 模型明确要求 zero terminal SNR 时启用，需同时选择 v_prediction。",
+            "default": false,
+            "x-ui": {
+              "advanced": true,
+              "control": "switch",
+              "group": "model",
+              "order": 80,
+              "show_when": "model.family == 'sdxl'"
+            }
+          },
+          "training_guidance": {
+            "type": "number",
+            "maximum": 30.0,
+            "minimum": 0.0,
+            "title": "Training Guidance",
+            "description": "FLUX 训练时传给模型的引导条件，默认 1；它与正负提示词的 CFG 放大不同。预览引导强度在采样设置中调整。",
+            "default": 1.0,
+            "x-ui": {
+              "advanced": true,
+              "group": "model",
+              "order": 90,
+              "show_when": "model.family in ['flux','flux2']"
+            }
+          },
+          "flux2_variant": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "dev",
+              "klein-base-4b",
+              "klein-base-9b"
+            ],
+            "title": "Flux2 Variant",
+            "description": "完整 FLUX.2 目录会读取模型配置。Klein 单文件无法从权重尺寸区分基础版和蒸馏版，请按模型发布说明选择对应基础版；当前不支持 Klein 蒸馏版训练。",
+            "default": "auto",
+            "x-ui": {
+              "control": "select",
+              "group": "model",
+              "order": 5,
+              "show_when": "model.family == 'flux2'"
             }
           }
         },
@@ -10639,7 +10820,10 @@
             "type": "string",
             "enum": [
               "anima",
-              "krea2"
+              "krea2",
+              "sdxl",
+              "flux",
+              "flux2"
             ],
             "title": "Family"
           },
@@ -10648,6 +10832,7 @@
             "enum": [
               "dit",
               "text_encoder",
+              "text_encoder_2",
               "vae"
             ],
             "title": "Kind"
@@ -12310,6 +12495,9 @@
             "enum": [
               "anima",
               "krea2",
+              "sdxl",
+              "flux",
+              "flux2",
               "toy"
             ],
             "title": "Family",
@@ -12672,7 +12860,10 @@
             "type": "string",
             "enum": [
               "anima",
-              "krea2"
+              "krea2",
+              "sdxl",
+              "flux",
+              "flux2"
             ],
             "title": "Family"
           },
@@ -12681,6 +12872,7 @@
             "enum": [
               "dit",
               "text_encoder",
+              "text_encoder_2",
               "vae"
             ],
             "title": "Kind"
@@ -12693,6 +12885,8 @@
             "type": "string",
             "enum": [
               "bf16",
+              "fp16",
+              "fp32",
               "fp8"
             ],
             "title": "Dtype"
@@ -13199,6 +13393,25 @@
       },
       "SamplingConfig": {
         "properties": {
+          "guidance": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 30.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guidance",
+            "description": "FLUX 模型内部的预览引导强度；留空使用对应模型默认值。这项不参与训练步的加噪或损失。",
+            "x-ui": {
+              "group": "sampling",
+              "order": 95,
+              "show_when": "sampling.enabled == true && model.family in ['flux','flux2']"
+            }
+          },
           "output_dir": {
             "anyOf": [
               {
@@ -14226,6 +14439,9 @@
                 "enum": [
                   "anima",
                   "krea2",
+                  "sdxl",
+                  "flux",
+                  "flux2",
                   "toy"
                 ]
               },
