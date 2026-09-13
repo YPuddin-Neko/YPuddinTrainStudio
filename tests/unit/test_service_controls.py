@@ -88,6 +88,9 @@ def test_job_preflight_paths_and_isolated_events(api, image_dataset, monkeypatch
 
 def test_settings_new_paths_preserve_old_jobs_and_delete_custom_run(api, image_dataset, tmp_path):
     client, ctx = api
+    original_images = {
+        p.relative_to(image_dataset): p.read_bytes() for p in image_dataset.rglob("*") if p.is_file()
+    }
     old = create_job(api, image_dataset)
     old_run = Path(old["run_dir"])
     old_samples = Path(old["samples_dir"] or old_run / "samples")
@@ -120,12 +123,17 @@ def test_settings_new_paths_preserve_old_jobs_and_delete_custom_run(api, image_d
     (run / "weights").write_text("keep until explicit deletion")
     unrelated = run.parent / "user-file"
     unrelated.write_text("preserve")
-    assert client.delete(f"/api/projects/{pid}?delete_files=true").status_code == 409
+    assert client.patch(f"/api/projects/{pid}", json={"archived": True}).status_code == 200
+    blocked = client.delete(f"/api/projects/{pid}?delete_files=true")
+    assert blocked.status_code == 409 and blocked.json()["error"]["code"] == "project.busy"
     ctx.db.update("jobs", new["id"], {"status": "completed"})
     assert client.delete(f"/api/projects/{pid}?delete_files=true").status_code == 200
     assert not run.exists() and unrelated.exists()
     assert old_weights.read_bytes() == b"existing weights"
     assert old_sample.read_bytes() == b"existing sample"
+    assert {
+        p.relative_to(image_dataset): p.read_bytes() for p in image_dataset.rglob("*") if p.is_file()
+    } == original_images
 
 
 def test_settings_relocated_root_and_concurrent_patch(api, tmp_path):

@@ -83,7 +83,7 @@
     "datasets": "Datasets",
     "jobs": "Jobs",
     "artifacts": "Artifacts",
-    "deleteConfirm": "Delete project \"{name}\"? The project directory on disk will also be removed. This cannot be undone.",
+    "deleteConfirm": "Permanently delete archived project \"{name}\"? The project, training records and files managed by this project will be deleted. This cannot be undone.",
     "createdAt": "Created",
     "allArchivedHint": "Enable \"Show archived\" above to view.",
     "allArchivedTitle": "All projects are archived",

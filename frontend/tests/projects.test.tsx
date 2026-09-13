@@ -47,7 +47,7 @@ function confirmCover(dialog: HTMLElement, file: File, zoom = 1, editor = '编�
 const zoomedPortraitCrop = { x: .25, y: .375, width: .5, height: .25 };
 
 it('paginates 73 projects and resets the page when searching or changing the archive filter', async () => {
-  show(); await screen.findByTestId('project-card-p0');
+  show('/projects?archived=1'); await screen.findByTestId('project-card-p0');
   expect(apiClient.get).toHaveBeenCalledWith('/projects', { params: { include_archived: true }, silent: true });
   expect(screen.getAllByTestId(/^project-card-/)).toHaveLength(24);
   fireEvent.click(screen.getByRole('button', { name: '下一页' }));
@@ -69,7 +69,7 @@ it('paginates 73 projects and resets the page when searching or changing the arc
 });
 
 it('restores the list search and page after opening a project and using browser back', async () => {
-  show('/projects?q=%E6%A0%B7%E6%9C%AC&page=2');
+  show('/projects?q=%E6%A0%B7%E6%9C%AC&page=2&archived=1');
   const card = await screen.findByTestId('project-card-p24');
   fireEvent.click(within(card).getByRole('link', { name: '打开项目：样本 024' }));
   expect(screen.getByTestId('project-location')).toHaveTextContent('/projects/p24');
@@ -81,11 +81,12 @@ it('restores the list search and page after opening a project and using browser 
 });
 
 it('clamps an empty last page after deleting its final record', async () => {
+  projects[72].archived = true;
   vi.spyOn(window, 'confirm').mockReturnValue(true);
-  show('/projects?page=4');
+  show('/projects?page=4&archived=1');
   const card = await screen.findByTestId('project-card-p72');
   fireEvent.click(within(card).getByRole('button', { name: /更多操作/ }));
-  fireEvent.click(screen.getByRole('menuitem', { name: '删除项目' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: '永久删除项目' }));
   await screen.findByTestId('project-card-p48');
   expect(screen.getByLabelText('当前页')).toHaveTextContent('3 / 3');
   await waitFor(() => expect(screen.getByTestId('project-location')).toHaveTextContent('page=3'));
@@ -168,22 +169,31 @@ it('shows a compact cover card with one entry link, inline metadata and no empty
   expect(screen.queryByText(i18n.t('projects.createdAt'))).not.toBeInTheDocument();
   expect(screen.queryByRole('navigation', { name: '项目分页' })).not.toBeInTheDocument();
   fireEvent.click(within(row).getByRole('button', { name: /更多操作/ }));
+  expect(screen.queryByRole('menuitem', { name: /删除/ })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('menuitem', { name: '归档项目' }));
   await waitFor(() => expect(projects[0].archived).toBe(true));
+  await screen.findByTestId('projects-all-archived');
+  expect(screen.queryByTestId('project-card-p0')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '查看已归档项目' }));
   const archived = await screen.findByTestId('project-card-p0');
   fireEvent.click(within(archived).getByRole('button', { name: /更多操作/ }));
   const restored = screen.getByRole('menuitem', { name: '恢复项目' });
+  expect(screen.getByRole('menuitem', { name: '永久删除项目' })).toBeInTheDocument();
+  expect(screen.queryByRole('menuitem', { name: '归档项目' })).not.toBeInTheDocument();
   expect(apiClient.patch).toHaveBeenCalledWith('/projects/p0', { archived: true });
   expect(screen.getByTestId('project-location')).toHaveTextContent('/projects');
   fireEvent.click(restored);
   await waitFor(() => expect(projects[0].archived).toBe(false));
   await screen.findByTestId('project-card-p0');
   expect(apiClient.patch).toHaveBeenLastCalledWith('/projects/p0', { archived: false });
+  fireEvent.click(screen.getByTestId('show-archived-toggle'));
+  expect(screen.getByTestId('project-card-p0')).toBeInTheDocument();
+  expect(apiClient.delete).not.toHaveBeenCalled();
 });
 
 it('combines a full-library category with search and archive filters, resetting only pagination', async () => {
   projects = projects.map((project, index) => ({ ...project, category: index < 40 ? '人物 LoRA' : index < 65 ? '画风 LoRA' : null }));
-  show('/projects?page=3'); await screen.findByTestId('project-card-p48');
+  show('/projects?page=3&archived=1'); await screen.findByTestId('project-card-p48');
   select('按分类筛选', '人物 LoRA · 40');
   expect(screen.getByLabelText('当前页')).toHaveTextContent('1 / 2');
   expect(screen.getByTestId('project-card-p0')).toBeInTheDocument();
@@ -199,7 +209,29 @@ it('combines a full-library category with search and archive filters, resetting 
   select('按分类筛选', '未分类 · 8');
   expect(screen.getAllByRole('listitem')).toHaveLength(4);
   expect(screen.getByTestId('project-location')).toHaveTextContent('uncategorized=true');
-  expect(screen.getByTestId('project-location')).toHaveTextContent('archived=0');
+  expect(screen.getByTestId('project-location')).not.toHaveTextContent('archived=1');
+});
+
+it('hides archived projects by default and only permanently deletes a confirmed archived project', async () => {
+  projects = projects.slice(0, 2);
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  show(); await screen.findByTestId('project-card-p0');
+  expect(screen.getByTestId('show-archived-toggle')).not.toBeChecked();
+  expect(screen.queryByTestId('project-card-p1')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByTestId('show-archived-toggle'));
+  const card = await screen.findByTestId('project-card-p1');
+  const openDelete = () => {
+    fireEvent.click(within(card).getByRole('button', { name: /更多操作/ }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '永久删除项目' }));
+  };
+  openDelete();
+  expect(confirm).toHaveBeenCalledWith(expect.stringContaining('永久删除已归档项目「样本 001」'));
+  expect(apiClient.delete).not.toHaveBeenCalled();
+  expect(card).toBeInTheDocument();
+  confirm.mockReturnValue(true); openDelete();
+  await waitFor(() => expect(screen.queryByTestId('project-card-p1')).not.toBeInTheDocument());
+  expect(apiClient.delete).toHaveBeenCalledExactlyOnceWith('/projects/p1', { params: { delete_files: true } });
+  expect(screen.getByTestId('project-card-p0')).toBeInTheDocument();
 });
 
 it('keeps cover uploads local until Save and discards cancelled name, category and cover edits', async () => {

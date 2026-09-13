@@ -350,7 +350,7 @@ def delete_project_cover(pid: str, c: ServiceContext = Depends(ctx)) -> dict:
 @router.delete("/projects/{pid}", response_model=m.Ok, response_model_exclude_unset=True)
 def delete_project(pid: str, delete_files: bool = False, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     with c.db.lock:
-        _get_project(c, pid)
+        project = _get_project(c, pid)
         project_root = c.project_dir(pid)
         if c.db.fetchone(f"SELECT id FROM jobs WHERE project_id=? AND status IN {ACTIVE_JOBS}", (pid,)):
             raise ApiError("project has running jobs", code="project.busy", status=409)
@@ -364,19 +364,39 @@ def delete_project(pid: str, delete_files: bool = False, c: ServiceContext = Dep
             for row in c.db.fetchall("SELECT id FROM jobs WHERE project_id=?", (pid,))
         ):
             raise ApiError("wait for the project's worker processes to exit", code="project.busy", status=409)
+        if not project["archived"]:
+            raise ApiError(
+                "archive the project before permanently deleting it",
+                code="project.archive_required",
+                status=409,
+            )
         if delete_files:
-            for job in c.db.fetchall("SELECT id, run_dir, samples_dir FROM jobs WHERE project_id=?", (pid,)):
-                run = Path(job["run_dir"])
-                if run.name == job["id"] and run.is_dir() and not run.is_symlink():
-                    shutil.rmtree(run)
-                samples = Path(job["samples_dir"]) if job["samples_dir"] else None
-                if samples and samples.name == job["id"] and samples.is_dir() and not samples.is_symlink():
-                    shutil.rmtree(samples)
+            try:
+                for job in c.db.fetchall(
+                    "SELECT id, run_dir, samples_dir FROM jobs WHERE project_id=?", (pid,)
+                ):
+                    run = Path(job["run_dir"])
+                    if run.name == job["id"] and run.is_dir() and not run.is_symlink():
+                        shutil.rmtree(run)
+                    samples = Path(job["samples_dir"]) if job["samples_dir"] else None
+                    if (
+                        samples
+                        and samples.name == job["id"]
+                        and samples.is_dir()
+                        and not samples.is_symlink()
+                    ):
+                        shutil.rmtree(samples)
+                if project_root.exists():
+                    shutil.rmtree(project_root)
+            except OSError as exc:
+                raise ApiError(
+                    "could not remove all project files; the archived project is retained so you can retry",
+                    code="project.delete_files_failed",
+                    status=500,
+                ) from exc
         c.db.execute("DELETE FROM jobs WHERE project_id=?", (pid,))
         c.db.execute("DELETE FROM artifacts WHERE project_id=?", (pid,))
         c.db.delete("projects", pid)
-        if delete_files and project_root.exists():
-            shutil.rmtree(project_root)
         return {"ok": True}
 
 

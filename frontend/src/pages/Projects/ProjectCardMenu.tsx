@@ -1,5 +1,5 @@
 import React from 'react';
-import { Archive, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { useWorkspaceText } from '../../utils/workspaceText';
 
 export default function ProjectCardMenu({ name, archived, busy, onEdit, onArchive, onDelete }: {
@@ -34,8 +34,8 @@ export default function ProjectCardMenu({ name, archived, busy, onEdit, onArchiv
       }
     }}>
       <button role="menuitem" type="button" onClick={() => run(onEdit)}><Pencil size={14}/>{text('编辑项目', 'Edit project')}</button>
-      <button role="menuitem" type="button" onClick={() => run(onArchive)}><Archive size={14}/>{archived ? text('恢复项目', 'Restore project') : text('归档项目', 'Archive project')}</button>
-      <button role="menuitem" type="button" className="project-remove" onClick={() => run(onDelete)}><Trash2 size={14}/>{text('删除项目', 'Delete project')}</button>
+      <button role="menuitem" type="button" onClick={() => run(onArchive)}>{archived ? <ArchiveRestore size={14}/> : <Archive size={14}/>}{archived ? text('恢复项目', 'Restore project') : text('归档项目', 'Archive project')}</button>
+      {archived && <button role="menuitem" type="button" className="project-remove" onClick={() => run(onDelete)}><Trash2 size={14}/>{text('永久删除项目', 'Permanently delete project')}</button>}
     </div>}
   </div>;
 }

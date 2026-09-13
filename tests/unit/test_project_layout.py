@@ -289,12 +289,81 @@ def test_project_delete_removes_new_layout_only_when_explicitly_requested(api):
     client, c = api
     first = project(api, "KeepFiles")
     root = c.project_dir(first["id"])
+    assert client.patch(f"/api/projects/{first['id']}", json={"archived": True}).status_code == 200
     assert client.delete(f"/api/projects/{first['id']}").status_code == 200
     assert root.exists()
     second = project(api, "RemoveFiles")
     root = c.project_dir(second["id"])
+    assert client.patch(f"/api/projects/{second['id']}", json={"archived": True}).status_code == 200
     assert client.delete(f"/api/projects/{second['id']}", params={"delete_files": True}).status_code == 200
     assert not root.exists()
+
+
+def test_unarchived_project_delete_preserves_records_and_files_then_archive_is_reversible(api):
+    client, c = api
+    p = project(api)
+    pid = p["id"]
+    source = upload(api, p)
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        indexed = client.get(f"/api/datasets/{source['id']}").json()
+        if indexed["index_status"] != "indexing":
+            break
+        time.sleep(0.01)
+    assert indexed["index_status"] == "ready", indexed
+    j = job(api, p)
+    c.db.update("jobs", j["id"], {"status": "completed"})
+    weights = Path(j["run_dir"]) / "weights.safetensors"
+    weights.parent.mkdir(parents=True)
+    weights.write_bytes(b"existing weights")
+    c.supervisor._register_artifact(j["id"], {"path": str(weights), "step": 1})
+    root = c.project_dir(pid)
+    files = {path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()}
+    records = {
+        table: c.db.fetchall(f"SELECT * FROM {table} ORDER BY id")
+        for table in ("projects", "project_versions", "datasets", "jobs", "artifacts")
+    }
+    for delete_files in (False, True):
+        rejected = client.delete(f"/api/projects/{pid}", params={"delete_files": delete_files})
+        assert rejected.status_code == 409
+        assert rejected.json()["error"]["code"] == "project.archive_required"
+        assert {table: c.db.fetchall(f"SELECT * FROM {table} ORDER BY id") for table in records} == records
+        assert {
+            path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()
+        } == files
+    assert client.patch(f"/api/projects/{pid}", json={"archived": True}).json()["archived"] is True
+    assert client.get("/api/projects").json() == []
+    assert client.get("/api/projects?archived=true").json()[0]["id"] == pid
+    for table in ("project_versions", "datasets", "jobs", "artifacts"):
+        assert c.db.fetchall(f"SELECT * FROM {table} ORDER BY id") == records[table]
+    assert {path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()} == files
+    assert client.patch(f"/api/projects/{pid}", json={"archived": False}).json()["archived"] is False
+    assert client.get("/api/projects").json()[0]["id"] == pid
+    assert client.delete(f"/api/projects/{pid}").json()["error"]["code"] == "project.archive_required"
+
+
+def test_failed_project_file_deletion_keeps_archived_record_for_retry(api, monkeypatch):
+    client, c = api
+    p = project(api)
+    pid = p["id"]
+    root = c.project_dir(pid)
+    assert client.patch(f"/api/projects/{pid}", json={"archived": True}).status_code == 200
+
+    def fail_remove(path):
+        assert path == root
+        raise PermissionError("fixture: file is in use")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(routes_work.shutil, "rmtree", fail_remove)
+        response = client.delete(f"/api/projects/{pid}", params={"delete_files": True})
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "project.delete_files_failed"
+    assert root.is_dir()
+    assert client.get(f"/api/projects/{pid}").json()["archived"] is True
+    assert c.resolve_version(pid)["id"] == p["active_version_id"]
+    assert client.delete(f"/api/projects/{pid}", params={"delete_files": True}).status_code == 200
+    assert not root.exists()
+    assert client.get(f"/api/projects/{pid}").status_code == 404
 
 
 def test_versioned_legacy_project_keeps_its_root_and_files_when_numbered(api):

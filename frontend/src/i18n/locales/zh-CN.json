@@ -83,7 +83,7 @@
     "datasets": "数据集",
     "jobs": "任务",
     "artifacts": "产物",
-    "deleteConfirm": "确定删除项目「{name}」吗？磁盘上的项目目录也会被删除，且不可恢复。",
+    "deleteConfirm": "永久删除已归档项目「{name}」？项目、训练记录及该项目管理的文件都会被删除，且无法恢复。",
     "createdAt": "创建于",
     "allArchivedHint": "勾选上方「显示已归档」查看。",
     "allArchivedTitle": "所有项目都已归档",

@@ -27,7 +27,7 @@ export default function Projects() {
   const search = params.get('q') || '';
   const category = params.get('category') || '';
   const uncategorized = params.get('uncategorized') === 'true';
-  const showArchived = params.get('archived') !== '0';
+  const showArchived = params.get('archived') === '1';
   const requestedPage = Math.max(1, Math.floor(Number(params.get('page')) || 1));
   const changeFilter = (patch: Record<string, string | null>, replace = false) => {
     const next = new URLSearchParams(params); next.delete('page');
@@ -51,7 +51,8 @@ export default function Projects() {
     finally { pendingRef.current = null; setPending(null); }
   };
   const remove = (project: GalleryProject) => {
-    if (window.confirm(t('projects.deleteConfirm').replace('{name}', project.name))) void mutate(project.id, () => apiClient.delete(`/projects/${project.id}`));
+    if (!project.archived || pendingRef.current) return;
+    if (window.confirm(t('projects.deleteConfirm').replace('{name}', project.name))) void mutate(project.id, () => apiClient.delete(`/projects/${project.id}`, { params: { delete_files: true } }));
   };
   const categories = [...new Set(projects.map(project => project.category?.trim()).filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b));
   const categoryCount = (value: string | null) => projects.filter(project => (project.category || null) === value).length;
@@ -82,7 +83,7 @@ export default function Projects() {
         <StudioSelect className="projects-category-filter" aria-label={text('按分类筛选', 'Filter by category')} value={uncategorized ? 'uncategorized' : category ? `category:${category}` : ''}
           options={[{ value: '', label: text('所有分类', 'All categories') }, { value: 'uncategorized', label: `${text('未分类', 'Uncategorized')} · ${categoryCount(null)}` }, ...categoryOptions.map(value => ({ value: `category:${value}`, label: `${categoryLabel(value, english)} · ${categoryCount(value)}` }))]}
           onValueChange={value => changeFilter({ category: value.startsWith('category:') ? value.slice(9) : null, uncategorized: value === 'uncategorized' ? 'true' : null })}/>
-        <label className="projects-archive-filter"><input type="checkbox" checked={showArchived} onChange={event => changeFilter({ archived: event.target.checked ? null : '0' })} data-testid="show-archived-toggle"/><span>{t('projects.showArchived', '显示已归档')}</span></label>
+        <label className="projects-archive-filter"><input type="checkbox" checked={showArchived} onChange={event => changeFilter({ archived: event.target.checked ? '1' : null })} data-testid="show-archived-toggle"/><span>{t('projects.showArchived', '显示已归档')}</span></label>
         {pageCount > 1 && <nav className="projects-pagination" aria-label={text('项目分页', 'Project pagination')} title={text(`共 ${visibleProjects.length} 个项目 · 每页 24 个`, `${visibleProjects.length} projects · 24 per page`)}><button className="projects-page-button" aria-label={text('上一页', 'Previous')} disabled={loading || page <= 1} onClick={() => changeFilter({ page: String(page - 1) })}><ChevronLeft size={15}/></button><span aria-label={text('当前页', 'Current page')}>{page} / {pageCount}</span><button className="projects-page-button" aria-label={text('下一页', 'Next')} disabled={loading || page >= pageCount} onClick={() => changeFilter({ page: String(page + 1) })}><ChevronRight size={15}/></button></nav>}
       </div>
       {error && <div role="alert" className="projects-list-error"><span>{error}</span><button onClick={() => void fetchProjects()} disabled={loading}>{t('common.retry')}</button></div>}
@@ -104,6 +105,7 @@ export default function Projects() {
         <h3>{query || category || uncategorized ? text('没有匹配的项目', 'No matching projects') : projects.length ? t('projects.allArchivedTitle', '所有项目都已归档') : t('projects.emptyTitle', '还没有项目')}</h3>
         <p>{query || category || uncategorized ? text('试试其他分类或关键词。', 'Try another category or search.') : projects.length ? t('projects.allArchivedHint', '勾选上方「显示已归档」查看。') : text('新建项目后可手动上传封面，导入训练数据。', 'Create a project, choose its cover and import training data.')}</p>
         {(query || category || uncategorized) && <button className="projects-page-button" onClick={() => changeFilter({ q: null, category: null, uncategorized: null })}>{text('清除筛选', 'Clear filters')}</button>}
+        {!query && !category && !uncategorized && projects.length > 0 && !showArchived && <button className="projects-page-button" onClick={() => changeFilter({ archived: '1' })}>{text('查看已归档项目', 'View archived projects')}</button>}
       </div>}
     {editor && <ProjectEditor project={editor === 'new' ? undefined : editor} categories={categories} onClose={() => setEditor(null)} onPartial={updateProject} onSaved={project => { updateProject(project); setEditor(null); if (editor === 'new') navigate(`/projects/${project.id}`); }}/>}
   </div>;

@@ -376,6 +376,7 @@ async def test_response_models_cover_every_json_endpoint(live_server, image_data
             await asyncio.sleep(0.02)
         assert indexed["index_status"] == "ready", indexed
         assert (await client.delete(f"/api/datasets/{d['source']['id']}")).json()["ok"] is True
+        assert (await client.patch(f"/api/projects/{p['id']}", json={"archived": True})).status_code == 200
         assert (await client.delete(f"/api/projects/{p['id']}")).json()["ok"] is True
 
 
