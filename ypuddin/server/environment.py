@@ -230,12 +230,14 @@ def runtime_info() -> dict[str, Any]:
 # Fixed program, never assembled from request text. Kernel probes use a separate process and
 # tiny tensors; imports alone do not establish that a wheel works with the current GPU.
 PROBE = r"""
-import importlib, json, torch
+import importlib, json, re, torch
 names = {"xformers": "xformers.ops", "flash-attn": "flash_attn", "sageattention": "sageattention", "nvidia-ml-py": "pynvml", "tensorboard": "tensorboard", "schedulefree": "schedulefree"}
 out = {}
 for name, module in names.items():
+    imported = False
     try:
         m = importlib.import_module(module)
+        imported = True
         tested = False
         if name in ("xformers", "flash-attn", "sageattention") and torch.cuda.is_available():
             q = torch.randn(1, 32, 2, 64, device="cuda", dtype=torch.float16, requires_grad=name != "sageattention")
@@ -248,7 +250,32 @@ for name, module in names.items():
             tested = True
         out[name] = {"importable": True, "kernel_tested": tested, "error": None}
     except Exception as exc:
-        out[name] = {"importable": False, "kernel_tested": False, "error": str(exc)[-1500:]}
+        detail = str(exc)
+        kernel_unavailable = name == "xformers" and imported and (
+            re.search(r"no operator found for\s+[`']?memory_efficient_attention", detail, re.IGNORECASE)
+            or "no kernel image is available for execution on the device" in detail.lower()
+            or re.search(r"(?:device(?: with)?|compute) capability[^\n]*too new", detail, re.IGNORECASE)
+        )
+        error = detail[-1500:]
+        if kernel_unavailable:
+            capability = torch.cuda.get_device_capability()
+            error = (
+                f"xFormers 已安装并可导入，但当前 wheel 没有可用于此 GPU（SM{capability[0]}{capability[1]}）的注意力计算内核。"
+                "需要兼容的 attention 内核。"
+                "可尝试匹配当前 Python、PyTorch、CUDA 且支持此 GPU 的 FlashAttention 2 wheel，安装后重新检测。"
+            )
+            try:
+                q_sdpa = torch.randn(1, 2, 32, 64, device="cuda", dtype=torch.float16, requires_grad=True)
+                y_sdpa = torch.nn.functional.scaled_dot_product_attention(q_sdpa, q_sdpa, q_sdpa)
+                y_sdpa.float().sum().backward()
+                torch.cuda.synchronize()
+                error += "PyTorch SDPA 正反向检测通过，可继续使用 SDPA。"
+            except Exception as sdpa_exc:
+                error += "PyTorch SDPA 检测也未通过，请检查运行环境。\nSDPA: " + str(sdpa_exc)[-500:]
+            error += "\n原始错误：" + detail[-1500:]
+        out[name] = {"importable": imported, "kernel_tested": False, "error": error}
+        if kernel_unavailable:
+            out[name]["kernel_unavailable"] = True
 print("YPUDDIN_ENV=" + json.dumps(out))
 """
 
@@ -953,6 +980,8 @@ class EnvironmentManager:
                 self._probe_cache, self._probe_time = probes, time.monotonic()
                 probe = probes.get(op.package, {})
                 if not probe.get("importable") or CATALOG[op.package][1] and not probe.get("kernel_tested"):
+                    if probe.get("kernel_unavailable"):
+                        raise RuntimeError(probe["error"])
                     raise RuntimeError(
                         "Package was installed but its runtime probe failed: "
                         + str(probe.get("error") or "CUDA kernel unavailable")

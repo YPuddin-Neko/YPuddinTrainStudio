@@ -294,6 +294,10 @@ ypuddin serve    --port 8765 --data-root studio_data
 
 运行环境页显示 Python、PyTorch、平台计算后端和 xFormers/FlashAttention，旧 Sage 配置仅说明采样用途；NVML、TensorBoard 与 Schedule-Free 等普通依赖由启动器按平台补齐，W&B 和 WD14 不再提供入口。扩展操作先生成 wheel / 版本变更计划，确认应用后显示安装日志；进行中和失败信息保留，普通包清单与常驻历史不再占据默认页面。基础 Torch/CUDA/NumPy 受保护；没有兼容预编译 wheel 时显示原因，不隐式启动源码编译。依赖实际修改后需重启，维护状态在重启前阻止训练与预缓存任务启动。
 
+Windows 上“包已安装”不等于它的 CUDA 内核支持当前显卡。例如 RTX 5070 Ti（SM120）使用官方 xFormers 0.0.35 CUDA 12.8 wheel 时，可能遇到 `No operator found` / `GPU ... too new`。此时环境页保留安装版本，分别报告导入状态和实际正反向检测结果；只有 SDPA 自检也通过才提示可继续使用 SDPA。不要为此直接降级受保护的 PyTorch。
+
+xFormers 可调用单独安装的 FlashAttention 2。Windows 可在运行环境中上传同时匹配 Python、PyTorch、CUDA 和 GPU 架构的 FA2 wheel，再执行安装和重新检测。社区预编译 wheel 不属于 FlashAttention 官方 Windows 发布包；应核对发布来源与 SHA256，并以当前机器上的正反向检测为准。没有可用 wheel 时继续使用已通过检测的 SDPA，无须在日常使用的电脑上启动源码编译。
+
 本机使用 Apple GPU，CUDA 扩展安装及真实 NVIDIA 功率读数未在本机验证。需要 CUDA 的选项显示原因并禁用；Apple MPS 不提供功率数据，不显示虚构的瓦数。
 
 ### 数据准备与中央访问密钥

@@ -1,7 +1,9 @@
 """Dependency management contracts; all installer and GPU calls are simulated."""
 
 import hashlib
+import importlib
 import json
+import sys
 import threading
 import time
 import zipfile
@@ -19,6 +21,7 @@ from ypuddin.server.context import ServiceContext
 from ypuddin.server.db import Database, now
 from ypuddin.server.environment import (
     CATALOG,
+    PROBE,
     EnvironmentManager,
     EnvironmentRequest,
     environment_attention_default,
@@ -239,6 +242,110 @@ def test_runtime_probes_cleanup_import_side_effects_in_disposable_cwd(monkeypatc
     assert directories and not directories[0].exists()
 
 
+def run_xformers_probe(
+    monkeypatch, capsys, error, *, capability=(12, 0), import_error=False, sdpa_error=None
+):
+    tensor = Mock()
+    attention = Mock(side_effect=error, return_value=tensor)
+    sdpa = Mock(side_effect=sdpa_error, return_value=tensor)
+    torch = SimpleNamespace(
+        cuda=SimpleNamespace(
+            is_available=lambda: True,
+            get_device_capability=lambda: capability,
+            synchronize=Mock(),
+        ),
+        randn=Mock(return_value=tensor),
+        float16="float16",
+        nn=SimpleNamespace(functional=SimpleNamespace(scaled_dot_product_attention=sdpa)),
+    )
+
+    def load(name):
+        if name == "xformers.ops":
+            if import_error:
+                raise error
+            return SimpleNamespace(memory_efficient_attention=attention)
+        raise ModuleNotFoundError(name)
+
+    with monkeypatch.context() as patch:
+        patch.setitem(sys.modules, "torch", torch)
+        patch.setattr(importlib, "import_module", load)
+        exec(PROBE, {})
+    output = capsys.readouterr().out.split("YPUDDIN_ENV=", 1)[1]
+    return json.loads(output)["xformers"], sdpa, tensor
+
+
+@pytest.mark.parametrize(
+    "error,capability",
+    [
+        (NotImplementedError("No operator found for `memory_efficient_attention_forward`"), (12, 0)),
+        (
+            RuntimeError(
+                "requires device with capability <= (9, 0) but your GPU has capability (12, 0) (too new)"
+            ),
+            (12, 0),
+        ),
+        (RuntimeError("CUDA error: no kernel image is available for execution on the device"), (8, 9)),
+        (NotImplementedError("No operator found for `memory_efficient_attention_forward`"), (7, 5)),
+    ],
+)
+def test_xformers_unavailable_kernel_reports_installed_package_and_tested_sdpa(
+    monkeypatch, capsys, error, capability
+):
+    result, sdpa, tensor = run_xformers_probe(monkeypatch, capsys, error, capability=capability)
+    assert result["importable"] and not result["kernel_tested"] and result["kernel_unavailable"]
+    assert "已安装并可导入" in result["error"]
+    assert "匹配当前 Python、PyTorch、CUDA 且支持此 GPU 的 FlashAttention 2 wheel" in result["error"]
+    assert f"SM{capability[0]}{capability[1]}" in result["error"]
+    if capability != (12, 0):
+        assert "SM120" not in result["error"]
+    assert "SDPA 正反向检测通过" in result["error"]
+    assert str(error) in result["error"]
+    sdpa.assert_called_once()
+    tensor.float.return_value.sum.return_value.backward.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "error,import_error",
+    [
+        (RuntimeError("CUDA out of memory"), False),
+        (RuntimeError("CUDA driver version is insufficient for CUDA runtime version"), False),
+        (RuntimeError("CUDA error: an illegal memory access was encountered"), False),
+        (RuntimeError("No operator found for an_unrelated_operation"), False),
+        (RuntimeError("requires device with capability >= (8, 0), device (7, 5) is too old"), False),
+        (ImportError("DLL load failed while importing _C"), True),
+        (ImportError("No operator found for `memory_efficient_attention_forward` during import"), True),
+    ],
+)
+def test_xformers_other_failures_keep_original_diagnosis(monkeypatch, capsys, error, import_error):
+    result, sdpa, _ = run_xformers_probe(monkeypatch, capsys, error, import_error=import_error)
+    assert result["importable"] is not import_error
+    assert not result["kernel_tested"]
+    assert not result.get("kernel_unavailable")
+    assert result["error"] == str(error)
+    sdpa.assert_not_called()
+
+
+def test_xformers_kernel_failure_does_not_claim_sdpa_available_when_fallback_probe_fails(monkeypatch, capsys):
+    result, sdpa, _ = run_xformers_probe(
+        monkeypatch,
+        capsys,
+        NotImplementedError("No operator found for `memory_efficient_attention_forward`"),
+        sdpa_error=RuntimeError("CUDA out of memory"),
+    )
+    assert result["kernel_unavailable"]
+    assert "SDPA 检测也未通过" in result["error"]
+    assert "CUDA out of memory" in result["error"]
+    assert "可继续使用 SDPA" not in result["error"]
+    sdpa.assert_called_once()
+
+
+def test_xformers_success_does_not_run_fallback_probe(monkeypatch, capsys):
+    result, sdpa, tensor = run_xformers_probe(monkeypatch, capsys, None)
+    assert result == {"importable": True, "kernel_tested": True, "error": None}
+    tensor.float.return_value.sum.return_value.backward.assert_called_once()
+    sdpa.assert_not_called()
+
+
 @pytest.mark.parametrize("package", ["torch", "arbitrary-package", "tensorboard;curl bad"])
 def test_api_has_a_package_allowlist(env, package):
     assert env.client.post("/api/environment/operations", json={"package": package}).status_code == 422
@@ -300,6 +407,34 @@ def test_runtime_probe_failure_never_reports_usable_install(env):
     done = wait_status(env.manager, op.id, ("failed", "completed"))
     assert done.status == "failed" and "broken import" in done.error
     assert done.restart_required
+
+
+def test_installed_xformers_with_unavailable_kernel_stays_failed_and_cannot_become_default(env, monkeypatch):
+    monkeypatch.setattr(env.manager, "validate_wheel", Mock())
+    op = start(env, package="xformers")
+    diagnostic = "xFormers 已安装并可导入，但当前 wheel 没有可用于此 GPU（SM120）的注意力计算内核。"
+    env.probe.side_effect = lambda: {
+        "xformers": {
+            "importable": True,
+            "kernel_tested": False,
+            "kernel_unavailable": True,
+            "error": diagnostic,
+        }
+    }
+    env.manager.apply(op.id)
+    done = wait_status(env.manager, op.id, ("failed", "completed"))
+    assert done.status == "failed" and done.error == diagnostic
+    assert done.restart_required
+    assert "xformers" in env.versions
+    package = next(
+        p for p in env.client.get("/api/environment").json()["packages"] if p["name"] == "xformers"
+    )
+    assert package["importable"] and not package["available"] and not package["kernel_tested"]
+    assert package["error"] == diagnostic
+    assert (
+        env.client.put("/api/environment/settings", json={"attention_default": "xformers"}).status_code == 422
+    )
+    assert environment_attention_default(env.context) == "auto"
 
 
 def test_training_or_cache_blocks_plan_and_apply(env):
