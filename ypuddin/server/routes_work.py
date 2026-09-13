@@ -1777,6 +1777,15 @@ def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends
         r = _get_job(c, jid)
         if r["status"] in ("running", "pausing", "cancelling") or c.supervisor.is_running(jid):
             raise ApiError("cancel the job first", code="job.running", status=409)
+        if c.db.fetchone(
+            "SELECT id FROM jobs WHERE type='xyz' AND json_extract(config_json,'$.xyz.source_job_id')=?",
+            (jid,),
+        ):
+            raise ApiError(
+                "Delete this training job's XYZ comparisons first; their history still uses this job",
+                code="job.xyz_dependencies",
+                status=409,
+            )
         c.db.delete("jobs", jid)
         if delete_files and r["run_dir"] and Path(r["run_dir"]).exists():
             shutil.rmtree(r["run_dir"])
@@ -2033,6 +2042,18 @@ def delete_artifact(aid: str, delete_file: bool = False, c: ServiceContext = Dep
         r = _get_artifact(c, aid)
         if r["project_id"]:
             assert_version_writable(c, r["project_id"], r.get("version_id"))
+        references = c.db.fetchall(
+            f"SELECT jobs.id, jobs.status IN {ACTIVE_JOBS} AS active FROM jobs "
+            "JOIN json_each(jobs.config_json,'$.xyz.checkpoints') AS checkpoints "
+            "WHERE jobs.type='xyz' AND checkpoints.key=?",
+            (aid,),
+        )
+        if any(row["active"] or c.supervisor.is_running(row["id"]) for row in references):
+            raise ApiError(
+                "A queued or running XYZ comparison uses this checkpoint; cancel it and wait for its worker to exit first",
+                code="artifact.xyz_dependencies",
+                status=409,
+            )
         c.db.delete("artifacts", aid)
         if delete_file:
             Path(r["path"]).unlink(missing_ok=True)

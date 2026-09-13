@@ -346,7 +346,25 @@ def start(context, source_id: str, request: XyzRequest):
         "checkpoint": {"output_dir": str(run_dir)},
     }
     with context.db.lock:
+        # Header validation happens outside the queue lock. A deletion may have
+        # completed in that interval, so publish references only while their
+        # records and checkpoint files still exist under the same lock used by
+        # the deletion endpoints.
+        source = _source(context, source_id)
         context.supervisor._check_job_version(source)
+        current_checkpoints = {row["id"]: row for row in _checkpoints(context, source_id)}
+        for checkpoint_id, checkpoint in resolved.items():
+            current = current_checkpoints.get(checkpoint_id)
+            if (
+                current is None
+                or current["path"] != checkpoint["path"]
+                or file_signature(Path(current["path"])) != checkpoint["signature"]
+            ):
+                raise ApiError(
+                    "A selected checkpoint changed or was removed; refresh the checkpoint list and try again",
+                    code="xyz.checkpoint",
+                    status=422,
+                )
         context.db.insert(
             "jobs",
             {
