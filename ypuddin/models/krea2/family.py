@@ -91,7 +91,10 @@ def _read_state_dict(
             continue
         if k.endswith(SCALE_SUFFIXES):
             base = k.rsplit(".", 1)[0]
-            scales[base] = v.reshape(()).to(torch.float32)
+            # A scalar view retains its original safetensors tensor via _base,
+            # even after block swapping rebinds its .data. Detach that view so
+            # moving the scale can release the checkpoint's shared mmap.
+            scales[base] = v.reshape(()).to(torch.float32).detach()
             continue
         if v.is_floating_point() and v.dtype not in FP8_DTYPES.values() and dtype is not None:
             v = v.to(dtype)

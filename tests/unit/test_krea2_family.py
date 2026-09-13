@@ -5,6 +5,7 @@ preview shift, GQA expansion in the shared attention helper and the Qwen3-VL tex
 from __future__ import annotations
 
 import shutil
+import weakref
 from copy import deepcopy
 
 import pytest
@@ -132,6 +133,73 @@ def test_missing_scale_for_fp8_weight_is_an_error(tmp_path):
     save_file(sd, str(tmp_path / "broken.safetensors"))
     with pytest.raises(RuntimeError, match="scale"):
         load_dit(tmp_path / "broken.safetensors", device="cpu", dtype=torch.float32)
+
+
+@pytest.mark.parametrize("scale_shape", [(), (1,)])
+def test_fp8_scales_release_safetensors_views_when_weights_move(tmp_path, monkeypatch, scale_shape):
+    """A scalar's old view base must not retain the whole mapped checkpoint after a move."""
+    import safetensors.torch
+
+    from ypuddin.memory import BlockSwapper
+
+    state = _fp8_scaled(_tiny_state_dict())
+    for key in state:
+        if key.endswith(".scale_weight"):
+            state[key] = state[key].reshape(scale_shape)
+    path = tmp_path / "mapped-fp8.safetensors"
+    save_file(state, str(path))
+    del state
+    original_load = safetensors.torch.load_file
+    source_scales = []
+
+    def observe_load(*args, **kwargs):
+        tensors = original_load(*args, **kwargs)
+        for key, tensor in tensors.items():
+            if key.endswith(".scale_weight"):
+                # Observe the real mapped Tensor and its view chain without
+                # keeping any of them alive ourselves.
+                while tensor is not None:
+                    source_scales.append(weakref.ref(tensor))
+                    tensor = tensor._base
+        return tensors
+
+    monkeypatch.setattr(safetensors.torch, "load_file", observe_load)
+    model, _ = load_dit(path, device="cpu", dtype=torch.float32)
+    frozen = {name: layer for name, layer in model.named_modules() if isinstance(layer, FrozenLinear)}
+    assert len(frozen) == 16 and source_scales
+    expected = {
+        name: (layer.weight.view(torch.uint8).clone(), layer.weight_scale.clone(), layer.dequant().clone())
+        for name, layer in frozen.items()
+    }
+    identities = {name: (id(layer.weight), id(layer.weight_scale)) for name, layer in frozen.items()}
+    adapters = inject(model, AdapterConfig(algo="lora", rank=4, alpha=4), Krea2Family().presets()["attn-mlp"])
+    for name, layer in adapters.layers.items():
+        if name in frozen:
+            assert layer.base is frozen[name]
+    swapper = BlockSwapper(model.blocks, num_swap=len(model.blocks), device="cpu")
+    try:
+        # Exercise the same in-place Tensor rebind used by a CPU -> CUDA move,
+        # including the non-swapped modules, without requiring a GPU.
+        for tensor in list(model.parameters()) + list(model.buffers()):
+            tensor.data = tensor.detach().clone()
+        assert all(reference() is None for reference in source_scales), (
+            "FP8 scales still retain the source safetensors view after all model weights moved"
+        )
+        for name, layer in frozen.items():
+            assert layer.weight_scale._base is None
+            assert layer.precision == "fp8_e4m3" and layer.weight.dtype == torch.float8_e4m3fn
+            assert layer.weight_scale.dtype == torch.float32 and layer.weight_scale.shape == ()
+            assert (id(layer.weight), id(layer.weight_scale)) == identities[name]
+            assert layer in tuple(model.modules())
+            weight, scale, dequantized = expected[name]
+            torch.testing.assert_close(layer.weight.view(torch.uint8), weight, rtol=0, atol=0)
+            torch.testing.assert_close(layer.weight_scale, scale, rtol=0, atol=0)
+            torch.testing.assert_close(layer.dequant(), dequantized, rtol=0, atol=0)
+        for index in swapper.swapped_idx:
+            swapper.ensure(index)
+        swapper.release_all()
+    finally:
+        swapper.remove()
 
 
 def test_missing_tensor_is_an_error(tmp_path):
