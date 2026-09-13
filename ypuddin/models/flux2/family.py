@@ -1,4 +1,4 @@
-"""FLUX.2-dev and Klein base text-to-image adapter training (local weights only).
+"""FLUX.2 Klein base text-to-image adapter training (local weights only).
 
 The VAE produces normalized, already patchified BCHW latents (128 channels,
 stride 16). The transformer packs only the spatial axes and receives unit flow
@@ -25,7 +25,17 @@ from ypuddin.models.base import (
 from ypuddin.models.registry import register
 
 from .latent import Flux2Latent
-from .loading import component, load_transformer, resolve_variant, shapes, transformer_config
+from .loading import (
+    DEV_UNSUPPORTED,
+    VARIANTS,
+    component,
+    load_transformer,
+    reject_dev_config,
+    reject_dev_weights,
+    resolve_variant,
+    shapes,
+    transformer_config,
+)
 from .text import Flux2Text
 
 
@@ -47,19 +57,19 @@ def text_ids(embeds):
 class Flux2Family(ModelFamily):
     spec = ModelSpec(
         name="flux2",
-        label="FLUX.2 dev / Klein base",
+        label="FLUX.2 Klein",
         latent=LatentSpec(128, 16, 1, "flux2-vae-mode-fp32-patch2-bn-v1"),
-        text=TextSpec(512, "flux2-variant-hidden-layers-v1", encoder_params=24_000_000_000),
+        text=TextSpec(512, "flux2-variant-hidden-layers-v1", encoder_params=4_000_000_000),
         sampling=SamplingDefaults(steps=50, cfg=4.0, shift=None, sampler="euler"),
         capabilities=frozenset({"activation_checkpointing", "masked_loss", "block_swap"}),
         architecture="flux2",
         adapter_prefix="lora_transformer",
         weights=(
-            ("dit_path", "FLUX.2 DiT", "完整本地 HF 目录或原始 BFL safetensors"),
+            ("dit_path", "Klein base DiT", "Klein base 4B/9B 完整本地 HF 目录或原始 BFL safetensors"),
             (
                 "text_encoder_path",
                 "文本编码器",
-                "完整模型目录可留空；单独 DiT 须选择 dev 的 Mistral3 或 Klein base 的 Qwen3 本地 HF 目录",
+                "完整模型目录可留空；单独 DiT 须选择 Qwen3 本地 HF 目录：Klein 4B 使用 Qwen3-4B，Klein 9B 使用 Qwen3-8B",
             ),
             (
                 "vae_path",
@@ -68,8 +78,8 @@ class Flux2Family(ModelFamily):
             ),
             (
                 "tokenizer_path",
-                "分词器 / 处理器",
-                "模型或文本编码器目录内含时可留空；否则选择本地 tokenizer/processor 与原始 chat template",
+                "Qwen3 分词器",
+                "模型或文本编码器目录内含时可留空；否则选择本地 Qwen3 tokenizer 与原始 chat template",
             ),
         ),
         optional_weights=("text_encoder_path", "vae_path", "tokenizer_path"),
@@ -88,16 +98,21 @@ class Flux2Family(ModelFamily):
         return root, component(root, "transformer"), text, component(root, "vae", cfg.vae_path), tokenizer
 
     def validate_config(self, cfg):
+        if getattr(cfg, "flux2_variant", "auto") == "dev":
+            return [DEV_UNSUPPORTED]
         if not cfg.dit_path:
             return ["model.dit_path is required for FLUX.2"]
         problems = []
         if cfg.attention not in {"auto", "sdpa", "flash_attn", "xformers"}:
             problems.append("FLUX.2 supports SDPA, FlashAttention or xFormers; Sage training is unsupported")
         try:
-            root, dit, text, vae, tokenizer = self._paths(cfg)
+            root = Path(cfg.dit_path).expanduser()
+            dit = component(root, "transformer")
             config = transformer_config(dit)
             resolve_variant(root, config, getattr(cfg, "flux2_variant", "auto"))
-            for path in (dit, text, vae):
+            reject_dev_weights(dit)
+            _, _, text, vae, tokenizer = self._paths(cfg)
+            for path in (text, vae):
                 shapes(path)
             if not (text / "config.json").is_file() or not (tokenizer / "tokenizer_config.json").is_file():
                 problems.append("FLUX.2 text encoder/tokenizer local directory is incomplete")
@@ -106,6 +121,8 @@ class Flux2Family(ModelFamily):
         return problems
 
     def training_options_errors(self, cfg):
+        if getattr(cfg.model, "flux2_variant", "auto") == "dev":
+            return [{"loc": "model.flux2_variant", "msg": DEV_UNSUPPORTED}]
         errors = super().training_options_errors(cfg)
         if cfg.memory.activation_checkpointing == "unsloth":
             errors.append(
@@ -139,7 +156,7 @@ class Flux2Family(ModelFamily):
         config = transformer_config(dit)
         variant = resolve_variant(root, config, getattr(cfg, "flux2_variant", "auto"))
         text = Flux2Text(text_path, tokenizer, variant=variant, dtype=dtype, device=device)
-        if text.hidden_size != config.get("joint_attention_dim", 15360):
+        if text.hidden_size != config.get("joint_attention_dim", 7680):
             raise ValueError("FLUX.2 text encoder hidden width does not match the selected transformer")
         from diffusers import Flux2Transformer2DModel
 
@@ -158,16 +175,13 @@ class Flux2Family(ModelFamily):
                 "backbone_device": backbone_device or device,
                 "checkpointing": memory.activation_checkpointing == "block",
                 "attention": cfg.attention,
-                "training_guidance": cfg.training_guidance,
+                "text_encoder_weight_elements": text.weight_elements,
                 "materialized": False,
             },
         )
 
     def sampling_defaults(self, loaded):
-        dev = loaded.extra["variant"] == "dev"
-        return SamplingDefaults(
-            steps=50, cfg=1.0 if dev else 4.0, shift=None, sampler="euler", guidance=4.0 if dev else None
-        )
+        return self.spec.sampling
 
     def sampling_shift(self, num_tokens, objective=None):
         return self._sampling_shift(num_tokens, 50)
@@ -179,11 +193,12 @@ class Flux2Family(ModelFamily):
     def _sampling_shift(num_tokens, steps):
         import math
 
-        from diffusers.pipelines.flux2.pipeline_flux2 import compute_empirical_mu
+        from diffusers.pipelines.flux2.pipeline_flux2_klein import compute_empirical_mu
 
         return math.exp(compute_empirical_mu(num_tokens, steps))
 
     def materialize_backbone(self, loaded):
+        reject_dev_config(loaded.extra["dit_config"], loaded.extra.get("variant", "auto"))
         if loaded.extra["materialized"]:
             return
         # The native trainer has cached and unloaded these by this phase. Direct
@@ -209,25 +224,20 @@ class Flux2Family(ModelFamily):
         loaded.extra["materialized"] = True
 
     def forward(self, loaded, x_t, t, cond, **extra):
+        reject_dev_config(loaded.extra["dit_config"], loaded.extra.get("variant", "auto"))
         if not loaded.extra.get("materialized", False):
             raise RuntimeError("Call materialize_backbone after caching and before FLUX.2 forward")
         b, c, h, w = x_t.shape
         if c != 128:
             raise ValueError("FLUX.2 expects normalized patchified 128-channel latents")
         embeds = cond["embeds"].to(x_t.device, loaded.dtype)
-        guidance = None
-        if loaded.extra["dit_config"].get("guidance_embeds", True):
-            value = extra.get("guidance")
-            if value is None:
-                value = 4.0 if extra.get("inference", False) else loaded.extra["training_guidance"]
-            guidance = torch.full((b,), float(value), device=x_t.device, dtype=torch.float32)
         prediction = loaded.backbone(
             hidden_states=x_t.flatten(2).transpose(1, 2),
             encoder_hidden_states=embeds,
             timestep=t.to(x_t.device, torch.float32),
             img_ids=image_ids(x_t),
             txt_ids=text_ids(embeds),
-            guidance=guidance,
+            guidance=None,
             return_dict=False,
         )[0]
         return prediction.transpose(1, 2).reshape(b, c, h, w)
@@ -268,7 +278,17 @@ class Flux2Family(ModelFamily):
     def meta_backbone(self, cfg):
         from diffusers import Flux2Transformer2DModel
 
-        config = transformer_config(component(cfg.dit_path, "transformer")) if cfg.dit_path else {}
+        requested = getattr(cfg, "flux2_variant", "auto")
+        if requested == "dev":
+            raise ValueError(DEV_UNSUPPORTED)
+        if cfg.dit_path:
+            root = Path(cfg.dit_path).expanduser()
+            dit = component(root, "transformer")
+            config = transformer_config(dit)
+            resolve_variant(root, config, requested)
+            reject_dev_weights(dit)
+        else:
+            config = dict(VARIANTS["klein-base-4b" if requested == "auto" else requested])
         return Flux2Transformer2DModel.from_config(config)
 
     def linear_module_names(self):

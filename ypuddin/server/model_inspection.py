@@ -12,6 +12,17 @@ HEADER_LIMIT = 32 * 1024 * 1024
 CONFIG_LIMIT = 2 * 1024 * 1024
 TOKENIZER_LIMIT = 32 * 1024 * 1024
 MAX_FILES = 1024
+FLUX1_RETIRED_REASON = "当前 FLUX 训练仅保留 FLUX.2 Klein base 4B/9B；不再接入 FLUX.1，已有记录和文件仍保留。"
+FLUX2_DEV_UNSUPPORTED_REASON = (
+    "检测到 FLUX.2 dev；当前仅支持 FLUX.2 Klein base 4B/9B，dev 及其 Mistral 编码器不能登记为 Klein。"
+)
+
+
+def training_rejection(detected: dict[str, Any], family: str | None = None) -> str | None:
+    """Shared admission gate; diagnostic family identities remain unchanged."""
+    if family == "flux" or detected.get("family") == "flux":
+        return FLUX1_RETIRED_REASON
+    return detected.get("unsupported_reason")
 
 
 def _json(path: Path, limit: int) -> dict[str, Any]:
@@ -109,9 +120,14 @@ def flux_component(shapes: dict[str, list[int]], config: dict | None = None) -> 
     shapes = {_key(key): shape for key, shape in shapes.items()}
     config = config or {}
 
-    def result(family, kind, candidates, evidence, warnings=()):
+    def result(family, kind, candidates, evidence, warnings=(), unsupported_reason=None):
         return dict(
-            family=family, kind=kind, candidates=candidates, evidence=[evidence], warnings=list(warnings)
+            family=family,
+            kind=kind,
+            candidates=candidates,
+            evidence=[evidence],
+            warnings=list(warnings),
+            unsupported_reason=unsupported_reason,
         )
 
     image = shapes.get("img_in.weight", shapes.get("x_embedder.weight", []))
@@ -126,6 +142,7 @@ def flux_component(shapes: dict[str, list[int]], config: dict | None = None) -> 
             ["flux"],
             f"FLUX.1 64-channel packed input, T5 width 4096 and dual/single-stream blocks; guidance={guided}",
             ["仅凭 FLUX.1 主干形状不能排除同形状的 Kontext 等衍生模型；具体支持范围由加载器校验。"],
+            unsupported_reason=FLUX1_RETIRED_REASON,
         )
     widths = {6144: (15360, "dev"), 3072: (7680, "Klein 4B"), 4096: (12288, "Klein 9B")}
     if len(image) == 2 and image[1] == 128 and image[0] in widths and double and single:
@@ -148,6 +165,7 @@ def flux_component(shapes: dict[str, list[int]], config: dict | None = None) -> 
                 ["flux2"],
                 f"FLUX.2 {variant}: 128-channel packed input and shared stream modulation",
                 warnings,
+                unsupported_reason=FLUX2_DEV_UNSUPPORTED_REASON if variant == "dev" else None,
             )
     encoder = shapes.get("encoder.conv_out.weight", [])
     decoder = shapes.get("decoder.conv_in.weight", [])
@@ -203,6 +221,7 @@ def flux_component(shapes: dict[str, list[int]], config: dict | None = None) -> 
             "text_encoder",
             ["flux2"],
             "Mistral 5120-wide text decoder compatible with FLUX.2 dev; complete local processor/model directory required",
+            unsupported_reason=FLUX2_DEV_UNSUPPORTED_REASON,
         )
     if (
         decoder_attention
@@ -254,11 +273,14 @@ def _local_references(config: dict, root: Path, allowed, label: str) -> None:
             raise ValueError(f"{label} {key} references a missing local asset")
 
 
-def _tokenizer_assets(folder: Path, allowed, label: str, *, chat=False, limit=TOKENIZER_LIMIT) -> None:
+def _tokenizer_assets(folder: Path, allowed, label: str, *, chat=False, limit=TOKENIZER_LIMIT) -> set[str]:
     config_path = _contained(folder, folder / "tokenizer_config.json", allowed, f"{label} config")
     if not config_path.is_file():
         raise ValueError(f"{label}: tokenizer_config.json is required")
     config = _json(config_path, CONFIG_LIMIT)
+    classes = {
+        value for key in ("tokenizer_class", "processor_class") if isinstance(value := config.get(key), str)
+    }
     _local_references(config, folder, allowed, label)
     if (folder / "tokenizer.json").is_file():
         vocabulary = ("tokenizer.json",)
@@ -289,6 +311,8 @@ def _tokenizer_assets(folder: Path, allowed, label: str, *, chat=False, limit=TO
             if name.endswith(".json"):
                 value = _json(file, CONFIG_LIMIT)
                 _local_references(value, folder, allowed, label)
+                if isinstance(value.get("processor_class"), str):
+                    classes.add(value["processor_class"])
             if name.startswith("chat_template"):
                 templates.append(file)
     template_dir = folder / "chat_templates"
@@ -303,6 +327,7 @@ def _tokenizer_assets(folder: Path, allowed, label: str, *, chat=False, limit=TO
                 raise ValueError(f"{label}: too many chat templates")
     if chat and not config.get("chat_template") and not templates:
         raise ValueError(f"{label}: FLUX.2 requires its local chat template")
+    return classes
 
 
 def _flux_directory(root: Path, allowed, budget: dict[str, int]) -> dict[str, Any] | None:
@@ -423,6 +448,11 @@ def _flux_directory(root: Path, allowed, budget: dict[str, int]) -> dict[str, An
         )
         if index.get("is_distilled") is True:
             warnings.append("模型配置声明 is_distilled=true；当前训练加载器不支持 distilled/KV。")
+    unsupported_reason = (
+        FLUX1_RETIRED_REASON if family == "flux" else FLUX2_DEV_UNSUPPORTED_REASON if not klein else None
+    )
+    if unsupported_reason:
+        warnings.append(unsupported_reason)
     return dict(
         path=str(root),
         family=family,
@@ -434,6 +464,7 @@ def _flux_directory(root: Path, allowed, budget: dict[str, int]) -> dict[str, An
         evidence=[f"Local {cls} directory: transformer, required text encoders, VAE and tokenizer assets"],
         warnings=warnings,
         files_inspected=sum(item["files_inspected"] for item in components),
+        unsupported_reason=unsupported_reason,
     )
 
 
@@ -628,6 +659,7 @@ def inspect_model(path: Path, *, allowed=None, _budget: dict[str, int] | None = 
         dtype = "fp8"
     family, kind, evidence, candidates = None, None, [], []
     warnings = []
+    unsupported_reason = None
     sdxl_kind = sdxl_component(shapes)
     flux = flux_component(shapes, config)
     if sdxl_kind == "dit":
@@ -639,6 +671,7 @@ def inspect_model(path: Path, *, allowed=None, _budget: dict[str, int] | None = 
         family, kind, candidates = flux["family"], flux["kind"], flux["candidates"]
         evidence.extend(flux["evidence"])
         warnings.extend(flux["warnings"])
+        unsupported_reason = flux["unsupported_reason"]
     elif sdxl_kind in ("text_encoder", "text_encoder_2"):
         kind = sdxl_kind
         candidates = ["sdxl", "flux"] if kind == "text_encoder" else ["sdxl"]
@@ -708,9 +741,15 @@ def inspect_model(path: Path, *, allowed=None, _budget: dict[str, int] | None = 
                 for name in ("tokenizer.json", "vocab.json", "spiece.model", "tokenizer.model")
             )
         ):
-            _tokenizer_assets(root, allowed, "tokenizer")
+            classes = _tokenizer_assets(root, allowed, "tokenizer")
             kind = "tokenizer"
             evidence.append("Local tokenizer configuration and vocabulary assets")
+            if "PixtralProcessor" in classes:
+                family = "flux2"
+                unsupported_reason = FLUX2_DEV_UNSUPPORTED_REASON
+                evidence.append(
+                    "Pixtral processor assets belong to the dev Mistral conditioning path, not Klein Qwen3"
+                )
     if family:
         candidates = [family]
     if not family:
@@ -725,6 +764,8 @@ def inspect_model(path: Path, *, allowed=None, _budget: dict[str, int] | None = 
         warnings.append("矩阵权重包含多种精度，已标记为 mixed。")
     if not dtype and kind != "tokenizer":
         warnings.append("未识别浮点权重精度，保留未知。")
+    if unsupported_reason:
+        warnings.append(unsupported_reason)
     return {
         "path": str(
             files[0]
@@ -743,4 +784,5 @@ def inspect_model(path: Path, *, allowed=None, _budget: dict[str, int] | None = 
         "evidence": evidence,
         "warnings": warnings,
         "files_inspected": len(files),
+        "unsupported_reason": unsupported_reason,
     }

@@ -1,5 +1,5 @@
 import type { ModelAsset, FamilyInfo, DatasetInfo } from '../api/types';
-import { familyParameterOptions } from './trainingFamilies';
+import { familyParameterOptions, inactiveTrainingReason, modelAssetUnsupportedReason } from './trainingFamilies';
 
 /** Windows paths are case-insensitive; preserve case for POSIX server paths. */
 export function normalizeDatasetPath(path: string) {
@@ -21,9 +21,10 @@ export const MODEL_PATH_FIELDS = {
 
 /** Registry defaults fill empty paths only; explicit project paths always win. */
 export function fillDefaultModels<T extends Record<string, any>>(config: T, assets: ModelAsset[]) {
+  if (inactiveTrainingReason(config)) return { ...config, model: { ...config.model } };
   const model = { ...(config.model || {}), family: config.model?.family || 'anima' };
   for (const [field, kind] of Object.entries(MODEL_PATH_FIELDS)) {
-    if (!model[field]) model[field] = assets.find((asset) => asset.family === model.family && asset.kind === kind && asset.is_default && asset.exists)?.path ?? null;
+    if (!model[field]) model[field] = assets.find((asset) => asset.family === model.family && asset.kind === kind && asset.is_default && asset.exists && !modelAssetUnsupportedReason(asset))?.path ?? null;
   }
   return { ...config, model };
 }
@@ -57,7 +58,7 @@ export function changeModelFamily(config: Record<string, any>, family: FamilyInf
     const options = familyParameterOptions(family, `${group}.${key}`);
     if (options?.length && !options.includes(next[group][key])) next[group][key] = options[0];
   }
-  if (family.name === 'flux' || family.name === 'flux2') {
+  if (family.name === 'flux2') {
     next.sampling.steps = null; next.sampling.cfg = null; next.sampling.guidance = null;
   }
   if (family.objective !== 'ddpm') {

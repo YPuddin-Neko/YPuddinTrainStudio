@@ -217,6 +217,27 @@ def test_local_registered_candidate_is_verified_once_and_later_edits_invalidate_
     assert client.get("/api/models/recommendations").json()[0]["available_path"] is None
 
 
+def test_replaced_verified_model_cannot_reuse_catalog_identity_to_set_default(tiny):
+    from tests.unit.test_flux_model_inspection import sparse_headers, transformer_shapes
+    from ypuddin.server.model_inspection import FLUX2_DEV_UNSUPPORTED_REASON
+
+    client, control, root, app, entry = tiny
+    path = root / "tiny.safetensors"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(control.payload)
+    asset = client.post("/api/models", json={"family": "anima", "kind": "dit", "path": str(path)}).json()
+    assert client.post(f"/api/models/recommendations/{entry.id}/use", json={}).status_code == 200
+    assert catalog.cached_sha256(app.state.ctx, path) == entry.sha256
+    assert client.patch(f"/api/models/{asset['id']}", json={"is_default": False}).status_code == 200
+
+    sparse_headers(path, transformer_shapes("flux2", 6144))
+    assert catalog.cached_sha256(app.state.ctx, path) is None
+    response = client.patch(f"/api/models/{asset['id']}", json={"is_default": True})
+    assert response.status_code == 422 and FLUX2_DEV_UNSUPPORTED_REASON in response.text
+    assert client.get("/api/models").json()[0]["is_default"] is False
+    assert path.exists()
+
+
 def test_unavailable_ids_sources_and_unpermitted_registered_paths_are_rejected(tiny, monkeypatch):
     client, control, root, app, entry = tiny
     assert download(tiny, id_="missing").status_code == 404

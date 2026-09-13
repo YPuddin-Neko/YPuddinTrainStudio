@@ -328,7 +328,9 @@ async def test_response_models_cover_every_json_endpoint(live_server, image_data
         ).json()
         assert imp["ok"] is True and imp["config"]["model"]["family"] == "toy"
         fams = {f["name"]: f for f in (await client.get("/api/families")).json()}
-        assert set(fams) >= {"anima", "krea2", "sdxl", "flux", "flux2", "toy"}
+        assert set(fams) >= {"anima", "krea2", "sdxl", "flux2", "toy"}
+        assert "flux" not in fams
+        assert fams["flux2"]["label"] == "FLUX.2 Klein"
         krea = fams["krea2"]
         assert krea["label"] == "Krea 2 Raw 12.9B" and krea["text_modes"] == ["auto", "cached"]
         assert krea["sampling"]["shift"] is None and krea["sampling"]["cfg"] == 5.5
@@ -346,7 +348,7 @@ async def test_response_models_cover_every_json_endpoint(live_server, image_data
         assert [w["field"] for w in krea["weights"] if not w["required"]] == ["tokenizer_path"]
         assert "online" in fams["anima"]["text_modes"] and fams["anima"]["latent"]["align"] == 16
         assert (await client.get("/api/families/anima")).json()["default_preset"] == "attn-mlp"
-        assert (await client.get("/api/families/flux")).status_code == 200
+        assert (await client.get("/api/families/flux")).status_code == 404
         assert (await client.get("/api/families/flux3")).status_code == 404
         weights = tmp_path / "w.safetensors"
         weights.write_bytes(b"\0" * 16)

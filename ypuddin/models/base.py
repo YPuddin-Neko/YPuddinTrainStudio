@@ -56,6 +56,7 @@ class ModelSpec:
     architecture: str = "unknown"  # modelspec.architecture base tag
     adapter_prefix: str = "lora_unet"
     label: str = ""  # human-readable name for UIs ("Krea 2 Raw 12.9B"); falls back to ``name``
+    retired_reason: str | None = None  # readable legacy configs, unavailable for new execution
     weights: tuple[tuple[str, str, str], ...] = ()  # (ModelConfig field, label, hint) the family needs
     optional_weights: tuple[str, ...] = ()  # fields supplied by a bundled checkpoint unless overridden
     directory_only_weights: tuple[str, ...] = ()  # cannot be prepared by single-file downloads
@@ -269,6 +270,8 @@ class ModelFamily(ABC):
         return []
 
     def sampling_errors(self, cfg: SamplingConfig) -> list[dict[str, str]]:
+        if self.spec.retired_reason:
+            return [{"loc": "model.family", "msg": self.spec.retired_reason}]
         problems = []
         for key, allowed in (
             ("sampler", self.spec.sampling_samplers),
@@ -291,6 +294,8 @@ class ModelFamily(ABC):
         return problems
 
     def training_options_errors(self, cfg: TrainConfig) -> list[dict[str, str]]:
+        if self.spec.retired_reason:
+            return [{"loc": "model.family", "msg": self.spec.retired_reason}]
         problems = []
         for key, allowed in (
             ("timestep_sampling", self.spec.objective_timestep_sampling),

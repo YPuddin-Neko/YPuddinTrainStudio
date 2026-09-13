@@ -9,6 +9,7 @@ import { mergeConfig } from '../../utils/config';
 import { applyTrainingPreset, reusableTrainingPreset } from '../../utils/trainingPresets';
 import { formatApiError } from '../../utils/errors';
 import { fillDefaultModels, changeModelFamily, matchingTrainingDatasets } from '../../utils/workspaceConfig';
+import { inactiveTrainingReason } from '../../utils/trainingFamilies';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import ProjectWorkspaceHeader from '../../components/projects/ProjectWorkspaceHeader';
 import { useProjectVersions } from '../../components/projects/useProjectVersions';
@@ -330,6 +331,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     const family = familyByName(families, config?.model?.family);
     if (!family) return;
     setConfig((prev) => {
+      if (inactiveTrainingReason(prev)) return prev;
       let changed = false;
       const next = { ...prev, adapter: { ...(prev.adapter || {}) }, dataset: { ...(prev.dataset || {}) } };
       // adapter.preset 不在新族列表 → 回到该族 default_preset
@@ -400,6 +402,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   }, [config, loaded, projectId, versionId, auxiliaryReload]);
 
   const handleApplyPreset = (preset: Preset) => {
+    if (inactiveTrainingReason(config) || inactiveTrainingReason(preset.config)) return;
     if (presetFamily(preset) && presetFamily(preset) !== config.model?.family) return;
     setError('');
     setConfig((prev) => fillDefaultModels(applyTrainingPreset(prev, preset.config), registeredModels));
@@ -407,11 +410,13 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   };
 
   const handleConfigChange = (next: Record<string, any>) => {
+    if (inactiveTrainingReason(config)) return;
     const family = familyByName(families, next.model?.family);
     setConfig(family && next.model?.family !== config.model?.family ? changeModelFamily(next, family, registeredModels) : next);
   };
 
   const handleSavePreset = async () => {
+    if (inactiveTrainingReason(config)) return;
     if (!presetName.trim()) return;
     setSavingPreset(true);
     setError('');
@@ -447,6 +452,8 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
 
   const handleEnqueue = async () => {
     if (archived) return;
+    const inactiveReason = inactiveTrainingReason(config, english);
+    if (inactiveReason) { setError(inactiveReason); return; }
     if (!Number.isInteger(priority) || (scheduledAt && !Number.isFinite(new Date(scheduledAt).getTime()))) {
       setError(text('请检查排期：优先级必须是整数，开始时间必须有效。', 'Check the schedule: priority must be an integer and the start time must be valid.'));
       return;
@@ -473,7 +480,8 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   };
 
   const issues = presentConfigIssues(validationErrors, english);
-  const ready = (!versions.enabled || versions.current?.status === 'ready') && loaded && !validating && validatedConfig === JSON.stringify(config) && plan?.ok === true && issues.length === 0;
+  const inactiveReason = inactiveTrainingReason(config, english);
+  const ready = !inactiveReason && (!versions.enabled || versions.current?.status === 'ready') && loaded && !validating && validatedConfig === JSON.stringify(config) && plan?.ok === true && issues.length === 0;
   const tabs: {id: ConfigTab; label: string; icon: typeof SlidersHorizontal}[] = [
     { id: 'model', label: text('底模与输出', 'Model & output'), icon: Box },
     { id: 'train', label: text('训练参数', 'Training'), icon: SlidersHorizontal },
@@ -500,7 +508,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
 
   if (!versionId && project?.active_version_id) return <Navigate replace to={`${projectUrl(project.id, project.active_version_id, 'train')}${location.search}${location.hash}`} state={location.state}/>;
   const dirty = loaded && JSON.stringify(config) !== lastSavedRef.current;
-  const familyLabel = familyByName(families, config.model?.family)?.label || config.model?.family;
+  const familyLabel = inactiveReason ? `${config.model?.family === 'flux' ? 'FLUX.1' : 'FLUX.2 dev'} · ${text('已停用', 'Retired')}` : familyByName(families, config.model?.family)?.label || config.model?.family;
   const familyBadge = familyLabel ? <span className="family-chip" data-testid="training-family-badge" title={familyLabel}>{familyLabel}</span> : null;
   const draftStatus = <span className="draft-indicator" data-testid={savedAt && !dirty ? 'draft-saved' : undefined}>{savingNavigation ? <><Loader2 size={12} className="animate-spin"/>{text('正在保存草稿…', 'Saving draft…')}</> : dirty ? text('有未保存修改', 'Unsaved changes') : savedAt ? <><CheckCircle2 size={12}/>{t('train.draftSaved', { time: savedAt })}</> : loaded ? text('修改自动保存', 'Changes save automatically') : text('正在加载…', 'Loading…')}</span>;
   if (versionId && (versions.current?.status !== 'ready' || archived)) return <div className="training-studio project-workspace">
@@ -510,6 +518,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   </div>;
   return <div className="training-studio project-workspace" aria-busy={savingNavigation}>
     {project ? <ProjectWorkspaceHeader project={project} versionId={versionId} versions={versions.versions} current={versions.current} active="train" refresh={versions.refresh} beforeAction={flushDraft} status={draftStatus} titleBadge={familyBadge} error={versions.error}/> : <div className="project-heading-placeholder"><h1>{text('训练参数', 'Training parameters')}</h1>{familyBadge}{draftStatus}</div>}
+    {inactiveReason && <div role="alert" className="studio-error" data-testid="retired-training-config">{inactiveReason}</div>}
     {error && <div role="alert" className="studio-error">{error}<button type="button" onClick={() => { setError(''); if (!loaded) setReload(v => v + 1); }}>{loaded ? text('关闭', 'Dismiss') : t('common.retry')}</button></div>}
     {recoveredDraft && loaded && <p className="workspace-message" role="status">{text('已恢复此版本上次未保存的草稿。', 'Recovered the unsaved draft for this version.')}</p>}
     {Object.keys(auxiliaryErrors).length>0 && <div role="alert" className="studio-error" data-testid="training-auxiliary-error"><div>{Object.entries(auxiliaryErrors).map(([key,message])=><p key={key}>{key==='presets'?text('预设列表读取失败','Preset list could not be loaded'):key==='sources'?text('数据目录用途读取失败','Dataset directory ownership could not be loaded'):key==='output'?text('权重保存位置读取失败','Weight output binding could not be loaded'):text('模型库读取失败','Model registry could not be loaded')}: {message}</p>)}<p>{text('本版本配置仍可编辑；重试不会替换当前草稿。','The version configuration remains editable. Retrying will preserve the current draft.')}</p></div><button type="button" disabled={auxiliaryLoading} onClick={()=>setAuxiliaryReload(value=>value+1)}>{text('重试辅助信息','Retry supporting data')}</button></div>}
@@ -519,11 +528,11 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       <label className="advanced-toggle"><input type="checkbox" checked={showAdvanced} onChange={event => setShowAdvanced(event.target.checked)}/>{t('train.advanced')}</label>
       </div>
       <div className="toolbar-actions">
-        <StudioSelect aria-label={t('train.loadPreset')} disabled={!loaded || savingNavigation} value="" onValueChange={name => {const preset=presets.find(item=>item.name===name);if(preset)setPendingPreset(preset);}} options={[{value:'',label:t('train.loadPreset'),disabled:true},...presets.map(preset=>({value:preset.name,label:`${preset.name}${presetFamily(preset) && presetFamily(preset)!==config.model?.family ? ` · ${text('适用于','For')} ${presetFamily(preset)}` : ''}`,disabled:!!presetFamily(preset) && presetFamily(preset)!==config.model?.family}))]}/>
+        <StudioSelect aria-label={t('train.loadPreset')} disabled={!loaded || savingNavigation || !!inactiveReason} value="" onValueChange={name => {const preset=presets.find(item=>item.name===name);if(preset)setPendingPreset(preset);}} options={[{value:'',label:t('train.loadPreset'),disabled:true},...presets.map(preset=>({value:preset.name,label:`${preset.name}${inactiveTrainingReason(preset.config) ? ` · ${text('已停用','Retired')}` : presetFamily(preset) && presetFamily(preset)!==config.model?.family ? ` · ${text('适用于','For')} ${presetFamily(preset)}` : ''}`,disabled:!!inactiveTrainingReason(preset.config) || !!presetFamily(preset) && presetFamily(preset)!==config.model?.family}))]}/>
         <button className="studio-secondary save-draft" disabled={!loaded || !dirty || savingNavigation} onClick={() => void saveDraftNow()}>{savingNavigation ? text('保存中…','Saving…') : text('保存草稿','Save draft')}</button>
         <details className="config-tools"><summary><Settings2 size={14}/>{text('配置工具', 'Config tools')}</summary><div className="config-tools-menu">
           <Link to="/presets">{text('管理参数预设','Manage parameter presets')}</Link>
-          <div className="preset-save"><input aria-label={t('train.presetName')} placeholder={t('train.presetName')} value={presetName} onChange={event => setPresetName(event.target.value)} /><button disabled={!loaded || savingPreset || !presetName.trim()} onClick={handleSavePreset}>{t('train.savePreset')}</button></div>
+          <div className="preset-save"><input aria-label={t('train.presetName')} placeholder={t('train.presetName')} value={presetName} onChange={event => setPresetName(event.target.value)} /><button disabled={!loaded || savingPreset || !presetName.trim() || !!inactiveReason} onClick={handleSavePreset}>{t('train.savePreset')}</button></div>
           <button disabled={!loaded} onClick={() => setImportOpen(value => !value)}>{t('train.importToml')}</button><button disabled={!loaded} onClick={handleExport}>{t('train.exportToml')}</button><button disabled={!loaded} onClick={() => { if (window.confirm(t('train.resetConfirm'))) setConfig(structuredClone(defaults)); }}>{t('train.resetDefaults')}</button>
         </div></details>
       </div>
@@ -544,7 +553,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
           {!search && activeTab === 'model' && <div className="config-context-card model-context-card"><strong><Box size={14}/>{text('选择训练机上的模型', 'Models on the training machine')}</strong><Link to={modelUrl} className="studio-secondary">{text('管理与下载模型', 'Manage & download models')}<ChevronRight size={13}/></Link></div>}
           {!search && activeTab === 'train' && <p className="training-section-note">{text('先设置适配器与参数规模，再调整训练步数、学习率和优化器。', 'Choose the adapter and parameter size, then set training duration, learning rate and optimizer.')}</p>}
           {!search && activeTab === 'advanced' && <p className="training-section-note">{text('设置训练中的采样预览、验证与运行选项。展开高级选项查看完整配置。', 'Configure sample previews, validation and runtime options. Enable advanced options for the full configuration.')}</p>}
-          {!loaded ? <p className="p-6 text-sm text-slate-500">{t('common.loading')}</p> : <SchemaForm key={revealVersion} compact schema={schema} value={config} sourceRoles={sourceRoles} outputBinding={outputBinding} versionSources={!!projectId} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} groupFilter={search ? undefined : CONFIG_TAB_GROUPS[activeTab]} search={search} onClearSearch={clearSearch} errors={issues.map(issue => ({loc:issue.path,msg:issue.message}))} family={familyByName(families, config?.model?.family)} families={families} />}
+          {!loaded ? <p className="p-6 text-sm text-slate-500">{t('common.loading')}</p> : <SchemaForm key={revealVersion} compact readOnly={!!inactiveReason} schema={schema} value={config} sourceRoles={sourceRoles} outputBinding={outputBinding} versionSources={!!projectId} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} groupFilter={search ? undefined : CONFIG_TAB_GROUPS[activeTab]} search={search} onClearSearch={clearSearch} errors={issues.map(issue => ({loc:issue.path,msg:issue.message}))} family={familyByName(families, config?.model?.family)} families={families} />}
         </div>
       </div>
       <aside id="training-plan-panel" className={`training-inspector ${inspectorOpen ? 'is-open' : ''}`} aria-label={text('训练计划', 'Training plan')}><BucketInspector plan={plan} loading={validating} hasSources={!!config.dataset?.sources?.length} indexed={indexedStats || undefined} onIssues={() => setIssuesOpen(true)} onData={() => {setActiveTab('data');setSearch('');setInspectorOpen(false);}}/>

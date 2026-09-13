@@ -31,7 +31,7 @@ def available() -> list[str]:
                 _autoload(n)
             except ImportError:
                 pass
-    return sorted(_FACTORIES)
+    return sorted(name for name in _FACTORIES if not get_family(name).spec.retired_reason)
 
 
 def _autoload(name: str) -> None:

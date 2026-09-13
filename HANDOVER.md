@@ -5,7 +5,7 @@
 
 ## 2026-09-13 模型后端新增
 
-优先阅读 [SDXL / FLUX.1 / FLUX.2 接入说明](docs/MODEL_FAMILIES_2026-09-13.md)。当前 registry 已支持这三个模型族；下面历史“Flux、SDXL 尚未接入”的记录已被本节取代。SDXL 默认光辉 v0.1，保留第三方本地模型与 ε/v 选择；FLUX.1 dev/schnell，FLUX.2 dev/Klein base 4B/9B 分别处理条件与采样。
+优先阅读 [SDXL / Klein 接入说明](docs/MODEL_FAMILIES_2026-09-13.md)。当前公开 registry 支持 SDXL 与 FLUX.2 Klein；下面历史“Flux、SDXL 尚未接入”的记录已被本节取代。SDXL 默认光辉 v0.1，保留第三方本地模型与 ε/v 选择；FLUX 仅保留 Klein base 4B/9B；旧 FLUX.1 和 FLUX.2 dev 配置可读，执行明确拒绝，不改写已有数据。
 
 核心新增 `ModelFamily.build_objective/sample_latents/materialize_backbone/sampling_defaults/sampling_shift_for_model`；默认 RF 路径兼容既有模型，SDXL 使用 DDPM，FLUX 主干在编码缓存后物化。FamilyInfo 提供权重角色、可选组件、可下载类型和实际支持的参数选项。配置、版本、预设与正则生成均已接入。新模型小型真实网络测试和外部数值对照不代表完整 GPU 验收；本轮未修改 Windows 服务或下载大模型。
 
@@ -26,7 +26,7 @@
 
 一个桌面化的 diffusion **LoRA / LoKr 训练器**。训练循环、适配器、数据流水线、服务 API 与 CLI 独立实现，模型组件包含按 Apache-2.0 引入的上游代码（见各 `vendor/NOTICE.md`）。`docs/reference/*.md` 保留早期参考审计，不能据此推断参考项目当前版本的状态或本项目性能更好。
 
-- **模型族**：`anima`（Anima 2B，Cosmos-Predict2 DiT + Qwen3-0.6B + Qwen-Image VAE）、`krea2`（Krea 2 Raw 12.9B 单流 MMDiT + Qwen3-VL-4B + 同款 VAE）、`sdxl`、`flux` 和 `flux2`；另有 `toy` 族供 CPU 测试。新族 = 实现 `ModelFamily` 协议（`ypuddin/models/`）。
+- **模型族**：`anima`（Anima 2B，Cosmos-Predict2 DiT + Qwen3-0.6B + Qwen-Image VAE）、`krea2`（Krea 2 Raw 12.9B 单流 MMDiT + Qwen3-VL-4B + 同款 VAE）、`sdxl` 和 `flux2`（Klein）；`flux` 仅供历史格式识别；另有 `toy` 族供 CPU 测试。新族 = 实现 `ModelFamily` 协议（`ypuddin/models/`）。
 - **适配器**：LoKr（自研，与 LyCORIS 文件格式兼容）、LoRA、LoHa、Full、DoRA 包装。目标选择用 preset + 有序 rules（`ypuddin/adapters/rules.py`）。
 - **形态**：Python 包 `ypuddin`（CLI + FastAPI 服务）+ `frontend/`（React/Vite 界面，可选）。一键脚本 `studio.sh` / `studio.bat`。
 - 许可证 Apache-2.0（参考项目里 diffusion-pipe 与 AnimaLoraStudio 是 GPL——只读不抄；sd-scripts / musubi-tuner 是 Apache-2.0，vendor 的代码见 §7）。

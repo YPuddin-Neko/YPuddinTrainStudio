@@ -7,7 +7,7 @@ import { apiClient } from '../../api/client';
 import { FamilyInfo } from '../../api/types';
 import { configFieldLabel, configOptionLabel } from '../../utils/configPresentation';
 import { MODEL_PATH_FIELDS } from '../../utils/workspaceConfig';
-import { familyParameterOptions, modelFamilyWeights, trainingFamilyOptions } from '../../utils/trainingFamilies';
+import { familyParameterOptions, modelAssetUnsupportedReason, modelFamilyWeights, trainingFamilyOptions } from '../../utils/trainingFamilies';
 import NumericControl from './NumericControl';
 import StudioSelect from '../../components/StudioSelect';
 import ConfigHelp from '../../components/ConfigHelp';
@@ -519,20 +519,20 @@ const ModelPathInput: React.FC<{
   familyName?: string;
 }> = ({ value, kind, onChange, label, familyName }) => {
   const { t } = useTranslation();
-  const [models, setModels] = React.useState<Array<{ id: string; path: string; kind: string; family: string; exists?: boolean }>>([]);
+  const [models, setModels] = React.useState<Array<{ id: string; path: string; kind: string; family: string; exists?: boolean; unsupported_reason?: string | null }>>([]);
 
   React.useEffect(() => {
     if (!kind) return;
     let active = true;
     const refresh = () => void apiClient
-      .get<Array<{ id: string; path: string; kind: string; family: string; exists?: boolean }>>('/models', { silent: true })
+      .get<Array<{ id: string; path: string; kind: string; family: string; exists?: boolean; unsupported_reason?: string | null }>>('/models', { silent: true })
       .then((list) => { if (active) setModels(Array.isArray(list) ? list : []); })
       .catch(() => { if (active) setModels([]); });
     refresh(); window.addEventListener('studio-models-changed', refresh); window.addEventListener('focus', refresh);
     return () => { active = false; window.removeEventListener('studio-models-changed', refresh); window.removeEventListener('focus', refresh); };
   }, [kind]);
 
-  const matched = kind ? models.filter((m) => m.exists !== false && m.kind === kind && (!familyName || m.family === familyName)) : [];
+  const matched = kind ? models.filter((m) => m.exists !== false && !modelAssetUnsupportedReason(m) && m.kind === kind && (!familyName || m.family === familyName)) : [];
 
   return (
     <div className={`model-path-control ${matched.length > 0 ? 'has-registry' : ''}`}>
@@ -699,6 +699,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const lokrRank = fullPathKey === 'adapter.rank' && value.adapter?.algo === 'lokr';
     const weightMeta = parentPath[0] === 'model' ? weights.find(weight => weight.field === key) : undefined;
     const supportedOptions = familyParameterOptions(family, fullPathKey);
+    if (['model.training_guidance', 'sampling.guidance'].includes(fullPathKey)) return null;
+    if (fullPathKey === 'model.text_encoder_2_path' && value.model?.family !== 'sdxl') return null;
     if (supportedOptions?.length === 0) return null;
     if (family?.objective === 'ddpm' && ['sampling.shift', 'sampling.er_sde_order', 'sampling.er_sde_s_noise', 'objective.shift', 'objective.res_shift_tokens', 'objective.res_shift_mu', 'objective.mode_scale', 'objective.snr_gamma'].includes(fullPathKey)) return null;
     if (parentPath[0] === 'model' && key in MODEL_PATH_FIELDS && weights.length && !weightMeta) return null;
@@ -841,6 +843,12 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       control = <SchemaValueInput schema={schema} property={prop} value={fieldValue} name={fullPathKey} compact={compactField}
         placeholder={family && fullPathKey.startsWith('sampling.') && ['steps', 'cfg', 'shift'].includes(key) ? (family.sampling?.[key as 'steps' | 'cfg' | 'shift'] != null ? String(family.sampling[key as 'steps' | 'cfg' | 'shift']) : key === 'shift' ? t('sampling.shiftAuto') : undefined) : undefined}
         onChange={(val) => onChange(setNestedValue(value, path, val))} />;
+    } else if (fullPathKey === 'model.flux2_variant') {
+      const options = ['auto', 'klein-base-4b', 'klein-base-9b'];
+      control = <StudioSelect aria-label={fieldLabel} value={fieldValue || 'auto'}
+        onValueChange={next => onChange(setNestedValue(value, path, next))}
+        options={[...(fieldValue === 'dev' ? [{ value: 'dev', label: english ? 'FLUX.2 dev (retired)' : 'FLUX.2 dev（已停用）', disabled: true }] : []),
+          ...options.map(option => ({ value: option, label: configOptionLabel(fullPathKey, option, english) }))]}/>;
     } else if (fullPathKey === 'model.family' && families) {
       control = <StudioSelect aria-label="model.family" value={fieldValue || families[0]?.name || ''} disabled={!families.length}
         onValueChange={next => onChange(setNestedValue(value,path,next))} options={trainingFamilyOptions(families, english, fieldValue)}/>;
@@ -965,7 +973,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       <div key={fullPathKey} id={`field-${fullPathKey}`} data-testid={`field-${fullPathKey}`} data-field-path={fullPathKey} data-control-kind={prop.type === 'boolean' ? 'toggle' : undefined} className={compactField ? `config-field ${prop.type === 'boolean' ? 'config-field-toggle' : ''} ${wide ? 'config-field-wide' : ''} ${errorItem ? 'config-field-invalid' : ''}` : `flex flex-col space-y-1 p-2 rounded ${errorItem ? 'bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800' : ''}`}>
         <div className="flex justify-between items-center">
           <label htmlFor={fieldId} className="text-sm font-medium text-slate-700 dark:text-slate-300">
-            {fieldLabel}{weightMeta?.required === false && !['flux', 'flux2'].includes(family?.name || '') && <span className="ml-1 text-xs text-slate-500">{english ? '(optional)' : '（可选）'}</span>}
+            {fieldLabel}{weightMeta?.required === false && family?.name !== 'flux2' && <span className="ml-1 text-xs text-slate-500">{english ? '(optional)' : '（可选）'}</span>}
             {ui.unit && !percentage && ui.control !== 'slider' && <span className="ml-1 text-xs text-slate-500">({ui.unit})</span>}
           </label>
           {compactField && help && <ConfigHelp label={`${fieldLabel} ${english ? 'help' : '说明'}`}>{help}</ConfigHelp>}

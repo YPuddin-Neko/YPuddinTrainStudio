@@ -176,8 +176,13 @@ def test_original_and_diffusers_headers_identify_architecture_not_filename(
     if family == "flux2" and width != 6144:
         assert any("base" in warning and "distilled" in warning for warning in result["warnings"])
     with safe_open(str(path), framework="pt", device="cpu") as weights:
-        check_component(weights, family, "dit")
-        with pytest.raises(ValueError, match="looks like"):
+        if family == "flux" or width == 6144:
+            with pytest.raises(ValueError, match="FLUX"):
+                check_component(weights, family, "dit")
+            assert any("当前" in warning for warning in result["warnings"])
+        else:
+            check_component(weights, family, "dit")
+        with pytest.raises(ValueError, match="FLUX"):
             check_component(weights, "flux2" if family == "flux" else "flux", "dit")
 
 
@@ -215,10 +220,14 @@ def test_shared_components_keep_role_and_compatible_families(tmp_path, kind, sha
     result = inspect_model(path)
     assert result["kind"] == kind and family in result["family_candidates"]
     with safe_open(str(path), framework="pt", device="cpu") as weights:
-        check_component(weights, family, kind)
+        if family == "flux":
+            with pytest.raises(ValueError, match="FLUX.1"):
+                check_component(weights, family, kind)
+        else:
+            check_component(weights, family, kind)
         with pytest.raises(ValueError, match="looks like"):
             check_component(weights, "anima", kind)
-        with pytest.raises(ValueError, match="looks like"):
+        with pytest.raises(ValueError, match="looks like|FLUX.1"):
             check_component(weights, family, "dit")
 
 
@@ -359,7 +368,7 @@ def test_distilled_klein_is_identified_but_never_claimed_as_base(tmp_path):
 def test_api_inspection_and_scan_register_pipeline_root_once(tmp_path):
     model_dir = tmp_path / "models"
     model_dir.mkdir()
-    root = hf_flux_directory(model_dir / "unhelpful_name", "flux", sharded=True)
+    root = hf_flux_directory(model_dir / "unhelpful_name", "klein4", sharded=True)
     app = create_app(tmp_path / "studio", frontend_dist=tmp_path / "missing")
     client = TestClient(app)
     try:
@@ -369,7 +378,7 @@ def test_api_inspection_and_scan_register_pipeline_root_once(tmp_path):
         response = client.post("/api/models/scan", json={"path": str(model_dir), "family": "anima"})
         assert response.status_code == 200, response.text
         assert [(row["path"], row["family"], row["kind"]) for row in response.json()] == [
-            (str(root), "flux", "dit")
+            (str(root), "flux2", "dit")
         ]
     finally:
         app.state.regularization.close()

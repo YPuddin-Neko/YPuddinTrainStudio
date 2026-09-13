@@ -57,6 +57,7 @@ class FluxFamily(ModelFamily):
     spec = ModelSpec(
         name="flux",
         label="FLUX.1",
+        retired_reason="FLUX.1 已停用；FLUX 训练仅保留 FLUX.2 Klein 基础版 4B/9B。请创建 Klein 版本并选择对应权重。",
         latent=LatentSpec(16, 8, 2, "flux1-ae-f8c16-v1"),
         text=TextSpec(512, "flux1-clip-l-t5xxl-v1", encoder_params=4_885_000_000),
         sampling=SamplingDefaults(steps=28, cfg=1, shift=None, sampler="euler", guidance=3.5),

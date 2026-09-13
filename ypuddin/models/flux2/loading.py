@@ -1,4 +1,4 @@
-"""Offline safetensors loading for FLUX.2 dev and explicitly identified Klein base.
+"""Offline Klein base loading; legacy dev geometry remains identifiable from headers.
 
 Geometry follows BFL flux2/model.py. Original tensor conversion delegates to the
 installed Apache-2.0 Diffusers implementation; no reference trainer code is vendored.
@@ -35,6 +35,35 @@ VARIANTS = {
         guidance_embeds=False,
     ),
 }
+
+KLEIN_VARIANTS = frozenset({"klein-base-4b", "klein-base-9b"})
+DEV_UNSUPPORTED = "FLUX.2 dev is no longer supported; select Klein base 4B or 9B weights explicitly"
+
+
+def reject_dev_config(config: dict, requested: str = "auto") -> None:
+    """Reject legacy selections/configuration before loading any tensor payload."""
+    if (
+        requested == "dev"
+        or config.get("guidance_embeds", True)
+        or config.get("joint_attention_dim") == 15360
+        or config.get("num_attention_heads", 0) * config.get("attention_head_dim", 128) == 6144
+    ):
+        raise ValueError(DEV_UNSUPPORTED)
+
+
+def reject_dev_weights(path: Path) -> None:
+    headers = shapes(path)
+    for key, shape in headers.items():
+        bare = key.removeprefix("model.diffusion_model.")
+        if (
+            bare.startswith(("guidance_in.", "time_guidance_embed.guidance_embedder."))
+            or bare in {"img_in.weight", "x_embedder.weight"}
+            and shape == (6144, 128)
+            or bare in {"txt_in.weight", "context_embedder.weight"}
+            and len(shape) == 2
+            and shape[1] == 15360
+        ):
+            raise ValueError(DEV_UNSUPPORTED)
 
 
 def read_json(path: Path) -> dict:
@@ -142,22 +171,21 @@ def transformer_config(path: Path) -> dict:
 
 
 def resolve_variant(root: Path, config: dict, requested: str = "auto") -> str:
+    reject_dev_config(config, requested)
     if config.get("in_channels", 128) != 128 or config.get("out_channels") not in (None, 128):
         raise ValueError("FLUX.2 requires 128 patchified latent channels")
-    inferred = (
-        "dev"
-        if config.get("guidance_embeds", True)
-        else ("klein-base-9b" if config.get("joint_attention_dim") == 12288 else "klein-base-4b")
-    )
+    inferred = "klein-base-9b" if config.get("joint_attention_dim") == 12288 else "klein-base-4b"
     manifest_file = root / "model_index.json"
     manifest = read_json(manifest_file) if manifest_file.is_file() else {}
+    if manifest.get("_class_name") == "Flux2Pipeline":
+        raise ValueError(DEV_UNSUPPORTED)
     if manifest.get("is_distilled") is True:
         raise ValueError("FLUX.2 Klein distilled/KV variants are not supported; choose Klein base")
     if requested != "auto":
-        if requested not in VARIANTS or requested != inferred:
+        if requested not in KLEIN_VARIANTS or requested != inferred:
             raise ValueError("FLUX.2 selected variant does not match the transformer configuration")
         return requested
-    if inferred != "dev" and manifest.get("is_distilled") is not False:
+    if manifest.get("is_distilled") is not False:
         raise ValueError(
             "Klein base and distilled weights share shapes; select flux2_variant explicitly or use an HF base directory with is_distilled=false"
         )
@@ -165,6 +193,8 @@ def resolve_variant(root: Path, config: dict, requested: str = "auto") -> str:
 
 
 def load_transformer(path: Path, config: dict, *, dtype, device):
+    reject_dev_config(config)
+    reject_dev_weights(path)
     from diffusers import Flux2Transformer2DModel
 
     if path.is_dir():

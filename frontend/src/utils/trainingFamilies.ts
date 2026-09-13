@@ -1,15 +1,37 @@
 import type { FamilyInfo } from '../api/types';
 import type { StudioSelectOption } from '../components/StudioSelect';
 
-/** The server registry is authoritative; unsupported engines cannot be selected. */
+/** Keep retired engines out of entry points even when connected to an older service. */
+export function availableTrainingFamilies(families: FamilyInfo[]): FamilyInfo[] {
+  return families.filter(family => family.name !== 'flux').map(family =>
+    family.name === 'flux2' ? { ...family, label: 'FLUX.2 Klein' } : family);
+}
+
+export function inactiveTrainingReason(config: Record<string, any> | null | undefined, english = false): string | undefined {
+  const name = config?.model?.family;
+  const variant = config?.model?.flux2_variant;
+  if (name !== 'flux' && !(name === 'flux2' && variant === 'dev')) return undefined;
+  const model = name === 'flux' ? 'FLUX.1' : 'FLUX.2 dev';
+  return english
+    ? `${model} is retired. This configuration remains available to view; create a new configuration with supported model weights to train. Existing files are preserved.`
+    : `${model} 已停用。此配置仍可查看；如需训练，请使用受支持的模型权重新建配置。已有文件保持原样。`;
+}
+
+/** The server inspects actual weights; filenames cannot identify a retired variant. */
+export function modelAssetUnsupportedReason(asset: { family: string; unsupported_reason?: string | null }): string | undefined {
+  return asset.unsupported_reason || (asset.family === 'flux' ? 'FLUX.1 已停用' : undefined);
+}
+
+/** Unsupported engines cannot be selected for new configurations. */
 export function trainingFamilyOptions(families: FamilyInfo[], _english = false, current = ''): StudioSelectOption[] {
-  const available = families.filter(family => family.name !== 'toy' || current === 'toy');
+  const available = availableTrainingFamilies(families).filter(family => family.name !== 'toy' || current === 'toy');
   return available.map(family => ({ value: family.name, label: family.label || family.name }));
 }
 
 /** Older services omit kind/required; their existing weight fields remain required. */
 export function modelFamilyWeights(family?: FamilyInfo) {
-  return (family?.weights || []).map(weight => ({
+  return (family?.name === 'flux' ? [] : family?.weights || []).filter(weight =>
+    weight.field !== 'text_encoder_2_path' || family?.name === 'sdxl').map(weight => ({
     field: weight.field,
     kind: typeof weight.kind === 'string' ? weight.kind : weight.field.replace(/_path$/, ''),
     label: weight.label,

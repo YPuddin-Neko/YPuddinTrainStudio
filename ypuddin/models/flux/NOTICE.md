@@ -1,3 +1,5 @@
+Legacy module: FLUX.1 is retired from public project/model choices and training/sampling execution. Files below retain format recognition and historical compatibility references.
+
 FLUX.1 implementation references
 ==============================
 

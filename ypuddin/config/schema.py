@@ -37,8 +37,8 @@ class ModelConfig(_Strict):
     )
     text_encoder_2_path: str | None = F(
         None,
-        help="第二文本编码器：SDXL 使用 CLIP-G（完整模型通常已内含）；FLUX.1 使用 T5-XXL。",
-        ui_=ui("model", order=25, control="path", show_when="model.family in ['sdxl','flux']"),
+        help="SDXL 的第二文本编码器 CLIP-G，完整模型通常已内含。",
+        ui_=ui("model", order=25, control="path", show_when="model.family == 'sdxl'"),
     )
     vae_path: str | None = F(None, help="VAE 权重", ui_=ui("model", order=30, control="path"))
     tokenizer_path: str | None = F(
@@ -70,8 +70,8 @@ class ModelConfig(_Strict):
         1.0,
         ge=0,
         le=30,
-        help="FLUX 训练时传给模型的引导条件，默认 1；它与正负提示词的 CFG 放大不同。预览引导强度在采样设置中调整。",
-        ui_=ui("model", order=90, advanced=True, show_when="model.family in ['flux','flux2']"),
+        help="旧 FLUX 模型的引导条件，仅为读取历史配置保留；Klein 不使用此参数。",
+        ui_=ui("model", order=90, advanced=True, show_when="model.family == 'flux'"),
     )
     flux2_variant: Literal["auto", "dev", "klein-base-4b", "klein-base-9b"] = F(
         "auto",
@@ -783,7 +783,7 @@ class SamplingConfig(_Strict):
         le=30,
         help="FLUX 模型内部的预览引导强度；留空使用对应模型默认值。这项不参与训练步的加噪或损失。",
         ui_=ui(
-            "sampling", order=95, show_when="sampling.enabled == true && model.family in ['flux','flux2']"
+            "sampling", order=95, show_when="sampling.enabled == true && model.family == 'flux'"
         ),
     )
     # Service-owned destination. Omitted for CLI compatibility (<run_dir>/samples).

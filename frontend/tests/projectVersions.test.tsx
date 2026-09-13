@@ -54,6 +54,30 @@ function trainingFixture() {
 }
 
 describe('explicit project version actions', () => {
+  it('rejects copying a retired dev configuration without relabeling it as Klein', async () => {
+    const created = vi.fn();
+    const source = { ...version('v1'), family: 'flux2' };
+    const config = { model: { family: 'flux2', flux2_variant: 'dev', dit_path: 'J:/models/original-dev.safetensors' }, dataset: { sources: [{ path: 'J:/project/images' }] } };
+    server.use(
+      http.get('/api/families', () => HttpResponse.json([{ name: 'anima', label: 'Anima' }, { name: 'flux', label: 'FLUX.1' }, { name: 'flux2', label: 'FLUX.2 dev / Klein' }])),
+      http.get('/api/projects/p_versions/config', () => HttpResponse.json(config)),
+      http.post('/api/projects/p_versions/versions', () => { created(); return HttpResponse.json(version('v3')); }),
+    );
+    render(wrap(<ProjectWorkspaceHeader project={project} versionId="v1" versions={[source]} current={source} active="data" refresh={vi.fn()}/>));
+    fireEvent.click(screen.getByRole('button', { name: '新版本' }));
+    const dialog = await screen.findByRole('dialog', { name: '新建实验版本' });
+    await waitFor(() => expect(within(dialog).getByRole('combobox', { name: '训练模型类型' })).toHaveTextContent('FLUX.2 Klein'));
+    fireEvent.click(within(dialog).getByRole('combobox', { name: '训练模型类型' }));
+    expect(screen.queryByRole('option', { name: 'FLUX.1' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('option', { name: 'FLUX.2 Klein' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: '创建版本' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('FLUX.2 dev 已停用');
+    expect(created).not.toHaveBeenCalled();
+    expect(config.model.flux2_variant).toBe('dev');
+    expect(config.model.dit_path).toBe('J:/models/original-dev.safetensors');
+    expect(config.dataset.sources[0].path).toBe('J:/project/images');
+  });
+
   it('creates a different model type without losing the chosen data inheritance', async () => {
     let submitted: unknown;
     server.use(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import threading
@@ -35,7 +36,7 @@ class DownloadVerification(BaseModel):
 
 class ModelDownloadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    family: Literal["anima", "krea2", "sdxl", "flux", "flux2"]
+    family: Literal["anima", "krea2", "sdxl", "flux2"]
     kind: Literal["dit", "text_encoder", "text_encoder_2", "vae"]
     provider: Provider = "huggingface"
     mirror: Literal["official", "hf-mirror"] = "official"
@@ -45,6 +46,15 @@ class ModelDownloadRequest(BaseModel):
     revision: str | None = None
     dtype: Literal["bf16", "fp16", "fp32", "fp8"] | None = None
     is_default: bool = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def active_family(cls, values):
+        if isinstance(values, dict) and values.get("family") == "flux":
+            from .model_inspection import FLUX1_RETIRED_REASON
+
+            raise ValueError(FLUX1_RETIRED_REASON)
+        return values
 
     @model_validator(mode="after")
     def source(self):
@@ -180,6 +190,10 @@ class _Cancelled(Exception):
 
 def check_component(weights: Any, family: str, kind: str) -> None:
     """Reject recognisable mismatches; complete architectural validation belongs to the loader."""
+    from .model_inspection import flux_component, sdxl_component, training_rejection
+
+    if reason := training_rejection({}, family):
+        raise ValueError(reason)
     if family == "flux2" and kind in ("text_encoder", "text_encoder_2"):
         raise ValueError(
             "FLUX.2 文本编码器需要包含配置、权重和 tokenizer/processor 的完整本地 HF 目录，不支持单文件下载。"
@@ -192,11 +206,11 @@ def check_component(weights: Any, family: str, kind: str) -> None:
                 clean = clean[len(prefix) :]
                 break
         names[clean] = key
-    from .model_inspection import flux_component, sdxl_component
-
     shapes = {key: weights.get_slice(original).get_shape() for key, original in names.items()}
     sdxl_kind = sdxl_component(shapes)
     flux = flux_component(shapes)
+    if flux and (reason := training_rejection(flux, family)):
+        raise ValueError(reason)
     found_family, found_kind = None, None
     candidates = []
     if sdxl_kind == "dit":
@@ -222,6 +236,24 @@ def check_component(weights: Any, family: str, kind: str) -> None:
         found_kind != kind or found_family not in (None, family) or candidates and family not in candidates
     ):
         raise ValueError(f"file looks like {found_family or 'shared'} {found_kind}, not {family} {kind}")
+
+
+def _check_download_header(header: bytes, family: str) -> None:
+    """Reject retired architectures as soon as their bounded header arrives."""
+    from .model_inspection import flux_component, training_rejection
+
+    metadata = json.loads(header)
+    if not isinstance(metadata, dict):
+        raise ValueError("invalid safetensors header")
+    shapes = {
+        key: value["shape"]
+        for key, value in metadata.items()
+        if isinstance(value, dict)
+        and isinstance(value.get("shape"), list)
+        and all(isinstance(size, int) and size >= 0 for size in value["shape"])
+    }
+    if reason := training_rejection(flux_component(shapes) or {}, family):
+        raise ValueError(reason)
 
 
 class ModelDownloads:
@@ -351,6 +383,10 @@ class ModelDownloads:
                 raise ApiError(
                     "automatic tagging is no longer available", status=410, code="download.retired"
                 )
+            if row["family"] == "flux":
+                from .model_inspection import FLUX1_RETIRED_REASON
+
+                raise ApiError(FLUX1_RETIRED_REASON, status=410, code="download.retired")
             if row["status"] not in {"failed", "cancelled"}:
                 raise Conflict("only failed or cancelled downloads can be retried", code="download.retry")
             body = ModelDownloadRequest(
@@ -413,6 +449,7 @@ class ModelDownloads:
                 source = row["source_url"].rsplit("/", 1)[0] + "/" + filename if bundle else row["source_url"]
                 request = urllib.request.Request(source, headers=headers)
                 received, digest = 0, hashlib.sha256()
+                probe = None if bundle else bytearray()
                 with (
                     self.opener.open(request, timeout=15) as response,
                     (partial.parent / filename).open("xb") as file,
@@ -432,6 +469,17 @@ class ModelDownloads:
                         chunk = response.read(256 * 1024)
                         if not chunk:
                             break
+                        if probe is not None:
+                            from .model_inspection import HEADER_LIMIT
+
+                            probe.extend(chunk[: HEADER_LIMIT + 8 - len(probe)])
+                            if len(probe) >= 8:
+                                header_size = int.from_bytes(probe[:8], "little")
+                                if not 2 <= header_size <= HEADER_LIMIT:
+                                    raise ValueError("invalid or oversized safetensors header")
+                                if len(probe) >= header_size + 8:
+                                    _check_download_header(probe[8 : header_size + 8], row["family"])
+                                    probe = None
                         file.write(chunk)
                         received += len(chunk)
                         done += len(chunk)

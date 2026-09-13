@@ -1357,13 +1357,13 @@
             }
           ],
           "default": null,
-          "description": "第二文本编码器：SDXL 使用 CLIP-G（完整模型通常已内含）；FLUX.1 使用 T5-XXL。",
+          "description": "SDXL 的第二文本编码器 CLIP-G，完整模型通常已内含。",
           "title": "Text Encoder 2 Path",
           "x-ui": {
             "control": "path",
             "group": "model",
             "order": 25,
-            "show_when": "model.family in ['sdxl','flux']"
+            "show_when": "model.family == 'sdxl'"
           }
         },
         "vae_path": {
@@ -1470,7 +1470,7 @@
         },
         "training_guidance": {
           "default": 1.0,
-          "description": "FLUX 训练时传给模型的引导条件，默认 1；它与正负提示词的 CFG 放大不同。预览引导强度在采样设置中调整。",
+          "description": "旧 FLUX 模型的引导条件，仅为读取历史配置保留；Klein 不使用此参数。",
           "maximum": 30,
           "minimum": 0,
           "title": "Training Guidance",
@@ -1479,7 +1479,7 @@
             "advanced": true,
             "group": "model",
             "order": 90,
-            "show_when": "model.family in ['flux','flux2']"
+            "show_when": "model.family == 'flux'"
           }
         },
         "flux2_variant": {
@@ -1991,7 +1991,7 @@
           "x-ui": {
             "group": "sampling",
             "order": 95,
-            "show_when": "sampling.enabled == true && model.family in ['flux','flux2']"
+            "show_when": "sampling.enabled == true && model.family == 'flux'"
           }
         },
         "output_dir": {

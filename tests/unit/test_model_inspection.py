@@ -308,9 +308,10 @@ def test_clip_roles_match_download_checker_without_guessing_family(tmp_path, rol
     with safe_open(str(path), framework="pt", device="cpu") as weights:
         check_component(weights, "sdxl", role)
         if role == "text_encoder":
-            check_component(weights, "flux", role)
+            with pytest.raises(ValueError, match="FLUX.1"):
+                check_component(weights, "flux", role)
         else:
-            with pytest.raises(ValueError, match="looks like shared"):
+            with pytest.raises(ValueError, match="FLUX.1"):
                 check_component(weights, "flux", role)
         with pytest.raises(ValueError, match="looks like shared"):
             check_component(weights, "sdxl", "text_encoder" if role == "text_encoder_2" else "text_encoder_2")

@@ -1,5 +1,6 @@
-"""Lazy dev Mistral3 / Klein Qwen3 conditioning using upstream chat templates."""
+"""Lazy Klein Qwen3 conditioning using the upstream chat template."""
 
+import math
 from pathlib import Path
 
 import torch
@@ -7,30 +8,32 @@ import torch
 from ypuddin.models.base import TextCond, TextPipeline
 from ypuddin.models.fingerprints import content_fingerprint
 
-from .loading import read_json, shapes
+from .loading import DEV_UNSUPPORTED, KLEIN_VARIANTS, read_json, shapes
 
 
 class Flux2Text(TextPipeline):
     max_len = 512
 
     def __init__(self, path: Path, tokenizer_path: Path, *, variant: str, dtype, device="cpu"):
+        if variant == "dev":
+            raise ValueError(DEV_UNSUPPORTED)
+        if variant not in KLEIN_VARIANTS:
+            raise ValueError("FLUX.2 text encoding requires Klein base 4B or 9B")
         self.path, self.tokenizer_path, self.variant = path, tokenizer_path, variant
         self.dtype, self.device = dtype, torch.device(device)
         self.model, self.tokenizer = None, None
         if not path.is_dir():
             raise ValueError("FLUX.2 text encoder must be a complete local HF directory")
         config = read_json(path / "config.json")
-        expected = "mistral3" if variant == "dev" else "qwen3"
-        if config.get("model_type") != expected:
-            raise ValueError(f"FLUX.2 {variant} requires {expected} text encoder")
-        text_config = config.get("text_config", config)
-        self.layers = (10, 20, 30) if variant == "dev" else (9, 18, 27)
-        if int(text_config.get("num_hidden_layers", 0)) < max(self.layers):
+        if config.get("model_type") != "qwen3":
+            raise ValueError(f"FLUX.2 {variant} requires a Qwen3 text encoder")
+        self.layers = (9, 18, 27)
+        if int(config.get("num_hidden_layers", 0)) < max(self.layers):
             raise ValueError("FLUX.2 text encoder lacks required intermediate hidden layers")
-        self.hidden_size = int(text_config["hidden_size"]) * 3
+        self.hidden_size = int(config["hidden_size"]) * 3
         if config.get("quantization_config"):
             raise ValueError("FLUX.2 quantized text encoders are unsupported; select BF16/FP16 local weights")
-        shapes(path)
+        self.weight_elements = sum(math.prod(shape) for shape in shapes(path).values())
         if not tokenizer_path.is_dir() or not (tokenizer_path / "tokenizer_config.json").is_file():
             raise ValueError("FLUX.2 needs a local tokenizer/processor directory with its chat template")
         token_cfg = read_json(tokenizer_path / "tokenizer_config.json")
@@ -42,22 +45,15 @@ class Flux2Text(TextPipeline):
 
     def _ensure(self):
         if self.tokenizer is None:
-            from transformers import AutoProcessor, AutoTokenizer
+            from transformers import AutoTokenizer
 
-            cls = AutoProcessor if self.variant == "dev" else AutoTokenizer
-            self.tokenizer = cls.from_pretrained(str(self.tokenizer_path), local_files_only=True)
-            tokenizer = getattr(self.tokenizer, "tokenizer", self.tokenizer)
-            if self.variant == "dev":
-                # Mistral's pad=EOS fallback changes conditioning; official FLUX.2 uses id 11.
-                tokenizer.padding_side = "right"
-                tokenizer.pad_token_id = 11
-            elif tokenizer.pad_token_id is None:
+            self.tokenizer = AutoTokenizer.from_pretrained(str(self.tokenizer_path), local_files_only=True)
+            if self.tokenizer.pad_token_id is None:
                 raise ValueError("FLUX.2 Qwen3 tokenizer has no padding token")
         if self.model is None:
-            from transformers import Mistral3ForConditionalGeneration, Qwen3ForCausalLM
+            from transformers import Qwen3ForCausalLM
 
-            cls = Mistral3ForConditionalGeneration if self.variant == "dev" else Qwen3ForCausalLM
-            self.model, info = cls.from_pretrained(
+            self.model, info = Qwen3ForCausalLM.from_pretrained(
                 str(self.path),
                 local_files_only=True,
                 use_safetensors=True,
@@ -85,30 +81,17 @@ class Flux2Text(TextPipeline):
     @torch.no_grad()
     def encode(self, captions, device):
         self._ensure()
-        if self.variant == "dev":
-            from diffusers import Flux2Pipeline
+        from diffusers import Flux2KleinPipeline
 
-            embeds = Flux2Pipeline._get_mistral_3_small_prompt_embeds(
-                self.model,
-                self.tokenizer,
-                captions,
-                device=self.device,
-                dtype=self.dtype,
-                max_sequence_length=self.max_len,
-                hidden_states_layers=self.layers,
-            )
-        else:
-            from diffusers import Flux2KleinPipeline
-
-            embeds = Flux2KleinPipeline._get_qwen3_prompt_embeds(
-                self.model,
-                self.tokenizer,
-                captions,
-                device=self.device,
-                dtype=self.dtype,
-                max_sequence_length=self.max_len,
-                hidden_states_layers=self.layers,
-            )
+        embeds = Flux2KleinPipeline._get_qwen3_prompt_embeds(
+            self.model,
+            self.tokenizer,
+            captions,
+            device=self.device,
+            dtype=self.dtype,
+            max_sequence_length=self.max_len,
+            hidden_states_layers=self.layers,
+        )
         return TextCond({"embeds": embeds}).to(device)
 
     def encode_for_cache(self, captions):

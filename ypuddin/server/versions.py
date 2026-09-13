@@ -205,6 +205,15 @@ class VersionManager:
                     if copy_config
                     else initial_family_config(c, family)
                 )
+            model = config.get("model", {})
+            if model.get("family") == "flux" or (
+                model.get("family") == "flux2" and model.get("flux2_variant") == "dev"
+            ):
+                raise ApiError(
+                    "此配置使用已停用的 FLUX 模型；请新建 Klein 基础版参数，不要继承旧模型配置。",
+                    code="version.family_retired",
+                    status=422,
+                )
             datasets = c.db.fetchall("SELECT * FROM datasets WHERE version_id=?", (source["id"],))
             from .source_roles import managed_source_role
 

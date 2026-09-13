@@ -13,7 +13,7 @@ from ypuddin.models import get_family
 from .environment import environment_attention_default
 from .errors import ApiError
 
-SUPPORTED_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux", "flux2", "toy"})
+SUPPORTED_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2", "toy"})
 MODEL_PATHS = {
     "dit": "dit_path",
     "text_encoder": "text_encoder_path",
@@ -49,6 +49,13 @@ def _default_model_paths(c: Any, family: str) -> dict[str, str]:
                 else path.is_file() or path.is_dir()
             )
             if valid and c.is_allowed(path):
+                if family == "flux2":
+                    from .model_inspection import inspect_model, training_rejection
+
+                    if kind == "text_encoder" and not path.is_dir():
+                        continue
+                    if training_rejection(inspect_model(path, allowed=c.is_allowed), family):
+                        continue  # Retain legacy dev rows without selecting them for a new Klein recipe.
                 paths[field] = str(path)
         except (OSError, RuntimeError, ValueError):
             continue
@@ -90,10 +97,10 @@ def initial_family_config(c: Any, family: str) -> dict[str, Any]:
         )
     else:
         config["objective"].update(timestep_sampling="shift", shift=spec.sampling.shift)
-    if family in {"krea2", "flux", "flux2"}:
+    if family in {"krea2", "flux2"}:
         config["memory"]["activation_checkpointing"] = "block"
-    if family in {"flux", "flux2"}:
-        # Dev / schnell / Klein defaults depend on the selected checkpoint.
+    if family == "flux2":
+        # Resolve Klein sampling defaults from the selected checkpoint.
         config["sampling"].update(steps=None, cfg=None, guidance=None)
     config["model"].update(_default_model_paths(c, family))
     return config
@@ -127,6 +134,6 @@ def version_family(c: Any, row: dict[str, Any]) -> str | None:
         if not isinstance(config, dict) or not isinstance(config.get("model", {}), dict):
             return None
         family = config.get("model", {}).get("family", "anima")
-        return family if isinstance(family, str) and family in SUPPORTED_FAMILIES else None
+        return family if isinstance(family, str) and family in SUPPORTED_FAMILIES | {"flux"} else None
     except (OSError, UnicodeError, ValueError, ApiError):
         return None

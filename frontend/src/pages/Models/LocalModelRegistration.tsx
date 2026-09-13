@@ -6,7 +6,7 @@ import { PathInput } from '../../components/PathBrowser';
 import StudioSelect from '../../components/StudioSelect';
 import { formatApiError } from '../../utils/errors';
 import { useWorkspaceText } from '../../utils/workspaceText';
-import { modelFamilyWeights } from '../../utils/trainingFamilies';
+import { availableTrainingFamilies, modelFamilyWeights } from '../../utils/trainingFamilies';
 
 export interface ModelInspection {
   path: string; family: string | null; family_candidates: string[]; kind: string | null;
@@ -14,8 +14,9 @@ export interface ModelInspection {
   evidence: string[]; warnings: string[]; files_inspected: number;
 }
 
-export default function LocalModelRegistration({ initialFamily, families, onClose, onRegistered, onBusyChange }: {initialFamily:string;families:FamilyInfo[];onClose:()=>void;onRegistered:(family:string)=>Promise<void>;onBusyChange:(busy:boolean)=>void}) {
+export default function LocalModelRegistration({ initialFamily, families: serviceFamilies, onClose, onRegistered, onBusyChange }: {initialFamily:string;families:FamilyInfo[];onClose:()=>void;onRegistered:(family:string)=>Promise<void>;onBusyChange:(busy:boolean)=>void}) {
   const text = useWorkspaceText();
+  const families = availableTrainingFamilies(serviceFamilies);
   const familyNames = families.filter(item => item.name !== 'toy').map(item => item.name).join('\0');
   const [path,setPath] = React.useState('');
   const [family,setFamily] = React.useState(familyNames.split('\0').includes(initialFamily) ? initialFamily : '');
@@ -38,7 +39,7 @@ export default function LocalModelRegistration({ initialFamily, families, onClos
         if(controller.signal.aborted)return;
         setDetected(result);setKind(result.kind||'');setDtype(result.dtype||'');
         const available = familyNames.split('\0').filter(name => name && (!result.family_candidates.length || result.family_candidates.includes(name)));
-        setFamily(current=>result.family && available.includes(result.family) ? result.family : available.includes(current) ? current : available[0] || '');
+        setFamily(current=>result.family ? available.includes(result.family) ? result.family : '' : available.includes(current) ? current : available[0] || '');
         inspectedPath.current=path.trim();setDetecting(false);
       }).catch(error=>{if(!controller.signal.aborted){setError(formatApiError(error));setDetecting(false);}});
     },300);

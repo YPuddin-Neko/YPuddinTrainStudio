@@ -310,6 +310,7 @@ class ModelAsset(_Out):
     dtype: str | None
     is_default: bool
     exists: bool
+    unsupported_reason: str | None = None  # Live admission projection; retained DB defaults are unchanged.
     created_at: float
 
 

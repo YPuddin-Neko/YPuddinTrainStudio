@@ -10,6 +10,7 @@ import { formatApiError } from '../../utils/errors';
 import { mergeConfig } from '../../utils/config';
 import { modelConfigUrl, projectUrl, type ProjectVersion, type VersionedProject } from '../../utils/projectVersions';
 import { useWorkspaceText } from '../../utils/workspaceText';
+import { inactiveTrainingReason } from '../../utils/trainingFamilies';
 import './project-overview.css';
 
 export interface OverviewDataset {
@@ -28,7 +29,7 @@ export interface ProjectOverviewProps {
 
 const number = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 const fileName = (value: unknown) => typeof value === 'string' ? value.trim().replace(/\\/g, '/').split('/').filter(Boolean).pop() || '' : '';
-const familyName = (family: string) => ({ anima: 'Anima', krea2: 'Krea 2', sdxl: 'SDXL', flux: 'FLUX.1', flux2: 'FLUX.2', toy: 'Toy' }[family] || family);
+const familyName = (family: string) => ({ anima: 'Anima', krea2: 'Krea 2', sdxl: 'SDXL', flux: 'FLUX.1', flux2: 'FLUX.2 Klein', toy: 'Toy' }[family] || family);
 
 /** Missing, failed and in-progress indexes must never look like an empty dataset. */
 function overviewDatasetStats(datasets: OverviewDataset[]) {
@@ -58,6 +59,8 @@ export default function ProjectOverview({ project, version, versionId, config: s
   const jobs = jobsQuery.data?.items || [];
   const latest = jobs[0];
   const family = config.model?.family || version?.family || project.active_family || '';
+  const inactiveReason = inactiveTrainingReason(config, i18n.language.startsWith('en'));
+  const modelLabel = inactiveReason ? `${family === 'flux' ? 'FLUX.1' : 'FLUX.2 dev'} · ${text('已停用', 'Retired')}` : familyName(family);
   const baseModel = fileName(config.model?.dit_path);
   const hasTrainingImages = stats.training !== null && stats.training > 0;
   const indexing = datasets.some(row => row.index_status === 'indexing');
@@ -114,7 +117,7 @@ export default function ProjectOverview({ project, version, versionId, config: s
 
       <section className="overview-panel overview-configuration">
         <div className="overview-panel-heading"><h3>{text('模型与训练配置', 'Model and training configuration')}</h3><Link to={trainUrl}>{text('查看参数', 'View parameters')}<ArrowRight size={13}/></Link></div>
-        <Link to={modelsUrl} className="overview-model"><div className="overview-model-icon"><Layers size={22}/></div><div><span>{family ? familyName(family) : text('未选择模型族', 'No model family selected')}</span><strong>{baseModel || text('尚未配置训练底模', 'Base model not configured')}</strong><small>{baseModel ? text('已保存的模型选择', 'Saved model selection') : text('选择底模、文本编码器和 VAE', 'Choose a base model, text encoder and VAE')}</small></div><ArrowRight size={16}/></Link>
+        <Link to={modelsUrl} className="overview-model"><div className="overview-model-icon"><Layers size={22}/></div><div><span>{family ? modelLabel : text('未选择模型族', 'No model family selected')}</span><strong>{baseModel || text('尚未配置训练底模', 'Base model not configured')}</strong><small>{inactiveReason || (baseModel ? text('已保存的模型选择', 'Saved model selection') : text('选择底模、文本编码器和 VAE', 'Choose a base model, text encoder and VAE'))}</small></div><ArrowRight size={16}/></Link>
         <dl className="overview-parameters">{parameters.map(([label, value]) => <div key={String(label)}><dt>{label}</dt><dd>{String(value)}</dd></div>)}</dl>
         {defaultsQuery.error && <div role="alert" className="overview-job-error"><span>{text('默认参数读取失败', 'Could not load default parameters')}</span><button type="button" onClick={() => void defaultsQuery.refetch()}>{text('重新读取默认参数', 'Reload default parameters')}</button></div>}
       </section>

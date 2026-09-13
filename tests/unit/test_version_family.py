@@ -42,7 +42,7 @@ def wait_ready(c, pid, vid):
     pytest.fail("version snapshot did not finish")
 
 
-@pytest.mark.parametrize("family", ["anima", "krea2", "sdxl", "flux", "flux2", "toy"])
+@pytest.mark.parametrize("family", ["anima", "krea2", "sdxl", "flux2", "toy"])
 def test_initial_recipe_uses_family_contract_without_cuda_assumptions(api, family):
     _, c, _ = api
     recipe = initial_family_config(c, family)
@@ -212,7 +212,7 @@ def test_cross_family_snapshot_copies_sidecars_and_never_rewrites_old_config_or_
     assert empty_config["validation"]["sources"] == []
 
 
-@pytest.mark.parametrize("family", ["flux3", "sdxl-unknown", "unknown"])
+@pytest.mark.parametrize("family", ["flux", "flux3", "sdxl-unknown", "unknown"])
 def test_unsupported_family_leaves_no_version_or_busy_source(api, family):
     _, c, p = api
     before = c.db.fetchall("SELECT * FROM project_versions")
@@ -238,3 +238,54 @@ def test_version_family_handles_legacy_pending_and_malformed_configs(api):
     assert version_family(c, row) == "anima"
     path.write_text('{"model":{"family":"toy"}}')
     assert version_family(c, row) == "toy"
+
+
+@pytest.mark.parametrize("family,variant", [("flux", "auto"), ("flux2", "dev")])
+def test_retired_configs_remain_readable_but_cannot_be_copied(api, family, variant):
+    client, c, p = api
+    row = c.resolve_version(p["id"], p["active_version_id"])
+    path = c.config_path(p["id"], row["id"])
+    config = json.loads(path.read_text())
+    config["model"].update(family=family, flux2_variant=variant)
+    path.write_text(json.dumps(config))
+    before = path.read_bytes()
+    rows = c.db.fetchall("SELECT * FROM project_versions")
+    assert version_family(c, row) == family
+    assert client.get(f"/api/projects/{p['id']}/config").json()["model"] == config["model"]
+    for selected in (None, family):
+        with pytest.raises(ApiError):
+            c.versions.create(p["id"], "Retired copy", "", row["id"], "empty", family=selected)
+    assert path.read_bytes() == before
+    assert c.db.fetchall("SELECT * FROM project_versions") == rows
+    switched = c.versions.create(p["id"], "Supported copy", "", row["id"], "empty", family="anima")
+    new = wait_ready(c, p["id"], switched["id"])
+    assert version_family(c, new) == "anima"
+    assert path.read_bytes() == before
+
+
+def test_legacy_registry_access_does_not_restore_public_flux_choice():
+    from ypuddin.models import available
+
+    legacy = get_family("flux")
+    assert legacy.spec.retired_reason
+    assert "flux" not in available()
+    assert "flux2" in available()
+    config = TrainConfig(model={"family": "flux"})
+    assert legacy.training_options_errors(config)[0]["loc"] == "model.family"
+    assert legacy.sampling_errors(config.sampling)[0]["loc"] == "model.family"
+
+
+@pytest.mark.parametrize("family,variant", [("flux", "auto"), ("flux2", "dev")])
+def test_retired_trainer_does_not_overwrite_existing_run_config(tmp_path, family, variant):
+    from ypuddin.train import Trainer
+
+    run = tmp_path / 'historical-run'
+    run.mkdir()
+    saved = run / 'config.toml'
+    saved.write_bytes(b'# historical configuration\n')
+    config = TrainConfig(model={'family': family, 'flux2_variant': variant}, checkpoint={'output_dir': str(run)})
+    trainer = Trainer(config, device='cpu')
+    with pytest.raises(ValueError):
+        trainer.prepare_data()
+    assert saved.read_bytes() == b'# historical configuration\n'
+    assert trainer._logs is None

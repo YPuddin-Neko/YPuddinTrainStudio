@@ -147,6 +147,9 @@ class Trainer:
     def prepare_data(self) -> None:
         """Load the model, index the dataset and fill the latent / text caches (what a cache job does)."""
         cfg = self.cfg
+        # Reject incompatible/retired recipes before touching an existing run's files.
+        self.family = get_family(cfg.model.family)
+        self._check_capabilities()
         self._preparing = True
         self._install_signal_handlers()
         self._logs = TrainingLogs(cfg, self.run_dir)
@@ -155,8 +158,6 @@ class Trainer:
         self.emit(
             "run.started", config_hash=self.config_hash, device=str(self.device), run_dir=str(self.run_dir)
         )
-        self.family = get_family(cfg.model.family)
-        self._check_capabilities()
         if self.device.type == "cuda":
             torch.backends.cuda.matmul.allow_tf32 = cfg.memory.allow_tf32
             torch.backends.cudnn.allow_tf32 = cfg.memory.allow_tf32

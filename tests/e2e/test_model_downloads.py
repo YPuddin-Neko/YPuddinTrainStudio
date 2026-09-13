@@ -435,3 +435,28 @@ def test_retired_tagger_cannot_be_downloaded_but_history_and_files_are_preserved
     assert client.get("/api/models/downloads").json()[0]["id"] == "dl_legacy"
     assert weights.read_bytes() == b"existing user asset"
     assert not control.requests
+
+
+def test_dev_download_stops_at_header_before_incomplete_large_payload(download_service):
+    import json
+
+    from tests.unit.test_flux_model_inspection import transformer_shapes
+    from ypuddin.server.model_inspection import FLUX2_DEV_UNSUPPORTED_REASON
+
+    client, control, root, _app = download_service
+    # A real HTTP response carries the complete architecture header but no model
+    # tensor body. Retirement must be detected before offset/payload validation.
+    header = json.dumps(
+        {
+            key: {"shape": shape, "dtype": "BF16", "data_offsets": [0, 0]}
+            for key, shape in transformer_shapes("flux2", 6144).items()
+        }
+    ).encode()
+    control.payload = len(header).to_bytes(8, "little") + header
+    response = start(client, "klein_base_4b.safetensors", family="flux2")
+    assert response.status_code == 202, response.text
+    row = wait_for(client, response.json()["id"])
+    assert row["status"] == "failed" and row["error"] == FLUX2_DEV_UNSUPPORTED_REASON
+    assert not Path(row["target_path"]).exists()
+    assert client.get("/api/models").json() == []
+    assert not list(root.rglob("*.safetensors"))

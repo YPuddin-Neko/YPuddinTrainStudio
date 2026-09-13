@@ -16,7 +16,7 @@ from typing import Any, Literal
 import psutil
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 import ypuddin
 from ypuddin.config import TrainConfig, deep_merge, dump_toml, read_config_file
@@ -257,7 +257,7 @@ def schema_train() -> dict[str, Any]:
 
 @router.get("/config/defaults", response_model=TrainConfig)
 def config_defaults(
-    family: Literal["anima", "krea2", "sdxl", "flux", "flux2", "toy"] | None = None,
+    family: Literal["anima", "krea2", "sdxl", "flux2", "toy"] | None = None,
     c: ServiceContext = Depends(ctx),
 ) -> dict[str, Any]:
     from .environment import environment_attention_default
@@ -507,21 +507,84 @@ def import_toml(body: dict[str, str]) -> dict[str, Any]:
 
 # --------------------------------------------------------------------------- models
 class ModelBody(BaseModel):
-    family: Literal["anima", "krea2", "sdxl", "flux", "flux2", "toy", "tagger"]
+    family: Literal["anima", "krea2", "sdxl", "flux2", "toy", "tagger"]
     kind: Literal["dit", "text_encoder", "text_encoder_2", "vae", "tokenizer", "tagger"]
     path: str
     dtype: str | None = None
     is_default: bool = False
 
+    @model_validator(mode="before")
+    @classmethod
+    def active_family(cls, values):
+        if isinstance(values, dict) and values.get("family") == "flux":
+            from .model_inspection import FLUX1_RETIRED_REASON
 
-def _model_row(r: dict[str, Any]) -> dict[str, Any]:
+            raise ValueError(FLUX1_RETIRED_REASON)
+        return values
+
+
+def _check_model_admission(path: Path, family: str, kind: str, c: ServiceContext, *, detected=None) -> None:
+    from .model_inspection import inspect_model, training_rejection
+
+    if reason := training_rejection({}, family):
+        raise ApiError(reason, code="model.unsupported", status=422)
+    if family == "flux2" and kind == "text_encoder" and not path.is_dir():
+        raise ApiError(
+            "Klein 文本编码器需要完整本地 HF 目录，不支持单独权重文件。", code="model.component", status=422
+        )
+    if family == "flux2" and not (path.is_dir() or path.suffix.lower() == ".safetensors"):
+        raise ApiError(
+            "Klein 组件仅支持 safetensors 权重或完整本地 HF 目录。", code="model.component", status=422
+        )
+    if family == "tagger" or not (path.is_dir() or path.suffix.lower() == ".safetensors"):
+        return
+    if family != "flux2" and path.is_file():
+        from .model_recommendations import RECOMMENDATIONS, cached_sha256
+
+        # A stat-valid SHA-256 proof already identifies the exact catalog weights.
+        # Repeated recommendation use need not reopen their multi-GB model file.
+        digest = cached_sha256(c, path)
+        if digest is not None and any(
+            entry.family == family and entry.kind == kind and entry.sha256 == digest
+            for entry in RECOMMENDATIONS
+        ):
+            return
+    if detected is None:
+        try:
+            detected = inspect_model(path, allowed=c.is_allowed)
+        except (ValueError, OSError, OverflowError) as error:
+            if family == "flux2":
+                raise ApiError(
+                    f"Cannot inspect Klein component: {error}", code="model.inspect", status=422
+                ) from error
+            return  # Preserve manual registration for existing non-FLUX formats.
+    if reason := training_rejection(detected, family):
+        raise ApiError(reason, code="model.unsupported", status=422)
+    if family == "flux2" and (
+        detected["kind"] != kind or kind != "tokenizer" and "flux2" not in detected["family_candidates"]
+    ):
+        raise ApiError(
+            "未识别到与 FLUX.2 Klein 兼容的组件，请保留完整配置并选择对应组件。",
+            code="model.component",
+            status=422,
+        )
+
+
+def _model_row(r: dict[str, Any], c: ServiceContext) -> dict[str, Any]:
     p = Path(r["path"])
-    return {**r, "exists": p.exists(), "is_default": bool(r["is_default"])}
+    projected = {**r, "exists": p.exists(), "is_default": bool(r["is_default"])}
+    if r["family"] in {"flux", "flux2"}:
+        try:
+            _check_model_admission(p.expanduser().resolve(), r["family"], r["kind"], c)
+            projected["unsupported_reason"] = None
+        except ApiError as error:
+            projected["unsupported_reason"] = str(error)
+    return projected
 
 
 @router.get("/models", response_model=list[m.ModelAsset], response_model_exclude_unset=True)
 def list_models(c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
-    return [_model_row(r) for r in c.db.fetchall("SELECT * FROM models ORDER BY family, kind, created_at")]
+    return [_model_row(r, c) for r in c.db.fetchall("SELECT * FROM models ORDER BY family, kind, created_at")]
 
 
 @router.post("/models", response_model=m.ModelAsset, response_model_exclude_unset=True)
@@ -535,6 +598,7 @@ def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, An
         raise NotFound(f"model path not found: {p}", code="model.not_found")
     if not c.is_allowed(p):
         raise ApiError("model path is outside allowed storage roots", code="model.path", status=403)
+    _check_model_admission(p, body.family, body.kind, c)
     if body.kind in {"dit", "vae"} and not p.is_file() and body.family not in {"sdxl", "flux", "flux2"}:
         raise ApiError("DiT and VAE paths must point to a weight file", code="model.path")
     if body.kind == "tokenizer" and not p.is_dir():
@@ -581,7 +645,7 @@ def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, An
                     "created_at": now(),
                 },
             )
-    return _model_row(c.db.fetchone("SELECT * FROM models WHERE id=?", (mid,)))
+    return _model_row(c.db.fetchone("SELECT * FROM models WHERE id=?", (mid,)), c)
 
 
 class ModelInspectionBody(BaseModel):
@@ -631,11 +695,12 @@ def patch_model(model_id: str, body: ModelDefaultPatch, c: ServiceContext = Depe
                 "the model file is missing; register its new location first", code="model.not_found"
             )
         if body.is_default:
+            _check_model_admission(Path(row["path"]).expanduser().resolve(), row["family"], row["kind"], c)
             c.db.execute(
                 "UPDATE models SET is_default=0 WHERE family=? AND kind=?", (row["family"], row["kind"])
             )
         c.db.update("models", model_id, {"is_default": int(body.is_default)})
-        return _model_row(c.db.fetchone("SELECT * FROM models WHERE id=?", (model_id,)))
+        return _model_row(c.db.fetchone("SELECT * FROM models WHERE id=?", (model_id,)), c)
 
 
 @router.delete("/models/{model_id}", response_model=m.Ok, response_model_exclude_unset=True)
@@ -658,7 +723,7 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
         raise ApiError("model path is outside allowed storage roots", code="model.path", status=403)
     if not root.is_dir():
         raise NotFound(f"directory not found: {root}", code="fs.not_found")
-    from .model_inspection import inspect_model
+    from .model_inspection import inspect_model, training_rejection
 
     found = []
     known = {str(Path(r["path"]).resolve()) for r in c.db.fetchall("SELECT path FROM models")}
@@ -710,6 +775,13 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
             family = body.family  # Explicit target for recognized shared components.
         if not kind or not family:
             continue  # Unknown assets need an explicit review in the local-file dialog.
+        if training_rejection(detected, family):
+            continue
+        if family == "flux2":
+            try:
+                _check_model_admission(Path(detected["path"]), family, kind, c, detected=detected)
+            except ApiError:
+                continue
         if candidate in configured:
             recognized_components.add(candidate)
         path = Path(detected["path"]).resolve()
@@ -739,7 +811,7 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
             },
         )
         known.add(str(path))
-        found.append(_model_row(c.db.fetchone("SELECT * FROM models WHERE id=?", (mid,))))
+        found.append(_model_row(c.db.fetchone("SELECT * FROM models WHERE id=?", (mid,)), c))
     return found
 
 

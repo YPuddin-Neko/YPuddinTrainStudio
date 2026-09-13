@@ -1,6 +1,6 @@
 # 最新项目状态：2026-09-13 模型接入
 
-源码版本 0.5.9。新增 SDXL（光辉 v0.1 默认下载、手选权重、ε/v）、FLUX.1 dev/schnell、FLUX.2 dev/Klein base 4B/9B。详见 [模型支持与验收](../MODEL_FAMILIES_2026-09-13.md)，当前 UI 布局见 [工作区验收](../UI_WORKFLOWS_2026-09-13.md)。
+源码版本 0.5.9。新增 SDXL（光辉 v0.1 默认下载、手选权重、ε/v）、FLUX.2 Klein base 4B/9B；FLUX.1/dev 已退出可选与执行范围。详见 [模型支持与验收](../MODEL_FAMILIES_2026-09-13.md)，当前 UI 布局见 [工作区验收](../UI_WORKFLOWS_2026-09-13.md)。
 
 缓存→训练→预览→保存回读已经以缩小的真实组件实测；FLUX LoRA/LoKr 导出做了独立 ComfyUI 数值映射验收。新模型完整权重 GPU、ComfyUI 应用画面、质量/性能尚未验收。FLUX.2 支持 block swap，但尚无逐层文本编码器卸载，不能承诺大 TE 在 16GB 设备可用。以下均为历史快照，不覆盖本节和最新报告。
 

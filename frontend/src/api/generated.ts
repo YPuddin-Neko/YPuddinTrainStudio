@@ -3340,6 +3340,8 @@ export interface components {
             is_default: boolean;
             /** Exists */
             exists: boolean;
+            /** Unsupported Reason */
+            unsupported_reason?: string | null;
             /** Created At */
             created_at: number;
         } & {
@@ -3351,7 +3353,7 @@ export interface components {
              * Family
              * @enum {string}
              */
-            family: "anima" | "krea2" | "sdxl" | "flux" | "flux2" | "toy" | "tagger";
+            family: "anima" | "krea2" | "sdxl" | "flux2" | "toy" | "tagger";
             /**
              * Kind
              * @enum {string}
@@ -3418,7 +3420,7 @@ export interface components {
             text_encoder_path?: string | null;
             /**
              * Text Encoder 2 Path
-             * @description 第二文本编码器：SDXL 使用 CLIP-G（完整模型通常已内含）；FLUX.1 使用 T5-XXL。
+             * @description SDXL 的第二文本编码器 CLIP-G，完整模型通常已内含。
              */
             text_encoder_2_path?: string | null;
             /**
@@ -3460,7 +3462,7 @@ export interface components {
             zero_terminal_snr: boolean;
             /**
              * Training Guidance
-             * @description FLUX 训练时传给模型的引导条件，默认 1；它与正负提示词的 CFG 放大不同。预览引导强度在采样设置中调整。
+             * @description 旧 FLUX 模型的引导条件，仅为读取历史配置保留；Klein 不使用此参数。
              * @default 1
              */
             training_guidance: number;
@@ -3543,7 +3545,7 @@ export interface components {
              * Family
              * @enum {string}
              */
-            family: "anima" | "krea2" | "sdxl" | "flux" | "flux2";
+            family: "anima" | "krea2" | "sdxl" | "flux2";
             /**
              * Kind
              * @enum {string}
@@ -4240,7 +4242,7 @@ export interface components {
              * @default anima
              * @enum {string}
              */
-            family: "anima" | "krea2" | "sdxl" | "flux" | "flux2" | "toy";
+            family: "anima" | "krea2" | "sdxl" | "flux2" | "toy";
         };
         /** ProjectCategories */
         ProjectCategories: {
@@ -5014,7 +5016,7 @@ export interface components {
              */
             copy_config: boolean;
             /** Family */
-            family?: ("anima" | "krea2" | "sdxl" | "flux" | "flux2" | "toy") | null;
+            family?: ("anima" | "krea2" | "sdxl" | "flux2" | "toy") | null;
         };
         /** VersionPatch */
         VersionPatch: {
@@ -5334,7 +5336,7 @@ export interface operations {
     config_defaults_api_config_defaults_get: {
         parameters: {
             query?: {
-                family?: ("anima" | "krea2" | "sdxl" | "flux" | "flux2" | "toy") | null;
+                family?: ("anima" | "krea2" | "sdxl" | "flux2" | "toy") | null;
             };
             header?: never;
             path?: never;

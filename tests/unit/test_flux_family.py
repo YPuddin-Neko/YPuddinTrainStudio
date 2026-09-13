@@ -24,7 +24,7 @@ from transformers import (
     T5TokenizerFast,
 )
 
-from ypuddin.adapters import inject, load_adapter_file
+from ypuddin.adapters import inject
 from ypuddin.config import AdapterConfig, MemoryConfig, ModelConfig, TrainConfig
 from ypuddin.models.flux.family import FluxFamily, image_ids, pack_latents, unpack_latents
 from ypuddin.models.flux.loading import ASSETS, load_component
@@ -260,7 +260,7 @@ def test_native_single_files_load_without_network_and_strict_missing(tiny_pipeli
         )
 
 
-def test_real_trainer_cache_materialize_train_preview_save_reload(tiny_pipeline, tmp_path):
+def test_retired_flux1_trainer_refuses_execution(tiny_pipeline, tmp_path):
     from ypuddin.train import Trainer
 
     data = tmp_path / "images"
@@ -292,31 +292,9 @@ def test_real_trainer_cache_materialize_train_preview_save_reload(tiny_pipeline,
         }
     )
     trainer = Trainer(config, device="cpu")
-    trainer.prepare()
-    assert trainer.text_mode == "cached"
-    assert not trainer.loaded.text.models and trainer.loaded.latent.vae is None
-    assert not any(p.is_meta for p in trainer.loaded.backbone.parameters())
-    before = {k: t.clone() for k, t in trainer.adapters.training_state_dict().items()}
-    assert trainer.run() == "finished" and trainer.progress.step == 2
-    assert any(not torch.equal(before[k], v) for k, v in trainer.adapters.training_state_dict().items())
-    assert torch.isfinite(torch.tensor(trainer.progress.extra["train_loss"]["loss"]))
-    samples = trainer.sample_images("verify")
-    assert samples and Image.open(samples[0]).size == (64, 64)
-    assert trainer.loaded.latent.vae is None and not trainer.loaded.text.models
-    exports = list((tmp_path / "run").glob("*.safetensors"))
-    assert exports
-    tensors, metadata = load_adapter_file(exports[0])
-    reloaded = _load(tiny_pipeline)
-    FluxFamily().materialize_backbone(reloaded)
-    fresh = inject(
-        reloaded.backbone,
-        config.adapter,
-        FluxFamily().presets()[config.adapter.preset],
-        prefix=FluxFamily.spec.adapter_prefix,
-    )
-    fresh.load_state(tensors, strict=True)
-    assert metadata and len(fresh.layers) == len(trainer.adapters.layers)
-    assert all(torch.isfinite(t).all() for t in tensors.values())
+    with pytest.raises((ValueError, RuntimeError), match="FLUX.1 已停用"):
+        trainer.prepare()
+    assert not list((tmp_path / "run").glob("*.safetensors"))
 
 
 def test_rejects_explicit_other_tasks_and_unsupported_memory(tiny_pipeline, tmp_path):

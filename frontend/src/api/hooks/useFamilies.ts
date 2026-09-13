@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../client';
 import { FamilyInfo } from '../types';
+import { availableTrainingFamilies } from '../../utils/trainingFamilies';
 
 /**
  * 模型族数据源：一次拉取 /api/families，全应用共享缓存。
@@ -11,6 +12,7 @@ export function useFamilies() {
   return useQuery<FamilyInfo[]>({
     queryKey: ['families'],
     queryFn: () => apiClient.get<FamilyInfo[]>('/families'),
+    select: availableTrainingFamilies,
     staleTime: 5 * 60 * 1000,
   });
 }

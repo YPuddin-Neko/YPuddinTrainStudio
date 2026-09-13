@@ -1,4 +1,4 @@
-"""Local reduced real Flux2, Qwen3/Mistral3 and VAE networks; no downloaded weights."""
+"""Local reduced real Klein, Qwen3 and VAE networks; no downloaded weights."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ pytest.importorskip("diffusers")
 pytest.importorskip("transformers")
 pytest.importorskip("accelerate")
 
-from diffusers import AutoencoderKLFlux2, Flux2KleinPipeline, Flux2Pipeline, Flux2Transformer2DModel
+from diffusers import AutoencoderKLFlux2, Flux2KleinPipeline, Flux2Transformer2DModel
 from tokenizers import Tokenizer
 from tokenizers.models import WordLevel
 from tokenizers.pre_tokenizers import Whitespace
@@ -133,7 +133,7 @@ def test_vae_exact_bn_mode_patch_roundtrip(tiny_root):
     z = latent.encode(pixels)
     vae = latent.vae
     raw = vae.encode(pixels).latent_dist.mode()
-    expected = Flux2Pipeline._patchify_latents(raw)
+    expected = Flux2KleinPipeline._patchify_latents(raw)
     expected = (expected - vae.bn.running_mean[None, :, None, None]) / (
         vae.bn.running_var[None, :, None, None] + vae.config.batch_norm_eps
     ).sqrt()
@@ -150,10 +150,10 @@ def test_ids_and_unit_time_native_forward(tiny_root):
     family, loaded = Flux2Family(), load(tiny_root)
     family.materialize_backbone(loaded)
     x, embeds, t = torch.randn(2, 128, 3, 5), torch.randn(2, 7, 24), torch.tensor([0.0, 0.8317])
-    torch.testing.assert_close(image_ids(x), Flux2Pipeline._prepare_latent_ids(x).float())
-    torch.testing.assert_close(text_ids(embeds), Flux2Pipeline._prepare_text_ids(embeds).float())
+    torch.testing.assert_close(image_ids(x), Flux2KleinPipeline._prepare_latent_ids(x).float())
+    torch.testing.assert_close(text_ids(embeds), Flux2KleinPipeline._prepare_text_ids(embeds).float())
     expected = loaded.backbone(
-        Flux2Pipeline._pack_latents(x),
+        Flux2KleinPipeline._pack_latents(x),
         embeds,
         t,
         image_ids(x),
@@ -234,7 +234,7 @@ def test_ambiguity_and_distilled_rejection(tmp_path):
     assert (
         resolve_variant(tmp_path, {**cfg, "joint_attention_dim": 12288}, "klein-base-9b") == "klein-base-9b"
     )
-    with pytest.raises(ValueError, match="does not match"):
+    with pytest.raises(ValueError, match="dev is no longer supported"):
         resolve_variant(tmp_path, cfg, "dev")
     (tmp_path / "model_index.json").write_text('{"is_distilled": true}')
     with pytest.raises(ValueError, match="distilled"):
@@ -252,11 +252,8 @@ def test_shard_paths_are_safe(tmp_path, shard):
         weight_files(tmp_path)
 
 
-@pytest.mark.parametrize("fixture", ["tiny_root", "tiny_dev_root"])
-def test_real_native_trainer_cache_train_preview_save_reload(fixture, request, tmp_path):
+def test_real_native_trainer_cache_train_preview_save_reload(tiny_root, tmp_path):
     from ypuddin.train import Trainer
-
-    tiny_root = request.getfixturevalue(fixture)
 
     data = tmp_path / "data"
     data.mkdir()
@@ -306,124 +303,6 @@ def test_real_native_trainer_cache_train_preview_save_reload(fixture, request, t
     )
     adapters.load_state(tensors, strict=True)
     assert all(torch.isfinite(v).all() for v in tensors.values())
-
-
-@pytest.fixture(scope="module")
-def tiny_dev_root(tiny_root, tmp_path_factory):
-    from transformers import (
-        Mistral3Config,
-        Mistral3ForConditionalGeneration,
-        PixtralImageProcessor,
-        PixtralProcessor,
-    )
-
-    root = tmp_path_factory.mktemp("flux2-dev-real")
-    shutil.copytree(tiny_root / "vae", root / "vae")
-    config = dict(Flux2Transformer2DModel.load_config(tiny_root / "transformer"))
-    config["guidance_embeds"] = True
-    transformer = Flux2Transformer2DModel.from_config(config)
-    transformer.save_pretrained(root / "transformer", safe_serialization=True)
-    encoder = Mistral3ForConditionalGeneration(
-        Mistral3Config(
-            text_config={
-                "model_type": "mistral",
-                "vocab_size": 16,
-                "hidden_size": 8,
-                "intermediate_size": 16,
-                "num_hidden_layers": 30,
-                "num_attention_heads": 2,
-                "num_key_value_heads": 1,
-                "head_dim": 4,
-            },
-            vision_config={
-                "model_type": "pixtral",
-                "hidden_size": 8,
-                "intermediate_size": 16,
-                "num_hidden_layers": 1,
-                "num_attention_heads": 2,
-                "head_dim": 4,
-                "image_size": 16,
-                "patch_size": 8,
-            },
-            image_token_index=10,
-        )
-    )
-    encoder.save_pretrained(root / "text_encoder", safe_serialization=True)
-    tokenizer = Tokenizer(
-        WordLevel(
-            {
-                "<unk>": 0,
-                "cat": 2,
-                "user": 4,
-                "system": 5,
-                "[IMG]": 10,
-                "<pad>": 11,
-                "[IMG_BREAK]": 12,
-                "[IMG_END]": 13,
-            },
-            unk_token="<unk>",
-        )
-    )
-    tokenizer.pre_tokenizer = Whitespace()
-    fast = PreTrainedTokenizerFast(tokenizer_object=tokenizer, unk_token="<unk>", pad_token="<pad>")
-    processor = PixtralProcessor(
-        PixtralImageProcessor(),
-        fast,
-        chat_template="{% for m in messages %}{{ m.role }} {% for c in m.content %}{{ c.text }} {% endfor %}{% endfor %}",
-    )
-    processor.save_pretrained(root / "tokenizer")
-    (root / "model_index.json").write_text('{"_class_name": "Flux2Pipeline"}')
-    return root
-
-
-def test_real_mistral_processor_hidden_layers_and_dev_guidance(tiny_dev_root):
-    from diffusers.pipelines.flux2.pipeline_flux2 import format_input
-
-    loaded, family = load(tiny_dev_root), Flux2Family()
-    text = loaded.text
-    cond = text.encode(["cat [IMG]"], "cpu")
-    tokens = text.tokenizer.apply_chat_template(
-        format_input(["cat [IMG]"]),
-        add_generation_prompt=False,
-        tokenize=True,
-        return_dict=True,
-        return_tensors="pt",
-        padding="max_length",
-        truncation=True,
-        max_length=512,
-    )
-    outputs = text.model(
-        input_ids=tokens["input_ids"],
-        attention_mask=tokens["attention_mask"],
-        output_hidden_states=True,
-        use_cache=False,
-    )
-    expected = torch.cat([outputs.hidden_states[k] for k in (10, 20, 30)], dim=-1)
-    torch.testing.assert_close(cond["embeds"], expected, rtol=0, atol=0)
-    assert type(text.tokenizer).__name__ == "PixtralProcessor"
-    assert text.tokenizer.tokenizer.pad_token_id == 11
-    assert cond["embeds"].shape == (1, 512, 24)
-    family.materialize_backbone(loaded)
-    assert text.model is None
-    x, t = torch.randn(1, 128, 2, 2), torch.tensor([0.4132])
-    for extra, value in (({}, 1), ({"inference": True}, 4), ({"guidance": 2.5}, 2.5)):
-        expected = loaded.backbone(
-            Flux2Pipeline._pack_latents(x),
-            cond["embeds"],
-            t,
-            image_ids(x),
-            text_ids(cond["embeds"]),
-            guidance=torch.tensor([value], dtype=torch.float32),
-            return_dict=False,
-        )[0]
-        torch.testing.assert_close(
-            family.forward(loaded, x, t, cond, **extra),
-            expected.transpose(1, 2).reshape_as(x),
-            rtol=0,
-            atol=0,
-        )
-    defaults = family.sampling_defaults(loaded)
-    assert (defaults.cfg, defaults.guidance, defaults.steps) == (1, 4, 50)
 
 
 def _original_transformer(state):
@@ -489,9 +368,8 @@ def _original_transformer(state):
     return out
 
 
-@pytest.mark.parametrize("dev", [False, True])
-def test_original_single_transformer_exact_conversion(tiny_root, tiny_dev_root, tmp_path, dev):
-    source = (tiny_dev_root if dev else tiny_root) / "transformer"
+def test_original_single_transformer_exact_conversion(tiny_root, tmp_path):
+    source = tiny_root / "transformer"
     expected = Flux2Transformer2DModel.from_pretrained(source, local_files_only=True)
     state = _original_transformer(expected.state_dict())
     file = tmp_path / "original.safetensors"
@@ -558,7 +436,7 @@ def test_original_single_vae_exact_conversion(tiny_root, tmp_path):
 def test_empirical_shift_matches_diffusers_euler_schedule(tokens, steps):
     import numpy as np
     from diffusers import FlowMatchEulerDiscreteScheduler
-    from diffusers.pipelines.flux2.pipeline_flux2 import compute_empirical_mu
+    from diffusers.pipelines.flux2.pipeline_flux2_klein import compute_empirical_mu
 
     from ypuddin.sampling.dispatch import noise_schedule
 
@@ -612,7 +490,11 @@ def test_original_official_variant_header_geometry(tmp_path):
             blocks,
             single,
         )
-        assert resolve_variant(tmp_path, cfg, variant) == variant
+        if variant == "dev":
+            with pytest.raises(ValueError, match="dev is no longer supported"):
+                resolve_variant(tmp_path, cfg, variant)
+        else:
+            assert resolve_variant(tmp_path, cfg, variant) == variant
 
 
 def test_lora_explicit_peft_conversion_loads_real_diffusers(tiny_root):
@@ -667,3 +549,112 @@ def test_real_hf_shards_load_strictly_and_missing_weight_rejected(tiny_root, tmp
     save_file(state, broken / "diffusion_pytorch_model.safetensors")
     with pytest.raises(ValueError, match="do not match"):
         load_transformer(broken, transformer_config(broken), device="cpu", dtype=torch.float32)
+
+
+@pytest.mark.parametrize(
+    "variant,blocks,single,heads,width",
+    [
+        ("auto", 5, 20, 24, 7680),
+        ("klein-base-4b", 5, 20, 24, 7680),
+        ("klein-base-9b", 8, 24, 32, 12288),
+    ],
+)
+def test_unconfigured_meta_defaults_to_klein_geometry(variant, blocks, single, heads, width):
+    with torch.device("meta"):
+        model = Flux2Family().meta_backbone(ModelConfig(family="flux2", flux2_variant=variant))
+    assert (len(model.transformer_blocks), len(model.single_transformer_blocks)) == (blocks, single)
+    assert (model.config.num_attention_heads, model.config.joint_attention_dim) == (heads, width)
+    assert model.config.guidance_embeds is False
+    assert all(p.is_meta for p in model.parameters())
+    assert Flux2Family.spec.label == "FLUX.2 Klein"
+    assert Flux2Family.spec.text.encoder_params == 4_000_000_000
+
+
+def test_legacy_dev_setting_rejected_before_any_file_access(monkeypatch, tmp_path):
+    import ypuddin.models.flux2.family as family_module
+    from ypuddin.models.flux2.text import Flux2Text
+
+    # Construct an old persisted value even when the public schema no longer lists it.
+    cfg = ModelConfig.model_construct(family="flux2", flux2_variant="dev", dit_path=str(tmp_path / "old"))
+    monkeypatch.setattr(family_module, "transformer_config", lambda *_: pytest.fail("must not read files"))
+    family = Flux2Family()
+    assert "dev is no longer supported" in family.validate_config(cfg)[0]
+    training = TrainConfig.model_construct(model=cfg)
+    assert family.training_options_errors(training) == [
+        {"loc": "model.flux2_variant", "msg": family.validate_config(cfg)[0]}
+    ]
+    with pytest.raises(ValueError, match="dev is no longer supported"):
+        family.load(cfg, MemoryConfig(), device="cpu", dtype=torch.float32)
+    with pytest.raises(ValueError, match="dev is no longer supported"):
+        family.meta_backbone(cfg)
+    with pytest.raises(ValueError, match="dev is no longer supported"):
+        Flux2Text(tmp_path, tmp_path, variant="dev", dtype=torch.float32)
+
+
+@pytest.mark.parametrize("requested", ["auto", "klein-base-4b", "klein-base-9b"])
+def test_dev_hf_configuration_rejected_before_weights_and_encoders(tmp_path, monkeypatch, requested):
+    import diffusers
+
+    import ypuddin.models.flux2.family as family_module
+
+    transformer = tmp_path / "transformer"
+    transformer.mkdir()
+    config = {
+        "_class_name": "Flux2Transformer2DModel",
+        "in_channels": 128,
+        "guidance_embeds": True,
+        "joint_attention_dim": 15360,
+    }
+    (transformer / "config.json").write_text(json.dumps(config))
+    monkeypatch.setattr(family_module, "shapes", lambda *_: pytest.fail("must not read encoder weights"))
+    monkeypatch.setattr(
+        diffusers.Flux2Transformer2DModel,
+        "from_pretrained",
+        lambda *_a, **_kw: pytest.fail("must not load transformer weights"),
+    )
+    cfg = ModelConfig(family="flux2", dit_path=str(tmp_path), flux2_variant=requested)
+    assert "dev is no longer supported" in Flux2Family().validate_config(cfg)[0]
+    with pytest.raises(ValueError, match="dev is no longer supported"):
+        Flux2Family().load(cfg, MemoryConfig(), device="cpu", dtype=torch.float32)
+    with pytest.raises(ValueError, match="dev is no longer supported"):
+        load_transformer(transformer, config, dtype=torch.float32, device="cpu")
+
+
+def test_raw_dev_and_mislabeled_dev_rejected_without_tensor_payload(tmp_path, monkeypatch):
+    import safetensors.torch
+
+    file = tmp_path / "dev.safetensors"
+    save_file({"img_in.weight": torch.zeros(6144, 128)}, file)
+    monkeypatch.setattr(
+        safetensors.torch, "load_file", lambda *_a, **_kw: pytest.fail("must not load weights")
+    )
+    cfg = ModelConfig(family="flux2", dit_path=str(file), flux2_variant="auto")
+    # No encoder/VAE paths are needed to diagnose and reject this unsupported DiT.
+    assert "dev is no longer supported" in Flux2Family().validate_config(cfg)[0]
+    with pytest.raises(ValueError, match="dev is no longer supported"):
+        Flux2Family().load(cfg, MemoryConfig(), device="cpu", dtype=torch.float32)
+    misleading = {"in_channels": 128, "guidance_embeds": False, "joint_attention_dim": 7680}
+    with pytest.raises(ValueError, match="dev is no longer supported"):
+        load_transformer(file, misleading, dtype=torch.float32, device="cpu")
+
+
+def test_klein_text_weight_count_comes_from_headers(tiny_root):
+    loaded = load(tiny_root)
+    import math
+
+    from ypuddin.models.flux2.loading import shapes
+
+    actual = sum(math.prod(shape) for shape in shapes(tiny_root / "text_encoder").values())
+    assert loaded.extra["text_encoder_weight_elements"] == actual
+    assert loaded.text.model is None
+
+
+def test_old_loaded_dev_object_cannot_be_materialized_or_forwarded(tiny_root):
+    family, loaded = Flux2Family(), load(tiny_root)
+    loaded.extra.update(variant="dev", materialized=True)
+    with pytest.raises(ValueError, match="dev is no longer supported"):
+        family.materialize_backbone(loaded)
+    with pytest.raises(ValueError, match="dev is no longer supported"):
+        family.forward(
+            loaded, torch.zeros(1, 128, 2, 2), torch.zeros(1), TextCond({"embeds": torch.zeros(1, 7, 24)})
+        )

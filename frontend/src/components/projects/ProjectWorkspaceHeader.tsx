@@ -5,7 +5,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { GitBranch, Plus, Settings2, GitCompare, FolderOpen, Loader2, Copy, AlertCircle } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import { useFamilies } from '../../api/hooks/useFamilies';
-import { trainingFamilyOptions } from '../../utils/trainingFamilies';
+import { inactiveTrainingReason, trainingFamilyOptions } from '../../utils/trainingFamilies';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatApiError } from '../../utils/errors';
 import { activateProjectVersion, configDifferences, projectUrl, versionConfigUrl, type ProjectVersion, type VersionedProject } from '../../utils/projectVersions';
@@ -51,7 +51,7 @@ export default function ProjectWorkspaceHeader({ project, versionId, versions, c
   }, [busy,versionId,current?.status,current?.archived,current?.busy,project.id,project.active_version_id,queryClient]);
   const readyVersions = versions.filter(item => item.status === 'ready');
   const sourceFamily = versions.find(item => item.id === source)?.family;
-  const familyLabel = (value?: string) => families.find(item => item.name === value)?.label || value || text('沿用配置', 'From configuration');
+  const familyLabel = (value?: string) => value === 'flux' ? `FLUX.1 · ${text('已停用', 'Retired')}` : families.find(item => item.name === value)?.label || value || text('沿用配置', 'From configuration');
   const familyOptions = trainingFamilyOptions(families, text('zh', 'en') === 'en', sourceFamily || family);
   const incompatibleFamily = !!sourceFamily && !!family && sourceFamily !== family;
   const copySources = readyVersions.filter(item => !item.archived && !('busy' in item && item.busy));
@@ -86,6 +86,13 @@ export default function ProjectWorkspaceHeader({ project, versionId, versions, c
     try {
       if (dialog === 'create') {
         if (source && !copySources.some(item => item.id === source)) throw new Error(text('来源版本已不可复制，请重新选择。', 'The source version is no longer available to copy. Choose another source.'));
+        const retiredFamily = inactiveTrainingReason({ model: { family: family || sourceFamily } }, text('zh', 'en') === 'en');
+        if (retiredFamily) throw new Error(retiredFamily);
+        if (source && sourceFamily === 'flux2' && (!family || family === sourceFamily)) {
+          const sourceConfig = await apiClient.get<Record<string, any>>(versionConfigUrl(project.id, source), { silent: true });
+          const retiredConfig = inactiveTrainingReason(sourceConfig, text('zh', 'en') === 'en');
+          if (retiredConfig) throw new Error(retiredConfig);
+        }
         const next = await apiClient.post<ProjectVersion>(`/projects/${project.id}/versions`, { name: name.trim(), note: note.trim(), source_version_id: source || null, data_mode: source ? mode : 'empty', copy_config: !!source, ...(family ? {family} : {}) }, { silent: true });
         await refresh(); setDialog(null); navigate(projectUrl(project.id, next.id));
       } else if (current && !current.archived) {
