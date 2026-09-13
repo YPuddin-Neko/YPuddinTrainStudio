@@ -12,6 +12,7 @@ from pydantic import TypeAdapter, ValidationError
 from torch import nn
 
 from ypuddin.adapters import inject
+from ypuddin.adapters.frozen import FrozenLinear
 from ypuddin.config import DatasetConfig, LoopConfig, TrainConfig, ValidationConfig
 from ypuddin.data import IndexDB
 from ypuddin.data.dataset import DataConfigError, item_geometry, prepare_data_layout
@@ -24,6 +25,11 @@ DTYPE_BYTES = {"bf16": 2, "fp16": 2, "fp32": 4, "fp8_e4m3": 1, "fp8_e5m2": 1, "k
 
 def _count_params(module: nn.Module) -> int:
     return sum(p.numel() for p in module.parameters())
+
+
+def _frozen_storage_bytes(module: nn.Module) -> int:
+    tensors = {id(t): t for t in (*module.parameters(), *module.buffers()) if not t.requires_grad}
+    return sum(t.numel() * t.element_size() for t in tensors.values())
 
 
 @dataclass(frozen=True)
@@ -365,6 +371,10 @@ def plan(
             with torch.device("meta"):
                 backbone = meta_fn(cfg.model)
             base_params = _count_params(backbone)
+            compute_dtype = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}[
+                effective_dtype
+            ]
+            family.prepare_backbone_for_plan(backbone, cfg.model, compute_dtype)
             presets = family.presets()
             if cfg.adapter.preset not in presets:
                 out["errors"].append(
@@ -373,7 +383,13 @@ def plan(
             else:
                 error_loc = "adapter"
                 aset = inject(
-                    backbone, cfg.adapter, presets[cfg.adapter.preset], prefix=family.spec.adapter_prefix
+                    backbone,
+                    cfg.adapter,
+                    presets[cfg.adapter.preset],
+                    prefix=family.spec.adapter_prefix,
+                    base_precision=cfg.memory.base_precision
+                    if cfg.memory.base_precision != "auto"
+                    else "keep",
                 )
                 params = {
                     "base": base_params,
@@ -386,16 +402,14 @@ def plan(
                         {"loc": "adapter", "msg": "adapter rules select no trainable parameters"}
                     )
                 error_loc = "memory"
-                base_bytes = (
-                    4
-                    if device_type in ("cpu", "mps")
-                    else DTYPE_BYTES[
-                        cfg.memory.base_precision if cfg.memory.base_precision != "auto" else cfg.model.dtype
-                    ]
-                )
-                weights_mb = base_params * base_bytes / 2**20
+                # A loader may retain native FP8 even when model.dtype is BF16.
+                # Explicit base_precision applies only to selected adapter targets.
+                weights_mb = _frozen_storage_bytes(backbone) / 2**20
                 adapter_mb = aset.num_params() * (4 if cfg.adapter.param_dtype == "fp32" else 2) / 2**20
                 optimizer_mb = aset.num_params() * 4 * (0.5 if "8bit" in cfg.optimizer.type else 2) / 2**20
+                gradients_mb = adapter_mb
+                compensation_mb = adapter_mb if cfg.optimizer.kahan else 0.0
+                ema_mb = adapter_mb if cfg.loop.ema else 0.0
                 layout = (
                     family.memory_layout_meta(backbone) if hasattr(family, "memory_layout_meta") else None
                 )
@@ -409,7 +423,12 @@ def plan(
                 act_by_bucket = []
                 for (w, h), _n in sorted(counts.items()) or [((r, r), 0) for r in ds.resolutions]:
                     tokens = (w // family.spec.latent.align) * (h // family.spec.latent.align)
-                    hidden = getattr(backbone, "dim", None) or getattr(backbone, "model_channels", 2048)
+                    tokens = family.training_tokens_for_plan(tokens)
+                    hidden = (
+                        getattr(backbone, "dim", None)
+                        or getattr(backbone, "model_channels", None)
+                        or getattr(getattr(backbone, "config", None), "features", 2048)
+                    )
                     n_blocks = len(layout.blocks) if layout else 1
                     ckpt = cfg.memory.activation_checkpointing != "none"
                     activation_bytes = (
@@ -428,31 +447,60 @@ def plan(
                     act = per_block * n_blocks * forward_batch / 2**20
                     act_by_bucket.append({"w": w, "h": h, "mb": round(act)})
                 swapped_mb = 0.0
-                if layout and cfg.memory.blocks_to_swap and layout.blocks and device_type != "mps":
-                    swapped_mb = (
-                        weights_mb * min(cfg.memory.blocks_to_swap, len(layout.blocks)) / len(layout.blocks)
-                    )
+                swap_staging_mb = 0.0
+                if layout and cfg.memory.blocks_to_swap and layout.blocks and device_type in (None, "cuda"):
+                    # BlockSwapper owns the last N blocks' frozen tensors only;
+                    # embeddings/text fusion and adapter parameters remain resident.
+                    n_swap = min(cfg.memory.blocks_to_swap, len(layout.blocks))
+                    block_sizes = [_frozen_storage_bytes(block) / 2**20 for block in layout.blocks[-n_swap:]]
+                    swapped_mb = sum(block_sizes)
+                    # Current block plus the prefetched next block can coexist.
+                    swap_staging_mb = sum(sorted(block_sizes, reverse=True)[:2])
+                dequant_mb = max(
+                    (
+                        2 * m.weight.numel() * DTYPE_BYTES[effective_dtype] / 2**20
+                        for m in backbone.modules()
+                        if isinstance(m, FrozenLinear) and m.is_fp8
+                    ),
+                    default=0.0,
+                )
                 text_mode = ds.text_encoding
                 if text_mode == "auto":
                     text_mode = "online" if "online_text" in family.spec.capabilities else "cached"
                 text_encoder_mb = 0.0
                 if text_mode == "online" and not cfg.memory.offload_text_encoder:
                     text_encoder_mb = family.spec.text.encoder_params * DTYPE_BYTES[effective_dtype] / 2**20
-                peak = (
+                training_peak = (
                     weights_mb
                     - swapped_mb
                     + text_encoder_mb
                     + adapter_mb
                     + optimizer_mb
+                    + gradients_mb
+                    + compensation_mb
+                    + ema_mb
+                    + swap_staging_mb
+                    + dequant_mb
                     + (max(a["mb"] for a in act_by_bucket) if act_by_bucket else 0)
                     + 512
                 )
+                cache_phases = family.cache_memory_estimate(cfg, compute_dtype)
+                peak = max(training_peak, *cache_phases.values()) if cache_phases else training_peak
                 memory = {
                     "weights_mb": round(weights_mb),
                     "swapped_mb": round(swapped_mb),
                     "text_encoder_mb": round(text_encoder_mb),
                     "adapter_mb": round(adapter_mb, 1),
                     "optimizer_mb": round(optimizer_mb, 1),
+                    "gradients_mb": round(gradients_mb, 1),
+                    "compensation_mb": round(compensation_mb, 1),
+                    "ema_mb": round(ema_mb, 1),
+                    "swap_staging_mb": round(swap_staging_mb, 1),
+                    "dequant_mb": round(dequant_mb, 1),
+                    "training_peak_mb_estimate": round(training_peak),
+                    "cache_phase_peak_mb_estimates": {
+                        key: round(value) for key, value in cache_phases.items()
+                    },
                     "activations_mb_by_bucket": act_by_bucket,
                     "peak_mb_estimate": round(peak),
                     "gpu_total_mb": gpu_total_mb,

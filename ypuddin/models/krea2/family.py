@@ -22,7 +22,7 @@ from torch import Tensor, nn
 
 from ypuddin.adapters import TargetPreset
 from ypuddin.adapters.frozen import FP8_DTYPES, FrozenLinear
-from ypuddin.config import MemoryConfig, ModelConfig
+from ypuddin.config import MemoryConfig, ModelConfig, TrainConfig
 from ypuddin.models.anima.family import AnimaLatent
 from ypuddin.models.base import (
     LatentSpec,
@@ -527,6 +527,84 @@ class Krea2Family(ModelFamily):
             except Exception as e:  # noqa: BLE001
                 log.warning("could not infer Krea 2 geometry from %s: %s", cfg.dit_path, e)
         return SingleStreamDiT(config)
+
+    def prepare_backbone_for_plan(self, backbone: nn.Module, cfg: ModelConfig, dtype: torch.dtype) -> None:
+        """Mirror load_dit's mixed FP8/compute-dtype storage using only safetensors headers."""
+        from safetensors import safe_open
+
+        super().prepare_backbone_for_plan(backbone, cfg, dtype)
+        if not cfg.dit_path or not Path(cfg.dit_path).expanduser().is_file():
+            return
+        expected = backbone.state_dict()
+        weights, scales = {}, {}
+        fp8 = {"F8_E4M3": torch.float8_e4m3fn, "F8_E4M3FN": torch.float8_e4m3fn, "F8_E5M2": torch.float8_e5m2}
+        with safe_open(str(Path(cfg.dit_path).expanduser()), framework="pt") as checkpoint:
+            for source_key in checkpoint.keys():
+                key = _strip_prefix(source_key)
+                if key == "scaled_fp8":
+                    continue
+                tensor = checkpoint.get_slice(source_key)
+                shape = tensor.get_shape()
+                if key.endswith(SCALE_SUFFIXES):
+                    if math.prod(shape) != 1:
+                        raise ValueError(f"Krea 2 FP8 scale {key} must contain exactly one value")
+                    scales[key.rsplit(".", 1)[0]] = torch.empty((), device="meta", dtype=torch.float32)
+                elif key in expected:
+                    target_dtype = fp8.get(tensor.get_dtype(), expected[key].dtype)
+                    weights[key] = torch.empty(shape, device="meta", dtype=target_dtype)
+        backbone.requires_grad_(False)
+        missing, _ = backbone.load_state_dict(weights, strict=False, assign=True)
+        if missing:
+            raise ValueError(f"Krea 2 checkpoint is missing tensors: {missing[:5]}")
+        _freeze_fp8_linears(backbone, scales)
+
+    def cache_memory_estimate(self, cfg: TrainConfig, dtype: torch.dtype) -> dict[str, float]:
+        from transformers import Qwen3VLTextModel
+
+        from .text import text_config_for
+
+        # The single-file loader discards the vision tower and lm_head. FP8
+        # decoder weights, when supplied, are dequantized to the compute dtype.
+        text_cfg = text_config_for(cfg.model.text_encoder_path or "")
+        with torch.device("meta"):
+            decoder = Qwen3VLTextModel(text_cfg)
+        element_size = torch.empty((), dtype=dtype).element_size()
+        weights = sum(p.numel() for p in decoder.parameters()) * element_size
+        hidden, layers = text_cfg.hidden_size, text_cfg.num_hidden_layers
+        # build_text_cache defaults to 16; even a small training batch does not
+        # reduce it. Budget a full cold-cache batch, without assuming cache hits.
+        batch, tokens = 16, self.spec.text.max_len + 34
+        selected = min(12, layers)
+        if cfg.model.dit_path and Path(cfg.model.dit_path).expanduser().is_file():
+            selected = _config_from_header(cfg.model.dit_path).txtlayers
+        retained = batch * tokens * hidden * (layers + 1 + selected) * element_size
+        qkv = (text_cfg.num_attention_heads + 2 * text_cfg.num_key_value_heads) * text_cfg.head_dim
+        scratch = batch * tokens * (qkv + 4 * hidden + 4 * text_cfg.intermediate_size) * element_size
+        # Include a full FP32 attention-score workspace as a conservative
+        # allowance, although fused SDPA normally needs less temporary storage.
+        scratch += batch * text_cfg.num_attention_heads * tokens * tokens * 4
+        phases = {"text_cache": (weights + retained + scratch) / 2**20 + 512}
+        if cfg.model.vae_path and Path(cfg.model.vae_path).expanduser().is_file():
+            from safetensors import safe_open
+
+            with safe_open(str(Path(cfg.model.vae_path).expanduser()), framework="pt") as checkpoint:
+                shapes = [checkpoint.get_slice(key).get_shape() for key in checkpoint.keys()]
+            vae_weights = sum(math.prod(shape) for shape in shapes) * element_size
+            pixels = (
+                cfg.dataset.native_max_pixels
+                if cfg.dataset.resolution_mode == "native"
+                else max(cfg.dataset.resolutions) ** 2
+            )
+            # Qwen-Image's encoder processes one image at a time by default;
+            # feature-map/residual workspaces are heuristic, weights are header based.
+            vae_scratch = pixels * 96 * 8 * element_size
+            phases["latent_cache"] = (vae_weights + vae_scratch) / 2**20 + 512
+        return phases
+
+    def training_tokens_for_plan(self, image_tokens: int) -> int:
+        # Joint self-attention also processes the cached caption tokens. Their
+        # actual trimmed length varies; planning budgets the supported maximum.
+        return image_tokens + self.spec.text.max_len
 
     def linear_module_names(self) -> list[str]:
         from .vendor.krea2_mmdit import KREA2_CONFIG, SingleStreamDiT

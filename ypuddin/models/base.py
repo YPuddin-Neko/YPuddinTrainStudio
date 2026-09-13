@@ -217,6 +217,17 @@ class ModelFamily(ABC):
     def materialize_backbone(self, loaded: LoadedModel) -> None:
         """Finish deferred weight loading after VAE/text caches have released their encoders."""
 
+    def prepare_backbone_for_plan(self, backbone: nn.Module, cfg: ModelConfig, dtype: torch.dtype) -> None:
+        """Match loaded storage on meta, without reading checkpoint tensor payloads."""
+        backbone.to(dtype=dtype)
+
+    def cache_memory_estimate(self, cfg: TrainConfig, dtype: torch.dtype) -> dict[str, float]:
+        """Optional independent encoder-phase estimates, in MiB (not added to training residency)."""
+        return {}
+
+    def training_tokens_for_plan(self, image_tokens: int) -> int:
+        return image_tokens
+
     def sample_latents(
         self,
         loaded: LoadedModel,
