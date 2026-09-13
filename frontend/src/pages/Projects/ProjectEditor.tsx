@@ -1,5 +1,5 @@
 import React from 'react';
-import { FolderOpen, ImagePlus, Loader2, X } from 'lucide-react';
+import { Crop, FolderOpen, ImagePlus, Loader2, X } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import { useFamilies } from '../../api/hooks/useFamilies';
 import Dialog from '../../components/Dialog';
@@ -9,12 +9,14 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import { trainingFamilyOptions } from '../../utils/trainingFamilies';
 import { useTranslation } from 'react-i18next';
 import { categoryLabel, coverSource, PROJECT_CATEGORIES, type GalleryProject } from './projectGallery';
+import ProjectCoverCropper from './ProjectCoverCropper';
+import { COVER_MAX_BYTES, cropImageStyle, type CoverCrop } from './coverCrop';
 
-export function ProjectCover({ source, name }: { source?: string | null; name: string }) {
+export function ProjectCover({ source, name, crop }: { source?: string | null; name: string; crop?: CoverCrop }) {
   const text = useWorkspaceText();
   const [failed, setFailed] = React.useState(false);
   React.useEffect(() => setFailed(false), [source]);
-  return source && !failed ? <img src={source} alt={text(`${name} 的封面`, `Cover for ${name}`)} loading="lazy" onError={() => setFailed(true)}/>
+  return source && !failed ? <img src={source} alt={text(`${name} 的封面`, `Cover for ${name}`)} style={crop ? cropImageStyle(crop) : undefined} loading="lazy" onError={() => setFailed(true)}/>
     : <div className="project-cover-placeholder"><FolderOpen size={27} aria-hidden="true"/><span>{source ? text('封面暂不可用', 'Cover unavailable') : text('未设置封面', 'No cover')}</span></div>;
 }
 
@@ -34,6 +36,8 @@ export default function ProjectEditor({ project, categories, onClose, onSaved, o
   const familyOptions = trainingFamilyOptions(families, english);
   const familyAvailable = familyOptions.some(option => option.value === family && !option.disabled);
   const [file, setFile] = React.useState<File | null>(null);
+  const [crop, setCrop] = React.useState<CoverCrop>();
+  const [candidate, setCandidate] = React.useState<{ file: File; crop?: CoverCrop } | null>(null);
   const [preview, setPreview] = React.useState<string | null>(null);
   const [removeCover, setRemoveCover] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
@@ -54,9 +58,21 @@ export default function ProjectEditor({ project, categories, onClose, onSaved, o
   const activeCover = preview || (!removeCover && savedProject?.cover_url ? coverSource(savedProject.cover_url) : null);
   const chooseFile = (selected?: File) => {
     if (!selected) return;
-    if (selected.size > 8 * 1024 * 1024) { setError(text('封面不能超过 8 MiB。', 'Cover must be no larger than 8 MiB.')); return; }
+    if (selected.size > COVER_MAX_BYTES) { setError(text('封面不能超过 8 MB（8,388,608 字节）。', 'Cover must be no larger than 8 MB (8,388,608 bytes).')); return; }
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(selected.type)) { setError(text('请选择 JPEG、PNG 或 WebP 图片。', 'Choose a JPEG, PNG or WebP image.')); return; }
-    setFile(selected); setRemoveCover(false); setError('');
+    setCandidate({ file: selected }); setError('');
+  };
+  const adjustCover = async () => {
+    if (file) { setCandidate({ file, crop }); return; }
+    if (!activeCover || busyRef.current) return;
+    busyRef.current = true; setBusy(true); setError('');
+    try {
+      const response = await fetch(activeCover);
+      if (!response.ok) throw new Error(text('无法读取封面，请重试。', 'Could not load the cover. Please retry.'));
+      const blob = await response.blob();
+      chooseFile(new File([blob], 'project-cover.webp', { type: blob.type }));
+    } catch (failure) { setError(formatApiError(failure)); }
+    finally { busyRef.current = false; setBusy(false); }
   };
   const save = async () => {
     setIdTouched(true);
@@ -75,6 +91,7 @@ export default function ProjectEditor({ project, categories, onClose, onSaved, o
       }
       if (file) {
         const body = new FormData(); body.append('file', file);
+        if (crop) body.append('crop', JSON.stringify(crop));
         currentProject = await apiClient.post<GalleryProject>(`/projects/${currentProject.id}/cover`, body, { silent: true });
       } else if (removeCover && currentProject.cover_url) {
         currentProject = await apiClient.delete<GalleryProject>(`/projects/${currentProject.id}/cover`, { silent: true });
@@ -88,19 +105,25 @@ export default function ProjectEditor({ project, categories, onClose, onSaved, o
       } else setError(details);
     } finally { busyRef.current = false; setBusy(false); }
   };
-  return <Dialog title={project ? text('编辑项目', 'Edit project') : text('新建项目', 'New project')} onClose={onClose} closeDisabled={busy}>
+  if (candidate) return <Dialog key="crop" title={text('裁切项目封面', 'Crop project cover')} onClose={() => setCandidate(null)}>
+    <ProjectCoverCropper file={candidate.file} initialCrop={candidate.crop} onCancel={() => setCandidate(null)} onApply={selectedCrop => {
+      setFile(candidate.file); setCrop(selectedCrop); setRemoveCover(false); setCandidate(null); setError('');
+    }}/>
+  </Dialog>;
+  return <Dialog key="editor" title={project ? text('编辑项目', 'Edit project') : text('新建项目', 'New project')} onClose={onClose} closeDisabled={busy}>
     <form className="project-editor" onSubmit={event => { event.preventDefault(); void save(); }} data-testid={project ? 'edit-project-modal' : 'create-project-modal'} aria-busy={busy}>
       {error && <p role="alert" className="project-editor-error">{error}</p>}
       {partial && !project && <p role="status" className="project-editor-note">{text(`项目 ${savedProject?.id} 已创建；关闭窗口会保留此项目，重试不会重复创建。`, `Project ${savedProject?.id} exists. Closing keeps it; retrying will not create a duplicate.`)}</p>}
       <fieldset disabled={busy} className="project-editor-fields">
-        <div className="project-cover-editor"><div className="project-cover-preview"><ProjectCover source={activeCover} name={name || text('项目', 'Project')}/></div><div className="project-cover-controls">
-          <strong>{text('项目封面', 'Project cover')}</strong><p>{text('手动选择图片，仅用于项目预览。', 'Choose an image for this project preview.')}</p>
+        <div className="project-cover-editor"><div className="project-cover-preview"><ProjectCover source={activeCover} crop={file ? crop : undefined} name={name || text('项目', 'Project')}/></div><div className="project-cover-controls">
+          <strong>{text('项目封面', 'Project cover')}</strong><p>{text('上传后可拖动、缩放，决定封面显示范围。', 'Drag and zoom after uploading to choose the cover framing.')}</p>
           <input ref={uploadInput} className="project-cover-file" type="file" tabIndex={-1} accept="image/jpeg,image/png,image/webp" aria-label={text('上传项目封面', 'Upload project cover')}
             onChange={event => { chooseFile(event.target.files?.[0]); event.target.value = ''; }}/>
           <div className="project-cover-buttons"><button type="button" className="projects-page-button" onClick={() => uploadInput.current?.click()}><ImagePlus size={14}/>{activeCover ? text('更换封面', 'Replace cover') : text('上传封面', 'Upload cover')}</button>
-            {(file || (!removeCover && savedProject?.cover_url)) && <button type="button" className="projects-page-button" onClick={() => { setFile(null); setRemoveCover(true); setError(''); }}><X size={14}/>{text('移除封面', 'Remove cover')}</button>}
+            {activeCover && <button type="button" className="projects-page-button" onClick={() => void adjustCover()}><Crop size={14}/>{text('调整裁切', 'Adjust crop')}</button>}
+            {(file || (!removeCover && savedProject?.cover_url)) && <button type="button" className="projects-page-button" onClick={() => { setFile(null); setCrop(undefined); setRemoveCover(true); setError(''); }}><X size={14}/>{text('移除封面', 'Remove cover')}</button>}
             {removeCover && savedProject?.cover_url && <button type="button" className="projects-page-button" onClick={() => setRemoveCover(false)}>{text('保留原封面', 'Keep current cover')}</button>}</div>
-          <small>JPEG / PNG / WebP · ≤ 8 MiB</small>{file && <span className="project-cover-filename" title={file.name}>{file.name}</span>}
+          <small title={text('文件上限 8,388,608 字节（8 MiB）', 'File limit: 8,388,608 bytes (8 MiB)')}>JPEG / PNG / WebP · ≤ 8 MB</small>{file && <span className="project-cover-filename" title={file.name}>{file.name}</span>}
         </div></div>
         <label className="project-editor-field"><span>{text('项目名称', 'Project name')}</span><input required type="text" value={name} onChange={event => setName(event.target.value)} data-testid="project-name-input" placeholder={text('支持中文及其他语言', 'Any language supported')}/></label>
         {!project && <div className="project-editor-field"><label htmlFor="project-id-input">{text('项目 ID', 'Project ID')}</label><input id="project-id-input" required maxLength={64} value={id} onChange={event => { setId(event.target.value); setIdTouched(true); setError(''); }} onBlur={() => setIdTouched(true)} disabled={busy || !!savedProject}

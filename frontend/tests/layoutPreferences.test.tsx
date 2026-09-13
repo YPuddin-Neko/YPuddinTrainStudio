@@ -52,15 +52,39 @@ const sidebar = () => within(screen.getByRole('complementary'));
 
 describe('sidebar appearance preferences', () => {
   it('persists sidebar collapse without writing trainer settings and restores accessible navigation after remount',async()=>{
+    const user=userEvent.setup();
     show(false);await waitFor(()=>expect(screen.getByLabelText('CPU 占用率')).toHaveTextContent('0%'));
-    const collapse=screen.getByRole('button',{name:'收起侧边栏'});fireEvent.click(collapse);
+    const collapse=sidebar().getByRole('button',{name:'收起侧边栏'});
+    expect(collapse.closest('.sidebar-brand-row')).toBeInTheDocument();
+    expect(collapse).toHaveAttribute('aria-controls','app-sidebar');
+    expect(screen.getByTestId('app-topbar')).not.toContainElement(collapse);
+    collapse.focus();await user.keyboard('{Enter}');
     expect(screen.getByRole('button',{name:'展开侧边栏'})).toHaveAttribute('aria-expanded','false');
+    expect(sidebar().getByRole('button',{name:'展开侧边栏'})).toBe(collapse);
+    expect(collapse).toHaveFocus();
     expect(screen.getByTestId('app-topbar').closest('.app-shell')).toHaveClass('sidebar-collapsed');
     expect(localStorage.getItem('studio.sidebar.collapsed')).toBe('true');expect(writes).toEqual([]);
-    cleanup();show(false);expect(screen.getByRole('button',{name:'展开侧边栏'})).toBeInTheDocument();
+    cleanup();show(false);const expand=sidebar().getByRole('button',{name:'展开侧边栏'});
+    expect(screen.getByTestId('app-topbar')).not.toContainElement(expand);
     expect(screen.getByRole('link',{name:'项目'})).toHaveAttribute('href','/projects');
-    fireEvent.click(screen.getByRole('button',{name:'展开侧边栏'}));expect(localStorage.getItem('studio.sidebar.collapsed')).toBe('false');
+    expand.focus();await user.keyboard(' ');expect(localStorage.getItem('studio.sidebar.collapsed')).toBe('false');
+    expect(sidebar().getByRole('button',{name:'收起侧边栏'})).toHaveFocus();
     expect(screen.getByTestId('app-topbar').closest('.app-shell')).not.toHaveClass('sidebar-collapsed');expect(writes).toEqual([]);
+  });
+  it('keeps the mobile menu operable with a remembered desktop collapse and returns focus on dismissal',async()=>{
+    const user=userEvent.setup();localStorage.setItem('studio.sidebar.collapsed','true');show(false);
+    await waitFor(()=>expect(screen.getByLabelText('CPU 占用率')).toHaveTextContent('0%'));
+    const opener=within(screen.getByTestId('app-topbar')).getByRole('button',{name:i18n.t('hardware.openMenu')});
+    const panel=screen.getByRole('complementary');
+    expect(opener).toHaveAttribute('aria-controls',panel.id);
+    expect(opener).toHaveAttribute('aria-expanded','false');
+    opener.focus();await user.keyboard('{Enter}');
+    expect(opener).toHaveAttribute('aria-expanded','true');expect(panel).not.toHaveClass('hidden');
+    const close=within(panel).getByRole('button',{name:i18n.t('hardware.closeMenu')});close.focus();await user.keyboard('{Enter}');
+    expect(panel).toHaveClass('hidden');expect(opener).toHaveAttribute('aria-expanded','false');expect(opener).toHaveFocus();
+    await user.click(opener);await user.click(document.querySelector('.app-sidebar-backdrop')!);
+    expect(opener).toHaveAttribute('aria-expanded','false');expect(opener).toHaveFocus();
+    expect(localStorage.getItem('studio.sidebar.collapsed')).toBe('true');expect(writes).toEqual([]);
   });
   it('opens compact preferences on demand and keeps its select interaction separate from outside and Escape dismissal',async()=>{
     const user=userEvent.setup();show(false);await waitFor(()=>expect(screen.getByLabelText('CPU 占用率')).toHaveTextContent('0%'));

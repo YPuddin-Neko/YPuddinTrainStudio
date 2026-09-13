@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import io
+import json
 import logging
+import math
 import re
 import tempfile
 import uuid
 import warnings
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -21,10 +24,44 @@ from .errors import ApiError
 log = logging.getLogger(__name__)
 MAX_BYTES = 8 * 1024**2
 MAX_REQUEST_BYTES = MAX_BYTES + 64 * 1024
+MAX_CROP_BYTES = 1024
 MAX_PIXELS = 16_000_000
 MAX_SIDE = 8192
 COVER_SIDE = 640
 _KEY = re.compile(r"^[a-f0-9]{32}\.webp$")
+
+
+@dataclass(frozen=True)
+class CoverCrop:
+    """A normalized crop in the EXIF-oriented source image, before thumbnailing."""
+
+    x: float
+    y: float
+    width: float
+    height: float
+
+
+def _read_crop(value: str | None) -> CoverCrop | None:
+    if value is None:
+        return None
+    try:
+        crop = json.loads(value)
+        if not isinstance(crop, dict) or set(crop) != {"x", "y", "width", "height"}:
+            raise ValueError
+        if any(type(v) not in {int, float} or not math.isfinite(v) for v in crop.values()):
+            raise ValueError
+        x, y, width, height = (float(crop[key]) for key in ("x", "y", "width", "height"))
+        if not (0 <= x < 1 and 0 <= y < 1 and 0 < width <= 1 and 0 < height <= 1):
+            raise ValueError
+        # Browser drag/zoom arithmetic can place the far edge a few ULPs past one.
+        if x + width > 1 + 1e-9 or y + height > 1 + 1e-9:
+            raise ValueError
+        return CoverCrop(x, y, min(width, 1 - x), min(height, 1 - y))
+    except (ValueError, TypeError, OverflowError) as exc:
+        raise ApiError(
+            "crop must contain finite normalized x, y, width and height within the image",
+            code="project.cover_crop",
+        ) from exc
 
 
 class _TooLarge(MultiPartException):
@@ -41,17 +78,23 @@ class _CoverParser(MultiPartParser):
 
     def on_headers_finished(self) -> None:
         super().on_headers_finished()
-        if self._current_part.field_name != "file" or self._current_part.file is None:
-            raise MultiPartException("use exactly one uploaded file in the file field")
+        part = self._current_part
+        if not (
+            (part.field_name == "file" and part.file is not None)
+            or (part.field_name == "crop" and part.file is None)
+        ):
+            raise MultiPartException("use one uploaded file and an optional crop text field")
 
     def on_part_data(self, data: bytes, start: int, end: int) -> None:
         self.part_bytes += end - start
-        if self.part_bytes > MAX_BYTES:
+        if self._current_part.file is None and self.part_bytes > MAX_CROP_BYTES:
+            raise MultiPartException("cover crop field exceeds the 1 KiB limit")
+        if self._current_part.file is not None and self.part_bytes > MAX_BYTES:
             raise _TooLarge("project cover exceeds the 8 MiB file limit")
         super().on_part_data(data, start, end)
 
 
-async def read_cover_upload(request: Request) -> bytes:
+async def read_cover_upload(request: Request) -> tuple[bytes, CoverCrop | None]:
     if not request.headers.get("content-type", "").lower().startswith("multipart/form-data"):
         raise ApiError("cover upload requires multipart/form-data", code="project.cover_type", status=415)
     length = request.headers.get("content-length")
@@ -71,7 +114,7 @@ async def read_cover_upload(request: Request) -> bytes:
                 raise _TooLarge("cover upload exceeds the request limit")
             yield chunk
 
-    parser = _CoverParser(request.headers, bounded_stream(), max_files=1, max_fields=0)
+    parser = _CoverParser(request.headers, bounded_stream(), max_files=1, max_fields=1)
     form = None
     try:
         try:
@@ -85,12 +128,20 @@ async def read_cover_upload(request: Request) -> bytes:
         except Exception as exc:
             raise ApiError("invalid or interrupted cover upload", code="project.cover_invalid") from exc
         files = form.getlist("file")
-        if len(form.multi_items()) != 1 or len(files) != 1 or not isinstance(files[0], UploadFile):
+        crops = form.getlist("crop")
+        if (
+            len(files) != 1
+            or not isinstance(files[0], UploadFile)
+            or len(crops) > 1
+            or len(form.multi_items()) != 1 + len(crops)
+            or (crops and not isinstance(crops[0], str))
+        ):
             raise ApiError("upload exactly one file", code="project.cover_invalid")
+        crop = _read_crop(crops[0] if crops else None)
         data = await files[0].read(MAX_BYTES + 1)
         if not data or len(data) > MAX_BYTES:
             raise ApiError("cover must be nonempty and at most 8 MiB", code="project.cover_size", status=413)
-        return data
+        return data, crop
     finally:
         if form is not None:
             await form.close()
@@ -99,7 +150,7 @@ async def read_cover_upload(request: Request) -> bytes:
                 handle.close()
 
 
-def thumbnail(data: bytes) -> bytes:
+def thumbnail(data: bytes, crop: CoverCrop | None = None) -> bytes:
     """Decode an allowed raster format and encode a static WebP without input metadata."""
     try:
         with warnings.catch_warnings():
@@ -120,6 +171,18 @@ def thumbnail(data: bytes) -> bytes:
                 source.verify()
             with Image.open(io.BytesIO(data)) as source:
                 image = ImageOps.exif_transpose(source).convert("RGBA")
+                if crop is not None:
+                    if crop.width * image.width < 1 or crop.height * image.height < 1:
+                        raise ApiError(
+                            "cover crop must include at least one pixel", code="project.cover_crop"
+                        )
+                    bounds = (
+                        round(crop.x * image.width),
+                        round(crop.y * image.height),
+                        round((crop.x + crop.width) * image.width),
+                        round((crop.y + crop.height) * image.height),
+                    )
+                    image = image.crop(bounds)
                 image.thumbnail((COVER_SIDE, COVER_SIDE), Image.Resampling.LANCZOS)
                 output = io.BytesIO()
                 image.save(output, "WEBP", quality=88, method=4)

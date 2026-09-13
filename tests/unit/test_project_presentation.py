@@ -42,11 +42,15 @@ def image_bytes(format="PNG", size=(1200, 800), color="red"):
     return stream.getvalue()
 
 
-def upload(client, pid, data=None, **kwargs):
+def upload(client, pid, payload=None, **kwargs):
     return client.post(
         f"/api/projects/{pid}/cover",
         files={
-            "file": ("../../v1/traindata/cover.png", image_bytes() if data is None else data, "image/png")
+            "file": (
+                "../../v1/traindata/cover.png",
+                image_bytes() if payload is None else payload,
+                "image/png",
+            )
         },
         **kwargs,
     )
@@ -197,7 +201,12 @@ def test_failed_cover_upload_preserves_project_then_retry_replace_and_delete(api
 
     with monkeypatch.context() as m:
         m.setattr(ctx.db, "update", fail_update)
-        failed = upload(client, project["id"], image_bytes(color="blue"))
+        failed = upload(
+            client,
+            project["id"],
+            image_bytes(color="blue"),
+            data={"crop": json.dumps({"x": 0, "y": 0, "width": 0.5, "height": 0.5})},
+        )
         assert failed.status_code == 500 and failed.json()["error"]["code"] == "project.cover_write"
     assert client.get(first["cover_url"]).content == before
     assert old_path.is_file() and list(old_path.parent.iterdir()) == [old_path]
@@ -208,6 +217,106 @@ def test_failed_cover_upload_preserves_project_then_retry_replace_and_delete(api
     assert client.get(f"/api/projects/{project['id']}/cover").status_code == 404
     assert client.delete(f"/api/projects/{project['id']}/cover").status_code == 200
     assert list(old_path.parent.iterdir()) == []
+
+
+@pytest.mark.parametrize("orientation", [None, 6])
+def test_cover_crop_uses_oriented_source_pixels_before_thumbnailing(api, orientation):
+    client, ctx = api
+    project = create(client)
+    before = {
+        p.relative_to(ctx.version_dir(project["id"])): p.read_bytes()
+        for p in ctx.version_dir(project["id"]).rglob("*")
+        if p.is_file()
+    }
+    # EXIF 6 rotates the raw top (red) half into the visible right half.
+    image = Image.new("RGB", (1000, 1600) if orientation else (1600, 1000), "blue")
+    image.paste("red", (0, 0, 1000, 800) if orientation else (800, 0, 1600, 1000))
+    output = io.BytesIO()
+    exif = Image.Exif()
+    if orientation:
+        exif[274] = orientation
+    image.save(output, "JPEG", exif=exif)
+    result = upload(
+        client,
+        project["id"],
+        output.getvalue(),
+        data={"crop": json.dumps({"x": 0.5, "y": 0, "width": 0.5, "height": 0.5})},
+    )
+    assert result.status_code == 200, result.text
+    with Image.open(io.BytesIO(client.get(result.json()["cover_url"]).content)) as saved:
+        assert saved.size == (640, 400)
+        red, green, blue = saved.convert("RGB").getpixel((320, 200))
+        assert red > 240 and green < 15 and blue < 15
+        assert not saved.getexif()
+    assert {
+        p.relative_to(ctx.version_dir(project["id"])): p.read_bytes()
+        for p in ctx.version_dir(project["id"]).rglob("*")
+        if p.is_file()
+    } == before
+
+
+@pytest.mark.parametrize(
+    "crop",
+    [
+        "not JSON",
+        "null",
+        "[]",
+        '{"x":0,"y":0,"width":1}',
+        '{"x":0,"y":0,"width":1,"height":1,"extra":0}',
+        '{"x":false,"y":0,"width":1,"height":1}',
+        '{"x":"0","y":0,"width":1,"height":1}',
+        '{"x":NaN,"y":0,"width":1,"height":1}',
+        '{"x":0,"y":0,"width":Infinity,"height":1}',
+        '{"x":0,"y":0,"width":0,"height":1}',
+        '{"x":-0.1,"y":0,"width":1,"height":1}',
+        '{"x":0.5,"y":0,"width":0.6,"height":1}',
+        '{"x":0,"y":0.5,"width":1,"height":0.6}',
+        '{"x":0,"y":0,"width":0.000001,"height":1}',
+    ],
+)
+def test_invalid_crop_never_replaces_an_existing_cover(api, crop):
+    client, ctx = api
+    project = create(client)
+    first = upload(client, project["id"]).json()
+    before = client.get(first["cover_url"]).content
+    stored = ctx.db.fetchone("SELECT * FROM projects WHERE id=?", (project["id"],))
+    old_path = project_covers.cover_path(ctx, stored)
+    failed = upload(client, project["id"], data={"crop": crop})
+    assert failed.status_code == 400, failed.text
+    assert failed.json()["error"]["code"] == "project.cover_crop"
+    assert client.get(f"/api/projects/{project['id']}").json()["cover_url"] == first["cover_url"]
+    assert client.get(first["cover_url"]).content == before
+    assert list(old_path.parent.iterdir()) == [old_path]
+
+
+def test_crop_multipart_fields_are_bounded_and_float_edge_rounding_is_allowed(api):
+    client, _ = api
+    project = create(client)
+    crop = '{"x":0.1,"y":0,"width":0.9000000000000001,"height":1}'
+    assert upload(client, project["id"], data={"crop": crop}).status_code == 200
+    assert upload(client, project["id"], data={"crop": " " * 1025}).status_code == 400
+    file = ("file", ("image.png", image_bytes(), "image/png"))
+    for fields in (
+        [("crop", (None, crop)), ("crop", (None, crop))],
+        [("crop", ("crop.json", crop, "application/json"))],
+        [("unexpected", (None, "value"))],
+    ):
+        assert client.post(f"/api/projects/{project['id']}/cover", files=[file, *fields]).status_code == 400
+
+
+def test_cover_accepts_exactly_eight_mib_and_rejects_one_extra_byte(api):
+    client, _ = api
+    project = create(client)
+    assert project_covers.MAX_BYTES == 8 * 1024 * 1024
+    data = image_bytes("JPEG").ljust(project_covers.MAX_BYTES, b"\0")
+    # The limit is the original file size, excluding the optional crop and multipart headers.
+    crop = {"crop": '{"x":0,"y":0,"width":1,"height":1}'}
+    accepted = upload(client, project["id"], data, data=crop)
+    assert accepted.status_code == 200, accepted.text
+    rejected = upload(client, project["id"], data + b"\0", data=crop)
+    assert rejected.status_code == 413, rejected.text
+    assert rejected.json()["error"]["code"] == "project.cover_size"
+    assert client.get(f"/api/projects/{project['id']}").json()["cover_url"] == accepted.json()["cover_url"]
 
 
 def test_cover_limits_and_symbolic_links_preserve_existing_files(api, tmp_path, monkeypatch):

@@ -67,7 +67,7 @@
 .project-editor-error { margin:0; color:#dc2626; white-space:pre-line; overflow-wrap:anywhere; font-size:12px; }
 .project-folder-preview { display:block; overflow-wrap:anywhere; background:var(--studio-muted); padding:6px 8px; border-radius:4px; font-size:11px; color:var(--studio-dim); }
 .project-cover-editor { display:flex; align-items:center; gap:13px; min-width:0; }
-.project-cover-preview { width:140px; aspect-ratio:16/10; flex:none; overflow:hidden; border:1px solid var(--studio-line); border-radius:6px; }
+.project-cover-preview { position:relative; width:140px; aspect-ratio:16/10; flex:none; overflow:hidden; border:1px solid var(--studio-line); border-radius:6px; }
 .project-cover-controls { min-width:0; display:grid; gap:6px; }
 .project-cover-controls strong { font-size:12px; font-weight:600; }
 .project-cover-controls p,.project-cover-controls small { margin:0; color:var(--studio-dim); font-size:11px; line-height:1.4; }

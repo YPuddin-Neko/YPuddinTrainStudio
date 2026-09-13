@@ -42,6 +42,11 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
   const [theme, setTheme] = React.useState<Settings['ui']['theme']>('system');
   const [systemDark, setSystemDark] = React.useState(window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false);
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const menuTrigger = React.useRef<HTMLButtonElement>(null);
+  const dismissMenu = () => {
+    setMenuOpen(false);
+    menuTrigger.current?.focus({ preventScroll: true });
+  };
   const [collapsed,setCollapsed]=React.useState(() => {try{return localStorage.getItem('studio.sidebar.collapsed')==='true';}catch{return false;}});
   const [preferencesOpen,setPreferencesOpen]=React.useState(false);
   const preferencesRef=React.useRef<HTMLDivElement>(null);
@@ -180,14 +185,15 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
   return (
     <ProjectSidebarContext.Provider value={projectSidebar}><div className={`app-shell flex overflow-hidden${collapsed ? ' sidebar-collapsed' : ''}`}>
       {/* Sidebar */}
-      {menuOpen && <button className="app-sidebar-backdrop fixed inset-0 bg-black/40 md:hidden" aria-label={t('hardware.closeMenu')} onClick={() => setMenuOpen(false)} />}
-      <aside className={`app-sidebar w-[184px] flex-shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex-col fixed inset-y-0 left-0 md:static ${menuOpen ? 'flex' : 'hidden md:flex'}`}>
+      {menuOpen && <button className="app-sidebar-backdrop fixed inset-0 bg-black/40 md:hidden" aria-label={t('hardware.closeMenu')} onClick={dismissMenu} />}
+      <aside id="app-sidebar" className={`app-sidebar w-[184px] flex-shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex-col fixed inset-y-0 left-0 md:static ${menuOpen ? 'flex' : 'hidden md:flex'}`}>
         <div className="sidebar-brand-row">
           <Link to="/projects" className="sidebar-brand" onClick={() => setMenuOpen(false)} aria-label="YPuddin Train Studio">
             <BrandMark/>
             <span className="sidebar-brand-text"><strong>YPuddin</strong><span>Train Studio</span></span>
           </Link>
-          <button onClick={() => setMenuOpen(false)} className="sidebar-menu-close md:hidden" aria-label={t('hardware.closeMenu')}><X className="w-4 h-4" /></button>
+          <button type="button" className="sidebar-collapse-control" aria-label={collapsed?text('展开侧边栏','Expand sidebar'):text('收起侧边栏','Collapse sidebar')} title={collapsed?text('展开侧边栏','Expand sidebar'):text('收起侧边栏','Collapse sidebar')} aria-expanded={!collapsed} aria-controls="app-sidebar" onClick={toggleSidebar}>{collapsed?<PanelLeftOpen size={18}/>:<PanelLeftClose size={18}/>}</button>
+          <button type="button" onClick={dismissMenu} className="sidebar-menu-close md:hidden" aria-label={t('hardware.closeMenu')}><X className="w-4 h-4" /></button>
         </div>
         <div className="sidebar-start px-3 pt-3"><Link to="/projects" aria-label={t('hardware.startTraining')} title={t('hardware.startTraining')} onClick={() => setMenuOpen(false)} className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 px-3 py-2.5 text-sm font-medium text-white"><Plus className="w-4 h-4" /><span>{t('hardware.startTraining')}</span></Link></div>
         <nav aria-label={text('主导航', 'Main navigation')} className="flex-1 overflow-y-auto p-2 space-y-1" onClick={event => { if (event.target instanceof Element && event.target.closest('a[href]')) setMenuOpen(false); }}>
@@ -221,8 +227,7 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
       <main className="app-main flex-1 min-w-0 flex flex-col overflow-hidden relative">
         {/* Topbar：实时系统状态 + 训练中胶囊 */}
         <header className="app-topbar bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800" data-testid="app-topbar">
-          <button type="button" className="sidebar-collapse-control" aria-label={collapsed?text('展开侧边栏','Expand sidebar'):text('收起侧边栏','Collapse sidebar')} title={collapsed?text('展开侧边栏','Expand sidebar'):text('收起侧边栏','Collapse sidebar')} aria-expanded={!collapsed} onClick={toggleSidebar}>{collapsed?<PanelLeftOpen size={18}/>:<PanelLeftClose size={18}/>}</button>
-          <button className="topbar-menu p-1.5" aria-label={t('hardware.openMenu')} onClick={() => setMenuOpen(true)}><Menu className="w-5 h-5" /></button>
+          <button ref={menuTrigger} type="button" className="topbar-menu p-1.5" aria-label={t('hardware.openMenu')} aria-expanded={menuOpen} aria-controls="app-sidebar" onClick={() => setMenuOpen(true)}><Menu className="w-5 h-5" /></button>
           {runningJob && <div className="topbar-job-slot">
               <Link
                 to={`/jobs/${runningJob.id}`}

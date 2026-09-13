@@ -280,7 +280,17 @@ def patch_project(pid: str, body: ProjectPatch, c: ServiceContext = Depends(ctx)
                     "schema": {
                         "type": "object",
                         "required": ["file"],
-                        "properties": {"file": {"type": "string", "format": "binary"}},
+                        "properties": {
+                            "file": {"type": "string", "format": "binary"},
+                            "crop": {
+                                "type": "string",
+                                "description": (
+                                    "Optional JSON object with normalized x, y, width and height (0–1), "
+                                    "relative to the EXIF-oriented image."
+                                ),
+                                "example": '{"x":0,"y":0.1,"width":1,"height":0.8}',
+                            },
+                        },
                     }
                 }
             },
@@ -289,8 +299,8 @@ def patch_project(pid: str, body: ProjectPatch, c: ServiceContext = Depends(ctx)
 )
 async def upload_project_cover(pid: str, request: Request, c: ServiceContext = Depends(ctx)) -> dict:
     original = _get_project(c, pid)
-    data = await read_cover_upload(request)
-    encoded = await run_in_threadpool(thumbnail, data)
+    data, crop = await read_cover_upload(request)
+    encoded = await run_in_threadpool(thumbnail, data, crop)
 
     def save():
         with c.db.lock:

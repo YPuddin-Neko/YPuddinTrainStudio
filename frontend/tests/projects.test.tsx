@@ -27,6 +27,24 @@ afterEach(() => vi.restoreAllMocks());
 function editCard(id = 'p0') { fireEvent.click(within(screen.getByTestId(`project-card-${id}`)).getByRole('button', { name: /更多操作/ })); fireEvent.click(screen.getByRole('menuitem', { name: '编辑项目' })); return screen.getByRole('dialog', { name: '编辑项目' }); }
 function select(label: string, option: string | RegExp) { fireEvent.click(screen.getByRole('combobox', { name: label })); fireEvent.click(screen.getByRole('option', { name: option })); }
 function coverFile() { return new File(['image bytes'], 'chosen-cover.png', { type: 'image/png' }); }
+function chooseCover(dialog: HTMLElement, file: File) {
+  fireEvent.change(within(dialog).getByLabelText('上传项目封面'), { target: { files: [file] } });
+  return screen.getByRole('dialog', { name: '裁切项目封面' });
+}
+function decodeCover(dialog: HTMLElement, width = 1600, height = 2000) {
+  const image = within(dialog).getByAltText('待裁切的项目封面');
+  Object.defineProperties(image, { naturalWidth: { configurable: true, value: width }, naturalHeight: { configurable: true, value: height } });
+  fireEvent.load(image);
+}
+function confirmCover(dialog: HTMLElement, file: File, zoom = 1, editor = '编辑项目') {
+  const cropDialog = chooseCover(dialog, file);
+  expect(within(cropDialog).getByRole('button', { name: '使用此裁切' })).toBeDisabled();
+  decodeCover(cropDialog);
+  if (zoom !== 1) fireEvent.change(within(cropDialog).getByRole('slider', { name: /^缩放(?:\s|$)/ }), { target: { value: String(zoom) } });
+  fireEvent.click(within(cropDialog).getByRole('button', { name: '使用此裁切' }));
+  return screen.getByRole('dialog', { name: editor });
+}
+const zoomedPortraitCrop = { x: .25, y: .375, width: .5, height: .25 };
 
 it('paginates 73 projects and resets the page when searching or changing the archive filter', async () => {
   show(); await screen.findByTestId('project-card-p0');
@@ -191,7 +209,7 @@ it('keeps cover uploads local until Save and discards cancelled name, category a
   fireEvent.change(within(dialog).getByRole('textbox', { name: '项目名称' }), { target: { value: '未保存名称' } });
   select('项目分类', '自定义分类…');
   fireEvent.change(screen.getByRole('textbox', { name: '自定义分类名称' }), { target: { value: '产品实验' } });
-  fireEvent.change(within(dialog).getByLabelText('上传项目封面'), { target: { files: [coverFile()] } });
+  dialog = confirmCover(dialog, coverFile());
   expect(within(dialog).getByRole('img')).toHaveAttribute('src', 'blob:project-cover');
   fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
   expect(apiClient.post).not.toHaveBeenCalled(); expect(apiClient.patch).not.toHaveBeenCalled(); expect(apiClient.delete).not.toHaveBeenCalled();
@@ -206,19 +224,20 @@ it('keeps cover uploads local until Save and discards cancelled name, category a
 it('retains a created project and selected file after upload failure, and retries without duplicating creation', async () => {
   show(); await screen.findByTestId('project-card-p0');
   fireEvent.click(screen.getByRole('button', { name: '新建项目' }));
-  const dialog = screen.getByRole('dialog', { name: '新建项目' });
+  let dialog = screen.getByRole('dialog', { name: '新建项目' });
   fireEvent.change(screen.getByTestId('project-name-input'), { target: { value: '封面与模型实验' } });
   fireEvent.change(screen.getByTestId('project-id-input'), { target: { value: 'Cover_01' } });
   await waitFor(() => expect(within(dialog).getByRole('button', { name: '创建' })).toBeEnabled());
   select('初始模型类型', 'Krea 2');
   select('项目分类', '画风 LoRA');
   const file = coverFile();
-  fireEvent.change(within(dialog).getByLabelText('上传项目封面'), { target: { files: [file] } });
+  dialog = confirmCover(dialog, file, 2, '新建项目');
   const created = { ...projects[0], id: 'Cover_01', name: '封面与模型实验', category: '画风 LoRA', cover_url: null };
   let uploads = 0;
   vi.mocked(apiClient.post).mockImplementation(async (endpoint, body) => {
     if (endpoint === '/projects') return created as any;
     expect(endpoint).toBe('/projects/Cover_01/cover'); expect((body as FormData).get('file')).toBe(file);
+    expect(JSON.parse((body as FormData).get('crop') as string)).toEqual(zoomedPortraitCrop);
     uploads += 1; if (uploads === 1) throw new Error('Upload connection lost');
     return { ...created, cover_url: '/api/projects/Cover_01/cover?v=2' } as any;
   });
@@ -263,7 +282,8 @@ it('rejects unsupported or oversized cover files without uploading and preserves
   expect(within(dialog).getByRole('alert')).toHaveTextContent('请选择 JPEG、PNG 或 WebP');
   const large = new File(['large'], 'large.png', { type: 'image/png' }); Object.defineProperty(large, 'size', { value: 8 * 1024 * 1024 + 1 });
   fireEvent.change(input, { target: { files: [large] } });
-  expect(within(dialog).getByRole('alert')).toHaveTextContent('不能超过 8 MiB');
+  expect(within(dialog).getByRole('alert')).toHaveTextContent('不能超过 8 MB（8,388,608 字节）');
+  expect(screen.queryByRole('dialog', { name: '裁切项目封面' })).not.toBeInTheDocument();
   expect(within(dialog).getByRole('textbox', { name: '项目名称' })).toBeEnabled();
   expect(apiClient.post).not.toHaveBeenCalled(); expect(apiClient.patch).not.toHaveBeenCalled();
 });
@@ -288,9 +308,10 @@ it('supports the More menu with keyboard focus and exposes unsupported families 
 
 it('preserves the previous cover and editable values when replacing a cover fails, then retries just the upload', async () => {
   projects = [{ ...projects[0], category: '人物 LoRA', cover_url: '/api/projects/p0/cover?v=1' } as Project];
-  show(); await screen.findByTestId('project-card-p0'); const dialog = editCard();
+  show(); await screen.findByTestId('project-card-p0'); let dialog = editCard();
   fireEvent.change(within(dialog).getByRole('textbox', { name: '项目名称' }), { target: { value: '已改名称' } });
-  fireEvent.change(within(dialog).getByLabelText('上传项目封面'), { target: { files: [coverFile()] } });
+  const file = coverFile();
+  dialog = confirmCover(dialog, file, 2);
   vi.mocked(apiClient.post).mockRejectedValueOnce(new Error('Cover storage is read only'));
   fireEvent.click(within(dialog).getByRole('button', { name: '保存' }));
   expect(await within(dialog).findByRole('alert')).toHaveTextContent('项目信息已保存，封面未保存');
@@ -302,5 +323,62 @@ it('preserves the previous cover and editable values when replacing a cover fail
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   expect(apiClient.patch).toHaveBeenCalledTimes(1);
   expect(apiClient.post).toHaveBeenCalledTimes(2);
+  for (const [endpoint, body] of vi.mocked(apiClient.post).mock.calls) {
+    expect(endpoint).toBe('/projects/p0/cover');
+    expect((body as FormData).get('file')).toBe(file);
+    expect(JSON.parse((body as FormData).get('crop') as string)).toEqual(zoomedPortraitCrop);
+  }
   expect(screen.getByRole('img')).toHaveAttribute('src', 'http://localhost:3000/api/projects/p0/cover?v=2');
+});
+
+it('keeps the previous pending file and crop when a replacement crop is cancelled', async () => {
+  show(); await screen.findByTestId('project-card-p0');
+  const file = coverFile();
+  let dialog = confirmCover(editCard(), file, 2);
+  const previewStyle = within(dialog).getByRole('img').getAttribute('style');
+  const replacement = new File(['another image'], 'replacement.webp', { type: 'image/webp' });
+  const cropDialog = chooseCover(dialog, replacement); decodeCover(cropDialog, 3000, 1000);
+  fireEvent.change(within(cropDialog).getByRole('slider', { name: /^缩放(?:\s|$)/ }), { target: { value: '3' } });
+  fireEvent.click(within(cropDialog).getByRole('button', { name: '取消裁切' }));
+  dialog = screen.getByRole('dialog', { name: '编辑项目' });
+  expect(within(dialog).getByText(file.name)).toBeInTheDocument();
+  expect(within(dialog).queryByText(replacement.name)).not.toBeInTheDocument();
+  expect(within(dialog).getByRole('img')).toHaveAttribute('style', previewStyle);
+  expect(apiClient.post).not.toHaveBeenCalled(); expect(apiClient.patch).not.toHaveBeenCalled();
+  vi.mocked(apiClient.post).mockResolvedValueOnce({ ...projects[0], cover_url: '/api/projects/p0/cover?v=cropped' });
+  fireEvent.click(within(dialog).getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  const [endpoint, body] = vi.mocked(apiClient.post).mock.calls[0];
+  expect(endpoint).toBe('/projects/p0/cover');
+  expect((body as FormData).get('file')).toBe(file);
+  expect(JSON.parse((body as FormData).get('crop') as string)).toEqual(zoomedPortraitCrop);
+});
+
+it('blocks crop confirmation until a real image size loads and keeps the project draft after bad images', async () => {
+  show(); await screen.findByTestId('project-card-p0'); let dialog = editCard();
+  fireEvent.change(within(dialog).getByRole('textbox', { name: '项目名称' }), { target: { value: '读取失败后保留' } });
+  let cropDialog = chooseCover(dialog, coverFile());
+  expect(within(cropDialog).getByRole('button', { name: '使用此裁切' })).toBeDisabled();
+  expect(within(cropDialog).getByRole('slider', { name: /^缩放(?:\s|$)/ })).toBeDisabled();
+  fireEvent.error(within(cropDialog).getByAltText('待裁切的项目封面'));
+  expect(within(cropDialog).getByRole('alert')).toHaveTextContent('无法读取这张图片');
+  expect(within(cropDialog).getByRole('button', { name: '使用此裁切' })).toBeDisabled();
+  fireEvent.click(within(cropDialog).getByRole('button', { name: '取消裁切' }));
+  dialog = screen.getByRole('dialog', { name: '编辑项目' });
+  expect(within(dialog).getByRole('textbox', { name: '项目名称' })).toHaveValue('读取失败后保留');
+  cropDialog = chooseCover(dialog, coverFile()); decodeCover(cropDialog, 0, 0);
+  expect(within(cropDialog).getByRole('alert')).toHaveTextContent('无法读取这张图片');
+  expect(within(cropDialog).getByRole('button', { name: '使用此裁切' })).toBeDisabled();
+  expect(apiClient.post).not.toHaveBeenCalled(); expect(apiClient.patch).not.toHaveBeenCalled();
+});
+
+it('accepts a cover of exactly 8 MiB for cropping without uploading or changing its bytes', async () => {
+  show(); await screen.findByTestId('project-card-p0');
+  const exact = new File(['size boundary fixture'], 'exact.png', { type: 'image/png' });
+  Object.defineProperty(exact, 'size', { value: 8 * 1024 * 1024 });
+  const cropDialog = chooseCover(editCard(), exact);
+  expect(URL.createObjectURL).toHaveBeenCalledWith(exact);
+  decodeCover(cropDialog);
+  expect(within(cropDialog).getByRole('button', { name: '使用此裁切' })).toBeEnabled();
+  expect(apiClient.post).not.toHaveBeenCalled(); expect(apiClient.patch).not.toHaveBeenCalled();
 });

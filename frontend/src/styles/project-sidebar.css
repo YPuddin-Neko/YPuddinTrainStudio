@@ -38,7 +38,8 @@
 
 .project-sidebar-model { padding:4px 1px 2px; color:var(--studio-dim); font-size:10px; overflow-wrap:anywhere; }
 .version-family-note { font-size:12px; color:var(--studio-dim); line-height:1.6; margin-top:-5px; }
-.sidebar-collapse-control{display:grid;place-items:center;width:28px;height:30px;flex-shrink:0;border-radius:6px;color:var(--studio-dim)}
+.app-shell .app-sidebar{transition-duration:200ms}
+.sidebar-collapse-control{display:grid;place-items:center;width:28px;height:30px;flex-shrink:0;margin-left:auto;border-radius:6px;color:var(--studio-dim)}
 .sidebar-collapse-control:hover{background:var(--studio-muted);color:var(--studio-text)}
 .app-sidebar .sidebar-preferences{display:block;position:relative;padding:8px}
 .sidebar-preferences-trigger{display:flex;align-items:center;gap:9px;width:100%;min-height:36px;padding:8px 10px;border-radius:6px;font-size:12px;color:var(--studio-dim)}
@@ -47,7 +48,8 @@
 .sidebar-preferences-popover>label{display:grid;grid-template-columns:54px minmax(0,1fr);align-items:center;gap:10px;font-size:12px}
 @media(min-width:768px){
  .sidebar-collapsed .app-sidebar{width:64px}
- .sidebar-collapsed .sidebar-brand-row{padding:0 17px}.sidebar-collapsed .sidebar-brand-text{display:none}
+ .sidebar-collapsed .sidebar-brand-row{justify-content:center;padding:0 12px}.sidebar-collapsed .sidebar-brand{display:none}
+ .sidebar-collapsed .sidebar-collapse-control{margin-left:0}
  .sidebar-collapsed .sidebar-start{padding-inline:12px}.sidebar-collapsed .sidebar-start a{padding-inline:0;min-height:38px}.sidebar-collapsed .sidebar-start span{display:none}
  .sidebar-collapsed .app-sidebar>nav>a,.sidebar-collapsed .app-sidebar>nav>a+div{min-width:0}
  .sidebar-collapsed .app-sidebar>nav>a{justify-content:center;padding-inline:0;min-height:38px}.sidebar-collapsed .app-sidebar>nav>a>span{display:none}
