@@ -239,7 +239,8 @@ def generate(payload: dict, output: Path, emit, cancelled):
             check()
             family.materialize_backbone(loaded)
             loaded.backbone.eval().requires_grad_(False)
-            previous_checkpoint = object()
+            uninitialized_checkpoint = object()
+            previous_checkpoint = uninitialized_checkpoint
             for cell in cells:
                 check()
                 sampling = SamplingConfig.model_validate(
@@ -249,7 +250,10 @@ def generate(payload: dict, output: Path, emit, cancelled):
                 if errors:
                     raise ValueError("; ".join(item["msg"] for item in errors))
                 if cell["checkpoint_id"] != previous_checkpoint:
-                    park()
+                    # First binding keeps the materializer's placement (which
+                    # may stage on CUDA before creating pinned swap masters).
+                    if previous_checkpoint is not uninitialized_checkpoint:
+                        park()
                     for parent, attr, original, _ in bindings:
                         setattr(parent, attr, original)
                     bindings.clear()

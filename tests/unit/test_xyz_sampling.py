@@ -290,8 +290,14 @@ def test_exported_adapters_keep_full_strength_and_zero_is_base(tmp_path, algo, d
         )
 
 
-def test_checkpoint_axis_switches_actual_weights_and_releases_swap_hooks(api, tmp_path):
+@pytest.mark.parametrize("cancel_after_bind", [None, 1, 2])
+def test_checkpoint_axis_switches_actual_weights_and_releases_swap_hooks(
+    api, tmp_path, monkeypatch, cancel_after_bind
+):
     from ypuddin.adapters import load_adapter_file, save_adapter_file
+    from ypuddin.memory import BlockSwapper
+    from ypuddin.models.toy import ToyFamily
+    from ypuddin.server import xyz_worker
 
     client, context = api
     original = Path(context.db.fetchone("SELECT path FROM artifacts WHERE id='a_trained'")["path"])
@@ -315,14 +321,87 @@ def test_checkpoint_axis_switches_actual_weights_and_releases_swap_hooks(api, tm
     assert client.get("/api/jobs/source/xyz/options").json()["defaults"]["checkpoint_id"] == "a_later"
     _, payload = create(api, x={"key": "checkpoint", "values": ["a_trained", "a_later"]})
     payload["memory"]["blocks_to_swap"] = 1
+    events, loaded_models, swappers = [], [], []
+    bound = 0
+    original_bind = xyz_worker.bind_checkpoint
+
+    class ObservedFamily(ToyFamily):
+        def load(self, *args, **kwargs):
+            loaded = super().load(*args, **kwargs)
+            loaded_models.append(loaded)
+            original_to = loaded.backbone.to
+
+            def move(*args, **kwargs):
+                target = args[0] if args else kwargs.get("device")
+                if isinstance(target, (str, torch.device)) and torch.device(target).type == "cpu":
+                    events.append("to_cpu")
+                return original_to(*args, **kwargs)
+
+            monkeypatch.setattr(loaded.backbone, "to", move)
+            monkeypatch.setattr(loaded.text, "unload", lambda: events.append("text_unload"))
+            monkeypatch.setattr(loaded.latent, "unload", lambda: events.append("latent_unload"))
+            return loaded
+
+        def materialize_backbone(self, loaded):
+            super().materialize_backbone(loaded)
+            events.append("materialized")
+
+    class ObservedSwapper(BlockSwapper):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            swappers.append(self)
+
+        def remove(self):
+            super().remove()
+            events.append("swap_removed")
+
+    def bind(*args, **kwargs):
+        nonlocal bound
+        bound += 1
+        events.append(f"bind_{bound}")
+        return original_bind(*args, **kwargs)
+
+    monkeypatch.setattr("ypuddin.models.get_family", lambda _: ObservedFamily())
+    monkeypatch.setattr("ypuddin.memory.BlockSwapper", ObservedSwapper)
+    monkeypatch.setattr(xyz_worker, "bind_checkpoint", bind)
     output = tmp_path / "result"
-    generate(payload, output, lambda *a, **k: None, lambda: False)
+
+    def run():
+        generate(payload, output, lambda *a, **k: None, lambda: bound == cancel_after_bind)
+
+    if cancel_after_bind is None:
+        run()
+    else:
+        with pytest.raises(InterruptedError, match="cancelled"):
+            run()
+    # Materialization may have preloaded CUDA weights. First binding must retain
+    # that placement; only an existing checkpoint/swapper needs parking.
+    first = events.index("materialized")
+    assert events[first + 1] == "bind_1"
+    if bound == 2:
+        second_bind = events.index("bind_2")
+        assert events[second_bind - 2 : second_bind] == ["swap_removed", "to_cpu"]
+    assert events[-4:] == ["swap_removed", "to_cpu", "text_unload", "latent_unload"]
+    assert len(swappers) == bound
+    assert all(not swapper._handles and not swapper._masters for swapper in swappers)
+    assert all(
+        not block._forward_pre_hooks
+        and not block._forward_hooks
+        and not block._backward_pre_hooks
+        and not block._backward_hooks
+        for block in loaded_models[0].backbone.blocks
+    )
     manifest = json.loads((output / "manifest.json").read_text())
-    assert [cell["checkpoint_id"] for cell in manifest["cells"]] == ["a_trained", "a_later"]
+    expected_cells = 2 if cancel_after_bind is None else cancel_after_bind - 1
+    assert manifest["complete"] is (cancel_after_bind is None)
+    assert [cell["checkpoint_id"] for cell in manifest["cells"]] == ["a_trained", "a_later"][:expected_cells]
     assert manifest["axes"]["x"]["labels"][-1] == "later"
-    assert (output / manifest["cells"][0]["file"]).read_bytes() != (
-        output / manifest["cells"][1]["file"]
-    ).read_bytes()
+    assert len(manifest["grids"]) == (1 if expected_cells else 0)
+    assert not list(output.glob("*.tmp"))
+    if expected_cells == 2:
+        assert (output / manifest["cells"][0]["file"]).read_bytes() != (
+            output / manifest["cells"][1]["file"]
+        ).read_bytes()
 
 
 def test_xyz_file_endpoint_refuses_symlink_to_unpublished_data(api, tmp_path):
