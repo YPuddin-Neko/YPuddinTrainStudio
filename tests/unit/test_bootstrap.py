@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import venv
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -646,6 +647,7 @@ def test_malformed_build_manifest_is_stale(monkeypatch, tmp_path, invalid):
         ("macos-mps", "Darwin", "arm64", "cpu"),
         ("windows-cuda", "Windows", "AMD64", "cu128"),
         ("linux-cuda", "Linux", "x86_64", "cu128"),
+        ("linux-dtk", "Linux", "x86_64", "dtk"),
         ("cpu", "Linux", "x86_64", "cpu"),
     ],
 )
@@ -662,6 +664,7 @@ def test_platform_profile_selects_matching_install(monkeypatch, profile, system,
     [
         ("windows-cuda", "auto"),
         ("linux-cuda", "auto"),
+        ("linux-dtk", "auto"),
         ("macos-mps", "cu128"),
         ("cpu", "cu128"),
         ("other", "auto"),
@@ -784,3 +787,477 @@ def test_cpu_profile_child_environment_blocks_package_and_device_leak(monkeypatc
     assert env["PYTHONNOUSERSITE"] == "1" and env["CUDA_VISIBLE_DEVICES"] == "-1"
     assert env["YPUDDIN_ENV_PROFILE"] == "linux-cpu"
     assert "nvidia" not in boot.choose_extras("cpu")
+
+
+@pytest.mark.parametrize("requested", ["cpu", "cu128", "cu126"])
+def test_dtk_profile_rejects_foreign_torch_channels(monkeypatch, requested):
+    monkeypatch.setattr(boot.platform, "system", lambda: "Linux")
+    with pytest.raises(SystemExit):
+        boot.platform_torch_tag("linux-dtk", requested)
+
+
+def test_dtk_profile_never_uses_nvidia_or_official_torch_sources(monkeypatch):
+    monkeypatch.setattr(boot.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(boot, "nvidia_driver_major", lambda: 580)
+    boot.select_environment("linux-dtk", "dtk")
+    assert boot.VENV == boot.ROOT / "environment/profiles/linux-dtk/venv"
+    assert "nvidia" not in boot.choose_extras("dtk")
+    assert boot.index_chains("official", "dtk")[1] == []
+
+
+@pytest.mark.parametrize("reinstall", [False, True])
+def test_dtk_missing_vendor_wheels_never_creates_or_deletes_environment(monkeypatch, reinstall):
+    monkeypatch.setattr(boot.platform, "system", lambda: "Linux")
+    boot.select_environment("linux-dtk", "dtk")
+    if reinstall:
+        boot.venv_python().parent.mkdir(parents=True)
+        boot.venv_python().write_text("vendor interpreter")
+    monkeypatch.setattr(boot, "run", lambda *a, **k: pytest.fail("installer must not run"))
+    with pytest.raises(SystemExit):
+        boot.ensure_venv("dtk", index_mode="official", reinstall=reinstall, extras=boot.EXTRAS_BASE)
+    assert boot.VENV.exists() == reinstall
+    if reinstall:
+        assert boot.venv_python().read_text() == "vendor interpreter"
+
+
+def test_dtk_existing_runtime_is_pinned_while_ordinary_dependencies_are_installed(monkeypatch):
+    monkeypatch.setattr(boot.platform, "system", lambda: "Linux")
+    boot.select_environment("linux-dtk", "dtk")
+    boot.venv_python().parent.mkdir(parents=True)
+    boot.venv_python().touch()
+    versions = {
+        "torch": "2.4.1+das.opt1.dtk25041",
+        "torchvision": "0.19.1+das.opt1.dtk25041",
+        "triton": "3.0.0+das.opt1.dtk25041",
+        "hip-runtime": "6.2",
+    }
+    monkeypatch.setattr(boot, "installed_versions", lambda: versions.copy())
+    monkeypatch.setattr(
+        boot, "torch_runtime", lambda: {"version": versions["torch"], "cuda": None, "hip": "6.2"}
+    )
+    monkeypatch.setattr(boot, "dependency_issues", lambda extras: [])
+    monkeypatch.setattr(boot, "editable_install_ready", lambda: True)
+    monkeypatch.setattr(boot, "uv_path", lambda: None)
+    calls = []
+
+    def execute(command, **kwargs):
+        calls.append(command)
+        if "--constraint" in command:
+            pins = Path(command[command.index("--constraint") + 1]).read_text()
+            assert all(f"{name}=={version}\n" in pins for name, version in versions.items())
+            assert "transformers<5\n" in pins
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(boot.subprocess, "run", execute)
+    boot.ensure_venv("dtk", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE)
+    assert all("torch>=2.4" not in command for command in calls)
+    assert not any("download.pytorch.org" in str(command) or ",nvidia" in str(command) for command in calls)
+    assert json.loads(boot.MARKER.read_text())["profile"] == "linux-dtk"
+
+
+def test_dtk_matching_marker_repairs_transformers_backend_incompatibility(monkeypatch, tmp_path):
+    versions = existing_environment(monkeypatch, tmp_path)
+    monkeypatch.setattr(boot, "PROFILE", "linux-dtk")
+    versions.clear()
+    versions.update(
+        torch="2.4.1+das.opt1.dtk25041",
+        torchvision="0.19.1+das.opt1.dtk25041",
+        transformers="5.17.0",
+        triton="3.0.0+das.opt1.dtk25041",
+    )
+    monkeypatch.setattr(
+        boot, "torch_runtime", lambda: {"version": versions["torch"], "cuda": None, "hip": "5.6"}
+    )
+    boot.MARKER.write_text(json.dumps({"signature": boot.install_signature("dtk", boot.EXTRAS_BASE)}))
+    commands = []
+
+    def install(command, **kwargs):
+        commands.append(command)
+        if "--constraint" in command:
+            constraints = Path(command[command.index("--constraint") + 1]).read_text()
+            assert "transformers<5\n" in constraints
+            assert "triton==3.0.0+das.opt1.dtk25041\n" in constraints
+            versions["transformers"] = "4.57.6"
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(boot.subprocess, "run", install)
+    boot.ensure_venv("dtk", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE)
+    assert any("-e" in command for command in commands)
+    assert versions["torch"] == "2.4.1+das.opt1.dtk25041"
+    commands.clear()
+    boot.ensure_venv("dtk", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE)
+    assert commands == []
+
+
+@pytest.mark.parametrize(
+    "profile,torch", [("linux-cuda", "2.4.1+cu124"), ("linux-dtk", "2.5.1+das.opt1.dtk25041")]
+)
+def test_dtk_torch24_transformers_constraint_does_not_leak_to_other_runtimes(monkeypatch, profile, torch):
+    monkeypatch.setattr(boot, "PROFILE", profile)
+    assert boot.dtk_compatibility_constraints({"torch": torch}) == []
+    assert boot.dtk_compatibility_issues({"torch": torch, "transformers": "5.17.0"}) == []
+
+
+@pytest.mark.parametrize(
+    "runtime", [{"version": "2.5.1", "cuda": "12.8"}, {"version": "2.5.1", "cuda": None}]
+)
+def test_dtk_rejects_cpu_or_cuda_runtime_before_installing(monkeypatch, runtime):
+    monkeypatch.setattr(boot.platform, "system", lambda: "Linux")
+    boot.select_environment("linux-dtk", "dtk")
+    boot.venv_python().parent.mkdir(parents=True)
+    boot.venv_python().touch()
+    monkeypatch.setattr(
+        boot, "installed_versions", lambda: {"torch": runtime["version"], "torchvision": "0.20.1"}
+    )
+    monkeypatch.setattr(boot, "torch_runtime", lambda: runtime)
+    monkeypatch.setattr(boot.subprocess, "run", lambda *a, **k: pytest.fail("installer must not run"))
+    with pytest.raises(SystemExit):
+        boot.ensure_venv("dtk", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE)
+
+
+@pytest.mark.parametrize("layout", ["dtk25041", "dtk2604"])
+@pytest.mark.parametrize("inherit_paths", [False, True])
+def test_dtk_launcher_keeps_library_environment_local_and_never_uses_legacy(tmp_path, layout, inherit_paths):
+    # Execute the real shell entry with a fake interpreter, without any vendor installation.
+    script = tmp_path / "studio-linux-dtk.sh"
+    script.write_bytes((SOURCE_ROOT / script.name).read_bytes())
+    binaries = tmp_path / "bin"
+    binaries.mkdir()
+    uname = binaries / "uname"
+    uname.write_text("#!/bin/sh\nprintf Linux")
+    uname.chmod(0o755)
+    dtk = tmp_path / "vendor dtk"
+    directories = ["lib", "hip/lib", "lib64", ".hyhal/lib", "bin", "llvm/bin", "hip/bin"]
+    if layout == "dtk2604":
+        directories += [
+            "llvm/lib", "dcc/lib", "dcc/gcvm/lib", "dcc/comgr/lib", "dcc/bin",
+            "dushmem/lib", "opencl/lib", ".hyhal/lib64", ".hyhal/rocm_smi/lib",
+            "include", "llvm/include", "dcc/gcvm/include", "dushmem/include", "opencl/include",
+        ]
+    for directory in directories:
+        (dtk / directory).mkdir(parents=True)
+    # The launcher reads no vendor shell code and does not alter the caller's files.
+    sentinel = tmp_path / "vendor-script-was-sourced"
+    (dtk / "env.sh").write_text(f"touch '{sentinel}'\n")
+    python = tmp_path / "environment/profiles/linux-dtk/venv/bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text(
+        '#!/bin/sh\nprintf \'%s\\n\' "$@" "${LD_LIBRARY_PATH:-}" "$PYTHONNOUSERSITE" '
+        '"${PYTHONPATH:-cleared}" "$DTK_ROOT" "$DTKROOT" "$ROCM_PATH" "$HIP_PATH" '
+        '"${LIBRARY_PATH:-}" "$PATH" "${C_INCLUDE_PATH:-}" "${CPLUS_INCLUDE_PATH:-}"'
+    )
+    python.chmod(0o755)
+    caller_env = {
+        **os.environ,
+        "PATH": str(binaries) + ":" + os.environ["PATH"],
+        "DTK_ROOT": str(dtk),
+        "PYTHONPATH": "/foreign/site",
+        "ROCM_PATH": "/foreign/runtime",
+        "HIP_PATH": "/foreign/runtime/hip",
+    }
+    for variable in ("LD_LIBRARY_PATH", "LIBRARY_PATH", "C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH"):
+        if inherit_paths:
+            caller_env[variable] = f"/existing/{variable.lower()}"
+        else:
+            caller_env.pop(variable, None)
+    before = caller_env.copy()
+    result = subprocess.run(
+        ["bash", str(script), "doctor"],
+        env=caller_env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    arguments = result.stdout.splitlines()
+    assert arguments[:3] == ["scripts/bootstrap.py", "--profile=linux-dtk", "doctor"]
+    ld_path, user_site, foreign_path, selected, dtkroot, rocm, hip, linker, path, c_path, cpp_path = arguments[3:]
+    assert (user_site, foreign_path) == ("1", "cleared")
+    assert (selected, dtkroot, rocm, hip) == (str(dtk), str(dtk), str(dtk), str(dtk / "hip"))
+    for variable, value, suffixes in (
+        ("LD_LIBRARY_PATH", ld_path, ("/lib", "/lib64", "lib", "lib64")),
+        ("LIBRARY_PATH", linker, ("/lib", "/lib64", "lib", "lib64")),
+        ("PATH", path, ("/bin", "bin")),
+        ("C_INCLUDE_PATH", c_path, ("/include", "include")),
+        ("CPLUS_INCLUDE_PATH", cpp_path, ("/include", "include")),
+    ):
+        entries = value.split(":") if value else []
+        assert "" not in entries  # No implicit current-directory search paths.
+        for directory in directories:
+            if directory.endswith(suffixes):
+                assert str(dtk / directory) in entries
+        if variable in caller_env:
+            assert value.endswith(caller_env[variable])
+        for entry in entries:
+            if entry.startswith(str(dtk)):
+                assert Path(entry).is_dir()
+    assert ld_path.split(":")[0] == str(dtk / "lib")
+    assert str(dtk / "dcc/lib") in ld_path if layout == "dtk2604" else str(dtk / "dcc/lib") not in ld_path
+    assert caller_env == before and not sentinel.exists()
+
+
+def test_dtk_vendor_wheel_failure_never_falls_back_to_online_torch(monkeypatch, tmp_path):
+    monkeypatch.setattr(boot.platform, "system", lambda: "Linux")
+    boot.select_environment("linux-dtk", "dtk")
+    boot.venv_python().parent.mkdir(parents=True)
+    boot.venv_python().touch()
+    wheels = tmp_path / "wheels"
+    wheels.mkdir()
+    for name in ("torch", "torchvision"):
+        (wheels / f"{name}-vendor.whl").touch()
+    monkeypatch.setattr(boot, "installed_versions", lambda: {})
+    monkeypatch.setattr(boot, "uv_path", lambda: None)
+    calls = []
+
+    def fail(command, **kwargs):
+        calls.append(command)
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(boot.subprocess, "run", fail)
+    with pytest.raises(subprocess.CalledProcessError):
+        boot.ensure_venv(
+            "dtk", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE, dtk_wheelhouse=str(wheels)
+        )
+    assert len(calls) == 1
+    assert "--no-index" in calls[0] and "--index-url" not in calls[0]
+    assert str(wheels) == calls[0][calls[0].index("--find-links") + 1]
+    assert not boot.MARKER.exists()
+
+
+def dtk_wheelhouse(tmp_path, triton_version=None):
+    wheels = tmp_path / "vendor-wheels"
+    wheels.mkdir()
+    for name in ("torch", "torchvision"):
+        (wheels / f"{name}-vendor.whl").touch()
+    if triton_version:
+        wheel = wheels / f"triton-{triton_version}-cp311-cp311-manylinux_2_28_x86_64.whl"
+        with zipfile.ZipFile(wheel, "w") as archive:
+            archive.writestr(
+                f"triton-{triton_version}.dist-info/METADATA",
+                f"Metadata-Version: 2.1\nName: triton\nVersion: {triton_version}\nRequires-Dist: torch==2.7.1\n",
+            )
+    return wheels
+
+
+@pytest.mark.parametrize("use_uv", [False, True])
+@pytest.mark.parametrize("initial", ["empty", "torch-ready", "triton-ready"])
+def test_dtk_local_triton_is_installed_and_pinned_even_after_ready_marker(
+    monkeypatch, tmp_path, use_uv, initial
+):
+    versions = existing_environment(monkeypatch, tmp_path)
+    versions.clear()
+    monkeypatch.setattr(boot, "PROFILE", "linux-dtk")
+    native = {"torch": "2.7.1+das.opt1.dtk2604", "torchvision": "0.22.0+das.opt1.dtk2604.torch271"}
+    supplied_triton = "3.1.0+das.opt1.dtk2604.torch271"
+    if initial != "empty":
+        versions.update(native)
+        versions["numpy"] = "1.26.4"
+        boot.MARKER.write_text(json.dumps({"signature": boot.install_signature("dtk", boot.EXTRAS_BASE)}))
+    if initial == "triton-ready":
+        # A supplied newer wheel must not cause a working native stack to upgrade.
+        versions["triton"] = "3.0.0+das.opt1.dtk2604.torch271"
+    before = versions.copy()
+    wheels = dtk_wheelhouse(tmp_path, supplied_triton)
+    monkeypatch.setattr(boot, "uv_path", lambda: "uv" if use_uv else None)
+    monkeypatch.setattr(boot, "uv_cache_dir", lambda _: tmp_path)
+    monkeypatch.setattr(boot, "torch_runtime", lambda: {"version": native["torch"], "cuda": None, "hip": "6.3"})
+    commands = []
+
+    def install(command, **kwargs):
+        commands.append(command)
+        if "--constraint" in command:
+            pins = Path(command[command.index("--constraint") + 1]).read_text()
+            assert all(f"{name}=={version}\n" in pins for name, version in before.items())
+            if "--no-index" in command:
+                assert "triton" in command and "--index-url" not in command
+                assert command[command.index("--find-links") + 1] == str(wheels)
+                versions.update(native, triton=supplied_triton)
+            else:
+                assert f"triton=={supplied_triton}\n" in pins
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(boot.subprocess, "run", install)
+    options = dict(index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE, dtk_wheelhouse=str(wheels))
+    boot.ensure_venv("dtk", **options)
+    assert sum("--no-index" in command for command in commands) == (initial != "triton-ready")
+    assert all(versions[name] == version for name, version in before.items())
+    assert versions["triton"] == before.get("triton", supplied_triton)
+    assert all("download.pytorch.org" not in " ".join(command) for command in commands)
+    # Once the supplement is present, the same invocation needs no installer/network.
+    commands.clear()
+    boot.ensure_venv("dtk", **options)
+    assert commands == []
+
+
+@pytest.mark.parametrize("torch_present", [False, True])
+def test_dtk_without_supplied_triton_keeps_sdpa_environment_optional(monkeypatch, tmp_path, torch_present):
+    versions = existing_environment(monkeypatch, tmp_path)
+    versions.clear()
+    monkeypatch.setattr(boot, "PROFILE", "linux-dtk")
+    native = {"torch": "2.7.1+das.opt1.dtk2604", "torchvision": "0.22.0+das.opt1.dtk2604.torch271"}
+    if torch_present:
+        versions.update(native)
+        boot.MARKER.write_text(json.dumps({"signature": boot.install_signature("dtk", boot.EXTRAS_BASE)}))
+    wheels = dtk_wheelhouse(tmp_path)
+    monkeypatch.setattr(boot, "torch_runtime", lambda: {"version": native["torch"], "cuda": None, "hip": "6.3"})
+    commands = []
+
+    def install(command, **kwargs):
+        commands.append(command)
+        assert "triton" not in command
+        if "--no-index" in command:
+            versions.update(native)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(boot.subprocess, "run", install)
+    boot.ensure_venv(
+        "dtk", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE, dtk_wheelhouse=str(wheels)
+    )
+    assert "triton" not in versions
+    assert sum("--no-index" in command for command in commands) == (not torch_present)
+    assert boot.MARKER.exists()
+
+
+@pytest.mark.parametrize("invalid", ["plain", "renamed", "corrupt"])
+def test_dtk_triton_must_have_vendor_metadata_before_any_environment_mutation(
+    monkeypatch, tmp_path, invalid
+):
+    versions = existing_environment(monkeypatch, tmp_path)
+    monkeypatch.setattr(boot, "PROFILE", "linux-dtk")
+    supplied = "3.1.0" if invalid in {"plain", "renamed"} else "3.1.0+das.opt1.dtk2604"
+    wheels = dtk_wheelhouse(tmp_path, supplied)
+    wheel = next(wheels.glob("triton-*.whl"))
+    if invalid == "renamed":
+        wheel.rename(wheel.with_name(wheel.name.replace("3.1.0", "3.1.0+das.opt1.dtk2604")))
+    elif invalid == "corrupt":
+        wheel.write_bytes(b"not a wheel")
+    before = versions.copy()
+    monkeypatch.setattr(boot.subprocess, "run", lambda *a, **k: pytest.fail("must fail before installation"))
+    with pytest.raises(SystemExit):
+        boot.ensure_venv(
+            "dtk", index_mode="official", reinstall=True, extras=boot.EXTRAS_BASE, dtk_wheelhouse=str(wheels)
+        )
+    assert boot.venv_python().exists() and versions == before
+
+
+def test_dtk_without_ensurepip_targets_only_new_venv_with_local_pip(monkeypatch, tmp_path):
+    wheelhouse = tmp_path / "vendor wheels"
+    wheelhouse.mkdir()
+    (wheelhouse / "pip-25.1-py3-none-any.whl").touch()
+    calls = []
+
+    def execute(command, **kwargs):
+        calls.append(command)
+        if "ensurepip" in command:
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="No module named ensurepip")
+        if "--help" in command:
+            return subprocess.CompletedProcess(command, 0, stdout="--python <python> Run pip in target")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(boot.subprocess, "run", execute)
+    boot.create_dtk_venv("/usr/bin/python3", wheelhouse)
+    assert calls[2] == ["/usr/bin/python3", "-m", "venv", "--without-pip", str(boot.VENV)]
+    seed = calls[3]
+    assert seed[:6] == ["/usr/bin/python3", "-m", "pip", "--isolated", "--python", str(boot.venv_python())]
+    assert "--no-index" in seed and "--no-deps" in seed and seed[-1] == "pip"
+    assert seed[seed.index("--find-links") + 1] == str(wheelhouse)
+    assert calls[4] == [str(boot.venv_python()), "-m", "pip", "--version"]
+    assert all("--upgrade" not in command and "torch" not in command for command in calls)
+
+
+@pytest.mark.parametrize("local_wheel,host_support", [(False, True), (True, False)])
+def test_dtk_missing_pip_bootstrap_prerequisites_do_not_create_environment(
+    monkeypatch, tmp_path, capsys, local_wheel, host_support
+):
+    wheelhouse = tmp_path / "wheels"
+    wheelhouse.mkdir()
+    if local_wheel:
+        (wheelhouse / "pip-25.1-py3-none-any.whl").touch()
+    calls = []
+
+    def execute(command, **kwargs):
+        calls.append(command)
+        assert "venv" not in command and "install" not in command
+        return subprocess.CompletedProcess(
+            command,
+            1 if "ensurepip" in command else 0,
+            stdout="--python" if host_support else "old pip without target option",
+            stderr="",
+        )
+
+    monkeypatch.setattr(boot.subprocess, "run", execute)
+    with pytest.raises(SystemExit):
+        boot.create_dtk_venv("/usr/bin/python3", wheelhouse)
+    assert not boot.VENV.exists()
+    assert "ensurepip" in capsys.readouterr().err
+    assert len(calls) == (2 if local_wheel else 1)
+
+
+def test_dtk_with_working_ensurepip_keeps_normal_venv_creation(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(
+        boot.subprocess,
+        "run",
+        lambda command, **kwargs: calls.append(command) or subprocess.CompletedProcess(command, 0),
+    )
+    boot.create_dtk_venv("/python", tmp_path)
+    assert calls == [["/python", "-m", "ensurepip", "--version"], ["/python", "-m", "venv", str(boot.VENV)]]
+
+
+def test_failed_dtk_pip_seed_removes_only_its_own_new_environment(monkeypatch, tmp_path):
+    wheelhouse = tmp_path / "wheels"
+    wheelhouse.mkdir()
+    (wheelhouse / "pip-25.1-py3-none-any.whl").touch()
+    other = boot.ROOT / "environment/profiles/linux-cuda/venv"
+    other.mkdir(parents=True)
+    sentinel = other / "keep.txt"
+    sentinel.write_text("running environment")
+
+    def execute(command, **kwargs):
+        if "ensurepip" in command:
+            return subprocess.CompletedProcess(command, 1)
+        if "--help" in command:
+            return subprocess.CompletedProcess(command, 0, stdout="--python")
+        if "venv" in command:
+            boot.VENV.mkdir()
+            return subprocess.CompletedProcess(command, 0)
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(boot.subprocess, "run", execute)
+    with pytest.raises(SystemExit):
+        boot.create_dtk_venv("/python", wheelhouse)
+    assert not boot.VENV.exists() and sentinel.read_text() == "running environment"
+
+
+def test_dtk_pip_fallback_builds_a_real_isolated_venv_offline(monkeypatch, tmp_path):
+    import ensurepip
+
+    bundled = list((Path(ensurepip.__file__).parent / "_bundled").glob("pip-*.whl"))
+    if not bundled:
+        pytest.skip("Local interpreter has no bundled pip wheel for this offline integration check")
+    # The development venv may itself have been created by uv without pip.
+    # Build a temporary host Python instead of modifying that active environment.
+    host = tmp_path / "host-python"
+    venv.create(host, with_pip=True)
+    host_python = str(host / ("Scripts/python.exe" if boot.WIN else "bin/python"))
+    host_pip = subprocess.check_output([host_python, "-m", "pip", "--version"], text=True)
+    wheelhouse = tmp_path / "local-wheels"
+    wheelhouse.mkdir()
+    (wheelhouse / bundled[0].name).write_bytes(bundled[0].read_bytes())
+    original = subprocess.run
+
+    def simulate_missing_ensurepip(command, **kwargs):
+        if command[1:4] == ["-m", "ensurepip", "--version"]:
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="No module named ensurepip")
+        return original(command, **kwargs)
+
+    monkeypatch.setattr(boot.subprocess, "run", simulate_missing_ensurepip)
+    boot.create_dtk_venv(host_python, wheelhouse)
+    result = original(
+        [str(boot.venv_python()), "-c", "import pip,sys,json; print(json.dumps([sys.prefix,pip.__file__]))"],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    prefix, pip_file = json.loads(result.stdout)
+    assert Path(prefix) == boot.VENV and Path(pip_file).is_relative_to(boot.VENV)
+    assert subprocess.check_output([host_python, "-m", "pip", "--version"], text=True) == host_pip

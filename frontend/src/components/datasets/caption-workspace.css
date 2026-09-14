@@ -115,3 +115,28 @@
   .caption-workspace-editor { padding:12px; }
   .caption-workspace-filters button { flex:1 1 140px; justify-content:space-between; }
 }
+
+.caption-workspace-filter-count { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; }
+.caption-workspace-refresh-status { display: inline-flex; align-items: center; gap: 5px; }
+
+/* Image and filmstrip share a column, beside the editor and directory frequencies. */
+.caption-workspace-body { min-width:0; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:20px; }
+.caption-workspace-visual { display:grid; min-width:0; gap:12px; align-content:start; }
+.caption-workspace-preview img { height:clamp(280px,44dvh,520px); }
+.caption-workspace-gallery { grid-template-columns:repeat(auto-fill,minmax(78px,1fr)); max-height:230px; }
+.caption-workspace-gallery img { height:86px; }
+.caption-workspace-editor { border:0; border-left:1px solid var(--studio-line); border-radius:0; padding:0 0 0 20px; }
+.caption-workspace-editor .structured-caption-field textarea { font-size:14px; }
+.caption-workspace-save { position:sticky; bottom:0; background:var(--studio-panel); padding:12px 0; }
+@container(min-width:1050px) {
+  .caption-workspace-content { grid-template-columns:minmax(0,1fr) 210px; gap:20px; }
+  .caption-workspace-body { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+  .caption-workspace-visual { position:sticky; top:calc(var(--workspace-head-height,0px) + var(--pipeline-nav-height,0px) + 12px); }
+}
+@container(max-width:740px) {
+  .caption-workspace-body { grid-template-columns:minmax(0,1fr); }
+  .caption-workspace-editor { border-left:0; border-top:1px solid var(--studio-line); padding:16px 0 0; }
+  .caption-workspace-preview img { height:clamp(260px,42dvh,420px); }
+  .caption-workspace-gallery { grid-template-columns:repeat(auto-fill,minmax(78px,1fr)); max-height:180px; }
+  .caption-workspace-gallery img { height:86px; }
+}

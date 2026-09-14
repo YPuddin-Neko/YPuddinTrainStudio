@@ -1,12 +1,55 @@
 """CPU dispatch simulations verify gradients/fallback contracts without optional CUDA packages."""
 
 import importlib
+import sys
+from types import SimpleNamespace
 
 import pytest
 import torch
 from torch.utils.checkpoint import checkpoint
 
 attn = importlib.import_module("ypuddin.models.anima.vendor.attention")
+
+
+@pytest.mark.parametrize("deterministic", [False, True])
+def test_flash_dispatch_honors_global_determinism_and_preserves_gradients(monkeypatch, deterministic):
+    seen = []
+
+    def flash(q, k, v, *, dropout_p, causal, deterministic):
+        seen.append((dropout_p, causal, deterministic))
+        return q + 2 * k + 3 * v
+
+    monkeypatch.setitem(sys.modules, "flash_attn", SimpleNamespace(flash_attn_func=flash))
+    previous = torch.are_deterministic_algorithms_enabled()
+    warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
+    try:
+        torch.use_deterministic_algorithms(deterministic)
+        tensors = [torch.randn(1, 2, 3, 8, requires_grad=True) for _ in range(3)]
+        result = attn._external_attention("flash_attn", *tensors, 0.0)
+        assert result.shape == tensors[0].shape
+        result.sum().backward()
+        assert seen == [(0.0, False, deterministic)]
+        for multiplier, tensor in enumerate(tensors, 1):
+            torch.testing.assert_close(tensor.grad, torch.full_like(tensor, multiplier))
+    finally:
+        torch.use_deterministic_algorithms(previous, warn_only=warn_only)
+
+
+def test_flash_deterministic_kernel_failure_is_not_silently_retried(monkeypatch):
+    def unsupported(*args, **kwargs):
+        assert kwargs["deterministic"] is True
+        raise RuntimeError("deterministic backward is unsupported on this device")
+
+    monkeypatch.setitem(sys.modules, "flash_attn", SimpleNamespace(flash_attn_func=unsupported))
+    previous = torch.are_deterministic_algorithms_enabled()
+    warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
+    try:
+        torch.use_deterministic_algorithms(True)
+        q = torch.randn(1, 2, 3, 8)
+        with pytest.raises(RuntimeError, match="deterministic backward is unsupported"):
+            attn._external_attention("flash_attn", q, q, q, 0.0)
+    finally:
+        torch.use_deterministic_algorithms(previous, warn_only=warn_only)
 
 
 @pytest.mark.parametrize("backend", ["sage", "xformers", "flash_attn"])

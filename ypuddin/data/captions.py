@@ -15,10 +15,17 @@ from .caption_json import StructuredCaption, edited_content, load_caption, rende
 _WILDCARD = re.compile(r"\{([^{}]*)\}")
 
 
-def read_training_caption(path: str | Path | None, fallback: str | None = None) -> str | StructuredCaption:
+def read_training_caption(
+    path: str | Path | None, fallback: str | None = None, *, require_known_format: bool = False
+) -> str | StructuredCaption:
+    """Read the selected caption; training callers require a recognized JSON format.
+
+    Inspection also uses this reader and keeps unknown documents available for the
+    read-only structured editor. Only training may interpret the result as conditioning.
+    """
     if path and Path(path).exists():
         if Path(path).suffix.lower() == ".json":
-            return load_caption(path)[1]
+            return load_caption(path, require_known_format=require_known_format)[1]
         text = Path(path).read_text(encoding="utf-8", errors="replace").strip()
         if text:
             return text
@@ -44,21 +51,31 @@ def caption_description(path: str | Path | None) -> str:
     return raw.nl if isinstance(raw, StructuredCaption) else ""
 
 
-def caption_content(path: str | Path, text: str, *, description: str | None = None) -> str:
+def caption_content(
+    path: str | Path, text: str | None = None, *, description: str | None = None,
+    fields: list[dict] | None = None, revision: str | None = None,
+) -> str:
     path = Path(path)
     if description is not None and path.suffix.lower() != ".json":
         raise ValueError("separate descriptions require a JSON caption")
+    if fields is not None and path.suffix.lower() != ".json":
+        raise ValueError("structured fields require a JSON caption")
+    if path.suffix.lower() != ".json" and text is None:
+        raise ValueError("TXT captions require caption text")
     return (
-        edited_content(path, text, description=description)
+        edited_content(path, text, description=description, fields=fields, revision=revision)
         if path.suffix.lower() == ".json"
         else text.strip() + "\n"
     )
 
 
-def write_caption(path: str | Path, text: str, *, description: str | None = None) -> None:
+def write_caption(
+    path: str | Path, text: str | None = None, *, description: str | None = None,
+    fields: list[dict] | None = None, revision: str | None = None,
+) -> None:
     """Atomically replace one caption. Each concurrent writer gets its own temporary file."""
     path = Path(path)
-    content = caption_content(path, text, description=description)
+    content = caption_content(path, text, description=description, fields=fields, revision=revision)
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="") as stream:

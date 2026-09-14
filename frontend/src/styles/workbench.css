@@ -1,9 +1,9 @@
 /* Shared workspace scale. Task-specific panels own their column breakpoints. */
-:root { --studio-canvas:#f5f6f8; --studio-muted:#f7f8fa; --studio-text:#263445; --studio-dim:#5f6e80; --studio-line:#dfe5ed; }
+:root { --studio-page-width:1520px; --studio-canvas:#f5f6f8; --studio-muted:#f7f8fa; --studio-text:#263445; --studio-dim:#5f6e80; --studio-line:#dfe5ed; }
 .dark { --studio-canvas:#10151e; --studio-panel:#181f2b; --studio-muted:#202938; --studio-text:#e0e6ef; --studio-dim:#a1afc1; --studio-line:#303c4e; }
 .app-shell { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif; }
 .app-shell .app-page-viewport { --page-inset:24px; padding:var(--page-inset); }
-.app-shell .app-page-frame { font-size:14px; max-width:1520px; }
+.app-shell .app-page-frame { font-size:14px; max-width:var(--studio-page-width); }
 .app-shell .task-workspace { width:100%; max-width:1320px; margin-inline:auto; gap:20px; }
 .app-shell .task-page-heading h1 { font-size:24px; letter-spacing:-.5px; }
 .app-shell .task-page-heading p { font-size:13px; }

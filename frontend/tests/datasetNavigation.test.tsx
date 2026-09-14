@@ -10,18 +10,18 @@ import Dataset from '../src/pages/Dataset/Dataset';
 import { handlers } from '../src/mocks/handlers';
 import i18n from '../src/i18n';
 
-const { updateCaption } = vi.hoisted(() => ({ updateCaption: vi.fn() }));
+const { updateCaption, refreshImages, imageFixtures } = vi.hoisted(() => ({ updateCaption: vi.fn(), refreshImages:vi.fn(), imageFixtures:{items:[{ hash:'image1', rel_path:'photo.png', width:64, height:64, has_mask:false, caption:'cat' }] as any[]} }));
 vi.mock('../src/events/useEventStream', () => ({ useEventStream: () => {}, useEventStreamStatus: () => 'connected' }));
 vi.mock('../src/api/hooks/useDatasetImages', () => ({ useDatasetImages: () => ({
-  items: [{ hash: 'image1', rel_path: 'photo.png', width: 64, height: 64, has_mask: false, caption: 'cat' }],
+  items: imageFixtures.items,
   total: 1, q: '', selected: new Set(), loading: false, error: null,
-  refresh: vi.fn(), loadMore: vi.fn(), setQ: vi.fn(), selectAll: vi.fn(), clearSelection: vi.fn(), toggleSelect: vi.fn(), updateCaption,
+  refresh: refreshImages, loadMore: vi.fn(), setQ: vi.fn(), selectAll: vi.fn(), clearSelection: vi.fn(), toggleSelect: vi.fn(), updateCaption,
 }) }));
 vi.mock('../src/components/masks/MaskEditor', () => ({ MaskEditor: ({ onClose }: { onClose: () => void }) => <div role="dialog" aria-label="Mask draft"><button onClick={onClose}>Close mask draft</button></div> }));
 const server = setupServer(...handlers);
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
 afterAll(() => server.close());
-beforeEach(async () => { await i18n.changeLanguage('zh-CN'); updateCaption.mockClear(); });
+beforeEach(async () => { await i18n.changeLanguage('zh-CN'); updateCaption.mockClear();refreshImages.mockClear();imageFixtures.items=[{hash:'image1',rel_path:'photo.png',width:64,height:64,has_mask:false,caption:'cat'}]; });
 afterEach(() => { server.resetHandlers(); vi.restoreAllMocks(); });
 
 function fixture() {
@@ -56,6 +56,23 @@ async function editCaption() {
 }
 
 describe('dataset project sidebar and navigation protection', () => {
+  it('edits JSON by original field path and targets the selected relative path even with duplicate hashes',async()=>{
+    const structure={format:'full',editable:true,legacy_override:false,revision:'json-file-sha',document:{ai_output:{appearance:['blue coat'],nl:'Natural prose.'},meta:{score:2}},fields:[{path:['ai_output','appearance'],role:'appearance',value:['blue coat'],present:true},{path:['ai_output','nl'],role:'nl',value:'Natural prose.',present:true}]};
+    imageFixtures.items=['first/a.png','second/a.png'].map(rel_path=>({hash:'same',rel_path,width:64,height:64,has_mask:false,caption:'blue coat. Natural prose.',caption_format:'json',caption_structure:structure}));
+    let requestUrl='';let payload:unknown;
+    server.use(http.put('/api/datasets/d_known/images/same/caption',async({request})=>{requestUrl=request.url;payload=await request.json();return HttpResponse.json({ok:true});}));
+    show();await screen.findByRole('combobox',{name:'项目版本'});
+    fireEvent.click(await screen.findByRole('button',{name:'编辑标签: second/a.png'}));
+    expect(screen.getByRole('textbox',{name:'自然语言描述'})).toHaveValue('Natural prose.');
+    expect(screen.queryByTestId('tag-add-input')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox',{name:'外观与服装 · 标签 1'}),{target:{value:'red coat'}});
+    fireEvent.click(screen.getByTestId('caption-save-btn'));
+    await waitFor(()=>expect(refreshImages).toHaveBeenCalledOnce());
+    expect(new URL(requestUrl).searchParams.get('rel_path')).toBe('second/a.png');
+    expect(payload).toEqual({caption_fields:[{path:['ai_output','appearance'],value:['red coat']}],caption_revision:'json-file-sha'});
+    expect(updateCaption).not.toHaveBeenCalled();expect(structure.document.meta.score).toBe(2);
+  });
+
   it('returns to the same version dataset library after removing a dataset', async () => {
     let deleted = false;
     server.use(http.delete('/api/datasets/d_known', () => { deleted = true; return HttpResponse.json({ ok: true }); }));
@@ -75,7 +92,8 @@ describe('dataset project sidebar and navigation protection', () => {
     await screen.findByRole('combobox',{name:'项目版本'});
     const back=screen.getByRole('link',{name:'返回本版本数据集'});
     expect(back).toHaveAttribute('href','/projects/p_dataset/v/v2?step=data&data_step=import#version-datasets');
-    expect(back.parentElement).toHaveClass('dataset-workspace-navigation');
+    expect(back.closest('nav')).toHaveClass('workspace-breadcrumb');
+    expect(back.closest('header')).toContainElement(screen.getByRole('heading', {name:'photos'}));
     fireEvent.click(back);
     await screen.findByText('Version destination');
     expect(screen.getByTestId('route')).toHaveTextContent('/projects/p_dataset/v/v2?step=data&data_step=import');
@@ -92,7 +110,7 @@ describe('dataset project sidebar and navigation protection', () => {
     await waitFor(()=>expect(screen.getByTestId('caption-save-btn')).toBeDisabled());
     expect(screen.getByTestId('route')).toHaveTextContent('/datasets/d_known');
     await act(async()=>release()); await screen.findByText('Version destination');
-    expect(updateCaption).toHaveBeenCalledExactlyOnceWith('image1','cat, blue eyes');
+    expect(updateCaption).toHaveBeenCalledExactlyOnceWith('image1','cat, blue eyes','photo.png');
   });
 
   it('uses the dataset owner/version and waits for its caption PUT before switching versions', async () => {
@@ -118,7 +136,7 @@ describe('dataset project sidebar and navigation protection', () => {
     await act(async () => release());
     await screen.findByText('Version destination');
     expect(screen.getByTestId('route')).toHaveTextContent('/projects/p_dataset/v/v1');
-    expect(updateCaption).toHaveBeenCalledWith('image1', 'cat, blue eyes');
+    expect(updateCaption).toHaveBeenCalledWith('image1', 'cat, blue eyes', 'photo.png');
   });
 
   it('keeps the caption draft and dataset route on a failed save, then retries before following a stage link', async () => {
@@ -167,7 +185,7 @@ describe('dataset project sidebar and navigation protection', () => {
     expect(screen.queryByRole('dialog', { name: '编辑图片标签' })).not.toBeInTheDocument();
     fireEvent.click(within(drawer).getByRole('button', { name: '关闭设置，返回工作区' }));
     expect(screen.getByTestId('route')).toHaveTextContent('/datasets/d_known'); expect(screen.getByTestId('dataset-page')).toBe(page);
-    expect(updateCaption).toHaveBeenCalledExactlyOnceWith('image1', 'cat, blue eyes');
+    expect(updateCaption).toHaveBeenCalledExactlyOnceWith('image1', 'cat, blue eyes', 'photo.png');
   });
 
   it('clears the old sidebar as soon as a different dataset opens and keeps it empty if metadata fails', async () => {

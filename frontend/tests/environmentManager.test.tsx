@@ -4,6 +4,8 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { File as NodeFile } from 'node:buffer';
 import { EnvironmentManagerPanel } from '../src/components/EnvironmentManagerPanel';
+import type { DtkCatalog, DtkWheel } from '../src/components/DtkWheelPicker';
+import type { WindowsAttentionCatalog } from '../src/components/WindowsAttentionWheelPicker';
 import i18n from '../src/i18n';
 
 const server = setupServer();
@@ -47,6 +49,8 @@ beforeEach(async () => {
   server.use(
     http.get('/api/environment', () => HttpResponse.json(runtime)),
     http.get('/api/environment/torch', () => HttpResponse.json({ builds: [], operations: [], current_python: runtime.runtime.python_executable, selected_environment: null, environments: [], disk_free_bytes: 100 * 1024 ** 3, minimum_free_bytes: 8 * 1024 ** 3, optional_extensions: [] })),
+    http.get('/api/environment/dtk/wheels', () => HttpResponse.json(dtkCatalog())),
+    http.get('/api/environment/windows/wheels', () => HttpResponse.json(windowsCatalog())),
     http.get('/api/environment/operations', () => HttpResponse.json(operations)),
     http.post('/api/environment/operations', async ({ request }) => {
       const body = await request.json() as { package: string; action: string };
@@ -126,7 +130,8 @@ describe('real environment management UI contracts', () => {
     const row = await screen.findByTestId('environment-package-flash-attn');
     fireEvent.click(within(row).getByRole('button', { name: '安装' }));
     expect(screen.getByRole('button', { name: '检查安装计划' })).toBeDisabled();
-    expect(screen.getByText(/此平台需要预编译 wheel/)).toBeInTheDocument();
+    expect(screen.getByText(/先选择兼容构建或上传 wheel/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('flash-attn 版本')).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('flash-attn wheel'), { target: { files: [new File(['wheel'], 'flash_attn.whl')] } });
     await waitFor(() => expect(screen.getByRole('button', { name: '检查安装计划' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: '检查安装计划' }));
@@ -146,7 +151,7 @@ describe('real environment management UI contracts', () => {
     expect(screen.getByLabelText('xformers 版本')).toHaveValue('invalid');
   });
 
-  it('persists a dismissed failure across drawer remounts and preserves explicit history', async () => {
+  it('keeps dismissed results hidden after remount without a history section', async () => {
     operations = [{ ...operation('xformers', 'failed'), error: 'Protected Torch dependency conflict' }];
     const first = render(<EnvironmentManagerPanel />);
     expect(await screen.findByRole('alert')).toHaveTextContent('Protected Torch dependency conflict');
@@ -158,12 +163,11 @@ describe('real environment management UI contracts', () => {
     expect(operations[0].dismissed_at).not.toBeNull();
     first.unmount();
     render(<EnvironmentManagerPanel />);
-    await screen.findByRole('button', { name: '历史记录（1）' });
+    await screen.findByTestId('environment-package-xformers');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '历史记录（1）' }));
-    fireEvent.click(within(screen.getByTestId('environment-operations')).getByRole('button', { expanded: false }));
-    expect(await screen.findByLabelText('安装日志')).toHaveTextContent('Torch unchanged');
-    expect(screen.queryByRole('button', { name: '关闭结果' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('environment-operations')).not.toBeInTheDocument();
+    expect(screen.queryByText('安装记录')).not.toBeInTheDocument();
+    expect(screen.queryByText(/历史记录/)).not.toBeInTheDocument();
     expect(operations[0].status).toBe('failed');
   });
 
@@ -227,7 +231,261 @@ describe('real environment management UI contracts', () => {
 it('reports Torch multi-device capability separately from single-device trainer support', async () => {
   render(<EnvironmentManagerPanel/>);
   const info=await screen.findByTestId('environment-training-devices');
-  expect(info).toHaveTextContent('PyTorch 可用 CUDA 显卡：2 张');
-  expect(info).toHaveTextContent('单任务多卡训练尚未接入');
-  expect(info).toHaveTextContent('当前平台不适用，不影响单卡训练');
+  expect(info).toHaveTextContent('PyTorch 可用显卡：2 张');
+  expect(info).toHaveTextContent('当前环境使用单设备训练');
+  expect(info).toHaveTextContent('当前平台不适用，不影响单设备训练');
+});
+
+it('identifies DTK and describes multi-GPU training without NVIDIA requirements', async () => {
+  Object.assign(runtime.runtime, { environment_profile: 'linux-dtk', compute_backend: 'hip', hip_runtime: '6.3.42134', cuda_runtime: null, platform: 'Linux', multi_gpu_training: true, gpus: [{name: 'HYGON BW', device: 'cuda:0', mem_total_mb: 65520}] });
+  render(<EnvironmentManagerPanel/>);
+  expect(await screen.findByText('Linux DTK')).toBeInTheDocument();
+  expect(screen.getByText('HIP 运行时').parentElement).toHaveTextContent('6.3.42134');
+  expect(screen.getByText('计算后端').parentElement).toHaveTextContent('DTK / HIP');
+  const info = screen.getByTestId('environment-training-devices');
+  expect(info).toHaveTextContent('可在训练参数中选择显卡数量');
+  expect(info).toHaveTextContent('每张卡仍保存完整模型');
+  expect(info).toHaveTextContent('NCCL 兼容接口');
+  expect(screen.queryByText('NVIDIA 显卡计算')).not.toBeInTheDocument();
+  expect(screen.queryByText('CUDA 版本')).not.toBeInTheDocument();
+});
+
+function dtkCatalog(): DtkCatalog {
+  return {source_url:'https://download.sourcefind.cn:65024/4/main/', runtime:{environment_profile:'linux-dtk',torch:'2.4.1+das.opt1.dtk25041',python:'3.10.14',dtk:'25.04.1',machine:'x86_64'},reason:null,
+    wheels:[{id:'vendor-flash',package:'flash-attn',version:'2.6.3+dtk25041',filename:'flash_attn_vendor.whl',url:'https://download.sourcefind.cn:65024/file/example.whl',size_bytes:12000000,sha256:'a'.repeat(64),dtk:'25.04.1',torch:'2.4.1',python_tag:'cp310',platform_tag:'linux_x86_64',compatible:true,reason:null},
+      {id:'wrong-torch',package:'flash-attn',version:'2.7.4+dtk2604',filename:'flash_attn_newer.whl',url:'https://download.sourcefind.cn:65024/file/other.whl',size_bytes:18000000,sha256:'b'.repeat(64),dtk:'26.04',torch:'2.7.1',python_tag:'cp310',platform_tag:'linux_x86_64',compatible:false,reason:'Torch 版本不匹配'}] as DtkWheel[]};
+}
+function useDtkRuntime() {
+  Object.assign(runtime.runtime, {environment_profile:'linux-dtk',compute_backend:'hip',hip_runtime:'6.3',cuda_runtime:null,platform:'Linux'});
+  const flash = runtime.packages.find(item=>item.name==='flash-attn')!;
+  Object.assign(flash,{supported:false,reason:'requires_dtk_wheel',wheel_required:true});
+}
+
+it('offers the matching vendor build for an actually failed DTK SDPA probe', async () => {
+  useDtkRuntime();
+  Object.assign(runtime, { sdpa: { status: 'failed', reason: 'hip_sdpa_flash_library_missing', error: 'No matching libraries found for flash_attn_2_cuda*.so', detail: 'native diagnostic', device: 'cuda:0', checked_at: 1 } });
+  server.use(http.get('/api/environment/dtk/wheels', () => HttpResponse.json(dtkCatalog())));
+  render(<EnvironmentManagerPanel/>);
+  const sdpa = await screen.findByTestId('environment-sdpa');
+  expect(sdpa).toHaveTextContent('当前计算路径不可用');
+  expect(sdpa).toHaveTextContent('重启后重新检测');
+  fireEvent.click(within(sdpa).getByRole('button', { name: '查看匹配的 FlashAttention 包' }));
+  expect(await screen.findByTestId('dtk-wheels-flash-attn')).toBeInTheDocument();
+  expect(create).not.toHaveBeenCalled();
+});
+
+it('does not claim untested DTK SDPA has passed while another job owns the GPU', async () => {
+  useDtkRuntime();
+  Object.assign(runtime, { probe_deferred: true, running_jobs: true, sdpa: { status: 'not_tested', reason: null } });
+  render(<EnvironmentManagerPanel/>);
+  const sdpa = await screen.findByTestId('environment-sdpa');
+  expect(sdpa).toHaveTextContent('任务运行中，检测已延后');
+  expect(sdpa).not.toHaveTextContent('已通过前向与反向检测');
+});
+
+it('keeps complete long DTK versions and kernel status when opening extension management', async () => {
+  useDtkRuntime();
+  const versions = {
+    xformers: '0.0.33+das.opt1.dtk2604.torch251',
+    'flash-attn': '2.8.3+das.opt1.dtk2604.torch271',
+  };
+  for (const [name, version] of Object.entries(versions)) {
+    Object.assign(runtime.packages.find(item => item.name === name)!, {
+      version, supported: true, reason: 'supported', available: true, importable: true, kernel_tested: true,
+    });
+  }
+  render(<EnvironmentManagerPanel/>);
+  const flash = await screen.findByTestId('environment-package-flash-attn');
+  fireEvent.click(within(flash).getByRole('button', { name: '管理' }));
+  await screen.findByTestId('dtk-wheels-flash-attn');
+  for (const [name, version] of Object.entries(versions)) {
+    const row = screen.getByTestId(`environment-package-${name}`);
+    expect(within(row).getByText(version, { exact: true })).toBeVisible();
+    expect(within(row).getByText('已通过 DTK / HIP 内核检测', { exact: true })).toBeVisible();
+    expect(within(row).getByRole('button', { name: '管理' })).toBeEnabled();
+  }
+  expect(create).not.toHaveBeenCalled();
+  expect(apply).not.toHaveBeenCalled();
+});
+
+it('selects an official DTK wheel by server-issued ID and leaves incompatible builds unselectable', async () => {
+  useDtkRuntime();
+  server.use(http.get('/api/environment/dtk/wheels',()=>HttpResponse.json(dtkCatalog())));
+  render(<EnvironmentManagerPanel/>);
+  const row=await screen.findByTestId('environment-package-flash-attn');
+  fireEvent.click(within(row).getByRole('button',{name:'安装'}));
+  const choice=await screen.findByRole('combobox',{name:'DTK 适配版本'});
+  expect(screen.queryByLabelText('flash-attn 版本')).not.toBeInTheDocument();
+  expect(screen.getByRole('button',{name:'检查安装计划'})).toBeDisabled();
+  fireEvent.click(choice);
+  fireEvent.click(screen.getByRole('option',{name:/2.6.3\+dtk25041/}));
+  expect(screen.queryByRole('option',{name:/2.7.4/})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByText('包信息与运行要求'));
+  expect(screen.getByText(/显卡检测只验证常规 FlashAttention 运算/)).toBeVisible();
+  fireEvent.click(screen.getByText('查看其他版本与不匹配原因'));
+  expect(screen.getByText('Torch 版本不匹配')).toBeVisible();
+  fireEvent.click(screen.getByRole('button',{name:'下载并检查安装计划'}));
+  await waitFor(()=>expect(create).toHaveBeenCalledWith({package:'flash-attn',action:'install',vendor_wheel_id:'vendor-flash'}));
+  expect(apply).not.toHaveBeenCalled();
+});
+
+it('keeps offline upload available when no official DTK build matches', async () => {
+  useDtkRuntime();
+  const catalog=dtkCatalog();catalog.wheels=catalog.wheels.map(item=>({...item,compatible:false,reason:'Torch 版本不匹配'}));
+  server.use(http.get('/api/environment/dtk/wheels',()=>HttpResponse.json({...catalog,reason:'no_matching_vendor_build'})));
+  render(<EnvironmentManagerPanel/>);
+  const row=await screen.findByTestId('environment-package-flash-attn');
+  fireEvent.click(within(row).getByRole('button',{name:'安装'}));
+  expect(await screen.findByText(/官方目录中暂未找到与当前环境匹配的版本/)).toBeInTheDocument();
+  expect(screen.getByRole('button',{name:'检查安装计划'})).toBeDisabled();
+  expect(screen.getByText('上传 wheel')).toBeVisible();
+  const input = screen.getByLabelText('flash-attn wheel');
+  expect(input).not.toBeDisabled();
+  expect(input).not.toBeVisible();
+  const choose = vi.spyOn(input, 'click');
+  fireEvent.click(screen.getByRole('button', {name:'上传 wheel'}));
+  expect(choose).toHaveBeenCalledOnce();
+});
+
+it('shows measured DTK download progress and stops showing stale speed after failure', async () => {
+  operations=[{...operation('flash-attn','planning'),phase:'download',downloaded_bytes:4000000,total_bytes:10000000,bytes_per_second:2000000,eta_seconds:3} as ReturnType<typeof operation>];
+  const view=render(<EnvironmentManagerPanel/>);
+  const progress=await screen.findByRole('progressbar',{name:'适配包下载进度'});
+  expect(progress).toHaveAttribute('aria-valuenow','40');
+  expect(screen.getByText('2.0 MB/s')).toBeInTheDocument();
+  expect(screen.getByText('预计剩余 3s')).toBeInTheDocument();
+  expect(screen.getByRole('button',{name:'取消计划'})).toBeEnabled();
+  view.unmount();operations[0].status='failed';operations[0].error='Network disconnected';
+  render(<EnvironmentManagerPanel/>);
+  expect(await screen.findByText('Network disconnected')).toBeInTheDocument();
+  expect(screen.getByRole('progressbar',{name:'适配包下载进度'})).toHaveAttribute('aria-valuenow','40');
+  expect(screen.queryByText('2.0 MB/s')).not.toBeInTheDocument();
+});
+
+it('describes Python-only vendor builds as pending device validation rather than verified compatibility', async () => {
+  useDtkRuntime();
+  const catalog=dtkCatalog();
+  catalog.runtime.torch='2.5.1+dtk25041';
+  catalog.wheels=[{...catalog.wheels[0],id:'vendor-xfs-python',package:'xformers',version:'0.0.33+dtk2604',dtk:'26.04 (vendor label; Python-only)',torch:'>=2.5',declared_torch:'>=2.1.0',python_tag:'py3',platform_tag:'any',binary:false,validation:'kernel_probe_required',requires_packages:['flash-attn>=2.6.1']}];
+  server.use(http.get('/api/environment/dtk/wheels',()=>HttpResponse.json(catalog)));
+  render(<EnvironmentManagerPanel/>);
+  const row=await screen.findByTestId('environment-package-xformers');
+  fireEvent.click(within(row).getByRole('button',{name:'安装'}));
+  fireEvent.click(await screen.findByRole('combobox',{name:'DTK 适配版本'}));
+  fireEvent.click(screen.getByRole('option',{name:/0.0.33/}));
+  expect(screen.getByText(/已匹配当前安装条件/)).toHaveTextContent('安装后会检测显卡上的实际可用性');
+  fireEvent.click(screen.getByText('包信息与运行要求'));
+  expect(screen.getByText(/此包提供纯 Python 接口/)).toHaveTextContent('仍需检查依赖并通过显卡检测');
+  expect(screen.getByText('发布目录 DTK 标签').parentElement).toHaveTextContent('26.04');
+  expect(screen.getByText('PyTorch 要求').parentElement).toHaveTextContent('>=2.5');
+  expect(screen.getByText('安装包声明').parentElement).toHaveTextContent('>=2.1.0');
+  expect(screen.getByText('需要已安装').parentElement).toHaveTextContent('flash-attn>=2.6.1');
+  expect(screen.getByText(/DTK 25.04.1 · PyTorch/)).toBeInTheDocument();
+});
+
+it('replaces empty CUDA runtime controls with matched DTK guidance and direct manual downloads', async () => {
+  useDtkRuntime();
+  const catalog = dtkCatalog();
+  Object.assign(catalog.runtime, {distribution:'Ubuntu 22.04.5 LTS',distribution_version:'22.04',installed_dtk:'25.04.1'});
+  catalog.guidance = {toolkit_source_url:'https://download.sourcefind.cn:65024/1/main',driver_source_url:'https://download.sourcefind.cn:65024/6/main',compatibility_source_url:'https://download.sourcefind.cn:65024/file/1/compatibility.md',driver_version:'6.3.31-V1.5.3.beta',driver_verification:'manual_confirmation_required',current_stack_reason:'torch24_transformers5_diffusers040_conflict',
+    recommendation:{dtk:'26.04',toolkit_url:'https://download.sourcefind.cn:65024/file/1/DTK-26.04/Ubuntu22.04/runtime.tar.gz',toolkit_checksum_url:'https://download.sourcefind.cn:65024/file/1/DTK-26.04/Ubuntu22.04/runtime.tar.gz.md5',python_tag:'cp311',minimum_driver:'6.3.30-V1.4.1a',status:'candidate_requires_validation',reason:'matched_vendor_metadata_requires_driver_and_training_validation',wheels:[{package:'torch',version:'2.7.1+dtk2604',url:'https://download.sourcefind.cn:65024/file/4/pytorch/torch.whl'}]}};
+  const torchRequest = vi.fn();
+  server.use(http.get('/api/environment/dtk/wheels',()=>HttpResponse.json(catalog)),http.get('/api/environment/torch',()=>{torchRequest();return HttpResponse.json({});}));
+  render(<EnvironmentManagerPanel/>);
+  const panel = await screen.findByTestId('dtk-runtime-guidance');
+  expect(await within(panel).findByText(/Ubuntu 22.04.5 LTS/)).toBeInTheDocument();
+  expect(within(panel).getByText('6.3.31-V1.5.3.beta')).toBeInTheDocument();
+  expect(within(panel).getByText(/候选 DTK 26.04 要求驱动/)).toHaveTextContent('需人工核对');
+  expect(within(panel).getByRole('link',{name:'下载 DTK 26.04'})).toHaveAttribute('href',catalog.guidance.recommendation!.toolkit_url);
+  expect(within(panel).getByRole('link',{name:'手动下载 torch 2.7.1+dtk2604'})).toHaveAttribute('href',catalog.guidance.recommendation!.wheels[0].url);
+  expect(within(panel).getByRole('link',{name:'DTK 版本目录'})).toHaveAttribute('href','https://download.sourcefind.cn:65024/1/main');
+  expect(within(panel).getByRole('link',{name:'驱动下载目录'})).toHaveAttribute('href','https://download.sourcefind.cn:65024/6/main');
+  expect(screen.queryByRole('combobox',{name:'选择 PyTorch 版本'})).not.toBeInTheDocument();
+  expect(screen.queryByText(/12 GiB/)).not.toBeInTheDocument();
+  expect(torchRequest).not.toHaveBeenCalled();
+  expect(create).not.toHaveBeenCalled();
+});
+
+it('allows a DTK wheel to be manually downloaded and uploaded without sending the automatic selection', async () => {
+  useDtkRuntime();
+  server.use(http.post('/api/environment/wheels',()=>HttpResponse.json({wheel_id:'manual-dtk',package:'flash-attn',filename:'flash_attn_vendor.whl',version:'2.6.3+dtk25041',sha256:'a'.repeat(64)},{status:201})));
+  render(<EnvironmentManagerPanel focusPackage="flash-attn"/>);
+  fireEvent.click(await screen.findByRole('combobox',{name:'DTK 适配版本'}));
+  fireEvent.click(screen.getByRole('option',{name:/2.6.3\+dtk25041/}));
+  expect(screen.getByRole('link',{name:'手动下载此 wheel'})).toHaveAttribute('href',dtkCatalog().wheels[0].url);
+  expect(screen.getByText('上传 wheel')).toBeVisible();
+  fireEvent.change(screen.getByLabelText('flash-attn wheel'),{target:{files:[new File(['wheel'],'flash_attn_vendor.whl')]}});
+  await waitFor(()=>expect(screen.getByRole('button',{name:'检查安装计划'})).toBeEnabled());
+  expect(screen.queryByRole('link',{name:'手动下载此 wheel'})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'检查安装计划'}));
+  await waitFor(()=>expect(create).toHaveBeenCalledWith({package:'flash-attn',action:'install',version:'2.6.3+dtk25041',wheel_id:'manual-dtk'}));
+});
+
+it('retains official manual sources when DTK matching fails', async () => {
+  useDtkRuntime();
+  server.use(http.get('/api/environment/dtk/wheels',()=>HttpResponse.json({error:{code:'catalog.unavailable',message:'目录暂时不可用'}},{status:503})));
+  render(<EnvironmentManagerPanel/>);
+  const panel=await screen.findByTestId('dtk-runtime-guidance');
+  expect(await within(panel).findByRole('alert')).toHaveTextContent('目录暂时不可用');
+  expect(within(panel).getByRole('link',{name:'DTK 版本目录'})).toHaveAttribute('href','https://download.sourcefind.cn:65024/1/main');
+  expect(within(panel).getByRole('link',{name:'驱动下载目录'})).toHaveAttribute('href','https://download.sourcefind.cn:65024/6/main');
+  expect(within(panel).getByRole('button',{name:'重新匹配'})).toBeEnabled();
+});
+
+function windowsCatalog(compatible = false): WindowsAttentionCatalog {
+  return {
+    source_url: 'https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/tag/v0.9.6', release: 'v0.9.6',
+    provider: 'mjun0812-community-windows', origin: 'live', checked_at: 1, error: null, reason: compatible ? null : 'no_matching_build',
+    runtime: {python:'3.12.10',torch:compatible ? '2.11.0+cu128' : '2.5.1+cu128',cuda_runtime:'12.8',platform:'Windows',machine:'AMD64'},
+    wheels: [{id:'mjun0812-cp312',package:'flash-attn',version:'2.8.3+cu128torch2.11',filename:'flash_attn-2.8.3+cu128torch2.11-cp312-cp312-win_amd64.whl',url:'https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.6/flash_attn-2.8.3%2Bcu128torch2.11-cp312-cp312-win_amd64.whl',source_url:'https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/tag/v0.9.6',provider:'mjun0812-community-windows',size_bytes:250730469,sha256:'a'.repeat(64),torch:'2.11',cuda:'12.8',python_tag:'cp312',platform_tag:'win_amd64',validation:'kernel_probe_required',compatible,reason:compatible ? null : 'torch_version_mismatch'}],
+  };
+}
+
+it('offers a matching Windows community build and stages a plan before any installation', async () => {
+  runtime.runtime.torch = '2.11.0+cu128';
+  server.use(http.get('/api/environment/windows/wheels', () => HttpResponse.json(windowsCatalog(true))));
+  render(<EnvironmentManagerPanel focusPackage="flash-attn"/>);
+  const select = await screen.findByRole('combobox',{name:'Windows FlashAttention 版本'});
+  expect(screen.getByText(/不是 FlashAttention 官方 Windows 构建/)).toBeInTheDocument();
+  expect(screen.queryByLabelText('flash-attn 版本')).not.toBeInTheDocument();
+  expect(screen.getByRole('button',{name:'检查安装计划'})).toBeDisabled();
+  fireEvent.click(select);
+  fireEvent.click(screen.getByRole('option',{name:/2.8.3\+cu128torch2.11/}));
+  expect(screen.getByRole('link',{name:'手动下载此 wheel'})).toHaveAttribute('href',windowsCatalog(true).wheels[0].url);
+  expect(create).not.toHaveBeenCalled(); expect(apply).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button',{name:'下载并检查安装计划'}));
+  await waitFor(()=>expect(create).toHaveBeenCalledWith({package:'flash-attn',action:'install',vendor_wheel_id:'mjun0812-cp312'}));
+  expect(apply).not.toHaveBeenCalled();
+  expect(await screen.findByRole('button',{name:'确认并执行此计划'})).toBeEnabled();
+});
+
+it('makes catalog failure explicit while allowing bundled matching and manual upload', async () => {
+  const catalog = {...windowsCatalog(true),origin:'bundled',error:'无法连接发布页，使用内置目录。'};
+  server.use(http.get('/api/environment/windows/wheels',()=>HttpResponse.json(catalog)),http.post('/api/environment/wheels',()=>HttpResponse.json({wheel_id:'offline-win',package:'flash-attn',filename:'offline.whl',version:'2.8.3',sha256:'a'.repeat(64)},{status:201})));
+  render(<EnvironmentManagerPanel focusPackage="flash-attn"/>);
+  expect(await screen.findByRole('alert')).toHaveTextContent('无法连接发布页');
+  expect(screen.getByText(/^Python .*内置目录/, {selector:'p.settings-note.break-words'})).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('combobox',{name:'Windows FlashAttention 版本'}));
+  fireEvent.click(screen.getByRole('option',{name:/2.8.3\+cu128torch2.11/}));
+  expect(screen.getByRole('button',{name:'上传 wheel'})).toBeEnabled();
+  fireEvent.change(screen.getByLabelText('flash-attn wheel'),{target:{files:[new File(['fake'], 'offline.whl')]}});
+  await screen.findByText('offline.whl');
+  expect(screen.queryByRole('link',{name:'手动下载此 wheel'})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'检查安装计划'}));
+  await waitFor(()=>expect(create).toHaveBeenCalledWith({package:'flash-attn',action:'install',version:'2.8.3',wheel_id:'offline-win'}));
+});
+
+it('distinguishes no matching build from request failure and keeps the publisher and upload controls', async () => {
+  server.use(http.get('/api/environment/windows/wheels',()=>HttpResponse.json(windowsCatalog(false))));
+  const view = render(<EnvironmentManagerPanel focusPackage="flash-attn"/>);
+  expect(await screen.findByText(/此发布范围内没有匹配当前环境的版本/)).toBeInTheDocument();
+  expect(screen.getByText('PyTorch 版本不匹配')).toBeInTheDocument();
+  expect(screen.queryByRole('combobox',{name:'Windows FlashAttention 版本'})).not.toBeInTheDocument();
+  expect(screen.getByRole('button',{name:'上传 wheel'})).toBeEnabled();
+  view.unmount();
+  server.use(http.get('/api/environment/windows/wheels',()=>HttpResponse.json({error:{code:'catalog.unavailable',message:'无法读取目录'}},{status:503})));
+  render(<EnvironmentManagerPanel focusPackage="flash-attn"/>);
+  expect(await screen.findByRole('alert')).toHaveTextContent('无法读取目录');
+  expect(screen.getByRole('link',{name:'维护者发布页'})).toHaveAttribute('href',windowsCatalog().source_url);
+  expect(screen.getByRole('button',{name:'上传 wheel'})).toBeEnabled();
 });

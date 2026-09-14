@@ -269,9 +269,10 @@ def convert_original(state: dict[str, torch.Tensor], config: dict) -> dict[str, 
 
 
 def create_meta(component: str, config: dict) -> nn.Module:
-    from accelerate import init_empty_weights
-    from diffusers import AutoencoderKL, FluxTransformer2DModel
-    from transformers import CLIPTextConfig, CLIPTextModel, T5Config, T5EncoderModel
+    with torch.device("cpu"):
+        from accelerate import init_empty_weights
+        from diffusers import AutoencoderKL, FluxTransformer2DModel
+        from transformers import CLIPTextConfig, CLIPTextModel, T5Config, T5EncoderModel
 
     with init_empty_weights():
         if component == "transformer":

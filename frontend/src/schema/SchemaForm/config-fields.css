@@ -76,6 +76,9 @@
 .config-beta-controls > label > span { font-size: 12px; line-height: 18px; color: var(--studio-dim); }
 .config-beta-controls > label > input { width: 100%; min-width: 0; }
 .config-field-hint { margin: 0; font-size: 12px; line-height: 1.5; color: var(--studio-dim); }
+.config-scientific-input { position:relative; min-width:0; }
+.config-scientific-input > input { padding-right:104px !important; }
+.config-scientific-input > output { position:absolute; right:28px; top:50%; transform:translateY(-50%); max-width:72px; overflow:hidden; text-overflow:ellipsis; color:var(--studio-dim); font:12px/20px ui-monospace,monospace; white-space:nowrap; }
 .config-managed-value { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; min-height: 38px; padding: 7px 10px; border: 1px solid var(--studio-line); border-radius: 6px; background: var(--studio-muted); color: var(--studio-text); font-size: 13px; line-height: 22px; }
 .config-managed-value > output { min-width: 0; overflow-wrap: anywhere; }
 .config-managed-value > span { flex-shrink: 0; color: var(--studio-dim); font-size: 12px; }
@@ -86,12 +89,12 @@
 .compact-schema .config-field-section + .config-field-section,
 .config-adapter-fields > .config-field-section + .config-field-section { padding-top: 16px; border-top: 1px solid var(--studio-line); }
 .model-path-control { display: grid; gap: 7px; min-width: 0; }
+.compact-schema .config-field .path-input-control > input { width:0; flex:1 1 0; }
+.compact-schema .path-input-browse { min-height:38px; padding:7px 10px; font-size:13px; }
 .compact-schema [data-group="model"] > .config-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.compact-schema [data-field-path="model.text_encoder_path"],
-.compact-schema [data-field-path="model.vae_path"] { grid-column: auto; }
-.compact-schema [data-field-path="model.family"] { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(120px, auto) minmax(180px, 300px); align-items: center; justify-content: start; gap: 14px; }
-.compact-schema [data-field-path="model.family"] > div:first-child { align-items: center; }
-.compact-schema [data-field-path="model.dit_path"] .model-path-control.has-registry { grid-template-columns: minmax(0, 1.3fr) minmax(160px, 1fr); align-items: start; }
+.compact-schema .config-model-assets { display:grid; grid-column:1 / -1; grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr)); gap:16px 20px; min-width:0; }
+.compact-schema .config-model-assets > .config-field { grid-column:auto; min-width:0; }
+.compact-schema [data-field-path="model.family"] { grid-column:1 / -1; width:min(100%,360px); }
 .compact-schema .config-adapter-structure { grid-template-columns: minmax(130px, .65fr) minmax(0, 1.35fr); }
 .compact-schema .config-adapter-capacity [data-field-path="adapter.parameter_mode"] { grid-column: 1 / -1; }
 .compact-schema .config-adapter-capacity [data-field-path="adapter.parameter_mode"] .studio-select { height: auto; min-height: 38px; }
@@ -119,10 +122,7 @@
   .compact-schema .config-fields { padding: 14px; gap: 16px; grid-template-columns: minmax(0, 1fr); }
   .compact-schema .config-field-section,
   .compact-schema .config-adapter-structure { grid-template-columns: minmax(0, 1fr); }
-  .compact-schema [data-group="model"] > .config-fields,
-  .compact-schema [data-field-path="model.family"],
-  .compact-schema [data-field-path="model.dit_path"] .model-path-control.has-registry { grid-template-columns: minmax(0, 1fr); }
-  .compact-schema [data-field-path="model.family"] { justify-content: stretch; gap: 6px; }
+  .compact-schema [data-group="model"] > .config-fields { grid-template-columns: minmax(0, 1fr); }
   .compact-schema .config-field input:not([type="checkbox"]):not([type="range"]),
   .compact-schema .config-field select,
   .compact-schema .config-field .studio-select { min-height: 40px; height: 40px; }

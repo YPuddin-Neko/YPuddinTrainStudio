@@ -8,7 +8,7 @@ import { useFamilies } from '../../api/hooks/useFamilies';
 import Dialog from '../../components/Dialog';
 import StudioSelect from '../../components/StudioSelect';
 import { SchemaForm, type ValidationError } from '../../schema/SchemaForm/SchemaForm';
-import { CONFIG_TAB_GROUPS, presentConfigIssues, type ConfigTab, type ConfigIssue } from '../../utils/configPresentation';
+import { presentConfigIssues, type ConfigTab, type ConfigIssue } from '../../utils/configPresentation';
 import { mergeConfig } from '../../utils/config';
 import { formatApiError } from '../../utils/errors';
 import { presetEditorSchema, presetPayload, presetSummary, presetFamily } from '../../utils/presetEditor';
@@ -20,6 +20,7 @@ import './presets.css';
 import '../../styles/parameter-workspace.css';
 import ParameterModeToggle from '../../components/ParameterModeToggle';
 import ParameterSections from '../../components/ParameterSections';
+import { workflowSchema } from '../../utils/parameterWorkflow';
 
 interface Draft { name: string; description: string; config: Record<string, any>; originalName: string | null; builtin: boolean; }
 const KEY = ['standalone-presets'];
@@ -32,7 +33,7 @@ export default function Presets() {
   const list = useQuery({ queryKey: KEY, queryFn: () => apiClient.get<Preset[]>('/presets', { silent: true }) });
   const schema = useQuery({ queryKey: ['training-schema'], queryFn: () => apiClient.get<any>('/schema/train', { silent: true }) });
   const families = useFamilies();
-  const editorSchema = React.useMemo(() => schema.data ? presetEditorSchema(schema.data) : null, [schema.data]);
+  const editorSchema = React.useMemo(() => schema.data ? workflowSchema(presetEditorSchema(schema.data)) : null, [schema.data]);
   const [draft, setDraft] = React.useState<Draft | null>(null);
   const inactiveReason = inactiveTrainingReason(draft?.config, english);
   const [saved, setSaved] = React.useState('');
@@ -147,7 +148,6 @@ export default function Presets() {
   const cancelLeave = () => { setPending(null); if (blocker.state === 'blocked') blocker.reset(); };
   const familyName = (name: string) => name === 'flux' ? 'FLUX.1 · ' + text('已停用', 'Retired') : families.data?.find(item => item.name === name)?.label || (name || text('通用', 'General'));
   const family = families.data?.find(item => item.name === draft?.config.model?.family);
-  const tabs: [ConfigTab, string][] = [['train', text('训练参数', 'Training')], ['data', text('数据与标签', 'Data and captions')], ['model', text('精度与保存', 'Precision and saving')], ['advanced', text('采样与高级', 'Sampling and advanced')]];
   const clearSearch = () => { setSearch(''); searchRef.current?.focus(); };
   const issues = presentConfigIssues(errors, english);
   const goToIssue = (issue: ConfigIssue) => {
@@ -185,10 +185,6 @@ export default function Presets() {
     </div>
     {draft && <div className="presets-editor">
       <div className="presets-form-toolbar">
-        <div role="tablist" aria-label={text('预设参数分区', 'Preset parameter sections')}>{tabs.map(([key,label], index)=><button key={key} id={`preset-tab-${key}`} role="tab" aria-label={label} tabIndex={tab === key ? 0 : -1} aria-selected={!search && tab===key} aria-controls="preset-parameters" onClick={()=>{setTab(key);setSearch('');}} onKeyDown={event => {
-          const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1;
-          if (next >= 0) { event.preventDefault(); setTab(tabs[next][0]); setSearch(''); document.getElementById(`preset-tab-${tabs[next][0]}`)?.focus(); }
-        }}>{label}{issues.some(issue => issue.tab === key) && <span className="tab-issue-dot" aria-label={text('有待配置项', 'Needs configuration')}/>}</button>)}</div>
         <label className="presets-field-search"><Search size={16}/><input ref={searchRef} aria-label={text('搜索预设参数', 'Search preset parameters')} placeholder={text('搜索所有分区的参数', 'Search all parameter sections')} value={search} onChange={event=>setSearch(event.target.value)}/>{search && <button type="button" aria-label={text('清空预设参数搜索', 'Clear preset parameter search')} onClick={clearSearch}><X size={15}/></button>}</label>
         <ParameterModeToggle advanced={advanced} onChange={setAdvanced}/>
       </div>
@@ -206,7 +202,7 @@ export default function Presets() {
       </fieldset>
       <div className="presets-context"><span>{!draft.originalName ? text('填写名称并编辑参数后保存。', 'Name and edit the preset, then save.') : presetSummary(draft.config, english)}</span><span className={dirty ? 'presets-dirty' : ''}>{dirty ? text('有未保存修改', 'Unsaved changes') : draft.originalName ? text('已保存', 'Saved') : text('尚未创建', 'Not created yet')}</span></div>
       {search && <p className="presets-search-context">{text('搜索所有分区，包含高级参数', 'Searching every section, including advanced parameters')}</p>}
-      {editorSchema && <div id="preset-parameters" className="presets-schema" role="tabpanel" aria-labelledby={search ? undefined : `preset-tab-${tab}`} aria-label={search ? text('预设参数搜索结果', 'Preset parameter search results') : undefined}><SchemaForm key={revealVersion} readOnly={busy || !!inactiveReason} schema={editorSchema} value={draft.config} onChange={config=>{setDraft({...draft,config});setErrors([]);}} compact showAdvanced={advanced || !!search} groupFilter={search ? undefined : CONFIG_TAB_GROUPS[tab]} search={search} onClearSearch={clearSearch} family={family} families={families.data} errors={errors}/></div>}
+      {editorSchema && <div id="preset-parameters" className="presets-schema" role="region" aria-label={search ? text('预设参数搜索结果', 'Preset parameter search results') : text('预设参数内容', 'Preset parameter fields')}><SchemaForm key={revealVersion} readOnly={busy || !!inactiveReason} schema={editorSchema} value={draft.config} onChange={config=>{setDraft({...draft,config});setErrors([]);}} compact showAdvanced={advanced || !!search} search={search} onClearSearch={clearSearch} family={family} families={families.data} errors={errors}/></div>}
       </div>
       </div>
     </div>}

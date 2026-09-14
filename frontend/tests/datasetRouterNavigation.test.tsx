@@ -68,7 +68,7 @@ describe('dataset drafts survive actual data-router history navigation', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/queue'));
     expect(router.state.location.search).toBe(direction === 1 ? '?status=failed' : '');
     expect(writes).toEqual([{caption:'cat, blue eyes'}, {caption:'cat, blue eyes'}]);
-    expect(updateCaption).toHaveBeenCalledExactlyOnceWith('image1','cat, blue eyes');
+    expect(updateCaption).toHaveBeenCalledExactlyOnceWith('image1','cat, blue eyes','photo.png');
   });
 
   it('keeps the actual mask pixels and undo history through Back and Forward, then allows its saved training action', async () => {

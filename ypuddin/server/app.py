@@ -70,7 +70,10 @@ def create_app(
         try:
             yield
         finally:
+            bus.close()
             stats_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await stats_task
             await supervisor.stop()
             await asyncio.to_thread(regularization.close)
             await asyncio.to_thread(model_downloads.close)

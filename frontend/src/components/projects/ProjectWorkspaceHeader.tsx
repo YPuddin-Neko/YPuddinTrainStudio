@@ -19,9 +19,9 @@ import '../../styles/project-sidebar.css';
 interface Props {
   project: VersionedProject; versionId?: string; versions: ProjectVersion[]; current?: ProjectVersion;
   active: WorkspaceStep; refresh: () => Promise<unknown>; beforeAction?: () => Promise<void>;
-  status?: React.ReactNode; error?: unknown; title?: string; titleBadge?: React.ReactNode;
+  status?: React.ReactNode; error?: unknown; title?: string; titleBadge?: React.ReactNode; breadcrumbLeading?: React.ReactNode;
 }
-export default function ProjectWorkspaceHeader({ project, versionId, versions, current, active, refresh, beforeAction, status, error: loadError, title: customTitle, titleBadge }: Props) {
+export default function ProjectWorkspaceHeader({ project, versionId, versions, current, active, refresh, beforeAction, status, error: loadError, title: customTitle, titleBadge, breadcrumbLeading }: Props) {
   const text = useWorkspaceText();
   const { data: families = [], isError: familiesError } = useFamilies();
   const navigationRef = useWorkspaceHeight('--workspace-head-height');
@@ -146,7 +146,7 @@ export default function ProjectWorkspaceHeader({ project, versionId, versions, c
   </section>;
   return <>
     {sidebar ? sidebar.target && createPortal(projectControls, sidebar.target) : <div className="project-sidebar-fallback">{projectControls}</div>}
-    <header className="workspace-navigation workspace-page-heading" ref={navigationRef}><div className="workspace-heading-main"><nav className="workspace-breadcrumb" aria-label={text('当前位置', 'Current location')}><Link to="/projects">{text('项目', 'Projects')}</Link><span aria-hidden="true">/</span><Link to={projectUrl(project.id, selectedId, 'overview')}>{project.name}</Link>{current && <><span aria-hidden="true">/</span><span>{current.name}</span></>}</nav><div className="workspace-heading-title"><h1 title={title}>{title}</h1>{titleBadge}</div></div>{status && <div className="project-heading-status">{status}</div>}</header>
+    <header className="workspace-navigation workspace-page-heading" ref={navigationRef}><div className="workspace-heading-main"><nav className="workspace-breadcrumb" aria-label={text('当前位置', 'Current location')}>{breadcrumbLeading && <>{breadcrumbLeading}<span aria-hidden="true">/</span></>}<Link to="/projects">{text('项目', 'Projects')}</Link><span aria-hidden="true">/</span><Link to={projectUrl(project.id, selectedId, 'overview')}>{project.name}</Link>{current && <><span aria-hidden="true">/</span><span>{current.name}</span></>}</nav><div className="workspace-heading-title"><h1 title={title}>{title}</h1>{titleBadge}</div></div>{status && <div className="project-heading-status">{status}</div>}</header>
     {problem && !dialog && <div role="alert" className="workspace-message error">{problem}<button onClick={() => {setError(''); void refresh();}}>{text('重试', 'Retry')}</button></div>}
     {current?.archived && <div className="workspace-message" role="status"><AlertCircle size={16}/><div><strong>{text('此版本已归档 · 只读', 'This version is archived · Read only')}</strong><p>{text('可以查看数据、比较参数和下载已有结果；恢复版本后继续编辑与训练。', 'View data, compare configurations and download existing results. Restore the version to edit or train.')}</p></div><button disabled={busy} onClick={() => void archive()}>{busy ? text('正在恢复…', 'Restoring…') : text('恢复版本', 'Restore version')}</button></div>}
     {current?.status === 'copying' && <div className="workspace-message" role="status"><Loader2 size={16} className="animate-spin"/><div><strong>{text('正在建立独立版本', 'Creating an independent version')}</strong><p>{text('复制图片、标签与遮罩，完成后即可编辑；原版本保持不变。', 'Copying images, captions and masks. The original version is preserved.')}</p><progress max={Math.max(1,current.progress?.files_total || 0)} value={current.progress?.files_done || 0}/><span>{current.progress?.files_done || 0} / {current.progress?.files_total || '…'} {text('个文件', 'files')}</span></div></div>}

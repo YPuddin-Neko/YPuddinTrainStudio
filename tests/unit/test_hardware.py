@@ -1,6 +1,7 @@
 """Driver telemetry works without tying GPU power to another optional metric."""
 
 import sys
+import uuid
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -10,12 +11,16 @@ from ypuddin.server import hardware as hw
 
 
 @pytest.fixture(autouse=True)
-def isolate_native_apple_sensors(monkeypatch):
+def isolate_native_apple_sensors(monkeypatch, tmp_path):
     monkeypatch.setattr(hw, "_apple_gpu_sensors", lambda: {"power_w": None, "temp_c": None})
+    monkeypatch.setattr(hw, "_DRM_SYSFS", tmp_path / "sys-drm")
+    monkeypatch.setattr(hw, "_DRM_DEVICES", tmp_path / "dev-dri")
+    monkeypatch.setattr(hw, "_hip_sensors_cache", None)
 
 
 @pytest.fixture
 def cuda(monkeypatch):
+    monkeypatch.setattr(hw.torch.version, "hip", None)
     monkeypatch.setattr(hw.torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(hw.torch.cuda, "device_count", lambda: 1)
     monkeypatch.setattr(
@@ -161,3 +166,252 @@ def test_standalone_mps_inventory_still_samples_system_memory(monkeypatch):
     monkeypatch.setattr(hw, "_apple_name", lambda: "Apple Test GPU")
     assert hw.gpu_info()[0]["mem_used_mb"] == 25
     memory.assert_called_once_with()
+
+
+@pytest.mark.parametrize("profile,kind", [("linux-dtk", "dtk"), ("legacy", "rocm")])
+def test_hip_inventory_never_reads_nvidia_telemetry_or_invents_metrics(cuda, monkeypatch, profile, kind):
+    monkeypatch.setenv("YPUDDIN_ENV_PROFILE", profile)
+    monkeypatch.setattr(hw.torch.version, "hip", "6.2.0")
+    monkeypatch.setattr(hw.torch.cuda, "device_count", lambda: 2)
+    monkeypatch.setattr(
+        hw.torch.cuda,
+        "get_device_properties",
+        lambda i: SimpleNamespace(name=f"BW GPU {i}", total_memory=64 * 2**30, uuid=f"DCU-{i}"),
+    )
+    monkeypatch.setattr(hw.torch.cuda, "mem_get_info", lambda i: ((60 - i) * 2**30, 64 * 2**30))
+    monkeypatch.setattr(hw, "_nvml_metrics", lambda *a: pytest.fail("HIP must never call NVML"))
+    monkeypatch.setattr(hw, "_nvidia_smi", lambda: pytest.fail("HIP must never call nvidia-smi"))
+    gpus = hw.gpu_info(include_unavailable=True)
+    assert len(gpus) == 2
+    for i, gpu in enumerate(gpus):
+        assert gpu["index"] == i and gpu["name"] == f"BW GPU {i}"
+        assert gpu["kind"] == kind and gpu["device"] == f"cuda:{i}"
+        assert gpu["hip_runtime"] == "6.2.0" and gpu["telemetry_source"] == "torch-hip"
+        assert gpu["mem_total_mb"] == 65536 and gpu["mem_used_mb"] == (4 + i) * 1024
+        assert gpu["mem_free_mb"] == (60 - i) * 1024
+        assert all(gpu[key] is None for key in ("util_pct", "power_w", "power_limit_w", "temp_c"))
+        assert gpu["telemetry_note"] == "hip_driver_metrics_unavailable"
+
+
+def test_hip_memory_probe_failure_stays_unknown_without_nvidia_fallback(cuda, monkeypatch):
+    monkeypatch.setattr(hw.torch.version, "hip", "6.2")
+    monkeypatch.setattr(hw.torch.cuda, "mem_get_info", Mock(side_effect=RuntimeError("unsupported")))
+    monkeypatch.setattr(hw, "_nvidia_smi", lambda: pytest.fail("HIP must never call nvidia-smi"))
+    gpu = hw.gpu_info()[0]
+    assert gpu["mem_total_mb"] == 24576
+    assert gpu["mem_used_mb"] is None and gpu.get("mem_free_mb") is None
+
+
+def test_unavailable_hip_runtime_does_not_fall_back_to_unrelated_nvidia_inventory(monkeypatch):
+    monkeypatch.setattr(hw.torch.version, "hip", "6.2")
+    monkeypatch.setattr(hw.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(hw.torch.backends.mps, "is_available", lambda: False)
+    monkeypatch.setattr(hw, "_nvidia_smi", lambda: pytest.fail("HIP must never call nvidia-smi"))
+    assert hw.gpu_info(include_unavailable=True) == []
+
+
+def test_hip_inventory_is_serialized_by_health_stats_and_system_info(cuda, monkeypatch, tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from ypuddin.server.routes_core import router
+
+    monkeypatch.setenv("YPUDDIN_ENV_PROFILE", "linux-dtk")
+    monkeypatch.setattr(hw.torch.version, "hip", "6.2.0")
+    monkeypatch.setattr(hw.torch.version, "cuda", None)
+    monkeypatch.setattr(hw, "_nvml_metrics", lambda *a: pytest.fail("HIP must never call NVML"))
+    app = FastAPI()
+    app.state.ctx = SimpleNamespace(data_root=tmp_path)
+    app.include_router(router, prefix="/api")
+    with TestClient(app) as client:
+        health = client.get("/api/health")
+        assert health.status_code == 200
+        assert health.json()["hip"] == "6.2.0" and health.json()["hip_available"] is True
+        assert health.json()["gpus"][0]["kind"] == "dtk"
+        stats = client.get("/api/system/stats")
+        assert stats.status_code == 200
+        gpu = stats.json()["gpus"][0]
+        assert gpu["kind"] == "dtk" and gpu["hip_runtime"] == "6.2.0"
+        assert gpu["power_w"] is None and gpu["util_pct"] is None
+        info = client.get("/api/system/info")
+        assert info.status_code == 200
+        assert info.json()["hip"] == "6.2.0" and info.json()["hip_available"] is True
+
+
+@pytest.fixture
+def hip_sysfs(cuda, monkeypatch, tmp_path):
+    monkeypatch.setattr(hw.sys, "platform", "linux")
+    monkeypatch.setattr(hw.torch.version, "hip", "6.3.26093")
+    monkeypatch.setenv("YPUDDIN_ENV_PROFILE", "linux-dtk")
+    denied = set()
+    monkeypatch.setattr(hw, "_drm_accessible", lambda node: node.name not in denied)
+    hw._DRM_DEVICES.mkdir()
+
+    def card(bus, identity, node, *, allocated=True, vendor="0x1d94", driver="hycu"):
+        device = tmp_path / "pci" / bus
+        sensor = device / "hwmon" / "hwmon8"
+        sensor.mkdir(parents=True)
+        values = {
+            "vendor": vendor,
+            "unique_id": identity,
+            "gpu_busy_percent": "37",
+            "mem_info_vram_total": str(65520 * 2**20),
+            "mem_info_vram_used": str(2048 * 2**20),
+            "hwmon/hwmon8/name": driver,
+            "hwmon/hwmon8/power1_average": "83500000",
+            "hwmon/hwmon8/power1_cap": "1000000000",
+            "hwmon/hwmon8/temp1_label": "edge",
+            "hwmon/hwmon8/temp1_input": "53000",
+            "hwmon/hwmon8/power2_average": "21000000",
+        }
+        for filename, value in values.items():
+            (device / filename).write_text(value)
+        node_dir = hw._DRM_SYSFS / node
+        node_dir.mkdir(parents=True)
+        (node_dir / "device").symlink_to(device, target_is_directory=True)
+        if allocated:
+            (hw._DRM_DEVICES / node).touch()
+        return device
+
+    return card, denied
+
+
+def _hip_props(identity, **kwargs):
+    return SimpleNamespace(
+        name="BW", total_memory=65520 * 2**20, uuid=uuid.UUID(bytes=identity.encode()), **kwargs
+    )
+
+
+@pytest.mark.parametrize(
+    "profile,vendor,driver", [("linux-dtk", "0x1d94", "hycu"), ("legacy", "0x1002", "amdgpu")]
+)
+def test_hip_driver_telemetry_matches_uuid_after_masks_and_shared_node_reordering(
+    hip_sysfs, monkeypatch, profile, vendor, driver
+):
+    card, _ = hip_sysfs
+    first = card("0000:36:00.0", "0014ba8a38d43021", "renderD129", vendor=vendor, driver=driver)
+    second = card("0000:55:00.0", "0014ba57aa024101", "renderD130", vendor=vendor, driver=driver)
+    card("0000:16:00.0", "0014ba8a38d43022", "renderD128", allocated=False)
+    (second / "gpu_busy_percent").write_text("0")  # A real idle reading is not missing data.
+    (second / "hwmon/hwmon8/power1_average").write_text("72000000")
+    (second / "mem_info_vram_used").write_text(str(4096 * 2**20))
+    monkeypatch.setenv("YPUDDIN_ENV_PROFILE", profile)
+    monkeypatch.setenv("HIP_VISIBLE_DEVICES", "1,0")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "1,0")
+    monkeypatch.setenv("ROCR_VISIBLE_DEVICES", "3,2")
+    monkeypatch.setattr(hw.torch.cuda, "device_count", lambda: 2)
+    props = [_hip_props("0014ba57aa024101"), _hip_props("0014ba8a38d43021")]
+    monkeypatch.setattr(hw.torch.cuda, "get_device_properties", lambda i: props[i])
+    monkeypatch.setattr(hw.torch.cuda, "mem_get_info", lambda i: (60000 * 2**20, 65520 * 2**20))
+    gpus = hw.gpu_info()
+    assert [g["index"] for g in gpus] == [0, 1]
+    assert [g["name"] for g in gpus] == ["BW", "BW"]
+    assert [g["util_pct"] for g in gpus] == [0, 37]
+    assert [g["power_w"] for g in gpus] == [72, 83.5]  # Never sum component power channels.
+    assert [g["mem_used_mb"] for g in gpus] == [4096, 2048]
+    assert [g["mem_free_mb"] for g in gpus] == [60000, 60000]  # Preserve HIP's allocatable-memory limit.
+    assert all(g["mem_total_mb"] == 65520 and g["temp_c"] == 53 for g in gpus)
+    assert all(g["telemetry_source"] == "torch-hip+sysfs" and g["telemetry_note"] is None for g in gpus)
+    assert all(g["power_source"] == "hwmon" and g["power_estimated"] is False for g in gpus)
+    assert all(g["temperature_source"] == "hwmon-edge" for g in gpus)
+    # Cache identity changes immediately with Torch's visible order, not after expiry.
+    props.reverse()
+    assert [g["power_w"] for g in hw.gpu_info()] == [83.5, 72]
+    assert first.exists()
+
+
+@pytest.mark.parametrize(
+    "failure", ["unknown_uuid", "duplicate_uuid", "unallocated", "denied", "other_vendor"]
+)
+def test_hip_sensors_never_attach_an_unproven_or_unallocated_device(hip_sysfs, monkeypatch, failure):
+    card, denied = hip_sysfs
+    identity = "0014ba8a38d43021"
+    card(
+        "0000:36:00.0",
+        identity,
+        "renderD129",
+        allocated=failure != "unallocated",
+        vendor="0x10de" if failure == "other_vendor" else "0x1d94",
+    )
+    if failure == "duplicate_uuid":
+        card("0000:55:00.0", identity, "renderD130")
+    if failure == "denied":
+        denied.add("renderD129")
+    monkeypatch.setattr(
+        hw.torch.cuda,
+        "get_device_properties",
+        lambda _: _hip_props("0014ba8a38d43022" if failure == "unknown_uuid" else identity),
+    )
+    gpu = hw.gpu_info()[0]
+    assert gpu["telemetry_source"] == "torch-hip"
+    assert gpu["power_w"] is None and gpu["util_pct"] is None and gpu["temp_c"] is None
+    assert gpu["mem_used_mb"] == 4096  # Independent Torch memory still works.
+
+
+def test_hip_explicit_pci_identity_can_match_when_uuid_is_unavailable(hip_sysfs, monkeypatch):
+    card, _ = hip_sysfs
+    card("0000:55:00.0", "0014ba57aa024101", "renderD130")
+    monkeypatch.setattr(
+        hw.torch.cuda,
+        "get_device_properties",
+        lambda _: SimpleNamespace(
+            name="BW", total_memory=65520 * 2**20, uuid=None, pci_bus_id="0000:55:00.0"
+        ),
+    )
+    assert hw.gpu_info()[0]["power_w"] == 83.5
+
+
+def test_hip_sysfs_cache_is_bounded_and_failed_readings_replace_previous_values(hip_sysfs, monkeypatch):
+    card, _ = hip_sysfs
+    device = card("0000:36:00.0", "0014ba8a38d43021", "renderD129")
+    clock = [100.0]
+    monkeypatch.setattr(hw.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(hw.torch.cuda, "get_device_properties", lambda _: _hip_props("0014ba8a38d43021"))
+    read = Mock(wraps=hw._hip_sensor_reading)
+    monkeypatch.setattr(hw, "_hip_sensor_reading", read)
+    assert hw.gpu_info()[0]["power_w"] == 83.5
+    (device / "hwmon/hwmon8/power1_average").write_text("NaN")
+    (device / "gpu_busy_percent").write_text("101")
+    (device / "hwmon/hwmon8/temp1_input").write_text("0")
+    (device / "mem_info_vram_used").write_text(str(70000 * 2**20))
+    assert hw.gpu_info()[0]["power_w"] == 83.5
+    assert read.call_count == 1
+    clock[0] += 2.01
+    gpu = hw.gpu_info()[0]
+    assert read.call_count == 2
+    assert gpu["power_w"] is None and gpu["util_pct"] is None and gpu["temp_c"] is None
+    assert gpu["mem_used_mb"] == 4096
+    assert gpu["power_limit_w"] == 1000  # A missing field does not hide independent metrics.
+
+
+def test_drm_access_check_rejects_device_cgroup_denial(monkeypatch):
+    node = Mock()
+    node.stat.return_value = SimpleNamespace(st_mode=hw.stat.S_IFCHR)
+    open_device = Mock(side_effect=PermissionError("device cgroup denies access"))
+    monkeypatch.setattr(hw.os, "open", open_device)
+    assert not hw._drm_accessible(node)
+    open_device.assert_called_once()
+
+
+def test_hip_driver_metrics_reach_system_stats_and_old_hwmon_without_label(hip_sysfs, monkeypatch, tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from ypuddin.server.routes_core import router
+
+    card, _ = hip_sysfs
+    device = card("0000:36:00.0", "0014ba8a38d43021", "renderD129", vendor="0x1002", driver="amdgpu")
+    (device / "hwmon/hwmon8/temp1_label").unlink()
+    monkeypatch.setattr(hw.torch.cuda, "get_device_properties", lambda _: _hip_props("0014ba8a38d43021"))
+    app = FastAPI()
+    app.state.ctx = SimpleNamespace(data_root=tmp_path)
+    app.include_router(router, prefix="/api")
+    with TestClient(app) as client:
+        response = client.get("/api/system/stats")
+        assert response.status_code == 200
+        gpu = response.json()["gpus"][0]
+        assert gpu["power_w"] == 83.5 and gpu["power_source"] == "hwmon"
+        assert gpu["power_estimated"] is False
+        assert gpu["temp_c"] == 53 and gpu["temperature_source"] == "hwmon-edge"
+        assert gpu["util_pct"] == 37 and gpu["mem_used_mb"] == 2048
+        assert gpu["telemetry_note"] is None

@@ -1,9 +1,37 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import ParameterSections from '../src/components/ParameterSections';
+import { presentConfigIssues } from '../src/utils/configPresentation';
 import '../src/i18n';
 
 afterEach(() => vi.restoreAllMocks());
+it('shows current validation status without treating an unchecked model path as complete', () => {
+  const root = document.createElement('div');
+  root.innerHTML = '<section data-group="model"><button class="config-group-title">Model</button></section>';
+  const props = {rootRef:{current:root}, tab:'model' as const, onTabChange:vi.fn(), onRevealAdvanced:vi.fn()};
+  const view = render(<ParameterSections {...props}/>);
+  const model = screen.getByRole('button', {name:/模型选择$/});
+  const optimizer = screen.getByRole('button', {name:/优化器$/});
+  expect(model).toHaveAccessibleDescription('待检查');
+  expect(optimizer).toHaveAccessibleDescription('待检查');
+  const issues = presentConfigIssues([{loc:'model.dit_path',msg:'Weight file is missing'}]);
+  view.rerender(<ParameterSections {...props} checked issues={issues}/>);
+  expect(model).toHaveAccessibleDescription('1 项待配置');
+  expect(optimizer).toHaveAccessibleDescription('检查通过');
+  // Schema-only success cannot prove that a local model exists.
+  view.rerender(<ParameterSections {...props} checked/>);
+  expect(model).toHaveAccessibleDescription('待检查');
+  view.rerender(<ParameterSections {...props} checked planChecked/>);
+  expect(model).toHaveAccessibleDescription('检查通过');
+  expect(model).toHaveAttribute('aria-current','step');
+  expect(model.querySelector('.parameter-step-complete')).not.toBeNull();
+  // Edits and requests in progress invalidate the old success state.
+  view.rerender(<ParameterSections {...props}/>);
+  expect(model).toHaveAccessibleDescription('待检查');
+  expect(optimizer).toHaveAccessibleDescription('待检查');
+  view.rerender(<ParameterSections {...props} checked planChecked issues={presentConfigIssues([{loc:'device',msg:'unavailable'}])}/>);
+  expect(model).toHaveAccessibleDescription('待检查');
+});
 it('keeps a short final section selected after a clamped jump, then follows user scrolling', async () => {
   vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { callback(0); return 1; });
   const root = document.createElement('div');

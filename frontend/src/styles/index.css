@@ -55,8 +55,7 @@ input::placeholder, textarea::placeholder { color:var(--studio-dim); opacity:1; 
 .telemetry-number { text-align:center; }
 .telemetry-unit { text-align:left; color:var(--studio-dim); font-size:10px; font-weight:400; }
 .telemetry-unit:empty { display:none; }
-.telemetry-device { width:50px; flex-shrink:0; }
-.telemetry-device select { width:50px; padding:0; border:0; background:transparent; color:var(--studio-text); font-size:10px; height:13px; }
+.telemetry-device { width:76px; height:44px; flex-shrink:0; display:flex; flex-direction:column; justify-content:center; align-items:stretch; gap:2px; }
 .telemetry-device-kind { color:var(--studio-dim); font-size:9px; line-height:14px; }
 .telemetry-gpu-readings { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:9px; flex:1; min-width:0; }
 .telemetry-gpu-readings > div:nth-child(3) { border-left:1px solid var(--studio-line); padding-left:7px; margin-left:-7px; }
@@ -257,5 +256,8 @@ input::placeholder, textarea::placeholder { color:var(--studio-dim); opacity:1; 
 .training-inspector { top:52px; }
 @media(max-width:800px) { .config-tabs { top:94px; } }
 
-.telemetry-gpu-select.studio-select { width:76px; min-height:18px; height:18px; padding:0 2px; border:0; font-size:10px; gap:2px; line-height:16px; }
+.telemetry-gpu-select.studio-select { width:100%; min-height:44px; height:44px; padding:0 3px; border:0; font-size:10px; gap:4px; line-height:13px; background:transparent; }
+.telemetry-gpu-select .studio-select-value { display:grid; gap:2px; text-align:center; }
+.telemetry-gpu-select .studio-select-title { overflow:hidden; text-overflow:ellipsis; color:var(--studio-dim); }
+.telemetry-gpu-select .studio-select-description { color:var(--studio-dim); font-size:9px; line-height:14px; }
 .telemetry-gpu-select .studio-select-chevron { width:10px; }

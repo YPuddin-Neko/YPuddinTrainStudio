@@ -32,10 +32,11 @@ from packaging.specifiers import SpecifierSet
 from packaging.tags import sys_tags
 from packaging.utils import canonicalize_name, parse_wheel_filename
 from packaging.version import InvalidVersion, Version
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ypuddin.runtime_profiles import current_profile, profile_root
 
+from . import dtk_catalog, windows_attention_catalog
 from .db import Database, new_id, now
 from .errors import ApiError
 
@@ -80,6 +81,15 @@ class EnvironmentRequest(BaseModel):
     action: Literal["install", "repair", "uninstall"] = "install"
     version: str | None = None
     wheel_id: str | None = None
+    vendor_wheel_id: str | None = None
+
+    @model_validator(mode="after")
+    def one_wheel_source(self):
+        if self.wheel_id and self.vendor_wheel_id:
+            raise ValueError("Choose either an uploaded wheel or a vendor wheel")
+        if self.action == "uninstall" and (self.wheel_id or self.vendor_wheel_id):
+            raise ValueError("Uninstall does not accept a wheel source")
+        return self
 
     @field_validator("version")
     @classmethod
@@ -103,8 +113,18 @@ class EnvironmentRuntime(BaseModel):
     python_executable: str
     platform: str
     machine: str
+    distribution: str | None = None
+    distribution_id: str | None = None
+    distribution_version: str | None = None
+    kernel_release: str | None = None
+    glibc_version: str | None = None
+    dtk_root: str | None = None
+    installed_dtk: str | None = None
+    driver_version: str | None = None
     torch: str
     cuda_runtime: str | None
+    hip_runtime: str | None = None
+    compute_backend: Literal["cuda", "hip", "mps", "cpu"] = "cpu"
     cuda_available: bool
     mps_available: bool
     gpu_capability: list[int] | None
@@ -115,7 +135,7 @@ class EnvironmentRuntime(BaseModel):
     distributed_available: bool = False
     nccl_available: bool = False
     multi_gpu_training: bool = False
-    training_device_policy: Literal["single_device"] = "single_device"
+    training_device_policy: Literal["single_device", "exclusive_devices"] = "single_device"
     cuda_applicable: bool = True
     nccl_applicable: bool = True
     distributed_purpose: str = "multi_process_communication"
@@ -135,6 +155,26 @@ class EnvironmentPackage(BaseModel):
     wheel_required: bool
 
 
+class SdpaCheck(BaseModel):
+    dtype: str
+    shape: list[int]
+    passed: bool
+    error: str | None = None
+
+
+class SdpaProbe(BaseModel):
+    status: Literal["passed", "failed", "not_tested"]
+    reason: str | None = None
+    error: str | None = None
+    detail: str | None = None
+    checked_at: float | None = None
+    device: str | None = None
+    device_name: str | None = None
+    torch: str | None = None
+    hip_runtime: str | None = None
+    checks: list[SdpaCheck] = Field(default_factory=list)
+
+
 class EnvironmentSnapshot(BaseModel):
     runtime: EnvironmentRuntime
     packages: list[EnvironmentPackage]
@@ -143,6 +183,7 @@ class EnvironmentSnapshot(BaseModel):
     maintenance: bool
     running_jobs: bool
     probe_deferred: bool
+    sdpa: SdpaProbe | None = None
 
 
 class EnvironmentWheel(BaseModel):
@@ -152,6 +193,7 @@ class EnvironmentWheel(BaseModel):
     filename: str
     size: int
     sha256: str
+    vendor_wheel_id: str | None = None
 
 
 class EnvironmentOperation(BaseModel):
@@ -168,6 +210,12 @@ class EnvironmentOperation(BaseModel):
     error: str | None = None
     restart_required: bool = False
     dismissed_at: float | None = None
+    vendor_wheel_id: str | None = None
+    phase: str = "plan"
+    downloaded_bytes: int = 0
+    total_bytes: int | None = None
+    bytes_per_second: float | None = None
+    eta_seconds: float | None = None
 
 
 def environment_attention_default(context) -> str:
@@ -194,7 +242,7 @@ def protected(name: str) -> bool:
     name = canonicalize_name(name)
     return (
         name in {"torch", "torchvision", "torchaudio", "triton", "triton-windows", "numpy"}
-        or name.startswith(("nvidia-", "cuda-", "pytorch-"))
+        or name.startswith(("nvidia-", "cuda-", "pytorch-", "dtk-", "dcu-", "hygon-", "hip-", "rocm-"))
         and name != "nvidia-ml-py"
     )
 
@@ -209,27 +257,34 @@ def runtime_info() -> dict[str, Any]:
     from .hardware import gpu_info
 
     cuda = torch.cuda.is_available()
+    hip = getattr(torch.version, "hip", None)
+    mps = bool(hasattr(torch.backends, "mps") and torch.backends.mps.is_available())
     distributed = getattr(torch, "distributed", None)
     distributed_available = bool(distributed and distributed.is_available())
     nccl_available = bool(distributed_available and distributed.is_nccl_available())
+    device_count = torch.cuda.device_count() if cuda else 0
+    multi_gpu = platform.system() == "Linux" and device_count >= 2 and nccl_available
     return {
         "environment_profile": current_profile(),
         "python": platform.python_version(),
         "python_executable": sys.executable,
         "platform": platform.system(),
         "machine": platform.machine(),
+        **dtk_catalog.system_info(),
+        "driver_version": dtk_catalog.driver_version() if hip else None,
         "torch": str(torch.__version__),
         "cuda_runtime": torch.version.cuda,
+        "hip_runtime": hip,
+        "compute_backend": "hip" if cuda and hip else "cuda" if cuda else "mps" if mps else "cpu",
         "cuda_available": cuda,
-        "cuda_device_count": torch.cuda.device_count() if cuda else 0,
+        "cuda_device_count": device_count,
         "distributed_available": distributed_available,
         "nccl_available": nccl_available,
-        "cuda_applicable": platform.system() != "Darwin",
+        "cuda_applicable": platform.system() != "Darwin" and not hip,
         "nccl_applicable": platform.system() == "Linux" and cuda,
-        # The supervisor launches one worker with one --device; no process group.
-        "multi_gpu_training": False,
-        "training_device_policy": "single_device",
-        "mps_available": bool(hasattr(torch.backends, "mps") and torch.backends.mps.is_available()),
+        "multi_gpu_training": multi_gpu,
+        "training_device_policy": "exclusive_devices" if multi_gpu else "single_device",
+        "mps_available": mps,
         "gpu_capability": list(torch.cuda.get_device_capability()) if cuda else None,
         "cxx11_abi": bool(torch.compiled_with_cxx11_abi())
         if hasattr(torch, "compiled_with_cxx11_abi")
@@ -245,6 +300,11 @@ PROBE = r"""
 import importlib, json, re, torch
 names = {"xformers": "xformers.ops", "flash-attn": "flash_attn", "sageattention": "sageattention", "nvidia-ml-py": "pynvml", "tensorboard": "tensorboard", "schedulefree": "schedulefree"}
 out = {}
+from ypuddin.runtime_attention import probe_sdpa
+try:
+    out["sdpa"] = probe_sdpa(torch)
+except Exception as exc:
+    out["sdpa"] = {"status": "not_tested", "reason": "probe_failed", "error": str(exc)[-1500:]}
 for name, module in names.items():
     imported = False
     try:
@@ -259,6 +319,9 @@ for name, module in names.items():
                 with torch.no_grad(): y = m.sageattn(q.transpose(1,2), q.transpose(1,2), q.transpose(1,2), tensor_layout="HND", is_causal=False)
             if name != "sageattention": y.float().sum().backward()
             torch.cuda.synchronize()
+            if not bool(torch.isfinite(y).all()): raise RuntimeError("Attention output is not finite")
+            if name != "sageattention" and (q.grad is None or not bool(torch.isfinite(q.grad).all())):
+                raise RuntimeError("Attention gradient is missing or not finite")
             tested = True
         out[name] = {"importable": True, "kernel_tested": tested, "error": None}
     except Exception as exc:
@@ -271,10 +334,13 @@ for name, module in names.items():
         error = detail[-1500:]
         if kernel_unavailable:
             capability = torch.cuda.get_device_capability()
+            hip = getattr(torch.version, 'hip', None)
+            device_label = 'HIP ' + str(getattr(torch.cuda.get_device_properties(0), 'gcnArchName', capability)) if hip else f'SM{capability[0]}{capability[1]}'
+            runtime_label = 'DTK / HIP' if hip else 'CUDA'
             error = (
-                f"xFormers 已安装并可导入，但当前 wheel 没有可用于此 GPU（SM{capability[0]}{capability[1]}）的注意力计算内核。"
+                f"xFormers 已安装并可导入，但当前 wheel 没有可用于此 GPU（{device_label}）的注意力计算内核。"
                 "需要兼容的 attention 内核。"
-                "可尝试匹配当前 Python、PyTorch、CUDA 且支持此 GPU 的 FlashAttention 2 wheel，安装后重新检测。"
+                f"可尝试匹配当前 Python、PyTorch、{runtime_label} 且支持此 GPU 的 FlashAttention 2 wheel，安装后重新检测。"
             )
             try:
                 q_sdpa = torch.randn(1, 2, 32, 64, device="cuda", dtype=torch.float16, requires_grad=True)
@@ -318,14 +384,15 @@ def probe_packages() -> dict[str, Any]:
             name: {"importable": False, "kernel_tested": False, "error": str(exc)}
             for name in CATALOG
             if name != "torch"
-        }
+        } | {"sdpa": {"status": "not_tested", "reason": "probe_failed", "error": str(exc)}}
 
 
 class Installer:
     """Fixed argument-list runner; separate bundled pip can target a venv without pip installed."""
 
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, *, context=None):
         self.root = root
+        self.context = context
 
     def command(self, log, cancel) -> list[str]:
         if importlib.util.find_spec("pip"):
@@ -356,7 +423,10 @@ class Installer:
         ]
 
     def run(self, args, log, cancel, *, timeout=1800):
-        env = os.environ.copy()
+        from .network import ProxyPolicy
+
+        policy = ProxyPolicy.from_context(self.context) if self.context else ProxyPolicy()
+        env = policy.subprocess_env()
         for key in tuple(env):
             if key.startswith("PIP_"):
                 env.pop(key)
@@ -365,7 +435,7 @@ class Installer:
         env["PYTHONNOUSERSITE"] = "1"
         env.pop("PYTHONHOME", None)
         env.pop("PYTHONPATH", None)
-        log("$ " + subprocess.list2cmdline(args))
+        log(policy.redact("$ " + subprocess.list2cmdline(args)))
         proc = subprocess.Popen(
             args,
             stdout=subprocess.PIPE,
@@ -380,7 +450,7 @@ class Installer:
         def read():
             assert proc.stdout is not None
             for line in proc.stdout:
-                line = line.rstrip("\r\n")
+                line = policy.redact(line.rstrip("\r\n"))
                 if line:
                     lines.append(line)
                     if len(lines) > 30:
@@ -428,13 +498,14 @@ class EnvironmentManager:
         self.profile = current_profile()
         self.root = profile_root(context.data_root, self.profile)
         self.root.mkdir(parents=True, exist_ok=True)
-        self.installer = installer or Installer(self.root)
+        self.installer = installer or Installer(self.root, context=context)
         self.versions, self.runtime, self.probe = versions, runtime, probe
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="environment")
         self.lock = threading.RLock()
         self._cancel: dict[str, threading.Event] = {}
         self._probe_cache: dict[str, Any] | None = None
         self._probe_time = 0.0
+        self._windows_catalog = windows_attention_catalog.Catalog()
         self._closed = False
         self.context.db.set_kv("environment.maintenance", {"blocked": False})
         # A fresh service has released imported DLLs. An interrupted mutation must still be
@@ -551,10 +622,13 @@ class EnvironmentManager:
                 reason = "supported"
                 if name == "torch":
                     reason = "protected_runtime"
+                elif self.profile == "linux-dtk" and name in ("sageattention", "nvidia-ml-py"):
+                    reason = "requires_nvidia"
                 elif backend and not runtime["cuda_available"]:
                     reason = "requires_cuda"
                 elif (
                     backend in ("flash_attn", "sage")
+                    and not runtime.get("hip_runtime")
                     and runtime.get("gpu_capability")
                     and runtime["gpu_capability"][0] < 8
                 ):
@@ -579,7 +653,8 @@ class EnvironmentManager:
                         and bool(probe.get("importable"))
                         and (not backend or bool(probe.get("kernel_tested"))),
                         "wheel_required": bool(
-                            backend in ("flash_attn", "sage") and runtime["platform"] == "Windows"
+                            (backend in ("flash_attn", "sage") and runtime["platform"] == "Windows")
+                            or (self.profile == "linux-dtk" and name in ("flash-attn", "xformers"))
                         ),
                     }
                 )
@@ -592,6 +667,7 @@ class EnvironmentManager:
                 "maintenance": maintenance_blocked(self.context.db),
                 "running_jobs": running,
                 "probe_deferred": running,
+                "sdpa": probes.get("sdpa"),
             }
 
     def save_settings(self, settings: EnvironmentSettings):
@@ -618,6 +694,11 @@ class EnvironmentManager:
         if not tags.intersection(set(sys_tags())):
             raise ValueError("Wheel Python ABI or platform does not match this server")
         with zipfile.ZipFile(path) as archive:
+            native_files = [
+                i.filename
+                for i in archive.infolist()
+                if i.filename.endswith((".so", ".pyd", ".dll", ".dylib"))
+            ]
             entries = [i for i in archive.infolist() if i.filename.endswith(".dist-info/METADATA")]
             if len(entries) != 1 or entries[0].file_size > 1024**2:
                 raise ValueError("Wheel must have exactly one valid package METADATA")
@@ -638,8 +719,8 @@ class EnvironmentManager:
             or Version(metadata.get("Version", "0")) != version
         ):
             raise ValueError("Wheel filename and package metadata disagree")
-        if metadata.get("Requires-Python") and platform.python_version() not in SpecifierSet(
-            metadata["Requires-Python"]
+        if metadata.get("Requires-Python") and not SpecifierSet(metadata["Requires-Python"]).contains(
+            platform.python_version(), prereleases=True
         ):
             raise ValueError("Wheel Requires-Python does not match this server")
         versions = self.versions()
@@ -664,7 +745,17 @@ class EnvironmentManager:
                 if dep == "torch":
                     torch_requirement = True
         runtime = self.runtime()
-        if CATALOG[name][1]:
+        vendor = None
+        if self.profile == "linux-dtk" and CATALOG[name][1]:
+            vendor = dtk_catalog.wheel_for_file(path)
+            reason = dtk_catalog.incompatibility(vendor, runtime, versions, self.profile)
+            if reason:
+                raise ValueError("DTK vendor wheel does not match this environment: " + reason)
+            if path.stat().st_size != vendor.size_bytes or self._hash(path) != vendor.sha256:
+                raise ValueError("DTK vendor wheel differs from the reviewed official SHA256 or size")
+            if not vendor.binary and native_files:
+                raise ValueError("The reviewed Python-only vendor wheel unexpectedly contains native code")
+        elif CATALOG[name][1]:
             match_torch = re.search(r"torch(\d+\.\d+(?:\.\d+)?)", path.name)
             match_cuda = re.search(r"cu(\d{2,3})", path.name)
             if (
@@ -710,7 +801,38 @@ class EnvironmentManager:
             "filename": path.name,
             "size": path.stat().st_size,
             "sha256": self._hash(path),
+            "vendor_wheel_id": vendor.id if vendor else None,
         }
+
+    @staticmethod
+    def _validate_installed_requirements(path: Path, versions: dict[str, str]):
+        with zipfile.ZipFile(path) as archive:
+            filename = next(name for name in archive.namelist() if name.endswith(".dist-info/METADATA"))
+            metadata = BytesParser().parsebytes(archive.read(filename))
+        for raw in metadata.get_all("Requires-Dist", []):
+            req = Requirement(raw)
+            if req.marker and not req.marker.evaluate():
+                continue
+            actual = versions.get(canonicalize_name(req.name))
+            if req.url or actual is None or actual not in req.specifier:
+                raise ValueError(
+                    f"Vendor wheel requires {req}; prepare the compatible dependency in this DTK environment first"
+                )
+
+    def vendor_wheels(self):
+        return dtk_catalog.catalog(self.runtime(), self.versions(), self.profile)
+
+    def windows_wheels(self, refresh=False):
+        from .network import ProxyPolicy
+
+        return self._windows_catalog.snapshot(
+            self.runtime(), self.profile, proxy=ProxyPolicy.from_context(self.context), refresh=refresh
+        )
+
+    def _wheel_provider(self, id_):
+        if id_.startswith("mjun0812-"):
+            return windows_attention_catalog, self._windows_catalog.find_wheel(id_)
+        return dtk_catalog, dtk_catalog.find_wheel(id_)
 
     @staticmethod
     def _hash(path):
@@ -733,6 +855,32 @@ class EnvironmentManager:
             if any(op.status in BUSY for op in self.list()):
                 raise EnvironmentError(409, "Another environment operation is in progress")
             runtime = self.runtime()
+            if request.vendor_wheel_id:
+                try:
+                    provider, vendor = self._wheel_provider(request.vendor_wheel_id)
+                    reason = provider.incompatibility(vendor, runtime, self.versions(), self.profile)
+                    if reason:
+                        raise ValueError("Selected prebuilt wheel is unavailable: " + reason)
+                    if (
+                        vendor.package != request.package
+                        or request.version
+                        and vendor.version != request.version
+                    ):
+                        raise ValueError("Vendor wheel does not match the selected package or version")
+                except ValueError as exc:
+                    raise EnvironmentError(422, str(exc)) from exc
+            if (
+                request.action != "uninstall"
+                and self.profile == "linux-dtk"
+                and (
+                    request.package in ("nvidia-ml-py", "sageattention")
+                    or (CATALOG[request.package][1] and not (request.vendor_wheel_id or request.wheel_id))
+                )
+            ):
+                raise EnvironmentError(
+                    422,
+                    "DTK requires a matching SourceFind vendor wheel or verified offline wheel; NVIDIA CUDA packages cannot be installed",
+                )
             if (
                 request.action != "uninstall"
                 and CATALOG[request.package][1]
@@ -745,7 +893,7 @@ class EnvironmentManager:
                 request.action != "uninstall"
                 and request.package in ("flash-attn", "sageattention")
                 and runtime["platform"] == "Windows"
-                and not request.wheel_id
+                and not (request.wheel_id or request.vendor_wheel_id)
             ):
                 raise EnvironmentError(
                     422,
@@ -767,6 +915,7 @@ class EnvironmentManager:
                 status="planning",
                 created_at=now(),
                 updated_at=now(),
+                vendor_wheel_id=request.vendor_wheel_id,
             )
             self.context.db.set_kv("environment.operation." + op.id, op.model_dump())
             self._cancel[op.id] = threading.Event()
@@ -802,6 +951,36 @@ class EnvironmentManager:
             )
             version = versions.get(request.package) if request.action == "repair" else request.version
             target = request.package + (f"=={version}" if version else "")
+            local_wheel = bool(request.wheel_id or request.vendor_wheel_id)
+            vendor = None
+            provider = None
+            if request.vendor_wheel_id:
+                provider, vendor = self._wheel_provider(request.vendor_wheel_id)
+                reason = provider.incompatibility(vendor, self.runtime(), versions, self.profile)
+                if reason:
+                    raise ValueError("Selected prebuilt wheel is no longer compatible: " + reason)
+                self._update(id_, phase="download", total_bytes=vendor.size_bytes)
+                log("Download reviewed prebuilt wheel: " + vendor.filename)
+
+                def progress(downloaded, total, speed, eta):
+                    self._update(
+                        id_,
+                        downloaded_bytes=downloaded,
+                        total_bytes=total,
+                        bytes_per_second=speed,
+                        eta_seconds=eta,
+                    )
+
+                from .network import ProxyPolicy
+
+                path = provider.download(
+                    vendor, work / "vendor", cancel, progress, proxy=ProxyPolicy.from_context(self.context)
+                )
+                self._update(id_, phase="validate", bytes_per_second=None, eta_seconds=None)
+                current = self.validate_wheel(path, package=request.package)
+                if version and current["version"] != version:
+                    raise ValueError("Vendor wheel does not match the requested repair version")
+                target = str(path)
             if request.wheel_id:
                 wheel = self.context.db.get_kv("environment.wheel." + request.wheel_id)
                 if not wheel:
@@ -810,8 +989,11 @@ class EnvironmentManager:
                 current = self.validate_wheel(path, package=request.package)
                 if current["sha256"] != wheel["sha256"] or version and current["version"] != version:
                     raise ValueError("Uploaded wheel changed or does not match the selected version")
+                if current.get("vendor_wheel_id"):
+                    provider, vendor = self._wheel_provider(current["vendor_wheel_id"])
                 target = str(path)
             cmd = self.installer.command(log, cancel)
+            self._update(id_, phase="plan", bytes_per_second=None, eta_seconds=None)
             report = work / "report.json"
             args = [
                 *cmd,
@@ -826,7 +1008,12 @@ class EnvironmentManager:
             ]
             # The official CUDA-specific xFormers wheel index binds its compiled kernels to
             # the actual Torch runtime, not the driver's advertised maximum CUDA version.
-            if request.package == "xformers" and not request.wheel_id:
+            if self.profile == "linux-dtk" and local_wheel:
+                # Native/declared dependencies must exist. Only the reviewed implicit
+                # Python dependencies are resolved separately below, never vendor kernels.
+                self._validate_installed_requirements(Path(target), versions)
+                args += ["--no-index", "--no-deps"]
+            elif request.package == "xformers" and not local_wheel:
                 cuda = self.runtime().get("cuda_runtime")
                 args += ["--index-url", "https://download.pytorch.org/whl/cu" + str(cuda).replace(".", "")]
             else:
@@ -837,6 +1024,53 @@ class EnvironmentManager:
                 args += ["--force-reinstall", "--no-deps"]
             self.installer.run([*args, target], log, cancel)
             rows = json.loads(report.read_text(encoding="utf-8")).get("install", [])
+            supplemental_names = set()
+            supplemental_requirements = []
+            if vendor and provider is dtk_catalog:
+                for value in dtk_catalog.python_runtime_requirements(vendor):
+                    requirement = Requirement(value)
+                    actual = versions.get(canonicalize_name(requirement.name))
+                    if actual is None or actual not in requirement.specifier:
+                        supplemental_requirements.append(value)
+            if supplemental_requirements:
+                log("Resolve vendor Python runtime dependencies: " + ", ".join(supplemental_requirements))
+                supplemental_report = work / "python-runtime-report.json"
+                self.installer.run(
+                    [
+                        *cmd,
+                        "install",
+                        "--dry-run",
+                        "--report",
+                        str(supplemental_report),
+                        "--only-binary=:all:",
+                        "--no-input",
+                        "--constraint",
+                        str(constraints),
+                        "--index-url",
+                        "https://pypi.org/simple",
+                        *supplemental_requirements,
+                    ],
+                    log,
+                    cancel,
+                )
+                supplemental_rows = json.loads(supplemental_report.read_text(encoding="utf-8")).get(
+                    "install", []
+                )
+                supplemental_names = {canonicalize_name(row["metadata"]["name"]) for row in supplemental_rows}
+                if any(protected(name) or name in CATALOG for name in supplemental_names):
+                    raise ValueError(
+                        "Vendor Python dependencies cannot install or replace native/managed packages"
+                    )
+                rows.extend(supplemental_rows)
+            planned_versions = {
+                **versions,
+                **{canonicalize_name(row["metadata"]["name"]): row["metadata"]["version"] for row in rows},
+            }
+            for value in supplemental_requirements:
+                requirement = Requirement(value)
+                actual = planned_versions.get(canonicalize_name(requirement.name))
+                if actual is None or actual not in requirement.specifier:
+                    raise ValueError("Vendor Python runtime dependency is missing from the plan: " + value)
             plan = []
             for row in rows:
                 meta = row["metadata"]
@@ -851,7 +1085,7 @@ class EnvironmentManager:
                 if parsed.scheme == "file":
                     if (
                         parsed.netloc
-                        or not request.wheel_id
+                        or not local_wheel
                         or Path(url2pathname(parsed.path)).resolve() != Path(target).resolve()
                     ):
                         raise ValueError("Unexpected local dependency in installation plan")
@@ -864,6 +1098,10 @@ class EnvironmentManager:
                 filename = urllib.parse.unquote(parsed.path).rsplit("/", 1)[-1]
                 if not filename.endswith(".whl"):
                     raise ValueError("Source builds are disabled; a compatible prebuilt wheel is required")
+                if name in supplemental_names:
+                    _, _, _, tags = parse_wheel_filename(filename)
+                    if any(tag.abi != "none" or tag.platform != "any" for tag in tags):
+                        raise ValueError("Vendor supplemental dependencies must be Python-only wheels")
                 if name != request.package and name in versions and selected != versions[name]:
                     raise ValueError(
                         f"Plan would change existing dependency {name}; only the selected package may change version"
@@ -872,18 +1110,16 @@ class EnvironmentManager:
                 if not sha or not re.fullmatch(r"[0-9a-fA-F]{64}", sha):
                     raise ValueError("Wheel plan is missing its SHA256 digest")
                 # Same-version repair must still satisfy existing dependency requirements.
-                if request.action == "repair":
+                if request.action == "repair" or name in supplemental_names:
                     for raw in meta.get("requires_dist", []):
                         req = Requirement(raw)
                         if req.marker and not req.marker.evaluate():
                             continue
                         if (
-                            canonicalize_name(req.name) not in versions
-                            or versions[canonicalize_name(req.name)] not in req.specifier
+                            canonicalize_name(req.name) not in planned_versions
+                            or planned_versions[canonicalize_name(req.name)] not in req.specifier
                         ):
-                            raise ValueError(
-                                f"Repair requires {req}; install the compatible dependencies first"
-                            )
+                            raise ValueError(f"Installation plan does not satisfy {req}")
                 plan.append(
                     {
                         "name": name,
@@ -892,6 +1128,11 @@ class EnvironmentManager:
                         "url": url,
                         "sha256": sha,
                         "filename": filename,
+                        **(
+                            {"source_url": vendor.url, "provider": "sourcefind-dtk" if provider is dtk_catalog else windows_attention_catalog.PROVIDER}
+                            if request.vendor_wheel_id and name == request.package
+                            else {}
+                        ),
                     }
                 )
             if not plan:
@@ -905,9 +1146,9 @@ class EnvironmentManager:
                 "Plan ready. Existing Torch/CUDA/NumPy runtime is protected. Review every package change before applying."
             )
         except InterruptedError:
-            self._update(id_, status="cancelled")
+            self._update(id_, status="cancelled", bytes_per_second=None, eta_seconds=None)
         except Exception as exc:
-            self._update(id_, status="failed", error=str(exc))
+            self._update(id_, status="failed", error=str(exc), bytes_per_second=None, eta_seconds=None)
             log(str(exc))
 
     def apply(self, id_):
@@ -935,6 +1176,7 @@ class EnvironmentManager:
                 },
             )
             self._update(id_, status="installing")
+            self._update(id_, phase="install", bytes_per_second=None, eta_seconds=None)
             self.pool.submit(self._apply, id_)
             return self.get(id_)
 
@@ -964,6 +1206,7 @@ class EnvironmentManager:
                     [
                         *cmd,
                         "download",
+                        *(["--no-index"] if self.profile == "linux-dtk" else []),
                         "--no-deps",
                         "--only-binary=:all:",
                         "--require-hashes",
@@ -989,7 +1232,7 @@ class EnvironmentManager:
                 self.installer.run(
                     [*cmd, "install", "--no-deps", "--no-index", "--force-reinstall", *wheels], log, no_cancel
                 )
-            self._update(id_, status="verifying")
+            self._update(id_, status="verifying", phase="verify")
             after = self.versions()
             if {k: v for k, v in before.items() if protected(k)} != {
                 k: v for k, v in after.items() if protected(k)

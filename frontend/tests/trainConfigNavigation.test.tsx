@@ -61,7 +61,7 @@ describe('training dataset destinations and saved navigation', () => {
   it('opens only current source B even when registered A is first, with Windows spelling normalized', async () => {
     fixtures(); show();
     await screen.findByRole('spinbutton', { name: 'loop.epochs' });
-    fireEvent.click(screen.getByRole('tab', { name: '数据与分桶' }));
+    fireEvent.click(screen.getByRole('button', { name: /数据与分桶$/ }));
     const link = await screen.findByRole('link', { name: '标签编辑' });
     expect(link).toHaveAttribute('href', '/projects/p_nav?step=data&data_step=captions&dataset=d_B');
     fireEvent.click(link);
@@ -74,7 +74,7 @@ describe('training dataset destinations and saved navigation', () => {
   ])('uses project source selection when a direct editor would be ambiguous: $label', async ({ paths }) => {
     fixtures(paths); show();
     await screen.findByRole('spinbutton', { name: 'loop.epochs' });
-    fireEvent.click(screen.getByRole('tab', { name: '数据与分桶' }));
+    fireEvent.click(screen.getByRole('button', { name: /数据与分桶$/ }));
     expect(await screen.findByRole('link', { name: '标签编辑' })).toHaveAttribute('href', '/projects/p_nav?step=data&data_step=captions');
     expect(screen.getByRole('link', {name:'涂抹与遮罩'})).toHaveAttribute('href','/projects/p_nav?step=data&data_step=paint');
   });
@@ -170,8 +170,8 @@ describe('training dataset destinations and saved navigation', () => {
     const epochs=await screen.findByRole('spinbutton',{name:'loop.epochs'});
     fireEvent.change(epochs,{target:{value:'23'}});
     expect(screen.getByText('有未保存修改')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('tab',{name:'数据与分桶'}));
-    fireEvent.click(screen.getByRole('tab',{name:'训练参数'}));
+    fireEvent.click(screen.getByRole('button', { name: /数据与分桶$/ }));
+    fireEvent.click(screen.getByRole('button', { name: /设备与时长$/ }));
     expect(screen.getByRole('spinbutton',{name:'loop.epochs'})).toHaveValue(23);
     fireEvent.click(screen.getByRole('button',{name:'保存草稿'}));
     await waitFor(()=>expect(complete).toBeDefined());

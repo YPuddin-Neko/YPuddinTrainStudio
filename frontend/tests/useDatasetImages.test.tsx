@@ -1,6 +1,7 @@
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest';
 import { setupServer } from 'msw/node';
+import { http, HttpResponse } from 'msw';
 import { handlers } from '../src/mocks/handlers';
 import { useDatasetImages } from '../src/api/hooks/useDatasetImages';
 
@@ -68,7 +69,26 @@ describe('useDatasetImages (A2: 分页 / 过滤 / 多选)', () => {
     await waitFor(() => expect(result.current.items.length).toBe(60));
 
     const first = result.current.items[0];
-    act(() => result.current.updateCaption(first.hash, 'new_caption, edited'));
+    act(() => result.current.updateCaption(first.hash, 'new_caption, edited', first.rel_path));
     expect(result.current.items[0].caption).toBe('new_caption, edited');
+  });
+
+  it('updates only the saved path when identical images have different captions', async () => {
+    server.use(http.get('/api/datasets/duplicates/images', () => HttpResponse.json({
+      total: 2, page: 1, page_size: 60,
+      items: [
+        { hash: 'same-content', rel_path: 'first/photo.png', caption: 'first original', caption_tags: 'first original', caption_format: 'txt' },
+        { hash: 'same-content', rel_path: 'second/photo.png', caption: 'second original', caption_tags: 'second original', caption_format: 'txt' },
+      ],
+    })));
+    const { result } = renderHook(() => useDatasetImages('duplicates'));
+    await waitFor(() => expect(result.current.items).toHaveLength(2));
+    const untouched = result.current.items[1];
+    act(() => result.current.updateCaption('same-content', 'edited first', 'first/photo.png'));
+    expect(result.current.items[0].caption_tags).toBe('edited first');
+    expect(result.current.items[1]).toBe(untouched);
+    expect(result.current.items[1].caption_tags).toBe('second original');
+    act(() => result.current.updateCaption('same-content', 'wrong path', 'missing/photo.png'));
+    expect(result.current.items.map(item => item.caption_tags)).toEqual(['edited first', 'second original']);
   });
 });

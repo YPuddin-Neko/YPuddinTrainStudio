@@ -147,11 +147,20 @@ class DatasetPipeline:
     def signature(self, pid: str, vid: str, *, recipe: bool = False) -> str:
         from .routes_work import get_project_config
 
-        payload: list[Any] = []
+        config = get_project_config(pid, self.c, vid)
+        # Inspection advice depends on the model and the effective caption
+        # transforms, even when image/caption bytes have not changed.
+        payload: list[Any] = [{
+            "caption_inspection_version": 2,
+            "model_family": config.get("model", {}).get("family"),
+            "caption": config.get("dataset", {}).get("caption"),
+        }]
         for source in self._sources(pid, vid):
             root = Path(source["path"])
             payload.append(
-                {key: source.get(key) for key in ("path", "caption_ext", "class_prompt", "roles", "repeats")}
+                {key: source.get(key) for key in (
+                    "path", "caption_ext", "class_prompt", "roles", "repeats", "caption", "is_reg"
+                )}
             )
             if not root.is_dir():
                 payload.append([str(root), None])
@@ -160,7 +169,6 @@ class DatasetPipeline:
                 if path.is_file():
                     payload.append([str(path), _stat(path)])
         if recipe:
-            config = get_project_config(pid, self.c, vid)
             payload.append({key: config.get(key) for key in ("model", "dataset", "validation")})
             for key in ("dit_path", "vae_path", "text_encoder_path", "text_encoder_2_path", "tokenizer_path"):
                 value = config.get("model", {}).get(key)
@@ -493,10 +501,16 @@ class DatasetPipeline:
         return resolved
 
     def _inspect(self, oid: str, pid: str, vid: str) -> dict:
-        from ypuddin.data.captions import read_caption
+        from ypuddin.data.anima_caption_inspection import inspect_anima_caption
+        from ypuddin.data.caption_json import StructuredCaption
+        from ypuddin.data.captions import read_training_caption
         from ypuddin.data.index import caption_target
 
+        from .routes_work import get_project_config
+
         signature = self.signature(pid, vid)
+        config = get_project_config(pid, self.c, vid)
+        caption_profile = "anima" if config.get("model", {}).get("family") == "anima" else None
         caption_directories = {}
         files, global_issues = [], []
         for source in self._sources(pid, vid):
@@ -530,6 +544,8 @@ class DatasetPipeline:
                 "height": None,
                 "caption": "",
                 "has_mask": bool(mask),
+                "has_alpha": None,
+                "has_transparency": None,
                 "issues": [],
                 "editable": bool(
                     source["dataset_id"]
@@ -544,8 +560,27 @@ class DatasetPipeline:
                 with Image.open(path) as image:
                     image.load()
                     record["width"], record["height"] = ImageOps.exif_transpose(image).size
+                    has_alpha = "A" in image.getbands() or "transparency" in image.info
+                    record["has_alpha"] = has_alpha
+                    # Palette transparency and PNG color keys become an alpha
+                    # channel on conversion. Inspect pixels, not just metadata:
+                    # a fully opaque channel or unused transparent palette entry
+                    # does not make the image transparent.
+                    record["has_transparency"] = (
+                        image.convert("RGBA").getchannel("A").getextrema()[0] < 255
+                        if has_alpha
+                        else False
+                    )
                 record["hash"] = content_hash(path)
                 groups.setdefault(digest, []).append(len(records))
+                if record["has_transparency"]:
+                    record["issues"].append(
+                        {
+                            "severity": "warning",
+                            "code": "transparent_image",
+                            "message": "Transparent or semi-transparent pixels are present",
+                        }
+                    )
                 if min(record["width"], record["height"]) < 256:
                     record["issues"].append(
                         {
@@ -560,7 +595,19 @@ class DatasetPipeline:
                 )
             try:
                 if caption.is_file():
-                    record["caption"] = read_caption(str(caption), None)
+                    raw_caption = read_training_caption(str(caption), None, require_known_format=True)
+                    record["caption"] = (
+                        raw_caption.text() if isinstance(raw_caption, StructuredCaption) else raw_caption
+                    )
+                    if caption_profile:
+                        # Match expand_items: an explicit source override wins;
+                        # regularization otherwise has no stochastic transforms.
+                        cap_cfg = source.get("caption")
+                        if cap_cfg is None:
+                            cap_cfg = {} if source.get("is_reg") else config.get("dataset", {}).get("caption", {})
+                        advice = inspect_anima_caption(caption, record["caption"], cap_cfg)
+                        record["caption_format"] = advice
+                        record["issues"].extend(advice["issues"])
                 if not record["caption"] and not source.get("class_prompt"):
                     record["issues"].append(
                         {
@@ -637,12 +684,15 @@ class DatasetPipeline:
             )
         return {
             "signature": signature,
+            "caption_profile": caption_profile,
             "images": records,
             "duplicate_groups": duplicates,
             "errors": sum(issue["severity"] == "error" for issue in issues),
             "warnings": sum(issue["severity"] == "warning" for issue in issues),
             "captioned": sum(bool(record["caption"]) for record in records),
             "masks": sum(record["has_mask"] for record in records),
+            "alpha_images": sum(record["has_alpha"] is True for record in records),
+            "transparent_images": sum(record["has_transparency"] is True for record in records),
             "source_issues": global_issues,
         }
 

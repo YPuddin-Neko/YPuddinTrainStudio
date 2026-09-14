@@ -22,6 +22,7 @@ from torch import Tensor, nn
 from ypuddin.models.anima.text import ASSETS as ANIMA_ASSETS
 from ypuddin.models.anima.text import tokenizer_assets
 from ypuddin.models.base import TextCond, TextPipeline
+from ypuddin.models.memory import release_model_memory
 
 log = logging.getLogger(__name__)
 
@@ -242,9 +243,10 @@ class Krea2Text(TextPipeline):
             self.encoder.to(self.device)
 
     def unload(self) -> None:
+        if self.encoder is None:
+            return
         self.encoder = None
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        release_model_memory(self.device)
 
     # ----------------------------------------------------------------- tokenize / encode
     def _tokenize(self, captions: list[str]) -> tuple[Tensor, Tensor]:

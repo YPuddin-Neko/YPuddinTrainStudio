@@ -74,6 +74,8 @@ def evaluation(method):
 
 
 class Trainer:
+    is_primary = True
+
     def __init__(
         self, cfg: TrainConfig, *, device: str | torch.device | None = None, emitter: Emitter | None = None
     ):
@@ -100,6 +102,7 @@ class Trainer:
         self.swapper: BlockSwapper | None = None
         self.gen = torch.Generator().manual_seed(cfg.loop.seed)  # noise / timestep RNG (checkpointed)
         self.loader_gen = torch.Generator().manual_seed(cfg.loop.seed + 1)
+        self._loader_epoch_state: dict[str, Any] | None = None
         self._stop: str | None = None
         self._loss_ema: float | None = None
         self._prepared = False
@@ -132,6 +135,8 @@ class Trainer:
         torch.manual_seed(s)
 
     def emit(self, type_: str, **data: Any) -> None:
+        if not self.is_primary:
+            return
         self.emitter.emit(type_, **data)
         if self._logs is not None:
             try:
@@ -165,9 +170,11 @@ class Trainer:
         self._check_capabilities()
         self._preparing = True
         self._install_signal_handlers()
-        self._logs = TrainingLogs(cfg, self.run_dir)
+        if self.is_primary:
+            self._logs = TrainingLogs(cfg, self.run_dir)
         self._seed_all()
-        write_config(cfg, self.run_dir / "config.toml")
+        if self.is_primary:
+            write_config(cfg, self.run_dir / "config.toml")
         self.emit(
             "run.started", config_hash=self.config_hash, device=str(self.device), run_dir=str(self.run_dir)
         )
@@ -343,7 +350,10 @@ class Trainer:
         native = cfg.dataset.resolution_mode == "native"
         sampler_type = NativeBatchSampler if native else BucketBatchSampler
         self.sampler = sampler_type(
-            self.bundle.train.bucket_keys(), cfg.dataset.batch_size, seed=cfg.loop.seed
+            self.bundle.train.bucket_keys(),
+            cfg.dataset.batch_size,
+            seed=cfg.loop.seed,
+            **self._sampler_options(),
         )
         self.loader = DataLoader(
             self.bundle.train,
@@ -384,6 +394,8 @@ class Trainer:
         caps = self.family.spec.capabilities
         cfg = self.cfg
         problems = []
+        if cfg.loop.gpu_count > 1 and not hasattr(self, "distributed"):
+            problems.append("loop.gpu_count > 1 requires torchrun; refusing single-device execution")
         if cfg.memory.blocks_to_swap > 0 and "block_swap" not in caps:
             problems.append("memory.blocks_to_swap requires the block_swap capability")
         if cfg.memory.base_precision.startswith("fp8") and self.device.type != "cuda":
@@ -411,6 +423,9 @@ class Trainer:
         problems += [f"{item['loc']}: {item['msg']}" for item in self.family.training_options_errors(cfg)]
         if problems:
             raise ValueError("; ".join(problems))
+
+    def _sampler_options(self) -> dict[str, int]:
+        return {}
 
     def compile_blocks(self, compile_fn: Callable[[torch.nn.Module], torch.nn.Module] | None = None) -> int:
         """Replace every transformer block by its ``torch.compile``d wrapper (after adapter injection).
@@ -529,7 +544,7 @@ class Trainer:
             self.scheduler.load_state_dict(ck["scheduler"])
         self.progress = ck["progress"]
         self.sampler.load_state_dict(ck["sampler"])
-        restore_rng(ck["rng"], {"main": self.gen, "loader": self.loader_gen})
+        self._restore_checkpoint_rng(ck["rng"])
         if "ema" in ck and self.ema is not None:
             self.ema = {k: v.float() for k, v in ck["ema"].items()}
         self._loss_ema = self.progress.extra.get("loss_ema")
@@ -643,6 +658,13 @@ class Trainer:
                 tensors, _ = self.adapters.export_state()
             training_tensors = self.adapters.training_state_dict()
         self.progress.extra["loss_ema"] = self._loss_ema
+        # The sampler cursor is the iterator's starting point. DataLoader can
+        # prefetch ahead, so only consumer progress identifies committed batches.
+        sampler_state = {
+            **self.sampler.state_dict(),
+            "epoch": self.progress.epoch,
+            "position": self.progress.batch_in_epoch,
+        }
         path = save_checkpoint(
             self.run_dir / f"state-{tag or self.progress.step}",
             adapter_tensors=tensors,
@@ -650,9 +672,9 @@ class Trainer:
             adapter_metadata=self._adapter_metadata(),
             optimizer=self.optimizer,
             scheduler=self.scheduler,
-            sampler_state=self.sampler.state_dict(),
+            sampler_state=sampler_state,
             progress=self.progress,
-            rng=capture_rng({"main": self.gen, "loader": self.loader_gen}),
+            rng=self._capture_checkpoint_rng(),
             ema_tensors=self.ema,
             config_hash=self.config_hash,
             dataset_fingerprint=self.bundle.plan.fingerprint,
@@ -661,6 +683,48 @@ class Trainer:
         )
         self.emit("checkpoint.saved", kind="full", step=self.progress.step, path=str(path))
         return path
+
+    def _capture_checkpoint_rng(self) -> dict[str, Any]:
+        return self._capture_local_checkpoint_rng()
+
+    def _capture_local_checkpoint_rng(self) -> dict[str, Any]:
+        state = capture_rng({"main": self.gen, "loader": self.loader_gen})
+        if self._loader_epoch_state is not None:
+            state["loader_iterator"] = self._loader_epoch_state
+        return state
+
+    def _restore_local_checkpoint_rng(self, state: dict[str, Any]) -> None:
+        restore_rng(state, {"main": self.gen, "loader": self.loader_gen})
+        self._loader_epoch_state = state.get("loader_iterator")
+
+    def _restore_checkpoint_rng(self, state: dict[str, Any]) -> None:
+        if "distributed" in state:
+            raise ValueError("distributed checkpoint requires the same torchrun world size for exact resume")
+        self._restore_local_checkpoint_rng(state)
+
+    def _training_iterator(self):
+        """Recreate workers without advancing the saved epoch's seed stream twice.
+
+        TrainDataset's augmentations depend on (seed, epoch, item), never on
+        worker scheduling or prefetched samples. Reusing the iterator's original
+        seed also keeps worker initialization identical after a mid-epoch resume.
+        """
+        epoch = self.progress.epoch
+        current = self.loader_gen.get_state()
+        saved = self._loader_epoch_state
+        continuing = saved is not None and saved["epoch"] == epoch
+        if continuing:
+            self.loader_gen.set_state(saved["generator"])
+        elif self.progress.batch_in_epoch == 0:
+            self._loader_epoch_state = {"epoch": epoch, "generator": current}
+        try:
+            return iter(self.loader)
+        finally:
+            # Older checkpoints lack the pre-iterator state. Their per-item
+            # augmentation is still reproducible; avoid an extra seed advance.
+            # A fresh epoch consumes exactly one worker-base-seed draw.
+            if continuing or self.progress.batch_in_epoch > 0:
+                self.loader_gen.set_state(current)
 
     # ----------------------------------------------------------------- batch processing
     @contextmanager
@@ -840,7 +904,7 @@ class Trainer:
         micro = 0
         group_loss = 0.0
         t0 = time.perf_counter()
-        for batch in self.loader:
+        for batch in self._training_iterator():
             self.progress.batch_in_epoch += 1
             self.progress.samples_seen += len(batch["caption"])
             loss, _, _ = self.compute_loss(batch)
@@ -908,7 +972,7 @@ class Trainer:
                         parameter.grad.mul_(target / images)
             self._optimizer_step(loss_sum / images, time.perf_counter() - t0)
 
-        for batch in self.loader:
+        for batch in self._training_iterator():
             self.progress.batch_in_epoch += 1
             self.progress.samples_seen += len(batch["caption"])
             invalid = False
@@ -1296,6 +1360,12 @@ def train(
     emitter: Emitter | None = None,
     listeners: list[Callable[[dict[str, Any]], None]] | None = None,
 ) -> str:
+    if int(os.environ.get("WORLD_SIZE", "1")) > 1:
+        from .distributed import distributed_train
+
+        return distributed_train(cfg, device=device, emitter=emitter, listeners=listeners)
+    if cfg.loop.gpu_count > 1:
+        raise ValueError("loop.gpu_count > 1 requires torchrun; refusing to silently train on one device")
     Path(cfg.checkpoint.output_dir).mkdir(parents=True, exist_ok=True)
     em = emitter or Emitter(
         path=cfg.logging.events_path or (Path(cfg.checkpoint.output_dir) / "events.jsonl"),

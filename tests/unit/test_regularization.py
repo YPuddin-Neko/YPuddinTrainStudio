@@ -566,3 +566,104 @@ def test_publish_path_collision_after_start_keeps_unowned_directory(api, monkeyp
     assert (collision[0] / "old.txt").read_text() == "unrelated directory"
     assert api[1].state.ctx.db.fetchall("SELECT * FROM datasets") == []
     assert list(collision[0].parent.iterdir()) == collision
+
+
+def test_training_tag_plan_and_incremental_generation_keep_source_provenance(api, tmp_path):
+    client, app, pid, vid = api
+    sources = []
+    originals = {}
+    for name, color, tag in (("first", "red", "dog"), ("second", "blue", "cat")):
+        root = tmp_path / name
+        root.mkdir()
+        Image.new("RGB", (64, 64), color).save(root / "same.png")
+        (root / "same.json").write_text(
+            json.dumps({"tags": ["subject_trigger", tag], "nl": "Unchanged prose", "custom": {"keep": name}})
+        )
+        if name == "first":
+            Image.new("RGB", (64, 64), "green").save(root / "missing.png")
+            Image.new("RGB", (64, 64), "yellow").save(root / "excluded.png")
+            (root / "excluded.txt").write_text("subject_trigger")
+        response = client.post(f"/api/projects/{pid}/datasets", json={"path": str(root)})
+        assert response.status_code == 201, response.text
+        source = response.json()["source"]
+        sources.append(source)
+        originals[Path(source["path"]) / "same.json"] = (Path(source["path"]) / "same.json").read_bytes()
+    endpoint = f"/api/projects/{pid}/versions/{vid}/regularization/plan"
+    body = {
+        "prompt_source": "training_tags",
+        "prompt": "",
+        "excluded_tags": ["subject trigger"],
+        "count": 1,
+        "width": 64,
+        "height": 64,
+        "steps": 2,
+        "cfg": 1,
+    }
+    response = client.post(endpoint, json=body | {"source_ids": [sources[0]["id"]]})
+    assert response.status_code == 200, response.text
+    scoped = response.json()
+    assert scoped["source_images"] == 3
+    assert scoped["missing_captions"] == 1 and scoped["empty_after_exclusion"] == 1
+    assert scoped["planned_images"] == 1
+    assert scoped["examples"][0]["prompt"] == "dog"  # JSON prose is not an editable tag.
+    assert {item["tag"]: item["count"] for item in scoped["top_tags"]}["subject_trigger"] == 2
+
+    plan = client.post(endpoint, json=body).json()
+    assert plan["planned_images"] == 1 and plan["remaining_images"] == 1
+    created = start(api, **body, plan_signature=plan["signature"])
+    assert created.status_code == 202, created.text
+    first = finished(api, created.json()["id"])
+    assert first["status"] == "completed", first
+    first_path = Path(first["path"])
+    first_manifest = (first_path / "manifest.json").read_bytes()
+    first_entry = json.loads(first_manifest)[0]
+    assert first_entry["training_source"]["rel_path"] == "same.png"
+    assert first_entry["training_source"]["source_id"] in {source["id"] for source in sources}
+    assert first["total"] == 1
+
+    plan = client.post(endpoint, json=body).json()
+    assert plan["existing_images"] == 1 and plan["planned_images"] == 1
+    created = start(api, **body, plan_signature=plan["signature"])
+    second = finished(api, created.json()["id"])
+    assert second["status"] == "completed", second
+    second_entry = json.loads((Path(second["path"]) / "manifest.json").read_text())[0]
+    assert first_entry["training_source"]["identity"] != second_entry["training_source"]["identity"]
+    assert first_entry["training_source"]["source_path"] != second_entry["training_source"]["source_path"]
+    plan = client.post(endpoint, json=body).json()
+    assert plan["existing_images"] == 2 and plan["planned_images"] == 0
+    assert start(api, **body).status_code == 422
+    all_body = body | {"generation_scope": "all", "count": 2, "seed": 91}
+    plan = client.post(endpoint, json=all_body).json()
+    assert plan["planned_images"] == 2 and plan["existing_images"] == 2
+    created = start(api, **all_body, plan_signature=plan["signature"])
+    rebuilt = finished(api, created.json()["id"])
+    assert rebuilt["status"] == "completed", rebuilt
+    assert rebuilt["path"] not in {first["path"], second["path"]}
+    assert (first_path / "manifest.json").read_bytes() == first_manifest
+    assert all(path.read_bytes() == original for path, original in originals.items())
+
+
+def test_training_tag_start_rechecks_plan_and_rejects_other_versions_sources(api, tmp_path):
+    client, _, pid, vid = api
+    root = tmp_path / "training"
+    root.mkdir()
+    Image.new("RGB", (64, 64), "red").save(root / "a.png")
+    (root / "a.txt").write_text("dog, outdoors")
+    registered = client.post(f"/api/projects/{pid}/datasets", json={"path": str(root)}).json()["source"]
+    body = {
+        "prompt_source": "training_tags",
+        "prompt": "",
+        "count": 2,
+        "width": 64,
+        "height": 64,
+        "steps": 2,
+        "cfg": 1,
+    }
+    endpoint = f"/api/projects/{pid}/versions/{vid}/regularization/plan"
+    plan = client.post(endpoint, json=body).json()
+    (Path(registered["path"]) / "a.txt").write_text("cat, indoors")
+    response = start(api, **body, plan_signature=plan["signature"])
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "regularization.plan_stale"
+    assert client.post(endpoint, json=body | {"source_ids": ["another-version-source"]}).status_code == 409
+    assert start(api, **body, source="danbooru").status_code == 422

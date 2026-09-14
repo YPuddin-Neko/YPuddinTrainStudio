@@ -9,6 +9,7 @@ from torch import Tensor, nn
 
 from ypuddin.models.base import TextCond, TextPipeline
 from ypuddin.models.fingerprints import content_fingerprint
+from ypuddin.models.memory import release_model_memory
 
 from .loading import ASSETS, component_config, config_asset, load_clip
 
@@ -78,9 +79,10 @@ class SDXLText(TextPipeline):
             model.to(self.device)
 
     def unload(self) -> None:
+        if not self.models:
+            return
         self.models.clear()
-        if self.device.type == "cuda":
-            torch.cuda.empty_cache()
+        release_model_memory(self.device)
 
     def trainable_modules(self) -> dict[str, nn.Module]:
         self._ensure()

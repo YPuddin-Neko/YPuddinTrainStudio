@@ -76,7 +76,14 @@ def _external_attention(name, q, k, v, dropout_p):
     if name == "xformers":
         out = function(*tensors, p=dropout_p)
     else:
-        out = function(*tensors, dropout_p=dropout_p, causal=False)
+        # FlashAttention's backward is non-deterministic by default. Honor the
+        # caller's PyTorch contract instead of silently ignoring strict mode.
+        out = function(
+            *tensors,
+            dropout_p=dropout_p,
+            causal=False,
+            deterministic=torch.are_deterministic_algorithms_enabled(),
+        )
     return out.transpose(1, 2)
 
 
@@ -111,7 +118,15 @@ def _sdpa(
             # xFormers uses this to report no kernel for a particular shape/device. Do not
             # catch RuntimeError: OOM, broken installs and other CUDA errors must surface.
             pass
-    return torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=dropout_p)
+    try:
+        return torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=dropout_p)
+    except RuntimeError as exc:
+        from ypuddin.runtime_attention import attention_dependency_error
+
+        diagnosed = attention_dependency_error(exc, hip_runtime=getattr(torch.version, "hip", None) if q.is_cuda else None)
+        if diagnosed is not None:
+            raise diagnosed from exc
+        raise
 
 
 @dataclass

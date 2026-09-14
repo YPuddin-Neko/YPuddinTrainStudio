@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -25,6 +25,75 @@ function showConfig() {
 const enqueue = () => screen.getByRole('button', { name: '开始训练' });
 
 describe('training configuration actions', () => {
+  it('renders one continuous form in workflow order even when opened through a legacy tab link', async () => {
+    showConfig(); // Legacy ?tab=train locates the training step, without hiding the model.
+    await screen.findByTestId('field-model.dit_path');
+    fireEvent.click(screen.getByRole('button', {name:'高级'}));
+    const form = screen.getByTestId('schema-form');
+    const groups = Array.from(form.querySelectorAll(':scope > [data-group]')).map(node => node.getAttribute('data-group'));
+    expect(groups).toEqual(['model','training','dataset','caption','loop','adapter','optimizer','scheduler','memory','objective','sampling','validation','checkpoint','logging']);
+    expect(screen.getByTestId('field-checkpoint.save_dtype')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', {name:/保存与恢复$/}));
+    expect(screen.getByTestId('field-model.dit_path')).toBeInTheDocument();
+    expect(Array.from(form.querySelectorAll(':scope > [data-group]')).map(node => node.getAttribute('data-group'))).toEqual(groups);
+  });
+
+  it('shows translated field errors once and keeps additional unrecognized system details', async () => {
+    const extra = 'Runtime backend: unexpected worker exit 17';
+    server.use(http.post('/api/plan', () => HttpResponse.json({ok:false, errors:[
+      {loc:'optimizer.d0',msg:'Input should be greater than 0'},
+      {loc:'memory',msg:extra},
+    ],warnings:[]})));
+    showConfig();
+    const launch = screen.getByRole('group', {name:'训练启动操作'});
+    fireEvent.click(await within(launch).findByRole('button', {name:'2 项待配置'}));
+    const panel = screen.getByRole('region', {name:'训练前检查'});
+    expect(within(panel).getByRole('button', {name:'配置初始步长估计（D0）'})).toHaveTextContent('输入值应大于 0');
+    expect(within(panel).queryByText('Input should be greater than 0')).not.toBeInTheDocument();
+    expect(within(panel).getAllByText('技术详情')).toHaveLength(1);
+    fireEvent.click(within(panel).getByText('技术详情'));
+    expect(within(panel).getByText(extra)).toBeVisible();
+  });
+  it('invalidates completed workflow steps on edits and waits for the current server plan', async () => {
+    const replies: Array<(result: object) => void> = [];
+    server.use(http.post('/api/plan', () => new Promise<Response>(resolve => {
+      replies.push(result => resolve(HttpResponse.json(result)));
+    })));
+    showConfig();
+    await screen.findByTestId('field-loop.epochs');
+    const model = screen.getByRole('button', {name:/模型选择$/});
+    const optimizer = screen.getByRole('button', {name:/优化器$/});
+    expect(model).toHaveAccessibleDescription('待检查');
+    await waitFor(() => expect(replies).toHaveLength(1));
+    await act(async () => replies[0]({ok:false,errors:[{loc:'model.dit_path',msg:'Weight file is missing'}],warnings:[],params:{}}));
+    await waitFor(() => expect(model).toHaveAccessibleDescription('1 项待配置'));
+    expect(optimizer).toHaveAccessibleDescription('检查通过');
+    fireEvent.click(model);
+    const path = within(await screen.findByTestId('field-model.dit_path')).getByRole('textbox');
+    fireEvent.change(path,{target:{value:'/models/checked.safetensors'}});
+    expect(optimizer).toHaveAccessibleDescription('待检查');
+    await waitFor(() => expect(replies).toHaveLength(2));
+    expect(model).not.toHaveAccessibleDescription('检查通过');
+    await act(async () => replies[1]({ok:true,errors:[],warnings:[],params:{}}));
+    await waitFor(() => expect(model).toHaveAccessibleDescription('检查通过'));
+    fireEvent.change(path,{target:{value:'/models/not-yet-checked.safetensors'}});
+    expect(model).toHaveAccessibleDescription('待检查');
+    expect(enqueue()).toBeDisabled();
+  });
+
+  it('preserves advanced values when switching to Simple and back', async () => {
+    showConfig();
+    await screen.findByTestId('field-loop.epochs');
+    fireEvent.click(screen.getByRole('button', {name:'高级'}));
+    const field = await screen.findByTestId('field-adapter.rs_lora');
+    const toggle = within(field).getByRole('checkbox');
+    fireEvent.click(toggle);
+    const edited = (toggle as HTMLInputElement).checked;
+    fireEvent.click(screen.getByRole('button', {name:'简单'}));
+    expect(screen.queryByTestId('field-adapter.rs_lora')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', {name:'高级'}));
+    expect((within(screen.getByTestId('field-adapter.rs_lora')).getByRole('checkbox') as HTMLInputElement).checked).toBe(edited);
+  });
   it('recovers from an empty search and exposes a plan disclosure without changing the draft', async () => {
     showConfig();
     const search = screen.getByRole('textbox', {name: '搜索训练参数'});
@@ -46,9 +115,14 @@ describe('training configuration actions', () => {
     const heading = screen.getByRole('heading', { name: '训练参数', level: 1 });
     expect(heading.parentElement).toContainElement(badge);
     expect(screen.getAllByRole('heading', { name: '训练参数' })).toHaveLength(1);
+    expect(screen.queryByRole('tablist', {name: '参数分区'})).not.toBeInTheDocument();
+    const launch = screen.getByRole('group', {name: '训练启动操作'});
+    expect(launch.closest('.parameter-workspace-header')).toContainElement(heading);
+    expect(launch.closest('footer')).toBeNull();
+    expect(launch.querySelector('.launch-estimate')).toBeNull();
     const toolbar = screen.getByRole('group', { name: '训练参数工具栏' });
     const search = within(toolbar).getByRole('textbox', { name: '搜索训练参数' });
-    const advanced = within(toolbar).getByRole('button', { name: '全部参数' });
+    const advanced = within(toolbar).getByRole('button', { name: '高级' });
     expect(search.closest('.training-toolbar-filters')).toContainElement(advanced);
     expect(within(toolbar).getByRole('button', { name: '保存草稿' })).toBeInTheDocument();
     expect(within(toolbar).getByRole('combobox', { name: /加载预设/ })).toBeInTheDocument();
@@ -56,7 +130,7 @@ describe('training configuration actions', () => {
     expect(await screen.findByTestId('field-model.vae_path')).toBeInTheDocument();
     expect(screen.getByText('搜索所有分区，包含高级参数')).toBeInTheDocument();
     fireEvent.click(within(toolbar).getByRole('button', { name: '清空搜索' }));
-    expect(screen.getByRole('tab', { name: '训练参数' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('field-loop.epochs')).toBeInTheDocument();
     expect(search).toHaveValue('');
     expect(heading.parentElement).toContainElement(badge);
   });
@@ -103,8 +177,8 @@ describe('training configuration actions', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'TOML 配置内容' }), { target: { value: '[dataset.caption]\ntrigger_word="from_toml"' } });
     fireEvent.click(screen.getByRole('button', { name: '校验并应用' }));
     await waitFor(() => expect(screen.queryByRole('button', { name: '校验并应用' })).not.toBeInTheDocument());
-    fireEvent.click(screen.getByRole('tab', {name:'数据与分桶'}));
-    fireEvent.click(screen.getByRole('button',{name:'全部参数'}));
+    fireEvent.click(screen.getByRole('button', { name: /数据与分桶$/ }));
+    fireEvent.click(screen.getByRole('button',{name:'高级'}));
     await waitFor(() => expect(within(screen.getByTestId('field-dataset.caption.trigger_word')).getByRole('textbox')).toHaveValue('from_toml'));
     expect(imported.format).toBe('toml');
     fireEvent.change(screen.getByRole('textbox', { name: '新预设名称' }), { target: { value: 'my-preset' } });
@@ -120,11 +194,12 @@ describe('training configuration actions', () => {
   it('blocks enqueue on plan errors and shows failed requests in the page', async () => {
     server.use(http.post('/api/plan', () => HttpResponse.json({ ok: false, errors: [{ loc: 'model.dit_path', msg: 'Weight file is missing' }], warnings: [] })));
     showConfig();
-    await screen.findByText('1 项待配置');
+    await within(screen.getByRole('group', {name: '训练启动操作'})).findByText('1 项待配置');
     expect(screen.queryByText('Weight file is missing')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', {name:'1 项待配置'}));
+    expect(within(screen.getByRole('region', {name: '训练前检查'})).queryByText('技术详情')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', {name:'配置主模型 / DiT'}));
-    await waitFor(() => expect(screen.getByRole('tab', {name:'底模与输出'})).toHaveAttribute('aria-selected','true'));
+    await waitFor(() => expect(screen.getByTestId('field-model.dit_path')).toBeInTheDocument());
     expect(screen.getAllByText('找不到指定文件，请检查训练机上的路径').length).toBeGreaterThan(0);
     fireEvent.click(screen.getByText('配置工具', {selector:'summary'}));
     expect(enqueue()).toBeDisabled();
@@ -139,7 +214,10 @@ describe('training configuration actions', () => {
   ])('focuses the editable control for %s instead of its help button', async (path, label, role) => {
     server.use(http.post('/api/plan', () => HttpResponse.json({ ok: false, errors: [{ loc: path, msg: 'Field required' }], warnings: [] })));
     showConfig();
-    fireEvent.click(await screen.findByRole('button', { name: '1 项待配置' }));
+    // Wait for the debounced plan without repeatedly traversing every field's
+    // accessibility tree; then retain the actual button/focus contract below.
+    await within(screen.getByRole('group', {name: '训练启动操作'})).findByText('1 项待配置');
+    fireEvent.click(screen.getByRole('button', { name: '1 项待配置' }));
     fireEvent.click(screen.getByRole('button', { name: `配置${label}` }));
     const field = await screen.findByTestId(`field-${path}`);
     const input = within(field).getByRole(role);
@@ -161,7 +239,8 @@ describe('training configuration actions', () => {
       http.post('/api/jobs', () => {createJob();return HttpResponse.json({id:'should-not-exist'});}),
     );
     showConfig();
-    await screen.findByRole('button', {name:'64 × 64, 8 样本'});
+    await screen.findByTestId('plan-buckets');
+    expect(screen.getByRole('button', {name:'64 × 64, 8 样本'})).toBeInTheDocument();
     expect(screen.getByRole('button', {name:'1 项待配置'})).toBeInTheDocument();
     expect(enqueue()).toBeDisabled();
     fireEvent.click(enqueue());
@@ -203,8 +282,8 @@ describe('training configuration actions', () => {
     showConfig();
     fireEvent.click(screen.getByText('配置工具', {selector:'summary'}));
     await waitFor(() => expect(screen.getByRole('button', { name: '导入 TOML' })).toBeEnabled());
-    fireEvent.click(screen.getByRole('tab', {name:'数据与分桶'}));
-    fireEvent.click(screen.getByRole('button',{name:'全部参数'}));
+    fireEvent.click(screen.getByRole('button', { name: /数据与分桶$/ }));
+    fireEvent.click(screen.getByRole('button',{name:'高级'}));
     const trigger = within(screen.getByTestId('field-dataset.caption.trigger_word')).getByRole('textbox');
     fireEvent.change(trigger, { target: { value: 'keep_draft' } });
     fireEvent.click(screen.getByRole('button', { name: '导入 TOML' }));

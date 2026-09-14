@@ -973,6 +973,13 @@ class MemoryConfig(_Strict):
 
 # --------------------------------------------------------------------------- loop
 class LoopConfig(_Strict):
+    gpu_count: int = F(
+        1,
+        ge=1,
+        le=64,
+        help="本次任务同时使用的 GPU 数量，默认 1；大于 1 时使用 DDP，每张卡保留一份完整模型，显存不会合并。批量大小按每卡计算，全局有效批量约为每卡批量 × 卡数 × 梯度累积。多卡需要标准分桶，暂不支持原图异形批次、块换出、编译和梯度检查点。",
+        ui_=ui("loop", order=15),
+    )
     max_steps: int | None = F(
         None,
         ge=1,

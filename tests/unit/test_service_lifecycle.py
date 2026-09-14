@@ -374,6 +374,21 @@ def test_platform_catalog_does_not_offer_macos_cuda_or_old_blackwell_build():
     assert next(b for b in win if b.id == "2.11.0-cu128").recommended
 
 
+def test_dtk_profile_cannot_switch_to_official_cuda_or_cpu_torch():
+    builds = build_catalog({"platform": "Linux", "machine": "x86_64", "python": "3.11.0"}, 580, "linux-dtk")
+    assert builds and all(not build.supported for build in builds)
+    assert all(build.reason == "different_deployment_profile" for build in builds)
+
+
+@pytest.mark.parametrize("suffix", ["venv", "runtimes/torch_test"])
+def test_dtk_profile_paths_are_inferred_and_separated_from_cuda(tmp_path, monkeypatch, suffix):
+    monkeypatch.delenv("YPUDDIN_ENV_PROFILE", raising=False)
+    monkeypatch.setattr(sys, "prefix", str(tmp_path / "environment/profiles/linux-dtk" / suffix))
+    assert current_profile() == "linux-dtk"
+    assert profile_root(tmp_path) == tmp_path / "environment/profiles/linux-dtk"
+    assert profile_root(tmp_path) != profile_root(tmp_path, "linux-cuda")
+
+
 def test_launcher_popen_failure_restores_original_interpreter(tmp_path, monkeypatch):
     folder = tmp_path / "environment/service"
     selected = folder / "selected.json"

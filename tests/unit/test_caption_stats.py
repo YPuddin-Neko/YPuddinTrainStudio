@@ -142,8 +142,9 @@ def test_caption_saves_update_statistics_and_json_description_without_metadata_l
         == 200
     )
     after = json.loads((Path(mixed["path"]) / "b.json").read_text())
-    assert after["meta"] == before["meta"] and after["unrelated_metadata"] == before["unrelated_metadata"]
-    assert after["nl"] == "Edited prose, not a tag." and after["tags"] == ["new"]
+    assert after["meta"] == {**before["meta"], "trigger": ""}
+    assert after["unrelated_metadata"] == before["unrelated_metadata"]
+    assert after["tags"]["nl"] == "Edited prose, not a tag." and after["tags"]["tags"] == ["new"]
     assert stats(api, mixed)["tags"] == [{"tag": "blue", "count": 1}, {"tag": "new", "count": 1}]
     refreshed = {image["rel_path"]: image for image in images(api, mixed)["items"]}
     assert refreshed["b.png"]["caption_description"] == "Edited prose, not a tag."

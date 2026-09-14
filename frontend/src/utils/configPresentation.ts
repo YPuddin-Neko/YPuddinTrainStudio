@@ -1,5 +1,6 @@
 
 const labels: Record<string, string> = {
+  'memory': '显存估算',
   'model.family': '模型系列', 'model.dit_path': '主模型 / DiT', 'model.text_encoder_path': '文本编码器',
   'model.text_encoder_2_path': '第二文本编码器', 'model.prediction_type': 'SDXL 预测方式',
   'model.zero_terminal_snr': '零终点信噪比（Zero SNR）',
@@ -52,9 +53,10 @@ const labels: Record<string, string> = {
   'scheduler.type': '学习率调度', 'scheduler.warmup_steps': '预热步数 / 比例', 'scheduler.min_lr_ratio': '最低学习率比例',
   'scheduler.num_cycles': '调度周期数', 'scheduler.power': '多项式幂', 'scheduler.decay_steps': '衰减步数',
   'memory.base_precision': '底模存储精度', 'memory.blocks_to_swap': '换出到 CPU 的层数',
-  'memory.activation_checkpointing': '梯度检查点', 'memory.offload_text_encoder': '卸载文本编码器',
+  'memory.activation_checkpointing': '重算中间结果（梯度检查点）', 'memory.offload_text_encoder': '卸载文本编码器',
   'memory.compile': '编译模型', 'memory.allow_tf32': '允许 TF32', 'loop.max_steps': '最大训练步数',
   'loop.epochs': '训练轮数', 'loop.grad_accum': '梯度累积', 'loop.mixed_precision': '混合精度', 'loop.seed': '随机种子',
+  'loop.gpu_count': '训练显卡数量',
   'loop.ema': '启用 EMA', 'loop.ema_decay': 'EMA 衰减', 'loop.nan_skip_limit': '无效梯度跳过上限', 'loop.log_every': '日志间隔',
   'checkpoint.output_dir': '训练权重保存位置', 'checkpoint.name': '权重文件名', 'checkpoint.save_every_steps': '每隔几步保存',
   'checkpoint.save_every_epochs': '每隔几轮保存', 'checkpoint.save_state_every_steps': '完整状态保存间隔',
@@ -71,6 +73,7 @@ const labels: Record<string, string> = {
 };
 
 export function configFieldLabel(path: string, fallback: string, english = false) {
+  if (path === 'loop.gpu_count') return english ? 'Training GPU count' : labels[path];
   if (path === 'adapter.preset') return english ? 'Adapter scope' : labels[path];
   if (english && path.startsWith('training.')) return ({mode:'Training mode',train_backbone:'Train main model (UNet / DiT)',train_text_encoder:'Train text encoder',resume_weights:'Initial full-model weights'} as Record<string,string>)[path.slice(9)] || fallback;
   if (english && path.startsWith('optimizer.')) {
@@ -139,6 +142,10 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
     ? 'β1 controls schedule-free weight averaging; β2 smooths the estimate of gradient size. These have different roles. Usually keep this optimizer’s defaults.'
     : 'β1 控制免调度训练中的权重平均，β2 平滑梯度大小的估计。两者作用不同，通常保留当前优化器的默认值。';
   const help: Record<string, [string, string]> = {
+    'memory.base_precision': ['控制适配器底层、尚未量化的冻结线性层如何存储。选择 FP8 会在启动时按张量量化，不改写源模型文件；计算时仍会还原到计算精度。Krea2 支持的逐张量 FP8 底模会保留文件权重与缩放值；其他量化文件仍需对应加载器支持。此选项不同于混合精度，也不保证加速。', 'Controls storage for unquantized frozen linear layers beneath adapters. FP8 quantizes each tensor at startup without modifying the source file; computation dequantizes to the compute dtype. Supported Krea2 per-tensor FP8 base weights retain checkpoint weights and scales; other quantized files still require a compatible loader. This differs from mixed precision and does not guarantee faster training.'],
+    'memory.activation_checkpointing': ['少保存前向计算的中间结果，在反向传播时重新计算，以额外计算换取更少显存。它不改变批量大小，也不是恢复训练用的存档。可以和梯度累积同时使用。', 'Saves fewer forward intermediates and recomputes them during backward, trading computation for lower memory use. It does not change batch size and is not a resume checkpoint. It can be combined with gradient accumulation.'],
+    'loop.grad_accum': ['累计多少个小批次后更新一次参数。例如单卡批量 1、累积 4，处理 4 张图后更新一次。有效批量还需乘以显卡数量；它与重算中间结果来节省显存的梯度检查点不同。', 'Number of minibatches before updating parameters. With one GPU, batch size 1 and accumulation 4 update after 4 images. Effective batch size also includes GPU count. This differs from activation checkpointing, which recomputes intermediates to save memory.'],
+    'loop.gpu_count': ['1 使用单卡；大于 1 时使用多卡数据并行。每张卡保存完整模型，显存不会合并。需要 Linux CUDA 或 DTK 及可用的 GPU 通信后端，队列会等待足够数量的空闲显卡后一起启动。', '1 uses one GPU; larger values enable data parallel training. Each GPU holds the full model; memory is not pooled. Requires Linux CUDA or DTK and GPU collective communication. The queue waits until enough GPUs are free.'],
     'optimizer.lr': ['控制每次参数更新的基础步长。数值过大容易不稳定，过小学习较慢；自适应优化器会按自身规则管理。', 'Sets the base step size for parameter updates. Too large can be unstable; too small can learn slowly. Adaptive optimizers manage this according to their own rules.'],
     'optimizer.weight_decay': ['给权重施加衰减约束，避免权重持续变大。通常保留默认值；过大可能让模型学不到细节，0 表示关闭。', 'Applies a decay constraint to weights. Usually keep the default; too much can prevent learning details. Set to 0 to disable.'],
     'optimizer.betas': ['β1 平滑更新方向，β2 平滑梯度大小的估计。通常保留优化器默认值；调大后反应更平缓，也会更慢适应变化。', 'β1 smooths the update direction; β2 smooths the estimate of gradient size. Usually keep the optimizer defaults. Higher values smooth changes more but respond more slowly.'],
@@ -155,8 +162,12 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
 
 export function configFieldHint(path: string, english = false, optimizerType?: string, scheduleFree = false) {
   const hints: Record<string, [string, string]> = {
+    'loop.gpu_count': ['1 为单卡；多卡分担图片计算，显存不会合并。', '1 uses a single GPU. Multiple GPUs split image processing; memory is not pooled.'],
+    'dataset.batch_size': ['每张显卡一次处理的图片数；有效批次还会乘以显卡数和梯度累积。', 'Images processed by each GPU per batch. Effective batch size also includes GPU count and gradient accumulation.'],
     'training.mode': ['适配器生成附加权重；全量微调直接更新并保存所选模型组件。', 'Adapters save additional weights; full fine-tuning updates and saves the selected model components.'],
-    'memory.base_precision': ['沿用加载精度不会根据剩余显存自动降为 FP8。', 'Keeping load precision never switches to FP8 based on free memory.'],
+    'memory.base_precision': ['这里只控制启动时量化；现成 FP8 文件需模型加载器支持。', 'This controls quantization at startup; prequantized FP8 files require a compatible model loader.'],
+    'memory.activation_checkpointing': ['通过重新计算节省显存，可能变慢；不会增大有效批量。', 'Recomputation saves memory and can be slower; effective batch size stays unchanged.'],
+    'loop.grad_accum': ['累积多个小批次后再更新一次参数。', 'Accumulate multiple minibatches before one parameter update.'],
     'model.attention': ['默认使用 PyTorch 内置 SDPA；其他后端需先在运行环境中安装。', 'Defaults to built-in PyTorch SDPA. Install optional backends in runtime settings first.'],
     'adapter.mode': ['自动使用分开计算路径；只改变计算方式，不降低权重精度。', 'Automatic uses the separate computation path; it does not reduce weight precision.'],
 
@@ -198,7 +209,7 @@ export function configPresetLabel(name: string, description: string, defaultPres
 export function configOptionLabel(path: string, option: string, english = false) {
   const options: Record<string, Record<string, [string, string]>> = {
     'training.mode': {adapter:['LoRA / LoKr 适配器','LoRA / LoKr adapter'],full:['全量微调','Full fine-tuning']},
-    'memory.base_precision': {auto:['沿用加载精度','Keep load precision'],fp32:['FP32 · 32 位','FP32 · 32-bit'],bf16:['BF16 · 16 位','BF16 · 16-bit'],fp16:['FP16 · 16 位','FP16 · 16-bit'],fp8_e4m3:['FP8 E4M3 · 8 位','FP8 E4M3 · 8-bit'],fp8_e5m2:['FP8 E5M2 · 8 位','FP8 E5M2 · 8-bit']},
+    'memory.base_precision': {auto:['沿用加载精度','Keep load precision'],fp32:['FP32 · 32 位','FP32 · 32-bit'],bf16:['BF16 · 16 位','BF16 · 16-bit'],fp16:['FP16 · 16 位','FP16 · 16-bit'],fp8_e4m3:['FP8 E4M3 · 启动时量化','FP8 E4M3 · quantize at startup'],fp8_e5m2:['FP8 E5M2 · 启动时量化','FP8 E5M2 · quantize at startup']},
     'model.attention': {auto:['PyTorch SDPA（默认）','PyTorch SDPA (default)'],sdpa:['PyTorch SDPA','PyTorch SDPA'],xformers:['xFormers','xFormers'],flash_attn:['FlashAttention 2','FlashAttention 2'],sage:['SageAttention · 仅采样','SageAttention · sampling only']},
     'adapter.mode': {auto:['自动 · 分开计算','Automatic · separate computation'],bypass:['分开计算适配器','Compute adapter separately'],weight:['合并权重后计算','Compute merged weights']},
     'memory.activation_checkpointing': {none:['关闭','Off'],block:['逐块重算 · 节省显存','Block recomputation · save memory'],unsloth:['重算并卸载中间输入','Recompute and offload block inputs']},
@@ -259,6 +270,15 @@ export function presentConfigIssues(errors: Array<{loc?: unknown; msg?: unknown}
 
 export function presentPlanWarning(code: string, fallback: string, english = false) {
   if (english) return fallback;
+  if (code === 'images.padding') {
+    const count = fallback.match(/^(\d+) images/)?.[1];
+    const share = fallback.match(/\(([\d.]+%) of training/)?.[1];
+    return `${count ? `${count} 张` : '部分'}图片通过填充保留完整画面${share ? `，填充占训练画布的 ${share}` : ''}。填充区不直接计入损失，但模型仍能看到；原生尺寸或更宽的长宽比分桶可减少填充。`;
+  }
+  if (code === 'vram.tight') {
+    const amounts = fallback.match(/estimated peak ([\d.]+) MB vs ([\d.]+) MB available/);
+    return amounts ? `预计峰值显存 ${amounts[1]} MB，设备可用容量 ${amounts[2]} MB，显存余量可能不足。` : '预计显存余量可能不足，请调整分辨率、批量或显存设置。';
+  }
   return ({
     'device.mps_fp32': 'Apple GPU 使用 FP32 训练，不启用混合精度。',
     'captions.missing': '部分图片没有标签，可到数据集补充标签或设置类别提示词。',

@@ -21,6 +21,8 @@ def excluded_reason(name: str | Path, *, built_ui: bool = False) -> str | None:
     parts = tuple(part.casefold() for part in path.parts)
     if not parts or path.is_absolute() or ".." in parts or ":" in parts[0]:
         return "invalid repository-relative path"
+    if any(part.startswith("._") or part == "__macosx" for part in parts):
+        return "local OS metadata"
     filename = parts[-1]
     if parts[0] in {
         "data",

@@ -46,4 +46,25 @@ def training_errors(cfg) -> list[dict[str, str]]:
                 reject(
                     "memory.offload_text_encoder", "训练中的文本编码器需保留权重及反向图，不能在编码后卸载"
                 )
+    if cfg.loop.gpu_count > 1:
+        errors.extend(distributed_training_errors(cfg))
     return errors
+
+
+def distributed_training_errors(cfg) -> list[dict[str, str]]:
+    """Shared admission checks for UI plans and externally launched torchrun jobs."""
+    checks = (
+        (
+            cfg.dataset.resolution_mode == "native",
+            "dataset.resolution_mode",
+            "多卡训练暂不支持原图异形批次，请使用标准分桶",
+        ),
+        (bool(cfg.memory.blocks_to_swap), "memory.blocks_to_swap", "多卡训练暂不支持块换出，请设置为 0"),
+        (cfg.memory.compile, "memory.compile", "多卡训练暂不支持编译，请关闭编译"),
+        (
+            cfg.memory.activation_checkpointing != "none",
+            "memory.activation_checkpointing",
+            "多卡训练暂不支持梯度检查点，请选择 none",
+        ),
+    )
+    return [{"loc": loc, "msg": message} for failed, loc, message in checks if failed]

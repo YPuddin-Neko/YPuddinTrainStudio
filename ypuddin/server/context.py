@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import threading
+import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,6 +22,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "paths": {"data_root": "", "cache_dir": "", "models_dir": "", "output_dir": ""},
     "server": {"host": "127.0.0.1", "port": 8765},
     "ui": {"language": "zh-CN", "theme": "system"},
+    "network": {"proxy_mode": "system", "proxy_url": "", "proxy_username": "", "proxy_password_configured": False},
 }
 
 
@@ -66,6 +69,12 @@ class ServiceContext:
         return self.data_root / "settings.json"
 
     def settings(self) -> dict[str, Any]:
+        with self._settings_lock:
+            return self._settings()
+
+    def _settings(self) -> dict[str, Any]:
+        from .network import PASSWORD_REVISION, ProxyCredentials
+
         base = json.loads(json.dumps(DEFAULT_SETTINGS))
         base["paths"]["data_root"] = str(self.data_root)
         base["paths"]["cache_dir"] = str(self.data_root / "cache")
@@ -88,6 +97,9 @@ class ServiceContext:
         base["paths"]["data_root"] = str(self.data_root)
         for key in ("cache_dir", "models_dir", "output_dir"):
             base["paths"][key] = str(Path(base["paths"][key]).expanduser().resolve())
+        base["network"].pop("proxy_password", None)
+        revision = base.pop(PASSWORD_REVISION, "")
+        base["network"]["proxy_password_configured"] = bool(ProxyCredentials(self.data_root).password(revision))
         return base
 
     def save_settings(self, patch: dict[str, Any]) -> dict[str, Any]:
@@ -95,6 +107,20 @@ class ServiceContext:
             return self._save_settings(patch)
 
     def _save_settings(self, patch: dict[str, Any]) -> dict[str, Any]:
+        from .network import PASSWORD_REVISION, ProxyCredentials, validate_proxy_settings
+
+        patch = dict(patch)
+        if PASSWORD_REVISION in patch:
+            raise ValueError("Internal settings revisions cannot be changed through the API")
+        password = None
+        if "network" in patch:
+            if not isinstance(patch["network"], dict):
+                raise ValueError("network settings must be an object")
+            patch["network"] = dict(patch["network"])
+            if "proxy_password" in patch["network"]:
+                password = patch["network"].pop("proxy_password")
+                if not isinstance(password, str) or len(password) > 4096 or any(ord(c) < 32 for c in password):
+                    raise ValueError("Invalid proxy password")
         cur = self.settings()
         for k, v in patch.items():
             if isinstance(v, dict) and isinstance(cur.get(k), dict):
@@ -118,17 +144,37 @@ class ServiceContext:
             if not value or not str(value).strip():
                 raise ValueError(f"paths.{key} must not be empty")
             cur["paths"][key] = str(Path(value).expanduser().resolve())
+        cur["network"] = validate_proxy_settings(cur["network"])
         cur = Settings.model_validate(cur).model_dump()
+        revision = json.loads(self.settings_path.read_text("utf-8")).get(PASSWORD_REVISION, "") if self.settings_path.exists() else ""
+        if password is not None:
+            next_revision = uuid.uuid4().hex
+            ProxyCredentials(self.data_root).prepare(password, revision, next_revision)
+            revision = next_revision
+            cur["network"]["proxy_password_configured"] = bool(password)
+        else:
+            cur["network"]["proxy_password_configured"] = bool(ProxyCredentials(self.data_root).password(revision))
+        # This replacement is the single commit point for both the public policy
+        # and the private password. Failed/uncommitted preparations remain inactive.
+        stored = {**cur, PASSWORD_REVISION: revision}
         with tempfile.NamedTemporaryFile(
             mode="w", dir=self.data_root, suffix=".tmp", delete=False, encoding="utf-8"
         ) as f:
             temporary = Path(f.name)
             try:
-                f.write(json.dumps(cur, indent=2, ensure_ascii=False))
+                f.write(json.dumps(stored, indent=2, ensure_ascii=False))
+                f.flush()
+                os.fsync(f.fileno())
                 f.close()
                 temporary.replace(self.settings_path)
             finally:
                 temporary.unlink(missing_ok=True)
+        try:
+            ProxyCredentials(self.data_root).finish(revision)
+        except OSError:
+            # The commit already succeeded. An inactive old credential can safely
+            # remain in the private file until the next save retries this cleanup.
+            pass
         return cur
 
     def project_dir(self, project_id: str) -> Path:

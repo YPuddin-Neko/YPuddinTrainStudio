@@ -1,3 +1,4 @@
+import userEvent from '@testing-library/user-event';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, it } from 'vitest';
 import { createMemoryRouter, Link, RouterProvider } from 'react-router-dom';
@@ -89,16 +90,19 @@ describe('compact user preset management', () => {
     expect(screen.queryByTestId('field-adapter.rs_lora')).not.toBeInTheDocument();
     fireEvent.change(search, {target: {value: 'adapter.rs_lora'}});
     expect(screen.getByTestId('field-adapter.rs_lora')).toBeInTheDocument();
-    expect(screen.getByRole('button', {name: '全部参数'})).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', {name: '高级'})).toHaveAttribute('aria-pressed', 'false');
     fireEvent.change(search, {target: {value: '不存在的参数123'}});
     expect(screen.getByText('没有匹配的参数。')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', {name: '返回参数分区'}));
     expect(search).toHaveValue(''); expect(search).toHaveFocus();
-    expect(screen.getByRole('tab', {name: '训练参数'})).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('field-loop.epochs')).toBeInTheDocument();
     expect(screen.queryByTestId('field-adapter.rs_lora')).not.toBeInTheDocument();
-    fireEvent.keyDown(screen.getByRole('tab', {name: '训练参数'}), {key: 'ArrowRight'});
-    expect(screen.getByRole('tab', {name: '数据与标签'})).toHaveFocus();
-    expect(screen.getByRole('tabpanel')).toHaveAccessibleName('数据与标签');
+    const dataStep = screen.getByRole('button', {name: /数据与分桶$/});
+    dataStep.focus();
+    await userEvent.keyboard('{Enter}');
+    expect(await screen.findByTestId('field-dataset.resolutions')).toBeInTheDocument();
+    expect(screen.getByRole('region', {name: '预设参数内容'})).toBeInTheDocument();
+    expect(screen.queryByRole('tablist', {name: '预设参数分区'})).not.toBeInTheDocument();
   });
 
   it('locates a server validation error in another section without discarding draft edits', async () => {
@@ -107,9 +111,9 @@ describe('compact user preset management', () => {
     fireEvent.change(epochs, {target: {value: '12'}});
     fireEvent.click(screen.getByRole('button', {name: '保存预设'}));
     fireEvent.click(await screen.findByRole('button', {name: '定位 权重保存精度'}));
-    await waitFor(() => expect(screen.getByRole('tab', {name: '精度与保存'})).toHaveAttribute('aria-selected', 'true'));
+    await waitFor(() => expect(screen.getByTestId('field-checkpoint.save_dtype')).toBeInTheDocument());
     await waitFor(() => expect(within(screen.getByTestId('field-checkpoint.save_dtype')).getByRole('combobox')).toHaveFocus());
-    fireEvent.click(screen.getByRole('tab', {name: '训练参数'}));
+    fireEvent.click(screen.getByRole('button', { name: /设备与时长$/ }));
     expect(screen.getByRole('spinbutton', {name: 'loop.epochs'})).toHaveValue(12);
   });
 
@@ -184,7 +188,7 @@ describe('compact user preset management', () => {
     expect(body.config.loop.epochs).toBe(7); expect(body.config.model.family).toBe('anima');
     for (const [group, key] of [['model', 'dit_path'], ['model', 'tokenizer_path'], ['dataset', 'sources'], ['dataset', 'cache_dir'], ['sampling', 'output_dir'], ['sampling', 'prompts_file'], ['adapter', 'resume_weights']]) expect(body.config[group]).not.toHaveProperty(key);
     expect(state.rows.find(row => row.name === 'my-style')?.config.loop).toEqual({ epochs: 4 });
-    fireEvent.click(screen.getByRole('tab', { name: '精度与保存' }));
+    fireEvent.click(screen.getByRole('button', { name: /模型加载精度$/ }));
     expect(screen.queryByTestId('field-model.dit_path')).not.toBeInTheDocument();
     expect(screen.queryByTestId('field-checkpoint.resume')).not.toBeInTheDocument();
   });

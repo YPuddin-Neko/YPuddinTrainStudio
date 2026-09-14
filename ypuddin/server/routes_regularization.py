@@ -41,7 +41,11 @@ router = APIRouter(route_class=SecretSafeRoute)
 class RegularizationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     source: Literal["ai", "danbooru", "gelbooru"] = "ai"
-    prompt: str = Field(min_length=1, max_length=8000)
+    prompt: str = Field("", max_length=8000)
+    prompt_source: Literal["manual", "training_tags"] = "manual"
+    source_ids: list[str] = Field(default_factory=list, max_length=200)
+    generation_scope: Literal["incremental", "all"] = "incremental"
+    plan_signature: str | None = Field(None, min_length=64, max_length=64)
     negative: str = Field("", max_length=8000)
     count: int = Field(20, ge=1, le=200)
     width: int = Field(1024, ge=32, le=2048)
@@ -85,6 +89,39 @@ class RegularizationStatus(BaseModel):
     operations: list[RegularizationTask]
 
 
+class RegularizationPlanSource(BaseModel):
+    id: str
+    path: str
+    name: str
+
+
+class RegularizationTagCount(BaseModel):
+    tag: str
+    count: int
+
+
+class RegularizationPlanExample(BaseModel):
+    source_id: str
+    rel_path: str
+    prompt: str
+
+
+class RegularizationPlan(BaseModel):
+    signature: str
+    sources: list[RegularizationPlanSource]
+    top_tags: list[RegularizationTagCount]
+    source_images: int
+    existing_images: int
+    missing_captions: int
+    invalid_captions: int
+    empty_after_exclusion: int
+    eligible_images: int
+    planned_images: int
+    remaining_images: int
+    max_batch_images: int
+    examples: list[RegularizationPlanExample]
+
+
 def manager(request: Request):
     return request.app.state.regularization
 
@@ -92,6 +129,11 @@ def manager(request: Request):
 @router.get("/projects/{pid}/versions/{vid}/regularization", response_model=RegularizationStatus)
 def status(pid: str, vid: str, service=Depends(manager)):
     return service.snapshot(pid, vid)
+
+
+@router.post("/projects/{pid}/versions/{vid}/regularization/plan", response_model=RegularizationPlan)
+def plan(pid: str, vid: str, body: RegularizationRequest, service=Depends(manager)):
+    return service.plan(pid, vid, body)
 
 
 @router.post(

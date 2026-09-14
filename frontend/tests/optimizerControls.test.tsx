@@ -14,6 +14,20 @@ function NumericEditor({initial}: {initial: Record<string, unknown>}) {
     <output data-testid="numeric-configuration">{JSON.stringify(value)}</output></>;
 }
 
+it('shows the exact learning rate in scientific notation while preserving decimal and exponent editing', async () => {
+  render(<NumericEditor initial={{optimizer:{type:'adamw',lr:0.0001}}}/>);
+  const input = screen.getByRole('spinbutton', {name:'学习率'});
+  const scientific = screen.getByLabelText('学习率 · 科学计数法');
+  expect(scientific).toHaveTextContent(/^1e-4$/);
+  for (const [raw, notation] of [['0.2','2e-1'],['2e-5','2e-5'],['0.000123456789','1.23456789e-4']]) {
+    await act(async () => { await userEvent.clear(input); });
+    expect(scientific).toHaveTextContent('—');
+    await act(async () => { await userEvent.type(input, raw); });
+    expect(scientific).toHaveTextContent(notation);
+    expect(JSON.parse(screen.getByTestId('numeric-configuration').textContent || '{}').optimizer.lr).toBe(Number(raw));
+  }
+});
+
 it.each(['2.5', '0.25', '1e-6'])('keeps a cleared D Coef empty while entering %s', async (raw) => {
   render(<NumericEditor initial={{optimizer: {type: 'prodigy_plus_sf', d_coef: 1}}}/>);
   const input = screen.getByRole('spinbutton', {name: '自适应步长倍率（D Coef）'});

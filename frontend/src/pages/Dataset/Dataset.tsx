@@ -10,6 +10,8 @@ import { EVENT_TYPES } from '../../events/eventTypes';
 import { MaskEditor } from '../../components/masks/MaskEditor';
 import { formatApiError } from '../../utils/errors';
 import { TagChips } from '../../components/TagChips';
+import StructuredCaptionEditor from '../../components/datasets/StructuredCaptionEditor';
+import { getCaptionStructure, captionFieldChanges, type CaptionFieldDraft } from '../../utils/captionStructure';
 import { formatBytes, formatParams, formatPercent } from '../../utils/format';
 import './dataset-workspace.css';
 import { NextStepLink } from '../../components/ProjectWorkflow';
@@ -85,6 +87,8 @@ function DatasetContent({id}: {id?:string}) {
   const [maskImage, setMaskImage] = React.useState<{ hash: string; relPath: string } | null>(null);
   const [actionError, setActionError] = React.useState('');
   const [editCaption, setEditCaption] = React.useState('');
+  const [captionFields, setCaptionFields] = React.useState<CaptionFieldDraft>({});
+  const [captionPath, setCaptionPath] = React.useState('');
   const [captionBase, setCaptionBase] = React.useState('');
   const [savingCaption, setSavingCaption] = React.useState(false);
   const captionSave = React.useRef<Promise<void>|null>(null);
@@ -111,6 +115,12 @@ function DatasetContent({id}: {id?:string}) {
   }, [checkVersionAccess]);
 
   const images = useDatasetImages(id);
+  const activeImg = activeImage ? images.items.find(i => i.hash === activeImage && i.rel_path === captionPath) : undefined;
+  const activeStructure = getCaptionStructure(activeImg);
+  const activeJson = activeImg?.caption_format?.toLowerCase().replace(/^\./, '') === 'json';
+  const changedFields = captionFieldChanges(activeStructure, captionFields);
+  const captionDirty = editCaption !== captionBase || changedFields.length > 0;
+  const captionLocked = !canEdit || savingCaption || !!activeImg?.caption_error || activeJson && !activeStructure?.editable;
   const gridRef = React.useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = React.useState(0);
   const [viewportH, setViewportH] = React.useState(600);
@@ -202,21 +212,22 @@ function DatasetContent({id}: {id?:string}) {
     }
   };
 
-  const openEditor = (hash: string) => {
-    const img = images.items.find((i) => i.hash === hash);
+  const openEditor = (hash: string, relPath: string) => {
+    const img = images.items.find((i) => i.hash === hash && i.rel_path === relPath);
     if (!img) return;
-    setActiveImage(hash);
+    setActiveImage(hash); setCaptionPath(relPath); setCaptionFields({});
     setEditCaption(img.caption_tags ?? img.caption ?? '');
     setCaptionBase(img.caption_tags ?? img.caption ?? '');
   };
 
   const saveCaption = async () => {
     if (captionSave.current) return captionSave.current;
-    if (!activeImage || !id || !canEdit) throw new Error(text('当前图片只读，无法保存标签。','The image is read only; its caption cannot be saved.'));
+    if (!activeImage || !id || !activeImg || captionLocked) throw new Error(text('当前图片只读，无法保存标签。','The image is read only; its caption cannot be saved.'));
     setSavingCaption(true);setActionError('');
-    const pending=apiClient.put(`/datasets/${id}/images/${activeImage}/caption`, { caption: editCaption },{silent:true})
+    const pending=apiClient.put(`/datasets/${id}/images/${activeImage}/caption`, activeJson ? { caption_fields: changedFields, caption_revision: activeStructure!.revision } : { caption: editCaption },{params:{rel_path:activeImg.rel_path},silent:true})
       .then(() => {
-        images.updateCaption(activeImage, editCaption);
+        if (activeJson) images.refresh(); else images.updateCaption(activeImage, editCaption, activeImg.rel_path);
+        setCaptionFields({});
         setCaptionBase(editCaption);
         setActiveImage(null);
       })
@@ -224,13 +235,13 @@ function DatasetContent({id}: {id?:string}) {
       .finally(() => {setSavingCaption(false);captionSave.current=null;});
     captionSave.current=pending;return pending;
   };
-  const closeCaption = () => {if(!savingCaption && (editCaption===captionBase || window.confirm(text('标签尚未保存，确定放弃这些修改？','Discard the unsaved caption changes?'))))setActiveImage(null);};
+  const closeCaption = () => {if(!savingCaption && (!captionDirty || window.confirm(text('标签尚未保存，确定放弃这些修改？','Discard the unsaved caption changes?'))))setActiveImage(null);};
   const beforeNavigation = async () => {
     if(maskImage)throw new Error(text('请先在遮罩编辑器中保存或关闭，再切换项目页面。','Save or close the mask editor before switching project pages.'));
-    if(activeImage && editCaption!==captionBase || captionSave.current)await saveCaption();
+    if(activeImage && captionDirty || captionSave.current)await saveCaption();
   };
   const leaveRef=React.useRef({beforeNavigation,dirty:false});
-  React.useLayoutEffect(()=>{leaveRef.current={beforeNavigation,dirty:!!maskImage || !!activeImage && editCaption!==captionBase || savingCaption};});
+  React.useLayoutEffect(()=>{leaveRef.current={beforeNavigation,dirty:!!maskImage || !!activeImage && captionDirty || savingCaption};});
   React.useEffect(()=>{
     let leaving=false;
     const click=(event:MouseEvent)=>{
@@ -327,7 +338,6 @@ function DatasetContent({id}: {id?:string}) {
 
   const stats = info?.stats;
   const coverage = stats?.images ? Math.round(((stats.captioned || 0) / stats.images) * 100) : 0;
-  const activeImg = activeImage ? images.items.find((i) => i.hash === activeImage) : undefined;
   const activeSize = activeImg?.size;
   const datasetName = info?.source.path.replace(/[\\/]+$/, '').split(/[\\/]/).pop()?.replace(/^(?:d_[0-9a-f]+-)+/i, '') || id;
   const returnQuery = new URLSearchParams(location.search);
@@ -337,6 +347,8 @@ function DatasetContent({id}: {id?:string}) {
   const returnVersion = info?.source.project_id ? info.source.version_id : returnQuery.get('version');
   const returnUrl = returnProject ? `${projectUrl(returnProject, returnVersion, 'data')}&data_step=import#version-datasets` : '/projects';
 
+  const returnLink = <Link className="dataset-workspace-return" to={returnUrl}><ArrowLeft size={14}/>{returnProject ? text('返回本版本数据集', 'Back to version datasets') : text('返回项目', 'Back to projects')}</Link>;
+
   return (
     <div className="dataset-workspace space-y-3" data-testid="dataset-page">
       {hasDataRouter && <DatasetNavigationGuard shouldBlock={destination => {
@@ -344,8 +356,7 @@ function DatasetContent({id}: {id?:string}) {
         return leaveRef.current.dirty;
       }} beforeLeave={() => leaveRef.current.beforeNavigation()} onError={error => setActionError(formatApiError(error))}/>}
       <div className="dataset-workspace-navigation" ref={navigationRef}>
-        <Link className="dataset-workspace-return" to={returnUrl}><ArrowLeft size={17}/>{returnProject ? text('返回本版本数据集', 'Back to version datasets') : text('返回项目', 'Back to projects')}</Link>
-        {projectContext && !infoError ? <ProjectWorkspaceHeader project={projectContext.project} versionId={info?.source.version_id || undefined} versions={projectContext.versions} current={projectContext.current} active="data" title={datasetName} refresh={refreshProjectContext} beforeAction={beforeNavigation}/> : <h1 className="text-base font-semibold" title={info?.source.path}>{info && !infoError ? datasetName : text('图片、标签与遮罩','Images, captions and masks')}</h1>}
+        {projectContext && !infoError ? <ProjectWorkspaceHeader project={projectContext.project} versionId={info?.source.version_id || undefined} versions={projectContext.versions} current={projectContext.current} active="data" title={datasetName} breadcrumbLeading={returnLink} refresh={refreshProjectContext} beforeAction={beforeNavigation}/> : <><nav className="workspace-breadcrumb">{returnLink}</nav><h1 className="text-base font-semibold" title={info?.source.path}>{info && !infoError ? datasetName : text('图片、标签与遮罩','Images, captions and masks')}</h1></>}
       </div>
       {(infoError || contextError) && <div role="alert" className="workspace-message error">{infoError || contextError}<button onClick={()=>{fetchInfo();void refreshProjectContext();}}>{t('common.retry')}</button></div>}
       {versionKey && !canEdit && <div className="flex flex-wrap items-center gap-2 rounded border border-slate-300 bg-slate-50 px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-900" role={versionAccess?.key === versionKey && versionAccess.error ? 'alert' : 'status'}>
@@ -488,7 +499,7 @@ function DatasetContent({id}: {id?:string}) {
                   style={{ width: cardWidth, height: CARD_H }}
                   data-testid={`image-card-${img.hash}`}
                 >
-                  <button type="button" onClick={() => openEditor(img.hash)} aria-label={`${canEdit ? text('编辑标签', 'Edit caption') : text('查看图片与标签', 'View image and caption')}: ${img.rel_path}`} className="block w-full">
+                  <button type="button" onClick={() => openEditor(img.hash, img.rel_path)} aria-label={`${canEdit ? text('编辑标签', 'Edit caption') : text('查看图片与标签', 'View image and caption')}: ${img.rel_path}`} className="block w-full">
                     <img src={apiUrl(`/datasets/${id}/images/${img.hash}/thumb?size=${THUMB_SIZE}`)} alt={img.rel_path} loading="lazy" className="w-full h-[170px] object-contain bg-slate-100 dark:bg-slate-900" />
                   </button>
                   <button
@@ -553,12 +564,11 @@ function DatasetContent({id}: {id?:string}) {
                 )}
               </div>
               <div className="space-y-3">
-                {canEdit && <button type="button" disabled={savingCaption} onClick={() => { if (activeImg) {void (editCaption!==captionBase?saveCaption():Promise.resolve()).then(()=>{setMaskImage({ hash: activeImg.hash, relPath: activeImg.rel_path });setActiveImage(null);}).catch(()=>{});} }} className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600"><Brush className="h-4 w-4" />{text('编辑这张图片的训练遮罩', 'Edit this image’s training mask')}</button>}
+                {canEdit && <button type="button" disabled={savingCaption} onClick={() => { if (activeImg) {void (captionDirty?saveCaption():Promise.resolve()).then(()=>{setMaskImage({ hash: activeImg.hash, relPath: activeImg.rel_path });setActiveImage(null);}).catch(()=>{});} }} className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600"><Brush className="h-4 w-4" />{text('编辑这张图片的训练遮罩', 'Edit this image’s training mask')}</button>}
                 <div className="text-xs text-slate-400">{t('dataset.captionEditorTitle')}{activeImg?.caption_format && ` · ${activeImg.caption_format.toUpperCase()}`}</div>
-                {activeImg?.caption_description && <div className="text-xs text-slate-500"><p>{text('JSON 自然语言描述（保留原文）','JSON natural-language description (preserved)')}</p><p className="whitespace-pre-wrap">{activeImg.caption_description}</p></div>}
                 {activeImg?.caption_error && <p role="alert">{activeImg.caption_error}</p>}
                 {actionError && <p role="alert" className="text-sm text-red-600">{actionError}</p>}
-                {canEdit ? <fieldset disabled={savingCaption}><TagChips caption={editCaption} onChange={setEditCaption} readOnly={savingCaption}/></fieldset> : <p className="whitespace-pre-wrap text-sm">{editCaption || t('dataset.noCaption', '（无 caption）')}</p>}
+                {activeJson ? <StructuredCaptionEditor key={`${activeImage}/${captionPath}`} structure={activeStructure} draft={captionFields} onChange={setCaptionFields} disabled={captionLocked} readOnly={!canEdit}/> : canEdit ? <fieldset disabled={captionLocked}><TagChips caption={editCaption} onChange={setEditCaption} readOnly={savingCaption}/></fieldset> : <p className="whitespace-pre-wrap text-sm">{editCaption || t('dataset.noCaption', '（无 caption）')}</p>}
                 <div className="flex justify-end space-x-2 pt-2">
                   <button
                     onClick={closeCaption} disabled={savingCaption}
@@ -568,7 +578,7 @@ function DatasetContent({id}: {id?:string}) {
                   </button>
                   <button
                     onClick={()=>void saveCaption().catch(()=>{})}
-                    disabled={!canEdit || savingCaption}
+                    disabled={captionLocked}
                     className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
                     data-testid="caption-save-btn"
                   >

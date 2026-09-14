@@ -559,7 +559,7 @@ const ModelPathInput: React.FC<{
     <div className={`model-path-control ${matched.length > 0 ? 'has-registry' : ''}`}>
       <PathInput ariaLabel={label} value={value} onChange={onChange} />
       {matched.length > 0 && (
-        <StudioSelect aria-label={`${label || kind} · ${t('models.fromRegistry')}`} value="" onValueChange={onChange} data-testid="model-registry-select"
+        <StudioSelect aria-label={`${label || kind} · ${t('models.fromRegistry')}`} value={matched.some(model => model.path === value) ? value : ''} onValueChange={onChange} data-testid="model-registry-select"
           options={[{value:'',label:t('models.fromRegistry'),disabled:true},...matched.map(model=>({value:model.path,label:model.path.split(/[\\/]/).pop() || model.path}))]}/>
 
       )}
@@ -754,7 +754,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (versionSources && ['checkpoint.output_dir', 'checkpoint.name'].includes(fullPathKey) && !showAdvanced && !editOutput) return null;
     if (fullPathKey === 'adapter.alpha' && value.adapter?.algo === 'lokr' && value.adapter?.rank === 'full') return null;
     if (['training.train_backbone', 'training.train_text_encoder'].includes(fullPathKey) && value.training?.mode !== 'full') return null;
-    const ui = { ...(prop['x-ui'] || {}), ...(compact && fullPathKey === 'dataset.batch_size' ? {group:'loop'} : {}), ...(fullPathKey === 'model.attention' ? {group:'memory',advanced:false} : {}) };
+    const ui = { ...(prop['x-ui'] || {}), ...(compact && fullPathKey === 'dataset.batch_size' ? {group:'loop'} : {}), ...(fullPathKey === 'model.attention' ? {group:'memory',advanced:false} : {}), ...(fullPathKey === 'loop.gpu_count' ? {group:'loop',advanced:false} : {}) };
     if (ui.hidden) return null;
     if (conditionValue.dataset.resolution_mode === 'native' && ['dataset.resolutions', 'dataset.aspect_ratio_limit', 'dataset.area_tolerance', 'dataset.bucket_step', 'dataset.bucket_no_upscale'].includes(fullPathKey)) return null;
     if (compact && !showAdvanced && fullPathKey === 'adapter.rules' && !value.adapter?.rules?.length) return null;
@@ -922,6 +922,11 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           )}
         </div>
       );
+    } else if (fullPathKey === 'model.attention') {
+      const attentionOptions = (supportedOptions || prop.enum?.map(String) || ['sdpa']).filter(option => option !== 'auto');
+      control = <StudioSelect aria-label={fieldLabel} value={!fieldValue || fieldValue === 'auto' ? 'sdpa' : String(fieldValue)}
+        onValueChange={next => onChange(setNestedValue(value, path, next))}
+        options={attentionOptions.map(option => ({value:option, label:configOptionLabel(fullPathKey, option, english)}))}/>;
     } else if (supportedOptions) {
       control = <StudioSelect aria-label={fieldLabel} value={fieldValue == null ? '' : String(fieldValue)}
         onValueChange={next => onChange(setNestedValue(value, path, next))}
@@ -1027,6 +1032,10 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const booleanField = prop.type === 'boolean' || ui.control === 'switch';
     if (!booleanField && !managedReason && React.isValidElement(control) && (typeof control.type === 'string' || control.type === StudioSelect)) {
       control = React.cloneElement(control as React.ReactElement<any>, {id: fieldId, 'aria-label': (control.props as any)['aria-label'] || fieldLabel, 'aria-invalid': !!errorItem});
+    }
+    if (!managedReason && ['optimizer.lr', 'optimizer.min_lr', 'optimizer.max_lr'].includes(fullPathKey)) {
+      const scientific = typeof fieldValue === 'number' && Number.isFinite(fieldValue) ? fieldValue.toExponential().replace('e+', 'e') : '—';
+      control = <div className="config-scientific-input">{control}<output aria-label={`${fieldLabel} · ${english ? 'scientific notation' : '科学计数法'}`} title={`${scientific} · ${english ? 'The same value in scientific notation' : '同一数值的科学计数法'}`}>{scientific}</output></div>;
     }
     const scopeHelp = fullPathKey === 'adapter.preset' ? (english
       ? 'Determines which parts of the model this training can adjust. Usually keep the default. A wider scope generally adds parameters and memory use, without guaranteeing better results.'
@@ -1140,10 +1149,14 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           {groupName === 'caption' && hasCaptionOverrides && !showAdvanced && !editCaptionOverrides && <div className="caption-override-notice" role="status"><span>{english ? 'This configuration adds text to your existing captions.' : '当前配置会额外改写已有标签。'}</span><button type="button" onClick={() => setEditCaptionOverrides(true)}>{english ? 'Edit extra caption changes' : '编辑额外标签改写'}</button></div>}
           {compact && groupName === 'model' ? (() => {
             const order = ['model.family', 'model.dit_path', 'model.text_encoder_path', 'model.text_encoder_2_path', 'model.vae_path', 'model.tokenizer_path', 'model.dtype', 'model.attention', 'model.prediction_type', 'model.zero_terminal_snr'];
-            return [...groupData.fields].sort((a, b) => {
+            const fields = [...groupData.fields].sort((a, b) => {
               const rank = (node: React.ReactNode) => { const index = order.indexOf(String((node as React.ReactElement).key)); return index < 0 ? order.length : index; };
               return rank(a) - rank(b);
             });
+            const path = (node: React.ReactNode) => String((node as React.ReactElement).key);
+            const assets = new Set(['model.dit_path', 'model.text_encoder_path', 'model.text_encoder_2_path', 'model.vae_path']);
+            const assetFields = fields.filter(node => assets.has(path(node)));
+            return <>{fields.filter(node => path(node) === 'model.family')}{assetFields.length > 0 && <div className="config-model-assets">{assetFields}</div>}{fields.filter(node => path(node) !== 'model.family' && !assets.has(path(node)))}</>;
           })() : groupName === 'adapter' ? (() => {
             const order = ['algo', 'preset', 'dora', 'rules', 'parameter_mode', 'factor', 'rank', 'alpha', 'decompose_both', 'rs_lora', 'init', 'resume_weights', 'dropout', 'rank_dropout', 'module_dropout', 'mode', 'param_dtype', 'lr_scale'];
             const fields = [...groupData.fields].sort((a, b) => {

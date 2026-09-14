@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { useWorkspaceText } from '../utils/workspaceText';
@@ -34,7 +35,7 @@ async function requestWithTimeout<T>(request: (signal: AbortSignal) => Promise<T
   finally { window.clearTimeout(timer); controllers.delete(controller); }
 }
 
-export default function ServiceControls({environmentId, onRestarted}: {environmentId?: string; onRestarted?:()=>void}) {
+export default function ServiceControls({environmentId, onRestarted, refreshTarget, secondary = false, disabled = false, refreshKey = 0}: {environmentId?: string; onRestarted?:()=>void; refreshTarget?: HTMLElement | null; secondary?: boolean; disabled?: boolean; refreshKey?: number}) {
   const text = useWorkspaceText();
   const [runtime, setRuntime] = React.useState<ServiceRuntime | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -44,7 +45,8 @@ export default function ServiceControls({environmentId, onRestarted}: {environme
   const cancelled=React.useRef(false);
   const controllers=React.useRef(new Set<AbortController>());
   const refresh=React.useCallback(async(timeoutMs=3000)=> {const value=await requestWithTimeout(signal=>apiClient.get<ServiceRuntime>('/service/runtime',{silent:true,signal}),timeoutMs,controllers.current);if(!cancelled.current)setRuntime(value);return value;},[]);
-  React.useEffect(()=>{const activeControllers=controllers.current;cancelled.current=false;void refresh().catch(e=>{if(!cancelled.current)setError(formatApiError(e));});return()=>{cancelled.current=true;for(const controller of activeControllers)controller.abort();};},[refresh]);
+  React.useEffect(()=>{let active=true;const activeControllers=controllers.current;cancelled.current=false;void refresh().catch(e=>{if(active&&!cancelled.current)setError(formatApiError(e));});return()=>{active=false;cancelled.current=true;for(const controller of activeControllers)controller.abort();};},[refresh]);
+  React.useEffect(()=>{if(refreshKey)void refresh().catch(e=>setError(formatApiError(e)));},[refreshKey,refresh]);
   const restart=async(options:Record<string,unknown>)=>{
     setBusy(true);setError('');setNotice('');setNextAddress('');
     const deadline=Date.now()+60000;
@@ -68,12 +70,13 @@ export default function ServiceControls({environmentId, onRestarted}: {environme
       setError(text('暂未重新连接。请查看启动窗口；恢复后可点击重新检测。','Reconnection timed out. Check the launcher window, then refresh status.'));
     }catch(e){if(!cancelled.current){setNotice('');setError(formatApiError(e));}}finally{if(!cancelled.current)setBusy(false);}
   };
-  return <div className="service-controls">
+  const refreshButton = <button type="button" className="settings-input service-refresh" disabled={busy || disabled} onClick={()=>void refresh().then(()=>setError('')).catch(e=>setError(formatApiError(e)))}><RefreshCw size={14}/>{text('重新检测','Refresh status')}</button>;
+  return <div className={`service-controls${secondary ? ' service-controls-secondary' : ''}`}>
     <div className="flex flex-wrap items-center gap-2">
-      <button type="button" className="settings-action" disabled={busy||!runtime?.can_restart} onClick={()=>void restart(environmentId?{environment_id:environmentId}:{})}>{busy?<Loader2 size={14} className="animate-spin"/>:<RefreshCw size={14}/>} {environmentId?text('重启并切换到此环境','Restart in this environment'):text('重启服务','Restart service')}</button>
-      {!environmentId && runtime?.can_restore_original && <button type="button" className="settings-input" disabled={busy||!runtime.can_restart} onClick={()=>void restart({restore_original_environment:true})}>{text('恢复原环境并重启','Restore original environment')}</button>}
-      {!environmentId && runtime && (runtime.saved_host!==runtime.current_host||runtime.saved_port!==runtime.current_port) && <button type="button" className="settings-input" disabled={busy||!runtime.can_restart} onClick={()=>void restart({apply_saved_address:true})}>{text(`应用已保存地址并重启（${runtime.saved_host}:${runtime.saved_port}）`,`Restart at saved address (${runtime.saved_host}:${runtime.saved_port})`)}</button>}
-      <button type="button" className="settings-input" disabled={busy} onClick={()=>void refresh().then(()=>setError('')).catch(e=>setError(formatApiError(e)))}>{text('重新检测','Refresh status')}</button>
+      <button type="button" className={secondary ? "settings-input" : "settings-action"} disabled={busy||disabled||!runtime?.can_restart} onClick={()=>void restart(environmentId?{environment_id:environmentId}:{})}>{busy?<Loader2 size={14} className="animate-spin"/>:<RefreshCw size={14}/>} {environmentId?text('重启并切换到此环境','Restart in this environment'):text('重启服务','Restart service')}</button>
+      {!environmentId && runtime?.can_restore_original && <button type="button" className="settings-input" disabled={busy||disabled||!runtime.can_restart} onClick={()=>void restart({restore_original_environment:true})}>{text('恢复原环境并重启','Restore original environment')}</button>}
+      {!environmentId && runtime && (runtime.saved_host!==runtime.current_host||runtime.saved_port!==runtime.current_port) && <button type="button" className="settings-input" disabled={busy||disabled||!runtime.can_restart} onClick={()=>void restart({apply_saved_address:true})}>{text(`应用已保存地址并重启（${runtime.saved_host}:${runtime.saved_port}）`,`Restart at saved address (${runtime.saved_host}:${runtime.saved_port})`)}</button>}
+      {refreshTarget ? createPortal(refreshButton, refreshTarget) : refreshButton}
     </div>
     {runtime?.reason&&<p className="settings-note">{reasons[runtime.reason]?text(...reasons[runtime.reason]):text('当前有操作占用服务，请稍后重试。','The service is busy. Try again later.')}</p>}
     {notice&&<p role="status" className="settings-note">{notice}</p>}

@@ -24,8 +24,9 @@ import '../../styles/parameter-workspace.css';
 import ParameterModeToggle from '../../components/ParameterModeToggle';
 import Dialog from '../../components/Dialog';
 import ParameterSections from '../../components/ParameterSections';
+import { workflowSchema } from '../../utils/parameterWorkflow';
 import { CONFIG_TAB_GROUPS, ConfigTab, ConfigIssue, presentConfigIssues, presentPlanWarning } from '../../utils/configPresentation';
-import { AlertCircle, CheckCircle2, ChevronRight, ChevronDown, Search, SlidersHorizontal, Play, Settings2, Brush, Database, Box, Sparkles, Loader2, BarChart3, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronRight, ChevronDown, Search, Play, Settings2, Brush, Database, Box, Loader2, BarChart3, X } from 'lucide-react';
 
 const presetFamily = (preset: Preset): string | undefined => { const model = preset.config.model; return model && typeof model === 'object' && 'family' in model && typeof model.family === 'string' ? model.family : undefined; };
 
@@ -85,9 +86,10 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const [tabParams, setTabParams] = useSearchParams();
   const requestedTab = tabParams.get('tab');
   const activeTab: ConfigTab = requestedTab && Object.prototype.hasOwnProperty.call(CONFIG_TAB_GROUPS, requestedTab) ? requestedTab as ConfigTab : 'model';
-  const setActiveTab = (tab: ConfigTab) => {
+  const setActiveTab = (tab: ConfigTab, group?: string) => {
     setInspectorOpen(false);
     const next = new URLSearchParams(tabParams); next.set('tab', tab);
+    if (group) next.set('group', group); else next.delete('group');
     setTabParams(next, { state: location.state });
   };
   const [search, setSearch] = React.useState('');
@@ -95,11 +97,6 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const parameterScrollRef = React.useRef<HTMLDivElement>(null);
   const [inspectorOpen, setInspectorOpen] = React.useState(false);
   const clearSearch = () => { setSearch(''); searchRef.current?.focus(); };
-  const previousTab = React.useRef(activeTab);
-  React.useLayoutEffect(() => {
-    if (previousTab.current !== activeTab) document.getElementById('training-parameters')?.scrollIntoView?.({block:'start'});
-    previousTab.current = activeTab;
-  }, [activeTab]);
   const [project, setProject] = React.useState<VersionedProject | null>(null);
   const versions = useProjectVersions(project, versionId);
   const versionStatus = versions.current?.status;
@@ -114,6 +111,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const [issuesOpen, setIssuesOpen] = React.useState(false);
   const [config, setConfig] = React.useState<Record<string, any>>({});
   const [schema, setSchema] = React.useState<any>(null);
+  const orderedSchema = React.useMemo(() => schema ? workflowSchema(schema) : schema, [schema]);
   const [defaults, setDefaults] = React.useState<Record<string, any>>({});
   const [registeredModels, setRegisteredModels] = React.useState<ModelAsset[]>([]);
   const registeredModelsRef = React.useRef<ModelAsset[]>([]);
@@ -488,13 +486,9 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
 
   const issues = presentConfigIssues(validationErrors, english);
   const inactiveReason = inactiveTrainingReason(config, english);
+  const checked = loaded && !validating && validatedConfig === JSON.stringify(config) && plan !== null;
+  const planChecked = checked && (plan?.ok === true || plan?.params != null);
   const ready = !inactiveReason && (!versions.enabled || versions.current?.status === 'ready') && loaded && !validating && validatedConfig === JSON.stringify(config) && plan?.ok === true && issues.length === 0;
-  const tabs: {id: ConfigTab; label: string; icon: typeof SlidersHorizontal}[] = [
-    { id: 'model', label: text('底模与输出', 'Model & output'), icon: Box },
-    { id: 'train', label: text('训练参数', 'Training'), icon: SlidersHorizontal },
-    { id: 'data', label: text('数据与分桶', 'Dataset & buckets'), icon: Database },
-    { id: 'advanced', label: text('采样与高级', 'Sampling & advanced'), icon: Sparkles },
-  ];
   const goToIssue = (issue: ConfigIssue) => {
     setActiveTab(issue.tab); setSearch(''); setShowAdvanced(true); setIssuesOpen(false); setRevealVersion(value => value + 1);
     requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -525,7 +519,17 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   </div>;
   return <div className="training-studio project-workspace parameter-workspace" aria-busy={savingNavigation}>
     <div className="parameter-workspace-header">
+    <div className="training-title-actions">
     {project ? <ProjectWorkspaceHeader project={project} versionId={versionId} versions={versions.versions} current={versions.current} active="train" refresh={versions.refresh} beforeAction={flushDraft} status={draftStatus} titleBadge={familyBadge} error={versions.error}/> : <div className="project-heading-placeholder"><h1>{text('训练参数', 'Training parameters')}</h1>{familyBadge}{draftStatus}</div>}
+    <div className="training-launch-bar training-header-actions" role="group" aria-label={text('训练启动操作', 'Training launch controls')} id="training-launch" ref={launchBarRef}>
+      {issuesOpen && issues.length > 0 && <section className="readiness-panel" aria-label={text('训练前检查', 'Preflight checks')}><div className="readiness-heading"><h2>{text('完成以下配置即可启动训练', 'Complete these settings to start training')}</h2><button onClick={() => setIssuesOpen(false)}>{text('收起', 'Collapse')}</button></div>{issues.map((issue,index) => <div className="readiness-item" key={`${issue.path}-${index}`}><button aria-label={text(`配置${issue.label}`, `Configure ${issue.label}`)} onClick={() => goToIssue(issue)}><span>{issue.label}</span><span>{issue.message}</span><ChevronRight size={14}/></button>{issue.message === '此配置未通过检查，展开详情查看具体原因' && <details><summary>{text('技术详情', 'Technical details')}</summary><code>{issue.detail}</code></details>}</div>)}</section>}
+      <div className="launch-status" role="status">{validating ? <><Loader2 size={15} className="animate-spin"/><span>{text('正在检查配置…', 'Checking configuration…')}</span></> : ready ? <><CheckCircle2 size={16} className="text-emerald-500"/><span>{text('可以开始训练', 'Ready to train')}</span></> : <button onClick={() => setIssuesOpen(value => !value)} className="readiness-toggle"><AlertCircle size={16}/><span>{issues.length ? text(`${issues.length} 项待配置`, `${issues.length} settings to complete`) : text('尚未通过检查', 'Checks incomplete')}</span><ChevronRight size={14}/></button>}</div>
+      <button type="button" className="launch-plan-toggle" aria-label={text('训练估算与分桶', 'Estimates and buckets')} aria-expanded={inspectorOpen} aria-controls="training-plan-panel" onClick={() => setInspectorOpen(open => !open)}><BarChart3 size={15}/><span>{text('执行估算', 'Estimates')}</span><ChevronDown size={14}/></button>
+      <input className="launch-name" aria-label={t('train.jobName')} placeholder={text('任务名称（可选）', 'Job name (optional)')} value={jobName} onChange={event => setJobName(event.target.value)}/>
+      <details className="launch-schedule"><summary>{scheduledAt ? text('已排期', 'Scheduled') : text('排期', 'Schedule')}</summary><div><label>{t('queue.priority')}<input aria-label={t('queue.priority')} type="number" step="1" aria-invalid={!Number.isInteger(priority)} value={priority} onChange={event => setPriority(Number(event.target.value))}/></label>{!Number.isInteger(priority) && <p className="text-xs text-amber-600">{text('优先级必须是整数', 'Priority must be an integer')}</p>}<label>{t('train.scheduledAt')}<input aria-label={t('train.scheduledAt')} type="datetime-local" value={scheduledAt} onChange={event => setScheduledAt(event.target.value)}/></label></div></details>
+      <button className="studio-primary start-training" onClick={handleEnqueue} disabled={!ready || isEnqueuing || savingNavigation || !Number.isInteger(priority)}><Play size={14}/>{enqueueSuccess ? t('train.enqueued') : isEnqueuing ? t('train.enqueuing') : text('开始训练', 'Start training')}</button>
+    </div>
+    </div>
     {inactiveReason && <div role="alert" className="studio-error" data-testid="retired-training-config">{inactiveReason}</div>}
     {error && <div role="alert" className="studio-error">{error}<button type="button" onClick={() => { setError(''); if (!loaded) setReload(v => v + 1); }}>{loaded ? text('关闭', 'Dismiss') : t('common.retry')}</button></div>}
     {recoveredDraft && loaded && <p className="workspace-message" role="status">{text('已恢复此版本上次未保存的草稿。', 'Recovered the unsaved draft for this version.')}</p>}
@@ -548,35 +552,24 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     {pendingPreset && <PresetPreview preset={pendingPreset} current={config} onClose={()=>setPendingPreset(null)} onApply={()=>handleApplyPreset(pendingPreset)}/>}
     {importOpen && <Dialog title={t('train.importToml')} closeDisabled={importing} onClose={() => setImportOpen(false)}><section className="config-import">{importError && <p role="alert" className="studio-error">{importError}</p>}<input disabled={importing} type="file" accept=".toml,text/plain" aria-label={t('train.importFile')} onChange={event => { const file = event.target.files?.[0]; if (file) file.text().then(setImportText).catch(err => setImportError(formatApiError(err))); }}/><textarea disabled={importing} aria-label={t('train.importContent')} value={importText} onChange={event => setImportText(event.target.value)} /><button className="studio-primary" disabled={importing || !importText.trim()} onClick={handleImport}>{t('train.applyImport')}</button></section></Dialog>}
 
-        <div className="config-tabs" role="tablist" aria-label={text('参数分区', 'Parameter sections')}>{tabs.map(tab => <button role="tab" aria-label={tab.label} tabIndex={tab.id === activeTab ? 0 : -1} onKeyDown={event => {
-          const index = tabs.findIndex(item => item.id === tab.id);
-          const nextIndex = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1;
-          if (nextIndex >= 0) { event.preventDefault(); setActiveTab(tabs[nextIndex].id); setSearch(''); document.getElementById(`tab-${tabs[nextIndex].id}`)?.focus(); }
-        }} id={`tab-${tab.id}`} key={tab.id} aria-selected={!search && tab.id === activeTab} aria-controls="training-parameters" onClick={() => {setActiveTab(tab.id);setSearch('');}}><tab.icon size={15}/>{tab.label}{issues.some(issue => issue.tab === tab.id) && <span className="tab-issue-dot" aria-label={text('有待配置项', 'Needs configuration')}/>}</button>)}</div>
+
     </div>
     <div className="parameter-workspace-body">
-      <ParameterSections rootRef={parameterScrollRef} tab={activeTab} onTabChange={tab => {setActiveTab(tab);setSearch('');}} issues={issues} hasTrainingMode={!!schema?.properties?.training} fullTraining={config.training?.mode === 'full'} onRevealAdvanced={() => setShowAdvanced(true)}/>
+      <ParameterSections rootRef={parameterScrollRef} tab={activeTab} group={tabParams.get('group') || undefined} onTabChange={(tab, group) => {setActiveTab(tab, group);setSearch('');}} issues={issues} checked={checked} planChecked={planChecked} hasTrainingMode={!!schema?.properties?.training} fullTraining={config.training?.mode === 'full'} onRevealAdvanced={() => setShowAdvanced(true)}/>
       <div className="training-editor parameter-scroll-region" ref={parameterScrollRef}>
-        <div id="training-parameters" role="tabpanel" aria-labelledby={search ? undefined : `tab-${activeTab}`}>
+        <div id="training-parameters" role="region" aria-label={search ? text('训练参数搜索结果', 'Training parameter search results') : text('训练参数内容', 'Training parameter fields')}>
           {search && <p className="section-context">{text('搜索所有分区，包含高级参数', 'Searching every section, including advanced parameters')}</p>}
           {!search && activeTab === 'data' && <div className="config-context-card"><div><strong><Database size={14}/>{text('训练数据与遮罩', 'Dataset and masks')}</strong><p>{text('上传图片与标签，检查分桶；需要局部训练时，在图片编辑器绘制白色训练区域。', 'Upload images and captions, inspect buckets, and paint white training regions in the image editor.')}</p></div><div className="context-actions"><Link to={`${dataUrl}&data_step=import`} className="studio-secondary">{text('添加数据', 'Add dataset')}</Link><Link to={`${dataUrl}&data_step=captions${sourceQuery}`} className="studio-secondary">{text('标签编辑', 'Caption editor')}</Link><Link to={`${dataUrl}&data_step=paint${sourceQuery}`} className="studio-secondary"><Brush size={13}/>{text('涂抹与遮罩', 'Paint & masks')}</Link></div>{config.dataset?.masked_loss && <p className="mask-context-note">{text('遮罩已启用：白色参与训练，黑色忽略。未制作遮罩且没有 alpha 通道的图片仍按整张图训练。', 'Masking enabled: white trains, black is ignored. Images without a mask or alpha still train the full image.')}</p>}</div>}
           {!search && activeTab === 'model' && <div className="config-context-card model-context-card"><strong><Box size={14}/>{text('选择训练机上的模型', 'Models on the training machine')}</strong><Link to={modelUrl} className="studio-secondary">{text('管理与下载模型', 'Manage & download models')}<ChevronRight size={13}/></Link></div>}
           {!search && activeTab === 'train' && <p className="training-section-note">{text('选择训练方式，再设置训练时长与优化器。', 'Choose a training mode, then set duration and optimizer.')}</p>}
-          {!search && activeTab === 'advanced' && <p className="training-section-note">{text('设置训练中的采样预览、验证与运行选项。切换“全部参数”查看完整配置。', 'Configure sample previews, validation and runtime options. Select All parameters for the full configuration.')}</p>}
-          {!loaded ? <p className="p-6 text-sm text-slate-500">{t('common.loading')}</p> : <SchemaForm key={revealVersion} compact readOnly={!!inactiveReason} schema={schema} value={config} sourceRoles={sourceRoles} outputBinding={outputBinding} versionSources={!!projectId} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} groupFilter={search ? undefined : CONFIG_TAB_GROUPS[activeTab]} search={search} onClearSearch={clearSearch} errors={issues.map(issue => ({loc:issue.path,msg:issue.message}))} family={familyByName(families, config?.model?.family)} families={families} />}
+          {!search && activeTab === 'advanced' && <p className="training-section-note">{text('设置训练中的采样预览、验证与运行选项。切换“高级”查看完整配置。', 'Configure sample previews, validation and runtime options. Select Advanced for the full configuration.')}</p>}
+          {!loaded ? <p className="p-6 text-sm text-slate-500">{t('common.loading')}</p> : <SchemaForm key={revealVersion} compact readOnly={!!inactiveReason} schema={orderedSchema} value={config} sourceRoles={sourceRoles} outputBinding={outputBinding} versionSources={!!projectId} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} search={search} onClearSearch={clearSearch} errors={issues.map(issue => ({loc:issue.path,msg:issue.message}))} family={familyByName(families, config?.model?.family)} families={families} />}
         </div>
       </div>
       <aside id="training-plan-panel" className={`training-inspector ${inspectorOpen ? 'is-open' : ''}`} aria-label={text('训练计划', 'Training plan')}><button type="button" className="inspector-return" onClick={() => setInspectorOpen(false)}>{text('返回参数', 'Back to parameters')}</button><BucketInspector plan={plan} loading={validating} hasSources={!!config.dataset?.sources?.length} indexed={indexedStats || undefined} onIssues={() => setIssuesOpen(true)} onData={() => {setActiveTab('data');setSearch('');setInspectorOpen(false);}}/>
         {!!plan?.warnings?.length && <details className="plan-notes"><summary><AlertCircle size={13}/>{text('配置提示', 'Configuration notes')} · {plan.warnings.length}</summary><ul>{plan.warnings.map((warning,index) => <li key={index}>{presentPlanWarning(warning.code,warning.msg,english)}</li>)}</ul></details>}
       </aside>
     </div>
-    <footer className="training-launch-bar" id="training-launch" ref={launchBarRef}>
-      {issuesOpen && issues.length > 0 && <section className="readiness-panel" aria-label={text('训练前检查', 'Preflight checks')}><div className="readiness-heading"><h2>{text('完成以下配置即可启动训练', 'Complete these settings to start training')}</h2><button onClick={() => setIssuesOpen(false)}>{text('收起', 'Collapse')}</button></div>{issues.map((issue,index) => <div className="readiness-item" key={`${issue.path}-${index}`}><button aria-label={text(`配置${issue.label}`, `Configure ${issue.label}`)} onClick={() => goToIssue(issue)}><span>{issue.label}</span><span>{issue.message}</span><ChevronRight size={14}/></button>{issue.message !== issue.detail && <details><summary>{text('技术详情', 'Technical details')}</summary><code>{issue.detail}</code></details>}</div>)}</section>}
-      <div className="launch-status" role="status">{validating ? <><Loader2 size={15} className="animate-spin"/><span>{text('正在检查配置…', 'Checking configuration…')}</span></> : ready ? <><CheckCircle2 size={16} className="text-emerald-500"/><span>{text('可以开始训练', 'Ready to train')}</span></> : <button onClick={() => setIssuesOpen(value => !value)} className="readiness-toggle"><AlertCircle size={16}/><span>{issues.length ? text(`${issues.length} 项待配置`, `${issues.length} settings to complete`) : text('尚未通过检查', 'Checks incomplete')}</span><ChevronRight size={14}/></button>}</div>
-      <span className="launch-estimate">{plan?.total_steps ?? '—'} <span>{text('步', 'steps')}</span></span><button type="button" className="launch-plan-toggle" aria-label={text('训练估算与分桶', 'Estimates and buckets')} aria-expanded={inspectorOpen} aria-controls="training-plan-panel" onClick={() => setInspectorOpen(open => !open)}><BarChart3 size={15}/><span>{plan?.total_steps ?? '—'} {text('步', 'steps')}</span><ChevronDown size={14}/></button>
-      <input className="launch-name" aria-label={t('train.jobName')} placeholder={text('任务名称（可选）', 'Job name (optional)')} value={jobName} onChange={event => setJobName(event.target.value)}/>
-      <details className="launch-schedule"><summary>{scheduledAt ? text('已排期', 'Scheduled') : text('排期', 'Schedule')}</summary><div><label>{t('queue.priority')}<input aria-label={t('queue.priority')} type="number" step="1" aria-invalid={!Number.isInteger(priority)} value={priority} onChange={event => setPriority(Number(event.target.value))}/></label>{!Number.isInteger(priority) && <p className="text-xs text-amber-600">{text('优先级必须是整数', 'Priority must be an integer')}</p>}<label>{t('train.scheduledAt')}<input aria-label={t('train.scheduledAt')} type="datetime-local" value={scheduledAt} onChange={event => setScheduledAt(event.target.value)}/></label></div></details>
-      <button className="studio-primary start-training" onClick={handleEnqueue} disabled={!ready || isEnqueuing || savingNavigation || !Number.isInteger(priority)}><Play size={14}/>{enqueueSuccess ? t('train.enqueued') : isEnqueuing ? t('train.enqueuing') : text('开始训练', 'Start training')}</button>
-    </footer>
+
   </div>;
 }

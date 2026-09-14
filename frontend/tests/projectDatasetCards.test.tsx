@@ -20,17 +20,21 @@ function show(datasets: WorkspaceDataset[], onRefresh = vi.fn()) {
 }
 
 describe('project dataset preview cards', () => {
-  it('requests only three preview records and links to the source owner with refresh-safe context', async () => {
+  it('requests one complete cover and keeps the dataset kind outside the image area', async () => {
     const urls: URL[] = [];
     server.use(http.get('/api/datasets/d_portraits/images', ({request}) => { urls.push(new URL(request.url)); return HttpResponse.json({total:20,items:Array.from({length:4},(_,i)=>({hash:`image${i}`,rel_path:`人物/${i}.png`}))}); }));
     show([row()]);
     const card = screen.getByTestId('dataset-card-d_portraits');
-    await waitFor(() => expect(within(card).getAllByRole('img')).toHaveLength(3));
-    expect(urls).toHaveLength(1); expect(urls[0].searchParams.get('page_size')).toBe('3'); expect(urls[0].searchParams.get('page')).toBe('1');
+    await waitFor(() => expect(within(card).getAllByRole('img')).toHaveLength(1));
+    expect(urls).toHaveLength(1); expect(urls[0].searchParams.get('page_size')).toBe('1'); expect(urls[0].searchParams.get('page')).toBe('1');
     expect(card).toHaveAttribute('href','/datasets/d_portraits?project=p_owner&version=v_old');
     expect(card).toHaveAccessibleName('打开数据集：人物与服装');
     expect(card).toHaveTextContent('20 张图片'); expect(card).toHaveTextContent('18 份标签'); expect(card).toHaveTextContent('4 张遮罩');
-    for(const image of within(card).getAllByRole('img')) { expect(image).toHaveAttribute('loading','lazy'); expect(image.getAttribute('src')).toMatch(/\/thumb\?size=256$/); }
+    const image = within(card).getByRole('img', { name: '人物/0.png' });
+    expect(image).toHaveAttribute('loading','lazy'); expect(image.getAttribute('src')).toMatch(/\/thumb\?size=512$/);
+    expect(within(card).getByText('训练集').closest('.project-dataset-card-body')).not.toBeNull();
+    expect(card.querySelector('.project-dataset-preview')).not.toHaveTextContent('训练集');
+    expect(card.querySelector('.project-dataset-kind svg')).toBeNull();
   });
 
   it('distinguishes an empty library, an empty folder, indexing and failure without fetching unusable previews', () => {
@@ -63,7 +67,9 @@ describe('project dataset preview cards', () => {
     server.use(http.get('/api/datasets/d_long/images',()=>HttpResponse.json({total:1,items:[{hash:'ready',rel_path:'就绪.png'}]})));
     const mounted=render(view(pending));
     expect(screen.getByRole('heading',{name:longName})).toHaveAttribute('title',longName);
-    expect(screen.getByTestId('dataset-card-d_long')).toHaveTextContent('正则图');
+    const card = screen.getByTestId('dataset-card-d_long');
+    expect(within(card).getByText('正则图').closest('.project-dataset-card-body')).not.toBeNull();
+    expect(card.querySelector('.project-dataset-preview')).not.toHaveTextContent('正则图');
     mounted.rerender(view({...pending,index_status:'ready',stats:{images:1,captioned:1,masks:0}}));
     expect(await screen.findByRole('img',{name:'就绪.png'})).toBeInTheDocument();
   });

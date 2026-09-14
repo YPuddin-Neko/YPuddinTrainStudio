@@ -27,6 +27,47 @@ ACTIVE = ("queued", "scheduled", "running", "pausing", "cancelling")
 TERMINAL = ("completed", "failed", "cancelled", "paused")
 
 
+def training_device_error(count: int, inventory: list[dict[str, Any]]) -> str | None:
+    """Validate requested parallelism against the running service, never a CPU fallback."""
+    if count <= 1:
+        return None
+    import torch
+
+    if current_profile().endswith("-cpu") or sys.platform != "linux":
+        return "多卡训练需要 Linux CUDA 或 DTK 环境；当前环境请使用 1 张显卡。"
+    devices = [g for g in inventory if str(g.get("device", "")).startswith("cuda:")]
+    if len(devices) < count:
+        return f"请求使用 {count} 张显卡，当前环境仅有 {len(devices)} 张可用显卡。"
+    if not torch.distributed.is_available() or not torch.distributed.is_nccl_available():
+        return "当前 PyTorch 未提供 GPU 集体通信后端（NCCL 兼容接口），无法启动多卡训练。"
+    return None
+
+
+def worker_device_environment(devices: tuple[str, ...], env: dict[str, str]) -> dict[str, str]:
+    """Translate service-local indices through inherited visibility masks.
+
+    HIP visibility is applied after ROCR visibility. Keep the inherited ROCR mask
+    intact, then narrow HIP's indices within it; resetting both masks to the
+    service's logical indices could select somebody else's physical devices.
+    """
+    import torch
+
+    indices = [int(device.split(":", 1)[1]) for device in devices]
+    hip = bool(getattr(torch.version, "hip", None)) or current_profile() == "linux-dtk"
+    key = "HIP_VISIBLE_DEVICES" if hip and "HIP_VISIBLE_DEVICES" in env else "CUDA_VISIBLE_DEVICES"
+    inherited = env.get(key)
+    visible = [part.strip() for part in inherited.split(",")] if inherited is not None else None
+    if visible is not None and any(index >= len(visible) or not visible[index] for index in indices):
+        raise ValueError(
+            "GPU visibility changed since device discovery; refresh the environment before retrying"
+        )
+    selected = ",".join(visible[index] if visible is not None else str(index) for index in indices)
+    result = dict(env, CUDA_VISIBLE_DEVICES=selected)
+    if hip:
+        result["HIP_VISIBLE_DEVICES"] = selected
+    return result
+
+
 class JobSupervisor:
     """One scheduler loop; jobs run as ``ypuddin train`` subprocesses writing ``events.jsonl``.
 
@@ -51,7 +92,7 @@ class JobSupervisor:
         self.max_concurrent = max_concurrent
         self.python = python or sys.executable
         self._procs: dict[str, subprocess.Popen] = {}
-        self._devices: dict[str, str] = {}
+        self._devices: dict[str, str | tuple[str, ...]] = {}
         self._offsets: dict[str, int] = {}
         # jobs whose current process already reported its outcome through the event stream; the
         # later process-exit notification must not touch their status (the user may have resumed)
@@ -97,7 +138,7 @@ class JobSupervisor:
             if self._procs:
                 await asyncio.sleep(0.1)
         for job_id, proc in list(self._procs.items()):
-            proc.kill()
+            self._kill_process_tree(proc)
             await asyncio.to_thread(proc.wait, 5)
             self._pump_events(job_id)
             self._on_exit(job_id, proc.returncode)
@@ -162,25 +203,41 @@ class JobSupervisor:
                 log.exception("could not launch job %s", nxt["id"])
                 self._set_status(nxt["id"], "failed", error=str(exc), finished_at=now())
 
-    def _choose_device(self, job: dict[str, Any], *, check_memory: bool = True) -> str | None:
+    def _choose_device(
+        self, job: dict[str, Any], *, check_memory: bool = True
+    ) -> str | tuple[str, ...] | None:
+        count = self._gpu_count(job)
         if current_profile().endswith("-cpu"):
+            if count > 1:
+                self._set_status(job["id"], "failed", error="CPU 环境不能启动多卡训练", finished_at=now())
+                return None
             return "cpu"
         inventory = gpu_info()
+        if count > 1 and (error := training_device_error(count, inventory)):
+            self._set_status(job["id"], "failed", error=error, finished_at=now())
+            return None
         if not inventory:
             return "cpu"
-        used = set(self._devices.values())
+        used = {device for allocation in self._devices.values() for device in self._allocation(allocation)}
         estimate = json.loads(job.get("progress_json") or "{}").get("estimated_peak_mb") or 0
+        selected = []
         for gpu in sorted(inventory, key=lambda g: g.get("mem_free_mb", 0), reverse=True):
             device = gpu["device"]
+            if count > 1 and not device.startswith("cuda:"):
+                continue
             if device in used:
                 continue  # exclusive accelerator ownership; max_concurrent is an upper bound
             available = gpu.get("mem_free_mb")
             if check_memory and estimate and available is not None and estimate > available * 0.95:
                 continue
-            return device
+            selected.append(device)
+            if len(selected) == count:
+                return selected[0] if count == 1 else tuple(selected)
         patch = {
             "phase": "waiting_for_device",
-            "wait_reason": "waiting for a free accelerator with enough memory",
+            "wait_reason": f"等待 {count} 张空闲且显存充足的显卡"
+            if count > 1
+            else "waiting for a free accelerator with enough memory",
         }
         current = json.loads(job.get("progress_json") or "{}")
         if any(current.get(k) != v for k, v in patch.items()):
@@ -188,8 +245,22 @@ class JobSupervisor:
             self.bus.publish("job.phase", {"job_id": job["id"], **patch})
         return None
 
-    def _launch(self, job: dict[str, Any], *, device: str | None = None) -> None:
+    @staticmethod
+    def _gpu_count(job: dict[str, Any]) -> int:
+        if job.get("type") != "train":
+            return 1
+        return int(json.loads(job.get("config_json") or "{}").get("loop", {}).get("gpu_count", 1))
+
+    @staticmethod
+    def _allocation(device: str | tuple[str, ...]) -> tuple[str, ...]:
+        return (device,) if isinstance(device, str) else device
+
+    def _launch(self, job: dict[str, Any], *, device: str | tuple[str, ...] | None = None) -> None:
         job_id = job["id"]
+        devices = self._allocation(device or "cpu")
+        count = self._gpu_count(job)
+        if len(devices) != count or (count > 1 and any(not d.startswith("cuda:") for d in devices)):
+            raise ValueError("The requested GPU allocation is incomplete; no training process was launched")
         run_dir = Path(job["run_dir"])
         run_dir.mkdir(parents=True, exist_ok=True)
         for command in ("pause", "stop", "save"):
@@ -211,7 +282,7 @@ class JobSupervisor:
                     "This legacy XYZ request did not pin a full-model result; recreate the comparison with an exported checkpoint"
                 )
             payload.update(
-                device=device or "cpu",
+                device=devices[0],
                 fingerprint_cache=str(self.data_root / "cache" / "xyz-fingerprints"),
                 parent_pid=os.getpid(),
                 parent_created=psutil.Process().create_time(),
@@ -220,7 +291,10 @@ class JobSupervisor:
             cfg_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
             cmd = [self.python, "-m", "ypuddin.server.xyz_worker", str(cfg_path)]
         else:
-            cfg = absolute_paths(TrainConfig.model_validate(json.loads(job["config_json"])))
+            payload = json.loads(job["config_json"])
+            if job["type"] == "cache":
+                payload.setdefault("loop", {})["gpu_count"] = 1
+            cfg = absolute_paths(TrainConfig.model_validate(payload))
             if job.get("resume_from"):
                 cfg = cfg.model_copy(
                     update={"checkpoint": cfg.checkpoint.model_copy(update={"resume": job["resume_from"]})}
@@ -230,22 +304,49 @@ class JobSupervisor:
             write_config(cfg, cfg_path)
             sub = {"train": "train", "cache": "cache"}[job["type"]]
             cmd = [self.python, "-m", "ypuddin.cli", sub, str(cfg_path)]
-            if device:
-                cmd += ["--device", device]
+            if count > 1:
+                cmd = [
+                    self.python,
+                    "-m",
+                    "torch.distributed.run",
+                    "--standalone",
+                    f"--nproc_per_node={count}",
+                    "-m",
+                    "ypuddin.cli",
+                    sub,
+                    str(cfg_path),
+                    "--device",
+                    "cuda",
+                ]
+            elif device:
+                cmd += ["--device", devices[0]]
             resume_from = cfg.checkpoint.resume
         events_path = run_dir / "events.jsonl"
         self._offsets[job_id] = events_path.stat().st_size if events_path.exists() else 0
         env = dict(os.environ, PYTHONUNBUFFERED="1")
+        if count > 1:
+            env = worker_device_environment(devices, env)
         kwargs: dict[str, Any] = {}
         if os.name == "nt":  # pragma: no cover
             kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            kwargs["start_new_session"] = True
         with open(run_dir / "run.log", "ab") as log_fp:
             proc = subprocess.Popen(
                 cmd, stdout=log_fp, stderr=subprocess.STDOUT, cwd=str(run_dir), env=env, **kwargs
             )
         self._procs[job_id] = proc
         self._devices[job_id] = device or "cpu"
-        self._merge_progress(job_id, {"device": device or "cpu", "phase": "starting", "wait_reason": ""})
+        self._merge_progress(
+            job_id,
+            {
+                "device": ", ".join(devices),
+                "devices": list(devices),
+                "gpu_count": count,
+                "phase": "starting",
+                "wait_reason": "",
+            },
+        )
         self._outcome_seen.discard(job_id)
         self._set_status(job_id, "running", started_at=now(), pid=proc.pid, resume_from=resume_from)
         self.bus.publish("job.phase", {"job_id": job_id, "phase": "starting"})
@@ -420,11 +521,17 @@ class JobSupervisor:
         job = self.db.fetchone("SELECT status, run_dir FROM jobs WHERE id=?", (job_id,))
         if not job:
             return
-        if job["status"] in TERMINAL or job_id in self._outcome_seen:
+        failed_after_completion = job["status"] == "completed" and code is not None and code != 0
+        if (job["status"] in TERMINAL or job_id in self._outcome_seen) and not failed_after_completion:
             self._outcome_seen.discard(job_id)
             self.db.update("jobs", job_id, {"exit_code": code})
             return
-        error = f"process exited with code {code}"
+        self._outcome_seen.discard(job_id)
+        error = (
+            f"worker process exited with code {code} after reporting completion"
+            if failed_after_completion
+            else f"process exited with code {code}"
+        )
         log_path = Path(job["run_dir"]) / "run.log"
         if log_path.exists():
             tail = log_path.read_bytes()[-4000:].decode("utf-8", errors="replace").strip().splitlines()
@@ -523,7 +630,43 @@ class JobSupervisor:
     def _force_kill(self, job_id: str, expected: subprocess.Popen | None = None) -> None:
         proc = self._procs.get(job_id)
         if proc is not None and (expected is None or proc is expected) and proc.poll() is None:
-            proc.kill()
+            self._kill_process_tree(proc)
+
+    @staticmethod
+    def _kill_process_tree(proc: subprocess.Popen) -> None:
+        if proc.poll() is not None:
+            return
+        if os.name == "nt":  # pragma: no cover
+            subprocess.run(
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True, timeout=10, check=False
+            )
+        else:
+            import psutil
+
+            # torchrun gives every rank its own session/process group. Killing
+            # only the launcher's group leaves those ranks and DataLoader
+            # workers alive. Freeze each owned parent before discovering its
+            # children so elastic cannot restart a rank while we tear it down.
+            # psutil retains each process identity and rejects reused PIDs.
+            owned = []
+            try:
+                pending = [psutil.Process(proc.pid)]
+                while pending:
+                    process = pending.pop()
+                    try:
+                        process.suspend()
+                        owned.append(process)
+                        pending.extend(process.children())
+                    except psutil.NoSuchProcess:
+                        continue
+            except psutil.NoSuchProcess:
+                pass
+            finally:
+                for process in reversed(owned):
+                    try:
+                        process.kill()
+                    except psutil.NoSuchProcess:
+                        pass
 
     def clone(self, job: dict[str, Any]) -> dict[str, Any]:
         self._check_job_version(job)

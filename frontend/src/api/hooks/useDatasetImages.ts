@@ -73,8 +73,8 @@ export function useDatasetImages(datasetId: string | undefined, pageSize = 60) {
     setSelected(new Set(items.map((i) => i.hash)));
   }, [items]);
 
-  const updateCaption = React.useCallback((hash: string, caption: string) => {
-    setItems((prev) => prev.map((i) => (i.hash === hash ? { ...i, caption_tags: caption, caption: i.caption_description ? `${caption}${caption ? ". " : ""}${i.caption_description}` : caption } : i)));
+  const updateCaption = React.useCallback((hash: string, caption: string, relPath: string) => {
+    setItems((prev) => prev.map((i) => (i.hash === hash && i.rel_path === relPath ? { ...i, caption_tags: caption, caption: i.caption_description ? `${caption}${caption ? ". " : ""}${i.caption_description}` : caption } : i)));
   }, []);
 
   return {

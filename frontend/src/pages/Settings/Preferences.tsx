@@ -1,9 +1,12 @@
+import NetworkPreferences, { type NetworkSettings } from './NetworkPreferences';
+type SettingsType = ApiSettings;
+
 import ServiceControls from '../../components/ServiceControls';
 import React from 'react';
 import { formatApiError } from '../../utils/errors';
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../api/client';
-import { Settings as SettingsType } from '../../api/types';
+import { Settings as ApiSettings } from '../../api/types';
 import { PathInput } from '../../components/PathBrowser';
 import { Loader2, Save } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
@@ -11,6 +14,8 @@ import { SettingsSections } from './SettingsSections';
 import { ServiceInfo } from './ServiceInfo';
 import StudioSelect from '../../components/StudioSelect';
 import { useWorkspaceText } from '../../utils/workspaceText';
+
+const defaultNetworkSettings: NetworkSettings = { proxy_mode: 'system', proxy_url: '', proxy_username: '', proxy_password_configured: false };
 
 export default function Preferences() {
   const { t, i18n } = useTranslation();
@@ -20,7 +25,10 @@ export default function Preferences() {
   const [settings, setSettings] = React.useState<SettingsType | null>(null);
   const [saving, setSaving] = React.useState(false);
   const savingRef = React.useRef(false);
+  const [proxyPassword, setProxyPassword] = React.useState<string | undefined>();
   const [saved, setSaved] = React.useState(false);
+  const [serviceRefreshTarget, setServiceRefreshTarget] = React.useState<HTMLSpanElement | null>(null);
+  const [serviceRefreshKey, setServiceRefreshKey] = React.useState(0);
   const [error, setError] = React.useState('');
 
   const load = React.useCallback(async () => {
@@ -51,9 +59,10 @@ export default function Preferences() {
     if (!settings || savingRef.current) return;
     savingRef.current = true;
     setSaving(true); setError('');
-    apiClient.put<SettingsType>('/settings', settings)
+    apiClient.put<SettingsType>('/settings', { ...settings, ...(proxyPassword !== undefined ? { network: { ...(settings.network ?? defaultNetworkSettings), proxy_password: proxyPassword } } : {}) })
       .then((res) => {
         setSettings(res);
+        setProxyPassword(undefined);
         // 即时生效：语言
         if (res.ui?.language && res.ui.language !== i18n.language) {
           i18n.changeLanguage(res.ui.language);
@@ -63,6 +72,7 @@ export default function Preferences() {
         document.documentElement.classList.toggle('dark', res.ui.theme === 'dark' || res.ui.theme === 'system' && (window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false));
         window.dispatchEvent(new CustomEvent('studio.settings.changed', { detail: res }));
         setSaved(true);
+        setServiceRefreshKey(value=>value+1);
         setTimeout(() => setSaved(false), 2000);
       })
       .catch((e) => setError(formatApiError(e)))
@@ -77,7 +87,7 @@ export default function Preferences() {
     );
   }
 
-  return <div data-testid="settings-page"><SettingsSections sections={appearance ? [{ id: 'preferences-appearance', label: t('settings.ui') }, { id: 'preferences-service', label: t('settings.server') }] : [{ id: 'preferences-storage', label: t('settings.paths') }]}>
+  return <div data-testid="settings-page"><SettingsSections sections={appearance ? [{ id: 'preferences-appearance', label: t('settings.ui') }, { id: 'preferences-service', label: t('settings.server') }, { id: 'preferences-network', label: text('网络代理', 'Network proxy') }] : [{ id: 'preferences-storage', label: t('settings.paths') }]}>
     {error && <div role="alert" className="settings-alert">{error}</div>}
     <fieldset disabled={saving} aria-busy={saving} className="contents">
     {!appearance ? <section id="preferences-storage" data-settings-section tabIndex={-1} className="settings-section">
@@ -102,15 +112,15 @@ export default function Preferences() {
         <div className="settings-field"><label htmlFor="preferences-theme">{t('settings.theme')}</label><div className="settings-field-control"><StudioSelect disabled={saving} id="preferences-theme" aria-label={t('settings.theme')} value={settings.ui.theme} onValueChange={value => update(s => ({...s,ui:{...s.ui,theme:value as SettingsType['ui']['theme']}}))} options={[{value:'system',label:t('settings.themeSystem')},{value:'light',label:t('settings.themeLight')},{value:'dark',label:t('settings.themeDark')}]} data-testid="settings-theme"/></div></div>
       </section>
       <section id="preferences-service" data-settings-section tabIndex={-1} className="settings-section">
-        <div className="settings-section-heading"><div><h2>{t('settings.server')}</h2><p className="settings-note">{t('settings.serverNote')}</p></div></div>
+        <div className="settings-section-heading"><div><h2>{t('settings.server')}</h2><p className="settings-note">{t('settings.serverNote')}</p></div><span className="settings-service-refresh" ref={setServiceRefreshTarget}/></div>
         <div className="settings-field"><span className="settings-field-label">{t('settings.connectedService', '当前连接')}</span><div className="settings-field-control py-1.5 font-mono break-all">{window.location.origin}</div></div>
         <ServiceInfo />
-        <ServiceControls key={`${saved}`}/>
         <div className="settings-field"><label htmlFor="preferences-host">{t('settings.host')}</label><div className="settings-field-control"><input id="preferences-host" type="text" aria-label={t('settings.host')} value={settings.server.host} onChange={event => update(s => ({ ...s, server: { ...s.server, host: event.target.value } }))} className="settings-input font-mono" /></div></div>
         <div className="settings-field"><label htmlFor="preferences-port">{t('settings.port')}</label><div className="settings-field-control"><input id="preferences-port" type="number" min={1} max={65535} aria-label={t('settings.port')} value={settings.server.port} onChange={event => update(s => ({ ...s, server: { ...s.server, port: Number(event.target.value) } }))} className="settings-input font-mono" /></div></div>
       </section>
+      <NetworkPreferences value={settings.network ?? defaultNetworkSettings} password={proxyPassword} disabled={saving} onChange={network => update(s => ({ ...s, network }))} onPasswordChange={value => { if (!savingRef.current) { setProxyPassword(value); setSaved(false); } }}/>
     </>}
     </fieldset>
-    <div className="settings-save"><button onClick={handleSave} disabled={saving} className="settings-action" data-testid="settings-save-btn">{saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}<span>{saved ? t('settings.saved') : saving ? t('settings.saving') : t('settings.save')}</span></button></div>
+    <div className="settings-save">{appearance && <ServiceControls secondary disabled={saving} refreshTarget={serviceRefreshTarget} refreshKey={serviceRefreshKey}/>}<button onClick={handleSave} disabled={saving} className="settings-action" data-testid="settings-save-btn">{saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}<span>{saved ? t('settings.saved') : saving ? t('settings.saving') : t('settings.save')}</span></button></div>
   </SettingsSections></div>;
 }

@@ -5,6 +5,7 @@ stride 16). The transformer packs only the spatial axes and receives unit flow
 time. Editing/reference images and distilled Klein/KV models are not supported.
 """
 
+import sys
 from pathlib import Path
 
 import torch
@@ -37,6 +38,46 @@ from .loading import (
     transformer_config,
 )
 from .text import Flux2Text
+
+
+def _set_attention_backend(model, attention, device):
+    backend = {"auto": "native", "sdpa": "native", "flash_attn": "flash", "xformers": "xformers"}[attention]
+    external = attention in {"flash_attn", "xformers"}
+    label = "FlashAttention" if attention == "flash_attn" else "xFormers"
+    if external and torch.device(device).type != "cuda":
+        raise ValueError(f"FLUX.2 Klein {label} requires a CUDA / HIP GPU. Select SDPA for this device.")
+    try:
+        model.set_attention_backend(backend)
+    except (ImportError, OSError, RuntimeError) as error:
+        if not external:
+            raise
+        if getattr(torch.version, "hip", None):
+            interface = sys.modules.get("flash_attn.flash_attn_interface")
+            missing_flash_interface = (
+                attention == "flash_attn"
+                and interface is not None
+                and any(
+                    not callable(getattr(interface, name, None))
+                    for name in ("_wrapped_flash_attn_forward", "_wrapped_flash_attn_backward")
+                )
+            )
+            reason = (
+                "缺少 Diffusers 所需的 FlashAttention 接口"
+                if missing_flash_interface
+                else "未满足 Diffusers 的接口或运行时要求"
+            )
+            message = (
+                f"FLUX.2 Klein 无法启用当前 DTK / HIP {label} 扩展：{reason}。"
+                "请将“注意力后端”改为“SDPA”；如需使用该扩展，请选择与 DTK、PyTorch 和 Diffusers "
+                "配套并经过验证的厂商构建。常规内核检测通过不代表 Klein 所需接口可用。"
+            )
+        else:
+            message = (
+                f"FLUX.2 Klein cannot enable {label} in the current environment. "
+                "Select SDPA in Attention backend, or use an extension compatible with the current "
+                "PyTorch and Diffusers versions. See the original exception for details."
+            )
+        raise RuntimeError(message) from error
 
 
 def image_ids(x):
@@ -162,6 +203,9 @@ class Flux2Family(ModelFamily):
 
         with torch.device("meta"):
             backbone = Flux2Transformer2DModel.from_config(config)
+        # Reject an unavailable explicit backend before building text/latent
+        # caches or allocating the full transformer weights on the GPU.
+        _set_attention_backend(backbone, cfg.attention, device)
         return LoadedModel(
             backbone,
             text,
@@ -213,13 +257,7 @@ class Flux2Family(ModelFamily):
         )
         if loaded.extra["checkpointing"]:
             model.enable_gradient_checkpointing()
-        attention = loaded.extra["attention"]
-        backend = {"auto": "native", "sdpa": "native", "flash_attn": "flash", "xformers": "xformers"}[
-            attention
-        ]
-        if attention in {"flash_attn", "xformers"} and loaded.device.type != "cuda":
-            raise ValueError(f"FLUX.2 {attention} requires CUDA")
-        model.set_attention_backend(backend)
+        _set_attention_backend(model, loaded.extra["attention"], loaded.device)
         loaded.backbone = model
         loaded.extra["materialized"] = True
 
@@ -276,7 +314,10 @@ class Flux2Family(ModelFamily):
         return Flux2Latent(path).fingerprint if path.exists() else self.spec.latent.fingerprint
 
     def meta_backbone(self, cfg):
-        from diffusers import Flux2Transformer2DModel
+        # Lazy library imports may initialize Dynamo with real scalar probes.
+        # Keep imports on CPU even when a caller wraps construction in meta.
+        with torch.device("cpu"):
+            from diffusers import Flux2Transformer2DModel
 
         requested = getattr(cfg, "flux2_variant", "auto")
         if requested == "dev":

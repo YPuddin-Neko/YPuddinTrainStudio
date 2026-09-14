@@ -6,7 +6,16 @@ import os
 import sys
 from pathlib import Path
 
-PROFILES = {"legacy", "windows-cuda", "linux-cuda", "macos-mps", "windows-cpu", "linux-cpu", "macos-cpu"}
+PROFILES = {
+    "legacy",
+    "windows-cuda",
+    "linux-cuda",
+    "linux-dtk",
+    "macos-mps",
+    "windows-cpu",
+    "linux-cpu",
+    "macos-cpu",
+}
 
 
 def current_profile() -> str:

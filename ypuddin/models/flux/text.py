@@ -10,6 +10,7 @@ from torch import Tensor
 
 from ypuddin.models.base import TextCond, TextPipeline
 from ypuddin.models.fingerprints import content_fingerprint
+from ypuddin.models.memory import release_model_memory
 
 from .loading import ASSETS, component_config, config_file, load_component
 
@@ -107,6 +108,7 @@ class FluxText(TextPipeline):
             model.to(self.device)
 
     def unload(self):
+        if not self.models:
+            return
         self.models.clear()
-        if self.device.type == "cuda":
-            torch.cuda.empty_cache()
+        release_model_memory(self.device)

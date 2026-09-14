@@ -8,7 +8,9 @@ import json
 import math
 import os
 import plistlib
+import re
 import shutil
+import stat
 import subprocess
 import sys
 import threading
@@ -21,12 +23,127 @@ from xml.parsers.expat import ExpatError
 import psutil
 import torch
 
+from ypuddin.runtime_profiles import current_profile
+
 _smi_lock = threading.Lock()
 _smi_cache: tuple[float, list[dict[str, Any]]] = (0, [])
 _apple_gpu_lock = threading.Lock()
 _apple_gpu_cache: tuple[float, float | None] | None = None
 _apple_sensors_lock = threading.Lock()
 _apple_sensors_cache: tuple[float, dict[str, Any]] | None = None
+_hip_sensors_lock = threading.Lock()
+_hip_sensors_cache: tuple[float, tuple, list[dict[str, Any]]] | None = None
+_DRM_SYSFS = Path("/sys/class/drm")
+_DRM_DEVICES = Path("/dev/dri")
+
+
+def _sysfs_text(path: Path) -> str:
+    try:
+        with path.open(encoding="ascii") as stream:
+            return stream.read(128).strip()
+    except (OSError, UnicodeError):
+        return ""
+
+
+def _hip_unique_id(value: Any) -> str | None:
+    """DTK encodes its 64-bit sysfs unique_id as 16 ASCII bytes in Torch's UUID."""
+    raw = str(value or "").lower().removeprefix("gpu-").removeprefix("0x")
+    if re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", raw):
+        try:
+            raw = bytes.fromhex(raw.replace("-", "")).decode("ascii").lower()
+        except UnicodeError:
+            return None
+    return raw if re.fullmatch(r"[0-9a-f]{16}", raw) and int(raw, 16) else None
+
+
+def _pci_address(value: Any) -> str | None:
+    raw = str(value or "").lower()
+    return raw if re.fullmatch(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]", raw) else None
+
+
+def _drm_accessible(path: Path) -> bool:
+    try:
+        if not stat.S_ISCHR(path.stat().st_mode):
+            return False
+        # Existence/mode bits alone do not enforce shared-node device cgroups.
+        # Opening a read-only fd checks actual access without a driver ioctl.
+        fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC)
+        os.close(fd)
+        return True
+    except OSError:
+        return False
+
+
+def _hip_sensor_reading(device: Path) -> dict[str, Any]:
+    def number(path: Path, scale: float = 1, maximum: float = math.inf):
+        value = _number(_sysfs_text(path))
+        return value / scale if value is not None and value / scale <= maximum else None
+
+    reading: dict[str, Any] = {"util_pct": number(device / "gpu_busy_percent", maximum=100)}
+    total = number(device / "mem_info_vram_total", 2**20)
+    used = number(device / "mem_info_vram_used", 2**20)
+    if total is not None and total > 0 and used is not None and used <= total:
+        reading.update(mem_total_mb=round(total), mem_used_mb=round(used), mem_free_mb=round(total - used))
+    for sensor in sorted((device / "hwmon").glob("hwmon*"))[:16]:
+        if _sysfs_text(sensor / "name") not in ("hycu", "amdgpu"):
+            continue
+        # Both drivers expose package power in microwatts and edge temperature
+        # in millidegrees C. Other power channels are components, not extra GPUs.
+        reading["power_w"] = number(sensor / "power1_average", 1e6)
+        reading["power_limit_w"] = number(sensor / "power1_cap", 1e6)
+        # Older amdgpu hwmon implementations omit the optional edge label.
+        if _sysfs_text(sensor / "temp1_label") in ("", "edge"):
+            temperature = number(sensor / "temp1_input", 1e3, 150)
+            reading["temp_c"] = temperature if temperature is not None and temperature > 0 else None
+        if reading.get("power_w") is not None:
+            reading.update(power_source="hwmon", power_estimated=False)
+        if reading.get("temp_c") is not None:
+            reading["temperature_source"] = "hwmon-edge"
+        break
+    return {key: value for key, value in reading.items() if value is not None}
+
+
+def _hip_sysfs_metrics(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Read only allocated DRM nodes, then join to Torch-visible identities.
+
+    DRM card numbers, HIP ordinals and SMI indices differ on shared nodes. Never
+    join by index/name or enumerate the host's other GPU sensor readings. Cache
+    successes and failures for two seconds; masks/order are part of the key.
+    """
+    if sys.platform != "linux":
+        return [{} for _ in entries]
+    global _hip_sensors_cache
+    key = tuple((entry.get("uuid"), entry.get("pci_bus_id")) for entry in entries)
+    with _hip_sensors_lock:
+        if (
+            _hip_sensors_cache is not None
+            and _hip_sensors_cache[1] == key
+            and time.monotonic() - _hip_sensors_cache[0] < 2
+        ):
+            return [dict(item) for item in _hip_sensors_cache[2]]
+        devices = {}
+        try:
+            for node in sorted(_DRM_DEVICES.iterdir())[:256]:
+                if not re.fullmatch(r"(?:card\d+|renderD\d+)", node.name) or not _drm_accessible(node):
+                    continue
+                device = (_DRM_SYSFS / node.name / "device").resolve()
+                if not _pci_address(device.name) or _sysfs_text(device / "vendor") not in (
+                    "0x1d94",
+                    "0x1002",
+                ):
+                    continue
+                devices[device] = _hip_unique_id(_sysfs_text(device / "unique_id"))
+        except OSError:
+            pass
+        rows = []
+        for entry in entries:
+            identity = _hip_unique_id(entry.get("uuid"))
+            matches = [path for path, unique_id in devices.items() if identity and identity == unique_id]
+            if not matches and (pci := _pci_address(entry.get("pci_bus_id"))):
+                matches = [path for path in devices if path.name == pci]
+            rows.append(_hip_sensor_reading(matches[0]) if len(matches) == 1 else {})
+        _hip_sensors_cache = (time.monotonic(), key, rows)
+        return [dict(item) for item in rows]
 
 
 def _apple_gpu_sensors() -> dict[str, Any]:
@@ -280,13 +397,14 @@ def _apple_name() -> str:
 
 def gpu_info(*, include_unavailable: bool = False, system_memory: Any | None = None) -> list[dict[str, Any]]:
     """Read accelerators, optionally reusing the caller's system-memory snapshot for MPS."""
+    hip = getattr(torch.version, "hip", None)
     if torch.cuda.is_available():
         out = []
         for i in range(torch.cuda.device_count()):
             props = torch.cuda.get_device_properties(i)
             entry: dict[str, Any] = {
                 "index": i,
-                "kind": "cuda",
+                "kind": ("dtk" if current_profile() == "linux-dtk" else "rocm") if hip else "cuda",
                 "device": f"cuda:{i}",
                 "name": props.name,
                 "mem_total_mb": round(props.total_memory / 2**20),
@@ -297,14 +415,33 @@ def gpu_info(*, include_unavailable: bool = False, system_memory: Any | None = N
                 "power_limit_w": None,
                 "uuid": str(props.uuid) if getattr(props, "uuid", None) else None,
                 "cuda_available": True,
+                "hip_runtime": hip,
                 "telemetry_source": "torch",
             }
+            if hip and (pci := _pci_address(getattr(props, "pci_bus_id", None))):
+                entry["pci_bus_id"] = pci
             try:
                 free, total = torch.cuda.mem_get_info(i)
                 entry.update(mem_used_mb=round((total - free) / 2**20), mem_free_mb=round(free / 2**20))
             except RuntimeError:
                 pass
             out.append(entry)
+        if hip:
+            # HIP deliberately reuses torch.cuda. NVIDIA telemetry APIs must never
+            # be applied to these local indices, even if the machine also has NVIDIA cards.
+            for entry, reading in zip(out, _hip_sysfs_metrics(out), strict=True):
+                # Scheduling needs HIP's allocatable memory, which can exclude
+                # runtime reservations absent from the driver's used-VRAM counter.
+                if entry.get("mem_free_mb") is not None:
+                    reading.pop("mem_free_mb", None)
+                entry.update(reading)
+                entry["telemetry_source"] = "torch-hip+sysfs" if reading else "torch-hip"
+                entry["telemetry_note"] = (
+                    "hip_driver_metrics_unavailable"
+                    if any(entry[key] is None for key in ("util_pct", "power_w", "temp_c"))
+                    else None
+                )
+            return out
         _nvml_metrics(out)
         fallback = (
             _nvidia_smi()
@@ -365,7 +502,7 @@ def gpu_info(*, include_unavailable: bool = False, system_memory: Any | None = N
                 "telemetry_note": "mps_power_unavailable" if sensors["power_w"] is None else None,
             }
         ]
-    if include_unavailable:
+    if include_unavailable and not hip:
         return [
             {
                 **g,

@@ -9,6 +9,7 @@
 | Windows + NVIDIA | `studio-windows-cuda.bat` |
 | Apple Silicon Mac | `studio-macos.command` |
 | Linux + NVIDIA | `studio-linux-cuda.sh` |
+| Linux + 海光 DTK | `studio-linux-dtk.sh`，先准备匹配厂商运行时的原生包 |
 | CPU 机器 | Windows 用 `studio-cpu.bat`，Linux 用 `studio-cpu.sh` |
 | 自动检测或旧部署 | 原来的 `studio.bat` / `studio.sh` 继续可用 |
 
@@ -19,6 +20,7 @@
   environment/profiles/
     windows-cuda/venv/
     linux-cuda/venv/
+    linux-dtk/venv/
     macos-mps/venv/
     windows-cpu/venv/
     linux-cpu/venv/
@@ -39,7 +41,7 @@
 
 各平台可以共享同一份项目数据，但同一数据根同时只启动一个服务。切换平台先停止原服务，再运行对应入口；共享数据不代表共享依赖。
 
-海光 BWGPU / DTK 当前仅保留“待接入”能力状态，不提供安装脚本、下载或多卡训练可用承诺。后续拿到设备后再验证厂商运行时与分布式训练链路。
+海光 BWGPU / DTK 使用单独的 `linux-dtk` 环境。启动入口仅使用显式指定的厂商 wheel 集合或已准备的独立厂商环境，绝不回退安装普通 CUDA / CPU Torch。运行时目录通过 `DTK_ROOT` 指定，仅设置子进程库搜索路径，不安装驱动或修改系统库配置。详见 [DTK 环境](RUNTIME_DTK.md)；启动入口可用不等于已完成正式大模型、多卡训练验收。
 
 macOS 的 PyTorch 安装包本身带有 MPS 支持，所以它的下载源是 PyPI，不是 CUDA wheel 源。CUDA 是 NVIDIA 的计算后端；NCCL 用于 NVIDIA GPU 之间通信。二者在 Mac 上不适用，不表示环境损坏。是否支持单任务多卡训练，由训练器自己的执行能力决定，不能只看 `torch.distributed` 是否存在。
 

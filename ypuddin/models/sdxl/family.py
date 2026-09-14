@@ -270,7 +270,9 @@ class SDXLFamily(ModelFamily):
         return SDXLLatent(path).fingerprint
 
     def meta_backbone(self, cfg: ModelConfig) -> nn.Module:
-        from diffusers import UNet2DConditionModel
+        # Import-time library probes require real CPU scalars, not meta tensors.
+        with torch.device("cpu"):
+            from diffusers import UNet2DConditionModel
 
         path = component_path(cfg.dit_path or ".", "unet")
         return UNet2DConditionModel.from_config(component_config(path, "unet"))

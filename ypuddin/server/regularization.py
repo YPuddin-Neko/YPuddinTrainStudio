@@ -217,6 +217,14 @@ class RegularizationManager:
             self.c.db.update("regularization_operations", oid, fields)
         self.c.bus.publish("regularization.changed", self.get(oid))
 
+    def plan(self, pid, vid, request):
+        from .regularization_plan import training_plan
+        from .routes_work import get_project_config
+
+        if request.source != "ai" or request.prompt_source != "training_tags":
+            raise ApiError("请先选择按训练标签生成", status=422, code="regularization.source")
+        return training_plan(self.c, pid, vid, request, get_project_config(pid, self.c, vid))[0]
+
     def start(self, pid, vid, request):
         from .routes_work import get_project_config
 
@@ -231,7 +239,9 @@ class RegularizationManager:
             for line in prompts
         ]
         prompts = [line for line in prompts if line]
-        if not prompts:
+        if request.prompt_source == "training_tags" and request.source != "ai":
+            raise ApiError("训练标签逐图生成仅适用于本地底模", status=422, code="regularization.source")
+        if not prompts and request.prompt_source == "manual":
             raise ApiError(
                 "Enter a non-empty class prompt or search query", status=422, code="regularization.prompt"
             )
@@ -295,6 +305,25 @@ class RegularizationManager:
                     "prompts": prompts,
                     "ownership_token": uuid.uuid4().hex,
                 }
+                if request.prompt_source == "training_tags":
+                    from .regularization_plan import training_plan
+
+                    plan, entries = training_plan(self.c, pid, version["id"], request, config)
+                    if request.plan_signature and request.plan_signature != plan["signature"]:
+                        raise ApiError(
+                            "训练来源或已有正则图已变化，请重新预览计划",
+                            status=409,
+                            code="regularization.plan_stale",
+                        )
+                    if not entries:
+                        raise ApiError(
+                            "当前范围没有待生成图片，请检查已有来源、标签与排除词",
+                            status=422,
+                            code="regularization.empty_plan",
+                        )
+                    payload.update(
+                        prompts=[entry["prompt"] for entry in entries], entries=entries, count=len(entries)
+                    )
                 if request.source == "ai":
                     from ypuddin.models import get_family
 
@@ -311,7 +340,13 @@ class RegularizationManager:
                             status=422,
                             code="regularization.dimensions",
                         )
-                    for field in ("dit_path", "text_encoder_path", "text_encoder_2_path", "vae_path", "tokenizer_path"):
+                    for field in (
+                        "dit_path",
+                        "text_encoder_path",
+                        "text_encoder_2_path",
+                        "vae_path",
+                        "tokenizer_path",
+                    ):
                         path = getattr(model, field)
                         if path and not self.c.is_allowed(Path(path)):
                             raise ApiError(
@@ -336,7 +371,7 @@ class RegularizationManager:
                         "source": request.source,
                         "status": "queued",
                         "phase": "queued",
-                        "total": request.count,
+                        "total": payload["count"],
                         "request_json": json.dumps(payload),
                         "created_at": now(),
                     },
@@ -612,10 +647,12 @@ class RegularizationManager:
                 self.processes.pop(oid, None)
 
     def _open(self, url, source, *, media=False, headers=None):
+        from .network import ProxyPolicy
+
         request = urllib.request.Request(
             url, headers={"User-Agent": "YPuddinTrainStudio/regularization", **(headers or {})}
         )
-        opener = self.opener or urllib.request.build_opener(_Redirect(source, media))
+        opener = self.opener or ProxyPolicy.from_context(self.c).opener(_Redirect(source, media))
         return opener.open(request, timeout=15)
 
     def _collect(self, oid, payload, credentials, output, cancelled):

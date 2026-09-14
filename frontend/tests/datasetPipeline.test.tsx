@@ -29,6 +29,70 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 describe('dataset pipeline', () => {
+  it('shows Anima field previews without writing captions and navigates to the existing editor', async () => {
+    state.inspection = {...state.inspection!, caption_profile:'anima', images:[{
+      ...image,rel_path:'a.png',caption:'Some_Artist, Blue_Hair',
+      issues:[{severity:'warning',code:'anima_artist_prefix',message:'Anima recommends @ before an artist name'}],
+      caption_format:{profile:'anima',suggestions:[
+        {path:['fixed','artist'],role:'artist',before:'Some_Artist',after:'@some artist'},
+        {path:['ai_output','tags'],role:'tags',before:['Blue_Hair','score_7','MY_Trigger'],after:['blue hair','score_7','MY_Trigger']},
+      ]},
+    }]};
+    const original=structuredClone(state);
+    show(); fireEvent.click(screen.getByRole('button',{name:/检查与筛选/}));
+    await screen.findByText('Anima 标签格式建议 · 1 张可预览');
+    fireEvent.click(screen.getByText('Anima 标签格式建议 · 1 张可预览'));
+    expect(screen.getByText(/原文件未修改/)).toBeInTheDocument();
+    expect(screen.getByText('@some artist')).toBeInTheDocument();
+    expect(screen.getByText(/自然语言可以与标签混排/)).toBeInTheDocument();
+    expect(screen.getByRole('link',{name:'查看模型作者的标签指南'})).toHaveAttribute('href','https://huggingface.co/circlestone-labs/Anima#prompting');
+    expect(screen.getByText('画师名前建议加 @')).toBeInTheDocument();
+    expect(state).toEqual(original);
+    expect(submitted).toEqual([]);
+    fireEvent.click(screen.getByRole('button',{name:'打开标签编辑'}));
+    expect(screen.getByTestId('pipeline-location')).toHaveTextContent('data_step=captions');
+    expect(submitted).toEqual([]);
+  });
+
+  it('does not apply Anima advice to other model families or old reports', async () => {
+    show(); fireEvent.click(screen.getByRole('button',{name:/检查与筛选/}));
+    await screen.findByRole('checkbox',{name:'选择 a.png'});
+    expect(screen.queryByText(/Anima 标签格式建议/)).not.toBeInTheDocument();
+  });
+
+  it('separates transparent pixels from fully opaque alpha channels and only filters on request', async () => {
+    state.inspection = {...state.inspection!, transparent_images:2, alpha_images:3, errors:0, warnings:2, images:[
+      {...image,rel_path:'semi.png',has_alpha:true,has_transparency:true,issues:[{severity:'warning',code:'transparent_image',message:'Transparent pixels'}]},
+      {...image,rel_path:'palette.png',has_alpha:true,has_transparency:true,issues:[{severity:'warning',code:'transparent_image',message:'Transparent pixels'}]},
+      {...image,rel_path:'opaque.png',has_alpha:true,has_transparency:false,issues:[]},
+      {...image,rel_path:'rgb.png',has_alpha:false,has_transparency:false,issues:[]},
+    ]};
+    show(); fireEvent.click(screen.getByRole('button',{name:/检查与筛选/}));
+    await screen.findByRole('checkbox',{name:'选择 semi.png'});
+    expect(screen.getByText('2 张含透明像素')).toBeInTheDocument();
+    expect(screen.getByText('3 张带透明通道')).toBeInTheDocument();
+    expect(screen.getAllByText('含透明或半透明像素')).toHaveLength(2);
+    expect(screen.getByText(/透明通道全部不透明/)).toBeInTheDocument();
+    expect(screen.getByText(/含透明像素仅作提示，可继续训练/)).toBeInTheDocument();
+    const filter = screen.getByRole('combobox',{name:'显示'});
+    fireEvent.click(filter);
+    fireEvent.click(screen.getByRole('option',{name:'含透明像素'}));
+    expect(screen.getByRole('checkbox',{name:'选择 palette.png'})).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox',{name:'选择 opaque.png'})).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox',{name:'选择 rgb.png'})).not.toBeInTheDocument();
+    fireEvent.click(filter);
+    fireEvent.click(screen.getByRole('option',{name:'带透明通道（含全不透明）'}));
+    expect(screen.getByRole('checkbox',{name:'选择 opaque.png'})).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox',{name:'选择 rgb.png'})).not.toBeInTheDocument();
+    expect(submitted).toEqual([]);
+  });
+
+  it('does not label an older inspection as having zero transparent images', async () => {
+    show(); fireEvent.click(screen.getByRole('button',{name:/检查与筛选/}));
+    await screen.findByRole('checkbox',{name:'选择 a.png'});
+    expect(screen.getByText('这份检查结果尚未包含透明像素检测，重新检查可补充。')).toBeInTheDocument();
+    expect(screen.queryByText('0 张含透明像素')).not.toBeInTheDocument();
+  });
   it('persists the selected stage in URL and per-version memory with browser back support', async()=>{
     const first=show();
     fireEvent.click(screen.getByRole('button',{name:/涂抹与遮罩/}));

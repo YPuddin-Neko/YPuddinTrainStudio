@@ -132,8 +132,8 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
           <button type="button" disabled={locked} onClick={() => folderInput.current?.click()} className="project-import-button project-import-primary"><FolderOpen size={14}/>{text('选择文件夹', 'Choose folder')}</button>
           <button type="button" disabled={locked} onClick={() => fileInput.current?.click()} className="project-import-button">{text('选择文件 / ZIP', 'Choose files / ZIP')}</button>
         </div>
-        <input ref={fileInput} className="sr-only" type="file" multiple accept="image/*,.txt,.json,.mask,.zip" aria-label={text('选择训练文件', 'Choose training files')} disabled={locked} onChange={event => chooseFiles(Array.from(event.target.files || []))}/>
-        <input ref={folderInput} className="sr-only" type="file" multiple {...{ webkitdirectory: '' }} aria-label={text('选择训练文件夹', 'Choose training folder')} disabled={locked} onChange={event => chooseFiles(Array.from(event.target.files || []))}/>
+        <input ref={fileInput} hidden type="file" multiple accept="image/*,.txt,.json,.mask,.zip" aria-label={text('选择训练文件', 'Choose training files')} disabled={locked} onChange={event => chooseFiles(Array.from(event.target.files || []))}/>
+        <input ref={folderInput} hidden type="file" multiple {...{ webkitdirectory: '' }} aria-label={text('选择训练文件夹', 'Choose training folder')} disabled={locked} onChange={event => chooseFiles(Array.from(event.target.files || []))}/>
       </div>
       <p className="project-import-limit">{text('同名 TXT / JSON 标签和遮罩一起导入 · 单次最多 2 GiB、5,000 个文件', 'Matching TXT / JSON captions and masks are included · Up to 2 GiB and 5,000 files per upload')}</p>
       {files.length > 0 && <div className="project-import-selected"><div className="project-import-selection-summary"><span>{text(`已选 ${files.length} 个文件`, `${files.length} files selected`)} · {formatBytes(files.reduce((total, item) => total + item.file.size, 0))}</span><button type="button" disabled={locked} onClick={() => selectFiles([])}>{text('清空选择', 'Clear selection')}</button></div>

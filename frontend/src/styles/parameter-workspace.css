@@ -1,18 +1,16 @@
 /* A parameter workspace has fixed rows and one form scroll surface. Nothing
    scrolls behind its header or launch bar. Keep this shared by both editors. */
-.app-shell .app-page-viewport:has(> .app-page-frame > .parameter-workspace) { overflow: hidden; padding: 0; scrollbar-gutter: auto; }
-.app-shell .app-page-frame:has(> .parameter-workspace) { height: 100%; min-height: 0; max-width: none; }
-.parameter-workspace { height: 100%; min-height: 0; width: 100%; display: flex; flex-direction: column; gap: 0; margin: 0; overflow: hidden; }
-.parameter-workspace-header { flex: 0 0 auto; padding: 16px 20px 12px; background: var(--studio-canvas); border-bottom: 1px solid var(--studio-line); z-index: 2; }
+.app-shell .app-page-viewport:has(> .app-page-frame > .parameter-workspace) { overflow: hidden; scrollbar-gutter: stable; }
+.app-shell .app-page-frame:has(> .parameter-workspace) { height: 100%; min-height: 0; max-width: var(--studio-page-width, 1520px); }
+.parameter-workspace { --parameter-content-width: var(--studio-page-width, 1520px); --parameter-page-gutter: 0px; --parameter-shell-gutter: max(var(--parameter-page-gutter), calc((100% - var(--parameter-content-width)) / 2 + var(--parameter-page-gutter))); height: 100%; min-height: 0; width: 100%; display: flex; flex-direction: column; gap: 0; margin: 0; overflow: hidden; }
+.parameter-workspace-header { flex: 0 0 auto; padding: 0 0 12px; background: var(--studio-canvas); border-bottom: 1px solid var(--studio-line); z-index: 2; }
 .parameter-workspace-header > .workspace-navigation { position: static; margin: 0 0 10px; padding: 0; box-shadow: none; border: 0; }
 .parameter-workspace-header .workspace-breadcrumb { font-size: 12px; }
-.parameter-workspace-header .workspace-heading-title h1 { font-size: 20px; }
 .parameter-workspace .parameter-workspace-header .training-toolbar,
 .parameter-workspace .parameter-workspace-header .presets-toolbar,
 .parameter-workspace .parameter-workspace-header .presets-form-toolbar { position: static; top: auto; margin: 0; border: 0; box-shadow: none; }
 .parameter-workspace .presets-toolbar::before, .parameter-workspace .presets-form-toolbar::before { display: none; }
-.parameter-workspace .parameter-workspace-header .config-tabs { position: static; margin: 8px 0 0; }
-.parameter-workspace-body { flex: 1 1 auto; min-height: 0; min-width: 0; display: grid; grid-template-columns: 176px minmax(0, 1fr); width: 100%; max-width: 1840px; margin-inline: auto; }
+.parameter-workspace-body { flex: 1 1 auto; min-height: 0; min-width: 0; display: grid; grid-template-columns: 176px minmax(0, 1fr); width: 100%; max-width: var(--parameter-content-width); margin-inline: auto; }
 .parameter-scroll-region { min-height: 0; min-width: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 20px; scroll-padding: 16px; }
 .parameter-scroll-region .config-field, .parameter-scroll-region [data-group] { scroll-margin: 16px; }
 .parameter-workspace .parameter-workspace-body > .training-inspector { position: static; min-height: 0; max-height: none; overflow: auto; margin: 20px 20px 20px 0; align-self: stretch; }
@@ -41,7 +39,8 @@
 @container training-workspace (min-width: 1320px) { .parameter-workspace-body { grid-template-columns: 184px minmax(0,1fr) 300px; } }
 @container training-workspace (max-width: 1319px) { .parameter-workspace-body > .training-inspector { display: none; }.parameter-workspace-body > .training-inspector.is-open { display: block; grid-column: 2; grid-row: 1; z-index: 3; background: var(--studio-panel); margin: 0; border-radius: 0; } }
 @media(max-width:900px) {
-  .parameter-workspace-header { padding: 12px 14px 10px; }
+  .parameter-workspace { --parameter-page-gutter: 0px; }
+  .parameter-workspace-header { padding-block: 0 10px; }
   .parameter-workspace-body { grid-template-columns: minmax(0,1fr); grid-template-rows: auto minmax(0,1fr); }
   .parameter-sections { overflow: visible; display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-right: 0; border-bottom: 1px solid var(--studio-line); }
   .parameter-sections-title { padding: 0; flex: 0 0 auto; }
@@ -58,16 +57,15 @@
   .training-studio.parameter-workspace .training-launch-bar .launch-name { width: 100%; grid-column: 1; grid-row: 2; order: initial; }
   .training-studio.parameter-workspace .training-launch-bar .launch-schedule { grid-column: 2; grid-row: 2; order: initial; }
   .training-studio.parameter-workspace .training-launch-bar .start-training { grid-column: 1/-1; width: 100%; margin: 0; }
-  .parameter-workspace-header .workspace-breadcrumb { display: none; }
 }
 
 .presets-page.parameter-workspace > .presets-editor { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; overflow: hidden; }
-.parameter-workspace .presets-form-toolbar { position: static; flex: 0 0 auto; top: auto; margin: 0; padding: 10px 20px; z-index: 2; }
+.parameter-workspace .presets-form-toolbar { position: static; flex: 0 0 auto; top: auto; margin: 0; padding: 10px var(--parameter-shell-gutter); z-index: 2; }
 .parameter-workspace .presets-page-heading { margin-bottom: 10px; }
 .parameter-workspace .presets-meta { margin-top: 0; }
 .parameter-workspace .presets-context { margin-bottom: 12px; }
 .parameter-workspace .presets-schema .config-field { scroll-margin-top: 16px; }
-@media(max-width:900px) { .parameter-workspace .presets-form-toolbar { padding: 8px 14px; } }
+@media(max-width:900px) { .parameter-workspace .presets-form-toolbar { padding-block: 8px; } }
 
 .parameter-sections { scrollbar-width: thin; scrollbar-color: var(--studio-line) transparent; }
 .parameter-sections::-webkit-scrollbar { width: 5px; }
@@ -87,14 +85,14 @@
 }
 
 .training-studio.parameter-workspace { gap: 0; }
-.app-shell .parameter-workspace .workspace-navigation.workspace-page-heading { min-height: 58px; padding: 0; margin: 0 0 8px; }
+.app-shell .parameter-workspace .workspace-navigation.workspace-page-heading { min-height: 76px; padding: 0 0 16px; margin: 0; }
 .parameter-workspace .launch-plan-toggle { display: flex; align-items: center; justify-content: center; flex: 0 0 auto; gap: 6px; padding: 8px 10px; border: 1px solid var(--studio-line); color: var(--studio-text); background: var(--studio-panel); font-variant-numeric: tabular-nums; }
 .parameter-workspace .launch-plan-toggle[aria-expanded=true] { color: var(--studio-accent); border-color: var(--studio-accent); }
 .parameter-workspace .readiness-item > button { height: auto; min-height: 40px; }
 @media(max-width:520px) {
   .training-studio.parameter-workspace .training-launch-bar .launch-status { grid-column: 1; }
   .parameter-workspace .launch-plan-toggle { grid-column: 2; grid-row: 1; }
-  .app-shell .parameter-workspace .workspace-navigation.workspace-page-heading { min-height: 34px; }
+  .app-shell .parameter-workspace .workspace-navigation.workspace-page-heading { min-height: 72px; padding-bottom: 12px; }
 }
 
 /* Both panes occupy the same grid cell on compact screens. Opening estimates
@@ -118,7 +116,34 @@
   .parameter-workspace-body > .parameter-scroll-region { grid-column: 1; grid-row: 2; }
   .parameter-workspace-body > .training-inspector.is-open { grid-column: 1; grid-row: 2; }
 }
-@media(max-width:520px) {
-  .training-studio.parameter-workspace .config-tabs { display: none; }
-  .parameter-workspace .presets-form-toolbar > [role=tablist] { display: none; }
+
+/* Header actions and the editor share the same centered content boundary. */
+.training-title-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 24px; margin-bottom: 0; }
+.parameter-workspace .training-title-actions > .workspace-navigation.workspace-page-heading { flex: 1 1 260px; min-width: 0; margin: 0; border: 0; position: static; box-shadow: none; }
+.training-studio.parameter-workspace .training-header-actions { flex: 0 1 auto; display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; position: relative; padding: 0; margin: 0; border: 0; background: transparent; gap: 8px; z-index: 4; }
+.training-header-actions .launch-status { flex: 0 1 auto; min-width: 0; }
+.training-studio.parameter-workspace .training-header-actions .launch-name { order: initial; flex: 0 1 150px; width: 150px; min-width: 100px; }
+.training-header-actions .launch-schedule { order: initial; }
+.training-studio.parameter-workspace .training-header-actions .start-training { margin: 0; }
+.parameter-workspace .training-header-actions .readiness-panel { top: calc(100% + 10px); bottom: auto; left: auto; right: 0; width: min(680px, calc(100cqw - 2 * var(--parameter-page-gutter))); max-height: min(60vh, 520px); border-radius: 8px; box-shadow: 0 8px 28px #0002; }
+.training-studio.parameter-workspace .training-header-actions .readiness-item > button { height: auto; min-height: 40px; }
+.parameter-workspace .readiness-heading { align-items: center; }
+.parameter-workspace .readiness-heading h2 { margin: 0; min-width: 0; line-height: 1.5; }
+.parameter-workspace .readiness-heading > button { flex: 0 0 auto; padding-inline: 8px; }
+.parameter-workspace .training-header-actions .launch-schedule > div { top: calc(100% + 10px); bottom: auto; box-shadow: 0 8px 25px #0002; }
+.parameter-step-complete { color: #15803d; flex: 0 0 auto; }
+.dark .parameter-step-complete { color: #4ade80; }
+.parameter-sections li { position: relative; }
+.parameter-sections button:focus-visible { outline: 2px solid var(--studio-accent); outline-offset: -2px; }
+.parameter-mode-toggle { height: 40px; }
+.parameter-mode-toggle button { height: 32px; line-height: 20px; }
+@container training-workspace (max-width: 1100px) {
+  .training-studio.parameter-workspace .training-header-actions { flex-basis: 100%; justify-content: flex-start; }
+  .training-header-actions .launch-status { margin-right: auto; }
+}
+@media (max-width: 520px) {
+  .training-studio.parameter-workspace .training-header-actions { display: flex; }
+  .training-header-actions .launch-status { flex-basis: 100%; }
+  .training-studio.parameter-workspace .training-header-actions .launch-name { flex: 1 1 100px; width: auto; }
+  .training-studio.parameter-workspace .training-header-actions .start-training { width: auto; min-width: 100px; }
 }

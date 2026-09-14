@@ -1,3 +1,4 @@
+import { StrictMode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from '../src/api/client';
@@ -13,6 +14,19 @@ afterEach(()=>{cleanup();vi.restoreAllMocks();vi.useRealTimers();});
 beforeEach(async()=>{await i18n.changeLanguage('zh-CN');});
 
 describe('isolated PyTorch environment controls',()=>{
+  it('does not show a stale abort error after StrictMode remounts the initial service probe',async()=>{
+    let calls=0;
+    vi.spyOn(apiClient,'get').mockImplementation(async(_url,options)=>{
+      calls+=1;
+      if(calls===1)return await new Promise((_resolve,reject)=>options?.signal?.addEventListener('abort',()=>reject(new DOMException('signal is aborted without reason','AbortError'))));
+      return runtime();
+    });
+    render(<StrictMode><ServiceControls/></StrictMode>);
+    await waitFor(()=>expect(screen.getByRole('button',{name:'重启服务'})).toBeEnabled());
+    expect(calls).toBe(2);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('reviews actual old/new framework versions before preparing the environment',async()=>{
     const data=snapshot();
     const get=vi.spyOn(apiClient,'get').mockImplementation(async()=>structuredClone(data));

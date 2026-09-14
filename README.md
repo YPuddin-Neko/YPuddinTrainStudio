@@ -4,7 +4,9 @@
 
 源码版本 **v0.5.9**，2026-09-13 新增模型接入说明见 [SDXL / FLUX 支持范围与验收](docs/MODEL_FAMILIES_2026-09-13.md)。SDXL 默认下载为光辉 Illustrious-XL v0.1，也可手选其他本地 SDXL base 模型，并明确选择 ε / v 预测。FLUX 仅保留 Klein 基础版 4B/9B；旧 FLUX.1 / dev 配置和数据仍保留，但不再提供新建或训练入口。完整目录与独立组件均按真实结构检查；Klein 蒸馏版和图像编辑模型不在本次接入范围。
 
-Anima、SDXL 光辉 v0.1、Klein base 4B、Krea2 Raw 已完成所列配置的 Windows 正式权重短训、保存、采样与复载；详情和失败边界见 [2026-09-14 Windows 验收](docs/WINDOWS_ACCEPTANCE_2026-09-14.md)。这些结果不代表长训收敛、同条件性能排名、完整 ComfyUI 画面或所有参数组合通过。Klein 9B 和 DDP 尚无对应正式验收，不能用 4B 单卡结果代替。
+Anima、SDXL 光辉 v0.1、Klein base 4B、Krea2 Raw 已完成所列配置的 Windows 正式权重短训、保存、采样与复载；详情和失败边界见 [2026-09-14 Windows 验收](docs/WINDOWS_ACCEPTANCE_2026-09-14.md)。这些结果不代表长训收敛、同条件性能排名、完整 ComfyUI 画面或所有参数组合通过。Klein 9B 尚无对应正式验收，不能用 4B 单卡结果代替。
+
+海光 Linux 已提供独立 DTK 启动入口。DTK 26.04 / 厂商 Torch 2.7.1 环境完成了 Krea2 Raw BF16、512 分辨率 LoKr 的单卡与双卡 DDP 训练验证，以及四个模型族的 20 项微型权重单卡测试；正式训练矩阵、精确恢复、安装流程和待完成项目见 [2026-09-14 DTK 验收](docs/DTK_ACCEPTANCE_2026-09-14.md)。微型权重测试不代表四个模型族的正式大模型均已验收，海光 DDP 结果也不代表 Windows DDP 通过。
 
 界面提供项目概览、独立版本、数据导入、标签与遮罩编辑、训练配置、任务指标和产物管理。最新 UI 流程见 [2026-09-13 工作区验收](docs/UI_WORKFLOWS_2026-09-13.md)；[训练流程、分桶与三个训练器的对比](docs/TRAINING_PARAMETERS.md)、[JSON 标签](docs/JSON_CAPTIONS.md)、[整图保留与原生分辨率](docs/native-resolution.md)有对应说明。Krea2 的加载、缓存和卸载流程见 [显存说明](docs/KREA2_MEMORY.md)。历史报告中的测试数量、服务路径和“未接入模型”仅代表当时状态。
 
@@ -31,7 +33,7 @@ HANDOVER.md       当前交接说明与验证边界
 studio.bat         # Windows
 ```
 
-首次部署按平台创建独立的 `environment/profiles/<平台>/venv`、选择 PyTorch 安装来源、构建前端并启动服务。已有根目录 `venv` 的旧部署继续使用原环境，不搬移或重建。明确选择平台可用 `studio-windows-cuda.bat`、`studio-linux-cuda.sh`、`studio-macos.command` 或 `studio-cpu.bat/.sh`；这些入口不共用依赖。默认地址为 `http://127.0.0.1:8765/`。前端构建需要 Node 20.19+ 或 22.12+；MPS 当前按 FP32 执行，内存预算按统一内存估算。目录、升级与切换边界见 [环境说明](docs/ENVIRONMENT_LIFECYCLE_2026-09-14.md)。
+首次部署按平台创建独立的 `environment/profiles/<平台>/venv`、选择 PyTorch 安装来源、构建前端并启动服务。已有根目录 `venv` 的旧部署继续使用原环境，不搬移或重建。明确选择平台可用 `studio-windows-cuda.bat`、`studio-linux-cuda.sh`、`studio-linux-dtk.sh`、`studio-macos.command` 或 `studio-cpu.bat/.sh`；这些入口不共用依赖。海光需要匹配的 DTK 用户态运行库与厂商 wheel，准备步骤见 [DTK 独立环境](docs/RUNTIME_DTK.md)；启动器不会安装系统驱动或用 CUDA 包代替。默认地址为 `http://127.0.0.1:8765/`。前端构建需要 Node 20.19+ 或 22.12+；MPS 当前按 FP32 执行，内存预算按统一内存估算。目录、升级与切换边界见 [环境说明](docs/ENVIRONMENT_LIFECYCLE_2026-09-14.md)。
 `./studio.sh doctor` 查看本机环境；`./studio.sh smoke --set model.dit_path=… --set model.text_encoder_path=… --set model.vae_path=…`
 用真实权重自检整条训练链路。完整说明（参数、手动安装、目录结构、常驻服务、远程访问、排障）见 [`docs/deploy.md`](docs/deploy.md)。
 

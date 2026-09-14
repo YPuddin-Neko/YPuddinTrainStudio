@@ -94,6 +94,8 @@ node_modules/
 
 # OS / editor
 .[Dd][Ss]_[Ss][Tt][Oo][Rr][Ee]
+._*
+__[Mm][Aa][Cc][Oo][Ss][Xx]
 [Tt][Hh][Uu][Mm][Bb][Ss].[Dd][Bb]
 [Dd][Ee][Ss][Kk][Tt][Oo][Pp].[Ii][Nn][Ii]
 .idea/

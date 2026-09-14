@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -54,6 +55,32 @@ const progressSnapshot = (id: string) => ({ id, phase: 'receiving', bytes_done: 
   files_done: 0, files_total: null, elapsed_seconds: 2, phase_elapsed_seconds: 2, bytes_per_second: 512 * 1024, eta_seconds: 2, error: null });
 
 describe('project import with browser folder collection and actual multipart requests', () => {
+  it('opens file and folder pickers from visible keyboard buttons without extra hidden tab stops', async () => {
+    const user = userEvent.setup();
+    show();
+    const files = screen.getByLabelText('选择训练文件');
+    const folder = screen.getByLabelText('选择训练文件夹');
+    expect(files).not.toBeVisible();
+    expect(folder).not.toBeVisible();
+    const openFiles = vi.spyOn(files, 'click').mockImplementation(() => {});
+    const openFolder = vi.spyOn(folder, 'click').mockImplementation(() => {});
+    const folderButton = screen.getByRole('button', {name:'选择文件夹'});
+    const fileButton = screen.getByRole('button', {name:'选择文件 / ZIP'});
+    expect(folderButton).toBeVisible();
+    expect(fileButton).toBeVisible();
+    folderButton.focus();
+    await user.keyboard('{Enter}');
+    expect(openFolder).toHaveBeenCalledOnce();
+    expect(folderButton).toHaveFocus();
+    await user.tab();
+    expect(fileButton).toHaveFocus();
+    await user.keyboard(' ');
+    expect(openFiles).toHaveBeenCalledOnce();
+    expect(fileButton).toHaveFocus();
+    await user.tab();
+    expect(screen.getByText('导入选项', {selector:'summary'})).toHaveFocus();
+  });
+
   it.each(['upload', 'path'])('imports via %s on LAN HTTP where crypto.randomUUID is unavailable', async mode => {
     const originalCrypto = globalThis.crypto;
     vi.stubGlobal('crypto', { getRandomValues: originalCrypto.getRandomValues.bind(originalCrypto) });

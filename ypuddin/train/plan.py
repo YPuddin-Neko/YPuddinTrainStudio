@@ -14,7 +14,7 @@ from torch import nn
 from ypuddin.adapters import inject
 from ypuddin.adapters.frozen import FrozenLinear
 from ypuddin.config import DatasetConfig, LoopConfig, TrainConfig, ValidationConfig
-from ypuddin.data import IndexDB
+from ypuddin.data import BucketBatchSampler, IndexDB
 from ypuddin.data.dataset import DataConfigError, item_geometry, prepare_data_layout
 from ypuddin.data.native import NativeBatchSampler, microbatch_indices, native_size
 from ypuddin.models import get_family
@@ -92,10 +92,37 @@ def _append_data_plan(
         }
     )
     if loop is not None:
-        steps_per_epoch = math.ceil(batches / loop.grad_accum) if batches else 0
+        per_rank_batches = batches // loop.gpu_count
+        steps_per_epoch = math.ceil(per_rank_batches / loop.grad_accum) if per_rank_batches else 0
         by_epochs = (loop.epochs or 10**9) * steps_per_epoch
         total_steps = min(by_epochs, loop.max_steps or 10**9) if steps_per_epoch else 0
         out.update(steps_per_epoch=steps_per_epoch, total_steps=total_steps, epochs=loop.epochs)
+        out["distributed"] = {
+            "world_size": loop.gpu_count,
+            "per_device_batch_size": ds.batch_size,
+            "effective_batch_size": ds.batch_size * loop.grad_accum * loop.gpu_count,
+            "batches_per_rank": per_rank_batches,
+            "tail_policy": "drop_incomplete_rank_group" if loop.gpu_count > 1 else "keep",
+            "dropped_samples": 0,
+        }
+        if loop.gpu_count > 1:
+            batch_plan = BucketBatchSampler(
+                [item.bucket.key for item in items], ds.batch_size, seed=seed or 0
+            ).plan()
+            usable = len(batch_plan) - len(batch_plan) % loop.gpu_count
+            dropped = sum(map(len, batch_plan[usable:]))
+            out["distributed"]["dropped_samples"] = dropped
+            if dropped:
+                out["warnings"].append(
+                    {
+                        "code": "distributed.tail",
+                        "msg": f"首轮有 {dropped} 张训练项因不足各卡同时处理一个批次而略过；每轮重新打乱，不复制图片补齐。",
+                    }
+                )
+            if per_rank_batches == 0:
+                out["errors"].append(
+                    {"loc": "loop.gpu_count", "msg": "分桶批次数少于卡数，请增加图片或降低每卡批量"}
+                )
     geometry = {}
     padded_images, cropped_images = set(), set()
     padding_pixels = total_pixels = 0

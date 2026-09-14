@@ -1251,7 +1251,7 @@ def _current_caption_path(
 
 
 def _dataset_image_items(c: ServiceContext, row: dict) -> list[dict]:
-    from ypuddin.data.caption_json import StructuredCaption, render, unique
+    from ypuddin.data.caption_json import StructuredCaption, load_caption_structure, render, unique
     from ypuddin.data.captions import read_training_caption
 
     root = Path(row["path"])
@@ -1266,11 +1266,15 @@ def _dataset_image_items(c: ServiceContext, row: dict) -> list[dict]:
         seen.add(r["path"])
         error = None
         caption_path = None
+        structure = None
         try:
             # Rediscover sidecars once per directory so additions/removals and auto
             # JSON preference are visible immediately, without a metadata rescan.
             caption_path = _current_caption_path(row, r, directory_cache)
-            raw = read_training_caption(caption_path)
+            structure = load_caption_structure(caption_path)
+            # Retain the source document for the read-only editor, but classify
+            # unsupported JSON exactly as training does instead of calling it empty.
+            raw = read_training_caption(caption_path, require_known_format=True)
             cap = raw.text() if isinstance(raw, StructuredCaption) else raw
             tokens = (
                 unique((raw.trigger, *raw.fixed, *raw.appearance, *raw.tags, *raw.environment))
@@ -1294,6 +1298,7 @@ def _dataset_image_items(c: ServiceContext, row: dict) -> list[dict]:
                 "caption": cap,
                 "caption_tags": editable,
                 "caption_description": description,
+                "caption_structure": structure,
                 "caption_format": caption_path.suffix.lower().lstrip(".") if caption_path else None,
                 "caption_error": error,
                 "caption_status": status,
@@ -1383,21 +1388,31 @@ def image_file(did: str, h: str, c: ServiceContext = Depends(ctx)) -> Response:
     return FileResponse(r["path"])
 
 
+class CaptionFieldEdit(BaseModel):
+    path: list[str] = Field(min_length=1)
+    value: str | list[str]
+
+
 class CaptionBody(BaseModel):
-    caption: str
+    caption: str | None = None
     description: str | None = None
+    caption_fields: list[CaptionFieldEdit] | None = None
+    caption_revision: str | None = None
 
 
 @router.get("/datasets/{did}/images/{h}/caption", response_model=m.Caption, response_model_exclude_unset=True)
 def get_caption(
     did: str, h: str, c: ServiceContext = Depends(ctx), rel_path: str | None = None
-) -> dict[str, str]:
+) -> dict[str, Any]:
     from ypuddin.data import read_caption
+    from ypuddin.data.caption_json import load_caption_structure
 
     row = _get_dataset(c, did)
     r = _record_by_hash(c, did, h, rel_path)
     try:
-        return {"caption": read_caption(_current_caption_path(row, r, {}), row["class_prompt"])}
+        path = _current_caption_path(row, r, {})
+        return {"caption": read_caption(path, row["class_prompt"]),
+                "caption_structure": load_caption_structure(path)}
     except (ValueError, OSError) as exc:
         raise ApiError(str(exc), code="dataset.caption_invalid", status=422) from exc
 
@@ -1405,10 +1420,13 @@ def get_caption(
 @router.put("/datasets/{did}/images/{h}/caption", response_model=m.Caption, response_model_exclude_unset=True)
 def put_caption(
     did: str, h: str, body: CaptionBody, c: ServiceContext = Depends(ctx), rel_path: str | None = None
-) -> dict[str, str]:
-    from ypuddin.data.captions import write_caption
+) -> dict[str, Any]:
+    from ypuddin.data.caption_json import CaptionConflictError, load_caption_structure
+    from ypuddin.data.captions import read_caption, write_caption
 
     row = _get_dataset(c, did)
+    if body.caption is None and body.description is None and body.caption_fields is None:
+        raise ApiError("caption, description or caption_fields is required", code="dataset.caption_invalid", status=422)
     with c.versions.mutation(row["project_id"], row["version_id"]):
         row = _get_dataset(c, did)
         r = _record_by_hash(c, did, h, rel_path)
@@ -1418,7 +1436,14 @@ def put_caption(
                 "separate descriptions require a JSON caption", code="dataset.caption_format", status=422
             )
         try:
-            write_caption(cap_path, body.caption, description=body.description)
+            write_caption(
+                cap_path, body.caption, description=body.description,
+                fields=[field.model_dump() for field in body.caption_fields]
+                if body.caption_fields is not None else None,
+                revision=body.caption_revision,
+            )
+        except CaptionConflictError as exc:
+            raise ApiError(str(exc), code="dataset.caption_conflict", status=409) from exc
         except (ValueError, OSError) as exc:
             raise ApiError(str(exc), code="dataset.caption_invalid", status=422) from exc
         if r["caption_path"] != str(cap_path):
@@ -1428,7 +1453,7 @@ def put_caption(
                     rec["caption_path"] = str(cap_path)
             _records_path(c, did).write_text(json.dumps(recs), encoding="utf-8")
         c.bus.publish("dataset.changed", {"dataset_id": did, "reason": "caption"})
-        return {"caption": body.caption.strip()}
+        return {"caption": read_caption(cap_path), "caption_structure": load_caption_structure(cap_path)}
 
 
 class TagBatch(BaseModel):
@@ -1685,6 +1710,10 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
             "sampling": {"output_dir": str(samples_dir)},
         },
     )
+    if body.type == "cache":
+        # Cache preparation has its own single-device worker, even when the
+        # project's following training run is configured for several GPUs.
+        config = deep_merge(config, {"loop": {"gpu_count": 1}})
     if body.project_id or not (config.get("dataset") or {}).get("cache_dir"):
         # a pre-cache job and the training jobs after it must hit the same cache
         config = deep_merge(config, {"dataset": {"cache_dir": str(c.cache_dir(body.project_id, vid))}})
@@ -1705,6 +1734,14 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
     from ypuddin.train.plan import plan
 
     devices = gpu_info()
+    from .supervisor import training_device_error
+
+    if error := training_device_error(cfg.loop.gpu_count, devices):
+        raise ApiError(
+            error,
+            code="config.invalid",
+            details={"errors": [{"loc": "loop.gpu_count", "msg": error}]},
+        )
     preflight = plan(
         cfg,
         gpu_total_mb=max((g["mem_total_mb"] for g in devices), default=None),

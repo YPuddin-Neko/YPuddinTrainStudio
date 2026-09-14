@@ -137,6 +137,11 @@ def generate(request: dict, output: Path, emit, cancelled) -> None:
                     "shift": shift,
                     "er_sde_order": sampling.er_sde_order,
                     "er_sde_s_noise": sampling.er_sde_s_noise,
+                    **(
+                        {"training_source": request["entries"][index]["training_source"]}
+                        if request.get("entries")
+                        else {}
+                    ),
                 }
             )
             loaded.latent.to("cpu")

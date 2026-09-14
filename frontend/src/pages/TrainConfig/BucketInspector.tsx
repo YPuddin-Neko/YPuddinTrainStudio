@@ -42,11 +42,17 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
         {!!plan.image_fit.items.length && <details><summary>{text('查看尺寸适配明细','Inspect image sizing')}</summary><div className="image-fit-details">{plan.image_fit.items.map((item,index)=><div key={`${item.path}/${item.width}/${item.height}/${index}`}><strong title={item.path}>{item.path.replace(/\\/g,'/').split('/').pop()}</strong><span>{item.source_width} × {item.source_height} → {item.resized_width} × {item.resized_height}</span><small>{text('训练画布','Training canvas')} {item.width} × {item.height} · {item.cropped_pixels ? text(`裁切 ${item.cropped_pixels} 像素`,`Crops ${item.cropped_pixels} pixels`) : text('无裁切','No cropping')}</small></div>)}{plan.image_fit.truncated && <p>{text('显示前 100 种图片与尺寸组合。','Showing the first 100 image-size pairs.')}</p>}</div></details>}
       </div>}
       <div className="estimate-block"><h4>{text('执行估算', 'Execution estimate')}</h4><dl>
+        {plan?.distributed && plan.distributed.world_size > 1 && <>
+          <div><dt>{text('训练显卡', 'Training GPUs')}</dt><dd>{plan.distributed.world_size}</dd></div>
+          <div><dt>{text('每卡批量', 'Batch per GPU')}</dt><dd>{plan.distributed.per_device_batch_size}</dd></div>
+          <div><dt>{text('有效批量上限', 'Maximum effective batch')}</dt><dd>{plan.distributed.effective_batch_size}</dd></div>
+          {plan.distributed.dropped_samples > 0 && <div><dt>{text('首轮末尾略过', 'First epoch tail skipped')}</dt><dd>{plan.distributed.dropped_samples} {text('张', 'images')}</dd></div>}
+        </>}
         {native && <><div><dt>{text('缩小的图片', 'Downscaled images')}</dt><dd>{native.downscaled}</dd></div><div><dt>{text('逻辑批次 / 轮', 'Logical batches / epoch')}</dt><dd>{native.logical_batches}</dd></div><div><dt>{text('分组前向 / 轮', 'Grouped forwards / epoch')}</dt><dd>{native.forward_groups ?? '—'}</dd></div></>}
         <div><dt>{text('每轮步数', 'Steps / epoch')}</dt><dd>{plan?.steps_per_epoch ?? '—'}</dd></div>
         <div><dt>{text('总训练步数', 'Total steps')}</dt><dd>{plan?.total_steps ?? '—'}</dd></div>
         <div><dt>{text('可训练参数', 'Trainable parameters')}</dt><dd>{formatParams(plan?.params?.trainable)}</dd></div>
-        <div><dt>{text('显存峰值估算', 'Estimated peak memory')}</dt><dd>{formatBytesMB(plan?.memory?.peak_mb_estimate)}</dd></div>
+        <div><dt>{plan?.distributed && plan.distributed.world_size > 1 ? text('每卡显存峰值估算', 'Estimated peak per GPU') : text('显存峰值估算', 'Estimated peak memory')}</dt><dd>{formatBytesMB(plan?.memory?.peak_mb_estimate)}</dd></div>
       </dl><p className="inspector-note">{text('显存是规划估算；实际占用以训练时的设备监控为准。', 'Memory is a planning estimate; observe actual device use during training.')}</p></div>
     </div>
   </section>;

@@ -7,7 +7,7 @@ import pytest
 from PIL import Image
 
 from ypuddin.config import CaptionConfig, DatasetSourceConfig, TrainConfig
-from ypuddin.data.caption_json import EDIT_MARKER, StructuredCaption, parse_caption
+from ypuddin.data.caption_json import EDIT_MARKER, StructuredCaption, load_caption_structure, parse_caption
 from ypuddin.data.captions import (
     caption_content,
     caption_description,
@@ -209,10 +209,19 @@ def test_edit_roundtrip_preserves_metadata_without_resurrecting_tags(tmp_path, f
     staging.write_text(serialized)
     staging.replace(path)
     saved = json.loads(path.read_text())
-    assert saved[EDIT_MARKER] == 1 and saved["tags"] == ["new", "confirmed"]
-    assert saved.get("meta") == source.get("meta")
+    assert EDIT_MARKER not in saved
+    expected_meta = dict(source.get("meta", {}))
+    if "trigger" in expected_meta:
+        expected_meta["trigger"] = ""  # Trigger is a real editable tag, not unrelated metadata.
+    assert saved.get("meta", {}) == expected_meta
     if kind == "full":
-        assert saved["fixed"] == source["fixed"] and saved["ai_output"] == source["ai_output"]
+        assert saved["fixed"] == {"quality": "", "series": "", "artist": ""}
+        assert saved["ai_output"]["tags"] == ["new", "confirmed"]
+        assert saved["ai_output"]["nl"] == source["ai_output"]["nl"]
+    elif kind == "standard":
+        assert isinstance(saved["tags"], dict) and saved["tags"]["tags"] == ["new", "confirmed"]
+    else:
+        assert saved["tags"] == ["new", "confirmed"]
     assert read_caption(path) == text
     write_caption(path, read_caption(path))
     assert read_caption(path) == text  # no duplicate prose on repeated save
@@ -237,12 +246,65 @@ def test_tag_editor_excludes_natural_language_from_bulk_operations(tmp_path, ful
     write_caption(path, ", ".join([*tags, "new tag"]))
     after = read_caption(path)
     assert after.count(full_caption["ai_output"]["nl"]) == 1
-    assert after.endswith("new tag. " + full_caption["ai_output"]["nl"])
+    assert after.endswith(". " + full_caption["ai_output"]["nl"])
+    saved = json.loads(path.read_text())
+    assert saved["ai_output"]["tags"] == ["smile", "standing", "new tag"]
+    assert saved["fixed"] == full_caption["fixed"]
+    assert saved["from_path"] == full_caption["from_path"]
 
 
 def test_empty_json_is_authoritative_not_class_prompt_fallback(tmp_path):
     path = save_json(tmp_path / "empty.json", {"tags": []})
     assert read_caption(path, "class prompt") == ""
+
+
+@pytest.mark.parametrize("document", [{"tags": []}, {"tags": {"tags": []}}, {"ai_output": {"tags": []}}])
+def test_supported_empty_json_remains_valid_for_training_and_cache(tmp_path, document):
+    Image.new("RGB", (64, 64), "red").save(tmp_path / "p.png")
+    path = save_json(tmp_path / "p.json", document)
+    cfg = TrainConfig.model_validate(
+        {
+            "model": {"family": "toy"},
+            "dataset": {
+                "sources": [{"path": str(tmp_path), "class_prompt": "must not replace empty"}],
+                "resolutions": [64],
+                "bucket_step": 16,
+            },
+        }
+    )
+    bundle = build_data(cfg, get_family("toy").spec.latent, cache_root=tmp_path / "cache")
+    assert bundle.train[0]["caption"] == ""
+    assert bundle.train.use_cached_captions() == [""]
+    assert json.loads(path.read_text()) == document
+
+
+@pytest.mark.parametrize("document", [{"caption": "Actual prose."}, {"custom_export": {"tag": "kept"}}, {}])
+def test_unknown_json_rejected_by_online_training_and_cache_but_still_viewable(tmp_path, document):
+    Image.new("RGB", (64, 64), "red").save(tmp_path / "p.png")
+    path = save_json(tmp_path / "p.json", {"tags": ["initially valid"]})
+    cfg = TrainConfig.model_validate(
+        {
+            "model": {"family": "toy"},
+            "dataset": {
+                "sources": [{"path": str(tmp_path), "class_prompt": "must not hide unknown JSON"}],
+                "resolutions": [64],
+                "bucket_step": 16,
+            },
+        }
+    )
+    bundle = build_data(cfg, get_family("toy").spec.latent, cache_root=tmp_path / "cache")
+    # A sidecar changed after preflight must also fail when training/cache actually reads it.
+    save_json(path, document)
+    before = path.read_bytes()
+    with pytest.raises(ValueError, match="p.json.*unrecognized caption format"):
+        bundle.train[0]
+    with pytest.raises(ValueError, match="p.json.*unrecognized caption format"):
+        bundle.train.use_cached_captions()
+    structure = load_caption_structure(path)
+    assert structure["format"] == "unknown" and not structure["editable"]
+    assert structure["document"] == document
+    assert read_caption(path) == ""  # Inspection never pretends metadata is a caption.
+    assert path.read_bytes() == before
 
 
 def test_txt_read_write_and_transform_remain_unchanged(tmp_path):
@@ -299,9 +361,10 @@ def test_scan_auto_enumerates_each_caption_directory_once(tmp_path, monkeypatch)
     assert calls == [tmp_path]
 
 
-def test_bad_json_preflight_has_source_location_and_no_txt_fallback(tmp_path):
+@pytest.mark.parametrize("payload", ["{broken", '{"caption":"Unsupported prose field"}', "{}"])
+def test_bad_json_preflight_has_source_location_and_no_txt_fallback(tmp_path, payload):
     Image.new("RGB", (64, 64), "red").save(tmp_path / "p.png")
-    (tmp_path / "p.json").write_text("{broken")
+    (tmp_path / "p.json").write_text(payload)
     (tmp_path / "p.txt").write_text("good text")
     cfg = TrainConfig.model_validate(
         {
@@ -312,17 +375,25 @@ def test_bad_json_preflight_has_source_location_and_no_txt_fallback(tmp_path):
     with pytest.raises(DataConfigError, match="p.json") as failure:
         prepare_data_layout(cfg, get_family("toy").spec.latent)
     assert failure.value.loc == "dataset.sources.0.caption_ext"
+    from ypuddin.train.plan import plan
+
+    result = plan(cfg)
+    assert any(
+        error["loc"] == "dataset.sources.0.caption_ext" and "p.json" in error["msg"]
+        for error in result["errors"]
+    )
     cfg.dataset.sources[0].caption_ext = ".txt"
     assert len(prepare_data_layout(cfg, get_family("toy").spec.latent).items) == 1
 
 
-def test_bad_validation_caption_has_validation_source_location(tmp_path):
+@pytest.mark.parametrize("payload", ["{broken", '{"caption":"Unsupported prose field"}'])
+def test_bad_validation_caption_has_validation_source_location(tmp_path, payload):
     train, val = tmp_path / "train", tmp_path / "val"
     train.mkdir()
     val.mkdir()
     Image.new("RGB", (64, 64), "red").save(train / "p.png")
     Image.new("RGB", (64, 64), "blue").save(val / "p.png")
-    (val / "p.json").write_text("{broken")
+    (val / "p.json").write_text(payload)
     cfg = TrainConfig.model_validate(
         {
             "model": {"family": "toy"},

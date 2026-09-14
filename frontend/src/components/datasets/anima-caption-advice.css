@@ -1,0 +1,14 @@
+.anima-caption-advice { padding:12px; border:1px solid var(--studio-line); border-radius:8px; background:var(--studio-panel); font-size:12px; line-height:1.65; }
+.anima-caption-advice summary { cursor:pointer; color:var(--studio-text); overflow-wrap:anywhere; }
+.anima-caption-advice p { margin:8px 0; color:var(--studio-dim); }
+.anima-caption-advice a { color:var(--studio-accent); }
+.anima-caption-advice > button { margin-top:10px; margin-right:8px; }
+.anima-caption-previews { max-height:420px; overflow:auto; overscroll-behavior:contain; scrollbar-gutter:stable; margin-top:10px; }
+.anima-caption-file { padding:10px 0; border-top:1px solid var(--studio-line); }
+.anima-caption-file h4 { margin-top:10px; font-weight:500; }
+.anima-caption-file dl { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.anima-caption-file dl > div { min-width:0; }
+.anima-caption-file dt { margin:4px 0; color:var(--studio-dim); }
+.anima-caption-file dd { margin:0; }
+.anima-caption-file pre { padding:8px; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-muted); color:var(--studio-text); font-family:inherit; white-space:pre-wrap; overflow-wrap:anywhere; }
+@media(max-width:600px) { .anima-caption-file dl { grid-template-columns:1fr; } }

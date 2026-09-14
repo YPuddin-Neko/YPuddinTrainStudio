@@ -54,7 +54,7 @@ describe('model choices share the training configuration workspace', () => {
     await screen.findByDisplayValue('/models/unsaved.safetensors');
     expect(screen.getByTestId('route')).toHaveTextContent('/projects/p_model/v/v2/train?tab=model');
     expect(screen.getByTestId('route')).toHaveTextContent('"origin":"kept"');
-    expect(screen.getByRole('tab',{name:'底模与输出'})).toHaveAttribute('aria-selected','true');
+    expect(screen.getByTestId('field-model.dit_path')).toBeInTheDocument();
     expect(within(screen.getByRole('navigation',{name:'项目训练步骤'})).getAllByRole('link').map(link => link.textContent)).toEqual(['项目概览','1训练数据','2训练参数','3训练结果']);
     fireEvent.click(screen.getByRole('button',{name:'保存草稿'})); await screen.findByTestId('draft-saved');
     expect(writes.at(-1)).toMatchObject({model:{dit_path:'/models/unsaved.safetensors'},loop:{epochs:19}});
@@ -66,10 +66,10 @@ describe('model choices share the training configuration workspace', () => {
     show('/projects/p_model/v/v2/train?tab=model&retained=1');
     const input = await screen.findByDisplayValue('/models/original.safetensors');
     fireEvent.change(input,{target:{value:'/models/chosen.safetensors'}});
-    fireEvent.click(screen.getByRole('tab',{name:'训练参数'}));
+    fireEvent.click(screen.getByRole('button', { name: /设备与时长$/ }));
     expect(screen.getByTestId('route')).toHaveTextContent('tab=train&retained=1');
     await act(async () => fireEvent.click(screen.getByRole('button',{name:'Browser back'})));
-    expect(screen.getByRole('tab',{name:'底模与输出'})).toHaveAttribute('aria-selected','true');
+    expect(screen.getByTestId('field-model.dit_path')).toBeInTheDocument();
     expect(screen.getByDisplayValue('/models/chosen.safetensors')).toBeInTheDocument();
     expect(screen.getByTestId('route')).toHaveTextContent('"origin":"kept"');
     server.use(http.get('/api/models',()=>HttpResponse.json([

@@ -1495,6 +1495,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/environment/dtk/wheels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dtk Wheels */
+        get: operations["dtk_wheels_api_environment_dtk_wheels_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/environment/windows/wheels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Windows Wheels */
+        get: operations["windows_wheels_api_environment_windows_wheels_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/environment/operations": {
         parameters: {
             query?: never;
@@ -1746,6 +1780,23 @@ export interface paths {
         put?: never;
         /** Start */
         post: operations["start_api_projects__pid__versions__vid__regularization_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{pid}/versions/{vid}/regularization/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Plan */
+        post: operations["plan_api_projects__pid__versions__vid__regularization_plan_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2059,15 +2110,20 @@ export interface components {
         Caption: {
             /** Caption */
             caption: string;
+            caption_structure?: components["schemas"]["CaptionStructure"] | null;
         } & {
             [key: string]: unknown;
         };
         /** CaptionBody */
         CaptionBody: {
             /** Caption */
-            caption: string;
+            caption?: string | null;
             /** Description */
             description?: string | null;
+            /** Caption Fields */
+            caption_fields?: components["schemas"]["CaptionFieldEdit"][] | null;
+            /** Caption Revision */
+            caption_revision?: string | null;
         };
         /** CaptionConfig */
         CaptionConfig: {
@@ -2131,6 +2187,29 @@ export interface components {
              */
             cache_variants: number;
         };
+        /** CaptionField */
+        CaptionField: {
+            /** Path */
+            path: string[];
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "quality" | "count" | "character" | "character_name" | "character_variant" | "character_full" | "series" | "artist" | "appearance" | "tags" | "environment" | "nl" | "trigger";
+            /** Value */
+            value: string | string[];
+            /** Present */
+            present: boolean;
+        } & {
+            [key: string]: unknown;
+        };
+        /** CaptionFieldEdit */
+        CaptionFieldEdit: {
+            /** Path */
+            path: string[];
+            /** Value */
+            value: string | string[];
+        };
         /** CaptionOptions */
         CaptionOptions: {
             /**
@@ -2141,6 +2220,30 @@ export interface components {
             mode: "fill_missing" | "append" | "remove" | "replace";
             /** Text */
             text: string;
+        };
+        /** CaptionStructure */
+        CaptionStructure: {
+            /**
+             * Format
+             * @enum {string}
+             */
+            format: "full" | "nested" | "simple" | "flat" | "legacy_override" | "unknown";
+            /** Document */
+            document: {
+                [key: string]: unknown;
+            };
+            /** Fields */
+            fields: components["schemas"]["CaptionField"][];
+            /** Revision */
+            revision: string;
+            /** Editable */
+            editable: boolean;
+            /** Legacy Override */
+            legacy_override: boolean;
+            /** Reason */
+            reason?: string | null;
+        } & {
+            [key: string]: unknown;
         };
         /** CaptionTagCount */
         CaptionTagCount: {
@@ -2506,6 +2609,7 @@ export interface components {
             caption_tags?: string | null;
             /** Caption Description */
             caption_description?: string | null;
+            caption_structure?: components["schemas"]["CaptionStructure"] | null;
             /** Caption Format */
             caption_format?: string | null;
             /** Caption Error */
@@ -2695,6 +2799,136 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** DtkCatalog */
+        DtkCatalog: {
+            /**
+             * Source Url
+             * @default https://download.sourcefind.cn:65024/4/main/
+             */
+            source_url: string;
+            /** Runtime */
+            runtime: {
+                [key: string]: string | null;
+            };
+            /** Wheels */
+            wheels: components["schemas"]["DtkWheel"][];
+            /** Reason */
+            reason?: string | null;
+            guidance: components["schemas"]["DtkGuidance"];
+        };
+        /** DtkGuidance */
+        DtkGuidance: {
+            /**
+             * Toolkit Source Url
+             * @default https://download.sourcefind.cn:65024/1/main
+             */
+            toolkit_source_url: string;
+            /**
+             * Driver Source Url
+             * @default https://download.sourcefind.cn:65024/6/main
+             */
+            driver_source_url: string;
+            /**
+             * Compatibility Source Url
+             * @default https://download.sourcefind.cn:65024/file/1/DTK%E4%B8%8E%E9%A9%B1%E5%8A%A8%E7%89%88%E6%9C%AC%E9%85%8D%E5%A5%97%E5%85%B3%E7%B3%BB%E8%A1%A8.md
+             */
+            compatibility_source_url: string;
+            /** Driver Version */
+            driver_version?: string | null;
+            /**
+             * Driver Verification
+             * @default manual_confirmation_required
+             */
+            driver_verification: string;
+            /**
+             * Current Stack Reason
+             * @default framework_combination_requires_validation
+             */
+            current_stack_reason: string;
+            recommendation?: components["schemas"]["DtkRuntimeRecommendation"] | null;
+        };
+        /** DtkRuntimePackage */
+        DtkRuntimePackage: {
+            /** Package */
+            package: string;
+            /** Version */
+            version: string;
+            /** Url */
+            url: string;
+        };
+        /** DtkRuntimeRecommendation */
+        DtkRuntimeRecommendation: {
+            /** Dtk */
+            dtk: string;
+            /** Toolkit Url */
+            toolkit_url: string;
+            /** Toolkit Checksum Url */
+            toolkit_checksum_url: string;
+            /** Python Tag */
+            python_tag: string;
+            /** Minimum Driver */
+            minimum_driver: string;
+            /**
+             * Status
+             * @default candidate_requires_validation
+             */
+            status: string;
+            /**
+             * Reason
+             * @default matched_vendor_metadata_requires_driver_and_training_validation
+             */
+            reason: string;
+            /** Wheels */
+            wheels: components["schemas"]["DtkRuntimePackage"][];
+        };
+        /** DtkWheel */
+        DtkWheel: {
+            /** Id */
+            id: string;
+            /** Package */
+            package: string;
+            /** Version */
+            version: string;
+            /** Filename */
+            filename: string;
+            /** Url */
+            url: string;
+            /**
+             * Source Url
+             * @default https://download.sourcefind.cn:65024/4/main/
+             */
+            source_url: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Sha256 */
+            sha256: string;
+            /** Dtk */
+            dtk: string;
+            /** Torch */
+            torch: string;
+            /** Declared Torch */
+            declared_torch?: string | null;
+            /** Python Tag */
+            python_tag: string;
+            /** Platform Tag */
+            platform_tag: string;
+            /** Binary */
+            binary: boolean;
+            /**
+             * Validation
+             * @default kernel_probe_required
+             */
+            validation: string;
+            /** Requires Packages */
+            requires_packages?: string[];
+            /**
+             * Compatible
+             * @default false
+             */
+            compatible: boolean;
+            /** Reason */
+            reason?: string | null;
+        };
         /** EnvironmentOperation */
         EnvironmentOperation: {
             /**
@@ -2734,6 +2968,24 @@ export interface components {
             restart_required: boolean;
             /** Dismissed At */
             dismissed_at?: number | null;
+            /** Vendor Wheel Id */
+            vendor_wheel_id?: string | null;
+            /**
+             * Phase
+             * @default plan
+             */
+            phase: string;
+            /**
+             * Downloaded Bytes
+             * @default 0
+             */
+            downloaded_bytes: number;
+            /** Total Bytes */
+            total_bytes?: number | null;
+            /** Bytes Per Second */
+            bytes_per_second?: number | null;
+            /** Eta Seconds */
+            eta_seconds?: number | null;
         };
         /** EnvironmentPackage */
         EnvironmentPackage: {
@@ -2777,6 +3029,8 @@ export interface components {
             version?: string | null;
             /** Wheel Id */
             wheel_id?: string | null;
+            /** Vendor Wheel Id */
+            vendor_wheel_id?: string | null;
         };
         /** EnvironmentRuntime */
         EnvironmentRuntime: {
@@ -2793,10 +3047,34 @@ export interface components {
             platform: string;
             /** Machine */
             machine: string;
+            /** Distribution */
+            distribution?: string | null;
+            /** Distribution Id */
+            distribution_id?: string | null;
+            /** Distribution Version */
+            distribution_version?: string | null;
+            /** Kernel Release */
+            kernel_release?: string | null;
+            /** Glibc Version */
+            glibc_version?: string | null;
+            /** Dtk Root */
+            dtk_root?: string | null;
+            /** Installed Dtk */
+            installed_dtk?: string | null;
+            /** Driver Version */
+            driver_version?: string | null;
             /** Torch */
             torch: string;
             /** Cuda Runtime */
             cuda_runtime: string | null;
+            /** Hip Runtime */
+            hip_runtime?: string | null;
+            /**
+             * Compute Backend
+             * @default cpu
+             * @enum {string}
+             */
+            compute_backend: "cuda" | "hip" | "mps" | "cpu";
             /** Cuda Available */
             cuda_available: boolean;
             /** Mps Available */
@@ -2834,9 +3112,9 @@ export interface components {
             /**
              * Training Device Policy
              * @default single_device
-             * @constant
+             * @enum {string}
              */
-            training_device_policy: "single_device";
+            training_device_policy: "single_device" | "exclusive_devices";
             /**
              * Cuda Applicable
              * @default true
@@ -2877,6 +3155,7 @@ export interface components {
             running_jobs: boolean;
             /** Probe Deferred */
             probe_deferred: boolean;
+            sdpa?: components["schemas"]["SdpaProbe"] | null;
         };
         /** EnvironmentWheel */
         EnvironmentWheel: {
@@ -2892,6 +3171,8 @@ export interface components {
             size: number;
             /** Sha256 */
             sha256: string;
+            /** Vendor Wheel Id */
+            vendor_wheel_id?: string | null;
         };
         /** FamilyInfo */
         FamilyInfo: {
@@ -3094,11 +3375,13 @@ export interface components {
              * @default cuda
              * @enum {string}
              */
-            kind: "cuda" | "mps";
+            kind: "cuda" | "mps" | "dtk" | "rocm";
             /** Name */
             name: string;
             /** Total Mb */
             total_mb?: number | null;
+            /** Hip Runtime */
+            hip_runtime?: string | null;
         } & {
             [key: string]: unknown;
         };
@@ -3111,7 +3394,7 @@ export interface components {
              * @default cuda
              * @enum {string}
              */
-            kind: "cuda" | "mps";
+            kind: "cuda" | "mps" | "dtk" | "rocm";
             /** Name */
             name: string;
             /** Util Pct */
@@ -3144,6 +3427,8 @@ export interface components {
             telemetry_note?: string | null;
             /** Cuda Available */
             cuda_available?: boolean | null;
+            /** Hip Runtime */
+            hip_runtime?: string | null;
         } & {
             [key: string]: unknown;
         };
@@ -3162,6 +3447,13 @@ export interface components {
             torch: string | null;
             /** Cuda */
             cuda: string | null;
+            /** Hip */
+            hip?: string | null;
+            /**
+             * Hip Available
+             * @default false
+             */
+            hip_available: boolean;
             /**
              * Mps
              * @default false
@@ -3517,6 +3809,12 @@ export interface components {
         };
         /** LoopConfig */
         LoopConfig: {
+            /**
+             * Gpu Count
+             * @description 本次任务同时使用的 GPU 数量，默认 1；大于 1 时使用 DDP，每张卡保留一份完整模型，显存不会合并。批量大小按每卡计算，全局有效批量约为每卡批量 × 卡数 × 梯度累积。多卡需要标准分桶，暂不支持原图异形批次、块换出、编译和梯度检查点。
+             * @default 1
+             */
+            gpu_count: number;
             /**
              * Max Steps
              * @description 最多执行多少次优化器更新，默认留空；它不是图片数或采样步数。与轮数至少设置一个，同时设置时先到者结束。需要固定更新预算时填写。
@@ -4572,6 +4870,7 @@ export interface components {
             text_encoding?: string | null;
             native?: components["schemas"]["NativePlan"] | null;
             image_fit?: components["schemas"]["ImageFitPlan"] | null;
+            distributed?: components["schemas"]["PlanDistributed"] | null;
         } & {
             [key: string]: unknown;
         };
@@ -4596,6 +4895,23 @@ export interface components {
             items: number;
             /** Batches */
             batches: number | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** PlanDistributed */
+        PlanDistributed: {
+            /** World Size */
+            world_size: number;
+            /** Per Device Batch Size */
+            per_device_batch_size: number;
+            /** Effective Batch Size */
+            effective_batch_size: number;
+            /** Batches Per Rank */
+            batches_per_rank: number;
+            /** Dropped Samples */
+            dropped_samples: number;
+            /** Tail Policy */
+            tail_policy: string;
         } & {
             [key: string]: unknown;
         };
@@ -5006,6 +5322,53 @@ export interface components {
             /** Url */
             url: string;
         };
+        /** RegularizationPlan */
+        RegularizationPlan: {
+            /** Signature */
+            signature: string;
+            /** Sources */
+            sources: components["schemas"]["RegularizationPlanSource"][];
+            /** Top Tags */
+            top_tags: components["schemas"]["RegularizationTagCount"][];
+            /** Source Images */
+            source_images: number;
+            /** Existing Images */
+            existing_images: number;
+            /** Missing Captions */
+            missing_captions: number;
+            /** Invalid Captions */
+            invalid_captions: number;
+            /** Empty After Exclusion */
+            empty_after_exclusion: number;
+            /** Eligible Images */
+            eligible_images: number;
+            /** Planned Images */
+            planned_images: number;
+            /** Remaining Images */
+            remaining_images: number;
+            /** Max Batch Images */
+            max_batch_images: number;
+            /** Examples */
+            examples: components["schemas"]["RegularizationPlanExample"][];
+        };
+        /** RegularizationPlanExample */
+        RegularizationPlanExample: {
+            /** Source Id */
+            source_id: string;
+            /** Rel Path */
+            rel_path: string;
+            /** Prompt */
+            prompt: string;
+        };
+        /** RegularizationPlanSource */
+        RegularizationPlanSource: {
+            /** Id */
+            id: string;
+            /** Path */
+            path: string;
+            /** Name */
+            name: string;
+        };
         /** RegularizationRequest */
         RegularizationRequest: {
             /**
@@ -5014,8 +5377,27 @@ export interface components {
              * @enum {string}
              */
             source: "ai" | "danbooru" | "gelbooru";
-            /** Prompt */
+            /**
+             * Prompt
+             * @default
+             */
             prompt: string;
+            /**
+             * Prompt Source
+             * @default manual
+             * @enum {string}
+             */
+            prompt_source: "manual" | "training_tags";
+            /** Source Ids */
+            source_ids?: string[];
+            /**
+             * Generation Scope
+             * @default incremental
+             * @enum {string}
+             */
+            generation_scope: "incremental" | "all";
+            /** Plan Signature */
+            plan_signature?: string | null;
             /**
              * Negative
              * @default
@@ -5088,6 +5470,13 @@ export interface components {
             images: number;
             /** Operations */
             operations: components["schemas"]["RegularizationTask"][];
+        };
+        /** RegularizationTagCount */
+        RegularizationTagCount: {
+            /** Tag */
+            tag: string;
+            /** Count */
+            count: number;
         };
         /** RegularizationTask */
         RegularizationTask: {
@@ -5357,6 +5746,43 @@ export interface components {
              */
             decay_steps?: number | null;
         };
+        /** SdpaCheck */
+        SdpaCheck: {
+            /** Dtype */
+            dtype: string;
+            /** Shape */
+            shape: number[];
+            /** Passed */
+            passed: boolean;
+            /** Error */
+            error?: string | null;
+        };
+        /** SdpaProbe */
+        SdpaProbe: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "passed" | "failed" | "not_tested";
+            /** Reason */
+            reason?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Detail */
+            detail?: string | null;
+            /** Checked At */
+            checked_at?: number | null;
+            /** Device */
+            device?: string | null;
+            /** Device Name */
+            device_name?: string | null;
+            /** Torch */
+            torch?: string | null;
+            /** Hip Runtime */
+            hip_runtime?: string | null;
+            /** Checks */
+            checks?: components["schemas"]["SdpaCheck"][];
+        };
         /** ServiceRuntime */
         ServiceRuntime: {
             /**
@@ -5398,8 +5824,33 @@ export interface components {
             paths: components["schemas"]["SettingsPaths"];
             server: components["schemas"]["SettingsServer"];
             ui: components["schemas"]["SettingsUi"];
+            network?: components["schemas"]["SettingsNetwork"];
         } & {
             [key: string]: unknown;
+        };
+        /** SettingsNetwork */
+        SettingsNetwork: {
+            /**
+             * Proxy Mode
+             * @default system
+             * @enum {string}
+             */
+            proxy_mode: "system" | "direct" | "custom";
+            /**
+             * Proxy Url
+             * @default
+             */
+            proxy_url: string;
+            /**
+             * Proxy Username
+             * @default
+             */
+            proxy_username: string;
+            /**
+             * Proxy Password Configured
+             * @default false
+             */
+            proxy_password_configured: boolean;
         };
         /** SettingsPaths */
         SettingsPaths: {
@@ -5487,6 +5938,13 @@ export interface components {
              * @default false
              */
             cuda_available: boolean;
+            /** Hip */
+            hip?: string | null;
+            /**
+             * Hip Available
+             * @default false
+             */
+            hip_available: boolean;
         } & {
             [key: string]: unknown;
         };
@@ -5882,6 +6340,94 @@ export interface components {
             run_name?: string | null;
             /** Entity */
             entity?: string | null;
+        };
+        /** WindowsAttentionCatalog */
+        WindowsAttentionCatalog: {
+            /**
+             * Source Url
+             * @default https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/tag/v0.9.6
+             */
+            source_url: string;
+            /**
+             * Release
+             * @default v0.9.6
+             */
+            release: string;
+            /**
+             * Provider
+             * @default mjun0812-community-windows
+             */
+            provider: string;
+            /**
+             * Origin
+             * @enum {string}
+             */
+            origin: "live" | "cached" | "bundled";
+            /** Checked At */
+            checked_at?: number | null;
+            /** Error */
+            error?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** Runtime */
+            runtime: {
+                [key: string]: string | null;
+            };
+            /** Wheels */
+            wheels: components["schemas"]["WindowsAttentionWheel"][];
+        };
+        /** WindowsAttentionWheel */
+        WindowsAttentionWheel: {
+            /** Id */
+            id: string;
+            /**
+             * Package
+             * @default flash-attn
+             */
+            package: string;
+            /** Version */
+            version: string;
+            /** Filename */
+            filename: string;
+            /** Url */
+            url: string;
+            /**
+             * Source Url
+             * @default https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/tag/v0.9.6
+             */
+            source_url: string;
+            /**
+             * Provider
+             * @default mjun0812-community-windows
+             */
+            provider: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Sha256 */
+            sha256: string;
+            /** Torch */
+            torch: string;
+            /** Cuda */
+            cuda: string;
+            /** Python Tag */
+            python_tag: string;
+            /**
+             * Platform Tag
+             * @default win_amd64
+             */
+            platform_tag: string;
+            /**
+             * Validation
+             * @default kernel_probe_required
+             */
+            validation: string;
+            /**
+             * Compatible
+             * @default false
+             */
+            compatible: boolean;
+            /** Reason */
+            reason?: string | null;
         };
         /** XyzAxis */
         XyzAxis: {
@@ -9638,6 +10184,57 @@ export interface operations {
             };
         };
     };
+    dtk_wheels_api_environment_dtk_wheels_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DtkCatalog"];
+                };
+            };
+        };
+    };
+    windows_wheels_api_environment_windows_wheels_get: {
+        parameters: {
+            query?: {
+                refresh?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WindowsAttentionCatalog"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     operations_api_environment_operations_get: {
         parameters: {
             query?: never;
@@ -10133,6 +10730,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RegularizationTask"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    plan_api_projects__pid__versions__vid__regularization_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+                vid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegularizationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegularizationPlan"];
                 };
             };
             /** @description Validation Error */

@@ -1,32 +1,25 @@
 import React from 'react';
-import { Check, ChevronRight } from 'lucide-react';
+import { Check, CheckCircle2, ChevronRight } from 'lucide-react';
 import StudioSelect from './StudioSelect';
 import { useWorkspaceText } from '../utils/workspaceText';
+import { PARAMETER_FLOW as flow } from '../utils/parameterWorkflow';
 import { CONFIG_TAB_GROUPS, type ConfigTab, type ConfigIssue } from '../utils/configPresentation';
 
-const flow: Array<{ group: string; label: [string, string] }> = [
-  { group: 'model', label: ['模型选择', 'Model'] },
-  { group: 'training', label: ['训练方式', 'Training mode'] },
-  { group: 'dataset', label: ['数据与分桶', 'Data and buckets'] },
-  { group: 'caption', label: ['标签处理', 'Captions'] },
-  { group: 'loop', label: ['训练时长', 'Duration'] },
-  { group: 'adapter', label: ['适配器', 'Adapter'] },
-  { group: 'optimizer', label: ['优化器', 'Optimizer'] },
-  { group: 'scheduler', label: ['学习率调度', 'LR schedule'] },
-  { group: 'memory', label: ['显存与计算', 'Memory and compute'] },
-  { group: 'objective', label: ['噪声与损失', 'Noise and loss'] },
-  { group: 'sampling', label: ['采样预览', 'Sample previews'] },
-  { group: 'validation', label: ['验证', 'Validation'] },
-  { group: 'checkpoint', label: ['保存与恢复', 'Save and resume'] },
-  { group: 'logging', label: ['训练记录', 'Logging'] },
-];
-
-export default function ParameterSections({ rootRef, tab, onTabChange, issues = [], preset = false, hasTrainingMode = false, fullTraining = false, onRevealAdvanced }: {
-  rootRef: React.RefObject<HTMLDivElement>; tab: ConfigTab; onTabChange: (tab: ConfigTab) => void;
-  issues?: ConfigIssue[]; preset?: boolean; hasTrainingMode?: boolean; fullTraining?: boolean; onRevealAdvanced: () => void;
+export default function ParameterSections({ rootRef, tab, group, onTabChange, issues = [], checked = false, planChecked = false, preset = false, hasTrainingMode = false, fullTraining = false, onRevealAdvanced }: {
+  rootRef: React.RefObject<HTMLDivElement>; tab: ConfigTab; group?: string; onTabChange: (tab: ConfigTab, group?: string) => void;
+  issues?: ConfigIssue[]; checked?: boolean; planChecked?: boolean; preset?: boolean; hasTrainingMode?: boolean; fullTraining?: boolean; onRevealAdvanced: () => void;
 }) {
   const text = useWorkspaceText();
   const items = flow.filter(item => (item.group !== 'training' || hasTrainingMode) && (item.group !== 'adapter' || !fullTraining)).map(item => item.group === 'model' && preset ? {...item, label:['模型加载精度','Model loading precision'] as [string,string]} : item);
+  const issueGroup = (issue: ConfigIssue) => issue.path === 'model.attention' ? 'memory' : issue.path === 'dataset.batch_size' ? 'loop' : issue.path.startsWith('dataset.caption.') ? 'caption' : issue.path.split('.')[0];
+  const hasGlobalIssue = issues.some(issue => !flow.some(item => item.group === issueGroup(issue)));
+  const completed = (group: string) => checked && !hasGlobalIssue && !issues.some(issue => issueGroup(issue) === group)
+    // A schema failure returns before model paths and cross-group constraints are checked.
+    && (planChecked || !['model', 'training', 'dataset', 'adapter', 'memory', 'validation'].includes(group));
+  const status = (group: string) => {
+    const count = issues.filter(issue => issueGroup(issue) === group).length;
+    return count ? text(`${count} 项待配置`, `${count} incomplete`) : completed(group) ? text('检查通过', 'Checked') : text('待检查', 'Not checked');
+  };
   const [active, setActive] = React.useState('');
   const pending = React.useRef<string | null>(null);
   const jumped = React.useRef<{ group: string; scrollTop: number } | null>(null);
@@ -36,7 +29,7 @@ export default function ParameterSections({ rootRef, tab, onTabChange, issues = 
     pending.current = group;
     jumped.current = null;
     revealed.current = false;
-    onTabChange(targetTab);
+    onTabChange(targetTab, group);
     setActive(group);
     requestAnimationFrame(() => reveal());
   };
@@ -45,6 +38,7 @@ export default function ParameterSections({ rootRef, tab, onTabChange, issues = 
     if (!root || !pending.current) return;
     const section = Array.from(root.querySelectorAll<HTMLElement>('[data-group]')).find(node => node.dataset.group === pending.current);
     if (!section) {
+      if (!root.querySelector('[data-testid="schema-form"], [data-group]')) return;
       // A deliberate jump may target a section whose controls are all advanced.
       if (!revealed.current) { revealed.current = true; onRevealAdvanced(); }
       return;
@@ -53,11 +47,27 @@ export default function ParameterSections({ rootRef, tab, onTabChange, issues = 
     if (heading?.getAttribute('aria-expanded') === 'false') heading.click();
     root.scrollTop += section.getBoundingClientRect().top - root.getBoundingClientRect().top - 16;
     jumped.current = { group: pending.current, scrollTop: root.scrollTop };
+    setActive(pending.current);
     heading?.focus({ preventScroll: true });
     pending.current = null;
   };
   const revealRef = React.useRef(reveal);
   React.useLayoutEffect(() => { revealRef.current = reveal; });
+  const defaultGroup = tab === 'model' ? 'model' : tab === 'data' ? 'dataset' : tab === 'advanced' ? 'objective' : hasTrainingMode ? 'training' : 'loop';
+  const locationGroup = items.some(item => item.group === group) ? group! : defaultGroup;
+  const previousLocation = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (previousLocation.current === locationGroup) return;
+    previousLocation.current = locationGroup;
+    // Explicit workflow clicks already hold the exact target, including groups
+    // that shared a legacy tab. External links and browser history locate it here.
+    if (!pending.current) {
+      pending.current = locationGroup;
+      jumped.current = null;
+      revealed.current = false;
+    }
+    requestAnimationFrame(() => revealRef.current());
+  }, [locationGroup]);
   React.useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
@@ -84,13 +94,15 @@ export default function ParameterSections({ rootRef, tab, onTabChange, issues = 
   }, [rootRef, tab]);
   return <nav className="parameter-sections" aria-label={text('参数配置流程', 'Parameter workflow')}>
     <div className="parameter-sections-title">{text('配置流程', 'Configuration')}</div>
-    <div className="parameter-sections-mobile"><StudioSelect aria-label={text('跳转到参数分组', 'Jump to parameter group')} value={items.some(item => item.group === active) ? active : ''} onValueChange={jump} options={items.map(item => ({ value: item.group, label: text(...item.label) }))} /></div>
+    <div className="parameter-sections-mobile"><StudioSelect aria-label={text('跳转到参数分组', 'Jump to parameter group')} value={items.some(item => item.group === active) ? active : ''} onValueChange={jump} options={items.map(item => ({ value: item.group, label: `${text(...item.label)} · ${status(item.group)}` }))} /></div>
     <ol>{items.map((item, index) => {
-      const problems = issues.filter(issue => (issue.path === 'model.attention' ? 'memory' : issue.path === 'dataset.batch_size' ? 'loop' : issue.path.startsWith('dataset.caption.') ? 'caption' : issue.path.split('.')[0]) === item.group);
-      return <li key={item.group}><button type="button" aria-current={active === item.group ? 'step' : undefined} onClick={() => jump(item.group)}>
+      const problems = issues.filter(issue => issueGroup(issue) === item.group);
+      const passed = completed(item.group);
+      const statusId = `${preset ? 'preset' : 'training'}-step-${item.group}-status`;
+      return <li key={item.group}><button type="button" aria-describedby={statusId} aria-controls={preset ? 'preset-parameters' : 'training-parameters'} aria-current={active === item.group ? 'step' : undefined} onClick={() => jump(item.group)}>
         <span className="parameter-step-number">{String(index + 1).padStart(2, '0')}</span><span>{text(...item.label)}</span>
-        {problems.length ? <span className="parameter-step-issues" aria-label={text(`${problems.length} 项待配置`, `${problems.length} incomplete`)}>{problems.length}</span> : active === item.group ? <ChevronRight size={14}/> : <Check size={13} className="parameter-step-placeholder"/>}
-      </button></li>;
+        {problems.length ? <span className="parameter-step-issues" aria-hidden="true">{problems.length}</span> : passed ? <CheckCircle2 size={16} className="parameter-step-complete" aria-hidden="true"/> : active === item.group ? <ChevronRight size={14}/> : <Check size={13} className="parameter-step-placeholder"/>}
+      </button><span className="sr-only" id={statusId}>{status(item.group)}</span></li>;
     })}</ol>
   </nav>;
 }

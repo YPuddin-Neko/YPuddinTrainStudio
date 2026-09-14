@@ -25,6 +25,36 @@ function show(readOnly=false) {
 }
 
 describe('regularization preparation',()=>{
+  it('previews training-tag exclusions and selected scope before starting the exact checked plan',async()=>{
+    const pending: {body:any;resolve:(value:any)=>void}[]=[];
+    const preview={signature:'a'.repeat(64),sources:[{id:'d_first',name:'first',path:'/train/first'},{id:'d_second',name:'second',path:'/train/second'}],top_tags:[{tag:'subject_trigger',count:2},{tag:'dog',count:1}],source_images:3,existing_images:0,missing_captions:1,invalid_captions:0,empty_after_exclusion:0,eligible_images:2,planned_images:2,remaining_images:0,max_batch_images:200,examples:[{source_id:'d_first',rel_path:'same.png',prompt:'subject_trigger, dog'}]};
+    vi.spyOn(apiClient,'post').mockImplementation((url,body)=>{
+      if(url.endsWith('/plan'))return new Promise(resolve=>pending.push({body,resolve}));
+      snapshot={...snapshot,operations:[task()]};return Promise.resolve(task() as any);
+    });
+    show();
+    fireEvent.click(await screen.findByRole('combobox',{name:'提示词来源'}));
+    fireEvent.click(screen.getByRole('option',{name:'按训练图片标签逐张生成'}));
+    await waitFor(()=>expect(pending).toHaveLength(1));
+    expect(screen.getByRole('button',{name:'生成正则图'})).toBeDisabled();
+    expect(pending[0].body.prompt_source).toBe('training_tags');
+    await act(async()=>pending[0].resolve(preview));
+    const exclude=await screen.findByRole('button',{name:'排除标签：subject_trigger，2 张图片'});
+    fireEvent.click(exclude);
+    expect(exclude).toHaveAttribute('aria-pressed','true');
+    expect(screen.getByRole('button',{name:'生成正则图'})).toBeDisabled();
+    fireEvent.click(screen.getByRole('combobox',{name:'训练目录范围'}));
+    fireEvent.click(screen.getByRole('option',{name:'first · /train/first'}));
+    fireEvent.click(screen.getByRole('combobox',{name:'生成范围'}));
+    fireEvent.click(screen.getByRole('option',{name:'全部：另建一个批次'}));
+    await waitFor(()=>expect(pending.length).toBeGreaterThan(1));
+    await waitFor(()=>expect(pending.at(-1)?.body).toMatchObject({excluded_tags:['subject_trigger'],source_ids:['d_first'],generation_scope:'all'}));
+    await act(async()=>pending.at(-1)!.resolve({...preview,signature:'b'.repeat(64),planned_images:1,eligible_images:1,examples:[{source_id:'d_first',rel_path:'same.png',prompt:'dog'}]}));
+    await waitFor(()=>expect(screen.getByRole('button',{name:'生成正则图'})).toBeEnabled());
+    expect(screen.getByText(/原图片与标签保持原样/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button',{name:'生成正则图'}));
+    await waitFor(()=>expect(apiClient.post).toHaveBeenCalledWith('/projects/dogs/versions/v1/regularization',expect.objectContaining({prompt_source:'training_tags',excluded_tags:['subject_trigger'],source_ids:['d_first'],generation_scope:'all',plan_signature:'b'.repeat(64)}),{silent:true}));
+  });
   it('starts explicit class generation and notifies the dataset owner only after publication',async()=>{
     vi.spyOn(apiClient,'post').mockImplementation(async()=>{snapshot={...snapshot,operations:[task()]};return task() as any;});
     const {client,changed}=show();

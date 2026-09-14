@@ -134,10 +134,10 @@ export const PathInput: React.FC<{
   const { t } = useTranslation();
   const [modalOpen, setModalOpen] = React.useState(false);
   return (
-    <div className="flex min-w-0 space-x-2">
+    <div className="path-input-control flex min-w-0 gap-2">
       <input type="text" aria-label={ariaLabel || t('pathBrowser.pathLabel')} value={value || ''} placeholder={placeholder} onChange={(e) => onChange(e.target.value)}
         className="min-w-0 flex-1 px-3 py-2 border rounded-md text-sm dark:bg-slate-900 dark:border-slate-600 font-mono" />
-      <button type="button" onClick={() => setModalOpen(true)} className="shrink-0 px-3 py-2 bg-slate-200 dark:bg-slate-700 rounded-md hover:bg-slate-300 dark:hover:bg-slate-600 text-sm flex items-center space-x-1">
+      <button type="button" onClick={() => setModalOpen(true)} className="path-input-browse studio-secondary shrink-0">
         <FolderOpen className="w-4 h-4" /><span>{t('common.browse')}</span>
       </button>
       <PathPickerModal isOpen={modalOpen} initialPath={value || '/'} onSelect={onChange} onClose={() => setModalOpen(false)} />

@@ -24,6 +24,27 @@ function activeLabel() {
 }
 
 describe('shared select interaction', () => {
+  it('keeps a two-line trigger together and places its menu below the full button', async () => {
+    render(<StudioSelect aria-label="GPU" value="alpha" options={options} triggerDescription="DTK · 2 卡" onValueChange={() => {}}/>);
+    const trigger = screen.getByRole('combobox');
+    expect(within(trigger).getByText('DTK · 2 卡')).toBeInTheDocument();
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({ x:700, y:2, top:2, bottom:46, left:700, right:776, width:76, height:44, toJSON:()=>({}) });
+    await userEvent.setup().click(trigger);
+    expect(screen.getByRole('listbox')).toHaveStyle({top:'51px'});
+    expect(screen.getByRole('listbox')).not.toHaveTextContent('DTK');
+  });
+  it('shows a compact trigger label while preserving the full menu choice', async () => {
+    const user = userEvent.setup();
+    const changed = vi.fn();
+    render(<StudioSelect aria-label="GPU" value="0" options={[{value:'0',label:'GPU 0 · Full device model',displayLabel:'GPU 0'},{value:'1',label:'GPU 1 · Other device',displayLabel:'GPU 1'}]} onValueChange={changed}/>);
+    const trigger=screen.getByRole('combobox');
+    expect(trigger).toHaveTextContent(/^GPU 0$/);
+    await user.click(trigger);
+    expect(screen.getByRole('option',{name:'GPU 0 · Full device model'})).toHaveAttribute('aria-selected','true');
+    await user.keyboard('{ArrowDown}{Enter}');
+    expect(changed).toHaveBeenCalledExactlyOnceWith('1');
+    expect(trigger).toHaveFocus();
+  });
   it('starts a fresh visible search when typing on a closed trigger after an empty search', async () => {
     const user = userEvent.setup(); const changed = vi.fn();
     render(<StudioSelect searchable aria-label="Versions" value="alpha" options={options} onValueChange={changed}/>);

@@ -1,30 +1,26 @@
 /* The page follows the shell width; fields and the plan respond to their own space. */
 .training-studio { --training-toolbar-height: 52px; --training-launch-height: 64px; max-width: none; width: 100%; margin-inline: auto; gap: 14px; container: training-workspace / inline-size; }
-.training-studio .workspace-page-heading, .training-studio .project-heading-placeholder { justify-content: flex-start; flex-wrap: wrap; align-items: center; gap: 10px; min-height: 40px; }
-.training-studio .workspace-page-heading h1, .training-studio .project-heading-placeholder h1 { margin: 0; font-size: 22px; line-height: 30px; font-weight: 650; }
+.training-studio .project-heading-placeholder { justify-content: flex-start; flex-wrap: wrap; align-items: center; gap: 10px; min-height: 40px; }
+.training-studio .project-heading-placeholder h1 { margin: 0; font-size: 23px; line-height: 1.25; font-weight: 650; }
 .training-studio .project-heading-status, .training-studio .project-heading-placeholder > .draft-indicator { margin-left: auto; }
 .training-studio .family-chip { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; letter-spacing: 0; font-weight: 500; }
 .training-studio .training-toolbar { top: var(--workspace-head-height, 0px); z-index: 26; margin: 0; padding: 8px 0; background: var(--studio-canvas); justify-content: space-between; flex-wrap: wrap; gap: 10px 16px; border-bottom: 1px solid var(--studio-line); }
 .training-toolbar-filters { display: flex; align-items: center; gap: 14px; min-width: 0; flex: 1 1 340px; }
-.training-studio .config-search { flex: 1; min-width: 0; max-width: 440px; min-height: 38px; margin: 0; font-size: 13px; padding: 7px 10px; }
-.training-studio .config-search input { font-size: 13px; }
+.training-studio .config-search { flex: 1; min-width: 0; max-width: 440px; min-height: 40px; height: 40px; margin: 0; font-size: 13px; padding: 0 10px; }
+.training-studio .config-search input { height: 100%; min-height: 0; padding: 0; font-size: 13px; line-height: 20px; }
 .training-studio .config-search > svg, .training-studio .config-search > button { flex-shrink: 0; }
 .training-studio .config-search > button { display: grid; place-items: center; width: 28px; min-height: 28px; margin: -4px; color: var(--studio-dim); }
-.training-studio .advanced-toggle { min-height: 38px; font-size: 13px; gap: 7px; }
+.training-studio .advanced-toggle { min-height: 40px; height: 40px; font-size: 13px; gap: 7px; }
 .training-studio .toolbar-actions { position: relative; min-width: 0; width: auto; justify-content: flex-start; flex-wrap: wrap; gap: 8px; }
-.training-studio .toolbar-actions > .studio-select { width: 170px; min-width: 120px; min-height: 38px; font-size: 13px; }
+.training-studio .toolbar-actions > .studio-select { width: 170px; min-width: 120px; min-height: 40px; height: 40px; font-size: 13px; }
 .training-studio .config-tools { position: static; }
-.training-studio .config-tools > summary { min-height: 38px; padding: 8px 10px; font-size: 13px; }
+.training-studio .config-tools > summary { min-height: 40px; height: 40px; padding: 9px 10px; font-size: 13px; }
 .training-studio .config-tools-menu { top: calc(100% + 5px); width: 340px; max-width: 100%; padding: 12px; }
 .training-studio .config-tools-menu :is(button, input, a) { min-height: 36px; font-size: 13px; }
-.training-studio .save-draft { min-height: 38px; font-size: 13px; }
+.training-studio .save-draft { min-height: 40px; height: 40px; font-size: 13px; }
 .training-studio .save-draft:disabled { opacity: .5; }
 .training-studio .training-columns { grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; }
 .training-studio .training-editor { min-width: 0; }
-.training-studio .config-tabs { top: calc(var(--workspace-head-height, 0px) + var(--training-toolbar-height)); z-index: 24; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; overflow: visible; margin-bottom: 14px; padding: 4px; border: 1px solid var(--studio-line); border-radius: 8px; background: var(--studio-canvas); }
-.training-studio .config-tabs button { min-width: 0; min-height: 42px; margin: 0; padding: 9px 10px; font-size: 13px; line-height: 20px; border: 0; border-radius: 5px; white-space: normal; }
-.training-studio .config-tabs button[aria-selected=true] { background: var(--studio-panel); color: var(--studio-accent); box-shadow: 0 1px 3px #00000012; font-weight: 650; }
-.training-studio .config-tabs svg { display: block; flex-shrink: 0; }
 .training-studio .training-inspector { top: calc(var(--workspace-head-height, 0px) + var(--training-toolbar-height) + 8px); max-height: calc(100dvh - var(--workspace-head-height, 0px) - var(--training-toolbar-height) - var(--training-launch-height) - 80px); overflow: auto; scrollbar-gutter: stable; }
 .training-studio .inspector-heading { min-height: 46px; padding: 12px 14px; }
 .training-studio .inspector-heading h3 { font-size: 14px; }
@@ -36,7 +32,7 @@
 .training-studio .bucket-size { font-size: 11px; }
 .training-studio .segmented-small button { min-width: 32px; min-height: 32px; }
 .training-studio .training-launch-bar { z-index: 31; margin-top: 2px; padding: 12px 0; gap: 12px; border-top: 1px solid var(--studio-line); background: var(--studio-canvas); }
-.training-studio .training-launch-bar :is(button, input, summary) { min-height: 38px; font-size: 13px; }
+.training-studio .training-launch-bar :is(button, input, summary) { min-height: 40px; height: 40px; font-size: 13px; }
 .training-studio .launch-status { font-size: 13px; }
 .training-studio .start-training { min-width: 124px; }
 .training-studio .config-field { scroll-margin-top: calc(var(--workspace-head-height, 0px) + var(--training-toolbar-height) + 72px); scroll-margin-bottom: calc(var(--training-launch-height) + 24px); }
@@ -65,9 +61,6 @@
   .training-studio .config-search { max-width: none; }
   .training-studio .toolbar-actions { width: 100%; }
   .training-studio .toolbar-actions > .studio-select { flex: 1; max-width: none; }
-  .training-studio .config-tabs { gap: 2px; }
-  .training-studio .config-tabs button { padding: 8px 4px; font-size: 13px; }
-  .training-studio .config-tabs svg { display: none; }
   .training-studio .training-launch-bar { flex-wrap: wrap; gap: 8px; }
   .training-studio .launch-status { flex: 1 1 160px; }
   .training-studio .launch-estimate { display: none; }

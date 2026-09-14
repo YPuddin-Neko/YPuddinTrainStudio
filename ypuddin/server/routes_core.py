@@ -66,18 +66,26 @@ def health(c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     try:
         import torch
 
-        torch_v, cuda = torch.__version__, torch.version.cuda
+        torch_v, cuda, hip = torch.__version__, torch.version.cuda, getattr(torch.version, "hip", None)
     except Exception:  # noqa: BLE001
-        torch_v, cuda = None, None
+        torch_v, cuda, hip = None, None, None
     devices = gpu_info()
     return {
         "version": ypuddin.__version__,
         "api_version": ypuddin.API_VERSION,
         "torch": torch_v,
         "cuda": cuda,
+        "hip": hip,
+        "hip_available": any(g["kind"] in ("dtk", "rocm") for g in devices),
         "mps": any(g["kind"] == "mps" for g in devices),
         "gpus": [
-            {"index": g["index"], "kind": g["kind"], "name": g["name"], "total_mb": g["mem_total_mb"]}
+            {
+                "index": g["index"],
+                "kind": g["kind"],
+                "name": g["name"],
+                "total_mb": g["mem_total_mb"],
+                "hip_runtime": g.get("hip_runtime"),
+            }
             for g in devices
         ],
         "families": available_families(),
@@ -112,6 +120,8 @@ def info() -> dict[str, Any]:
         "ypuddin": ypuddin.__version__,
         "cuda": torch.version.cuda,
         "cuda_available": torch.cuda.is_available(),
+        "hip": getattr(torch.version, "hip", None),
+        "hip_available": bool(getattr(torch.version, "hip", None) and torch.cuda.is_available()),
     }
 
 
@@ -356,11 +366,18 @@ def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str,
     # plan keeps full validation errors while previewing independently valid data fields.
     cfg = _scoped_config(body, c)
     gpus = gpu_info()
-    return make_plan(
+    result = make_plan(
         cfg,
         gpu_total_mb=gpus[0]["mem_total_mb"] if gpus else None,
         device=gpus[0]["device"] if gpus else "cpu",
     )
+    from .supervisor import training_device_error
+
+    count = (result.get("distributed") or {}).get("world_size", 1)
+    if error := training_device_error(count, gpus):
+        result["errors"].append({"loc": "loop.gpu_count", "msg": error})
+        result["ok"] = False
+    return result
 
 
 # --------------------------------------------------------------------------- presets
@@ -875,15 +892,21 @@ async def events(
     async def gen():
         try:
             for ev in bus.replay(after):
+                if bus.closed:
+                    break
                 yield bus.format_sse(ev)
-            while True:
+            while not bus.closed:
                 if await request.is_disconnected():
                     break
                 try:
                     ev = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    if ev is None:
+                        break
                     yield bus.format_sse(ev)
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
+            if bus.closed:
+                yield "event: service.stopping\ndata: {}\n\n"
         finally:
             bus.unsubscribe(queue)
 

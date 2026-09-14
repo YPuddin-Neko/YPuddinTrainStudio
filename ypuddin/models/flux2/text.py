@@ -7,6 +7,7 @@ import torch
 
 from ypuddin.models.base import TextCond, TextPipeline
 from ypuddin.models.fingerprints import content_fingerprint
+from ypuddin.models.memory import release_model_memory
 
 from .loading import DEV_UNSUPPORTED, KLEIN_VARIANTS, read_json, shapes
 
@@ -74,9 +75,10 @@ class Flux2Text(TextPipeline):
             self.model.to(self.device)
 
     def unload(self):
+        if self.model is None:
+            return
         self.model = None
-        if self.device.type == "cuda":
-            torch.cuda.empty_cache()
+        release_model_memory(self.device)
 
     def trainable_modules(self):
         self._ensure()

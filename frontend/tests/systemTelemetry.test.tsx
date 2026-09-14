@@ -92,11 +92,47 @@ describe('stable system telemetry', () => {
     fireEvent.click(screen.getByRole('option', { name: 'GPU 3 · Second GPU' }));
     expect(screen.getByLabelText('GPU 功率')).toHaveTextContent('280 W');
     rerender(<SystemTelemetry stats={{ ...data, gpus: [{ ...second, power_w: 285 }, data.gpus[0]] }}/>);
-    expect(screen.getByRole('combobox')).toHaveTextContent('GPU 3 · Second GPU');
+    expect(screen.getByRole('combobox')).toHaveTextContent(/^GPU 3CUDA$/);
     expect(screen.getByLabelText('GPU 功率')).toHaveTextContent('285 W');
     rerender(<SystemTelemetry stats={snapshot()}/>);
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
     expect(screen.getByLabelText('GPU 功率')).toHaveTextContent('193 W');
+  });
+
+  it('defaults to per-card averages and keeps full device names in the menu only', () => {
+    const data = snapshot();
+    data.gpus.push({ ...data.gpus[0], index: 3, name: 'Another long GPU model name', util_pct: 75, mem_used_mb: 12288, mem_total_mb: 24576, power_w: 280.8, temp_c: 66 });
+    const {rerender} = render(<SystemTelemetry stats={data}/>);
+    expect(screen.getByRole('combobox')).toHaveTextContent(/^多卡平均CUDA · 2 卡$/);
+    expect(screen.getByLabelText('GPU 占用率')).toHaveTextContent('62%');
+    expect(screen.getByLabelText('显存占用率')).toHaveTextContent('38%');
+    expect(screen.getByLabelText('GPU 功率')).toHaveTextContent('237 W');
+    expect(screen.getByLabelText('GPU 温度')).toHaveTextContent('62 °C');
+    expect(screen.getByLabelText('显存占用率').parentElement).toHaveAttribute('title', expect.stringContaining('每张显卡已用显存的百分比'));
+    fireEvent.click(screen.getByRole('combobox'));
+    expect(screen.getByRole('option', {name:'多卡平均 · 2 张显卡'})).toHaveAttribute('aria-selected','true');
+    fireEvent.click(screen.getByRole('option', {name:'GPU 3 · Another long GPU model name'}));
+    expect(screen.getByRole('combobox')).toHaveTextContent(/^GPU 3CUDA$/);
+    expect(screen.getByLabelText('GPU 占用率')).toHaveTextContent('75%');
+    fireEvent.click(screen.getByRole('combobox'));
+    fireEvent.click(screen.getByRole('option', {name:'多卡平均 · 2 张显卡'}));
+    rerender(<SystemTelemetry stats={{...data, gpus:[{...data.gpus[1],util_pct:51},data.gpus[0]]}}/>);
+    expect(screen.getByLabelText('GPU 占用率')).toHaveTextContent('50%');
+  });
+
+  it('never treats a missing device reading as zero in an average', () => {
+    const data = snapshot();
+    data.gpus.push({ ...data.gpus[0], index: 1, util_pct: null, power_w: 0, temp_c: Number.NaN, mem_used_mb: 0 });
+    const {rerender} = render(<SystemTelemetry stats={data}/>);
+    expect(screen.getByLabelText('GPU 占用率')).toHaveTextContent(/^—$/);
+    expect(screen.getByLabelText('GPU 温度')).toHaveTextContent(/^—$/);
+    expect(screen.getByLabelText('GPU 占用率').parentElement).toHaveAttribute('title',expect.stringContaining('1/2'));
+    expect(screen.getByLabelText('GPU 功率')).toHaveTextContent('97 W');
+    expect(screen.getByLabelText('显存占用率')).toHaveTextContent('13%');
+    rerender(<SystemTelemetry stats={{...data, gpus:data.gpus.map(item=>({...item,util_pct:0,power_w:0,temp_c:0,mem_used_mb:0}))}}/>);
+    for (const label of ['GPU 占用率','显存占用率']) expect(screen.getByLabelText(label)).toHaveTextContent('0%');
+    expect(screen.getByLabelText('GPU 功率')).toHaveTextContent('0 W');
+    expect(screen.getByLabelText('GPU 温度')).toHaveTextContent('0 °C');
   });
 
   it('labels MPS memory as system unified memory and does not invent GPU load or power', () => {
@@ -106,6 +142,25 @@ describe('stable system telemetry', () => {
     expect(screen.queryByLabelText('显存占用率')).not.toBeInTheDocument();
     expect(screen.getByTestId('telemetry-gpu')).toHaveAttribute('title', expect.stringContaining('并非 GPU 专用显存或训练进程分配量'));
     expect(screen.getByLabelText('GPU 估算功率')).toHaveTextContent(/^—$/);
+  });
+
+  it.each([['dtk', 'DTK'], ['rocm', 'ROCm']] as const)('labels %s and keeps unavailable driver readings unknown', (kind, label) => {
+    const data = snapshot();
+    data.gpus = [
+      { index: 0, kind, name: 'BW GPU 0', mem_total_mb: 65536, mem_used_mb: 4096, util_pct: null, power_w: null, temp_c: null, telemetry_source: 'torch-hip', telemetry_note: 'hip_driver_metrics_unavailable' },
+      { index: 1, kind, name: 'BW GPU 1', mem_total_mb: 65536, mem_used_mb: 8192, util_pct: null, power_w: null, temp_c: null, telemetry_source: 'torch-hip', telemetry_note: 'hip_driver_metrics_unavailable' },
+    ];
+    render(<SystemTelemetry stats={data}/>);
+    expect(screen.getByText(`${label} · 2 卡`)).toBeInTheDocument();
+    expect(screen.queryByText('CUDA')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('GPU 占用率').parentElement).toHaveAttribute('title', expect.stringContaining('0/2'));
+    expect(screen.getByTestId('telemetry-gpu')).not.toHaveAttribute('title', expect.stringContaining('hardware.hip'));
+    for (const reading of ['GPU 占用率', 'GPU 功率', 'GPU 温度']) expect(screen.getByLabelText(reading)).toHaveTextContent(/^—$/);
+    expect(screen.getByLabelText('显存占用率')).toHaveTextContent('9%');
+    fireEvent.click(screen.getByRole('combobox', { name: '选择监控显卡' }));
+    fireEvent.click(screen.getByRole('option', { name: 'GPU 1 · BW GPU 1' }));
+    expect(screen.getByLabelText('显存占用率')).toHaveTextContent('13%');
+    expect(screen.getByTestId('telemetry-gpu')).toHaveAttribute('title', expect.stringContaining('暂时无法可靠获取这张卡'));
   });
 
   it.each([0, 46])('shows Apple GPU driver utilization %s while missing power and temperature stay independent', value => {
@@ -178,6 +233,15 @@ describe('stable system telemetry', () => {
     expect(screen.queryByText('均温')).not.toBeInTheDocument();
     const tip=screen.getByTestId('telemetry-gpu').getAttribute('title');
     expect(tip).not.toMatch(/Apple|IOReport|SMC|均温|估算平均功率/);
+  });
+
+  it('explains ROCm driver power and edge temperature without claiming isolated APU GPU power', () => {
+    const data=snapshot();
+    data.gpus[0]={...data.gpus[0],kind:'rocm',power_source:'hwmon',temperature_source:'hwmon-edge'};
+    render(<SystemTelemetry stats={data}/>);
+    expect(screen.getByLabelText('GPU 功率').parentElement).toHaveAttribute('title',expect.stringContaining('包含 CPU 功耗'));
+    expect(screen.getByLabelText('GPU 温度').parentElement).toHaveAttribute('title',expect.stringContaining('边缘温度'));
+    expect(screen.getByLabelText('GPU 功率')).toHaveTextContent('193 W');
   });
 
   it('removes normal connection text, keeps disconnect feedback, and updates live readings', async () => {

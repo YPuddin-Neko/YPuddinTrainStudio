@@ -65,6 +65,12 @@ def repository(tmp_path):
         "other/tsconfig.tsbuildinfo",
         ".cache/huggingface/metadata.json",
         ".mypy_cache/result.json",
+        "._source.py",
+        "frontend/src/._App.tsx",
+        "frontend/src/._components/Component.tsx",
+        "__MACOSX/source.py",
+        "frontend/src/__MACOSX/Component.tsx",
+        "nested/__macosx/metadata",
     ],
 )
 def test_generated_and_private_paths_are_ignored_and_excluded(repository, name):
@@ -89,6 +95,9 @@ def test_generated_and_private_paths_are_ignored_and_excluded(repository, name):
         "examples/.ENV.EXAMPLE",
         "frontend/public/studio.svg",
         "pyproject.toml",
+        "frontend/src/MACOSX.ts",
+        "docs/__MACOSX-notes.md",
+        "docs/note._backup.md",
     ],
 )
 def test_source_assets_and_templates_are_retained(repository, name):
@@ -143,6 +152,30 @@ def test_frontend_build_is_delivery_only_and_private_files_stay_excluded():
     assert pack.excluded_reason("frontend/dist/nested/node_modules/app.js", built_ui=True)
 
 
+def test_os_metadata_is_excluded_from_built_ui_without_removing_local_files(repository):
+    artifacts = {
+        "frontend/dist/index.html": b"<!doctype html>",
+        "frontend/dist/assets/app.js": b"export {};",
+        "frontend/dist/._index.html": b"AppleDouble metadata",
+        "frontend/dist/assets/._app.js": b"AppleDouble metadata",
+        "frontend/dist/__MACOSX/index.html": b"macOS metadata",
+        "frontend/dist/assets/__MACOSX/app.js": b"macOS metadata",
+        "frontend/dist/._assets/app.js": b"macOS metadata",
+    }
+    for name, content in artifacts.items():
+        path = repository / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+
+    assert pack.collect_files(repository) == {
+        Path(".gitignore"),
+        Path("frontend/dist/index.html"),
+        Path("frontend/dist/assets/app.js"),
+    }
+    for name, content in artifacts.items():
+        assert (repository / name).read_bytes() == content
+
+
 def test_custom_runtime_root_is_excluded_without_manual_ignore(repository):
     root = repository / "my custom studio"
     data = root / "project/person/v1/traindata/photo.png"
@@ -193,6 +226,8 @@ def test_symlinks_do_not_pull_external_files_into_delivery(repository, tmp_path)
 def test_windows_paths_are_checked_and_paths_cannot_escape_repository():
     assert pack.excluded_reason(r"Studio_Data\Projects\image.png")
     assert pack.excluded_reason(r"local\SECRETS.JSON")
+    assert pack.excluded_reason(r"frontend\src\._App.tsx")
+    assert pack.excluded_reason(r"frontend\dist\__MACOSX\app.js", built_ui=True)
     assert pack.excluded_reason("../image.png")
     assert pack.excluded_reason("/tmp/image.png")
     assert pack.excluded_reason(r"C:\data\image.png")

@@ -93,6 +93,47 @@ def wait_for(client, id_, predicate=lambda row: row["status"] not in {"queued", 
     pytest.fail(f"download did not reach expected state: {row}")
 
 
+def test_live_download_resolves_saved_proxy_and_preserves_redirect_rules(download_service, monkeypatch):
+    from ypuddin.server.network import ProxyPolicy
+
+    client, _, _, app = download_service
+    transport = app.state.model_downloads.opener
+    app.state.model_downloads.opener = None
+    captured = []
+
+    def opener(self, *handlers):
+        captured.append((self.mode, handlers))
+        return transport
+
+    monkeypatch.setattr(ProxyPolicy, "opener", opener)
+    client.put("/api/settings", json={"network": {"proxy_mode": "direct"}}).raise_for_status()
+    first = start(client, filename="first.safetensors")
+    assert wait_for(client, first.json()["id"])["status"] == "completed"
+    client.put("/api/settings", json={"network": {"proxy_mode": "custom", "proxy_url": "http://localhost:7890"}}).raise_for_status()
+    second = start(client, filename="second.safetensors")
+    assert wait_for(client, second.json()["id"])["status"] == "completed"
+    assert [item[0] for item in captured] == ["direct", "custom"]
+    assert all(isinstance(item[1][0], _Redirect) for item in captured)
+
+
+def test_changing_proxy_password_during_request_does_not_leak_old_password(download_service):
+    client, _, _, app = download_service
+    app.state.ctx.save_settings({"network": {"proxy_mode": "custom", "proxy_url": "http://proxy.invalid:8080", "proxy_password": "old-request-private"}})
+
+    class FailingProxy:
+        def open(self, *_args, **_kwargs):
+            app.state.ctx.save_settings({"network": {"proxy_password": "new-request-private"}})
+            raise OSError("proxy rejected password old-request-private")
+
+    app.state.model_downloads.opener = FailingProxy()
+    response = start(client)
+    row = wait_for(client, response.json()["id"])
+    assert row["status"] == "failed"
+    assert "old-request-private" not in row["error"]
+    assert "new-request-private" not in row["error"]
+    assert "***" in row["error"]
+
+
 def test_download_registers_complete_file_in_configured_directory_and_defaults(download_service):
     client, control, root, _app = download_service
     response = start(client)

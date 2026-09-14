@@ -74,7 +74,9 @@ class TorchSnapshot(BaseModel):
     environment_profile: str = "legacy"
     environment_root: str = ""
     unavailable_backends: list[dict[str, str]] = Field(
-        default_factory=lambda: [{"id": "dtk", "label": "海光 BWGPU / DTK", "reason": "integration_pending"}]
+        default_factory=lambda: [
+            {"id": "dtk", "label": "海光 DTK 在线环境切换", "reason": "vendor_runtime_required"}
+        ]
     )
     builds: list[TorchBuild]
     operations: list[TorchOperation]
@@ -191,7 +193,7 @@ class TorchEnvironments:
         self.selected_key = selected_key(self.profile)
         self.root = environment.root / "runtimes"
         self.root.mkdir(parents=True, exist_ok=True)
-        self.installer = installer or Installer(environment.root)
+        self.installer = installer or Installer(environment.root, context=context)
         self.driver = driver
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="torch-environment")
         self.lock = threading.RLock()

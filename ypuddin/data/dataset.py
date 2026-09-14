@@ -248,7 +248,9 @@ class TrainDataset(Dataset):
         self.epoch = epoch
 
     def raw_caption(self, item: Item) -> str | StructuredCaption:
-        return read_training_caption(item.record.caption_path, item.source.class_prompt)
+        return read_training_caption(
+            item.record.caption_path, item.source.class_prompt, require_known_format=True
+        )
 
     def use_cached_captions(self) -> list[str]:
         """Restrict every item to a bounded, deterministic set of caption variants and return them all.
@@ -484,7 +486,7 @@ def prepare_data_layout(
             for record in records:
                 if record.caption_path and Path(record.caption_path).suffix.lower() == ".json":
                     try:
-                        read_training_caption(record.caption_path)
+                        read_training_caption(record.caption_path, require_known_format=True)
                     except (ValueError, OSError) as error:
                         raise DataConfigError(
                             f"{prefix}.{record.source_index}.caption_ext", str(error)

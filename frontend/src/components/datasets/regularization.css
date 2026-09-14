@@ -31,3 +31,20 @@
 .reg-task pre { margin-top:8px; padding:10px; max-height:180px; overflow:auto; background:var(--studio-muted); border-radius:6px; font-size:10px; white-space:pre-wrap; overflow-wrap:anywhere; }
 .reg-failed { color:#b91c1c; }
 @media(max-width:540px) { .regularization-panel { padding:12px; } .reg-grid-three { grid-template-columns:repeat(2,minmax(0,1fr)); } .reg-actions { flex-wrap:wrap; } .reg-actions > span { flex-basis:100%; } .reg-actions > button { margin-left:auto; } }
+.reg-training-plan { display:grid; gap:12px; min-width:0; padding-top:12px; border-top:1px solid var(--studio-line); }
+.reg-tag-selection { display:grid; gap:8px; min-width:0; font-size:12px; }
+.reg-tag-selection > div { display:flex; flex-wrap:wrap; gap:6px; max-height:180px; overflow:auto; }
+.reg-tag-selection button { display:inline-flex; align-items:center; gap:8px; min-height:34px; padding:5px 9px; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-panel); }
+.reg-tag-selection button[aria-pressed=true] { color:var(--studio-accent); border-color:var(--studio-accent); background:color-mix(in srgb,var(--studio-accent) 8%,var(--studio-panel)); }
+.reg-tag-selection button small { color:var(--studio-dim); font-variant-numeric:tabular-nums; }
+.reg-plan-preview { min-width:0; padding:12px; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-muted); font-size:12px; }
+.reg-plan-preview > [role=status] { display:flex; align-items:center; gap:6px; margin-bottom:10px; color:var(--studio-dim); }
+.reg-plan-preview dl { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.reg-plan-preview dt { color:var(--studio-dim); }
+.reg-plan-preview dd { margin:4px 0 0; font-weight:600; font-variant-numeric:tabular-nums; }
+.reg-plan-preview details,.reg-plan-preview > p { margin-top:10px; }
+.reg-plan-preview summary { cursor:pointer; }
+.reg-plan-preview ul { margin-top:8px; display:grid; gap:8px; }
+.reg-plan-preview li { min-width:0; overflow-wrap:anywhere; }
+.reg-plan-preview li strong { color:var(--studio-dim); font-weight:400; }
+@media(max-width:540px) { .reg-training-plan .reg-form-grid { grid-template-columns:minmax(0,1fr); } .reg-plan-preview dl { grid-template-columns:repeat(2,minmax(0,1fr)); } }

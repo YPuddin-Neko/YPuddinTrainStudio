@@ -1,0 +1,215 @@
+{
+  "job_id": "j_7637e4ffba11",
+  "passed": true,
+  "entrypoint": "product POST /api/jobs -> supervisor -> torchrun -> ypuddin.cli train",
+  "resume_checked": false,
+  "checks": {
+    "two_rank_rng_saved": true,
+    "step_2_state": true,
+    "final_and_state_weights_equal": true,
+    "all_weights_finite": true,
+    "preview_png_512": true,
+    "project_dataset_matches_original_32_files": true,
+    "distributed_world_size_2": true
+  },
+  "exported_tensors_including_alpha": 896,
+  "trainable_weight_tensors": 672,
+  "state_progress": {
+    "step": 2,
+    "epoch": 0,
+    "batch_in_epoch": 2,
+    "samples_seen": 4,
+    "nan_skips": 0,
+    "total_steps": 2,
+    "steps_per_epoch": 8,
+    "extra": {
+      "train_loss": {
+        "step": 2,
+        "loss": 0.16945402324199677
+      },
+      "loss_sum": 0.29356059059500694,
+      "loss_count": 2,
+      "loss_mean_scope": "run",
+      "loss_ema": 0.1250135164707899
+    }
+  },
+  "rng_world_size": 2,
+  "rng_rank_count": 2,
+  "distributed_plan": {
+    "seq": 48,
+    "ts": 1789418821.4814396,
+    "type": "distributed.plan",
+    "world_size": 2,
+    "backend": "nccl",
+    "per_device_batch_size": 1,
+    "effective_batch_size": 2,
+    "batches_per_rank": 8,
+    "dropped_samples": 0,
+    "tail_policy": "drop_incomplete_rank_group"
+  },
+  "artifacts": [
+    {
+      "name": "state-1/adapter.safetensors",
+      "bytes": 53845896,
+      "sha256": "026c9537f995fef0ce72cbdb4ff45ad53cae1b2573a77bb2ddb738cf1565bbaf"
+    },
+    {
+      "name": "state-1/optimizer.pt",
+      "bytes": 107942147,
+      "sha256": "478e5181e70ae1820c6ae06749d75bdd09e89508c0f88a4209fc9b7852a8b209"
+    },
+    {
+      "name": "state-1/rng.pt",
+      "bytes": 59895,
+      "sha256": "adb9e3058a99d530ef6b4909cca8177155f65ed713704b66237eb17f7193bb0b"
+    },
+    {
+      "name": "state-1/scheduler.pt",
+      "bytes": 1401,
+      "sha256": "c77fd9918bf8f2803b59d141dbd211120b891a444cc7309be9980659800fabd9"
+    },
+    {
+      "name": "state-1/state.json",
+      "bytes": 700,
+      "sha256": "af8808c6970af23a7083c36a800fac12e575f5a68f4cb6e5427a1951657222c0"
+    },
+    {
+      "name": "state-1/training.safetensors",
+      "bytes": 53755184,
+      "sha256": "457d2770da9e3b7f76d671663a483e60737ecc81820020c0084d75f0d8633b5d"
+    },
+    {
+      "name": "state-2/adapter.safetensors",
+      "bytes": 53845896,
+      "sha256": "f5f14c8fd35b65b4ef4a901b3fb97191f46708ea01012989472a3f3770de2e1d"
+    },
+    {
+      "name": "state-2/optimizer.pt",
+      "bytes": 107942147,
+      "sha256": "4e40cc067d0a9b30b7b27c008e45607d5f65bcb76568013f9c119b2000c549ff"
+    },
+    {
+      "name": "state-2/rng.pt",
+      "bytes": 59895,
+      "sha256": "c7bbaaa150b65baf71788f06ad258fa9ff3c4e6c9b03d1e2248504f3a2a516f2"
+    },
+    {
+      "name": "state-2/scheduler.pt",
+      "bytes": 1401,
+      "sha256": "f8868bdb5fe23533d8ccbff2b47c6c4187e561969c7fe7efb1eb0da7dead7d01"
+    },
+    {
+      "name": "state-2/state.json",
+      "bytes": 699,
+      "sha256": "7567d7466d2a95ef04c66540d226ee9d3bdae83735c0fc3f34f4ce0ba0024af5"
+    },
+    {
+      "name": "state-2/training.safetensors",
+      "bytes": 53755184,
+      "sha256": "4acf0e0fee15676992c1ddd03bb407099e7efc58506c54f683a0a8db3bf6a3de"
+    },
+    {
+      "name": "界面一致性验收_v1-final.safetensors",
+      "bytes": 53845984,
+      "sha256": "858ee41c38f62e9482ec078db06bdd5759d7280dde441d73153562475265250c"
+    }
+  ],
+  "preview": {
+    "name": "step2_00_42.png",
+    "bytes": 204852,
+    "sha256": "27e8481077e22026529e4f26f0478b9b2a4c431fb15cc7ea4a8d82e5bbf8f478"
+  },
+  "date": "2026-09-15",
+  "node": "new allocated two-BW node",
+  "model": "official Krea2 Raw BF16",
+  "training": "LoKr rank16 alpha16 factor4",
+  "attention": "sdpa",
+  "resolution": [
+    512,
+    512
+  ],
+  "gpu_count": 2,
+  "optimizer_steps": 2,
+  "process_wall_elapsed_s": 222.4,
+  "exit_code": 0,
+  "original_project_config_preserved": true,
+  "queue_settings_preserved": true,
+  "active_jobs_after": 0,
+  "ranks": [
+    {
+      "rank": "0",
+      "local_rank": "0",
+      "world_size": "2",
+      "hip_visible_devices": "0,1",
+      "cuda_visible_devices": "0,1",
+      "process_exited": true
+    },
+    {
+      "rank": "1",
+      "local_rank": "1",
+      "world_size": "2",
+      "hip_visible_devices": "0,1",
+      "cuda_visible_devices": "0,1",
+      "process_exited": true
+    }
+  ],
+  "gpus_after": [
+    {
+      "index": 0,
+      "util_pct": 0.0,
+      "mem_used_mb": 2,
+      "mem_free_mb": 65198
+    },
+    {
+      "index": 1,
+      "util_pct": 0.0,
+      "mem_used_mb": 2,
+      "mem_free_mb": 65198
+    }
+  ],
+  "metrics": {
+    "steps": [
+      1,
+      2
+    ],
+    "loss": [
+      0.12410656735301018,
+      0.16945402324199677
+    ],
+    "loss_ema": [
+      0.12410656735301018,
+      0.1250135164707899
+    ],
+    "lr": {
+      "w1": [
+        0.0001,
+        0.0001
+      ],
+      "w2": [
+        0.0001,
+        0.0001
+      ]
+    },
+    "grad_norm": [
+      0.012193655595183372,
+      0.009225609712302685
+    ],
+    "vram_mb": [
+      42949.4462890625,
+      43134.68896484375
+    ],
+    "vram_metric": "peak_allocated",
+    "it_s": [
+      0.10750232038742366,
+      0.18481190357730892
+    ],
+    "validation": []
+  },
+  "boundaries": [
+    "Created through actual product API and supervisor; no acceptance harness replaced the training entrypoint.",
+    "This two-step product task saves full state but does not perform a resume comparison.",
+    "The original saved project configuration and queue settings were not changed.",
+    "Elapsed time includes cold imports, process startup, model loading, caching, training, saving and preview.",
+    "The final adapter export has 672 learned tensors plus 224 alpha scalars; both final and state exports contain 896 entries."
+  ]
+}

@@ -281,7 +281,7 @@ class ModelDownloads:
         }
         self.cancelled: dict[str, threading.Event] = {}
         self.pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="model-download")
-        self.opener = urllib.request.build_opener(_Redirect())
+        self.opener = None  # Optional test transport; live requests resolve the current proxy policy.
         self.closed = False
         for row in self.tasks.values():
             row.setdefault("provider", "huggingface")
@@ -454,12 +454,15 @@ class ModelDownloads:
             return self.start(body, recommendation=recommendation)
 
     def _run(self, id_: str, root: Path) -> None:
+        from .network import ProxyPolicy
+
         row = self.tasks[id_]
         event = self.cancelled[id_]
         partial = root / ".downloads" / id_ / row["filename"]
         target = Path(row["target_path"])
         published = False
         token = None
+        policy = ProxyPolicy()
         try:
             if event.is_set():
                 raise _Cancelled()
@@ -489,10 +492,12 @@ class ModelDownloads:
             for filename, meta in files.items():
                 source = row["source_url"].rsplit("/", 1)[0] + "/" + filename if bundle else row["source_url"]
                 request = urllib.request.Request(source, headers=headers)
+                policy = ProxyPolicy.from_context(self.context)
+                opener = self.opener or policy.opener(_Redirect())
                 received, digest = 0, hashlib.sha256()
                 probe = None if bundle else bytearray()
                 with (
-                    self.opener.open(request, timeout=15) as response,
+                    opener.open(request, timeout=15) as response,
                     (partial.parent / filename).open("xb") as file,
                 ):
                     if response.status != 200:
@@ -595,7 +600,7 @@ class ModelDownloads:
                 if row["kind"] == "tagger":
                     (target.parent / "selected_tags.csv").unlink(missing_ok=True)
                 target.parent.rmdir()
-            message = str(error)
+            message = policy.redact(error)
             if token:
                 message = message.replace(token, "[redacted]")
             if isinstance(error, urllib.error.HTTPError):

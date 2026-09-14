@@ -31,8 +31,10 @@ from ypuddin.models.base import (
     TextCond,
     TextSpec,
 )
+from ypuddin.models.memory import release_model_memory
 from ypuddin.models.registry import register
 
+from .checkpoint import check_unquantized_checkpoint
 from .text import AnimaText
 
 log = logging.getLogger(__name__)
@@ -44,6 +46,7 @@ PREFIXES = ("net.", "model.diffusion_model.", "diffusion_model.")
 def _read_state_dict(path: str | Path, dtype: torch.dtype | None = None) -> dict[str, Tensor]:
     from safetensors.torch import load_file
 
+    check_unquantized_checkpoint(path, "Anima DiT")
     sd = load_file(str(path))
     out: dict[str, Tensor] = {}
     for k, v in sd.items():
@@ -58,19 +61,24 @@ def _read_state_dict(path: str | Path, dtype: torch.dtype | None = None) -> dict
 
 
 def build_dit(config: dict[str, Any]) -> nn.Module:
-    from .vendor.cosmos_dit import Anima
+    # einops initializes Dynamo when this vendor module is first imported.
+    # Its real-scalar probes must not inherit the planner's meta context.
+    with torch.device("cpu"):
+        from .vendor.cosmos_dit import Anima
 
     return Anima(**config)
 
 
 def infer_config(state_dict: dict[str, Tensor]) -> dict[str, Any]:
-    from .vendor.cosmos_dit import infer_dit_config
+    with torch.device("cpu"):
+        from .vendor.cosmos_dit import infer_dit_config
 
     return infer_dit_config(state_dict)
 
 
 def default_config() -> dict[str, Any]:
-    from .vendor.cosmos_dit import ANIMA_2B_CONFIG
+    with torch.device("cpu"):
+        from .vendor.cosmos_dit import ANIMA_2B_CONFIG
 
     return dict(ANIMA_2B_CONFIG)
 
@@ -174,9 +182,10 @@ class AnimaLatent(LatentPipeline):
             self.vae.to(self.device)
 
     def unload(self) -> None:
+        if self.vae is None:
+            return
         self.vae = None
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        release_model_memory(self.device)
 
     @torch.no_grad()
     def encode(self, pixels: Tensor) -> Tensor:
@@ -227,6 +236,8 @@ class AnimaFamily(ModelFamily):
 
     # ----------------------------------------------------------------- loading
     def validate_config(self, cfg: ModelConfig) -> list[str]:
+        from safetensors import SafetensorError
+
         problems = []
         for field in ("dit_path", "text_encoder_path", "vae_path"):
             value = getattr(cfg, field)
@@ -234,6 +245,13 @@ class AnimaFamily(ModelFamily):
                 problems.append(f"model.{field} is required for anima")
             elif not Path(value).expanduser().exists():
                 problems.append(f"model.{field} does not exist: {value}")
+            elif field in {"dit_path", "text_encoder_path"}:
+                try:
+                    check_unquantized_checkpoint(
+                        value, "Anima DiT" if field == "dit_path" else "Anima 文字编码器"
+                    )
+                except (OSError, ValueError, KeyError, TypeError, SafetensorError) as error:
+                    problems.append(f"model.{field}: {error}")
         return problems
 
     def latent_fingerprint(self, cfg: ModelConfig, *, dtype: torch.dtype) -> str:

@@ -2,6 +2,7 @@
 
 import hashlib
 import importlib
+import io
 import json
 import sys
 import threading
@@ -15,7 +16,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from packaging.tags import sys_tags
+from packaging.utils import parse_wheel_filename
 
+from ypuddin.server import dtk_catalog
 from ypuddin.server.bus import EventBus
 from ypuddin.server.context import ServiceContext
 from ypuddin.server.db import Database, now
@@ -28,6 +31,8 @@ from ypuddin.server.environment import (
     environment_attention_default,
     maintenance_blocked,
     probe_packages,
+    protected,
+    runtime_info,
 )
 from ypuddin.server.errors import install as install_errors
 from ypuddin.server.routes_environment import router
@@ -178,6 +183,306 @@ def test_extension_plan_cannot_apply_after_same_profile_interpreter_switch(env, 
     assert env.installer.calls == calls
 
 
+@pytest.mark.parametrize("package", ["xformers", "flash-attn", "sageattention", "nvidia-ml-py"])
+def test_dtk_profile_requires_vendor_selection_even_when_torch_cuda_api_is_available(env, package):
+    env.manager.profile = "linux-dtk"
+    env.runtime.update(platform="Linux", hip_runtime="6.2", compute_backend="hip", cuda_runtime=None)
+    package_status = next(item for item in env.manager.status()["packages"] if item["name"] == package)
+    if package in ("xformers", "flash-attn"):
+        assert package_status["supported"] is True and package_status["wheel_required"] is True
+    else:
+        assert package_status["supported"] is False
+    response = env.client.post("/api/environment/operations", json={"package": package})
+    assert response.status_code == 422
+    assert "DTK" in response.text
+    assert env.installer.calls == []
+
+
+@pytest.mark.parametrize(
+    "package",
+    ["hip-runtime", "rocm-core", "dcu-library", "dtk-runtime", "hygon-runtime", "pytorch-triton-rocm"],
+)
+def test_vendor_native_dependencies_cannot_be_replaced_by_extension_plans(package):
+    assert protected(package)
+
+
+@pytest.fixture
+def dtk_env(env, monkeypatch, request):
+    """Exercise the real vendor stream and wheel verifier; only network/pip/device are simulated."""
+    env.manager.profile = "linux-dtk"
+    env.runtime.update(
+        platform="Linux",
+        machine="x86_64",
+        python="3.11.0rc1",
+        torch="2.5.1+das.opt1.dtk25041",
+        hip_runtime="5.6",
+        cuda_runtime=None,
+    )
+    package = getattr(request, "param", "xformers")
+    entry = next(wheel for wheel in dtk_catalog.WHEELS if wheel.package == package)
+    if package == "flash-attn":
+        env.runtime["torch"] = "2.4.1+das.opt1.dtk25041"
+    env.versions.update(
+        torch=env.runtime["torch"],
+        triton="3.0.0+das.opt1.dtk25041",
+        einops="0.8.1",
+        pytest="8.4.2",
+        **{"flash-attn": "2.6.1+das.opt1.dtk25041"},
+    )
+    monkeypatch.setattr(
+        "ypuddin.server.environment.sys_tags", lambda: parse_wheel_filename(entry.filename)[3]
+    )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as wheel:
+        wheel.writestr(
+            entry.package.replace("-", "_") + "-" + entry.version + ".dist-info/METADATA",
+            "Metadata-Version: 2.1\nName: "
+            + entry.package
+            + "\nVersion: "
+            + entry.version
+            + "\nRequires-Python: >=3.9\nRequires-Dist: torch>=2.1.0\nRequires-Dist: numpy\n",
+        )
+        wheel.writestr(
+            entry.package.replace("-", "_") + "/__init__.py", "# Simulated vendor package; never executed.\n"
+        )
+    data = buffer.getvalue()
+    entry = entry.model_copy(update={"size_bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+    monkeypatch.setattr(dtk_catalog, "WHEELS", (entry,))
+
+    class Response(io.BytesIO):
+        headers = {"Content-Length": str(len(data))}
+
+        def geturl(self):
+            return entry.url
+
+    monkeypatch.setattr(
+        dtk_catalog.urllib.request,
+        "build_opener",
+        lambda *a: SimpleNamespace(open=lambda *a, **k: Response(data)),
+    )
+    original_run = env.installer.run
+
+    def run(args, log, cancel, **kwargs):
+        if "--dry-run" in args:
+            env.installer.calls.append(args)
+            if args[-1] == "pytest":
+                rows = getattr(
+                    env.installer,
+                    "python_rows",
+                    [
+                        {
+                            **FakeInstaller.row("pytest", "8.4.2"),
+                            "metadata": {
+                                "name": "pytest",
+                                "version": "8.4.2",
+                                "requires_dist": ["pluggy>=1.5"],
+                            },
+                        },
+                        FakeInstaller.row("pluggy", "1.6.0"),
+                    ],
+                )
+                env.installer.current.extend(rows)
+            else:
+                rows = [
+                    {
+                        "metadata": {"name": entry.package, "version": entry.version},
+                        "download_info": {
+                            "url": Path(args[-1]).as_uri(),
+                            "archive_info": {"hashes": {"sha256": entry.sha256}},
+                        },
+                    }
+                ]
+                env.installer.current = rows.copy()
+            Path(args[args.index("--report") + 1]).write_text(json.dumps({"install": rows}))
+        elif "download" in args:
+            env.installer.calls.append(args)
+            (Path(args[args.index("--dest") + 1]) / entry.filename).write_bytes(data)
+            for row in env.installer.current:
+                if row["metadata"]["name"] != entry.package:
+                    (
+                        Path(args[args.index("--dest") + 1]) / row["download_info"]["url"].rsplit("/", 1)[-1]
+                    ).write_bytes(WHEEL)
+        else:
+            original_run(args, log, cancel, **kwargs)
+
+    env.installer.run = run
+    env.vendor = entry
+    env.vendor_data = data
+    return env
+
+
+def test_dtk_vendor_download_plan_apply_preserves_native_stack_and_reports_provenance(dtk_env):
+    env = dtk_env
+    before = env.versions.copy()
+    catalog = env.client.get("/api/environment/dtk/wheels").json()
+    assert catalog["wheels"][0]["compatible"] is True
+    response = env.client.post(
+        "/api/environment/operations",
+        json={"package": "xformers", "vendor_wheel_id": env.vendor.id},
+    )
+    assert response.status_code == 202, response.text
+    op = wait_status(env.manager, response.json()["id"])
+    assert op.status == "ready", op.error
+    assert op.phase == "plan" and op.downloaded_bytes == op.total_bytes == env.vendor.size_bytes
+    assert op.bytes_per_second is None and op.eta_seconds is None
+    assert op.plan[0]["provider"] == "sourcefind-dtk" and op.plan[0]["source_url"] == env.vendor.url
+    assert env.versions == before  # Preparing a download is not an installation.
+    assert "--no-index" in env.installer.calls[0] and "--no-deps" in env.installer.calls[0]
+    env.manager.apply(op.id)
+    result = wait_status(env.manager, op.id, ("completed", "failed"))
+    assert result.status == "completed", result.error
+    assert all(env.versions[name] == value for name, value in before.items())
+    assert env.versions["xformers"] == env.vendor.version
+    assert env.probe.called
+
+
+def test_dtk_vendor_installed_but_failed_probe_is_not_claimed_available(dtk_env):
+    env = dtk_env
+    env.probe.side_effect = lambda: {
+        "xformers": {
+            "importable": True,
+            "kernel_tested": False,
+            "error": "vendor kernel unavailable on current GPU",
+        }
+    }
+    op = env.manager.start(EnvironmentRequest(package="xformers", vendor_wheel_id=env.vendor.id))
+    op = wait_status(env.manager, op.id)
+    assert op.status == "ready", op.error
+    env.manager.apply(op.id)
+    result = wait_status(env.manager, op.id, ("completed", "failed"))
+    assert result.status == "failed" and "vendor kernel unavailable" in result.error
+    status = next(item for item in env.manager.status()["packages"] if item["name"] == "xformers")
+    assert not status["available"]
+
+
+def test_dtk_vendor_download_rejects_hash_mismatch_before_pip_runs(dtk_env, monkeypatch):
+    env = dtk_env
+    monkeypatch.setattr(dtk_catalog, "WHEELS", (env.vendor.model_copy(update={"sha256": "0" * 64}),))
+    op = env.manager.start(EnvironmentRequest(package="xformers", vendor_wheel_id=env.vendor.id))
+    op = wait_status(env.manager, op.id)
+    assert op.status == "failed" and "SHA256" in op.error
+    assert not env.installer.calls
+    assert op.bytes_per_second is None and op.eta_seconds is None
+
+
+def test_dtk_vendor_source_cannot_be_combined_with_offline_wheel(dtk_env):
+    response = dtk_env.client.post(
+        "/api/environment/operations",
+        json={"package": "xformers", "vendor_wheel_id": dtk_env.vendor.id, "wheel_id": "other"},
+    )
+    assert response.status_code == 422 and not dtk_env.installer.calls
+
+
+@pytest.mark.parametrize("dtk_env", ["flash-attn", "xformers"], indirect=True)
+@pytest.mark.parametrize("offline", [False, True])
+@pytest.mark.parametrize("action", ["install", "repair"])
+def test_dtk_vendor_plan_adds_implicit_python_runtime_dependencies_before_apply(dtk_env, offline, action):
+    env = dtk_env
+    env.versions.pop("pytest")
+    env.versions[env.vendor.package] = env.vendor.version
+    before = env.versions.copy()
+    source = {"vendor_wheel_id": env.vendor.id}
+    if offline:
+        path = env.manager.root / env.vendor.filename
+        path.write_bytes(env.vendor_data)
+        uploaded = env.manager.register_wheel(path)
+        source = {"wheel_id": uploaded["wheel_id"]}
+    op = env.manager.start(EnvironmentRequest(package=env.vendor.package, action=action, **source))
+    op = wait_status(env.manager, op.id)
+    assert op.status == "ready", op.error
+    assert {item["name"] for item in op.plan} == {env.vendor.package, "pytest", "pluggy"}
+    assert env.versions == before
+    native_plan, python_plan = env.installer.calls
+    assert "--no-deps" in native_plan and "--no-index" in native_plan
+    assert python_plan[-1] == "pytest" and "--no-deps" not in python_plan
+    pins = Path(python_plan[python_plan.index("--constraint") + 1]).read_text()
+    assert all(
+        f"{name}==={version}\n" in pins for name, version in before.items() if name != env.vendor.package
+    )
+    env.manager.apply(op.id)
+    result = wait_status(env.manager, op.id, ("completed", "failed"))
+    assert result.status == "completed", result.error
+    assert all(env.versions[name] == value for name, value in before.items())
+    assert env.versions["pytest"] == "8.4.2" and env.versions["pluggy"] == "1.6.0"
+    assert "--require-hashes" in next(args for args in env.installer.calls if "download" in args)
+
+
+@pytest.mark.parametrize("bad", ["native", "existing", "compiled", "missing-transitive"])
+def test_dtk_python_runtime_resolution_cannot_bypass_plan_protection(dtk_env, bad):
+    env = dtk_env
+    env.versions.pop("pytest")
+    rows = [FakeInstaller.row("pytest", "8.4.2")]
+    if bad == "native":
+        rows.append(FakeInstaller.row("triton", "3.6.0"))
+    elif bad == "existing":
+        env.versions["pluggy"] = "1.5.0"
+        rows.append(FakeInstaller.row("pluggy", "1.6.0"))
+    elif bad == "compiled":
+        rows[0]["download_info"]["url"] = (
+            "https://files.pythonhosted.org/pytest-8.4.2-cp311-cp311-manylinux_2_28_x86_64.whl"
+        )
+    else:
+        rows[0]["metadata"]["requires_dist"] = ["pluggy>=1.5"]
+    env.installer.python_rows = rows
+    before = env.versions.copy()
+    op = env.manager.start(EnvironmentRequest(package=env.vendor.package, vendor_wheel_id=env.vendor.id))
+    op = wait_status(env.manager, op.id)
+    assert op.status == "failed"
+    assert env.versions == before and all("--dry-run" in call for call in env.installer.calls)
+
+
+def test_dtk_missing_python_dependency_download_failure_does_not_install_extension(dtk_env):
+    env = dtk_env
+    env.versions.pop("pytest")
+    before = env.versions.copy()
+    original = env.installer.run
+
+    def fail_dependency_resolution(args, log, cancel, **kwargs):
+        if args[-1] == "pytest":
+            raise RuntimeError("Python package index unavailable")
+        return original(args, log, cancel, **kwargs)
+
+    env.installer.run = fail_dependency_resolution
+    op = env.manager.start(EnvironmentRequest(package=env.vendor.package, vendor_wheel_id=env.vendor.id))
+    op = wait_status(env.manager, op.id)
+    assert op.status == "failed" and "index unavailable" in op.error
+    assert env.versions == before and not maintenance_blocked(env.context.db)
+    assert all("--dry-run" in args for args in env.installer.calls)
+
+
+@pytest.mark.parametrize(
+    "system,count,nccl,multi_gpu",
+    [
+        ("Linux", 2, True, True),
+        ("Linux", 1, True, False),
+        ("Linux", 2, False, False),
+        ("Windows", 2, True, False),
+    ],
+)
+def test_hip_runtime_uses_vendor_backend_and_reports_actual_collective_capability(
+    monkeypatch, system, count, nccl, multi_gpu
+):
+    monkeypatch.setattr("ypuddin.server.hardware.gpu_info", lambda **kwargs: [])
+    monkeypatch.setattr("ypuddin.server.environment.platform.system", lambda: system)
+    monkeypatch.setenv("YPUDDIN_ENV_PROFILE", "linux-dtk")
+    torch = SimpleNamespace(
+        __version__="2.4.1+das.opt1.dtk25041",
+        version=SimpleNamespace(cuda=None, hip="6.2"),
+        cuda=SimpleNamespace(
+            is_available=lambda: True, device_count=lambda: count, get_device_capability=lambda: (9, 0)
+        ),
+        distributed=SimpleNamespace(is_available=lambda: True, is_nccl_available=lambda: nccl),
+        backends=SimpleNamespace(),
+    )
+    monkeypatch.setitem(sys.modules, "torch", torch)
+    runtime = runtime_info()
+    assert runtime["hip_runtime"] == "6.2"
+    assert runtime["compute_backend"] == "hip" and runtime["cuda_applicable"] is False
+    assert runtime["cuda_device_count"] == count
+    assert runtime["multi_gpu_training"] == multi_gpu
+    assert runtime["training_device_policy"] == ("exclusive_devices" if multi_gpu else "single_device")
+
+
 def start(env, **fields):
     response = env.client.post("/api/environment/operations", json={"package": "tensorboard", **fields})
     assert response.status_code == 202, response.text
@@ -278,12 +583,14 @@ def test_runtime_probes_cleanup_import_side_effects_in_disposable_cwd(monkeypatc
 
 
 def run_xformers_probe(
-    monkeypatch, capsys, error, *, capability=(12, 0), import_error=False, sdpa_error=None
+    monkeypatch, capsys, error, *, capability=(12, 0), import_error=False, sdpa_error=None, finite=True
 ):
     tensor = Mock()
     attention = Mock(side_effect=error, return_value=tensor)
     sdpa = Mock(side_effect=sdpa_error, return_value=tensor)
     torch = SimpleNamespace(
+        version=SimpleNamespace(hip=None),
+        isfinite=lambda value: SimpleNamespace(all=lambda: finite),
         cuda=SimpleNamespace(
             is_available=lambda: True,
             get_device_capability=lambda: capability,
@@ -378,6 +685,13 @@ def test_xformers_success_does_not_run_fallback_probe(monkeypatch, capsys):
     result, sdpa, tensor = run_xformers_probe(monkeypatch, capsys, None)
     assert result == {"importable": True, "kernel_tested": True, "error": None}
     tensor.float.return_value.sum.return_value.backward.assert_called_once()
+    sdpa.assert_not_called()
+
+
+def test_xformers_nonfinite_result_does_not_pass_kernel_probe(monkeypatch, capsys):
+    result, sdpa, _ = run_xformers_probe(monkeypatch, capsys, None, finite=False)
+    assert result["importable"] is True and result["kernel_tested"] is False
+    assert "not finite" in result["error"]
     sdpa.assert_not_called()
 
 
@@ -720,3 +1034,116 @@ def test_cannot_dismiss_unfinished_install(env, status):
     env.context.db.set_kv("environment.operation." + op.id, op.model_dump())
     assert env.client.post(f"/api/environment/operations/{op.id}/dismiss").status_code == 409
     assert env.manager.get(op.id).dismissed_at is None
+
+
+def test_sdpa_snapshot_has_separate_cached_status_without_changing_install_catalog(env):
+    previous_names = set(CATALOG)
+    result = {
+        "status": "failed", "reason": "hip_sdpa_flash_library_missing",
+        "error": "当前 SDPA 缺少厂商动态库", "detail": "No matching libraries found for flash_attn_2_cuda*.so",
+        "checked_at": 10.0, "device": "cuda:0", "device_name": "BW",
+        "torch": "2.7.1", "hip_runtime": "6.3", "checks": [{"dtype": "bf16", "shape": [1, 2, 32, 64], "passed": False, "error": "missing"}],
+    }
+
+    def probe():
+        assert env.context.db.get_kv("environment.maintenance")["probing"]
+        assert maintenance_blocked(env.context.db)
+        return {"sdpa": result}
+
+    env.probe.side_effect = probe
+    state = env.client.get("/api/environment").json()
+    assert state["sdpa"] == result
+    assert {item["name"] for item in state["packages"]} == previous_names
+    assert env.client.get("/api/environment").json()["sdpa"] == result
+    env.probe.assert_called_once()
+    assert not maintenance_blocked(env.context.db)
+    job(env)
+    state = env.client.get("/api/environment?refresh=true").json()
+    assert state["probe_deferred"] and state["sdpa"] == result
+    env.probe.assert_called_once()
+
+
+def test_busy_first_snapshot_does_not_invent_sdpa_success(env):
+    job(env)
+    state = env.client.get("/api/environment?refresh=true").json()
+    assert state["probe_deferred"] and state["sdpa"] is None
+    env.probe.assert_not_called()
+
+
+@pytest.fixture
+def windows_vendor_env(env, monkeypatch):
+    """Real catalog admission/download/wheel/plan checks with simulated network, pip and GPU."""
+    from ypuddin.server import windows_attention_catalog as windows
+    from ypuddin.server.network import ProxyPolicy
+
+    env.manager.profile = "windows-cuda"
+    env.runtime.update(torch="2.11.0+cu128", gpu_capability=[12, 0])
+    env.versions["torch"] = "2.11.0+cu128"
+    entry = next(w for w in windows.BUNDLED if w.python_tag == "cp312" and w.cuda == "12.8")
+    monkeypatch.setattr("ypuddin.server.environment.sys_tags", lambda: parse_wheel_filename(entry.filename)[3])
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("flash_attn-" + entry.version + ".dist-info/METADATA", "Metadata-Version: 2.1\nName: flash-attn\nVersion: " + entry.version + "\nRequires-Python: >=3.9\nRequires-Dist: torch==2.11.0\n")
+    data = buffer.getvalue()
+    entry = entry.model_copy(update={"size_bytes":len(data), "sha256":hashlib.sha256(data).hexdigest()})
+    env.manager._windows_catalog._wheels = (entry,)
+    class Response(io.BytesIO):
+        headers = {"Content-Length":str(len(data))}
+        def geturl(self): return entry.url
+    monkeypatch.setattr(ProxyPolicy, "opener", lambda *a: SimpleNamespace(open=lambda *a, **k: Response(data)))
+    original = env.installer.run
+    def run(args, log, cancel, **kwargs):
+        if "--dry-run" in args:
+            env.installer.calls.append(args)
+            rows = env.installer.rows or [{"metadata":{"name":"flash-attn", "version":entry.version}, "download_info":{"url":Path(args[-1]).as_uri(), "archive_info":{"hashes":{"sha256":entry.sha256}}}}]
+            env.installer.current = rows
+            Path(args[args.index("--report")+1]).write_text(json.dumps({"install":rows}))
+        elif "download" in args:
+            env.installer.calls.append(args)
+            (Path(args[args.index("--dest")+1])/entry.filename).write_bytes(data)
+        else:
+            original(args, log, cancel, **kwargs)
+    env.installer.run = run
+    env.vendor = entry
+    return env
+
+
+def test_windows_community_download_plan_apply_protects_torch_and_tests_kernel(windows_vendor_env):
+    env = windows_vendor_env
+    before = env.versions.copy()
+    response = env.client.post("/api/environment/operations", json={"package":"flash-attn", "vendor_wheel_id":env.vendor.id})
+    assert response.status_code == 202, response.text
+    ready = wait_status(env.manager, response.json()["id"])
+    assert ready.status == "ready", ready.error
+    assert ready.downloaded_bytes == ready.total_bytes == env.vendor.size_bytes
+    assert ready.plan[0]["provider"] == "mjun0812-community-windows"
+    assert env.versions == before and not env.probe.called
+    env.manager.apply(ready.id)
+    result = wait_status(env.manager, ready.id, ("completed", "failed"))
+    assert result.status == "completed", result.error
+    assert env.versions == {**before, "flash-attn":env.vendor.version} and env.probe.called
+
+
+def test_windows_catalog_cannot_cross_into_dtk_or_replace_torch(windows_vendor_env):
+    env = windows_vendor_env
+    env.manager.profile = "linux-dtk"
+    with pytest.raises(EnvironmentError, match="requires_windows_cuda"):
+        env.manager.start(EnvironmentRequest(package="flash-attn", vendor_wheel_id=env.vendor.id))
+    env.manager.profile = "windows-cuda"
+    env.installer.rows = [FakeInstaller.row("torch", "2.12.0")]
+    op = env.manager.start(EnvironmentRequest(package="flash-attn", vendor_wheel_id=env.vendor.id))
+    failed = wait_status(env.manager, op.id)
+    assert failed.status == "failed" and "protected runtime torch" in failed.error
+    assert all("--dry-run" in args for args in env.installer.calls)
+
+
+def test_windows_catalog_api_returns_bundled_candidates_and_network_reason(env, monkeypatch):
+    from ypuddin.server.network import ProxyPolicy
+    env.runtime.update(torch="2.11.0+cu128")
+    def fail(*a, **k): raise OSError("network unavailable")
+    monkeypatch.setattr(ProxyPolicy, "opener", lambda *a: SimpleNamespace(open=fail))
+    response = env.client.get("/api/environment/windows/wheels")
+    assert response.status_code == 200
+    catalog = response.json()
+    assert catalog["origin"] == "bundled" and "network unavailable" in catalog["error"]
+    assert len([w for w in catalog["wheels"] if w["compatible"]]) == 1

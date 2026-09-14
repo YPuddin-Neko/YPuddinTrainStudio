@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -25,11 +26,20 @@ def _load(args: argparse.Namespace) -> TrainConfig:
 
 
 def cmd_train(args: argparse.Namespace) -> int:
+    from ypuddin.runtime_attention import AttentionEnvironmentError
     from ypuddin.train import train
 
     cfg = _load(args)
-    outcome = train(cfg, device=args.device)
-    print(f"training {outcome}")
+    try:
+        outcome = train(cfg, device=args.device)
+    except AttentionEnvironmentError as exc:
+        if args.verbose:
+            raise
+        if int(os.environ.get("RANK", "0")) == 0:
+            print(str(exc), file=sys.stderr)
+        return 1
+    if int(os.environ.get("RANK", "0")) == 0:
+        print(f"training {outcome}")
     return 0 if outcome in ("finished", "paused") else 1
 
 
@@ -220,6 +230,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         import uvicorn
 
         from ypuddin.server.app import create_app
+        from ypuddin.server.http_server import StudioServer
         from ypuddin.server.lifecycle import RESTART_TOKEN_ENV, launch_service
     except ImportError as e:
         print(f"server dependencies missing: {e}. Install with: pip install 'ypuddin[server]'")
@@ -229,8 +240,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
     app = create_app(data_root=args.data_root)
     settings = app.state.ctx.settings()["server"]
     host, port = args.host or settings["host"], args.port or settings["port"]
-    server = uvicorn.Server(
-        uvicorn.Config(app, host=host, port=port, log_level="info", timeout_graceful_shutdown=5)
+    server = StudioServer(
+        uvicorn.Config(app, host=host, port=port, log_level="info", timeout_graceful_shutdown=5),
+        event_bus=app.state.ctx.bus,
     )
     if args.control_file and args.original_python:
         import os

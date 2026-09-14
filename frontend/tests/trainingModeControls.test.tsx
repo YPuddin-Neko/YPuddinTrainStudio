@@ -55,3 +55,18 @@ it('keeps unrelated settings intact and does not mutate the previous draft', () 
   expect(original.training.mode).toBe('adapter');
   expect(changed.memory.base_precision).toBe('fp32');
 });
+
+it('offers GPU count in common settings and persists the numeric choice', () => {
+  function Devices() {
+    const [value, setValue] = React.useState(schemaDefaults(schema));
+    return <><SchemaForm schema={schema} value={value} onChange={setValue} compact showAdvanced={false} groupFilter={['loop']}/><output data-testid="training-config">{JSON.stringify(value)}</output></>;
+  }
+  render(<Devices/>);
+  const field = screen.getByLabelText('训练显卡数量');
+  expect(field).toHaveValue(1);
+  fireEvent.change(field, {target: {value: '2'}});
+  fireEvent.blur(field);
+  expect(config().loop.gpu_count).toBe(2);
+  expect(screen.getByText('1 为单卡；多卡分担图片计算，显存不会合并。')).toBeInTheDocument();
+  expect(screen.getByTestId('field-dataset.batch_size')).toHaveTextContent('每张显卡一次处理的图片数');
+});

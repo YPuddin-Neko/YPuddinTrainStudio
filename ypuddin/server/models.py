@@ -20,9 +20,10 @@ class _Out(BaseModel):
 # --------------------------------------------------------------------------- system
 class GpuInfo(_Out):
     index: int
-    kind: Literal["cuda", "mps"] = "cuda"
+    kind: Literal["cuda", "mps", "dtk", "rocm"] = "cuda"
     name: str
     total_mb: int | None = None
+    hip_runtime: str | None = None
 
 
 class Health(_Out):
@@ -30,6 +31,8 @@ class Health(_Out):
     api_version: int
     torch: str | None
     cuda: str | None
+    hip: str | None = None
+    hip_available: bool = False
     mps: bool = False
     gpus: list[GpuInfo]
     families: list[str]
@@ -37,7 +40,7 @@ class Health(_Out):
 
 class GpuStats(_Out):
     index: int
-    kind: Literal["cuda", "mps"] = "cuda"
+    kind: Literal["cuda", "mps", "dtk", "rocm"] = "cuda"
     name: str
     util_pct: float | None = None
     mem_used_mb: int | None = None
@@ -54,6 +57,7 @@ class GpuStats(_Out):
     telemetry_source: str | None = None
     telemetry_note: str | None = None
     cuda_available: bool | None = None
+    hip_runtime: str | None = None
 
 
 class RamStats(_Out):
@@ -81,6 +85,8 @@ class SystemInfo(_Out):
     ypuddin: str
     cuda: str | None = None
     cuda_available: bool = False
+    hip: str | None = None
+    hip_available: bool = False
 
 
 class SettingsPaths(_Out):
@@ -101,10 +107,19 @@ class SettingsUi(_Out):
     theme: Literal["light", "dark", "system"]
 
 
+class SettingsNetwork(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    proxy_mode: Literal["system", "direct", "custom"] = "system"
+    proxy_url: str = ""
+    proxy_username: str = ""
+    proxy_password_configured: bool = False
+
+
 class Settings(_Out):
     paths: SettingsPaths
     server: SettingsServer
     ui: SettingsUi
+    network: SettingsNetwork = Field(default_factory=SettingsNetwork)
 
 
 class FsEntry(_Out):
@@ -219,6 +234,15 @@ class ImageFitPlan(_Out):
     items: list[ImageFitGeometry]
 
 
+class PlanDistributed(_Out):
+    world_size: int
+    per_device_batch_size: int
+    effective_batch_size: int
+    batches_per_rank: int
+    dropped_samples: int
+    tail_policy: str
+
+
 class Plan(_Out):
     ok: bool
     errors: list[ConfigError]
@@ -235,6 +259,7 @@ class Plan(_Out):
     text_encoding: str | None = None
     native: NativePlan | None = None
     image_fit: ImageFitPlan | None = None
+    distributed: PlanDistributed | None = None
 
 
 class Preset(_Out):
@@ -468,6 +493,26 @@ class DatasetImportProgress(_Out):
     error: str | None
 
 
+class CaptionField(_Out):
+    path: list[str]
+    role: Literal[
+        "quality", "count", "character", "character_name", "character_variant", "character_full",
+        "series", "artist", "appearance", "tags", "environment", "nl", "trigger",
+    ]
+    value: str | list[str]
+    present: bool
+
+
+class CaptionStructure(_Out):
+    format: Literal["full", "nested", "simple", "flat", "legacy_override", "unknown"]
+    document: dict[str, Any]
+    fields: list[CaptionField]
+    revision: str
+    editable: bool
+    legacy_override: bool
+    reason: str | None = None
+
+
 class DatasetImage(_Out):
     hash: str
     rel_path: str
@@ -476,6 +521,7 @@ class DatasetImage(_Out):
     caption: str
     caption_tags: str | None = None
     caption_description: str | None = None
+    caption_structure: CaptionStructure | None = None
     caption_format: str | None = None
     caption_error: str | None = None
     caption_status: Literal["captioned", "missing", "invalid"] = "missing"
@@ -506,6 +552,7 @@ class DatasetCaptionStats(_Out):
 
 class Caption(_Out):
     caption: str
+    caption_structure: CaptionStructure | None = None
 
 
 class TagBatchResult(_Out):

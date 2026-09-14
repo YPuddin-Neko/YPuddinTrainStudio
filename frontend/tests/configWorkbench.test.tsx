@@ -1,7 +1,7 @@
 import React from 'react';
 import {fireEvent, render, screen, within} from '@testing-library/react';
 import {describe, it, expect} from 'vitest';
-import {presentConfigIssues, configTabForPath} from '../src/utils/configPresentation';
+import {presentConfigIssues, configTabForPath, presentPlanWarning} from '../src/utils/configPresentation';
 import {SchemaForm} from '../src/schema/SchemaForm/SchemaForm';
 import BucketInspector from '../src/pages/TrainConfig/BucketInspector';
 import type {Plan} from '../src/api/types';
@@ -9,6 +9,27 @@ import '../src/i18n';
 import trainSchema from '../src/schema/train-schema.json';
 
 describe('compact configuration workbench contracts', () => {
+  it('localizes padding and VRAM notes without losing their quantities', () => {
+    const padding = '182 images preserve the complete frame with padding (2.4% of training canvas pixels); padding is excluded from direct loss but remains visible context. Native mode or wider aspect buckets can reduce it.';
+    expect(presentPlanWarning('images.padding', padding)).toContain('182 张');
+    expect(presentPlanWarning('images.padding', padding)).toContain('2.4%');
+    expect(presentPlanWarning('images.padding', padding)).not.toContain('images');
+    expect(presentPlanWarning('images.padding', padding, true)).toBe(padding);
+    expect(presentPlanWarning('vram.tight', 'estimated peak 18000 MB vs 16000 MB available')).toBe('预计峰值显存 18000 MB，设备可用容量 16000 MB，显存余量可能不足。');
+  });
+
+  it('reads legacy automatic attention as SDPA and exposes each explicit backend once', () => {
+    const changes: unknown[] = [];
+    render(<SchemaForm schema={trainSchema} value={{model:{attention:'auto'}}} onChange={value=>changes.push(value)} compact showAdvanced groupFilter={['memory']}/>);
+    const attention = screen.getByRole('combobox',{name:'注意力后端'});
+    expect(attention).toHaveTextContent(/^PyTorch SDPA$/);
+    fireEvent.click(attention);
+    expect(screen.getAllByRole('option',{name:/PyTorch SDPA/})).toHaveLength(1);
+    expect(screen.queryByRole('option',{name:/默认/})).not.toBeInTheDocument();
+    expect(changes).toHaveLength(0);
+    fireEvent.click(screen.getByRole('option',{name:'xFormers'}));
+    expect(changes).toEqual([{model:{attention:'xformers'}}]);
+  });
   it('normalizes FastAPI locations and translates required components without crashing', () => {
     const issues = presentConfigIssues([
       {loc:['body','config','model','dit_path'],msg:'model.dit_path is required for anima'},

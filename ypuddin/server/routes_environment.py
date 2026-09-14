@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Request, UploadFile
 
 from .db import new_id
+from .dtk_catalog import DtkCatalog
 from .environment import (
     MAX_WHEEL_BYTES,
     EnvironmentError,
@@ -18,6 +19,7 @@ from .environment import (
 )
 from .lifecycle import RestartRequest, RestartResult, ServiceRuntime
 from .torch_environments import TorchOperation, TorchRequest, TorchSnapshot
+from .windows_attention_catalog import WindowsAttentionCatalog
 
 router = APIRouter()
 
@@ -34,6 +36,16 @@ def status(refresh: bool = False, service: EnvironmentManager = Depends(environm
 @router.put("/environment/settings", response_model=EnvironmentSettings)
 def settings(body: EnvironmentSettings, service: EnvironmentManager = Depends(environment)):
     return service.save_settings(body)
+
+
+@router.get("/environment/dtk/wheels", response_model=DtkCatalog)
+def dtk_wheels(service: EnvironmentManager = Depends(environment)):
+    return service.vendor_wheels()
+
+
+@router.get("/environment/windows/wheels", response_model=WindowsAttentionCatalog)
+def windows_wheels(refresh: bool = False, service: EnvironmentManager = Depends(environment)):
+    return service.windows_wheels(refresh=refresh)
 
 
 @router.get("/environment/operations", response_model=list[EnvironmentOperation])

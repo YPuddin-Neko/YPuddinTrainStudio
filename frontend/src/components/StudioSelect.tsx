@@ -4,7 +4,7 @@ import { Check, ChevronDown } from 'lucide-react';
 import { useWorkspaceText } from '../utils/workspaceText';
 import './studio-select-search.css';
 
-export interface StudioSelectOption { value: string; label: string; disabled?: boolean; }
+export interface StudioSelectOption { value: string; label: string; displayLabel?: string; disabled?: boolean; }
 interface Props {
   id?: string;
   value: string;
@@ -13,6 +13,7 @@ interface Props {
   disabled?: boolean;
   className?: string;
   icon?: React.ReactNode;
+  triggerDescription?: string;
   searchable?: boolean;
   'aria-invalid'?: React.AriaAttributes['aria-invalid'];
   'aria-label'?: string;
@@ -22,7 +23,7 @@ interface Props {
 }
 
 /** A select-only combobox; focus stays on the trigger while its list is open. */
-export default function StudioSelect({ id, value, options, onValueChange, disabled, className = '', icon, searchable = false, ...aria }: Props) {
+export default function StudioSelect({ id, value, options, onValueChange, disabled, className = '', icon, triggerDescription, searchable = false, ...aria }: Props) {
   const text = useWorkspaceText();
   const generatedId = React.useId();
   const triggerId = id || `studio-select-${generatedId}`;
@@ -144,7 +145,7 @@ export default function StudioSelect({ id, value, options, onValueChange, disabl
       className={`studio-select ${className}`} aria-haspopup="listbox" aria-expanded={visible}
       aria-controls={visible ? listId : undefined} aria-activedescendant={visible && active >= 0 ? `${listId}-${active}` : undefined}
       onClick={() => visible ? setOpen(false) : openList()} onKeyDown={keyDown} onBlur={event => { if (!list.current?.contains(event.relatedTarget)) setOpen(false); }}>
-      {icon}<span className="studio-select-value">{options[selected]?.label ?? value}</span><ChevronDown size={13} className="studio-select-chevron" aria-hidden="true"/>
+      {icon}<span className="studio-select-value">{triggerDescription ? <><span className="studio-select-title">{options[selected]?.displayLabel ?? options[selected]?.label ?? value}</span><span className="studio-select-description">{triggerDescription}</span></> : options[selected]?.displayLabel ?? options[selected]?.label ?? value}</span><ChevronDown size={13} className="studio-select-chevron" aria-hidden="true"/>
     </button>
     {visible && createPortal(<div ref={list} id={searchable ? undefined : listId} role={searchable ? undefined : 'listbox'} className={`studio-select-menu${searchable ? ' studio-select-menu-searchable' : ''}`} style={position}
       aria-label={searchable ? undefined : aria['aria-label']} aria-labelledby={searchable ? undefined : aria['aria-labelledby'] || (!aria['aria-label'] ? triggerId : undefined)}

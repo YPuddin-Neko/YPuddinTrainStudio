@@ -99,6 +99,44 @@ def test_quality_inspects_pixels_duplicates_sidecars_and_metadata_staleness(api,
     assert snapshot(api)["stale"] and snapshot(api)["inspection"] is None
 
 
+def test_inspection_distinguishes_alpha_metadata_from_actual_transparent_pixels(api, tmp_path):
+    _, root = imported(api, tmp_path, mask=False)
+    Image.new("RGBA", (256, 256), (10, 20, 30, 128)).save(root / "semi.png")
+    Image.new("RGBA", (256, 256), (10, 20, 30, 255)).save(root / "opaque-alpha.png")
+    Image.new("RGB", (256, 256), (10, 20, 30)).save(root / "rgb.png")
+    palette = Image.new("P", (256, 256), 1)
+    palette.putpalette([0, 0, 0, 10, 20, 30] + [0] * 762)
+    palette.putpixel((0, 0), 0)
+    palette.save(root / "palette-transparent.png", transparency=0)
+    # The palette declares transparency, but no pixel uses the transparent entry.
+    palette.putpixel((0, 0), 1)
+    palette.save(root / "palette-opaque.png", transparency=0)
+    for path in root.glob("*.png"):
+        path.with_suffix(".txt").write_text("test image", encoding="utf8")
+    before = {path.name: path.read_bytes() for path in root.iterdir()}
+
+    result = start(api, "inspect")
+    assert result["status"] == "completed", result
+    report = snapshot(api)["inspection"]
+    records = {record["rel_path"]: record for record in report["images"]}
+    for name, alpha, transparent in (
+        ("semi.png", True, True),
+        ("opaque-alpha.png", True, False),
+        ("palette-transparent.png", True, True),
+        ("palette-opaque.png", True, False),
+        ("rgb.png", False, False),
+    ):
+        record = records[name]
+        assert record["has_alpha"] is alpha
+        assert record["has_transparency"] is transparent
+        notices = [issue for issue in record["issues"] if issue["code"] == "transparent_image"]
+        assert len(notices) == int(transparent)
+        assert all(issue["severity"] == "warning" for issue in notices)
+    assert report["alpha_images"] == 4 and report["transparent_images"] == 2
+    assert report["errors"] == 0  # Transparency is informational, not a training blocker.
+    assert {path.name: path.read_bytes() for path in root.iterdir()} == before
+
+
 def test_exclusion_undo_preserves_original_import_and_shared_sidecars(api, tmp_path):
     row, root = imported(api, tmp_path)
     original = {p.name: p.read_bytes() for p in root.iterdir()}
@@ -507,3 +545,109 @@ def test_automatic_tagging_removed_but_historical_captions_and_undo_remain(api, 
     retry = client.post(f"/api/dataset-pipeline/operations/{op['id']}/retry")
     assert retry.status_code == 410 and "tagging_removed" in retry.text
     assert not c.resolve_version(project["id"], project["active_version_id"])["busy"]
+
+
+def test_anima_caption_advice_is_read_only_and_model_specific(api, tmp_path):
+    import json
+
+    row, root = imported(api, tmp_path, mask=False)
+    path = root / "a.json"
+    payload = json.dumps({"fixed": {"artist": "Some_Artist"}, "ai_output": {"tags": ["Blue_Hair"], "nl": "A Girl, with Blue_Hair."}, "meta": {"source": "unchanged"}})
+    path.write_text(payload)
+    client, _, _, project = api
+    url = f"/api/projects/{project['id']}/config"
+    cfg = client.get(url).json()
+    cfg["model"]["family"] = "anima"
+    cfg["dataset"]["sources"][0]["caption_ext"] = ".json"
+    assert client.put(url, json=cfg).status_code == 200
+    report = start(api, "inspect")["result"]["inspection"]
+    assert report["caption_profile"] == "anima"
+    image = next(image for image in report["images"] if image["rel_path"] == "a.png")
+    assert image["caption_format"]["suggestions"][0]["after"] == "@some artist"
+    assert any(issue["code"] == "anima_artist_prefix" for issue in image["issues"])
+    assert not report["errors"]
+    assert path.read_text() == payload
+    cfg["model"]["family"] = "krea2"
+    assert client.put(url, json=cfg).status_code == 200
+    assert snapshot(api)["inspection"] is None
+    report = start(api, "inspect")["result"]["inspection"]
+    assert report["caption_profile"] is None
+    assert all("caption_format" not in image for image in report["images"])
+    assert path.read_text() == payload
+
+
+def test_anima_inspection_invalidates_on_caption_settings_and_honors_source_override(api, tmp_path):
+    _, root = imported(api, tmp_path, mask=False)
+    (root / "a.txt").write_text("1girl, blue hair. A girl sits beside a window, wearing a red dress.")
+    client, _, _, project = api
+    url = f"/api/projects/{project['id']}/config"
+    cfg = client.get(url).json()
+    cfg["model"]["family"] = "anima"
+    cfg["dataset"]["caption"]["shuffle"] = False
+    assert client.put(url, json=cfg).status_code == 200
+    report = start(api, "inspect")["result"]["inspection"]
+    assert not any(issue["code"] == "anima_text_shuffle" for image in report["images"] for issue in image["issues"])
+
+    cfg["dataset"]["caption"]["shuffle"] = True
+    assert client.put(url, json=cfg).status_code == 200
+    assert snapshot(api)["inspection"] is None
+    report = start(api, "inspect")["result"]["inspection"]
+    assert any(issue["code"] == "anima_text_shuffle" for image in report["images"] for issue in image["issues"])
+    cfg["dataset"]["sources"][0]["caption"] = {"shuffle": False}
+    assert client.put(url, json=cfg).status_code == 200
+    assert snapshot(api)["inspection"] is None
+    report = start(api, "inspect")["result"]["inspection"]
+    assert not any(issue["code"] == "anima_text_shuffle" for image in report["images"] for issue in image["issues"])
+
+
+def test_inspection_reports_unknown_json_as_error_but_preserves_readonly_document_and_txt_choice(api, tmp_path):
+    import json
+
+    from ypuddin.data.caption_json import load_caption_structure
+
+    row, root = imported(api, tmp_path, mask=False)
+    unknown = root / "a.json"
+    payload = json.dumps({"private_metadata": {"source": "manual"}, "description": "A portrait."})
+    unknown.write_text(payload)
+    # A recognized empty tags field is valid: missing caption is only a warning.
+    (root / "b.json").write_text('{"tags": [], "nl": ""}')
+    client, _, _, project = api
+    url = f"/api/projects/{project['id']}/config"
+    cfg = client.get(url).json()
+    cfg["dataset"]["sources"][0]["caption_ext"] = "auto"
+    assert client.put(url, json=cfg).status_code == 200
+
+    report = start(api, "inspect")["result"]["inspection"]
+    assert report["errors"] == 1 and snapshot(api)["inspection"]["errors"] == 1
+    images = {image["rel_path"]: image for image in report["images"]}
+    errors = [issue for issue in images["a.png"]["issues"] if issue["severity"] == "error"]
+    assert len(errors) == 1 and errors[0]["code"] == "caption_encoding"
+    assert "a.json" in errors[0]["message"] and "unrecognized caption format" in errors[0]["message"]
+    assert images["a.png"]["caption"] == ""  # Does not silently read the existing a.txt.
+    assert not any(issue["code"] == "missing_caption" for issue in images["a.png"]["issues"])
+    assert not any(issue["severity"] == "error" for issue in images["b.png"]["issues"])
+    assert any(issue["code"] == "missing_caption" for issue in images["b.png"]["issues"])
+    assert unknown.read_text() == payload
+    structure = load_caption_structure(unknown)
+    assert not structure["editable"] and structure["document"] == json.loads(payload)
+    # Both caption summary and thumbnail status use the same classification.
+    stats = client.get(f"/api/datasets/{row['id']}/caption-stats").json()
+    assert (stats["captioned"], stats["missing"], stats["invalid"]) == (0, 1, 1)
+    listing = client.get(f"/api/datasets/{row['id']}/images").json()
+    listed = next(item for item in listing["items"] if item["rel_path"] == "a.png")
+    assert listed["caption_status"] == "invalid" and "a.json" in listed["caption_error"]
+    assert listed["caption_structure"]["document"] == json.loads(payload)
+    assert not listed["caption_structure"]["editable"]
+    editor = client.get(f"/api/datasets/{row['id']}/images/{listed['hash']}/caption", params={"rel_path": "a.png"})
+    assert editor.status_code == 200
+    assert editor.json()["caption_structure"]["document"] == json.loads(payload)
+    assert not editor.json()["caption_structure"]["editable"]
+
+    # Explicit TXT is a user choice, so unrelated unknown JSON must not block it.
+    cfg["dataset"]["sources"][0]["caption_ext"] = ".txt"
+    assert client.put(url, json=cfg).status_code == 200
+    report = start(api, "inspect")["result"]["inspection"]
+    assert report["errors"] == 0
+    image = next(image for image in report["images"] if image["rel_path"] == "a.png")
+    assert image["caption"] == "red, portrait"
+    assert unknown.read_text() == payload

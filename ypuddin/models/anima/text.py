@@ -16,6 +16,7 @@ import torch
 from torch import Tensor, nn
 
 from ypuddin.models.base import TextCond, TextPipeline
+from ypuddin.models.memory import release_model_memory
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +47,9 @@ def tokenizer_assets(root: str | Path) -> list[Path]:
 
 
 def _load_qwen3(path: str | Path, dtype: torch.dtype, device: torch.device | str) -> nn.Module:
+    from .checkpoint import check_unquantized_checkpoint
+
+    check_unquantized_checkpoint(path, "Anima 文字编码器")
     from transformers import AutoConfig, AutoModelForCausalLM
 
     p = Path(path)
@@ -175,9 +179,10 @@ class AnimaText(TextPipeline):
             self.encoder.to(self.device)
 
     def unload(self) -> None:
+        if self.encoder is None:
+            return
         self.encoder = None
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        release_model_memory(self.device)
 
     # ----------------------------------------------------------------- tokenize / encode
     def _tokenize(self, captions: list[str]) -> tuple[Tensor, Tensor, Tensor, Tensor]:

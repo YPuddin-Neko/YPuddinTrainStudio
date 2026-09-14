@@ -156,15 +156,97 @@ def test_manual_json_edit_preserves_metadata_and_does_not_restore_removed_tags(a
     response = api[0].put(caption_url(source["id"], row), json={"caption": "new_tag"})
     assert response.status_code == 200, response.text
     after = json.loads(path.read_text())
-    assert after["meta"] == document()["meta"]
+    assert after["meta"] == {**document()["meta"], "trigger": ""}
     assert after["unrelated_metadata"] == document()["unrelated_metadata"]
-    assert after["tags"] == ["new_tag"]
+    assert after["tags"]["tags"] == ["new_tag"]
+    assert after["tags"]["quality"] == [] and after["tags"]["appearance"] == []
+    assert "_ypuddin_caption_edit" not in after
     expected = "new_tag. A test portrait."
     assert api[0].get(caption_url(source["id"], row)).json()["caption"] == expected
     assert images(api, source["id"])["a.png"]["caption"] == expected
     assert api[0].post(f"/api/datasets/{source['id']}/rescan").status_code == 200
     assert images(api, source["id"])["a.png"]["caption"] == expected
     assert (path.parent / "a.txt").read_text() == "fallback TXT"
+
+
+def test_unknown_json_remains_read_only_in_api_but_blocks_training_plan(api, tmp_path, monkeypatch):
+    from ypuddin.server import routes_core
+
+    monkeypatch.setattr(routes_core, "gpu_info", lambda: [])
+    original = b'{"caption":"Keep this prose","metadata":{"value":17}}\n'
+    response = ingest(api, tmp_path, entries=[("a.png", picture()), ("a.json", original)])
+    assert response.status_code == 200, response.text
+    source = response.json()["source"]
+    row = images(api, source["id"])["a.png"]
+    structure = row["caption_structure"]
+    assert structure["format"] == "unknown" and not structure["editable"]
+    assert structure["document"] == json.loads(original)
+    assert api[0].get(caption_url(source["id"], row)).json()["caption_structure"] == structure
+    config = {
+        "model": {"family": "toy"},
+        "dataset": {"sources": [{"path": source["path"]}], "resolutions": [64], "bucket_step": 16},
+    }
+    response = api[0].post("/api/plan", json={"config": config})
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert not result["ok"]
+    assert any(
+        error["loc"] == "dataset.sources.0.caption_ext" and "unrecognized caption format" in error["msg"]
+        for error in result["errors"]
+    )
+    assert (Path(source["path"]) / "a.json").read_bytes() == original
+
+
+def test_structured_caption_api_preserves_source_and_rejects_stale_revision(api, tmp_path):
+    source = ingest(api, tmp_path).json()["source"]
+    path = Path(source["path"]) / "a.json"
+    row = images(api, source["id"])["a.png"]
+    structure = row["caption_structure"]
+    assert structure["format"] == "nested" and structure["editable"]
+    assert structure["document"] == document()
+    assert api[0].get(caption_url(source["id"], row)).json()["caption_structure"] == structure
+    response = api[0].put(caption_url(source["id"], row), json={
+        "caption_fields": [{"path": ["tags", "appearance"], "value": ["green_hair"]}],
+        "caption_revision": structure["revision"],
+    })
+    assert response.status_code == 200, response.text
+    expected = document()
+    expected["tags"]["appearance"] = ["green_hair"]
+    assert json.loads(path.read_text()) == expected
+    assert response.json()["caption_structure"]["document"] == expected
+    before = path.read_bytes()
+    stale = api[0].put(caption_url(source["id"], row), json={
+        "caption_fields": [{"path": ["tags", "appearance"], "value": ["stale"]}],
+        "caption_revision": structure["revision"],
+    })
+    assert stale.status_code == 409 and path.read_bytes() == before
+
+
+@pytest.mark.parametrize("patch", [
+    {"path": ["unrelated_metadata"], "value": "overwrite"},
+    {"path": ["tags", "quality"], "value": "wrong array type"},
+    {"path": ["tags", "nl"], "value": ["wrong string type"]},
+])
+def test_structured_api_rejects_unknown_fields_and_type_changes(api, tmp_path, patch):
+    source = ingest(api, tmp_path).json()["source"]
+    row = images(api, source["id"])["a.png"]
+    path = Path(source["path"]) / "a.json"
+    before = path.read_bytes()
+    response = api[0].put(caption_url(source["id"], row), json={
+        "caption_fields": [patch], "caption_revision": row["caption_structure"]["revision"],
+    })
+    assert response.status_code == 422, response.text
+    assert path.read_bytes() == before
+
+
+def test_description_only_api_edits_original_nl_field_without_flattening(api, tmp_path):
+    source = ingest(api, tmp_path).json()["source"]
+    row = images(api, source["id"])["a.png"]
+    response = api[0].put(caption_url(source["id"], row), json={"description": "New prose."})
+    assert response.status_code == 200, response.text
+    expected = document()
+    expected["tags"]["nl"] = "New prose."
+    assert json.loads((Path(source["path"]) / "a.json").read_text()) == expected
 
 
 def test_json_batch_edit_and_undo_restore_original_bytes(api, tmp_path):
@@ -178,7 +260,7 @@ def test_json_batch_edit_and_undo_restore_original_bytes(api, tmp_path):
         captions={"mode": "replace", "text": "replacement"},
     )
     assert result["status"] == "completed", result
-    assert json.loads(path.read_text())["meta"] == document()["meta"]
+    assert json.loads(path.read_text())["meta"] == {**document()["meta"], "trigger": ""}
     assert images(api, source["id"])["a.png"]["caption"] == "replacement. A test portrait."
     assert any(Path(change["backup"]).read_bytes() == before for change in result["result"]["changes"])
     restored = operation(api, "restore", restore_operation_id=result["id"])
@@ -199,9 +281,11 @@ def test_json_batch_append_keeps_prose_once_and_adds_a_real_tag(api, tmp_path):
     )
     assert result["status"] == "completed", result
     text = images(api, source["id"])["a.png"]["caption"]
-    assert text == "trigger_token, best, blue_hair, smile, garden, added_tag. A test portrait."
+    assert text == "trigger_token, best, blue_hair, smile, added_tag, garden. A test portrait."
     after = json.loads(path.read_text())
-    assert "added_tag" in after["tags"] and all("A test portrait" not in tag for tag in after["tags"])
+    assert after["tags"]["tags"] == ["smile", "added_tag"]
+    assert after["tags"]["environment"] == ["garden"]
+    assert after["meta"] == document()["meta"]
     assert operation(api, "restore", restore_operation_id=result["id"])["status"] == "completed"
     assert path.read_bytes() == before
 
@@ -397,5 +481,5 @@ def test_bulk_caption_lookups_enumerate_once_per_directory_and_refresh_next_oper
     # Selection, published-file reindex, and refreshed quality report each scan once,
     # independently of the eight selected images; no stale listing crosses publication.
     assert calls[root] == 3
-    assert json.loads((root / "0.json").read_text())["tags"][-1] == "added"
+    assert json.loads((root / "0.json").read_text())["tags"]["tags"][-1] == "added"
     assert (root / "0.txt").read_text() == "caption"

@@ -5363,6 +5363,64 @@
         }
       }
     },
+    "/api/environment/dtk/wheels": {
+      "get": {
+        "summary": "Dtk Wheels",
+        "operationId": "dtk_wheels_api_environment_dtk_wheels_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DtkCatalog"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/environment/windows/wheels": {
+      "get": {
+        "summary": "Windows Wheels",
+        "operationId": "windows_wheels_api_environment_windows_wheels_get",
+        "parameters": [
+          {
+            "name": "refresh",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Refresh"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WindowsAttentionCatalog"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/environment/operations": {
       "get": {
         "summary": "Operations",
@@ -5970,6 +6028,64 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RegularizationTask"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{pid}/versions/{vid}/regularization/plan": {
+      "post": {
+        "summary": "Plan",
+        "operationId": "plan_api_projects__pid__versions__vid__regularization_plan_post",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegularizationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegularizationPlan"
                 }
               }
             }
@@ -6817,6 +6933,16 @@
           "caption": {
             "type": "string",
             "title": "Caption"
+          },
+          "caption_structure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaptionStructure"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": true,
@@ -6829,7 +6955,14 @@
       "CaptionBody": {
         "properties": {
           "caption": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Caption"
           },
           "description": {
@@ -6842,12 +6975,34 @@
               }
             ],
             "title": "Description"
+          },
+          "caption_fields": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CaptionFieldEdit"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caption Fields"
+          },
+          "caption_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caption Revision"
           }
         },
         "type": "object",
-        "required": [
-          "caption"
-        ],
         "title": "CaptionBody"
       },
       "CaptionConfig": {
@@ -6984,6 +7139,95 @@
         "type": "object",
         "title": "CaptionConfig"
       },
+      "CaptionField": {
+        "properties": {
+          "path": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Path"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "quality",
+              "count",
+              "character",
+              "character_name",
+              "character_variant",
+              "character_full",
+              "series",
+              "artist",
+              "appearance",
+              "tags",
+              "environment",
+              "nl",
+              "trigger"
+            ],
+            "title": "Role"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Value"
+          },
+          "present": {
+            "type": "boolean",
+            "title": "Present"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "path",
+          "role",
+          "value",
+          "present"
+        ],
+        "title": "CaptionField"
+      },
+      "CaptionFieldEdit": {
+        "properties": {
+          "path": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Path"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "value"
+        ],
+        "title": "CaptionFieldEdit"
+      },
       "CaptionOptions": {
         "properties": {
           "mode": {
@@ -7008,6 +7252,68 @@
           "text"
         ],
         "title": "CaptionOptions"
+      },
+      "CaptionStructure": {
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": [
+              "full",
+              "nested",
+              "simple",
+              "flat",
+              "legacy_override",
+              "unknown"
+            ],
+            "title": "Format"
+          },
+          "document": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Document"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/CaptionField"
+            },
+            "type": "array",
+            "title": "Fields"
+          },
+          "revision": {
+            "type": "string",
+            "title": "Revision"
+          },
+          "editable": {
+            "type": "boolean",
+            "title": "Editable"
+          },
+          "legacy_override": {
+            "type": "boolean",
+            "title": "Legacy Override"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "format",
+          "document",
+          "fields",
+          "revision",
+          "editable",
+          "legacy_override"
+        ],
+        "title": "CaptionStructure"
       },
       "CaptionTagCount": {
         "properties": {
@@ -7877,6 +8183,16 @@
             ],
             "title": "Caption Description"
           },
+          "caption_structure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaptionStructure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "caption_format": {
             "anyOf": [
               {
@@ -8390,6 +8706,295 @@
         ],
         "title": "DiskStats"
       },
+      "DtkCatalog": {
+        "properties": {
+          "source_url": {
+            "type": "string",
+            "title": "Source Url",
+            "default": "https://download.sourcefind.cn:65024/4/main/"
+          },
+          "runtime": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Runtime"
+          },
+          "wheels": {
+            "items": {
+              "$ref": "#/components/schemas/DtkWheel"
+            },
+            "type": "array",
+            "title": "Wheels"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "guidance": {
+            "$ref": "#/components/schemas/DtkGuidance"
+          }
+        },
+        "type": "object",
+        "required": [
+          "runtime",
+          "wheels",
+          "guidance"
+        ],
+        "title": "DtkCatalog"
+      },
+      "DtkGuidance": {
+        "properties": {
+          "toolkit_source_url": {
+            "type": "string",
+            "title": "Toolkit Source Url",
+            "default": "https://download.sourcefind.cn:65024/1/main"
+          },
+          "driver_source_url": {
+            "type": "string",
+            "title": "Driver Source Url",
+            "default": "https://download.sourcefind.cn:65024/6/main"
+          },
+          "compatibility_source_url": {
+            "type": "string",
+            "title": "Compatibility Source Url",
+            "default": "https://download.sourcefind.cn:65024/file/1/DTK%E4%B8%8E%E9%A9%B1%E5%8A%A8%E7%89%88%E6%9C%AC%E9%85%8D%E5%A5%97%E5%85%B3%E7%B3%BB%E8%A1%A8.md"
+          },
+          "driver_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Driver Version"
+          },
+          "driver_verification": {
+            "type": "string",
+            "title": "Driver Verification",
+            "default": "manual_confirmation_required"
+          },
+          "current_stack_reason": {
+            "type": "string",
+            "title": "Current Stack Reason",
+            "default": "framework_combination_requires_validation"
+          },
+          "recommendation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DtkRuntimeRecommendation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "DtkGuidance"
+      },
+      "DtkRuntimePackage": {
+        "properties": {
+          "package": {
+            "type": "string",
+            "title": "Package"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "package",
+          "version",
+          "url"
+        ],
+        "title": "DtkRuntimePackage"
+      },
+      "DtkRuntimeRecommendation": {
+        "properties": {
+          "dtk": {
+            "type": "string",
+            "title": "Dtk"
+          },
+          "toolkit_url": {
+            "type": "string",
+            "title": "Toolkit Url"
+          },
+          "toolkit_checksum_url": {
+            "type": "string",
+            "title": "Toolkit Checksum Url"
+          },
+          "python_tag": {
+            "type": "string",
+            "title": "Python Tag"
+          },
+          "minimum_driver": {
+            "type": "string",
+            "title": "Minimum Driver"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "candidate_requires_validation"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": "matched_vendor_metadata_requires_driver_and_training_validation"
+          },
+          "wheels": {
+            "items": {
+              "$ref": "#/components/schemas/DtkRuntimePackage"
+            },
+            "type": "array",
+            "title": "Wheels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dtk",
+          "toolkit_url",
+          "toolkit_checksum_url",
+          "python_tag",
+          "minimum_driver",
+          "wheels"
+        ],
+        "title": "DtkRuntimeRecommendation"
+      },
+      "DtkWheel": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "package": {
+            "type": "string",
+            "title": "Package"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "source_url": {
+            "type": "string",
+            "title": "Source Url",
+            "default": "https://download.sourcefind.cn:65024/4/main/"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          },
+          "dtk": {
+            "type": "string",
+            "title": "Dtk"
+          },
+          "torch": {
+            "type": "string",
+            "title": "Torch"
+          },
+          "declared_torch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Declared Torch"
+          },
+          "python_tag": {
+            "type": "string",
+            "title": "Python Tag"
+          },
+          "platform_tag": {
+            "type": "string",
+            "title": "Platform Tag"
+          },
+          "binary": {
+            "type": "boolean",
+            "title": "Binary"
+          },
+          "validation": {
+            "type": "string",
+            "title": "Validation",
+            "default": "kernel_probe_required"
+          },
+          "requires_packages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Requires Packages"
+          },
+          "compatible": {
+            "type": "boolean",
+            "title": "Compatible",
+            "default": false
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "package",
+          "version",
+          "filename",
+          "url",
+          "size_bytes",
+          "sha256",
+          "dtk",
+          "torch",
+          "python_tag",
+          "platform_tag",
+          "binary"
+        ],
+        "title": "DtkWheel"
+      },
       "EnvironmentOperation": {
         "properties": {
           "environment_profile": {
@@ -8482,6 +9087,60 @@
               }
             ],
             "title": "Dismissed At"
+          },
+          "vendor_wheel_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor Wheel Id"
+          },
+          "phase": {
+            "type": "string",
+            "title": "Phase",
+            "default": "plan"
+          },
+          "downloaded_bytes": {
+            "type": "integer",
+            "title": "Downloaded Bytes",
+            "default": 0
+          },
+          "total_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Bytes"
+          },
+          "bytes_per_second": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bytes Per Second"
+          },
+          "eta_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta Seconds"
           }
         },
         "type": "object",
@@ -8624,6 +9283,17 @@
               }
             ],
             "title": "Wheel Id"
+          },
+          "vendor_wheel_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor Wheel Id"
           }
         },
         "additionalProperties": false,
@@ -8656,6 +9326,94 @@
             "type": "string",
             "title": "Machine"
           },
+          "distribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distribution"
+          },
+          "distribution_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distribution Id"
+          },
+          "distribution_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distribution Version"
+          },
+          "kernel_release": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kernel Release"
+          },
+          "glibc_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Glibc Version"
+          },
+          "dtk_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dtk Root"
+          },
+          "installed_dtk": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed Dtk"
+          },
+          "driver_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Driver Version"
+          },
           "torch": {
             "type": "string",
             "title": "Torch"
@@ -8670,6 +9428,28 @@
               }
             ],
             "title": "Cuda Runtime"
+          },
+          "hip_runtime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hip Runtime"
+          },
+          "compute_backend": {
+            "type": "string",
+            "enum": [
+              "cuda",
+              "hip",
+              "mps",
+              "cpu"
+            ],
+            "title": "Compute Backend",
+            "default": "cpu"
           },
           "cuda_available": {
             "type": "boolean",
@@ -8738,7 +9518,10 @@
           },
           "training_device_policy": {
             "type": "string",
-            "const": "single_device",
+            "enum": [
+              "single_device",
+              "exclusive_devices"
+            ],
             "title": "Training Device Policy",
             "default": "single_device"
           },
@@ -8824,6 +9607,16 @@
           "probe_deferred": {
             "type": "boolean",
             "title": "Probe Deferred"
+          },
+          "sdpa": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SdpaProbe"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -8863,6 +9656,17 @@
           "sha256": {
             "type": "string",
             "title": "Sha256"
+          },
+          "vendor_wheel_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor Wheel Id"
           }
         },
         "type": "object",
@@ -9306,7 +10110,9 @@
             "type": "string",
             "enum": [
               "cuda",
-              "mps"
+              "mps",
+              "dtk",
+              "rocm"
             ],
             "title": "Kind",
             "default": "cuda"
@@ -9325,6 +10131,17 @@
               }
             ],
             "title": "Total Mb"
+          },
+          "hip_runtime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hip Runtime"
           }
         },
         "additionalProperties": true,
@@ -9345,7 +10162,9 @@
             "type": "string",
             "enum": [
               "cuda",
-              "mps"
+              "mps",
+              "dtk",
+              "rocm"
             ],
             "title": "Kind",
             "default": "cuda"
@@ -9518,6 +10337,17 @@
               }
             ],
             "title": "Cuda Available"
+          },
+          "hip_runtime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hip Runtime"
           }
         },
         "additionalProperties": true,
@@ -9572,6 +10402,22 @@
               }
             ],
             "title": "Cuda"
+          },
+          "hip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hip"
+          },
+          "hip_available": {
+            "type": "boolean",
+            "title": "Hip Available",
+            "default": false
           },
           "mps": {
             "type": "boolean",
@@ -10783,6 +11629,18 @@
       },
       "LoopConfig": {
         "properties": {
+          "gpu_count": {
+            "type": "integer",
+            "maximum": 64.0,
+            "minimum": 1.0,
+            "title": "Gpu Count",
+            "description": "本次任务同时使用的 GPU 数量，默认 1；大于 1 时使用 DDP，每张卡保留一份完整模型，显存不会合并。批量大小按每卡计算，全局有效批量约为每卡批量 × 卡数 × 梯度累积。多卡需要标准分桶，暂不支持原图异形批次、块换出、编译和梯度检查点。",
+            "default": 1,
+            "x-ui": {
+              "group": "loop",
+              "order": 15
+            }
+          },
           "max_steps": {
             "anyOf": [
               {
@@ -13454,6 +14312,16 @@
                 "type": "null"
               }
             ]
+          },
+          "distributed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanDistributed"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": true,
@@ -13524,6 +14392,45 @@
           "batches"
         ],
         "title": "PlanBucket"
+      },
+      "PlanDistributed": {
+        "properties": {
+          "world_size": {
+            "type": "integer",
+            "title": "World Size"
+          },
+          "per_device_batch_size": {
+            "type": "integer",
+            "title": "Per Device Batch Size"
+          },
+          "effective_batch_size": {
+            "type": "integer",
+            "title": "Effective Batch Size"
+          },
+          "batches_per_rank": {
+            "type": "integer",
+            "title": "Batches Per Rank"
+          },
+          "dropped_samples": {
+            "type": "integer",
+            "title": "Dropped Samples"
+          },
+          "tail_policy": {
+            "type": "string",
+            "title": "Tail Policy"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "world_size",
+          "per_device_batch_size",
+          "effective_batch_size",
+          "batches_per_rank",
+          "dropped_samples",
+          "tail_policy"
+        ],
+        "title": "PlanDistributed"
       },
       "PlanMemory": {
         "properties": {
@@ -14451,6 +15358,134 @@
         ],
         "title": "RecommendedSource"
       },
+      "RegularizationPlan": {
+        "properties": {
+          "signature": {
+            "type": "string",
+            "title": "Signature"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/RegularizationPlanSource"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "top_tags": {
+            "items": {
+              "$ref": "#/components/schemas/RegularizationTagCount"
+            },
+            "type": "array",
+            "title": "Top Tags"
+          },
+          "source_images": {
+            "type": "integer",
+            "title": "Source Images"
+          },
+          "existing_images": {
+            "type": "integer",
+            "title": "Existing Images"
+          },
+          "missing_captions": {
+            "type": "integer",
+            "title": "Missing Captions"
+          },
+          "invalid_captions": {
+            "type": "integer",
+            "title": "Invalid Captions"
+          },
+          "empty_after_exclusion": {
+            "type": "integer",
+            "title": "Empty After Exclusion"
+          },
+          "eligible_images": {
+            "type": "integer",
+            "title": "Eligible Images"
+          },
+          "planned_images": {
+            "type": "integer",
+            "title": "Planned Images"
+          },
+          "remaining_images": {
+            "type": "integer",
+            "title": "Remaining Images"
+          },
+          "max_batch_images": {
+            "type": "integer",
+            "title": "Max Batch Images"
+          },
+          "examples": {
+            "items": {
+              "$ref": "#/components/schemas/RegularizationPlanExample"
+            },
+            "type": "array",
+            "title": "Examples"
+          }
+        },
+        "type": "object",
+        "required": [
+          "signature",
+          "sources",
+          "top_tags",
+          "source_images",
+          "existing_images",
+          "missing_captions",
+          "invalid_captions",
+          "empty_after_exclusion",
+          "eligible_images",
+          "planned_images",
+          "remaining_images",
+          "max_batch_images",
+          "examples"
+        ],
+        "title": "RegularizationPlan"
+      },
+      "RegularizationPlanExample": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "rel_path": {
+            "type": "string",
+            "title": "Rel Path"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_id",
+          "rel_path",
+          "prompt"
+        ],
+        "title": "RegularizationPlanExample"
+      },
+      "RegularizationPlanSource": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "name"
+        ],
+        "title": "RegularizationPlanSource"
+      },
       "RegularizationRequest": {
         "properties": {
           "source": {
@@ -14466,8 +15501,47 @@
           "prompt": {
             "type": "string",
             "maxLength": 8000,
-            "minLength": 1,
-            "title": "Prompt"
+            "title": "Prompt",
+            "default": ""
+          },
+          "prompt_source": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "training_tags"
+            ],
+            "title": "Prompt Source",
+            "default": "manual"
+          },
+          "source_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Source Ids"
+          },
+          "generation_scope": {
+            "type": "string",
+            "enum": [
+              "incremental",
+              "all"
+            ],
+            "title": "Generation Scope",
+            "default": "incremental"
+          },
+          "plan_signature": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Signature"
           },
           "negative": {
             "type": "string",
@@ -14562,9 +15636,6 @@
         },
         "additionalProperties": false,
         "type": "object",
-        "required": [
-          "prompt"
-        ],
         "title": "RegularizationRequest"
       },
       "RegularizationStatus": {
@@ -14592,6 +15663,24 @@
           "operations"
         ],
         "title": "RegularizationStatus"
+      },
+      "RegularizationTagCount": {
+        "properties": {
+          "tag": {
+            "type": "string",
+            "title": "Tag"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tag",
+          "count"
+        ],
+        "title": "RegularizationTagCount"
       },
       "RegularizationTask": {
         "properties": {
@@ -15327,6 +16416,156 @@
         "type": "object",
         "title": "SchedulerConfig"
       },
+      "SdpaCheck": {
+        "properties": {
+          "dtype": {
+            "type": "string",
+            "title": "Dtype"
+          },
+          "shape": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Shape"
+          },
+          "passed": {
+            "type": "boolean",
+            "title": "Passed"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dtype",
+          "shape",
+          "passed"
+        ],
+        "title": "SdpaCheck"
+      },
+      "SdpaProbe": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed",
+              "not_tested"
+            ],
+            "title": "Status"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "device": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device"
+          },
+          "device_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Name"
+          },
+          "torch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Torch"
+          },
+          "hip_runtime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hip Runtime"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/SdpaCheck"
+            },
+            "type": "array",
+            "title": "Checks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "SdpaProbe"
+      },
       "ServiceRuntime": {
         "properties": {
           "environment_profile": {
@@ -15455,6 +16694,9 @@
           },
           "ui": {
             "$ref": "#/components/schemas/SettingsUi"
+          },
+          "network": {
+            "$ref": "#/components/schemas/SettingsNetwork"
           }
         },
         "additionalProperties": true,
@@ -15465,6 +16707,38 @@
           "ui"
         ],
         "title": "Settings"
+      },
+      "SettingsNetwork": {
+        "properties": {
+          "proxy_mode": {
+            "type": "string",
+            "enum": [
+              "system",
+              "direct",
+              "custom"
+            ],
+            "title": "Proxy Mode",
+            "default": "system"
+          },
+          "proxy_url": {
+            "type": "string",
+            "title": "Proxy Url",
+            "default": ""
+          },
+          "proxy_username": {
+            "type": "string",
+            "title": "Proxy Username",
+            "default": ""
+          },
+          "proxy_password_configured": {
+            "type": "boolean",
+            "title": "Proxy Password Configured",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SettingsNetwork"
       },
       "SettingsPaths": {
         "properties": {
@@ -15667,6 +16941,22 @@
           "cuda_available": {
             "type": "boolean",
             "title": "Cuda Available",
+            "default": false
+          },
+          "hip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hip"
+          },
+          "hip_available": {
+            "type": "boolean",
+            "title": "Hip Available",
             "default": false
           }
         },
@@ -16646,6 +17936,189 @@
         "additionalProperties": false,
         "type": "object",
         "title": "WandbConfig"
+      },
+      "WindowsAttentionCatalog": {
+        "properties": {
+          "source_url": {
+            "type": "string",
+            "title": "Source Url",
+            "default": "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/tag/v0.9.6"
+          },
+          "release": {
+            "type": "string",
+            "title": "Release",
+            "default": "v0.9.6"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider",
+            "default": "mjun0812-community-windows"
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "live",
+              "cached",
+              "bundled"
+            ],
+            "title": "Origin"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "runtime": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Runtime"
+          },
+          "wheels": {
+            "items": {
+              "$ref": "#/components/schemas/WindowsAttentionWheel"
+            },
+            "type": "array",
+            "title": "Wheels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "origin",
+          "runtime",
+          "wheels"
+        ],
+        "title": "WindowsAttentionCatalog"
+      },
+      "WindowsAttentionWheel": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "package": {
+            "type": "string",
+            "title": "Package",
+            "default": "flash-attn"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "source_url": {
+            "type": "string",
+            "title": "Source Url",
+            "default": "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/tag/v0.9.6"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider",
+            "default": "mjun0812-community-windows"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          },
+          "torch": {
+            "type": "string",
+            "title": "Torch"
+          },
+          "cuda": {
+            "type": "string",
+            "title": "Cuda"
+          },
+          "python_tag": {
+            "type": "string",
+            "title": "Python Tag"
+          },
+          "platform_tag": {
+            "type": "string",
+            "title": "Platform Tag",
+            "default": "win_amd64"
+          },
+          "validation": {
+            "type": "string",
+            "title": "Validation",
+            "default": "kernel_probe_required"
+          },
+          "compatible": {
+            "type": "boolean",
+            "title": "Compatible",
+            "default": false
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "filename",
+          "url",
+          "size_bytes",
+          "sha256",
+          "torch",
+          "cuda",
+          "python_tag"
+        ],
+        "title": "WindowsAttentionWheel"
       },
       "XyzAxis": {
         "properties": {
