@@ -20,8 +20,8 @@
 :root { --studio-canvas:#f8fafc; --studio-panel:#fff; --studio-muted:#f8fafc; --studio-line:#e2e8f0; --studio-text:#334155; --studio-dim:#64748b; --studio-accent:#2563eb; --studio-scrollbar-thumb:#94a3b8; --studio-scrollbar-hover:#64748b; }
 /* Filled actions keep a readable foreground; the accent also serves as link text. */
 :root { --studio-action:#2563eb; --studio-action-hover:#1d4ed8; --studio-on-action:#fff; }
-input[type="checkbox"] { color-scheme: light; }
-.dark input[type="checkbox"] { color-scheme: dark; }
+input[type="checkbox"], input[type="number"] { color-scheme: light; }
+.dark input[type="checkbox"], .dark input[type="number"] { color-scheme: dark; }
 .dark { --studio-canvas:#020617; --studio-panel:#0f172a; --studio-muted:#111c30; --studio-line:#263349; --studio-text:#cbd5e1; --studio-dim:#94a3b8; --studio-accent:#60a5fa; --studio-scrollbar-thumb:#64748b; --studio-scrollbar-hover:#94a3b8; }
 input::placeholder, textarea::placeholder { color:var(--studio-dim); opacity:1; }
 /* Keep native scrolling in pages, nested lists and portaled dialogs on the same theme. */
