@@ -36,35 +36,65 @@ describe('isolated PyTorch environment controls',()=>{
       return structuredClone(data.operations[0]);
     });
     render(<TorchEnvironmentPanel/>);
-    await waitFor(()=>expect(screen.getByRole('button',{name:'检查切换计划'})).toBeEnabled());
-    fireEvent.click(screen.getByRole('button',{name:'检查切换计划'}));
+    await waitFor(()=>expect(screen.getByRole('button',{name:'检查 PyTorch 安装条件'})).toBeEnabled());
+    fireEvent.click(screen.getByRole('button',{name:'检查 PyTorch 安装条件'}));
     expect(await screen.findByText('2.10.0 → 2.11.0')).toBeInTheDocument();
     expect(post).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole('button',{name:'下载并准备此环境'}));
-    expect(await screen.findByRole('progressbar',{name:'环境准备中'})).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button',{name:'安装到独立环境'}));
+    expect(await screen.findByRole('progressbar',{name:'PyTorch 安装进度'})).toBeInTheDocument();
     expect(post).toHaveBeenLastCalledWith('/environment/torch/operations/torch_test/apply',{}, {silent:true});
     expect(get).toHaveBeenCalledWith('/environment/torch',{silent:true});
   });
-  it('keeps failed logs in explicit history after a persisted dismissal and remount',async()=>{
-    const data=snapshot();data.operations=[{...operation('failed'),error:'Network unavailable',logs:['Current environment unchanged']}];
+  it('keeps a current failure visible but does not restore old logs or history after reopening', async () => {
+    const data=snapshot();data.operations=[operation('ready')];
     vi.spyOn(apiClient,'get').mockImplementation(async()=>structuredClone(data));
-    const post=vi.spyOn(apiClient,'post').mockImplementation(async()=>{data.operations[0].dismissed_at=123;return structuredClone(data.operations[0]);});
+    const post=vi.spyOn(apiClient,'post');
     const first=render(<TorchEnvironmentPanel/>);
+    await screen.findByRole('button',{name:'安装到独立环境'});
+    data.operations=[{...operation('failed'),error:'Network unavailable',logs:['Current environment unchanged']}];
+    fireEvent.click(screen.getByRole('button',{name:'刷新状态'}));
     expect(await screen.findByRole('alert')).toHaveTextContent('Network unavailable');
-    fireEvent.click(screen.getByRole('button',{name:'关闭结果'}));
-    await waitFor(()=>expect(screen.queryByRole('alert')).not.toBeInTheDocument());
-    expect(post).toHaveBeenCalledWith('/environment/torch/operations/torch_test/dismiss',{}, {silent:true});
+    expect(screen.getByLabelText('PyTorch 安装日志')).toHaveClass('bg-slate-950');
+    expect(screen.queryByRole('button',{name:'关闭结果'})).not.toBeInTheDocument();
     first.unmount();render(<TorchEnvironmentPanel/>);
-    fireEvent.click(await screen.findByRole('button',{name:'历史记录'}));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Network unavailable');
-    expect(screen.getByText('Current environment unchanged')).toBeInTheDocument();
-    expect(data.operations[0].status).toBe('failed');
+    await screen.findByRole('button',{name:'检查 PyTorch 安装条件'});
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText('Current environment unchanged')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button',{name:'历史记录'})).not.toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+  });
+  it('places progress and cancellation in the shared installation log target', async () => {
+    const data=snapshot();data.operations=[{...operation('installing'),phase:'installing_pytorch',logs:['Installing the selected PyTorch build']}];
+    vi.spyOn(apiClient,'get').mockImplementation(async()=>structuredClone(data));
+    const post=vi.spyOn(apiClient,'post').mockImplementation(async()=>{data.operations=[{...operation('cancelled'),phase:'cancelled'}];return data.operations[0];});
+    const target=document.createElement('div');document.body.appendChild(target);
+    const view=render(<TorchEnvironmentPanel operationsTarget={target}/>);
+    const progress=await screen.findByRole('progressbar',{name:'PyTorch 安装进度'});
+    expect(target).toContainElement(progress);
+    expect(progress.tagName).toBe('DIV');
+    expect(progress).not.toHaveAttribute('aria-valuenow');
+    expect(view.container).not.toContainElement(progress);
+    const cancel=screen.getByRole('button',{name:'取消安装'});
+    expect(target).toContainElement(cancel);
+    fireEvent.click(cancel);
+    await waitFor(()=>expect(post).toHaveBeenCalledWith('/environment/torch/operations/torch_test/cancel',{}, {silent:true}));
+    expect(await screen.findByText('已取消')).toBeInTheDocument();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    view.unmount();target.remove();
+  });
+  it('retains the activation action for an installed environment that has not been selected', async () => {
+    const data=snapshot();data.operations=[{...operation('completed'),phase:'ready_to_restart',environment_id:'new-env'}];
+    vi.spyOn(apiClient,'get').mockImplementation(async(url)=>url==='/service/runtime'?runtime():structuredClone(data));
+    render(<TorchEnvironmentPanel/>);
+    expect(await screen.findByText('安装完成，重启后可使用')).toBeInTheDocument();
+    expect(await screen.findByRole('button',{name:'重启并切换到此环境'})).toBeInTheDocument();
+    expect(screen.queryByRole('button',{name:'关闭结果'})).not.toBeInTheDocument();
   });
   it('disables environment preparation while an existing task is running',async()=>{
     vi.spyOn(apiClient,'get').mockResolvedValue(snapshot());
     const post=vi.spyOn(apiClient,'post');
     render(<TorchEnvironmentPanel disabled/>);
-    expect(await screen.findByRole('button',{name:'检查切换计划'})).toBeDisabled();
+    expect(await screen.findByRole('button',{name:'检查 PyTorch 安装条件'})).toBeDisabled();
     expect(screen.getByRole('combobox',{name:'选择 PyTorch 版本'})).toBeDisabled();
     expect(post).not.toHaveBeenCalled();
   });
@@ -125,7 +155,7 @@ describe('service restart controls',()=>{
     vi.spyOn(apiClient,'get').mockImplementation(async()=>await new Promise(()=>{}));
     render(<ServiceControls/>);
     await act(async()=>{await vi.advanceTimersByTimeAsync(3000);});
-    expect(screen.getByRole('alert')).toHaveTextContent('服务暂未响应，请重新检测。');
+    expect(screen.getByRole('alert')).toHaveTextContent('服务暂未响应，请刷新状态。');
     expect(screen.queryByText('Service request timed out')).not.toBeInTheDocument();
   });
   it('bounds a restart acknowledgement that never returns and releases the controls',async()=>{
@@ -142,7 +172,7 @@ describe('service restart controls',()=>{
     await act(async()=>{await vi.advanceTimersByTimeAsync(10000);});
     expect(pending?.aborted).toBe(true);
     expect(screen.getByRole('alert')).toHaveTextContent('服务暂未响应');
-    expect(screen.getByRole('button',{name:'重新检测'})).toBeEnabled();
+    expect(screen.getByRole('button',{name:'刷新状态'})).toBeEnabled();
   });
   it('shows the actual busy reason and does not send a restart',async()=>{
     vi.spyOn(apiClient,'get').mockResolvedValue({...runtime(),can_restart:false,reason:'training_or_data_worker_running'});
@@ -218,6 +248,6 @@ describe('service restart controls',()=>{
     expect(signals.every(signal=>signal.aborted)).toBe(true);
     expect(screen.getByRole('alert')).toHaveTextContent('暂未重新连接');
     expect(screen.queryByText('正在重启并重新连接…')).not.toBeInTheDocument();
-    expect(screen.getByRole('button',{name:'重新检测'})).toBeEnabled();
+    expect(screen.getByRole('button',{name:'刷新状态'})).toBeEnabled();
   });
 });

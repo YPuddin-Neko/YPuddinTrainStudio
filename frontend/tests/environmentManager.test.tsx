@@ -86,7 +86,7 @@ describe('real environment management UI contracts', () => {
     for (const name of ['torch', 'tensorboard', 'wandb', 'nvidia-ml-py', 'schedulefree', 'onnxruntime', 'sageattention']) {
       expect(screen.queryByTestId(`environment-package-${name}`)).not.toBeInTheDocument();
     }
-    expect(screen.queryByRole('button', { name: '检查安装计划' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '检查安装条件' })).not.toBeInTheDocument();
     expect(screen.queryByTestId('environment-operations')).not.toBeInTheDocument();
     expect(screen.queryByText('环境操作记录')).not.toBeInTheDocument();
     expect(within(screen.getByRole('navigation')).getAllByRole('button')).toHaveLength(3);
@@ -94,16 +94,16 @@ describe('real environment management UI contracts', () => {
   it('shows the target runtime and requires plan review before mutation', async () => {
     render(<EnvironmentManagerPanel />);
     expect(await screen.findByText('2.5.1+cu128')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '检查安装计划' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '检查安装条件' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByText('解释器与显卡诊断'));
     expect(screen.getByText('C:\\Studio\\venv\\Scripts\\python.exe')).toBeVisible();
     const row = screen.getByTestId('environment-package-xformers');
     fireEvent.click(within(row).getByRole('button', { name: '安装' }));
     fireEvent.click(screen.getByText('手动版本与 wheel'));
     fireEvent.change(screen.getByLabelText('xformers 版本'), { target: { value: '1.2.3' } });
-    fireEvent.click(screen.getByRole('button', { name: '检查安装计划' }));
+    fireEvent.click(screen.getByRole('button', { name: '检查安装条件' }));
     await waitFor(() => expect(create).toHaveBeenCalledWith({ package: 'xformers', action: 'install', version: '1.2.3' }));
-    const confirm = await screen.findByRole('button', { name: '确认并执行此计划' });
+    const confirm = await screen.findByRole('button', { name: '确认安装' });
     expect(apply).not.toHaveBeenCalled();
     expect(screen.getByLabelText('安装日志')).toHaveTextContent('Torch unchanged');
     fireEvent.click(confirm);
@@ -129,12 +129,12 @@ describe('real environment management UI contracts', () => {
     render(<EnvironmentManagerPanel />);
     const row = await screen.findByTestId('environment-package-flash-attn');
     fireEvent.click(within(row).getByRole('button', { name: '安装' }));
-    expect(screen.getByRole('button', { name: '检查安装计划' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '检查安装条件' })).toBeDisabled();
     expect(screen.getByText(/先选择兼容构建或上传 wheel/)).toBeInTheDocument();
     expect(screen.queryByLabelText('flash-attn 版本')).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('flash-attn wheel'), { target: { files: [new File(['wheel'], 'flash_attn.whl')] } });
-    await waitFor(() => expect(screen.getByRole('button', { name: '检查安装计划' })).toBeEnabled());
-    fireEvent.click(screen.getByRole('button', { name: '检查安装计划' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '检查安装条件' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: '检查安装条件' }));
     await waitFor(() => expect(create).toHaveBeenCalledWith({ package: 'flash-attn', action: 'install', version: '1.2.3', wheel_id: 'wheel_ok' }));
     expect(apply).not.toHaveBeenCalled();
   });
@@ -146,21 +146,21 @@ describe('real environment management UI contracts', () => {
     fireEvent.click(within(row).getByRole('button', { name: '安装' }));
     fireEvent.click(screen.getByText('手动版本与 wheel'));
     fireEvent.change(screen.getByLabelText('xformers 版本'), { target: { value: 'invalid' } });
-    fireEvent.click(screen.getByRole('button', { name: '检查安装计划' }));
+    fireEvent.click(screen.getByRole('button', { name: '检查安装条件' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Exact version required');
     expect(screen.getByLabelText('xformers 版本')).toHaveValue('invalid');
   });
 
-  it('keeps dismissed results hidden after remount without a history section', async () => {
-    operations = [{ ...operation('xformers', 'failed'), error: 'Protected Torch dependency conflict' }];
+  it('keeps finished logs only for the current visit without a dismiss or history button', async () => {
+    operations = [operation('xformers', 'planning')];
     const first = render(<EnvironmentManagerPanel />);
+    await screen.findByLabelText('安装日志');
+    operations = [{ ...operations[0], status: 'failed', error: 'Protected Torch dependency conflict' }];
+    fireEvent.click(screen.getByRole('button', { name: '重新检测' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Protected Torch dependency conflict');
-    expect(screen.getByLabelText('安装日志')).toHaveTextContent('Torch unchanged');
-    expect(screen.queryByRole('button', { name: '确认并执行此计划' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', {name:'安装日志'})).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '关闭结果' })).not.toBeInTheDocument();
     expect(apply).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: '关闭结果' }));
-    await waitFor(() => expect(screen.queryByTestId('environment-operations')).not.toBeInTheDocument());
-    expect(operations[0].dismissed_at).not.toBeNull();
     first.unmount();
     render(<EnvironmentManagerPanel />);
     await screen.findByTestId('environment-package-xformers');
@@ -179,12 +179,34 @@ describe('real environment management UI contracts', () => {
     expect(screen.queryByText('Old error')).not.toBeInTheDocument();
   });
 
+  it('renders PyTorch operations in the shared installation log below the version controls', async () => {
+    server.use(http.get('/api/environment/torch',()=>HttpResponse.json({builds:[{id:'torch-cu128',label:'PyTorch 2.11.0 · CUDA 12.8',supported:true,recommended:true}],operations:[{id:'torch_install',build_id:'torch-cu128',status:'installing',phase:'installing_pytorch',logs:['Installing PyTorch in an isolated environment'],error:null,environment_id:null,dismissed_at:null}],selected_environment:null,disk_free_bytes:100*1024**3})));
+    render(<EnvironmentManagerPanel/>);
+    const log=await screen.findByLabelText('PyTorch 安装日志');
+    const section=screen.getByTestId('environment-operations');
+    expect(section).toContainElement(log);
+    expect(section).toContainElement(screen.getByRole('progressbar',{name:'PyTorch 安装进度'}));
+    expect(section).toContainElement(screen.getByRole('button',{name:'取消安装'}));
+    expect(document.getElementById('environment-torch')).not.toContainElement(log);
+    expect(screen.getByRole('heading',{name:'安装日志'})).toBeInTheDocument();
+    expect(screen.getByRole('navigation',{name:'当前页章节'})).toHaveTextContent('安装日志');
+  });
+  it.each([['uninstall','正在卸载','确认卸载'],['repair','正在重装','确认重装']])('describes %s using its actual action', async (action,progress,confirm) => {
+    operations=[{...operation('xformers','ready'),action}];
+    render(<EnvironmentManagerPanel/>);
+    expect(await screen.findByRole('button',{name:confirm})).toBeInTheDocument();
+    operations=[{...operations[0],status:'installing'}];
+    fireEvent.click(screen.getByRole('button',{name:'重新检测'}));
+    expect(await screen.findByText(progress)).toBeInTheDocument();
+    expect(screen.queryByText('下载并安装')).not.toBeInTheDocument();
+  });
+
   it('restores an in-progress install and logs without exposing an interrupt action', async () => {
     operations = [operation('flash-attn', 'installing')];
     render(<EnvironmentManagerPanel />);
     expect(await screen.findByLabelText('安装日志')).toHaveTextContent('Torch unchanged');
-    expect(screen.getByText('下载并安装')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '取消计划' })).not.toBeInTheDocument();
+    expect(screen.getByText('正在安装')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '取消安装' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '关闭结果' })).not.toBeInTheDocument();
     expect(within(screen.getByTestId('environment-package-xformers')).getByRole('button', { name: '安装' })).toBeDisabled();
   });
@@ -316,7 +338,7 @@ it('selects an official DTK wheel by server-issued ID and leaves incompatible bu
   fireEvent.click(within(row).getByRole('button',{name:'安装'}));
   const choice=await screen.findByRole('combobox',{name:'DTK 适配版本'});
   expect(screen.queryByLabelText('flash-attn 版本')).not.toBeInTheDocument();
-  expect(screen.getByRole('button',{name:'检查安装计划'})).toBeDisabled();
+  expect(screen.getByRole('button',{name:'检查安装条件'})).toBeDisabled();
   fireEvent.click(choice);
   fireEvent.click(screen.getByRole('option',{name:/2.6.3\+dtk25041/}));
   expect(screen.queryByRole('option',{name:/2.7.4/})).not.toBeInTheDocument();
@@ -324,7 +346,7 @@ it('selects an official DTK wheel by server-issued ID and leaves incompatible bu
   expect(screen.getByText(/显卡检测只验证常规 FlashAttention 运算/)).toBeVisible();
   fireEvent.click(screen.getByText('查看其他版本与不匹配原因'));
   expect(screen.getByText('Torch 版本不匹配')).toBeVisible();
-  fireEvent.click(screen.getByRole('button',{name:'下载并检查安装计划'}));
+  fireEvent.click(screen.getByRole('button',{name:'下载并检查安装包'}));
   await waitFor(()=>expect(create).toHaveBeenCalledWith({package:'flash-attn',action:'install',vendor_wheel_id:'vendor-flash'}));
   expect(apply).not.toHaveBeenCalled();
 });
@@ -337,7 +359,7 @@ it('keeps offline upload available when no official DTK build matches', async ()
   const row=await screen.findByTestId('environment-package-flash-attn');
   fireEvent.click(within(row).getByRole('button',{name:'安装'}));
   expect(await screen.findByText(/官方目录中暂未找到与当前环境匹配的版本/)).toBeInTheDocument();
-  expect(screen.getByRole('button',{name:'检查安装计划'})).toBeDisabled();
+  expect(screen.getByRole('button',{name:'检查安装条件'})).toBeDisabled();
   expect(screen.getByText('上传 wheel')).toBeVisible();
   const input = screen.getByLabelText('flash-attn wheel');
   expect(input).not.toBeDisabled();
@@ -354,12 +376,15 @@ it('shows measured DTK download progress and stops showing stale speed after fai
   expect(progress).toHaveAttribute('aria-valuenow','40');
   expect(screen.getByText('2.0 MB/s')).toBeInTheDocument();
   expect(screen.getByText('预计剩余 3s')).toBeInTheDocument();
-  expect(screen.getByRole('button',{name:'取消计划'})).toBeEnabled();
-  view.unmount();operations[0].status='failed';operations[0].error='Network disconnected';
-  render(<EnvironmentManagerPanel/>);
+  expect(screen.getByRole('button',{name:'取消下载'})).toBeEnabled();
+  operations[0].status='failed';operations[0].error='Network disconnected';
+  fireEvent.click(screen.getByRole('button',{name:'重新检测'}));
   expect(await screen.findByText('Network disconnected')).toBeInTheDocument();
   expect(screen.getByRole('progressbar',{name:'适配包下载进度'})).toHaveAttribute('aria-valuenow','40');
   expect(screen.queryByText('2.0 MB/s')).not.toBeInTheDocument();
+  view.unmount();render(<EnvironmentManagerPanel/>);
+  await screen.findByTestId('environment-package-xformers');
+  expect(screen.queryByText('Network disconnected')).not.toBeInTheDocument();
 });
 
 it('describes Python-only vendor builds as pending device validation rather than verified compatibility', async () => {
@@ -372,13 +397,14 @@ it('describes Python-only vendor builds as pending device validation rather than
   const row=await screen.findByTestId('environment-package-xformers');
   fireEvent.click(within(row).getByRole('button',{name:'安装'}));
   fireEvent.click(await screen.findByRole('combobox',{name:'DTK 适配版本'}));
+  expect(screen.queryByRole('option',{name:'选择适配版本'})).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('option',{name:/0.0.33/}));
-  expect(screen.getByText(/已匹配当前安装条件/)).toHaveTextContent('安装后会检测显卡上的实际可用性');
+  expect(screen.getByText(/版本要求已满足/)).toHaveTextContent('安装完成后会测试扩展能否在当前显卡上运行');
   fireEvent.click(screen.getByText('包信息与运行要求'));
   expect(screen.getByText(/此包提供纯 Python 接口/)).toHaveTextContent('仍需检查依赖并通过显卡检测');
   expect(screen.getByText('发布目录 DTK 标签').parentElement).toHaveTextContent('26.04');
   expect(screen.getByText('PyTorch 要求').parentElement).toHaveTextContent('>=2.5');
-  expect(screen.getByText('安装包声明').parentElement).toHaveTextContent('>=2.1.0');
+  expect(screen.getByText('安装包声明的依赖').parentElement).toHaveTextContent('>=2.1.0');
   expect(screen.getByText('需要已安装').parentElement).toHaveTextContent('flash-attn>=2.6.1');
   expect(screen.getByText(/DTK 25.04.1 · PyTorch/)).toBeInTheDocument();
 });
@@ -395,7 +421,7 @@ it('replaces empty CUDA runtime controls with matched DTK guidance and direct ma
   const panel = await screen.findByTestId('dtk-runtime-guidance');
   expect(await within(panel).findByText(/Ubuntu 22.04.5 LTS/)).toBeInTheDocument();
   expect(within(panel).getByText('6.3.31-V1.5.3.beta')).toBeInTheDocument();
-  expect(within(panel).getByText(/候选 DTK 26.04 要求驱动/)).toHaveTextContent('需人工核对');
+  expect(within(panel).getByText(/DTK 26.04 要求驱动/)).toHaveTextContent('安装前请确认当前驱动是否兼容');
   expect(within(panel).getByRole('link',{name:'下载 DTK 26.04'})).toHaveAttribute('href',catalog.guidance.recommendation!.toolkit_url);
   expect(within(panel).getByRole('link',{name:'手动下载 torch 2.7.1+dtk2604'})).toHaveAttribute('href',catalog.guidance.recommendation!.wheels[0].url);
   expect(within(panel).getByRole('link',{name:'DTK 版本目录'})).toHaveAttribute('href','https://download.sourcefind.cn:65024/1/main');
@@ -411,13 +437,14 @@ it('allows a DTK wheel to be manually downloaded and uploaded without sending th
   server.use(http.post('/api/environment/wheels',()=>HttpResponse.json({wheel_id:'manual-dtk',package:'flash-attn',filename:'flash_attn_vendor.whl',version:'2.6.3+dtk25041',sha256:'a'.repeat(64)},{status:201})));
   render(<EnvironmentManagerPanel focusPackage="flash-attn"/>);
   fireEvent.click(await screen.findByRole('combobox',{name:'DTK 适配版本'}));
+  expect(screen.queryByRole('option',{name:'选择适配版本'})).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('option',{name:/2.6.3\+dtk25041/}));
   expect(screen.getByRole('link',{name:'手动下载此 wheel'})).toHaveAttribute('href',dtkCatalog().wheels[0].url);
   expect(screen.getByText('上传 wheel')).toBeVisible();
   fireEvent.change(screen.getByLabelText('flash-attn wheel'),{target:{files:[new File(['wheel'],'flash_attn_vendor.whl')]}});
-  await waitFor(()=>expect(screen.getByRole('button',{name:'检查安装计划'})).toBeEnabled());
+  await waitFor(()=>expect(screen.getByRole('button',{name:'检查安装条件'})).toBeEnabled());
   expect(screen.queryByRole('link',{name:'手动下载此 wheel'})).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button',{name:'检查安装计划'}));
+  fireEvent.click(screen.getByRole('button',{name:'检查安装条件'}));
   await waitFor(()=>expect(create).toHaveBeenCalledWith({package:'flash-attn',action:'install',version:'2.6.3+dtk25041',wheel_id:'manual-dtk'}));
 });
 
@@ -429,7 +456,7 @@ it('retains official manual sources when DTK matching fails', async () => {
   expect(await within(panel).findByRole('alert')).toHaveTextContent('目录暂时不可用');
   expect(within(panel).getByRole('link',{name:'DTK 版本目录'})).toHaveAttribute('href','https://download.sourcefind.cn:65024/1/main');
   expect(within(panel).getByRole('link',{name:'驱动下载目录'})).toHaveAttribute('href','https://download.sourcefind.cn:65024/6/main');
-  expect(within(panel).getByRole('button',{name:'重新匹配'})).toBeEnabled();
+  expect(within(panel).getByRole('button',{name:'刷新推荐'})).toBeEnabled();
 });
 
 function windowsCatalog(compatible = false): WindowsAttentionCatalog {
@@ -446,17 +473,23 @@ it('offers a matching Windows community build and stages a plan before any insta
   server.use(http.get('/api/environment/windows/wheels', () => HttpResponse.json(windowsCatalog(true))));
   render(<EnvironmentManagerPanel focusPackage="flash-attn"/>);
   const select = await screen.findByRole('combobox',{name:'Windows FlashAttention 版本'});
-  expect(screen.getByText(/不是 FlashAttention 官方 Windows 构建/)).toBeInTheDocument();
+  expect(screen.getByText(/并非 FlashAttention 官方提供/)).toBeInTheDocument();
   expect(screen.queryByLabelText('flash-attn 版本')).not.toBeInTheDocument();
-  expect(screen.getByRole('button',{name:'检查安装计划'})).toBeDisabled();
+  expect(screen.getByRole('button',{name:'检查安装条件'})).toBeDisabled();
+  expect(select).toHaveTextContent('选择兼容版本');
   fireEvent.click(select);
+  expect(screen.queryByRole('option',{name:'选择兼容版本'})).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('option',{name:/2.8.3\+cu128torch2.11/}));
+  fireEvent.click(select);
+  expect(screen.getAllByRole('option')).toHaveLength(1);
+  expect(screen.queryByRole('option',{name:'选择兼容版本'})).not.toBeInTheDocument();
+  fireEvent.click(select);
   expect(screen.getByRole('link',{name:'手动下载此 wheel'})).toHaveAttribute('href',windowsCatalog(true).wheels[0].url);
   expect(create).not.toHaveBeenCalled(); expect(apply).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button',{name:'下载并检查安装计划'}));
+  fireEvent.click(screen.getByRole('button',{name:'下载并检查安装包'}));
   await waitFor(()=>expect(create).toHaveBeenCalledWith({package:'flash-attn',action:'install',vendor_wheel_id:'mjun0812-cp312'}));
   expect(apply).not.toHaveBeenCalled();
-  expect(await screen.findByRole('button',{name:'确认并执行此计划'})).toBeEnabled();
+  expect(await screen.findByRole('button',{name:'确认安装'})).toBeEnabled();
 });
 
 it('makes catalog failure explicit while allowing bundled matching and manual upload', async () => {
@@ -464,21 +497,21 @@ it('makes catalog failure explicit while allowing bundled matching and manual up
   server.use(http.get('/api/environment/windows/wheels',()=>HttpResponse.json(catalog)),http.post('/api/environment/wheels',()=>HttpResponse.json({wheel_id:'offline-win',package:'flash-attn',filename:'offline.whl',version:'2.8.3',sha256:'a'.repeat(64)},{status:201})));
   render(<EnvironmentManagerPanel focusPackage="flash-attn"/>);
   expect(await screen.findByRole('alert')).toHaveTextContent('无法连接发布页');
-  expect(screen.getByText(/^Python .*内置目录/, {selector:'p.settings-note.break-words'})).toBeInTheDocument();
+  expect(screen.getByText(/^Python .*使用内置版本列表/, {selector:'p.settings-note.break-words'})).toBeInTheDocument();
   fireEvent.click(screen.getByRole('combobox',{name:'Windows FlashAttention 版本'}));
   fireEvent.click(screen.getByRole('option',{name:/2.8.3\+cu128torch2.11/}));
   expect(screen.getByRole('button',{name:'上传 wheel'})).toBeEnabled();
   fireEvent.change(screen.getByLabelText('flash-attn wheel'),{target:{files:[new File(['fake'], 'offline.whl')]}});
   await screen.findByText('offline.whl');
   expect(screen.queryByRole('link',{name:'手动下载此 wheel'})).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button',{name:'检查安装计划'}));
+  fireEvent.click(screen.getByRole('button',{name:'检查安装条件'}));
   await waitFor(()=>expect(create).toHaveBeenCalledWith({package:'flash-attn',action:'install',version:'2.8.3',wheel_id:'offline-win'}));
 });
 
 it('distinguishes no matching build from request failure and keeps the publisher and upload controls', async () => {
   server.use(http.get('/api/environment/windows/wheels',()=>HttpResponse.json(windowsCatalog(false))));
   const view = render(<EnvironmentManagerPanel focusPackage="flash-attn"/>);
-  expect(await screen.findByText(/此发布范围内没有匹配当前环境的版本/)).toBeInTheDocument();
+  expect(await screen.findByText(/这个发布批次没有适合当前环境的安装包/)).toBeInTheDocument();
   expect(screen.getByText('PyTorch 版本不匹配')).toBeInTheDocument();
   expect(screen.queryByRole('combobox',{name:'Windows FlashAttention 版本'})).not.toBeInTheDocument();
   expect(screen.getByRole('button',{name:'上传 wheel'})).toBeEnabled();

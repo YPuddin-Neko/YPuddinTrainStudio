@@ -24,6 +24,29 @@ function activeLabel() {
 }
 
 describe('shared select interaction', () => {
+  it('keeps placeholder text out of the menu and keyboard choices', async () => {
+    const user=userEvent.setup();const changed=vi.fn();
+    const view=render(<StudioSelect aria-label="Build" value="" placeholder="选择兼容版本" options={[{value:'one',label:'Build one'},{value:'two',label:'Build two'}]} onValueChange={changed}/>);
+    const trigger=screen.getByRole('combobox',{name:'Build'});
+    expect(trigger).toHaveTextContent('选择兼容版本');
+    await user.click(trigger);
+    expect(screen.getAllByRole('option').map(option=>option.textContent)).toEqual(['Build one','Build two']);
+    await user.keyboard('{Enter}');expect(changed).toHaveBeenCalledExactlyOnceWith('one');
+    view.rerender(<StudioSelect aria-label="Build" value="one" placeholder="选择兼容版本" options={[{value:'one',label:'Build one'},{value:'two',label:'Build two'}]} onValueChange={changed}/>);
+    expect(trigger).toHaveTextContent('Build one');
+    await user.click(trigger);expect(screen.queryByRole('option',{name:'选择兼容版本'})).not.toBeInTheDocument();
+  });
+  it('preserves real empty-value choices such as clearing a default model', async () => {
+    const changed=vi.fn();const user=userEvent.setup();
+    render(<StudioSelect aria-label="Default model" value="one" placeholder="请选择" options={[{value:'',label:'清除默认模型',displayLabel:'未设置默认模型'},{value:'one',label:'Model one'}]} onValueChange={changed}/>);
+    await user.click(screen.getByRole('combobox'));await user.click(screen.getByRole('option',{name:'清除默认模型'}));
+    expect(changed).toHaveBeenCalledExactlyOnceWith('');
+  });
+  it('shows an empty-state placeholder without opening an empty menu', () => {
+    render(<StudioSelect aria-label="Jobs" value="" placeholder="还没有训练任务" options={[]} onValueChange={()=>{}}/>);
+    expect(screen.getByRole('combobox')).toBeDisabled();
+    expect(screen.getByRole('combobox')).toHaveTextContent('还没有训练任务');
+  });
   it('keeps a two-line trigger together and places its menu below the full button', async () => {
     render(<StudioSelect aria-label="GPU" value="alpha" options={options} triggerDescription="DTK · 2 卡" onValueChange={() => {}}/>);
     const trigger = screen.getByRole('combobox');

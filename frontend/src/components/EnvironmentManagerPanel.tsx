@@ -1,4 +1,5 @@
 import TorchEnvironmentPanel from './TorchEnvironmentPanel';
+import InstallationOperation, { InstallationLog, InstallationProgress } from './InstallationOperation';
 import DtkWheelPicker, { type DtkWheel } from './DtkWheelPicker';
 import DtkRuntimePanel from './DtkRuntimePanel';
 import WindowsAttentionWheelPicker, { type WindowsAttentionWheel } from './WindowsAttentionWheelPicker';
@@ -49,9 +50,8 @@ function DownloadProgress({ operation, copy }: {operation: Operation; copy: (zh:
   if (!downloading && !downloaded) return null;
   const percent = total ? Math.min(100, downloaded / total * 100) : undefined;
   return <div className="space-y-2" data-testid="environment-download-progress">
-    <div className="flex flex-wrap justify-between gap-2 text-xs"><strong>{downloading ? copy('下载适配包', 'Downloading build') : copy('下载记录', 'Download record')}</strong><span className="tabular-nums">{formatBytes(downloaded)}{total ? ` / ${formatBytes(total)}` : ''}</span></div>
-    <div role="progressbar" aria-label={copy('适配包下载进度', 'Build download progress')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}
-      className="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className={`h-full rounded-full bg-blue-600 ${percent === undefined && downloading ? 'animate-pulse' : ''}`} style={{width:`${percent ?? (downloading ? 12 : 0)}%`}}/></div>
+    <div className="flex flex-wrap justify-between gap-2 text-xs"><strong>{downloading ? copy('下载适配包', 'Downloading build') : copy('已下载', 'Downloaded')}</strong><span className="tabular-nums">{formatBytes(downloaded)}{total ? ` / ${formatBytes(total)}` : ''}</span></div>
+    <InstallationProgress label={copy('适配包下载进度', 'Build download progress')} percent={percent ?? (downloading ? undefined : 0)}/>
     {downloading && <p className="flex flex-wrap gap-4 text-xs text-slate-500 dark:text-slate-400 tabular-nums"><span>{operation.bytes_per_second && operation.bytes_per_second > 0 ? `${formatBytes(operation.bytes_per_second)}/s` : copy('正在计算速度…', 'Measuring speed…')}</span><span>{copy('预计剩余', 'Remaining')} {formatEta(operation.eta_seconds)}</span></p>}
   </div>;
 }
@@ -74,19 +74,24 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
   const [wheel, setWheel] = React.useState<Wheel | null>(null);
   const [vendorWheel, setVendorWheel] = React.useState<DtkWheel | WindowsAttentionWheel | null>(null);
   const [expanded, setExpanded] = React.useState<string | null>(null);
+  const [torchOperationsTarget, setTorchOperationsTarget] = React.useState<HTMLDivElement | null>(null);
+  const [torchOperationsVisible, setTorchOperationsVisible] = React.useState(false);
   const [createdOperations, setCreatedOperations] = React.useState<Set<string>>(new Set());
   const observedOperations = React.useRef(new Set<string>());
-  const visibleOperations = operations.filter((op, index) => !op.dismissed_at && (
+  const visibleOperations = operations.filter(op => !op.dismissed_at && (
     busyStatus(op) || op.status === 'ready' && managedPackages.has(op.package)
-    || index === 0 && op.status === 'failed'
-    || createdOperations.has(op.id) && op.status === 'completed'
+    || createdOperations.has(op.id) && ['completed', 'failed', 'cancelled'].includes(op.status)
   ));
   React.useEffect(() => {
-    const current = operations.find((op, index) => !op.dismissed_at && !observedOperations.current.has(`${op.id}:${op.status}`) && (
-      busyStatus(op) || op.status === 'ready' && managedPackages.has(op.package) || index === 0 && op.status === 'failed'
+    setCreatedOperations(previous => {
+      const activeIds = operations.filter(op => busyStatus(op) || op.status === 'ready').map(op => op.id);
+      return activeIds.some(id => !previous.has(id)) ? new Set([...previous, ...activeIds]) : previous;
+    });
+    const current = operations.find(op => !op.dismissed_at && !observedOperations.current.has(`${op.id}:${op.status}`) && (
+      busyStatus(op) || op.status === 'ready' && managedPackages.has(op.package) || createdOperations.has(op.id) && op.status === 'failed'
     ));
     if (current) { observedOperations.current.add(`${current.id}:${current.status}`); setExpanded(current.id); }
-  }, [operations]);
+  }, [operations, createdOperations]);
   const [uploading, setUploading] = React.useState(false);
   const focusAvailable = !!focusPackage && managedPackages.has(focusPackage) && !!status?.packages.some(pkg => pkg.name === focusPackage);
   React.useEffect(() => {
@@ -186,9 +191,9 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
 
   return <div data-testid="environment-manager"><SettingsSections sections={[
     { id: 'environment-runtime', label: copy('当前环境', 'Current runtime') },
-    { id: 'environment-torch', label: profile === 'linux-dtk' ? copy('DTK 安装与更新', 'DTK setup') : copy('PyTorch 版本', 'PyTorch version') },
+    { id: 'environment-torch', label: profile === 'linux-dtk' ? copy('DTK 安装指南', 'DTK installation guide') : copy('PyTorch 版本', 'PyTorch version') },
     { id: 'environment-attention', label: copy('注意力加速', 'Attention acceleration') },
-    ...(visibleOperations.length ? [{ id: 'environment-installation', label: copy('安装状态', 'Installation status') }] : []),
+    ...(visibleOperations.length || torchOperationsVisible ? [{ id: 'environment-installation', label: copy('安装日志', 'Installation log') }] : []),
   ]}>
     <section id="environment-runtime" data-settings-section tabIndex={-1} className="settings-section">
     <div className="settings-section-heading">
@@ -209,7 +214,7 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     </>}
     </section>
     {status && <>
-      {profile === 'linux-dtk' ? <DtkRuntimePanel/> : <TorchEnvironmentPanel disabled={status.running_jobs || busy || operations.some(busyStatus)}/>}
+      {profile === 'linux-dtk' ? <DtkRuntimePanel/> : <TorchEnvironmentPanel disabled={status.running_jobs || busy || operations.some(busyStatus)} operationsTarget={torchOperationsTarget} onOperationsVisible={setTorchOperationsVisible}/>}
       <section id="environment-attention" data-settings-section tabIndex={-1} className="settings-section">
         <div className="settings-section-heading"><div><h2>{copy('注意力加速', 'Attention acceleration')}</h2><p className="settings-note">{hipBackend ? copy('使用当前 DTK 适配版 PyTorch 的 SDPA；扩展包需要与厂商运行时匹配。', 'Use SDPA from the DTK-compatible PyTorch build. Extension packages must match the vendor runtime.') : copy('默认 SDPA 即可训练；可选扩展用于 CUDA 加速。', 'SDPA is ready for training. Optional extensions provide CUDA acceleration.')}</p></div></div>
       {hipBackend && <div className="settings-sdpa-status" data-testid="environment-sdpa">
@@ -230,35 +235,38 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
           <>
             {hipBackend && <DtkWheelPicker packageName={pkg.name} selected={vendorWheel && 'dtk' in vendorWheel ? vendorWheel : null} disabled={locked} onSelect={next => {setVendorWheel(next); setWheel(null); setVersion('');}}/>}
             {!hipBackend && status.runtime.platform === 'Windows' && pkg.name === 'flash-attn' && <WindowsAttentionWheelPicker selected={vendorWheel && 'cuda' in vendorWheel ? vendorWheel : null} disabled={locked} onSelect={next => {setVendorWheel(next); setWheel(null); setVersion('');}}/>}
-            <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">{hipBackend || status.runtime.platform === 'Windows' && pkg.name === 'flash-attn' ? copy('可自动下载；也可手动下载后上传此 wheel，再检查安装计划。', 'Download automatically, or download the wheel manually and upload it to review the install plan.') : pkg.wheel_required ? copy('此平台需要预编译 wheel，请上传匹配当前 Python、Torch 和 CUDA 的文件。', 'This platform needs a prebuilt wheel matching the current Python, Torch and CUDA.') : copy('自动匹配兼容版本，确认变更计划后安装。', 'Find a compatible version and review the changes before installing.')}</p>
+            <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">{hipBackend || status.runtime.platform === 'Windows' && pkg.name === 'flash-attn' ? copy('可自动下载；也可手动下载后上传此 wheel，再检查安装条件。', 'Download automatically, or download the wheel manually and upload it to review the install plan.') : pkg.wheel_required ? copy('此平台需要预编译 wheel，请上传匹配当前 Python、Torch 和 CUDA 的文件。', 'This platform needs a prebuilt wheel matching the current Python, Torch and CUDA.') : copy('检查版本和依赖要求后，会列出要安装的内容；确认后才开始安装。', 'Check version and dependency requirements, review the packages, then confirm installation.')}</p>
             <div className="flex flex-wrap items-center gap-2">
-              <button className={`${button} border-blue-600 bg-blue-600 text-white hover:bg-blue-700`} disabled={locked || (hipBackend ? !wheel && !vendorWheel : !pkg.supported || pkg.wheel_required && !wheel && !vendorWheel)} onClick={() => void plan(pkg.name, 'install')}>{vendorWheel ? copy('下载并检查安装计划', 'Download and review install plan') : copy('检查安装计划', 'Review install plan')}</button>
+              <button className={`${button} border-blue-600 bg-blue-600 text-white hover:bg-blue-700`} disabled={locked || (hipBackend ? !wheel && !vendorWheel : !pkg.supported || pkg.wheel_required && !wheel && !vendorWheel)} onClick={() => void plan(pkg.name, 'install')}>{vendorWheel ? copy('下载并检查安装包', 'Download and check the package') : copy('检查安装条件', 'Check installation requirements')}</button>
               {vendorWheel && <a className={button} href={vendorWheel.url} target="_blank" rel="noreferrer"><Download size={13}/>{copy('手动下载此 wheel', 'Download this wheel manually')}</a>}
               {hipBackend && wheelUpload(pkg.name)}
-              {pkg.version && <><button className={button} disabled={locked || (hipBackend ? !wheel && !vendorWheel : !pkg.supported || pkg.wheel_required && !wheel && !vendorWheel)} onClick={() => void plan(pkg.name, 'repair')}>{copy('修复当前版本', 'Repair current version')}</button><button className={button} disabled={locked} onClick={() => void plan(pkg.name, 'uninstall')}>{copy('卸载', 'Uninstall')}</button></>}
+              {pkg.version && <><button className={button} disabled={locked || (hipBackend ? !wheel && !vendorWheel : !pkg.supported || pkg.wheel_required && !wheel && !vendorWheel)} onClick={() => void plan(pkg.name, 'repair')}>{copy('重装当前版本', 'Reinstall current version')}</button><button className={button} disabled={locked} onClick={() => void plan(pkg.name, 'uninstall')}>{copy('卸载', 'Uninstall')}</button></>}
             </div>
             {!hipBackend && <details className="settings-inline-details" open={pkg.wheel_required}><summary>{pkg.wheel_required ? copy('手动上传 wheel', 'Upload wheel manually') : copy('手动版本与 wheel', 'Manual version and wheel')}</summary>
             <div className="flex flex-wrap items-center gap-2">{!pkg.wheel_required && <label className="flex items-center gap-2 text-xs">{copy('版本', 'Version')}<input className={`${input} w-40`} aria-label={`${pkg.name} ${copy('版本', 'version')}`} placeholder={copy('自动匹配兼容版本', 'Compatible version')} value={version} onChange={event => setVersion(event.target.value)} disabled={locked || !!wheel}/></label>}
               {wheelUpload(pkg.name)}
             </div></details>}
-            {pkg.wheel_required && !wheel && !vendorWheel && <p className="settings-note">{copy('先选择兼容构建或上传 wheel，即可检查安装计划。', 'Choose a compatible build or upload a wheel to review the install plan.')}</p>}
+            {pkg.wheel_required && !wheel && !vendorWheel && <p className="settings-note">{copy('先选择兼容构建或上传 wheel，即可检查安装条件。', 'Choose a compatible build or upload a wheel to review the install plan.')}</p>}
             {wheel && <p className="flex items-center gap-2 break-all text-xs text-emerald-700 dark:text-emerald-400"><Check size={13} />{wheel.filename}<button className="text-slate-500 dark:text-slate-400" aria-label={copy('清除 wheel', 'Clear wheel')} onClick={() => { setWheel(null); setVendorWheel(null); setVersion(''); }}><X size={13} /></button></p>}
           </>
         </div>}
       </div>)}</div></section>
     </>}
-    {visibleOperations.length > 0 && <section id="environment-installation" data-settings-section tabIndex={-1} className="settings-section space-y-3" data-testid="environment-operations"><div className="settings-section-heading"><h2>{copy('当前安装', 'Current installation')}</h2></div>{visibleOperations.map(op => <div key={op.id} className="rounded-lg border border-slate-200 dark:border-slate-700">
-      <button aria-expanded={expanded === op.id} className="flex w-full flex-wrap items-center gap-2 px-3 py-2 text-left text-xs" onClick={() => setExpanded(expanded === op.id ? null : op.id)}>{expanded === op.id ? <ChevronDown size={13} /> : <ChevronRight size={13} />}{busyStatus(op) && <Loader2 size={13} className="animate-spin" />}<span className="font-medium">{packageLabel(op.package)}</span><time className="text-slate-500 dark:text-slate-400" dateTime={new Date(op.created_at * 1000).toISOString()}>{new Date(op.created_at * 1000).toLocaleString(en ? 'en' : 'zh-CN')}</time><span>{op.action === 'uninstall' ? copy('卸载', 'Uninstall') : op.action === 'repair' ? copy('修复', 'Repair') : copy('安装', 'Install')}</span><span className={`ml-auto ${op.status === 'failed' ? 'text-red-600 dark:text-red-300' : 'text-slate-500 dark:text-slate-400'}`}>{statusLabel(op.status)}</span></button>
-      {expanded === op.id && <div className="space-y-2 border-t border-slate-100 px-3 py-3 dark:border-slate-700">
+    <section id="environment-installation" data-settings-section tabIndex={-1} hidden={!visibleOperations.length && !torchOperationsVisible} className="settings-section space-y-3" data-testid={visibleOperations.length || torchOperationsVisible ? 'environment-operations' : undefined}>
+      {(visibleOperations.length > 0 || torchOperationsVisible) && <div className="settings-section-heading"><h2>{copy('安装日志', 'Installation log')}</h2></div>}
+      <div ref={setTorchOperationsTarget} className="space-y-3"/>
+      {visibleOperations.map(op => <InstallationOperation key={op.id} title={packageLabel(op.package)}
+        action={op.action === 'uninstall' ? copy('卸载', 'Uninstall') : op.action === 'repair' ? copy('重装', 'Reinstall') : copy('安装', 'Install')}
+        status={op.status === 'installing' ? op.action === 'uninstall' ? copy('正在卸载', 'Uninstalling') : op.action === 'repair' ? copy('正在重装', 'Reinstalling') : copy('正在安装', 'Installing') : statusLabel(op.status)}
+        busy={busyStatus(op)} failed={op.status === 'failed'} expanded={expanded === op.id} onToggle={() => setExpanded(expanded === op.id ? null : op.id)}>
         <DownloadProgress operation={op} copy={copy}/>
         {op.plan.length > 0 && <div className="space-y-1 text-xs">{op.plan.map(item => <p key={item.name} className="break-words"><span className="font-mono">{item.name}</span> · {item.from_version || copy('未安装', 'not installed')} → <strong>{item.version || copy('移除', 'remove')}</strong></p>)}</div>}
         {op.error && <p role="alert" className="whitespace-pre-wrap break-words text-xs text-red-600 dark:text-red-300">{op.error}</p>}
-        {op.status === 'ready' && <div className="flex flex-wrap items-center gap-2"><button className={`${button} border-blue-600 bg-blue-600 text-white hover:bg-blue-700`} disabled={locked} onClick={() => void execute(() => apiClient.post(`/environment/operations/${op.id}/apply`, {}, { silent: true }))}>{copy('确认并执行此计划', 'Apply this reviewed plan')}</button><span className="text-xs text-slate-500 dark:text-slate-400">{copy('执行后需要重启 Studio。', 'Restart Studio after applying.')}</span></div>}
-        {['planning', 'ready'].includes(op.status) && <button className={button} disabled={busy} onClick={() => void execute(() => apiClient.post(`/environment/operations/${op.id}/cancel`, {}, { silent: true }))}>{copy('取消计划', 'Cancel plan')}</button>}
-        {['installing', 'verifying'].includes(op.status) && <p className="text-xs text-slate-500 dark:text-slate-400">{copy('正在执行已确认的计划。为避免留下半安装状态，此阶段不能中断。', 'Applying the reviewed plan. This stage cannot be interrupted because it may leave a partial installation.')}</p>}
-        {op.logs.length > 0 && <pre aria-label={copy('安装日志', 'Installer logs')} className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded-md bg-slate-950 p-3 font-mono text-[11px] leading-5 text-slate-200">{op.logs.join('\n')}</pre>}
-      </div>}
-      {!op.dismissed_at && ['completed', 'failed', 'cancelled'].includes(op.status) && <div className="px-3 pb-2"><button type="button" className="text-xs text-slate-500 dark:text-slate-400 underline" disabled={busy} onClick={() => void execute(() => apiClient.post(`/environment/operations/${op.id}/dismiss`, {}, { silent: true }))}>{copy('关闭结果', 'Dismiss result')}</button></div>}
-    </div>)}</section>}
+        {op.status === 'ready' && <div className="flex flex-wrap items-center gap-2"><button className={`${button} border-blue-600 bg-blue-600 text-white hover:bg-blue-700`} disabled={locked} onClick={() => void execute(() => apiClient.post(`/environment/operations/${op.id}/apply`, {}, { silent: true }))}>{op.action === 'uninstall' ? copy('确认卸载', 'Confirm uninstall') : op.action === 'repair' ? copy('确认重装', 'Confirm reinstall') : copy('确认安装', 'Confirm install')}</button><span className="text-xs text-slate-500 dark:text-slate-400">{copy('执行后需要重启 Studio。', 'Restart Studio after applying.')}</span></div>}
+        {['planning', 'ready'].includes(op.status) && <button className={button} disabled={busy} onClick={() => void execute(() => apiClient.post(`/environment/operations/${op.id}/cancel`, {}, { silent: true }))}>{op.action === 'uninstall' ? copy('取消卸载', 'Cancel uninstall') : op.phase === 'download' ? copy('取消下载', 'Cancel download') : copy('取消安装', 'Cancel installation')}</button>}
+        {['installing', 'verifying'].includes(op.status) && <p className="text-xs text-slate-500 dark:text-slate-400">{copy('正在修改已安装的软件包。为避免留下不完整的环境，此阶段不能中断。', 'Installed packages are being changed. This stage cannot be interrupted because it could leave an incomplete environment.')}</p>}
+        {op.logs.length > 0 && <InstallationLog label={copy('安装日志', 'Installation log')} logs={op.logs}/>}
+      </InstallationOperation>)}
+    </section>
   </SettingsSections></div>;
 }

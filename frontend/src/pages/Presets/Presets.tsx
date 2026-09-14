@@ -162,15 +162,12 @@ export default function Presets() {
     }));
   };
 
-  const options = [
-    ...(!draft?.originalName ? [{value:'',label:text('新预设', 'New preset'),disabled:true}] : []),
-    ...userPresets.map(item=>({value:item.name,label:`${item.name} · ${familyName(presetFamily(item.config))}`})),
-  ];
+  const options = userPresets.map(item=>({value:item.name,label:`${item.name} · ${familyName(presetFamily(item.config))}`}));
   return <section className="presets-page parameter-workspace">
     <div className="parameter-workspace-header">
     <header className="presets-page-heading"><div><h1>{text('参数预设', 'Presets')}</h1><p>{text('保存常用训练参数，在项目版本中预览后应用。', 'Save reusable training parameters, then preview and apply them in a project version.')}</p></div><span>{text(`${userPresets.length} 个预设`, `${userPresets.length} presets`)}</span></header>
     <div className="presets-toolbar" ref={toolbarRef} role="group" aria-label={text('预设操作', 'Preset actions')}>
-      <div className="presets-switcher"><span>{text('当前预设', 'Current preset')}</span><StudioSelect searchable aria-label={text('选择预设', 'Choose preset')} value={draft?.originalName || ''} disabled={busy || !userPresets.length} options={options} onValueChange={name=>{const item=userPresets.find(row=>row.name===name);if(item && name!==draft?.originalName)requestAction(()=>void begin(item));}}/></div>
+      <div className="presets-switcher"><span>{text('当前预设', 'Current preset')}</span><StudioSelect searchable aria-label={text('选择预设', 'Choose preset')} value={draft?.originalName || ''} disabled={busy || !userPresets.length} placeholder={text('新预设', 'New preset')} options={options} onValueChange={name=>{const item=userPresets.find(row=>row.name===name);if(item && name!==draft?.originalName)requestAction(()=>void begin(item));}}/></div>
       <div className="presets-actions">
         <button className="studio-secondary" disabled={busy || !schema.data || !families.data || list.isPending || list.isError} onClick={() => requestAction(() => void begin())}><Plus size={15}/>{text('新建预设', 'New preset')}</button>
         {draft?.originalName && <><button className="studio-secondary" aria-label={text('复制为新预设', 'Duplicate')} disabled={busy || !!inactiveReason} onClick={() => requestAction(() => void begin({name:draft.name,description:draft.description,config:draft.config,builtin:false,updated_at:null},true))}><Copy size={15}/>{text('复制', 'Duplicate')}</button><button className="studio-secondary presets-delete" aria-label={text('删除预设', 'Delete preset')} disabled={busy} onClick={()=>setDeleting(true)}><Trash2 size={15}/>{text('删除', 'Delete')}</button></>}

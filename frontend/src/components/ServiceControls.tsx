@@ -15,7 +15,7 @@ const reasons: Record<string, [string,string]> = {
   restart_in_progress:['服务正在重启。','The service is restarting.'],
   training_or_data_worker_running:['训练或数据任务运行中，请完成或停止后重启。','Finish or stop the training/data task before restarting.'],
   extension_operation_running:['等待扩展安装完成。','Wait for the extension operation to finish.'],
-  torch_operation_running:['等待 PyTorch 环境准备完成。','Wait for the PyTorch environment to finish preparing.'],
+  torch_operation_running:['等待 PyTorch 安装完成。','Wait for the PyTorch environment to finish preparing.'],
   model_download_running:['等待模型下载完成或取消下载。','Finish or cancel model downloads first.'],
   data_operation_running:['等待数据处理完成。','Wait for data processing to finish.'],
   version_operation_running:['等待版本操作完成。','Wait for the version operation to finish.'],
@@ -67,10 +67,10 @@ export default function ServiceControls({environmentId, onRestarted, refreshTarg
         try {const current=await refresh(Math.min(3000,deadline-Date.now()));if(cancelled.current)return;if(current.worker_id!==before.worker_id){if(typeof options.environment_id==='string'&&current.selected_environment!==options.environment_id){setError(text('新环境启动失败，服务已恢复原环境。请查看启动日志后重试。','The prepared environment could not start. The original environment was restored; check the launcher log.'));setNotice('');onRestarted?.();return;}setNotice(text('服务已重启。','Service restarted.'));onRestarted?.();return;}}catch{/* Expected while the owned worker restarts. */}
       }
       setNotice('');
-      setError(text('暂未重新连接。请查看启动窗口；恢复后可点击重新检测。','Reconnection timed out. Check the launcher window, then refresh status.'));
+      setError(text('暂未重新连接。请查看启动窗口；恢复后可点击刷新状态。','Reconnection timed out. Check the launcher window, then refresh status.'));
     }catch(e){if(!cancelled.current){setNotice('');setError(formatApiError(e));}}finally{if(!cancelled.current)setBusy(false);}
   };
-  const refreshButton = <button type="button" className="settings-input service-refresh" disabled={busy || disabled} onClick={()=>void refresh().then(()=>setError('')).catch(e=>setError(formatApiError(e)))}><RefreshCw size={14}/>{text('重新检测','Refresh status')}</button>;
+  const refreshButton = <button type="button" className="settings-input service-refresh" disabled={busy || disabled} onClick={()=>void refresh().then(()=>setError('')).catch(e=>setError(formatApiError(e)))}><RefreshCw size={14}/>{text('刷新状态','Refresh status')}</button>;
   return <div className={`service-controls${secondary ? ' service-controls-secondary' : ''}`}>
     <div className="flex flex-wrap items-center gap-2">
       <button type="button" className={secondary ? "settings-input" : "settings-action"} disabled={busy||disabled||!runtime?.can_restart} onClick={()=>void restart(environmentId?{environment_id:environmentId}:{})}>{busy?<Loader2 size={14} className="animate-spin"/>:<RefreshCw size={14}/>} {environmentId?text('重启并切换到此环境','Restart in this environment'):text('重启服务','Restart service')}</button>
@@ -81,6 +81,6 @@ export default function ServiceControls({environmentId, onRestarted, refreshTarg
     {runtime?.reason&&<p className="settings-note">{reasons[runtime.reason]?text(...reasons[runtime.reason]):text('当前有操作占用服务，请稍后重试。','The service is busy. Try again later.')}</p>}
     {notice&&<p role="status" className="settings-note">{notice}</p>}
     {nextAddress&&<a className="text-[var(--studio-accent)]" href={nextAddress}>{text('打开新的服务地址','Open the new service address')}</a>}
-    {error&&<p role="alert" className="settings-alert">{error==='Service request timed out'?text('服务暂未响应，请重新检测。','The service did not respond. Refresh status to retry.'):error}</p>}
+    {error&&<p role="alert" className="settings-alert">{error==='Service request timed out'?text('服务暂未响应，请刷新状态。','The service did not respond. Refresh status to retry.'):error}</p>}
   </div>;
 }

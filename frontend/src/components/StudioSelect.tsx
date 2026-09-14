@@ -14,6 +14,8 @@ interface Props {
   className?: string;
   icon?: React.ReactNode;
   triggerDescription?: string;
+  /** Trigger-only guidance. Keep real empty-value states (for example All or Off) in options. */
+  placeholder?: string;
   searchable?: boolean;
   'aria-invalid'?: React.AriaAttributes['aria-invalid'];
   'aria-label'?: string;
@@ -23,7 +25,7 @@ interface Props {
 }
 
 /** A select-only combobox; focus stays on the trigger while its list is open. */
-export default function StudioSelect({ id, value, options, onValueChange, disabled, className = '', icon, triggerDescription, searchable = false, ...aria }: Props) {
+export default function StudioSelect({ id, value, options, onValueChange, disabled, className = '', icon, triggerDescription, placeholder, searchable = false, ...aria }: Props) {
   const text = useWorkspaceText();
   const generatedId = React.useId();
   const triggerId = id || `studio-select-${generatedId}`;
@@ -37,7 +39,9 @@ export default function StudioSelect({ id, value, options, onValueChange, disabl
   const [active, setActive] = React.useState(-1);
   const [position, setPosition] = React.useState<React.CSSProperties>({});
   const selected = options.findIndex(option => option.value === value);
-  const visible = open && !disabled;
+  const unavailable = disabled || options.length === 0;
+  const visible = open && !unavailable;
+  const triggerLabel = options[selected]?.displayLabel ?? options[selected]?.label ?? (value || placeholder || text(options.length ? '请选择' : '暂无可选项', options.length ? 'Choose' : 'No options available'));
   const matches = options.map((option, index) => ({ option, index })).filter(({ option }) => !searchable || option.label.toLocaleLowerCase().includes(filter.trim().toLocaleLowerCase()));
   const openList = (last = false, edge = false) => {
     const fallback = last ? options.reduce((index, option, current) => option.disabled ? index : current, -1) : options.findIndex(option => !option.disabled);
@@ -141,11 +145,11 @@ export default function StudioSelect({ id, value, options, onValueChange, disabl
   </div>);
 
   return <>
-    <button {...aria} id={triggerId} ref={trigger} type="button" role="combobox" disabled={disabled}
+    <button {...aria} id={triggerId} ref={trigger} type="button" role="combobox" disabled={unavailable}
       className={`studio-select ${className}`} aria-haspopup="listbox" aria-expanded={visible}
       aria-controls={visible ? listId : undefined} aria-activedescendant={visible && active >= 0 ? `${listId}-${active}` : undefined}
       onClick={() => visible ? setOpen(false) : openList()} onKeyDown={keyDown} onBlur={event => { if (!list.current?.contains(event.relatedTarget)) setOpen(false); }}>
-      {icon}<span className="studio-select-value">{triggerDescription ? <><span className="studio-select-title">{options[selected]?.displayLabel ?? options[selected]?.label ?? value}</span><span className="studio-select-description">{triggerDescription}</span></> : options[selected]?.displayLabel ?? options[selected]?.label ?? value}</span><ChevronDown size={13} className="studio-select-chevron" aria-hidden="true"/>
+      {icon}<span className="studio-select-value">{triggerDescription ? <><span className="studio-select-title">{triggerLabel}</span><span className="studio-select-description">{triggerDescription}</span></> : triggerLabel}</span><ChevronDown size={13} className="studio-select-chevron" aria-hidden="true"/>
     </button>
     {visible && createPortal(<div ref={list} id={searchable ? undefined : listId} role={searchable ? undefined : 'listbox'} className={`studio-select-menu${searchable ? ' studio-select-menu-searchable' : ''}`} style={position}
       aria-label={searchable ? undefined : aria['aria-label']} aria-labelledby={searchable ? undefined : aria['aria-labelledby'] || (!aria['aria-label'] ? triggerId : undefined)}

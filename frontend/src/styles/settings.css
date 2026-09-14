@@ -75,7 +75,8 @@
 @container(min-width:320px) and (max-width:560px) { .settings-facts { grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; } }
 
 .service-controls { display:grid; gap:10px; margin:16px 0; }
-.torch-operation { display:grid; gap:12px; margin-top:16px; padding:16px; border:1px solid var(--studio-line); border-radius:8px; background:var(--studio-panel); }
+.installation-operation .settings-input,.installation-operation .settings-action { width:auto; padding:6px 10px; border-radius:6px; font-size:12px; line-height:16px; }
+.installation-operation .settings-action { border:1px solid transparent; }
 
 .settings-service-refresh { flex:0 0 auto; }
 .service-refresh { display:inline-flex; align-items:center; justify-content:center; gap:6px; white-space:nowrap; }

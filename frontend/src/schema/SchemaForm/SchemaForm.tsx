@@ -560,7 +560,7 @@ const ModelPathInput: React.FC<{
       <PathInput ariaLabel={label} value={value} onChange={onChange} />
       {matched.length > 0 && (
         <StudioSelect aria-label={`${label || kind} · ${t('models.fromRegistry')}`} value={matched.some(model => model.path === value) ? value : ''} onValueChange={onChange} data-testid="model-registry-select"
-          options={[{value:'',label:t('models.fromRegistry'),disabled:true},...matched.map(model=>({value:model.path,label:model.path.split(/[\\/]/).pop() || model.path}))]}/>
+          placeholder={t('models.fromRegistry')} options={matched.map(model=>({value:model.path,label:model.path.split(/[\\/]/).pop() || model.path}))}/>
 
       )}
     </div>
