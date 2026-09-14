@@ -36,7 +36,16 @@ from ypuddin.data import (
 from ypuddin.data.native import NativeBatchSampler, collate_native
 from ypuddin.memory import BlockSwapper
 from ypuddin.models import LoadedModel, ModelFamily, TextCond, get_family
-from ypuddin.optim import build_optimizer, build_scheduler, is_schedule_free
+from ypuddin.optim import (
+    build_optimizer,
+    build_scheduler,
+    is_schedule_free,
+    manages_learning_rate,
+    optimizer_hyperparameter_snapshot,
+    optimizer_learning_rates,
+    optimizer_rate_snapshot,
+    validate_optimizer_runtime,
+)
 
 from .events import Emitter, NullEmitter
 from .logging import TrainingLogs
@@ -323,7 +332,7 @@ class Trainer:
         self.progress.total_steps = min(by_epochs, cfg.loop.max_steps or 10**9)
         self.scheduler = (
             None
-            if is_schedule_free(cfg.optimizer)
+            if manages_learning_rate(cfg.optimizer)
             else build_scheduler(cfg.scheduler, self.optimizer, self.progress.total_steps)
         )
         if cfg.loop.ema:
@@ -471,7 +480,11 @@ class Trainer:
             self.emit(
                 "warning", message="resuming a legacy checkpoint; exact RNG compatibility is not guaranteed"
             )
+        expected_optimizer_settings = optimizer_hyperparameter_snapshot(self.cfg.optimizer, self.optimizer)
         self.optimizer.load_state_dict(ck["optimizer"])
+        validate_optimizer_runtime(
+            self.cfg.optimizer, self.optimizer, expected_groups=expected_optimizer_settings
+        )
         if self.scheduler is not None and ck["scheduler"]:
             self.scheduler.load_state_dict(ck["scheduler"])
         self.progress = ck["progress"]
@@ -887,7 +900,15 @@ class Trainer:
                 raise RuntimeError("too many non-finite gradients")
             return
         self.progress.nan_skips = 0
+        next_step = self.progress.step + 1
+        will_log = next_step % cfg.loop.log_every == 0 or next_step == self.progress.total_steps
+        rate_snapshot = optimizer_rate_snapshot(self.optimizer) if will_log else None
         self.optimizer.step()
+        lrs = (
+            optimizer_learning_rates(cfg.optimizer, self.optimizer, before_step=rate_snapshot)
+            if will_log
+            else None
+        )
         if self.scheduler is not None:
             self.scheduler.step()
         self.optimizer.zero_grad(set_to_none=True)
@@ -907,7 +928,6 @@ class Trainer:
         loss_count = self.progress.extra["loss_count"]
         loss_mean = self.progress.extra["loss_sum"] / loss_count
         if step % cfg.loop.log_every == 0 or step == self.progress.total_steps:
-            lrs = {g.get("name", str(i)): g["lr"] for i, g in enumerate(self.optimizer.param_groups)}
             remaining = self.progress.total_steps - step
             it_s = 1.0 / elapsed if elapsed > 0 else None
             self.emit(

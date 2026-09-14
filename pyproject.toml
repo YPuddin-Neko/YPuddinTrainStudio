@@ -59,8 +59,8 @@ cuda = [
 optim = [
     "schedulefree>=1.4",
     "lion-pytorch>=0.2",
-    "prodigyopt>=1.0",
-    "prodigy-plus-schedule-free>=2.0",
+    "prodigyopt>=1.1.2",
+    "prodigy-plus-schedule-free>=2.0.1",
     "pytorch-optimizer>=3.0",
 ]
 logging = [

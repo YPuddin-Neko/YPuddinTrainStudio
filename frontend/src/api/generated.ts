@@ -3908,7 +3908,7 @@ export interface components {
             weight_decay: number;
             /**
              * Betas
-             * @description 动量统计的两个衰减系数，默认 0.9 和 0.99。仅传给界面支持此字段的内置优化器；通常保持默认，自定义优化器可在额外参数中指定。
+             * @description 平滑更新所用的历史统计。普通 Adam/Prodigy 的 β1 平滑方向；Schedule-Free 的 β1 控制权重平均；β2 平滑梯度大小估计。通常保持当前优化器默认值，较大值反应更平缓。
              * @default [
              *       0.9,
              *       0.99
@@ -3920,13 +3920,13 @@ export interface components {
             ];
             /**
              * Eps
-             * @description Adam 系列分母中的数值稳定项，默认 0.00000001。仅传给 Adam/AdamW/AdamW8bit/AdamW Schedule-Free；其他算法的不同 eps 格式使用额外参数。
+             * @description 防止梯度大小估计过小时除法不稳定，通常保留优化器默认值。PPSF 留空会改用 Adam-atan2，此时不能同时启用 StableAdamW 或 FOCUS。
              * @default 1e-8
              */
-            eps: number;
+            eps: number | null;
             /**
              * Args
-             * @description 原样传给所选优化器的构造参数；同名值会覆盖上方通用参数。仅填写该优化器文档支持的参数，名称或类型错误会明确报错。
+             * @description 用于自定义优化器或尚无独立控件的扩展参数。已有控件的参数会迁移到对应字段；同名冲突或覆盖自动管理参数会明确报错。
              */
             args?: {
                 [key: string]: unknown;
@@ -3956,6 +3956,184 @@ export interface components {
             group_lr?: {
                 [key: string]: number;
             };
+            /**
+             * D Coef
+             * @description 自适应步长倍率。默认 1；放大或缩小优化器估计的步长，调大通常更新更强。基础学习率由优化器管理时，用它调整训练强度。
+             * @default 1
+             */
+            d_coef: number;
+            /**
+             * D0
+             * @description 自动估计步长的起始值，默认 0.000001。仅影响估计起点；通常保留默认，与训练中实时估计的 D 值不同。
+             * @default 0.000001
+             */
+            d0: number;
+            /**
+             * Beta3
+             * @description 步长估计所用的历史平滑系数。留空时自动取 β2 的平方根；通常保留自动值。
+             */
+            beta3?: number | null;
+            /**
+             * Use Bias Correction
+             * @description Prodigy 修正训练初期的统计偏差；PPSF 使用 RAdam 式修正与自动预热。作者均默认关闭，开启会改变早期更新曲线。
+             * @default false
+             */
+            use_bias_correction: boolean;
+            /**
+             * Safeguard Warmup
+             * @description 估计步长时排除学习率预热的影响，作者默认关闭；使用外部预热时可启用。
+             * @default false
+             */
+            safeguard_warmup: boolean;
+            /**
+             * Growth Rate
+             * @description 限制 D 估计每一步最多增长的倍率；留空不设上限。1.02 表示相对上一步最多增加约 2%，通常保留不限。
+             */
+            growth_rate?: number | null;
+            /**
+             * Slice P
+             * @description 步长估计每隔几个元素取样。默认 1 使用全部元素；更大值减少估计状态占用，也会降低估计精细度。
+             * @default 1
+             */
+            slice_p: number;
+            /**
+             * Decouple
+             * @description 将权重衰减与梯度更新分开，默认开启；关闭时衰减项会加入梯度。
+             * @default true
+             */
+            decouple: boolean;
+            /**
+             * Prodigy Steps
+             * @description 持续自动估计步长的优化器更新次数。0 表示全程估计；正数表示到达该步数后冻结估计，继续训练。
+             * @default 0
+             */
+            prodigy_steps: number;
+            /**
+             * D Limiter
+             * @description 限制步长估计突然增大，默认开启。启用 SPEED 时由 SPEED 自己的估计方式接管。
+             * @default true
+             */
+            d_limiter: boolean;
+            /**
+             * Schedulefree C
+             * @description 控制 Schedule-Free 权重平均的速度。0 使用作者默认平均方式；通常保留 0，仅在需要改变平均轨迹时调整。
+             * @default 0
+             */
+            schedulefree_c: number;
+            /**
+             * Split Groups
+             * @description 让不同参数组分别估计步长，默认开启。关闭后共享估计；不会启用手动分组学习率。
+             * @default true
+             */
+            split_groups: boolean;
+            /**
+             * Split Groups Mean
+             * @description 将各参数组估计的步长取调和平均后使用，默认关闭；需启用分组估计。
+             * @default false
+             */
+            split_groups_mean: boolean;
+            /**
+             * Factored
+             * @description 将适合的梯度统计矩阵分解存储，默认开启以减少优化器状态占用；关闭会保存完整统计。
+             * @default true
+             */
+            factored: boolean;
+            /**
+             * Factored Fp32
+             * @description 使用 FP32 保存分解统计，默认开启以减少舍入误差；仅在分解统计开启时生效。
+             * @default true
+             */
+            factored_fp32: boolean;
+            /**
+             * Use Stableadamw
+             * @description 使用 StableAdamW 的更新归一化，默认开启以约束异常更新；不能与 Adam-atan2（EPS 留空）组合。
+             * @default true
+             */
+            use_stableadamw: boolean;
+            /**
+             * Stochastic Rounding
+             * @description 对低精度参数写回使用随机舍入，默认开启，降低小更新被截断的偏差；不影响 FP32 参数。
+             * @default true
+             */
+            stochastic_rounding: boolean;
+            /**
+             * Weight Decay By Lr
+             * @description 将权重衰减随当前有效学习率一起缩放，默认开启；关闭会使用另一种衰减尺度。
+             * @default true
+             */
+            weight_decay_by_lr: boolean;
+            /**
+             * Use Schedulefree
+             * @description 启用免调度权重平均，默认开启，无需外部学习率曲线。关闭后按普通训练方式使用学习率调度。
+             * @default true
+             */
+            use_schedulefree: boolean;
+            /**
+             * Use Speed
+             * @description 切换为 SPEED 步长估计，默认关闭；启用后忽略 D 增长限制，估计轨迹会改变。
+             * @default false
+             */
+            use_speed: boolean;
+            /**
+             * Use Cautious
+             * @description 只保留与当前梯度方向一致的更新，默认关闭；不能与 Grams 同时启用。
+             * @default false
+             */
+            use_cautious: boolean;
+            /**
+             * Use Grams
+             * @description 按当前梯度重新确定更新方向，默认关闭；不能与 Cautious 同时启用。
+             * @default false
+             */
+            use_grams: boolean;
+            /**
+             * Use Adopt
+             * @description 切换梯度归一化顺序并加入 ADOPT 的限制，默认关闭；会改变早期更新方式。
+             * @default false
+             */
+            use_adopt: boolean;
+            /**
+             * Use Orthograd
+             * @description 移除梯度中与权重方向平行的分量，默认关闭；用于对比不同更新方向。
+             * @default false
+             */
+            use_orthograd: boolean;
+            /**
+             * Use Focus
+             * @description 改用 FOCUS 更新方式，默认关闭；不能与分解统计或 Adam-atan2 同时使用。
+             * @default false
+             */
+            use_focus: boolean;
+            /**
+             * Beta2
+             * @description 平滑梯度大小估计，默认 0.999。数值越大，越看重较长的历史，对变化反应更慢。
+             * @default 0.999
+             */
+            beta2: number;
+            /**
+             * Min Lr
+             * @description 逐元素自适应学习率的下限，默认 0.0000001；需不高于上限。
+             * @default 1e-7
+             */
+            min_lr: number;
+            /**
+             * Max Lr
+             * @description 逐元素自适应学习率的上限，默认 0.001；用于限制最大更新强度。
+             * @default 0.001
+             */
+            max_lr: number;
+            /**
+             * Lr Bump
+             * @description 逐元素学习率每次调整的增量，默认 0.000001。较大值会更快调整，也可能使步长变化更明显。
+             * @default 0.000001
+             */
+            lr_bump: number;
+            /**
+             * Clip Threshold
+             * @description Automagic 内部更新归一化阈值，默认 1；与训练器的全局梯度裁剪不同。
+             * @default 1
+             */
+            clip_threshold: number;
         };
         /** OutputBinding */
         OutputBinding: {

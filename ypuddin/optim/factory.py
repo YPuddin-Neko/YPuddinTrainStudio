@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import math
 from collections.abc import Callable
+from copy import deepcopy
 from typing import Any
 
 import torch
@@ -13,6 +14,7 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR
 
 from ypuddin.config import OptimizerConfig, SchedulerConfig
+from ypuddin.config.optimizer_rules import optimizer_key, optimizer_policy, optimizer_specific_fields
 
 # --------------------------------------------------------------------------- optimizers
 
@@ -28,9 +30,26 @@ _BUILTIN: dict[str, str] = {
     "adafactor": "transformers.optimization.Adafactor",
     "came": "pytorch_optimizer.CAME",
     "adamw_sf": "schedulefree.AdamWScheduleFree",
+    "automagic": "ypuddin.optim.automagic.Automagic",
 }
 
 SCHEDULE_FREE = {"prodigy_plus_sf", "adamw_sf"}
+
+
+def _validate_managed_learning_rates(key: str, lr: float, groups: list[dict[str, Any]]) -> None:
+    expected = optimizer_policy(key).get("fixed", {}).get("optimizer.lr")
+    if expected is None:
+        return
+    if lr != expected:
+        raise ValueError(f"{key} uses the managed learning-rate setting {expected:g}")
+    for group in groups:
+        group_lr = group.get("lr", lr)
+        if group_lr not in (0, expected):
+            name = group.get("name", "unnamed")
+            raise ValueError(
+                f"{key} parameter group {name!r} overrides the managed learning rate; "
+                f"remove per-group/per-layer rates and adapter LR scaling (expected {expected:g})"
+            )
 
 
 def _import_class(path: str) -> type:
@@ -42,17 +61,31 @@ def _import_class(path: str) -> type:
 
 
 def build_optimizer(cfg: OptimizerConfig, param_groups: list[dict[str, Any]]) -> Optimizer:
-    if cfg.fused_backward:
+    # Assignment validation cannot observe in-place changes to args/group_lr.
+    cfg = OptimizerConfig.model_validate(cfg.model_dump())
+    if cfg.fused_backward or cfg.args.get("fused_back_pass", False):
         raise ValueError("optimizer.fused_backward is not implemented; use the normal optimizer step")
-    if cfg.kahan and is_schedule_free(cfg):
+    key = optimizer_key(cfg.type)
+    if cfg.kahan and (is_schedule_free(cfg) or key == "prodigy_plus_sf"):
         raise ValueError("optimizer.kahan cannot be combined with a schedule-free optimizer")
-    key = cfg.type.lower()
+    if key == "automagic" and cfg.kahan:
+        raise ValueError("Automagic already preserves low-precision updates with FP32 master weights")
     path = _BUILTIN.get(key, cfg.type)
     cls = _import_class(path)
     kwargs: dict[str, Any] = {"lr": cfg.lr, "weight_decay": cfg.weight_decay}
-    if key in ("adamw", "adam", "adamw8bit", "prodigy", "prodigy_plus_sf", "adamw_sf", "came"):
+    if key in (
+        "adamw",
+        "adam",
+        "adamw8bit",
+        "lion",
+        "lion8bit",
+        "prodigy",
+        "prodigy_plus_sf",
+        "adamw_sf",
+        "came",
+    ):
         kwargs["betas"] = tuple(cfg.betas)
-    if key in ("adamw", "adam", "adamw8bit", "adamw_sf"):
+    if key in ("adamw", "adam", "adamw8bit", "adamw_sf", "prodigy", "prodigy_plus_sf", "automagic"):
         kwargs["eps"] = cfg.eps
     if key == "adafactor":
         kwargs.update({"scale_parameter": False, "relative_step": False, "warmup_init": False})
@@ -60,15 +93,127 @@ def build_optimizer(cfg: OptimizerConfig, param_groups: list[dict[str, Any]]) ->
         kwargs.pop("weight_decay", None)
         kwargs["weight_decay"] = cfg.weight_decay
     kwargs.update(cfg.args)
+    for name in optimizer_specific_fields(key):
+        # Known fields have been migrated out of legacy args by config validation.
+        if hasattr(cfg, name):
+            value = getattr(cfg, name)
+            kwargs[name] = math.inf if name == "growth_rate" and value is None else value
     groups = [dict(g) for g in param_groups]
+    _validate_managed_learning_rates(key, kwargs["lr"], groups)
     opt = cls(groups, **kwargs)
+    validate_optimizer_runtime(cfg, opt)
     if cfg.kahan:
         opt = KahanWrapper(opt)
     return opt
 
 
 def is_schedule_free(cfg: OptimizerConfig) -> bool:
-    return cfg.type.lower() in SCHEDULE_FREE or "schedulefree" in cfg.type.lower()
+    key = optimizer_key(cfg.type)
+    if key == "prodigy_plus_sf":
+        return bool(getattr(cfg, "use_schedulefree", cfg.args.get("use_schedulefree", True)))
+    return key in SCHEDULE_FREE or "schedulefree" in key
+
+
+def manages_learning_rate(cfg: OptimizerConfig) -> bool:
+    """Whether the optimizer must run without an external LR scheduler."""
+    return optimizer_key(cfg.type) == "automagic" or is_schedule_free(cfg)
+
+
+def optimizer_rate_snapshot(optimizer: Optimizer) -> list[dict[str, Any]]:
+    """Capture scalar group settings before optimizers advance their D estimates."""
+    keys = ("lr", "d", "shared_d", "split_groups", "split_groups_mean", "betas", "use_bias_correction", "k")
+    return [{key: group[key] for key in keys if key in group} for group in optimizer.param_groups]
+
+
+def optimizer_learning_rates(
+    cfg: OptimizerConfig,
+    optimizer: Optimizer,
+    *,
+    before_step: list[dict[str, Any]] | None = None,
+) -> dict[str, float]:
+    """Report adaptive scalar rates, using the completed update when snapshotted.
+
+    These are optimizer step-size scales, not a measurement of weight changes.
+    Automagic reports its mean coordinate rate. PPSF includes its SF mixing
+    factor; Prodigy includes bias correction when enabled.
+    """
+    key = optimizer_key(cfg.type)
+    if key == "automagic":
+        rates = optimizer.get_learning_rates()
+    else:
+        rates = []
+        for index, group in enumerate(optimizer.param_groups):
+            source = before_step[index] if before_step is not None else group
+            rate = float(source["lr"])
+            if key == "prodigy":
+                rate *= float(source.get("d", 0))
+                if source.get("use_bias_correction"):
+                    beta1, beta2 = source["betas"]
+                    step = int(source.get("k", 0)) + 1
+                    rate *= math.sqrt(1 - beta2**step) / (1 - beta1**step)
+            elif key == "prodigy_plus_sf":
+                shared = source.get("shared_d")
+                use_shared = (
+                    source.get("split_groups") and source.get("split_groups_mean") and shared is not None
+                )
+                d = shared if use_shared else source.get("d", 0)
+                rate = float(d) * float(group.get("effective_lr", rate))
+            rates.append(rate)
+    return {
+        group.get("name", str(index)): rate
+        for index, (group, rate) in enumerate(zip(optimizer.param_groups, rates, strict=True))
+    }
+
+
+def optimizer_hyperparameter_snapshot(cfg: OptimizerConfig, optimizer: Optimizer) -> list[dict[str, Any]]:
+    """Preserve the requested per-group settings before loading checkpoint state."""
+    keys = {"name", "betas", "eps", "weight_decay", "optimiser_version"}
+    keys.update(optimizer_specific_fields(cfg.type))
+    keys.update(cfg.args)
+    # A scheduler changes group.lr; its initial_lr remains the requested base.
+    keys.discard("lr")
+    return [{key: deepcopy(group[key]) for key in keys if key in group} for group in optimizer.param_groups]
+
+
+def validate_optimizer_runtime(
+    cfg: OptimizerConfig,
+    optimizer: Optimizer,
+    *,
+    expected_groups: list[dict[str, Any]] | None = None,
+) -> None:
+    """Reject checkpoint overrides of protected settings before another update."""
+    key = optimizer_key(cfg.type)
+    groups = optimizer.param_groups
+    if not manages_learning_rate(cfg):
+        # A supported cosine/linear scheduler legitimately changes the current
+        # rate. Validate its protected base, not its resumed position on the curve.
+        groups = [{**group, "lr": group.get("initial_lr", group["lr"])} for group in groups]
+    _validate_managed_learning_rates(key, cfg.lr, groups)
+    for group in optimizer.param_groups:
+        if key in ("prodigy", "prodigy_plus_sf") and not {"d", "d0", "k"} <= group.keys():
+            raise ValueError("Checkpoint optimizer does not match the selected adaptive optimizer")
+        if key == "prodigy_plus_sf":
+            if group.get("optimiser_version") != getattr(optimizer, "VERSION", None):
+                raise ValueError(
+                    "Checkpoint PPSF optimizer version is incompatible; load adapter weights to start a new optimizer"
+                )
+            if group.get("use_schedulefree") != is_schedule_free(cfg):
+                raise ValueError(
+                    "Checkpoint Schedule-Free mode differs; resume with the original optimizer mode"
+                )
+            if group.get("fused_back_pass", False):
+                raise ValueError("Checkpoint requests fused backward, which is not supported")
+    if expected_groups is not None:
+        for expected, group in zip(expected_groups, optimizer.param_groups, strict=True):
+            for name, value in expected.items():
+                actual = group.get(name)
+                if isinstance(actual, (tuple, list)) and isinstance(value, (tuple, list)):
+                    actual, value = tuple(actual), tuple(value)
+                if actual != value:
+                    raise ValueError(
+                        f"Checkpoint optimizer setting {name!r} differs from the current configuration; "
+                        "resume with the original settings, or load adapter weights to start a new optimizer"
+                    )
 
 
 class KahanWrapper(Optimizer):

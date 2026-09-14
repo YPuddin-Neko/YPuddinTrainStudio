@@ -29,9 +29,25 @@ const labels: Record<string, string> = {
   'objective.stratified': '分层时间步采样', 'objective.t_min': '时间步下限', 'objective.t_max': '时间步上限',
   'objective.loss': '损失函数', 'objective.huber_c': 'Huber 系数', 'objective.weighting': '损失加权',
   'objective.snr_gamma': 'SNR Gamma', 'objective.ip_noise_gamma': '输入扰动强度', 'optimizer.type': '优化器',
-  'optimizer.lr': '学习率', 'optimizer.weight_decay': '权重衰减', 'optimizer.betas': '动量 β1 / β2',
-  'optimizer.eps': '数值稳定常量', 'optimizer.args': '优化器附加参数', 'optimizer.grad_clip_norm': '梯度裁剪',
-  'optimizer.kahan': 'Kahan 补偿', 'optimizer.fused_backward': '融合反向更新', 'optimizer.group_lr': '参数组学习率',
+  'optimizer.lr': '学习率', 'optimizer.weight_decay': '权重衰减', 'optimizer.betas': '更新平滑程度',
+  'optimizer.eps': '数值稳定常量', 'optimizer.args': '优化器附加参数', 'optimizer.grad_clip_norm': '梯度保护阈值',
+  'optimizer.kahan': '低精度更新补偿', 'optimizer.fused_backward': '融合反向更新', 'optimizer.group_lr': '参数组学习率',
+  'optimizer.d_coef': '自适应步长倍率（D Coef）', 'optimizer.d0': '初始步长估计（D0）',
+  'optimizer.prodigy_steps': '自适应估计步数',
+  'optimizer.beta3': '步长估计平滑（β3）', 'optimizer.use_bias_correction': '修正初期统计偏差',
+  'optimizer.safeguard_warmup': '预热阶段估计保护', 'optimizer.growth_rate': '步长增长上限',
+  'optimizer.slice_p': '步长估计取样间隔', 'optimizer.decouple': '独立计算权重衰减',
+  'optimizer.d_limiter': '限制步长突然增长', 'optimizer.schedulefree_c': '权重平均速度',
+  'optimizer.split_groups': '各参数组独立估计步长', 'optimizer.split_groups_mean': '合并各组步长估计',
+  'optimizer.factored': '分解统计以节省显存', 'optimizer.factored_fp32': '分解统计使用 FP32',
+  'optimizer.use_stableadamw': '稳定更新（StableAdamW）', 'optimizer.stochastic_rounding': '低精度写回随机舍入',
+  'optimizer.weight_decay_by_lr': '衰减强度随学习率变化', 'optimizer.use_schedulefree': '免调度权重平均',
+  'optimizer.use_speed': 'SPEED 步长估计', 'optimizer.use_cautious': 'Cautious 更新方向筛选',
+  'optimizer.use_grams': 'Grams 更新方向调整', 'optimizer.use_adopt': 'ADOPT 更新方式',
+  'optimizer.use_orthograd': 'OrthoGrad 梯度方向处理', 'optimizer.use_focus': 'FOCUS 更新方式',
+  'optimizer.beta2': '梯度大小平滑（β2）', 'optimizer.min_lr': '自适应学习率下限',
+  'optimizer.max_lr': '自适应学习率上限', 'optimizer.lr_bump': '学习率调整增量',
+  'optimizer.clip_threshold': '更新幅度保护阈值',
   'scheduler.type': '学习率调度', 'scheduler.warmup_steps': '预热步数 / 比例', 'scheduler.min_lr_ratio': '最低学习率比例',
   'scheduler.num_cycles': '调度周期数', 'scheduler.power': '多项式幂', 'scheduler.decay_steps': '衰减步数',
   'memory.base_precision': '底模存储精度', 'memory.blocks_to_swap': '换出到 CPU 的层数',
@@ -55,7 +71,102 @@ const labels: Record<string, string> = {
 
 export function configFieldLabel(path: string, fallback: string, english = false) {
   if (path === 'adapter.preset') return english ? 'Training scope' : labels[path];
+  if (english && path.startsWith('optimizer.')) {
+    const optimizerLabels: Record<string, string> = {
+      type: 'Optimizer', lr: 'Learning rate', weight_decay: 'Weight decay', betas: 'Update smoothing', eps: 'EPS · numerical stability',
+      args: 'Extra optimizer arguments', grad_clip_norm: 'Gradient clipping threshold', kahan: 'Low-precision update compensation', group_lr: 'Parameter-group learning rates',
+      d_coef: 'Adaptive step multiplier (D Coef)', d0: 'Initial step estimate (D0)', beta3: 'Step estimate smoothing (β3)', prodigy_steps: 'Adaptive estimation steps',
+      use_bias_correction: 'Early-statistics bias correction', safeguard_warmup: 'Warmup estimation safeguard', growth_rate: 'Step-growth limit', slice_p: 'Estimation sampling interval',
+      decouple: 'Decoupled weight decay', d_limiter: 'Limit sudden step growth', schedulefree_c: 'Weight averaging speed', split_groups: 'Estimate each group independently',
+      split_groups_mean: 'Combine group estimates', factored: 'Factored statistics', factored_fp32: 'FP32 factored statistics', use_stableadamw: 'StableAdamW update normalization',
+      stochastic_rounding: 'Stochastic low-precision rounding', weight_decay_by_lr: 'Scale decay with the learning rate', use_schedulefree: 'Schedule-Free weight averaging',
+      use_speed: 'SPEED step estimation', use_cautious: 'Cautious direction filtering', use_grams: 'Grams direction adjustment', use_adopt: 'ADOPT updates', use_orthograd: 'OrthoGrad directions', use_focus: 'FOCUS updates',
+      beta2: 'Gradient-size smoothing (β2)', min_lr: 'Adaptive learning-rate minimum', max_lr: 'Adaptive learning-rate maximum', lr_bump: 'Learning-rate increment', clip_threshold: 'Normalized update clipping threshold',
+    };
+    return optimizerLabels[path.slice(10)] || fallback;
+  }
   return english ? fallback : labels[path] || fallback;
+}
+
+const optimizerEnglishHelp: Record<string, string> = {
+  type: 'Choose the algorithm used to update trainable parameters. Start with AdamW unless you need another optimizer’s behavior. Optional optimizers require their corresponding installed packages.',
+  d_coef: 'Scales the automatically estimated step size. Default: 1. Higher values generally produce stronger updates; use this instead of changing the managed base learning rate.',
+  d0: 'Starting estimate for the adaptive step size. Default: 0.000001. This is the initial estimate, not the live D value during training.',
+  beta3: 'Smooths the step-size estimate. Automatic uses the square root of β2; usually keep this automatic.',
+  use_bias_correction: 'Prodigy corrects early statistical bias; PPSF uses RAdam rectification and automatic warmup. Off by default; changes early updates.',
+  safeguard_warmup: 'Removes the influence of external warmup from step-size estimation. Off by default; consider it when using external warmup.',
+  growth_rate: 'Maximum growth multiplier for the D estimate per update. Unlimited by default. 1.02 allows at most about 2% growth per update.',
+  slice_p: 'Samples every N elements for step-size estimation. 1 uses all elements; larger values reduce estimator memory and detail.',
+  decouple: 'Applies weight decay separately from the gradient update. On by default; turning it off adds decay to the gradient.',
+  prodigy_steps: 'Number of optimizer updates used to estimate the step size. 0 keeps estimating throughout training; a positive value freezes the estimate afterward.',
+  d_limiter: 'Limits sudden growth in the step-size estimate. On by default; SPEED uses its own estimation method when enabled.',
+  schedulefree_c: 'Changes the speed of Schedule-Free weight averaging. 0 uses the author’s default averaging; usually keep 0.',
+  split_groups: 'Estimates step sizes independently for parameter groups. On by default; turning it off shares the estimate without enabling manual group rates.',
+  split_groups_mean: 'Uses the harmonic mean of the per-group step estimates. Off by default; requires independent group estimation.',
+  factored: 'Stores suitable gradient statistics in factored form to reduce optimizer-state memory. On by default; turning it off stores full statistics.',
+  factored_fp32: 'Stores factored statistics in FP32 to reduce rounding errors. On by default; applies only when factored statistics are enabled.',
+  use_stableadamw: 'Normalizes updates inside the optimizer using StableAdamW. On by default; cannot be combined with Adam-atan2 (unset EPS).',
+  stochastic_rounding: 'Uses stochastic rounding when writing low-precision parameters. On by default; does not affect FP32 parameters.',
+  weight_decay_by_lr: 'Scales weight decay with the current effective learning rate. On by default; turning it off changes the decay scale.',
+  use_schedulefree: 'Uses Schedule-Free weight averaging without an external learning-rate curve. On by default; turning it off enables external scheduling.',
+  use_speed: 'Uses SPEED step-size estimation. Off by default; changes the estimation path and ignores the D growth limiter.',
+  use_cautious: 'Keeps updates aligned with the current gradient direction. Off by default; cannot be combined with Grams.',
+  use_grams: 'Sets update directions using the current gradient. Off by default; cannot be combined with Cautious.',
+  use_adopt: 'Changes gradient normalization order and adds ADOPT limits. Off by default; affects early updates.',
+  use_orthograd: 'Removes the gradient component parallel to the weight direction. Off by default; use to compare alternative update directions.',
+  use_focus: 'Selects FOCUS updates. Off by default; requires factored statistics to be off and EPS to be set.',
+  beta2: 'Smooths the gradient-size estimate. Default: 0.999. Higher values use longer history and react more slowly to changes.',
+  min_lr: 'Lower bound for per-element adaptive learning rates. Default: 0.0000001; must not exceed the upper bound.',
+  max_lr: 'Upper bound for per-element adaptive learning rates. Default: 0.001; limits the adaptive rate.',
+  lr_bump: 'Increment added to or subtracted from the adaptive learning rate. Larger increments change the rate more rapidly; usually keep the default.',
+  clip_threshold: 'Clips normalized updates inside Automagic. Default: 1. This is separate from external gradient clipping.',
+};
+
+/** Explain what a choice changes before introducing the implementation term. */
+export function configFieldHelp(path: string, fallback: string | undefined, english = false, optimizerType?: string, scheduleFree = false) {
+  if (path === 'optimizer.eps' && optimizerType === 'prodigy_plus_sf') return english
+    ? 'Prevents division by very small estimates. Unset selects Adam-atan2 instead; StableAdamW and FOCUS must be disabled in that mode.' : fallback;
+  if (path === 'optimizer.grad_clip_norm' && optimizerType === 'prodigy_plus_sf') return english
+    ? 'Clips gradients before they reach the optimizer. PPSF defaults this external clipping to 0 (off). StableAdamW provides a different normalization inside the optimizer; these controls are not interchangeable.'
+    : '在梯度进入优化器前做外部裁剪。PPSF 默认 0 关闭；StableAdamW 是优化器内部的更新归一化，两者并不是同一个保护功能。';
+  if (path === 'optimizer.grad_clip_norm' && optimizerType === 'automagic') return english
+    ? 'Clips gradients before they reach the optimizer. Automagic defaults this external clipping to 0 (off); its internal clipping threshold applies to normalized updates instead.'
+    : '在梯度进入优化器前做外部裁剪。Automagic 默认 0 关闭；其内部保护阈值限制的是归一化后的更新，两者作用位置不同。';
+  if (path === 'optimizer.betas' && scheduleFree) return english
+    ? 'β1 controls schedule-free weight averaging; β2 smooths the estimate of gradient size. These have different roles. Usually keep this optimizer’s defaults.'
+    : 'β1 控制免调度训练中的权重平均，β2 平滑梯度大小的估计。两者作用不同，通常保留当前优化器的默认值。';
+  const help: Record<string, [string, string]> = {
+    'optimizer.lr': ['控制每次参数更新的基础步长。数值过大容易不稳定，过小学习较慢；自适应优化器会按自身规则管理。', 'Sets the base step size for parameter updates. Too large can be unstable; too small can learn slowly. Adaptive optimizers manage this according to their own rules.'],
+    'optimizer.weight_decay': ['给权重施加衰减约束，避免权重持续变大。通常保留默认值；过大可能让模型学不到细节，0 表示关闭。', 'Applies a decay constraint to weights. Usually keep the default; too much can prevent learning details. Set to 0 to disable.'],
+    'optimizer.betas': ['β1 平滑更新方向，β2 平滑梯度大小的估计。通常保留优化器默认值；调大后反应更平缓，也会更慢适应变化。', 'β1 smooths the update direction; β2 smooths the estimate of gradient size. Usually keep the optimizer defaults. Higher values smooth changes more but respond more slowly.'],
+    'optimizer.grad_clip_norm': ['限制异常大的梯度，降低数值失控的风险。通常保留 1；0 表示关闭梯度裁剪。', 'Limits unusually large gradients to reduce numerical instability. Usually keep 1; set to 0 to disable gradient clipping.'],
+    'optimizer.kahan': ['使用 Kahan 补偿保留低精度更新中容易丢失的小数值，会增加状态内存。仅在支持的优化器与精度组合下使用；通常保持关闭。', 'Uses Kahan compensation to retain small values that low-precision updates can lose, adding state memory. Use only with supported optimizers and precision modes; usually leave off.'],
+    'optimizer.eps': ['防止计算时除以接近零的数。通常保留优化器默认值；这不是学习率，也不需要随训练分辨率调整。', 'Prevents division by values close to zero. Usually keep the optimizer default; this is not the learning rate and does not need to track resolution.'],
+    'optimizer.args': ['仅用于当前优化器支持的额外参数。已有专用控件的参数请在对应位置设置；不确定名称和作用时留空。', 'Only for extra parameters supported by the selected optimizer. Use dedicated controls where available; leave empty unless you know the parameter and its effect.'],
+    'optimizer.group_lr': ['分别覆盖不同参数组的学习率。通常留空，使用统一学习率；自动管理学习率时不可覆盖。', 'Overrides the learning rate of individual parameter groups. Usually leave empty to use the shared rate; unavailable when the rate is managed automatically.'],
+  };
+  return help[path]?.[english ? 1 : 0] || (english && path.startsWith('optimizer.') ? optimizerEnglishHelp[path.slice(10)] : undefined) || fallback;
+}
+
+export function configFieldHint(path: string, english = false, optimizerType?: string, scheduleFree = false) {
+  const hints: Record<string, [string, string]> = {
+    'optimizer.lr': ['基础更新步长；自适应优化器按自身规则管理。', 'Base update step size; adaptive optimizers manage it by their own rules.'],
+    'optimizer.weight_decay': ['约束权重增长；通常保留默认值，0 关闭。', 'Constrains weight growth; usually keep the default. 0 disables it.'],
+    'optimizer.betas': scheduleFree
+      ? ['分别控制权重平均与梯度大小估计，通常保留默认值。', 'Controls weight averaging and gradient-size estimation; usually keep the defaults.']
+      : ['数值越大，反应越平缓；通常保留默认值。', 'Higher values react more smoothly; usually keep the defaults.'],
+    'optimizer.grad_clip_norm': optimizerType === 'prodigy_plus_sf'
+      ? ['外部梯度裁剪，默认 0 关闭；与 StableAdamW 内部更新保护不同。', 'External gradient clipping defaults to 0 (off); it differs from StableAdamW’s internal protection.']
+      : optimizerType === 'automagic'
+      ? ['外部梯度裁剪，默认 0 关闭；与优化器内部更新保护不同。', 'External gradient clipping defaults to 0 (off); it differs from internal update clipping.']
+      : ['限制异常大梯度；通常保留 1，0 关闭。', 'Limits unusually large gradients; usually keep 1. 0 disables it.'],
+    'optimizer.eps': optimizerType === 'prodigy_plus_sf'
+      ? ['通常保留默认值；留空改用 Adam-atan2，需关闭 StableAdamW 和 FOCUS。', 'Usually keep the default. Unset selects Adam-atan2, requiring StableAdamW and FOCUS to be off.']
+      : ['防止除以接近零的数；通常保留默认值。', 'Prevents division by values near zero; usually keep the default.'],
+    'optimizer.kahan': ['补偿低精度更新中容易丢失的小数值。', 'Compensates for small values lost during low-precision updates.'],
+    'optimizer.group_lr': ['留空时统一使用上方学习率。', 'Leave empty to use the learning rate above for every group.'],
+  };
+  return hints[path]?.[english ? 1 : 0] || (english && path.startsWith('optimizer.') ? optimizerEnglishHelp[path.slice(10)] : undefined);
 }
 
 export function configPresetLabel(name: string, description: string, defaultPreset?: string, english = false) {
@@ -78,7 +189,7 @@ export function configOptionLabel(path: string, option: string, english = false)
     'model.flux2_variant': { auto: ['自动读取模型配置', 'Read model configuration'], dev: ['FLUX.2 dev（已停用）', 'FLUX.2 dev (retired)'], 'klein-base-4b': ['Klein 基础版 4B', 'Klein base 4B'], 'klein-base-9b': ['Klein 基础版 9B', 'Klein base 9B'] },
     'sampling.sampler': { euler:['Euler', 'Euler'], heun:['Heun', 'Heun'], er_sde:['ER-SDE', 'ER-SDE'] },
     'sampling.scheduler': { uniform:['Uniform', 'Uniform'], simple:['Simple', 'Simple'], sgm_uniform:['SGM Uniform', 'SGM Uniform'], normal:['Normal', 'Normal'] },
-    'optimizer.type': {adamw:['AdamW','AdamW'],adam:['Adam','Adam'],sgd:['SGD','SGD'],adamw8bit:['AdamW 8-bit','AdamW 8-bit'],lion:['Lion','Lion'],lion8bit:['Lion 8-bit','Lion 8-bit'],prodigy:['Prodigy','Prodigy'],prodigy_plus_sf:['Prodigy Plus Schedule-Free','Prodigy Plus Schedule-Free'],adafactor:['Adafactor','Adafactor'],came:['CAME','CAME'],adamw_sf:['AdamW Schedule-Free','AdamW Schedule-Free']},
+    'optimizer.type': {adamw:['AdamW','AdamW'],adam:['Adam','Adam'],sgd:['SGD','SGD'],adamw8bit:['AdamW 8-bit','AdamW 8-bit'],lion:['Lion','Lion'],lion8bit:['Lion 8-bit','Lion 8-bit'],prodigy:['Prodigy','Prodigy'],prodigy_plus_sf:['Prodigy Plus Schedule-Free','Prodigy Plus Schedule-Free'],automagic:['Automagic','Automagic'],adafactor:['Adafactor','Adafactor'],came:['CAME','CAME'],adamw_sf:['AdamW Schedule-Free','AdamW Schedule-Free']},
     'dataset.resolution_mode': { bucket: ['分桶 · 统一基准面积', 'Buckets · target area'], native: ['原生 · 每图独立尺寸', 'Native · individual image sizes'] },
     'dataset.image_fit': { pad: ['保留完整画面', 'Preserve the whole image'], crop: ['裁切填满（旧模式）', 'Crop to fill (legacy)'] },
     'dataset.native_overflow': { downscale: ['等比缩小到预算内', 'Downscale to fit budget'], error: ['报错并停止', 'Stop with an error'] },

@@ -5,9 +5,10 @@ import { ChevronDown, ChevronRight, Plus, Trash2, ArrowUp, ArrowDown, FolderOpen
 import { PathInput, PathPickerModal } from '../../components/PathBrowser';
 import { apiClient } from '../../api/client';
 import { FamilyInfo } from '../../api/types';
-import { configFieldLabel, configOptionLabel, configPresetLabel } from '../../utils/configPresentation';
+import { configFieldHelp, configFieldHint, configFieldLabel, configOptionLabel, configPresetLabel } from '../../utils/configPresentation';
 import { MODEL_PATH_FIELDS } from '../../utils/workspaceConfig';
 import { familyParameterOptions, modelAssetUnsupportedReason, modelFamilyWeights, trainingFamilyOptions } from '../../utils/trainingFamilies';
+import { managedValueLabel, normalizeOptimizerConfig, optimizerManagedReason, restoreOptimizerSelection, selectOptimizer } from '../../utils/optimizerCapabilities';
 import NumericControl from './NumericControl';
 import StudioSelect from '../../components/StudioSelect';
 import ConfigHelp from '../../components/ConfigHelp';
@@ -34,6 +35,7 @@ interface SchemaProperty {
     group?: string;
     order?: number;
     advanced?: boolean;
+    hidden?: boolean;
     control?: string;
     unit?: string;
     help?: string;
@@ -122,8 +124,9 @@ const setNestedValue = (obj: any, path: string[], value: any): any => {
 // 2. Rules 专用组件 (AdapterRule 列表)
 const RulesEditor: React.FC<{
   value: any[];
+  learningRateReason?: string;
   onChange: (val: any[]) => void;
-}> = ({ value = [], onChange }) => {
+}> = ({ value = [], learningRateReason, onChange }) => {
   const { t } = useTranslation();
   const addRule = () => {
     onChange([
@@ -192,9 +195,12 @@ const RulesEditor: React.FC<{
           />
           <input
             type="number"
+            aria-label={`LR ${idx + 1}`}
             placeholder="LR"
             step="0.0001"
             value={rule.lr ?? ''}
+            disabled={!!learningRateReason}
+            title={learningRateReason}
             onChange={(e) => updateRule(idx, 'lr', e.target.value === '' ? null : Number(e.target.value))}
             className="w-20 px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
           />
@@ -211,6 +217,7 @@ const RulesEditor: React.FC<{
           </div>
         </div>
       ))}
+      {!!value.length && learningRateReason && <p className="config-field-hint">{learningRateReason}</p>}
       <button
         type="button"
         onClick={addRule}
@@ -486,26 +493,37 @@ const PromptsEditor: React.FC<{
 // 6. Betas 控件 (长度 2 的数字数组)
 const BetasEditor: React.FC<{
   value: [number, number];
+  scheduleFree?: boolean;
   onChange: (val: [number, number]) => void;
-}> = ({ value = [0.9, 0.999], onChange }) => {
+}> = ({ value = [0.9, 0.999], scheduleFree, onChange }) => {
+  const { i18n } = useTranslation();
+  const english = i18n.resolvedLanguage?.startsWith('en') || false;
   return (
-    <div className="flex space-x-2">
+    <div className="config-beta-controls">
+      <label><span>{scheduleFree ? (english ? 'Weight averaging β1' : '权重平均 β1') : (english ? 'Direction smoothing β1' : '方向平滑 β1')}</span>
       <input
         type="number"
+        min="0"
+        max="0.999999"
         step="0.001"
         value={value[0] ?? 0.9}
         onChange={(e) => onChange([Number(e.target.value), value[1]])}
         className="w-1/2 px-3 py-2 border rounded-md text-sm dark:bg-slate-900 dark:border-slate-600"
         placeholder="beta1"
       />
+      </label>
+      <label><span>{english ? 'Magnitude smoothing β2' : '幅度平滑 β2'}</span>
       <input
         type="number"
+        min="0"
+        max="0.999999"
         step="0.0001"
         value={value[1] ?? 0.999}
         onChange={(e) => onChange([value[0], Number(e.target.value)])}
         className="w-1/2 px-3 py-2 border rounded-md text-sm dark:bg-slate-900 dark:border-slate-600"
         placeholder="beta2"
       />
+      </label>
     </div>
   );
 };
@@ -569,6 +587,11 @@ const SchemaValueInput: React.FC<{
   const branch = alternatives.find((p) => p.type !== 'null' && p.const === undefined) || alternatives[0];
   const resolved = branch.$ref ? { ...resolveRef(schema, branch.$ref), ...branch } : branch;
   const prop: SchemaProperty = { ...property, ...resolved };
+  const english = i18n.resolvedLanguage?.startsWith('en') || false;
+  const unsetLabel = name === 'optimizer.beta3' ? (english ? 'Automatic' : '自动')
+    : name === 'optimizer.growth_rate' ? (english ? 'Unlimited' : '不限')
+    : name === 'optimizer.eps' ? 'Adam-atan2'
+    : compact ? (english ? 'Unset' : '不设置') : t('train.unset');
   const cls = 'w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:bg-slate-900 dark:border-slate-600';
   const initialValue = () => {
     if (prop.default != null) return prop.default;
@@ -611,7 +634,7 @@ const SchemaValueInput: React.FC<{
   return <div className={compact ? 'config-union' : 'space-y-2'}>
     {nullable && <label className="flex items-center gap-2 text-xs text-[var(--studio-dim)]">
       <input type="checkbox" aria-label={`${name}.unset`} checked={value == null}
-        onChange={(e) => onChange(e.target.checked ? null : initialValue())} /><span title={t('train.unset')}>{compact ? (i18n.resolvedLanguage?.startsWith('en') ? 'Unset' : '不设置') : t('train.unset')}</span>
+        onChange={(e) => onChange(e.target.checked ? null : initialValue())} /><span title={unsetLabel}>{unsetLabel}</span>
     </label>}
     {input}
     {constant && <label className="flex items-center gap-2 text-xs"><input type="checkbox" aria-label={`${name}.${constant.const}`}
@@ -654,7 +677,7 @@ const FieldGroup: React.FC<{
 
 export const SchemaForm: React.FC<SchemaFormProps> = ({
   schema,
-  value,
+  value: sourceValue,
   onChange: onValueChange,
   showAdvanced = false,
   errors = [],
@@ -671,22 +694,35 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
 }) => {
   const { t, i18n } = useTranslation();
   const english = i18n.resolvedLanguage?.startsWith('en') || false;
+  const value = React.useMemo(() => normalizeOptimizerConfig(schema, sourceValue), [schema, sourceValue]);
+  const scheduleFree = value.optimizer?.type === 'adamw_sf' || (value.optimizer?.type === 'prodigy_plus_sf' && value.optimizer?.use_schedulefree !== false);
   const [editCaptionOverrides, setEditCaptionOverrides] = React.useState(false);
   const [editOutput, setEditOutput] = React.useState(false);
   const lastLowRank = React.useRef<number | null>(null);
   const lastEmittedConfig = React.useRef<Record<string, any> | null>(null);
+  const optimizerEdits = React.useRef(new Map<string, Record<string, any>>());
   React.useEffect(() => {
     // Only retain a rank across changes emitted by this editor. Selecting another
     // preset or loading an external draft must not inherit this temporary value.
-    if (value !== lastEmittedConfig.current) lastLowRank.current = null;
+    if (sourceValue !== lastEmittedConfig.current) {
+      lastLowRank.current = null;
+      optimizerEdits.current.clear();
+    }
     lastEmittedConfig.current = null;
-  }, [value]);
+  }, [sourceValue]);
   const captionOverrideKeys = ['prefix', 'suffix', 'trigger_word'];
   const hasCaptionOverrides = captionOverrideKeys.some(key => !!value.dataset?.caption?.[key]);
   const onChange = (next: Record<string, any>) => {
     if (readOnly) return;
-    lastEmittedConfig.current = next;
-    onValueChange(next);
+    const type = next.optimizer?.type;
+    if (type !== undefined && type !== value.optimizer?.type) {
+      optimizerEdits.current.set(value.optimizer?.type ?? 'adamw', value);
+      const previous = optimizerEdits.current.get(type);
+      next = previous ? restoreOptimizerSelection(schema, next, previous) : selectOptimizer(schema, next, type);
+    }
+    const normalized = normalizeOptimizerConfig(schema, next);
+    lastEmittedConfig.current = normalized;
+    onValueChange(normalized);
   };
   const lokrModeLabel = english ? 'LoKr parameter mode' : 'LoKr 参数形式';
   const groups: Record<string, { order: number; fields: React.ReactNode[] }> = {};
@@ -713,6 +749,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (versionSources && ['checkpoint.output_dir', 'checkpoint.name'].includes(fullPathKey) && !showAdvanced && !editOutput) return null;
     if (fullPathKey === 'adapter.alpha' && value.adapter?.algo === 'lokr' && value.adapter?.rank === 'full') return null;
     const ui = { ...(prop['x-ui'] || {}), ...(compact && fullPathKey === 'dataset.batch_size' ? {group:'loop'} : {}) };
+    if (ui.hidden) return null;
     if (conditionValue.dataset.resolution_mode === 'native' && ['dataset.resolutions', 'dataset.aspect_ratio_limit', 'dataset.area_tolerance', 'dataset.bucket_step', 'dataset.bucket_no_upscale'].includes(fullPathKey)) return null;
     if (compact && !showAdvanced && fullPathKey === 'adapter.rules' && !value.adapter?.rules?.length) return null;
 
@@ -728,7 +765,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (search.trim() && !`${fieldLabel} ${fullPathKey} ${prop.description || ''} ${lokrRank ? lokrModeLabel : ''}`.toLowerCase().includes(search.trim().toLowerCase())) return null;
 
     const captionOverride = fullPathKey.startsWith('dataset.caption.') && captionOverrideKeys.includes(key);
-    if ((ui.advanced || captionOverride) && !showAdvanced && !(captionOverride && editCaptionOverrides) && !(editOutput && ['checkpoint.output_dir', 'checkpoint.name'].includes(fullPathKey))) return null;
+    const optionalAdvanced = ui.advanced && !(currentGroup === 'optimizer' && key !== 'args');
+    if ((optionalAdvanced || captionOverride) && !showAdvanced && !(captionOverride && editCaptionOverrides) && !(editOutput && ['checkpoint.output_dir', 'checkpoint.name'].includes(fullPathKey))) return null;
     if (ui.show_when) {
       try {
         if (!evaluateShowWhen(ui.show_when, conditionValue)) return null;
@@ -747,11 +785,15 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const percentage = ['adapter.dropout', 'adapter.rank_dropout', 'adapter.module_dropout', 'dataset.area_tolerance', 'dataset.caption.tag_dropout', 'dataset.caption.caption_dropout', 'scheduler.min_lr_ratio', 'validation.split_ratio'].includes(fullPathKey);
     const numericMin = ui.min ?? prop.minimum ?? prop.exclusiveMinimum;
     const numericMax = ui.max ?? prop.maximum ?? prop.exclusiveMaximum;
+    const managedReason = optimizerManagedReason(schema, value, fullPathKey, english);
 
     let control = null;
 
     // 1. 递归对象渲染
-    if (compact && fullPathKey === 'dataset.resolutions') {
+    if (managedReason) {
+      const display = prop.enum ? configOptionLabel(fullPathKey, String(fieldValue), english) : managedValueLabel(fieldValue, english);
+      control = <div className="config-managed-value"><output id={fieldId} aria-label={fieldLabel} aria-describedby={`${fieldId}-managed-reason`}>{display}</output><span>{english ? 'Automatic' : '自动管理'}</span></div>;
+    } else if (compact && fullPathKey === 'dataset.resolutions') {
       control = <ResolutionInput label={fieldLabel} value={fieldValue} onChange={next => onChange(setNestedValue(value, path, next))} />;
     } else if (prop.type === 'object' && prop.properties) {
       control = (
@@ -778,6 +820,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       control = (
         <RulesEditor
           value={fieldValue || []}
+          learningRateReason={optimizerManagedReason(schema, value, 'adapter.rules.lr', english)}
           onChange={(val) => onChange(setNestedValue(value, path, val))}
         />
       );
@@ -807,6 +850,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       control = (
         <BetasEditor
           value={fieldValue || [0.9, 0.999]}
+          scheduleFree={scheduleFree}
           onChange={(val) => onChange(setNestedValue(value, path, val))}
         />
       );
@@ -840,7 +884,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           onChange(setNestedValue(value, path, rank));
         }}/>;
     } else if (prop.anyOf) {
-      control = <SchemaValueInput schema={schema} property={prop} value={fieldValue} name={fullPathKey} compact={compactField}
+      const inputProperty = fullPathKey === 'optimizer.eps' && value.optimizer?.type !== 'prodigy_plus_sf'
+        ? {...prop, anyOf: prop.anyOf.filter(branch => branch.type !== 'null')} : prop;
+      control = <SchemaValueInput schema={schema} property={inputProperty} value={fieldValue} name={fullPathKey} compact={compactField}
         placeholder={family && fullPathKey.startsWith('sampling.') && ['steps', 'cfg', 'shift'].includes(key) ? (family.sampling?.[key as 'steps' | 'cfg' | 'shift'] != null ? String(family.sampling[key as 'steps' | 'cfg' | 'shift']) : key === 'shift' ? t('sampling.shiftAuto') : undefined) : undefined}
         onChange={(val) => onChange(setNestedValue(value, path, val))} />;
     } else if (fullPathKey === 'model.flux2_variant') {
@@ -897,12 +943,18 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       );
     } else if (prop.type === 'boolean' || ui.control === 'switch') {
       control = (
+        <label className="config-toggle-control" data-state={fieldValue ? 'on' : 'off'}>
         <input
+          id={fieldId}
+          aria-label={fieldLabel}
+          aria-invalid={!!errorItem}
           type="checkbox"
           className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
           checked={!!fieldValue}
           onChange={(e) => onChange(setNestedValue(value, path, e.target.checked))}
         />
+        <span>{fieldValue ? (english ? 'Enabled' : '已开启') : (english ? 'Disabled' : '未开启')}</span>
+        </label>
       );
     } else if (prop.type === 'integer' || prop.type === 'number') {
       if ((percentage || ui.control === 'slider') && numericMin !== undefined && numericMax !== undefined) {
@@ -964,7 +1016,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     }
 
     const wide = ['sources', 'rules', 'prompts', 'resolutions', 'args', 'group_lr'].includes(key) || ui.control === 'path' || key.endsWith('_path') || key === 'output_dir' || fullPathKey === 'adapter.lr_scale';
-    if (React.isValidElement(control) && (typeof control.type === 'string' || control.type === StudioSelect)) {
+    const booleanField = prop.type === 'boolean' || ui.control === 'switch';
+    if (!booleanField && !managedReason && React.isValidElement(control) && (typeof control.type === 'string' || control.type === StudioSelect)) {
       control = React.cloneElement(control as React.ReactElement<any>, {id: fieldId, 'aria-label': (control.props as any)['aria-label'] || fieldLabel, 'aria-invalid': !!errorItem});
     }
     const scopeHelp = fullPathKey === 'adapter.preset' ? (english
@@ -977,9 +1030,11 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       showAdvanced && selectedPreset && `${t('preset.layers', {n: selectedPreset.layers})} · ${selectedPreset.name}`,
       showAdvanced && selectedPreset?.include?.length && `${english ? 'Included layers' : '包含层'}：${selectedPreset.include.join(', ')}`,
       showAdvanced && selectedPreset?.exclude?.length && `${english ? 'Excluded layers' : '排除层'}：${selectedPreset.exclude.join(', ')}`,
-    ].filter(Boolean).join('\n\n') : weightMeta?.hint || prop.description;
+    ].filter(Boolean).join('\n\n') : weightMeta?.hint || configFieldHelp(fullPathKey, prop.description, english, value.optimizer?.type, scheduleFree);
+    const hint = managedReason || configFieldHint(fullPathKey, english, value.optimizer?.type, scheduleFree)
+      || (currentGroup === 'optimizer' && !['type', 'args', 'group_lr'].includes(key) ? prop.description : undefined);
     const label = (
-      <div key={fullPathKey} id={`field-${fullPathKey}`} data-testid={`field-${fullPathKey}`} data-field-path={fullPathKey} data-control-kind={prop.type === 'boolean' ? 'toggle' : undefined} className={compactField ? `config-field ${prop.type === 'boolean' ? 'config-field-toggle' : ''} ${wide ? 'config-field-wide' : ''} ${errorItem ? 'config-field-invalid' : ''}` : `flex flex-col space-y-1 p-2 rounded ${errorItem ? 'bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800' : ''}`}>
+      <div key={fullPathKey} id={`field-${fullPathKey}`} data-testid={`field-${fullPathKey}`} data-field-path={fullPathKey} data-control-kind={booleanField ? 'toggle' : undefined} className={compactField ? `config-field ${booleanField ? 'config-field-boolean' : ''} ${wide ? 'config-field-wide' : ''} ${errorItem ? 'config-field-invalid' : ''}` : `flex flex-col space-y-1 p-2 rounded ${errorItem ? 'bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800' : ''}`}>
         <div className="flex justify-between items-center">
           <label htmlFor={fieldId} className="text-sm font-medium text-slate-700 dark:text-slate-300">
             {fieldLabel}{weightMeta?.required === false && family?.name !== 'flux2' && <span className="ml-1 text-xs text-slate-500">{english ? '(optional)' : '（可选）'}</span>}
@@ -987,13 +1042,14 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           </label>
           {compactField && help && <ConfigHelp label={`${fieldLabel} ${english ? 'help' : '说明'}`}>{help}</ConfigHelp>}
         </div>
-        {!compactField && prop.description && !weightMeta?.hint && <p className="text-xs text-slate-500 dark:text-slate-400">{prop.description}</p>}
+        {!compactField && help && !weightMeta?.hint && <p className="text-xs text-slate-500 dark:text-slate-400">{help}</p>}
         {!compactField && weightMeta?.hint && (
           <p className="text-[11px] text-slate-400 dark:text-slate-500" data-testid={`weight-hint-${key}`}>
             {weightMeta.hint}
           </p>
         )}
         <div className="mt-1">{readOnly ? <fieldset disabled style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>{control}</fieldset> : control}</div>
+        {hint && (compactField || managedReason) && <p id={managedReason ? `${fieldId}-managed-reason` : undefined} className="config-field-hint">{hint}</p>}
         {fullPathKey === 'adapter.preset' && family && <p className="config-scope-hint">{english ? 'Usually keep the default; a wider scope does not guarantee better results.' : '通常保留默认；范围更大不一定效果更好。'}</p>}
         {errorItem && <p className="text-xs text-red-600 dark:text-red-400">{errorItem.msg}</p>}
       </div>
@@ -1098,6 +1154,22 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
               const content = fields.filter(node => section.names.includes(fieldName(node)));
               return content.length > 0 && <div key={section.key} className={`config-field-section config-adapter-${section.key}`}><h3>{section.title}</h3>{content}</div>;
             })}</>;
+          })() : compact && groupName === 'optimizer' ? (() => {
+            const fieldName = (node: React.ReactNode) => String((node as React.ReactElement).key).split('.').pop() || '';
+            const sections = [
+              {key: 'basic', title: english ? 'Optimizer and learning rate' : '优化器与学习率', names: ['type', 'lr', 'weight_decay']},
+              {key: 'adaptive', title: english ? 'Step-size estimation' : '自动步长估计', names: ['d_coef', 'd0', 'beta3', 'prodigy_steps', 'd_limiter', 'safeguard_warmup', 'growth_rate', 'slice_p', 'use_speed', 'split_groups', 'split_groups_mean', 'min_lr', 'max_lr', 'lr_bump']},
+              {key: 'averaging', title: english ? 'Weight averaging and decay' : '权重平均与衰减', names: ['use_schedulefree', 'schedulefree_c', 'weight_decay_by_lr', 'decouple']},
+              {key: 'stability', title: english ? 'Smoothing and stability' : '平滑与稳定性', names: ['betas', 'beta2', 'eps', 'grad_clip_norm', 'use_bias_correction', 'use_stableadamw', 'clip_threshold']},
+              {key: 'precision', title: english ? 'State memory and precision' : '状态占用与精度', names: ['factored', 'factored_fp32', 'stochastic_rounding', 'kahan']},
+              {key: 'variants', title: english ? 'Update methods' : '更新方式', names: ['use_cautious', 'use_grams', 'use_adopt', 'use_orthograd', 'use_focus']},
+            ];
+            const assigned = new Set(sections.flatMap(section => section.names));
+            const remaining = groupData.fields.filter(node => !assigned.has(fieldName(node)));
+            return <>{sections.map(section => {
+              const fields = groupData.fields.filter(node => section.names.includes(fieldName(node)));
+              return fields.length > 0 && <div key={section.key} className={`config-field-section config-optimizer-${section.key}`}><h3>{section.title}</h3>{fields}</div>;
+            })}{remaining.length > 0 && <div className="config-field-section config-optimizer-options"><h3>{english ? 'Optimizer options' : '优化器选项'}</h3>{remaining}</div>}</>;
           })() : compact && groupName === 'sampling' ? [...groupData.fields].sort((a, b) => {
             const order = ['enabled', 'at_start', 'every_steps', 'every_epochs', 'prompts', 'width', 'height', 'steps', 'cfg', 'shift', 'seed', 'sampler', 'scheduler', 'er_sde_order', 'er_sde_s_noise', 'prompts_file'];
             const rank = (node: React.ReactNode) => { const index = order.indexOf(String((node as React.ReactElement).key).split('.').pop() || ''); return index < 0 ? order.length : index; };

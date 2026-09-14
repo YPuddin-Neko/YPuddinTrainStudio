@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import PureWindowsPath
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator, model_validator
 
+from .optimizer_rules import (
+    optimizer_capabilities,
+    optimizer_key,
+    optimizer_policy,
+    optimizer_specific_fields,
+)
 from .ui import F, ui
 
 Algo = Literal["lora", "lokr", "loha", "full"]
@@ -472,6 +479,19 @@ class ObjectiveConfig(_Strict):
 
 # --------------------------------------------------------------------------- optimizer / scheduler
 class OptimizerConfig(_Strict):
+    model_config = ConfigDict(extra="forbid", validate_assignment=True, allow_inf_nan=False)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        # Validate the complete candidate atomically. Assignment validation alone
+        # overwrites values migrated by before validators and leaves failed after
+        # validations on the object (e.g. conflicting PPSF toggles).
+        if name in type(self).model_fields:
+            candidate = type(self).model_validate({**self.model_dump(), name: value})
+            object.__setattr__(self, "__dict__", candidate.__dict__.copy())
+            object.__setattr__(self, "__pydantic_fields_set__", self.__pydantic_fields_set__ | {name})
+        else:
+            super().__setattr__(name, value)
+
     type: str = F(
         "adamw",
         help="默认 AdamW。内置选项对应真实优化器实现；8-bit 选项需要 CUDA 和 bitsandbytes，其他扩展优化器需要对应依赖。缺失时会报错，不会自动换用其他优化器。高级用户也可填已安装的 module.Class；其额外参数填写在优化器参数中。",
@@ -490,6 +510,7 @@ class OptimizerConfig(_Strict):
                     "adafactor",
                     "came",
                     "adamw_sf",
+                    "automagic",
                 ],
                 "allow_custom": True,
             }
@@ -509,28 +530,26 @@ class OptimizerConfig(_Strict):
     )
     betas: tuple[float, float] = F(
         (0.9, 0.99),
-        help="动量统计的两个衰减系数，默认 0.9 和 0.99。仅传给界面支持此字段的内置优化器；通常保持默认，自定义优化器可在额外参数中指定。",
+        help="平滑更新所用的历史统计。普通 Adam/Prodigy 的 β1 平滑方向；Schedule-Free 的 β1 控制权重平均；β2 平滑梯度大小估计。通常保持当前优化器默认值，较大值反应更平缓。",
         ui_=ui(
             "optimizer",
             order=30,
-            advanced=True,
-            show_when="optimizer.type in ['adamw','adam','adamw8bit','prodigy','prodigy_plus_sf','adamw_sf','came']",
+            show_when="optimizer.type in ['adamw','adam','adamw8bit','lion','lion8bit','prodigy','prodigy_plus_sf','adamw_sf','came']",
         ),
     )
-    eps: float = F(
+    eps: float | None = F(
         1e-8,
         gt=0,
-        help="Adam 系列分母中的数值稳定项，默认 0.00000001。仅传给 Adam/AdamW/AdamW8bit/AdamW Schedule-Free；其他算法的不同 eps 格式使用额外参数。",
+        help="防止梯度大小估计过小时除法不稳定，通常保留优化器默认值。PPSF 留空会改用 Adam-atan2，此时不能同时启用 StableAdamW 或 FOCUS。",
         ui_=ui(
             "optimizer",
             order=40,
-            advanced=True,
-            show_when="optimizer.type in ['adamw','adam','adamw8bit','adamw_sf']",
+            show_when="optimizer.type in ['adamw','adam','adamw8bit','adamw_sf','prodigy','prodigy_plus_sf','automagic']",
         ),
     )
     args: dict[str, Any] = F(
         default_factory=dict,
-        help="原样传给所选优化器的构造参数；同名值会覆盖上方通用参数。仅填写该优化器文档支持的参数，名称或类型错误会明确报错。",
+        help="用于自定义优化器或尚无独立控件的扩展参数。已有控件的参数会迁移到对应字段；同名冲突或覆盖自动管理参数会明确报错。",
         ui_=ui("optimizer", order=50, advanced=True),
     )
     grad_clip_norm: float = F(
@@ -542,17 +561,216 @@ class OptimizerConfig(_Strict):
     kahan: bool = F(
         False,
         help="为低精度训练参数保留 fp32 副本并补偿舍入误差，默认关闭；会增加内存。仅在确实用低精度适配器参数时考虑，不支持与 Schedule-Free 优化器组合。",
-        ui_=ui("optimizer", order=70, control="switch", advanced=True),
+        ui_=ui("optimizer", order=70, control="switch"),
     )
     fused_backward: bool = F(
         False,
         help="预留的反向即时更新选项，当前尚未实现，必须保持关闭；开启会明确拒绝启动，不会静默改成普通训练。",
-        ui_=ui("optimizer", order=80, control="switch", advanced=True),
+        ui_={"x-ui": {**ui("optimizer", order=80, control="switch", advanced=True)["x-ui"], "hidden": True}},
     )
     group_lr: dict[str, float] = F(
         default_factory=dict,
         help="按模块分组的学习率，如 {'llm_adapter': 5e-5, 'te': 2e-5}",
-        ui_=ui("optimizer", order=90, advanced=True),
+        ui_=ui("optimizer", order=90),
+    )
+
+    d_coef: float = F(
+        1.0,
+        gt=0,
+        help="自适应步长倍率。默认 1；放大或缩小优化器估计的步长，调大通常更新更强。基础学习率由优化器管理时，用它调整训练强度。",
+        ui_=ui("optimizer", order=100, show_when="optimizer.type in ['prodigy','prodigy_plus_sf']"),
+    )
+
+    d0: float = F(
+        1e-6,
+        gt=0,
+        help="自动估计步长的起始值，默认 0.000001。仅影响估计起点；通常保留默认，与训练中实时估计的 D 值不同。",
+        ui_=ui("optimizer", order=110, show_when="optimizer.type in ['prodigy','prodigy_plus_sf']"),
+    )
+
+    beta3: float | None = F(
+        None,
+        ge=0,
+        lt=1,
+        help="步长估计所用的历史平滑系数。留空时自动取 β2 的平方根；通常保留自动值。",
+        ui_=ui("optimizer", order=120, show_when="optimizer.type in ['prodigy','prodigy_plus_sf']"),
+    )
+
+    use_bias_correction: bool = F(
+        False,
+        help="Prodigy 修正训练初期的统计偏差；PPSF 使用 RAdam 式修正与自动预热。作者均默认关闭，开启会改变早期更新曲线。",
+        ui_=ui(
+            "optimizer",
+            order=130,
+            control="switch",
+            show_when="optimizer.type in ['prodigy','prodigy_plus_sf']",
+        ),
+    )
+
+    safeguard_warmup: bool = F(
+        False,
+        help="估计步长时排除学习率预热的影响，作者默认关闭；使用外部预热时可启用。",
+        ui_=ui("optimizer", order=140, control="switch", show_when="optimizer.type == 'prodigy'"),
+    )
+
+    growth_rate: float | None = F(
+        None,
+        ge=1,
+        help="限制 D 估计每一步最多增长的倍率；留空不设上限。1.02 表示相对上一步最多增加约 2%，通常保留不限。",
+        ui_=ui("optimizer", order=150, show_when="optimizer.type == 'prodigy'"),
+    )
+
+    slice_p: int = F(
+        1,
+        ge=1,
+        help="步长估计每隔几个元素取样。默认 1 使用全部元素；更大值减少估计状态占用，也会降低估计精细度。",
+        ui_=ui("optimizer", order=160, show_when="optimizer.type == 'prodigy'"),
+    )
+
+    decouple: bool = F(
+        True,
+        help="将权重衰减与梯度更新分开，默认开启；关闭时衰减项会加入梯度。",
+        ui_=ui("optimizer", order=170, control="switch", show_when="optimizer.type == 'prodigy'"),
+    )
+
+    prodigy_steps: int = F(
+        0,
+        ge=0,
+        help="持续自动估计步长的优化器更新次数。0 表示全程估计；正数表示到达该步数后冻结估计，继续训练。",
+        ui_=ui("optimizer", order=180, show_when="optimizer.type == 'prodigy_plus_sf'"),
+    )
+
+    d_limiter: bool = F(
+        True,
+        help="限制步长估计突然增大，默认开启。启用 SPEED 时由 SPEED 自己的估计方式接管。",
+        ui_=ui("optimizer", order=190, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+    )
+
+    schedulefree_c: float = F(
+        0.0,
+        ge=0,
+        help="控制 Schedule-Free 权重平均的速度。0 使用作者默认平均方式；通常保留 0，仅在需要改变平均轨迹时调整。",
+        ui_=ui("optimizer", order=200, show_when="optimizer.type == 'prodigy_plus_sf'"),
+    )
+
+    split_groups: bool = F(
+        True,
+        help="让不同参数组分别估计步长，默认开启。关闭后共享估计；不会启用手动分组学习率。",
+        ui_=ui("optimizer", order=210, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+    )
+
+    split_groups_mean: bool = F(
+        False,
+        help="将各参数组估计的步长取调和平均后使用，默认关闭；需启用分组估计。",
+        ui_=ui("optimizer", order=220, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+    )
+
+    factored: bool = F(
+        True,
+        help="将适合的梯度统计矩阵分解存储，默认开启以减少优化器状态占用；关闭会保存完整统计。",
+        ui_=ui("optimizer", order=230, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+    )
+
+    factored_fp32: bool = F(
+        True,
+        help="使用 FP32 保存分解统计，默认开启以减少舍入误差；仅在分解统计开启时生效。",
+        ui_=ui("optimizer", order=240, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+    )
+
+    use_stableadamw: bool = F(
+        True,
+        help="使用 StableAdamW 的更新归一化，默认开启以约束异常更新；不能与 Adam-atan2（EPS 留空）组合。",
+        ui_=ui("optimizer", order=250, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+    )
+
+    stochastic_rounding: bool = F(
+        True,
+        help="对低精度参数写回使用随机舍入，默认开启，降低小更新被截断的偏差；不影响 FP32 参数。",
+        ui_=ui("optimizer", order=260, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+    )
+
+    weight_decay_by_lr: bool = F(
+        True,
+        help="将权重衰减随当前有效学习率一起缩放，默认开启；关闭会使用另一种衰减尺度。",
+        ui_=ui("optimizer", order=270, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+    )
+
+    use_schedulefree: bool = F(
+        True,
+        help="启用免调度权重平均，默认开启，无需外部学习率曲线。关闭后按普通训练方式使用学习率调度。",
+        ui_=ui("optimizer", order=280, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+    )
+
+    use_speed: bool = F(
+        False,
+        help="切换为 SPEED 步长估计，默认关闭；启用后忽略 D 增长限制，估计轨迹会改变。",
+        ui_=ui("optimizer", order=290, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+    )
+
+    use_cautious: bool = F(
+        False,
+        help="只保留与当前梯度方向一致的更新，默认关闭；不能与 Grams 同时启用。",
+        ui_=ui("optimizer", order=300, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+    )
+
+    use_grams: bool = F(
+        False,
+        help="按当前梯度重新确定更新方向，默认关闭；不能与 Cautious 同时启用。",
+        ui_=ui("optimizer", order=310, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+    )
+
+    use_adopt: bool = F(
+        False,
+        help="切换梯度归一化顺序并加入 ADOPT 的限制，默认关闭；会改变早期更新方式。",
+        ui_=ui("optimizer", order=320, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+    )
+
+    use_orthograd: bool = F(
+        False,
+        help="移除梯度中与权重方向平行的分量，默认关闭；用于对比不同更新方向。",
+        ui_=ui("optimizer", order=330, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+    )
+
+    use_focus: bool = F(
+        False,
+        help="改用 FOCUS 更新方式，默认关闭；不能与分解统计或 Adam-atan2 同时使用。",
+        ui_=ui("optimizer", order=340, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+    )
+
+    beta2: float = F(
+        0.999,
+        ge=0,
+        lt=1,
+        help="平滑梯度大小估计，默认 0.999。数值越大，越看重较长的历史，对变化反应更慢。",
+        ui_=ui("optimizer", order=350, show_when="optimizer.type == 'automagic'"),
+    )
+
+    min_lr: float = F(
+        1e-7,
+        gt=0,
+        help="逐元素自适应学习率的下限，默认 0.0000001；需不高于上限。",
+        ui_=ui("optimizer", order=360, show_when="optimizer.type == 'automagic'"),
+    )
+
+    max_lr: float = F(
+        1e-3,
+        gt=0,
+        help="逐元素自适应学习率的上限，默认 0.001；用于限制最大更新强度。",
+        ui_=ui("optimizer", order=370, show_when="optimizer.type == 'automagic'"),
+    )
+
+    lr_bump: float = F(
+        1e-6,
+        gt=0,
+        help="逐元素学习率每次调整的增量，默认 0.000001。较大值会更快调整，也可能使步长变化更明显。",
+        ui_=ui("optimizer", order=380, show_when="optimizer.type == 'automagic'"),
+    )
+
+    clip_threshold: float = F(
+        1.0,
+        gt=0,
+        help="Automagic 内部更新归一化阈值，默认 1；与训练器的全局梯度裁剪不同。",
+        ui_=ui("optimizer", order=390, show_when="optimizer.type == 'automagic'"),
     )
 
     @field_validator("fused_backward")
@@ -562,12 +780,119 @@ class OptimizerConfig(_Strict):
             raise ValueError("fused_backward is not implemented; use false for normal optimizer steps")
         return value
 
+    @field_validator("lr")
+    @classmethod
+    def _managed_lr(cls, value: float, info: ValidationInfo) -> float:
+        return optimizer_policy(info.data.get("type", "adamw")).get("fixed", {}).get("optimizer.lr", value)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _canonical_optimizer(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        key = optimizer_key(str(data.get("type", "adamw")))
+        known = {
+            "adamw",
+            "adam",
+            "sgd",
+            "adamw8bit",
+            "lion",
+            "lion8bit",
+            "prodigy",
+            "prodigy_plus_sf",
+            "adafactor",
+            "came",
+            "adamw_sf",
+            "automagic",
+        }
+        if key in known:
+            data["type"] = key
+        raw_args = data.get("args", {})
+        if not isinstance(raw_args, dict):
+            raise ValueError("optimizer.args must be an object of named optimizer parameters")
+        args = dict(raw_args)
+        policy = optimizer_policy(key, use_schedulefree=data.get("use_schedulefree", True))
+        fixed_lr = policy.get("fixed", {}).get("optimizer.lr")
+        if fixed_lr is not None and "lr" in args and args["lr"] != fixed_lr:
+            raise ValueError(
+                "optimizer.args.lr cannot override the automatically managed learning rate; use D Coef or Automagic bounds"
+            )
+        if args.get("fused_back_pass"):
+            raise ValueError("optimizer.args.fused_back_pass is not implemented; use normal optimizer steps")
+        args.pop("fused_back_pass", None)
+        migrated = ({"lr", "weight_decay"} if key in known else set()) | set(optimizer_specific_fields(key))
+        if key in {
+            "adamw",
+            "adam",
+            "adamw8bit",
+            "lion",
+            "lion8bit",
+            "prodigy",
+            "prodigy_plus_sf",
+            "adamw_sf",
+            "came",
+        }:
+            migrated.add("betas")
+        if key in {"adamw", "adam", "adamw8bit", "adamw_sf", "prodigy", "prodigy_plus_sf", "automagic"}:
+            migrated.add("eps")
+        for name in migrated & args.keys():
+            legacy = args.pop(name)
+            current = data.get(name)
+            default = cls.model_fields[name].default
+            if name == "betas":
+                if not isinstance(legacy, (tuple, list)):
+                    raise ValueError("optimizer.args.betas must contain two numeric values")
+                legacy = tuple(legacy)
+                current = tuple(current) if isinstance(current, (tuple, list)) else current
+            if name == "growth_rate" and legacy == math.inf:
+                legacy = None
+            if name in data and current != default and current != legacy:
+                raise ValueError(
+                    f"optimizer.{name} conflicts with optimizer.args.{name}; keep one value in the dedicated field"
+                )
+            data[name] = legacy
+        data["args"] = args
+        policy = optimizer_policy(key, use_schedulefree=data.get("use_schedulefree", True))
+        for path, default in policy.get("defaults", {}).items():
+            if path.startswith("optimizer."):
+                data.setdefault(path.split(".")[1], default)
+        for path, fixed in policy.get("fixed", {}).items():
+            if path == "optimizer.lr":
+                original_lr = data.get("lr", fixed)
+                try:
+                    valid_lr = math.isfinite(float(original_lr)) and float(original_lr) > 0
+                except (ValueError, TypeError):
+                    valid_lr = False
+                if not valid_lr:
+                    raise ValueError("optimizer.lr must be finite and positive")
+                data["lr"] = fixed
+        return data
+
     @model_validator(mode="after")
-    def _schedule_free_kahan(self) -> OptimizerConfig:
-        if self.kahan and (
-            self.type.lower() in {"prodigy_plus_sf", "adamw_sf"} or "schedulefree" in self.type.lower()
-        ):
-            raise ValueError("kahan cannot be combined with a schedule-free optimizer")
+    def _optimizer_combinations(self) -> OptimizerConfig:
+        key = optimizer_key(self.type)
+        if any(not 0 <= beta < 1 for beta in self.betas):
+            raise ValueError("optimizer.betas must be within [0, 1)")
+        if key in {"prodigy_plus_sf", "adamw_sf"} and self.use_schedulefree and self.betas[0] == 0:
+            raise ValueError("Schedule-Free weight averaging requires beta1 > 0")
+        if self.kahan and (key in {"prodigy_plus_sf", "adamw_sf", "automagic"} or "schedulefree" in key):
+            raise ValueError("kahan cannot be combined with a schedule-free or Automagic optimizer")
+        if key in {"prodigy", "prodigy_plus_sf", "automagic"} and self.group_lr:
+            raise ValueError("optimizer.group_lr is managed automatically; clear manual group learning rates")
+        if key != "prodigy_plus_sf" and self.eps is None:
+            raise ValueError("optimizer.eps may be null only for PPSF Adam-atan2")
+        if key == "prodigy_plus_sf":
+            if self.use_cautious and self.use_grams:
+                raise ValueError("PPSF Cautious and Grams cannot both be enabled")
+            if self.use_focus and (self.factored or self.eps is None):
+                raise ValueError("PPSF FOCUS requires factored=false and a non-null eps")
+            if self.eps is None and self.use_stableadamw:
+                raise ValueError("PPSF Adam-atan2 (eps=null) requires use_stableadamw=false")
+        if key == "automagic" and not self.min_lr <= self.lr <= self.max_lr:
+            raise ValueError(
+                "Automagic bounds must contain its initial learning rate (min_lr <= 0.000001 <= max_lr)"
+            )
         return self
 
 
@@ -988,6 +1313,23 @@ class TrainConfig(_Strict):
 
     @model_validator(mode="after")
     def _cross(self) -> TrainConfig:
+        policy = optimizer_policy(self.optimizer.type, use_schedulefree=self.optimizer.use_schedulefree)
+        if "adapter.lr_scale" in policy.get("fixed", {}):
+            if self.adapter.lr_scale:
+                raise ValueError(
+                    "adapter.lr_scale is managed automatically for this optimizer; clear manual multipliers"
+                )
+            if any(rule.lr is not None for rule in self.adapter.rules):
+                raise ValueError(
+                    "adapter.rules[].lr is managed automatically for this optimizer; clear rule learning rates"
+                )
+        scheduler_fixed = {
+            path.split(".")[1]: val
+            for path, val in policy.get("fixed", {}).items()
+            if path.startswith("scheduler.")
+        }
+        if scheduler_fixed:
+            object.__setattr__(self, "scheduler", self.scheduler.model_copy(update=scheduler_fixed))
         if self.optimizer.fused_backward and self.loop.grad_accum != 1:
             raise ValueError("optimizer.fused_backward requires loop.grad_accum == 1")
         if self.sampling.enabled and not self.sampling.prompts and not self.sampling.prompts_file:
@@ -1004,5 +1346,6 @@ class TrainConfig(_Strict):
     @classmethod
     def json_schema(cls) -> dict[str, Any]:
         schema = cls.model_json_schema()
+        schema["x-optimizer-capabilities"] = optimizer_capabilities()
         schema["x-ui-groups"] = list(__import__("ypuddin.config.ui", fromlist=["GROUPS"]).GROUPS)
         return schema

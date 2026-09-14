@@ -422,7 +422,10 @@ def _write_preset(name: str, body: PresetBody, c: ServiceContext, *, create: boo
             code="config.invalid",
             details={"errors": [{"loc": "model.family", "msg": "family must be a string"}]},
         )
-    _validated_or_error(deep_merge(initial_family_config(c, family), body.config))
+    validated = _validated_or_error(deep_merge(initial_family_config(c, family), body.config))
+    from ypuddin.config.optimizer_rules import canonical_optimizer_fragment
+
+    config = canonical_optimizer_fragment(body.config, validated.to_dict())
     with _preset_lock:
         collision = next(
             (f for f in path.parent.glob("*.json") if f.stem.casefold() == name.casefold()), None
@@ -431,7 +434,7 @@ def _write_preset(name: str, body: PresetBody, c: ServiceContext, *, create: boo
             raise ApiError("a preset with this name already exists", code="preset.duplicate", status=409)
         if not create and (collision is None or collision.name != path.name):
             raise NotFound(f"preset {name} not found", code="preset.not_found")
-        data = {"description": body.description, "config": body.config}
+        data = {"description": body.description, "config": config}
         temporary: str | None = None
         try:
             with tempfile.NamedTemporaryFile(
