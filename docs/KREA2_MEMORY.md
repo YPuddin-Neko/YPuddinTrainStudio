@@ -4,6 +4,8 @@
 
 这里的“电脑内存”指 CPU RAM，“显存”指 GPU VRAM。它们要分别留出空间；分块换出会减少显存占用，同时增加电脑内存占用。
 
+与 AnimaLoraStudio、sd-scripts 和 diffusion-pipe 的源码对比见 [训练流程与缓存对比](TRAINING_PARAMETERS.md#4-图片缓存文字缓存与模型卸载)。本文只展开我们当前 Krea2 的内存生命周期。
+
 ## 启动后会发生什么
 
 | 顺序 | 程序在做什么 | 模型占用情况 |

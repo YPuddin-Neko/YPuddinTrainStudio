@@ -4,9 +4,9 @@
 
 源码版本 **v0.5.9**，2026-09-13 新增模型接入说明见 [SDXL / FLUX 支持范围与验收](docs/MODEL_FAMILIES_2026-09-13.md)。SDXL 默认下载为光辉 Illustrious-XL v0.1，也可手选其他本地 SDXL base 模型，并明确选择 ε / v 预测。FLUX 仅保留 Klein 基础版 4B/9B；旧 FLUX.1 / dev 配置和数据仍保留，但不再提供新建或训练入口。完整目录与独立组件均按真实结构检查；Klein 蒸馏版和图像编辑模型不在本次接入范围。
 
-新增模型已使用缩小的真实网络验证缓存、训练、预览、保存回读及独立权重转换。**完整权重 GPU、实际 ComfyUI 画面、图像质量及速度/显存基准仍需逐模型验证**，不把 CPU 小模型测试当作这些项目通过。FLUX.2 的延迟主干加载和 block swap 不等于逐层文本编码器卸载，不能承诺 Klein 9B 可在 16GB 显卡上运行。
+Anima、SDXL 光辉 v0.1、Klein base 4B、Krea2 Raw 已完成所列配置的 Windows 正式权重短训、保存、采样与复载；详情和失败边界见 [2026-09-14 Windows 验收](docs/WINDOWS_ACCEPTANCE_2026-09-14.md)。这些结果不代表长训收敛、同条件性能排名、完整 ComfyUI 画面或所有参数组合通过。Klein 9B 和 DDP 尚无对应正式验收，不能用 4B 单卡结果代替。
 
-界面提供项目概览、独立版本、数据导入、标签与遮罩编辑、训练配置、任务指标和产物管理。最新 UI 流程见 [2026-09-13 工作区验收](docs/UI_WORKFLOWS_2026-09-13.md)；[训练参数](docs/TRAINING_PARAMETERS.md)、[JSON 标签](docs/JSON_CAPTIONS.md)、[整图保留与原生分辨率](docs/native-resolution.md)有对应说明。Krea2 的加载、缓存和卸载流程见 [显存说明](docs/KREA2_MEMORY.md)。历史报告中的测试数量、服务路径和“未接入模型”仅代表当时状态。
+界面提供项目概览、独立版本、数据导入、标签与遮罩编辑、训练配置、任务指标和产物管理。最新 UI 流程见 [2026-09-13 工作区验收](docs/UI_WORKFLOWS_2026-09-13.md)；[训练流程、分桶与三个训练器的对比](docs/TRAINING_PARAMETERS.md)、[JSON 标签](docs/JSON_CAPTIONS.md)、[整图保留与原生分辨率](docs/native-resolution.md)有对应说明。Krea2 的加载、缓存和卸载流程见 [显存说明](docs/KREA2_MEMORY.md)。历史报告中的测试数量、服务路径和“未接入模型”仅代表当时状态。
 
 项目按 `project/<id>/vN/` 保存训练图、正则图、缓存、采样与产物，支持自定义输出根；已有数据不随代码更新自动迁移。正则图支持本地底模生成、网站收集与已有图片导入；标签页编辑已有 caption，不提供 WD14 自动打标。参考代码分析位于 `docs/reference/`，不能据此宣称性能优于参考实现。
 
