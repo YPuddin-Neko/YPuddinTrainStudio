@@ -1837,7 +1837,7 @@
             }
           ],
           "default": 1e-08,
-          "description": "防止梯度大小估计过小时除法不稳定，通常保留优化器默认值。PPSF 留空会改用 Adam-atan2，此时不能同时启用 StableAdamW 或 FOCUS。",
+          "description": "防止梯度大小估计过小时除法不稳定，通常保留优化器默认值。PPSF 勾选“Adam-atan2”会切换更新方式，此时不能同时启用 StableAdamW 或 FOCUS。",
           "title": "Eps",
           "x-ui": {
             "group": "optimizer",
@@ -1939,7 +1939,7 @@
             }
           ],
           "default": null,
-          "description": "步长估计所用的历史平滑系数。留空时自动取 β2 的平方根；通常保留自动值。",
+          "description": "步长估计所用的历史平滑系数。勾选“自动”时取 β2 的平方根；通常保留自动值。",
           "title": "Beta3",
           "x-ui": {
             "group": "optimizer",
@@ -1982,7 +1982,7 @@
             }
           ],
           "default": null,
-          "description": "限制 D 估计每一步最多增长的倍率；留空不设上限。1.02 表示相对上一步最多增加约 2%，通常保留不限。",
+          "description": "限制 D 估计每一步最多增长的倍率；勾选“不限”时不设上限。1.02 表示相对上一步最多增加约 2%，通常保留不限。",
           "title": "Growth Rate",
           "x-ui": {
             "group": "optimizer",
@@ -2100,7 +2100,7 @@
         },
         "use_stableadamw": {
           "default": true,
-          "description": "使用 StableAdamW 的更新归一化，默认开启以约束异常更新；不能与 Adam-atan2（EPS 留空）组合。",
+          "description": "使用 StableAdamW 的更新归一化，默认开启以约束异常更新；不能与 Adam-atan2（勾选 EPS 旁的选项）组合。",
           "title": "Use Stableadamw",
           "type": "boolean",
           "x-ui": {

@@ -629,7 +629,7 @@ const SchemaValueInput: React.FC<{
       value={constant && value === constant.const ? '' : value ?? ''} disabled={!!constant && value === constant.const}
       min={(prop as any).minimum ?? prop['x-ui']?.min} max={(prop as any).maximum ?? prop['x-ui']?.max}
       step={prop['x-ui']?.step ?? (prop.type === 'integer' ? 1 : 'any')} placeholder={placeholder}
-      onChange={(e) => onChange(e.target.value === '' ? (nullable ? null : '') : numeric ? Number(e.target.value) : e.target.value)} />;
+      onChange={(e) => onChange(e.target.value === '' ? (nullable && !numeric ? null : '') : numeric ? Number(e.target.value) : e.target.value)} />;
   }
   return <div className={compact ? 'config-union' : 'space-y-2'}>
     {nullable && <label className="flex items-center gap-2 text-xs text-[var(--studio-dim)]">
