@@ -496,8 +496,19 @@ class DatasetImportProgress(_Out):
 class CaptionField(_Out):
     path: list[str]
     role: Literal[
-        "quality", "count", "character", "character_name", "character_variant", "character_full",
-        "series", "artist", "appearance", "tags", "environment", "nl", "trigger",
+        "quality",
+        "count",
+        "character",
+        "character_name",
+        "character_variant",
+        "character_full",
+        "series",
+        "artist",
+        "appearance",
+        "tags",
+        "environment",
+        "nl",
+        "trigger",
     ]
     value: str | list[str]
     present: bool
@@ -581,6 +592,8 @@ class JobProgress(_Out):
     vram_peak_mb: float | None = None
     vram_metric: str | None = None
     device: str | None = None
+    devices: list[str] = Field(default_factory=list)
+    gpu_count: int | None = None
     estimated_peak_mb: float | None = None
     wait_reason: str | None = None
 
@@ -605,6 +618,7 @@ class Job(_Out):
     version_number: int | None = None
     status: JobStatus | str
     priority: int
+    gpu_devices: list[str] = Field(default_factory=list)
     scheduled_at: float | None
     created_at: float
     started_at: float | None
@@ -681,8 +695,23 @@ class JobLog(_Out):
 class QueueSettings(_Out):
     model_config = ConfigDict(extra="forbid")
     held: bool = False
-    max_concurrent: int = Field(1, ge=1, le=64)
+    max_concurrent: int | None = Field(None, ge=1, le=64)
     memory_admission: bool = True
+
+
+class QueueDevice(_Out):
+    device: str
+    name: str
+    mem_free_mb: float | None = None
+    mem_total_mb: float | None = None
+    job_id: str | None = None
+    job_name: str | None = None
+    status: str | None = None
+
+
+class QueueDevices(_Out):
+    devices: list[QueueDevice]
+    max_concurrent: int | None = None
 
 
 # --------------------------------------------------------------------------- artifacts

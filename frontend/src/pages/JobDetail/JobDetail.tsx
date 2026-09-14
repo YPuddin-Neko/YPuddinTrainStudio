@@ -1,6 +1,6 @@
 import { mergeJobEvent } from '../../utils/jobs';
 import React from 'react';
-import { Link, useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
+import { Link, useParams, useNavigate, useSearchParams, useLocation, Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { EChart } from '../../components/EChart';
 import { apiClient, apiUrl } from '../../api/client';
@@ -27,7 +27,7 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import StudioSelect from '../../components/StudioSelect';
 import { JobActions } from '../Queue/jobPresentation';
 import SampleLoss from '../../components/SampleLoss';
-import XyzSampling from '../../components/sampling/XyzSampling';
+import { samplingUrl } from '../../utils/samplingRoutes';
 import ConfigHelp from '../../components/ConfigHelp';
 import { metricChartBase, metricLabels } from './metricPresentation';
 import '../Queue/queue.css';
@@ -521,7 +521,7 @@ export default function JobDetail() {
         </div>
       )}
 
-      {activeTab === 'xyz' && id && (job?.type === 'train' ? <XyzSampling sourceJobId={id}/> : job?.type === 'xyz' && configSnapshot?.xyz?.source_job_id ? <XyzSampling sourceJobId={configSnapshot.xyz.source_job_id} initialTaskId={id}/> : null)}
+      {activeTab === 'xyz' && id && (job?.type === 'train' ? <Navigate replace to={samplingUrl(id, null, job.project_id, job.version_id)}/> : job?.type === 'xyz' && configSnapshot?.xyz?.source_job_id ? <Navigate replace to={samplingUrl(configSnapshot.xyz.source_job_id, id, job.project_id, job.version_id)}/> : null)}
       {activeTab === 'samples' && (
         <section><div className="job-sample-controls"><StudioSelect aria-label={text('采样步数', 'Sample step')} value={sampleStep} options={[{ value: '', label: text('全部步数', 'All steps') }, ...[...new Set(samples.map(sample => sample.step))].sort((a,b) => b-a).map(step => ({ value: String(step), label: `${text('步数', 'Step')} ${step}` }))]} onValueChange={value => { setSampleStep(value); setSamplePage(1); }}/><span>{text(`共 ${filteredSamples.length} 张 · 每页 24 张`, `${filteredSamples.length} samples · 24 per page`)}</span>{samplePages > 1 && <div className="task-actions"><button className="task-button" disabled={samplePage <= 1} onClick={() => setSamplePage(page => page - 1)}>{text('上一页', 'Previous')}</button><span>{samplePage} / {samplePages}</span><button className="task-button" disabled={samplePage >= samplePages} onClick={() => setSamplePage(page => page + 1)}>{text('下一页', 'Next')}</button></div>}</div><div className="job-sample-gallery" data-testid="samples-gallery">
           {samples.length === 0 && (

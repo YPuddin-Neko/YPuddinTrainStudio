@@ -102,8 +102,8 @@ def test_statistics_cover_all_images_and_keep_structured_prose_and_metadata_out(
     assert {key: result[key] for key in ("images", "captioned", "missing", "invalid")} == {
         "images": 7,
         "captioned": 3,
-        "missing": 3,
-        "invalid": 1,
+        "missing": 2,
+        "invalid": 2,
     }
     assert result["formats"] == {"txt": 2, "json": 4}
     assert result["unique_tags"] == 6
@@ -123,10 +123,19 @@ def test_exact_tag_status_search_filters_intersect_before_pagination(api, mixed)
     assert images(api, mixed, tag="red hair")["total"] == 1
     assert images(api, mixed, tag="red", q="a.png")["total"] == 1
     assert images(api, mixed, tag="red", caption_status="missing")["total"] == 0
-    for status, count in [("captioned", 3), ("missing", 3), ("invalid", 1)]:
+    for status, count in [("captioned", 3), ("missing", 2), ("invalid", 2)]:
         result = images(api, mixed, caption_status=status)
         assert result["total"] == count
         assert all(item["caption_status"] == status for item in result["items"])
+    invalid = {item["rel_path"]: item for item in images(api, mixed, caption_status="invalid")["items"]}
+    assert set(invalid) == {"e.png", "g.png"}
+    assert "unrecognized caption format" in invalid["g.png"]["caption_error"]
+    assert invalid["g.png"]["caption_structure"]["format"] == "unknown"
+    assert invalid["g.png"]["caption_structure"]["editable"] is False
+    assert {item["rel_path"] for item in images(api, mixed, caption_status="missing")["items"]} == {
+        "c.png",
+        "d.png",
+    }
     assert (
         api[0].get(f"/api/datasets/{mixed['id']}/images", params={"caption_status": "unknown"}).status_code
         == 422

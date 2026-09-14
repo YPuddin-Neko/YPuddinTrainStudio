@@ -6,7 +6,7 @@ export interface SamplingValues {
   seed: number; sampler: string; scheduler: string; shift: number | null; guidance: number | null;
   adapter_scale: number; checkpoint_id: string | null; sampling_model_id: string | null;
 }
-export interface XyzRequest extends SamplingValues { name?: string; x: XyzAxis; y?: XyzAxis | null; z?: XyzAxis | null }
+export interface XyzRequest extends SamplingValues { gpu_devices?: string[]; name?: string; x: XyzAxis; y?: XyzAxis | null; z?: XyzAxis | null }
 export interface XyzOptions {
   family: string; training_mode?: 'adapter' | 'full'; defaults: SamplingValues;
   axes: { key: AxisKey; label: string; values?: AxisValue[] }[];

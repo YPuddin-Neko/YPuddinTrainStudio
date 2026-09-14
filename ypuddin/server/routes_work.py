@@ -29,6 +29,7 @@ from .context import ServiceContext
 from .dataset_uploads import UploadBatch, read_upload, staged_upload
 from .db import new_id, now
 from .errors import ApiError, NotFound
+from .gpu_selection import GpuSelection, selection_error
 from .hardware import gpu_info
 from .import_progress import ImportProgress
 from .project_covers import cover_path, cover_url, read_cover_upload, remove_cover, replace_cover, thumbnail
@@ -1411,8 +1412,10 @@ def get_caption(
     r = _record_by_hash(c, did, h, rel_path)
     try:
         path = _current_caption_path(row, r, {})
-        return {"caption": read_caption(path, row["class_prompt"]),
-                "caption_structure": load_caption_structure(path)}
+        return {
+            "caption": read_caption(path, row["class_prompt"]),
+            "caption_structure": load_caption_structure(path),
+        }
     except (ValueError, OSError) as exc:
         raise ApiError(str(exc), code="dataset.caption_invalid", status=422) from exc
 
@@ -1426,7 +1429,9 @@ def put_caption(
 
     row = _get_dataset(c, did)
     if body.caption is None and body.description is None and body.caption_fields is None:
-        raise ApiError("caption, description or caption_fields is required", code="dataset.caption_invalid", status=422)
+        raise ApiError(
+            "caption, description or caption_fields is required", code="dataset.caption_invalid", status=422
+        )
     with c.versions.mutation(row["project_id"], row["version_id"]):
         row = _get_dataset(c, did)
         r = _record_by_hash(c, did, h, rel_path)
@@ -1437,9 +1442,12 @@ def put_caption(
             )
         try:
             write_caption(
-                cap_path, body.caption, description=body.description,
+                cap_path,
+                body.caption,
+                description=body.description,
                 fields=[field.model_dump() for field in body.caption_fields]
-                if body.caption_fields is not None else None,
+                if body.caption_fields is not None
+                else None,
                 revision=body.caption_revision,
             )
         except CaptionConflictError as exc:
@@ -1594,7 +1602,7 @@ def tags_batch(did: str, body: TagBatch, c: ServiceContext = Depends(ctx)) -> di
 
 
 # --------------------------------------------------------------------------- jobs
-class JobBody(BaseModel):
+class JobBody(GpuSelection):
     type: str = "train"
     name: str
     project_id: str | None = None
@@ -1604,7 +1612,7 @@ class JobBody(BaseModel):
     scheduled_at: float | None = None
 
 
-class JobPatch(BaseModel):
+class JobPatch(GpuSelection):
     priority: int | None = None
     name: str | None = None
 
@@ -1613,6 +1621,7 @@ def _job_row(r: dict[str, Any]) -> dict[str, Any]:
     out = dict(r)
     out["progress"] = json.loads(r.get("progress_json") or "{}")
     out["latest"] = json.loads(r.get("latest_json") or "{}")
+    out["gpu_devices"] = json.loads(out.pop("gpu_devices_json", None) or "[]")
     out.pop("progress_json", None)
     out.pop("latest_json", None)
     out.pop("config_json", None)
@@ -1742,10 +1751,15 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
             code="config.invalid",
             details={"errors": [{"loc": "loop.gpu_count", "msg": error}]},
         )
+    if error := selection_error(body.gpu_devices, cfg.loop.gpu_count, devices):
+        raise ApiError(error, code="job.gpu_selection", status=422)
+    selected = [gpu for gpu in devices if gpu["device"] in body.gpu_devices]
     preflight = plan(
         cfg,
-        gpu_total_mb=max((g["mem_total_mb"] for g in devices), default=None),
-        device=devices[0]["device"] if devices else "cpu",
+        gpu_total_mb=min((g["mem_total_mb"] for g in selected), default=None)
+        if selected
+        else max((g["mem_total_mb"] for g in devices), default=None),
+        device=(selected or devices)[0]["device"] if devices else "cpu",
     )
     if not preflight["ok"]:
         raise ApiError(
@@ -1773,6 +1787,7 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
                 "version_id": vid,
                 "status": status,
                 "priority": body.priority,
+                "gpu_devices_json": json.dumps(body.gpu_devices),
                 "scheduled_at": body.scheduled_at,
                 "created_at": now(),
                 "run_dir": str(run_dir),
@@ -1804,8 +1819,22 @@ def get_job(jid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
 
 @router.patch("/jobs/{jid}", response_model=m.Job, response_model_exclude_unset=True)
 def patch_job(jid: str, body: JobPatch, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    _get_job(c, jid)
-    c.db.update("jobs", jid, {k: v for k, v in body.model_dump().items() if v is not None})
+    with c.db.lock:
+        job = _get_job(c, jid)
+        patch = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+        if "gpu_devices" in patch:
+            if job["status"] not in {
+                "queued",
+                "scheduled",
+                "paused",
+                "failed",
+                "cancelled",
+            } or c.supervisor.is_running(jid):
+                raise ApiError("请先暂停或取消任务，再更换显卡。", code="job.running", status=409)
+            if error := selection_error(body.gpu_devices, c.supervisor._gpu_count(job), gpu_info()):
+                raise ApiError(error, code="job.gpu_selection", status=422)
+            patch["gpu_devices_json"] = json.dumps(patch.pop("gpu_devices"))
+        c.db.update("jobs", jid, patch)
     c.bus.publish("queue.changed", {})
     return _job_row(_get_job(c, jid))
 
@@ -2004,7 +2033,26 @@ def job_log(
 # --------------------------------------------------------------------------- queue settings
 @router.get("/queue/settings", response_model=m.QueueSettings, response_model_exclude_unset=True)
 def queue_settings(c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    return c.db.get_kv("queue.settings", {"held": False, "max_concurrent": 1})
+    return c.db.get_kv("queue.settings", {"held": False, "max_concurrent": None})
+
+
+@router.get("/queue/devices", response_model=m.QueueDevices)
+def queue_devices(c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+    inventory = gpu_info()
+    with c.db.lock:
+        ownership = {}
+        for jid, allocation in list(c.supervisor._devices.items()):
+            job = c.db.fetchone("SELECT name,status FROM jobs WHERE id=?", (jid,))
+            for device in c.supervisor._allocation(allocation):
+                ownership[device] = {
+                    "job_id": jid,
+                    "job_name": job["name"] if job else jid,
+                    "status": job["status"] if job else "running",
+                }
+        return {
+            "devices": [gpu | ownership.get(gpu["device"], {}) for gpu in inventory],
+            "max_concurrent": queue_settings(c).get("max_concurrent"),
+        }
 
 
 @router.put("/queue/settings", response_model=m.QueueSettings, response_model_exclude_unset=True)
@@ -2025,7 +2073,11 @@ def _artifact_row(r: dict[str, Any]) -> dict[str, Any]:
         try:
             manifest = json.loads((Path(r["path"]) / "manifest.json").read_text(encoding="utf-8"))
             if manifest.get("format") == "ypuddin-full-model-v1":
-                meta = {"training_mode": "full", "components": list(manifest.get("components", {})), "frozen_assets": manifest.get("frozen_assets")}
+                meta = {
+                    "training_mode": "full",
+                    "components": list(manifest.get("components", {})),
+                    "frozen_assets": manifest.get("frozen_assets"),
+                }
                 out["family"] = manifest.get("family")
         except (OSError, ValueError):
             pass
@@ -2109,7 +2161,9 @@ def delete_artifact(aid: str, delete_file: bool = False, c: ServiceContext = Dep
                 except (OSError, ValueError):
                     manifest = {}
                 if manifest.get("format") != "ypuddin-full-model-v1":
-                    raise ApiError("Model artifact manifest is missing or invalid", code="artifact.manifest", status=409)
+                    raise ApiError(
+                        "Model artifact manifest is missing or invalid", code="artifact.manifest", status=409
+                    )
                 shutil.rmtree(path)
             else:
                 path.unlink(missing_ok=True)
@@ -2130,10 +2184,16 @@ def download_artifact(aid: str, c: ServiceContext = Depends(ctx)) -> Response:
             with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
                 for file in sorted(path.rglob("*")):
                     if file.is_symlink() or not file.resolve().is_relative_to(path.resolve()):
-                        raise ApiError("Model artifact contains an external link", code="artifact.path", status=409)
+                        raise ApiError(
+                            "Model artifact contains an external link", code="artifact.path", status=409
+                        )
                     if file.is_file():
                         archive.write(file, str(Path(path.name) / file.relative_to(path)))
-            return FileResponse(target, filename=target.name, background=BackgroundTask(shutil.rmtree, folder, ignore_errors=True))
+            return FileResponse(
+                target,
+                filename=target.name,
+                background=BackgroundTask(shutil.rmtree, folder, ignore_errors=True),
+            )
         except Exception:
             shutil.rmtree(folder, ignore_errors=True)
             raise
@@ -2157,7 +2217,9 @@ def convert_artifact(aid: str, body: ConvertBody, c: ServiceContext = Depends(ct
 
 def _convert_artifact(c: ServiceContext, r: dict, body: ConvertBody) -> dict[str, Any]:
     if r["kind"] not in {"weights", "comfyui", "kohya"}:
-        raise ApiError("Only adapter weight artifacts support format conversion", code="artifact.kind", status=422)
+        raise ApiError(
+            "Only adapter weight artifacts support format conversion", code="artifact.kind", status=422
+        )
     from safetensors.torch import save_file
 
     from ypuddin.adapters import load_adapter_file

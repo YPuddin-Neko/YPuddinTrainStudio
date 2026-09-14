@@ -2,6 +2,7 @@
 
 import json
 import math
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -412,7 +413,9 @@ def test_flux2_declared_mistral3_cannot_hide_decoder_only_config(tmp_path):
 def test_flux2_download_rejected_before_network_or_registration(tmp_path):
     app = create_app(tmp_path / "studio", frontend_dist=tmp_path / "missing")
     with TestClient(app) as client:
-        app.state.model_downloads.opener.open = lambda *a, **k: pytest.fail("incomplete TE must not download")
+        app.state.model_downloads.opener = SimpleNamespace(
+            open=lambda *a, **k: pytest.fail("incomplete TE must not download")
+        )
         response = client.post(
             "/api/models/downloads",
             json={

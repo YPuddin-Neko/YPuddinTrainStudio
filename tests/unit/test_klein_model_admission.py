@@ -1,5 +1,7 @@
 """Klein-only admission retains inspectable legacy assets without changing their data."""
 
+from types import SimpleNamespace
+
 import pytest
 
 from tests.unit import test_sdxl_model_registration
@@ -105,7 +107,9 @@ def test_scan_skips_legacy_flux_and_dev_but_keeps_klein_root(api, tmp_path):
 def test_flux1_download_and_retry_are_rejected_without_touching_history(api, tmp_path):
     client, _ = api
     downloads = client.app.state.model_downloads
-    downloads.opener.open = lambda *a, **k: pytest.fail("retired downloads must not use the network")
+    downloads.opener = SimpleNamespace(
+        open=lambda *a, **k: pytest.fail("retired downloads must not use the network")
+    )
     response = client.post(
         "/api/models/downloads",
         json={"family": "flux", "kind": "dit", "repo_id": "owner/model", "filename": "weights.safetensors"},

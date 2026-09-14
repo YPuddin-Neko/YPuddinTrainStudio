@@ -93,3 +93,11 @@
   .queue-navigation .task-tabs > button { min-width:0; flex-wrap:wrap; justify-content:center; gap:4px; white-space:normal; }
   .queue-search { min-width:0; }
 }
+
+.queue-device-overview { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:10px; }
+.queue-device-overview article { display:grid; gap:6px; padding:12px; border:1px solid var(--studio-line); border-radius:7px; background:var(--studio-panel); font-size:12px; }
+.queue-device-overview article > strong { display:flex; flex-wrap:wrap; gap:5px 10px; font-weight:600; }
+.queue-device-overview article strong span,.queue-device-overview small { color:var(--studio-dim); font-size:11px; font-weight:400; }
+.queue-device-overview article > span { color:#15803d; }.dark .queue-device-overview article > span { color:#86efac; }
+.queue-device-overview a { color:var(--studio-accent); overflow-wrap:anywhere; }
+.queue-options .studio-select { max-width:200px; min-width:0; }

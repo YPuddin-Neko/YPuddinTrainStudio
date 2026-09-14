@@ -3,6 +3,7 @@
 import json
 import time
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 import torch
@@ -125,6 +126,57 @@ def test_queue_filters_xyz_jobs_and_preserves_image_progress(api):
     assert job["progress"]["total"] == 8
     trains = client.get("/api/jobs", params={"type": "train"}).json()["items"]
     assert [row["id"] for row in trains] == ["source"]
+
+
+def test_xyz_can_use_second_card_while_source_training_is_running(api, monkeypatch):
+    client, context = api
+    cards = [
+        {"device": f"cuda:{i}", "name": f"GPU {i}", "mem_total_mb": 64000, "mem_free_mb": 60000}
+        for i in range(2)
+    ]
+    monkeypatch.setattr("ypuddin.server.xyz.gpu_info", lambda: cards)
+    monkeypatch.setattr("ypuddin.server.supervisor.gpu_info", lambda: cards)
+    monkeypatch.setattr("ypuddin.server.supervisor.current_profile", lambda: "linux-dtk")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "4,7")
+    monkeypatch.setenv("HIP_VISIBLE_DEVICES", "4,7")
+    context.db.update("jobs", "source", {"status": "running"})
+    context.supervisor._devices["source"] = "cuda:0"
+    response = client.post("/api/jobs/source/xyz", json=body(gpu_devices=["cuda:1"]))
+    assert response.status_code == 202, response.text
+    row = context.db.fetchone("SELECT * FROM jobs WHERE id=?", (response.json()["id"],))
+    assert json.loads(row["gpu_devices_json"]) == ["cuda:1"]
+    allocation = context.supervisor._choose_device(row)
+    assert allocation == "cuda:1"
+    proc = Mock(pid=900010)
+    proc.poll.return_value = None
+    popen = Mock(return_value=proc)
+    monkeypatch.setattr("ypuddin.server.supervisor.subprocess.Popen", popen)
+    context.supervisor._launch(row, device=allocation)
+    args, kwargs = popen.call_args
+    assert "ypuddin.server.xyz_worker" in args[0]
+    assert kwargs["env"]["HIP_VISIBLE_DEVICES"] == kwargs["env"]["CUDA_VISIBLE_DEVICES"] == "7"
+    request = json.loads((Path(row["run_dir"]) / "xyz-request.json").read_text())
+    assert request["device"] == "cuda:0"
+    assert context.supervisor._devices == {"source": "cuda:0", row["id"]: "cuda:1"}
+    context.supervisor.request(row["id"], "cancel")
+    assert context.db.fetchone("SELECT status FROM jobs WHERE id='source'")["status"] == "running"
+    assert not (
+        Path(context.db.fetchone("SELECT run_dir FROM jobs WHERE id='source'")["run_dir"])
+        / "control"
+        / "stop"
+    ).exists()
+    context.supervisor._procs.clear()
+    context.supervisor._devices.clear()
+    context.db.update("jobs", row["id"], {"status": "cancelled"})
+    context.db.update("jobs", "source", {"status": "completed"})
+
+
+def test_xyz_rejects_multiple_or_missing_cards(api, monkeypatch):
+    monkeypatch.setattr("ypuddin.server.xyz.gpu_info", lambda: [{"device": "cuda:0"}, {"device": "cuda:1"}])
+    for devices in (["cuda:0", "cuda:1"], ["cuda:2"], ["cuda:0", "cuda:0"]):
+        response = api[0].post("/api/jobs/source/xyz", json=body(gpu_devices=devices))
+        assert response.status_code == 422, response.text
+    assert not api[1].db.fetchall("SELECT * FROM jobs WHERE type='xyz'")
 
 
 @pytest.mark.parametrize(

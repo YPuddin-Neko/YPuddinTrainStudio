@@ -6,6 +6,8 @@ import { formatApiError } from '../../utils/errors';
 import { formatTime } from '../../utils/format';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import StudioSelect from '../StudioSelect';
+import GpuDevicePicker from '../GpuDevicePicker';
+import { gpuDeviceLabel } from '../../utils/gpuDevices';
 import Dialog from '../Dialog';
 import { axisCount, axisNames, parseAxis, type AxisKey, type XyzAxis, type XyzCell, type XyzOptions, type XyzRequest, type XyzTask, type SamplingValues } from './xyzTypes';
 import './xyz-sampling.css';
@@ -74,6 +76,8 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
   const [error, setError] = React.useState('');
   const [loading, setLoading] = React.useState(true);
   const [submitting, setSubmitting] = React.useState(false);
+  const [gpuDevices, setGpuDevices] = React.useState<string[]>([]);
+  const [gpuValid, setGpuValid] = React.useState(true);
   const [page, setPage] = React.useState(0);
   const [preview, setPreview] = React.useState<XyzCell | null>(null);
   const [revision, setRevision] = React.useState(0);
@@ -124,10 +128,10 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
   const update = <K extends keyof SamplingValues>(key: K, value: SamplingValues[K]) => setValues(previous => previous && { ...previous, [key]: value });
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!values || !axes[0] || axisInvalid || checkpointMissing || overLimit || tooManyPixels || locked) return;
+    if (!values || !axes[0] || axisInvalid || checkpointMissing || overLimit || tooManyPixels || locked || !gpuValid) return;
     setSubmitting(true); setError('');
     try {
-      const request: XyzRequest = { ...values, name: text('XYZ 对比采样', 'XYZ comparison'), x: axes[0], y: axes[1], z: axes[2] };
+      const request: XyzRequest = { ...values, name: text('XYZ 对比采样', 'XYZ comparison'), gpu_devices: gpuDevices, x: axes[0], y: axes[1], z: axes[2] };
       const created = await apiClient.post<XyzTask>(source, request, { silent: true });
       setHistory(previous => [created, ...previous]); setSelected(created.id); setPage(0); setCollapsed(true);
     } catch (err) { setError(formatApiError(err)); }
@@ -147,7 +151,8 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
   const grid = task?.manifest?.grids.find(item => item.z === page);
   const reuse = () => {
     if (!request || !options || locked) return;
-    const { x, y, z, ...fixed } = request;
+    const { x, y, z, gpu_devices, ...fixed } = request;
+    setGpuDevices(gpu_devices || []);
     delete fixed.name;
     setValues(compatibleValues(fixed, options));
     setDrafts(compatibleDrafts([x, y, z].map(axis => axis ? { key: axis.key, raw: axis.values.join(', ') } : null), options));
@@ -162,6 +167,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
       <form className="xyz-form" data-collapsed={collapsed} onSubmit={event => void submit(event)}>
         <header><Grid2X2 size={17}/><h3>{text('对比设置', 'Comparison setup')}</h3><span>{options.family.toUpperCase()}</span><button className="xyz-settings-toggle" type="button" aria-expanded={!collapsed} onClick={() => setCollapsed(value => !value)}>{collapsed ? text('展开设置', 'Show settings') : text('收起设置', 'Hide settings')}<ChevronDown size={14}/></button></header>
         <div className="xyz-form-body">
+          <GpuDevicePicker value={gpuDevices} onChange={setGpuDevices} disabled={locked} onValidityChange={setGpuValid}/>
           <fieldset className="xyz-section" disabled={locked}>
             {!fullModel && <><label><span>{text('采样底模', 'Sampling base model')}</span><StudioSelect aria-label={text('采样底模', 'Sampling base model')} disabled={locked} value={values.sampling_model_id || ''} options={[{ value: '', label: text('沿用本次训练底模', 'Use training base model') }, ...options.sampling_models.map(model => ({ value: model.id, label: model.name }))]} onValueChange={value => {
               const turbo = options.sampling_models.find(model => model.id === value)?.variant === 'turbo';
@@ -179,13 +185,13 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
             <label className="xyz-span"><span>{text('负面提示词', 'Negative prompt')}</span><textarea rows={2} value={values.negative} onChange={event => update('negative', event.target.value)}/></label>
           </fieldset></details>
         </div>
-        <footer><p className={axisInvalid || checkpointMissing || overLimit || tooManyPixels ? 'xyz-invalid' : ''} aria-live="polite">{checkpointMissing ? text('当前训练尚未保存模型检查点，保存后才能生成对比图', 'Save a model checkpoint before generating a comparison') : axisInvalid ? text('请填写有效的轴取值', 'Enter valid axis values') : overLimit ? text(`一次最多 ${options.limits.max_cells} 张，请减少取值`, `Maximum ${options.limits.max_cells} cells per comparison`) : tooManyPixels ? text('网格总像素过多，请减少取值或降低尺寸', 'Too many pixels; reduce values or image dimensions') : text(`${axes[0]?.values.length || 0} 列 × ${axes[1]?.values.length || 1} 行 × ${axes[2]?.values.length || 1} 页，共 ${count} 张`, `${count} images · ${axes[0]?.values.length || 0} columns × ${axes[1]?.values.length || 1} rows × ${axes[2]?.values.length || 1} pages`)}</p><button className="xyz-primary" type="submit" disabled={locked || axisInvalid || checkpointMissing || overLimit || tooManyPixels || !values.prompt.trim()}>{submitting ? <Loader2 size={15} className="animate-spin"/> : <Play size={15}/>} {running ? text('加入生成队列', 'Add to queue') : text('生成对比图', 'Generate comparison')}</button></footer>
+        <footer><p className={axisInvalid || checkpointMissing || overLimit || tooManyPixels ? 'xyz-invalid' : ''} aria-live="polite">{checkpointMissing ? text('当前训练尚未保存模型检查点，保存后才能生成对比图', 'Save a model checkpoint before generating a comparison') : axisInvalid ? text('请填写有效的轴取值', 'Enter valid axis values') : overLimit ? text(`一次最多 ${options.limits.max_cells} 张，请减少取值`, `Maximum ${options.limits.max_cells} cells per comparison`) : tooManyPixels ? text('网格总像素过多，请减少取值或降低尺寸', 'Too many pixels; reduce values or image dimensions') : text(`${axes[0]?.values.length || 0} 列 × ${axes[1]?.values.length || 1} 行 × ${axes[2]?.values.length || 1} 页，共 ${count} 张`, `${count} images · ${axes[0]?.values.length || 0} columns × ${axes[1]?.values.length || 1} rows × ${axes[2]?.values.length || 1} pages`)}</p><button className="xyz-primary" type="submit" disabled={locked || axisInvalid || checkpointMissing || overLimit || tooManyPixels || !gpuValid || !values.prompt.trim()}>{submitting ? <Loader2 size={15} className="animate-spin"/> : <Play size={15}/>} {running ? text('加入生成队列', 'Add to queue') : text('生成对比图', 'Generate comparison')}</button></footer>
       </form>
       <div className="xyz-results">
         <header className="xyz-result-header"><label><span>{text('对比记录', 'Comparisons')}</span><StudioSelect searchable aria-label={text('对比记录', 'Comparisons')} value={selected} placeholder={text('尚未生成', 'No comparisons yet')} options={history.map(item => ({ value: item.id, label: `${formatTime(item.created_at)} · ${item.total} ${text('张', 'images')} · ${stateLabel(item.status)}` }))} onValueChange={value => { setSelected(value); setPage(0); }}/></label><button type="button" disabled={loading} onClick={() => setRevision(value => value + 1)} aria-label={text('刷新对比记录', 'Refresh comparisons')}><RefreshCw size={15}/></button></header>
         {task ? <>
           <div className="xyz-progress" role="status"><div><strong>{stateLabel(task.status)}</strong><span>{task.done} / {task.total}</span>{task.can_cancel && <button type="button" disabled={submitting || readOnly} onClick={() => void cancel(task)}><Square size={12}/>{text('取消生成', 'Cancel')}</button>}</div><progress max={Math.max(1, task.total)} value={task.done}/>{task.phase && activeStatuses.has(task.status) && <small>{{ loading: text('加载模型', 'Loading model'), encoding_text: text('处理提示词', 'Encoding prompts'), sampling: text('正在出图', 'Sampling'), decoding: text('解码图片', 'Decoding image') }[task.phase] || stateLabel(task.status)}{task.sample_steps ? text(` · 当前图片 ${task.sample_step || 0} / ${task.sample_steps} 步`, ` · Image ${task.sample_step || 0} / ${task.sample_steps} steps`) : ''}</small>}{task.error && <p role="alert" className="xyz-invalid">{task.error}</p>}</div>
-          <div className="xyz-result-context"><span>{request?.width} × {request?.height} · {text('提示词', 'Prompt')}: {request?.prompt}</span><button type="button" disabled={locked} onClick={reuse}>{text('复用参数', 'Reuse settings')}</button>{grid && <a href={imageUrl(grid.url)} download><Download size={14}/>{text('下载本页网格', 'Download grid')}</a>}</div>
+          <div className="xyz-result-context"><span>{request?.gpu_devices?.length ? `${text('申请显卡', 'Requested GPU')}: ${request.gpu_devices.map(gpuDeviceLabel).join(', ')} · ` : ''}{request?.width} × {request?.height} · {text('提示词', 'Prompt')}: {request?.prompt}</span><button type="button" disabled={locked} onClick={reuse}>{text('复用参数', 'Reuse settings')}</button>{grid && <a href={imageUrl(grid.url)} download><Download size={14}/>{text('下载本页网格', 'Download grid')}</a>}</div>
           {request?.z && <nav className="xyz-pages" aria-label={text('Z 轴分页', 'Z axis pages')}>{zValues.map((value, index) => <button key={index} type="button" aria-current={page === index ? 'page' : undefined} onClick={() => setPage(index)}>{name(request.z!.key)} · {displayValue(request.z, value)}</button>)}</nav>}
           <div className="xyz-grid-scroll" tabIndex={0} aria-label={text('对比网格，可横向滚动查看所有列', 'Comparison grid, scroll horizontally for all columns')}>
             <table className="xyz-grid" style={{ minWidth: 88 + xValues.length * 150 }}><thead><tr><th>{request?.y ? `${name(request.y.key)} ↓` : ''}<br/>{request ? `${name(request.x.key)} →` : ''}</th>{xValues.map((value, x) => <th key={x} title={displayValue(request?.x, value)}>{displayValue(request?.x, value)}</th>)}</tr></thead><tbody>{yValues.map((value, y) => <tr key={y}><th title={displayValue(request?.y, value)}>{displayValue(request?.y, value)}</th>{xValues.map((_, x) => { const cell = cells.get(`${x}:${y}`); return <td key={x}>{cell ? <button type="button" className="xyz-cell" onClick={() => setPreview(cell)} aria-label={text(`查看第 ${x + 1} 列第 ${y + 1} 行`, `View column ${x + 1}, row ${y + 1}`)}><img src={imageUrl(cell.url)} loading="lazy" alt={`${name(request!.x.key)} ${displayValue(request?.x, cell.x_value)}, ${request?.y ? `${name(request.y.key)} ${displayValue(request.y, cell.y_value)}` : ''}`} width={request?.width} height={request?.height}/></button> : <div className="xyz-cell-pending"><Grid2X2 size={19}/><span>{activeStatuses.has(task.status) ? text('等待生成', 'Waiting') : text('未生成', 'Not generated')}</span></div>}</td>; })}</tr>)}</tbody></table>

@@ -18,6 +18,7 @@ from ypuddin.runtime_profiles import current_profile
 from .bus import EventBus
 from .db import Database, new_id, now
 from .environment import maintenance_blocked
+from .gpu_selection import selection_error
 from .hardware import gpu_info
 from .sample_events import sample_event_loss
 
@@ -82,7 +83,7 @@ class JobSupervisor:
         data_root: Path,
         *,
         poll_interval: float = 0.5,
-        max_concurrent: int = 1,
+        max_concurrent: int | None = None,
         python: str | None = None,
     ):
         self.db = db
@@ -171,7 +172,8 @@ class JobSupervisor:
             "UPDATE jobs SET status='queued' WHERE status='scheduled' AND scheduled_at IS NOT NULL AND scheduled_at <= ?",
             (t,),
         )
-        slots = max(1, min(64, int(settings.get("max_concurrent", 1))))
+        limit = settings.get("max_concurrent", self.max_concurrent)
+        slots = max(1, min(64, int(limit))) if limit is not None else max(1, len(gpu_info()))
         for nxt in self.db.fetchall(
             "SELECT * FROM jobs WHERE status='queued' ORDER BY priority DESC, created_at ASC"
         ):
@@ -191,6 +193,8 @@ class JobSupervisor:
                     current = self.db.fetchone("SELECT * FROM jobs WHERE id=?", (nxt["id"],))
                     if not current or current["status"] != "queued":
                         continue  # It may have been paused/deleted while hardware was inspected.
+                    if (current.get("gpu_devices_json") or "[]") != (nxt.get("gpu_devices_json") or "[]"):
+                        continue  # A changed request must be allocated from a fresh snapshot.
                     if current.get("version_id"):
                         version = self.db.fetchone(
                             "SELECT * FROM project_versions WHERE id=?", (current["version_id"],)
@@ -207,14 +211,18 @@ class JobSupervisor:
         self, job: dict[str, Any], *, check_memory: bool = True
     ) -> str | tuple[str, ...] | None:
         count = self._gpu_count(job)
+        requested = json.loads(job.get("gpu_devices_json") or "[]")
+        inventory = [] if current_profile().endswith("-cpu") else gpu_info()
+        if error := selection_error(requested, count, inventory):
+            self._publish_admission(job, error=error)
+            return None
         if current_profile().endswith("-cpu"):
             if count > 1:
-                self._set_status(job["id"], "failed", error="CPU 环境不能启动多卡训练", finished_at=now())
+                self._publish_admission(job, error="CPU 环境不能启动多卡训练")
                 return None
             return "cpu"
-        inventory = gpu_info()
         if count > 1 and (error := training_device_error(count, inventory)):
-            self._set_status(job["id"], "failed", error=error, finished_at=now())
+            self._publish_admission(job, error=error)
             return None
         if not inventory:
             return "cpu"
@@ -223,6 +231,8 @@ class JobSupervisor:
         selected = []
         for gpu in sorted(inventory, key=lambda g: g.get("mem_free_mb", 0), reverse=True):
             device = gpu["device"]
+            if requested and device not in requested:
+                continue
             if count > 1 and not device.startswith("cuda:"):
                 continue
             if device in used:
@@ -232,18 +242,38 @@ class JobSupervisor:
                 continue
             selected.append(device)
             if len(selected) == count:
-                return selected[0] if count == 1 else tuple(selected)
+                allocation = requested or selected
+                return allocation[0] if count == 1 else tuple(allocation)
         patch = {
             "phase": "waiting_for_device",
-            "wait_reason": f"等待 {count} 张空闲且显存充足的显卡"
-            if count > 1
-            else "waiting for a free accelerator with enough memory",
+            "wait_reason": f"等待所选显卡 {', '.join(requested)} 空闲且显存充足"
+            if requested
+            else f"等待 {count} 张空闲且显存充足的显卡",
         }
-        current = json.loads(job.get("progress_json") or "{}")
-        if any(current.get(k) != v for k, v in patch.items()):
-            self._merge_progress(job["id"], patch)
-            self.bus.publish("job.phase", {"job_id": job["id"], **patch})
+        self._publish_admission(job, progress=patch)
         return None
+
+    def _publish_admission(
+        self, job: dict[str, Any], *, error: str | None = None, progress: dict[str, Any] | None = None
+    ) -> None:
+        # Hardware inspection is outside this lock. Its result may only update
+        # the same pending request, never a changed selection or a paused task.
+        with self.db.lock:
+            current = self.db.fetchone("SELECT * FROM jobs WHERE id=?", (job["id"],))
+            if (
+                not current
+                or current["status"] != "queued"
+                or job["id"] in self._procs
+                or (current.get("gpu_devices_json") or "[]") != (job.get("gpu_devices_json") or "[]")
+            ):
+                return
+            if error:
+                self._set_status(job["id"], "failed", error=error, finished_at=now())
+            elif progress:
+                latest = json.loads(current.get("progress_json") or "{}")
+                if any(latest.get(key) != value for key, value in progress.items()):
+                    self._merge_progress(job["id"], progress)
+                    self.bus.publish("job.phase", {"job_id": job["id"], **progress})
 
     @staticmethod
     def _gpu_count(job: dict[str, Any]) -> int:
@@ -259,8 +289,20 @@ class JobSupervisor:
         job_id = job["id"]
         devices = self._allocation(device or "cpu")
         count = self._gpu_count(job)
+        requested = json.loads(job.get("gpu_devices_json") or "[]")
+        if requested and tuple(requested) != devices:
+            raise ValueError("所选显卡已改变，请重新调度此任务。")
         if len(devices) != count or (count > 1 and any(not d.startswith("cuda:") for d in devices)):
-            raise ValueError("The requested GPU allocation is incomplete; no training process was launched")
+            raise ValueError("所需显卡尚未全部分配，训练未启动。")
+        # Every CUDA/HIP worker sees only its assigned cards. Single-card jobs
+        # address their own card as cuda:0 even when the service assigned cuda:1.
+        # This also isolates libraries that allocate on the default device.
+        masked = all(d.startswith("cuda:") for d in devices)
+        worker_device = "cuda:0" if masked else devices[0]
+        env = dict(os.environ, PYTHONUNBUFFERED="1")
+        env.pop("YPUDDIN_LEGACY_CUDA_RNG_INDEX", None)
+        if masked:
+            env = worker_device_environment(devices, env)
         run_dir = Path(job["run_dir"])
         run_dir.mkdir(parents=True, exist_ok=True)
         for command in ("pause", "stop", "save"):
@@ -279,10 +321,10 @@ class JobSupervisor:
                 and payload.get("training", {}).get("mode") != "full"
             ):
                 raise ValueError(
-                    "This legacy XYZ request did not pin a full-model result; recreate the comparison with an exported checkpoint"
+                    "这个旧的 XY 对比未固定完整模型权重，请选择已导出的检查点重新创建对比。"
                 )
             payload.update(
-                device=devices[0],
+                device=worker_device,
                 fingerprint_cache=str(self.data_root / "cache" / "xyz-fingerprints"),
                 parent_pid=os.getpid(),
                 parent_created=psutil.Process().create_time(),
@@ -292,6 +334,9 @@ class JobSupervisor:
             cmd = [self.python, "-m", "ypuddin.server.xyz_worker", str(cfg_path)]
         else:
             payload = json.loads(job["config_json"])
+            # New queue snapshots include the switch. Existing immutable jobs
+            # predate it and must resume with their original calculation mode.
+            payload.setdefault("loop", {}).setdefault("deterministic", False)
             if job["type"] == "cache":
                 payload.setdefault("loop", {})["gpu_count"] = 1
             cfg = absolute_paths(TrainConfig.model_validate(payload))
@@ -319,13 +364,25 @@ class JobSupervisor:
                     "cuda",
                 ]
             elif device:
-                cmd += ["--device", devices[0]]
+                cmd += ["--device", worker_device]
             resume_from = cfg.checkpoint.resume
+        legacy_binding = None
+        if masked and count == 1 and resume_from:
+            progress = json.loads(job.get("progress_json") or "{}")
+            checkpoint = str(Path(resume_from).expanduser().resolve())
+            saved = progress.get("legacy_cuda_rng_source") or {}
+            if saved.get("checkpoint") == checkpoint:
+                legacy_binding = saved
+            else:
+                previous = progress.get("devices") or [progress.get("device", "")]
+                if len(previous) == 1 and str(previous[0]).startswith("cuda:"):
+                    index = previous[0].split(":", 1)[1]
+                    if index.isdecimal():
+                        legacy_binding = {"checkpoint": checkpoint, "device_index": int(index)}
+            if legacy_binding is not None:
+                env["YPUDDIN_LEGACY_CUDA_RNG_INDEX"] = str(legacy_binding["device_index"])
         events_path = run_dir / "events.jsonl"
         self._offsets[job_id] = events_path.stat().st_size if events_path.exists() else 0
-        env = dict(os.environ, PYTHONUNBUFFERED="1")
-        if count > 1:
-            env = worker_device_environment(devices, env)
         kwargs: dict[str, Any] = {}
         if os.name == "nt":  # pragma: no cover
             kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
@@ -345,10 +402,13 @@ class JobSupervisor:
                 "gpu_count": count,
                 "phase": "starting",
                 "wait_reason": "",
+                **({"legacy_cuda_rng_source": legacy_binding} if legacy_binding is not None else {}),
             },
         )
         self._outcome_seen.discard(job_id)
-        self._set_status(job_id, "running", started_at=now(), pid=proc.pid, resume_from=resume_from)
+        self._set_status(
+            job_id, "running", started_at=now(), pid=proc.pid, exit_code=None, resume_from=resume_from
+        )
         self.bus.publish("job.phase", {"job_id": job_id, "phase": "starting"})
 
     # ----------------------------------------------------------------- events
@@ -692,6 +752,7 @@ class JobSupervisor:
                 "version_id": job.get("version_id"),
                 "status": "queued",
                 "priority": job["priority"],
+                "gpu_devices_json": job.get("gpu_devices_json") or "[]",
                 "created_at": now(),
                 "run_dir": str(run_dir),
                 "samples_dir": str(samples_dir),
@@ -713,7 +774,17 @@ class JobSupervisor:
         return job_id in self._procs
 
     def _check_job_version(self, job: dict[str, Any]) -> None:
+        from .errors import ApiError
+
+        if job.get("project_id"):
+            project = self.db.fetchone("SELECT archived FROM projects WHERE id=?", (job["project_id"],))
+            if not project or project["archived"]:
+                raise ApiError(
+                    "项目已归档或不可用，请先恢复项目再创建或恢复任务。", code="project.archived", status=409
+                )
         if job.get("version_id"):
             version = self.db.fetchone("SELECT * FROM project_versions WHERE id=?", (job["version_id"],))
             if not version or version["status"] != "ready" or version["busy"] or version["archived"]:
-                raise ValueError("job version is unavailable, archived or busy")
+                raise ApiError(
+                    "任务所属版本不可用、已归档或正在处理，请检查版本状态。", code="version.busy", status=409
+                )

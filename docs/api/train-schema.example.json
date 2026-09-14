@@ -1158,6 +1158,18 @@
             "order": 40
           }
         },
+        "deterministic": {
+          "default": false,
+          "description": "默认关闭。开启后使用确定性计算，尽量减少相同设备、软件版本和配置下重复训练及恢复的数值差异，不保证所有环境逐位一致。可能降低速度；DTK 的 SDPA 使用数学实现，会增加显存需求。遇到不支持确定性计算的算子会报错停止，不会自动降级。关闭时即使种子相同，数值也可能略有不同。恢复时必须保持此设置不变；旧版本训练状态需关闭此项。",
+          "title": "Deterministic",
+          "type": "boolean",
+          "x-ui": {
+            "advanced": true,
+            "control": "switch",
+            "group": "loop",
+            "order": 45
+          }
+        },
         "ema": {
           "default": false,
           "description": "在 CPU 维护适配器权重的指数移动平均，默认关闭；开启后额外保存 EMA 权重用于对比，会增加内存和文件占用。当前训练预览仍使用当时的普通权重。",

@@ -15,6 +15,8 @@ from ypuddin.models import get_family
 
 from .db import new_id, now
 from .errors import ApiError, NotFound
+from .gpu_selection import GpuSelection, selection_error
+from .hardware import gpu_info
 
 AXES = {
     "steps": "Steps",
@@ -58,7 +60,7 @@ class XyzAxis(BaseModel):
         return self
 
 
-class XyzRequest(BaseModel):
+class XyzRequest(GpuSelection):
     model_config = ConfigDict(extra="forbid")
     name: str = Field("XYZ comparison", min_length=1, max_length=120)
     prompt: str = Field(min_length=1, max_length=8000)
@@ -135,7 +137,7 @@ def expand_cells(request: XyzRequest) -> list[dict[str, Any]]:
     axes = [request.x, request.y, request.z]
     ranges = [list(enumerate(axis.values)) if axis else [(0, None)] for axis in axes]
     for (zi, zv), (yi, yv), (xi, xv) in itertools.product(ranges[2], ranges[1], ranges[0]):
-        cell = request.model_dump(exclude={"name", "prompt", "negative", "x", "y", "z"})
+        cell = request.model_dump(exclude={"name", "prompt", "negative", "x", "y", "z", "gpu_devices"})
         for axis, value in zip(axes, (xv, yv, zv), strict=True):
             if axis:
                 cell["checkpoint_id" if axis.key == "checkpoint" else axis.key] = value
@@ -275,6 +277,8 @@ def options(context, source_id):
 
 
 def start(context, source_id: str, request: XyzRequest):
+    if error := selection_error(request.gpu_devices, 1, gpu_info()):
+        raise ApiError(error, code="job.gpu_selection", status=422)
     source = _source(context, source_id)
     context.supervisor._check_job_version(source)
     config = json.loads(source["config_json"])
@@ -476,6 +480,7 @@ def start(context, source_id: str, request: XyzRequest):
                 "version_id": source.get("version_id"),
                 "status": "queued",
                 "priority": 0,
+                "gpu_devices_json": json.dumps(request.gpu_devices),
                 "created_at": now(),
                 "run_dir": str(run_dir),
                 "samples_dir": str(run_dir / "samples"),

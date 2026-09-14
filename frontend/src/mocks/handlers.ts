@@ -487,6 +487,8 @@ export const handlers = [
     return new HttpResponse(png, { headers: { 'Content-Type': 'image/png' } });
   }),
 
+  http.get('/api/queue/devices', () => HttpResponse.json({ devices: [], max_concurrent: mockQueueSettings.max_concurrent })),
+
   http.get('/api/queue/settings', () => HttpResponse.json(mockQueueSettings)),
 
   http.put('/api/queue/settings', async ({ request }) => {

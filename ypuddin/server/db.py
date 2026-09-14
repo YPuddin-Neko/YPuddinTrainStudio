@@ -84,6 +84,7 @@ class Database:
                     ("projects", "cover_key", "TEXT"),
                     ("project_versions", "number", "INTEGER"),
                     ("jobs", "samples_dir", "TEXT"),
+                    ("jobs", "gpu_devices_json", "TEXT NOT NULL DEFAULT '[]'"),
                     ("models", "purpose", "TEXT NOT NULL DEFAULT 'training'"),
                     ("models", "variant", "TEXT"),
                 ):

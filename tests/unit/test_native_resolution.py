@@ -180,11 +180,15 @@ def test_native_downscale_uses_one_geometry_for_alpha_sidecar_and_flipped_rgb(tm
     assert transformed.tobytes() == expected.tobytes()
 
 
-def test_native_gradient_weights_each_image_equally_across_sizes_and_tail():
-    trainer = object.__new__(Trainer)
-    trainer.cfg = TrainConfig.model_validate(
-        {"dataset": {"resolution_mode": "native", "batch_size": 4}, "loop": {"grad_accum": 2}}
+def test_native_gradient_weights_each_image_equally_across_sizes_and_tail(tmp_path):
+    cfg = TrainConfig.model_validate(
+        {
+            "dataset": {"resolution_mode": "native", "batch_size": 4},
+            "loop": {"grad_accum": 2},
+            "checkpoint": {"output_dir": str(tmp_path / "native-gradient")},
+        }
     )
+    trainer = Trainer(cfg, device="cpu")
     trainer.progress = Progress(total_steps=1)
     trainer.sampler = NativeBatchSampler([(32, 32)] * 7, 4)
     trainer.bundle = SimpleNamespace(train=SimpleNamespace(set_epoch=lambda epoch: None))

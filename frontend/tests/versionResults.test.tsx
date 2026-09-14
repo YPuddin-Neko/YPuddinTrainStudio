@@ -292,3 +292,10 @@ it('retains a paged-out weight selection on a connection failure and clears only
   expect(screen.queryByRole('link', { name: '查看此任务检查点' })).not.toBeInTheDocument();
   expect(apiClient.get).toHaveBeenCalledWith('/artifacts', expect.objectContaining({ params: { project_id: 'p1', version_id: 'v1' } }));
 });
+
+it('opens XYZ comparison in its independent page with the exact project version', async () => {
+  render(<MemoryRouter initialEntries={['/projects/p1/v/v1?step=results']}><VersionResults projectId="p1" versionId="v1"/><Location/></MemoryRouter>);
+  fireEvent.click(await screen.findByRole('tab', {name:'XYZ 对比'}));
+  await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/sampling?project_id=p1&version_id=v1'));
+  expect(screen.queryByRole('region', {name:'XYZ 对比采样'})).not.toBeInTheDocument();
+});

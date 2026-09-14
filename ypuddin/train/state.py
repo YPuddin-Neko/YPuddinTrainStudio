@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import random
 import shutil
 from dataclasses import asdict, dataclass, field
@@ -14,7 +15,9 @@ import torch
 from safetensors.torch import load_file, save_file
 
 
-def capture_rng(generators: dict[str, torch.Generator] | None = None) -> dict[str, Any]:
+def capture_rng(
+    generators: dict[str, torch.Generator] | None = None, *, device: torch.device | None = None
+) -> dict[str, Any]:
     state: dict[str, Any] = {
         "python": random.getstate(),
         "numpy": np.random.get_state(),
@@ -22,6 +25,8 @@ def capture_rng(generators: dict[str, torch.Generator] | None = None) -> dict[st
     }
     if torch.cuda.is_available():
         state["cuda"] = torch.cuda.get_rng_state_all()
+        if device is not None and device.type == "cuda":
+            state["cuda_device"] = device.index if device.index is not None else torch.cuda.current_device()
     if torch.backends.mps.is_available():
         state["mps"] = torch.mps.get_rng_state()
     if generators:
@@ -29,12 +34,35 @@ def capture_rng(generators: dict[str, torch.Generator] | None = None) -> dict[st
     return state
 
 
-def restore_rng(state: dict[str, Any], generators: dict[str, torch.Generator] | None = None) -> None:
+def restore_rng(
+    state: dict[str, Any],
+    generators: dict[str, torch.Generator] | None = None,
+    *,
+    device: torch.device | None = None,
+) -> None:
+    cuda = state.get("cuda") if torch.cuda.is_available() else None
+    source = state.get("cuda_device")
+    target = device.index if device is not None and device.type == "cuda" else None
+    if cuda is not None:
+        target = torch.cuda.current_device() if target is None else target
+        visible = torch.cuda.device_count()
+        if len(cuda) != visible and source is None:
+            # Old service workers exposed every GPU and saved every RNG. The
+            # supervisor can recover their actual device from durable job progress.
+            legacy = os.environ.get("YPUDDIN_LEGACY_CUDA_RNG_INDEX")
+            source = int(legacy) if legacy is not None and legacy.isdecimal() else None
+        if (len(cuda) != visible and source is None) or (
+            source is not None and (type(source) is not int or not 0 <= source < len(cuda))
+        ):
+            raise ValueError("无法确定旧训练状态使用的显卡，请从原任务恢复训练，以保留正确的随机状态。")
     random.setstate(state["python"])
     np.random.set_state(state["numpy"])
     torch.set_rng_state(state["torch"])
-    if "cuda" in state and torch.cuda.is_available():
-        torch.cuda.set_rng_state_all(state["cuda"])
+    if cuda is not None:
+        if len(cuda) == visible:
+            torch.cuda.set_rng_state_all(cuda)
+        if source is not None and (len(cuda) != visible or source != target):
+            torch.cuda.set_rng_state(cuda[source], device=target)
     if "mps" in state and torch.backends.mps.is_available():
         torch.mps.set_rng_state(state["mps"])
     if generators and "generators" in state:

@@ -135,17 +135,21 @@ describe('training configuration actions', () => {
     expect(heading.parentElement).toContainElement(badge);
   });
 
-  it('loads the live schema and submits job name, priority and local schedule', async () => {
+  it('loads the live schema and submits job name, explicit GPU, priority and local schedule', async () => {
     const schema: any = structuredClone(trainSchema);
     schema.$defs.LoopConfig.properties.backend_added = { type: 'string', title: 'Backend added field' };
     let submitted: any;
     server.use(
       http.get('/api/schema/train', () => HttpResponse.json(schema)),
+      http.get('/api/queue/devices', () => HttpResponse.json({devices:[{device:'cuda:0',name:'BW',job_id:null},{device:'cuda:1',name:'BW',job_id:null}],max_concurrent:null})),
       http.post('/api/jobs', async ({ request }) => { submitted = await request.json(); return HttpResponse.json({ id: 'new-job' }); }),
     );
     showConfig();
     expect(enqueue()).toBeDisabled();
     const dynamicField = await screen.findByTestId('field-loop.backend_added');
+    fireEvent.click(screen.getByLabelText('选择运行显卡'));
+    fireEvent.click(screen.getByRole('combobox', {name:'运行显卡'}));
+    fireEvent.click(await screen.findByRole('option', {name:/GPU 1.*空闲/}));
     fireEvent.change(within(dynamicField).getByRole('textbox'), { target: { value: 'from-current-backend' } });
     fireEvent.change(screen.getByRole('textbox', { name: '任务名称（可选）' }), { target: { value: 'Scheduled training' } });
     fireEvent.click(screen.getByText('排期', {selector:'summary'}));
@@ -154,7 +158,7 @@ describe('training configuration actions', () => {
     await waitFor(() => expect(enqueue()).toBeEnabled());
     fireEvent.click(enqueue());
     await screen.findByText('Created job');
-    expect(submitted).toMatchObject({ name: 'Scheduled training', priority: 7, project_id: 'p_test', config: { loop: { backend_added: 'from-current-backend' } } });
+    expect(submitted).toMatchObject({ name: 'Scheduled training', gpu_devices: ['cuda:1'], priority: 7, project_id: 'p_test', config: { loop: { backend_added: 'from-current-backend' } } });
     expect(submitted.scheduled_at).toBe(new Date('2026-10-12T08:30').getTime() / 1000);
   });
 

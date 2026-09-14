@@ -109,6 +109,12 @@ def load_config(
 
 def config_hash(config: TrainConfig | Mapping[str, Any]) -> str:
     data = config.to_dict() if isinstance(config, TrainConfig) else dict(config)
+    # Older versions had no switch and used nondeterministic kernels. Explicit
+    # false retains that fingerprint; true and all other configuration changes
+    # remain visible to the checkpoint compatibility check.
+    loop = data.get("loop")
+    if isinstance(loop, Mapping) and loop.get("deterministic") is False:
+        data["loop"] = {key: value for key, value in loop.items() if key != "deterministic"}
     blob = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
     return hashlib.blake2b(blob, digest_size=8).hexdigest()
 

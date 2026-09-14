@@ -33,7 +33,8 @@ def service(tmp_path, monkeypatch):
 
 def inventory(count=3):
     return [
-        {"device": f"cuda:{i}", "mem_free_mb": 8000 - i * 1000, "mem_total_mb": 8000} for i in range(count)
+        {"device": f"cuda:{i}", "name": f"GPU {i}", "mem_free_mb": 8000 - i * 1000, "mem_total_mb": 8000}
+        for i in range(count)
     ]
 
 
@@ -108,6 +109,7 @@ def test_torchrun_launch_reserves_all_cards_and_uses_relative_worker_devices(
     service, image_dataset, monkeypatch
 ):
     row = job(service, image_dataset)
+    service[1].db.update("jobs", row["id"], {"exit_code": 0})
     monkeypatch.setattr(torch.version, "hip", None)
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "5,2,7")
     proc = Mock(pid=987654)
@@ -133,6 +135,7 @@ def test_torchrun_launch_reserves_all_cards_and_uses_relative_worker_devices(
     )
     assert progress["devices"] == ["cuda:2", "cuda:0"]
     assert progress["device"] == "cuda:2, cuda:0"
+    assert service[1].db.fetchone("SELECT exit_code FROM jobs WHERE id=?", (row["id"],))["exit_code"] is None
     service[1].supervisor._procs.clear()
 
 
@@ -163,8 +166,263 @@ def test_cache_of_multigpu_project_stays_single_card(service, image_dataset, mon
     monkeypatch.setattr(module.subprocess, "Popen", popen)
     service[1].supervisor._launch(stored, device="cuda:1")
     assert "torch.distributed.run" not in popen.call_args.args[0]
-    assert popen.call_args.args[0][-2:] == ["--device", "cuda:1"]
+    assert popen.call_args.args[0][-2:] == ["--device", "cuda:0"]
+    assert popen.call_args.kwargs["env"]["CUDA_VISIBLE_DEVICES"] == "1"
     service[1].supervisor._procs.clear()
+
+
+def single_job(service, image_dataset, devices):
+    row = job(service, image_dataset)
+    config = json.loads(row["config_json"])
+    config["loop"]["gpu_count"] = 1
+    patch = {
+        "config_json": json.dumps(config),
+        "gpu_devices_json": json.dumps(devices),
+        "progress_json": "{}",
+    }
+    service[1].db.update("jobs", row["id"], patch)
+    return row | patch
+
+
+def test_default_queue_starts_independent_cards_and_skips_blocked_head(service, image_dataset, monkeypatch):
+    first = single_job(service, image_dataset, ["cuda:0"])
+    blocked = single_job(service, image_dataset, ["cuda:0"])
+    other = single_job(service, image_dataset, ["cuda:1"])
+    monkeypatch.setattr(module, "gpu_info", lambda: inventory(2))
+    monkeypatch.setattr(torch.version, "hip", None)
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    spawned = []
+
+    def launch(*args, **kwargs):
+        proc = Mock(pid=900000 + len(spawned))
+        proc.poll.return_value = None
+        spawned.append((args, kwargs, proc))
+        return proc
+
+    monkeypatch.setattr(module.subprocess, "Popen", launch)
+    sup = service[1].supervisor
+    sup._tick()
+    assert set(sup._procs) == {first["id"], other["id"]}
+    assert [kwargs["env"]["CUDA_VISIBLE_DEVICES"] for _, kwargs, _ in spawned] == ["0", "1"]
+    assert all(args[0][-2:] == ["--device", "cuda:0"] for args, _, _ in spawned)
+    waiting = service[1].db.fetchone("SELECT * FROM jobs WHERE id=?", (blocked["id"],))
+    assert waiting["status"] == "queued"
+    assert "cuda:0" in json.loads(waiting["progress_json"])["wait_reason"]
+    # A terminal event does not free the card until its process really exits.
+    sup._set_terminal(first["id"], "run.finished")
+    sup._tick()
+    assert len(spawned) == 2
+    spawned[0][2].poll.return_value = 0
+    spawned[0][2].returncode = 0
+    sup._tick()
+    assert set(sup._procs) == {blocked["id"], other["id"]}
+    assert sup._devices[other["id"]] == "cuda:1"
+    assert spawned[1][2].poll.return_value is None
+    sup._procs.clear()
+
+
+def test_explicit_concurrency_limit_can_be_returned_to_automatic(service, image_dataset, monkeypatch):
+    first = single_job(service, image_dataset, ["cuda:0"])
+    other = single_job(service, image_dataset, ["cuda:1"])
+    monkeypatch.setattr(module, "gpu_info", lambda: inventory(2))
+    proc = Mock(pid=900100)
+    proc.poll.return_value = None
+    monkeypatch.setattr(module.subprocess, "Popen", Mock(return_value=proc))
+    client, ctx = service
+    assert client.get("/api/queue/settings").json()["max_concurrent"] is None
+    assert client.put("/api/queue/settings", json={"max_concurrent": 1}).status_code == 200
+    ctx.supervisor._tick()
+    assert list(ctx.supervisor._procs) == [first["id"]]
+    assert client.put("/api/queue/settings", json={"max_concurrent": None}).status_code == 200
+    ctx.supervisor._tick()
+    assert set(ctx.supervisor._procs) == {first["id"], other["id"]}
+    ctx.supervisor._procs.clear()
+
+
+def test_requested_device_validation_patch_inventory_and_retry(service, image_dataset, monkeypatch):
+    row = single_job(service, image_dataset, [])
+    client, ctx = service
+    monkeypatch.setattr("ypuddin.server.routes_work.gpu_info", lambda: inventory(2))
+    monkeypatch.setattr(module, "gpu_info", lambda: inventory(2))
+    for devices in (["cuda:2"], ["cuda:0", "cuda:1"], ["cuda:0", "cuda:0"], ["cuda:-1"]):
+        response = client.patch(f"/api/jobs/{row['id']}", json={"gpu_devices": devices})
+        assert response.status_code == 422, response.text
+    response = client.patch(f"/api/jobs/{row['id']}", json={"gpu_devices": ["cuda:1"]})
+    assert response.status_code == 200
+    assert response.json()["gpu_devices"] == ["cuda:1"]
+    assert "gpu_devices_json" not in response.json()
+    stored = ctx.db.fetchone("SELECT * FROM jobs WHERE id=?", (row["id"],))
+    assert ctx.supervisor._choose_device(stored) == "cuda:1"
+    cloned = ctx.supervisor.clone(stored)
+    assert json.loads(cloned["gpu_devices_json"]) == ["cuda:1"]
+    ctx.supervisor._devices[row["id"]] = "cuda:1"
+    ctx.db.update("jobs", row["id"], {"status": "running"})
+    cards = client.get("/api/queue/devices").json()["devices"]
+    assert cards[0]["job_id"] is None
+    assert cards[1]["job_id"] == row["id"]
+    assert cards[1]["job_name"] == "ownership"
+    assert client.patch(f"/api/jobs/{row['id']}", json={"gpu_devices": []}).status_code == 409
+    # Removing a card never quietly moves a pinned task to a different GPU or CPU.
+    ctx.supervisor._devices.clear()
+    monkeypatch.setattr(module, "gpu_info", lambda: [])
+    assert ctx.supervisor._choose_device(cloned) is None
+    assert ctx.db.fetchone("SELECT status FROM jobs WHERE id=?", (cloned["id"],))["status"] == "failed"
+
+
+def test_old_job_retains_compute_mode_and_original_rng_device_on_resume(service, image_dataset, monkeypatch):
+    row = single_job(service, image_dataset, ["cuda:0"])
+    config = json.loads(row["config_json"])
+    config["loop"].pop("deterministic", None)
+    row["config_json"] = json.dumps(config)
+    row["progress_json"] = json.dumps({"devices": ["cuda:1"], "device": "cuda:1"})
+    row["resume_from"] = str(Path(row["run_dir"]) / "legacy-state")
+    popen = Mock(return_value=Mock(pid=900021))
+    monkeypatch.setattr(module.subprocess, "Popen", popen)
+    service[1].supervisor._launch(row, device="cuda:0")
+    assert load_config(Path(row["run_dir"]) / "job-config.toml").loop.deterministic is False
+    assert popen.call_args.kwargs["env"]["YPUDDIN_LEGACY_CUDA_RNG_INDEX"] == "1"
+    service[1].supervisor._procs.clear()
+
+
+def test_gpu_patch_during_hardware_probe_is_honoured_at_launch(service, image_dataset, monkeypatch):
+    row = single_job(service, image_dataset, ["cuda:0"])
+    client, ctx = service
+    monkeypatch.setattr(module, "gpu_info", lambda: inventory(2))
+    monkeypatch.setattr("ypuddin.server.routes_work.gpu_info", lambda: inventory(2))
+    original_choose = ctx.supervisor._choose_device
+
+    def interleaved_patch(job, **kwargs):
+        allocation = original_choose(job, **kwargs)
+        response = client.patch(f"/api/jobs/{job['id']}", json={"gpu_devices": ["cuda:1"]})
+        assert response.status_code == 200, response.text
+        assert response.json()["gpu_devices"] == ["cuda:1"]
+        return allocation
+
+    launch = Mock()
+    monkeypatch.setattr(ctx.supervisor, "_choose_device", interleaved_patch)
+    monkeypatch.setattr(ctx.supervisor, "_launch", launch)
+    ctx.supervisor._tick()
+    if not launch.called:
+        assert ctx.db.fetchone("SELECT status FROM jobs WHERE id=?", (row["id"],))["status"] == "queued"
+        monkeypatch.setattr(ctx.supervisor, "_choose_device", original_choose)
+        ctx.supervisor._tick()
+    launch.assert_called_once()
+    assert json.loads(launch.call_args.args[0]["gpu_devices_json"]) == ["cuda:1"]
+    assert launch.call_args.kwargs["device"] == "cuda:1"
+
+
+def test_failed_first_legacy_resume_keeps_checkpoint_rng_origin(service, image_dataset, monkeypatch):
+    row = single_job(service, image_dataset, ["cuda:0"])
+    _, ctx = service
+    for key in ("CUDA_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES"):
+        monkeypatch.delenv(key, raising=False)
+    popen = Mock(return_value=Mock(pid=987654))
+    monkeypatch.setattr(module.subprocess, "Popen", popen)
+    state = Path(row["run_dir"]) / "legacy-state"
+    state.mkdir(parents=True)
+    (state / "state.json").write_text("{}")
+    ctx.db.update(
+        "jobs",
+        row["id"],
+        {
+            "status": "paused",
+            "resume_from": str(state),
+            "progress_json": json.dumps({"device": "cuda:1", "step": 8}),
+        },
+    )
+    first = ctx.db.fetchone("SELECT * FROM jobs WHERE id=?", (row["id"],))
+    ctx.supervisor._launch(first, device="cuda:0")
+    assert popen.call_args.kwargs["env"]["YPUDDIN_LEGACY_CUDA_RNG_INDEX"] == "1"
+    # Simulate an import/model preparation failure before reading or replacing the old state.
+    ctx.supervisor._on_exit(row["id"], 1)
+    ctx.supervisor._procs.clear()
+    ctx.supervisor._devices.clear()
+    ctx.supervisor.request(row["id"], "resume")
+    second = ctx.db.fetchone("SELECT * FROM jobs WHERE id=?", (row["id"],))
+    assert second["resume_from"] == str(state)
+    ctx.supervisor._launch(second, device="cuda:0")
+    assert popen.call_args.kwargs["env"]["YPUDDIN_LEGACY_CUDA_RNG_INDEX"] == "1"
+    assert (state / "state.json").read_text() == "{}"
+    ctx.supervisor._procs.clear()
+
+
+@pytest.mark.parametrize("feedback", ["missing", "waiting"])
+def test_stale_admission_feedback_after_gpu_patch_defers_to_next_tick(
+    service, image_dataset, monkeypatch, feedback
+):
+    row = single_job(service, image_dataset, ["cuda:1"])
+    client, ctx = service
+    ctx.db.set_kv("queue.settings", {"max_concurrent": 2})
+    cards = inventory(1 if feedback == "missing" else 2)
+    monkeypatch.setattr("ypuddin.server.routes_work.gpu_info", lambda: cards)
+    if feedback == "waiting":
+        ctx.supervisor._devices["other"] = "cuda:1"
+    previous = {"device": "cuda:1", "devices": ["cuda:1"], "step": 8, "phase": "paused"}
+    ctx.db.update("jobs", row["id"], {"progress_json": json.dumps(previous)})
+
+    def probe():
+        response = client.patch(f"/api/jobs/{row['id']}", json={"gpu_devices": ["cuda:0"]})
+        assert response.status_code == 200, response.text
+        return cards
+
+    monkeypatch.setattr(module, "gpu_info", probe)
+    popen = Mock(return_value=Mock(pid=987655))
+    monkeypatch.setattr(module.subprocess, "Popen", popen)
+    ctx.supervisor._tick()
+    current = client.get(f"/api/jobs/{row['id']}").json()
+    assert current["status"] == "queued" and current["error"] is None
+    assert current["gpu_devices"] == ["cuda:0"] and current["progress"] == previous
+    popen.assert_not_called()
+    monkeypatch.setattr(module, "gpu_info", lambda: cards)
+    ctx.supervisor._tick()
+    popen.assert_called_once()
+    current = client.get(f"/api/jobs/{row['id']}").json()
+    assert current["status"] == "running" and current["progress"]["devices"] == ["cuda:0"]
+    assert ctx.supervisor._devices[row["id"]] == "cuda:0"
+    ctx.supervisor._procs.clear()
+    ctx.supervisor._devices.clear()
+
+
+@pytest.mark.parametrize("feedback", ["missing", "waiting"])
+@pytest.mark.parametrize("command,status", [("pause", "paused"), ("cancel", "cancelled")])
+def test_stale_admission_feedback_keeps_user_control_and_previous_device(
+    service, image_dataset, monkeypatch, feedback, command, status
+):
+    row = single_job(service, image_dataset, ["cuda:1"])
+    client, ctx = service
+    previous = {"device": "cuda:0", "devices": ["cuda:0"], "step": 7}
+    ctx.db.update("jobs", row["id"], {"progress_json": json.dumps(previous)})
+    if feedback == "waiting":
+        ctx.supervisor._devices["other"] = "cuda:1"
+
+    def probe():
+        assert client.post(f"/api/jobs/{row['id']}/{command}", json={}).status_code == 200
+        return inventory(1 if feedback == "missing" else 2)
+
+    monkeypatch.setattr(module, "gpu_info", probe)
+    assert ctx.supervisor._choose_device(row) is None
+    current = client.get(f"/api/jobs/{row['id']}").json()
+    assert current["status"] == status and current["error"] is None
+    assert current["progress"] == previous
+
+
+def test_waiting_feedback_preserves_live_progress_and_actual_device(service, image_dataset, monkeypatch):
+    row = single_job(service, image_dataset, ["cuda:1"])
+    client, ctx = service
+    ctx.supervisor._devices["other"] = "cuda:1"
+    latest = {"device": "cuda:0", "devices": ["cuda:0"], "step": 9}
+
+    def probe():
+        ctx.db.update("jobs", row["id"], {"progress_json": json.dumps(latest)})
+        return inventory(2)
+
+    monkeypatch.setattr(module, "gpu_info", probe)
+    assert ctx.supervisor._choose_device(row) is None
+    current = client.get(f"/api/jobs/{row['id']}").json()
+    assert current["status"] == "queued"
+    assert current["progress"]["phase"] == "waiting_for_device"
+    assert "cuda:1" in current["progress"]["wait_reason"]
+    assert {key: current["progress"][key] for key in latest} == latest
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX process-group cleanup")

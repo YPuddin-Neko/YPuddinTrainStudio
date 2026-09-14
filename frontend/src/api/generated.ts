@@ -998,6 +998,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/queue/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Queue Devices */
+        get: operations["queue_devices_api_queue_devices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/artifacts": {
         parameters: {
             query?: never;
@@ -3558,6 +3575,8 @@ export interface components {
             status: ("queued" | "scheduled" | "running" | "pausing" | "cancelling" | "paused" | "completed" | "failed" | "cancelled") | string;
             /** Priority */
             priority: number;
+            /** Gpu Devices */
+            gpu_devices?: string[];
             /** Scheduled At */
             scheduled_at: number | null;
             /** Created At */
@@ -3585,6 +3604,8 @@ export interface components {
         };
         /** JobBody */
         JobBody: {
+            /** Gpu Devices */
+            gpu_devices?: string[];
             /**
              * Type
              * @default train
@@ -3703,6 +3724,8 @@ export interface components {
         };
         /** JobPatch */
         JobPatch: {
+            /** Gpu Devices */
+            gpu_devices?: string[];
             /** Priority */
             priority?: number | null;
             /** Name */
@@ -3740,6 +3763,10 @@ export interface components {
             vram_metric?: string | null;
             /** Device */
             device?: string | null;
+            /** Devices */
+            devices?: string[];
+            /** Gpu Count */
+            gpu_count?: number | null;
             /** Estimated Peak Mb */
             estimated_peak_mb?: number | null;
             /** Wait Reason */
@@ -3845,6 +3872,12 @@ export interface components {
              * @default 42
              */
             seed: number;
+            /**
+             * Deterministic
+             * @description 默认关闭。开启后使用确定性计算，尽量减少相同设备、软件版本和配置下重复训练及恢复的数值差异，不保证所有环境逐位一致。可能降低速度；DTK 的 SDPA 使用数学实现，会增加显存需求。遇到不支持确定性计算的算子会报错停止，不会自动降级。关闭时即使种子相同，数值也可能略有不同。恢复时必须保持此设置不变；旧版本训练状态需关闭此项。
+             * @default false
+             */
+            deterministic: boolean;
             /**
              * Ema
              * @description 在 CPU 维护适配器权重的指数移动平均，默认关闭；开启后额外保存 EMA 权重用于对比，会增加内存和文件占用。当前训练预览仍使用当时的普通权重。
@@ -5215,6 +5248,34 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** QueueDevice */
+        QueueDevice: {
+            /** Device */
+            device: string;
+            /** Name */
+            name: string;
+            /** Mem Free Mb */
+            mem_free_mb?: number | null;
+            /** Mem Total Mb */
+            mem_total_mb?: number | null;
+            /** Job Id */
+            job_id?: string | null;
+            /** Job Name */
+            job_name?: string | null;
+            /** Status */
+            status?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** QueueDevices */
+        QueueDevices: {
+            /** Devices */
+            devices: components["schemas"]["QueueDevice"][];
+            /** Max Concurrent */
+            max_concurrent?: number | null;
+        } & {
+            [key: string]: unknown;
+        };
         /** QueueSettings */
         QueueSettings: {
             /**
@@ -5222,11 +5283,8 @@ export interface components {
              * @default false
              */
             held: boolean;
-            /**
-             * Max Concurrent
-             * @default 1
-             */
-            max_concurrent: number;
+            /** Max Concurrent */
+            max_concurrent?: number | null;
             /**
              * Memory Admission
              * @default true
@@ -6492,6 +6550,8 @@ export interface components {
         };
         /** XyzRequest */
         XyzRequest: {
+            /** Gpu Devices */
+            gpu_devices?: string[];
             /**
              * Name
              * @default XYZ comparison
@@ -9128,6 +9188,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    queue_devices_api_queue_devices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueDevices"];
                 };
             };
         };

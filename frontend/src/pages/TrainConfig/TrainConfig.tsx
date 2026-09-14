@@ -17,6 +17,7 @@ import { projectUrl, versionConfigUrl, type VersionedProject } from '../../utils
 import '../../styles/project-workspace.css';
 import BucketInspector from './BucketInspector';
 import StudioSelect from '../../components/StudioSelect';
+import GpuDevicePicker from '../../components/GpuDevicePicker';
 import PresetPreview from '../../components/PresetPreview';
 import { useWorkspaceHeight } from '../../components/projects/useWorkspaceHeight';
 import './training-workspace.css';
@@ -133,6 +134,8 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const [enqueueSuccess, setEnqueueSuccess] = React.useState(false);
   const [savedAt, setSavedAt] = React.useState<string | null>(null);
   const [jobName, setJobName] = React.useState('');
+  const [gpuDevices, setGpuDevices] = React.useState<string[]>([]);
+  const [gpuValid, setGpuValid] = React.useState(true);
   const [priority, setPriority] = React.useState(0);
   const [scheduledAt, setScheduledAt] = React.useState('');
   const [pendingPreset, setPendingPreset] = React.useState<Preset | null>(null);
@@ -456,7 +459,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   };
 
   const handleEnqueue = async () => {
-    if (archived) return;
+    if (archived || !gpuValid) return;
     const inactiveReason = inactiveTrainingReason(config, english);
     if (inactiveReason) { setError(inactiveReason); return; }
     if (!Number.isInteger(priority) || (scheduledAt && !Number.isFinite(new Date(scheduledAt).getTime()))) {
@@ -474,7 +477,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       }
       const job = await apiClient.post<Job>('/jobs', {
         type: 'train', name: jobName.trim() || project?.name || `${config.model?.family || 'model'} training`, project_id: projectId || null, version_id: versionId || project?.active_version_id || null,
-        config, priority, scheduled_at: scheduledAt ? new Date(scheduledAt).getTime() / 1000 : null,
+        config, priority, gpu_devices: gpuDevices, scheduled_at: scheduledAt ? new Date(scheduledAt).getTime() / 1000 : null,
       }, { silent: true });
       setEnqueueSuccess(true);
       if (job.id) navigate(`/jobs/${job.id}`);
@@ -525,9 +528,10 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       {issuesOpen && issues.length > 0 && <section className="readiness-panel" aria-label={text('训练前检查', 'Preflight checks')}><div className="readiness-heading"><h2>{text('完成以下配置即可启动训练', 'Complete these settings to start training')}</h2><button onClick={() => setIssuesOpen(false)}>{text('收起', 'Collapse')}</button></div>{issues.map((issue,index) => <div className="readiness-item" key={`${issue.path}-${index}`}><button aria-label={text(`配置${issue.label}`, `Configure ${issue.label}`)} onClick={() => goToIssue(issue)}><span>{issue.label}</span><span>{issue.message}</span><ChevronRight size={14}/></button>{issue.message === '此配置未通过检查，展开详情查看具体原因' && <details><summary>{text('技术详情', 'Technical details')}</summary><code>{issue.detail}</code></details>}</div>)}</section>}
       <div className="launch-status" role="status">{validating ? <><Loader2 size={15} className="animate-spin"/><span>{text('正在检查配置…', 'Checking configuration…')}</span></> : ready ? <><CheckCircle2 size={16} className="text-emerald-500"/><span>{text('可以开始训练', 'Ready to train')}</span></> : <button onClick={() => setIssuesOpen(value => !value)} className="readiness-toggle"><AlertCircle size={16}/><span>{issues.length ? text(`${issues.length} 项待配置`, `${issues.length} settings to complete`) : text('尚未通过检查', 'Checks incomplete')}</span><ChevronRight size={14}/></button>}</div>
       <button type="button" className="launch-plan-toggle" aria-label={text('训练估算与分桶', 'Estimates and buckets')} aria-expanded={inspectorOpen} aria-controls="training-plan-panel" onClick={() => setInspectorOpen(open => !open)}><BarChart3 size={15}/><span>{text('执行估算', 'Estimates')}</span><ChevronDown size={14}/></button>
+      <GpuDevicePicker compact value={gpuDevices} onChange={setGpuDevices} count={Number(config.loop?.gpu_count) || 1} disabled={isEnqueuing || savingNavigation} onValidityChange={setGpuValid}/>
       <input className="launch-name" aria-label={t('train.jobName')} placeholder={text('任务名称（可选）', 'Job name (optional)')} value={jobName} onChange={event => setJobName(event.target.value)}/>
       <details className="launch-schedule"><summary>{scheduledAt ? text('已排期', 'Scheduled') : text('排期', 'Schedule')}</summary><div><label>{t('queue.priority')}<input aria-label={t('queue.priority')} type="number" step="1" aria-invalid={!Number.isInteger(priority)} value={priority} onChange={event => setPriority(Number(event.target.value))}/></label>{!Number.isInteger(priority) && <p className="text-xs text-amber-600">{text('优先级必须是整数', 'Priority must be an integer')}</p>}<label>{t('train.scheduledAt')}<input aria-label={t('train.scheduledAt')} type="datetime-local" value={scheduledAt} onChange={event => setScheduledAt(event.target.value)}/></label></div></details>
-      <button className="studio-primary start-training" onClick={handleEnqueue} disabled={!ready || isEnqueuing || savingNavigation || !Number.isInteger(priority)}><Play size={14}/>{enqueueSuccess ? t('train.enqueued') : isEnqueuing ? t('train.enqueuing') : text('开始训练', 'Start training')}</button>
+      <button className="studio-primary start-training" onClick={handleEnqueue} disabled={!ready || !gpuValid || isEnqueuing || savingNavigation || !Number.isInteger(priority)}><Play size={14}/>{enqueueSuccess ? t('train.enqueued') : isEnqueuing ? t('train.enqueuing') : text('开始训练', 'Start training')}</button>
     </div>
     </div>
     {inactiveReason && <div role="alert" className="studio-error" data-testid="retired-training-config">{inactiveReason}</div>}

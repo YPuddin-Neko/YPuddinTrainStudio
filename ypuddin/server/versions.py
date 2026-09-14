@@ -25,9 +25,12 @@ def dataset_directory_name(source: Path) -> str:
 
 def assert_version_writable(c: Any, pid: str, vid: str | None, *, data: bool = False) -> dict:
     row = c.resolve_version(pid, vid)
+    project = c.db.fetchone("SELECT archived FROM projects WHERE id=?", (pid,))
+    if project is None or project["archived"]:
+        raise ApiError("项目已归档，请先恢复项目再修改配置或创建任务。", code="project.archived", status=409)
     if row["status"] != "ready" or row["busy"] or row["archived"]:
         raise ApiError(
-            "version is archived or busy; wait for its operation to finish", code="version.busy", status=409
+            "版本已归档或正在处理，请恢复版本或等待当前操作完成。", code="version.busy", status=409
         )
     if data and c.db.fetchone(
         f"SELECT id FROM jobs WHERE version_id=? AND status IN {ACTIVE_JOBS}", (row["id"],)

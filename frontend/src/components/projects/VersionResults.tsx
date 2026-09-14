@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Activity, Box, Grid2X2, ChevronLeft, ChevronRight, Download, ExternalLink, Image as ImageIcon, Loader2, RefreshCw, X } from 'lucide-react';
 import { apiClient, apiUrl } from '../../api/client';
@@ -15,7 +15,7 @@ import { projectUrl } from '../../utils/projectVersions';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import StudioSelect from '../StudioSelect';
 import Artifacts from '../../pages/Artifacts/Artifacts';
-import XyzSampling from '../sampling/XyzSampling';
+import { samplingUrl } from '../../utils/samplingRoutes';
 import '../../styles/project-results.css';
 
 interface VersionResultsProps { projectId: string; versionId?: string; readOnly?: boolean }
@@ -177,7 +177,7 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
       </article>)}</div>}
     </div>}
 
-    {tab === 'xyz' && <div role="tabpanel" id="results-panel-xyz" aria-labelledby="results-tab-xyz"><div className="results-sample-toolbar results-output-selector"><label><span>{text('训练任务', 'Training run')}</span><StudioSelect searchable aria-label={text('XYZ 来源任务', 'XYZ source run')} value={selectedJobId} onValueChange={setSelectedJobId} disabled={jobsLoading} placeholder={text('还没有训练任务', 'No training runs yet')} options={sampleJobs.map(job => ({ value: job.id, label: job.name }))}/></label>{pagination}</div>{selectedJobId ? <XyzSampling sourceJobId={selectedJobId} readOnly={readOnly}/> : <div className="results-empty"><Grid2X2 size={24}/><p>{text('完成训练并保存权重后，可在这里生成参数与权重对比图。', 'Train and save checkpoints to compare weights and sampling settings here.')}</p></div>}</div>}
+    {tab === 'xyz' && <Navigate replace to={samplingUrl(selectedJobId || null, null, projectId, versionId)}/>}
 
     {tab === 'artifacts' && <div role="tabpanel" id="results-panel-artifacts" aria-labelledby="results-tab-artifacts"><div className="results-sample-toolbar results-output-selector"><label><span>{text('训练任务', 'Training job')}</span><StudioSelect aria-label={text('权重所属任务', 'Weight source job')} value={artifactJobId} onValueChange={chooseArtifactJob} options={[{ value: '', label: text('此版本全部训练', 'All training runs in this version') }, ...artifactJobs.map(job => ({ value: job.id, label: job.name }))]}/></label>{artifactJobId && <Link to={`/jobs/${artifactJobId}?tab=checkpoints`}>{text('查看此任务检查点', 'View job checkpoints')}</Link>}{pagination}</div><Artifacts embedded projectId={projectId} versionId={versionId} jobId={artifactJobId || undefined} readOnly={readOnly}/></div>}
 

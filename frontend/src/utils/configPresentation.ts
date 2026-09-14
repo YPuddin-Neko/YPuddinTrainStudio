@@ -57,6 +57,7 @@ const labels: Record<string, string> = {
   'memory.compile': '编译模型', 'memory.allow_tf32': '允许 TF32', 'loop.max_steps': '最大训练步数',
   'loop.epochs': '训练轮数', 'loop.grad_accum': '梯度累积', 'loop.mixed_precision': '混合精度', 'loop.seed': '随机种子',
   'loop.gpu_count': '训练显卡数量',
+  'loop.deterministic': '可复现训练',
   'loop.ema': '启用 EMA', 'loop.ema_decay': 'EMA 衰减', 'loop.nan_skip_limit': '无效梯度跳过上限', 'loop.log_every': '日志间隔',
   'checkpoint.output_dir': '训练权重保存位置', 'checkpoint.name': '权重文件名', 'checkpoint.save_every_steps': '每隔几步保存',
   'checkpoint.save_every_epochs': '每隔几轮保存', 'checkpoint.save_state_every_steps': '完整状态保存间隔',
@@ -74,6 +75,7 @@ const labels: Record<string, string> = {
 
 export function configFieldLabel(path: string, fallback: string, english = false) {
   if (path === 'loop.gpu_count') return english ? 'Training GPU count' : labels[path];
+  if (path === 'loop.deterministic') return english ? 'Reproducible training' : labels[path];
   if (path === 'adapter.preset') return english ? 'Adapter scope' : labels[path];
   if (english && path.startsWith('training.')) return ({mode:'Training mode',train_backbone:'Train main model (UNet / DiT)',train_text_encoder:'Train text encoder',resume_weights:'Initial full-model weights'} as Record<string,string>)[path.slice(9)] || fallback;
   if (english && path.startsWith('optimizer.')) {
@@ -142,6 +144,7 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
     ? 'β1 controls schedule-free weight averaging; β2 smooths the estimate of gradient size. These have different roles. Usually keep this optimizer’s defaults.'
     : 'β1 控制免调度训练中的权重平均，β2 平滑梯度大小的估计。两者作用不同，通常保留当前优化器的默认值。';
   const help: Record<string, [string, string]> = {
+    'loop.deterministic': ['默认关闭。开启后使用确定性计算，尽量减少相同设备、软件版本和配置下的数值差异，不保证所有环境逐位一致，可能降低速度。DTK 的 SDPA 使用数学实现，会增加显存需求；单独选择 FlashAttention 或 xFormers 时仍使用对应扩展。不支持的算子会报错停止。关闭后相同种子也可能产生略有不同的数值。恢复时需保持原设置；旧版本训练状态需关闭此项。', 'Off by default. When enabled, requests deterministic computation to reduce numerical differences across repeated training and resume on the same hardware, software and configuration; bitwise equality is not guaranteed in every environment. It can be slower. DTK native SDPA uses its math implementation and needs more memory; explicitly selected FlashAttention or xFormers still uses that extension. Unsupported operations fail instead of silently falling back. Keep this setting unchanged for resume. Disable it for checkpoints from versions without this setting.'],
     'memory.base_precision': ['设置冻结底模权重的存储精度，仅作用于适配器所连接的线性层。选择 FP8 会在启动时量化这些权重，不修改源模型文件；计算时再还原为计算所需的精度。Krea2 支持的逐张量 FP8 文件会保留原有权重和缩放值，其他 FP8 文件需对应加载器支持。存储精度与混合精度分别设置，使用 FP8 不一定更快。', 'Controls storage for unquantized frozen linear layers beneath adapters. FP8 quantizes each tensor at startup without modifying the source file; computation dequantizes to the compute dtype. Supported Krea2 per-tensor FP8 base weights retain checkpoint weights and scales; other quantized files still require a compatible loader. This differs from mixed precision and does not guarantee faster training.'],
     'memory.activation_checkpointing': ['少保存前向计算的中间结果，在反向传播时重新计算，以额外计算换取更少显存。它不改变批量大小，也不是恢复训练用的存档。可以和梯度累积同时使用。', 'Saves fewer forward intermediates and recomputes them during backward, trading computation for lower memory use. It does not change batch size and is not a resume checkpoint. It can be combined with gradient accumulation.'],
     'loop.grad_accum': ['累计多少个小批次后更新一次参数。例如单卡批量 1、累积 4，处理 4 张图后更新一次。有效批量还需乘以显卡数量；它与重算中间结果来节省显存的梯度检查点不同。', 'Number of minibatches before updating parameters. With one GPU, batch size 1 and accumulation 4 update after 4 images. Effective batch size also includes GPU count. This differs from activation checkpointing, which recomputes intermediates to save memory.'],

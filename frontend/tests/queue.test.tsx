@@ -8,7 +8,7 @@ import i18n from '../src/i18n';
 
 vi.mock('../src/events/useEventStream', () => ({ useEventStream: () => {} }));
 let jobs: any[];
-let settings: { held: boolean; max_concurrent: number; memory_admission: boolean };
+let settings: { held: boolean; max_concurrent: number | null; memory_admission: boolean };
 const make = (id: string, status: string, extra = {}) => ({ ...mockJobs[0], id, name: `Run ${id}`, status, project_id: 'p1', project_name: '衣装实验', version_id: 'v_original', version_name: '蓝色衣装', version_number: 2, type: 'train', ...extra });
 function Location() { const location = useLocation(); return <output data-testid="location">{location.search}</output>; }
 const view = (url = '/queue') => <MemoryRouter initialEntries={[url]}><Queue/><Location/></MemoryRouter>;
@@ -19,6 +19,7 @@ beforeEach(async () => {
   vi.spyOn(apiClient, 'get').mockImplementation(async (url, options) => {
     if (url === '/projects') return [{ id: 'p1', name: '衣装实验' }] as any;
     if (url === '/queue/settings') return settings as any;
+    if (url === '/queue/devices') return {devices:[],max_concurrent:settings.max_concurrent} as any;
     if (url === '/jobs') {
       const params = options?.params || {};
       const groups: Record<string, string[]> = { active: ['running', 'paused', 'pausing', 'cancelling'], waiting: ['queued', 'scheduled'], history: ['completed', 'failed', 'cancelled'] };
@@ -103,4 +104,24 @@ it('does not repeat an unchanged version number as its display name', async () =
   expect(context).not.toHaveTextContent('v1 · v1');
   expect(within(row).getByRole('button', { name: '暂停' })).toBeEnabled();
   expect(within(row).getByRole('button', { name: '保存检查点' })).toBeEnabled();
+});
+
+it('preserves an explicit one-job limit until the user switches to automatic GPU scheduling', async () => {
+  render(view()); await screen.findByTestId('job-row-live');
+  fireEvent.click(screen.getByText('调度设置', {selector:'summary'}));
+  expect(screen.getByRole('combobox', {name:'并行方式'})).toHaveTextContent('限制任务数量');
+  expect(screen.getByRole('spinbutton', {name:'最多并行任务'})).toHaveValue(1);
+  expect(apiClient.put).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('combobox', {name:'并行方式'}));
+  fireEvent.click(screen.getByRole('option', {name:'自动 · 按空闲显卡'}));
+  await waitFor(() => expect(apiClient.put).toHaveBeenCalledWith('/queue/settings', {max_concurrent:null}, {silent:true}));
+  expect(screen.queryByRole('spinbutton', {name:'最多并行任务'})).not.toBeInTheDocument();
+});
+it('distinguishes actual device assignment from a waiting request', async () => {
+  jobs[0] = {...jobs[0],gpu_devices:['cuda:1'],progress:{devices:['cuda:1'],step:1,total_steps:10}};
+  jobs[1] = {...jobs[1],gpu_devices:['cuda:0']};
+  render(view());
+  expect(await screen.findByTestId('job-row-live')).toHaveTextContent('实际显卡: GPU 1');
+  fireEvent.click(screen.getByRole('tab', {name:/等待调度/}));
+  expect(await screen.findByTestId('job-row-waiting')).toHaveTextContent('申请显卡: GPU 0');
 });

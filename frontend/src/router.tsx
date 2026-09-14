@@ -11,6 +11,7 @@ const Presets = React.lazy(() => import('./pages/Presets/Presets'));
 const ProjectDetail = React.lazy(() => import('./pages/ProjectDetail/ProjectDetail'));
 const Dataset = React.lazy(() => import('./pages/Dataset/Dataset'));
 const TrainConfig = React.lazy(() => import('./pages/TrainConfig/TrainConfig'));
+const Sampling = React.lazy(() => import('./pages/Sampling/Sampling'));
 const Queue = React.lazy(() => import('./pages/Queue/Queue'));
 const JobDetail = React.lazy(() => import('./pages/JobDetail/JobDetail'));
 const Settings = React.lazy(() => import('./pages/Settings/Settings'));
@@ -42,7 +43,7 @@ export default function AppRoutes() {
         <Route path="presets" element={<Presets/>}/>
         <Route path="projects/:id" element={<ProjectDetail/>}/><Route path="projects/:id/train" element={<TrainConfig/>}/>
         <Route path="projects/:id/v/:versionId" element={<ProjectDetail/>}/><Route path="projects/:id/v/:versionId/train" element={<TrainConfig/>}/>
-        <Route path="datasets/:id" element={<Dataset/>}/><Route path="queue" element={<Queue/>}/><Route path="jobs/:id" element={<JobDetail/>}/>
+        <Route path="datasets/:id" element={<Dataset/>}/><Route path="queue" element={<Queue/>}/><Route path="sampling" element={<Sampling/>}/><Route path="jobs/:id" element={<JobDetail/>}/>
         <Route path="artifacts" element={<LegacyOutputsRedirect/>}/><Route path="models" element={<SettingsRedirect tab="models"/>}/>
         {settingsRoutes()}
       </Route>

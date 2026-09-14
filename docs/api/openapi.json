@@ -3741,6 +3741,24 @@
         }
       }
     },
+    "/api/queue/devices": {
+      "get": {
+        "summary": "Queue Devices",
+        "operationId": "queue_devices_api_queue_devices_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueDevices"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/artifacts": {
       "get": {
         "summary": "List Artifacts",
@@ -10713,6 +10731,13 @@
             "type": "integer",
             "title": "Priority"
           },
+          "gpu_devices": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Gpu Devices"
+          },
           "scheduled_at": {
             "anyOf": [
               {
@@ -10848,6 +10873,15 @@
       },
       "JobBody": {
         "properties": {
+          "gpu_devices": {
+            "items": {
+              "type": "string",
+              "pattern": "^(cuda:[0-9]+|mps)$"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "title": "Gpu Devices"
+          },
           "type": {
             "type": "string",
             "title": "Type",
@@ -11245,6 +11279,15 @@
       },
       "JobPatch": {
         "properties": {
+          "gpu_devices": {
+            "items": {
+              "type": "string",
+              "pattern": "^(cuda:[0-9]+|mps)$"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "title": "Gpu Devices"
+          },
           "priority": {
             "anyOf": [
               {
@@ -11437,6 +11480,24 @@
               }
             ],
             "title": "Device"
+          },
+          "devices": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Devices"
+          },
+          "gpu_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Count"
           },
           "estimated_peak_mb": {
             "anyOf": [
@@ -11711,6 +11772,18 @@
             "x-ui": {
               "group": "loop",
               "order": 40
+            }
+          },
+          "deterministic": {
+            "type": "boolean",
+            "title": "Deterministic",
+            "description": "默认关闭。开启后使用确定性计算，尽量减少相同设备、软件版本和配置下重复训练及恢复的数值差异，不保证所有环境逐位一致。可能降低速度；DTK 的 SDPA 使用数学实现，会增加显存需求。遇到不支持确定性计算的算子会报错停止，不会自动降级。关闭时即使种子相同，数值也可能略有不同。恢复时必须保持此设置不变；旧版本训练状态需关闭此项。",
+            "default": false,
+            "x-ui": {
+              "advanced": true,
+              "control": "switch",
+              "group": "loop",
+              "order": 45
             }
           },
           "ema": {
@@ -15129,6 +15202,108 @@
         ],
         "title": "ProjectVersion"
       },
+      "QueueDevice": {
+        "properties": {
+          "device": {
+            "type": "string",
+            "title": "Device"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "mem_free_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mem Free Mb"
+          },
+          "mem_total_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mem Total Mb"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "job_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Name"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "device",
+          "name"
+        ],
+        "title": "QueueDevice"
+      },
+      "QueueDevices": {
+        "properties": {
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/QueueDevice"
+            },
+            "type": "array",
+            "title": "Devices"
+          },
+          "max_concurrent": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Concurrent"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "devices"
+        ],
+        "title": "QueueDevices"
+      },
       "QueueSettings": {
         "properties": {
           "held": {
@@ -15137,11 +15312,17 @@
             "default": false
           },
           "max_concurrent": {
-            "type": "integer",
-            "maximum": 64.0,
-            "minimum": 1.0,
-            "title": "Max Concurrent",
-            "default": 1
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 64.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Concurrent"
           },
           "memory_admission": {
             "type": "boolean",
@@ -18249,6 +18430,15 @@
       },
       "XyzRequest": {
         "properties": {
+          "gpu_devices": {
+            "items": {
+              "type": "string",
+              "pattern": "^(cuda:[0-9]+|mps)$"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "title": "Gpu Devices"
+          },
           "name": {
             "type": "string",
             "maxLength": 120,

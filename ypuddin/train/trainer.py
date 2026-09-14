@@ -50,6 +50,7 @@ from ypuddin.runtime_profiles import current_profile
 
 from .events import Emitter, NullEmitter
 from .logging import TrainingLogs
+from .reproducibility import configure_reproducibility, validate_resume_reproducibility
 from .state import Progress, capture_rng, load_checkpoint, restore_rng, save_checkpoint
 from .training_modes import FullTrainingSet, save_model_artifact
 
@@ -129,6 +130,7 @@ class Trainer:
         return DTYPES[self.cfg.loop.mixed_precision]
 
     def _seed_all(self) -> None:
+        configure_reproducibility(self.cfg.loop.deterministic, self.device)
         s = self.cfg.loop.seed
         random.seed(s)
         np.random.seed(s)
@@ -380,6 +382,7 @@ class Trainer:
             }
         if cfg.checkpoint.resume:
             self._resume(cfg.checkpoint.resume)
+        self.progress.extra["deterministic"] = cfg.loop.deterministic
         self._install_signal_handlers()
         self._prepared = True
         self.emit(
@@ -388,6 +391,7 @@ class Trainer:
             steps_per_epoch=self.progress.steps_per_epoch,
             trainable_params=self.adapters.num_params(),
             text_mode=self.text_mode,
+            deterministic=cfg.loop.deterministic,
         )
 
     def _check_capabilities(self) -> None:
@@ -521,6 +525,9 @@ class Trainer:
                 message="checkpoint has no model asset identity; the original backbone and encoders "
                 "cannot be verified, so exact resume is not guaranteed",
             )
+        validate_resume_reproducibility(
+            self.cfg.loop.deterministic, ck["progress"].extra.get("deterministic")
+        )
         if ck["config_hash"] and ck["config_hash"] != self.config_hash:
             log.warning("config changed since the checkpoint was written; resuming anyway")
         if "training" in ck:
@@ -688,13 +695,13 @@ class Trainer:
         return self._capture_local_checkpoint_rng()
 
     def _capture_local_checkpoint_rng(self) -> dict[str, Any]:
-        state = capture_rng({"main": self.gen, "loader": self.loader_gen})
+        state = capture_rng({"main": self.gen, "loader": self.loader_gen}, device=self.device)
         if self._loader_epoch_state is not None:
             state["loader_iterator"] = self._loader_epoch_state
         return state
 
     def _restore_local_checkpoint_rng(self, state: dict[str, Any]) -> None:
-        restore_rng(state, {"main": self.gen, "loader": self.loader_gen})
+        restore_rng(state, {"main": self.gen, "loader": self.loader_gen}, device=self.device)
         self._loader_epoch_state = state.get("loader_iterator")
 
     def _restore_checkpoint_rng(self, state: dict[str, Any]) -> None:
@@ -730,7 +737,7 @@ class Trainer:
     @contextmanager
     def _evaluation(self, *, unload_latent: bool = False):
         """Evaluate schedule-free parameters and restore both training weights and RNG on every exit."""
-        rng = capture_rng({"main": self.gen, "loader": self.loader_gen})
+        rng = capture_rng({"main": self.gen, "loader": self.loader_gen}, device=self.device)
         mode = self.loaded.backbone.training
         swap_mode = self.swapper.forward_only if self.swapper is not None else False
         schedule_free = hasattr(self, "optimizer") and is_schedule_free(self.cfg.optimizer)
@@ -755,7 +762,7 @@ class Trainer:
                 self.adapters.load_training_state(raw)
             self.loaded.backbone.train(mode)
             self.adapters.train(mode)
-            restore_rng(rng, {"main": self.gen, "loader": self.loader_gen})
+            restore_rng(rng, {"main": self.gen, "loader": self.loader_gen}, device=self.device)
 
     def _text_cond(self, captions: list[str]) -> TextCond:
         if self.text_mode == "cached" and self.text_cache is not None:
