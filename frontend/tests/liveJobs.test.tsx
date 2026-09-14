@@ -102,14 +102,14 @@ describe('training monitor interactions and events', () => {
     fireEvent.click(screen.getByRole('button', { name: '学习率、梯度与性能诊断' }));
     expect(perfChart().series[1].data).toEqual([[1,10/1024],[2,20/1024]]);
     expect(screen.queryByText('显存峰值')).not.toBeInTheDocument();
-    expect(screen.getByText('吞吐与当前训练分配量')).toBeInTheDocument();
-    expect(perfChart().series[1].name).toBe('当前训练分配量 (GB)');
+    expect(screen.getByText('训练速度与当前已分配内存')).toBeInTheDocument();
+    expect(perfChart().series[1].name).toBe('训练当前已分配内存 (GB)');
     emit('job.step', { job_id: 'job_01', step: 3, vram_mb: 1024, vram_metric: 'current_allocated' });
     expect(perfChart().series[1].data.at(-1)).toEqual([3, 1]);
     emit('job.step', { job_id: 'job_01', step: 2, vram_mb: 4096, vram_metric: 'peak_allocated' });
     expect(perfChart().series[1].data.at(-1)).toEqual([3, 1]);
     expect(perfChart().series[1].data).toHaveLength(3);
-    expect(perfChart().series[1].name).toBe('当前训练分配量 (GB)');
+    expect(perfChart().series[1].name).toBe('训练当前已分配内存 (GB)');
   });
 
   it('retains legacy peak behavior and switches chart labels when CUDA metric metadata arrives', async () => {

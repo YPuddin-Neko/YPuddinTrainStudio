@@ -35,8 +35,10 @@ beforeEach(async () => {
 afterEach(() => vi.restoreAllMocks());
 
 it('separates running jobs from history, links their exact version and pauses through the API', async () => {
+  jobs[0] = { ...jobs[0], progress: { phase: 'loading' } };
   render(view());
   const row = await screen.findByTestId('job-row-live');
+  expect(row).toHaveTextContent('加载权重');
   expect(screen.queryByTestId('job-row-waiting')).not.toBeInTheDocument();
   expect(within(row).getByRole('link', { name: /衣装实验/ })).toHaveAttribute('href', '/projects/p1/v/v_original?step=results');
   expect(row).toHaveTextContent('v2 · 蓝色衣装');
@@ -62,8 +64,10 @@ it('persists history filters in the URL and asks the server for the second filte
 });
 
 it('edits only a waiting job priority and explains that holding scheduling does not pause running jobs', async () => {
+  jobs[1] = { ...jobs[1], progress: { phase: 'waiting_for_device', wait_reason: 'waiting for a free accelerator with enough memory' } };
   render(view('/queue?view=waiting'));
   const input = await screen.findByRole('spinbutton', { name: '优先级: Run waiting' });
+  expect(screen.getByTestId('job-row-waiting')).toHaveTextContent('等待空闲且显存充足的显卡');
   fireEvent.change(input, { target: { value: '42' } }); fireEvent.blur(input);
   await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/jobs/waiting', { priority: 42 }, { silent: true }));
   fireEvent.click(screen.getByTestId('toggle-held'));

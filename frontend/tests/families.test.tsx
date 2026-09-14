@@ -92,8 +92,8 @@ describe('FE-M7: family-driven SchemaForm', () => {
     );
     fireEvent.click(screen.getByTestId('text-encoding-select'));
     expect(screen.getAllByRole('option')).toHaveLength(2);
-    expect(screen.getByRole('option',{name:'训练前缓存标签'})).toBeInTheDocument();
-    expect(screen.queryByRole('option',{name:'每步处理标签'})).not.toBeInTheDocument();
+    expect(screen.getByRole('option',{name:'训练前缓存文本特征'})).toBeInTheDocument();
+    expect(screen.queryByRole('option',{name:'每步编码文本'})).not.toBeInTheDocument();
   });
 
   it('3. anima 高级标签处理方式使用易懂中文且仍写入 online 枚举', () => {
@@ -104,7 +104,7 @@ describe('FE-M7: family-driven SchemaForm', () => {
     fireEvent.click(screen.getByTestId('text-encoding-select'));
     expect(screen.getAllByRole('option')).toHaveLength(3);
     expect(screen.queryByRole('option',{name:/在线|预缓存/})).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('option',{name:'每步处理标签'}));
+    fireEvent.click(screen.getByRole('option',{name:'每步编码文本'}));
     expect(changed.dataset.text_encoding).toBe('online');
   });
 

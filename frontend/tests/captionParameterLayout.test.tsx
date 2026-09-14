@@ -51,10 +51,10 @@ describe('compact data and caption parameter layout', () => {
     const cache = within(screen.getByTestId('field-dataset.cache_latents')).getByRole('checkbox');
     expect(cache).not.toBeChecked();
     const mode = screen.getByTestId('text-encoding-select');
-    expect(mode).toHaveTextContent('每步处理标签');
+    expect(mode).toHaveTextContent('每步编码文本');
     fireEvent.click(mode);
     expect(screen.queryByRole('option', { name: /在线|预缓存/ })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('option', { name: '训练前缓存标签' }));
+    fireEvent.click(screen.getByRole('option', { name: '训练前缓存文本特征' }));
     expect(current().dataset).toEqual({ ...initial.dataset, text_encoding: 'cached' });
   });
 
