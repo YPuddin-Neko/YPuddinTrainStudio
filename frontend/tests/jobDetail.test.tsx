@@ -159,3 +159,17 @@ it('returns to the exact filtered queue page after navigating through detail tab
   expect(screen.getByTestId('current-location')).toHaveTextContent(queueUrl);
   expect(requests.some(url => url.searchParams.get('group') === 'history' && url.searchParams.get('project_id') === 'proj_01' && url.searchParams.get('type') === 'train' && url.searchParams.get('status') === 'completed' && url.searchParams.get('q') === 'chara' && url.searchParams.get('page') === '2')).toBe(true);
 });
+
+
+it.each(['logs', 'config'])('keeps XYZ %s free of training metrics when navigating between tabs', async (tab) => {
+  server.use(http.get('/api/jobs/job_01', () => HttpResponse.json({...mockJobs[0], id: 'job_01', name: 'XYZ 对比任务', type: 'xyz', status: 'completed'})));
+  const {container} = render(<MemoryRouter initialEntries={[`/jobs/job_01?tab=${tab}`]}><Routes><Route path="/jobs/:id" element={<JobDetail/>}/></Routes></MemoryRouter>);
+  await screen.findByRole('heading', {name: 'XYZ 对比任务'});
+  expect(container.querySelector('.job-monitor-summary')).not.toBeInTheDocument();
+  expect(screen.getByText('运行时长')).toBeInTheDocument();
+  expect(screen.getByText('任务配置')).toBeInTheDocument();
+  expect(screen.queryByLabelText('训练核心指标')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab', {name: tab === 'logs' ? '配置快照' : '日志'}));
+  expect(container.querySelector('.job-monitor-summary')).not.toBeInTheDocument();
+  expect(screen.queryByText('训练时长')).not.toBeInTheDocument();
+});
