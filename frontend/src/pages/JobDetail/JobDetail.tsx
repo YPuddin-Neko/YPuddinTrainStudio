@@ -58,7 +58,7 @@ function EmptyState({ icon: Icon, title, hint }: { icon: React.ComponentType<{ c
     <div className="col-span-full flex flex-col items-center justify-center py-14 text-center">
       <Icon className="w-8 h-8 text-slate-300 dark:text-slate-600" />
       <p className="mt-3 text-sm font-medium text-slate-500 dark:text-slate-400">{title}</p>
-      <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">{hint}</p>
+      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{hint}</p>
     </div>
   );
 }
@@ -67,7 +67,7 @@ function EmptyState({ icon: Icon, title, hint }: { icon: React.ComponentType<{ c
 function logLevelColor(level: string): string {
   if (level === 'error') return 'text-red-400';
   if (level === 'warn') return 'text-yellow-400';
-  if (level === 'debug') return 'text-slate-500';
+  if (level === 'debug') return 'text-slate-400';
   return 'text-blue-400';
 }
 
@@ -441,7 +441,7 @@ export default function JobDetail() {
             return (
               <React.Fragment key={ph}>
                 <div className={`flex items-center space-x-1.5 text-xs font-medium px-3 py-1.5 rounded-md ${
-                  isCurrent ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' : isDone ? 'text-green-600 dark:text-green-400' : 'text-slate-400'
+                  isCurrent ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' : isDone ? 'text-green-700 dark:text-green-400' : 'text-slate-500 dark:text-slate-400'
                 }`}>
                   {isDone ? <CheckCircle2 className="w-3.5 h-3.5" /> : <span>{idx + 1}.</span>}
                   <span>{phaseLabels[ph]}</span>
@@ -482,7 +482,7 @@ export default function JobDetail() {
               role="tab" id={`job-tab-${tab.key}`} aria-controls={`job-panel-${tab.key}`} tabIndex={activeTab === tab.key ? 0 : -1} aria-selected={activeTab === tab.key}
               onKeyDown={event => { const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1; if (next >= 0) { event.preventDefault(); setActiveTab(tabs[next].key); document.getElementById(`job-tab-${tabs[next].key}`)?.focus(); } }}
               onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center space-x-2 py-3 border-b-2 ${activeTab === tab.key ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+              className={`flex items-center space-x-2 py-3 border-b-2 ${activeTab === tab.key ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
             >
               <tab.icon className="w-4 h-4" />
               <span>{tab.label}</span>
@@ -537,9 +537,9 @@ export default function JobDetail() {
               <div className="p-3 space-y-1 text-xs">
                 <div className="flex justify-between font-semibold">
                   <span className="font-mono">{t('job.step')} {s.step}</span>
-                  <span className="text-slate-400 font-mono">{t('job.seed')} {s.seed}</span>
+                  <span className="text-slate-500 dark:text-slate-400 font-mono">{t('job.seed')} {s.seed}</span>
                 </div>
-                <SampleLoss sample={s}/><p className="text-slate-500 line-clamp-2" title={s.prompt}>{s.prompt}</p>
+                <SampleLoss sample={s}/><p className="text-slate-500 dark:text-slate-400 line-clamp-2" title={s.prompt}>{s.prompt}</p>
               </div>
             </div>
           ))}
@@ -567,12 +567,12 @@ export default function JobDetail() {
               <div className="h-full flex flex-col items-center justify-center text-center">
                 <Terminal className="w-6 h-6 text-slate-600" />
                 <p className="mt-2 text-slate-400">{t('job.noLogs', '暂无日志')}</p>
-                <p className="mt-1 text-slate-500">{t('job.noLogsHint', '任务运行日志会实时输出到这里。')}</p>
+                <p className="mt-1 text-slate-400">{t('job.noLogsHint', '任务运行日志会实时输出到这里。')}</p>
               </div>
             ) : (
               filteredLogs.map((l, idx) => (
-                <div key={idx} className={`flex space-x-2 ${l.level === 'debug' ? 'opacity-60' : ''}`}>
-                  <span className="text-slate-500 shrink-0">
+                <div key={idx} className="flex space-x-2">
+                  <span className="text-slate-400 shrink-0">
                     [{l.ts == null ? '--' : typeof l.ts === 'number' ? new Date(l.ts * 1000).toLocaleTimeString() : l.ts}]
                   </span>
                   <span className={`uppercase font-bold ${logLevelColor(l.level)}`}>

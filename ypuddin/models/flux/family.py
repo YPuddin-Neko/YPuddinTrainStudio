@@ -229,11 +229,11 @@ class FluxFamily(ModelFamily):
             "single_transformer_blocks.*.{proj_mlp,proj_out}",
         )
         return {
-            "attn-only": TargetPreset("attn-only", attention, description="双流与单流 block 的注意力投影"),
+            "attn-only": TargetPreset("attn-only", attention, description="仅训练双流和单流模块的注意力投影，训练参数更少。"),
             "attn-mlp": TargetPreset(
-                "attn-mlp", attention + mlp, description="注意力与 MLP，含单流 block 的联合输出投影"
+                "attn-mlp", attention + mlp, description="训练注意力和前馈层，包括单流模块的联合输出投影。"
             ),
-            "all-linear": TargetPreset("all-linear", ("*",), description="所有 Linear 层"),
+            "all-linear": TargetPreset("all-linear", ("*",), description="训练模型中的全部线性层，包括嵌入与输出层。"),
         }
 
     def memory_layout(self, loaded):

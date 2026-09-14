@@ -34,8 +34,7 @@
 .overview-checks strong { font-size:12px; font-weight:550; }
 .overview-checks small { font-size:11px; line-height:1.45; color:var(--studio-dim); overflow-wrap:anywhere; }
 .overview-panel-footer { display:flex; justify-content:flex-end; margin-top:auto; padding-top:13px; }
-.overview-primary-link { display:inline-flex; align-items:center; gap:8px; min-height:35px; padding:7px 11px; border-radius:6px; background:var(--studio-accent); color:var(--studio-on-accent,#fff); font-size:12px; font-weight:550; }
-.dark .overview-primary-link { color:var(--studio-on-accent,#0f172a); }
+.overview-primary-link { display:inline-flex; align-items:center; gap:8px; min-height:35px; padding:7px 11px; border-radius:6px; background:var(--studio-action); color:var(--studio-on-action); font-size:12px; font-weight:550; }
 .overview-model { display:flex; align-items:center; gap:12px; padding:13px 0 18px; border-bottom:1px solid var(--studio-line); min-width:0; }
 .overview-model-icon { flex:none; display:grid; place-items:center; width:45px; height:45px; border:1px solid var(--studio-line); border-radius:9px; color:var(--studio-accent); background:var(--studio-muted); }
 .overview-model > div:nth-child(2) { display:grid; gap:4px; min-width:0; flex:1; }

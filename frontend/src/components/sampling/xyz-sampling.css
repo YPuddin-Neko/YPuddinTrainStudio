@@ -29,7 +29,7 @@
 .xyz-span { grid-column:1/-1; }
 .xyz-form footer { padding:12px 16px; border-top:1px solid var(--studio-line); background:var(--studio-muted); }
 .xyz-form footer p { color:var(--studio-dim); font-size:11px; margin-bottom:9px; line-height:1.6; }
-.xyz-primary { display:flex; align-items:center; justify-content:center; gap:7px; width:100%; min-height:36px; border-radius:6px; background:var(--studio-accent); color:white; font-size:12px; font-weight:600; }
+.xyz-primary { display:flex; align-items:center; justify-content:center; gap:7px; width:100%; min-height:36px; border-radius:6px; background:var(--studio-action); color:var(--studio-on-action); font-size:12px; font-weight:600; }
 .xyz-result-header { display:flex; gap:8px; align-items:center; padding:12px 14px; border-bottom:1px solid var(--studio-line); }
 .xyz-result-header label { display:flex; align-items:center; gap:10px; min-width:0; flex:1; }
 .xyz-result-header label > span { white-space:nowrap; font-size:11px; }

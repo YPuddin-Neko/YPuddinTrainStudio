@@ -21,7 +21,7 @@ const labels: Record<string, string> = {
   'adapter.algo': '适配器算法', 'adapter.rank': 'Rank / 秩', 'adapter.alpha': 'Alpha / 缩放', 'adapter.factor': 'LoKr 分解因子',
   'adapter.decompose_both': '双矩阵低秩分解', 'adapter.rs_lora': 'Rank 稳定缩放', 'adapter.dora': '启用 DoRA',
   'adapter.init': '初始化方式', 'adapter.dropout': '输出丢弃率', 'adapter.rank_dropout': '秩丢弃率',
-  'adapter.module_dropout': '模块丢弃率', 'adapter.preset': '训练目标层', 'adapter.rules': '逐层覆盖规则',
+  'adapter.module_dropout': '模块丢弃率', 'adapter.preset': '训练范围', 'adapter.rules': '逐层覆盖规则',
   'adapter.mode': '适配器计算模式', 'adapter.param_dtype': '可训练参数精度', 'adapter.lr_scale': '学习率缩放',
   'adapter.resume_weights': '已有适配器权重', 'objective.timestep_sampling': '时间步采样',
   'objective.logit_mean': 'Logit 均值', 'objective.logit_std': 'Logit 标准差', 'objective.res_shift_tokens': '分辨率偏移基准',
@@ -54,7 +54,22 @@ const labels: Record<string, string> = {
 };
 
 export function configFieldLabel(path: string, fallback: string, english = false) {
+  if (path === 'adapter.preset') return english ? 'Training scope' : labels[path];
   return english ? fallback : labels[path] || fallback;
+}
+
+export function configPresetLabel(name: string, description: string, defaultPreset?: string, english = false) {
+  const names: Record<string, [string, string]> = {
+    'attn-mlp': ['常规范围', 'Standard scope'],
+    'attn-only': ['精简范围', 'Reduced scope'],
+    'full-linear': ['全部线性层', 'All linear layers'],
+    'all-linear': ['全部线性层', 'All linear layers'],
+    'with-adapter': ['常规范围＋文字适配层', 'Standard scope + text adapter'],
+    'attn-mlp-text': ['常规范围＋文字融合层', 'Standard scope + text fusion'],
+    'adapter-only': ['仅文字适配层', 'Text adapter only'],
+  };
+  const label = names[name]?.[english ? 1 : 0] || description || name;
+  return name === defaultPreset ? `${label}${english ? ' (default)' : '（默认）'}` : label;
 }
 
 export function configOptionLabel(path: string, option: string, english = false) {
@@ -105,7 +120,7 @@ export function presentConfigIssues(errors: Array<{loc?: unknown; msg?: unknown}
       else if (/Extra inputs are not permitted/i.test(detail)) message = '当前版本不支持此参数，请检查导入的配置';
       else if (/valid (integer|number)/i.test(detail)) message = '请输入有效数字';
       else if (/no (images|training images)|dataset is empty/i.test(detail)) message = '数据源中没有可用的训练图片';
-      else if (/unknown preset/i.test(detail)) message = '当前模型不支持这个目标层预设，请重新选择';
+      else if (/unknown preset/i.test(detail)) message = '当前模型不支持这个训练范围，请重新选择';
       else if (Array.from(detail).every(character => character.charCodeAt(0) < 128)) message = '此配置未通过检查，展开详情查看具体原因';
     }
     return {path, label, message, detail, tab: configTabForPath(path)};

@@ -254,8 +254,8 @@ class SDXLFamily(ModelFamily):
         attn = ("*.attn1.{to_q,to_k,to_v,to_out.0}", "*.attn2.{to_q,to_k,to_v,to_out.0}")
         mlp = ("*.ff.net.0.proj", "*.ff.net.2")
         return {
-            "attn-only": TargetPreset("attn-only", attn, description="UNet 注意力投影"),
-            "attn-mlp": TargetPreset("attn-mlp", attn + mlp, description="UNet 注意力与前馈层"),
+            "attn-only": TargetPreset("attn-only", attn, description="仅训练图像模型的注意力投影，训练参数更少。"),
+            "attn-mlp": TargetPreset("attn-mlp", attn + mlp, description="训练图像模型的注意力和前馈层。"),
         }
 
     def memory_layout(self, loaded: LoadedModel) -> MemoryLayout:

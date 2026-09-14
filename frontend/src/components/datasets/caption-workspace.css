@@ -48,7 +48,8 @@
 .caption-workspace-tag-add input { width:0; flex:1; }
 .caption-workspace-save { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:7px; border-top:1px solid var(--studio-line); padding-top:10px; }
 .caption-workspace-save > span { margin-right:auto; font-size:11px; color:var(--studio-dim); }
-.caption-workspace .caption-workspace-primary,.caption-workspace-leave .caption-workspace-primary { border-color:var(--studio-accent); background:var(--studio-accent); color:#fff; }
+.caption-workspace .caption-workspace-primary,.caption-workspace-leave .caption-workspace-primary { border-color:var(--studio-action); background:var(--studio-action); color:var(--studio-on-action); }
+.caption-workspace .caption-workspace-primary:hover:not(:disabled),.caption-workspace-leave .caption-workspace-primary:hover:not(:disabled) { border-color:var(--studio-action-hover); background:var(--studio-action-hover); }
 .caption-workspace-statistics { display:grid; gap:10px; min-width:0; border-top:1px solid var(--studio-line); padding-top:12px; }
 .caption-workspace-statistics header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
 .caption-workspace-statistics header > div { min-width:0; }

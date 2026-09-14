@@ -474,22 +474,22 @@ class Krea2Family(ModelFamily):
             "all-linear": TargetPreset(
                 "all-linear",
                 include=("*",),
-                description="全部 264 个 Linear（Krea 官方默认：rank 32 / alpha 32）",
+                description="训练模型中的全部线性层，包括文字融合、嵌入与输出层。参数量随所选范围增大。",
             ),
             "attn-mlp": TargetPreset(
                 "attn-mlp",
                 include=attn + mlp,
-                description="28 个主 block 的注意力 + SwiGLU（不含文本融合层与嵌入/输出层）",
+                description="训练图像模型主模块的注意力和前馈层，不包含文字融合、嵌入与输出层。",
             ),
             "attn-only": TargetPreset(
                 "attn-only",
                 include=attn,
-                description="仅主 block 注意力投影（官方对长时间训练的建议：更好保持提示词遵循）",
+                description="仅训练图像模型主模块的注意力投影，训练参数更少。",
             ),
             "attn-mlp-text": TargetPreset(
                 "attn-mlp-text",
                 include=attn + mlp + text,
-                description="主 block + 文本融合 transformer + 文本 MLP",
+                description="训练主模块的注意力、前馈层，以及模型内部的文字融合层；不训练文本编码器本身。",
             ),
         }
 

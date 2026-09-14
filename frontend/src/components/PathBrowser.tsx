@@ -85,36 +85,36 @@ export const PathPickerModal: React.FC<{
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} onKeyDown={keyDown}
-        className="min-w-0 bg-white dark:bg-slate-800 rounded-xl max-w-xl w-full max-h-[90vh] overflow-y-auto p-5 space-y-4 shadow-xl border border-slate-200 dark:border-slate-700"
+        className="min-w-0 bg-white dark:bg-slate-800 text-[var(--studio-text)] rounded-xl max-w-xl w-full max-h-[90vh] overflow-y-auto p-5 space-y-4 shadow-xl border border-slate-200 dark:border-slate-700"
         onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center gap-3 border-b pb-2 dark:border-slate-700">
           <h3 id={titleId} className="font-semibold text-lg">{t('pathBrowser.title')}</h3>
-          <button type="button" onClick={onClose} aria-label={t('common.close')} className="p-1 text-slate-400 hover:text-slate-600"><X className="h-5 w-5" /></button>
+          <button type="button" onClick={onClose} aria-label={t('common.close')} className="p-1 text-[var(--studio-dim)] hover:text-[var(--studio-text)]"><X className="h-5 w-5" /></button>
         </div>
         <div className="space-y-2">
-          <label htmlFor={`${titleId}-address`} className="text-xs text-slate-500">{t('pathBrowser.address')}</label>
+          <label htmlFor={`${titleId}-address`} className="text-xs text-[var(--studio-dim)]">{t('pathBrowser.address')}</label>
           <div className="flex min-w-0 gap-2">
             <input ref={addressRef} id={`${titleId}-address`} value={address} onChange={(e) => { request.current?.abort(); setAddress(e.target.value); setData(null); setLoading(false); setError(''); }}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (address.trim()) void loadDirectory(address); } }}
               className="min-w-0 flex-1 rounded border border-slate-300 px-3 py-2 text-sm font-mono dark:bg-slate-900 dark:border-slate-600" />
             <button type="button" disabled={!address.trim()} onClick={() => void loadDirectory(address)} className="shrink-0 rounded bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-50">{t('pathBrowser.openDirectory')}</button>
           </div>
-          <p className="text-xs text-slate-500">{t('pathBrowser.serverHint')}</p>
+          <p className="text-xs text-[var(--studio-dim)]">{t('pathBrowser.serverHint')}</p>
         </div>
-        {loading && <div role="status" className="flex items-center gap-2 py-5 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />{t('pathBrowser.loading')}</div>}
+        {loading && <div role="status" className="flex items-center gap-2 py-5 text-sm text-[var(--studio-dim)]"><Loader2 className="h-4 w-4 animate-spin" />{t('pathBrowser.loading')}</div>}
         {error && <div role="alert" className="space-y-2 rounded bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"><p className="whitespace-pre-line break-words">{error}</p><button type="button" onClick={() => void loadDirectory(address)} className="underline">{t('common.retry')}</button></div>}
-        {!loading && !error && !canSelect && <p className="text-sm text-slate-500">{t('pathBrowser.openToBrowse')}</p>}
+        {!loading && !error && !canSelect && <p className="text-sm text-[var(--studio-dim)]">{t('pathBrowser.openToBrowse')}</p>}
         {canSelect && data && <div className="max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700" aria-label={t('pathBrowser.entries')}>
-          {data.parent && <button type="button" onClick={() => void loadDirectory(data.parent!)} className="flex w-full items-center gap-2 p-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-700 font-medium text-blue-500"><ArrowUp className="h-4 w-4" />{t('pathBrowser.parentDir')}</button>}
+          {data.parent && <button type="button" onClick={() => void loadDirectory(data.parent!)} className="flex w-full items-center gap-2 p-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-700 font-medium text-[var(--studio-accent)]"><ArrowUp className="h-4 w-4" />{t('pathBrowser.parentDir')}</button>}
           {data.entries.map((entry) => <button type="button" key={entry.name} onClick={() => {
             const path = childPath(data.path, entry.name);
             if (entry.is_dir) void loadDirectory(path);
             else { onSelect(path); onClose(); }
           }} className="flex w-full min-w-0 items-center justify-between gap-3 p-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-700">
-            <span className="flex min-w-0 items-center gap-2">{entry.is_dir ? <Folder className="h-4 w-4 shrink-0 text-blue-500" /> : <File className="h-4 w-4 shrink-0 text-slate-400" />}<span className="break-all">{entry.name}</span></span>
-            <span className="shrink-0 text-xs text-slate-400">{entry.is_dir ? t('pathBrowser.dir') : formatBytes(entry.size)}</span>
+            <span className="flex min-w-0 items-center gap-2">{entry.is_dir ? <Folder className="h-4 w-4 shrink-0 text-[var(--studio-accent)]" /> : <File className="h-4 w-4 shrink-0 text-[var(--studio-dim)]" />}<span className="break-all">{entry.name}</span></span>
+            <span className="shrink-0 text-xs text-[var(--studio-dim)]">{entry.is_dir ? t('pathBrowser.dir') : formatBytes(entry.size)}</span>
           </button>)}
-          {data.entries.length === 0 && <p className="p-4 text-center text-sm text-slate-500">{t('pathBrowser.empty')}</p>}
+          {data.entries.length === 0 && <p className="p-4 text-center text-sm text-[var(--studio-dim)]">{t('pathBrowser.empty')}</p>}
         </div>}
         <div className="flex justify-end gap-2 pt-3 border-t dark:border-slate-700">
           <button type="button" onClick={onClose} className="px-3 py-2 text-sm rounded bg-slate-200 dark:bg-slate-700">{t('common.cancel')}</button>

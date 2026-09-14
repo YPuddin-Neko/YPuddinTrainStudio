@@ -2,7 +2,7 @@
 .settings-drawer-backdrop { position: fixed; inset: 0; z-index: 60; background: #0f172a55; display: flex; justify-content: flex-end; }
 .settings-drawer { position: relative; width: min(1120px,calc(100vw - 240px)); height: 100dvh; background: #f8fafc; color: #1e293b; border-left: 1px solid #dfe3e9; box-shadow: -16px 0 50px #0f172a22; padding: 12px; overflow: hidden; }
 .dark .settings-drawer { background: #0b1220; color: #e2e8f0; border-color: #334155; }
-.settings-drawer-close { position: absolute; top: 17px; right: 20px; z-index: 4; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 5px; color: #64748b; }.settings-drawer-close:hover { background: #e2e8f0; }.dark .settings-drawer-close:hover { background: #334155; }
-.settings-drawer-loading { padding: 32px; color: #64748b; font-size: 13px; }
+.settings-drawer-close { position: absolute; top: 17px; right: 20px; z-index: 4; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 5px; color: var(--studio-dim); }.settings-drawer-close:hover { background: #e2e8f0; }.dark .settings-drawer-close:hover { background: #334155; }
+.settings-drawer-loading { padding: 32px; color: var(--studio-dim); font-size: 13px; }
 @media (max-width: 1000px) { .settings-drawer { width: calc(100vw - 48px); } }
 @media (max-width: 800px) { .settings-drawer { width: 100vw; padding: 8px; }.settings-drawer-close { right: 12px; top: 12px; width: 40px; height: 40px; } }

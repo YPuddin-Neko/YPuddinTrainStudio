@@ -30,11 +30,11 @@ export function metricChartBase(xAxisName: string, yAxisName: string) {
         return [`${xAxisName}: ${formatMetricValue(points[0].axisValue)}`, ...points.map(point => `${point.seriesName || yAxisName}: ${formatMetricValue(point.value)}`)].join('\n');
       },
     },
-    legend: { type: 'scroll' as const, top: 4, left: 12, right: 12, textStyle: { color: '#888', fontSize: 11 } },
+    legend: { type: 'scroll' as const, top: 4, left: 12, right: 12, textStyle: { fontSize: 11 } },
     // Reserve separate top legend, axes and bottom zoom regions at every width.
     grid: { left: 12, right: 26, top: 62, bottom: 78, containLabel: true },
     xAxis: { type: 'value' as const, name: xAxisName, nameLocation: 'middle' as const, nameGap: 30, splitLine: { show: false }, axisLabel: { formatter: formatMetricValue } },
-    yAxis: { type: 'value' as const, name: yAxisName, scale: true, axisLabel: { formatter: formatMetricValue }, splitLine: { lineStyle: { color: '#88888825' } } },
+    yAxis: { type: 'value' as const, name: yAxisName, scale: true, axisLabel: { formatter: formatMetricValue } },
     dataZoom: [{ type: 'slider' as const, bottom: 8, height: 18, showDetail: false, brushSelect: false }],
   };
 }

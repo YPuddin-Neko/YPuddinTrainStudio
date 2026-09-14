@@ -18,7 +18,10 @@
 
 /* Dense desktop workbench: shared surfaces, deliberate field rhythm, no duplicate forms. */
 :root { --studio-canvas:#f8fafc; --studio-panel:#fff; --studio-muted:#f8fafc; --studio-line:#e2e8f0; --studio-text:#334155; --studio-dim:#64748b; --studio-accent:#2563eb; --studio-scrollbar-thumb:#94a3b8; --studio-scrollbar-hover:#64748b; }
+/* Filled actions keep a readable foreground; the accent also serves as link text. */
+:root { --studio-action:#2563eb; --studio-action-hover:#1d4ed8; --studio-on-action:#fff; }
 .dark { --studio-canvas:#020617; --studio-panel:#0f172a; --studio-muted:#111c30; --studio-line:#263349; --studio-text:#cbd5e1; --studio-dim:#94a3b8; --studio-accent:#60a5fa; --studio-scrollbar-thumb:#64748b; --studio-scrollbar-hover:#94a3b8; }
+input::placeholder, textarea::placeholder { color:var(--studio-dim); opacity:1; }
 /* Keep native scrolling in pages, nested lists and portaled dialogs on the same theme. */
 :where(*) { scrollbar-width:thin; scrollbar-color:var(--studio-scrollbar-thumb) transparent; }
 :where(*):hover { scrollbar-color:var(--studio-scrollbar-hover) transparent; }
@@ -159,8 +162,8 @@
 .mask-context-note { flex-basis:100%; border-top:1px solid var(--studio-line); padding-top:8px; }
 .section-context { color:var(--studio-dim); font-size:12px; padding:0 0 12px; }
 .studio-primary, .studio-secondary { display:inline-flex; align-items:center; justify-content:center; gap:6px; border-radius:6px; padding:7px 11px; font-size:12px; white-space:nowrap; }
-.studio-primary { background:#2563eb; color:white; font-weight:600; border:1px solid #2563eb; }
-.studio-primary:hover:not(:disabled) { background:#1d4ed8; }
+.studio-primary { background:var(--studio-action); color:var(--studio-on-action); font-weight:600; border:1px solid var(--studio-action); }
+.studio-primary:hover:not(:disabled) { background:var(--studio-action-hover); }
 .studio-primary:disabled { opacity:.45; }
 .studio-secondary { border:1px solid var(--studio-line); background:var(--studio-panel); }
 .studio-secondary:hover { background:var(--studio-muted); }

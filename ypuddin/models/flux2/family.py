@@ -250,9 +250,9 @@ class Flux2Family(ModelFamily):
         mlp = ("transformer_blocks.*.{ff,ff_context}.{linear_in,linear_out}",)
         return {
             "attn-only": TargetPreset(
-                "attn-only", attn, description="FLUX.2 注意力；single block 含融合 MLP 投影"
+                "attn-only", attn, description="训练注意力投影；单流模块的投影同时包含融合的前馈部分。"
             ),
-            "attn-mlp": TargetPreset("attn-mlp", attn + mlp, description="FLUX.2 双流与单流注意力及前馈层"),
+            "attn-mlp": TargetPreset("attn-mlp", attn + mlp, description="训练双流和单流模块的注意力及前馈层。"),
         }
 
     def memory_layout(self, loaded):

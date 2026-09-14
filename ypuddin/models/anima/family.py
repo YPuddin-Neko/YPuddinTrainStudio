@@ -326,16 +326,16 @@ class AnimaFamily(ModelFamily):
             "attn-mlp": TargetPreset(
                 "attn-mlp",
                 include=attn + mlp,
-                description="DiT 注意力 + MLP（默认，与 AnimaLoraStudio 一致）",
+                description="训练图像模型的注意力和前馈层。适合大多数 LoRA / LoKr 训练。",
             ),
-            "attn-only": TargetPreset("attn-only", include=attn, description="仅 DiT 注意力投影"),
+            "attn-only": TargetPreset("attn-only", include=attn, description="仅训练图像模型的注意力投影，训练参数更少。"),
             "full-linear": TargetPreset(
-                "full-linear", include=attn + mlp + adaln, description="DiT 内全部 Linear（含 AdaLN 调制）"
+                "full-linear", include=attn + mlp + adaln, description="训练图像模型各主模块中的全部线性层，包括注意力、前馈和条件调制层。"
             ),
             "with-adapter": TargetPreset(
-                "with-adapter", include=attn + mlp + adapter, description="DiT 注意力 + MLP + LLM Adapter"
+                "with-adapter", include=attn + mlp + adapter, description="训练图像模型的注意力、前馈层，以及连接文字特征的适配层。"
             ),
-            "adapter-only": TargetPreset("adapter-only", include=adapter, description="仅 LLM Adapter"),
+            "adapter-only": TargetPreset("adapter-only", include=adapter, description="只训练连接文字特征与图像模型的适配层，不训练文本编码器本身。"),
         }
 
     def memory_layout(self, loaded: LoadedModel) -> MemoryLayout:

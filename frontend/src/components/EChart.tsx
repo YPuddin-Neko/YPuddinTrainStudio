@@ -10,6 +10,7 @@ import {
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import type { EChartsCoreOption } from 'echarts/core';
+import { readChartTheme, updateChartTheme } from './chartTheme';
 
 // 按需注册：只打包用得到的模块（完整 echarts 包约 1 MB，这里约 1/3）
 echarts.use([
@@ -35,8 +36,18 @@ export function EChart({ option, style }: EChartProps) {
   React.useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const chart = echarts.init(el);
+    const root = document.documentElement;
+    const theme = readChartTheme(root);
+    let dark = theme.darkMode;
+    const chart = echarts.init(el, theme);
     chartRef.current = chart;
+    const themeObserver = new MutationObserver(() => {
+      const nextDark = root.classList.contains('dark');
+      if (nextDark === dark) return;
+      dark = nextDark;
+      updateChartTheme(chart, readChartTheme(root));
+    });
+    themeObserver.observe(root, {attributes: true, attributeFilter: ['class']});
     // jsdom（测试环境）没有 ResizeObserver，退化为 window resize 监听
     const onResize = () => chart.resize();
     let observer: ResizeObserver | null = null;
@@ -47,6 +58,7 @@ export function EChart({ option, style }: EChartProps) {
       window.addEventListener('resize', onResize);
     }
     return () => {
+      themeObserver.disconnect();
       observer?.disconnect();
       window.removeEventListener('resize', onResize);
       chart.dispose();

@@ -16,8 +16,7 @@
 .projects-archive-filter { display:flex; align-items:center; gap:5px; flex:none; font-size:12px; color:var(--studio-dim); white-space:nowrap; }
 .projects-pagination { display:flex; align-items:center; gap:7px; margin-left:auto; flex:none; font-size:12px; color:var(--studio-dim); font-variant-numeric:tabular-nums; }
 .projects-page-button,.projects-create-button { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:33px; padding:5px 9px; border:1px solid var(--studio-line); border-radius:5px; background:var(--studio-panel); color:var(--studio-text); font-size:12px; cursor:pointer; }
-.projects-create-button { background:var(--studio-accent); border-color:var(--studio-accent); color:var(--studio-on-accent,#fff); }
-.dark .projects-create-button { color:var(--studio-on-accent,#0f172a); }
+.projects-create-button { background:var(--studio-action); border-color:var(--studio-action); color:var(--studio-on-action); }
 .projects-create-button:hover:not(:disabled) { filter:brightness(.94); }
 .projects-page-button:hover:not(:disabled) { color:var(--studio-accent); border-color:var(--studio-accent); }
 .projects-page-button:disabled,.projects-create-button:disabled,.project-more-button:disabled { opacity:.45; cursor:not-allowed; }

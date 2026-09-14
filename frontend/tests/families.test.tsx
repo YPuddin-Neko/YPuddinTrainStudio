@@ -57,17 +57,33 @@ const baseConfig = {
 
 describe('FE-M7: family-driven SchemaForm', () => {
   it('1. adapter.preset 下拉选项随族切换', () => {
+    let changed: any;
     const { rerender } = render(
-      <SchemaForm schema={trainSchema as any} value={baseConfig} onChange={() => {}} family={krea2Family} />
+      <SchemaForm schema={trainSchema as any} value={baseConfig} onChange={next => { changed = next; }} family={krea2Family} />
     );
     const select = screen.getByTestId('adapter-preset-select');
-    expect(select).toHaveTextContent('all-linear');
+    expect(select).toHaveAccessibleName('训练范围');
+    expect(select).toHaveTextContent('全部线性层');
     fireEvent.click(select);
-    expect(screen.getAllByRole('option').map(option=>option.textContent?.split(' — ')[0])).toEqual(['all-linear','attn-mlp','attn-only']);
-    fireEvent.keyDown(select,{key:'Escape'});
+    expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['全部线性层', '常规范围（默认）', '精简范围']);
+    fireEvent.click(screen.getByRole('option', {name: '精简范围'}));
+    expect(changed.adapter.preset).toBe('attn-only');
     rerender(<SchemaForm schema={trainSchema as any} value={baseConfig} onChange={()=>{}} family={animaFamily}/>);
     fireEvent.click(screen.getByTestId('adapter-preset-select'));
-    expect(screen.getAllByRole('option').map(option=>option.textContent?.split(' — ')[0])).toEqual(['attn-mlp','full-linear']);
+    expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['常规范围（默认）', '全部线性层']);
+  });
+
+  it('explains training scope separately and reserves technical identifiers for advanced help', () => {
+    const {rerender} = render(<SchemaForm schema={trainSchema} value={baseConfig} onChange={() => {}} family={krea2Family} compact/>);
+    fireEvent.click(screen.getByRole('button', {name: '训练范围 说明'}));
+    expect(screen.getByRole('tooltip')).toHaveTextContent('决定本次训练可以调整模型的哪些部分');
+    expect(screen.getByRole('tooltip')).toHaveTextContent('不保证效果更好');
+    expect(screen.getByRole('tooltip')).not.toHaveTextContent('all-linear');
+    fireEvent.keyDown(document, {key: 'Escape'});
+    rerender(<SchemaForm schema={trainSchema} value={baseConfig} onChange={() => {}} family={krea2Family} compact showAdvanced/>);
+    fireEvent.click(screen.getByRole('button', {name: '训练范围 说明'}));
+    expect(screen.getByRole('tooltip')).toHaveTextContent('all-linear');
+    expect(screen.getByRole('tooltip')).toHaveTextContent('264');
   });
 
   it('2. krea2 高级标签处理方式仅提供受支持的缓存选项', () => {

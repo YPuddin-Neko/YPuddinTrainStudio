@@ -5,7 +5,7 @@ import { ChevronDown, ChevronRight, Plus, Trash2, ArrowUp, ArrowDown, FolderOpen
 import { PathInput, PathPickerModal } from '../../components/PathBrowser';
 import { apiClient } from '../../api/client';
 import { FamilyInfo } from '../../api/types';
-import { configFieldLabel, configOptionLabel } from '../../utils/configPresentation';
+import { configFieldLabel, configOptionLabel, configPresetLabel } from '../../utils/configPresentation';
 import { MODEL_PATH_FIELDS } from '../../utils/workspaceConfig';
 import { familyParameterOptions, modelAssetUnsupportedReason, modelFamilyWeights, trainingFamilyOptions } from '../../utils/trainingFamilies';
 import NumericControl from './NumericControl';
@@ -609,7 +609,7 @@ const SchemaValueInput: React.FC<{
       onChange={(e) => onChange(e.target.value === '' && nullable ? null : numeric ? Number(e.target.value) : e.target.value)} />;
   }
   return <div className={compact ? 'config-union' : 'space-y-2'}>
-    {nullable && <label className="flex items-center gap-2 text-xs text-slate-500">
+    {nullable && <label className="flex items-center gap-2 text-xs text-[var(--studio-dim)]">
       <input type="checkbox" aria-label={`${name}.unset`} checked={value == null}
         onChange={(e) => onChange(e.target.checked ? null : initialValue())} /><span title={t('train.unset')}>{compact ? (i18n.resolvedLanguage?.startsWith('en') ? 'Unset' : '不设置') : t('train.unset')}</span>
     </label>}
@@ -853,11 +853,10 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       control = <StudioSelect aria-label="model.family" value={fieldValue || families[0]?.name || ''} disabled={!families.length}
         onValueChange={next => onChange(setNestedValue(value,path,next))} options={trainingFamilyOptions(families, english, fieldValue)}/>;
     } else if (fullPathKey === 'adapter.preset' && family) {
-      // 族内预设下拉：name — description（N 层）
+      // Keep the stable preset ID in the value; show the family-owned explanation.
       control = (
         <StudioSelect aria-label={fieldLabel} value={fieldValue || family.default_preset || ''} data-testid="adapter-preset-select"
-          onValueChange={next => onChange(setNestedValue(value,path,next))} options={(family.presets || []).map(preset=>({value:preset.name,label:`${preset.name} — ${preset.description}（${t('preset.layers',{n:preset.layers})}）`}))}/>
-
+          onValueChange={next => onChange(setNestedValue(value,path,next))} options={(family.presets || []).map(preset=>({value:preset.name,label:configPresetLabel(preset.name, preset.description, family.default_preset, english)}))}/>
       );
     } else if (fullPathKey === 'dataset.text_encoding' && family) {
       // 文本编码选项受族 text_modes 约束（krea2 无 online）
@@ -968,7 +967,17 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (React.isValidElement(control) && (typeof control.type === 'string' || control.type === StudioSelect)) {
       control = React.cloneElement(control as React.ReactElement<any>, {id: fieldId, 'aria-label': (control.props as any)['aria-label'] || fieldLabel, 'aria-invalid': !!errorItem});
     }
-    const help = weightMeta?.hint || prop.description;
+    const scopeHelp = fullPathKey === 'adapter.preset' ? (english
+      ? 'Determines which parts of the model this training can adjust. Usually keep the default. A wider scope generally adds parameters and memory use, without guaranteeing better results.'
+      : '决定本次训练可以调整模型的哪些部分。通常保留默认；扩大范围通常增加参数和占用，不保证效果更好。') : null;
+    const selectedPreset = fullPathKey === 'adapter.preset' ? family?.presets?.find(preset => preset.name === (fieldValue || family.default_preset)) : undefined;
+    const help = scopeHelp ? [
+      scopeHelp,
+      selectedPreset?.description,
+      showAdvanced && selectedPreset && `${t('preset.layers', {n: selectedPreset.layers})} · ${selectedPreset.name}`,
+      showAdvanced && selectedPreset?.include?.length && `${english ? 'Included layers' : '包含层'}：${selectedPreset.include.join(', ')}`,
+      showAdvanced && selectedPreset?.exclude?.length && `${english ? 'Excluded layers' : '排除层'}：${selectedPreset.exclude.join(', ')}`,
+    ].filter(Boolean).join('\n\n') : weightMeta?.hint || prop.description;
     const label = (
       <div key={fullPathKey} id={`field-${fullPathKey}`} data-testid={`field-${fullPathKey}`} data-field-path={fullPathKey} data-control-kind={prop.type === 'boolean' ? 'toggle' : undefined} className={compactField ? `config-field ${prop.type === 'boolean' ? 'config-field-toggle' : ''} ${wide ? 'config-field-wide' : ''} ${errorItem ? 'config-field-invalid' : ''}` : `flex flex-col space-y-1 p-2 rounded ${errorItem ? 'bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800' : ''}`}>
         <div className="flex justify-between items-center">
@@ -985,6 +994,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           </p>
         )}
         <div className="mt-1">{readOnly ? <fieldset disabled style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>{control}</fieldset> : control}</div>
+        {fullPathKey === 'adapter.preset' && family && <p className="config-scope-hint">{english ? 'Usually keep the default; a wider scope does not guarantee better results.' : '通常保留默认；范围更大不一定效果更好。'}</p>}
         {errorItem && <p className="text-xs text-red-600 dark:text-red-400">{errorItem.msg}</p>}
       </div>
     );
@@ -1071,19 +1081,23 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
               return rank(a) - rank(b);
             });
           })() : groupName === 'adapter' ? (() => {
-            const order = ['algo', 'preset', 'parameter_mode', 'factor', 'rank', 'alpha', 'init', 'mode', 'param_dtype', 'dropout', 'rank_dropout', 'module_dropout', 'lr_scale', 'rules', 'resume_weights'];
-            const isToggle = (node: React.ReactNode) => (node as React.ReactElement).props['data-control-kind'] === 'toggle';
-            const fields = groupData.fields.filter(node => !isToggle(node)).sort((a, b) => {
+            const order = ['algo', 'preset', 'dora', 'rules', 'parameter_mode', 'factor', 'rank', 'alpha', 'decompose_both', 'rs_lora', 'init', 'resume_weights', 'dropout', 'rank_dropout', 'module_dropout', 'mode', 'param_dtype', 'lr_scale'];
+            const fields = [...groupData.fields].sort((a, b) => {
               const rank = (node: React.ReactNode) => { const index = order.indexOf(String((node as React.ReactElement).key).split('.').pop() || ''); return index < 0 ? order.length : index; };
               return rank(a) - rank(b);
             });
-            const switches = groupData.fields.filter(isToggle);
             const fieldName = (node: React.ReactNode) => String((node as React.ReactElement).key).split('.').pop() || '';
-            const structure = fields.filter(node => ['algo', 'preset'].includes(fieldName(node)));
-            const capacity = fields.filter(node => ['parameter_mode', 'factor', 'rank', 'alpha'].includes(fieldName(node)));
-            const tuning = fields.filter(node => !['algo', 'preset', 'parameter_mode', 'factor', 'rank', 'alpha'].includes(fieldName(node)));
-            if (!compact) return <>{structure}{capacity}{switches.length > 0 && <div className="config-adapter-switches">{switches}</div>}{tuning}</>;
-            return <>{structure.length > 0 && <div className="config-field-section config-adapter-structure"><h3>{english ? 'Training structure' : '训练结构'}</h3>{structure}</div>}{capacity.length > 0 && <div className="config-field-section config-adapter-capacity"><h3>{english ? 'Parameter size' : '参数规模'}</h3>{capacity}</div>}{(tuning.length > 0 || switches.length > 0) && <div className="config-field-section config-adapter-tuning"><h3>{english ? 'Initialization and regularization' : '初始化与正则'}</h3>{switches.length > 0 && <div className="config-adapter-switches">{switches}</div>}{tuning}</div>}</>;
+            const sections = [
+              {key: 'structure', title: english ? 'Training structure' : '训练结构', names: ['algo', 'preset', 'dora', 'rules']},
+              {key: 'capacity', title: english ? 'Parameter size' : '参数规模', names: ['parameter_mode', 'factor', 'rank', 'alpha', 'decompose_both', 'rs_lora']},
+              {key: 'initialization', title: english ? 'Initialization and weight loading' : '初始化与继续训练', names: ['init', 'resume_weights']},
+              {key: 'regularization', title: english ? 'Training regularization' : '训练正则', names: ['dropout', 'rank_dropout', 'module_dropout']},
+              {key: 'execution', title: english ? 'Computation and learning rate' : '计算与学习率', names: ['mode', 'param_dtype', 'lr_scale']},
+            ];
+            return <>{sections.map(section => {
+              const content = fields.filter(node => section.names.includes(fieldName(node)));
+              return content.length > 0 && <div key={section.key} className={`config-field-section config-adapter-${section.key}`}><h3>{section.title}</h3>{content}</div>;
+            })}</>;
           })() : compact && groupName === 'sampling' ? [...groupData.fields].sort((a, b) => {
             const order = ['enabled', 'at_start', 'every_steps', 'every_epochs', 'prompts', 'width', 'height', 'steps', 'cfg', 'shift', 'seed', 'sampler', 'scheduler', 'er_sde_order', 'er_sde_s_noise', 'prompts_file'];
             const rank = (node: React.ReactNode) => { const index = order.indexOf(String((node as React.ReactElement).key).split('.').pop() || ''); return index < 0 ? order.length : index; };

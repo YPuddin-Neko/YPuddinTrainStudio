@@ -87,7 +87,7 @@ describe('sidebar footer navigation', () => {
     const settingsLink=sidebar().getByRole('link',{name:'系统设置'});
     expect(settingsLink.closest('.sidebar-footer')).toBeInTheDocument();
     settingsLink.focus();await user.keyboard('{Enter}');
-    expect(screen.getByTestId('route')).toHaveTextContent('/settings');
+    await waitFor(()=>expect(screen.getByTestId('route')).toHaveTextContent('/settings'));
     expect(sidebar().getByRole('button',{name:'展开侧边栏'})).toHaveAttribute('aria-expanded','false');
     expect(localStorage.getItem('studio.sidebar.collapsed')).toBe('true');
     expect(writes).toEqual([]);
