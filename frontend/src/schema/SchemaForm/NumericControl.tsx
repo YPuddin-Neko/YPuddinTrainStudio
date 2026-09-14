@@ -1,8 +1,8 @@
 interface NumericControlProps {
   id: string;
   label: string;
-  value: number | null | undefined;
-  onChange: (value: number | undefined) => void;
+  value: number | '' | null | undefined;
+  onChange: (value: number | '') => void;
   min: number;
   max: number;
   step: number;
@@ -22,7 +22,7 @@ export default function NumericControl({ id, label, value, onChange, min, max, s
   const increments = display === '' ? 0 : (display - toDisplay(min)) / toDisplay(step);
   const rangeStep = Math.abs(increments - Math.round(increments)) > 1e-8 ? 'any' : toDisplay(step);
   const suffix = percentage ? '%' : unit;
-  const change = (raw: string) => onChange(raw === '' ? undefined : Number((Number(raw) / scale).toPrecision(12)));
+  const change = (raw: string) => onChange(raw === '' ? '' : Number((Number(raw) / scale).toPrecision(12)));
   return <div className="config-number-control">
     <input type="range" aria-label={`${label} ${sliderLabel}`} aria-valuetext={display === '' ? '—' : `${display}${suffix || ''}`}
       min={toDisplay(min)} max={toDisplay(max)} step={rangeStep} value={display === '' ? toDisplay(min) : display}

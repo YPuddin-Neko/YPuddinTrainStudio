@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import React from 'react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { SchemaForm } from '../src/schema/SchemaForm/SchemaForm';
@@ -6,6 +7,34 @@ import schema from '../src/schema/train-schema.json';
 import i18n from '../src/i18n';
 
 beforeEach(async () => { await i18n.changeLanguage('zh-CN'); });
+
+function NumericEditor({initial}: {initial: Record<string, unknown>}) {
+  const [value, setValue] = React.useState(initial);
+  return <><SchemaForm schema={schema} value={value} onChange={setValue} compact showAdvanced groupFilter={['optimizer', 'adapter']}/>
+    <output data-testid="numeric-configuration">{JSON.stringify(value)}</output></>;
+}
+
+it.each(['2.5', '0.25', '1e-6'])('keeps a cleared D Coef empty while entering %s', async (raw) => {
+  render(<NumericEditor initial={{optimizer: {type: 'prodigy_plus_sf', d_coef: 1}}}/>);
+  const input = screen.getByRole('spinbutton', {name: '自适应步长倍率（D Coef）'});
+  await act(async () => { await userEvent.clear(input); });
+  expect(input).toHaveValue(null);
+  expect(JSON.parse(screen.getByTestId('numeric-configuration').textContent || '{}').optimizer.d_coef).toBe('');
+  await act(async () => { await userEvent.type(input, raw); });
+  expect(input).toHaveValue(Number(raw));
+  expect(JSON.parse(screen.getByTestId('numeric-configuration').textContent || '{}').optimizer.d_coef).toBe(Number(raw));
+});
+
+it('allows clearing beta, rank, learning rate and slider numbers before replacement', async () => {
+  render(<NumericEditor initial={{optimizer: {type: 'adamw'}, adapter: {algo: 'lokr', rank: 16}}}/>);
+  for (const [name, next] of [['方向平滑 β1', '0.85'], ['Rank / 秩', '32'], ['学习率', '1e-5'], ['optimizer.eps', '1e-8'], ['输出丢弃率', '12.5']]) {
+    const input = screen.getByRole('spinbutton', {name});
+    await act(async () => { await userEvent.clear(input); });
+    expect(input).toHaveValue(null);
+    await act(async () => { await userEvent.type(input, next); });
+    expect(input).toHaveValue(Number(next));
+  }
+});
 
 it('gives each beta a separate readable name and only changes the chosen value', () => {
   const changed = vi.fn();

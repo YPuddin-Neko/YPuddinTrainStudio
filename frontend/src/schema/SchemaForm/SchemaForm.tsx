@@ -373,9 +373,9 @@ const SourcesEditor: React.FC<{
             </button>
           </div>
           <div className="source-settings-grid">
-            <label><span>{t('dataset.repeats')}<ConfigHelp label={text('重复次数说明','Repeats help')}>{text('每轮让这组图片出现几次；默认 1。例如 20 张图重复 5 次计为 100 个样本，不复制文件。增加次数会增加训练占比和总步数，也可能过拟合。图片本身不能决定这个数值。','How often these images appear per epoch; default 1. Twenty images repeated five times count as 100 samples without copying files. More repeats increase their training share and step count, and may overfit. The image itself cannot determine this setting.')}</ConfigHelp></span><input aria-label={text(`重复次数 ${idx+1}`,`Repeats ${idx+1}`)} type="number" min="1" step="1" value={src.repeats ?? 1} onChange={event=>updateSource(idx,'repeats',Number(event.target.value))}/></label>
+            <label><span>{t('dataset.repeats')}<ConfigHelp label={text('重复次数说明','Repeats help')}>{text('每轮让这组图片出现几次；默认 1。例如 20 张图重复 5 次计为 100 个样本，不复制文件。增加次数会增加训练占比和总步数，也可能过拟合。图片本身不能决定这个数值。','How often these images appear per epoch; default 1. Twenty images repeated five times count as 100 samples without copying files. More repeats increase their training share and step count, and may overfit. The image itself cannot determine this setting.')}</ConfigHelp></span><input aria-label={text(`重复次数 ${idx+1}`,`Repeats ${idx+1}`)} type="number" min="1" step="1" value={src.repeats ?? 1} onChange={event=>updateSource(idx,'repeats',event.target.value === '' ? '' : Number(event.target.value))}/></label>
             <div className="source-reg-toggle"><span>{isReg ? text('正则集','Regularization') : text('训练集','Training')}</span><ConfigHelp label={text('数据用途说明','Dataset purpose help')}>{text('当前版本 traindata 中的图片自动作为训练集，reg 中的图片自动作为正则集。正则图用于类别先验保持，默认不继承训练触发词。外部与旧版来源保留已有用途。','Images inside this version’s traindata are training examples; images inside reg are regularization examples. Class priors do not inherit the training trigger by default. External and legacy sources retain their existing purpose.')}</ConfigHelp></div>
-            {isReg && <label><span>{text('正则损失权重','Regularization loss weight')}<ConfigHelp label={text('正则损失权重说明','Regularization loss weight help')}>{text('只对正则图片的损失生效。默认 1；0.5 表示这些图片的损失乘以一半，0 则不贡献训练梯度。它不是生成正则图片的数量。','Applies only to regularization-image losses. Default 1; 0.5 halves their contribution, while 0 contributes no training gradient. This is not the number of images to generate.')}</ConfigHelp></span><input aria-label={text(`正则损失权重 ${idx+1}`,`Regularization loss weight ${idx+1}`)} type="number" min="0" step="0.1" value={src.prior_weight ?? 1} onChange={event=>updateSource(idx,'prior_weight',Number(event.target.value))}/></label>}
+            {isReg && <label><span>{text('正则损失权重','Regularization loss weight')}<ConfigHelp label={text('正则损失权重说明','Regularization loss weight help')}>{text('只对正则图片的损失生效。默认 1；0.5 表示这些图片的损失乘以一半，0 则不贡献训练梯度。它不是生成正则图片的数量。','Applies only to regularization-image losses. Default 1; 0.5 halves their contribution, while 0 contributes no training gradient. This is not the number of images to generate.')}</ConfigHelp></span><input aria-label={text(`正则损失权重 ${idx+1}`,`Regularization loss weight ${idx+1}`)} type="number" min="0" step="0.1" value={src.prior_weight ?? 1} onChange={event=>updateSource(idx,'prior_weight',event.target.value === '' ? '' : Number(event.target.value))}/></label>}
           </div>
           {role?.managed ? <p>{text('目录归属：当前版本','Directory: current version')} / <strong>{role.is_reg ? 'reg' : 'traindata'}</strong><br/><code className="break-all">{role.root}</code></p> : versionSources && !role ? <p>{text('正在核对目录归属；保留当前用途。','Checking directory ownership; retaining the current purpose.')}</p> : <details><summary>{text('外部 / 旧版来源兼容设置','External / legacy source compatibility')}</summary><p>{text('此路径不属于当前版本的 traindata 或 reg，文件保持原位置。仅为已有外部训练配置显式设置用途。','This path is outside this version’s traindata and reg. Files stay in place; adjust purpose only for existing external training configurations.')}</p><label><input type="checkbox" checked={isReg} onChange={event=>updateSource(idx,'is_reg',event.target.checked)}/>{text('外部来源用于正则训练','Use external source for regularization')}</label></details>}
           <details className="source-fallback"><summary>{text('缺少标签时的默认描述（可选）','Fallback description when captions are missing (optional)')}</summary><input aria-label={text(`默认描述 ${idx+1}`,`Fallback description ${idx+1}`)} value={src.class_prompt ?? ''} onChange={event=>updateSource(idx,'class_prompt',event.target.value || null)} placeholder={text('例如：a person；不生成或修改标签文件','For example: a person; does not create or edit caption files')}/></details>
@@ -492,9 +492,9 @@ const PromptsEditor: React.FC<{
 
 // 6. Betas 控件 (长度 2 的数字数组)
 const BetasEditor: React.FC<{
-  value: [number, number];
+  value: [number | '', number | ''];
   scheduleFree?: boolean;
-  onChange: (val: [number, number]) => void;
+  onChange: (val: [number | '', number | '']) => void;
 }> = ({ value = [0.9, 0.999], scheduleFree, onChange }) => {
   const { i18n } = useTranslation();
   const english = i18n.resolvedLanguage?.startsWith('en') || false;
@@ -507,7 +507,7 @@ const BetasEditor: React.FC<{
         max="0.999999"
         step="0.001"
         value={value[0] ?? 0.9}
-        onChange={(e) => onChange([Number(e.target.value), value[1]])}
+        onChange={(e) => onChange([e.target.value === '' ? '' : Number(e.target.value), value[1]])}
         className="w-1/2 px-3 py-2 border rounded-md text-sm dark:bg-slate-900 dark:border-slate-600"
         placeholder="beta1"
       />
@@ -519,7 +519,7 @@ const BetasEditor: React.FC<{
         max="0.999999"
         step="0.0001"
         value={value[1] ?? 0.999}
-        onChange={(e) => onChange([value[0], Number(e.target.value)])}
+        onChange={(e) => onChange([value[0], e.target.value === '' ? '' : Number(e.target.value)])}
         className="w-1/2 px-3 py-2 border rounded-md text-sm dark:bg-slate-900 dark:border-slate-600"
         placeholder="beta2"
       />
@@ -629,7 +629,7 @@ const SchemaValueInput: React.FC<{
       value={constant && value === constant.const ? '' : value ?? ''} disabled={!!constant && value === constant.const}
       min={(prop as any).minimum ?? prop['x-ui']?.min} max={(prop as any).maximum ?? prop['x-ui']?.max}
       step={prop['x-ui']?.step ?? (prop.type === 'integer' ? 1 : 'any')} placeholder={placeholder}
-      onChange={(e) => onChange(e.target.value === '' && nullable ? null : numeric ? Number(e.target.value) : e.target.value)} />;
+      onChange={(e) => onChange(e.target.value === '' ? (nullable ? null : '') : numeric ? Number(e.target.value) : e.target.value)} />;
   }
   return <div className={compact ? 'config-union' : 'space-y-2'}>
     {nullable && <label className="flex items-center gap-2 text-xs text-[var(--studio-dim)]">
@@ -879,7 +879,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     } else if (fullPathKey === 'adapter.rank') {
       control = <input type="number" aria-label={fieldLabel} min="1" step="1" value={fieldValue === 'full' ? '' : fieldValue ?? 16}
         onChange={event => {
-          const rank = event.target.value === '' ? undefined : Number(event.target.value);
+          const rank = event.target.value === '' ? '' : Number(event.target.value);
           if (typeof rank === 'number' && Number.isInteger(rank) && rank > 0) lastLowRank.current = rank;
           onChange(setNestedValue(value, path, rank));
         }}/>;
@@ -982,7 +982,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
             step={ui.step ?? (prop.type === 'integer' ? 1 : 'any')}
             placeholder={placeholder}
             onChange={(e) => {
-              const val = e.target.value === '' ? undefined : Number(e.target.value);
+              // Empty is an unfinished edit, not a missing setting: undefined
+              // immediately restores the schema default and prefixes the next input.
+              const val = e.target.value === '' ? '' : Number(e.target.value);
               onChange(setNestedValue(value, path, val));
             }}
           />
