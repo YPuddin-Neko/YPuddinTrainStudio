@@ -1,6 +1,6 @@
 # 海光 DTK 验收记录 · 2026-09-14
 
-**最新状态：新节点新增 Krea2 BF16 双卡两组、运行时 FP8 单双卡四组严格通过；Klein 单卡 LoKr 正式权重也已严格通过。Anima、SDXL 的严格恢复仍失败，不能称为全部验收完成。** 最新结果见下方追加区及 [正式矩阵追加记录](validation/DTK_FORMAL_EXTENSION_2026-09-15.json)。界面当前行为与最新测试范围见 [前端修复交付报告](FRONTEND_REVIEW_2026-09-15.md)。
+**最新状态：新节点新增 Krea2 BF16 双卡两组、运行时 FP8 单双卡四组严格通过；Klein 单卡、双卡 LoKr 正式权重也已严格通过。Anima、SDXL 的严格恢复仍失败，不能称为全部验收完成。** 最新结果见下方追加区及 [正式矩阵追加记录](validation/DTK_FORMAL_EXTENSION_2026-09-15.json)。界面当前行为与最新测试范围见 [前端修复交付报告](FRONTEND_REVIEW_2026-09-15.md)。
 
 ## 最新追加结果 · 2026-09-15
 
@@ -31,9 +31,17 @@ Anima 曾在“单卡、确定性开关、只读张量哈希 trace”的诊断�
 
 本地新增的 `loop.deterministic` 最终默认关闭。仅在 DTK 上显式开启时改用 native math SDPA 的方案仍是**未上传、未实机验证的候选修复**；它可能增加显存并降低速度。单元测试通过不代表这套策略已解决 Anima/SDXL 的正式恢复差异。
 
-Klein 的最新单卡报告随后完成：**官方 4B / LoKr / SDPA / 512×512 / 有效批量 2 / 8 步与第 4 步恢复**严格通过，300 个权重张量逐位一致，五类状态、预览 PNG、官方组件审计及原数据不变检查通过，训练和恢复进程均正常退出。该用例使用远端已有代码与 PyTorch 全局确定性开关，**没有使用上述本地 math SDPA 候选**，不能推广到 Klein 双卡或全参数微调。报告为源码外 `remote-testing/dtk-20260914/remaining-formal/formal-flux2-adapter-g1-r512-20260915-073106-238940363/report.json`，SHA256 为 `7f26274e528afd5d6f20f3ab615adfa63aa12e543ac139cb4c6d0f47ede92bf2`。
+Klein 的最新单卡报告随后完成：**官方 4B / LoKr / SDPA / 512×512 / 有效批量 2 / 8 步与第 4 步恢复**严格通过，300 个权重张量逐位一致，五类状态、预览 PNG、官方组件审计及原数据不变检查通过，训练和恢复进程均正常退出。该用例使用远端已有代码与 PyTorch 全局确定性开关，**没有使用上述本地 math SDPA 候选**，不单独证明 Klein 双卡或全参数微调；双卡结果另列于下段。报告为源码外 `remote-testing/dtk-20260914/remaining-formal/formal-flux2-adapter-g1-r512-20260915-073106-238940363/report.json`，SHA256 为 `7f26274e528afd5d6f20f3ab615adfa63aa12e543ac139cb4c6d0f47ede92bf2`。
 
-追加 Krea2 与早期 Anima/SDXL 报告散列见 [精简 JSON](validation/DTK_FORMAL_EXTENSION_2026-09-15.json)。它和源码外 `remote-testing/dtk-20260914/final-validation/formal-report-index-20260915.json` 是各自生成时的快照：索引内 Anima 双卡的早期未完成状态不替代后续最终报告。最新无 trace 对照与差异说明见源码外 `remote-testing/dtk-20260914/formal-resume-diagnosis-20260915.md`；最终原始报告保留在 `remote-testing/dtk-20260914/remaining-formal/` 对应 case 目录。Klein 双卡与 Anima/SDXL/Klein 全参仍未完成正式验收；本节不证明新产品的“不同显卡并行不同任务”已在海光实测。
+Klein 双卡在相同正式模型与训练条件下也严格通过：300 个最终权重张量、五类状态和预览 PNG 均一致，两个 rank 权重一致、数据分片互不重叠，训练与恢复的所属进程均已退出。原始报告为 `formal-flux2-adapter-g2-r512-20260915-073654-697197852/report.json`，SHA256 为 `8cfe3f9c51abc0d68211595cf64bd27995063040248ee0d881c44c5d22044bf7`，已收录于追加记录。这仍是一个任务的双卡 DDP，不是两个独立任务分别用卡。
+
+追加 Krea2 与早期 Anima/SDXL 报告散列见 [精简 JSON](validation/DTK_FORMAL_EXTENSION_2026-09-15.json)。它和源码外 `remote-testing/dtk-20260914/final-validation/formal-report-index-20260915.json` 是各自生成时的快照：索引内 Anima 双卡的早期未完成状态不替代后续最终报告。最新无 trace 对照与差异说明见源码外 `remote-testing/dtk-20260914/formal-resume-diagnosis-20260915.md`；最终原始报告保留在 `remote-testing/dtk-20260914/remaining-formal/` 对应 case 目录。Anima/SDXL/Klein 全参仍未完成正式验收；本节不证明新产品的“不同显卡并行不同任务”已在海光实测。
+
+## Anima 全参数测试的阶段性结果
+
+官方 Anima 2B 主模型全参数、冻结文本编码器、FP32 参数、BF16 计算、AdamW、单卡 512×512、按块梯度检查点，已完成连续 8 步。实际可训练参数为 2,091,068,928，loss 与最终权重有限且权重发生更新，工作进程正常退出；峰值张量分配 41,921,165,824 字节，约 39.04 GiB。状态保存、最终导出和预览均进入完成阶段。
+
+随后外部验收脚本审计全参数状态时错误读取 `training.safetensors`，而完整模型状态使用 `model.safetensors`，导致脚本停止，**尚未启动恢复运行**。这是验收脚本路径分支的问题，不是训练进程报错；也不能据此前半程正常结束认定全参数严格恢复通过。原报告保留失败字段与异常，不修改成通过；工作进程与官方组件证据另收录于 [追加记录的 partial_reports](validation/DTK_FORMAL_EXTENSION_2026-09-15.json)。本地脚本修正后的实机继续验收同样需要代码传输授权。
 
 ## 历史批次入口
 

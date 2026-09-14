@@ -1,5 +1,5 @@
 {
-  "recorded_at": "2026-09-15T07:37:00+08:00",
+  "recorded_at": "2026-09-15T07:53:52+08:00",
   "status": "in_progress",
   "node": "DTK 26.04 / vendor Torch 2.7.1 / two BW 64 GiB GPUs",
   "scope": "Official-size 512px LoKr training and strict 8-step versus 4-step-resume comparisons. GPU-only tests are separate from frontend fixtures.",
@@ -1258,6 +1258,138 @@
         },
         "passed": true
       }
+    },
+    {
+      "case": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-flux2-adapter-g2-r512-20260915-073654-697197852",
+      "family": "flux2",
+      "mode": "adapter",
+      "attention": "sdpa",
+      "gpus": 2,
+      "resolution": 512,
+      "steps": 8,
+      "effective_batch_size": 2,
+      "train_backbone": true,
+      "train_text_encoder": false,
+      "base_precision": "auto",
+      "activation_checkpointing": "none",
+      "optimizer": "adamw",
+      "passed": true,
+      "training_passed": true,
+      "resume_execution_passed": true,
+      "resume_comparison": {
+        "exact": true,
+        "finite": true,
+        "different_tensor_count": 0,
+        "max_absolute_difference": 0.0,
+        "rms_absolute_difference": 0.0,
+        "relative_l2_difference": 0.0,
+        "numerical_metrics_are_diagnostic_only": true,
+        "example_different_keys": [],
+        "tensor_count": 300
+      },
+      "checkpoint_state_comparison": {
+        "progress_exact": true,
+        "sampler_exact": true,
+        "rng_exact": true,
+        "scheduler_exact": true,
+        "optimizer_exact": true
+      },
+      "preview_exact": true,
+      "original_assets_unchanged": true,
+      "path": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-flux2-adapter-g2-r512-20260915-073654-697197852/report.json",
+      "sha256": "8cfe3f9c51abc0d68211595cf64bd27995063040248ee0d881c44c5d22044bf7",
+      "global_deterministic_flag": true,
+      "synchronizing_trace_hooks": false,
+      "reference": {
+        "checks": {
+          "finished_all_ranks": true,
+          "expected_final_step": true,
+          "finite_losses": true,
+          "finite_weights": true,
+          "parameters_changed": true,
+          "all_optimizer_updates_observed": true,
+          "rank_parameters_equal": true,
+          "rank_shards_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "preview_file": true,
+          "full_state": true,
+          "no_nonfinite_skips": true,
+          "official_size_and_components_verified": true,
+          "final_adapter_weights": true
+        },
+        "passed": true
+      },
+      "resumed": {
+        "checks": {
+          "finished_all_ranks": true,
+          "expected_final_step": true,
+          "finite_losses": true,
+          "finite_weights": true,
+          "parameters_changed": true,
+          "all_optimizer_updates_observed": true,
+          "rank_parameters_equal": true,
+          "rank_shards_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "preview_file": true,
+          "full_state": true,
+          "no_nonfinite_skips": true,
+          "official_size_and_components_verified": true,
+          "final_adapter_weights": true
+        },
+        "passed": true
+      }
+    }
+  ],
+  "partial_reports": [
+    {
+      "case": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-full-g1-r512-20260915-074346-457588215",
+      "family": "anima",
+      "mode": "full",
+      "gpus": 1,
+      "resolution": 512,
+      "steps": 8,
+      "activation_checkpointing": "block",
+      "optimizer": "adamw",
+      "outcome": "harness_error_before_resume",
+      "strict_pass": false,
+      "resume_executed": false,
+      "harness_error": "FileNotFoundError: No such file or directory: /root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-full-g1-r512-20260915-074346-457588215/reference/state-8/training.safetensors",
+      "reference_worker": {
+        "outcome": "finished",
+        "trainable_parameters": 2091068928,
+        "finite_weights": true,
+        "weights_changed": true,
+        "peak_allocated_bytes": 41921165824,
+        "peak_reserved_bytes": 42895147008
+      },
+      "reference_process_returncode": 0,
+      "reference_final_step": 8,
+      "component_checks": {
+        "official_size_backbone": true,
+        "text_encoder_excluded": true,
+        "backbone_selected": true,
+        "expected_components": true,
+        "positive_trainable_parameters": true,
+        "all_backbone_parameters_trainable_for_full": true,
+        "fp32_full_training_parameters": true
+      },
+      "reference_losses_finite": true,
+      "evidence": [
+        {
+          "path": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-full-g1-r512-20260915-074346-457588215/report.json",
+          "sha256": "67e3670e093badc6c305c5475a920bba7ac0ae836a83f6044edded6a2d9c4cff"
+        },
+        {
+          "path": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-full-g1-r512-20260915-074346-457588215/reference/rank-0.json",
+          "sha256": "3b9c54ce43380087f548b8e1f3b22e7e1ae3bfeff272eaadcc793559c36fcc7d"
+        },
+        {
+          "path": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-full-g1-r512-20260915-074346-457588215/reference/components-rank-0.json",
+          "sha256": "01d9be95b04857e96b49afe4a877b3cb46221f8e055bc92ed01175152155cb7e"
+        }
+      ]
     }
   ]
 }

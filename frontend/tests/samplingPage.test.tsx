@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import Sampling from '../src/pages/Sampling/Sampling';
@@ -12,7 +12,7 @@ beforeEach(async () => {
   vi.spyOn(apiClient, 'get').mockImplementation(async (url) => {
     if (url === '/projects') return [{ id: 'p1', name: '服装' }] as never;
     if (url === '/projects/p1') return { archived: false } as never;
-    if (url === '/projects/p1/versions/v1') return { archived: false, status: 'ready' } as never;
+    if (url === '/projects/p1/versions/v1') return { archived: false, status: 'ready', busy: false } as never;
     if (url === '/jobs') return { items: [source], total: 1 } as never;
     if (url === '/jobs/live') return source as never;
     if (url === '/jobs/live/xyz/options') return options as never;
@@ -30,8 +30,9 @@ it('opens a running training source on the independent page and schedules XY on 
   await screen.findByText('对比设置');
   expect(screen.getByRole('heading', { name: 'XY 对比' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: '查看训练任务' })).toHaveAttribute('href', '/jobs/live?tab=metrics');
+  await waitFor(() => expect(screen.getByRole('combobox', { name: '运行显卡' })).toBeEnabled());
   fireEvent.click(screen.getByRole('combobox', { name: '运行显卡' }));
-  fireEvent.click(screen.getByRole('option', { name: /GPU 1.*空闲/ }));
+  fireEvent.click(await screen.findByRole('option', { name: /GPU 1.*空闲/ }));
   fireEvent.click(screen.getByRole('button', { name: '生成对比图' }));
   await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/jobs/live/xyz', expect.objectContaining({ gpu_devices: ['cuda:1'] }), { silent: true }));
   expect(screen.getByTestId('location')).toHaveTextContent('/sampling');
@@ -80,5 +81,80 @@ it('keeps an archived source readable but prevents generating new comparisons', 
   await screen.findByText('对比设置');
   await screen.findByText('来源项目或版本已归档；可以查看对比记录，恢复归档后才能生成。');
   expect(screen.getByRole('button', { name: '生成对比图' })).toBeDisabled();
+  expect(apiClient.post).not.toHaveBeenCalled();
+});
+
+it('blocks a ready but busy source until refreshing confirms version processing has finished', async () => {
+  const original = vi.mocked(apiClient.get).getMockImplementation()!;
+  let busy = true;
+  vi.mocked(apiClient.get).mockImplementation(async (url, config) => url === '/projects/p1/versions/v1' ? { archived: false, status: 'ready', busy } as never : original(url, config));
+  view('/sampling?source_job_id=live');
+  await screen.findByText('对比设置');
+  await screen.findByText('来源版本正在处理，暂时无法生成对比图；已有对比记录仍可查看。');
+  const generate = screen.getByRole('button', { name: '生成对比图' });
+  expect(generate).toBeDisabled();
+  fireEvent.click(generate);
+  expect(apiClient.post).not.toHaveBeenCalled();
+  expect(screen.getByRole('link', { name: '查看训练任务' })).toHaveAttribute('href', '/jobs/live?tab=metrics');
+  busy = false;
+  fireEvent.click(screen.getByRole('button', { name: '刷新来源任务' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '生成对比图' })).toBeEnabled());
+  expect(screen.queryByText('来源版本正在处理，暂时无法生成对比图；已有对比记录仍可查看。')).not.toBeInTheDocument();
+  expect(screen.getByTestId('location')).toHaveTextContent('source_job_id=live');
+  fireEvent.click(screen.getByRole('button', { name: '生成对比图' }));
+  await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/jobs/live/xyz', expect.any(Object), { silent: true }));
+});
+
+it('preserves unsent prompt and axis edits while refreshing the same source and locks generation until checked', async () => {
+  const original = vi.mocked(apiClient.get).getMockImplementation()!;
+  let holdVersionCheck = false;
+  let releaseVersionCheck!: () => void;
+  const versionCheck = new Promise<void>(resolve => { releaseVersionCheck = resolve; });
+  vi.mocked(apiClient.get).mockImplementation(async (url, config) => {
+    if (url === '/projects/p1/versions/v1' && holdVersionCheck) await versionCheck;
+    return original(url, config);
+  });
+  view('/sampling?source_job_id=live');
+  const prompt = await screen.findByLabelText('XYZ 提示词');
+  await waitFor(() => expect(screen.getByRole('button', { name: '生成对比图' })).toBeEnabled());
+  fireEvent.change(prompt, { target: { value: '尚未生成的自定义提示词' } });
+  fireEvent.change(screen.getByLabelText('X · 横向比较 · 取值'), { target: { value: '12, 24, 36' } });
+  holdVersionCheck = true;
+  fireEvent.click(screen.getByRole('button', { name: '刷新来源任务' }));
+  expect(screen.getByText('正在检查来源版本状态…')).toBeInTheDocument();
+  expect(screen.getByLabelText('XYZ 提示词')).toBe(prompt);
+  expect(prompt).toHaveValue('尚未生成的自定义提示词');
+  expect(prompt).toBeDisabled();
+  expect(screen.getByRole('button', { name: '生成对比图' })).toBeDisabled();
+  expect(apiClient.post).not.toHaveBeenCalled();
+  await act(async () => releaseVersionCheck());
+  await waitFor(() => expect(screen.getByRole('button', { name: '生成对比图' })).toBeEnabled());
+  expect(prompt).toHaveValue('尚未生成的自定义提示词');
+  expect(screen.getByLabelText('X · 横向比较 · 取值')).toHaveValue('12, 24, 36');
+  fireEvent.click(screen.getByRole('button', { name: '生成对比图' }));
+  await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/jobs/live/xyz', expect.objectContaining({ prompt: '尚未生成的自定义提示词', x: { key: 'steps', values: [12, 24, 36] } }), { silent: true }));
+});
+
+it('clears unsent edits when selecting a different source', async () => {
+  const original = vi.mocked(apiClient.get).getMockImplementation()!;
+  const other = { ...source, id: 'other', name: '另一项训练' };
+  vi.mocked(apiClient.get).mockImplementation(async (url, config) => {
+    if (url === '/jobs') return { items: [source, other], total: 2 } as never;
+    if (url === '/jobs/other') return other as never;
+    if (url === '/jobs/other/xyz/options') return { ...options, defaults: { ...options.defaults, prompt: '另一来源的默认提示词' } } as never;
+    if (url === '/jobs/other/xyz') return [] as never;
+    return original(url, config);
+  });
+  view('/sampling?source_job_id=live');
+  const prompt = await screen.findByLabelText('XYZ 提示词');
+  await waitFor(() => expect(screen.getByRole('button', { name: '生成对比图' })).toBeEnabled());
+  fireEvent.change(prompt, { target: { value: '原来源的未生成内容' } });
+  fireEvent.change(screen.getByLabelText('X · 横向比较 · 取值'), { target: { value: '11, 22' } });
+  fireEvent.click(screen.getByRole('combobox', { name: '来源训练任务' }));
+  fireEvent.click(await screen.findByRole('option', { name: /另一项训练/ }));
+  await waitFor(() => expect(screen.getByLabelText('XYZ 提示词')).toHaveValue('另一来源的默认提示词'));
+  expect(screen.getByLabelText('XYZ 提示词')).not.toBe(prompt);
+  expect(screen.getByLabelText('X · 横向比较 · 取值')).not.toHaveValue('11, 22');
+  expect(screen.getByTestId('location')).toHaveTextContent('source_job_id=other');
   expect(apiClient.post).not.toHaveBeenCalled();
 });
