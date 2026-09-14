@@ -14,11 +14,12 @@
   shell   打印如何激活 venv
 
 全局参数
+  --profile=<auto|legacy|windows-cuda|linux-cuda|macos-mps|cpu>  独立平台环境；auto 保留已有 legacy venv
   --torch=<cu128|cu126|cu124|cu118|cpu|auto>  首次安装/重建的 PyTorch 类型（默认 auto）
   --index=<auto|cn|official>  包源。auto / cn（默认）：国内镜像优先，中科大 -> 清华 -> 阿里 -> 官方兜底，
                   探测不通的源自动排后，逐个尝试直到成功；official：官方源优先（镜像兜底）
   --mirror        等价于 --index=cn
-  --reinstall     删掉 venv 重装（studio_data/ 不受影响）
+  --reinstall     只重建选中平台的环境（其他环境及 studio_data/ 不受影响）
   --no-browser    服务起来后不自动打开浏览器
   --no-frontend   跳过前端构建（只要 API）
   --host/--port/--data-root 原样传给 ``ypuddin serve``
@@ -45,6 +46,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VENV = ROOT / "venv"
 FRONTEND = ROOT / "frontend"
 MARKER = VENV / ".ypuddin-install.json"
+PROFILE = "legacy"
 WIN = os.name == "nt"
 PYPI_OFFICIAL = "https://pypi.org/simple"
 # mainland-China PyPI mirrors in the order they are tried; the official index is always the last resort
@@ -174,6 +176,63 @@ def pick_torch_tag(requested: str) -> str:
     return "cpu"
 
 
+def platform_torch_tag(profile: str, requested: str) -> str:
+    """Validate an explicit deployment profile before creating or modifying its venv."""
+    expected = {"windows-cuda": "Windows", "linux-cuda": "Linux", "macos-mps": "Darwin"}
+    if profile not in ("auto", "legacy", "cpu", *expected):
+        die("未知部署类型；请选择 auto/legacy/windows-cuda/linux-cuda/macos-mps/cpu；海光 DTK 尚未接入")
+    if profile in expected and platform.system() != expected[profile]:
+        die(f"{profile} 启动入口只适用于 {expected[profile]}，当前为 {platform.system()}")
+    if profile == "macos-mps":
+        if platform.machine().lower() not in ("arm64", "aarch64"):
+            die("Apple MPS 部署入口需要 Apple Silicon Mac")
+        if requested not in ("auto", "cpu"):
+            die("Apple MPS 使用 macOS PyTorch，不安装 CUDA wheel")
+        return "cpu"  # On macOS this selects the universal PyPI build with MPS.
+    if profile == "cpu":
+        if requested not in ("auto", "cpu"):
+            die("CPU 部署入口不能选择 CUDA wheel")
+        return "cpu"
+    tag = pick_torch_tag(requested)
+    if profile.endswith("-cuda") and (not tag.startswith("cu") or nvidia_driver_major() is None):
+        die("CUDA 部署入口未检测到可用 NVIDIA 驱动。请先安装驱动，或使用 CPU 启动入口。")
+    return tag
+
+
+def select_environment(profile: str, torch_tag: str) -> str:
+    """Select a directory before all probes/mutations. Never migrate a pre-existing venv."""
+    global VENV, MARKER, PROFILE
+    system = {"Windows": "windows", "Linux": "linux", "Darwin": "macos"}.get(platform.system())
+    if profile == "legacy" or (profile == "auto" and (ROOT / "venv").exists()):
+        PROFILE, VENV = "legacy", ROOT / "venv"
+    else:
+        if not system:
+            die("此系统没有独立部署环境入口")
+        if profile == "auto":
+            profile = (
+                "macos-mps"
+                if system == "macos" and platform.machine().lower() in ("arm64", "aarch64")
+                else (system + "-cuda" if torch_tag.startswith("cu") else "cpu")
+            )
+        PROFILE = system + "-cpu" if profile == "cpu" else profile
+        VENV = ROOT / "environment" / "profiles" / PROFILE / "venv"
+    MARKER = VENV / ".ypuddin-install.json"
+    # Refuse links before either installation or explicit rebuild can affect another directory.
+    path = VENV
+    while path != ROOT:
+        if path.is_symlink() or (hasattr(path, "is_junction") and path.is_junction()):
+            die(f"环境目录不允许链接或目录联接，未修改：{path}")
+        path = path.parent
+    if MARKER.exists():
+        try:
+            owner = json.loads(MARKER.read_text(encoding="utf-8")).get("profile", "legacy")
+        except (OSError, ValueError):
+            die("环境安装标记损坏，未修改环境；请先检查环境目录")
+        if owner != PROFILE:
+            die(f"环境属于 {owner}，不能作为 {PROFILE} 更新或重建")
+    return PROFILE
+
+
 def url_ok(url: str, timeout: float = 4.0) -> bool:
     try:
         with urllib.request.urlopen(url, timeout=timeout) as r:  # noqa: S310
@@ -240,7 +299,9 @@ def find_base_python() -> str:
 def install_signature(torch_tag: str, extras: str) -> str:
     h = hashlib.sha256((ROOT / "pyproject.toml").read_bytes())
     h.update(Path(__file__).read_bytes())
-    h.update(f"{torch_tag}|{extras}|{sys.platform}|{platform.machine()}|{sys.version_info[:2]}".encode())
+    h.update(
+        f"{PROFILE}|{torch_tag}|{extras}|{sys.platform}|{platform.machine()}|{sys.version_info[:2]}".encode()
+    )
     return h.hexdigest()[:16]
 
 
@@ -253,6 +314,7 @@ def venv_json(code: str, *args: str):
             capture_output=True,
             text=True,
             timeout=45,
+            env=_env(),
         )
     if result.returncode:
         raise RuntimeError((result.stderr.strip() or "environment probe failed")[-1600:])
@@ -416,6 +478,7 @@ def ensure_venv(torch_tag: str, *, index_mode: str, reinstall: bool, extras: str
         return
     uv = uv_path()
     if not venv_python().exists():
+        VENV.parent.mkdir(parents=True, exist_ok=True)
         base = find_base_python()
         log(f"[2/5] 创建虚拟环境 {VENV.name}/（基于 {base}，用 {'uv' if uv else 'python -m venv'}）")
         if uv:
@@ -436,10 +499,12 @@ def ensure_venv(torch_tag: str, *, index_mode: str, reinstall: bool, extras: str
             die(f"已有 PyTorch 无法加载，未修改环境：{exc}。请运行 doctor 检查；需要重建时使用 --reinstall。")
         if tuple(int(n) for n in re.findall(r"\d+", current["version"])[:2]) < (2, 4):
             die("已有 PyTorch 低于 2.4，自动补依赖不会替换它；请使用 --reinstall 重建环境。")
+        if PROFILE != "legacy" and bool(current["cuda"]) != PROFILE.endswith("-cuda"):
+            die(f"已有 PyTorch 与 {PROFILE} 平台不符；未修改或重建环境，请检查是否手动混装过包。")
         log(f"[3/5] 保留现有 PyTorch {current['version']} / CUDA {current['cuda'] or '无（CPU/MPS）'}")
     pypi_chain, torch_sources = index_chains(index_mode, torch_tag)
 
-    env = dict(os.environ)
+    env = _env()
     if uv and needs_copy_link_mode(st_dev_of(uv_cache_dir(uv) or VENV), st_dev_of(ROOT)):
         # uv cache and project are on different filesystems: copy instead of hardlinking, no warning
         env["UV_LINK_MODE"] = "copy"
@@ -532,6 +597,7 @@ def ensure_venv(torch_tag: str, *, index_mode: str, reinstall: bool, extras: str
         json.dumps(
             {
                 "signature": sig,
+                "profile": PROFILE,
                 "torch": torch_tag,
                 "torch_version": after["torch"],
                 "extras": extras,
@@ -543,8 +609,10 @@ def ensure_venv(torch_tag: str, *, index_mode: str, reinstall: bool, extras: str
 
 def choose_extras(torch_tag: str) -> str:
     extras = EXTRAS_BASE
-    if platform.system() in {"Windows", "Linux"} and (
-        torch_tag != "cpu" or nvidia_driver_major() is not None
+    if (
+        not PROFILE.endswith("-cpu")
+        and platform.system() in {"Windows", "Linux"}
+        and (torch_tag != "cpu" or nvidia_driver_major() is not None)
     ):
         extras += ",nvidia"
     return extras
@@ -701,12 +769,19 @@ def _env() -> dict[str, str]:
     env = dict(os.environ)
     env.setdefault("PYTHONUTF8", "1")
     env.setdefault("PYTHONIOENCODING", "utf-8")
+    env["YPUDDIN_ENV_PROFILE"] = PROFILE
+    env["PYTHONNOUSERSITE"] = "1"
+    env.pop("PYTHONHOME", None)
+    env.pop("PYTHONPATH", None)
+    if PROFILE.endswith("-cpu"):
+        env["CUDA_VISIBLE_DEVICES"] = "-1"
     return env
 
 
 def doctor() -> int:
     py = venv_python()
     print(f"项目目录   : {ROOT}")
+    print(f"部署环境   : {PROFILE}")
     print(f"系统       : {platform.platform()}")
     print(f"虚拟环境   : {'已创建' if py.exists() else '未创建'} ({VENV})")
     if MARKER.exists():
@@ -773,6 +848,7 @@ def doctor() -> int:
 def main(argv: list[str]) -> int:
     opts = {
         "torch": "auto",
+        "profile": "auto",
         "index": "auto",
         "reinstall": False,
         "browser": True,
@@ -787,6 +863,8 @@ def main(argv: list[str]) -> int:
     for a in it:
         if a.startswith("--torch="):
             opts["torch"] = a.split("=", 1)[1]
+        elif a.startswith("--profile="):
+            opts["profile"] = a.split("=", 1)[1]
         elif a == "--mirror":
             opts["index"] = "cn"
         elif a.startswith("--index="):
@@ -808,10 +886,16 @@ def main(argv: list[str]) -> int:
     if opts["index"] not in ("auto", "cn", "official"):
         die(f"--index 取值无效：{opts['index']!r}（可选 auto/cn/official）")
 
+    torch_tag = platform_torch_tag(opts["profile"], opts["torch"])
+    select_environment(opts["profile"], torch_tag)
     if command == "doctor":
         return doctor()
-
-    torch_tag = pick_torch_tag(opts["torch"])
+    if opts["reinstall"] and Path(sys.prefix).resolve() == VENV.resolve():
+        # In Windows the interpreter executing this file cannot delete itself.
+        base = getattr(sys, "_base_executable", None)
+        if not base or Path(base).resolve().is_relative_to(VENV.resolve()):
+            die("请用系统 Python 运行 --reinstall；当前解释器位于待重建目录内，未删除环境")
+        return subprocess.run([base, str(Path(__file__).resolve()), *argv], cwd=ROOT, env=_env()).returncode
     extras = choose_extras(torch_tag) + (",dev" if command == "test" else "")
     gpus = nvidia_gpus()
     gpu_desc = "、".join(n for n, _ in gpus) if gpus else "未检测到 NVIDIA 显卡"

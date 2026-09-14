@@ -353,7 +353,7 @@ export default function JobDetail() {
           : 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300';
 
   const checkpointKindLabel = (kind: string) =>
-    kind === 'weights' ? t('job.kindWeights', '仅权重') : kind === 'full' ? t('job.kindFull', '完整') : kind;
+    kind === 'model' ? text('全量模型组件', 'Full-model components') : kind === 'weights' ? t('job.kindWeights', '仅权重') : kind === 'full' ? t('job.kindFull', '完整') : kind;
 
   const logLevelLabels: Record<string, string> = {
     all: t('job.levelAll'),

@@ -1,3 +1,4 @@
+import ServiceControls from '../../components/ServiceControls';
 import React from 'react';
 import { formatApiError } from '../../utils/errors';
 import { useTranslation } from 'react-i18next';
@@ -93,10 +94,7 @@ export default function Preferences() {
         {settings.paths.output_mode === 'custom' ? <><div className="mt-2"><PathInput ariaLabel={t('settings.outputDir')} value={settings.paths.output_dir} onChange={value => update(s => ({...s,paths:{...s.paths,output_dir:value}}))}/></div><p className="settings-note">{text('在此目录下按项目 ID、版本号和任务 ID 分开保存，避免重复训练互相覆盖。','Outputs under this root are separated by project ID, version and job ID.')}</p></>
           : <p className="settings-note font-mono">project/{'<project_id>'}/v1/output/{'<job_id>'}/</p>}
       </div></div>
-      <details className="settings-inline-details"><summary>{text('新项目目录结构', 'New project directory layout')}</summary>
-        <pre className="text-xs leading-6 overflow-auto">{`studio_data/project/<project_id>/v1/\n  traindata/\n  reg/\n  samples/<job_id>/\n  output/<job_id>/`}</pre>
-        <p>{text('显示名称可以使用任意语言；目录使用字母、数字和下划线组成的项目 ID。旧项目保留原目录与文件引用。', 'Display names support any language. Directory IDs use letters, digits and underscores. Existing projects retain their original paths.')}</p>
-      </details>
+
     </section> : <>
       <section id="preferences-appearance" data-settings-section tabIndex={-1} className="settings-section">
         <div className="settings-section-heading"><div><h2>{t('settings.ui')}</h2><p className="settings-note">{t('settings.uiDesc', '语言与主题在保存后立即生效。')}</p></div></div>
@@ -107,6 +105,7 @@ export default function Preferences() {
         <div className="settings-section-heading"><div><h2>{t('settings.server')}</h2><p className="settings-note">{t('settings.serverNote')}</p></div></div>
         <div className="settings-field"><span className="settings-field-label">{t('settings.connectedService', '当前连接')}</span><div className="settings-field-control py-1.5 font-mono break-all">{window.location.origin}</div></div>
         <ServiceInfo />
+        <ServiceControls key={`${saved}`}/>
         <div className="settings-field"><label htmlFor="preferences-host">{t('settings.host')}</label><div className="settings-field-control"><input id="preferences-host" type="text" aria-label={t('settings.host')} value={settings.server.host} onChange={event => update(s => ({ ...s, server: { ...s.server, host: event.target.value } }))} className="settings-input font-mono" /></div></div>
         <div className="settings-field"><label htmlFor="preferences-port">{t('settings.port')}</label><div className="settings-field-control"><input id="preferences-port" type="number" min={1} max={65535} aria-label={t('settings.port')} value={settings.server.port} onChange={event => update(s => ({ ...s, server: { ...s.server, port: Number(event.target.value) } }))} className="settings-input font-mono" /></div></div>
       </section>

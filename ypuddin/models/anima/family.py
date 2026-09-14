@@ -385,28 +385,8 @@ class AnimaFamily(ModelFamily):
 
 
 def _infer_from_shapes(shapes: dict[str, Any], base: dict[str, Any]) -> dict[str, Any]:
-    """Geometry from safetensors slices (no tensor data read)."""
-    cfg = dict(base)
-    xe = shapes.get("x_embedder.proj.1.weight")
-    if xe is not None:
-        out_dim, in_dim = xe.get_shape()
-        cfg["model_channels"] = int(out_dim)
-        cfg["in_channels"] = int(in_dim) // 4 - 1
-    n_blocks = 0
-    for k in shapes:
-        if k.startswith("blocks."):
-            try:
-                n_blocks = max(n_blocks, int(k.split(".")[1]) + 1)
-            except ValueError:
-                continue
-    if n_blocks:
-        cfg["num_blocks"] = n_blocks
-    heads = {2048: 16, 5120: 40}
-    cfg["num_heads"] = heads.get(
-        cfg.get("model_channels", 2048), max(1, cfg.get("model_channels", 2048) // 128)
-    )
-    cfg["use_llm_adapter"] = any(k.startswith("llm_adapter.") for k in shapes)
-    return cfg
+    """Use the loading geometry contract for planning, including the LLM adapter."""
+    return {**base, **infer_config(shapes)}
 
 
 register("anima", AnimaFamily)

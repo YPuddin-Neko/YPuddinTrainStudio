@@ -658,3 +658,75 @@ def test_old_loaded_dev_object_cannot_be_materialized_or_forwarded(tiny_root):
         family.forward(
             loaded, torch.zeros(1, 128, 2, 2), torch.zeros(1), TextCond({"embeds": torch.zeros(1, 7, 24)})
         )
+
+
+@pytest.mark.parametrize("backbone,text", [(True, False), (False, True), (True, True)])
+def test_full_finetune_native_components_and_reload(tiny_root, tmp_path, backbone, text):
+    from ypuddin.config import load_config
+    from ypuddin.train import Trainer
+
+    data = tmp_path / "full-data"
+    data.mkdir()
+    Image.new("RGB", (64, 64), (120, 45, 80)).save(data / "cat.png")
+    (data / "cat.txt").write_text("a red cat")
+    cfg = TrainConfig.model_validate(
+        {
+            "training": {"mode": "full", "train_backbone": backbone, "train_text_encoder": text},
+            "model": {"family": "flux2", "dit_path": str(tiny_root), "dtype": "fp32"},
+            "dataset": {
+                "sources": [{"path": str(data)}],
+                "resolutions": [64],
+                "num_workers": 0,
+                "batch_size": 1,
+                "text_encoding": "online" if text else "cached",
+            },
+            "memory": {"offload_text_encoder": not text, "activation_checkpointing": "block"},
+            "loop": {"max_steps": 2, "mixed_precision": "no"},
+            "sampling": {
+                "enabled": True,
+                "steps": 2,
+                "cfg": 1,
+                "width": 64,
+                "height": 64,
+                "prompts": [{"prompt": "a red cat", "width": 64, "height": 64, "steps": 2}],
+            },
+            "checkpoint": {
+                "output_dir": str(tmp_path / "full-run"),
+                "name": "full",
+                "save_dtype": "fp32",
+                "save_state_every_steps": 1,
+            },
+        }
+    )
+    trainer = Trainer(cfg, device="cpu")
+    trainer.prepare()
+    from ypuddin.train.plan import plan
+
+    planned = plan(cfg, device="cpu")
+    assert planned["ok"], planned["errors"]
+    assert planned["params"]["trainable"] == trainer.adapters.num_params()
+    before = trainer.adapters.training_state_dict()
+    assert trainer.run() == "finished"
+    after = trainer.adapters.training_state_dict()
+    for component in trainer.adapters.modules:
+        assert any(not torch.equal(before[k], after[k]) for k in before if k.startswith(component + ".")), (
+            component
+        )
+    assert trainer.sample_images("full-preview")
+    artifact = tmp_path / "full-run/full-final.model"
+    restored_cfg = load_config(artifact / "config.toml")
+    restored_cfg.checkpoint.output_dir = str(tmp_path / "reloaded-run")
+    restored_cfg.loop.max_steps = 1
+    restored = Trainer(restored_cfg, device="cpu")
+    restored.prepare()
+    for k, value in restored.adapters.training_state_dict().items():
+        torch.testing.assert_close(value, after[k], rtol=0, atol=0)
+    assert restored.run() == "finished"
+
+    resume_cfg = cfg.model_copy(deep=True)
+    resume_cfg.checkpoint.output_dir = str(tmp_path / "resumed-run")
+    resume_cfg.checkpoint.resume = str(tmp_path / "full-run/state-1")
+    resumed = Trainer(resume_cfg, device="cpu")
+    assert resumed.run() == "finished"
+    for k, value in resumed.adapters.training_state_dict().items():
+        torch.testing.assert_close(value, after[k], rtol=0, atol=0)

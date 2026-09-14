@@ -91,6 +91,17 @@ def load_config(
         data = deep_merge(data, patch)
     if path is not None:
         data = deep_merge(data, read_config_file(path))
+        # Full-model exports carry native components next to this config. Rebind
+        # only those generated component paths after copying/unpacking an artifact;
+        # frozen VAE/tokenizer references retain their explicit original locations.
+        manifest_path = Path(path).parent / "manifest.json"
+        if Path(path).name == "config.toml" and manifest_path.is_file():
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if isinstance(manifest, dict) and manifest.get("format") == "ypuddin-full-model-v1":
+                from .model_artifact import rebind_artifact_components
+
+                data = rebind_artifact_components(data, manifest, Path(path).parent)
+
     patch = overrides if isinstance(overrides, Mapping) else parse_overrides(overrides)
     data = deep_merge(data, patch)
     return TrainConfig.model_validate(data)
@@ -113,6 +124,7 @@ def absolute_paths(config: TrainConfig) -> TrainConfig:
         (cfg.model, "tokenizer_path"),
         (cfg.dataset, "cache_dir"),
         (cfg.adapter, "resume_weights"),
+        (cfg.training, "resume_weights"),
         (cfg.checkpoint, "output_dir"),
         (cfg.checkpoint, "resume"),
         (cfg.sampling, "prompts_file"),

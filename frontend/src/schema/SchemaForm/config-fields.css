@@ -130,3 +130,8 @@
   .config-managed-value { min-height: 40px; }
   .compact-schema .config-group-title { padding-inline: 14px; }
 }
+
+/* Both smoothing values share the same label row and input baseline as EPS. */
+.config-beta-controls > label { position: relative; display: flex; align-items: center; }
+.config-beta-controls > label > span { position: absolute; left: 10px; font-size: 12px; line-height: 20px; pointer-events: none; }
+.compact-schema .config-field .config-beta-controls > label > input:not([type="checkbox"]):not([type="range"]) { padding-left: 31px; }

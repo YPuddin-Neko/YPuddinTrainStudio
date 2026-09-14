@@ -15,3 +15,5 @@
 @media(max-width:480px){.model-form-grid{grid-template-columns:1fr}.models-heading{flex-wrap:wrap}.models-source-bar{gap:10px}.models-source-bar label{width:100%}.model-catalog-description strong{font-size:12px}.model-catalog-action .model-button{padding:6px 8px}.model-download-heading{flex-wrap:wrap}.model-default-row{grid-template-columns:1fr;gap:4px}}
 
 .settings-workspace .models-toolbar { background:var(--settings-surface); }
+
+.model-transfer-status { font-size:12px; color:var(--studio-dim); line-height:1.6; font-variant-numeric:tabular-nums; margin:6px 0; }

@@ -22,6 +22,7 @@ from ypuddin.server.db import Database, now
 from ypuddin.server.environment import (
     CATALOG,
     PROBE,
+    EnvironmentError,
     EnvironmentManager,
     EnvironmentRequest,
     environment_attention_default,
@@ -141,6 +142,40 @@ def wait_status(manager, id_, expected=("ready", "completed", "failed", "cancell
             return op
         time.sleep(0.01)
     raise AssertionError(manager.get(id_))
+
+
+def test_extension_plans_cannot_be_applied_or_uninstalled_from_another_profile(env, monkeypatch):
+    env.versions["tensorboard"] = "1.0"
+    op = start(env, action="uninstall")
+    assert op.status == "ready"
+    calls = list(env.installer.calls)
+    monkeypatch.setenv("YPUDDIN_ENV_PROFILE", "windows-cpu")
+    other = EnvironmentManager(
+        env.context,
+        installer=env.installer,
+        versions=lambda: env.versions.copy(),
+        runtime=lambda: env.runtime.copy(),
+        probe=env.probe,
+    )
+    try:
+        assert other.list() == []
+        with pytest.raises(EnvironmentError):
+            other.apply(op.id)
+        assert other.root != env.manager.root
+        assert env.installer.calls == calls
+        assert env.versions["tensorboard"] == "1.0"
+        assert env.manager.get(op.id).status == "ready"
+    finally:
+        other.close()
+
+
+def test_extension_plan_cannot_apply_after_same_profile_interpreter_switch(env, monkeypatch):
+    op = start(env)
+    calls = list(env.installer.calls)
+    monkeypatch.setattr(sys, "executable", "/different/profile-runtime/bin/python")
+    with pytest.raises(EnvironmentError, match="another interpreter"):
+        env.manager.apply(op.id)
+    assert env.installer.calls == calls
 
 
 def start(env, **fields):
@@ -644,3 +679,44 @@ def test_regularization_reservation_and_environment_apply_share_admission_lock(e
     assert "regularization" in str(errors[0])
     assert maintenance_blocked(env.context.db)
     assert not any("install" in call and "--dry-run" not in call for call in env.installer.calls)
+
+
+def test_dismissed_result_is_persistent_but_preserves_history(env):
+    from ypuddin.server.environment import EnvironmentOperation
+
+    op = EnvironmentOperation(
+        id="env_dismiss_test",
+        package="xformers",
+        action="install",
+        status="failed",
+        created_at=now(),
+        updated_at=now(),
+        error="old kernel failure",
+        logs=["keep diagnostic log"],
+    )
+    env.context.db.set_kv("environment.operation." + op.id, op.model_dump())
+    response = env.client.post(f"/api/environment/operations/{op.id}/dismiss")
+    assert response.status_code == 200
+    stored = env.context.db.get_kv("environment.operation." + op.id)
+    assert stored["dismissed_at"] > 0
+    assert stored["status"] == "failed"
+    assert stored["error"] == "old kernel failure"
+    assert stored["logs"] == ["keep diagnostic log"]
+    assert env.client.get("/api/environment/operations").json()[0]["dismissed_at"] == stored["dismissed_at"]
+
+
+@pytest.mark.parametrize("status", ["planning", "ready", "installing", "verifying"])
+def test_cannot_dismiss_unfinished_install(env, status):
+    from ypuddin.server.environment import EnvironmentOperation
+
+    op = EnvironmentOperation(
+        id="env_busy_dismiss",
+        package="xformers",
+        action="install",
+        status=status,
+        created_at=now(),
+        updated_at=now(),
+    )
+    env.context.db.set_kv("environment.operation." + op.id, op.model_dump())
+    assert env.client.post(f"/api/environment/operations/{op.id}/dismiss").status_code == 409
+    assert env.manager.get(op.id).dismissed_at is None

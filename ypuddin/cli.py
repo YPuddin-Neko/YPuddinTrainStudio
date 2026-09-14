@@ -52,8 +52,16 @@ def cmd_plan(args: argparse.Namespace) -> int:
         import torch
 
         if device is None:
+            from ypuddin.runtime_profiles import current_profile
+
             device = (
-                "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+                "cpu"
+                if current_profile().endswith("-cpu")
+                else "cuda"
+                if torch.cuda.is_available()
+                else "mps"
+                if torch.backends.mps.is_available()
+                else "cpu"
             )
         target = torch.device(device)
         if target.type == "cuda" and torch.cuda.is_available():
@@ -212,17 +220,28 @@ def cmd_serve(args: argparse.Namespace) -> int:
         import uvicorn
 
         from ypuddin.server.app import create_app
+        from ypuddin.server.lifecycle import launch_service
     except ImportError as e:
         print(f"server dependencies missing: {e}. Install with: pip install 'ypuddin[server]'")
         return 1
-
+    if not args.service_worker:
+        return launch_service(args.data_root, args.host, args.port)
     app = create_app(data_root=args.data_root)
     settings = app.state.ctx.settings()["server"]
     host, port = args.host or settings["host"], args.port or settings["port"]
-    # SSE connections are long-lived; bound their drain before the lifespan asks
-    # running trainers to checkpoint and closes the database.
-    uvicorn.run(app, host=host, port=port, log_level="info", timeout_graceful_shutdown=5)
-    return 0
+    server = uvicorn.Server(
+        uvicorn.Config(app, host=host, port=port, log_level="info", timeout_graceful_shutdown=5)
+    )
+    if args.control_file and args.original_python:
+        app.state.lifecycle.configure(
+            control_file=Path(args.control_file),
+            host=host,
+            port=port,
+            shutdown=lambda: setattr(server, "should_exit", True),
+            original_python=args.original_python,
+        )
+    server.run()
+    return 0 if server.started else 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -312,6 +331,9 @@ def build_parser() -> argparse.ArgumentParser:
     sv.add_argument("--host", default=None, help="override the saved server host")
     sv.add_argument("--port", type=int, default=None, help="override the saved server port")
     sv.add_argument("--data-root", default="studio_data")
+    sv.add_argument("--service-worker", action="store_true", help=argparse.SUPPRESS)
+    sv.add_argument("--control-file", help=argparse.SUPPRESS)
+    sv.add_argument("--original-python", help=argparse.SUPPRESS)
     sv.set_defaults(fn=cmd_serve)
     return p
 

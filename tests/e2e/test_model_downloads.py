@@ -132,6 +132,9 @@ def test_progress_and_cancellation_do_not_register_partial_weights(download_serv
     id_ = start(client).json()["id"]
     progress = wait_for(client, id_, lambda row: row["downloaded_bytes"] > 0)
     assert 0 < progress["downloaded_bytes"] < progress["total_bytes"]
+    assert progress["bytes_per_second"] > 0
+    assert progress["eta_seconds"] > 0
+    assert progress["progress_at"] > 0
     assert start(client).status_code == 409
     client.post(f"/api/models/downloads/{id_}/cancel", json={}).raise_for_status()
     row = wait_for(client, id_)

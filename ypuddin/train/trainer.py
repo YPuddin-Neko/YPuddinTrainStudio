@@ -46,10 +46,12 @@ from ypuddin.optim import (
     optimizer_rate_snapshot,
     validate_optimizer_runtime,
 )
+from ypuddin.runtime_profiles import current_profile
 
 from .events import Emitter, NullEmitter
 from .logging import TrainingLogs
 from .state import Progress, capture_rng, load_checkpoint, restore_rng, save_checkpoint
+from .training_modes import FullTrainingSet, save_model_artifact
 
 log = logging.getLogger(__name__)
 
@@ -86,7 +88,7 @@ class Trainer:
         self.progress = Progress()
         self.family: ModelFamily
         self.loaded: LoadedModel
-        self.adapters: AdapterSet
+        self.adapters: AdapterSet | FullTrainingSet
         self.bundle: DataBundle
         self.objective: Any  # family-owned noising, prediction target and loss contract
         self.optimizer: torch.optim.Optimizer
@@ -107,6 +109,8 @@ class Trainer:
     # ----------------------------------------------------------------- setup
     @staticmethod
     def _pick_device() -> torch.device:
+        if current_profile().endswith("-cpu"):
+            return torch.device("cpu")
         if torch.cuda.is_available():
             return torch.device("cuda")
         if torch.backends.mps.is_available():
@@ -170,7 +174,15 @@ class Trainer:
         if self.device.type == "cuda":
             torch.backends.cuda.matmul.allow_tf32 = cfg.memory.allow_tf32
             torch.backends.cudnn.allow_tf32 = cfg.memory.allow_tf32
-        model_dtype = DTYPES[cfg.model.dtype] if self.device.type == "cuda" else torch.float32
+        model_dtype = (
+            DTYPES[cfg.model.dtype]
+            if self.device.type == "cuda"
+            and not (
+                cfg.training.mode == "full"
+                and (cfg.training.train_backbone or cfg.memory.base_precision == "fp32")
+            )
+            else torch.float32
+        )
         if self.device.type == "mps" and (cfg.model.dtype != "fp32" or cfg.loop.mixed_precision != "no"):
             self.emit(
                 "warning", message="MPS training uses fp32 without autocast for numerical compatibility"
@@ -259,41 +271,58 @@ class Trainer:
         cfg = self.cfg
         self.family.materialize_backbone(self.loaded)
         self.emit("phase.changed", phase="injecting")
-        presets = self.family.presets()
-        if cfg.adapter.preset not in presets:
-            raise ValueError(
-                f"unknown adapter preset {cfg.adapter.preset!r} for {self.family.spec.name}; available: {sorted(presets)}"
-            )
-        base_precision = cfg.memory.base_precision if cfg.memory.base_precision != "auto" else "keep"
-        self.adapters = inject(
-            self.loaded.backbone,
-            cfg.adapter,
-            presets[cfg.adapter.preset],
-            prefix=self.family.spec.adapter_prefix,
-            base_precision=base_precision,
-        )
-        if cfg.adapter.resume_weights:
-            from ypuddin.adapters import load_adapter_file
+        if cfg.training.mode == "full":
+            from ypuddin.adapters.frozen import FrozenLinear
 
-            tensors, _ = load_adapter_file(cfg.adapter.resume_weights)
-            missing = self.adapters.load_state(tensors, strict=False)
-            matched = len(self.adapters.layers) - len(missing)
-            if matched == 0:
+            if any(isinstance(layer, FrozenLinear) for layer in self.loaded.backbone.modules()):
+                raise ValueError("Full fine-tuning requires unquantized base weights")
+            self.loaded.backbone.requires_grad_(False)
+            modules = {}
+            if cfg.training.train_backbone:
+                modules["backbone"] = self.loaded.backbone
+                self.loaded.dtype = torch.float32
+            if cfg.training.train_text_encoder:
+                self.loaded.text.to(self.device)
+                modules.update(self.loaded.text.enable_training())
+            self.adapters = FullTrainingSet(modules)
+            if cfg.training.resume_weights:
+                self.adapters.load_weights(cfg.training.resume_weights, self.family.spec.name)
+        else:
+            presets = self.family.presets()
+            if cfg.adapter.preset not in presets:
                 raise ValueError(
-                    "adapter.resume_weights matched no adapted layers; check the model family, "
-                    "adapter targets and weight file format"
+                    f"unknown adapter preset {cfg.adapter.preset!r} for {self.family.spec.name}; available: {sorted(presets)}"
                 )
-            if missing:
-                self.emit(
-                    "warning",
-                    code="adapter.partial_warm_start",
-                    message=(
-                        f"已加载 {matched}/{len(self.adapters.layers)} 个适配层；"
-                        f"权重文件中缺少其余 {len(missing)} 层，这些层将从初始权重开始训练。"
-                    ),
-                    matched_layers=matched,
-                    missing_layers=len(missing),
-                )
+            base_precision = cfg.memory.base_precision if cfg.memory.base_precision != "auto" else "keep"
+            self.adapters = inject(
+                self.loaded.backbone,
+                cfg.adapter,
+                presets[cfg.adapter.preset],
+                prefix=self.family.spec.adapter_prefix,
+                base_precision=base_precision,
+            )
+            if cfg.adapter.resume_weights:
+                from ypuddin.adapters import load_adapter_file
+
+                tensors, _ = load_adapter_file(cfg.adapter.resume_weights)
+                missing = self.adapters.load_state(tensors, strict=False)
+                matched = len(self.adapters.layers) - len(missing)
+                if matched == 0:
+                    raise ValueError(
+                        "adapter.resume_weights matched no adapted layers; check the model family, "
+                        "adapter targets and weight file format"
+                    )
+                if missing:
+                    self.emit(
+                        "warning",
+                        code="adapter.partial_warm_start",
+                        message=(
+                            f"已加载 {matched}/{len(self.adapters.layers)} 个适配层；"
+                            f"权重文件中缺少其余 {len(missing)} 层，这些层将从初始权重开始训练。"
+                        ),
+                        matched_layers=matched,
+                        missing_layers=len(missing),
+                    )
         self.emit("adapters.injected", **self.adapters.summary())
         if cfg.memory.blocks_to_swap > 0:
             blocks = self.family.memory_layout(self.loaded).blocks
@@ -361,7 +390,11 @@ class Trainer:
             problems.append("fp8 base precision requires CUDA")
         if (cfg.dataset.masked_loss or cfg.dataset.image_fit == "pad") and "masked_loss" not in caps:
             problems.append("masked loss (including image padding exclusion) is not supported by this family")
-        if cfg.dataset.text_encoding == "online" and "online_text" not in caps:
+        if (
+            cfg.dataset.text_encoding == "online"
+            and "online_text" not in caps
+            and not cfg.training.train_text_encoder
+        ):
             problems.append(
                 "dataset.text_encoding='online' is not supported by this family (its text encoder is too large to "
                 "stay resident); use 'cached' or 'auto'"
@@ -405,6 +438,8 @@ class Trainer:
         return n
 
     def _resolve_text_mode(self) -> str:
+        if self.cfg.training.train_text_encoder:
+            return "online"
         mode = self.cfg.dataset.text_encoding
         if mode == "auto":
             return "online" if "online_text" in self.family.spec.capabilities else "cached"
@@ -447,6 +482,11 @@ class Trainer:
     # ----------------------------------------------------------------- resume / checkpoint
     def _resume(self, path: str) -> None:
         ck = load_checkpoint(path)
+        expected_kind = "full-model" if self.cfg.training.mode == "full" else "adapter"
+        if ck.get("training_kind", "adapter") != expected_kind:
+            raise ValueError(
+                "checkpoint training mode differs: full-model weights and adapters are not interchangeable"
+            )
         if ck["dataset_fingerprint"] and ck["dataset_fingerprint"] != self.bundle.plan.fingerprint:
             if ck["format"] == 1:
                 raise ValueError(
@@ -501,6 +541,13 @@ class Trainer:
         )
 
     def _adapter_metadata(self) -> dict[str, str]:
+        if self.cfg.training.mode == "full":
+            return {
+                "ypuddin.training_mode": "full",
+                "ypuddin.family": self.family.spec.name,
+                "ypuddin.components": json.dumps(sorted(self.adapters.modules)),
+                "ypuddin.config_hash": self.config_hash,
+            }
         _, targets = self.adapters.export_state()
         metadata = build_metadata(
             targets=targets,
@@ -526,6 +573,24 @@ class Trainer:
 
     @evaluation
     def save_weights(self, tag: str) -> Path:
+        if isinstance(self.adapters, FullTrainingSet):
+            path = save_model_artifact(
+                self.run_dir / f"{self.cfg.checkpoint.name}-{tag}.model", self.adapters, self.cfg, self.loaded
+            )
+            self.emit("checkpoint.saved", kind="model", step=self.progress.step, path=str(path), ema=False)
+            if self.ema is not None:
+                ema_path = save_model_artifact(
+                    self.run_dir / f"{self.cfg.checkpoint.name}-{tag}-ema.model",
+                    self.adapters,
+                    self.cfg,
+                    self.loaded,
+                    tensors=self.ema,
+                )
+                self.emit(
+                    "checkpoint.saved", kind="model", step=self.progress.step, path=str(ema_path), ema=True
+                )
+            self._rotate_weights()
+            return path
         tensors, _ = self.adapters.export_state()
         path = save_adapter_file(
             self.run_dir / f"{self.cfg.checkpoint.name}-{tag}.safetensors",
@@ -553,22 +618,35 @@ class Trainer:
             return
         prefix = f"{self.cfg.checkpoint.name}-step"
         groups: dict[int, list[Path]] = {}
-        for path in self.run_dir.glob(f"{prefix}*.safetensors"):
+        suffix = ".model" if self.cfg.training.mode == "full" else ".safetensors"
+        for path in self.run_dir.glob(f"{prefix}*{suffix}"):
             step = path.stem.removeprefix(prefix).removesuffix("-ema")
             if step.isdecimal():
                 groups.setdefault(int(step), []).append(path)
         for step in sorted(groups)[:-keep]:
             for path in groups[step]:
-                path.unlink(missing_ok=True)
+                if path.is_dir():
+                    import shutil
+
+                    shutil.rmtree(path)
+                else:
+                    path.unlink(missing_ok=True)
 
     def save_state(self, tag: str | None = None) -> Path:
-        with self._evaluation():
-            tensors, _ = self.adapters.export_state()
+        if self.cfg.training.mode == "full":
+            # A full-state checkpoint needs the raw optimizer-point weights only.
+            # Do not duplicate a complete model in host RAM or switch SF into eval.
+            tensors = self.adapters.training_state_dict()
+            training_tensors = tensors
+        else:
+            with self._evaluation():
+                tensors, _ = self.adapters.export_state()
+            training_tensors = self.adapters.training_state_dict()
         self.progress.extra["loss_ema"] = self._loss_ema
         path = save_checkpoint(
             self.run_dir / f"state-{tag or self.progress.step}",
             adapter_tensors=tensors,
-            training_tensors=self.adapters.training_state_dict(),
+            training_tensors=training_tensors,
             adapter_metadata=self._adapter_metadata(),
             optimizer=self.optimizer,
             scheduler=self.scheduler,
@@ -579,6 +657,7 @@ class Trainer:
             config_hash=self.config_hash,
             dataset_fingerprint=self.bundle.plan.fingerprint,
             model_identity=self.model_identity,
+            training_kind="full-model" if self.cfg.training.mode == "full" else "adapter",
         )
         self.emit("checkpoint.saved", kind="full", step=self.progress.step, path=str(path))
         return path

@@ -9,6 +9,7 @@ import re
 import shutil
 import tempfile
 import unicodedata
+import zipfile
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Literal
@@ -17,6 +18,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, field_validator
+from starlette.background import BackgroundTask
 
 from ypuddin.config import DatasetSourceConfig, TrainConfig, deep_merge
 from ypuddin.config.io import absolute_paths
@@ -1087,7 +1089,7 @@ def add_dataset(
     version_id: str | None = None,
     progress_id: str | None = None,
 ) -> dict[str, Any]:
-    with c.import_progress.track(pid, progress_id, "validating") as progress:
+    with c.import_admission(), c.import_progress.track(pid, progress_id, "validating") as progress:
         version = c.resolve_version(pid, version_id or body.version_id)
         did = c.versions.import_directory(pid, version["id"], body, progress=progress)
     background_tasks.add_task(_index_dataset, c, did)
@@ -1136,7 +1138,7 @@ async def upload_dataset(
     version_id: str | None = None,
     progress_id: str | None = None,
 ) -> dict[str, Any]:
-    with c.import_progress.track(pid, progress_id, "receiving") as progress:
+    with c.import_admission(), c.import_progress.track(pid, progress_id, "receiving") as progress:
         version = await run_in_threadpool(assert_version_writable, c, pid, version_id, data=True)
         async with read_upload(request, progress) as batch:
             ids = await run_in_threadpool(_register_upload, c, pid, batch, version["id"], progress)
@@ -1982,7 +1984,15 @@ def _artifact_row(r: dict[str, Any]) -> dict[str, Any]:
     out = dict(r)
     meta = json.loads(r.get("meta_json") or "{}")
     out.pop("meta_json", None)
-    if not meta and Path(r["path"]).exists():
+    if r["kind"] == "model" and Path(r["path"]).is_dir():
+        try:
+            manifest = json.loads((Path(r["path"]) / "manifest.json").read_text(encoding="utf-8"))
+            if manifest.get("format") == "ypuddin-full-model-v1":
+                meta = {"training_mode": "full", "components": list(manifest.get("components", {})), "frozen_assets": manifest.get("frozen_assets")}
+                out["family"] = manifest.get("family")
+        except (OSError, ValueError):
+            pass
+    elif not meta and Path(r["path"]).exists():
         try:
             from ypuddin.adapters import load_adapter_file
 
@@ -2020,7 +2030,7 @@ def list_artifacts(
     return [
         _artifact_row(r)
         for r in c.db.fetchall(sql + " ORDER BY created_at DESC", tuple(params))
-        if Path(r["path"]).is_file()
+        if Path(r["path"]).is_file() or (r["kind"] == "model" and Path(r["path"]).is_dir())
     ]
 
 
@@ -2054,16 +2064,43 @@ def delete_artifact(aid: str, delete_file: bool = False, c: ServiceContext = Dep
                 code="artifact.xyz_dependencies",
                 status=409,
             )
-        c.db.delete("artifacts", aid)
         if delete_file:
-            Path(r["path"]).unlink(missing_ok=True)
+            path = Path(r["path"])
+            if r["kind"] == "model" and path.is_dir() and not path.is_symlink():
+                try:
+                    manifest = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    manifest = {}
+                if manifest.get("format") != "ypuddin-full-model-v1":
+                    raise ApiError("Model artifact manifest is missing or invalid", code="artifact.manifest", status=409)
+                shutil.rmtree(path)
+            else:
+                path.unlink(missing_ok=True)
+        c.db.delete("artifacts", aid)
     return {"ok": True}
 
 
 @router.get("/artifacts/{aid}/download")
 def download_artifact(aid: str, c: ServiceContext = Depends(ctx)) -> Response:
     r = _get_artifact(c, aid)
-    return FileResponse(r["path"], filename=Path(r["path"]).name)
+    path = Path(r["path"])
+    if r["kind"] == "model" and path.is_dir():
+        if path.is_symlink() or not (path / "manifest.json").is_file():
+            raise ApiError("Invalid model artifact directory", code="artifact.manifest", status=409)
+        folder = Path(tempfile.mkdtemp(prefix="ypuddin-model-export-"))
+        target = folder / (path.name + ".zip")
+        try:
+            with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
+                for file in sorted(path.rglob("*")):
+                    if file.is_symlink() or not file.resolve().is_relative_to(path.resolve()):
+                        raise ApiError("Model artifact contains an external link", code="artifact.path", status=409)
+                    if file.is_file():
+                        archive.write(file, str(Path(path.name) / file.relative_to(path)))
+            return FileResponse(target, filename=target.name, background=BackgroundTask(shutil.rmtree, folder, ignore_errors=True))
+        except Exception:
+            shutil.rmtree(folder, ignore_errors=True)
+            raise
+    return FileResponse(path, filename=path.name)
 
 
 class ConvertBody(BaseModel):
@@ -2082,6 +2119,8 @@ def convert_artifact(aid: str, body: ConvertBody, c: ServiceContext = Depends(ct
 
 
 def _convert_artifact(c: ServiceContext, r: dict, body: ConvertBody) -> dict[str, Any]:
+    if r["kind"] not in {"weights", "comfyui", "kohya"}:
+        raise ApiError("Only adapter weight artifacts support format conversion", code="artifact.kind", status=422)
     from safetensors.torch import save_file
 
     from ypuddin.adapters import load_adapter_file

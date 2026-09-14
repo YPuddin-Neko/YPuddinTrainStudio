@@ -54,7 +54,8 @@ def _load_qwen3(path: str | Path, dtype: torch.dtype, device: torch.device | str
     else:
         from safetensors.torch import load_file
 
-        config = AutoConfig.from_pretrained(str(ASSETS / "qwen3_06b"))
+        config_root = p.parent if (p.parent / "config.json").is_file() else ASSETS / "qwen3_06b"
+        config = AutoConfig.from_pretrained(str(config_root), local_files_only=True)
         # The complete decoder is supplied by the checkpoint: allocating and randomly
         # initializing it first wastes CPU time and a second copy of its weights.
         with torch.device("meta"):
@@ -156,7 +157,10 @@ class AnimaText(TextPipeline):
             *tokenizer_assets(tokenizer_path or ASSETS / "t5_old"),
         ]
         if Path(text_encoder_path).is_file():
-            assets.append(ASSETS / "qwen3_06b" / "config.json")
+            adjacent_config = Path(text_encoder_path).parent / "config.json"
+            assets.append(
+                adjacent_config if adjacent_config.is_file() else ASSETS / "qwen3_06b" / "config.json"
+            )
         self.fingerprint = content_fingerprint(assets, namespace=f"{AnimaText.fingerprint}:{max_len}:{dtype}")
 
     # ----------------------------------------------------------------- weights
@@ -209,10 +213,11 @@ class AnimaText(TextPipeline):
         lt = max(PAD_FLOOR, max(e["t5_ids"].shape[0] for e in entries))
         b = len(entries)
         hidden = entries[0]["embeds"].shape[1] if entries else QWEN_HIDDEN
-        embeds = torch.zeros(b, lq, hidden, dtype=torch.float32)
-        q_mask = torch.zeros(b, lq, dtype=torch.bool)
-        t5_ids = torch.full((b, lt), T5_PAD_ID, dtype=torch.long)
-        t5_mask = torch.zeros(b, lt, dtype=torch.bool)
+        storage_device = entries[0]["embeds"].device
+        embeds = torch.zeros(b, lq, hidden, dtype=torch.float32, device=storage_device)
+        q_mask = torch.zeros(b, lq, dtype=torch.bool, device=storage_device)
+        t5_ids = torch.full((b, lt), T5_PAD_ID, dtype=torch.long, device=storage_device)
+        t5_mask = torch.zeros(b, lt, dtype=torch.bool, device=storage_device)
         for i, e in enumerate(entries):
             n, m = e["embeds"].shape[0], e["t5_ids"].shape[0]
             embeds[i, :n] = e["embeds"].float()
@@ -223,5 +228,21 @@ class AnimaText(TextPipeline):
             device
         )
 
+    def trainable_modules(self) -> dict[str, nn.Module]:
+        return {"text_encoder": self._ensure_loaded()}
+
     def encode(self, captions: list[str], device: torch.device | str) -> TextCond:
-        return self.cond_from_cache(self.encode_for_cache(captions), device)
+        if not getattr(self, "training_enabled", False):
+            return self.cond_from_cache(self.encode_for_cache(captions), device)
+        encoder = self._ensure_loaded()
+        q_ids, q_mask, t5_ids, t5_mask = self._tokenize(captions)
+        output = encoder(
+            input_ids=q_ids.to(self.device), attention_mask=q_mask.to(self.device), use_cache=False
+        )
+        # Padding is applied with differentiable cat/copy operations, not the detached disk cache.
+        hidden = output.last_hidden_state
+        entries = [
+            {"embeds": hidden[i, : int(q_mask[i].sum())], "t5_ids": t5_ids[i, : int(t5_mask[i].sum())]}
+            for i in range(len(captions))
+        ]
+        return self.cond_from_cache(entries, device)

@@ -35,6 +35,7 @@ REM ============================================================================
 
 echo [studio] YPuddin Train Studio
 
+if defined YPUDDIN_BOOTSTRAP_VENV if exist "%YPUDDIN_BOOTSTRAP_VENV%\Scripts\python.exe" goto :run_profile
 if exist "venv\Scripts\python.exe" goto :run_venv
 
 echo [studio] First run: looking for Python 3.10 - 3.12 ...
@@ -54,6 +55,10 @@ if not errorlevel 1 goto :run_uv
 
 echo [studio] ERROR: Python 3.10 - 3.12 not found. Install it from https://www.python.org (tick "Add python.exe to PATH") and run this again.
 goto :fail
+
+:run_profile
+"%YPUDDIN_BOOTSTRAP_VENV%\Scripts\python.exe" scripts\bootstrap.py %*
+goto :done
 
 :run_venv
 "venv\Scripts\python.exe" scripts\bootstrap.py %*

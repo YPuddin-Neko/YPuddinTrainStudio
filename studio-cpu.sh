@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")"
+case "$(uname -s)" in
+  Darwin) export YPUDDIN_BOOTSTRAP_VENV="environment/profiles/macos-cpu/venv" ;;
+  Linux) export YPUDDIN_BOOTSTRAP_VENV="environment/profiles/linux-cpu/venv" ;;
+  *) echo "[studio] This CPU launcher supports Linux or macOS." >&2; exit 1 ;;
+esac
+exec ./studio.sh --profile=cpu "$@"

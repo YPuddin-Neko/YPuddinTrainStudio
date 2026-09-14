@@ -1,3 +1,4 @@
+import { selectTrainingComponents, trainingManagedReason } from '../../utils/trainingSelection';
 import React from 'react';
 import { evaluateShowWhen } from '../showWhen';
 import { useTranslation } from 'react-i18next';
@@ -500,7 +501,7 @@ const BetasEditor: React.FC<{
   const english = i18n.resolvedLanguage?.startsWith('en') || false;
   return (
     <div className="config-beta-controls">
-      <label><span>{scheduleFree ? (english ? 'Weight averaging β1' : '权重平均 β1') : (english ? 'Direction smoothing β1' : '方向平滑 β1')}</span>
+      <label><span aria-hidden="true">β1</span>
       <input
         type="number"
         min="0"
@@ -510,9 +511,10 @@ const BetasEditor: React.FC<{
         onChange={(e) => onChange([e.target.value === '' ? '' : Number(e.target.value), value[1]])}
         className="w-1/2 px-3 py-2 border rounded-md text-sm dark:bg-slate-900 dark:border-slate-600"
         placeholder="beta1"
+        aria-label={scheduleFree ? (english ? 'Weight averaging β1' : '权重平均 β1') : (english ? 'Direction smoothing β1' : '方向平滑 β1')}
       />
       </label>
-      <label><span>{english ? 'Magnitude smoothing β2' : '幅度平滑 β2'}</span>
+      <label><span aria-hidden="true">β2</span>
       <input
         type="number"
         min="0"
@@ -522,6 +524,7 @@ const BetasEditor: React.FC<{
         onChange={(e) => onChange([value[0], e.target.value === '' ? '' : Number(e.target.value)])}
         className="w-1/2 px-3 py-2 border rounded-md text-sm dark:bg-slate-900 dark:border-slate-600"
         placeholder="beta2"
+        aria-label={english ? 'Magnitude smoothing β2' : '幅度平滑 β2'}
       />
       </label>
     </div>
@@ -714,6 +717,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   const hasCaptionOverrides = captionOverrideKeys.some(key => !!value.dataset?.caption?.[key]);
   const onChange = (next: Record<string, any>) => {
     if (readOnly) return;
+    next = selectTrainingComponents(next, value);
     const type = next.optimizer?.type;
     if (type !== undefined && type !== value.optimizer?.type) {
       optimizerEdits.current.set(value.optimizer?.type ?? 'adamw', value);
@@ -735,6 +739,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const lokrRank = fullPathKey === 'adapter.rank' && value.adapter?.algo === 'lokr';
     const weightMeta = parentPath[0] === 'model' ? weights.find(weight => weight.field === key) : undefined;
     const supportedOptions = familyParameterOptions(family, fullPathKey);
+    if (parentPath[0] === 'adapter' && value.training?.mode === 'full') return null;
     if (['model.training_guidance', 'sampling.guidance'].includes(fullPathKey)) return null;
     if (fullPathKey === 'model.text_encoder_2_path' && value.model?.family !== 'sdxl') return null;
     if (supportedOptions?.length === 0) return null;
@@ -748,7 +753,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (fullPathKey === 'sampling.output_dir') return null;
     if (versionSources && ['checkpoint.output_dir', 'checkpoint.name'].includes(fullPathKey) && !showAdvanced && !editOutput) return null;
     if (fullPathKey === 'adapter.alpha' && value.adapter?.algo === 'lokr' && value.adapter?.rank === 'full') return null;
-    const ui = { ...(prop['x-ui'] || {}), ...(compact && fullPathKey === 'dataset.batch_size' ? {group:'loop'} : {}) };
+    if (['training.train_backbone', 'training.train_text_encoder'].includes(fullPathKey) && value.training?.mode !== 'full') return null;
+    const ui = { ...(prop['x-ui'] || {}), ...(compact && fullPathKey === 'dataset.batch_size' ? {group:'loop'} : {}), ...(fullPathKey === 'model.attention' ? {group:'memory',advanced:false} : {}) };
     if (ui.hidden) return null;
     if (conditionValue.dataset.resolution_mode === 'native' && ['dataset.resolutions', 'dataset.aspect_ratio_limit', 'dataset.area_tolerance', 'dataset.bucket_step', 'dataset.bucket_no_upscale'].includes(fullPathKey)) return null;
     if (compact && !showAdvanced && fullPathKey === 'adapter.rules' && !value.adapter?.rules?.length) return null;
@@ -785,7 +791,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const percentage = ['adapter.dropout', 'adapter.rank_dropout', 'adapter.module_dropout', 'dataset.area_tolerance', 'dataset.caption.tag_dropout', 'dataset.caption.caption_dropout', 'scheduler.min_lr_ratio', 'validation.split_ratio'].includes(fullPathKey);
     const numericMin = ui.min ?? prop.minimum ?? prop.exclusiveMinimum;
     const numericMax = ui.max ?? prop.maximum ?? prop.exclusiveMaximum;
-    const managedReason = optimizerManagedReason(schema, value, fullPathKey, english);
+    const managedReason = trainingManagedReason(value, fullPathKey, english) || optimizerManagedReason(schema, value, fullPathKey, english);
 
     let control = null;
 
@@ -1116,10 +1122,10 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     <div className={compact ? 'compact-schema' : 'space-y-6'} data-testid="schema-form">
       {search.trim() && sortedGroups.length > 0 && <p className="config-search-results" role="status">{english ? `${sortedGroups.reduce((count, [, group]) => count + group.fields.length, 0)} matching parameters · ${sortedGroups.length} sections` : `${sortedGroups.reduce((count, [, group]) => count + group.fields.length, 0)} 个匹配参数 · ${sortedGroups.length} 个分组`}</p>}
       {sortedGroups.map(([groupName, groupData]) => (
-        <FieldGroup key={`${groupName}:${search.trim()}`} title={t(`groups.${groupName}`, groupName)} count={groupData.fields.length} compact={compact} groupKey={groupName}>
+        <FieldGroup key={`${groupName}:${search.trim()}`} title={groupName === 'training' ? (english ? 'Training mode' : '训练方式') : t(`groups.${groupName}`, groupName)} count={groupData.fields.length} compact={compact} groupKey={groupName}>
           {groupName === 'checkpoint' && versionSources && <div className="output-binding-summary">
             <div className="output-binding-heading"><strong>{english ? 'Training weights' : '训练权重'}</strong><button type="button" onClick={() => setEditOutput(previous => !previous)}>{editOutput ? (english ? 'Collapse custom settings' : '收起自定义设置') : (english ? 'Customize save location or name' : '自定义保存位置或名称')}</button></div>
-            {outputBinding ? <><div><span>{english ? 'File name' : '文件名'}</span><code>{outputBinding.name}-final.safetensors</code></div><div><span>{english ? 'Save location' : '保存位置'}</span><code>{outputBinding.directory_template.replace('{job_id}', english ? '<run ID>' : '<运行 ID>')}</code></div></> : <p>{english ? 'Resolving the save location…' : '正在读取保存位置…'}</p>}
+            {outputBinding ? <><div><span>{english ? 'File name' : '文件名'}</span><code>{outputBinding.name}-final{value.training?.mode === 'full' ? '.model/' : '.safetensors'}</code></div><div><span>{english ? 'Save location' : '保存位置'}</span><code>{outputBinding.directory_template.replace('{job_id}', english ? '<run ID>' : '<运行 ID>')}</code></div></> : <p>{english ? 'Resolving the save location…' : '正在读取保存位置…'}</p>}
           </div>}
           {groupName === 'caption' && showCaptionFormats && <div className="caption-source-formats">
             {captionSources.map((source: any, index: number) => {

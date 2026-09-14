@@ -18,10 +18,11 @@ const task: XyzTask = {
   manifest: { complete: true, grids: [0, 1].map(z => ({ z, z_value: 42 + z, file: `grid-${z}.png`, url: `/api/xyz/xy1/file?name=grid-${z}.png` })), cells: [0, 1, 2, 3].map(index => ({ index, x: index % 2, y: 0, z: Math.floor(index / 2), x_value: `cp${index % 2 + 1}`, y_value: null, z_value: 42 + Math.floor(index / 2), seed: 42 + Math.floor(index / 2), steps: 28, cfg: 4.5, sampler: 'euler', scheduler: 'uniform', shift: 1.15, adapter_scale: 1, checkpoint_id: `cp${index % 2 + 1}`, file: `cell-${index}.png`, url: `/api/xyz/xy1/file?name=cell-${index}.png` })) },
 };
 let history: XyzTask[];
+let currentOptions: XyzOptions;
 beforeEach(async () => {
-  await i18n.changeLanguage('zh-CN'); history = [];
+  await i18n.changeLanguage('zh-CN'); history = []; currentOptions = structuredClone(options);
   vi.spyOn(apiClient, 'get').mockImplementation(async url => {
-    if (url === '/jobs/run/xyz/options') return structuredClone(options) as never;
+    if (url === '/jobs/run/xyz/options') return structuredClone(currentOptions) as never;
     if (url === '/jobs/run/xyz') return history as never;
     if (url === '/xyz/xy1') return { ...task, status: 'running', done: 1, can_cancel: true } as never;
     throw new Error(`Unexpected ${url}`);
@@ -87,6 +88,28 @@ describe('XYZ sampling workspace', () => {
     history = [task]; view(true); await screen.findByText('对比设置');
     expect(screen.getByRole('button', { name: '生成对比图' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '查看第 1 列第 1 行' })).toBeEnabled();
+  });
+  it('uses native full checkpoints without base-model or LoRA controls, including reused legacy settings', async () => {
+    currentOptions.training_mode = 'full';
+    currentOptions.defaults.checkpoint_id = null;
+    history = [{ ...task, request: { ...task.request, checkpoint_id: null, sampling_model_id: 'turbo', adapter_scale: 0.5, x: { key: 'adapter_scale', values: [0.5, 1] }, y: null, z: null } }];
+    view(); await screen.findByText('对比设置');
+    fireEvent.click(screen.getByRole('button', { name: '复用参数' }));
+    expect(screen.queryByRole('combobox', { name: '采样底模' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('固定 adapter_scale')).not.toBeInTheDocument();
+    choose('X · 横向比较', '采样步数');
+    fireEvent.click(screen.getByRole('combobox', { name: '对比使用的训练权重' }));
+    expect(screen.queryByRole('option', { name: /只看底模/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('option', { name: 'pudding-final.safetensors' }));
+    fireEvent.click(screen.getByRole('button', { name: '生成对比图' }));
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/jobs/run/xyz', expect.objectContaining({ checkpoint_id: 'cp2', sampling_model_id: null, adapter_scale: 1, x: { key: 'steps', values: [8, 16, 24] } }), expect.anything()));
+  });
+  it('blocks full comparison until a saved checkpoint exists', async () => {
+    currentOptions.training_mode = 'full'; currentOptions.checkpoints = []; currentOptions.defaults.checkpoint_id = null;
+    view(); await screen.findByText('对比设置');
+    expect(screen.getByText('当前训练尚未保存模型检查点，保存后才能生成对比图')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '生成对比图' })).toBeDisabled();
+    expect(apiClient.post).not.toHaveBeenCalled();
   });
   it('parses Chinese separators without losing order and calculates page count', () => {
     expect(parseAxis('steps', '8，12\n16')).toEqual({ key: 'steps', values: [8, 12, 16] });

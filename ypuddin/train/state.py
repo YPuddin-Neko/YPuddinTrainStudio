@@ -73,6 +73,7 @@ def save_checkpoint(
     config_hash: str = "",
     dataset_fingerprint: str = "",
     model_identity: str = "",
+    training_kind: str = "adapter",
 ) -> Path:
     """Write everything needed for an exact resume into ``path`` (atomic via temp dir + rename)."""
     final = Path(path)
@@ -82,13 +83,13 @@ def save_checkpoint(
     tmp.mkdir(parents=True)
     save_file(
         {k: v.detach().cpu().contiguous() for k, v in adapter_tensors.items()},
-        str(tmp / "adapter.safetensors"),
+        str(tmp / ("model.safetensors" if training_kind == "full-model" else "adapter.safetensors")),
         metadata=adapter_metadata,
     )
     torch.save(optimizer.state_dict(), tmp / "optimizer.pt")
     torch.save(scheduler.state_dict() if scheduler is not None else {}, tmp / "scheduler.pt")
     torch.save(rng, tmp / "rng.pt")
-    if training_tensors is not None:
+    if training_tensors is not None and training_kind != "full-model":
         save_file(
             {k: v.detach().cpu().contiguous() for k, v in training_tensors.items()},
             str(tmp / "training.safetensors"),
@@ -103,7 +104,8 @@ def save_checkpoint(
         "config_hash": config_hash,
         "dataset_fingerprint": dataset_fingerprint,
         "model_identity": model_identity,
-        "format": 2 if training_tensors is not None else 1,
+        "format": 3 if training_kind == "full-model" else 2 if training_tensors is not None else 1,
+        "training_kind": training_kind,
     }
     (tmp / "state.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     if final.exists():
@@ -116,10 +118,11 @@ def load_checkpoint(path: str | Path) -> dict[str, Any]:
     p = Path(path)
     meta = json.loads((p / "state.json").read_text(encoding="utf-8"))
     version = meta.get("format", 1)
-    if version not in (1, 2):
+    if version not in (1, 2, 3):
         raise ValueError(f"unsupported checkpoint format {version}")
     out: dict[str, Any] = {
-        "adapter": load_file(str(p / "adapter.safetensors")),
+        "adapter": load_file(str(p / ("model.safetensors" if version == 3 else "adapter.safetensors"))),
+        "training_kind": meta.get("training_kind", "adapter"),
         "optimizer": torch.load(p / "optimizer.pt", map_location="cpu", weights_only=False),
         "scheduler": torch.load(p / "scheduler.pt", map_location="cpu", weights_only=False),
         "rng": torch.load(p / "rng.pt", map_location="cpu", weights_only=False),
@@ -130,7 +133,9 @@ def load_checkpoint(path: str | Path) -> dict[str, Any]:
         "model_identity": meta.get("model_identity", ""),
         "format": version,
     }
-    if version >= 2:
+    if version == 3:
+        out["training"] = out["adapter"]
+    elif version == 2:
         out["training"] = load_file(str(p / "training.safetensors"))
     if (p / "ema.safetensors").exists():
         out["ema"] = load_file(str(p / "ema.safetensors"))

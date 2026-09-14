@@ -1,10 +1,10 @@
+import TorchEnvironmentPanel from './TorchEnvironmentPanel';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, ChevronDown, ChevronRight, ExternalLink, Loader2, RefreshCw, Upload, X } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { formatApiError } from '../utils/errors';
 import { SettingsSections } from '../pages/Settings/SettingsSections';
-import StudioSelect from './StudioSelect';
 
 interface PackageStatus {
   name: string; version: string | null; backend: string | null; docs_url: string;
@@ -13,11 +13,12 @@ interface PackageStatus {
 }
 interface EnvironmentStatus {
   runtime: {
+    environment_profile?: string;
     python: string; python_executable: string; platform: string; machine: string; torch: string;
     cuda_runtime: string | null; cuda_available: boolean; mps_available: boolean;
     gpu_capability: number[] | null; virtual_environment: boolean;
     cuda_device_count?: number; distributed_available?: boolean; nccl_available?: boolean;
-    multi_gpu_training?: boolean; training_device_policy?: string;
+    cuda_applicable?: boolean; nccl_applicable?: boolean; multi_gpu_training?: boolean; training_device_policy?: string;
     gpus: { name: string; device?: string | null; cuda_available?: boolean; memory_scope?: string; mem_total_mb?: number; telemetry_source?: string; telemetry_note?: string; driver_version?: string }[];
   };
   packages: PackageStatus[]; attention_default: string; restart_required: boolean;
@@ -26,14 +27,13 @@ interface EnvironmentStatus {
 interface PlanEntry { name: string; from_version: string | null; version: string | null; sha256?: string }
 interface Operation {
   id: string; package: string; action: string; status: string; created_at: number;
-  plan: PlanEntry[]; logs: string[]; error: string | null; restart_required: boolean;
+  dismissed_at?: number | null; plan: PlanEntry[]; logs: string[]; error: string | null; restart_required: boolean;
 }
 interface Wheel { wheel_id: string; package: string; filename: string; version: string; sha256: string }
 const button = 'inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-600 dark:hover:bg-slate-800';
 const input = 'rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900';
 const busyStatus = (op: Operation) => ['planning', 'installing', 'verifying'].includes(op.status);
 const managedPackages = new Set(['xformers', 'flash-attn']);
-const backendNames: Record<string, string> = { auto: 'Auto · PyTorch SDPA', sdpa: 'PyTorch SDPA', xformers: 'xFormers', flash_attn: 'FlashAttention 2', sage: 'SageAttention' };
 
 export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: string } = {}) {
   const { i18n, t } = useTranslation();
@@ -51,20 +51,22 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
   const [version, setVersion] = React.useState('');
   const [wheel, setWheel] = React.useState<Wheel | null>(null);
   const [expanded, setExpanded] = React.useState<string | null>(null);
-  const [dismissed, setDismissed] = React.useState<Set<string>>(new Set());
+  const [historyOpen, setHistoryOpen] = React.useState(false);
   const [createdOperations, setCreatedOperations] = React.useState<Set<string>>(new Set());
   const observedOperations = React.useRef(new Set<string>());
-  const visibleOperations = operations.filter((op, index) => !dismissed.has(op.id) && (
+  const visibleOperations = operations.filter((op, index) => !op.dismissed_at && (
     busyStatus(op) || op.status === 'ready' && managedPackages.has(op.package)
     || index === 0 && op.status === 'failed'
     || createdOperations.has(op.id) && op.status === 'completed'
   ));
   React.useEffect(() => {
-    const current = operations.find((op, index) => !observedOperations.current.has(`${op.id}:${op.status}`) && (
+    const current = operations.find((op, index) => !op.dismissed_at && !observedOperations.current.has(`${op.id}:${op.status}`) && (
       busyStatus(op) || op.status === 'ready' && managedPackages.has(op.package) || index === 0 && op.status === 'failed'
     ));
     if (current) { observedOperations.current.add(`${current.id}:${current.status}`); setExpanded(current.id); }
   }, [operations]);
+  const historyOperations = operations.filter(op => !visibleOperations.some(current => current.id === op.id));
+  const shownOperations = historyOpen ? operations : visibleOperations;
   const [uploading, setUploading] = React.useState(false);
   const focusAvailable = !!focusPackage && managedPackages.has(focusPackage) && !!status?.packages.some(pkg => pkg.name === focusPackage);
   React.useEffect(() => {
@@ -140,22 +142,26 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
   };
   const textUnavailable = () => copy(' · 驱动可见，当前 PyTorch 不可用',' · visible to driver, unavailable to current PyTorch');
   const locked = busy || uploading || operations.some(busyStatus) || !!status?.running_jobs;
-  const computeBackend = status?.runtime.cuda_available
+  const profile = status?.runtime.environment_profile || 'legacy';
+  const profileLabel = ({ 'windows-cuda': 'Windows CUDA', 'linux-cuda': 'Linux CUDA', 'macos-mps': 'macOS MPS', 'windows-cpu': 'Windows CPU', 'linux-cpu': 'Linux CPU', 'macos-cpu': 'macOS CPU', legacy: copy('旧版环境', 'Legacy environment') } as Record<string, string>)[profile] || copy('未知环境', 'Unknown environment');
+  const cpuProfile = profile.endsWith('-cpu');
+  const computeBackend = cpuProfile ? 'CPU' : status?.runtime.cuda_available
     ? `CUDA ${status.runtime.cuda_runtime || ''}`.trim()
     : status?.runtime.mps_available ? 'Apple MPS' : 'CPU';
   const facts = status && [
+    [copy('部署环境', 'Deployment environment'), profileLabel],
     ['Python', status.runtime.python],
     ['PyTorch', status.runtime.torch],
-    [copy('CUDA 构建', 'CUDA build'), status.runtime.cuda_runtime || copy('未编译 CUDA', 'No CUDA build')],
-    [copy('CUDA 可用', 'CUDA available'), status.runtime.cuda_available ? copy('是', 'Yes') : copy('否', 'No')],
+    ...(status.runtime.mps_available ? [] : [[copy('CUDA 版本', 'CUDA version'), status.runtime.cuda_runtime || copy('CPU 版本', 'CPU build')], [copy('NVIDIA 显卡计算', 'NVIDIA GPU compute'), status.runtime.cuda_available ? copy('可用', 'Available') : copy('未启用', 'Not enabled')]]),
     [copy('计算后端', 'Compute backend'), computeBackend],
-    [copy('设备', 'Device'), status.runtime.gpus.map(g => g.name).join(' / ') || (status.runtime.mps_available ? 'Apple GPU' : 'CPU')],
+    [copy('设备', 'Device'), cpuProfile ? 'CPU' : status.runtime.gpus.map(g => g.name).join(' / ') || (status.runtime.mps_available ? 'Apple GPU' : 'CPU')],
   ];
 
   return <div data-testid="environment-manager"><SettingsSections sections={[
     { id: 'environment-runtime', label: copy('当前环境', 'Current runtime') },
+    { id: 'environment-torch', label: copy('PyTorch 版本', 'PyTorch version') },
     { id: 'environment-attention', label: copy('注意力加速', 'Attention acceleration') },
-    ...(visibleOperations.length ? [{ id: 'environment-installation', label: copy('安装状态', 'Installation status') }] : []),
+    ...(operations.length ? [{ id: 'environment-installation', label: copy('安装状态', 'Installation status') }] : []),
   ]}>
     <section id="environment-runtime" data-settings-section tabIndex={-1} className="settings-section">
     <div className="settings-section-heading">
@@ -167,8 +173,8 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     {status && <>
       <dl className="settings-facts">{facts?.map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-xs text-slate-500 dark:text-slate-400">{label}</dt><dd className="mt-1 break-words text-sm font-medium">{value}</dd></div>)}</dl>
       {status.runtime.gpus.length>0&&<ul className="settings-note" aria-label={copy('已检测设备','Detected devices')}>{status.runtime.gpus.map((gpu,index)=><li key={`${gpu.device||index}:${gpu.name}`}><strong>{gpu.device||`GPU ${index+1}`}</strong> · {gpu.name}{gpu.mem_total_mb!=null?` · ${(gpu.mem_total_mb/1024).toFixed(1)} GiB ${gpu.memory_scope==='unified_system'?copy('统一内存','unified memory'):copy('设备内存','device memory')}`:''}{gpu.cuda_available===false?textUnavailable():''}</li>)}</ul>}
-      <div className="settings-note" data-testid="environment-training-devices"><p><strong>{copy('训练设备', 'Training devices')}</strong> · {copy(`PyTorch 可用 CUDA 显卡：${status.runtime.cuda_device_count ?? 0} 张`, `CUDA GPUs available to PyTorch: ${status.runtime.cuda_device_count ?? 0}`)}</p><p>{copy('当前每个任务使用一张卡；多张显卡可分配给不同任务。单任务多卡训练（DDP）尚未接入。', 'Each task currently uses one device. Multiple GPUs can run separate tasks; multi-GPU training for a single task (DDP) is not implemented.')}</p><p>torch.distributed: {status.runtime.distributed_available ? copy('可用', 'available') : copy('不可用', 'unavailable')} · NCCL: {status.runtime.nccl_available ? copy('已编译', 'compiled') : copy('未编译', 'not compiled')}</p><p>{copy('这两项只表示 PyTorch 构建能力，不代表已运行多卡通信测试。', 'These indicate PyTorch build capabilities, not a completed multi-GPU communication test.')}</p></div>
-      <details className="settings-inline-details"><summary>{copy('解释器与显卡诊断', 'Interpreter & GPU diagnostics')}</summary><p className="font-mono break-all">{status.runtime.python_executable}</p><p>{status.runtime.platform} · {status.runtime.machine}</p><p>{copy('PyTorch / CUDA 随启动环境统一管理，运行时不替换。修复后重新启动 Studio。', 'PyTorch / CUDA are managed by the launcher and are not replaced while running. Restart Studio after repairing the runtime.')}</p>
+      <details className="settings-inline-details"><summary>{copy('解释器与显卡诊断', 'Interpreter & GPU diagnostics')}</summary><p className="font-mono break-all">{status.runtime.python_executable}</p><p>{status.runtime.platform} · {status.runtime.machine}</p><p>{copy('这里显示当前服务实际加载的解释器。', 'This is the interpreter loaded by the running service.')}</p>
+        <div className="settings-note" data-testid="environment-training-devices"><p>{copy('每个训练任务使用一张显卡；单任务多卡训练尚未接入。', 'Each training task uses one GPU; multi-GPU training for a single task is not implemented.')}</p>{!status.runtime.mps_available && <p>{copy(`PyTorch 可用 CUDA 显卡：${status.runtime.cuda_device_count ?? 0} 张`, `CUDA GPUs available to PyTorch: ${status.runtime.cuda_device_count ?? 0}`)}</p>}<p>{copy('NCCL 是 NVIDIA 多卡通信组件。', 'NCCL handles communication between NVIDIA GPUs.')} {status.runtime.mps_available || status.runtime.platform === 'Windows' ? copy('当前平台不适用，不影响单卡训练。', 'It does not apply to this platform and is not needed for single-GPU training.') : status.runtime.nccl_available ? copy('当前版本已包含。', 'Included in this build.') : copy('当前版本未包含；单卡训练不需要它。', 'Not included in this build; single-GPU training does not need it.')}</p></div>
         {status.runtime.gpus.some(g => g.telemetry_source) && <p>{status.runtime.gpus.map(g => `${g.name}: ${g.telemetry_source || '—'}${g.telemetry_note ? ` (${t(`hardware.${g.telemetry_note}`)})` : ''}`).join(' / ')}</p>}
       </details>
       {!status.runtime.cuda_available && !status.runtime.mps_available && <p className="settings-note">{status.runtime.cuda_runtime ? copy(`当前 PyTorch 含 CUDA ${status.runtime.cuda_runtime}，但无法使用 CUDA。请检查显卡驱动后重启。`, `PyTorch includes CUDA ${status.runtime.cuda_runtime}, but CUDA is unavailable. Check the GPU driver and restart.`) : copy('当前使用 CPU 计算。若需使用 NVIDIA 显卡，请通过启动器配置 CUDA 版 PyTorch。', 'Currently using CPU compute. To use an NVIDIA GPU, configure CUDA-enabled PyTorch through the launcher.')}</p>}
@@ -176,14 +182,9 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     </>}
     </section>
     {status && <>
+      <TorchEnvironmentPanel disabled={status.running_jobs || busy || operations.some(busyStatus)}/>
       <section id="environment-attention" data-settings-section tabIndex={-1} className="settings-section">
         <div className="settings-section-heading"><div><h2>{copy('注意力加速', 'Attention acceleration')}</h2><p className="settings-note">{copy('默认 SDPA 即可训练；可选扩展用于 CUDA 加速。', 'SDPA is ready for training. Optional extensions provide CUDA acceleration.')}</p></div></div>
-        <div className="settings-field"><label htmlFor="environment-attention-select">{copy('新任务默认注意力', 'Default attention for new jobs')}</label><div className="settings-field-control">
-          <StudioSelect id="environment-attention-select" aria-label={copy('新任务默认注意力', 'Default attention for new jobs')} className="settings-input" value={status.attention_default} disabled={busy}
-            onValueChange={value => void execute(() => apiClient.put('/environment/settings', { attention_default: value }, { silent: true }))}
-            options={['auto', 'sdpa', 'xformers', 'flash_attn', ...(status.attention_default === 'sage' ? ['sage'] : [])].map(backend => ({ value: backend, label: backend === 'sage' ? copy('SageAttention · 仅采样', 'SageAttention · sampling only') : backendNames[backend], disabled: !['auto', 'sdpa'].includes(backend) && !status.packages.some(pkg => pkg.backend === backend && pkg.available) }))} />
-          {status.attention_default === 'sage' && <p className="settings-note">{copy('SageAttention 仅用于采样，训练反向传播仍使用 SDPA。', 'SageAttention is used for sampling only; training gradients still use SDPA.')}</p>}
-        </div></div>
       <div className="settings-dependencies">{status.packages.filter(pkg => managedPackages.has(pkg.name)).map(pkg => <div key={pkg.name} className="settings-dependency">
         <div id={`environment-package-${pkg.name}`} className="settings-dependency-row" data-testid={`environment-package-${pkg.name}`}>
           <div><button type="button" disabled={uploading || busy} className="settings-dependency-name disabled:opacity-50" aria-expanded={selected === pkg.name} aria-controls={`environment-details-${pkg.name}`} onClick={() => { setSelected(selected === pkg.name ? null : pkg.name); setVersion(''); setWheel(null); }}>{selected === pkg.name ? <ChevronDown size={13} /> : <ChevronRight size={13} />}{packageLabel(pkg.name)}</button><p className="settings-dependency-purpose">{purpose(pkg.name)}</p></div>
@@ -208,8 +209,8 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
         </div>}
       </div>)}</div></section>
     </>}
-    {visibleOperations.length > 0 && <section id="environment-installation" data-settings-section tabIndex={-1} className="settings-section space-y-3" data-testid="environment-operations"><h2>{copy('安装状态', 'Installation status')}</h2>{visibleOperations.map(op => <div key={op.id} className="rounded-lg border border-slate-200 dark:border-slate-700">
-      <button aria-expanded={expanded === op.id} className="flex w-full flex-wrap items-center gap-2 px-3 py-2 text-left text-xs" onClick={() => setExpanded(expanded === op.id ? null : op.id)}>{expanded === op.id ? <ChevronDown size={13} /> : <ChevronRight size={13} />}{busyStatus(op) && <Loader2 size={13} className="animate-spin" />}<span className="font-medium">{op.package}</span><span>{op.action === 'uninstall' ? copy('卸载', 'Uninstall') : op.action === 'repair' ? copy('修复', 'Repair') : copy('安装', 'Install')}</span><span className={`ml-auto ${op.status === 'failed' ? 'text-red-600 dark:text-red-300' : 'text-slate-500 dark:text-slate-400'}`}>{statusLabel(op.status)}</span></button>
+    {operations.length > 0 && <section id="environment-installation" data-settings-section tabIndex={-1} className="settings-section space-y-3" data-testid={shownOperations.length ? "environment-operations" : "environment-history"}><div className="settings-section-heading"><h2>{copy('安装记录', 'Installation records')}</h2>{historyOperations.length > 0 && <button type="button" className={button} aria-expanded={historyOpen} onClick={() => { setHistoryOpen(!historyOpen); setExpanded(null); }}>{historyOpen ? copy('收起历史', 'Hide history') : copy(`历史记录（${historyOperations.length}）`, `History (${historyOperations.length})`)}</button>}</div>{shownOperations.map(op => <div key={op.id} className="rounded-lg border border-slate-200 dark:border-slate-700">
+      <button aria-expanded={expanded === op.id} className="flex w-full flex-wrap items-center gap-2 px-3 py-2 text-left text-xs" onClick={() => setExpanded(expanded === op.id ? null : op.id)}>{expanded === op.id ? <ChevronDown size={13} /> : <ChevronRight size={13} />}{busyStatus(op) && <Loader2 size={13} className="animate-spin" />}<span className="font-medium">{packageLabel(op.package)}</span><time className="text-slate-500 dark:text-slate-400" dateTime={new Date(op.created_at * 1000).toISOString()}>{new Date(op.created_at * 1000).toLocaleString(en ? 'en' : 'zh-CN')}</time><span>{op.action === 'uninstall' ? copy('卸载', 'Uninstall') : op.action === 'repair' ? copy('修复', 'Repair') : copy('安装', 'Install')}</span><span className={`ml-auto ${op.status === 'failed' ? 'text-red-600 dark:text-red-300' : 'text-slate-500 dark:text-slate-400'}`}>{statusLabel(op.status)}</span></button>
       {expanded === op.id && <div className="space-y-2 border-t border-slate-100 px-3 py-3 dark:border-slate-700">
         {op.plan.length > 0 && <div className="space-y-1 text-xs">{op.plan.map(item => <p key={item.name} className="break-words"><span className="font-mono">{item.name}</span> · {item.from_version || copy('未安装', 'not installed')} → <strong>{item.version || copy('移除', 'remove')}</strong></p>)}</div>}
         {op.error && <p role="alert" className="whitespace-pre-wrap break-words text-xs text-red-600 dark:text-red-300">{op.error}</p>}
@@ -218,7 +219,7 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
         {['installing', 'verifying'].includes(op.status) && <p className="text-xs text-slate-500 dark:text-slate-400">{copy('正在执行已确认的计划。为避免留下半安装状态，此阶段不能中断。', 'Applying the reviewed plan. This stage cannot be interrupted because it may leave a partial installation.')}</p>}
         {op.logs.length > 0 && <pre aria-label={copy('安装日志', 'Installer logs')} className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded-md bg-slate-950 p-3 font-mono text-[11px] leading-5 text-slate-200">{op.logs.join('\n')}</pre>}
       </div>}
-      {['completed', 'failed'].includes(op.status) && <div className="px-3 pb-2"><button type="button" className="text-xs text-slate-500 dark:text-slate-400 underline" onClick={() => setDismissed(previous => new Set(previous).add(op.id))}>{copy('关闭结果', 'Dismiss result')}</button></div>}
+      {!op.dismissed_at && ['completed', 'failed', 'cancelled'].includes(op.status) && <div className="px-3 pb-2"><button type="button" className="text-xs text-slate-500 dark:text-slate-400 underline" disabled={busy} onClick={() => void execute(() => apiClient.post(`/environment/operations/${op.id}/dismiss`, {}, { silent: true }))}>{copy('关闭结果', 'Dismiss result')}</button></div>}
     </div>)}</section>}
   </SettingsSections></div>;
 }

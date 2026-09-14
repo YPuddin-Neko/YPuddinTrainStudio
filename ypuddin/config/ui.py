@@ -13,6 +13,7 @@ from pydantic import Field
 
 GROUPS: tuple[str, ...] = (
     "model",
+    "training",
     "dataset",
     "caption",
     "adapter",

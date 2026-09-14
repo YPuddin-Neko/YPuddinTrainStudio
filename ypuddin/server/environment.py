@@ -34,6 +34,8 @@ from packaging.utils import canonicalize_name, parse_wheel_filename
 from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from ypuddin.runtime_profiles import current_profile, profile_root
+
 from .db import Database, new_id, now
 from .errors import ApiError
 
@@ -96,6 +98,7 @@ class EnvironmentSettings(BaseModel):
 
 
 class EnvironmentRuntime(BaseModel):
+    environment_profile: str = "legacy"
     python: str
     python_executable: str
     platform: str
@@ -113,6 +116,9 @@ class EnvironmentRuntime(BaseModel):
     nccl_available: bool = False
     multi_gpu_training: bool = False
     training_device_policy: Literal["single_device"] = "single_device"
+    cuda_applicable: bool = True
+    nccl_applicable: bool = True
+    distributed_purpose: str = "multi_process_communication"
 
 
 class EnvironmentPackage(BaseModel):
@@ -149,6 +155,8 @@ class EnvironmentWheel(BaseModel):
 
 
 class EnvironmentOperation(BaseModel):
+    environment_profile: str = "legacy"
+    python_executable: str | None = None
     id: str
     package: str
     action: str
@@ -159,6 +167,7 @@ class EnvironmentOperation(BaseModel):
     logs: list[str] = Field(default_factory=list)
     error: str | None = None
     restart_required: bool = False
+    dismissed_at: float | None = None
 
 
 def environment_attention_default(context) -> str:
@@ -204,6 +213,7 @@ def runtime_info() -> dict[str, Any]:
     distributed_available = bool(distributed and distributed.is_available())
     nccl_available = bool(distributed_available and distributed.is_nccl_available())
     return {
+        "environment_profile": current_profile(),
         "python": platform.python_version(),
         "python_executable": sys.executable,
         "platform": platform.system(),
@@ -214,6 +224,8 @@ def runtime_info() -> dict[str, Any]:
         "cuda_device_count": torch.cuda.device_count() if cuda else 0,
         "distributed_available": distributed_available,
         "nccl_available": nccl_available,
+        "cuda_applicable": platform.system() != "Darwin",
+        "nccl_applicable": platform.system() == "Linux" and cuda,
         # The supervisor launches one worker with one --device; no process group.
         "multi_gpu_training": False,
         "training_device_policy": "single_device",
@@ -350,6 +362,9 @@ class Installer:
                 env.pop(key)
         env["PIP_CONFIG_FILE"] = os.devnull
         env["PYTHONUNBUFFERED"] = "1"
+        env["PYTHONNOUSERSITE"] = "1"
+        env.pop("PYTHONHOME", None)
+        env.pop("PYTHONPATH", None)
         log("$ " + subprocess.list2cmdline(args))
         proc = subprocess.Popen(
             args,
@@ -410,7 +425,8 @@ class EnvironmentManager:
         probe=probe_packages,
     ):
         self.context = context
-        self.root = context.data_root / "environment"
+        self.profile = current_profile()
+        self.root = profile_root(context.data_root, self.profile)
         self.root.mkdir(parents=True, exist_ok=True)
         self.installer = installer or Installer(self.root)
         self.versions, self.runtime, self.probe = versions, runtime, probe
@@ -435,16 +451,26 @@ class EnvironmentManager:
     def list(self) -> list[EnvironmentOperation]:
         rows = self.context.db.fetchall("SELECT value FROM kv WHERE key LIKE 'environment.operation.%'")
         return sorted(
-            (EnvironmentOperation.model_validate(json.loads(row["value"])) for row in rows),
+            (
+                EnvironmentOperation.model_validate(value)
+                for row in rows
+                if (value := json.loads(row["value"])).get("environment_profile", "legacy") == self.profile
+            ),
             key=lambda op: op.created_at,
             reverse=True,
         )
 
     def get(self, id_: str) -> EnvironmentOperation:
         item = self.context.db.get_kv("environment.operation." + id_)
-        if not item:
+        if not item or item.get("environment_profile", "legacy") != self.profile:
             raise EnvironmentError(404, "Environment operation not found")
         return EnvironmentOperation.model_validate(item)
+
+    def dismiss(self, id_: str) -> EnvironmentOperation:
+        with self.lock:
+            if self.get(id_).status not in ("completed", "failed", "cancelled"):
+                raise EnvironmentError(409, "Only a finished operation notification can be dismissed")
+            return self._update(id_, dismissed_at=now())
 
     def _update(self, id_, **fields):
         with self.lock:
@@ -482,6 +508,9 @@ class EnvironmentManager:
         return False
 
     def _idle(self):
+        maintenance = self.context.db.get_kv("environment.maintenance", {})
+        if maintenance.get("torch_operation") or maintenance.get("restarting"):
+            raise EnvironmentError(409, "The service is switching or preparing its runtime")
         if self._running():
             raise EnvironmentError(
                 409,
@@ -730,6 +759,8 @@ class EnvironmentManager:
                     422, "Repair reinstalls the current version; choose Install to change version"
                 )
             op = EnvironmentOperation(
+                environment_profile=self.profile,
+                python_executable=sys.executable,
                 id=new_id("env"),
                 package=request.package,
                 action=request.action,
@@ -885,6 +916,8 @@ class EnvironmentManager:
             op = self.get(id_)
             if op.status != "ready":
                 raise EnvironmentError(409, "Only a reviewed, ready plan can be applied")
+            if op.python_executable and op.python_executable != sys.executable:
+                raise EnvironmentError(409, "This plan belongs to another interpreter; create a new plan")
             if any(other.status in BUSY for other in self.list()):
                 raise EnvironmentError(409, "Another environment operation is in progress")
             if environment_identity(self.versions()) != self.context.db.get_kv("environment.identity." + id_):

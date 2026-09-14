@@ -78,8 +78,15 @@ class Flux2Text(TextPipeline):
         if self.device.type == "cuda":
             torch.cuda.empty_cache()
 
-    @torch.no_grad()
+    def trainable_modules(self):
+        self._ensure()
+        return {"text_encoder": self.model}
+
     def encode(self, captions, device):
+        with torch.set_grad_enabled(torch.is_grad_enabled() and getattr(self, "training_enabled", False)):
+            return self._encode(captions, device)
+
+    def _encode(self, captions, device):
         self._ensure()
         from diffusers import Flux2KleinPipeline
 
@@ -94,6 +101,7 @@ class Flux2Text(TextPipeline):
         )
         return TextCond({"embeds": embeds}).to(device)
 
+    @torch.no_grad()
     def encode_for_cache(self, captions):
         embeds = self.encode(captions, "cpu")["embeds"]
         return [{"embeds": row.contiguous()} for row in embeds]

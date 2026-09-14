@@ -5,6 +5,7 @@ const labels: Record<string, string> = {
   'model.zero_terminal_snr': '零终点信噪比（Zero SNR）',
   'model.training_guidance': '训练引导值', 'sampling.guidance': '模型引导值',
   'model.flux2_variant': 'Klein 类型',
+  'training.mode': '训练方式', 'training.train_backbone': '训练主模型（UNet / DiT）', 'training.train_text_encoder': '训练文本编码器', 'training.resume_weights': '全量模型起始权重',
   'model.vae_path': 'VAE', 'model.tokenizer_path': '分词器目录', 'model.dtype': '底模加载精度', 'model.attention': '注意力后端',
   'dataset.sources': '训练数据源', 'dataset.resolutions': '训练分辨率', 'dataset.aspect_ratio_limit': '最大长宽比',
   'dataset.resolution_mode': '分辨率模式', 'dataset.image_fit': '图片适配方式', 'dataset.native_max_pixels': '原生像素预算',
@@ -21,7 +22,7 @@ const labels: Record<string, string> = {
   'adapter.algo': '适配器算法', 'adapter.rank': 'Rank / 秩', 'adapter.alpha': 'Alpha / 缩放', 'adapter.factor': 'LoKr 分解因子',
   'adapter.decompose_both': '双矩阵低秩分解', 'adapter.rs_lora': 'Rank 稳定缩放', 'adapter.dora': '启用 DoRA',
   'adapter.init': '初始化方式', 'adapter.dropout': '输出丢弃率', 'adapter.rank_dropout': '秩丢弃率',
-  'adapter.module_dropout': '模块丢弃率', 'adapter.preset': '训练范围', 'adapter.rules': '逐层覆盖规则',
+  'adapter.module_dropout': '模块丢弃率', 'adapter.preset': '适配器作用范围', 'adapter.rules': '逐层覆盖规则',
   'adapter.mode': '适配器计算模式', 'adapter.param_dtype': '可训练参数精度', 'adapter.lr_scale': '学习率缩放',
   'adapter.resume_weights': '已有适配器权重', 'objective.timestep_sampling': '时间步采样',
   'objective.logit_mean': 'Logit 均值', 'objective.logit_std': 'Logit 标准差', 'objective.res_shift_tokens': '分辨率偏移基准',
@@ -70,7 +71,8 @@ const labels: Record<string, string> = {
 };
 
 export function configFieldLabel(path: string, fallback: string, english = false) {
-  if (path === 'adapter.preset') return english ? 'Training scope' : labels[path];
+  if (path === 'adapter.preset') return english ? 'Adapter scope' : labels[path];
+  if (english && path.startsWith('training.')) return ({mode:'Training mode',train_backbone:'Train main model (UNet / DiT)',train_text_encoder:'Train text encoder',resume_weights:'Initial full-model weights'} as Record<string,string>)[path.slice(9)] || fallback;
   if (english && path.startsWith('optimizer.')) {
     const optimizerLabels: Record<string, string> = {
       type: 'Optimizer', lr: 'Learning rate', weight_decay: 'Weight decay', betas: 'Update smoothing', eps: 'EPS · numerical stability',
@@ -153,6 +155,11 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
 
 export function configFieldHint(path: string, english = false, optimizerType?: string, scheduleFree = false) {
   const hints: Record<string, [string, string]> = {
+    'training.mode': ['适配器生成附加权重；全量微调直接更新并保存所选模型组件。', 'Adapters save additional weights; full fine-tuning updates and saves the selected model components.'],
+    'memory.base_precision': ['沿用加载精度不会根据剩余显存自动降为 FP8。', 'Keeping load precision never switches to FP8 based on free memory.'],
+    'model.attention': ['默认使用 PyTorch 内置 SDPA；其他后端需先在运行环境中安装。', 'Defaults to built-in PyTorch SDPA. Install optional backends in runtime settings first.'],
+    'adapter.mode': ['自动使用分开计算路径；只改变计算方式，不降低权重精度。', 'Automatic uses the separate computation path; it does not reduce weight precision.'],
+
     'optimizer.lr': ['基础更新步长；自适应优化器按自身规则管理。', 'Base update step size; adaptive optimizers manage it by their own rules.'],
     'optimizer.weight_decay': ['约束权重增长；通常保留默认值，0 关闭。', 'Constrains weight growth; usually keep the default. 0 disables it.'],
     'optimizer.betas': scheduleFree
@@ -190,6 +197,11 @@ export function configPresetLabel(name: string, description: string, defaultPres
 
 export function configOptionLabel(path: string, option: string, english = false) {
   const options: Record<string, Record<string, [string, string]>> = {
+    'training.mode': {adapter:['LoRA / LoKr 适配器','LoRA / LoKr adapter'],full:['全量微调','Full fine-tuning']},
+    'memory.base_precision': {auto:['沿用加载精度','Keep load precision'],fp32:['FP32 · 32 位','FP32 · 32-bit'],bf16:['BF16 · 16 位','BF16 · 16-bit'],fp16:['FP16 · 16 位','FP16 · 16-bit'],fp8_e4m3:['FP8 E4M3 · 8 位','FP8 E4M3 · 8-bit'],fp8_e5m2:['FP8 E5M2 · 8 位','FP8 E5M2 · 8-bit']},
+    'model.attention': {auto:['PyTorch SDPA（默认）','PyTorch SDPA (default)'],sdpa:['PyTorch SDPA','PyTorch SDPA'],xformers:['xFormers','xFormers'],flash_attn:['FlashAttention 2','FlashAttention 2'],sage:['SageAttention · 仅采样','SageAttention · sampling only']},
+    'adapter.mode': {auto:['自动 · 分开计算','Automatic · separate computation'],bypass:['分开计算适配器','Compute adapter separately'],weight:['合并权重后计算','Compute merged weights']},
+    'memory.activation_checkpointing': {none:['关闭','Off'],block:['逐块重算 · 节省显存','Block recomputation · save memory'],unsloth:['重算并卸载中间输入','Recompute and offload block inputs']},
     'model.prediction_type': { epsilon: ['ε 预测（常规模型）', 'Epsilon (standard)'], v_prediction: ['v 预测', 'v-prediction'] },
     'model.flux2_variant': { auto: ['自动读取模型配置', 'Read model configuration'], dev: ['FLUX.2 dev（已停用）', 'FLUX.2 dev (retired)'], 'klein-base-4b': ['Klein 基础版 4B', 'Klein base 4B'], 'klein-base-9b': ['Klein 基础版 9B', 'Klein base 9B'] },
     'sampling.sampler': { euler:['Euler', 'Euler'], heun:['Heun', 'Heun'], er_sde:['ER-SDE', 'ER-SDE'] },
@@ -204,12 +216,13 @@ export function configOptionLabel(path: string, option: string, english = false)
 
 export type ConfigTab = 'train' | 'data' | 'model' | 'advanced';
 export const CONFIG_TAB_GROUPS: Record<ConfigTab, string[]> = {
-  train: ['loop', 'adapter', 'optimizer', 'scheduler', 'memory'],
+  train: ['training', 'loop', 'adapter', 'optimizer', 'scheduler', 'memory'],
   data: ['dataset', 'caption'],
   model: ['model', 'checkpoint'],
   advanced: ['objective', 'sampling', 'validation', 'logging'],
 };
 export function configTabForPath(path: string): ConfigTab {
+  if (path === 'model.attention') return 'train';
   if (path === 'dataset.batch_size') return 'train';
   const group = path.split('.')[0];
   return (Object.keys(CONFIG_TAB_GROUPS) as ConfigTab[]).find(tab => CONFIG_TAB_GROUPS[tab].includes(group)) || 'advanced';

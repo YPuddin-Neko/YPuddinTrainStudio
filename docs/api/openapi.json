@@ -4693,6 +4693,113 @@
         }
       }
     },
+    "/api/datasets/{did}/overview": {
+      "get": {
+        "summary": "Dataset Overview",
+        "operationId": "dataset_overview_api_datasets__did__overview_get",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Did"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "version_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "folder",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Folder"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 16,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetOverview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/datasets/{did}/images/{h}/paint/info": {
       "get": {
         "summary": "Paint Info",
@@ -5431,6 +5538,45 @@
         }
       }
     },
+    "/api/environment/operations/{id_}/dismiss": {
+      "post": {
+        "summary": "Dismiss",
+        "operationId": "dismiss_api_environment_operations__id___dismiss_post",
+        "parameters": [
+          {
+            "name": "id_",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id "
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentOperation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/environment/wheels": {
       "post": {
         "summary": "Wheel",
@@ -5452,6 +5598,274 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/EnvironmentWheel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/environment/torch": {
+      "get": {
+        "summary": "Torch Status",
+        "operationId": "torch_status_api_environment_torch_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TorchSnapshot"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/environment/torch/operations": {
+      "post": {
+        "summary": "Torch Plan",
+        "operationId": "torch_plan_api_environment_torch_operations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TorchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TorchOperation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/environment/torch/operations/{id_}": {
+      "get": {
+        "summary": "Torch Operation",
+        "operationId": "torch_operation_api_environment_torch_operations__id___get",
+        "parameters": [
+          {
+            "name": "id_",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id "
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TorchOperation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/environment/torch/operations/{id_}/apply": {
+      "post": {
+        "summary": "Torch Apply",
+        "operationId": "torch_apply_api_environment_torch_operations__id___apply_post",
+        "parameters": [
+          {
+            "name": "id_",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id "
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TorchOperation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/environment/torch/operations/{id_}/cancel": {
+      "post": {
+        "summary": "Torch Cancel",
+        "operationId": "torch_cancel_api_environment_torch_operations__id___cancel_post",
+        "parameters": [
+          {
+            "name": "id_",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id "
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TorchOperation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/environment/torch/operations/{id_}/dismiss": {
+      "post": {
+        "summary": "Torch Dismiss",
+        "operationId": "torch_dismiss_api_environment_torch_operations__id___dismiss_post",
+        "parameters": [
+          {
+            "name": "id_",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id "
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TorchOperation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/service/runtime": {
+      "get": {
+        "summary": "Service Runtime",
+        "operationId": "service_runtime_api_service_runtime_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceRuntime"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/service/restart": {
+      "post": {
+        "summary": "Service Restart",
+        "operationId": "service_restart_api_service_restart_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestartResult"
                 }
               }
             }
@@ -7661,6 +8075,39 @@
         ],
         "title": "DatasetInfo"
       },
+      "DatasetOverview": {
+        "properties": {
+          "dataset_id": {
+            "type": "string",
+            "title": "Dataset Id"
+          },
+          "folders": {
+            "items": {
+              "$ref": "#/components/schemas/FolderCount"
+            },
+            "type": "array",
+            "title": "Folders"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/DatasetStats"
+          },
+          "caption_stats": {
+            "$ref": "#/components/schemas/DatasetCaptionStats"
+          },
+          "images": {
+            "$ref": "#/components/schemas/ImagePage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dataset_id",
+          "folders",
+          "stats",
+          "caption_stats",
+          "images"
+        ],
+        "title": "DatasetOverview"
+      },
       "DatasetSource": {
         "properties": {
           "id": {
@@ -7945,6 +8392,22 @@
       },
       "EnvironmentOperation": {
         "properties": {
+          "environment_profile": {
+            "type": "string",
+            "title": "Environment Profile",
+            "default": "legacy"
+          },
+          "python_executable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Python Executable"
+          },
           "id": {
             "type": "string",
             "title": "Id"
@@ -8008,6 +8471,17 @@
             "type": "boolean",
             "title": "Restart Required",
             "default": false
+          },
+          "dismissed_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dismissed At"
           }
         },
         "type": "object",
@@ -8161,6 +8635,11 @@
       },
       "EnvironmentRuntime": {
         "properties": {
+          "environment_profile": {
+            "type": "string",
+            "title": "Environment Profile",
+            "default": "legacy"
+          },
           "python": {
             "type": "string",
             "title": "Python"
@@ -8262,6 +8741,21 @@
             "const": "single_device",
             "title": "Training Device Policy",
             "default": "single_device"
+          },
+          "cuda_applicable": {
+            "type": "boolean",
+            "title": "Cuda Applicable",
+            "default": true
+          },
+          "nccl_applicable": {
+            "type": "boolean",
+            "title": "Nccl Applicable",
+            "default": true
+          },
+          "distributed_purpose": {
+            "type": "string",
+            "title": "Distributed Purpose",
+            "default": "multi_process_communication"
           }
         },
         "type": "object",
@@ -8480,6 +8974,11 @@
             "type": "array",
             "title": "Text Modes"
           },
+          "training_capabilities": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Training Capabilities"
+          },
           "presets": {
             "items": {
               "$ref": "#/components/schemas/FamilyPreset"
@@ -8686,6 +9185,24 @@
           "hint"
         ],
         "title": "FamilyWeight"
+      },
+      "FolderCount": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "count"
+        ],
+        "title": "FolderCount"
       },
       "FsEntry": {
         "properties": {
@@ -11095,6 +11612,33 @@
             "title": "Downloaded Bytes",
             "default": 0
           },
+          "bytes_per_second": {
+            "type": "number",
+            "title": "Bytes Per Second",
+            "default": 0
+          },
+          "eta_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta Seconds"
+          },
+          "progress_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress At"
+          },
           "total_bytes": {
             "anyOf": [
               {
@@ -13031,6 +13575,35 @@
             ],
             "title": "Peak Mb Estimate"
           },
+          "training_peak_mb_estimate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Training Peak Mb Estimate"
+          },
+          "known_training_residency_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Known Training Residency Mb"
+          },
+          "unestimated_components": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unestimated Components"
+          },
           "gpu_total_mb": {
             "anyOf": [
               {
@@ -13078,6 +13651,22 @@
             },
             "type": "object",
             "title": "By Algo"
+          },
+          "training_mode": {
+            "type": "string",
+            "enum": [
+              "adapter",
+              "full"
+            ],
+            "title": "Training Mode",
+            "default": "adapter"
+          },
+          "components": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Components"
           }
         },
         "additionalProperties": true,
@@ -14181,6 +14770,79 @@
         ],
         "title": "ResolutionCount"
       },
+      "RestartRequest": {
+        "properties": {
+          "apply_saved_address": {
+            "type": "boolean",
+            "title": "Apply Saved Address",
+            "default": false
+          },
+          "environment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Id"
+          },
+          "restore_original_environment": {
+            "type": "boolean",
+            "title": "Restore Original Environment",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "RestartRequest"
+      },
+      "RestartResult": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "restarting",
+            "title": "Status",
+            "default": "restarting"
+          },
+          "host": {
+            "type": "string",
+            "title": "Host"
+          },
+          "port": {
+            "type": "integer",
+            "title": "Port"
+          },
+          "reconnect_url": {
+            "type": "string",
+            "title": "Reconnect Url"
+          },
+          "address_changed": {
+            "type": "boolean",
+            "title": "Address Changed"
+          },
+          "environment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "host",
+          "port",
+          "reconnect_url",
+          "address_changed"
+        ],
+        "title": "RestartResult"
+      },
       "SamplePrompt": {
         "properties": {
           "prompt": {
@@ -14665,6 +15327,124 @@
         "type": "object",
         "title": "SchedulerConfig"
       },
+      "ServiceRuntime": {
+        "properties": {
+          "environment_profile": {
+            "type": "string",
+            "title": "Environment Profile",
+            "default": "legacy"
+          },
+          "worker_id": {
+            "type": "integer",
+            "title": "Worker Id"
+          },
+          "managed": {
+            "type": "boolean",
+            "title": "Managed"
+          },
+          "can_restart": {
+            "type": "boolean",
+            "title": "Can Restart"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "current_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Host"
+          },
+          "current_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Port"
+          },
+          "saved_host": {
+            "type": "string",
+            "title": "Saved Host"
+          },
+          "saved_port": {
+            "type": "integer",
+            "title": "Saved Port"
+          },
+          "restart_required": {
+            "type": "boolean",
+            "title": "Restart Required"
+          },
+          "restarting": {
+            "type": "boolean",
+            "title": "Restarting"
+          },
+          "current_python": {
+            "type": "string",
+            "title": "Current Python"
+          },
+          "original_python": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Python"
+          },
+          "can_restore_original": {
+            "type": "boolean",
+            "title": "Can Restore Original"
+          },
+          "selected_environment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Environment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "worker_id",
+          "managed",
+          "can_restart",
+          "reason",
+          "current_host",
+          "current_port",
+          "saved_host",
+          "saved_port",
+          "restart_required",
+          "restarting",
+          "current_python",
+          "original_python",
+          "can_restore_original",
+          "selected_environment"
+        ],
+        "title": "ServiceRuntime"
+      },
       "Settings": {
         "properties": {
           "paths": {
@@ -14978,8 +15758,293 @@
         ],
         "title": "TagBatchResult"
       },
+      "TorchBuild": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "torch": {
+            "type": "string",
+            "title": "Torch"
+          },
+          "torchvision": {
+            "type": "string",
+            "title": "Torchvision"
+          },
+          "backend": {
+            "type": "string",
+            "title": "Backend"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "index_url": {
+            "type": "string",
+            "title": "Index Url"
+          },
+          "supported": {
+            "type": "boolean",
+            "title": "Supported"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "recommended": {
+            "type": "boolean",
+            "title": "Recommended",
+            "default": false
+          },
+          "validation": {
+            "type": "string",
+            "title": "Validation",
+            "default": "official_build"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "torch",
+          "torchvision",
+          "backend",
+          "label",
+          "index_url",
+          "supported"
+        ],
+        "title": "TorchBuild"
+      },
+      "TorchOperation": {
+        "properties": {
+          "environment_profile": {
+            "type": "string",
+            "title": "Environment Profile",
+            "default": "legacy"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "build_id": {
+            "type": "string",
+            "title": "Build Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "planning",
+              "ready",
+              "installing",
+              "verifying",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "number",
+            "title": "Updated At"
+          },
+          "plan": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Plan"
+          },
+          "logs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Logs"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "phase": {
+            "type": "string",
+            "title": "Phase",
+            "default": "preflight"
+          },
+          "environment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Id"
+          },
+          "dismissed_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dismissed At"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "build_id",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TorchOperation"
+      },
+      "TorchRequest": {
+        "properties": {
+          "build_id": {
+            "type": "string",
+            "title": "Build Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "build_id"
+        ],
+        "title": "TorchRequest"
+      },
+      "TorchSnapshot": {
+        "properties": {
+          "environment_profile": {
+            "type": "string",
+            "title": "Environment Profile",
+            "default": "legacy"
+          },
+          "environment_root": {
+            "type": "string",
+            "title": "Environment Root",
+            "default": ""
+          },
+          "unavailable_backends": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Unavailable Backends"
+          },
+          "builds": {
+            "items": {
+              "$ref": "#/components/schemas/TorchBuild"
+            },
+            "type": "array",
+            "title": "Builds"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/TorchOperation"
+            },
+            "type": "array",
+            "title": "Operations"
+          },
+          "current_python": {
+            "type": "string",
+            "title": "Current Python"
+          },
+          "selected_environment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Environment"
+          },
+          "environments": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Environments"
+          },
+          "disk_free_bytes": {
+            "type": "integer",
+            "title": "Disk Free Bytes"
+          },
+          "minimum_free_bytes": {
+            "type": "integer",
+            "title": "Minimum Free Bytes"
+          },
+          "source_url": {
+            "type": "string",
+            "title": "Source Url",
+            "default": "https://pytorch.org/get-started/previous-versions/"
+          },
+          "optional_extensions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Optional Extensions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "builds",
+          "operations",
+          "current_python",
+          "selected_environment",
+          "environments",
+          "disk_free_bytes",
+          "minimum_free_bytes",
+          "optional_extensions"
+        ],
+        "title": "TorchSnapshot"
+      },
       "TrainConfig": {
         "properties": {
+          "training": {
+            "$ref": "#/components/schemas/TrainingConfig"
+          },
           "model": {
             "$ref": "#/components/schemas/ModelConfig"
           },
@@ -15020,6 +16085,68 @@
         "additionalProperties": false,
         "type": "object",
         "title": "TrainConfig"
+      },
+      "TrainingConfig": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "adapter",
+              "full"
+            ],
+            "title": "Mode",
+            "description": "适配器训练生成 LoRA/LoKr 等附加权重；全量微调直接更新所选组件的原始参数，保存模型组件。",
+            "default": "adapter",
+            "x-ui": {
+              "control": "select",
+              "group": "training",
+              "order": 0
+            }
+          },
+          "train_backbone": {
+            "type": "boolean",
+            "title": "Train Backbone",
+            "description": "训练生成图像的主模型：SDXL 为 UNet，Anima/Krea 2/Klein 为 DiT。全量微调时包括卷积、归一化、嵌入与偏置，不局限于线性层。",
+            "default": true,
+            "x-ui": {
+              "control": "switch",
+              "group": "training",
+              "order": 10
+            }
+          },
+          "train_text_encoder": {
+            "type": "boolean",
+            "title": "Train Text Encoder",
+            "description": "全量微调标签编码器；SDXL 同时训练 CLIP-L 与 CLIP-G，其他模型训练文本解码器。每一步重新编码标签，不使用文本缓存，显存需求明显增加。",
+            "default": false,
+            "x-ui": {
+              "control": "switch",
+              "group": "training",
+              "order": 20
+            }
+          },
+          "resume_weights": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume Weights",
+            "description": "从本程序导出的全量模型目录继续微调权重，并重新初始化优化器；恢复原进度请使用完整训练状态。",
+            "x-ui": {
+              "control": "path",
+              "group": "checkpoint",
+              "order": 170,
+              "show_when": "training.mode == 'full'"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TrainingConfig"
       },
       "ValidateResult": {
         "properties": {
@@ -15589,6 +16716,15 @@
           "family": {
             "type": "string",
             "title": "Family"
+          },
+          "training_mode": {
+            "type": "string",
+            "enum": [
+              "adapter",
+              "full"
+            ],
+            "title": "Training Mode",
+            "default": "adapter"
           },
           "defaults": {
             "additionalProperties": true,

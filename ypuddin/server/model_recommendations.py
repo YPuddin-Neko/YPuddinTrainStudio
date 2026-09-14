@@ -157,18 +157,6 @@ RECOMMENDATIONS = [
         "split_files/diffusion_models/anima-base-v1.0.safetensors",
     ),
     _entry(
-        "anima-preview3",
-        "anima",
-        "dit",
-        "Anima Preview 3 Base",
-        "bf16",
-        4182218360,
-        "14fffe8ad5116cd73b9a4696f6a89d7e5f6efdd24b2e4785603aa891a9b2295b",
-        ANIMA,
-        "split_files/diffusion_models/anima-preview3-base.safetensors",
-        False,
-    ),
-    _entry(
         "anima-qwen3",
         "anima",
         "text_encoder",

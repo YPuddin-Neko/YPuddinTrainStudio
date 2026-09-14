@@ -31,7 +31,7 @@ HANDOVER.md       当前交接说明与验证边界
 studio.bat         # Windows
 ```
 
-第一次运行自动创建 `venv`、选择 PyTorch 安装来源、有可用 Node 时构建前端并启动服务，默认浏览器地址为 `http://127.0.0.1:8765/`。构建前端需要 Node 20.19+ 或 22.12+；macOS 使用支持 MPS 的 PyTorch，当前 MPS 训练按 FP32 执行，内存预算按统一内存估算。
+首次部署按平台创建独立的 `environment/profiles/<平台>/venv`、选择 PyTorch 安装来源、构建前端并启动服务。已有根目录 `venv` 的旧部署继续使用原环境，不搬移或重建。明确选择平台可用 `studio-windows-cuda.bat`、`studio-linux-cuda.sh`、`studio-macos.command` 或 `studio-cpu.bat/.sh`；这些入口不共用依赖。默认地址为 `http://127.0.0.1:8765/`。前端构建需要 Node 20.19+ 或 22.12+；MPS 当前按 FP32 执行，内存预算按统一内存估算。目录、升级与切换边界见 [环境说明](docs/ENVIRONMENT_LIFECYCLE_2026-09-14.md)。
 `./studio.sh doctor` 查看本机环境；`./studio.sh smoke --set model.dit_path=… --set model.text_encoder_path=… --set model.vae_path=…`
 用真实权重自检整条训练链路。完整说明（参数、手动安装、目录结构、常驻服务、远程访问、排障）见 [`docs/deploy.md`](docs/deploy.md)。
 

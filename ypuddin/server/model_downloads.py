@@ -87,6 +87,9 @@ class ModelDownload(BaseModel):
     target_path: str
     status: Literal["queued", "downloading", "completed", "failed", "cancelled"]
     downloaded_bytes: int = 0
+    bytes_per_second: float = 0
+    eta_seconds: float | None = None
+    progress_at: float | None = None
     total_bytes: int | None = None
     error: str | None = None
     model_id: str | None = None
@@ -473,6 +476,7 @@ class ModelDownloads:
                         f"m_session_id={token}" if row["provider"] == "modelscope" else f"Bearer {token}"
                     )
             done, last = 0, time.monotonic()
+            last_bytes, rate = 0, 0.0
             bundle = row["kind"] == "tagger"
             verified = bool(row.get("sha256"))
             files = (
@@ -525,8 +529,14 @@ class ModelDownloads:
                             if received > meta["size"]:
                                 raise ValueError("catalog file exceeds its verified size")
                         if time.monotonic() - last >= 0.4:
-                            self._update(id_, downloaded_bytes=done)
-                            last = time.monotonic()
+                            current = time.monotonic()
+                            measured = (done - last_bytes) / max(current - last, 0.001)
+                            rate = measured if not rate else 0.3 * measured + 0.7 * rate
+                            remaining = self.tasks[id_].get("total_bytes")
+                            self._update(id_, downloaded_bytes=done, bytes_per_second=rate,
+                                         eta_seconds=max(0, remaining - done) / rate if remaining else None,
+                                         progress_at=now())
+                            last, last_bytes = current, done
                     if not received or total is not None and received != total:
                         raise ValueError(f"incomplete download: received {received} of {total} bytes")
                     if (bundle or verified) and (

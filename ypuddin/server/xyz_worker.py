@@ -9,7 +9,7 @@ import sys
 from contextlib import nullcontext
 from pathlib import Path
 
-from .xyz import AXES, XyzRequest, expand_cells, file_signature
+from .xyz import AXES, XyzRequest, checkpoint_signature, expand_cells, full_checkpoint_model
 
 
 def _atomic_json(path: Path, value):
@@ -177,6 +177,23 @@ def generate(payload: dict, output: Path, emit, cancelled):
     family = get_family(model.family)
     cells = expand_cells(request)
     checkpoints = payload["xyz"]["checkpoints"]
+    full = payload.get("training", {}).get("mode") == "full"
+    if full:
+        if (
+            request.sampling_model_id
+            or request.adapter_scale != 1
+            or any(axis and axis.key == "adapter_scale" for axis in (request.x, request.y, request.z))
+        ):
+            raise ValueError("Full-model XYZ cannot apply adapters or replace the exported backbone")
+        if any(
+            not cell["checkpoint_id"] or checkpoints.get(cell["checkpoint_id"], {}).get("kind") != "model"
+            for cell in cells
+        ):
+            raise ValueError(
+                "Full-model XYZ requires an exported model in every cell; base fallback is disabled"
+            )
+    elif any(checkpoint.get("kind") == "model" for checkpoint in checkpoints.values()):
+        raise ValueError("Full-model checkpoints require full-model XYZ mode")
     device = torch.device(payload["device"])
     dtype = (
         getattr(torch, {"bf16": "bfloat16", "fp16": "float16", "fp32": "float32"}[model.dtype])
@@ -217,28 +234,41 @@ def generate(payload: dict, output: Path, emit, cancelled):
         if loaded and loaded.extra.get("materialized", True):
             loaded.backbone.to("cpu")
 
-    try:
+    conditions = {}
+    needs_uncond = getattr(family, "sampling_needs_uncond", lambda _loaded, cfg: cfg != 1)
+
+    def load_selection(selected_model):
+        nonlocal loaded, model, dtype, conditions
         check()
+        model = selected_model
+        dtype = (
+            getattr(torch, {"bf16": "bfloat16", "fp16": "float16", "fp32": "float32"}[model.dtype])
+            if device.type == "cuda"
+            else torch.float32
+        )
         emit("phase.changed", phase="loading")
         with fingerprint_cache(Path(payload["fingerprint_cache"])):
             loaded = family.load(model, memory, device=device, dtype=dtype, backbone_device="cpu")
-        check()
         loaded.backbone.eval().requires_grad_(False)
         conditions = {}
-        needs_uncond = getattr(family, "sampling_needs_uncond", lambda _loaded, cfg: cfg != 1)
         prompts = [request.prompt]
         if any(needs_uncond(loaded, cell["cfg"]) for cell in cells):
             prompts.append(request.negative)
         emit("phase.changed", phase="encoding_text")
-        with torch.inference_mode():
-            loaded.text.to(device)
-            for prompt in dict.fromkeys(prompts):
-                check()
-                conditions[prompt] = loaded.text.encode([prompt], device=device).to("cpu")
-            loaded.text.unload()
+        loaded.text.to(device)
+        for prompt in dict.fromkeys(prompts):
             check()
-            family.materialize_backbone(loaded)
-            loaded.backbone.eval().requires_grad_(False)
+            conditions[prompt] = loaded.text.encode([prompt], device=device).to("cpu")
+        loaded.text.unload()
+        check()
+        family.materialize_backbone(loaded)
+        loaded.backbone.eval().requires_grad_(False)
+
+    try:
+        check()
+        with torch.inference_mode():
+            if not full:
+                load_selection(model)
             uninitialized_checkpoint = object()
             previous_checkpoint = uninitialized_checkpoint
             for cell in cells:
@@ -257,10 +287,27 @@ def generate(payload: dict, output: Path, emit, cancelled):
                     for parent, attr, original, _ in bindings:
                         setattr(parent, attr, original)
                     bindings.clear()
-                    if cell["checkpoint_id"]:
+                    if full:
+                        if loaded:
+                            loaded.text.unload()
+                            loaded.latent.unload()
+                        loaded = None
+                        conditions.clear()
+                        gc.collect()
+                        if device.type == "cuda":
+                            torch.cuda.empty_cache()
                         checkpoint = checkpoints[cell["checkpoint_id"]]
                         path = Path(checkpoint["path"])
-                        if file_signature(path) != checkpoint["signature"]:
+                        if checkpoint_signature(path) != checkpoint["signature"]:
+                            raise ValueError("Full-model checkpoint changed after this comparison was queued")
+                        selected_model = full_checkpoint_model(path, model.family)
+                        if selected_model.model_dump(mode="json") != checkpoint["model"]:
+                            raise ValueError("Full-model checkpoint configuration changed after queueing")
+                        load_selection(selected_model)
+                    elif cell["checkpoint_id"]:
+                        checkpoint = checkpoints[cell["checkpoint_id"]]
+                        path = Path(checkpoint["path"])
+                        if checkpoint_signature(path) != checkpoint["signature"]:
                             raise ValueError("Checkpoint changed after this comparison was queued")
                         bindings = bind_checkpoint(
                             loaded.backbone, path, model.family, family.spec.adapter_prefix
@@ -304,7 +351,7 @@ def generate(payload: dict, output: Path, emit, cancelled):
                     sample_steps=cell["steps"],
                 )
 
-                def predict(x, t, condition=cond, guidance_value=guidance):
+                def predict(x, t, condition=cond, guidance_value=guidance, current_loaded=loaded):
                     check()
                     precision = (
                         torch.autocast("cuda", dtype=dtype)
@@ -313,7 +360,7 @@ def generate(payload: dict, output: Path, emit, cancelled):
                     )
                     with precision:
                         return family.forward(
-                            loaded,
+                            current_loaded,
                             x.to(dtype),
                             t.to(device),
                             condition,
@@ -342,7 +389,7 @@ def generate(payload: dict, output: Path, emit, cancelled):
                     shift=shift,
                     sampler=cell["sampler"],
                     scheduler=cell["scheduler"],
-                    predict_uncond=(lambda x, t, condition=uncond: predict(x, t, condition))
+                    predict_uncond=(lambda x, t, condition=uncond, forward=predict: forward(x, t, condition))
                     if uncond is not None
                     else None,
                     generator=torch.Generator().manual_seed(cell["seed"]),
@@ -383,7 +430,7 @@ def generate(payload: dict, output: Path, emit, cancelled):
                 )
                 _atomic_json(manifest_path, manifest)
                 emit("xyz.progress", phase="sampling", done=len(manifest["cells"]), total=len(cells))
-                del latents, pixels, cond, uncond
+                del latents, pixels, cond, uncond, predict, step
         check()
         manifest["complete"] = True
     finally:

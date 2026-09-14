@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import tempfile
 import threading
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,28 @@ class ServiceContext:
     _settings_lock: Any = field(default_factory=threading.RLock, init=False, repr=False)
     versions: Any = field(default=None, init=False, repr=False)
     import_progress: ImportProgressStore = field(default_factory=ImportProgressStore, init=False, repr=False)
+    _active_imports: int = field(default=0, init=False, repr=False)
+
+    @contextmanager
+    def import_admission(self):
+        """Protect receiving bodies too, including callers without a progress identifier.
+
+        Restart claims maintenance under the same lock. A request is either admitted
+        before that claim and blocks restart, or rejected before reading any files.
+        """
+        from .errors import ApiError
+
+        with self.db.lock:
+            if self.db.get_kv("environment.maintenance", {}).get("restarting"):
+                raise ApiError(
+                    "Service is restarting; retry after reconnecting", code="service.restarting", status=409
+                )
+            self._active_imports += 1
+        try:
+            yield
+        finally:
+            with self.db.lock:
+                self._active_imports -= 1
 
     def __post_init__(self) -> None:
         from .versions import VersionManager

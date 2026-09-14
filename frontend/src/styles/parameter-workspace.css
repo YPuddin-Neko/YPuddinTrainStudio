@@ -1,0 +1,124 @@
+/* A parameter workspace has fixed rows and one form scroll surface. Nothing
+   scrolls behind its header or launch bar. Keep this shared by both editors. */
+.app-shell .app-page-viewport:has(> .app-page-frame > .parameter-workspace) { overflow: hidden; padding: 0; scrollbar-gutter: auto; }
+.app-shell .app-page-frame:has(> .parameter-workspace) { height: 100%; min-height: 0; max-width: none; }
+.parameter-workspace { height: 100%; min-height: 0; width: 100%; display: flex; flex-direction: column; gap: 0; margin: 0; overflow: hidden; }
+.parameter-workspace-header { flex: 0 0 auto; padding: 16px 20px 12px; background: var(--studio-canvas); border-bottom: 1px solid var(--studio-line); z-index: 2; }
+.parameter-workspace-header > .workspace-navigation { position: static; margin: 0 0 10px; padding: 0; box-shadow: none; border: 0; }
+.parameter-workspace-header .workspace-breadcrumb { font-size: 12px; }
+.parameter-workspace-header .workspace-heading-title h1 { font-size: 20px; }
+.parameter-workspace .parameter-workspace-header .training-toolbar,
+.parameter-workspace .parameter-workspace-header .presets-toolbar,
+.parameter-workspace .parameter-workspace-header .presets-form-toolbar { position: static; top: auto; margin: 0; border: 0; box-shadow: none; }
+.parameter-workspace .presets-toolbar::before, .parameter-workspace .presets-form-toolbar::before { display: none; }
+.parameter-workspace .parameter-workspace-header .config-tabs { position: static; margin: 8px 0 0; }
+.parameter-workspace-body { flex: 1 1 auto; min-height: 0; min-width: 0; display: grid; grid-template-columns: 176px minmax(0, 1fr); width: 100%; max-width: 1840px; margin-inline: auto; }
+.parameter-scroll-region { min-height: 0; min-width: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 20px; scroll-padding: 16px; }
+.parameter-scroll-region .config-field, .parameter-scroll-region [data-group] { scroll-margin: 16px; }
+.parameter-workspace .parameter-workspace-body > .training-inspector { position: static; min-height: 0; max-height: none; overflow: auto; margin: 20px 20px 20px 0; align-self: stretch; }
+.parameter-sections { min-width: 0; min-height: 0; padding: 20px 10px; overflow: auto; border-right: 1px solid var(--studio-line); background: var(--studio-canvas); }
+.parameter-sections-title { font-size: 12px; color: var(--studio-dim); padding: 0 10px 12px; font-weight: 600; }
+.parameter-sections ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.parameter-sections li > button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 8px; border-radius: 6px; font-size: 12px; line-height: 20px; text-align: left; }
+.parameter-sections li > button > span:nth-child(2) { flex: 1; }
+.parameter-sections li > button:hover { background: var(--studio-panel); }
+.parameter-sections li > button[aria-current=step] { background: color-mix(in srgb,var(--studio-accent) 9%,var(--studio-panel)); color: var(--studio-accent); font-weight: 600; }
+.parameter-step-number { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--studio-dim); }
+.parameter-step-placeholder { visibility: hidden; }
+.parameter-step-issues { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: color-mix(in srgb,#d97706 10%,var(--studio-panel)); color: #b45309; font-size: 11px; }
+.dark .parameter-step-issues { color: #fbbf24; }
+.parameter-sections-mobile { display: none; }
+.parameter-mode-toggle { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 3px; padding: 3px; border: 1px solid var(--studio-line); border-radius: 7px; background: var(--studio-muted); }
+.parameter-mode-toggle button { min-height: 32px; padding: 5px 10px; border-radius: 4px; font-size: 12px; white-space: nowrap; }
+.parameter-mode-toggle button[aria-pressed=true] { background: var(--studio-panel); color: var(--studio-accent); box-shadow: 0 1px 3px #00000012; font-weight: 650; }
+.training-studio.parameter-workspace .training-launch-bar { position: relative; flex: 0 0 auto; bottom: auto; padding: 12px 20px; margin: 0; border-top: 1px solid var(--studio-line); background: var(--studio-panel); box-shadow: none; gap: 10px; }
+.training-studio.parameter-workspace .training-launch-bar :is(button,input,summary) { min-height: 40px; height: 40px; border-radius: 6px; font-size: 13px; line-height: 20px; }
+.training-studio.parameter-workspace .training-launch-bar .launch-name { width: 180px; padding: 9px 12px; border: 1px solid var(--studio-line); background: var(--studio-panel); }
+.parameter-workspace .launch-schedule > summary { display: flex; align-items: center; padding: 9px 12px; border: 1px solid var(--studio-line); }
+.training-studio.parameter-workspace .training-launch-bar .start-training { padding: 9px 16px; }
+.parameter-workspace .readiness-toggle { padding: 9px 0; }
+.parameter-workspace .config-group { background: var(--studio-panel); }
+@container training-workspace (min-width: 1320px) { .parameter-workspace-body { grid-template-columns: 184px minmax(0,1fr) 300px; } }
+@container training-workspace (max-width: 1319px) { .parameter-workspace-body > .training-inspector { display: none; }.parameter-workspace-body > .training-inspector.is-open { display: block; grid-column: 2; grid-row: 1; z-index: 3; background: var(--studio-panel); margin: 0; border-radius: 0; } }
+@media(max-width:900px) {
+  .parameter-workspace-header { padding: 12px 14px 10px; }
+  .parameter-workspace-body { grid-template-columns: minmax(0,1fr); grid-template-rows: auto minmax(0,1fr); }
+  .parameter-sections { overflow: visible; display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-right: 0; border-bottom: 1px solid var(--studio-line); }
+  .parameter-sections-title { padding: 0; flex: 0 0 auto; }
+  .parameter-sections ol { display: none; }
+  .parameter-sections-mobile { display: block; flex: 1; min-width: 0; }
+  .parameter-sections-mobile .studio-select { min-height: 36px; height: 36px; }
+  .parameter-scroll-region { padding: 14px; }
+  .parameter-workspace-body > .training-inspector.is-open { grid-column: 1; grid-row: 2; }
+  .training-studio.parameter-workspace .training-launch-bar { padding: 10px 14px; }
+}
+@media(max-width:520px) {
+  .training-studio.parameter-workspace .training-launch-bar { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; }
+  .training-studio.parameter-workspace .training-launch-bar .launch-status { grid-column: 1/-1; }
+  .training-studio.parameter-workspace .training-launch-bar .launch-name { width: 100%; grid-column: 1; grid-row: 2; order: initial; }
+  .training-studio.parameter-workspace .training-launch-bar .launch-schedule { grid-column: 2; grid-row: 2; order: initial; }
+  .training-studio.parameter-workspace .training-launch-bar .start-training { grid-column: 1/-1; width: 100%; margin: 0; }
+  .parameter-workspace-header .workspace-breadcrumb { display: none; }
+}
+
+.presets-page.parameter-workspace > .presets-editor { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; overflow: hidden; }
+.parameter-workspace .presets-form-toolbar { position: static; flex: 0 0 auto; top: auto; margin: 0; padding: 10px 20px; z-index: 2; }
+.parameter-workspace .presets-page-heading { margin-bottom: 10px; }
+.parameter-workspace .presets-meta { margin-top: 0; }
+.parameter-workspace .presets-context { margin-bottom: 12px; }
+.parameter-workspace .presets-schema .config-field { scroll-margin-top: 16px; }
+@media(max-width:900px) { .parameter-workspace .presets-form-toolbar { padding: 8px 14px; } }
+
+.parameter-sections { scrollbar-width: thin; scrollbar-color: var(--studio-line) transparent; }
+.parameter-sections::-webkit-scrollbar { width: 5px; }
+.parameter-sections::-webkit-scrollbar-thumb { background:var(--studio-line); border-radius:4px; }
+
+/* Give the editor the available height; title and preset actions share a row. */
+.presets-page.parameter-workspace { container-type: inline-size; container-name: preset-workspace; }
+@container preset-workspace (min-width: 820px) {
+  .presets-page > .parameter-workspace-header { display: grid; grid-template-columns: 120px minmax(0, 1fr); align-items: center; gap: 12px 20px; padding-block: 14px; }
+  .parameter-workspace .presets-page-heading { display: block; margin: 0; }
+  .parameter-workspace .presets-page-heading h1 { font-size: 20px; line-height: 28px; }
+  .parameter-workspace .presets-page-heading p { display: none; }
+  .parameter-workspace .presets-page-heading > span { display: block; margin-top: 3px; }
+  .parameter-workspace .presets-toolbar { min-width: 0; padding: 0; gap: 12px; }
+  .parameter-workspace .presets-switcher { flex: 1 1 220px; width: auto; max-width: 400px; min-width: 150px; }
+  .presets-page > .parameter-workspace-header > :not(header):not(.presets-toolbar) { grid-column: 1/-1; }
+}
+
+.training-studio.parameter-workspace { gap: 0; }
+.app-shell .parameter-workspace .workspace-navigation.workspace-page-heading { min-height: 58px; padding: 0; margin: 0 0 8px; }
+.parameter-workspace .launch-plan-toggle { display: flex; align-items: center; justify-content: center; flex: 0 0 auto; gap: 6px; padding: 8px 10px; border: 1px solid var(--studio-line); color: var(--studio-text); background: var(--studio-panel); font-variant-numeric: tabular-nums; }
+.parameter-workspace .launch-plan-toggle[aria-expanded=true] { color: var(--studio-accent); border-color: var(--studio-accent); }
+.parameter-workspace .readiness-item > button { height: auto; min-height: 40px; }
+@media(max-width:520px) {
+  .training-studio.parameter-workspace .training-launch-bar .launch-status { grid-column: 1; }
+  .parameter-workspace .launch-plan-toggle { grid-column: 2; grid-row: 1; }
+  .app-shell .parameter-workspace .workspace-navigation.workspace-page-heading { min-height: 34px; }
+}
+
+/* Both panes occupy the same grid cell on compact screens. Opening estimates
+   must never auto-place the form into a new row underneath the workflow rail. */
+.parameter-workspace-body { grid-template-rows: minmax(0, 1fr); }
+.parameter-workspace-body > .parameter-sections { grid-column: 1; grid-row: 1; }
+.parameter-workspace-body > .parameter-scroll-region { grid-column: 2; grid-row: 1; }
+.parameter-workspace-body > .training-inspector { grid-column: 3; grid-row: 1; }
+.parameter-workspace .inspector-return { display: none; }
+.parameter-workspace .launch-estimate { display: none; }
+@container training-workspace (min-width:1320px) {
+  .parameter-workspace .launch-plan-toggle { display: none; }
+  .parameter-workspace .launch-estimate { display: inline; }
+}
+@container training-workspace (max-width:1319px) {
+  .parameter-workspace-body:has(> .training-inspector.is-open) > .training-editor { visibility: hidden; }
+  .parameter-workspace .inspector-return { display: flex; align-items: center; min-height: 40px; padding: 8px 14px; color: var(--studio-accent); border-bottom: 1px solid var(--studio-line); width: 100%; }
+}
+@media(max-width:900px) {
+  .parameter-workspace-body { grid-template-rows: auto minmax(0,1fr); }
+  .parameter-workspace-body > .parameter-scroll-region { grid-column: 1; grid-row: 2; }
+  .parameter-workspace-body > .training-inspector.is-open { grid-column: 1; grid-row: 2; }
+}
+@media(max-width:520px) {
+  .training-studio.parameter-workspace .config-tabs { display: none; }
+  .parameter-workspace .presets-form-toolbar > [role=tablist] { display: none; }
+}

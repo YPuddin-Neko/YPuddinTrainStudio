@@ -55,7 +55,7 @@ function fixture(archived = false) {
     http.get('/api/projects/p_archive/datasets', () => HttpResponse.json([dataset])),
     http.get('/api/datasets/d_archive', () => HttpResponse.json(dataset)),
     http.get('/api/jobs', () => HttpResponse.json({ items: [], total: 0, page: 1, page_size: 50 })),
-    http.get('/api/artifacts', () => HttpResponse.json([{ id: 'a_archive', name: 'archive.safetensors', project_id: 'p_archive', version_id: 'v1', job_id: 'j_old', path: 'D:/v1/output.safetensors', size: 100, created_at: 1, metadata: { test: 'kept' } }])),
+    http.get('/api/artifacts', () => HttpResponse.json([{ id: 'a_archive', kind: 'weights', name: 'archive.safetensors', project_id: 'p_archive', version_id: 'v1', job_id: 'j_old', path: 'D:/v1/output.safetensors', size: 100, created_at: 1, metadata: { test: 'kept' } }])),
     http.post('/api/jobs', async ({ request }) => { const body = await request.json(); state.writes.push({ method: 'POST', path: '/jobs', body }); return HttpResponse.json({ id: 'j_cache' }); }),
   );
   return state;

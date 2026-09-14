@@ -95,7 +95,12 @@ def text_config_for(path: str | Path):
     p = Path(path)
     cfg_dir = p if p.is_dir() else p.parent
     if (cfg_dir / "config.json").exists():
-        cfg = Qwen3VLConfig.from_pretrained(str(cfg_dir))
+        import json
+
+        config = json.loads((cfg_dir / "config.json").read_text(encoding="utf-8"))
+        if config.get("model_type") == "qwen3_vl_text":
+            return Qwen3VLTextConfig(**config)
+        cfg = Qwen3VLConfig.from_pretrained(str(cfg_dir), local_files_only=True)
         return getattr(cfg, "text_config", cfg)
     return Qwen3VLTextConfig(**QWEN3_VL_4B_TEXT_CONFIG)
 
@@ -275,13 +280,32 @@ class Krea2Text(TextPipeline):
     def cond_from_cache(self, entries: list[dict[str, Tensor]], device: torch.device | str) -> TextCond:
         n_max = max(e["embeds"].shape[0] for e in entries)
         layers, dim = entries[0]["embeds"].shape[1:]
-        embeds = torch.zeros(len(entries), n_max, layers, dim, dtype=torch.bfloat16)
-        mask = torch.zeros(len(entries), n_max, dtype=torch.bool)
+        storage_device = entries[0]["embeds"].device
+        embeds = torch.zeros(len(entries), n_max, layers, dim, dtype=torch.bfloat16, device=storage_device)
+        mask = torch.zeros(len(entries), n_max, dtype=torch.bool, device=storage_device)
         for i, e in enumerate(entries):
             n = e["embeds"].shape[0]
             embeds[i, :n] = e["embeds"].to(torch.bfloat16)
             mask[i, :n] = True
         return TextCond({"embeds": embeds, "attn_mask": mask}).to(device)
 
+    def trainable_modules(self) -> dict[str, nn.Module]:
+        return {"text_encoder": self._ensure_loaded()}
+
     def encode(self, captions: list[str], device: torch.device | str) -> TextCond:
-        return self.cond_from_cache(self.encode_for_cache(captions), device)
+        if not getattr(self, "training_enabled", False):
+            return self.cond_from_cache(self.encode_for_cache(captions), device)
+        ids, mask = self._tokenize(captions)
+        output = self._ensure_loaded()(
+            input_ids=ids.to(self.device),
+            attention_mask=mask.to(self.device),
+            output_hidden_states=True,
+            use_cache=False,
+        )
+        stack = torch.stack([output.hidden_states[i] for i in self.select_layers], dim=2)[
+            :, self.prefix_len :
+        ]
+        mask = mask[:, self.prefix_len :].to(stack.device)
+        # Preserve the model's BF16 conditioning convention without detaching from encoder parameters.
+        entries = [{"embeds": stack[i][mask[i]].to(torch.bfloat16)} for i in range(len(captions))]
+        return self.cond_from_cache(entries, device)

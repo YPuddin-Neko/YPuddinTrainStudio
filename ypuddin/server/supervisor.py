@@ -13,6 +13,7 @@ from typing import Any
 
 from ypuddin.config import TrainConfig, write_config
 from ypuddin.config.io import absolute_paths
+from ypuddin.runtime_profiles import current_profile
 
 from .bus import EventBus
 from .db import Database, new_id, now
@@ -162,6 +163,8 @@ class JobSupervisor:
                 self._set_status(nxt["id"], "failed", error=str(exc), finished_at=now())
 
     def _choose_device(self, job: dict[str, Any], *, check_memory: bool = True) -> str | None:
+        if current_profile().endswith("-cpu"):
+            return "cpu"
         inventory = gpu_info()
         if not inventory:
             return "cpu"
@@ -196,6 +199,17 @@ class JobSupervisor:
             import psutil
 
             payload = json.loads(job["config_json"])
+            source = self.db.fetchone(
+                "SELECT config_json FROM jobs WHERE id=?", (payload["xyz"]["source_job_id"],)
+            )
+            if (
+                source
+                and json.loads(source["config_json"]).get("training", {}).get("mode") == "full"
+                and payload.get("training", {}).get("mode") != "full"
+            ):
+                raise ValueError(
+                    "This legacy XYZ request did not pin a full-model result; recreate the comparison with an exported checkpoint"
+                )
             payload.update(
                 device=device or "cpu",
                 fingerprint_cache=str(self.data_root / "cache" / "xyz-fingerprints"),
@@ -334,7 +348,7 @@ class JobSupervisor:
                 },
             )
         elif t == "checkpoint.saved":
-            if ev.get("kind") == "weights":
+            if ev.get("kind") in {"weights", "model"}:
                 self._register_artifact(job_id, ev)
             self.bus.publish("job.checkpoint", data)
         elif t == "warning":
@@ -365,8 +379,10 @@ class JobSupervisor:
                 "job_id": job_id,
                 "name": path.name,
                 "path": str(path),
-                "size": path.stat().st_size,
-                "kind": "weights",
+                "size": sum(f.stat().st_size for f in path.rglob("*") if f.is_file() and not f.is_symlink())
+                if path.is_dir()
+                else path.stat().st_size,
+                "kind": ev.get("kind", "weights"),
                 "step": ev.get("step"),
                 "created_at": now(),
                 "meta_json": "{}",

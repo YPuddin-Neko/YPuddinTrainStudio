@@ -1,6 +1,7 @@
 import { reusableTrainingPreset } from './trainingPresets';
 
 const HIDDEN_FIELDS: Record<string, string[]> = {
+  training: ['resume_weights'],
   model: ['family', 'dit_path', 'text_encoder_path', 'text_encoder_2_path', 'vae_path', 'tokenizer_path'],
   dataset: ['sources', 'cache_dir'],
   validation: ['sources'],
@@ -22,8 +23,8 @@ export function presetEditorSchema(schema: any) {
 
 export function presetSummary(config: Record<string, any>, english = false): string {
   const pieces = [
-    config.adapter?.algo?.toUpperCase(),
-    config.adapter?.rank != null ? `Rank ${config.adapter.rank}` : null,
+    config.training?.mode === 'full' ? (english ? 'Full fine-tuning' : '全量微调') : config.adapter?.algo?.toUpperCase(),
+    config.training?.mode !== 'full' && config.adapter?.rank != null ? `Rank ${config.adapter.rank}` : null,
     config.optimizer?.lr != null ? `LR ${config.optimizer.lr}` : null,
     config.dataset?.batch_size != null ? `${english ? 'Batch' : '批大小'} ${config.dataset.batch_size}` : null,
     config.loop?.epochs != null ? `${config.loop.epochs} ${english ? 'epochs' : '轮'}` : null,

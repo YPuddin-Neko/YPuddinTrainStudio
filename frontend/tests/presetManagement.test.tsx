@@ -89,7 +89,7 @@ describe('compact user preset management', () => {
     expect(screen.queryByTestId('field-adapter.rs_lora')).not.toBeInTheDocument();
     fireEvent.change(search, {target: {value: 'adapter.rs_lora'}});
     expect(screen.getByTestId('field-adapter.rs_lora')).toBeInTheDocument();
-    expect(screen.getByRole('checkbox', {name: '高级选项'})).not.toBeChecked();
+    expect(screen.getByRole('button', {name: '全部参数'})).toHaveAttribute('aria-pressed', 'false');
     fireEvent.change(search, {target: {value: '不存在的参数123'}});
     expect(screen.getByText('没有匹配的参数。')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', {name: '返回参数分区'}));

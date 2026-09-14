@@ -8,7 +8,7 @@ export interface SamplingValues {
 }
 export interface XyzRequest extends SamplingValues { name?: string; x: XyzAxis; y?: XyzAxis | null; z?: XyzAxis | null }
 export interface XyzOptions {
-  family: string; defaults: SamplingValues;
+  family: string; training_mode?: 'adapter' | 'full'; defaults: SamplingValues;
   axes: { key: AxisKey; label: string; values?: AxisValue[] }[];
   checkpoints: { id: string; name: string; step: number }[];
   sampling_models: { id: string; name: string; variant?: string }[];

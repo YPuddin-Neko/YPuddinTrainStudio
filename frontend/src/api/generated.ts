@@ -1291,6 +1291,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/datasets/{did}/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dataset Overview */
+        get: operations["dataset_overview_api_datasets__did__overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/datasets/{did}/images/{h}/paint/info": {
         parameters: {
             query?: never;
@@ -1547,6 +1564,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/environment/operations/{id_}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dismiss */
+        post: operations["dismiss_api_environment_operations__id___dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/environment/wheels": {
         parameters: {
             query?: never;
@@ -1558,6 +1592,142 @@ export interface paths {
         put?: never;
         /** Wheel */
         post: operations["wheel_api_environment_wheels_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/environment/torch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Torch Status */
+        get: operations["torch_status_api_environment_torch_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/environment/torch/operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Torch Plan */
+        post: operations["torch_plan_api_environment_torch_operations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/environment/torch/operations/{id_}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Torch Operation */
+        get: operations["torch_operation_api_environment_torch_operations__id___get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/environment/torch/operations/{id_}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Torch Apply */
+        post: operations["torch_apply_api_environment_torch_operations__id___apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/environment/torch/operations/{id_}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Torch Cancel */
+        post: operations["torch_cancel_api_environment_torch_operations__id___cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/environment/torch/operations/{id_}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Torch Dismiss */
+        post: operations["torch_dismiss_api_environment_torch_operations__id___dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/service/runtime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Service Runtime */
+        get: operations["service_runtime_api_service_runtime_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/service/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Service Restart */
+        post: operations["service_restart_api_service_restart_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2394,6 +2564,16 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** DatasetOverview */
+        DatasetOverview: {
+            /** Dataset Id */
+            dataset_id: string;
+            /** Folders */
+            folders: components["schemas"]["FolderCount"][];
+            stats: components["schemas"]["DatasetStats"];
+            caption_stats: components["schemas"]["DatasetCaptionStats"];
+            images: components["schemas"]["ImagePage"];
+        };
         /** DatasetSource */
         DatasetSource: {
             /** Id */
@@ -2517,6 +2697,13 @@ export interface components {
         };
         /** EnvironmentOperation */
         EnvironmentOperation: {
+            /**
+             * Environment Profile
+             * @default legacy
+             */
+            environment_profile: string;
+            /** Python Executable */
+            python_executable?: string | null;
             /** Id */
             id: string;
             /** Package */
@@ -2545,6 +2732,8 @@ export interface components {
              * @default false
              */
             restart_required: boolean;
+            /** Dismissed At */
+            dismissed_at?: number | null;
         };
         /** EnvironmentPackage */
         EnvironmentPackage: {
@@ -2591,6 +2780,11 @@ export interface components {
         };
         /** EnvironmentRuntime */
         EnvironmentRuntime: {
+            /**
+             * Environment Profile
+             * @default legacy
+             */
+            environment_profile: string;
             /** Python */
             python: string;
             /** Python Executable */
@@ -2643,6 +2837,21 @@ export interface components {
              * @constant
              */
             training_device_policy: "single_device";
+            /**
+             * Cuda Applicable
+             * @default true
+             */
+            cuda_applicable: boolean;
+            /**
+             * Nccl Applicable
+             * @default true
+             */
+            nccl_applicable: boolean;
+            /**
+             * Distributed Purpose
+             * @default multi_process_communication
+             */
+            distributed_purpose: string;
         };
         /** EnvironmentSettings */
         EnvironmentSettings: {
@@ -2747,6 +2956,10 @@ export interface components {
             capabilities: string[];
             /** Text Modes */
             text_modes: string[];
+            /** Training Capabilities */
+            training_capabilities?: {
+                [key: string]: unknown;
+            };
             /** Presets */
             presets: components["schemas"]["FamilyPreset"][];
             /** Default Preset */
@@ -2830,6 +3043,13 @@ export interface components {
             downloadable: boolean;
         } & {
             [key: string]: unknown;
+        };
+        /** FolderCount */
+        FolderCount: {
+            /** Path */
+            path: string;
+            /** Count */
+            count: number;
         };
         /** FsEntry */
         FsEntry: {
@@ -3630,6 +3850,15 @@ export interface components {
              * @default 0
              */
             downloaded_bytes: number;
+            /**
+             * Bytes Per Second
+             * @default 0
+             */
+            bytes_per_second: number;
+            /** Eta Seconds */
+            eta_seconds?: number | null;
+            /** Progress At */
+            progress_at?: number | null;
             /** Total Bytes */
             total_bytes?: number | null;
             /** Error */
@@ -4409,6 +4638,12 @@ export interface components {
             activations_mb_by_bucket?: components["schemas"]["PlanActivation"][];
             /** Peak Mb Estimate */
             peak_mb_estimate?: number | null;
+            /** Training Peak Mb Estimate */
+            training_peak_mb_estimate?: number | null;
+            /** Known Training Residency Mb */
+            known_training_residency_mb?: number | null;
+            /** Unestimated Components */
+            unestimated_components?: string[];
             /** Gpu Total Mb */
             gpu_total_mb?: number | null;
             /** Suggestions */
@@ -4438,6 +4673,16 @@ export interface components {
             adapted_layers: number;
             /** By Algo */
             by_algo?: {
+                [key: string]: number;
+            };
+            /**
+             * Training Mode
+             * @default adapter
+             * @enum {string}
+             */
+            training_mode: "adapter" | "full";
+            /** Components */
+            components?: {
                 [key: string]: number;
             };
         } & {
@@ -4902,6 +5147,40 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** RestartRequest */
+        RestartRequest: {
+            /**
+             * Apply Saved Address
+             * @default false
+             */
+            apply_saved_address: boolean;
+            /** Environment Id */
+            environment_id?: string | null;
+            /**
+             * Restore Original Environment
+             * @default false
+             */
+            restore_original_environment: boolean;
+        };
+        /** RestartResult */
+        RestartResult: {
+            /**
+             * Status
+             * @default restarting
+             * @constant
+             */
+            status: "restarting";
+            /** Host */
+            host: string;
+            /** Port */
+            port: number;
+            /** Reconnect Url */
+            reconnect_url: string;
+            /** Address Changed */
+            address_changed: boolean;
+            /** Environment Id */
+            environment_id?: string | null;
+        };
         /** SamplePrompt */
         SamplePrompt: {
             /** Prompt */
@@ -5078,6 +5357,42 @@ export interface components {
              */
             decay_steps?: number | null;
         };
+        /** ServiceRuntime */
+        ServiceRuntime: {
+            /**
+             * Environment Profile
+             * @default legacy
+             */
+            environment_profile: string;
+            /** Worker Id */
+            worker_id: number;
+            /** Managed */
+            managed: boolean;
+            /** Can Restart */
+            can_restart: boolean;
+            /** Reason */
+            reason: string | null;
+            /** Current Host */
+            current_host: string | null;
+            /** Current Port */
+            current_port: number | null;
+            /** Saved Host */
+            saved_host: string;
+            /** Saved Port */
+            saved_port: number;
+            /** Restart Required */
+            restart_required: boolean;
+            /** Restarting */
+            restarting: boolean;
+            /** Current Python */
+            current_python: string;
+            /** Original Python */
+            original_python: string | null;
+            /** Can Restore Original */
+            can_restore_original: boolean;
+            /** Selected Environment */
+            selected_environment: string | null;
+        };
         /** Settings */
         Settings: {
             paths: components["schemas"]["SettingsPaths"];
@@ -5203,8 +5518,123 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** TorchBuild */
+        TorchBuild: {
+            /** Id */
+            id: string;
+            /** Torch */
+            torch: string;
+            /** Torchvision */
+            torchvision: string;
+            /** Backend */
+            backend: string;
+            /** Label */
+            label: string;
+            /** Index Url */
+            index_url: string;
+            /** Supported */
+            supported: boolean;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Recommended
+             * @default false
+             */
+            recommended: boolean;
+            /**
+             * Validation
+             * @default official_build
+             */
+            validation: string;
+        };
+        /** TorchOperation */
+        TorchOperation: {
+            /**
+             * Environment Profile
+             * @default legacy
+             */
+            environment_profile: string;
+            /** Id */
+            id: string;
+            /** Build Id */
+            build_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "planning" | "ready" | "installing" | "verifying" | "completed" | "failed" | "cancelled";
+            /** Created At */
+            created_at: number;
+            /** Updated At */
+            updated_at: number;
+            /** Plan */
+            plan?: {
+                [key: string]: unknown;
+            }[];
+            /** Logs */
+            logs?: string[];
+            /** Error */
+            error?: string | null;
+            /**
+             * Phase
+             * @default preflight
+             */
+            phase: string;
+            /** Environment Id */
+            environment_id?: string | null;
+            /** Dismissed At */
+            dismissed_at?: number | null;
+            /** Progress */
+            progress?: number | null;
+        };
+        /** TorchRequest */
+        TorchRequest: {
+            /** Build Id */
+            build_id: string;
+        };
+        /** TorchSnapshot */
+        TorchSnapshot: {
+            /**
+             * Environment Profile
+             * @default legacy
+             */
+            environment_profile: string;
+            /**
+             * Environment Root
+             * @default
+             */
+            environment_root: string;
+            /** Unavailable Backends */
+            unavailable_backends?: {
+                [key: string]: string;
+            }[];
+            /** Builds */
+            builds: components["schemas"]["TorchBuild"][];
+            /** Operations */
+            operations: components["schemas"]["TorchOperation"][];
+            /** Current Python */
+            current_python: string;
+            /** Selected Environment */
+            selected_environment: string | null;
+            /** Environments */
+            environments: {
+                [key: string]: unknown;
+            }[];
+            /** Disk Free Bytes */
+            disk_free_bytes: number;
+            /** Minimum Free Bytes */
+            minimum_free_bytes: number;
+            /**
+             * Source Url
+             * @default https://pytorch.org/get-started/previous-versions/
+             */
+            source_url: string;
+            /** Optional Extensions */
+            optional_extensions: string[];
+        };
         /** TrainConfig */
         TrainConfig: {
+            training?: components["schemas"]["TrainingConfig"];
             model?: components["schemas"]["ModelConfig"];
             dataset?: components["schemas"]["DatasetConfig"];
             adapter?: components["schemas"]["AdapterConfig"];
@@ -5217,6 +5647,33 @@ export interface components {
             sampling?: components["schemas"]["SamplingConfig"];
             validation?: components["schemas"]["ValidationConfig"];
             logging?: components["schemas"]["LoggingConfig"];
+        };
+        /** TrainingConfig */
+        TrainingConfig: {
+            /**
+             * Mode
+             * @description 适配器训练生成 LoRA/LoKr 等附加权重；全量微调直接更新所选组件的原始参数，保存模型组件。
+             * @default adapter
+             * @enum {string}
+             */
+            mode: "adapter" | "full";
+            /**
+             * Train Backbone
+             * @description 训练生成图像的主模型：SDXL 为 UNet，Anima/Krea 2/Klein 为 DiT。全量微调时包括卷积、归一化、嵌入与偏置，不局限于线性层。
+             * @default true
+             */
+            train_backbone: boolean;
+            /**
+             * Train Text Encoder
+             * @description 全量微调标签编码器；SDXL 同时训练 CLIP-L 与 CLIP-G，其他模型训练文本解码器。每一步重新编码标签，不使用文本缓存，显存需求明显增加。
+             * @default false
+             */
+            train_text_encoder: boolean;
+            /**
+             * Resume Weights
+             * @description 从本程序导出的全量模型目录继续微调权重，并重新初始化优化器；恢复原进度请使用完整训练状态。
+             */
+            resume_weights?: string | null;
         };
         /** ValidateResult */
         ValidateResult: {
@@ -5460,6 +5917,12 @@ export interface components {
         XyzOptions: {
             /** Family */
             family: string;
+            /**
+             * Training Mode
+             * @default adapter
+             * @enum {string}
+             */
+            training_mode: "adapter" | "full";
             /** Defaults */
             defaults: {
                 [key: string]: unknown;
@@ -8772,6 +9235,44 @@ export interface operations {
             };
         };
     };
+    dataset_overview_api_datasets__did__overview_get: {
+        parameters: {
+            query: {
+                project_id: string;
+                version_id?: string | null;
+                folder?: string;
+                q?: string;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                did: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetOverview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     paint_info_api_datasets__did__images__h__paint_info_get: {
         parameters: {
             query?: {
@@ -9283,6 +9784,37 @@ export interface operations {
             };
         };
     };
+    dismiss_api_environment_operations__id___dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id_: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentOperation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     wheel_api_environment_wheels_post: {
         parameters: {
             query?: never;
@@ -9303,6 +9835,236 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvironmentWheel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    torch_status_api_environment_torch_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TorchSnapshot"];
+                };
+            };
+        };
+    };
+    torch_plan_api_environment_torch_operations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TorchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TorchOperation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    torch_operation_api_environment_torch_operations__id___get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id_: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TorchOperation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    torch_apply_api_environment_torch_operations__id___apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id_: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TorchOperation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    torch_cancel_api_environment_torch_operations__id___cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id_: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TorchOperation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    torch_dismiss_api_environment_torch_operations__id___dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id_: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TorchOperation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    service_runtime_api_service_runtime_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceRuntime"];
+                };
+            };
+        };
+    };
+    service_restart_api_service_restart_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestartRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestartResult"];
                 };
             };
             /** @description Validation Error */

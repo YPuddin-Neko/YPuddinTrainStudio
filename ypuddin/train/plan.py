@@ -299,7 +299,9 @@ def plan(
             "family does not support masked loss, required to exclude image padding",
         ),
         (
-            cfg.dataset.text_encoding == "online" and "online_text" not in caps,
+            cfg.dataset.text_encoding == "online"
+            and "online_text" not in caps
+            and not cfg.training.train_text_encoder,
             "dataset.text_encoding",
             "family requires cached text encoding",
         ),
@@ -336,7 +338,15 @@ def plan(
     ]
     out["errors"].extend({"loc": loc, "msg": message} for failed, loc, message in checks if failed)
     out["errors"].extend(family.training_options_errors(cfg))
-    effective_dtype = "fp32" if device_type in ("cpu", "mps") else cfg.model.dtype
+    effective_dtype = (
+        "fp32"
+        if device_type in ("cpu", "mps")
+        or (
+            cfg.training.mode == "full"
+            and (cfg.training.train_backbone or cfg.memory.base_precision == "fp32")
+        )
+        else cfg.model.dtype
+    )
     if device_type == "mps" and (cfg.model.dtype != "fp32" or cfg.loop.mixed_precision != "no"):
         out["warnings"].append(
             {
@@ -376,27 +386,57 @@ def plan(
             ]
             family.prepare_backbone_for_plan(backbone, cfg.model, compute_dtype)
             presets = family.presets()
-            if cfg.adapter.preset not in presets:
+            full_training = cfg.training.mode == "full"
+            if not full_training and cfg.adapter.preset not in presets:
                 out["errors"].append(
                     {"loc": "adapter.preset", "msg": f"unknown preset; available: {sorted(presets)}"}
                 )
             else:
                 error_loc = "adapter"
-                aset = inject(
-                    backbone,
-                    cfg.adapter,
-                    presets[cfg.adapter.preset],
-                    prefix=family.spec.adapter_prefix,
-                    base_precision=cfg.memory.base_precision
-                    if cfg.memory.base_precision != "auto"
-                    else "keep",
-                )
+                if full_training:
+                    from types import SimpleNamespace
+
+                    from ypuddin.models.training_parameters import text_parameter_count
+
+                    if any(isinstance(layer, FrozenLinear) for layer in backbone.modules()):
+                        raise ValueError("Full fine-tuning requires unquantized base weights")
+                    backbone.requires_grad_(False)
+                    encoder_params = (
+                        text_parameter_count(family, cfg.model) if cfg.training.train_text_encoder else 0
+                    )
+                    trainable = (base_params if cfg.training.train_backbone else 0) + encoder_params
+                    aset = SimpleNamespace(
+                        num_params=lambda: trainable,
+                        layers={},
+                        summary=lambda: {
+                            "by_algo": {
+                                "full-model": int(cfg.training.train_backbone)
+                                + int(cfg.training.train_text_encoder)
+                            }
+                        },
+                    )
+                else:
+                    aset = inject(
+                        backbone,
+                        cfg.adapter,
+                        presets[cfg.adapter.preset],
+                        prefix=family.spec.adapter_prefix,
+                        base_precision=cfg.memory.base_precision
+                        if cfg.memory.base_precision != "auto"
+                        else "keep",
+                    )
                 params = {
                     "base": base_params,
                     "trainable": aset.num_params(),
                     "adapted_layers": len(aset.layers),
                     "by_algo": aset.summary()["by_algo"],
+                    "training_mode": cfg.training.mode,
                 }
+                if full_training:
+                    params["components"] = {
+                        "backbone": base_params if cfg.training.train_backbone else 0,
+                        "text_encoder": encoder_params,
+                    }
                 if params["trainable"] == 0:
                     out["errors"].append(
                         {"loc": "adapter", "msg": "adapter rules select no trainable parameters"}
@@ -404,8 +444,16 @@ def plan(
                 error_loc = "memory"
                 # A loader may retain native FP8 even when model.dtype is BF16.
                 # Explicit base_precision applies only to selected adapter targets.
-                weights_mb = _frozen_storage_bytes(backbone) / 2**20
-                adapter_mb = aset.num_params() * (4 if cfg.adapter.param_dtype == "fp32" else 2) / 2**20
+                weights_mb = (
+                    0.0
+                    if full_training and cfg.training.train_backbone
+                    else _frozen_storage_bytes(backbone) / 2**20
+                )
+                adapter_mb = (
+                    aset.num_params()
+                    * (4 if full_training or cfg.adapter.param_dtype == "fp32" else 2)
+                    / 2**20
+                )
                 optimizer_mb = aset.num_params() * 4 * (0.5 if "8bit" in cfg.optimizer.type else 2) / 2**20
                 gradients_mb = adapter_mb
                 compensation_mb = adapter_mb if cfg.optimizer.kahan else 0.0
@@ -464,11 +512,15 @@ def plan(
                     ),
                     default=0.0,
                 )
-                text_mode = ds.text_encoding
+                text_mode = "online" if cfg.training.train_text_encoder else ds.text_encoding
                 if text_mode == "auto":
                     text_mode = "online" if "online_text" in family.spec.capabilities else "cached"
                 text_encoder_mb = 0.0
-                if text_mode == "online" and not cfg.memory.offload_text_encoder:
+                if (
+                    text_mode == "online"
+                    and not cfg.memory.offload_text_encoder
+                    and not cfg.training.train_text_encoder
+                ):
                     text_encoder_mb = family.spec.text.encoder_params * DTYPE_BYTES[effective_dtype] / 2**20
                 training_peak = (
                     weights_mb
@@ -497,25 +549,40 @@ def plan(
                     "ema_mb": round(ema_mb, 1),
                     "swap_staging_mb": round(swap_staging_mb, 1),
                     "dequant_mb": round(dequant_mb, 1),
-                    "training_peak_mb_estimate": round(training_peak),
+                    "training_peak_mb_estimate": None
+                    if cfg.training.train_text_encoder
+                    else round(training_peak),
+                    "known_training_residency_mb": round(
+                        weights_mb
+                        + text_encoder_mb
+                        + adapter_mb
+                        + optimizer_mb
+                        + gradients_mb
+                        + compensation_mb
+                        + ema_mb
+                    ),
+                    "unestimated_components": ["text_encoder_activations"]
+                    if cfg.training.train_text_encoder
+                    else [],
                     "cache_phase_peak_mb_estimates": {
                         key: round(value) for key, value in cache_phases.items()
                     },
                     "activations_mb_by_bucket": act_by_bucket,
-                    "peak_mb_estimate": round(peak),
+                    "peak_mb_estimate": None if cfg.training.train_text_encoder else round(peak),
                     "gpu_total_mb": gpu_total_mb,
                     "heuristic": True,
                     "device": str(device) if device is not None else None,
                     "effective_dtype": effective_dtype,
                     "suggestions": [],
                 }
-                if gpu_total_mb and peak > gpu_total_mb * 0.9:
+                if gpu_total_mb and not cfg.training.train_text_encoder and peak > gpu_total_mb * 0.9:
                     if cfg.memory.activation_checkpointing == "none":
                         memory["suggestions"].append("set memory.activation_checkpointing = 'block'")
                     if (
                         device_type != "mps"
                         and "block_swap" in family.spec.capabilities
                         and not cfg.memory.blocks_to_swap
+                        and cfg.training.mode != "full"
                     ):
                         memory["suggestions"].append("enable memory.blocks_to_swap")
                     if device_type in (None, "cuda") and "8bit" not in cfg.optimizer.type:
@@ -538,6 +605,7 @@ def plan(
         "online"
         if (cfg.dataset.text_encoding == "auto" and "online_text" in family.spec.capabilities)
         or cfg.dataset.text_encoding == "online"
+        or cfg.training.train_text_encoder
         else "cached"
     )
     out["ok"] = not out["errors"]

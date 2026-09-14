@@ -29,7 +29,7 @@ const entries = [
   {id:'anima-vae',family:'anima',kind:'vae',name:'Shared VAE',filename:'vae.safetensors'},
 ];
 function task(overrides: Partial<ModelDownload> = {}): ModelDownload {
-  return {id:'dl1',provider:'huggingface',mirror:'official',family:'anima',kind:'text_encoder',source_url:'https://huggingface.co/official/anima/resolve/main/encoder.safetensors',filename:'encoder.safetensors',target_path:'D:\\models\\encoder.safetensors',status:'downloading',downloaded_bytes:500,total_bytes:1000,error:null,model_id:null,dtype:'bf16',is_default:true,purpose:'training',created_at:1,finished_at:null,...overrides};
+  return {id:'dl1',provider:'huggingface',mirror:'official',family:'anima',kind:'text_encoder',source_url:'https://huggingface.co/official/anima/resolve/main/encoder.safetensors',filename:'encoder.safetensors',target_path:'D:\\models\\encoder.safetensors',status:'downloading',bytes_per_second:0,eta_seconds:null,progress_at:null,downloaded_bytes:500,total_bytes:1000,error:null,model_id:null,dtype:'bf16',is_default:true,purpose:'training',created_at:1,finished_at:null,...overrides};
 }
 beforeEach(async () => {
   await i18n.changeLanguage('zh-CN');

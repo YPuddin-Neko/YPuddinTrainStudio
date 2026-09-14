@@ -146,6 +146,19 @@ class TextPipeline(ABC):
     def unload(self) -> None:
         """Release encoder weights (after caching)."""
 
+    def trainable_modules(self) -> dict[str, nn.Module]:
+        """Materialize the actual encoder modules, retaining their original parameter names."""
+        raise NotImplementedError("This text pipeline does not implement text-encoder training")
+
+    def enable_training(self) -> dict[str, nn.Module]:
+        self.training_enabled = True
+        if hasattr(self, "dtype"):
+            self.dtype = torch.float32
+        modules = self.trainable_modules()
+        for module in modules.values():
+            module.to(dtype=torch.float32).requires_grad_(True).train()
+        return modules
+
 
 class LatentPipeline(ABC):
     fingerprint: str

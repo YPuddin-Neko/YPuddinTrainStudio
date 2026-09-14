@@ -25,6 +25,7 @@ from .schema import (
     SamplingConfig,
     SchedulerConfig,
     TrainConfig,
+    TrainingConfig,
     ValidationConfig,
 )
 from .show_when import ShowWhenError, evaluate
@@ -49,6 +50,7 @@ __all__ = [
     "SchedulerConfig",
     "ShowWhenError",
     "TrainConfig",
+    "TrainingConfig",
     "ValidationConfig",
     "config_hash",
     "deep_merge",

@@ -1,0 +1,30 @@
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, expect, it, vi } from 'vitest';
+import ParameterSections from '../src/components/ParameterSections';
+import '../src/i18n';
+
+afterEach(() => vi.restoreAllMocks());
+it('keeps a short final section selected after a clamped jump, then follows user scrolling', async () => {
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { callback(0); return 1; });
+  const root = document.createElement('div');
+  root.innerHTML = '<section data-group="objective"><button class="config-group-title" aria-expanded="true">Noise</button></section><section data-group="logging"><button class="config-group-title" aria-expanded="true">Logging</button></section>';
+  document.body.append(root);
+  let offset = 0;
+  Object.defineProperties(root, { scrollTop: { get: () => offset, set: (value: number) => { offset = Math.max(0, Math.min(100, value)); } }, scrollHeight: { value: 700 }, clientHeight: { value: 600 } });
+  vi.spyOn(root, 'getBoundingClientRect').mockImplementation(() => ({ top: 200 }) as DOMRect);
+  vi.spyOn(root.children[0], 'getBoundingClientRect').mockImplementation(() => ({ top: 200 - offset }) as DOMRect);
+  vi.spyOn(root.children[1], 'getBoundingClientRect').mockImplementation(() => ({ top: 600 - offset }) as DOMRect);
+  render(<ParameterSections rootRef={{current:root}} tab="advanced" onTabChange={() => {}} onRevealAdvanced={() => {}}/>);
+  const logging = screen.getByRole('button', { name: /训练记录$/ });
+  fireEvent.click(logging);
+  expect(offset).toBe(100);
+  fireEvent.scroll(root);
+  root.append(document.createElement('span'));
+  await act(async () => {});
+  expect(logging).toHaveAttribute('aria-current','step');
+  root.scrollTop = 0; fireEvent.scroll(root);
+  expect(screen.getByRole('button',{name:/噪声与损失$/})).toHaveAttribute('aria-current','step');
+  root.scrollTop = 100; fireEvent.scroll(root);
+  expect(logging).toHaveAttribute('aria-current','step');
+  root.remove();
+});

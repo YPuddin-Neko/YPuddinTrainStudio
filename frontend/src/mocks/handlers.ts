@@ -664,7 +664,7 @@ export const handlers = [
       total_steps: 2000,
       epochs: 4,
       buckets: [{ w: 1024, h: 1024, items: 100, batches: 50 }],
-      params: { trainable: 14500000, base: 2000000000, adapted_layers: 280, by_algo: { lokr: 280 } },
+      params: { training_mode: 'adapter', trainable: 14500000, base: 2000000000, adapted_layers: 280, by_algo: { lokr: 280 } },
       memory: {
         weights_mb: 4200, swapped_mb: 0, text_encoder_mb: 0, adapter_mb: 64, optimizer_mb: 128, heuristic: true,
         activations_mb_by_bucket: [{ w: 1024, h: 1024, mb: 6100 }],

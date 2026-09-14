@@ -77,7 +77,6 @@ export default function AccessKeys() {
   };
   return <div className="access-keys" data-testid="access-keys-settings"><SettingsSections sections={providers.map(p => ({ id: `credentials-${p.id}`, label: p.name }))}>
     {statusError && <div role="alert" className="settings-alert">{statusError}<button type="button" className="ml-2 underline" disabled={loading || !!busy} onClick={() => void refresh()}>{text('重试读取', 'Retry status')}</button></div>}
-    <p className="settings-note">{text('集中管理模型下载与正则图收集的访问密钥。这里只显示配置状态，已保存的账号和密钥不会回填。', 'Manage model-download and regularization-site access keys here. Only configuration status is shown; saved accounts and keys are never filled back into forms.')}</p>
     {providers.map(provider => <section key={provider.id} id={`credentials-${provider.id}`} data-settings-section tabIndex={-1} className="settings-section">
       <div className="settings-section-heading"><div><h2>{provider.name}</h2><p className="settings-note">{provider.account ? text('用于从此站点收集正则图。', 'Used to collect regularization images from this site.') : text('用于官方模型下载；受限仓库需先取得权限。', 'Official model downloads; gated repositories require access approval.')}</p></div><span role="status" className="settings-note access-key-state">{status ? status[provider.id]?.configured ? text('已配置', 'Configured') : text('未配置', 'Not configured') : loading ? text('读取状态中', 'Loading status') : text('状态不可用', 'Status unavailable')}</span></div>
       <form className="access-key-form" onSubmit={event => { event.preventDefault(); void save(provider); }}>

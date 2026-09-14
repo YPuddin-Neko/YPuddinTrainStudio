@@ -82,8 +82,15 @@ class SDXLText(TextPipeline):
         if self.device.type == "cuda":
             torch.cuda.empty_cache()
 
-    @torch.no_grad()
+    def trainable_modules(self) -> dict[str, nn.Module]:
+        self._ensure()
+        return dict(zip(self.components, self.models, strict=True))
+
     def encode(self, captions: list[str], device: torch.device | str) -> TextCond:
+        with torch.set_grad_enabled(torch.is_grad_enabled() and getattr(self, "training_enabled", False)):
+            return self._encode(captions, device)
+
+    def _encode(self, captions: list[str], device: torch.device | str) -> TextCond:
         self._ensure()
         hidden = []
         pooled = None
@@ -101,6 +108,7 @@ class SDXLText(TextPipeline):
             raise RuntimeError("SDXL CLIP-G did not return projected pooled embeddings")
         return TextCond({"embeds": torch.cat(hidden, dim=-1), "pooled": pooled}).to(device)
 
+    @torch.no_grad()
     def encode_for_cache(self, captions: list[str]) -> list[dict[str, Tensor]]:
         cond = self.encode(captions, "cpu")
         return [

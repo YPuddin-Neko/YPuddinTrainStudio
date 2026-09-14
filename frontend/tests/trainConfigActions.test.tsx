@@ -48,7 +48,7 @@ describe('training configuration actions', () => {
     expect(screen.getAllByRole('heading', { name: '训练参数' })).toHaveLength(1);
     const toolbar = screen.getByRole('group', { name: '训练参数工具栏' });
     const search = within(toolbar).getByRole('textbox', { name: '搜索训练参数' });
-    const advanced = within(toolbar).getByRole('checkbox', { name: '高级选项' });
+    const advanced = within(toolbar).getByRole('button', { name: '全部参数' });
     expect(search.closest('.training-toolbar-filters')).toContainElement(advanced);
     expect(within(toolbar).getByRole('button', { name: '保存草稿' })).toBeInTheDocument();
     expect(within(toolbar).getByRole('combobox', { name: /加载预设/ })).toBeInTheDocument();
@@ -104,7 +104,7 @@ describe('training configuration actions', () => {
     fireEvent.click(screen.getByRole('button', { name: '校验并应用' }));
     await waitFor(() => expect(screen.queryByRole('button', { name: '校验并应用' })).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole('tab', {name:'数据与分桶'}));
-    fireEvent.click(screen.getByRole('checkbox',{name:'高级选项'}));
+    fireEvent.click(screen.getByRole('button',{name:'全部参数'}));
     await waitFor(() => expect(within(screen.getByTestId('field-dataset.caption.trigger_word')).getByRole('textbox')).toHaveValue('from_toml'));
     expect(imported.format).toBe('toml');
     fireEvent.change(screen.getByRole('textbox', { name: '新预设名称' }), { target: { value: 'my-preset' } });
@@ -172,6 +172,26 @@ describe('training configuration actions', () => {
     expect(screen.getByRole('region', {name:'训练前检查'})).toHaveTextContent(/采样|sampling/);
   });
 
+
+  it('keeps an in-flight TOML import in its dialog so a late response cannot replace later edits', async () => {
+    let finish = () => {};
+    const pending = new Promise<void>(resolve => {finish = resolve;});
+    server.use(http.post('/api/config/import', async () => {await pending; return HttpResponse.json(schemaDefaults(trainSchema));}));
+    showConfig();
+    fireEvent.click(screen.getByText('配置工具', {selector:'summary'}));
+    await waitFor(() => expect(screen.getByRole('button', {name:'导入 TOML'})).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', {name:'导入 TOML'}));
+    const dialog = screen.getByRole('dialog', {name:'导入 TOML'});
+    fireEvent.change(within(dialog).getByRole('textbox', {name:'TOML 配置内容'}), {target:{value:'[loop]\nmax_steps=2'}});
+    fireEvent.click(within(dialog).getByRole('button', {name:'校验并应用'}));
+    expect(within(dialog).getByRole('textbox', {name:'TOML 配置内容'})).toBeDisabled();
+    expect(within(dialog).getByRole('button', {name:'关闭'})).toBeDisabled();
+    fireEvent.keyDown(dialog, {key:'Escape'});
+    expect(dialog).toBeInTheDocument();
+    finish();
+    await waitFor(() => expect(screen.queryByRole('dialog', {name:'导入 TOML'})).not.toBeInTheDocument());
+  });
+
   it('shows the invalid TOML field and reason while retaining the import text and current draft', async () => {
     const badToml = '[checkpoint]\nsave_full_state = true';
     server.use(http.post('/api/config/import', () => HttpResponse.json({
@@ -184,13 +204,14 @@ describe('training configuration actions', () => {
     fireEvent.click(screen.getByText('配置工具', {selector:'summary'}));
     await waitFor(() => expect(screen.getByRole('button', { name: '导入 TOML' })).toBeEnabled());
     fireEvent.click(screen.getByRole('tab', {name:'数据与分桶'}));
-    fireEvent.click(screen.getByRole('checkbox',{name:'高级选项'}));
+    fireEvent.click(screen.getByRole('button',{name:'全部参数'}));
     const trigger = within(screen.getByTestId('field-dataset.caption.trigger_word')).getByRole('textbox');
     fireEvent.change(trigger, { target: { value: 'keep_draft' } });
     fireEvent.click(screen.getByRole('button', { name: '导入 TOML' }));
     fireEvent.change(screen.getByRole('textbox', { name: 'TOML 配置内容' }), { target: { value: badToml } });
     fireEvent.click(screen.getByRole('button', { name: '校验并应用' }));
-    const alert = await screen.findByRole('alert');
+    const dialog = screen.getByRole('dialog', {name:'导入 TOML'});
+    const alert = await within(dialog).findByRole('alert');
     expect(alert).toHaveTextContent('invalid config');
     expect(alert).toHaveTextContent('checkpoint.save_full_state: Extra inputs are not permitted');
     expect(screen.getByRole('textbox', { name: 'TOML 配置内容' })).toHaveValue(badToml);

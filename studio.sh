@@ -28,6 +28,9 @@ pause_on_error() {
 trap pause_on_error EXIT
 
 # venv 已存在：直接用它自己的 Python，不再依赖系统 Python
+if [ -n "${YPUDDIN_BOOTSTRAP_VENV:-}" ] && [ -x "$YPUDDIN_BOOTSTRAP_VENV/bin/python" ]; then
+  exec "$YPUDDIN_BOOTSTRAP_VENV/bin/python" scripts/bootstrap.py "$@"
+fi
 if [ -x venv/bin/python ]; then
   exec venv/bin/python scripts/bootstrap.py "$@"
 fi

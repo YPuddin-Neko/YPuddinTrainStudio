@@ -122,6 +122,7 @@ class XyzTask(BaseModel):
 
 class XyzOptions(BaseModel):
     family: str
+    training_mode: Literal["adapter", "full"] = "adapter"
     defaults: dict[str, Any]
     axes: list[dict[str, Any]]
     checkpoints: list[dict[str, Any]]
@@ -150,6 +151,37 @@ def file_signature(path: Path) -> list[int]:
     return [stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns]
 
 
+def checkpoint_signature(path: Path):
+    """Pin all native component/config files, not just the directory inode."""
+    if path.is_file():
+        return file_signature(path)
+    if not path.is_dir() or path.is_symlink():
+        raise ValueError("Checkpoint is missing or not a regular model directory")
+    signature = {}
+    for entry in sorted(path.rglob("*")):
+        if entry.is_symlink():
+            raise ValueError("Model checkpoint must not contain symbolic links")
+        if entry.is_file():
+            signature[entry.relative_to(path).as_posix()] = file_signature(entry)
+    if not signature:
+        raise ValueError("Model checkpoint is empty")
+    return signature
+
+
+def full_checkpoint_model(path: Path, family: str) -> ModelConfig:
+    from ypuddin.config import load_config
+
+    manifest = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
+    if manifest.get("format") != "ypuddin-full-model-v1" or manifest.get("family") != family:
+        raise ValueError("Invalid full-model checkpoint format or family")
+    if not manifest.get("components"):
+        raise ValueError("Full-model checkpoint contains no trained components")
+    config = load_config(path / "config.toml")
+    if config.training.mode != "full" or config.model.family != family:
+        raise ValueError("Full-model checkpoint configuration differs from its manifest")
+    return config.model
+
+
 def _source(context, source_id):
     row = context.db.fetchone("SELECT * FROM jobs WHERE id=?", (source_id,))
     if not row or row["type"] != "train":
@@ -157,15 +189,28 @@ def _source(context, source_id):
     return row
 
 
-def _checkpoints(context, source_id):
+def _checkpoints(context, source_id, *, full=False):
     records = []
     for row in context.db.fetchall(
-        "SELECT * FROM artifacts WHERE job_id=? AND kind='weights' ORDER BY step DESC, created_at DESC",
-        (source_id,),
+        "SELECT * FROM artifacts WHERE job_id=? AND kind=? ORDER BY step DESC, created_at DESC",
+        (source_id, "model" if full else "weights"),
     ):
         path = Path(row["path"]).expanduser().resolve()
-        if path.is_file() and path.suffix.lower() == ".safetensors" and context.is_allowed(path):
-            records.append({"id": row["id"], "name": row["name"], "step": row["step"], "path": str(path)})
+        exists = (
+            path.is_dir() and (path / "manifest.json").is_file()
+            if full
+            else (path.is_file() and path.suffix.lower() == ".safetensors")
+        )
+        if exists and context.is_allowed(path):
+            records.append(
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "step": row["step"],
+                    "kind": "model" if full else "weights",
+                    "path": str(path),
+                }
+            )
     return records
 
 
@@ -176,7 +221,8 @@ def options(context, source_id):
     family = get_family(model.family)
     sampling = SamplingConfig.model_validate(config.get("sampling", {}))
     prompt = sampling.prompts[0] if sampling.prompts else None
-    checkpoints = _checkpoints(context, source_id)
+    full = config.get("training", {}).get("mode") == "full"
+    checkpoints = _checkpoints(context, source_id, full=full)
     defaults = {
         key: getattr(sampling, key)
         for key in ("width", "height", "steps", "cfg", "sampler", "scheduler", "shift", "guidance")
@@ -211,16 +257,19 @@ def options(context, source_id):
                     "purpose": projected.get("purpose"),
                 }
             )
-    axes = [{"key": key, "label": label} for key, label in AXES.items()]
+    axes = [
+        {"key": key, "label": label} for key, label in AXES.items() if not (full and key == "adapter_scale")
+    ]
     for axis in axes:
         if axis["key"] in {"sampler", "scheduler"}:
             axis["values"] = list(getattr(family.spec, "sampling_" + axis["key"] + "s"))
     return {
         "family": model.family,
+        "training_mode": "full" if full else "adapter",
         "defaults": defaults,
         "axes": axes,
         "checkpoints": [{k: v for k, v in row.items() if k != "path"} for row in checkpoints],
-        "sampling_models": models,
+        "sampling_models": [] if full else models,
         "limits": {"max_cells": MAX_CELLS, "max_axis_values": 12, "max_pixels": 64 * 1024 * 1024},
     }
 
@@ -230,6 +279,34 @@ def start(context, source_id: str, request: XyzRequest):
     context.supervisor._check_job_version(source)
     config = json.loads(source["config_json"])
     model = ModelConfig.model_validate(config["model"])
+    full = config.get("training", {}).get("mode") == "full"
+    cells = expand_cells(request)
+    checkpoints = {row["id"]: row for row in _checkpoints(context, source_id, full=full)}
+    if full:
+        if (
+            request.sampling_model_id
+            or request.adapter_scale != 1
+            or any(axis and axis.key == "adapter_scale" for axis in (request.x, request.y, request.z))
+        ):
+            raise ApiError(
+                "Full-model results use their exported components; adapter strength and replacement backbones are unavailable",
+                code="xyz.full_model",
+                status=422,
+            )
+        if any(not cell["checkpoint_id"] or cell["checkpoint_id"] not in checkpoints for cell in cells):
+            raise ApiError(
+                "Select an existing full-model result for every XYZ cell; original-base fallback is disabled",
+                code="xyz.checkpoint",
+                status=422,
+            )
+        try:
+            first_path = Path(checkpoints[cells[0]["checkpoint_id"]]["path"])
+            checkpoint_signature(first_path)
+            model = full_checkpoint_model(first_path, model.family)
+        except (OSError, ValueError) as exc:
+            raise ApiError(
+                f"Cannot read full-model checkpoint: {exc}", code="xyz.checkpoint", status=422
+            ) from exc
     if request.sampling_model_id:
         row = context.db.fetchone("SELECT * FROM models WHERE id=?", (request.sampling_model_id,))
         if not row or row["family"] != model.family or row["kind"] != "dit":
@@ -279,7 +356,6 @@ def start(context, source_id: str, request: XyzRequest):
             code="xyz.dimensions",
             status=422,
         )
-    checkpoints = {row["id"]: row for row in _checkpoints(context, source_id)}
     resolved = {}
     cells = expand_cells(request)
     for cell in cells:
@@ -313,18 +389,38 @@ def start(context, source_id: str, request: XyzRequest):
                     status=422,
                 )
             path = Path(checkpoints[checkpoint]["path"])
-            from safetensors import safe_open
-
             try:
-                with safe_open(path, framework="pt", device="cpu") as handle:
-                    metadata = handle.metadata() or {}
-                    if metadata.get("ypuddin.family", model.family) != model.family:
-                        raise ValueError("Checkpoint model family does not match the sampling model")
+                if full:
+                    checkpoint_model = full_checkpoint_model(path, model.family)
+                    problems = family.validate_config(checkpoint_model)
+                    if problems:
+                        raise ValueError("; ".join(problems))
+                    for field in (
+                        "dit_path",
+                        "text_encoder_path",
+                        "text_encoder_2_path",
+                        "vae_path",
+                        "tokenizer_path",
+                    ):
+                        value = getattr(checkpoint_model, field)
+                        if value and not context.is_allowed(Path(value).expanduser().resolve()):
+                            raise ApiError("Model is outside allowed roots", code="xyz.path", status=403)
+                    resolved[checkpoint] = checkpoints[checkpoint] | {
+                        "signature": checkpoint_signature(path),
+                        "model": checkpoint_model.model_dump(mode="json"),
+                    }
+                else:
+                    from safetensors import safe_open
+
+                    with safe_open(path, framework="pt", device="cpu") as handle:
+                        metadata = handle.metadata() or {}
+                        if metadata.get("ypuddin.family", model.family) != model.family:
+                            raise ValueError("Checkpoint model family does not match the sampling model")
+                    resolved[checkpoint] = checkpoints[checkpoint] | {"signature": checkpoint_signature(path)}
+            except ApiError:
+                raise
             except Exception as exc:
-                raise ApiError(
-                    f"Cannot read adapter checkpoint: {exc}", code="xyz.checkpoint", status=422
-                ) from exc
-            resolved[checkpoint] = checkpoints[checkpoint] | {"signature": file_signature(path)}
+                raise ApiError(f"Cannot read checkpoint: {exc}", code="xyz.checkpoint", status=422) from exc
     memory = MemoryConfig.model_validate(config.get("memory", {}))
     # Klein's loader requires block checkpointing when swap is enabled. Keeping
     # that configuration satisfies its memory contract; eval/inference_mode below
@@ -338,6 +434,7 @@ def start(context, source_id: str, request: XyzRequest):
     payload = {
         "model": model.model_dump(mode="json"),
         "memory": memory.model_dump(mode="json"),
+        "training": {"mode": "full" if full else "adapter"},
         "xyz": {
             "source_job_id": source_id,
             "request": request.model_dump(mode="json"),
@@ -352,14 +449,18 @@ def start(context, source_id: str, request: XyzRequest):
         # the deletion endpoints.
         source = _source(context, source_id)
         context.supervisor._check_job_version(source)
-        current_checkpoints = {row["id"]: row for row in _checkpoints(context, source_id)}
+        current_checkpoints = {row["id"]: row for row in _checkpoints(context, source_id, full=full)}
         for checkpoint_id, checkpoint in resolved.items():
             current = current_checkpoints.get(checkpoint_id)
-            if (
-                current is None
-                or current["path"] != checkpoint["path"]
-                or file_signature(Path(current["path"])) != checkpoint["signature"]
-            ):
+            try:
+                unchanged = (
+                    current is not None
+                    and current["path"] == checkpoint["path"]
+                    and checkpoint_signature(Path(current["path"])) == checkpoint["signature"]
+                )
+            except (OSError, ValueError):
+                unchanged = False
+            if not unchanged:
                 raise ApiError(
                     "A selected checkpoint changed or was removed; refresh the checkpoint list and try again",
                     code="xyz.checkpoint",

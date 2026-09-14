@@ -2,7 +2,10 @@
 
 import importlib.util
 import json
+import os
+import subprocess
 import sys
+import venv
 from pathlib import Path
 
 import pytest
@@ -19,6 +22,7 @@ def isolated_bootstrap_root(monkeypatch, tmp_path_factory):
     root = tmp_path_factory.mktemp("bootstrap-project")
     (root / "pyproject.toml").write_bytes((SOURCE_ROOT / "pyproject.toml").read_bytes())
     monkeypatch.setattr(boot, "ROOT", root)
+    monkeypatch.setattr(boot, "PROFILE", "legacy")
     monkeypatch.setattr(boot, "VENV", root / "venv")
     monkeypatch.setattr(boot, "MARKER", root / "venv" / ".ypuddin-install.json")
     monkeypatch.setattr(boot, "FRONTEND", root / "frontend")
@@ -221,7 +225,7 @@ def test_launch_dependency_groups_include_real_optimizer_names_and_no_removed_fe
     with (boot.ROOT / "pyproject.toml").open("rb") as source:
         groups = tomllib.load(source)["project"]["optional-dependencies"]
     assert "schedulefree>=1.4" in groups["optim"]
-    assert "prodigy-plus-schedule-free>=2.0" in groups["optim"]
+    assert "prodigy-plus-schedule-free>=2.0.1" in groups["optim"]
     assert "tensorboard>=2.16" in groups["logging"]
     assert not any(
         "wandb" in requirement or "onnxruntime" in requirement
@@ -533,6 +537,8 @@ def test_dependency_health_probe_checks_selected_extras_and_transitive_metadata(
     )
     distribution("pipeline_helper", ["missing-transitive>=2"])
     monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+    # This fixture intentionally injects synthetic metadata; production probes strip PYTHONPATH.
+    monkeypatch.setattr(boot, "_env", lambda: dict(os.environ))
     monkeypatch.setattr(boot, "venv_python", lambda: Path(sys.executable))
     issues = boot.dependency_issues("optim")
     assert any("missing-optional" in issue for issue in issues)
@@ -632,3 +638,149 @@ def test_malformed_build_manifest_is_stale(monkeypatch, tmp_path, invalid):
     (tmp_path / "dist/index.html").write_text("built")
     (tmp_path / "dist/.source-manifest.json").write_text(invalid)
     assert boot.frontend_stale() is True
+
+
+@pytest.mark.parametrize(
+    "profile,system,machine,expected",
+    [
+        ("macos-mps", "Darwin", "arm64", "cpu"),
+        ("windows-cuda", "Windows", "AMD64", "cu128"),
+        ("linux-cuda", "Linux", "x86_64", "cu128"),
+        ("cpu", "Linux", "x86_64", "cpu"),
+    ],
+)
+def test_platform_profile_selects_matching_install(monkeypatch, profile, system, machine, expected):
+    monkeypatch.setattr(boot.platform, "system", lambda: system)
+    monkeypatch.setattr(boot.platform, "machine", lambda: machine)
+    monkeypatch.setattr(boot, "nvidia_driver_major", lambda: 575)
+    monkeypatch.setattr(boot, "nvidia_gpus", lambda: [("test GPU", 12.0)])
+    assert boot.platform_torch_tag(profile, "auto") == expected
+
+
+@pytest.mark.parametrize(
+    "profile,requested",
+    [
+        ("windows-cuda", "auto"),
+        ("linux-cuda", "auto"),
+        ("macos-mps", "cu128"),
+        ("cpu", "cu128"),
+        ("other", "auto"),
+    ],
+)
+def test_wrong_platform_profile_never_starts_install(monkeypatch, profile, requested):
+    monkeypatch.setattr(boot.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(boot.platform, "machine", lambda: "arm64")
+    with pytest.raises(SystemExit):
+        boot.platform_torch_tag(profile, requested)
+
+
+def test_cuda_profile_rejects_missing_nvidia_driver(monkeypatch):
+    monkeypatch.setattr(boot.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(boot, "nvidia_driver_major", lambda: None)
+    with pytest.raises(SystemExit):
+        boot.platform_torch_tag("windows-cuda", "auto")
+
+
+@pytest.mark.parametrize(
+    "system,cuda,cpu",
+    [
+        ("Windows", "windows-cuda", "windows-cpu"),
+        ("Linux", "linux-cuda", "linux-cpu"),
+        ("Darwin", "macos-mps", "macos-cpu"),
+    ],
+)
+def test_platform_directories_are_distinct_and_preserve_legacy(monkeypatch, system, cuda, cpu):
+    monkeypatch.setattr(boot.platform, "system", lambda: system)
+    legacy = boot.ROOT / "venv"
+    legacy.mkdir()
+    (legacy / "keep.txt").write_text("legacy packages")
+    assert boot.select_environment("auto", "cpu") == "legacy"
+    assert boot.VENV == legacy
+    assert boot.select_environment(cuda, "cu128") == cuda
+    cuda_path = boot.VENV
+    assert boot.select_environment("cpu", "cpu") == cpu
+    assert boot.VENV != cuda_path and legacy not in boot.VENV.parents
+    assert boot.VENV == boot.ROOT / "environment/profiles" / cpu / "venv"
+    assert (legacy / "keep.txt").read_text() == "legacy packages"
+
+
+def test_two_real_profile_venvs_do_not_share_packages(monkeypatch):
+    # Actual stdlib venvs and child interpreters, with no package download or Torch install.
+    monkeypatch.setattr(boot.platform, "system", lambda: "Linux")
+    paths = []
+    for profile, module in [("linux-cuda", "cuda_only_canary"), ("cpu", "cpu_only_canary")]:
+        boot.select_environment(profile, "cpu")
+        venv.EnvBuilder(with_pip=False).create(boot.VENV)
+        py = boot.venv_python()
+        site = Path(
+            subprocess.check_output(
+                [str(py), "-I", "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"], text=True
+            ).strip()
+        )
+        (site / (module + ".py")).write_text("VALUE = '" + boot.PROFILE + "'\n")
+        paths.append((py, module, boot.PROFILE))
+    for py, module, profile in paths:
+        other = "cpu_only_canary" if module == "cuda_only_canary" else "cuda_only_canary"
+        code = f"import {module}, importlib.util; print({module}.VALUE); assert importlib.util.find_spec('{other}') is None"
+        result = subprocess.run([str(py), "-I", "-c", code], capture_output=True, text=True, check=True)
+        assert result.stdout.strip() == profile
+
+
+def test_rebuild_only_changes_selected_profile(monkeypatch):
+    fresh_torch(monkeypatch, "cpu")
+    other = boot.ROOT / "environment/profiles/linux-cuda/venv/keep.txt"
+    legacy = boot.ROOT / "venv/keep.txt"
+    for file in (other, legacy):
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text("unchanged")
+    boot.select_environment("cpu", "cpu")
+    boot.VENV.mkdir(parents=True)
+    (boot.VENV / "old.txt").write_text("selected old env")
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        if "venv" in command:
+            boot.venv_python().parent.mkdir(parents=True)
+            boot.venv_python().touch()
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(boot.subprocess, "run", fake_run)
+    monkeypatch.setattr(boot, "find_base_python", lambda: "/base/python")
+    monkeypatch.setattr(boot, "uv_path", lambda: None)
+    boot.ensure_venv("cpu", index_mode="official", reinstall=True, extras=boot.EXTRAS_BASE)
+    assert not (boot.VENV / "old.txt").exists()
+    assert json.loads(boot.MARKER.read_text())["profile"] == "linux-cpu"
+    assert all(file.read_text() == "unchanged" for file in (other, legacy))
+    assert all(command[0] == str(boot.venv_python()) for command in calls if "install" in command)
+    assert not any("nvidia" in str(command) for command in calls)
+
+
+def test_profile_rejects_foreign_marker_and_symlink_before_mutation(monkeypatch):
+    monkeypatch.setattr(boot.platform, "system", lambda: "Linux")
+    boot.select_environment("cpu", "cpu")
+    boot.VENV.mkdir(parents=True)
+    boot.MARKER.write_text(json.dumps({"profile": "linux-cuda"}))
+    with pytest.raises(SystemExit):
+        boot.select_environment("cpu", "cpu")
+    boot.MARKER.unlink()
+    boot.VENV.rmdir()
+    target = boot.ROOT / "untouched"
+    target.mkdir()
+    boot.VENV.symlink_to(target, target_is_directory=True)
+    with pytest.raises(SystemExit):
+        boot.select_environment("cpu", "cpu")
+    assert target.is_dir()
+
+
+def test_cpu_profile_child_environment_blocks_package_and_device_leak(monkeypatch):
+    monkeypatch.setattr(boot.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(boot, "nvidia_driver_major", lambda: 580)
+    monkeypatch.setenv("PYTHONPATH", "/another/environment/site-packages")
+    monkeypatch.setenv("PYTHONHOME", "/another/environment")
+    boot.select_environment("cpu", "cpu")
+    env = boot._env()
+    assert "PYTHONPATH" not in env and "PYTHONHOME" not in env
+    assert env["PYTHONNOUSERSITE"] == "1" and env["CUDA_VISIBLE_DEVICES"] == "-1"
+    assert env["YPUDDIN_ENV_PROFILE"] == "linux-cpu"
+    assert "nvidia" not in boot.choose_extras("cpu")

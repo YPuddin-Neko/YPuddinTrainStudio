@@ -71,11 +71,22 @@ class ToyText(TextPipeline):
 
     def __init__(self) -> None:
         g = torch.Generator().manual_seed(11)
-        self.embed = torch.randn(VOCAB, DIM, generator=g) * 0.5
-        self.pos = torch.randn(MAX_LEN, DIM, generator=g) * 0.1
+        self.embed = nn.Parameter(torch.randn(VOCAB, DIM, generator=g) * 0.5, requires_grad=False)
+        self.pos = nn.Parameter(torch.randn(MAX_LEN, DIM, generator=g) * 0.1, requires_grad=False)
+
+    def trainable_modules(self) -> dict[str, nn.Module]:
+        module = nn.Module()
+        module.register_parameter("embed", self.embed)
+        module.register_parameter("pos", self.pos)
+        return {"text_encoder": module}
+
+    def to(self, device: torch.device | str) -> None:
+        # CPU-only toy is also used on CUDA for tiny smoke tests.
+        for parameter in (self.embed, self.pos):
+            parameter.data = parameter.data.to(device)
 
     def _embed(self, ids: list[int]) -> Tensor:
-        t = torch.as_tensor(ids)
+        t = torch.as_tensor(ids, device=self.embed.device)
         return self.embed[t] + self.pos[: len(ids)]
 
     def encode(self, captions: list[str], device: torch.device | str) -> TextCond:
@@ -241,8 +252,18 @@ class ToyFamily(ModelFamily):
             backbone.load_state_dict(load_file(cfg.dit_path))
         backbone.to(device=backbone_device or device, dtype=dtype)
         backbone.grad_checkpointing = memory.activation_checkpointing != "none"
+        text = ToyText()
+        if cfg.text_encoder_path:
+            from pathlib import Path
+
+            from safetensors.torch import load_file
+
+            source = Path(cfg.text_encoder_path)
+            text.trainable_modules()["text_encoder"].load_state_dict(
+                load_file(str(source / "model.safetensors" if source.is_dir() else source))
+            )
         return LoadedModel(
-            backbone=backbone, text=ToyText(), latent=ToyLatent(), device=torch.device(device), dtype=dtype
+            backbone=backbone, text=text, latent=ToyLatent(), device=torch.device(device), dtype=dtype
         )
 
     def forward(self, loaded: LoadedModel, x_t: Tensor, t: Tensor, cond: TextCond, **extra: Any) -> Tensor:

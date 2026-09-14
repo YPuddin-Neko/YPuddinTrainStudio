@@ -1,7 +1,7 @@
 import React from 'react';
 import { useBlocker, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Copy, Plus, Save, Search, Trash2, SlidersHorizontal, X, ChevronRight, ChevronDown } from 'lucide-react';
+import { Copy, Plus, Save, Search, Trash2, X, ChevronRight, ChevronDown } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import type { Preset } from '../../api/types';
 import { useFamilies } from '../../api/hooks/useFamilies';
@@ -17,6 +17,9 @@ import { inactiveTrainingReason, trainingFamilyOptions } from '../../utils/train
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { useWorkspaceHeight } from '../../components/projects/useWorkspaceHeight';
 import './presets.css';
+import '../../styles/parameter-workspace.css';
+import ParameterModeToggle from '../../components/ParameterModeToggle';
+import ParameterSections from '../../components/ParameterSections';
 
 interface Draft { name: string; description: string; config: Record<string, any>; originalName: string | null; builtin: boolean; }
 const KEY = ['standalone-presets'];
@@ -39,6 +42,7 @@ export default function Presets() {
   const [errors, setErrors] = React.useState<ValidationError[]>([]);
   const [search, setSearch] = React.useState('');
   const searchRef = React.useRef<HTMLInputElement>(null);
+  const parameterScrollRef = React.useRef<HTMLDivElement>(null);
   const nameRef = React.useRef<HTMLInputElement>(null);
   const descriptionRef = React.useRef<HTMLInputElement>(null);
   const [descriptionOpen, setDescriptionOpen] = React.useState(false);
@@ -162,7 +166,8 @@ export default function Presets() {
     ...(!draft?.originalName ? [{value:'',label:text('新预设', 'New preset'),disabled:true}] : []),
     ...userPresets.map(item=>({value:item.name,label:`${item.name} · ${familyName(presetFamily(item.config))}`})),
   ];
-  return <section className="presets-page">
+  return <section className="presets-page parameter-workspace">
+    <div className="parameter-workspace-header">
     <header className="presets-page-heading"><div><h1>{text('参数预设', 'Presets')}</h1><p>{text('保存常用训练参数，在项目版本中预览后应用。', 'Save reusable training parameters, then preview and apply them in a project version.')}</p></div><span>{text(`${userPresets.length} 个预设`, `${userPresets.length} presets`)}</span></header>
     <div className="presets-toolbar" ref={toolbarRef} role="group" aria-label={text('预设操作', 'Preset actions')}>
       <div className="presets-switcher"><span>{text('当前预设', 'Current preset')}</span><StudioSelect searchable aria-label={text('选择预设', 'Choose preset')} value={draft?.originalName || ''} disabled={busy || !userPresets.length} options={options} onValueChange={name=>{const item=userPresets.find(row=>row.name===name);if(item && name!==draft?.originalName)requestAction(()=>void begin(item));}}/></div>
@@ -177,7 +182,19 @@ export default function Presets() {
     {inactiveReason && <p role="alert" className="studio-error" data-testid="retired-preset">{inactiveReason}</p>}
     {[list, schema, families].some(query => query.isError) && <div role="alert" className="studio-error"><span>{[list, schema, families].filter(query => query.error).map(query => formatApiError(query.error)).join('\n')}</span><button onClick={() => { for (const query of [list, schema, families]) if (query.isError) void query.refetch(); }}>{text('重新加载', 'Reload')}</button></div>}
     {!draft && !error && <p role="status" className="presets-loading">{text('正在读取参数…', 'Loading parameters…')}</p>}
+    </div>
     {draft && <div className="presets-editor">
+      <div className="presets-form-toolbar">
+        <div role="tablist" aria-label={text('预设参数分区', 'Preset parameter sections')}>{tabs.map(([key,label], index)=><button key={key} id={`preset-tab-${key}`} role="tab" aria-label={label} tabIndex={tab === key ? 0 : -1} aria-selected={!search && tab===key} aria-controls="preset-parameters" onClick={()=>{setTab(key);setSearch('');}} onKeyDown={event => {
+          const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1;
+          if (next >= 0) { event.preventDefault(); setTab(tabs[next][0]); setSearch(''); document.getElementById(`preset-tab-${tabs[next][0]}`)?.focus(); }
+        }}>{label}{issues.some(issue => issue.tab === key) && <span className="tab-issue-dot" aria-label={text('有待配置项', 'Needs configuration')}/>}</button>)}</div>
+        <label className="presets-field-search"><Search size={16}/><input ref={searchRef} aria-label={text('搜索预设参数', 'Search preset parameters')} placeholder={text('搜索所有分区的参数', 'Search all parameter sections')} value={search} onChange={event=>setSearch(event.target.value)}/>{search && <button type="button" aria-label={text('清空预设参数搜索', 'Clear preset parameter search')} onClick={clearSearch}><X size={15}/></button>}</label>
+        <ParameterModeToggle advanced={advanced} onChange={setAdvanced}/>
+      </div>
+      <div className="parameter-workspace-body">
+      <ParameterSections rootRef={parameterScrollRef} tab={tab} onTabChange={tab => {setTab(tab);setSearch('');}} issues={issues} preset hasTrainingMode={!!editorSchema?.properties?.training} fullTraining={draft.config.training?.mode === 'full'} onRevealAdvanced={() => setAdvanced(true)}/>
+      <div className="parameter-scroll-region" ref={parameterScrollRef}>
       <fieldset disabled={busy || !!inactiveReason} className="presets-meta">
         <label className="presets-family">{text('适用模型', 'Model family')}{inactiveReason ? <span>{draft.config.model.family === 'flux' ? 'FLUX.1' : 'FLUX.2 dev'} · {text('已停用', 'Retired')}</span> : <StudioSelect aria-label={text('适用模型', 'Model family')} disabled={busy || !!draft.originalName} value={draft.config.model.family} onValueChange={target=>{const change=()=>{void begin({name:draft.name,description:draft.description,config:{model:{family:target}},builtin:false,updated_at:null},false,target,true);};if(JSON.stringify(draft.config)!==startingConfig.current)requestAction(change);else change();}} options={trainingFamilyOptions(families.data || [], english, draft.config.model.family)}/>}</label>
         <label>{text('预设名称', 'Preset name')}<input ref={nameRef} aria-label={text('预设名称', 'Preset name')} placeholder={text('例如：人物_LoKr', 'For example: character_LoKr')} value={draft.name} readOnly={!!draft.originalName} onChange={event=>setDraft({...draft,name:event.target.value})}/></label>
@@ -188,16 +205,10 @@ export default function Presets() {
         {descriptionOpen && <label id="preset-description" className="presets-description">{text('用途与说明', 'Description')}<input ref={descriptionRef} aria-label={text('用途与说明', 'Description')} placeholder={text('可选，记录用途或参数取舍', 'Optional: purpose or parameter choices')} value={draft.description} onChange={event=>setDraft({...draft,description:event.target.value})}/></label>}
       </fieldset>
       <div className="presets-context"><span>{!draft.originalName ? text('填写名称并编辑参数后保存。', 'Name and edit the preset, then save.') : presetSummary(draft.config, english)}</span><span className={dirty ? 'presets-dirty' : ''}>{dirty ? text('有未保存修改', 'Unsaved changes') : draft.originalName ? text('已保存', 'Saved') : text('尚未创建', 'Not created yet')}</span></div>
-      <div className="presets-form-toolbar">
-        <div role="tablist" aria-label={text('预设参数分区', 'Preset parameter sections')}>{tabs.map(([key,label], index)=><button key={key} id={`preset-tab-${key}`} role="tab" aria-label={label} tabIndex={tab === key ? 0 : -1} aria-selected={!search && tab===key} aria-controls="preset-parameters" onClick={()=>{setTab(key);setSearch('');}} onKeyDown={event => {
-          const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1;
-          if (next >= 0) { event.preventDefault(); setTab(tabs[next][0]); setSearch(''); document.getElementById(`preset-tab-${tabs[next][0]}`)?.focus(); }
-        }}>{label}{issues.some(issue => issue.tab === key) && <span className="tab-issue-dot" aria-label={text('有待配置项', 'Needs configuration')}/>}</button>)}</div>
-        <label className="presets-field-search"><Search size={16}/><input ref={searchRef} aria-label={text('搜索预设参数', 'Search preset parameters')} placeholder={text('搜索所有分区的参数', 'Search all parameter sections')} value={search} onChange={event=>setSearch(event.target.value)}/>{search && <button type="button" aria-label={text('清空预设参数搜索', 'Clear preset parameter search')} onClick={clearSearch}><X size={15}/></button>}</label>
-        <label className="presets-advanced"><input type="checkbox" checked={advanced} onChange={event=>setAdvanced(event.target.checked)}/><SlidersHorizontal size={13}/>{text('高级选项', 'Advanced')}</label>
-      </div>
       {search && <p className="presets-search-context">{text('搜索所有分区，包含高级参数', 'Searching every section, including advanced parameters')}</p>}
       {editorSchema && <div id="preset-parameters" className="presets-schema" role="tabpanel" aria-labelledby={search ? undefined : `preset-tab-${tab}`} aria-label={search ? text('预设参数搜索结果', 'Preset parameter search results') : undefined}><SchemaForm key={revealVersion} readOnly={busy || !!inactiveReason} schema={editorSchema} value={draft.config} onChange={config=>{setDraft({...draft,config});setErrors([]);}} compact showAdvanced={advanced || !!search} groupFilter={search ? undefined : CONFIG_TAB_GROUPS[tab]} search={search} onClearSearch={clearSearch} family={family} families={families.data} errors={errors}/></div>}
+      </div>
+      </div>
     </div>}
     {(pending || blocker.state === 'blocked') && <Dialog title={text('保存预设修改？', 'Save preset changes?')} onClose={cancelLeave} closeDisabled={busy}><p>{text('当前预设尚未保存。可以先保存，或放弃这些修改。', 'This preset has unsaved changes. Save them or discard the draft.')}</p>{error && <p role="alert" className="studio-error">{error}</p>}<div className="presets-confirm-actions"><button className="studio-secondary" disabled={busy} onClick={cancelLeave}>{text('继续编辑', 'Keep editing')}</button><button className="studio-secondary" disabled={busy} onClick={proceed}>{text('放弃修改', 'Discard changes')}</button><button className="studio-primary" disabled={busy} onClick={()=>{void save().then(ok=>{if(ok)proceed();});}}>{text('保存并继续', 'Save and continue')}</button></div></Dialog>}
     {deleting && <Dialog title={text('删除预设', 'Delete preset')} onClose={()=>setDeleting(false)} closeDisabled={busy}><p>{text('删除后不会改变任何已有项目配置。确定删除', 'Existing project configurations will remain unchanged. Delete')} “{draft?.name}”?</p>{error&&<p role="alert" className="studio-error">{error}</p>}<div className="presets-confirm-actions"><button className="studio-secondary" disabled={busy} onClick={()=>setDeleting(false)}>{text('取消', 'Cancel')}</button><button className="studio-primary" disabled={busy} onClick={()=>void remove()}>{text('确认删除', 'Confirm deletion')}</button></div></Dialog>}

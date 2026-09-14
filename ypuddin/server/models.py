@@ -152,6 +152,8 @@ class PlanParams(_Out):
     trainable: int = 0
     adapted_layers: int = 0
     by_algo: dict[str, int] = Field(default_factory=dict)
+    training_mode: Literal["adapter", "full"] = "adapter"
+    components: dict[str, int] = Field(default_factory=dict)
 
 
 class PlanActivation(_Out):
@@ -171,6 +173,9 @@ class PlanMemory(_Out):
     heuristic: bool = True
     activations_mb_by_bucket: list[PlanActivation] = Field(default_factory=list)
     peak_mb_estimate: float | None = None
+    training_peak_mb_estimate: float | None = None
+    known_training_residency_mb: float | None = None
+    unestimated_components: list[str] = Field(default_factory=list)
     gpu_total_mb: float | None = None
     suggestions: list[str] = Field(default_factory=list)
 
@@ -291,7 +296,8 @@ class FamilyInfo(_Out):
     objective_weighting: list[str] = ["none", "sigma_sqrt", "cosmap", "snr_like", "cosmos"]
     adapter_prefix: str
     capabilities: list[str]
-    text_modes: list[str]  # valid values of dataset.text_encoding for this family
+    text_modes: list[str]  # valid values for a frozen encoder
+    training_capabilities: dict[str, Any] = Field(default_factory=dict)
     presets: list[FamilyPreset]
     default_preset: str
     sampling: FamilySampling

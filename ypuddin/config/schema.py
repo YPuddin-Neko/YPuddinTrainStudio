@@ -1297,7 +1297,31 @@ class LoggingConfig(_Strict):
 
 
 # --------------------------------------------------------------------------- root
+class TrainingConfig(_Strict):
+    mode: Literal["adapter", "full"] = F(
+        "adapter",
+        help="适配器训练生成 LoRA/LoKr 等附加权重；全量微调直接更新所选组件的原始参数，保存模型组件。",
+        ui_=ui("training", order=0, control="select"),
+    )
+    train_backbone: bool = F(
+        True,
+        help="训练生成图像的主模型：SDXL 为 UNet，Anima/Krea 2/Klein 为 DiT。全量微调时包括卷积、归一化、嵌入与偏置，不局限于线性层。",
+        ui_=ui("training", order=10, control="switch"),
+    )
+    train_text_encoder: bool = F(
+        False,
+        help="全量微调标签编码器；SDXL 同时训练 CLIP-L 与 CLIP-G，其他模型训练文本解码器。每一步重新编码标签，不使用文本缓存，显存需求明显增加。",
+        ui_=ui("training", order=20, control="switch"),
+    )
+    resume_weights: str | None = F(
+        None,
+        help="从本程序导出的全量模型目录继续微调权重，并重新初始化优化器；恢复原进度请使用完整训练状态。",
+        ui_=ui("checkpoint", order=170, control="path", show_when="training.mode == 'full'"),
+    )
+
+
 class TrainConfig(_Strict):
+    training: TrainingConfig = F(default_factory=TrainingConfig)
     model: ModelConfig = F(default_factory=ModelConfig)
     dataset: DatasetConfig = F(default_factory=DatasetConfig)
     adapter: AdapterConfig = F(default_factory=AdapterConfig)
@@ -1313,8 +1337,13 @@ class TrainConfig(_Strict):
 
     @model_validator(mode="after")
     def _cross(self) -> TrainConfig:
+        from ypuddin.config.training_rules import training_errors
+
+        mode_errors = training_errors(self)
+        if mode_errors:
+            raise ValueError("; ".join(f"{e['loc']}: {e['msg']}" for e in mode_errors))
         policy = optimizer_policy(self.optimizer.type, use_schedulefree=self.optimizer.use_schedulefree)
-        if "adapter.lr_scale" in policy.get("fixed", {}):
+        if self.training.mode == "adapter" and "adapter.lr_scale" in policy.get("fixed", {}):
             if self.adapter.lr_scale:
                 raise ValueError(
                     "adapter.lr_scale is managed automatically for this optimizer; clear manual multipliers"
@@ -1336,7 +1365,7 @@ class TrainConfig(_Strict):
             raise ValueError("sampling.enabled requires sampling.prompts or sampling.prompts_file")
         if self.validation.enabled and self.validation.split_ratio == 0 and not self.validation.sources:
             raise ValueError("validation.enabled requires split_ratio > 0 or explicit sources")
-        if self.adapter.algo != "lokr" and self.adapter.rank == "full":
+        if self.training.mode == "adapter" and self.adapter.algo != "lokr" and self.adapter.rank == "full":
             raise ValueError("adapter.rank='full' is only meaningful for lokr")
         return self
 

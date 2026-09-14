@@ -2756,6 +2756,69 @@
       "title": "SchedulerConfig",
       "type": "object"
     },
+    "TrainingConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "default": "adapter",
+          "description": "适配器训练生成 LoRA/LoKr 等附加权重；全量微调直接更新所选组件的原始参数，保存模型组件。",
+          "enum": [
+            "adapter",
+            "full"
+          ],
+          "title": "Mode",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "training",
+            "order": 0
+          }
+        },
+        "train_backbone": {
+          "default": true,
+          "description": "训练生成图像的主模型：SDXL 为 UNet，Anima/Krea 2/Klein 为 DiT。全量微调时包括卷积、归一化、嵌入与偏置，不局限于线性层。",
+          "title": "Train Backbone",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "training",
+            "order": 10
+          }
+        },
+        "train_text_encoder": {
+          "default": false,
+          "description": "全量微调标签编码器；SDXL 同时训练 CLIP-L 与 CLIP-G，其他模型训练文本解码器。每一步重新编码标签，不使用文本缓存，显存需求明显增加。",
+          "title": "Train Text Encoder",
+          "type": "boolean",
+          "x-ui": {
+            "control": "switch",
+            "group": "training",
+            "order": 20
+          }
+        },
+        "resume_weights": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "从本程序导出的全量模型目录继续微调权重，并重新初始化优化器；恢复原进度请使用完整训练状态。",
+          "title": "Resume Weights",
+          "x-ui": {
+            "control": "path",
+            "group": "checkpoint",
+            "order": 170,
+            "show_when": "training.mode == 'full'"
+          }
+        }
+      },
+      "title": "TrainingConfig",
+      "type": "object"
+    },
     "ValidationConfig": {
       "additionalProperties": false,
       "properties": {
@@ -2929,6 +2992,9 @@
   },
   "additionalProperties": false,
   "properties": {
+    "training": {
+      "$ref": "#/$defs/TrainingConfig"
+    },
     "model": {
       "$ref": "#/$defs/ModelConfig"
     },
@@ -3205,6 +3271,7 @@
   },
   "x-ui-groups": [
     "model",
+    "training",
     "dataset",
     "caption",
     "adapter",

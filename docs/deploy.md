@@ -21,7 +21,9 @@ git clone <本仓库> YPuddinTrainStudio && cd YPuddinTrainStudio/xiangmuyuanma
 studio.bat             # Windows（双击或在 PowerShell 里 .\studio.bat）
 ```
 
-第一次运行会依次：创建 `venv` → 选择 PyTorch 安装来源（NVIDIA 按驱动和显卡判断 CUDA 版本；macOS 使用含 MPS 支持的 PyPI 轮子）→ 安装 `ypuddin[models,server,optim,logging]`（NVIDIA 主机再加 `nvidia`，不自动安装注意力扩展）→ 有符合版本要求的 Node 则构建前端 → 启动服务 → 打开浏览器。初始地址为 `http://127.0.0.1:8765/`；保存过 host/port 设置后，下次启动使用保存值，命令行参数优先。后续运行按启动器/依赖签名、实际缺包及前端构建指纹做增量检查，保留已安装的 Torch/CUDA/Numpy 原生栈。
+首次部署会按平台创建独立的 `environment/profiles/<平台>/venv`，再安装对应 PyTorch、训练依赖并构建前端。CUDA、CPU、macOS MPS 的依赖环境不共用。建议分别使用 `studio-windows-cuda.bat`、`studio-linux-cuda.sh`、`studio-macos.command`、`studio-cpu.bat/.sh`。普通 `studio.bat/.sh` 发现已有根目录 `venv` 时继续旧部署，不搬移或重建。平台目录和 Torch 切换关系见 [环境说明](ENVIRONMENT_LIFECYCLE_2026-09-14.md)。
+
+CUDA 环境安装 `ypuddin[models,server,optim,logging,nvidia]`，CPU/MPS 不安装 NVIDIA 依赖，也不自动安装注意力扩展。初始地址为 `http://127.0.0.1:8765/`；保存过 host/port 设置后，下次启动使用保存值，命令行参数优先。后续运行只对选中环境增量补齐依赖，保留已有 Torch/CUDA/NumPy 原生栈。
 
 安装完成后，启动器会校验 `venv` 内的独立安装信息，再自动删除根目录的 `ypuddin.egg-info` 构建副本。已有部署更新代码后正常启动即可清理旧残留，无需删除环境或数据。即使依赖安装被跳过，也会执行此清理；Windows 文件被占用时会提示并在下次启动重试。运行所需的 `venv` 内 `.dist-info` 保留，旧式安装先更新为现代 editable 安装再清理。
 
@@ -32,7 +34,8 @@ studio.bat             # Windows（双击或在 PowerShell 里 .\studio.bat）
 | `--port 8800` / `--host 0.0.0.0` / `--data-root /data/studio` | 覆盖服务端口 / 绑定地址 / 数据目录。初始默认 `127.0.0.1`、`8765`、`./studio_data`；host/port 可从设置读取，data-root 始终由本次启动参数决定 |
 | `--torch=cu128` | 首次安装或 `--reinstall` 时选择 PyTorch 来源：`cu128` `cu126` `cu124` `cu118` `cpu`。默认 `auto`：脚本识别到 Blackwell 时选 cu128 并检查驱动；其余按驱动主版本 ≥570→cu128、≥560→cu126、≥550→cu124、≥450→cu118，否则 cpu。macOS 自动使用 PyPI 的 CPU/MPS 轮子。这是安装选择规则，安装后仍应通过 `doctor` 和真实 smoke 验证 |
 | `--index=auto\|cn\|official` | 包源。`auto` / `cn`（默认）：镜像优先——中科大 → 清华 → 阿里 → 官方兜底，某个源缺包或报错就自动换下一个，探测不通的源先排到后面；CUDA 轮子走阿里 → 上交 → 官方。`official`：普通依赖官方优先、镜像兜底，CUDA 轮子使用官方索引。`--mirror` 等价于 `--index=cn` |
-| `--reinstall` | 删掉 `venv` 重装，不删除服务数据、模型、数据集或自定义输出目录 |
+| `--profile=legacy` | 明确使用旧的根目录 `venv`；平台专用入口默认使用独立环境 |
+| `--reinstall` | 只重建当前入口选中的基础环境；其他平台、服务数据、模型、数据集和准备好的 Torch 环境保留 |
 | `--no-browser` / `--no-frontend` | 不自动开浏览器 / 不构建前端（只要 API） |
 
 子命令：
@@ -88,7 +91,8 @@ macOS 将上面的 PyTorch 安装行改为 `uv pip install --python venv/bin/pyt
 
 ```
 xiangmuyuanma/
-├── venv/                Python 环境（可随时 --reinstall 重建）
+├── venv/                旧部署环境，普通启动入口继续兼容
+├── environment/profiles/<平台>/venv/  新部署各平台独立依赖
 ├── studio_data/          服务数据目录（--data-root 可改），包含：
 │   ├── studio.db         SQLite：项目 / 版本 / 数据集 / 任务 / 产物 / 模型注册表
 │   ├── settings.json     「系统设置」页保存的设置
@@ -268,7 +272,7 @@ git pull
 | `fused_backward is not implemented` | 将 `optimizer.fused_backward` 设为 `false`，当前不支持此功能 |
 | 采样阶段看起来"卡住" | 任务详情页 header 有「生成预览 第 k/n 张 · 步 x/y」进度；分辩率填错（如 10240）会被配置校验拒绝 |
 | 任务状态 `failed`，error 是 `process exited with code …` | 打开任务详情「Logs」看最后几行；`studio_data/projects/<pid>/runs/<jid>/run.log` 是完整日志 |
-| 重建 Python 环境 | 使用 `--reinstall`，只重建 `venv/`；服务数据、自定义输出和外部数据集另行保留 |
+| 重建 Python 环境 | 在对应平台入口后使用 `--reinstall`，只重建该入口的基础环境；其他环境和服务数据不动 |
 
 ## 10. CLI 速查（激活 `venv` 后）
 

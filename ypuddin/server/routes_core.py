@@ -126,6 +126,7 @@ def family_info(name: str) -> dict[str, Any]:
         return _FAMILY_INFO[name]
     from ypuddin.adapters.rules import resolve_targets
     from ypuddin.config import AdapterConfig
+    from ypuddin.config.training_rules import training_capabilities
     from ypuddin.models import get_family
 
     fam = get_family(name)
@@ -163,6 +164,7 @@ def family_info(name: str) -> dict[str, Any]:
         "adapter_prefix": spec.adapter_prefix,
         "capabilities": sorted(spec.capabilities),
         "text_modes": text_modes,
+        "training_capabilities": training_capabilities(name),
         "presets": presets,
         "default_preset": fam.default_preset(),
         "sampling": {

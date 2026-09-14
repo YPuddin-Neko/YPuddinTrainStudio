@@ -18,6 +18,7 @@ from . import (
     routes_core,
     routes_credentials,
     routes_dataset_masks,
+    routes_dataset_overview,
     routes_dataset_paint,
     routes_dataset_pipeline,
     routes_environment,
@@ -32,9 +33,11 @@ from .context import ServiceContext
 from .dataset_pipeline import DatasetPipeline
 from .db import Database
 from .environment import EnvironmentManager
+from .lifecycle import ServiceLifecycle
 from .model_downloads import ModelDownloads
 from .regularization import RegularizationManager
 from .supervisor import JobSupervisor
+from .torch_environments import TorchEnvironments
 
 log = logging.getLogger(__name__)
 
@@ -53,6 +56,9 @@ def create_app(
     context = ServiceContext(data_root=root, db=db, bus=bus, supervisor=supervisor)
     model_downloads = ModelDownloads(context)
     environment = EnvironmentManager(context)
+    torch_environments = TorchEnvironments(context, environment)
+    lifecycle = ServiceLifecycle(context, environment, torch_environments)
+    lifecycle.model_downloads = model_downloads
     dataset_pipeline = DatasetPipeline(context)
     regularization = RegularizationManager(context, credentials=model_downloads.credentials)
 
@@ -68,6 +74,7 @@ def create_app(
             await supervisor.stop()
             await asyncio.to_thread(regularization.close)
             await asyncio.to_thread(model_downloads.close)
+            await asyncio.to_thread(torch_environments.close)
             await asyncio.to_thread(environment.close)
             await asyncio.to_thread(dataset_pipeline.close)
             await asyncio.to_thread(context.versions.close)
@@ -83,6 +90,8 @@ def create_app(
     app.state.ctx = context
     app.state.model_downloads = model_downloads
     app.state.environment = environment
+    app.state.torch_environments = torch_environments
+    app.state.lifecycle = lifecycle
     app.state.dataset_pipeline = dataset_pipeline
     app.state.regularization = regularization
     errors.install(app)
@@ -99,6 +108,7 @@ def create_app(
     app.include_router(routes_model_downloads.router, prefix="/api")
     app.include_router(routes_model_recommendations.router, prefix="/api")
     app.include_router(routes_dataset_masks.router, prefix="/api")
+    app.include_router(routes_dataset_overview.router, prefix="/api")
     app.include_router(routes_dataset_paint.router, prefix="/api")
     app.include_router(routes_dataset_pipeline.router, prefix="/api")
     app.include_router(routes_environment.router, prefix="/api")
