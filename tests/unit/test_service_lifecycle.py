@@ -24,7 +24,7 @@ from ypuddin.server.context import ServiceContext
 from ypuddin.server.db import Database, now
 from ypuddin.server.environment import EnvironmentError
 from ypuddin.server.errors import ApiError, install
-from ypuddin.server.lifecycle import RestartRequest, ServiceLifecycle, launch_service
+from ypuddin.server.lifecycle import RESTART_TOKEN_ENV, RestartRequest, ServiceLifecycle, launch_service
 from ypuddin.server.routes_environment import router
 from ypuddin.server.supervisor import JobSupervisor
 from ypuddin.server.torch_environments import (
@@ -115,6 +115,7 @@ def configure(fixture, monkeypatch):
         port=8877,
         shutdown=Mock(),
         original_python=sys.executable,
+        restart_token="fixture-worker-capability",
     )
 
 
@@ -145,6 +146,7 @@ def test_restart_keeps_effective_address_unless_explicit(lifecycle, monkeypatch)
     assert not result.json()["address_changed"]
     request = json.loads(lifecycle.service.control_file.read_text())
     assert request["worker_pid"] == os.getpid()
+    assert request["restart_token"] == "fixture-worker-capability"
     assert request["python"] == sys.executable
     assert lifecycle.context.db.get_kv("environment.maintenance")["blocked"]
     assert lifecycle.client.post("/api/service/restart", json={}).status_code == 409
@@ -411,6 +413,71 @@ def test_launcher_sigterm_terminates_only_owned_child(tmp_path, monkeypatch):
     child.terminate.assert_called_once()
     child.kill.assert_not_called()
     assert installed[signal.SIGTERM] == signal.SIG_DFL
+
+
+def test_launcher_accepts_authenticated_windows_venv_redirector_and_rotates_token(tmp_path, monkeypatch):
+    tokens = []
+
+    def spawn(command, *, env):
+        index = len(tokens)
+        tokens.append(env[RESTART_TOKEN_ENV])
+        control = Path(command[command.index("--control-file") + 1])
+
+        def wait():
+            # The Windows venv redirector's PID is not os.getpid() in its Python child.
+            atomic_json(
+                control,
+                {
+                    "action": "restart",
+                    "worker_pid": 32960,
+                    "restart_token": tokens[0],
+                    "python": sys.executable,
+                    "host": "127.0.0.1",
+                    "port": 8877,
+                    "environment_id": None,
+                },
+            )
+            return 0
+
+        # A valid first request restarts. Replaying its token in the next spawn must fail.
+        return Mock(pid=17012 + index, wait=Mock(side_effect=wait), poll=Mock(return_value=0))
+
+    popen = Mock(side_effect=spawn)
+    monkeypatch.setattr("ypuddin.server.lifecycle.subprocess.Popen", popen)
+    assert launch_service(str(tmp_path), "127.0.0.1", 8877) == 0
+    assert popen.call_count == 2
+    assert len(tokens[0]) == 64 and tokens[0] != tokens[1]
+    assert RESTART_TOKEN_ENV not in os.environ
+
+
+@pytest.mark.parametrize("token", [None, "wrong", "非ASCII"])
+def test_launcher_rejects_unauthenticated_request_even_when_pid_matches(tmp_path, monkeypatch, token):
+    def spawn(command, *, env):
+        control = Path(command[command.index("--control-file") + 1])
+
+        def wait():
+            atomic_json(control, {"action": "restart", "worker_pid": 55, "restart_token": token})
+            return 0
+
+        return Mock(pid=55, wait=Mock(side_effect=wait), poll=Mock(return_value=0))
+
+    popen = Mock(side_effect=spawn)
+    monkeypatch.setattr("ypuddin.server.lifecycle.subprocess.Popen", popen)
+    assert launch_service(str(tmp_path), "127.0.0.1", 8877) == 0
+    popen.assert_called_once()
+
+
+def test_worker_without_launcher_capability_cannot_request_restart(lifecycle):
+    lifecycle.service.configure(
+        control_file=lifecycle.context.data_root / "restart.json",
+        host="127.0.0.1",
+        port=8877,
+        shutdown=Mock(),
+        original_python=sys.executable,
+    )
+    assert not lifecycle.service.status().managed
+    assert lifecycle.client.post("/api/service/restart", json={}).status_code == 409
+    assert not lifecycle.service.control_file.exists()
 
 
 def test_torch_plans_and_prepared_interpreters_belong_to_one_profile(lifecycle):

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import signal
 import subprocess
 import sys
@@ -22,6 +23,8 @@ from ypuddin.runtime_profiles import current_profile, profile_root, selected_key
 
 from .environment import EnvironmentError
 from .torch_environments import ACTIVE, atomic_json
+
+RESTART_TOKEN_ENV = "YPUDDIN_SERVICE_RESTART_TOKEN"
 
 
 class RestartRequest(BaseModel):
@@ -70,12 +73,23 @@ class ServiceLifecycle:
         self.port: int | None = None
         self.restarting = False
         self.original_python: str | None = None
+        self.restart_token: str | None = None
         self.model_downloads = None
         self.dataset_pipeline = None
 
-    def configure(self, *, control_file: Path, host: str, port: int, shutdown, original_python: str):
+    def configure(
+        self,
+        *,
+        control_file: Path,
+        host: str,
+        port: int,
+        shutdown,
+        original_python: str,
+        restart_token: str | None = None,
+    ):
         self.control_file, self.host, self.port, self.shutdown = control_file, host, port, shutdown
         self.original_python = original_python
+        self.restart_token = restart_token
         selected = next(
             (
                 op.environment_id
@@ -89,7 +103,7 @@ class ServiceLifecycle:
         self.context.db.set_kv(self.selected_key, {"id": selected})
 
     def _blocked(self) -> str | None:
-        if not self.shutdown:
+        if not self.shutdown or not self.restart_token:
             return "start_with_studio_launcher"
         if self.restarting:
             return "restart_in_progress"
@@ -125,7 +139,7 @@ class ServiceLifecycle:
         return ServiceRuntime(
             environment_profile=self.profile,
             worker_id=os.getpid(),
-            managed=self.shutdown is not None,
+            managed=self.shutdown is not None and bool(self.restart_token),
             can_restart=self._blocked() is None,
             reason=self._blocked(),
             current_host=self.host,
@@ -180,6 +194,7 @@ class ServiceLifecycle:
                     "port": port,
                     "environment_id": environment_id,
                     "worker_pid": os.getpid(),
+                    "restart_token": self.restart_token,
                 },
             )
             self.restarting = True
@@ -257,8 +272,14 @@ def launch_service(data_root: str, host: str | None, port: int | None) -> int:
                 "--original-python",
                 original_python,
             ]
+            # Windows venv python.exe may redirect to a second Python process: its
+            # Popen PID is then different from the HTTP worker's PID. Authenticate
+            # this spawn using an inherited, one-use capability, never PID equality alone.
+            spawn_token = secrets.token_hex(32)
+            child_env = dict(os.environ)
+            child_env[RESTART_TOKEN_ENV] = spawn_token
             try:
-                child = subprocess.Popen(command)
+                child = subprocess.Popen(command, env=child_env)
             except OSError as exc:
                 print(f"[studio] Cannot start the selected interpreter: {exc}", flush=True)
                 if python == original_python and (host, port) == original_address:
@@ -285,7 +306,15 @@ def launch_service(data_root: str, host: str | None, port: int | None) -> int:
                     request = json.loads(control.read_text(encoding="utf-8"))
                 except (OSError, ValueError):
                     pass
-            if request and request.get("action") == "restart" and request.get("worker_pid") == child.pid:
+            if (
+                isinstance(request, dict)
+                and request.get("action") == "restart"
+                and type(request.get("worker_pid")) is int
+                and request["worker_pid"] > 0
+                and isinstance(request.get("restart_token"), str)
+                and request["restart_token"].isascii()
+                and secrets.compare_digest(request["restart_token"], spawn_token)
+            ):
                 python, host, port = request["python"], request["host"], request["port"]
                 environment_id = request.get("environment_id")
                 fallback = False
@@ -294,6 +323,10 @@ def launch_service(data_root: str, host: str | None, port: int | None) -> int:
                 else:
                     selected.unlink(missing_ok=True)
                 continue
+            if request is not None:
+                print(
+                    "[studio] Ignored a restart request not authenticated for this worker spawn.", flush=True
+                )
             if code and (python != original_python or (host, port) != original_address) and not fallback:
                 print(
                     "[studio] Restart failed; returning to the original environment and address.", flush=True

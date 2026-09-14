@@ -220,7 +220,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         import uvicorn
 
         from ypuddin.server.app import create_app
-        from ypuddin.server.lifecycle import launch_service
+        from ypuddin.server.lifecycle import RESTART_TOKEN_ENV, launch_service
     except ImportError as e:
         print(f"server dependencies missing: {e}. Install with: pip install 'ypuddin[server]'")
         return 1
@@ -233,12 +233,16 @@ def cmd_serve(args: argparse.Namespace) -> int:
         uvicorn.Config(app, host=host, port=port, log_level="info", timeout_graceful_shutdown=5)
     )
     if args.control_file and args.original_python:
+        import os
+
         app.state.lifecycle.configure(
             control_file=Path(args.control_file),
             host=host,
             port=port,
             shutdown=lambda: setattr(server, "should_exit", True),
             original_python=args.original_python,
+            # Keep the capability in this worker, not in later training/probe subprocesses.
+            restart_token=os.environ.pop(RESTART_TOKEN_ENV, None),
         )
     server.run()
     return 0 if server.started else 1
