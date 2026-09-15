@@ -3,12 +3,60 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 
 import torch
 
 from ypuddin.runtime_profiles import current_profile
 
 _sdp_defaults: dict[str, bool] | None = None
+
+
+def capture_compute_runtime(device: torch.device) -> dict[str, Any]:
+    """Numeric environment only: GPU ordinals and file paths are not a contract."""
+    cuda = torch.backends.cuda
+    return {
+        "torch": str(torch.__version__),
+        "hip": torch.version.hip,
+        "cuda": torch.version.cuda,
+        "device_type": device.type,
+        "deterministic": torch.are_deterministic_algorithms_enabled(),
+        "warn_only": torch.is_deterministic_algorithms_warn_only_enabled(),
+        "cudnn_enabled": torch.backends.cudnn.enabled,
+        "cudnn_deterministic": torch.backends.cudnn.deterministic,
+        "cudnn_benchmark": torch.backends.cudnn.benchmark,
+        "cudnn_allow_tf32": torch.backends.cudnn.allow_tf32,
+        "matmul_allow_tf32": cuda.matmul.allow_tf32,
+        "preferred_blas": str(cuda.preferred_blas_library())
+        if hasattr(cuda, "preferred_blas_library")
+        else None,
+        "sdpa": {
+            name: getattr(cuda, f"{name}_sdp_enabled")()
+            for name in ("flash", "mem_efficient", "math", "cudnn")
+            if hasattr(cuda, f"{name}_sdp_enabled")
+        },
+        "blas_environment": {
+            name: os.environ.get(name)
+            for name in (
+                "CUBLAS_WORKSPACE_CONFIG",
+                "HIPBLAS_WORKSPACE_CONFIG",
+                "ROCBLAS_WORKSPACE_CONFIG",
+                "CUBLASLT_WORKSPACE_SIZE",
+                "HIPBLASLT_WORKSPACE_SIZE",
+                "TORCH_BLAS_PREFER_HIPBLASLT",
+                "DISABLE_ADDMM_CUDA_LT",
+                "HIPBLASLT_ALLOW_TF32",
+            )
+        },
+    }
+
+
+def validate_compute_runtime(current: dict[str, Any], saved: dict[str, Any] | None) -> None:
+    if not isinstance(current, dict) or saved != current:
+        raise ValueError(
+            "恢复训练的计算环境与保存状态时不同，无法保持严格一致。"
+            "请使用原来的 PyTorch、DTK 和计算设置继续，或从导出权重新建训练。"
+        )
 
 
 def _configure_dtk_sdpa(enabled: bool) -> None:

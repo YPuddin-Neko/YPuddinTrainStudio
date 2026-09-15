@@ -258,6 +258,7 @@ class Plan(_Out):
     ok: bool
     errors: list[ConfigError]
     warnings: list[ConfigWarning]
+    compute_policy: dict[str, Any] | None = None
     images: int = 0
     items: int = 0
     captioned: int = 0

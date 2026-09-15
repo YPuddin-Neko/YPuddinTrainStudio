@@ -193,6 +193,8 @@ def test_resume_checks_current_scheduler_and_step_budget_before_loading(tmp_path
     trainer.distributed = SimpleNamespace(world_size=2)
     trainer.bundle = SimpleNamespace(plan=SimpleNamespace(fingerprint="dataset"))
     trainer.model_identity = "model"
+    trainer.compute_policy = None
+    trainer.compute_runtime = None
     trainer.progress = Progress(total_steps=9)
     trainer._resume_scheduler_contract = {"config": {"type": "cosine"}, "total_steps": 8}
 

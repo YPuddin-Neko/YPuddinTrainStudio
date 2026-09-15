@@ -21,6 +21,7 @@ from ypuddin.optim import optimizer_hyperparameter_snapshot, validate_optimizer_
 from ypuddin.optim.sharded import prepare_sharded_optimizer, sharded_optimizer_state_bytes
 
 from .distributed import DistributedTrainer
+from .reproducibility import capture_compute_runtime
 from .sharded_state import (
     _collective_check,
     export_sharded_model_artifact,
@@ -215,6 +216,8 @@ class ShardedTrainer(DistributedTrainer):
             expected_dataset_fingerprint=self.bundle.plan.fingerprint,
             expected_model_identity=self.model_identity,
             expected_deterministic=self.cfg.loop.deterministic,
+            expected_compute_policy=self.compute_policy,
+            expected_compute_runtime=capture_compute_runtime(self.device) if self.compute_policy else None,
             expected_scheduler_config=self.cfg.scheduler.model_dump(mode="json"),
             expected_total_steps=self.progress.total_steps,
             legacy_scheduler_contract=getattr(self, "_resume_scheduler_contract", None),

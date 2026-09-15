@@ -171,6 +171,20 @@ def _worker(rank, directory):
                 with pytest.raises(ValueError):
                     load_sharded_checkpoint(checkpoint, **{**checks, key: wrong})
                 _assert_values(before, _snapshot(model, optimizer))
+            # One rank seeing a new numeric policy must reject on every rank,
+            # before writing a single parameter or optimizer shard.
+            policy = {
+                "id": "dtk-full-fp32-math-v1",
+                "mixed_precision": "no",
+                "allow_tf32": False,
+                "attention": "sdpa",
+                "sdpa_backend": "math",
+            }
+            with pytest.raises(ValueError, match="计算"):
+                load_sharded_checkpoint(
+                    checkpoint, **checks, expected_compute_policy=policy if rank else None
+                )
+            _assert_values(before, _snapshot(model, optimizer))
             # Load into an optimizer whose state is empty, proving restoration
             # needs neither a fake optimizer step nor preallocated moment states.
             optimizer.state.clear()
@@ -185,6 +199,40 @@ def _worker(rank, directory):
             scheduler.step()
             _assert_values(reference, _snapshot(model, optimizer))
             if dtype == torch.float32 and optimizer_kind == "adamw":
+                versioned = directory / "versioned-compute-state"
+                runtime = {"torch": "test-version", "device_type": "cpu"}
+                save_sharded_checkpoint(
+                    versioned,
+                    **{
+                        **kwargs,
+                        "progress": Progress(
+                            step=3,
+                            extra={
+                                "deterministic": True,
+                                "compute_policy": policy,
+                                "compute_runtime": runtime,
+                            },
+                        ),
+                    },
+                )
+                strict_checks = {
+                    **checks,
+                    "expected_deterministic": True,
+                    "expected_compute_policy": policy,
+                    "expected_compute_runtime": runtime,
+                }
+                unchanged = _snapshot(model, optimizer)
+                loaded_strict = load_sharded_checkpoint(versioned, **strict_checks)
+                assert loaded_strict["progress"].extra["compute_policy"] == policy
+                _assert_values(unchanged, _snapshot(model, optimizer))
+                for override in (
+                    {"expected_compute_policy": None},
+                    {"expected_compute_policy": {**policy, "mixed_precision": "bf16"}},
+                    {"expected_compute_runtime": {"torch": "changed"} if rank else runtime},
+                ):
+                    with pytest.raises(ValueError, match="计算"):
+                        load_sharded_checkpoint(versioned, **{**strict_checks, **override})
+                    _assert_values(unchanged, _snapshot(model, optimizer))
                 cfg = TrainConfig.model_validate(
                     {
                         "model": {"family": "toy"},

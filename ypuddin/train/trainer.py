@@ -24,6 +24,7 @@ from torch.utils.data import DataLoader
 
 from ypuddin.adapters import AdapterSet, build_metadata, inject, save_adapter_file
 from ypuddin.config import TrainConfig, config_hash, write_config
+from ypuddin.config.compute_policy import resolve_training_compute_config, validate_resume_compute_policy
 from ypuddin.data import (
     BucketBatchSampler,
     DataBundle,
@@ -50,7 +51,12 @@ from ypuddin.runtime_profiles import current_profile
 
 from .events import Emitter, NullEmitter
 from .logging import TrainingLogs
-from .reproducibility import configure_reproducibility, validate_resume_reproducibility
+from .reproducibility import (
+    capture_compute_runtime,
+    configure_reproducibility,
+    validate_compute_runtime,
+    validate_resume_reproducibility,
+)
 from .state import Progress, capture_rng, load_checkpoint, restore_rng, save_checkpoint
 from .training_modes import FullTrainingSet, save_model_artifact
 
@@ -80,8 +86,12 @@ class Trainer:
     def __init__(
         self, cfg: TrainConfig, *, device: str | torch.device | None = None, emitter: Emitter | None = None
     ):
-        self.cfg = cfg
         self.device = torch.device(device) if device else self._pick_device()
+        self.cfg, self.compute_policy = resolve_training_compute_config(
+            cfg, self.device.type, current_profile()
+        )
+        cfg = self.cfg
+        self.compute_runtime: dict[str, Any] | None = None
         self.run_dir = Path(cfg.checkpoint.output_dir)
         self.run_dir.mkdir(parents=True, exist_ok=True)
         events_path = cfg.logging.events_path or (self.run_dir / "events.jsonl")
@@ -170,19 +180,23 @@ class Trainer:
         # Reject incompatible/retired recipes before touching an existing run's files.
         self.family = get_family(cfg.model.family)
         self._check_capabilities()
+        resume_extra = self._read_resume_compute_metadata()
         self._preparing = True
         self._install_signal_handlers()
+        self._seed_all()
+        if self.device.type == "cuda":
+            torch.backends.cuda.matmul.allow_tf32 = cfg.memory.allow_tf32
+            torch.backends.cudnn.allow_tf32 = cfg.memory.allow_tf32
+        if self.compute_policy is not None:
+            self.compute_runtime = capture_compute_runtime(self.device)
+            if resume_extra is not None:
+                validate_compute_runtime(self.compute_runtime, resume_extra.get("compute_runtime"))
         if self.is_primary:
             self._logs = TrainingLogs(cfg, self.run_dir)
-        self._seed_all()
-        if self.is_primary:
             write_config(cfg, self.run_dir / "config.toml")
         self.emit(
             "run.started", config_hash=self.config_hash, device=str(self.device), run_dir=str(self.run_dir)
         )
-        if self.device.type == "cuda":
-            torch.backends.cuda.matmul.allow_tf32 = cfg.memory.allow_tf32
-            torch.backends.cudnn.allow_tf32 = cfg.memory.allow_tf32
         model_dtype = (
             DTYPES[cfg.model.dtype]
             if self.device.type == "cuda"
@@ -375,6 +389,9 @@ class Trainer:
         if cfg.checkpoint.resume:
             self._resume(cfg.checkpoint.resume)
         self.progress.extra["deterministic"] = cfg.loop.deterministic
+        if self.compute_policy is not None:
+            self.progress.extra["compute_policy"] = dict(self.compute_policy)
+            self.progress.extra["compute_runtime"] = self.compute_runtime
         self._install_signal_handlers()
         self._prepared = True
         self.emit(
@@ -384,6 +401,7 @@ class Trainer:
             trainable_params=self.adapters.num_params(),
             text_mode=self.text_mode,
             deterministic=cfg.loop.deterministic,
+            compute_policy=self.compute_policy,
         )
 
     def _place_training_model(self) -> None:
@@ -507,6 +525,21 @@ class Trainer:
                 pass
 
     # ----------------------------------------------------------------- resume / checkpoint
+    def _read_resume_compute_metadata(self) -> dict[str, Any] | None:
+        """Reject numeric-policy changes before model loading or config overwrite.
+
+        This is deliberately local/read-only. Distributed preparation serializes
+        owners and broadcasts any error; adding a collective here would deadlock.
+        """
+        if not self.cfg.checkpoint.resume:
+            return None
+        path = Path(self.cfg.checkpoint.resume) / "state.json"
+        metadata = json.loads(path.read_text(encoding="utf-8"))
+        extra = metadata.get("progress", {}).get("extra", {})
+        validate_resume_reproducibility(self.cfg.loop.deterministic, extra.get("deterministic"))
+        validate_resume_compute_policy(self.compute_policy, extra.get("compute_policy"))
+        return extra
+
     def _resume(self, path: str) -> None:
         ck = load_checkpoint(path)
         expected_kind = "full-model" if self.cfg.training.mode == "full" else "adapter"
@@ -536,6 +569,11 @@ class Trainer:
         validate_resume_reproducibility(
             self.cfg.loop.deterministic, ck["progress"].extra.get("deterministic")
         )
+        validate_resume_compute_policy(self.compute_policy, ck["progress"].extra.get("compute_policy"))
+        if self.compute_policy is not None:
+            validate_compute_runtime(
+                capture_compute_runtime(self.device), ck["progress"].extra.get("compute_runtime")
+            )
         if ck["config_hash"] and ck["config_hash"] != self.config_hash:
             log.warning("config changed since the checkpoint was written; resuming anyway")
         if "training" in ck:
@@ -802,6 +840,14 @@ class Trainer:
         return (latents.shape[-2] // p) * (latents.shape[-1] // p)
 
     def _autocast(self):
+        if self.compute_policy is not None:
+            validate_compute_runtime(capture_compute_runtime(self.device), self.compute_runtime)
+            if (
+                self.cfg.loop.mixed_precision != self.compute_policy["mixed_precision"]
+                or self.cfg.memory.allow_tf32 != self.compute_policy["allow_tf32"]
+                or self.cfg.model.attention != self.compute_policy["attention"]
+            ):
+                raise ValueError("可复现训练的计算设置在运行中改变，已停止训练；请保持原设置后重试。")
         enabled = self.cfg.loop.mixed_precision != "no" and self.device.type == "cuda"
         return torch.autocast(device_type=self.device.type, dtype=self.compute_dtype, enabled=enabled)
 

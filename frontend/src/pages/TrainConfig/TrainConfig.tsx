@@ -10,6 +10,7 @@ import { applyTrainingPreset, reusableTrainingPreset } from '../../utils/trainin
 import { formatApiError } from '../../utils/errors';
 import { fillDefaultModels, changeModelFamily, matchingTrainingDatasets } from '../../utils/workspaceConfig';
 import { inactiveTrainingReason } from '../../utils/trainingFamilies';
+import { currentTrainingComputePolicy } from '../../utils/trainingComputePolicy';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import ProjectWorkspaceHeader from '../../components/projects/ProjectWorkspaceHeader';
 import { useProjectVersions } from '../../components/projects/useProjectVersions';
@@ -490,6 +491,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const issues = presentConfigIssues(validationErrors, english);
   const inactiveReason = inactiveTrainingReason(config, english);
   const checked = loaded && !validating && validatedConfig === JSON.stringify(config) && plan !== null;
+  const computePolicy = currentTrainingComputePolicy(plan?.compute_policy, config, validatedConfig, validating);
   const planChecked = checked && (plan?.ok === true || plan?.params != null);
   const ready = !inactiveReason && (!versions.enabled || versions.current?.status === 'ready') && loaded && !validating && validatedConfig === JSON.stringify(config) && plan?.ok === true && issues.length === 0;
   const goToIssue = (issue: ConfigIssue) => {
@@ -567,7 +569,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
           {!search && activeTab === 'model' && <div className="config-context-card model-context-card"><strong><Box size={14}/>{text('选择训练机上的模型', 'Models on the training machine')}</strong><Link to={modelUrl} className="studio-secondary">{text('管理与下载模型', 'Manage & download models')}<ChevronRight size={13}/></Link></div>}
           {!search && activeTab === 'train' && <p className="training-section-note">{text('选择训练方式，再设置训练时长与优化器。', 'Choose a training mode, then set duration and optimizer.')}</p>}
           {!search && activeTab === 'advanced' && <p className="training-section-note">{text('设置训练中的采样预览、验证与运行选项。切换“高级”查看完整配置。', 'Configure sample previews, validation and runtime options. Select Advanced for the full configuration.')}</p>}
-          {!loaded ? <p className="p-6 text-sm text-slate-500">{t('common.loading')}</p> : <SchemaForm key={revealVersion} compact readOnly={!!inactiveReason} schema={orderedSchema} value={config} sourceRoles={sourceRoles} outputBinding={outputBinding} versionSources={!!projectId} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} search={search} onClearSearch={clearSearch} errors={issues.map(issue => ({loc:issue.path,msg:issue.message}))} family={familyByName(families, config?.model?.family)} families={families} />}
+          {!loaded ? <p className="p-6 text-sm text-slate-500">{t('common.loading')}</p> : <SchemaForm key={revealVersion} compact readOnly={!!inactiveReason} schema={orderedSchema} value={config} computePolicy={computePolicy} sourceRoles={sourceRoles} outputBinding={outputBinding} versionSources={!!projectId} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} search={search} onClearSearch={clearSearch} errors={issues.map(issue => ({loc:issue.path,msg:issue.message}))} family={familyByName(families, config?.model?.family)} families={families} />}
         </div>
       </div>
       <aside id="training-plan-panel" className={`training-inspector ${inspectorOpen ? 'is-open' : ''}`} aria-label={text('训练计划', 'Training plan')}><button type="button" className="inspector-return" onClick={() => setInspectorOpen(false)}>{text('返回参数', 'Back to parameters')}</button><BucketInspector plan={plan} loading={validating} hasSources={!!config.dataset?.sources?.length} indexed={indexedStats || undefined} onIssues={() => setIssuesOpen(true)} onData={() => {setActiveTab('data');setSearch('');setInspectorOpen(false);}}/>

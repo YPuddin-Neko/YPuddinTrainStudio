@@ -1,4 +1,5 @@
 import { selectTrainingComponents, trainingManagedReason } from '../../utils/trainingSelection';
+import { confirmedTrainingComputePolicy, trainingComputeManagedField, trainingComputePolicyHint } from '../../utils/trainingComputePolicy';
 import React from 'react';
 import { evaluateShowWhen } from '../showWhen';
 import { useTranslation } from 'react-i18next';
@@ -88,6 +89,8 @@ interface SchemaFormProps {
   sourceRoles?: SourceRoleInfo[];
   outputBinding?: OutputBindingInfo | null;
   versionSources?: boolean;
+  /** Effective policy returned for this exact draft by the server plan. */
+  computePolicy?: unknown;
 }
 
 const resolveRef = (rootSchema: any, refPath: string) => {
@@ -694,10 +697,12 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   sourceRoles,
   outputBinding,
   versionSources = false,
+  computePolicy,
 }) => {
   const { t, i18n } = useTranslation();
   const english = i18n.resolvedLanguage?.startsWith('en') || false;
   const value = React.useMemo(() => normalizeOptimizerConfig(schema, sourceValue), [schema, sourceValue]);
+  const activeComputePolicy = confirmedTrainingComputePolicy(computePolicy, value);
   const scheduleFree = value.optimizer?.type === 'adamw_sf' || (value.optimizer?.type === 'prodigy_plus_sf' && value.optimizer?.use_schedulefree !== false);
   const [editCaptionOverrides, setEditCaptionOverrides] = React.useState(false);
   const [editOutput, setEditOutput] = React.useState(false);
@@ -783,7 +788,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     }
 
     const errorItem = errors.find((e) => e.loc === fullPathKey || e.loc?.startsWith(`${fullPathKey}.`));
-    const fieldValue = getNestedValue(value, path) !== undefined ? getNestedValue(value, path) : prop.default;
+    const computeManaged = trainingComputeManagedField(activeComputePolicy, fullPathKey, english);
+    const fieldValue = computeManaged ? computeManaged.value : getNestedValue(value, path) !== undefined ? getNestedValue(value, path) : prop.default;
     const groupName = ui.group || (parentPath.length > 0 ? parentPath[0] : 'default');
     const compactField = compact || groupName === 'adapter';
     // These fields are probabilities/fractions, unlike EMA decay, timesteps, and
@@ -791,13 +797,13 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const percentage = ['adapter.dropout', 'adapter.rank_dropout', 'adapter.module_dropout', 'dataset.area_tolerance', 'dataset.caption.tag_dropout', 'dataset.caption.caption_dropout', 'scheduler.min_lr_ratio', 'validation.split_ratio'].includes(fullPathKey);
     const numericMin = ui.min ?? prop.minimum ?? prop.exclusiveMinimum;
     const numericMax = ui.max ?? prop.maximum ?? prop.exclusiveMaximum;
-    const managedReason = trainingManagedReason(value, fullPathKey, english) || optimizerManagedReason(schema, value, fullPathKey, english);
+    const managedReason = computeManaged?.reason || trainingManagedReason(value, fullPathKey, english) || optimizerManagedReason(schema, value, fullPathKey, english);
 
     let control = null;
 
     // 1. 递归对象渲染
     if (managedReason) {
-      const display = prop.enum ? configOptionLabel(fullPathKey, String(fieldValue), english) : managedValueLabel(fieldValue, english);
+      const display = computeManaged?.label ?? (prop.enum ? configOptionLabel(fullPathKey, String(fieldValue), english) : managedValueLabel(fieldValue, english));
       control = <div className="config-managed-value"><output id={fieldId} aria-label={fieldLabel} aria-describedby={`${fieldId}-managed-reason`}>{display}</output><span>{english ? 'Automatic' : '自动管理'}</span></div>;
     } else if (compact && fullPathKey === 'dataset.resolutions') {
       control = <ResolutionInput label={fieldLabel} value={fieldValue} onChange={next => onChange(setNestedValue(value, path, next))} />;
@@ -1048,7 +1054,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       showAdvanced && selectedPreset?.include?.length && `${english ? 'Included layers' : '包含层'}：${selectedPreset.include.join(', ')}`,
       showAdvanced && selectedPreset?.exclude?.length && `${english ? 'Excluded layers' : '排除层'}：${selectedPreset.exclude.join(', ')}`,
     ].filter(Boolean).join('\n\n') : weightMeta?.hint || configFieldHelp(fullPathKey, prop.description, english, value.optimizer?.type, scheduleFree);
-    const hint = managedReason || configFieldHint(fullPathKey, english, value.optimizer?.type, scheduleFree)
+    const hint = managedReason || (fullPathKey === 'loop.deterministic' ? trainingComputePolicyHint(activeComputePolicy, english) : undefined) || configFieldHint(fullPathKey, english, value.optimizer?.type, scheduleFree)
       || (currentGroup === 'optimizer' && !['type', 'args', 'group_lr'].includes(key) ? prop.description : undefined);
     const label = (
       <div key={fullPathKey} id={`field-${fullPathKey}`} data-testid={`field-${fullPathKey}`} data-field-path={fullPathKey} data-control-kind={booleanField ? 'toggle' : undefined} className={compactField ? `config-field ${booleanField ? 'config-field-boolean' : ''} ${wide ? 'config-field-wide' : ''} ${errorItem ? 'config-field-invalid' : ''}` : `flex flex-col space-y-1 p-2 rounded ${errorItem ? 'bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800' : ''}`}>

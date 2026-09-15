@@ -1,5 +1,11 @@
 {
   "recorded_at": "2026-09-15T09:19:28.290490+08:00",
+  "superseded_by": {
+    "document": "../RESUME_CONSISTENCY_2026-09-15.md",
+    "scope": "Current strict-resume status for Anima, SDXL and Krea2 full-backbone FP32 computation; all values and timestamps below remain historical evidence.",
+    "current_result": "Fixed r4 source: uninterrupted 8 steps versus a cold process resume from state 4 to step 8 passed bitwise for 685 Anima, 1680 SDXL and 430 Krea2 weight tensors, all five checkpoint-state categories and preview PNG. Krea2 used two-rank FSDP with 33 FP32 parameter/reduction groups and 14 execution checks per phase.",
+    "limits": "Recorded BF16 full-backbone failures and Anima/SDXL adapter failures are not rewritten as passed. The r5 integrated product-entry validation is separate; see the newer report for its evidence rather than inferring it from the r4 configuration tests."
+  },
   "status": "strict_resume_failures_remain",
   "dtk_source_commit": "d2a43f561521656af372f2eb5e3bfbf2254d6a49",
   "evidence_base": "repository sibling remote-testing/dtk-20260914",

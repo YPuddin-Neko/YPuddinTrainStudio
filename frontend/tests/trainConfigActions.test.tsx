@@ -25,6 +25,39 @@ function showConfig() {
 const enqueue = () => screen.getByRole('button', { name: '开始训练' });
 
 describe('training configuration actions', () => {
+  it('only displays effective DTK precision for the current plan and restores original choices when disabled', async () => {
+    const config = schemaDefaults(trainSchema);
+    config.model.family = 'anima'; config.model.attention = 'xformers';
+    config.training.mode = 'full'; config.training.train_backbone = true;
+    config.loop.deterministic = true; config.loop.mixed_precision = 'bf16';
+    config.memory.allow_tf32 = true;
+    const replies: Array<(result: object) => void> = [];
+    server.use(
+      http.get('/api/projects/p_test/config', () => HttpResponse.json(config)),
+      http.post('/api/plan', () => new Promise<Response>(resolve => {
+        replies.push(result => resolve(HttpResponse.json(result)));
+      })),
+    );
+    const confirmed = {ok:true,errors:[],warnings:[],params:{},compute_policy:{id:'dtk-full-fp32-math-v1',mixed_precision:'no',allow_tf32:false,attention:'sdpa',sdpa_backend:'math'}};
+    showConfig();
+    await screen.findByTestId('field-loop.epochs');
+    fireEvent.click(screen.getByRole('button',{name:'高级'}));
+    expect(screen.getByRole('combobox',{name:'混合精度'})).toHaveTextContent('BF16');
+    await waitFor(() => expect(replies).toHaveLength(1));
+    await act(async () => replies[0](confirmed));
+    expect(await screen.findByRole('status',{name:'混合精度'})).toHaveTextContent('FP32 计算');
+    expect(screen.getByRole('status',{name:'注意力后端'})).toHaveTextContent('数学实现');
+    fireEvent.click(screen.getByRole('checkbox',{name:'可复现训练'}));
+    expect(screen.getByRole('combobox',{name:'混合精度'})).toHaveTextContent('BF16');
+    expect(screen.getByRole('combobox',{name:'注意力后端'})).toHaveTextContent('xFormers');
+    expect(screen.getByRole('checkbox',{name:'允许 TF32'})).toBeChecked();
+    await waitFor(() => expect(replies).toHaveLength(2));
+    // Even a stale/malformed server policy cannot lock a draft whose switch is off.
+    await act(async () => replies[1](confirmed));
+    expect(screen.queryByRole('status',{name:'混合精度'})).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox',{name:'混合精度'})).toHaveTextContent('BF16');
+  });
+
   it('renders one continuous form in workflow order even when opened through a legacy tab link', async () => {
     showConfig(); // Legacy ?tab=train locates the training step, without hiding the model.
     await screen.findByTestId('field-model.dit_path');

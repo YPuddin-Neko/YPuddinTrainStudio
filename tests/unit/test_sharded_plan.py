@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from torch import nn
 
 from ypuddin.config import TrainConfig
+from ypuddin.config.compute_policy import resolve_training_compute_config
 from ypuddin.models import get_family
 from ypuddin.train.plan import _fsdp_memory, _online_latent_memory, plan
 
@@ -306,3 +307,150 @@ def test_disabling_mixed_precision_accounts_for_fp32_gathers(image_dataset, capa
         fp32["memory"]["activations_mb_by_bucket"][0]["mb"]
         == 2 * bf16["memory"]["activations_mb_by_bucket"][0]["mb"]
     )
+
+
+@pytest.mark.parametrize("count,checkpointing", [(1, "none"), (1, "block"), (2, "none")])
+def test_unsharded_full_no_autocast_uses_actual_fp32_activation_storage(
+    image_dataset, capacity_family, count, checkpointing
+):
+    raw = _config(image_dataset, strategy="ddp", count=count).to_dict()
+    raw["dataset"]["resolutions"] = [512]
+    raw["memory"]["activation_checkpointing"] = checkpointing
+    raw["model"]["dtype"] = "bf16"
+    amp = plan(raw, device="cuda")
+    raw["loop"]["mixed_precision"] = "no"
+    no_autocast = plan(raw, device="cuda")
+    raw["model"]["dtype"] = "fp32"
+    explicit_fp32 = plan(raw, device="cuda")
+
+    for result in (amp, no_autocast, explicit_fp32):
+        assert result["ok"], result["errors"]
+        assert result["memory"]["effective_dtype"] == "fp32"
+    # Full backbone training loads FP32 parameters even with a BF16 model
+    # loading preference. Without autocast, that preference cannot halve the
+    # estimate or change whether the identical training workload fits.
+    assert no_autocast["memory"] == explicit_fp32["memory"]
+    for low, full in zip(
+        amp["memory"]["activations_mb_by_bucket"],
+        no_autocast["memory"]["activations_mb_by_bucket"],
+        strict=True,
+    ):
+        assert low["mb"] > 0
+        assert abs(full["mb"] - 2 * low["mb"]) <= 1  # Report rounds to whole MiB.
+    assert no_autocast["memory"]["training_peak_mb_estimate"] > amp["memory"]["training_peak_mb_estimate"]
+
+
+@pytest.mark.parametrize("family_name", ["anima", "sdxl", "krea2"])
+@pytest.mark.parametrize("strategy,count", [("ddp", 1), ("ddp", 2), ("fsdp", 2)])
+def test_dtk_compute_policy_reaches_planning_and_fp32_memory_estimate(
+    image_dataset, capacity_family, monkeypatch, family_name, strategy, count
+):
+    import importlib
+
+    planning = importlib.import_module("ypuddin.train.plan")
+    monkeypatch.setattr(planning, "current_profile", lambda: "linux-dtk")
+    # Exercise the full planning path with a meta architecture and no model payloads.
+    monkeypatch.setattr(planning, "get_family", lambda _: capacity_family)
+    observed = []
+
+    def cache_estimate(cfg, dtype):
+        observed.append((cfg.loop.mixed_precision, cfg.memory.allow_tf32, cfg.model.attention, dtype))
+        return {}
+
+    monkeypatch.setattr(capacity_family, "cache_memory_estimate", cache_estimate)
+    cfg = _config(image_dataset, strategy=strategy, count=count)
+    cfg.model.family = family_name
+    cfg.model.attention = "flash_attn"
+    cfg.loop.deterministic = True
+    cfg.dataset.resolutions = [512]
+    original = cfg.to_dict()
+    result = plan(cfg, device="cuda")
+    explicit, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+    explicit.loop.deterministic = False  # Same FP32 workload without automatic recipe selection.
+    manual = plan(explicit, device="cuda")
+
+    assert result["ok"], result["errors"]
+    assert manual["ok"], manual["errors"]
+    assert result["compute_policy"] == policy
+    assert manual["compute_policy"] is None
+    assert result["memory"] == manual["memory"]
+    assert observed == [("no", False, "sdpa", torch.float32)] * 2
+    assert cfg.to_dict() == original
+
+
+@pytest.mark.parametrize(
+    "enabled,saved,allowed",
+    [
+        (True, "same", True),
+        (True, "old", False),
+        (True, "different", False),
+        (False, "same", False),
+        (False, "old", True),
+    ],
+)
+def test_plan_preflights_saved_compute_policy_without_loading_weights(
+    image_dataset, capacity_family, monkeypatch, tmp_path, enabled, saved, allowed
+):
+    import importlib
+
+    planning = importlib.import_module("ypuddin.train.plan")
+    monkeypatch.setattr(planning, "current_profile", lambda: "linux-dtk")
+    monkeypatch.setattr(planning, "get_family", lambda _: capacity_family)
+    cfg = _config(image_dataset, strategy="ddp", count=1)
+    cfg.model.family = "anima"
+    cfg.loop.deterministic = True
+    _, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+    cfg.loop.deterministic = enabled
+    state = tmp_path / "saved-state"
+    state.mkdir()
+    cfg.checkpoint.resume = str(state)
+    saved_policy = policy | {"id": "older-recipe"} if saved == "different" else policy
+    metadata = {"progress": {"extra": {} if saved == "old" else {"compute_policy": saved_policy}}}
+    metadata_path = state / "state.json"
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    original = metadata_path.read_bytes()
+    result = plan(cfg, device="cuda")
+    assert result["ok"] is allowed, result["errors"]
+    if not allowed:
+        assert any(error["loc"] == "checkpoint.resume" for error in result["errors"])
+    assert metadata_path.read_bytes() == original
+
+
+def test_offline_plan_defers_recipe_compatibility_until_device_is_known(
+    image_dataset, capacity_family, monkeypatch, tmp_path
+):
+    import importlib
+
+    planning = importlib.import_module("ypuddin.train.plan")
+    monkeypatch.setattr(planning, "current_profile", lambda: "linux-dtk")
+    monkeypatch.setattr(planning, "get_family", lambda _: capacity_family)
+    cfg = _config(image_dataset, strategy="ddp", count=1)
+    cfg.model.family = "anima"
+    cfg.loop.deterministic = True
+    _, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+    cfg.checkpoint.resume = str(tmp_path)
+    (tmp_path / "state.json").write_text(
+        json.dumps({"progress": {"extra": {"compute_policy": policy}}}), encoding="utf-8"
+    )
+    offline = plan(cfg)
+    assert offline["ok"], offline["errors"]
+    assert offline["compute_policy"] is None
+    cpu = plan(cfg, device="cpu")
+    assert not cpu["ok"]
+    assert any(error["loc"] == "checkpoint.resume" for error in cpu["errors"])
+
+
+@pytest.mark.parametrize("contents", ["{bad-json", "[]", '{"progress": []}', '{"progress": {"extra": []}}'])
+def test_plan_reports_malformed_resume_policy_metadata(
+    image_dataset, capacity_family, monkeypatch, tmp_path, contents
+):
+    import importlib
+
+    planning = importlib.import_module("ypuddin.train.plan")
+    monkeypatch.setattr(planning, "get_family", lambda _: capacity_family)
+    cfg = _config(image_dataset, strategy="ddp", count=1)
+    cfg.checkpoint.resume = str(tmp_path)
+    (tmp_path / "state.json").write_text(contents, encoding="utf-8")
+    result = plan(cfg, device="cpu")
+    assert not result["ok"]
+    assert any(error["loc"] == "checkpoint.resume" for error in result["errors"])

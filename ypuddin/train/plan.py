@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,11 +15,13 @@ from torch import nn
 from ypuddin.adapters import inject
 from ypuddin.adapters.frozen import FrozenLinear
 from ypuddin.config import DatasetConfig, LoopConfig, TrainConfig, ValidationConfig
+from ypuddin.config.compute_policy import resolve_training_compute_config, validate_resume_compute_policy
 from ypuddin.data import BucketBatchSampler, IndexDB
 from ypuddin.data.dataset import DataConfigError, item_geometry, prepare_data_layout
 from ypuddin.data.native import NativeBatchSampler, microbatch_indices, native_size
 from ypuddin.models import get_family
 from ypuddin.models.base import LatentSpec
+from ypuddin.runtime_profiles import current_profile
 
 DTYPE_BYTES = {"bf16": 2, "fp16": 2, "fp32": 4, "fp8_e4m3": 1, "fp8_e5m2": 1, "keep": 2, "auto": 2}
 
@@ -459,7 +462,7 @@ def plan(
     Pass the execution device from CLI/service to enforce hardware constraints and account
     for CPU/MPS fp32 execution. This does not require target CUDA hardware to be locally present.
     """
-    out: dict[str, Any] = {"ok": True, "errors": [], "warnings": []}
+    out: dict[str, Any] = {"ok": True, "errors": [], "warnings": [], "compute_policy": None}
     try:
         cfg = TrainConfig.model_validate(cfg)
     except ValidationError as e:
@@ -484,6 +487,23 @@ def plan(
         return {"ok": False, "errors": [{"loc": "device", "msg": str(e)}], "warnings": []}
     if device_type not in (None, "cpu", "mps", "cuda"):
         out["errors"].append({"loc": "device", "msg": "only cpu, mps and cuda execution are supported"})
+    cfg, compute_policy = resolve_training_compute_config(cfg, device_type, current_profile())
+    out["compute_policy"] = compute_policy
+    # Offline plans do not know which runtime recipe will apply. The execution
+    # plan and trainer perform this check once the device is known.
+    if cfg.checkpoint.resume and device_type is not None:
+        metadata_path = Path(cfg.checkpoint.resume) / "state.json"
+        if metadata_path.is_file():
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                if not isinstance(metadata, dict) or not isinstance(metadata.get("progress", {}), dict):
+                    raise ValueError("训练状态的进度元数据格式无效")
+                extra = metadata.get("progress", {}).get("extra", {})
+                if not isinstance(extra, dict):
+                    raise ValueError("训练状态的附加元数据格式无效")
+                validate_resume_compute_policy(compute_policy, extra.get("compute_policy"))
+            except (OSError, UnicodeError, ValueError) as error:
+                out["errors"].append({"loc": "checkpoint.resume", "msg": str(error)})
     caps = family.spec.capabilities
     checks = [
         (
@@ -706,7 +726,7 @@ def plan(
                         if device_type in ("cpu", "mps")
                         or (sharding is not None and cfg.loop.mixed_precision == "no")
                         else DTYPE_BYTES[
-                            cfg.model.dtype if cfg.loop.mixed_precision == "no" else cfg.loop.mixed_precision
+                            effective_dtype if cfg.loop.mixed_precision == "no" else cfg.loop.mixed_precision
                         ]
                     )
                     per_block = tokens * hidden * activation_bytes * (2 if ckpt else 14)

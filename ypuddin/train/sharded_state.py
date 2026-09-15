@@ -22,6 +22,7 @@ from safetensors.torch import save_file
 from torch import nn
 from torch.distributed.tensor import DTensor, Replicate, Shard
 
+from ypuddin.config.compute_policy import validate_resume_compute_policy
 from ypuddin.config.io import config_hash, load_config
 
 from .state import Progress
@@ -382,6 +383,8 @@ def load_sharded_checkpoint(
     expected_dataset_fingerprint: str | None = None,
     expected_model_identity: str | None = None,
     expected_deterministic: bool | None = None,
+    expected_compute_policy: dict[str, Any] | None = None,
+    expected_compute_runtime: dict[str, Any] | None = None,
     expected_scheduler_config: dict[str, Any] | None = None,
     expected_total_steps: int | None = None,
     legacy_scheduler_contract: dict[str, Any] | None = None,
@@ -411,6 +414,15 @@ def load_sharded_checkpoint(
         if expected_deterministic is not None:
             if meta["progress"].get("extra", {}).get("deterministic") != expected_deterministic:
                 raise ValueError("分片训练状态的可复现计算设置与当前训练不同")
+        validate_resume_compute_policy(
+            expected_compute_policy, meta["progress"].get("extra", {}).get("compute_policy")
+        )
+        if expected_compute_policy is not None:
+            from .reproducibility import validate_compute_runtime
+
+            validate_compute_runtime(
+                expected_compute_runtime, meta["progress"].get("extra", {}).get("compute_runtime")
+            )
         if expected_scheduler_config is not None or expected_total_steps is not None:
             contract = meta.get("scheduler_contract")
             if contract is None:

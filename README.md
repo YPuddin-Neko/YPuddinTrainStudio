@@ -8,7 +8,7 @@ Anima、SDXL 光辉 v0.1、Klein base 4B、Krea2 Raw 已完成所列配置的 Wi
 
 海光 Linux 已提供独立 DTK 启动入口。DTK 26.04 / 厂商 Torch 2.7.1 环境完成了 Krea2 Raw BF16、512 分辨率 LoKr 的单卡与双卡 DDP 训练验证，以及四个模型族的 20 项微型权重单卡测试；正式训练矩阵、精确恢复、安装流程和待完成项目见 [2026-09-14 DTK 验收](docs/DTK_ACCEPTANCE_2026-09-14.md)。微型权重测试不代表四个模型族的正式大模型均已验收，海光 DDP 结果也不代表 Windows DDP 通过。
 
-主模型全量微调还可使用 [FSDP2 显存分片](docs/FSDP_TRAINING_2026-09-15.md)，由多张卡分配参数、梯度和优化器状态。正式 Krea 2 的 r2 双卡用例完成容量、8 步训练、冷恢复执行及完整模型原生重载；**逐位恢复一致性未通过**。支持范围与后续快照状态见指南及 [当前交付报告](docs/DELIVERY_REPORT_2026-09-15.md)。
+主模型全量微调还可使用 [FSDP2 显存分片](docs/FSDP_TRAINING_2026-09-15.md)，由多张卡分配参数、梯度和优化器状态。**Anima、SDXL、Krea2 的 r4 正式主干全参 FP32 计算已通过连续 8 步与第 4 步冷恢复至第 8 步的权重、五类状态及 PNG 逐位比较；Krea2 使用双卡 FSDP。** 旧 r2 Krea BF16 严格失败及原生重载记录分别保留，不改写为通过。明确配置、新版“可复现训练”入口证据与验证边界见 [严格续训一致性报告](docs/RESUME_CONSISTENCY_2026-09-15.md) 及 [当前交付报告](docs/DELIVERY_REPORT_2026-09-15.md)。
 
 Windows 环境准备见 [兼容性预检与真机验收](docs/WINDOWS_READINESS_2026-09-15.md)：本地模拟不代替 CUDA 真机验证；原生 Windows 单任务多卡仍未开放。
 
