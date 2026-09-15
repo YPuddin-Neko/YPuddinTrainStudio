@@ -4,7 +4,11 @@ import pytest
 
 from ypuddin.config import TrainConfig
 from ypuddin.config.compute_policy import (
+    BF16_LINEAR_BACKWARD_IMPLEMENTATION_ID,
     DTK_FULL_FP32_MATH_POLICY_ID,
+    DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
+    DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
+    FP32_CONV_IMPLEMENTATION_ID,
     resolve_training_compute_config,
     validate_resume_compute_policy,
 )
@@ -29,6 +33,7 @@ def _config(family="anima", *, mode="full", train_backbone=True, deterministic=T
 @pytest.mark.parametrize("attention", ["auto", "sdpa", "flash_attn", "xformers"])
 def test_dtk_full_recipe_resolves_explicit_effective_config_without_mutation(family, attention):
     cfg = _config(family)
+    cfg.loop.mixed_precision = "fp16"  # Existing FP32 recipe remains available.
     cfg.model.attention = attention
     original = cfg.to_dict()
     effective, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
@@ -115,3 +120,173 @@ def test_versioned_state_cannot_resume_with_recipe_disabled():
     _, policy = resolve_training_compute_config(_config(), "cuda", "linux-dtk")
     with pytest.raises(ValueError, match="计算配方与当前设置不同"):
         validate_resume_compute_policy(None, policy)
+
+
+def _krea_bf16_config():
+    cfg = _config("krea2")
+    cfg.loop.distributed_strategy = "fsdp"
+    cfg.loop.gpu_count = 2
+    return cfg
+
+
+def test_krea_bf16_sharding_policy_keeps_native_compute_and_is_idempotent():
+    cfg = _krea_bf16_config()
+    original = cfg.to_dict()
+    effective, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+    assert effective.loop.mixed_precision == "bf16"
+    assert not effective.memory.allow_tf32
+    assert effective.model.attention == "sdpa"
+    assert policy == {
+        "id": DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
+        "mixed_precision": "bf16",
+        "allow_tf32": False,
+        "attention": "sdpa",
+        "sdpa_backend": "math",
+        "linear_forward": "native-bf16",
+        "linear_backward": "fp32-contractions-grad-original-dtype",
+        "linear_backward_implementation": BF16_LINEAR_BACKWARD_IMPLEMENTATION_ID,
+        "fsdp_param_dtype": "bfloat16",
+        "fsdp_reduce_dtype": "float32",
+    }
+    again, same = resolve_training_compute_config(effective, "cuda", "linux-dtk")
+    assert again.to_dict() == effective.to_dict() and same == policy
+    assert cfg.to_dict() == original
+
+
+@pytest.mark.parametrize(
+    "section,field,value,expected_id",
+    [
+        ("loop", "gpu_count", 1, DTK_FULL_FP32_MATH_POLICY_ID),
+        ("loop", "distributed_strategy", "ddp", DTK_FULL_FP32_MATH_POLICY_ID),
+        ("loop", "mixed_precision", "no", DTK_FULL_FP32_MATH_POLICY_ID),
+        ("loop", "mixed_precision", "fp16", DTK_FULL_FP32_MATH_POLICY_ID),
+        ("training", "train_text_encoder", True, DTK_FULL_FP32_MATH_POLICY_ID),
+        ("model", "family", "anima", DTK_FULL_FP32_MATH_POLICY_ID),
+        ("model", "family", "sdxl", DTK_FULL_FP32_MATH_POLICY_ID),
+        ("loop", "deterministic", False, None),
+        ("training", "mode", "adapter", None),
+        ("training", "train_backbone", False, None),
+    ],
+)
+def test_krea_bf16_policy_never_expands_unverified_scope(section, field, value, expected_id):
+    cfg = _krea_bf16_config()
+    setattr(getattr(cfg, section), field, value)
+    original = cfg.to_dict()
+    effective, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+    assert (policy or {}).get("id") == expected_id
+    if expected_id is None:
+        assert effective.to_dict() == original
+    else:
+        assert effective.loop.mixed_precision == "no"
+
+
+@pytest.mark.parametrize(
+    "device,profile", [("cpu", "linux-dtk"), ("cuda", "windows-cuda"), ("cuda", "linux-cuda")]
+)
+def test_krea_bf16_policy_does_not_claim_non_dtk_validation(device, profile):
+    cfg = _krea_bf16_config()
+    effective, policy = resolve_training_compute_config(cfg, device, profile)
+    assert policy is None and effective.to_dict() == cfg.to_dict()
+
+
+def test_krea_bf16_checkpoint_identity_rejects_external_candidate_fp32_and_changed_operators():
+    _, policy = resolve_training_compute_config(_krea_bf16_config(), "cuda", "linux-dtk")
+    _, old_fp32 = resolve_training_compute_config(_config("krea2"), "cuda", "linux-dtk")
+    validate_resume_compute_policy(policy, dict(policy))
+    for saved in (
+        None,
+        old_fp32,
+        policy | {"id": "external-bf16-candidate"},
+        {key: value for key, value in policy.items() if key != "linear_backward_implementation"},
+        policy | {"linear_backward_implementation": "other-algorithm"},
+        policy | {"fsdp_reduce_dtype": "bfloat16"},
+    ):
+        with pytest.raises(ValueError, match="计算"):
+            validate_resume_compute_policy(policy, saved)
+
+
+def test_sdxl_single_gpu_bf16_conv_and_linear_policy_is_explicit_and_idempotent():
+    cfg = _config("sdxl")
+    original = cfg.to_dict()
+    effective, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+    assert policy["id"] == DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID
+    assert policy["conv_forward"] == "fp32-output-bf16"
+    assert policy["conv_implementation"] == FP32_CONV_IMPLEMENTATION_ID
+    assert policy["linear_backward_implementation"] == BF16_LINEAR_BACKWARD_IMPLEMENTATION_ID
+    assert "fsdp_param_dtype" not in policy
+    assert effective.loop.mixed_precision == "bf16" and not effective.memory.allow_tf32
+    assert effective.model.attention == "sdpa"
+    again, repeated = resolve_training_compute_config(effective, "cuda", "linux-dtk")
+    assert again.to_dict() == effective.to_dict() and repeated == policy
+    assert cfg.to_dict() == original
+    for saved in (
+        None,
+        policy | {"conv_implementation": "old-candidate"},
+        policy | {"conv_forward": "native-bf16"},
+    ):
+        with pytest.raises(ValueError, match="计算"):
+            validate_resume_compute_policy(policy, saved)
+
+
+@pytest.mark.parametrize(
+    "section,field,value,expected_id",
+    [
+        ("loop", "gpu_count", 2, DTK_FULL_FP32_MATH_POLICY_ID),
+        ("training", "train_text_encoder", True, DTK_FULL_FP32_MATH_POLICY_ID),
+        ("loop", "mixed_precision", "no", DTK_FULL_FP32_MATH_POLICY_ID),
+        ("loop", "mixed_precision", "fp16", DTK_FULL_FP32_MATH_POLICY_ID),
+        ("training", "train_backbone", False, None),
+        ("loop", "deterministic", False, None),
+    ],
+)
+def test_sdxl_bf16_recipe_stays_inside_verified_scope(section, field, value, expected_id):
+    cfg = _config("sdxl")
+    setattr(getattr(cfg, section), field, value)
+    effective, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+    assert (policy or {}).get("id") == expected_id
+    assert effective.loop.mixed_precision == ("no" if expected_id else cfg.loop.mixed_precision)
+
+
+@pytest.mark.parametrize("mode", ["auto", "bypass"])
+def test_sdxl_lokr_bypass_recipe_with_homogeneous_rules(mode):
+    cfg = _config("sdxl", mode="adapter")
+    cfg.adapter.mode = mode
+    from ypuddin.config.schema import AdapterRule
+
+    cfg.adapter.rules = [
+        AdapterRule(match="*.q", algo="lokr"),
+        AdapterRule(match="*.k", algo=None),
+        AdapterRule(match="*.v", algo="none"),
+    ]
+    effective, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+    assert policy["id"] == DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID
+    assert effective.adapter == cfg.adapter and effective.loop.mixed_precision == "bf16"
+
+
+@pytest.mark.parametrize(
+    "section,field,value",
+    [
+        ("adapter", "algo", "lora"),
+        ("adapter", "mode", "merged"),
+        ("adapter", "dora", True),
+        ("adapter", "param_dtype", "bf16"),
+        ("memory", "base_precision", "fp8_e4m3"),
+        ("loop", "gpu_count", 2),
+        ("training", "train_text_encoder", True),
+        ("loop", "deterministic", False),
+    ],
+)
+def test_sdxl_other_adapter_paths_keep_existing_behavior(section, field, value):
+    cfg = _config("sdxl", mode="adapter")
+    setattr(getattr(cfg, section), field, value)
+    effective, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+    assert policy is None and effective.to_dict() == cfg.to_dict()
+
+
+def test_sdxl_mixed_algorithm_rules_never_claim_lokr_policy():
+    from ypuddin.config.schema import AdapterRule
+
+    cfg = _config("sdxl", mode="adapter")
+    cfg.adapter.rules = [AdapterRule(match="*", algo="lora")]
+    effective, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+    assert policy is None and effective.to_dict() == cfg.to_dict()

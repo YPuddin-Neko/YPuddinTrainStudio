@@ -17,6 +17,7 @@ from torch import nn
 from torch.distributed.device_mesh import init_device_mesh
 from torch.distributed.tensor import DTensor, Shard
 
+from ypuddin.config.compute_policy import DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID
 from ypuddin.optim import optimizer_hyperparameter_snapshot, validate_optimizer_runtime
 from ypuddin.optim.sharded import prepare_sharded_optimizer, sharded_optimizer_state_bytes
 
@@ -91,6 +92,15 @@ class ShardedTrainer(DistributedTrainer):
         from torch.distributed.fsdp import MixedPrecisionPolicy, fully_shard
 
         model = self.loaded.backbone
+        if (getattr(self, "compute_policy", None) or {}).get("id") == DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID:
+            from .linear_backward import install_linear_bf16_forward_fp32_backward
+
+            if getattr(self, "_linear_backward_counts", None) is not None:
+                raise ValueError("BF16 Linear 反向计算策略不能重复安装")
+            self._linear_backward_restore, self._linear_backward_counts = (
+                install_linear_bf16_forward_fp32_backward(model)
+            )
+            self._validate_training_compute_policy()
         world = self.distributed.world_size
         mesh = init_device_mesh("cuda", (world,), mesh_dim_names=("data",))
         parameters = list(model.parameters())
@@ -125,6 +135,7 @@ class ShardedTrainer(DistributedTrainer):
             )
             self.adapters.rebind_parameters()
         self.adapters.rebind_parameters()
+        self._validate_training_compute_policy()
         self._replicated_parameters = [p for p in self.adapters.parameters() if not isinstance(p, DTensor)]
         local_bytes = sum(
             (p.to_local() if isinstance(p, DTensor) else p).numel() * p.element_size()
@@ -205,6 +216,7 @@ class ShardedTrainer(DistributedTrainer):
             self.emit("distributed.memory", step=self.progress.step, ranks=ranks)
 
     def _resume(self, path):
+        self._validate_training_compute_policy()
         expected = optimizer_hyperparameter_snapshot(self.cfg.optimizer, self.optimizer)
         saved = load_sharded_checkpoint(
             path,
@@ -237,6 +249,7 @@ class ShardedTrainer(DistributedTrainer):
         )
 
     def save_state(self, tag=None):
+        self._validate_training_compute_policy()
         self.progress.extra["loss_ema"] = self._loss_ema
         path = save_sharded_checkpoint(
             self.run_dir / f"state-{tag or self.progress.step}",

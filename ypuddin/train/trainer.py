@@ -24,7 +24,12 @@ from torch.utils.data import DataLoader
 
 from ypuddin.adapters import AdapterSet, build_metadata, inject, save_adapter_file
 from ypuddin.config import TrainConfig, config_hash, write_config
-from ypuddin.config.compute_policy import resolve_training_compute_config, validate_resume_compute_policy
+from ypuddin.config.compute_policy import (
+    DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
+    DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
+    resolve_training_compute_config,
+    validate_resume_compute_policy,
+)
 from ypuddin.data import (
     BucketBatchSampler,
     DataBundle,
@@ -348,6 +353,7 @@ class Trainer:
                     )
         self.emit("adapters.injected", **self.adapters.summary())
         self._place_training_model()
+        self._validate_training_compute_policy()
 
         groups = self.adapters.param_groups(
             cfg.optimizer.lr, cfg.optimizer.weight_decay, cfg.optimizer.group_lr
@@ -406,6 +412,24 @@ class Trainer:
 
     def _place_training_model(self) -> None:
         """Place selected parameters before binding an optimizer to their final objects."""
+        if (getattr(self, "compute_policy", None) or {}).get("id") == DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID:
+            raise ValueError("BF16 Linear 反向计算策略必须由 FSDP 分片训练器安装")
+        if (getattr(self, "compute_policy", None) or {}).get("id") == DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID:
+            from .conv_forward import install_conv_fp32_forward
+            from .linear_backward import install_linear_bf16_forward_fp32_backward
+
+            if getattr(self, "_linear_backward_counts", None) is not None:
+                raise ValueError("BF16 算子计算策略不能重复安装")
+            restore, counts = install_linear_bf16_forward_fp32_backward(self.loaded.backbone)
+            try:
+                self._conv_forward_restore, self._conv_forward_counts = install_conv_fp32_forward(
+                    self.loaded.backbone
+                )
+            except Exception:
+                restore()
+                raise
+            self._linear_backward_restore, self._linear_backward_counts = restore, counts
+            self._validate_training_compute_policy()
         cfg = self.cfg
         if cfg.memory.blocks_to_swap > 0:
             blocks = self.family.memory_layout(self.loaded).blocks
@@ -541,6 +565,7 @@ class Trainer:
         return extra
 
     def _resume(self, path: str) -> None:
+        self._validate_training_compute_policy()
         ck = load_checkpoint(path)
         expected_kind = "full-model" if self.cfg.training.mode == "full" else "adapter"
         if ck.get("training_kind", "adapter") != expected_kind:
@@ -701,6 +726,7 @@ class Trainer:
                     path.unlink(missing_ok=True)
 
     def save_state(self, tag: str | None = None) -> Path:
+        self._validate_training_compute_policy()
         if self.cfg.training.mode == "full":
             # A full-state checkpoint needs the raw optimizer-point weights only.
             # Do not duplicate a complete model in host RAM or switch SF into eval.
@@ -840,6 +866,7 @@ class Trainer:
         return (latents.shape[-2] // p) * (latents.shape[-1] // p)
 
     def _autocast(self):
+        self._validate_training_compute_policy()
         if self.compute_policy is not None:
             validate_compute_runtime(capture_compute_runtime(self.device), self.compute_runtime)
             if (
@@ -850,6 +877,35 @@ class Trainer:
                 raise ValueError("可复现训练的计算设置在运行中改变，已停止训练；请保持原设置后重试。")
         enabled = self.cfg.loop.mixed_precision != "no" and self.device.type == "cuda"
         return torch.autocast(device_type=self.device.type, dtype=self.compute_dtype, enabled=enabled)
+
+    def _validate_training_compute_policy(self):
+        policy = getattr(self, "compute_policy", None)
+        if (policy or {}).get("id") not in {
+            DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
+            DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
+        }:
+            return
+        from .linear_backward import validate_linear_backward_installation
+
+        _, expected = resolve_training_compute_config(self.cfg, self.device.type, current_profile())
+        if expected != policy or self.compute_dtype != torch.bfloat16:
+            raise ValueError("BF16 Linear 反向计算策略与当前训练设置不一致")
+        counts = getattr(self, "_linear_backward_counts", None)
+        if not counts or not sum(counts.values()):
+            raise ValueError("BF16 Linear 反向计算策略未完整安装到未量化的训练主干")
+        if self.cfg.training.mode == "full" and (not counts.get("nn_linear") or counts.get("frozen_linear")):
+            raise ValueError("BF16 Linear 全参策略需要未量化的训练主干")
+        validate_linear_backward_installation(self.loaded.backbone, counts)
+        if policy["id"] == DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID:
+            from .conv_forward import validate_conv_forward_installation
+
+            validate_conv_forward_installation(
+                self.loaded.backbone, getattr(self, "_conv_forward_counts", None)
+            )
+            if self.cfg.training.mode == "adapter":
+                from .linear_backward import validate_lokr_bypass_backbone
+
+                validate_lokr_bypass_backbone(self.loaded.backbone)
 
     def compute_loss(
         self,

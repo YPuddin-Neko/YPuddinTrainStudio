@@ -3868,7 +3868,7 @@ export interface components {
             grad_accum: number;
             /**
              * Mixed Precision
-             * @description CUDA / DTK 训练的自动混合精度，默认 bf16；no 关闭自动混合精度，但不改变模型权重本身的精度。fp16 需设备与模型数值兼容，CPU/MPS 当前关闭自动混合精度。DTK 上对 Anima、SDXL 或 Krea2 主模型全量微调开启可复现训练时，由该开关统一采用 FP32 计算。此项不同于冻结权重存储精度与导出文件精度。
+             * @description CUDA / DTK 训练的自动混合精度，默认 bf16；no 关闭自动混合精度，但不改变模型权重本身的精度。fp16 需设备与模型数值兼容，CPU/MPS 当前关闭自动混合精度。DTK 可复现全量微调通常使用 FP32。仅训练主模型并选择 BF16 时，SDXL 单卡全量微调及默认 LoKr 训练使用 FP32 卷积和线性层反向；Krea2 多卡显存分片使用 FP32 线性层反向。两者保留 BF16 主体计算，以参数检查后显示的实际设置为准。此项不同于冻结权重存储精度与导出文件精度。
              * @default bf16
              * @enum {string}
              */
@@ -3881,7 +3881,7 @@ export interface components {
             seed: number;
             /**
              * Deterministic
-             * @description 默认关闭。开启后请求确定性计算，减少重复训练与续训的数值差异。DTK 上训练 Anima、SDXL 或 Krea2 的主模型全量参数时，会统一使用 FP32 计算、关闭 TF32，并采用原生 SDPA 数学实现；混合精度、TF32 和注意力后端的原选择暂不生效。可能增加激活显存和训练耗时，不保证不同设备、软件版本等环境逐位一致。其他训练方式不自动改为 FP32。不支持的确定性算子会报错停止。恢复时必须保持原开关和计算策略一致，不能靠切换此项兼容旧状态。
+             * @description 默认关闭。开启后请求确定性计算。DTK 上 Anima、SDXL 或 Krea2 主模型全量微调通常使用 FP32；仅训练主模型并选择 BF16 时，SDXL 单卡全量微调及默认 LoKr 训练使用 FP32 卷积和线性层反向；Krea2 多卡显存分片使用 FP32 线性层反向和梯度汇总。两者保留 BF16 主体计算。这些训练关闭 TF32，并使用原生 SDPA 数学实现；以参数检查后显示的实际计算设置为准。可能增加显存占用和耗时，不保证不同设备或软件版本逐位一致。不支持的确定性算子会报错停止；续训必须保持原计算策略和运行环境。
              * @default false
              */
             deterministic: boolean;

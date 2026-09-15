@@ -9,6 +9,8 @@ import {confirmedTrainingComputePolicy, currentTrainingComputePolicy} from '../s
 import i18n from '../src/i18n';
 
 const policy = {id:'dtk-full-fp32-math-v1',mixed_precision:'no',allow_tf32:false,attention:'sdpa',sdpa_backend:'math'};
+const bf16Policy = {...policy,id:'dtk-krea2-fsdp-bf16-linear-fp32-backward-v1',mixed_precision:'bf16',linear_forward:'native-bf16',linear_backward:'fp32-contractions-grad-original-dtype',linear_backward_implementation:'linear-bf16-forward-fp32-backward-v1',fsdp_param_dtype:'bfloat16',fsdp_reduce_dtype:'float32'};
+const sdxlPolicy = {...policy,id:'dtk-sdxl-bf16-conv-fp32-linear-backward-v1',mixed_precision:'bf16',linear_forward:'native-bf16',linear_backward:'fp32-contractions-grad-original-dtype',linear_backward_implementation:'linear-bf16-forward-fp32-backward-v1',conv_forward:'fp32-output-bf16',conv_implementation:'conv2d-fp32-output-bf16-v1'};
 const fullConfig = () => {
   const value = schemaDefaults(schema);
   value.model.family = 'anima'; value.model.attention = 'xformers';
@@ -18,6 +20,88 @@ const fullConfig = () => {
   return value;
 };
 beforeEach(async () => { await i18n.changeLanguage('zh-CN'); });
+
+const shardedKreaConfig = () => {
+  const value = fullConfig();
+  value.model.family = 'krea2';
+  value.training.train_text_encoder = false;
+  value.loop.distributed_strategy = 'fsdp'; value.loop.gpu_count = 2;
+  return value;
+};
+
+it('only confirms complete BF16 policy metadata for the matching multi-GPU Krea draft', () => {
+  const config = shardedKreaConfig();
+  expect(confirmedTrainingComputePolicy(bf16Policy,config)).toEqual(bf16Policy);
+  for (const changed of [
+    {...config,model:{...config.model,family:'anima'}},
+    {...config,training:{...config.training,train_text_encoder:true}},
+    {...config,loop:{...config.loop,distributed_strategy:'ddp'}},
+    {...config,loop:{...config.loop,gpu_count:1}},
+    {...config,loop:{...config.loop,mixed_precision:'no'}},
+  ]) expect(confirmedTrainingComputePolicy(bf16Policy,changed)).toBeNull();
+  for (const changed of [
+    {...bf16Policy,linear_backward:undefined},
+    {...bf16Policy,linear_backward_implementation:undefined},
+    {...bf16Policy,linear_forward:'fp32'},
+    {...bf16Policy,fsdp_reduce_dtype:'bfloat16'},
+    {...bf16Policy,id:'diagnostic-dtk-krea2-full-bf16-math-linear-backward-v2'},
+  ]) expect(confirmedTrainingComputePolicy(changed,config)).toBeNull();
+});
+
+it('renders actual BF16 forward and FP32 backward without changing the selected draft', () => {
+  const initial = shardedKreaConfig();
+  function Editor() {
+    const [value,setValue] = React.useState(initial);
+    return <><SchemaForm schema={schema} value={value} onChange={setValue} computePolicy={bf16Policy} compact showAdvanced groupFilter={['loop','memory']}/><output data-testid="draft">{JSON.stringify(value)}</output></>;
+  }
+  render(<Editor/>);
+  expect(screen.getByRole('status',{name:'混合精度'})).toHaveTextContent('BF16 前向（线性层反向 FP32）');
+  expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('本次 Krea2 使用多卡显存分片');
+  expect(screen.queryByText('FP32 计算（关闭混合精度）')).not.toBeInTheDocument();
+  expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual(initial);
+  fireEvent.click(screen.getByRole('checkbox',{name:'可复现训练'}));
+  expect(screen.getByRole('combobox',{name:'混合精度'})).toHaveTextContent('BF16');
+  expect(screen.getByRole('checkbox',{name:'允许 TF32'})).toBeChecked();
+});
+
+it('shows the BF16 policy in English with no Chinese fallback', async () => {
+  await i18n.changeLanguage('en');
+  render(<SchemaForm schema={schema} value={shardedKreaConfig()} onChange={() => {}} computePolicy={bf16Policy} compact showAdvanced groupFilter={['loop','memory']}/>);
+  expect(screen.getByTestId('field-loop.mixed_precision')).toHaveTextContent('BF16 forward (FP32 linear backward)');
+  const hint = screen.getByTestId('field-loop.deterministic');
+  expect(hint).toHaveTextContent('shards the model across GPUs');
+  expect(hint.textContent).not.toMatch(/[\u4e00-\u9fff]/);
+});
+
+it('shows the SDXL convolution policy only for the checked single-GPU backbone configuration', () => {
+  const config = fullConfig(); config.model.family = 'sdxl'; config.loop.gpu_count = 1;
+  expect(confirmedTrainingComputePolicy(sdxlPolicy,config)).toEqual(sdxlPolicy);
+  expect(confirmedTrainingComputePolicy({...sdxlPolicy,conv_implementation:undefined},config)).toBeNull();
+  expect(confirmedTrainingComputePolicy(sdxlPolicy,{...config,loop:{...config.loop,gpu_count:2}})).toBeNull();
+  expect(confirmedTrainingComputePolicy(sdxlPolicy,{...config,model:{...config.model,family:'anima'}})).toBeNull();
+  render(<SchemaForm schema={schema} value={config} onChange={() => {}} computePolicy={sdxlPolicy} compact showAdvanced groupFilter={['loop','memory']}/>);
+  expect(screen.getByRole('status',{name:'混合精度'})).toHaveTextContent('BF16（FP32 卷积、线性层反向）');
+  expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('卷积输出转回 BF16');
+  expect(screen.getByTestId('field-loop.deterministic')).not.toHaveTextContent('本次 Krea2');
+});
+
+it('shows the same verified SDXL policy for supported LoKr, without accepting unverified adapter paths', () => {
+  const config = fullConfig(); config.model.family = 'sdxl'; config.loop.gpu_count = 1;
+  config.training.mode = 'adapter'; config.adapter.algo = 'lokr'; config.adapter.mode = 'auto';
+  config.adapter.param_dtype = 'fp32'; config.adapter.dora = false; config.adapter.rules = [];
+  config.memory.base_precision = 'auto';
+  expect(confirmedTrainingComputePolicy(sdxlPolicy,config)).toEqual(sdxlPolicy);
+  expect(confirmedTrainingComputePolicy(policy,config)).toBeNull();
+  for (const adapter of [
+    {...config.adapter,algo:'lora'}, {...config.adapter,mode:'merged'},
+    {...config.adapter,dora:true}, {...config.adapter,param_dtype:'bf16'},
+    {...config.adapter,rules:[{match:'*',algo:'loha'}]},
+  ]) expect(confirmedTrainingComputePolicy(sdxlPolicy,{...config,adapter})).toBeNull();
+  expect(confirmedTrainingComputePolicy(sdxlPolicy,{...config,memory:{...config.memory,base_precision:'fp8_e4m3'}})).toBeNull();
+  render(<SchemaForm schema={schema} value={config} onChange={() => {}} computePolicy={sdxlPolicy} compact showAdvanced groupFilter={['loop','memory']}/>);
+  expect(screen.getByRole('status',{name:'混合精度'})).toHaveTextContent('BF16（FP32 卷积、线性层反向）');
+  expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('本次 SDXL 保留 BF16');
+});
 
 it('only uses a confirmed policy for the current server-checked draft', () => {
   const config = fullConfig(); const encoded = JSON.stringify(config);

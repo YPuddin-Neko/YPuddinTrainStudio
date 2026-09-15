@@ -342,7 +342,7 @@ def test_unsharded_full_no_autocast_uses_actual_fp32_activation_storage(
 
 @pytest.mark.parametrize("family_name", ["anima", "sdxl", "krea2"])
 @pytest.mark.parametrize("strategy,count", [("ddp", 1), ("ddp", 2), ("fsdp", 2)])
-def test_dtk_compute_policy_reaches_planning_and_fp32_memory_estimate(
+def test_dtk_compute_policy_reaches_planning_and_effective_memory_estimate(
     image_dataset, capacity_family, monkeypatch, family_name, strategy, count
 ):
     import importlib
@@ -366,7 +366,7 @@ def test_dtk_compute_policy_reaches_planning_and_fp32_memory_estimate(
     original = cfg.to_dict()
     result = plan(cfg, device="cuda")
     explicit, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
-    explicit.loop.deterministic = False  # Same FP32 workload without automatic recipe selection.
+    explicit.loop.deterministic = False  # Same resolved precision without automatic recipe selection.
     manual = plan(explicit, device="cuda")
 
     assert result["ok"], result["errors"]
@@ -374,7 +374,9 @@ def test_dtk_compute_policy_reaches_planning_and_fp32_memory_estimate(
     assert result["compute_policy"] == policy
     assert manual["compute_policy"] is None
     assert result["memory"] == manual["memory"]
-    assert observed == [("no", False, "sdpa", torch.float32)] * 2
+    precision = explicit.loop.mixed_precision
+    # Frozen cache modules still use the full-training FP32 loading preference.
+    assert observed == [(precision, False, "sdpa", torch.float32)] * 2
     assert cfg.to_dict() == original
 
 
