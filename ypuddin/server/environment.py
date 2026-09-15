@@ -263,9 +263,12 @@ def runtime_info() -> dict[str, Any]:
     distributed_available = bool(distributed and distributed.is_available())
     nccl_available = bool(distributed_available and distributed.is_nccl_available())
     device_count = torch.cuda.device_count() if cuda else 0
-    multi_gpu = platform.system() == "Linux" and device_count >= 2 and nccl_available
+    profile = current_profile()
+    multi_gpu = (
+        not profile.endswith("-cpu") and platform.system() == "Linux" and device_count >= 2 and nccl_available
+    )
     return {
-        "environment_profile": current_profile(),
+        "environment_profile": profile,
         "python": platform.python_version(),
         "python_executable": sys.executable,
         "platform": platform.system(),
@@ -1129,7 +1132,12 @@ class EnvironmentManager:
                         "sha256": sha,
                         "filename": filename,
                         **(
-                            {"source_url": vendor.url, "provider": "sourcefind-dtk" if provider is dtk_catalog else windows_attention_catalog.PROVIDER}
+                            {
+                                "source_url": vendor.url,
+                                "provider": "sourcefind-dtk"
+                                if provider is dtk_catalog
+                                else windows_attention_catalog.PROVIDER,
+                            }
                             if request.vendor_wheel_id and name == request.package
                             else {}
                         ),

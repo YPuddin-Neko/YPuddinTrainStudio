@@ -6,17 +6,41 @@ from ypuddin.server.environment import runtime_info
 
 
 @pytest.mark.parametrize(
-    "cuda, count, distributed, nccl",
-    [(True, 2, True, True), (False, 8, True, False), (False, 0, False, False)],
+    "system,profile,cuda,count,distributed,nccl,hip,expected_multi",
+    [
+        ("Windows", "windows-cuda", True, 2, True, True, None, False),
+        ("Windows", "windows-cuda", True, 2, True, False, None, False),
+        ("Windows", "windows-cpu", False, 8, True, False, None, False),
+        ("Windows", "windows-cpu", True, 2, True, True, None, False),
+        ("Windows", "windows-cuda", False, 0, False, False, None, False),
+        ("Linux", "linux-cuda", True, 2, True, True, None, True),
+        ("Linux", "linux-cuda", True, 1, True, True, None, False),
+        ("Linux", "linux-cuda", True, 2, False, True, None, False),
+        ("Linux", "linux-cuda", True, 2, True, False, None, False),
+        ("Linux", "linux-dtk", True, 2, True, True, "6.3.26093", True),
+        ("Linux", "linux-cpu", True, 2, True, True, None, False),
+        ("Linux", "linux-cpu", False, 8, True, False, None, False),
+        ("Darwin", "macos-mps", False, 0, False, False, None, False),
+    ],
 )
 def test_runtime_distinguishes_pytorch_build_capabilities_from_trainer_support(
-    monkeypatch, cuda, count, distributed, nccl
+    monkeypatch, system, profile, cuda, count, distributed, nccl, hip, expected_multi
 ):
     import torch
 
-    from ypuddin.server import hardware
+    from ypuddin.server import environment, hardware
 
+    monkeypatch.setattr(
+        environment,
+        "platform",
+        SimpleNamespace(system=lambda: system, python_version=lambda: "3.12.10", machine=lambda: "AMD64"),
+    )
+    monkeypatch.setattr(environment, "current_profile", lambda: profile)
+    monkeypatch.setattr(environment.dtk_catalog, "system_info", lambda: {})
+    monkeypatch.setattr(environment.dtk_catalog, "driver_version", lambda: None)
+    monkeypatch.setattr(torch.version, "hip", hip)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: count)
     monkeypatch.setattr(torch.cuda, "get_device_capability", lambda: (8, 9))
     monkeypatch.setattr(
@@ -28,9 +52,11 @@ def test_runtime_distinguishes_pytorch_build_capabilities_from_trainer_support(
     result = runtime_info()
     assert result["cuda_device_count"] == (count if cuda else 0)
     assert result["distributed_available"] == distributed
-    assert result["nccl_available"] == nccl
-    assert result["multi_gpu_training"] is False
-    assert result["training_device_policy"] == "single_device"
+    assert result["nccl_available"] == (distributed and nccl)
+    assert result["environment_profile"] == profile
+    assert result["platform"] == system
+    assert result["multi_gpu_training"] is expected_multi
+    assert result["training_device_policy"] == ("exclusive_devices" if expected_multi else "single_device")
     # Driver inventory must not turn CPU Torch into CUDA-capable Torch.
     assert len(result["gpus"]) == 2
     assert result["cuda_available"] is cuda
