@@ -366,7 +366,7 @@ export default function JobDetail() {
   const tabs = [
     { key: 'metrics', icon: Activity, label: t('job.tabMetrics') },
     { key: 'samples', icon: ImageIcon, label: `${t('job.tabSamples')} (${samples.length})` },
-    ...(job?.type === 'train' || job?.type === 'xyz' ? [{ key: 'xyz', icon: Grid2X2, label: text('XYZ 对比', 'XYZ comparison') }] : []),
+    ...(job?.type === 'train' || job?.type === 'xyz' ? [{ key: 'xyz', icon: Grid2X2, label: text('模型测试', 'Model testing') }] : []),
     { key: 'checkpoints', icon: Layers, label: `${t('job.tabCheckpoints')} (${checkpoints.length})` },
     { key: 'logs', icon: Terminal, label: t('job.tabLogs') },
     { key: 'config', icon: Code, label: t('job.tabConfig') },
@@ -400,7 +400,7 @@ export default function JobDetail() {
     <div className="job-monitor task-workspace" data-view={activeTab} data-testid="job-detail-page">
       <div className="job-monitor-bar"><div className="job-monitor-links"><Link to={queueReturnTo}>← {text('全局训练队列', 'Training queue')}</Link>
       {job?.project_id && <Link to={projectUrl(job.project_id, job.version_id, 'results')} title={job.project_id} className="inline-flex flex-wrap gap-1 text-sm hover:underline">← {job.project_name || text('所属项目', 'Project')} · {text('训练结果', 'Training results')}{job.version_id && <span className="break-words text-xs" title={job.version_id}> · {versionName ? `${text('版本', 'Version')} ${versionName}` : text('所属版本', 'Version')}</span>}</Link>}
-      </div><div className="job-monitor-identity"><div><h1>{job?.name || text('读取任务…', 'Loading job…')}</h1><small>{id} · {job?.type === 'xyz' ? text('XYZ 对比采样', 'XYZ comparison') : job?.type === 'cache' ? text('缓存任务', 'Cache job') : text('训练任务', 'Training job')}</small></div><span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${statusBadgeClass}`}>{statusText}</span>{job && <JobActions key={job.id} job={job} onUpdated={updated => { if (updated.id === job.id) setJob(updated); else navigate(`/jobs/${updated.id}`); }}/>}</div></div>
+      </div><div className="job-monitor-identity"><div><h1>{job?.name || text('读取任务…', 'Loading job…')}</h1><small>{id} · {job?.type === 'xyz' ? text('模型测试', 'Model testing') : job?.type === 'cache' ? text('缓存任务', 'Cache job') : text('训练任务', 'Training job')}</small></div><span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${statusBadgeClass}`}>{statusText}</span>{job && <JobActions key={job.id} job={job} onUpdated={updated => { if (updated.id === job.id) setJob(updated); else navigate(`/jobs/${updated.id}`); }}/>}</div></div>
       <dl className="job-run-metadata" aria-label={text('运行信息','Run information')}>
         <div><dt>{text('开始时间','Started')}</dt><dd>{formatTime(job?.started_at)}</dd></div>
         <div><dt>{job?.type === 'train' ? text('训练时长','Training elapsed') : text('运行时长','Elapsed')}</dt><dd>{formatEta(elapsed)}</dd></div>

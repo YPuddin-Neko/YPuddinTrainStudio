@@ -1850,7 +1850,7 @@ def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends
             (jid,),
         ):
             raise ApiError(
-                "Delete this training job's XYZ comparisons first; their history still uses this job",
+                "请先删除使用此训练任务的模型测试记录，这些记录仍依赖该任务。",
                 code="job.xyz_dependencies",
                 status=409,
             )
@@ -2149,7 +2149,7 @@ def delete_artifact(aid: str, delete_file: bool = False, c: ServiceContext = Dep
         )
         if any(row["active"] or c.supervisor.is_running(row["id"]) for row in references):
             raise ApiError(
-                "A queued or running XYZ comparison uses this checkpoint; cancel it and wait for its worker to exit first",
+                "排队或运行中的模型测试正在使用此检查点，请先取消该测试并等待进程退出。",
                 code="artifact.xyz_dependencies",
                 status=409,
             )

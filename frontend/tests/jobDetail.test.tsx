@@ -165,6 +165,7 @@ it.each(['logs', 'config'])('keeps XYZ %s free of training metrics when navigati
   server.use(http.get('/api/jobs/job_01', () => HttpResponse.json({...mockJobs[0], id: 'job_01', name: 'XYZ 对比任务', type: 'xyz', status: 'completed'})));
   const {container} = render(<MemoryRouter initialEntries={[`/jobs/job_01?tab=${tab}`]}><Routes><Route path="/jobs/:id" element={<JobDetail/>}/></Routes></MemoryRouter>);
   await screen.findByRole('heading', {name: 'XYZ 对比任务'});
+  expect(screen.getByRole('tab', { name: '模型测试' })).toBeInTheDocument();
   expect(container.querySelector('.job-monitor-summary')).not.toBeInTheDocument();
   expect(screen.getByText('运行时长')).toBeInTheDocument();
   expect(screen.getByText('任务配置')).toBeInTheDocument();

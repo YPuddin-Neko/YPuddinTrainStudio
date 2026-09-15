@@ -62,7 +62,7 @@ class XyzAxis(BaseModel):
 
 class XyzRequest(GpuSelection):
     model_config = ConfigDict(extra="forbid")
-    name: str = Field("XYZ comparison", min_length=1, max_length=120)
+    name: str = Field("模型测试", min_length=1, max_length=120)
     prompt: str = Field(min_length=1, max_length=8000)
     negative: str = Field("", max_length=8000)
     width: int = Field(512, ge=32, le=2048)
@@ -88,7 +88,7 @@ class XyzRequest(GpuSelection):
             raise ValueError("X, Y and Z must use different parameters")
         count = math.prod(len(axis.values) for axis in axes)
         if count > MAX_CELLS or count * self.width * self.height > 64 * 1024 * 1024:
-            raise ValueError("XYZ exceeds 64 cells or 64 megapixels; reduce axis values or image dimensions")
+            raise ValueError("模型测试超出图片数量或总像素上限，请减少参数值或降低图片尺寸（最多 64 张）。")
         if any(axis.key == "adapter_scale" for axis in axes) and not (
             self.checkpoint_id or any(axis.key == "checkpoint" for axis in axes)
         ):
@@ -187,7 +187,7 @@ def full_checkpoint_model(path: Path, family: str) -> ModelConfig:
 def _source(context, source_id):
     row = context.db.fetchone("SELECT * FROM jobs WHERE id=?", (source_id,))
     if not row or row["type"] != "train":
-        raise NotFound("Select a training job for XYZ sampling", code="xyz.source")
+        raise NotFound("请为模型测试选择一个来源训练任务。", code="xyz.source")
     return row
 
 
@@ -299,7 +299,7 @@ def start(context, source_id: str, request: XyzRequest):
             )
         if any(not cell["checkpoint_id"] or cell["checkpoint_id"] not in checkpoints for cell in cells):
             raise ApiError(
-                "Select an existing full-model result for every XYZ cell; original-base fallback is disabled",
+                "请为模型测试中的每张图片选择已导出的完整模型，不能使用原始底模代替。",
                 code="xyz.checkpoint",
                 status=422,
             )
@@ -496,14 +496,14 @@ def start(context, source_id: str, request: XyzRequest):
 def _row(context, jid):
     row = context.db.fetchone("SELECT * FROM jobs WHERE id=? AND type='xyz'", (jid,))
     if not row:
-        raise NotFound("XYZ task not found", code="xyz.not_found")
+        raise NotFound("模型测试任务不存在。", code="xyz.not_found")
     return row
 
 
 def result_root(context, row):
     root = Path(row["run_dir"]).expanduser()
     if root.is_symlink() or (root / "samples").is_symlink() or not context.is_allowed(root.resolve()):
-        raise ApiError("XYZ result storage is outside allowed roots", code="xyz.path", status=403)
+        raise ApiError("模型测试结果目录不在允许访问的范围内。", code="xyz.path", status=403)
     return root.resolve() / "samples"
 
 

@@ -204,7 +204,7 @@ describe('queue pagination', () => {
     emit('job.xyz_progress', { job_id: 'xyz-run', done: 1, total: 8 });
     expect(within(row).getByText('3 / 8 张')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('combobox', { name: '任务类型' }));
-    expect(screen.getByRole('option', { name: 'XYZ 采样' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: '模型测试' })).toBeInTheDocument();
   });
   it('loads subsequent pages and applies server-side status filters', async () => {
     const requests: URL[] = [];

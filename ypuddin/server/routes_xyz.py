@@ -51,13 +51,13 @@ def file(jid: str, name: str, context=Depends(ctx)):
     task = xyz.task(context, jid)
     published = {entry["file"] for entry in task["manifest"]["cells"] + task["manifest"]["grids"]}
     if name not in published:
-        raise NotFound("XYZ image not found", code="xyz.file")
+        raise NotFound("模型测试图片不存在。", code="xyz.file")
     root = xyz.result_root(context, xyz._row(context, jid))
     path = root / name
     if path.is_symlink() or not path.resolve().is_relative_to(root) or not context.is_allowed(path.resolve()):
-        raise ApiError("XYZ image is outside result storage", code="xyz.path", status=403)
+        raise ApiError("模型测试图片不在结果目录内。", code="xyz.path", status=403)
     if not path.is_file():
-        raise NotFound("XYZ image not found", code="xyz.file")
+        raise NotFound("模型测试图片不存在。", code="xyz.file")
     return FileResponse(
         path,
         media_type="image/png",

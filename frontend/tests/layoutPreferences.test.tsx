@@ -50,6 +50,17 @@ function show() {
 const sidebar = () => within(screen.getByRole('complementary'));
 
 describe('sidebar footer navigation', () => {
+  it.each([['zh-CN', '模型测试'], ['en', 'Model testing']] as const)('opens model testing from the %s navigation without changing settings', async (language, label) => {
+    const user = userEvent.setup();
+    settings.ui.language = language;
+    await i18n.changeLanguage(language);
+    show();
+    const entry = await sidebar().findByRole('link', { name: label });
+    expect(entry).toHaveAttribute('href', '/sampling');
+    await user.click(entry);
+    expect(screen.getByTestId('route')).toHaveTextContent('/sampling');
+    expect(writes).toEqual([]);
+  });
   it('persists sidebar collapse without writing trainer settings and restores accessible navigation after remount',async()=>{
     const user=userEvent.setup();
     show();await waitFor(()=>expect(screen.getByLabelText('CPU 占用率')).toHaveTextContent('0%'));

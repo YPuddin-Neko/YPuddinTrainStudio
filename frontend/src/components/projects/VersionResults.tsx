@@ -141,7 +141,7 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
   const tabs: { id: ResultTab; label: string; icon: typeof Activity }[] = [
     { id: 'artifacts', label: text('模型权重', 'Model weights'), icon: Box },
     { id: 'samples', label: text('采样图', 'Samples'), icon: ImageIcon },
-    { id: 'xyz', label: text('XYZ 对比', 'XYZ comparison'), icon: Grid2X2 },
+    { id: 'xyz', label: text('模型测试', 'Model testing'), icon: Grid2X2 },
     { id: 'jobs', label: text('训练记录', 'Training records'), icon: Activity },
   ];
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));

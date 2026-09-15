@@ -145,7 +145,7 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
     { to: '/', icon: Activity, label: t('nav.dashboard') },
     { to: '/projects', icon: Folder, label: t('nav.projects') },
     { to: '/queue', icon: Layers, label: t('nav.queue') },
-    { to: '/sampling', icon: Grid2X2, label: text('XY 对比', 'XY comparison') },
+    { to: '/sampling', icon: Grid2X2, label: text('模型测试', 'Model testing') },
     { to: '/presets', icon: SlidersHorizontal, label: text('参数预设', 'Training presets') },
   ];
 
@@ -201,7 +201,7 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
                 data-testid="topbar-running-job"
               >
                 <PlayCircle className="w-3.5 h-3.5 animate-pulse" />
-                <span className="topbar-job-name">{runningJob.name}</span><span className="sr-only">{runningJob.type === 'xyz' ? text('XYZ 采样', 'XYZ sampling') : runningJob.type === 'cache' ? text('缓存', 'Cache') : text('训练', 'Training')}</span>
+                <span className="topbar-job-name">{runningJob.name}</span><span className="sr-only">{runningJob.type === 'xyz' ? text('模型测试', 'Model testing') : runningJob.type === 'cache' ? text('缓存', 'Cache') : text('训练', 'Training')}</span>
                 {runningJob.type === 'xyz' && runningJob.progress?.total != null && <span className="topbar-job-progress">{runningJob.progress.done ?? 0}/{runningJob.progress.total}</span>}
                 {runningJob.type !== 'xyz' && runningJob.progress?.step != null && runningJob.progress?.total_steps != null && (
                   <span className="topbar-job-progress">{runningJob.progress.step}/{runningJob.progress.total_steps}</span>

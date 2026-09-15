@@ -44,7 +44,7 @@ describe('XYZ sampling workspace', () => {
     choose('Y · 纵向比较', 'LoRA 强度'); choose('Z · 分页比较', '随机种子');
     expect(screen.getByText('2 列 × 3 行 × 3 页，共 18 张')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '生成对比图' }));
-    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/jobs/run/xyz', expect.objectContaining({ x: { key: 'checkpoint', values: ['cp1', 'cp2'] }, y: { key: 'adapter_scale', values: [0.6, 0.8, 1] }, z: { key: 'seed', values: [42, 43, 44] }, checkpoint_id: 'cp2', width: 1024, seed: 42 }), expect.anything()));
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/jobs/run/xyz', expect.objectContaining({ name: '模型测试', x: { key: 'checkpoint', values: ['cp1', 'cp2'] }, y: { key: 'adapter_scale', values: [0.6, 0.8, 1] }, z: { key: 'seed', values: [42, 43, 44] }, checkpoint_id: 'cp2', width: 1024, seed: 42 }), expect.anything()));
   });
   it('applies Turbo inference defaults when chosen, then restores Raw defaults', async () => {
     view(); await screen.findByText('对比设置'); choose('X · 横向比较', '采样步数');
@@ -72,9 +72,9 @@ describe('XYZ sampling workspace', () => {
     const dialog = screen.getByRole('dialog'); expect(within(dialog).getByRole('link', { name: '下载原图' })).toHaveAttribute('href', expect.stringContaining('cell-2.png'));
     fireEvent.keyDown(within(dialog).getByRole('button', { name: '关闭' }), { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    fireEvent.change(screen.getByLabelText('XYZ 提示词'), { target: { value: 'changed' } });
+    fireEvent.change(screen.getByLabelText('模型测试提示词'), { target: { value: 'changed' } });
     fireEvent.click(screen.getByRole('button', { name: '复用参数' }));
-    expect(screen.getByLabelText('XYZ 提示词')).toHaveValue('a pudding');
+    expect(screen.getByLabelText('模型测试提示词')).toHaveValue('a pudding');
     expect(screen.getByLabelText('Z · 分页比较 · 取值')).toHaveValue('42, 43');
   });
   it('preserves partial results and cancels the actual selected task', async () => {

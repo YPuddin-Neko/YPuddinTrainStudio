@@ -6554,7 +6554,7 @@ export interface components {
             gpu_devices?: string[];
             /**
              * Name
-             * @default XYZ comparison
+             * @default 模型测试
              */
             name: string;
             /** Prompt */

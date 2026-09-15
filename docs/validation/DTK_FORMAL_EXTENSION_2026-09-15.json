@@ -1,13 +1,13 @@
 {
-  "recorded_at": "2026-09-15T07:53:52+08:00",
+  "recorded_at": "2026-09-15T08:25:00+08:00",
   "status": "in_progress",
   "node": "DTK 26.04 / vendor Torch 2.7.1 / two BW 64 GiB GPUs",
   "scope": "Official-size 512px LoKr training and strict 8-step versus 4-step-resume comparisons. GPU-only tests are separate from frontend fixtures.",
   "limitations": [
     "Runtime FP8 cases quantize selected frozen linears from official BF16 weights; they do not load the official scaled-FP8 checkpoint or validate native FP8 GEMM.",
     "The passing Anima single-GPU diagnostic includes synchronizing tensor hashing hooks. The subsequent plain deterministic single-GPU control failed strict comparison; the diagnostic pass is not a product fix.",
-    "Anima single/multi-GPU and SDXL exact resume remain under investigation; training completion alone is not a strict pass. The new optional DTK math-SDPA candidate has not been deployed or tested on hardware.",
-    "New per-GPU concurrent product jobs await authorization to copy the updated code to an isolated remote test directory."
+    "Anima single/multi-GPU and SDXL exact resume remain under investigation. The optional DTK math-SDPA candidate was tested on official Anima single-GPU using d2a43f5 and failed strict comparison; it is not a demonstrated fix.",
+    "Independent per-GPU product jobs passed eight real DTK checks; see DTK_PARALLEL_TASKS_2026-09-15.json. That test does not establish bitwise resume equivalence or long-duration stability."
   ],
   "completed_reports": [
     {
@@ -1390,6 +1390,251 @@
           "sha256": "01d9be95b04857e96b49afe4a877b3cb46221f8e055bc92ed01175152155cb7e"
         }
       ]
+    }
+  ],
+  "continued_reports": [
+    {
+      "case": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-full-g1-r512-20260915-074346-457588215",
+      "family": "anima",
+      "mode": "full",
+      "gpus": 1,
+      "steps": 8,
+      "source": "/root/private_data/YPuddinTrainStudio-dtk/source",
+      "deterministic": true,
+      "passed": false,
+      "reference_report_sha256": "67e3670e093badc6c305c5475a920bba7ac0ae836a83f6044edded6a2d9c4cff",
+      "reference_reused_without_retraining": true,
+      "resume_comparison": {
+        "exact": false,
+        "finite": true,
+        "different_tensor_count": 685,
+        "max_absolute_difference": 4.313560202717781e-05,
+        "rms_absolute_difference": 3.0792228939716726e-06,
+        "relative_l2_difference": 3.651144211309877e-06,
+        "numerical_metrics_are_diagnostic_only": true,
+        "example_different_keys": [
+          "backbone.blocks.0.adaln_modulation_cross_attn.1.weight",
+          "backbone.blocks.0.adaln_modulation_cross_attn.2.weight",
+          "backbone.blocks.0.adaln_modulation_mlp.1.weight",
+          "backbone.blocks.0.adaln_modulation_mlp.2.weight",
+          "backbone.blocks.0.adaln_modulation_self_attn.1.weight",
+          "backbone.blocks.0.adaln_modulation_self_attn.2.weight",
+          "backbone.blocks.0.cross_attn.k_norm.weight",
+          "backbone.blocks.0.cross_attn.k_proj.weight",
+          "backbone.blocks.0.cross_attn.output_proj.weight",
+          "backbone.blocks.0.cross_attn.q_norm.weight"
+        ],
+        "tensor_count": 685
+      },
+      "checkpoint_state_comparison": {
+        "progress_exact": false,
+        "sampler_exact": true,
+        "rng_exact": true,
+        "scheduler_exact": true,
+        "optimizer_exact": false
+      },
+      "preview_exact": false,
+      "original_assets_unchanged": true,
+      "path": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-full-g1-r512-20260915-074346-457588215/continued-20260915-081334-836575411-report.json",
+      "sha256": "53f8b7e56f71bb430712fcf24e9f8466cb0b99df598ca3f04c7fa2752647f657",
+      "training_passed": true,
+      "resume_execution_passed": true,
+      "resume_process": {
+        "command": [
+          "/root/private_data/YPuddinTrainStudio-dtk/source/environment/profiles/linux-dtk/venv/bin/python",
+          "/root/private_data/YPuddinTrainStudio-dtk/acceptance/parallel-source-20260915/runner/family_formal_acceptance.py",
+          "--root",
+          "/root/private_data/YPuddinTrainStudio-dtk",
+          "worker",
+          "--config",
+          "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-full-g1-r512-20260915-074346-457588215/continued-20260915-081334-836575411.json",
+          "--deterministic"
+        ],
+        "returncode": 0,
+        "wall_elapsed_s": 211.98088892293163,
+        "log": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-full-g1-r512-20260915-074346-457588215/continued-20260915-081334-836575411.log",
+        "all_owned_processes_exited": true
+      },
+      "reference": {
+        "checks": {
+          "finished_all_ranks": true,
+          "expected_final_step": true,
+          "finite_losses": true,
+          "finite_weights": true,
+          "parameters_changed": true,
+          "all_optimizer_updates_observed": true,
+          "rank_parameters_equal": true,
+          "rank_shards_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "preview_file": true,
+          "full_state": true,
+          "no_nonfinite_skips": true,
+          "official_size_and_components_verified": true,
+          "full_model_manifest": true,
+          "only_backbone_exported": true,
+          "export_matches_full_training_state": true,
+          "native_reload_config_present": true
+        },
+        "passed": true,
+        "artifact": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-full-g1-r512-20260915-074346-457588215/reference/anima-final.model",
+        "compute_policy": []
+      },
+      "resumed": {
+        "checks": {
+          "finished_all_ranks": true,
+          "expected_final_step": true,
+          "finite_losses": true,
+          "finite_weights": true,
+          "parameters_changed": true,
+          "all_optimizer_updates_observed": true,
+          "rank_parameters_equal": true,
+          "rank_shards_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "preview_file": true,
+          "full_state": true,
+          "no_nonfinite_skips": true,
+          "official_size_and_components_verified": true,
+          "full_model_manifest": true,
+          "only_backbone_exported": true,
+          "export_matches_full_training_state": true,
+          "native_reload_config_present": true
+        },
+        "passed": true,
+        "artifact": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-full-g1-r512-20260915-074346-457588215/continued-20260915-081334-836575411/anima-final.model",
+        "compute_policy": [
+          {
+            "source": "/root/private_data/YPuddinTrainStudio-dtk/source",
+            "config_deterministic": null,
+            "deterministic_algorithms": true,
+            "cudnn_deterministic": false,
+            "cudnn_benchmark": false,
+            "sdpa": {
+              "flash": true,
+              "mem_efficient": true,
+              "math": true,
+              "cudnn": true
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "candidate_reports": [
+    {
+      "case": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-adapter-g1-r512-20260915-082040-350247590",
+      "family": "anima",
+      "mode": "adapter",
+      "gpus": 1,
+      "steps": 8,
+      "passed": false,
+      "resume_comparison": {
+        "exact": false,
+        "finite": true,
+        "different_tensor_count": 840,
+        "max_absolute_difference": 0.00047851912677288055,
+        "rms_absolute_difference": 3.739309760601055e-05,
+        "relative_l2_difference": 0.0003583929943553693,
+        "numerical_metrics_are_diagnostic_only": true,
+        "example_different_keys": [
+          "blocks.0.cross_attn.k_proj.adapter.w1",
+          "blocks.0.cross_attn.k_proj.adapter.w2_a",
+          "blocks.0.cross_attn.k_proj.adapter.w2_b",
+          "blocks.0.cross_attn.output_proj.adapter.w1",
+          "blocks.0.cross_attn.output_proj.adapter.w2_a",
+          "blocks.0.cross_attn.output_proj.adapter.w2_b",
+          "blocks.0.cross_attn.q_proj.adapter.w1",
+          "blocks.0.cross_attn.q_proj.adapter.w2_a",
+          "blocks.0.cross_attn.q_proj.adapter.w2_b",
+          "blocks.0.cross_attn.v_proj.adapter.w1"
+        ],
+        "tensor_count": 840
+      },
+      "checkpoint_state_comparison": {
+        "progress_exact": false,
+        "sampler_exact": true,
+        "rng_exact": true,
+        "scheduler_exact": true,
+        "optimizer_exact": false
+      },
+      "preview_exact": false,
+      "original_assets_unchanged": true,
+      "path": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-adapter-g1-r512-20260915-082040-350247590/report.json",
+      "sha256": "48c86826075a5c250638514d21720e6bad9621979e1b29978d32bfe857cfb527",
+      "source_commit": "d2a43f561521656af372f2eb5e3bfbf2254d6a49",
+      "training_passed": true,
+      "resume_execution_passed": true,
+      "reference": {
+        "checks": {
+          "finished_all_ranks": true,
+          "expected_final_step": true,
+          "finite_losses": true,
+          "finite_weights": true,
+          "parameters_changed": true,
+          "all_optimizer_updates_observed": true,
+          "rank_parameters_equal": true,
+          "rank_shards_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "preview_file": true,
+          "full_state": true,
+          "no_nonfinite_skips": true,
+          "official_size_and_components_verified": true,
+          "final_adapter_weights": true
+        },
+        "passed": true,
+        "compute_policy": [
+          {
+            "source": "/root/private_data/YPuddinTrainStudio-dtk/acceptance/parallel-source-20260915",
+            "config_deterministic": true,
+            "deterministic_algorithms": true,
+            "cudnn_deterministic": true,
+            "cudnn_benchmark": false,
+            "sdpa": {
+              "flash": false,
+              "mem_efficient": false,
+              "math": true,
+              "cudnn": false
+            }
+          }
+        ]
+      },
+      "resumed": {
+        "checks": {
+          "finished_all_ranks": true,
+          "expected_final_step": true,
+          "finite_losses": true,
+          "finite_weights": true,
+          "parameters_changed": true,
+          "all_optimizer_updates_observed": true,
+          "rank_parameters_equal": true,
+          "rank_shards_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "preview_file": true,
+          "full_state": true,
+          "no_nonfinite_skips": true,
+          "official_size_and_components_verified": true,
+          "final_adapter_weights": true
+        },
+        "passed": true,
+        "compute_policy": [
+          {
+            "source": "/root/private_data/YPuddinTrainStudio-dtk/acceptance/parallel-source-20260915",
+            "config_deterministic": true,
+            "deterministic_algorithms": true,
+            "cudnn_deterministic": true,
+            "cudnn_benchmark": false,
+            "sdpa": {
+              "flash": false,
+              "mem_efficient": false,
+              "math": true,
+              "cudnn": false
+            }
+          }
+        ]
+      }
     }
   ]
 }

@@ -2,7 +2,7 @@
 
 本报告对照 9 月 14 日至 15 日的截图反馈，记录当前源码中的修复、实际检查范围和未完成的验证。**最新本地前端全量检查为 89 个测试文件、687 项通过，TypeScript、生产构建和 ESLint 通过。** 此数字是一次完整测试集合，不与此前 664、672 项或局部测试重复相加。
 
-已有本地提交：`549c955`（DTK、监控与工作区）、`e8838cd`（统一安装日志与下拉选择）、`6108a25`（中文说明）。本报告所在提交包含独立 XY 页面、按卡选择与队列显示的新增改动；实际提交号在交付回复中提供。没有云端推送，也没有按本次请求生成安装包。
+已有本地提交：`549c955`（DTK、监控与工作区）、`e8838cd`（统一安装日志与下拉选择）、`6108a25`（中文说明）。本报告所在提交包含独立模型测试页面、按卡选择与队列显示的新增改动；实际提交号在交付回复中提供。没有云端推送，也没有按本次请求生成安装包。
 
 ## 训练参数与监控
 
@@ -64,30 +64,31 @@ PyTorch、xFormers、FlashAttention 的条件检查、确认、进度、日志�
 
 实现入口：[共享下拉](../frontend/src/components/StudioSelect.tsx)、[环境管理](../frontend/src/components/EnvironmentManagerPanel.tsx)、[PyTorch 环境](../frontend/src/components/TorchEnvironmentPanel.tsx)、[统一安装展示](../frontend/src/components/InstallationOperation.tsx)、[Windows 包选择](../frontend/src/components/WindowsAttentionWheelPicker.tsx)、[网络代理](../frontend/src/pages/Settings/NetworkPreferences.tsx)、[服务关闭](../ypuddin/server/http_server.py)。
 
-## 独立 XY 对比与选卡
+## 独立模型测试与选卡
 
-- 主导航新增 `/sampling` 的“XY 对比”。选择项目和来源训练任务后，复用该任务的底模、已保存权重和原有 X/Y/Z 参数轴；原任务详情和版本结果入口携带来源、版本及选中记录跳转。
+- 主导航新增 `/sampling` 的“模型测试”。选择项目和来源训练任务后，复用该任务的底模、已保存权重和原有 X/Y/Z 参数轴；原任务详情和版本结果入口携带来源、版本及选中记录跳转。
 - 项目列表读取失败就地提示并可重试，不阻断已选来源的查看；从版本页进入时显示可清除的“当前版本”筛选。归档来源只读；版本未就绪或状态无法确认时禁生成。
-- 训练启动区可按训练显卡数量选择 N 张卡；XY 选择一张卡。请求传服务逻辑设备编号，自动模式使用空数组。指定忙卡可排队等待，不静默换卡；所选卡失效或数量不符会阻止提交。
+- 训练启动区可按训练显卡数量选择 N 张卡；模型测试选择一张卡。请求传服务逻辑设备编号，自动模式使用空数组。指定忙卡可排队等待，不静默换卡；所选卡失效或数量不符会阻止提交。
 - 队列显示每张卡所属任务、任务申请卡和实际运行卡。自动并行使用 `max_concurrent=null`；已有手动并发上限不会被静默覆盖。
 - 比较区按独立页面剩余高度布局，常规桌面首屏可见生成按钮。显卡下拉使用共享组件，选项即使通过 portal 展开也不会被外层弹层提前关闭。
 - 版本即使处于 `ready`，只要仍有处理操作（`busy`）也禁止生成。现有刷新来源按钮同时重查版本状态，处理结束后恢复生成；同来源刷新保留未生成的提示词与轴设置，切换来源才重置草稿，历史对比始终可查看。
 
-实际原生 Edge 验证使用真实组件和固定测试数据：训练显示占用 GPU 0，XY 选择 GPU 1，提交后进入对比结果，再到队列查看两项归属及自动并行设置。**这证明前端选择、请求和显示链路，不证明 GPU 计算已经并发运行。** 新版并发调度上传海光节点的审批尚未完成，不能将此前单任务 DDP 或单卡训练结果算作新并发验收。
+首次原生 Edge 验证使用固定测试数据，检查选卡、提交、结果和队列显示。随后已在海光通过真实产品 API 完成两项训练分卡运行，以及训练期间另一张卡生成两张测试图，8 项硬件检查全部通过，见 [分卡实测记录](validation/DTK_PARALLEL_TASKS_2026-09-15.json)。浏览器再次连接独立验收服务，检查真实完成图片、预览和三项任务历史，并确认导航、标题、相关入口和任务类型均显示“模型测试”。这些浏览器截图是完成结果；实时并发由 API 时间线与工作进程证据支持。
 
-实现入口：[独立页面](../frontend/src/pages/Sampling/Sampling.tsx)、[共享选卡](../frontend/src/components/GpuDevicePicker.tsx)、[XY 工作区](../frontend/src/components/sampling/XyzSampling.tsx)、[队列](../frontend/src/pages/Queue/Queue.tsx)。
+实现入口：[独立页面](../frontend/src/pages/Sampling/Sampling.tsx)、[共享选卡](../frontend/src/components/GpuDevicePicker.tsx)、[模型测试工作区](../frontend/src/components/sampling/XyzSampling.tsx)、[队列](../frontend/src/pages/Queue/Queue.tsx)。
 
 ## 验收证据与版本边界
 
 | 检查 | 最新结果 | 覆盖范围 |
 | --- | --- | --- |
 | 前端全量 | **89 文件 / 687 项通过** | 既有界面回归，以及新增独立页、归档只读、来源重试、显卡选择、请求字段、自动并行和旧入口跳转。 |
-| XY 来源状态增补 | **3 文件 / 24 项通过** | 在完整集合之后新增 `ready + busy` 门禁与刷新解除只读回归，未与上面的重叠集合相加；构建和 ESLint 重新通过。 |
+| 模型测试来源状态增补 | **3 文件 / 24 项通过** | 在完整集合之后新增 `ready + busy` 门禁与刷新解除只读回归，未与上面的重叠集合相加；构建和 ESLint 重新通过。 |
 | 构建 | TypeScript 与 Vite 通过 | 当前源码的生产构建；不代表已部署到 Windows 或海光服务。 |
 | 代码规范 | ESLint 零 warning、`git diff --check` 通过 | 当前检查范围内的代码和差异。 |
 | 生产页面 | 已有训练参数、数据集、JSON、正则计划和遥测验收 | 详见 [UI_ACCEPTANCE](UI_ACCEPTANCE_2026-09-14.md) 中 9 月 15 日追加记录。 |
 | 安装日志、Windows 版本列表 | 原生浏览器 + fixture | 所有 API 被替换为测试数据，没有执行真实安装。 |
-| 新 XY 分卡显示 | 原生浏览器 + fixture | 没有连接真实训练服务、占用 GPU 或修改用户训练数据。 |
+| 模型测试分卡显示 | fixture 交互 + 海光真实完成结果 | 两种证据分开保留；真实结果包括 GPU 0 / GPU 1 任务归属和两张生成图。 |
+| 模型测试名称统一 | **7 文件 / 68 项通过** | 导航、标题、入口、队列类型、默认新任务名及相关无障碍描述；构建与 lint 通过。 |
 
 首轮全量检查曾发现训练 schema 重导丢失优化器能力信息，造成 8 项优化器回归和 TypeScript 失败。修复导出流程后重新完整运行，得到上述 687 项通过；没有删除失败断言或把失败排除在最终集合之外。
 
@@ -104,12 +105,14 @@ PyTorch、xFormers、FlashAttention 的条件检查、确认、进度、日志�
 | `remote-testing/dtk-20260914/final-validation/multigpu-frontend-final-limited-20260915.log`、`multigpu-build-final-20260915.log` | 最终 Schema 更新后再次构建并完整验证，89 文件 / 687 项通过。此次限制两个测试 worker，保留原有断言与超时；此前与后端大批量并行运行时有 3 项超时，未将那次结果算作通过。 |
 | 同目录 `xy-gpu1-selected.png`、`xy-generation-gpu1.png`、`queue-separate-gpus.png`、`queue-auto-concurrency.png` | 原生浏览器中的选卡、生成、队列归属和自动并行截图，内容为 fixture。 |
 
+本次真实浏览器证据在 `remote-testing/dtk-20260914/final-validation/model-testing-real-browser-20260915.md`，包括截图尺寸、SHA256、服务来源及边界。新名称截图为 `model-testing-real-results-20260915.jpg` 和 `model-testing-real-queue-history-20260915.jpg`，原生输出为 JPEG；同名 `.txt` 保留可访问性文本。历史任务的原自定义名称没有改写。
+
 较早的 [工作台验收](WORKSPACE_ACCEPTANCE_2026-09-14.md)、仓库外 `ui-acceptance-checklist.md` 和旧汇总中仍有“常用 / 全部参数”“关闭结果”“历史记录”等阶段性描述。当前产品以本报告和源码为准：使用“简单 / 高级”，安装只显示统一日志区，不恢复这些旧入口。
 
 ## 尚未完成或不能据此认定完成的项目
 
 1. **Windows 实机安装验收**：本轮新版 FA2 候选查询、真实 wheel 安装/重装/卸载、PyTorch 独立环境安装及重启切换，尚未在用户当前 Windows 环境完整重测。此前 [Windows 训练验收](WINDOWS_ACCEPTANCE_2026-09-14.md) 是不同范围的证据。
-2. **新版海光分卡并发**：尚未完成新调度代码的远端上传与真实“训练 GPU 0 + XY GPU 1”运行验证；前端 fixture 和本地调度测试不能替代它。
+2. **Windows CUDA 分卡实测**：海光上的独立任务分卡已通过；不将该结果视为用户当前 Windows CUDA 机器也已实测。
 3. **代理实网组合**：界面保存与后端代理契约有回归，但不能宣称用户实际代理到模型站点、包源、Danbooru 的全部联网组合已逐一通过；当前仅承诺所实现的 HTTP/HTTPS 代理设置。
 4. **正则图新增范围的实际生成**：本轮生产页面验证到筛选、排除、数量与提示词计划，没有在这次 UI 验收中启动正式模型生成或 Danbooru 收集。
 5. **所有 JSON 与所有中文输出**：已验证列出的 JSON 结构及保护行为；未知结构仍需明确适配。静态中文扫描不包含所有动态错误和第三方日志，不能写成“全部页面永远不会出现英文”。

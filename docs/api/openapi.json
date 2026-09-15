@@ -18444,7 +18444,7 @@
             "maxLength": 120,
             "minLength": 1,
             "title": "Name",
-            "default": "XYZ comparison"
+            "default": "模型测试"
           },
           "prompt": {
             "type": "string",

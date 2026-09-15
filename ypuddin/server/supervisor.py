@@ -321,7 +321,7 @@ class JobSupervisor:
                 and payload.get("training", {}).get("mode") != "full"
             ):
                 raise ValueError(
-                    "这个旧的 XY 对比未固定完整模型权重，请选择已导出的检查点重新创建对比。"
+                    "这个旧的模型测试未固定完整模型权重，请选择已导出的检查点重新创建测试。"
                 )
             payload.update(
                 device=worker_device,
@@ -627,7 +627,7 @@ class JobSupervisor:
             raise KeyError(job_id)
         if job["type"] == "xyz" and command not in {"cancel", "retry"}:
             raise ValueError(
-                "XYZ comparisons support cancel and retry; training pause/resume/save do not apply"
+                "模型测试支持取消和重试，不能执行训练任务的暂停、恢复或保存操作。"
             )
         if command in {"resume", "retry"}:
             self._check_job_version(job)
