@@ -22,6 +22,8 @@ from safetensors.torch import save_file
 from torch import nn
 from torch.distributed.tensor import DTensor, Replicate, Shard
 
+from ypuddin.config.io import config_hash, load_config
+
 from .state import Progress
 from .training_modes import FullTrainingSet, save_model_artifact
 
@@ -273,6 +275,7 @@ def save_sharded_checkpoint(
     config_hash: str = "",
     dataset_fingerprint: str = "",
     model_identity: str = "",
+    scheduler_config: dict[str, Any] | None = None,
 ) -> Path:
     """Save full-model format 4; all ranks call, rank zero writes atomically."""
     _, world = _rank_world()
@@ -300,6 +303,11 @@ def save_sharded_checkpoint(
         "dataset_fingerprint": dataset_fingerprint,
         "model_identity": model_identity,
     }
+    if scheduler_config is not None:
+        meta["scheduler_contract"] = {
+            "config": copy.deepcopy(scheduler_config),
+            "total_steps": progress.total_steps,
+        }
     checkpoint_rng = {
         **ranks[0]["rng"],
         "distributed": {
@@ -335,6 +343,34 @@ def read_sharded_checkpoint_metadata(path: str | Path) -> dict[str, Any]:
     return meta
 
 
+def _scheduler_contract(path: Path, meta: dict[str, Any]) -> dict[str, Any]:
+    contract = meta.get("scheduler_contract")
+    if contract is not None:
+        return contract
+    # r2 saved the LambdaLR state but not its Python closure. Only trust the
+    # original run config if its fingerprint matches this checkpoint, never a
+    # newly edited config or the current resume job's output/resume paths.
+    try:
+        original = load_config(path.parent / "config.toml")
+        if not meta.get("config_hash") or config_hash(original) != meta["config_hash"]:
+            raise ValueError("原训练配置已修改或无法确认来源")
+        return {
+            "config": original.scheduler.model_dump(mode="json"),
+            "total_steps": meta["progress"]["total_steps"],
+        }
+    except (OSError, ValueError, KeyError) as exc:
+        raise ValueError(
+            "旧分片训练状态缺少学习率调度配置，无法验证精确恢复；"
+            "请保留原训练目录中未修改的 config.toml，或使用完整模型权重开始新任务。"
+        ) from exc
+
+
+def read_sharded_scheduler_contract(path: str | Path) -> dict[str, Any]:
+    """Capture the original recipe before a same-directory resume writes its config."""
+    path = Path(path)
+    return _scheduler_contract(path, read_sharded_checkpoint_metadata(path))
+
+
 def load_sharded_checkpoint(
     path: str | Path,
     *,
@@ -346,6 +382,9 @@ def load_sharded_checkpoint(
     expected_dataset_fingerprint: str | None = None,
     expected_model_identity: str | None = None,
     expected_deterministic: bool | None = None,
+    expected_scheduler_config: dict[str, Any] | None = None,
+    expected_total_steps: int | None = None,
+    legacy_scheduler_contract: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Validate before mutation, then restore native tensors and optimizer shards.
 
@@ -372,6 +411,20 @@ def load_sharded_checkpoint(
         if expected_deterministic is not None:
             if meta["progress"].get("extra", {}).get("deterministic") != expected_deterministic:
                 raise ValueError("分片训练状态的可复现计算设置与当前训练不同")
+        if expected_scheduler_config is not None or expected_total_steps is not None:
+            contract = meta.get("scheduler_contract")
+            if contract is None:
+                contract = legacy_scheduler_contract or _scheduler_contract(path, meta)
+            if not isinstance(contract, dict) or not isinstance(contract.get("config"), dict):
+                raise ValueError("分片训练状态的学习率调度配置无效，不能精确恢复")
+            if expected_scheduler_config is not None and contract["config"] != expected_scheduler_config:
+                raise ValueError("学习率调度配置与原训练不同，不能精确恢复；请恢复原设置或开始新任务")
+            if (
+                contract.get("total_steps") != meta["progress"].get("total_steps")
+                or expected_total_steps is not None
+                and contract.get("total_steps") != expected_total_steps
+            ):
+                raise ValueError("总训练步数与原训练不同，不能精确恢复学习率调度；请恢复原设置或开始新任务")
         if meta.get("optimizer_class") != f"{type(optimizer).__module__}.{type(optimizer).__qualname__}":
             raise ValueError("分片训练状态的优化器类型与当前训练不同")
         states = _model_state(modules)

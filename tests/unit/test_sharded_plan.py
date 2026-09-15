@@ -10,7 +10,7 @@ from torch import nn
 
 from ypuddin.config import TrainConfig
 from ypuddin.models import get_family
-from ypuddin.train.plan import _fsdp_memory, plan
+from ypuddin.train.plan import _fsdp_memory, _online_latent_memory, plan
 
 
 def _config(path=None, *, optimizer="adafactor", args=None, strategy="fsdp", count=2):
@@ -140,6 +140,111 @@ def test_unsharded_cache_phase_remains_an_admission_constraint(image_dataset, ca
     assert result["ok"], result["errors"]
     assert result["memory"]["peak_mb_estimate"] == 80 * 1024
     assert result["memory"]["cache_phase_peak_mb_estimates"]["text_encoding"] == 80 * 1024
+
+
+def test_online_vae_uses_actual_image_loader_geometry_without_loading_weights(monkeypatch):
+    from ypuddin.models.anima.vendor import qwen_image_vae_2d as qwen
+
+    # The native loader's JSON geometry is independent of planner assumptions.
+    # Keep all checkpoint tensors on meta so this executes no large allocation.
+    with torch.device("meta"):
+        state = qwen.AutoencoderKLQwenImage2D().state_dict()
+    monkeypatch.setattr(qwen, "load_safetensors", lambda *_args, **_kwargs: state)
+    with torch.device("meta"):
+        loaded = qwen.load_vae("no-weight-file.safetensors", device="meta")
+    actual_bytes = sum(t.numel() * t.element_size() for t in loaded.state_dict().values())
+    monkeypatch.setattr(qwen, "load_safetensors", lambda *_a, **_k: pytest.fail("plan loaded VAE weights"))
+    for family in ("anima", "krea2"):
+        raw = _config().to_dict()
+        raw["model"]["family"] = family
+        cfg = TrainConfig.model_validate(raw)
+        weights, workspace = _online_latent_memory(cfg, torch.float32, 512 * 512)
+        assert weights * 2**20 == actual_bytes
+        cfg.dataset.batch_size = 2
+        cfg.loop.gpu_count = 4
+        more_weights, more_workspace = _online_latent_memory(cfg, torch.float32, 512 * 768)
+        assert more_weights == weights  # The VAE is replicated, not sharded.
+        assert more_workspace == workspace * 3  # Per-card batch and actual pixel area.
+
+
+@pytest.mark.parametrize("family", ["sdxl", "flux2"])
+def test_online_vae_honors_local_component_geometry_and_fp32(tmp_path, family):
+    from diffusers import AutoencoderKL, AutoencoderKLFlux2
+
+    model_type = AutoencoderKL if family == "sdxl" else AutoencoderKLFlux2
+    vae = model_type(
+        block_out_channels=(32, 32),
+        down_block_types=("DownEncoderBlock2D",) * 2,
+        up_block_types=("UpDecoderBlock2D",) * 2,
+        layers_per_block=1,
+        latent_channels=4 if family == "sdxl" else 32,
+    )
+    root = tmp_path / "local-model"
+    component = root / "vae"
+    vae.save_config(component)
+    raw = _config().to_dict()
+    raw["model"].update(family=family, dit_path=str(root))
+    cfg = TrainConfig.model_validate(raw)
+    weights, _ = _online_latent_memory(cfg, torch.bfloat16, 64 * 64)
+    assert weights * 2**20 == sum(t.numel() * t.element_size() for t in vae.state_dict().values())
+    assert weights > 0  # These families encode at FP32, even with BF16 backbone compute.
+
+
+def test_online_vae_overlaps_training_and_changes_per_card_queue_admission(
+    image_dataset, capacity_family, tmp_path, monkeypatch
+):
+    from ypuddin.server import create_app
+    from ypuddin.server import supervisor as module
+
+    # Standalone VAE encoding fits comfortably; overlapping it with the 12.8B
+    # full-training shards must nevertheless stop admission on these cards.
+    weights_mb, workspace_mb = 8 * 1024, 2 * 1024
+    monkeypatch.setattr(
+        "ypuddin.train.plan._online_latent_memory",
+        lambda *_args: (weights_mb, workspace_mb),
+    )
+    monkeypatch.setattr(
+        capacity_family, "cache_memory_estimate", lambda *_args: {"latent_cache": weights_mb + workspace_mb}
+    )
+    cards = [
+        {"device": f"cuda:{i}", "name": "test GPU", "mem_free_mb": 64 * 1024, "mem_total_mb": 64 * 1024}
+        for i in range(2)
+    ]
+    monkeypatch.setattr(module.sys, "platform", "linux")
+    monkeypatch.setattr(module, "current_profile", lambda: "linux-cuda")
+    monkeypatch.setattr(module, "gpu_info", lambda: cards)
+    monkeypatch.setattr("ypuddin.server.routes_work.gpu_info", lambda: cards)
+    monkeypatch.setattr(torch.distributed, "is_available", lambda: True)
+    monkeypatch.setattr(torch.distributed, "is_nccl_available", lambda: True)
+    cfg = _config(image_dataset)
+    cached = plan(cfg, device="cuda")["memory"]
+    cfg.dataset.cache_latents = False
+    online = plan(cfg, device="cuda")["memory"]
+    assert (
+        online["training_peak_mb_estimate"] == cached["training_peak_mb_estimate"] + weights_mb + workspace_mb
+    )
+    assert online["known_training_residency_mb"] == cached["known_training_residency_mb"] + weights_mb
+    assert online["latent_encoder_mb"] == weights_mb
+    assert online["latent_encoding_workspace_mb_estimate"] == workspace_mb
+    cfg.loop.gpu_count = 4
+    four_cards = plan(cfg, device="cuda")["memory"]
+    assert four_cards["latent_encoder_mb"] == weights_mb
+    assert four_cards["latent_encoding_workspace_mb_estimate"] == workspace_mb
+    cfg.loop.gpu_count = 2
+    app = create_app(tmp_path / "studio", frontend_dist=tmp_path / "no-ui")
+    client = TestClient(app)  # No lifespan: this cannot launch a GPU worker.
+    try:
+        for cache_latents, devices in [(True, ("cuda:0", "cuda:1")), (False, None)]:
+            cfg.dataset.cache_latents = cache_latents
+            response = client.post("/api/jobs", json={"name": "online VAE", "config": cfg.to_dict()})
+            assert response.status_code == 201, response.text
+            row = app.state.ctx.db.fetchone("SELECT * FROM jobs WHERE id=?", (response.json()["id"],))
+            expected = cached if cache_latents else online
+            assert json.loads(row["progress_json"])["estimated_peak_mb"] == expected["peak_mb_estimate"]
+            assert app.state.ctx.supervisor._choose_device(row) == devices
+    finally:
+        client.close()
+        app.state.ctx.db.close()
 
 
 def test_fsdp_does_not_admit_cpu_execution(image_dataset):

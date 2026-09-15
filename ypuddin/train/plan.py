@@ -32,6 +32,55 @@ def _frozen_storage_bytes(module: nn.Module) -> int:
     return sum(t.numel() * t.element_size() for t in tensors.values())
 
 
+def _online_latent_memory(cfg: TrainConfig, dtype: torch.dtype, pixels: int) -> tuple[float, float]:
+    """Resident VAE weights and conservative encoder workspace, in MiB per GPU.
+
+    Online encoding leaves the entire frozen VAE resident beside the training
+    shards. Construct only its native architecture on meta: checkpoint storage
+    can include temporal weights discarded by the image-only Qwen VAE, so file
+    size is not its actual residency. No model tensor payload is read here.
+    """
+    family = cfg.model.family
+    if family == "toy":
+        # ToyLatent keeps its tiny projection on CPU and copies it per call.
+        return 0.0, 0.0
+    if family in {"anima", "krea2"}:
+        from ypuddin.models.anima.vendor.qwen_image_vae_2d import AutoencoderKLQwenImage2D
+
+        with torch.device("meta"):
+            vae = AutoencoderKLQwenImage2D()
+        channels = 96
+    elif family == "sdxl":
+        from diffusers import AutoencoderKL
+
+        from ypuddin.models.sdxl.loading import component_config, component_path
+
+        path = component_path(cfg.model.dit_path or ".", "vae", cfg.model.vae_path)
+        config = component_config(path, "vae")
+        with torch.device("meta"):
+            vae = AutoencoderKL.from_config(config)
+        channels, dtype = config["block_out_channels"][0], torch.float32
+    elif family == "flux2":
+        from diffusers import AutoencoderKLFlux2
+
+        from ypuddin.models.flux2.loading import component, read_json
+
+        path = component(cfg.model.dit_path or ".", "vae", cfg.model.vae_path)
+        config_path = (path if path.is_dir() else path.parent) / "config.json"
+        config = read_json(config_path) if config_path.is_file() else {}
+        with torch.device("meta"):
+            vae = AutoencoderKLFlux2.from_config(config)
+        channels, dtype = vae.config.block_out_channels[0], torch.float32
+    else:
+        raise ValueError(f"online latent memory planning is unavailable for {family}")
+    vae.to(dtype=dtype).requires_grad_(False)
+    weights = _frozen_storage_bytes(vae)
+    # Match the encoder workspace heuristic used for the Krea cache phase, but
+    # budget the per-device training batch and actual largest bucket here.
+    workspace = pixels * cfg.dataset.batch_size * channels * 8 * torch.empty((), dtype=dtype).element_size()
+    return weights / 2**20, workspace / 2**20
+
+
 def _fsdp_memory(backbone: nn.Module, blocks: list[nn.Module], cfg: TrainConfig) -> dict[str, Any]:
     """Account for actual per-rank FP32 shards and native optimizer-state layouts.
 
@@ -696,10 +745,20 @@ def plan(
                     and not cfg.training.train_text_encoder
                 ):
                     text_encoder_mb = family.spec.text.encoder_params * DTYPE_BYTES[effective_dtype] / 2**20
+                latent_encoder_mb = latent_workspace_mb = 0.0
+                if sharding is not None and not ds.cache_latents:
+                    pixels = max((w * h for w, h in counts), default=max(ds.resolutions) ** 2)
+                    latent_encoder_mb, latent_workspace_mb = _online_latent_memory(cfg, compute_dtype, pixels)
+                    estimate_notes.append(
+                        "关闭图像编码缓存后，完整 VAE 在每张卡上与训练状态同时驻留；"
+                        "权重与在线编码工作区均计入单卡估算，不按卡数分摊。"
+                    )
                 training_peak = (
                     weights_mb
                     - swapped_mb
                     + text_encoder_mb
+                    + latent_encoder_mb
+                    + latent_workspace_mb
                     + adapter_mb
                     + optimizer_mb
                     + gradients_mb
@@ -731,6 +790,8 @@ def plan(
                     "weights_mb": round(weights_mb),
                     "swapped_mb": round(swapped_mb),
                     "text_encoder_mb": round(text_encoder_mb),
+                    "latent_encoder_mb": round(latent_encoder_mb, 1),
+                    "latent_encoding_workspace_mb_estimate": round(latent_workspace_mb, 1),
                     "adapter_mb": round(adapter_mb, 1),
                     "optimizer_mb": round(optimizer_mb, 1),
                     "gradients_mb": round(gradients_mb, 1),
@@ -744,6 +805,7 @@ def plan(
                     "known_training_residency_mb": round(
                         weights_mb
                         + text_encoder_mb
+                        + latent_encoder_mb
                         + adapter_mb
                         + optimizer_mb
                         + gradients_mb

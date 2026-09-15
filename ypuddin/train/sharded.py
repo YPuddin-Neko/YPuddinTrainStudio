@@ -21,7 +21,13 @@ from ypuddin.optim import optimizer_hyperparameter_snapshot, validate_optimizer_
 from ypuddin.optim.sharded import prepare_sharded_optimizer, sharded_optimizer_state_bytes
 
 from .distributed import DistributedTrainer
-from .sharded_state import export_sharded_model_artifact, load_sharded_checkpoint, save_sharded_checkpoint
+from .sharded_state import (
+    _collective_check,
+    export_sharded_model_artifact,
+    load_sharded_checkpoint,
+    read_sharded_scheduler_contract,
+    save_sharded_checkpoint,
+)
 from .trainer import Trainer
 
 
@@ -63,6 +69,12 @@ class ShardedTrainer(DistributedTrainer):
             raise ValueError("当前 PyTorch 缺少 FSDP2 显存分片支持，请使用支持 FSDP2 的版本") from exc
         if not {"shard_placement_fn", "ignored_params"} <= set(inspect.signature(fully_shard).parameters):
             raise ValueError("当前 PyTorch 的 FSDP2 接口不支持所需的参数分片方式")
+        if self.cfg.checkpoint.resume:
+            # prepare_data writes config.toml before _resume. Every rank must
+            # capture the old recipe first, especially when reusing the run dir.
+            self._resume_scheduler_contract = _collective_check(
+                lambda: read_sharded_scheduler_contract(self.cfg.checkpoint.resume)
+            )
 
     def _prepare_training(self):
         Trainer._prepare_training(self)
@@ -199,6 +211,9 @@ class ShardedTrainer(DistributedTrainer):
             expected_dataset_fingerprint=self.bundle.plan.fingerprint,
             expected_model_identity=self.model_identity,
             expected_deterministic=self.cfg.loop.deterministic,
+            expected_scheduler_config=self.cfg.scheduler.model_dump(mode="json"),
+            expected_total_steps=self.progress.total_steps,
+            legacy_scheduler_contract=getattr(self, "_resume_scheduler_contract", None),
         )
         validate_optimizer_runtime(self.cfg.optimizer, self.optimizer, expected_groups=expected)
         if self.scheduler is not None and saved["scheduler"]:
@@ -234,6 +249,7 @@ class ShardedTrainer(DistributedTrainer):
             config_hash=self.config_hash,
             dataset_fingerprint=self.bundle.plan.fingerprint,
             model_identity=self.model_identity,
+            scheduler_config=self.cfg.scheduler.model_dump(mode="json"),
         )
         self.emit("checkpoint.saved", kind="full", step=self.progress.step, path=str(path))
         return path

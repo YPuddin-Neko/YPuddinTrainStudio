@@ -15,11 +15,14 @@ from torch.distributed.device_mesh import init_device_mesh
 from torch.distributed.tensor import DTensor, Shard, distribute_tensor
 
 from ypuddin.config import TrainConfig
+from ypuddin.config.io import config_hash, write_config
+from ypuddin.optim import build_scheduler
 from ypuddin.train.sharded_state import (
     export_sharded_model_artifact,
     gather_full_training_state,
     load_sharded_checkpoint,
     read_sharded_checkpoint_metadata,
+    read_sharded_scheduler_contract,
     save_sharded_checkpoint,
 )
 from ypuddin.train.state import Progress
@@ -264,3 +267,117 @@ def test_staging_checkpoint_is_never_discovered_as_resumable(tmp_path):
         _atomic_directory(checkpoint, fail_after_metadata)
     assert (checkpoint / "state.json").read_text() == "old complete state"
     assert not list(tmp_path.glob(".state-4.tmp-*"))
+
+
+def _scheduler_worker(rank, directory):
+    directory = Path(directory)
+    torch.set_num_threads(1)
+    dist.init_process_group(
+        "gloo",
+        init_method=(directory / "scheduler-rendezvous").as_uri(),
+        rank=rank,
+        world_size=2,
+        timeout=timedelta(seconds=40),
+    )
+    try:
+        mesh = init_device_mesh("cpu", (2,))
+        for legacy in (False, True):
+            run = directory / ("legacy" if legacy else "new")
+            checkpoint = run / "state-2"
+            cfg = TrainConfig.model_validate(
+                {
+                    "model": {"family": "toy"},
+                    "scheduler": {"type": "cosine", "warmup_steps": 1},
+                    "loop": {"max_steps": 8},
+                    "checkpoint": {"output_dir": str(run)},
+                }
+            )
+            model = _model(mesh, torch.float32)
+            optimizer = torch.optim.AdamW(model.parameters(), lr=0.01, foreach=False)
+            scheduler = build_scheduler(cfg.scheduler, optimizer, 8)
+            for _ in range(2):
+                _step(model, optimizer)
+                scheduler.step()
+            save_sharded_checkpoint(
+                checkpoint,
+                modules={"backbone": model},
+                optimizer=optimizer,
+                scheduler=scheduler,
+                sampler_state={"position": 2, "rank": rank},
+                progress=Progress(step=2, total_steps=8),
+                rng={"rank": rank},
+                batch_size=1,
+                grad_accum=1,
+                config_hash=config_hash(cfg),
+                scheduler_config=cfg.scheduler.model_dump(mode="json"),
+            )
+            if rank == 0:
+                write_config(cfg, run / "config.toml")
+                meta = read_sharded_checkpoint_metadata(checkpoint)
+                assert meta["scheduler_contract"]["total_steps"] == 8
+                if legacy:
+                    del meta["scheduler_contract"]
+                    (checkpoint / "state.json").write_text(json.dumps(meta))
+            dist.barrier()
+            expected_loss = _step(model, optimizer)
+            scheduler.step()
+            reference = _snapshot(model, optimizer)
+            checks = {
+                "modules": {"backbone": model},
+                "optimizer": optimizer,
+                "expected_scheduler_config": cfg.scheduler.model_dump(mode="json"),
+                "expected_total_steps": 8,
+            }
+            for changed, total, message in (
+                (cfg.scheduler.model_copy(update={"type": "constant"}), 8, "学习率调度配置"),
+                (cfg.scheduler, 9, "总训练步数"),
+            ):
+                # These are actual newly constructed LambdaLR closures; loading
+                # its saved state alone would not undo either recipe change.
+                build_scheduler(changed, optimizer, total)
+                before = _snapshot(model, optimizer)
+                before_lrs = [g["lr"] for g in optimizer.param_groups]
+                with pytest.raises(ValueError, match=message):
+                    load_sharded_checkpoint(
+                        checkpoint,
+                        **{
+                            **checks,
+                            "expected_scheduler_config": changed.model_dump(mode="json"),
+                            "expected_total_steps": total,
+                        },
+                    )
+                _assert_values(before, _snapshot(model, optimizer))
+                assert before_lrs == [g["lr"] for g in optimizer.param_groups]
+            if legacy:
+                captured = read_sharded_scheduler_contract(checkpoint)
+                if rank == 0:
+                    (run / "config.toml").unlink()
+                dist.barrier()
+                before = _snapshot(model, optimizer)
+                with pytest.raises(ValueError, match="无法验证精确恢复"):
+                    load_sharded_checkpoint(checkpoint, **checks)
+                _assert_values(before, _snapshot(model, optimizer))
+                if rank == 0:
+                    altered = cfg.model_copy(deep=True)
+                    altered.scheduler.type = "constant"
+                    write_config(altered, run / "config.toml")
+                dist.barrier()
+                with pytest.raises(ValueError, match="无法验证精确恢复"):
+                    load_sharded_checkpoint(checkpoint, **checks)
+                _assert_values(before, _snapshot(model, optimizer))
+                # Same-dir prepare may overwrite config.toml after all ranks
+                # captured the authenticated old recipe. The captured contract
+                # supports it without trusting the replacement file.
+                checks["legacy_scheduler_contract"] = captured
+            scheduler = build_scheduler(cfg.scheduler, optimizer, 8)
+            loaded = load_sharded_checkpoint(checkpoint, **checks)
+            scheduler.load_state_dict(loaded["scheduler"])
+            assert _step(model, optimizer) == expected_loss
+            scheduler.step()
+            _assert_values(reference, _snapshot(model, optimizer))
+    finally:
+        dist.destroy_process_group()
+
+
+def test_scheduler_recipe_preflight_and_legacy_resume_are_exact(tmp_path):
+    mp.spawn(_scheduler_worker, args=(str(tmp_path),), nprocs=2, join=True)
