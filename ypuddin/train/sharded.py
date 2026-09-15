@@ -69,12 +69,16 @@ class ShardedTrainer(DistributedTrainer):
             raise ValueError("当前 PyTorch 缺少 FSDP2 显存分片支持，请使用支持 FSDP2 的版本") from exc
         if not {"shard_placement_fn", "ignored_params"} <= set(inspect.signature(fully_shard).parameters):
             raise ValueError("当前 PyTorch 的 FSDP2 接口不支持所需的参数分片方式")
+
+    def prepare_data(self):
         if self.cfg.checkpoint.resume:
-            # prepare_data writes config.toml before _resume. Every rank must
-            # capture the old recipe first, especially when reusing the run dir.
+            # DistributedTrainer prepares one owner at a time. Capture on all
+            # ranks before entering that serialized loop; capability checks
+            # inside the loop must never initiate a collective.
             self._resume_scheduler_contract = _collective_check(
                 lambda: read_sharded_scheduler_contract(self.cfg.checkpoint.resume)
             )
+        super().prepare_data()
 
     def _prepare_training(self):
         Trainer._prepare_training(self)

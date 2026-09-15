@@ -1,15 +1,20 @@
 """Capacity-critical placement and strategy admission for full-model sharding."""
 
 import json
+from datetime import timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 import torch
+import torch.distributed as dist
+import torch.multiprocessing as mp
 from torch import nn
 from torch.distributed.tensor import Shard
 
 from ypuddin.config import TrainConfig
-from ypuddin.config.io import config_hash, write_config
+from ypuddin.config.io import config_hash, read_config_file, write_config
+from ypuddin.models import get_family
 from ypuddin.train.sharded import ShardedTrainer, parameter_shard, sharding_groups
 from ypuddin.train.state import Progress
 from ypuddin.train.training_modes import FullTrainingSet
@@ -81,37 +86,100 @@ def test_optimizer_rebind_uses_replaced_parameters():
     assert all(p is not old_weight for g in groups for p in g["params"])
 
 
-def test_legacy_scheduler_recipe_is_captured_before_same_run_config_replacement(tmp_path, monkeypatch):
+def _serialized_preparation_worker(rank, directory):
     import ypuddin.train.sharded as module
 
-    checkpoint = tmp_path / "state-2"
-    checkpoint.mkdir()
-    original = _config(checkpoint={"output_dir": str(tmp_path)})
-    write_config(original, tmp_path / "config.toml")
-    (checkpoint / "state.json").write_text(
-        json.dumps(
-            {
-                "format": 4,
-                "strategy": "fsdp2",
-                "training_kind": "full-model",
-                "config_hash": config_hash(original),
-                "progress": {"total_steps": 8},
-            }
-        )
+    directory = Path(directory)
+    torch.set_num_threads(1)
+    dist.init_process_group(
+        "gloo",
+        init_method=(directory / "rendezvous").as_uri(),
+        rank=rank,
+        world_size=2,
+        timeout=timedelta(seconds=20),
     )
-    (checkpoint / "complete.json").write_text('{"format": 4}')
-    trainer = object.__new__(ShardedTrainer)
-    trainer.cfg = _config(checkpoint={"resume": str(checkpoint), "output_dir": str(tmp_path)})
-    trainer.device = torch.device("cuda")  # capability checks only; no allocation
-    monkeypatch.setattr(module.DistributedTrainer, "_check_capabilities", lambda self: None)
-    monkeypatch.setattr(module, "_collective_check", lambda function: function())
-    trainer._check_capabilities()
-    trainer.cfg.scheduler.type = "constant"
-    write_config(trainer.cfg, tmp_path / "config.toml")
-    assert trainer._resume_scheduler_contract == {
-        "config": original.scheduler.model_dump(mode="json"),
-        "total_steps": 8,
-    }
+    try:
+        checkpoint = directory / "state-2"
+        original = _config(checkpoint={"output_dir": str(directory)})
+        if rank == 0:
+            checkpoint.mkdir()
+            write_config(original, directory / "config.toml")
+            (checkpoint / "state.json").write_text(
+                json.dumps(
+                    {
+                        "format": 4,
+                        "strategy": "fsdp2",
+                        "training_kind": "full-model",
+                        "config_hash": config_hash(original),
+                        "progress": {"total_steps": 8},
+                    }
+                )
+            )
+            (checkpoint / "complete.json").write_text('{"format": 4}')
+        dist.barrier()
+        trainer = object.__new__(ShardedTrainer)
+        trainer.cfg = _config(
+            checkpoint={"resume": str(checkpoint), "output_dir": str(directory)},
+            scheduler={"type": "constant"},
+            memory={"activation_checkpointing": "none"},
+        )
+        trainer.device = torch.device("cpu")
+        trainer.distributed = SimpleNamespace(rank=rank, world_size=2)
+        trainer.is_primary = rank == 0
+        trainer.family = get_family("toy")
+        trainer.run_dir = directory
+        trainer._stop = None
+        trainer._preparing = False
+        read_contract = module.read_sharded_scheduler_contract
+
+        def record_read(path):
+            contract = read_contract(path)
+            (directory / f"read-{rank}.json").write_text(json.dumps(contract))
+            return contract
+
+        def prepare_without_loading_models(self):
+            # Preserve the real local capability method while avoiding CUDA
+            # allocations; the real owner/control collectives use CPU below.
+            self.device = torch.device("cuda")
+            try:
+                self._check_capabilities()
+            finally:
+                self.device = torch.device("cpu")
+            assert all((directory / f"read-{i}.json").exists() for i in range(2))
+            if self.is_primary:
+                write_config(self.cfg, directory / "config.toml")
+            else:
+                assert (directory / "owner-0.json").is_file()
+                assert read_config_file(directory / "config.toml")["scheduler"]["type"] == "constant"
+            (directory / f"owner-{rank}.json").write_text(json.dumps(self._resume_scheduler_contract))
+
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(module, "read_sharded_scheduler_contract", record_read)
+            patch.setattr(module.Trainer, "prepare_data", prepare_without_loading_models)
+            # Keep actual DistributedTrainer.prepare_data, all broadcasts,
+            # control-request all_reduces and the preflight all_gather intact.
+            trainer.prepare_data()
+        assert trainer._resume_scheduler_contract == {
+            "config": original.scheduler.model_dump(mode="json"),
+            "total_steps": 8,
+        }
+    finally:
+        dist.destroy_process_group()
+
+
+def test_legacy_scheduler_preflight_precedes_real_serialized_owner_preparation(tmp_path):
+    context = mp.spawn(_serialized_preparation_worker, args=(str(tmp_path),), nprocs=2, join=False)
+    try:
+        assert context.join(timeout=50) or context.join(timeout=10), "serialized preparation timed out"
+    finally:
+        for process in context.processes:
+            if process.is_alive():
+                process.terminate()
+            process.join(timeout=10)
+    contracts = [json.loads((tmp_path / f"owner-{rank}.json").read_text()) for rank in range(2)]
+    assert contracts[0] == contracts[1]
+    assert contracts[0]["config"]["type"] == "cosine"
+    assert read_config_file(tmp_path / "config.toml")["scheduler"]["type"] == "constant"
 
 
 def test_resume_checks_current_scheduler_and_step_budget_before_loading(tmp_path, monkeypatch):
