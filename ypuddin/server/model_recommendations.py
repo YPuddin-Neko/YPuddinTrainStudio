@@ -3,6 +3,7 @@
 Source metadata checked 2026-09-13 using the Hugging Face tree API and ModelScope
 repo/files API. Provider mappings are explicit; a matching repository name is never
 assumed by the client. Updated upstream bytes must pass the pinned SHA-256 check.
+Illustrious v0.1 and Krea Raw BF16 ModelScope sources rechecked 2026-09-15.
 """
 
 import hashlib
@@ -54,6 +55,7 @@ def _entry(
     *,
     purpose="training",
     variant=None,
+    modelscope_source: RecommendedSource | None = None,
 ):
     return RecommendedModel(
         id=id_,
@@ -74,7 +76,8 @@ def _entry(
                 revision="main",
                 url=f"https://huggingface.co/{repo}/blob/main/{filename}",
             ),
-            RecommendedSource(
+            modelscope_source
+            or RecommendedSource(
                 provider="modelscope",
                 repo_id=repo,
                 filename=filename,
@@ -143,6 +146,13 @@ RECOMMENDATIONS = [
                 revision="f08f0826ffe32183ba2d1f4106dd5b32e195a02e",
                 url="https://huggingface.co/OnomaAIResearch/Illustrious-xl-early-release-v0/blob/f08f0826ffe32183ba2d1f4106dd5b32e195a02e/Illustrious-XL-v0.1.safetensors",
             ),
+            RecommendedSource(
+                provider="modelscope",
+                repo_id="OnomaAIResearch/Illustrious-xl-early-release-v0",
+                filename="Illustrious-XL-v0.1.safetensors",
+                revision="6f7fa36d9cb8aede0e05eeb8790966151a0d21a0",
+                url="https://modelscope.cn/models/OnomaAIResearch/Illustrious-xl-early-release-v0/files",
+            ),
         ],
     ),
     _entry(
@@ -178,6 +188,13 @@ RECOMMENDATIONS = [
         KREA,
         "diffusion_models/krea2_raw_bf16.safetensors",
         variant="raw",
+        modelscope_source=RecommendedSource(
+            provider="modelscope",
+            repo_id="krea/Krea-2-Raw",
+            filename="raw.safetensors",
+            revision="4c6e0f5dee814bea2d3f5e1fe7264e78a42c4370",
+            url="https://modelscope.cn/models/krea/Krea-2-Raw/files",
+        ),
     ),
     _entry(
         "krea2-raw-fp8",
