@@ -8,6 +8,7 @@ from ypuddin.config.compute_policy import (
     DTK_FULL_FP32_MATH_POLICY_ID,
     DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
     DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
+    DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID,
     FP32_CONV_IMPLEMENTATION_ID,
     resolve_training_compute_config,
     validate_resume_compute_policy,
@@ -162,7 +163,6 @@ def test_krea_bf16_sharding_policy_keeps_native_compute_and_is_idempotent():
         ("loop", "mixed_precision", "fp16", DTK_FULL_FP32_MATH_POLICY_ID),
         ("training", "train_text_encoder", True, DTK_FULL_FP32_MATH_POLICY_ID),
         ("model", "family", "anima", DTK_FULL_FP32_MATH_POLICY_ID),
-        ("model", "family", "sdxl", DTK_FULL_FP32_MATH_POLICY_ID),
         ("loop", "deterministic", False, None),
         ("training", "mode", "adapter", None),
         ("training", "train_backbone", False, None),
@@ -248,9 +248,12 @@ def test_sdxl_bf16_recipe_stays_inside_verified_scope(section, field, value, exp
 
 
 @pytest.mark.parametrize("mode", ["auto", "bypass"])
-def test_sdxl_lokr_bypass_recipe_with_homogeneous_rules(mode):
+@pytest.mark.parametrize("gpu_count", [1, 2])
+def test_sdxl_lokr_bypass_recipe_with_homogeneous_rules(mode, gpu_count):
     cfg = _config("sdxl", mode="adapter")
     cfg.adapter.mode = mode
+    cfg.loop.gpu_count = gpu_count
+    cfg.loop.distributed_strategy = "ddp"
     from ypuddin.config.schema import AdapterRule
 
     cfg.adapter.rules = [
@@ -271,7 +274,6 @@ def test_sdxl_lokr_bypass_recipe_with_homogeneous_rules(mode):
         ("adapter", "dora", True),
         ("adapter", "param_dtype", "bf16"),
         ("memory", "base_precision", "fp8_e4m3"),
-        ("loop", "gpu_count", 2),
         ("training", "train_text_encoder", True),
         ("loop", "deterministic", False),
     ],
@@ -290,3 +292,37 @@ def test_sdxl_mixed_algorithm_rules_never_claim_lokr_policy():
     cfg.adapter.rules = [AdapterRule(match="*", algo="lora")]
     effective, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
     assert policy is None and effective.to_dict() == cfg.to_dict()
+
+
+def test_sdxl_adapter_sharding_does_not_claim_ddp_bf16_policy():
+    cfg = _config("sdxl", mode="adapter")
+    cfg.loop.gpu_count = 2
+    cfg.loop.distributed_strategy = "fsdp"
+    effective, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+    assert policy is None and effective.to_dict() == cfg.to_dict()
+
+
+def test_sdxl_fsdp_has_distinct_bf16_gather_identity_and_rejects_unsharded_state():
+    cfg = _config("sdxl")
+    _, single_policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+    cfg.loop.gpu_count = 2
+    cfg.loop.distributed_strategy = "fsdp"
+    original = cfg.to_dict()
+    effective, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+    assert policy == single_policy | {
+        "id": DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID,
+        "fsdp_param_dtype": "bfloat16",
+        "fsdp_reduce_dtype": "float32",
+    }
+    assert effective.loop.mixed_precision == "bf16"
+    assert cfg.to_dict() == original
+    repeated, repeated_policy = resolve_training_compute_config(effective, "cuda", "linux-dtk")
+    assert repeated.to_dict() == effective.to_dict() and repeated_policy == policy
+    for saved in (
+        None,
+        single_policy,
+        policy | {"fsdp_param_dtype": "float32"},
+        policy | {"id": "diagnostic-dtk-sdxl-dual-bf16-conv-linear-v1"},
+    ):
+        with pytest.raises(ValueError, match="计算"):
+            validate_resume_compute_policy(policy, saved)

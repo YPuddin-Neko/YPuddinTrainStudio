@@ -9,6 +9,7 @@ from .schema import TrainConfig
 DTK_FULL_FP32_MATH_POLICY_ID = "dtk-full-fp32-math-v1"
 DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID = "dtk-krea2-fsdp-bf16-linear-fp32-backward-v1"
 DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID = "dtk-sdxl-bf16-conv-fp32-linear-backward-v1"
+DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID = "dtk-sdxl-fsdp-bf16-conv-fp32-linear-backward-v1"
 BF16_LINEAR_BACKWARD_IMPLEMENTATION_ID = "linear-bf16-forward-fp32-backward-v1"
 FP32_CONV_IMPLEMENTATION_ID = "conv2d-fp32-output-bf16-v1"
 
@@ -54,7 +55,7 @@ def resolve_training_compute_config(
         cfg.model.family == "sdxl"
         and cfg.training.mode == "adapter"
         and not cfg.training.train_text_encoder
-        and cfg.loop.gpu_count == 1
+        and (cfg.loop.gpu_count == 1 or cfg.loop.distributed_strategy == "ddp")
         and cfg.loop.mixed_precision == "bf16"
         and cfg.adapter.algo == "lokr"
         and cfg.adapter.mode in {"auto", "bypass"}
@@ -62,6 +63,12 @@ def resolve_training_compute_config(
         and cfg.adapter.param_dtype == "fp32"
         and all(rule.algo in {None, "lokr", "none"} for rule in cfg.adapter.rules)
         and not cfg.memory.base_precision.startswith("fp8")
+    )
+    sdxl_sharded_full = (
+        cfg.model.family == "sdxl"
+        and cfg.training.mode == "full"
+        and cfg.loop.gpu_count >= 2
+        and cfg.loop.distributed_strategy == "fsdp"
     )
     if cfg.training.mode != "full" and not sdxl_lokr:
         return effective, None
@@ -90,11 +97,13 @@ def resolve_training_compute_config(
     if (
         cfg.model.family == "sdxl"
         and not cfg.training.train_text_encoder
-        and cfg.loop.gpu_count == 1
+        and (cfg.loop.gpu_count == 1 or sdxl_lokr or sdxl_sharded_full)
         and cfg.loop.mixed_precision == "bf16"
     ):
-        return effective, {
-            "id": DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
+        sdxl_policy: TrainingComputePolicy = {
+            "id": DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID
+            if sdxl_sharded_full
+            else DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
             "mixed_precision": "bf16",
             "allow_tf32": False,
             "attention": "sdpa",
@@ -105,6 +114,11 @@ def resolve_training_compute_config(
             "conv_forward": "fp32-output-bf16",
             "conv_implementation": FP32_CONV_IMPLEMENTATION_ID,
         }
+        if sdxl_sharded_full:
+            # FSDP gathers BF16 parameters before the FP32 convolution. This
+            # rounding boundary differs from the unsharded FP32 master weights.
+            sdxl_policy.update(fsdp_param_dtype="bfloat16", fsdp_reduce_dtype="float32")
+        return effective, sdxl_policy
     effective.loop.mixed_precision = "no"
     policy: TrainingComputePolicy = {
         "id": DTK_FULL_FP32_MATH_POLICY_ID,

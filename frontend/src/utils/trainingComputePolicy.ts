@@ -12,6 +12,11 @@ interface BF16TrainingComputePolicy extends CommonTrainingComputePolicy {
   linear_backward_implementation: 'linear-bf16-forward-fp32-backward-v1';
 }
 
+interface SDXLTrainingComputePolicy extends BF16TrainingComputePolicy {
+  conv_forward: 'fp32-output-bf16';
+  conv_implementation: 'conv2d-fp32-output-bf16-v1';
+}
+
 export type TrainingComputePolicy = (CommonTrainingComputePolicy & {
   id: 'dtk-full-fp32-math-v1';
   mixed_precision: 'no';
@@ -19,10 +24,12 @@ export type TrainingComputePolicy = (CommonTrainingComputePolicy & {
   id: 'dtk-krea2-fsdp-bf16-linear-fp32-backward-v1';
   fsdp_param_dtype: 'bfloat16';
   fsdp_reduce_dtype: 'float32';
-}) | (BF16TrainingComputePolicy & {
+}) | (SDXLTrainingComputePolicy & {
   id: 'dtk-sdxl-bf16-conv-fp32-linear-backward-v1';
-  conv_forward: 'fp32-output-bf16';
-  conv_implementation: 'conv2d-fp32-output-bf16-v1';
+}) | (SDXLTrainingComputePolicy & {
+  id: 'dtk-sdxl-fsdp-bf16-conv-fp32-linear-backward-v1';
+  fsdp_param_dtype: 'bfloat16';
+  fsdp_reduce_dtype: 'float32';
 });
 
 export function confirmedTrainingComputePolicy(candidate: unknown, config: Record<string, any>): TrainingComputePolicy | null {
@@ -50,7 +57,14 @@ export function confirmedTrainingComputePolicy(candidate: unknown, config: Recor
     && Number.isInteger(config.loop.gpu_count) && config.loop.gpu_count >= 2) return policy as unknown as TrainingComputePolicy;
   if (policy.id === 'dtk-sdxl-bf16-conv-fp32-linear-backward-v1'
     && policy.conv_forward === 'fp32-output-bf16' && policy.conv_implementation === 'conv2d-fp32-output-bf16-v1'
-    && config.model.family === 'sdxl' && config.loop.gpu_count === 1) return policy as unknown as TrainingComputePolicy;
+    && config.model.family === 'sdxl' && (config.loop.gpu_count === 1
+      || (sdxlLokr && config.loop.distributed_strategy === 'ddp'
+        && Number.isInteger(config.loop.gpu_count) && config.loop.gpu_count >= 2))) return policy as unknown as TrainingComputePolicy;
+  if (policy.id === 'dtk-sdxl-fsdp-bf16-conv-fp32-linear-backward-v1'
+    && policy.conv_forward === 'fp32-output-bf16' && policy.conv_implementation === 'conv2d-fp32-output-bf16-v1'
+    && policy.fsdp_param_dtype === 'bfloat16' && policy.fsdp_reduce_dtype === 'float32'
+    && full && config.model.family === 'sdxl' && config.loop.distributed_strategy === 'fsdp'
+    && Number.isInteger(config.loop.gpu_count) && config.loop.gpu_count >= 2) return policy as unknown as TrainingComputePolicy;
   return null;
 }
 
@@ -66,7 +80,7 @@ export function trainingComputeManagedField(policy: TrainingComputePolicy | null
     : '由 DTK 可复现训练管理。保留原选择，关闭开关后恢复使用。';
   if (path === 'loop.mixed_precision') return {
     value: policy.mixed_precision,
-    label: policy.id === 'dtk-sdxl-bf16-conv-fp32-linear-backward-v1'
+    label: 'conv_forward' in policy
       ? (english ? 'BF16 (FP32 convolution and linear backward)' : 'BF16（FP32 卷积、线性层反向）')
       : policy.mixed_precision === 'bf16'
       ? (english ? 'BF16 forward (FP32 linear backward)' : 'BF16 前向（线性层反向 FP32）')
@@ -80,6 +94,9 @@ export function trainingComputeManagedField(policy: TrainingComputePolicy | null
 
 export function trainingComputePolicyHint(policy: TrainingComputePolicy | null, english: boolean) {
   if (!policy) return undefined;
+  if (policy.id === 'dtk-sdxl-fsdp-bf16-conv-fp32-linear-backward-v1') return english
+    ? 'This SDXL run shards the model across GPUs and uses BF16 for gathered parameters and main computation. Convolution, linear backward matrix operations and gradient reduction use FP32. Convolution outputs return to BF16. TF32 is disabled and attention uses native SDPA math. Resume requires the same compute policy and environment.'
+    : '本次 SDXL 使用多卡显存分片，按 BF16 汇集参数并进行主体计算。卷积、线性层反向矩阵运算和梯度汇总使用 FP32，卷积输出转回 BF16。关闭 TF32，并使用原生 SDPA 数学实现。续训需保持相同计算策略和运行环境。';
   if (policy.id === 'dtk-krea2-fsdp-bf16-linear-fp32-backward-v1') return english
     ? 'This Krea2 run shards the model across GPUs and retains BF16 forward computation. Linear backward matrix operations and gradient reduction use FP32, with TF32 disabled and native SDPA math. Resume requires the same compute policy and environment.'
     : '本次 Krea2 使用多卡显存分片，保留 BF16 前向计算。线性层反向矩阵运算和梯度汇总使用 FP32，关闭 TF32，并使用原生 SDPA 数学实现。续训需保持相同计算策略和运行环境。';

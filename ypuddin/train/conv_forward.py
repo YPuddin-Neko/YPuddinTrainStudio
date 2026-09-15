@@ -73,8 +73,16 @@ def validate_conv_forward_installation(backbone, expected_counts):
         if not isinstance(module, nn.Conv2d):
             continue
         marker = module.__dict__.get(_MARKER)
+        ordinary_conv = type(module) is nn.Conv2d
+        if not ordinary_conv:
+            from torch.distributed.fsdp import FSDPModule
+
+            # FSDP2 dynamically wraps the original class after installation.
+            # Accept only that wrapper around an ordinary Conv2d, not an
+            # arbitrary Conv2d subclass with different forward semantics.
+            ordinary_conv = type(module).__bases__ == (FSDPModule, nn.Conv2d)
         if (
-            type(module) is not nn.Conv2d
+            not ordinary_conv
             or marker is None
             or marker[0] != FP32_CONV_IMPLEMENTATION_ID
             or module.__dict__.get("forward") is not marker[1]

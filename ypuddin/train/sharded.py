@@ -17,7 +17,10 @@ from torch import nn
 from torch.distributed.device_mesh import init_device_mesh
 from torch.distributed.tensor import DTensor, Shard
 
-from ypuddin.config.compute_policy import DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID
+from ypuddin.config.compute_policy import (
+    DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
+    DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID,
+)
 from ypuddin.optim import optimizer_hyperparameter_snapshot, validate_optimizer_runtime
 from ypuddin.optim.sharded import prepare_sharded_optimizer, sharded_optimizer_state_bytes
 
@@ -101,6 +104,10 @@ class ShardedTrainer(DistributedTrainer):
                 install_linear_bf16_forward_fp32_backward(model)
             )
             self._validate_training_compute_policy()
+        elif (getattr(self, "compute_policy", None) or {}).get(
+            "id"
+        ) == DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID:
+            self._install_sdxl_compute_operators()
         world = self.distributed.world_size
         mesh = init_device_mesh("cuda", (world,), mesh_dim_names=("data",))
         parameters = list(model.parameters())

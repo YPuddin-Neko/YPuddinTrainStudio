@@ -27,6 +27,7 @@ from ypuddin.config import TrainConfig, config_hash, write_config
 from ypuddin.config.compute_policy import (
     DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
     DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
+    DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID,
     resolve_training_compute_config,
     validate_resume_compute_policy,
 )
@@ -412,24 +413,13 @@ class Trainer:
 
     def _place_training_model(self) -> None:
         """Place selected parameters before binding an optimizer to their final objects."""
-        if (getattr(self, "compute_policy", None) or {}).get("id") == DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID:
-            raise ValueError("BF16 Linear 反向计算策略必须由 FSDP 分片训练器安装")
+        if (getattr(self, "compute_policy", None) or {}).get("id") in {
+            DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
+            DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID,
+        }:
+            raise ValueError("BF16 分片计算策略必须由 FSDP 分片训练器安装")
         if (getattr(self, "compute_policy", None) or {}).get("id") == DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID:
-            from .conv_forward import install_conv_fp32_forward
-            from .linear_backward import install_linear_bf16_forward_fp32_backward
-
-            if getattr(self, "_linear_backward_counts", None) is not None:
-                raise ValueError("BF16 算子计算策略不能重复安装")
-            restore, counts = install_linear_bf16_forward_fp32_backward(self.loaded.backbone)
-            try:
-                self._conv_forward_restore, self._conv_forward_counts = install_conv_fp32_forward(
-                    self.loaded.backbone
-                )
-            except Exception:
-                restore()
-                raise
-            self._linear_backward_restore, self._linear_backward_counts = restore, counts
-            self._validate_training_compute_policy()
+            self._install_sdxl_compute_operators()
         cfg = self.cfg
         if cfg.memory.blocks_to_swap > 0:
             blocks = self.family.memory_layout(self.loaded).blocks
@@ -440,6 +430,24 @@ class Trainer:
             self.loaded.backbone.to(self.device)
         if cfg.memory.compile:
             self.compile_blocks()
+
+    def _install_sdxl_compute_operators(self) -> None:
+        """Install the same operators before device movement or FSDP wrapping."""
+        from .conv_forward import install_conv_fp32_forward
+        from .linear_backward import install_linear_bf16_forward_fp32_backward
+
+        if getattr(self, "_linear_backward_counts", None) is not None:
+            raise ValueError("BF16 算子计算策略不能重复安装")
+        restore, counts = install_linear_bf16_forward_fp32_backward(self.loaded.backbone)
+        try:
+            self._conv_forward_restore, self._conv_forward_counts = install_conv_fp32_forward(
+                self.loaded.backbone
+            )
+        except Exception:
+            restore()
+            raise
+        self._linear_backward_restore, self._linear_backward_counts = restore, counts
+        self._validate_training_compute_policy()
 
     def _build_training_optimizer(self, groups):
         return build_optimizer(self.cfg.optimizer, groups)
@@ -883,6 +891,7 @@ class Trainer:
         if (policy or {}).get("id") not in {
             DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
             DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
+            DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID,
         }:
             return
         from .linear_backward import validate_linear_backward_installation
@@ -896,7 +905,7 @@ class Trainer:
         if self.cfg.training.mode == "full" and (not counts.get("nn_linear") or counts.get("frozen_linear")):
             raise ValueError("BF16 Linear 全参策略需要未量化的训练主干")
         validate_linear_backward_installation(self.loaded.backbone, counts)
-        if policy["id"] == DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID:
+        if policy["id"] in {DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID, DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID}:
             from .conv_forward import validate_conv_forward_installation
 
             validate_conv_forward_installation(

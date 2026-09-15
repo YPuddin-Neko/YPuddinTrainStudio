@@ -11,6 +11,7 @@ import i18n from '../src/i18n';
 const policy = {id:'dtk-full-fp32-math-v1',mixed_precision:'no',allow_tf32:false,attention:'sdpa',sdpa_backend:'math'};
 const bf16Policy = {...policy,id:'dtk-krea2-fsdp-bf16-linear-fp32-backward-v1',mixed_precision:'bf16',linear_forward:'native-bf16',linear_backward:'fp32-contractions-grad-original-dtype',linear_backward_implementation:'linear-bf16-forward-fp32-backward-v1',fsdp_param_dtype:'bfloat16',fsdp_reduce_dtype:'float32'};
 const sdxlPolicy = {...policy,id:'dtk-sdxl-bf16-conv-fp32-linear-backward-v1',mixed_precision:'bf16',linear_forward:'native-bf16',linear_backward:'fp32-contractions-grad-original-dtype',linear_backward_implementation:'linear-bf16-forward-fp32-backward-v1',conv_forward:'fp32-output-bf16',conv_implementation:'conv2d-fp32-output-bf16-v1'};
+const sdxlShardedPolicy = {...sdxlPolicy,id:'dtk-sdxl-fsdp-bf16-conv-fp32-linear-backward-v1',fsdp_param_dtype:'bfloat16',fsdp_reduce_dtype:'float32'};
 const fullConfig = () => {
   const value = schemaDefaults(schema);
   value.model.family = 'anima'; value.model.attention = 'xformers';
@@ -110,6 +111,33 @@ it('only uses a confirmed policy for the current server-checked draft', () => {
   const changed = structuredClone(config); changed.loop.seed += 1;
   expect(currentTrainingComputePolicy(policy,changed,encoded,false)).toBeNull();
   expect(currentTrainingComputePolicy(null,config,encoded,false)).toBeNull();
+});
+
+it('keeps the verified BF16 LoKr settings for DDP but rejects adapter sharding and full DDP', () => {
+  const config = fullConfig(); config.model.family = 'sdxl'; config.training.mode = 'adapter';
+  config.adapter.algo = 'lokr'; config.adapter.param_dtype = 'fp32'; config.adapter.dora = false;
+  config.adapter.mode = 'auto'; config.adapter.rules = []; config.memory.base_precision = 'auto';
+  config.loop.gpu_count = 2; config.loop.distributed_strategy = 'ddp';
+  expect(confirmedTrainingComputePolicy(sdxlPolicy,config)).toEqual(sdxlPolicy);
+  expect(confirmedTrainingComputePolicy(sdxlPolicy,{...config,loop:{...config.loop,distributed_strategy:'fsdp'}})).toBeNull();
+  expect(confirmedTrainingComputePolicy(sdxlPolicy,{...config,training:{...config.training,mode:'full'}})).toBeNull();
+  render(<SchemaForm schema={schema} value={config} onChange={() => {}} computePolicy={sdxlPolicy} compact showAdvanced groupFilter={['loop','memory']}/>);
+  expect(screen.getByRole('status',{name:'混合精度'})).toHaveTextContent('BF16（FP32 卷积、线性层反向）');
+});
+
+it('shows SDXL sharding only for the matching full-model policy and BF16 gather metadata', () => {
+  const config = shardedKreaConfig(); config.model.family = 'sdxl';
+  expect(confirmedTrainingComputePolicy(sdxlShardedPolicy,config)).toEqual(sdxlShardedPolicy);
+  expect(confirmedTrainingComputePolicy(sdxlPolicy,config)).toBeNull();
+  expect(confirmedTrainingComputePolicy(sdxlShardedPolicy,{...config,loop:{...config.loop,distributed_strategy:'ddp'}})).toBeNull();
+  expect(confirmedTrainingComputePolicy(sdxlShardedPolicy,{...config,training:{...config.training,mode:'adapter'}})).toBeNull();
+  for (const changed of [
+    {...sdxlShardedPolicy,fsdp_param_dtype:'float32'}, {...sdxlShardedPolicy,fsdp_reduce_dtype:'bfloat16'},
+    {...sdxlShardedPolicy,conv_implementation:undefined}, {...sdxlShardedPolicy,linear_backward_implementation:undefined},
+  ]) expect(confirmedTrainingComputePolicy(changed,config)).toBeNull();
+  render(<SchemaForm schema={schema} value={config} onChange={() => {}} computePolicy={sdxlShardedPolicy} compact showAdvanced groupFilter={['loop','memory']}/>);
+  expect(screen.getByRole('status',{name:'混合精度'})).toHaveTextContent('BF16（FP32 卷积、线性层反向）');
+  expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('本次 SDXL 使用多卡显存分片');
 });
 
 it.each(['anima','sdxl','krea2'])('accepts the server-confirmed full-backbone policy for %s', family => {
