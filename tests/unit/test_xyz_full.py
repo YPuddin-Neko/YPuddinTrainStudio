@@ -250,7 +250,7 @@ def test_full_xyz_rejects_base_fallback_and_mutated_models(tmp_path):
         legacy = copy.deepcopy(payload)
         del legacy["training"]
         ctx.db.update("jobs", job["id"], {"config_json": json.dumps(legacy)})
-        with pytest.raises(ValueError, match="legacy XYZ"):
+        with pytest.raises(ValueError, match="旧的模型测试未固定完整模型权重"):
             ctx.supervisor._launch(
                 ctx.db.fetchone("SELECT * FROM jobs WHERE id=?", (job["id"],)), device="cpu"
             )

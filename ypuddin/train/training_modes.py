@@ -35,13 +35,17 @@ class FullTrainingSet:
                     "Full fine-tuning requires unquantized base weights; this checkpoint contains frozen FP8 layers"
                 )
             module.to(dtype=torch.float32).requires_grad_(True)
-        self._names = {
-            f"{component}.{name}": parameter
-            for component, module in modules.items()
-            for name, parameter in module.named_parameters()
-        }
+        self.rebind_parameters()
         if not self._names:
             raise ValueError("selected full-training components have no parameters")
+
+    def rebind_parameters(self) -> None:
+        """Refresh references after distributed placement replaces native parameters."""
+        self._names = {
+            f"{component}.{name}": parameter
+            for component, module in self.modules.items()
+            for name, parameter in module.named_parameters()
+        }
 
     def parameters(self) -> list[nn.Parameter]:
         return list({id(parameter): parameter for parameter in self._names.values()}.values())

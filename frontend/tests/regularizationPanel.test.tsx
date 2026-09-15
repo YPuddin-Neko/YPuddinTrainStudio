@@ -63,7 +63,7 @@ describe('regularization preparation',()=>{
     fireEvent.change(screen.getByRole('textbox',{name:'类别提示词'}),{target:{value:'a photo of a dog'}});
     fireEvent.change(screen.getByRole('spinbutton',{name:'图片数量'}),{target:{value:'2'}});
     fireEvent.click(screen.getByRole('button',{name:'生成正则图'}));
-    await screen.findByRole('progressbar',{name:'正则图准备进度'});
+    await screen.findByRole('progressbar',{name:'正则图进度'});
     expect(apiClient.post).toHaveBeenCalledWith('/projects/dogs/versions/v1/regularization',expect.objectContaining({source:'ai',prompt:'a photo of a dog',count:2,prior_weight:1,repeats:1}),{silent:true});
     expect(changed).not.toHaveBeenCalled();
     snapshot={...snapshot,images:2,operations:[task({status:'completed',done:2,images:2,dataset_id:'d_reg',can_cancel:false})]};

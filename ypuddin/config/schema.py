@@ -977,8 +977,18 @@ class LoopConfig(_Strict):
         1,
         ge=1,
         le=64,
-        help="本次任务同时使用的 GPU 数量，默认 1；大于 1 时使用 DDP，每张卡保留一份完整模型，显存不会合并。批量大小按每卡计算，全局有效批量约为每卡批量 × 卡数 × 梯度累积。多卡需要标准分桶，暂不支持原图异形批次、块换出、编译和梯度检查点。",
+        help="本次任务同时使用的 GPU 数量，默认 1。多卡时可选择数据并行或显存分片；数据并行每卡保留完整模型，显存分片将模型和训练状态分配到不同卡。批量大小按每卡计算，全局有效批量为每卡批量 × 卡数 × 梯度累积。",
         ui_=ui("loop", order=15),
+    )
+    distributed_strategy: Literal["ddp", "fsdp"] = F(
+        "ddp",
+        help="数据并行（DDP）每卡保留完整模型；显存分片（FSDP）将参数、梯度和优化器状态分到多张卡，适合单卡装不下的全量主模型。分片需要至少两张 CUDA/DTK 显卡，目前支持冻结文本编码器的主模型全量微调，以及 AdamW、Adafactor 或 SGD。可配逐块梯度检查点；实际速度取决于跨卡通信和模型。",
+        ui_=ui(
+            "loop",
+            order=16,
+            control="select",
+            show_when='loop.gpu_count > 1 || loop.distributed_strategy == "fsdp"',
+        ),
     )
     max_steps: int | None = F(
         None,

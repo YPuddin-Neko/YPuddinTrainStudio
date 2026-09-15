@@ -108,7 +108,24 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
     catch (err) { setError(formatApiError(err)); }
     finally { setSubmitting(false); }
   };
-  const statusName = (status: string) => ({queued:text('等待开始','Queued'),running:text('准备中','Preparing'),cancelling:text('正在取消','Cancelling'),completed:text('已加入正则集','Added to regularization data'),failed:text('失败','Failed'),cancelled:text('已取消','Cancelled')}[status] || status);
+  const statusName = (status: string) => ({queued:text('等待开始','Queued'),running:text('进行中','Running'),cancelling:text('正在取消','Cancelling'),completed:text('已加入正则集','Added to regularization data'),failed:text('失败','Failed'),cancelled:text('已取消','Cancelled')}[status] || status);
+  const logText = (message: string) => {
+    const fixed: Record<string, string> = {
+      'Preparing a new isolated regularization batch': '正在创建本批正则图',
+      'Cancellation requested': '已请求取消，正在停止任务',
+      'Cleanup requires attention; existing datasets were preserved': '临时文件未能全部清理，请检查日志；已有数据集已保留',
+    };
+    if (fixed[message]) return text(fixed[message], message);
+    const loading = /^Loading (.+) base model without adapters$/.exec(message);
+    if (loading) return text(`正在加载 ${loading[1]} 底模，不加载适配器`, message);
+    const publishing = /^Publishing (\d+) verified image\/caption pairs$/.exec(message);
+    if (publishing) return text(`正在保存 ${publishing[1]} 组已检查的图片与标签`, message);
+    const added = /^Added (\d+) regularization images to this version$/.exec(message);
+    if (added) return text(`已将 ${added[1]} 张正则图加入当前版本`, message);
+    const searching = /^Searching (danbooru|gelbooru), page (\d+)$/.exec(message);
+    if (searching) return text(`正在检索 ${searching[1]} 第 ${searching[2]} 页`, message);
+    return message;
+  };
 
   return <section className="regularization-panel" aria-label={text('正则图','Regularization images')}>
     <div className="reg-heading"><div><h3>{text('正则图','Regularization images')}</h3><p>{text('可选的先验保持数据，用于保留底模对通用类别的表现。','Optional prior-preservation images help retain the base model’s general class knowledge.')}</p></div><span className="reg-count">{text(`已有 ${query.data?.images ?? 0} 张`,`${query.data?.images ?? 0} images`)}</span></div>
@@ -162,11 +179,11 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
     </form>
     {query.data?.operations.slice(0,3).map(task=><article className="reg-task" key={task.id} aria-label={task.id}>
       <div className="reg-task-heading"><strong>{task.source === 'ai' ? text('底模生成','Base model generation') : task.source}</strong><code>{task.id}</code><span className={task.status === 'failed' ? 'reg-failed' : ''}>{statusName(task.status)}</span>{task.can_cancel && <button type="button" disabled={submitting || readOnly} onClick={()=>void cancel(task.id)} aria-label={text(`取消 ${task.id}`,`Cancel ${task.id}`)}><X size={14}/>{text('取消','Cancel')}</button>}</div>
-      {active(task) && <><progress value={task.done} max={Math.max(task.total,1)} aria-label={text('正则图准备进度','Regularization progress')}/><p className="reg-note">{task.done} / {task.total}</p></>}
+      {active(task) && <><progress value={task.done} max={Math.max(task.total,1)} aria-label={text('正则图进度','Regularization progress')}/><p className="reg-note">{task.done} / {task.total}</p></>}
       {task.error && <p role="alert" className="reg-error">{task.error}</p>}
       {task.status === 'completed' && <p className="reg-note">{text(`新增 ${task.images} 张图片`,`Added ${task.images} images`)}{task.duplicates ? text(`，跳过 ${task.duplicates} 张重复图片`,`, skipped ${task.duplicates} duplicates`) : ''}</p>}
       {task.dataset_id && <Link className="studio-link" to={`${projectUrl(projectId,versionId,'data')}&data_step=captions`}>{text('查看图片与标签','View images and captions')}</Link>}
-      {!!task.logs.length && <details><summary>{text('查看日志','View logs')}</summary><pre>{task.logs.join('\n')}</pre></details>}
+      {!!task.logs.length && <details><summary>{text('查看日志','View logs')}</summary><pre>{task.logs.map(logText).join('\n')}</pre></details>}
     </article>)}
     {!readOnly && !current && <details className="reg-options reg-existing"><summary>{text('导入已有正则图','Import existing regularization images')}</summary><ProjectDataImport projectId={projectId} versionId={versionId} defaultIsReg onImported={()=>{void query.refetch();onChanged();}}/></details>}
     </>}

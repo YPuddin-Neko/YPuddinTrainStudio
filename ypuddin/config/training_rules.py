@@ -46,14 +46,15 @@ def training_errors(cfg) -> list[dict[str, str]]:
                 reject(
                     "memory.offload_text_encoder", "训练中的文本编码器需保留权重及反向图，不能在编码后卸载"
                 )
-    if cfg.loop.gpu_count > 1:
+    if cfg.loop.gpu_count > 1 or cfg.loop.distributed_strategy == "fsdp":
         errors.extend(distributed_training_errors(cfg))
     return errors
 
 
 def distributed_training_errors(cfg) -> list[dict[str, str]]:
     """Shared admission checks for UI plans and externally launched torchrun jobs."""
-    checks = (
+    sharded = cfg.loop.distributed_strategy == "fsdp"
+    checks = [
         (
             cfg.dataset.resolution_mode == "native",
             "dataset.resolution_mode",
@@ -62,9 +63,36 @@ def distributed_training_errors(cfg) -> list[dict[str, str]]:
         (bool(cfg.memory.blocks_to_swap), "memory.blocks_to_swap", "多卡训练暂不支持块换出，请设置为 0"),
         (cfg.memory.compile, "memory.compile", "多卡训练暂不支持编译，请关闭编译"),
         (
-            cfg.memory.activation_checkpointing != "none",
+            cfg.memory.activation_checkpointing not in ({"none", "block"} if sharded else {"none"}),
             "memory.activation_checkpointing",
-            "多卡训练暂不支持梯度检查点，请选择 none",
+            "显存分片请选择逐块梯度检查点或关闭"
+            if sharded
+            else "多卡数据并行暂不支持梯度检查点，请选择 none",
         ),
-    )
+    ]
+    if sharded:
+        from .optimizer_rules import optimizer_key
+
+        checks.extend(
+            [
+                (cfg.loop.gpu_count < 2, "loop.gpu_count", "显存分片至少需要两张显卡"),
+                (
+                    cfg.training.mode != "full" or not cfg.training.train_backbone,
+                    "training.mode",
+                    "显存分片目前需要选择主模型全量微调",
+                ),
+                (
+                    cfg.training.train_text_encoder,
+                    "training.train_text_encoder",
+                    "显存分片暂不支持同时训练文本编码器",
+                ),
+                (cfg.loop.ema, "loop.ema", "显存分片暂不支持 EMA，请关闭 EMA"),
+                (
+                    optimizer_key(cfg.optimizer.type) not in {"adamw", "adafactor", "sgd"},
+                    "optimizer.type",
+                    "显存分片请选择 AdamW、Adafactor 或 SGD",
+                ),
+                (cfg.optimizer.kahan, "optimizer.kahan", "显存分片的主参数使用 FP32，请关闭低精度更新补偿"),
+            ]
+        )
     return [{"loc": loc, "msg": message} for failed, loc, message in checks if failed]

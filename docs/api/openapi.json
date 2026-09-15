@@ -11695,11 +11695,27 @@
             "maximum": 64.0,
             "minimum": 1.0,
             "title": "Gpu Count",
-            "description": "本次任务同时使用的 GPU 数量，默认 1；大于 1 时使用 DDP，每张卡保留一份完整模型，显存不会合并。批量大小按每卡计算，全局有效批量约为每卡批量 × 卡数 × 梯度累积。多卡需要标准分桶，暂不支持原图异形批次、块换出、编译和梯度检查点。",
+            "description": "本次任务同时使用的 GPU 数量，默认 1。多卡时可选择数据并行或显存分片；数据并行每卡保留完整模型，显存分片将模型和训练状态分配到不同卡。批量大小按每卡计算，全局有效批量为每卡批量 × 卡数 × 梯度累积。",
             "default": 1,
             "x-ui": {
               "group": "loop",
               "order": 15
+            }
+          },
+          "distributed_strategy": {
+            "type": "string",
+            "enum": [
+              "ddp",
+              "fsdp"
+            ],
+            "title": "Distributed Strategy",
+            "description": "数据并行（DDP）每卡保留完整模型；显存分片（FSDP）将参数、梯度和优化器状态分到多张卡，适合单卡装不下的全量主模型。分片需要至少两张 CUDA/DTK 显卡，目前支持冻结文本编码器的主模型全量微调，以及 AdamW、Adafactor 或 SGD。可配逐块梯度检查点；实际速度取决于跨卡通信和模型。",
+            "default": "ddp",
+            "x-ui": {
+              "control": "select",
+              "group": "loop",
+              "order": 16,
+              "show_when": "loop.gpu_count > 1 || loop.distributed_strategy == \"fsdp\""
             }
           },
           "max_steps": {
@@ -14468,6 +14484,43 @@
       },
       "PlanDistributed": {
         "properties": {
+          "strategy": {
+            "type": "string",
+            "enum": [
+              "single",
+              "ddp",
+              "fsdp"
+            ],
+            "title": "Strategy",
+            "default": "single"
+          },
+          "parameter_storage": {
+            "type": "string",
+            "enum": [
+              "replicated",
+              "sharded"
+            ],
+            "title": "Parameter Storage",
+            "default": "replicated"
+          },
+          "gradient_storage": {
+            "type": "string",
+            "enum": [
+              "replicated",
+              "sharded"
+            ],
+            "title": "Gradient Storage",
+            "default": "replicated"
+          },
+          "optimizer_storage": {
+            "type": "string",
+            "enum": [
+              "replicated",
+              "sharded"
+            ],
+            "title": "Optimizer Storage",
+            "default": "replicated"
+          },
           "world_size": {
             "type": "integer",
             "title": "World Size"
@@ -14531,6 +14584,57 @@
             "type": "number",
             "title": "Optimizer Mb",
             "default": 0
+          },
+          "gradients_mb": {
+            "type": "number",
+            "title": "Gradients Mb",
+            "default": 0
+          },
+          "estimate_scope": {
+            "type": "string",
+            "const": "per_device",
+            "title": "Estimate Scope",
+            "default": "per_device"
+          },
+          "communication_mb_estimate": {
+            "type": "number",
+            "title": "Communication Mb Estimate",
+            "default": 0
+          },
+          "optimizer_workspace_mb_estimate": {
+            "type": "number",
+            "title": "Optimizer Workspace Mb Estimate",
+            "default": 0
+          },
+          "initialization_peak_mb_estimate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initialization Peak Mb Estimate"
+          },
+          "estimate_notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Estimate Notes"
+          },
+          "sharding": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharding"
           },
           "heuristic": {
             "type": "boolean",

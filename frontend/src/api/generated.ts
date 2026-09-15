@@ -3838,10 +3838,17 @@ export interface components {
         LoopConfig: {
             /**
              * Gpu Count
-             * @description 本次任务同时使用的 GPU 数量，默认 1；大于 1 时使用 DDP，每张卡保留一份完整模型，显存不会合并。批量大小按每卡计算，全局有效批量约为每卡批量 × 卡数 × 梯度累积。多卡需要标准分桶，暂不支持原图异形批次、块换出、编译和梯度检查点。
+             * @description 本次任务同时使用的 GPU 数量，默认 1。多卡时可选择数据并行或显存分片；数据并行每卡保留完整模型，显存分片将模型和训练状态分配到不同卡。批量大小按每卡计算，全局有效批量为每卡批量 × 卡数 × 梯度累积。
              * @default 1
              */
             gpu_count: number;
+            /**
+             * Distributed Strategy
+             * @description 数据并行（DDP）每卡保留完整模型；显存分片（FSDP）将参数、梯度和优化器状态分到多张卡，适合单卡装不下的全量主模型。分片需要至少两张 CUDA/DTK 显卡，目前支持冻结文本编码器的主模型全量微调，以及 AdamW、Adafactor 或 SGD。可配逐块梯度检查点；实际速度取决于跨卡通信和模型。
+             * @default ddp
+             * @enum {string}
+             */
+            distributed_strategy: "ddp" | "fsdp";
             /**
              * Max Steps
              * @description 最多执行多少次优化器更新，默认留空；它不是图片数或采样步数。与轮数至少设置一个，同时设置时先到者结束。需要固定更新预算时填写。
@@ -4933,6 +4940,30 @@ export interface components {
         };
         /** PlanDistributed */
         PlanDistributed: {
+            /**
+             * Strategy
+             * @default single
+             * @enum {string}
+             */
+            strategy: "single" | "ddp" | "fsdp";
+            /**
+             * Parameter Storage
+             * @default replicated
+             * @enum {string}
+             */
+            parameter_storage: "replicated" | "sharded";
+            /**
+             * Gradient Storage
+             * @default replicated
+             * @enum {string}
+             */
+            gradient_storage: "replicated" | "sharded";
+            /**
+             * Optimizer Storage
+             * @default replicated
+             * @enum {string}
+             */
+            optimizer_storage: "replicated" | "sharded";
             /** World Size */
             world_size: number;
             /** Per Device Batch Size */
@@ -4978,6 +5009,35 @@ export interface components {
              * @default 0
              */
             optimizer_mb: number;
+            /**
+             * Gradients Mb
+             * @default 0
+             */
+            gradients_mb: number;
+            /**
+             * Estimate Scope
+             * @default per_device
+             * @constant
+             */
+            estimate_scope: "per_device";
+            /**
+             * Communication Mb Estimate
+             * @default 0
+             */
+            communication_mb_estimate: number;
+            /**
+             * Optimizer Workspace Mb Estimate
+             * @default 0
+             */
+            optimizer_workspace_mb_estimate: number;
+            /** Initialization Peak Mb Estimate */
+            initialization_peak_mb_estimate?: number | null;
+            /** Estimate Notes */
+            estimate_notes?: string[];
+            /** Sharding */
+            sharding?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Heuristic
              * @default true

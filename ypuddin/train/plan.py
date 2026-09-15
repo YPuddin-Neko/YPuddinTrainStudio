@@ -32,6 +32,124 @@ def _frozen_storage_bytes(module: nn.Module) -> int:
     return sum(t.numel() * t.element_size() for t in tensors.values())
 
 
+def _fsdp_memory(backbone: nn.Module, blocks: list[nn.Module], cfg: TrainConfig) -> dict[str, Any]:
+    """Account for actual per-rank FP32 shards and native optimizer-state layouts.
+
+    Only persistent tensor sizes are exact. All-gather, reduce-scatter and
+    optimizer temporaries are conservative workspace estimates, not measured
+    allocator peaks. Use the training placement/group functions so odd shapes,
+    single-row projections and shared/nested modules cannot drift from runtime.
+    """
+    from ypuddin.config.optimizer_rules import optimizer_key
+
+    from .sharded import parameter_shard, sharding_groups
+
+    world = cfg.loop.gpu_count
+    key = optimizer_key(cfg.optimizer.type)
+    if key not in {"adafactor", "adamw", "sgd"}:
+        raise ValueError("显存分片请选择 AdamW、Adafactor 或 SGD")
+    parameter_bytes = [0] * world
+    state_bytes = [0] * world
+    largest_parameter_bytes = [0] * world
+    local_elements: dict[int, list[int]] = {}
+    replicated_elements = 0
+    for parameter in backbone.parameters():
+        shape = tuple(parameter.shape)
+        axis = None if parameter.numel() < world else parameter_shard(parameter, world).dim
+        if axis is None:
+            replicated_elements += parameter.numel()
+        sizes = []
+        for rank in range(world):
+            local_shape = list(shape)
+            if axis is not None:
+                chunk = math.ceil(shape[axis] / world)
+                local_shape[axis] = max(0, min(chunk, shape[axis] - rank * chunk))
+            elements = math.prod(local_shape)
+            sizes.append(elements)
+            parameter_bytes[rank] += elements * 4
+            largest_parameter_bytes[rank] = max(largest_parameter_bytes[rank], elements * 4)
+            if key == "adafactor":
+                if len(shape) >= 2:
+                    # A reduction across the sharded dimension is replicated;
+                    # reductions on any other dimension retain the local shard.
+                    factors = 0
+                    for reduced in (len(shape) - 1, len(shape) - 2):
+                        source = shape if axis == reduced else local_shape
+                        factors += math.prod(size for dim, size in enumerate(source) if dim != reduced)
+                    state_bytes[rank] += factors * 4
+                else:
+                    state_bytes[rank] += elements * 4
+                if cfg.optimizer.args.get("beta1") is not None:
+                    state_bytes[rank] += elements * 4
+                state_bytes[rank] += 4  # RMS is a replicated FP32 scalar after the first step.
+            elif key == "adamw":
+                state_bytes[rank] += elements * 4 * (3 if cfg.optimizer.args.get("amsgrad") else 2)
+                if cfg.optimizer.args.get("capturable") or cfg.optimizer.args.get("fused"):
+                    state_bytes[rank] += 4  # Otherwise the step scalar stays on CPU.
+            elif cfg.optimizer.args.get("momentum", 0):
+                state_bytes[rank] += elements * 4
+        local_elements[id(parameter)] = sizes
+
+    claimed = set()
+    groups = []
+    for name, module in [*sharding_groups(backbone, blocks), ("", backbone)]:
+        members = []
+        for parameter in module.parameters():
+            if id(parameter) in claimed:
+                continue
+            claimed.add(id(parameter))
+            if parameter.numel() >= world:
+                members.append(parameter)
+        if members:
+            groups.append(
+                {
+                    "name": name or "backbone",
+                    "parameter_count": sum(parameter.numel() for parameter in members),
+                    "local_parameter_bytes_by_rank": [
+                        sum(local_elements[id(parameter)][rank] * 4 for parameter in members)
+                        for rank in range(world)
+                    ],
+                }
+            )
+    largest_groups = sorted((group["parameter_count"] for group in groups), reverse=True)
+    largest_group = max(largest_groups, default=0)
+    compute_bytes = DTYPE_BYTES["fp32" if cfg.loop.mixed_precision == "no" else cfg.loop.mixed_precision]
+    # Current and prefetched group gathers may coexist; backward also needs a
+    # full FP32 reduction input and a local reduction output. Activations and
+    # frozen text/VAE cache phases are accounted separately and are NOT divided.
+    communication_bytes = sum(largest_groups[:2]) * compute_bytes + largest_group * 4
+    communication_bytes += max((max(group["local_parameter_bytes_by_rank"]) for group in groups), default=0)
+    buffer_bytes = sum(buffer.numel() * buffer.element_size() for buffer in backbone.buffers())
+    if key == "adafactor":
+        optimizer_workspace = 2 * max(largest_parameter_bytes, default=0)
+        state_layout = (
+            "factored_with_first_moment" if cfg.optimizer.args.get("beta1") is not None else "factored"
+        )
+    else:
+        # foreach=None permits automatic selection; reserve a tensor-list-sized
+        # temporary unless the user explicitly disables it.
+        optimizer_workspace = (
+            max(parameter_bytes)
+            if cfg.optimizer.args.get("foreach") is not False
+            else max(largest_parameter_bytes, default=0)
+        )
+        state_layout = "adamw_amsgrad" if key == "adamw" and cfg.optimizer.args.get("amsgrad") else key
+    return {
+        "world_size": world,
+        "optimizer": key,
+        "optimizer_state_layout": state_layout,
+        "global_parameter_bytes": _count_params(backbone) * 4,
+        "local_parameter_bytes_by_rank": parameter_bytes,
+        "optimizer_state_bytes_by_rank": state_bytes,
+        "replicated_parameter_count": replicated_elements,
+        "replicated_buffer_bytes": buffer_bytes,
+        "communication_bytes_estimate": communication_bytes,
+        "optimizer_workspace_bytes_estimate": optimizer_workspace,
+        "initialization_bytes_estimate": max(parameter_bytes) + largest_group * 4 + buffer_bytes,
+        "groups": groups,
+    }
+
+
 @dataclass(frozen=True)
 class _LayoutInputs:
     """Only the validated fields consumed by prepare_data_layout, never a training config."""
@@ -99,6 +217,10 @@ def _append_data_plan(
         out.update(steps_per_epoch=steps_per_epoch, total_steps=total_steps, epochs=loop.epochs)
         out["distributed"] = {
             "world_size": loop.gpu_count,
+            "strategy": loop.distributed_strategy if loop.gpu_count > 1 else "single",
+            "parameter_storage": "sharded" if loop.distributed_strategy == "fsdp" else "replicated",
+            "gradient_storage": "sharded" if loop.distributed_strategy == "fsdp" else "replicated",
+            "optimizer_storage": "sharded" if loop.distributed_strategy == "fsdp" else "replicated",
             "per_device_batch_size": ds.batch_size,
             "effective_batch_size": ds.batch_size * loop.grad_accum * loop.gpu_count,
             "batches_per_rank": per_rank_batches,
@@ -362,6 +484,11 @@ def plan(
             "optimizer.type",
             "8-bit optimizers require CUDA",
         ),
+        (
+            device_type in ("cpu", "mps") and cfg.loop.distributed_strategy == "fsdp",
+            "loop.distributed_strategy",
+            "显存分片训练需要至少两张 CUDA 或 DTK 显卡",
+        ),
     ]
     out["errors"].extend({"loc": loc, "msg": message} for failed, loc, message in checks if failed)
     out["errors"].extend(family.training_options_errors(cfg))
@@ -488,6 +615,25 @@ def plan(
                 layout = (
                     family.memory_layout_meta(backbone) if hasattr(family, "memory_layout_meta") else None
                 )
+                sharding = None
+                communication_mb = optimizer_workspace_mb = 0.0
+                initialization_peak = None
+                estimate_notes = []
+                if cfg.loop.distributed_strategy == "fsdp":
+                    sharding = _fsdp_memory(backbone, list(layout.blocks) if layout else [], cfg)
+                    adapter_mb = max(sharding["local_parameter_bytes_by_rank"]) / 2**20
+                    gradients_mb = adapter_mb
+                    optimizer_mb = max(sharding["optimizer_state_bytes_by_rank"]) / 2**20
+                    weights_mb = sharding["replicated_buffer_bytes"] / 2**20
+                    communication_mb = sharding["communication_bytes_estimate"] / 2**20
+                    optimizer_workspace_mb = sharding["optimizer_workspace_bytes_estimate"] / 2**20
+                    initialization_peak = sharding["initialization_bytes_estimate"] / 2**20 + 512
+                    estimate_notes = [
+                        "显存按单张卡中占用最大的分片估算；主参数、梯度和优化器状态分片，少量小参数及缓冲区在各卡保留。",
+                        "Adafactor 按实际行、列状态计算；设置 beta1 会额外保留一份 FP32 一阶动量。",
+                        "激活和文本、图片编码缓存按每卡计算，不随卡数平均分摊。",
+                        "通信缓冲区、优化器临时张量和激活峰值是估算；实际占用需以运行监控为准。分片不保证按卡数成倍提速。",
+                    ]
                 if layout and cfg.memory.blocks_to_swap > len(layout.blocks):
                     out["errors"].append(
                         {
@@ -509,6 +655,7 @@ def plan(
                     activation_bytes = (
                         4
                         if device_type in ("cpu", "mps")
+                        or (sharding is not None and cfg.loop.mixed_precision == "no")
                         else DTYPE_BYTES[
                             cfg.model.dtype if cfg.loop.mixed_precision == "no" else cfg.loop.mixed_precision
                         ]
@@ -560,12 +707,27 @@ def plan(
                     + ema_mb
                     + swap_staging_mb
                     + dequant_mb
+                    + communication_mb
+                    + optimizer_workspace_mb
                     + (max(a["mb"] for a in act_by_bucket) if act_by_bucket else 0)
                     + 512
                 )
                 cache_phases = family.cache_memory_estimate(cfg, compute_dtype)
                 peak = max(training_peak, *cache_phases.values()) if cache_phases else training_peak
+                if initialization_peak is not None:
+                    # Text may stay resident through backbone placement when
+                    # online encoding is selected without offloading.
+                    initialization_peak += text_encoder_mb
+                    peak = max(peak, initialization_peak)
                 memory = {
+                    "estimate_scope": "per_device",
+                    "communication_mb_estimate": round(communication_mb, 1),
+                    "optimizer_workspace_mb_estimate": round(optimizer_workspace_mb, 1),
+                    "initialization_peak_mb_estimate": round(initialization_peak)
+                    if initialization_peak is not None
+                    else None,
+                    "estimate_notes": estimate_notes,
+                    "sharding": sharding,
                     "weights_mb": round(weights_mb),
                     "swapped_mb": round(swapped_mb),
                     "text_encoder_mb": round(text_encoder_mb),
@@ -612,8 +774,18 @@ def plan(
                         and cfg.training.mode != "full"
                     ):
                         memory["suggestions"].append("enable memory.blocks_to_swap")
-                    if device_type in (None, "cuda") and "8bit" not in cfg.optimizer.type:
+                    if (
+                        device_type in (None, "cuda")
+                        and "8bit" not in cfg.optimizer.type
+                        and sharding is None
+                    ):
                         memory["suggestions"].append("use optimizer.type = 'adamw8bit'")
+                    if sharding and (
+                        sharding["optimizer"] != "adafactor" or cfg.optimizer.args.get("beta1") is not None
+                    ):
+                        memory["suggestions"].append(
+                            "可评估使用 Adafactor 且不设置 beta1，以减少优化器状态；这会改变优化算法，请按训练需求选择。"
+                        )
                     if text_encoder_mb:
                         memory["suggestions"].append(
                             "set dataset.text_encoding = 'cached' (frees the text encoder)"

@@ -185,6 +185,13 @@ class PlanMemory(_Out):
     text_encoder_mb: float = 0
     adapter_mb: float = 0
     optimizer_mb: float = 0
+    gradients_mb: float = 0
+    estimate_scope: Literal["per_device"] = "per_device"
+    communication_mb_estimate: float = 0
+    optimizer_workspace_mb_estimate: float = 0
+    initialization_peak_mb_estimate: float | None = None
+    estimate_notes: list[str] = Field(default_factory=list)
+    sharding: dict[str, Any] | None = None
     heuristic: bool = True
     activations_mb_by_bucket: list[PlanActivation] = Field(default_factory=list)
     peak_mb_estimate: float | None = None
@@ -235,6 +242,10 @@ class ImageFitPlan(_Out):
 
 
 class PlanDistributed(_Out):
+    strategy: Literal["single", "ddp", "fsdp"] = "single"
+    parameter_storage: Literal["replicated", "sharded"] = "replicated"
+    gradient_storage: Literal["replicated", "sharded"] = "replicated"
+    optimizer_storage: Literal["replicated", "sharded"] = "replicated"
     world_size: int
     per_device_batch_size: int
     effective_batch_size: int

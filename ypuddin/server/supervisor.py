@@ -338,7 +338,7 @@ class JobSupervisor:
             # predate it and must resume with their original calculation mode.
             payload.setdefault("loop", {}).setdefault("deterministic", False)
             if job["type"] == "cache":
-                payload.setdefault("loop", {})["gpu_count"] = 1
+                payload.setdefault("loop", {}).update(gpu_count=1, distributed_strategy="ddp")
             cfg = absolute_paths(TrainConfig.model_validate(payload))
             if job.get("resume_from"):
                 cfg = cfg.model_copy(

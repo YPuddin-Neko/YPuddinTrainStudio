@@ -57,6 +57,7 @@ const labels: Record<string, string> = {
   'memory.compile': '编译模型', 'memory.allow_tf32': '允许 TF32', 'loop.max_steps': '最大训练步数',
   'loop.epochs': '训练轮数', 'loop.grad_accum': '梯度累积', 'loop.mixed_precision': '混合精度', 'loop.seed': '随机种子',
   'loop.gpu_count': '训练显卡数量',
+  'loop.distributed_strategy': '多卡训练方式',
   'loop.deterministic': '可复现训练',
   'loop.ema': '启用 EMA', 'loop.ema_decay': 'EMA 衰减', 'loop.nan_skip_limit': '无效梯度跳过上限', 'loop.log_every': '日志间隔',
   'checkpoint.output_dir': '训练权重保存位置', 'checkpoint.name': '权重文件名', 'checkpoint.save_every_steps': '每隔几步保存',
@@ -75,6 +76,7 @@ const labels: Record<string, string> = {
 
 export function configFieldLabel(path: string, fallback: string, english = false) {
   if (path === 'loop.gpu_count') return english ? 'Training GPU count' : labels[path];
+  if (path === 'loop.distributed_strategy') return english ? 'Multi-GPU training strategy' : labels[path];
   if (path === 'loop.deterministic') return english ? 'Reproducible training' : labels[path];
   if (path === 'adapter.preset') return english ? 'Adapter scope' : labels[path];
   if (english && path.startsWith('training.')) return ({mode:'Training mode',train_backbone:'Train main model (UNet / DiT)',train_text_encoder:'Train text encoder',resume_weights:'Initial full-model weights'} as Record<string,string>)[path.slice(9)] || fallback;
@@ -148,7 +150,8 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
     'memory.base_precision': ['设置冻结底模权重的存储精度，仅作用于适配器所连接的线性层。选择 FP8 会在启动时量化这些权重，不修改源模型文件；计算时再还原为计算所需的精度。Krea2 支持的逐张量 FP8 文件会保留原有权重和缩放值，其他 FP8 文件需对应加载器支持。存储精度与混合精度分别设置，使用 FP8 不一定更快。', 'Controls storage for unquantized frozen linear layers beneath adapters. FP8 quantizes each tensor at startup without modifying the source file; computation dequantizes to the compute dtype. Supported Krea2 per-tensor FP8 base weights retain checkpoint weights and scales; other quantized files still require a compatible loader. This differs from mixed precision and does not guarantee faster training.'],
     'memory.activation_checkpointing': ['少保存前向计算的中间结果，在反向传播时重新计算，以额外计算换取更少显存。它不改变批量大小，也不是恢复训练用的存档。可以和梯度累积同时使用。', 'Saves fewer forward intermediates and recomputes them during backward, trading computation for lower memory use. It does not change batch size and is not a resume checkpoint. It can be combined with gradient accumulation.'],
     'loop.grad_accum': ['累计多少个小批次后更新一次参数。例如单卡批量 1、累积 4，处理 4 张图后更新一次。有效批量还需乘以显卡数量；它与重算中间结果来节省显存的梯度检查点不同。', 'Number of minibatches before updating parameters. With one GPU, batch size 1 and accumulation 4 update after 4 images. Effective batch size also includes GPU count. This differs from activation checkpointing, which recomputes intermediates to save memory.'],
-    'loop.gpu_count': ['1 使用单卡；大于 1 时使用多卡数据并行。每张卡保存完整模型，显存不会合并。需要 Linux CUDA 或 DTK 及可用的 GPU 通信后端，队列会等待足够数量的空闲显卡后一起启动。', '1 uses one GPU; larger values enable data parallel training. Each GPU holds the full model; memory is not pooled. Requires Linux CUDA or DTK and GPU collective communication. The queue waits until enough GPUs are free.'],
+    'loop.gpu_count': ['1 使用单卡；大于 1 时可选择数据并行或显存分片。需要 Linux CUDA 或 DTK 及可用的 GPU 通信后端，队列会等待足够数量的空闲显卡后一起启动。批大小按每张显卡计算。', '1 uses one GPU; larger values allow data parallelism or memory sharding. Requires Linux CUDA or DTK and GPU collective communication. The queue waits until enough GPUs are free. Batch size is per GPU.'],
+    'loop.distributed_strategy': ['数据并行：每张卡保留完整模型，分担图片计算。显存分片：将参数、梯度和优化器状态分配到多张卡，适合单卡装不下的大模型。分片目前支持冻结文本编码器的主模型全量微调，以及 AdamW、Adafactor 或 SGD。实际速度取决于模型和跨卡通信，并非卡越多就一定越快。', 'Data parallelism keeps a full model on each GPU and splits image processing. Memory sharding distributes parameters, gradients and optimizer states across GPUs for models that do not fit on one GPU. Sharding currently supports full backbone training with frozen text encoders and AdamW, Adafactor or SGD. Speed depends on the model and communication; more GPUs are not always faster.'],
     'optimizer.lr': ['控制每次参数更新的基础步长。可输入 0.0001 或 1e-4，两者表示同一个数值；右侧会显示对应的科学计数法。数值过大容易不稳定，过小学习较慢；自适应优化器会自行调整实际步长。', 'Sets the base step size for parameter updates. Enter 0.0001 or 1e-4 for the same value; the equivalent scientific notation appears on the right. Too large can be unstable; too small can learn slowly. Adaptive optimizers manage the effective step size.'],
     'optimizer.weight_decay': ['给权重施加衰减约束，避免权重持续变大。通常保留默认值；过大可能让模型学不到细节，0 表示关闭。', 'Applies a decay constraint to weights. Usually keep the default; too much can prevent learning details. Set to 0 to disable.'],
     'optimizer.betas': ['β1 平滑更新方向，β2 平滑梯度大小的估计。通常保留优化器默认值；调大后反应更平缓，也会更慢适应变化。', 'β1 smooths the update direction; β2 smooths the estimate of gradient size. Usually keep the optimizer defaults. Higher values smooth changes more but respond more slowly.'],
@@ -165,7 +168,8 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
 
 export function configFieldHint(path: string, english = false, optimizerType?: string, scheduleFree = false) {
   const hints: Record<string, [string, string]> = {
-    'loop.gpu_count': ['1 为单卡；多卡分担图片计算，显存不会合并。', '1 uses a single GPU. Multiple GPUs split image processing; memory is not pooled.'],
+    'loop.gpu_count': ['1 为单卡；多卡可选择数据并行或显存分片。', '1 uses one GPU. Multiple GPUs can use data parallelism or memory sharding.'],
+    'loop.distributed_strategy': ['数据并行每卡保留完整模型；显存分片分担参数、梯度和优化器状态。速度取决于跨卡通信。', 'Data parallelism keeps a full model per GPU; memory sharding splits parameters, gradients and optimizer states. Speed depends on communication.'],
     'dataset.batch_size': ['每张显卡一次处理的图片数；有效批次还会乘以显卡数和梯度累积。', 'Images processed by each GPU per batch. Effective batch size also includes GPU count and gradient accumulation.'],
     'training.mode': ['适配器生成附加权重；全量微调直接更新并保存所选模型组件。', 'Adapters save additional weights; full fine-tuning updates and saves the selected model components.'],
     'memory.base_precision': ['选择 FP8 会在启动时量化适配器连接的底模权重；已有 FP8 文件需加载器支持。', 'FP8 quantizes adapter-connected base weights at startup; prequantized FP8 files require a compatible model loader.'],
@@ -211,6 +215,7 @@ export function configPresetLabel(name: string, description: string, defaultPres
 
 export function configOptionLabel(path: string, option: string, english = false) {
   const options: Record<string, Record<string, [string, string]>> = {
+    'loop.distributed_strategy': {ddp:['数据并行','Data parallelism'],fsdp:['显存分片（大模型）','Memory sharding (large models)']},
     'training.mode': {adapter:['LoRA / LoKr 适配器','LoRA / LoKr adapter'],full:['全量微调','Full fine-tuning']},
     'memory.base_precision': {auto:['沿用加载精度','Keep load precision'],fp32:['FP32 · 32 位','FP32 · 32-bit'],bf16:['BF16 · 16 位','BF16 · 16-bit'],fp16:['FP16 · 16 位','FP16 · 16-bit'],fp8_e4m3:['FP8 E4M3 · 启动时量化','FP8 E4M3 · quantize at startup'],fp8_e5m2:['FP8 E5M2 · 启动时量化','FP8 E5M2 · quantize at startup']},
     'model.attention': {auto:['PyTorch SDPA（默认）','PyTorch SDPA (default)'],sdpa:['PyTorch SDPA','PyTorch SDPA'],xformers:['xFormers','xFormers'],flash_attn:['FlashAttention 2','FlashAttention 2'],sage:['SageAttention · 仅采样','SageAttention · sampling only']},

@@ -154,20 +154,31 @@ def test_hip_mask_preserves_rocr_scope_and_translates_inherited_hip(monkeypatch)
         worker_device_environment(("cuda:2",), env)
 
 
-def test_cache_of_multigpu_project_stays_single_card(service, image_dataset, monkeypatch):
+@pytest.mark.parametrize("strategy", ["ddp", "fsdp"])
+def test_cache_of_multigpu_project_stays_single_card(service, image_dataset, monkeypatch, strategy):
     row = job(service, image_dataset)
     config = json.loads(row["config_json"])
+    config["loop"]["distributed_strategy"] = strategy
+    if strategy == "fsdp":
+        config["training"]["mode"] = "full"
     # A cache request must not require the project's future training GPU count.
     response = service[0].post("/api/jobs", json={"name": "cache", "type": "cache", "config": config})
     assert response.status_code == 201, response.text
     stored = service[1].db.fetchone("SELECT * FROM jobs WHERE id=?", (response.json()["id"],))
     assert json.loads(stored["config_json"])["loop"]["gpu_count"] == 1
+    assert json.loads(stored["config_json"])["loop"]["distributed_strategy"] == "ddp"
+    # Older queued cache jobs may still contain the project's original FSDP
+    # settings. The worker boundary must normalize those independently too.
+    stored["config_json"] = json.dumps(config)
     popen = Mock(return_value=Mock(pid=987655))
     monkeypatch.setattr(module.subprocess, "Popen", popen)
     service[1].supervisor._launch(stored, device="cuda:1")
     assert "torch.distributed.run" not in popen.call_args.args[0]
     assert popen.call_args.args[0][-2:] == ["--device", "cuda:0"]
     assert popen.call_args.kwargs["env"]["CUDA_VISIBLE_DEVICES"] == "1"
+    worker = load_config(Path(stored["run_dir"]) / "job-config.toml")
+    assert worker.loop.gpu_count == 1
+    assert worker.loop.distributed_strategy == "ddp"
     service[1].supervisor._procs.clear()
 
 
@@ -617,3 +628,41 @@ def test_previous_paused_process_exit_does_not_fail_queued_resume(service, image
     supervisor.request(row["id"], "resume")
     supervisor._on_exit(row["id"], 1)
     assert service[0].get("/api/jobs/" + row["id"]).json()["status"] == "queued"
+
+
+@pytest.mark.parametrize(
+    "phases",
+    [
+        None,
+        {},
+        {"text_cache": None},
+        {"vae_cache": 1200, "text_cache": None},
+        {"text_cache": float("inf")},
+        {"text_cache": -1},
+        {"text_cache": "22000"},
+    ],
+)
+def test_cache_with_unknown_phase_estimate_never_inherits_training_peak(
+    service, image_dataset, monkeypatch, phases
+):
+    row = job(service, image_dataset)
+    config = json.loads(row["config_json"])
+    config["training"]["mode"] = "full"
+    config["loop"]["distributed_strategy"] = "fsdp"
+    monkeypatch.setattr(
+        "ypuddin.train.plan.plan",
+        lambda *_args, **_kwargs: {
+            "ok": True,
+            "errors": [],
+            "warnings": [],
+            "memory": {"peak_mb_estimate": 191 * 1024, "cache_phase_peak_mb_estimates": phases},
+        },
+    )
+    response = service[0].post(
+        "/api/jobs", json={"type": "cache", "name": "unknown cache estimate", "config": config}
+    )
+    assert response.status_code == 201, response.text
+    cached = service[1].db.fetchone("SELECT * FROM jobs WHERE id=?", (response.json()["id"],))
+    assert json.loads(cached["progress_json"])["estimated_peak_mb"] is None
+    monkeypatch.setattr(module, "gpu_info", lambda: inventory(1))
+    assert service[1].supervisor._choose_device(cached) == "cuda:0"

@@ -154,6 +154,9 @@ class DistributedTrainer(Trainer):
             broadcast_buffers=False,
             find_unused_parameters=True,
         )
+        self._finish_distributed_preparation()
+
+    def _finish_distributed_preparation(self):
         if not self.cfg.checkpoint.resume:
             seed = self.cfg.loop.seed + 100_003 * self.distributed.rank
             random.seed(seed)
@@ -167,6 +170,7 @@ class DistributedTrainer(Trainer):
         usable = len(unsharded) - len(unsharded) % self.distributed.world_size
         self.emit(
             "distributed.plan",
+            strategy=self.cfg.loop.distributed_strategy,
             world_size=self.distributed.world_size,
             backend=self.distributed.backend,
             per_device_batch_size=self.cfg.dataset.batch_size,
@@ -266,8 +270,8 @@ class DistributedTrainer(Trainer):
                 self.progress.batch_in_epoch += 1
                 local_count = len(batch["caption"])
                 count += local_count
-                with self.ddp.no_sync() if micro < len(group) - 1 else nullcontext():
-                    loss = self.ddp(batch)
+                with self._accumulation_context(micro < len(group) - 1):
+                    loss = self._distributed_forward(batch)
                     finite = torch.tensor(int(torch.isfinite(loss).item()), device=self.device)
                     dist.all_reduce(finite, op=dist.ReduceOp.MIN)
                     invalid |= not bool(finite.item())
@@ -307,6 +311,12 @@ class DistributedTrainer(Trainer):
         self.emit("epoch.finished", epoch=epoch, step=self.progress.step)
         self._epoch_hooks(epoch + 1)
 
+    def _accumulation_context(self, accumulating):
+        return self.ddp.no_sync() if accumulating else nullcontext()
+
+    def _distributed_forward(self, batch):
+        return self.ddp(batch)
+
 
 def distributed_train(cfg, *, device=None, emitter=None, listeners=None):
     context = DistributedContext.initialize(device)
@@ -319,7 +329,12 @@ def distributed_train(cfg, *, device=None, emitter=None, listeners=None):
             )
             for listener in listeners or []:
                 emitter.add_listener(listener)
-        return DistributedTrainer(cfg, context=context, emitter=emitter).run()
+        trainer_type = DistributedTrainer
+        if cfg.loop.distributed_strategy == "fsdp":
+            from .sharded import ShardedTrainer
+
+            trainer_type = ShardedTrainer
+        return trainer_type(cfg, context=context, emitter=emitter).run()
     finally:
         # Never barrier on failure: the launcher terminates siblings and every
         # process must be able to release its group without waiting for a peer.

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import math
 import re
 import shutil
 import tempfile
@@ -1722,7 +1723,7 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
     if body.type == "cache":
         # Cache preparation has its own single-device worker, even when the
         # project's following training run is configured for several GPUs.
-        config = deep_merge(config, {"loop": {"gpu_count": 1}})
+        config = deep_merge(config, {"loop": {"gpu_count": 1, "distributed_strategy": "ddp"}})
     if body.project_id or not (config.get("dataset") or {}).get("cache_dir"):
         # a pre-cache job and the training jobs after it must hit the same cache
         config = deep_merge(config, {"dataset": {"cache_dir": str(c.cache_dir(body.project_id, vid))}})
@@ -1773,6 +1774,20 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
                 code="config.invalid",
                 details={"errors": [{"loc": "checkpoint.resume", "msg": "complete checkpoint not found"}]},
             )
+    memory = preflight.get("memory") or {}
+    estimated_peak_mb = memory.get("peak_mb_estimate")
+    if body.type == "cache":
+        # This worker only caches text/latent features; it never materializes
+        # the trainable backbone, gradients or optimizer. Missing/partial phase
+        # estimates stay unknown instead of inheriting the training peak.
+        phases = memory.get("cache_phase_peak_mb_estimates")
+        values = list(phases.values()) if isinstance(phases, dict) else []
+        estimated_peak_mb = (
+            max(values)
+            if values
+            and all(type(value) in (int, float) and math.isfinite(value) and value >= 0 for value in values)
+            else None
+        )
     with c.db.lock:
         if version:
             assert_version_writable(c, body.project_id, vid)
@@ -1793,9 +1808,7 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
                 "run_dir": str(run_dir),
                 "samples_dir": str(samples_dir),
                 "config_json": json.dumps(cfg.to_dict()),
-                "progress_json": json.dumps(
-                    {"estimated_peak_mb": preflight.get("memory", {}).get("peak_mb_estimate")}
-                ),
+                "progress_json": json.dumps({"estimated_peak_mb": estimated_peak_mb}),
                 "latest_json": "{}",
             },
         )

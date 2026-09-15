@@ -333,20 +333,12 @@ class Trainer:
                         missing_layers=len(missing),
                     )
         self.emit("adapters.injected", **self.adapters.summary())
-        if cfg.memory.blocks_to_swap > 0:
-            blocks = self.family.memory_layout(self.loaded).blocks
-            self.swapper = BlockSwapper(blocks, cfg.memory.blocks_to_swap, self.device)
-            self.swapper.move_model_to_device(self.loaded.backbone)
-            self.emit("memory.block_swap", **self.swapper.summary())
-        else:
-            self.loaded.backbone.to(self.device)
-        if cfg.memory.compile:
-            self.compile_blocks()
+        self._place_training_model()
 
         groups = self.adapters.param_groups(
             cfg.optimizer.lr, cfg.optimizer.weight_decay, cfg.optimizer.group_lr
         )
-        self.optimizer = build_optimizer(cfg.optimizer, groups)
+        self.optimizer = self._build_training_optimizer(groups)
         if is_schedule_free(cfg.optimizer):
             self.optimizer.train()
         native = cfg.dataset.resolution_mode == "native"
@@ -393,6 +385,22 @@ class Trainer:
             text_mode=self.text_mode,
             deterministic=cfg.loop.deterministic,
         )
+
+    def _place_training_model(self) -> None:
+        """Place selected parameters before binding an optimizer to their final objects."""
+        cfg = self.cfg
+        if cfg.memory.blocks_to_swap > 0:
+            blocks = self.family.memory_layout(self.loaded).blocks
+            self.swapper = BlockSwapper(blocks, cfg.memory.blocks_to_swap, self.device)
+            self.swapper.move_model_to_device(self.loaded.backbone)
+            self.emit("memory.block_swap", **self.swapper.summary())
+        else:
+            self.loaded.backbone.to(self.device)
+        if cfg.memory.compile:
+            self.compile_blocks()
+
+    def _build_training_optimizer(self, groups):
+        return build_optimizer(self.cfg.optimizer, groups)
 
     def _check_capabilities(self) -> None:
         caps = self.family.spec.capabilities
@@ -1032,14 +1040,7 @@ class Trainer:
 
     def _optimizer_step(self, group_loss: float, elapsed: float) -> None:
         cfg = self.cfg
-        params = self.adapters.parameters()
-        grad_norm = None
-        if cfg.optimizer.grad_clip_norm > 0:
-            grad_norm = torch.nn.utils.clip_grad_norm_(params, cfg.optimizer.grad_clip_norm).item()
-        else:
-            grad_norm = math.sqrt(
-                sum(float(p.grad.detach().float().pow(2).sum()) for p in params if p.grad is not None)
-            )
+        grad_norm = self._gradient_norm_and_clip()
         if not math.isfinite(grad_norm):
             self.optimizer.zero_grad(set_to_none=True)
             self.progress.nan_skips += 1
@@ -1101,6 +1102,14 @@ class Trainer:
                 else ("current_allocated" if self.device.type == "mps" else None),
             )
         self._step_hooks(step)
+
+    def _gradient_norm_and_clip(self) -> float:
+        params = self.adapters.parameters()
+        if self.cfg.optimizer.grad_clip_norm > 0:
+            return torch.nn.utils.clip_grad_norm_(params, self.cfg.optimizer.grad_clip_norm).item()
+        return math.sqrt(
+            sum(float(p.grad.detach().float().pow(2).sum()) for p in params if p.grad is not None)
+        )
 
     def _update_ema(self) -> None:
         if self.ema is None:
@@ -1285,7 +1294,8 @@ class Trainer:
             pixels = self.loaded.latent.decode(latents).clamp(-1, 1)
             arr = ((pixels[0].permute(1, 2, 0).cpu().float().numpy() + 1) * 127.5).round().astype("uint8")
             path = out_dir / f"{tag}_{i:02d}_{seed}.png"
-            Image.fromarray(arr).save(path)
+            if self.is_primary:
+                Image.fromarray(arr).save(path)
             paths.append(path)
             self.emit(
                 "sample.saved",

@@ -64,9 +64,43 @@ it('offers GPU count in common settings and persists the numeric choice', () => 
   render(<Devices/>);
   const field = screen.getByLabelText('训练显卡数量');
   expect(field).toHaveValue(1);
+  expect(screen.queryByRole('combobox', {name:'多卡训练方式'})).not.toBeInTheDocument();
   fireEvent.change(field, {target: {value: '2'}});
   fireEvent.blur(field);
   expect(config().loop.gpu_count).toBe(2);
-  expect(screen.getByText('1 为单卡；多卡分担图片计算，显存不会合并。')).toBeInTheDocument();
+  const strategy = screen.getByRole('combobox', {name:'多卡训练方式'});
+  expect(strategy).toHaveTextContent('数据并行');
+  fireEvent.click(strategy);
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['数据并行', '显存分片（大模型）']);
+  fireEvent.click(screen.getByRole('option', {name:'显存分片（大模型）'}));
+  expect(config().loop.distributed_strategy).toBe('fsdp');
+  fireEvent.click(screen.getByRole('button', {name:'多卡训练方式 说明'}));
+  expect(screen.getByRole('tooltip')).toHaveTextContent('每张卡保留完整模型');
+  expect(screen.getByRole('tooltip')).toHaveTextContent('参数、梯度和优化器状态');
+  expect(screen.getByRole('tooltip')).toHaveTextContent('实际速度取决于模型和跨卡通信');
+  expect(screen.getByText('1 为单卡；多卡可选择数据并行或显存分片。')).toBeInTheDocument();
   expect(screen.getByTestId('field-dataset.batch_size')).toHaveTextContent('每张显卡一次处理的图片数');
+  fireEvent.keyDown(document, {key:'Escape'});
+  fireEvent.change(field, {target: {value:'1'}});
+  fireEvent.blur(field);
+  // Keep the incompatible inherited choice visible so users can correct it.
+  const inherited = screen.getByRole('combobox', {name:'多卡训练方式'});
+  expect(inherited).toHaveTextContent('显存分片（大模型）');
+  fireEvent.click(inherited);
+  fireEvent.click(screen.getByRole('option', {name:'数据并行'}));
+  expect(config().loop).toMatchObject({gpu_count:1, distributed_strategy:'ddp'});
+  expect(screen.queryByRole('combobox', {name:'多卡训练方式'})).not.toBeInTheDocument();
+});
+
+
+it('shows readable English multi-GPU choices while storing the same strategy identifiers', async () => {
+  await i18n.changeLanguage('en');
+  const initial = schemaDefaults(schema);
+  initial.loop.gpu_count = 2;
+  let changed: any;
+  render(<SchemaForm schema={schema} value={initial} onChange={next => {changed = next;}} compact groupFilter={['loop']}/>);
+  fireEvent.click(screen.getByRole('combobox', {name:'Multi-GPU training strategy'}));
+  expect(screen.getByRole('option', {name:'Data parallelism'})).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('option', {name:'Memory sharding (large models)'}));
+  expect(changed.loop.distributed_strategy).toBe('fsdp');
 });

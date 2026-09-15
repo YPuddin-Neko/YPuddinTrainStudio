@@ -191,3 +191,48 @@ def test_api_native_fp8_job_admits_on_16gb_but_preserves_low_memory_queue_gate(
     finally:
         client.close()
         app.state.ctx.db.close()
+
+
+def test_full_krea_cache_admits_using_cache_phases_while_training_keeps_its_peak(
+    official_geometry, image_dataset, monkeypatch, tmp_path
+):
+    # Official model dimensions in sparse headers; no payload loads or GPU
+    # workers. Admission uses the real model planner and a 24 GiB inventory.
+    gpu = {"device": "cuda:0", "mem_total_mb": 24576, "mem_free_mb": 24576}
+    monkeypatch.setattr("ypuddin.server.routes_work.gpu_info", lambda: [gpu])
+    monkeypatch.setattr("ypuddin.server.supervisor.gpu_info", lambda: [gpu])
+    monkeypatch.setattr("ypuddin.server.supervisor.current_profile", lambda: "linux-cuda")
+    app = create_app(tmp_path / "studio", frontend_dist=tmp_path / "no-ui")
+    client = TestClient(app)  # No lifespan: do not launch actual workers.
+    try:
+        config = _config(official_geometry, image_dataset, "bf16").to_dict()
+        config["training"]["mode"] = "full"
+        config["memory"]["blocks_to_swap"] = 0
+        config["loop"].update(gpu_count=2, distributed_strategy="fsdp")
+        response = client.post(
+            "/api/jobs", json={"type": "cache", "name": "full model cache", "config": config}
+        )
+        assert response.status_code == 201, response.text
+        ctx = app.state.ctx
+        cached = ctx.db.fetchone("SELECT * FROM jobs WHERE id=?", (response.json()["id"],))
+        normalized = json.loads(cached["config_json"])
+        assert normalized["loop"]["gpu_count"] == 1
+        assert normalized["loop"]["distributed_strategy"] == "ddp"
+        estimate = plan(normalized, device="cuda")["memory"]
+        cache_peak = json.loads(cached["progress_json"])["estimated_peak_mb"]
+        assert cache_peak == max(estimate["cache_phase_peak_mb_estimates"].values())
+        assert 0 < cache_peak < gpu["mem_free_mb"] * 0.95
+        assert estimate["peak_mb_estimate"] > gpu["mem_free_mb"]
+        assert ctx.supervisor._choose_device(cached) == "cuda:0"
+        # The complete training task keeps the complete estimate and cannot
+        # bypass its VRAM gate merely because cache preparation fits.
+        response = client.post(
+            "/api/jobs", json={"type": "train", "name": "full model train", "config": normalized}
+        )
+        assert response.status_code == 201, response.text
+        training = ctx.db.fetchone("SELECT * FROM jobs WHERE id=?", (response.json()["id"],))
+        assert json.loads(training["progress_json"])["estimated_peak_mb"] == estimate["peak_mb_estimate"]
+        assert ctx.supervisor._choose_device(training) is None
+    finally:
+        client.close()
+        app.state.ctx.db.close()
