@@ -8,6 +8,8 @@ Anima、SDXL 光辉 v0.1、Klein base 4B、Krea2 Raw 已完成所列配置的 Wi
 
 海光 Linux 已提供独立 DTK 启动入口。DTK 26.04 / 厂商 Torch 2.7.1 环境完成了 Krea2 Raw BF16、512 分辨率 LoKr 的单卡与双卡 DDP 训练验证，以及四个模型族的 20 项微型权重单卡测试；正式训练矩阵、精确恢复、安装流程和待完成项目见 [2026-09-14 DTK 验收](docs/DTK_ACCEPTANCE_2026-09-14.md)。微型权重测试不代表四个模型族的正式大模型均已验收，海光 DDP 结果也不代表 Windows DDP 通过。
 
+主模型全量微调还可使用 [FSDP2 显存分片](docs/FSDP_TRAINING_2026-09-15.md)，由多张卡分配参数、梯度和优化器状态。正式 Krea 2 的 r2 双卡用例完成容量、8 步训练、冷恢复执行及完整模型原生重载；**逐位恢复一致性未通过**。支持范围与后续快照状态见指南及 [当前交付报告](docs/DELIVERY_REPORT_2026-09-15.md)。
+
 界面提供项目概览、独立版本、数据导入、标签与遮罩编辑、训练配置、任务指标和产物管理。最新 UI 流程见 [2026-09-13 工作区验收](docs/UI_WORKFLOWS_2026-09-13.md)；[训练流程、分桶与三个训练器的对比](docs/TRAINING_PARAMETERS.md)、[JSON 标签](docs/JSON_CAPTIONS.md)、[整图保留与原生分辨率](docs/native-resolution.md)有对应说明。Krea2 的加载、缓存和卸载流程见 [显存说明](docs/KREA2_MEMORY.md)。历史报告中的测试数量、服务路径和“未接入模型”仅代表当时状态。
 
 项目按 `project/<id>/vN/` 保存训练图、正则图、缓存、采样与产物，支持自定义输出根；已有数据不随代码更新自动迁移。正则图支持本地底模生成、网站收集与已有图片导入；标签页编辑已有 caption，不提供 WD14 自动打标。参考代码分析位于 `docs/reference/`，不能据此宣称性能优于参考实现。

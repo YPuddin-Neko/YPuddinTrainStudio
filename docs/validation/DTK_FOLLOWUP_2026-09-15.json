@@ -1,0 +1,2558 @@
+{
+  "recorded_at": "2026-09-15T09:19:28.290490+08:00",
+  "status": "strict_resume_failures_remain",
+  "dtk_source_commit": "d2a43f561521656af372f2eb5e3bfbf2254d6a49",
+  "evidence_base": "repository sibling remote-testing/dtk-20260914",
+  "data_provenance": {
+    "formal_training": "isolated copy of 16 existing images and TXT captions; original data preserved",
+    "regularization_test": "four newly generated synthetic fixture images and TXT captions in a separate test project",
+    "input_manifest_evidence": {
+      "path": "final-validation/formal-dataset-provenance-20260915.json",
+      "sha256": "ea0e91f821268ae2543a508647be818b65c32ed2b38ea2b9b221a68a9099fcc9"
+    },
+    "input_manifest_note": "This manifest records the current 16-image input files and hashes; it does not independently establish the earlier copy origin because original and destination point to the same acceptance directory.",
+    "copy_manifest_evidence": {
+      "path": "new-server-10278/old-krea2-dataset.json",
+      "sha256": "008532d5081325d681dd72bfdc70346349b8a96cb6c9d003f6ba95a3caff911b"
+    },
+    "transfer_verification_evidence": {
+      "path": "new-server-10278/krea2-transferred-dataset-verification.json",
+      "sha256": "d566c47068d94ccb87e8735ed408f043e55d8ec672e0c4e8301c4139ba5ee9ca"
+    },
+    "preservation_evidence": {
+      "path": "new-server-10278/formal-dataset-preservation.json",
+      "sha256": "e2d4698a8a41177e0ef0f6a41e7f414748a594b4db7b4caa2b570d47fc2f832a"
+    },
+    "chain_verification": "Original isolated-copy manifest, new-node transfer and current input manifest agree for all 16 images plus 16 TXT captions (32 files, 135135755 bytes). Preservation audit reports all original acceptance inputs unchanged."
+  },
+  "new_full_training": [
+    {
+      "family": "sdxl",
+      "case": "formal-sdxl-full-g1-r512-20260915-084518-751182275",
+      "evidence": {
+        "path": "remaining-formal/formal-sdxl-full-g1-r512-20260915-084518-751182275/report.json",
+        "sha256": "cdd7e729e673686eb35561799f47b95101f6337050d101915c4765d97b5d8a17"
+      },
+      "parameters": 2567463684,
+      "parameter_dtype": "fp32",
+      "compute_dtype": "bf16",
+      "text_encoder_trainable": false,
+      "mode": "full",
+      "attention": "sdpa",
+      "deterministic": false,
+      "gpus": 1,
+      "resolution": 512,
+      "steps": 8,
+      "effective_batch_size": 2,
+      "activation_checkpointing": "block",
+      "optimizer": "adamw",
+      "training_passed": true,
+      "resume_execution_passed": true,
+      "passed": false,
+      "resume_comparison": {
+        "exact": false,
+        "finite": true,
+        "different_tensor_count": 1680,
+        "max_absolute_difference": 3.226962871849537e-05,
+        "rms_absolute_difference": 7.383619153440688e-07,
+        "relative_l2_difference": 2.489787835408368e-05,
+        "numerical_metrics_are_diagnostic_only": true,
+        "example_different_keys": [
+          "backbone.add_embedding.linear_1.bias",
+          "backbone.add_embedding.linear_1.weight",
+          "backbone.add_embedding.linear_2.bias",
+          "backbone.add_embedding.linear_2.weight",
+          "backbone.conv_in.bias",
+          "backbone.conv_in.weight",
+          "backbone.conv_norm_out.bias",
+          "backbone.conv_norm_out.weight",
+          "backbone.conv_out.bias",
+          "backbone.conv_out.weight"
+        ],
+        "tensor_count": 1680
+      },
+      "checkpoint_state_comparison": {
+        "progress_exact": false,
+        "sampler_exact": true,
+        "rng_exact": true,
+        "scheduler_exact": true,
+        "optimizer_exact": false
+      },
+      "preview_exact": false,
+      "original_assets_unchanged": true,
+      "reference_checks": {
+        "finished_all_ranks": true,
+        "expected_final_step": true,
+        "finite_losses": true,
+        "finite_weights": true,
+        "parameters_changed": true,
+        "all_optimizer_updates_observed": true,
+        "rank_parameters_equal": true,
+        "rank_shards_disjoint": true,
+        "one_start_event": true,
+        "one_final_preview": true,
+        "preview_file": true,
+        "full_state": true,
+        "no_nonfinite_skips": true,
+        "official_size_and_components_verified": true,
+        "full_model_manifest": true,
+        "only_backbone_exported": true,
+        "export_matches_full_training_state": true,
+        "native_reload_config_present": true
+      },
+      "resume_checks": {
+        "finished_all_ranks": true,
+        "expected_final_step": true,
+        "finite_losses": true,
+        "finite_weights": true,
+        "parameters_changed": true,
+        "all_optimizer_updates_observed": true,
+        "rank_parameters_equal": true,
+        "rank_shards_disjoint": true,
+        "one_start_event": true,
+        "one_final_preview": true,
+        "preview_file": true,
+        "full_state": true,
+        "no_nonfinite_skips": true,
+        "official_size_and_components_verified": true,
+        "full_model_manifest": true,
+        "only_backbone_exported": true,
+        "export_matches_full_training_state": true,
+        "native_reload_config_present": true
+      },
+      "workers_exited": true
+    },
+    {
+      "family": "flux2",
+      "case": "formal-flux2-full-g1-r512-20260915-090233-641380240",
+      "evidence": {
+        "path": "remaining-formal/formal-flux2-full-g1-r512-20260915-090233-641380240/report.json",
+        "sha256": "9a97adefcaf09fc27e727a4dd356dfcf929d7a33ae1ea4f5301538fcc8f72a87"
+      },
+      "parameters": 3875544576,
+      "parameter_dtype": "fp32",
+      "compute_dtype": "bf16",
+      "text_encoder_trainable": false,
+      "mode": "full",
+      "attention": "sdpa",
+      "deterministic": false,
+      "gpus": 1,
+      "resolution": 512,
+      "steps": 8,
+      "effective_batch_size": 2,
+      "activation_checkpointing": "block",
+      "optimizer": "adafactor",
+      "training_passed": true,
+      "resume_execution_passed": true,
+      "passed": true,
+      "resume_comparison": {
+        "exact": true,
+        "finite": true,
+        "different_tensor_count": 0,
+        "max_absolute_difference": 0.0,
+        "rms_absolute_difference": 0.0,
+        "relative_l2_difference": 0.0,
+        "numerical_metrics_are_diagnostic_only": true,
+        "example_different_keys": [],
+        "tensor_count": 169
+      },
+      "checkpoint_state_comparison": {
+        "progress_exact": true,
+        "sampler_exact": true,
+        "rng_exact": true,
+        "scheduler_exact": true,
+        "optimizer_exact": true
+      },
+      "preview_exact": true,
+      "original_assets_unchanged": true,
+      "reference_checks": {
+        "finished_all_ranks": true,
+        "expected_final_step": true,
+        "finite_losses": true,
+        "finite_weights": true,
+        "parameters_changed": true,
+        "all_optimizer_updates_observed": true,
+        "rank_parameters_equal": true,
+        "rank_shards_disjoint": true,
+        "one_start_event": true,
+        "one_final_preview": true,
+        "preview_file": true,
+        "full_state": true,
+        "no_nonfinite_skips": true,
+        "official_size_and_components_verified": true,
+        "full_model_manifest": true,
+        "only_backbone_exported": true,
+        "export_matches_full_training_state": true,
+        "native_reload_config_present": true
+      },
+      "resume_checks": {
+        "finished_all_ranks": true,
+        "expected_final_step": true,
+        "finite_losses": true,
+        "finite_weights": true,
+        "parameters_changed": true,
+        "all_optimizer_updates_observed": true,
+        "rank_parameters_equal": true,
+        "rank_shards_disjoint": true,
+        "one_start_event": true,
+        "one_final_preview": true,
+        "preview_file": true,
+        "full_state": true,
+        "no_nonfinite_skips": true,
+        "official_size_and_components_verified": true,
+        "full_model_manifest": true,
+        "only_backbone_exported": true,
+        "export_matches_full_training_state": true,
+        "native_reload_config_present": true
+      },
+      "workers_exited": true
+    }
+  ],
+  "native_full_export_reload": [
+    {
+      "family": "anima",
+      "case": "formal-anima-full-artifact-reload-20260915-090547-621107044",
+      "evidence": {
+        "path": "remaining-formal/formal-anima-full-artifact-reload-20260915-090547-621107044/report.json",
+        "sha256": "6c327057bfe44c9627b7ed194b894833d12c8df43e77fbab9c6285d3a28230b2"
+      },
+      "passed": true,
+      "checks": {
+        "manifest_complete": true,
+        "expected_cell_count": true,
+        "selected_checkpoints_sampled": true,
+        "all_exports_reloaded": true,
+        "all_reloaded_weights_exact": true,
+        "actual_product_forward_observed": true,
+        "pngs_valid_512": true,
+        "nonconstant_images": true,
+        "grid_created": true
+      },
+      "forward_calls": 24,
+      "loads": [
+        {
+          "checkpoint": "export-0",
+          "actual_model_path": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-full-g1-r512-20260915-074346-457588215/reference/anima-final.model/backbone/model.safetensors",
+          "tensor_count": 685,
+          "elements": 2091068928,
+          "parameters": 2091068928,
+          "different_keys": [],
+          "exact_export_weights": true,
+          "official_size": true,
+          "unquantized_full_model": true
+        },
+        {
+          "checkpoint": "export-1",
+          "actual_model_path": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-full-g1-r512-20260915-074346-457588215/continued-20260915-081334-836575411/anima-final.model/backbone/model.safetensors",
+          "tensor_count": 685,
+          "elements": 2091068928,
+          "parameters": 2091068928,
+          "different_keys": [],
+          "exact_export_weights": true,
+          "official_size": true,
+          "unquantized_full_model": true
+        }
+      ],
+      "images": [
+        {
+          "checkpoint": "export-0",
+          "path": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-full-artifact-reload-20260915-090547-621107044/samples/cell_z00_y00_x00.png",
+          "size": [
+            512,
+            512
+          ],
+          "variance": [
+            2697.964020914398,
+            1541.9849959080457,
+            2711.0097287369426
+          ],
+          "sha256": "87be52f29c79d5fe43815158cb7950e9bce7e7110a17d61cb871a4296705a39a"
+        },
+        {
+          "checkpoint": "export-1",
+          "path": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-full-artifact-reload-20260915-090547-621107044/samples/cell_z00_y00_x01.png",
+          "size": [
+            512,
+            512
+          ],
+          "variance": [
+            2701.8947984640836,
+            1611.0006139915786,
+            2819.4861641973257
+          ],
+          "sha256": "21738bf7558f63200495c4d632d6b5a570afbabc221ed20d2ac08b3887f75ae4"
+        }
+      ],
+      "artifact_signatures_unchanged": true,
+      "referenced_assets_unchanged": true,
+      "wall_elapsed_s": 99.62921349098906,
+      "peak_allocated_bytes": 8590862336
+    },
+    {
+      "family": "sdxl",
+      "case": "formal-sdxl-full-artifact-reload-20260915-085721-898875422",
+      "evidence": {
+        "path": "remaining-formal/formal-sdxl-full-artifact-reload-20260915-085721-898875422/report.json",
+        "sha256": "8b1a75ca56a9b320933b83678eab99a3dcc3c00a9bd25845bafc3415cfe3541d"
+      },
+      "passed": true,
+      "checks": {
+        "manifest_complete": true,
+        "expected_cell_count": true,
+        "selected_checkpoints_sampled": true,
+        "all_exports_reloaded": true,
+        "all_reloaded_weights_exact": true,
+        "actual_product_forward_observed": true,
+        "pngs_valid_512": true,
+        "nonconstant_images": true,
+        "grid_created": true
+      },
+      "forward_calls": 24,
+      "loads": [
+        {
+          "checkpoint": "export-0",
+          "actual_model_path": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-sdxl-full-g1-r512-20260915-084518-751182275/reference/sdxl-final.model/backbone",
+          "tensor_count": 1680,
+          "elements": 2567463684,
+          "parameters": 2567463684,
+          "different_keys": [],
+          "exact_export_weights": true,
+          "official_size": true,
+          "unquantized_full_model": true
+        },
+        {
+          "checkpoint": "export-1",
+          "actual_model_path": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-sdxl-full-g1-r512-20260915-084518-751182275/resumed/sdxl-final.model/backbone",
+          "tensor_count": 1680,
+          "elements": 2567463684,
+          "parameters": 2567463684,
+          "different_keys": [],
+          "exact_export_weights": true,
+          "official_size": true,
+          "unquantized_full_model": true
+        }
+      ],
+      "images": [
+        {
+          "checkpoint": "export-0",
+          "path": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-sdxl-full-artifact-reload-20260915-085721-898875422/samples/cell_z00_y00_x00.png",
+          "size": [
+            512,
+            512
+          ],
+          "variance": [
+            5566.3572827242315,
+            5345.60632445557,
+            6259.937680516159
+          ],
+          "sha256": "c6c596298de05c1fdeaa69960261e420ebee90fac72b6eab0e43e0a513b5aada"
+        },
+        {
+          "checkpoint": "export-1",
+          "path": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-sdxl-full-artifact-reload-20260915-085721-898875422/samples/cell_z00_y00_x01.png",
+          "size": [
+            512,
+            512
+          ],
+          "variance": [
+            5545.466600303873,
+            5355.704602356476,
+            6239.861664128242
+          ],
+          "sha256": "bcaed1f92e5798f084e68a9c3180fcd0d673efb5f25e7badf968dbc7d271ab6c"
+        }
+      ],
+      "artifact_signatures_unchanged": true,
+      "referenced_assets_unchanged": true,
+      "wall_elapsed_s": 109.13493328797631,
+      "peak_allocated_bytes": 10532920832
+    },
+    {
+      "family": "flux2",
+      "case": "formal-flux2-full-artifact-reload-20260915-091315-313900513",
+      "evidence": {
+        "path": "remaining-formal/formal-flux2-full-artifact-reload-20260915-091315-313900513/report.json",
+        "sha256": "c56c4999c50605ad04608e2f39b168eeb8ce93eb62b4be9bae50a94c2b4e3ad6"
+      },
+      "passed": true,
+      "checks": {
+        "manifest_complete": true,
+        "expected_cell_count": true,
+        "selected_checkpoints_sampled": true,
+        "all_exports_reloaded": true,
+        "all_reloaded_weights_exact": true,
+        "actual_product_forward_observed": true,
+        "pngs_valid_512": true,
+        "nonconstant_images": true,
+        "grid_created": true
+      },
+      "forward_calls": 24,
+      "loads": [
+        {
+          "checkpoint": "export-0",
+          "actual_model_path": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-flux2-full-g1-r512-20260915-090233-641380240/reference/flux2-final.model/backbone",
+          "tensor_count": 169,
+          "elements": 3875544576,
+          "parameters": 3875544576,
+          "different_keys": [],
+          "exact_export_weights": true,
+          "official_size": true,
+          "unquantized_full_model": true
+        },
+        {
+          "checkpoint": "export-1",
+          "actual_model_path": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-flux2-full-g1-r512-20260915-090233-641380240/resumed/flux2-final.model/backbone",
+          "tensor_count": 169,
+          "elements": 3875544576,
+          "parameters": 3875544576,
+          "different_keys": [],
+          "exact_export_weights": true,
+          "official_size": true,
+          "unquantized_full_model": true
+        }
+      ],
+      "images": [
+        {
+          "checkpoint": "export-0",
+          "path": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-flux2-full-artifact-reload-20260915-091315-313900513/samples/cell_z00_y00_x00.png",
+          "size": [
+            512,
+            512
+          ],
+          "variance": [
+            3040.156609566824,
+            1895.184253222178,
+            3447.597185172548
+          ],
+          "sha256": "ff6dfd4eab4a3fea69ecf06cb02bd56f2e4f1c4d8bdaa2a166592df46e29f80b"
+        },
+        {
+          "checkpoint": "export-1",
+          "path": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-flux2-full-artifact-reload-20260915-091315-313900513/samples/cell_z00_y00_x01.png",
+          "size": [
+            512,
+            512
+          ],
+          "variance": [
+            3040.156609566824,
+            1895.184253222178,
+            3447.597185172548
+          ],
+          "sha256": "ff6dfd4eab4a3fea69ecf06cb02bd56f2e4f1c4d8bdaa2a166592df46e29f80b"
+        }
+      ],
+      "artifact_signatures_unchanged": true,
+      "referenced_assets_unchanged": true,
+      "wall_elapsed_s": 165.19601629511453,
+      "peak_allocated_bytes": 16773553152
+    }
+  ],
+  "anima_independent_cold_resumes": {
+    "evidence": {
+      "path": "remaining-formal/formal-anima-adapter-g1-r512-20260915-082453-525707993/cold-vs-cold-20260915-090034.json",
+      "sha256": "16656241bcac4319588279c26cc2ac5011c20ef1f87298949a7c026eb47cb11b"
+    },
+    "comparison": "same state4 two independent cold resume workers",
+    "deterministic": false,
+    "configs_equal_except_output_dir": true,
+    "same_initial_weights": true,
+    "both_execution_checks_passed": true,
+    "weights": {
+      "exact": true,
+      "finite": true,
+      "different_tensor_count": 0,
+      "max_absolute_difference": 0.0,
+      "rms_absolute_difference": 0.0,
+      "relative_l2_difference": 0.0,
+      "numerical_metrics_are_diagnostic_only": true,
+      "example_different_keys": [],
+      "tensor_count": 840
+    },
+    "checkpoint_state": {
+      "progress_exact": true,
+      "sampler_exact": true,
+      "rng_exact": true,
+      "scheduler_exact": true,
+      "optimizer_exact": true
+    },
+    "preview_exact": true,
+    "optimizer_steps": {
+      "first": [
+        {
+          "step": 5,
+          "loss": 0.1227799579501152
+        },
+        {
+          "step": 6,
+          "loss": 0.21168462187051773
+        },
+        {
+          "step": 7,
+          "loss": 0.2576984092593193
+        },
+        {
+          "step": 8,
+          "loss": 0.15672368556261063
+        }
+      ],
+      "second": [
+        {
+          "step": 5,
+          "loss": 0.1227799579501152
+        },
+        {
+          "step": 6,
+          "loss": 0.21168462187051773
+        },
+        {
+          "step": 7,
+          "loss": 0.2576984092593193
+        },
+        {
+          "step": 8,
+          "loss": 0.15672368556261063
+        }
+      ]
+    },
+    "second_worker_returncode": 0,
+    "second_all_owned_processes_exited": true,
+    "assets_unchanged": true,
+    "strict_equal": true,
+    "interpretation": "Two cold resumes match; both still differ from the uninterrupted reference. This does not fix strict resume."
+  },
+  "hardware_tests": {
+    "passed": 5,
+    "skipped": 0,
+    "seconds": 16.95,
+    "physical_gpu": 1,
+    "source_file_sha256": {
+      "tests/unit/test_block_swap.py": "b57ae2496e213d8f10f1ac5f1e2a51dc204f93fb3dda3e3baf72a5702133ded3",
+      "tests/unit/test_objectives.py": "b40eea431a55ad4f4ec092ab46ad278bc7528282d5ae26e80908d7d81850420f",
+      "tests/e2e/test_toy_training.py": "72eeff499f3484f1231720e6c88ff298b896c53284d6312d71c07f2d8d72e77a"
+    },
+    "evidence": {
+      "path": "final-validation/hardware-pytest-20260915-0910.log",
+      "sha256": "ac6fa020c5b5b390df9606e5b2129b812483df56a63d578705ce7a04c88bb01c"
+    },
+    "source_import": "PYTHONSAFEPATH=1 and --import-mode=importlib with PYTHONPATH=d2a43f5 snapshot; warning trace confirms snapshot path",
+    "scope": "pinned host memory on CPU/CUDA source; identical noise; toy accelerator train/resume/preview with swap=0 and swap=2",
+    "warnings": "Two pytest-asyncio options unsupported because that plugin is absent; selected tests are synchronous. Vendor Torch reports missing memory-efficient SDP for toy fallback. All five tests passed without skipping."
+  },
+  "live_proxy_and_collection": {
+    "evidence": {
+      "path": "final-validation/live-network-20260915/report.json",
+      "sha256": "1513e1c952e1e089f0e11284b8efd1cb9c60cafa0ff9e1ce378f6f27833c108a"
+    },
+    "environment": "local macOS / live HTTPS / isolated product database",
+    "requests": [
+      {
+        "name": "model_repository_metadata",
+        "url": "https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B/resolve/main/model_index.json",
+        "status": 200,
+        "bytes": 422,
+        "sha256": "de1fef01845f0af3e1e2f2581cd5e86f2dfa4a4776f7f0b26b4c77feac4ee70f",
+        "valid_json": true,
+        "passed": true
+      },
+      {
+        "name": "package_versions",
+        "url": "https://pypi.org/pypi/xformers/json",
+        "status": 200,
+        "bytes": 289570,
+        "sha256": "38e520b3b443e604e7fbda435b65f57d26c854127b6e8b593b34b69670c9bdfb",
+        "valid_json": true,
+        "passed": true
+      },
+      {
+        "name": "attention_release",
+        "url": "https://api.github.com/repos/Dao-AILab/flash-attention/releases/latest",
+        "status": 200,
+        "bytes": 90834,
+        "sha256": "c74e69fb2c8d0c8e5289cc80a26bafc956c7c84232ac579676d8920d6786ebfe",
+        "valid_json": true,
+        "passed": true
+      },
+      {
+        "name": "danbooru_search",
+        "url": "https://danbooru.donmai.us/posts.json?tags=cat%20rating%3Ageneral&limit=2",
+        "status": 200,
+        "bytes": 6886,
+        "sha256": "0a915dd945224c87b0bb187f62ee8ee69c0daf124ff172fc6c1f27b51abbd060",
+        "valid_json": true,
+        "passed": true
+      }
+    ],
+    "checks": {
+      "product_proxy_settings_saved": true,
+      "real_collection_completed": true,
+      "published_as_regularization_source": true,
+      "real_proxy_tunnels_observed": true
+    },
+    "passed": true,
+    "collection_id": "reg_c2b1b6faa73c",
+    "images": 1,
+    "artifacts": [
+      {
+        "path": "studio/project/p_216d27f6e694/v1/reg/reg_c2b1b6faa73c/danbooru_12194448.txt",
+        "bytes": 641,
+        "sha256": "c114f368bdf901e55f1551462546de11ca08369be8b3ce1fc65eb6d6e02e1786"
+      },
+      {
+        "path": "studio/project/p_216d27f6e694/v1/reg/reg_c2b1b6faa73c/manifest.json",
+        "bytes": 338,
+        "sha256": "5dcb4f6abbe0eb4c1c0826adaa95166555e44f4b37e4acb38702b25fb4bd4cb3"
+      },
+      {
+        "path": "studio/project/p_216d27f6e694/v1/reg/reg_c2b1b6faa73c/danbooru_12194448.png",
+        "bytes": 1768469,
+        "sha256": "a1224c84c6fe80794d0860058972cc9651ac7be09f40fe02f45b78b2f59ff527"
+      }
+    ],
+    "limits": [
+      "Uses a controlled local HTTP CONNECT proxy with real upstream TLS; not the user Windows proxy.",
+      "Metadata/version requests are not full model-weight downloads or package installs.",
+      "No existing user projects or credentials were used."
+    ]
+  },
+  "dtk_regularization_generation": {
+    "evidence": {
+      "path": "final-validation/live-regularization-20260915-r2/report.json",
+      "sha256": "8e5ec873384cd2dd1c284022a88dcc10da4d9d3ff3e153564a2d7d36e95017fd"
+    },
+    "physical_gpu": 1,
+    "checks": {
+      "physical_gpu1_only": true,
+      "selected_source_only": true,
+      "top_tags_available": true,
+      "excluded_tag_removed_from_prompt": true,
+      "stale_plan_rejected": true,
+      "first_increment_completed": true,
+      "increment_skips_existing": true,
+      "second_increment_completed": true,
+      "increment_exhausted": true,
+      "empty_increment_rejected": true,
+      "all_scope_includes_existing": true,
+      "all_scope_completed": true,
+      "three_batches_registered": true
+    },
+    "passed": true,
+    "operations": [
+      {
+        "label": "first_increment",
+        "id": "reg_efb8f57156d4",
+        "status": "completed",
+        "images": 1,
+        "request": {
+          "source": "ai",
+          "prompt_source": "training_tags",
+          "source_ids": [
+            "d_051e28518cc8"
+          ],
+          "generation_scope": "incremental",
+          "excluded_tags": [
+            "acceptance_trigger"
+          ],
+          "count": 1,
+          "width": 512,
+          "height": 512,
+          "steps": 4,
+          "cfg": 3,
+          "seed": 1100
+        }
+      },
+      {
+        "label": "second_increment",
+        "id": "reg_c394af763afb",
+        "status": "completed",
+        "images": 1,
+        "request": {
+          "source": "ai",
+          "prompt_source": "training_tags",
+          "source_ids": [
+            "d_051e28518cc8"
+          ],
+          "generation_scope": "incremental",
+          "excluded_tags": [
+            "acceptance_trigger"
+          ],
+          "count": 1,
+          "width": 512,
+          "height": 512,
+          "steps": 4,
+          "cfg": 3,
+          "seed": 1100
+        }
+      },
+      {
+        "label": "all_scope",
+        "id": "reg_d34e7a4e99fb",
+        "status": "completed",
+        "images": 1,
+        "request": {
+          "source": "ai",
+          "prompt_source": "training_tags",
+          "source_ids": [
+            "d_051e28518cc8"
+          ],
+          "generation_scope": "all",
+          "excluded_tags": [
+            "acceptance_trigger"
+          ],
+          "count": 1,
+          "width": 512,
+          "height": 512,
+          "steps": 4,
+          "cfg": 3,
+          "seed": 1200
+        }
+      }
+    ],
+    "artifact_audit_evidence": {
+      "path": "final-validation/live-regularization-20260915-r2/artifacts-audit.json",
+      "sha256": "c509446d8556dd9deeeecddd247dd6c6407117ff2faa3b767fc61a03a364e28c"
+    },
+    "artifact_checks": {
+      "three_valid_512_images": true,
+      "generated_captions_exclude_trigger": true,
+      "input_unchanged_范围A_0_png": true,
+      "input_unchanged_范围A_0_txt": true,
+      "input_unchanged_范围A_1_png": true,
+      "input_unchanged_范围A_1_txt": true,
+      "input_unchanged_范围B_0_png": true,
+      "input_unchanged_范围B_0_txt": true,
+      "input_unchanged_范围B_1_png": true,
+      "input_unchanged_范围B_1_txt": true
+    },
+    "artifact_audit_passed": true,
+    "generated_images": [
+      {
+        "path": "reg/reg_efb8f57156d4/prior_0000_1100.png",
+        "bytes": 335418,
+        "sha256": "353d60378d5a14724485bb7697774d4c56e8b3616a277cf80f70c0441d94c614",
+        "size": [
+          512,
+          512
+        ],
+        "mode": "RGB",
+        "stddev": [
+          40.58827417971932,
+          42.08941154715119,
+          43.91248100456672
+        ]
+      },
+      {
+        "path": "reg/reg_c394af763afb/prior_0000_1100.png",
+        "bytes": 301526,
+        "sha256": "3d88a7645c8df966eb5f553eb5079814ac3332cc999c11b6e9d252188d1019fc",
+        "size": [
+          512,
+          512
+        ],
+        "mode": "RGB",
+        "stddev": [
+          54.44022573689711,
+          57.766481025400374,
+          73.53926839676924
+        ]
+      },
+      {
+        "path": "reg/reg_d34e7a4e99fb/prior_0000_1200.png",
+        "bytes": 344619,
+        "sha256": "389dd71d42d8edc3116295aa11851b85c702fca4e90ec6e394f198e921649c0a",
+        "size": [
+          512,
+          512
+        ],
+        "mode": "RGB",
+        "stddev": [
+          29.349481278682607,
+          28.376940593376048,
+          23.765114572156364
+        ]
+      }
+    ],
+    "worker_exit_evidence": {
+      "path": "final-validation/live-regularization-20260915-r2/process-exit.txt",
+      "sha256": "2c21d1ad2c84bc083a7c0b52551d2dc13311172bb54fbd2f6a6a4c62b3ea819a"
+    },
+    "service_cleanup_evidence": {
+      "path": "final-validation/live-regularization-20260915-r2/service-cleanup.txt",
+      "sha256": "09a8c9b739f24668db2394e49d65ab00484ee6676acfd99757b96ee78d0ea7bc"
+    },
+    "temporary_service_stopped": true,
+    "temporary_forward_8901_cancelled": true,
+    "limits": [
+      "Uses uploaded safe synthetic fixtures, official Anima 2B base model, and real product generation workers.",
+      "Four sampling steps validate execution, not image quality.",
+      "Physical GPU 1 is cuda:0 inside this isolated single-visible-GPU service."
+    ]
+  },
+  "frontend_copy_fix": {
+    "scope": "localize owned regularization logs and rename running/progress copy",
+    "test_count": 6,
+    "evidence": [
+      {
+        "path": "final-validation/regularization-copy-tests-20260915.log",
+        "sha256": "1eed0877b22984daf12203be643f3b6adb33e96c87d596846c05aa1006c8f7da"
+      },
+      {
+        "path": "final-validation/regularization-copy-build-20260915.log",
+        "sha256": "67083334cc470d0672325323f04d5fb4f7a34e0e97754af39a5c765567103fa6"
+      },
+      {
+        "path": "final-validation/regularization-copy-lint-20260915.log",
+        "sha256": "e891ea9bbe1c9aadf9d6e56b1c22bae6ef53ce4b923bf01979e22a1955e9eac2"
+      }
+    ],
+    "build_passed": true,
+    "lint_passed": true
+  },
+  "limits": [
+    "Anima and SDXL strict resume remain unresolved; execution and export reload passing do not imply bitwise uninterrupted equivalence.",
+    "Full training freezes text encoders. Klein full uses Adafactor; this does not validate full AdamW under the same VRAM budget.",
+    "Native export checks call the product sampling worker directly; API scheduling is covered by the separate real multi-GPU product report.",
+    "Native Windows single-job multi-GPU training is explicitly rejected by the server, for DDP and FSDP; those modes require Linux CUDA/DTK. Windows installation/switch/uninstall and separate single-GPU jobs assigned to different devices were not exercised in this macOS/Linux DTK setup. DTK acceptance does not establish Windows sharded training support.",
+    "Short training and low-step previews establish execution, not convergence, style quality, or long-duration stability.",
+    "SDXL independent cold-vs-cold full-model resumes also differ. Only an approved filtered summary of this diagnostic was downloaded; the exact cause remains unresolved.",
+    "FSDP2 strict cold-process resume passed on the explicit r2 toy model. Official Krea2 r2 full FSDP capacity/training/resume execution and native reload passed, but strict final equivalence failed for all 430 parameter tensors; cause and long-run impact remain unknown.",
+    "r3 adds online-VAE planning and scheduler-contract validation after the r2 formal runs. CPU checks do not establish r3 official-model numerical equivalence; its Toy hardware rerun found a collective-order defect during resume; the original failure report is retained, while a separate repaired r4 Toy cold-process regression passed. This does not rerun official Krea2 or remove its strict failure."
+  ],
+  "krea2_full_capacity": {
+    "evidence": {
+      "path": "final-validation/krea2-full-parameter-meta-audit-20260915.json",
+      "sha256": "5ee3f9eb8418d059025d026b83e8d91decc5032e05e0a29730a1b208970a3dd2"
+    },
+    "audit": {
+      "method": "Official header only plus actual SingleStreamDiT meta construction and FullTrainingSet; no real tensor allocation or GPU execution",
+      "header_source": "/root/private_data/YPuddinTrainStudio-dtk/models/diffusion_models/krea2-raw-bf16.safetensors",
+      "header_sha256": "acc002a069322b911e23fac84c1a6a0b85f2e0ed4de2bf818b383ad1c94cf90a",
+      "config": {
+        "features": 6144,
+        "tdim": 256,
+        "txtdim": 2560,
+        "heads": 48,
+        "multiplier": 4,
+        "layers": 28,
+        "patch": 2,
+        "channels": 16,
+        "bias": false,
+        "theta": 1000.0,
+        "kvheads": 12,
+        "txtlayers": 12,
+        "txtheads": 20,
+        "txtkvheads": 20
+      },
+      "header_tensor_count": 430,
+      "model_parameter_tensor_count": 430,
+      "model_parameter_elements": 12820073036,
+      "model_buffer_tensor_count": 0,
+      "model_buffer_elements": 0,
+      "matched_header_parameter_elements": 12820073036,
+      "header_elements_total": 12820073036,
+      "header_unknown_keys": [],
+      "header_missing_model_keys": [],
+      "header_shape_mismatches": [],
+      "all_parameters_meta": true,
+      "full_training_parameters": 12820073036,
+      "all_full_parameters_fp32": true,
+      "all_full_parameters_require_grad": true,
+      "fp32_parameters_gib": 47.75849370658398,
+      "fp32_parameters_and_gradients_gib": 95.51698741316795,
+      "fp32_adamw_parameters_gradients_two_moments_gib": 191.0339748263359,
+      "raw_parameter_header_elements_by_dtype": {
+        "BF16": 12498501632,
+        "F32": 321571404
+      },
+      "full_backbone_swappable_elements": 0,
+      "all_parameters_resident_per_ddp_rank": true,
+      "boundary_scope": "Existing full backbone training: FP32 parameters and gradients resident on each device; excludes activations, temporaries, communication buckets and optimizer extras. Frozen-only block swapping does not offload trainable full weights.",
+      "source_evidence": {
+        "ypuddin/models/krea2/vendor/krea2_mmdit.py": {
+          "line": 301,
+          "reason": "Actual SingleStreamDiT architecture matched all official header tensor names and shapes.",
+          "sha256": "73bf856436713796651d87134a7fd68c738b49aec1c657cc357b9fa9bdd161f0"
+        },
+        "ypuddin/train/training_modes.py": {
+          "line": 27,
+          "reason": "FullTrainingSet converts each selected module to float32 and enables gradients on every parameter.",
+          "sha256": "42c3d8947b4d2a728927c8f7197ee64c13c21b79f8bcbbd47344ea2729bcd795"
+        },
+        "ypuddin/train/trainer.py": {
+          "line": 337,
+          "reason": "Backbone moved to training device; optimizer built over FullTrainingSet parameters.",
+          "sha256": "367bb774ff3428860b3560eaf9110940fb6cfdb973fdd49bf37700beb2b719ca"
+        },
+        "ypuddin/train/trainer.py#optimizer": {
+          "line": 1059,
+          "reason": "Ordinary optimizer.step followed by zero_grad; no per-layer gradient release or CPU optimizer offload.",
+          "sha256": "367bb774ff3428860b3560eaf9110940fb6cfdb973fdd49bf37700beb2b719ca"
+        },
+        "ypuddin/memory/block_swap.py": {
+          "line": 26,
+          "reason": "Only parameters without requires_grad plus buffers are swappable; all-full meta audit finds zero swappable elements.",
+          "sha256": "f90fa941e37df2946ae107bd0a9ccb06c77070506a249a2912fb3f202a026e84"
+        },
+        "ypuddin/train/distributed.py": {
+          "line": 145,
+          "reason": "Each rank runs normal _prepare_training then wraps the full graph in DistributedDataParallel; no parameter sharding/FSDP/ZeRO.",
+          "sha256": "a419b7a3a74b87a6ac77754d5dfa1fe89f8d52558a8c33ea6f9a36f074ab58d2"
+        }
+      },
+      "remote_snapshot_sources_match_local": {
+        "ypuddin/models/krea2/vendor/krea2_mmdit.py": true,
+        "ypuddin/train/training_modes.py": true,
+        "ypuddin/memory/block_swap.py": true,
+        "ypuddin/train/distributed.py": true
+      },
+      "source_snapshot_commit": "d2a43f5"
+    },
+    "execution_tested": false,
+    "training_passed": null,
+    "reason": "FP32 parameters and gradients alone require 95.52 GiB per rank, above 64 GiB. DDP does not pool device memory.",
+    "historical_scope_note": "This original nonsharded/DDP memory-bound audit remains unchanged. Subsequent actual two-GPU FSDP training is recorded separately under krea2_fsdp_full."
+  },
+  "anima_reload_diagnostic": {
+    "evidence": {
+      "path": "remaining-formal/formal-anima-adapter-g1-r512-20260915-082453-525707993/inprocess-comparison-20260915-0913.json",
+      "sha256": "6d4211be5b235459cccfd1d4a7a74b7fca83000395b770b46df1c56406b2dd9a"
+    },
+    "result": {
+      "case": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-adapter-g1-r512-20260915-082453-525707993",
+      "source": "/root/private_data/YPuddinTrainStudio-dtk/acceptance/parallel-source-20260915",
+      "gpu_physical": 1,
+      "deterministic": false,
+      "outputs": {
+        "inprocess-20260915-0908": {
+          "checks": {
+            "finished_all_ranks": true,
+            "expected_final_step": true,
+            "finite_losses": true,
+            "finite_weights": true,
+            "parameters_changed": true,
+            "all_optimizer_updates_observed": true,
+            "rank_parameters_equal": true,
+            "rank_shards_disjoint": true,
+            "one_start_event": true,
+            "one_final_preview": true,
+            "preview_file": true,
+            "full_state": true,
+            "no_nonfinite_skips": true,
+            "official_size_and_components_verified": true,
+            "final_adapter_weights": true
+          },
+          "passed": true,
+          "ranks": [
+            {
+              "rank": 0,
+              "world_size": 1,
+              "pid": 77435,
+              "device": "cuda:0",
+              "device_name": "BW",
+              "torch": "2.7.1",
+              "hip": "6.3.26093",
+              "attention_requested": "sdpa",
+              "deterministic_algorithms": false,
+              "visible_devices": {
+                "CUDA_VISIBLE_DEVICES": "1",
+                "HIP_VISIBLE_DEVICES": "1"
+              },
+              "config": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-adapter-g1-r512-20260915-082453-525707993/inprocess-20260915-0908.json",
+              "epochs": [
+                {
+                  "epoch": 0,
+                  "batch_start": 0,
+                  "batch_end": 16,
+                  "indices": [
+                    11,
+                    15,
+                    1,
+                    14,
+                    4,
+                    8,
+                    3,
+                    13,
+                    12,
+                    10,
+                    7,
+                    5,
+                    0,
+                    9,
+                    6,
+                    2
+                  ],
+                  "images": [
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/003.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/011.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/010.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/014.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/012.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/005.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/000.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/013.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/007.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/008.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/004.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/002.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/015.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/006.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/001.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/009.png"
+                  ]
+                }
+              ],
+              "optimizer_steps": [
+                {
+                  "step": 1,
+                  "loss": 0.12272923067212105,
+                  "finite": true,
+                  "reported_batch_elapsed_s": 11.340947387041524,
+                  "unix": 1789434906.2605245,
+                  "allocated_bytes": 4338455040,
+                  "reserved_bytes": 11943280640,
+                  "peak_allocated_bytes": 11765680640,
+                  "peak_reserved_bytes": 11943280640
+                },
+                {
+                  "step": 2,
+                  "loss": 0.6073827147483826,
+                  "finite": true,
+                  "reported_batch_elapsed_s": 2.842976984102279,
+                  "unix": 1789434909.1297908,
+                  "allocated_bytes": 4338455040,
+                  "reserved_bytes": 13069451264,
+                  "peak_allocated_bytes": 12408484864,
+                  "peak_reserved_bytes": 13069451264
+                },
+                {
+                  "step": 3,
+                  "loss": 0.10361342132091522,
+                  "finite": true,
+                  "reported_batch_elapsed_s": 2.767705559032038,
+                  "unix": 1789434911.9234052,
+                  "allocated_bytes": 4338455040,
+                  "reserved_bytes": 13069451264,
+                  "peak_allocated_bytes": 12408484864,
+                  "peak_reserved_bytes": 13069451264
+                },
+                {
+                  "step": 4,
+                  "loss": 0.3081367462873459,
+                  "finite": true,
+                  "reported_batch_elapsed_s": 2.918385990895331,
+                  "unix": 1789434916.102742,
+                  "allocated_bytes": 4384616960,
+                  "reserved_bytes": 13069451264,
+                  "peak_allocated_bytes": 12408484864,
+                  "peak_reserved_bytes": 13069451264
+                },
+                {
+                  "step": 5,
+                  "loss": 0.12280813977122307,
+                  "finite": true,
+                  "reported_batch_elapsed_s": 2.760085458867252,
+                  "unix": 1789434918.8893187,
+                  "allocated_bytes": 4384616960,
+                  "reserved_bytes": 13105102848,
+                  "peak_allocated_bytes": 12408484864,
+                  "peak_reserved_bytes": 13105102848
+                },
+                {
+                  "step": 6,
+                  "loss": 0.21167441457509995,
+                  "finite": true,
+                  "reported_batch_elapsed_s": 2.922851889161393,
+                  "unix": 1789434921.8397048,
+                  "allocated_bytes": 4384616960,
+                  "reserved_bytes": 13113491456,
+                  "peak_allocated_bytes": 12408484864,
+                  "peak_reserved_bytes": 13113491456
+                },
+                {
+                  "step": 7,
+                  "loss": 0.2576740235090256,
+                  "finite": true,
+                  "reported_batch_elapsed_s": 2.9360678708180785,
+                  "unix": 1789434924.8034666,
+                  "allocated_bytes": 4384616960,
+                  "reserved_bytes": 13113491456,
+                  "peak_allocated_bytes": 12408484864,
+                  "peak_reserved_bytes": 13113491456
+                },
+                {
+                  "step": 8,
+                  "loss": 0.15687531232833862,
+                  "finite": true,
+                  "reported_batch_elapsed_s": 2.795369368046522,
+                  "unix": 1789434938.7973504,
+                  "allocated_bytes": 4338455040,
+                  "reserved_bytes": 4462739456,
+                  "peak_allocated_bytes": 12408484864,
+                  "peak_reserved_bytes": 13113491456
+                }
+              ],
+              "started_unix": 1789434881.22031,
+              "attention_calls": {
+                "training:torch": {
+                  "dispatch": 896,
+                  "external_attempts": 0,
+                  "external_success": 0,
+                  "not_implemented_fallback": 0,
+                  "sdpa_fallback": 0,
+                  "errors": 0,
+                  "examples": []
+                },
+                "sampling:torch": {
+                  "dispatch": 672,
+                  "external_attempts": 0,
+                  "external_success": 0,
+                  "not_implemented_fallback": 0,
+                  "sdpa_fallback": 0,
+                  "errors": 0,
+                  "examples": []
+                }
+              },
+              "initial_step": 0,
+              "initial_weight_sha256": "16181c63de46e161aa1c0584b460ffa745e1864321210a467b4a5e71d91e14c1",
+              "trainable_parameters": 5738880,
+              "text_mode": "cached",
+              "attention_resolved": null,
+              "batches_per_rank": 16,
+              "phase_prepared_unix": 1789434894.5866883,
+              "outcome": "finished",
+              "progress": {
+                "step": 8,
+                "epoch": 1,
+                "batch_in_epoch": 0,
+                "samples_seen": 16,
+                "nan_skips": 0,
+                "total_steps": 8,
+                "steps_per_epoch": 8,
+                "extra": {
+                  "deterministic": false,
+                  "train_loss": {
+                    "step": 8,
+                    "loss": 0.15687531232833862
+                  },
+                  "loss_sum": 1.890894003212452,
+                  "loss_count": 8,
+                  "loss_mean_scope": "run",
+                  "loss_ema": 0.1394282428622355
+                }
+              },
+              "final_weight_sha256": "264233f0db39443cd7da753dd513aeb134421739abf33f54acba94d98c6890a2",
+              "finite_weights": true,
+              "weights_changed": true,
+              "finished_unix": 1789434939.3026574,
+              "peak_allocated_bytes": 12408484864,
+              "peak_reserved_bytes": 13113491456,
+              "wall_elapsed_s": 58.08234739303589
+            }
+          ],
+          "components": [
+            {
+              "family": "anima",
+              "mode": "adapter",
+              "rank": 0,
+              "components": [
+                "adapter"
+              ],
+              "backbone_parameters": 2091068928,
+              "trainable_parameters": 5738880,
+              "checks": {
+                "official_size_backbone": true,
+                "text_encoder_excluded": true,
+                "backbone_selected": true,
+                "expected_components": true,
+                "positive_trainable_parameters": true,
+                "all_backbone_parameters_trainable_for_full": true,
+                "fp32_full_training_parameters": true
+              },
+              "passed": true,
+              "compute_policy": {
+                "source": "/root/private_data/YPuddinTrainStudio-dtk/acceptance/parallel-source-20260915",
+                "config_deterministic": false,
+                "deterministic_algorithms": false,
+                "cudnn_deterministic": false,
+                "cudnn_benchmark": false,
+                "sdpa": {
+                  "flash": true,
+                  "mem_efficient": true,
+                  "math": true,
+                  "cudnn": true
+                }
+              }
+            }
+          ],
+          "samples": [
+            {
+              "seq": 67,
+              "ts": 1789434937.953511,
+              "type": "sample.saved",
+              "step": 8,
+              "prompt_index": 0,
+              "prompt": "1girl, smile, outdoors",
+              "seed": 42,
+              "path": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-adapter-g1-r512-20260915-082453-525707993/inprocess-20260915-0908/samples/step8_00_42.png",
+              "width": 512,
+              "height": 512,
+              "loss": 0.15687531232833862,
+              "sampler": "euler",
+              "scheduler": "uniform",
+              "steps": 6,
+              "cfg": 4.0,
+              "shift": 3.0,
+              "guidance": null,
+              "er_sde_order": 3,
+              "er_sde_s_noise": 1.0
+            }
+          ],
+          "artifact": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-adapter-g1-r512-20260915-082453-525707993/inprocess-20260915-0908/anima-final.safetensors"
+        },
+        "inprocess-control-20260915-0913": {
+          "checks": {
+            "finished_all_ranks": true,
+            "expected_final_step": true,
+            "finite_losses": true,
+            "finite_weights": true,
+            "parameters_changed": true,
+            "all_optimizer_updates_observed": true,
+            "rank_parameters_equal": true,
+            "rank_shards_disjoint": true,
+            "one_start_event": true,
+            "one_final_preview": true,
+            "preview_file": true,
+            "full_state": true,
+            "no_nonfinite_skips": true,
+            "official_size_and_components_verified": true,
+            "final_adapter_weights": true
+          },
+          "passed": true,
+          "ranks": [
+            {
+              "rank": 0,
+              "world_size": 1,
+              "pid": 78343,
+              "device": "cuda:0",
+              "device_name": "BW",
+              "torch": "2.7.1",
+              "hip": "6.3.26093",
+              "attention_requested": "sdpa",
+              "deterministic_algorithms": false,
+              "visible_devices": {
+                "CUDA_VISIBLE_DEVICES": "1",
+                "HIP_VISIBLE_DEVICES": "1"
+              },
+              "config": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-adapter-g1-r512-20260915-082453-525707993/inprocess-control-20260915-0913.json",
+              "epochs": [
+                {
+                  "epoch": 0,
+                  "batch_start": 0,
+                  "batch_end": 16,
+                  "indices": [
+                    11,
+                    15,
+                    1,
+                    14,
+                    4,
+                    8,
+                    3,
+                    13,
+                    12,
+                    10,
+                    7,
+                    5,
+                    0,
+                    9,
+                    6,
+                    2
+                  ],
+                  "images": [
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/003.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/011.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/010.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/014.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/012.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/005.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/000.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/013.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/007.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/008.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/004.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/002.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/015.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/006.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/001.png",
+                    "/root/private_data/YPuddinTrainStudio-dtk/datasets/krea2-16/009.png"
+                  ]
+                }
+              ],
+              "optimizer_steps": [
+                {
+                  "step": 1,
+                  "loss": 0.1227729432284832,
+                  "finite": true,
+                  "reported_batch_elapsed_s": 8.630287870997563,
+                  "unix": 1789435225.132334,
+                  "allocated_bytes": 4338455040,
+                  "reserved_bytes": 11943280640,
+                  "peak_allocated_bytes": 11765680640,
+                  "peak_reserved_bytes": 11943280640
+                },
+                {
+                  "step": 2,
+                  "loss": 0.6074318885803223,
+                  "finite": true,
+                  "reported_batch_elapsed_s": 2.886362111195922,
+                  "unix": 1789435228.0469923,
+                  "allocated_bytes": 4338455040,
+                  "reserved_bytes": 13069451264,
+                  "peak_allocated_bytes": 12408484864,
+                  "peak_reserved_bytes": 13069451264
+                },
+                {
+                  "step": 3,
+                  "loss": 0.10363870672881603,
+                  "finite": true,
+                  "reported_batch_elapsed_s": 2.8226709221489727,
+                  "unix": 1789435230.9008617,
+                  "allocated_bytes": 4338455040,
+                  "reserved_bytes": 13069451264,
+                  "peak_allocated_bytes": 12408484864,
+                  "peak_reserved_bytes": 13069451264
+                },
+                {
+                  "step": 4,
+                  "loss": 0.3081783056259155,
+                  "finite": true,
+                  "reported_batch_elapsed_s": 2.9753210488706827,
+                  "unix": 1789435234.675763,
+                  "allocated_bytes": 4338455040,
+                  "reserved_bytes": 13069451264,
+                  "peak_allocated_bytes": 12408484864,
+                  "peak_reserved_bytes": 13069451264
+                },
+                {
+                  "step": 5,
+                  "loss": 0.12280784919857979,
+                  "finite": true,
+                  "reported_batch_elapsed_s": 2.7952826349064708,
+                  "unix": 1789435237.4991133,
+                  "allocated_bytes": 4338455040,
+                  "reserved_bytes": 13069451264,
+                  "peak_allocated_bytes": 12408484864,
+                  "peak_reserved_bytes": 13069451264
+                },
+                {
+                  "step": 6,
+                  "loss": 0.21156738698482513,
+                  "finite": true,
+                  "reported_batch_elapsed_s": 2.9621783781331033,
+                  "unix": 1789435240.4913638,
+                  "allocated_bytes": 4338455040,
+                  "reserved_bytes": 13069451264,
+                  "peak_allocated_bytes": 12408484864,
+                  "peak_reserved_bytes": 13069451264
+                },
+                {
+                  "step": 7,
+                  "loss": 0.2578304558992386,
+                  "finite": true,
+                  "reported_batch_elapsed_s": 2.970507621066645,
+                  "unix": 1789435243.490032,
+                  "allocated_bytes": 4338455040,
+                  "reserved_bytes": 13069451264,
+                  "peak_allocated_bytes": 12408484864,
+                  "peak_reserved_bytes": 13069451264
+                },
+                {
+                  "step": 8,
+                  "loss": 0.15682842582464218,
+                  "finite": true,
+                  "reported_batch_elapsed_s": 2.82645619683899,
+                  "unix": 1789435251.7739537,
+                  "allocated_bytes": 4338455040,
+                  "reserved_bytes": 4462739456,
+                  "peak_allocated_bytes": 12408484864,
+                  "peak_reserved_bytes": 13069451264
+                }
+              ],
+              "started_unix": 1789435207.5681946,
+              "attention_calls": {
+                "training:torch": {
+                  "dispatch": 896,
+                  "external_attempts": 0,
+                  "external_success": 0,
+                  "not_implemented_fallback": 0,
+                  "sdpa_fallback": 0,
+                  "errors": 0,
+                  "examples": []
+                },
+                "sampling:torch": {
+                  "dispatch": 672,
+                  "external_attempts": 0,
+                  "external_success": 0,
+                  "not_implemented_fallback": 0,
+                  "sdpa_fallback": 0,
+                  "errors": 0,
+                  "examples": []
+                }
+              },
+              "initial_step": 0,
+              "initial_weight_sha256": "16181c63de46e161aa1c0584b460ffa745e1864321210a467b4a5e71d91e14c1",
+              "trainable_parameters": 5738880,
+              "text_mode": "cached",
+              "attention_resolved": null,
+              "batches_per_rank": 16,
+              "phase_prepared_unix": 1789435216.3622031,
+              "outcome": "finished",
+              "progress": {
+                "step": 8,
+                "epoch": 1,
+                "batch_in_epoch": 0,
+                "samples_seen": 16,
+                "nan_skips": 0,
+                "total_steps": 8,
+                "steps_per_epoch": 8,
+                "extra": {
+                  "deterministic": false,
+                  "train_loss": {
+                    "step": 8,
+                    "loss": 0.15682842582464218
+                  },
+                  "loss_sum": 1.8910559620708227,
+                  "loss_count": 8,
+                  "loss_mean_scope": "run",
+                  "loss_ema": 0.13946835292328555
+                }
+              },
+              "final_weight_sha256": "c7fb24a50f282c4d751fd0d354bc90f2112a24d8b4ffb96779c8229b28a30112",
+              "finite_weights": true,
+              "weights_changed": true,
+              "finished_unix": 1789435252.3504405,
+              "peak_allocated_bytes": 12408484864,
+              "peak_reserved_bytes": 13069451264,
+              "wall_elapsed_s": 44.78224587440491
+            }
+          ],
+          "components": [
+            {
+              "family": "anima",
+              "mode": "adapter",
+              "rank": 0,
+              "components": [
+                "adapter"
+              ],
+              "backbone_parameters": 2091068928,
+              "trainable_parameters": 5738880,
+              "checks": {
+                "official_size_backbone": true,
+                "text_encoder_excluded": true,
+                "backbone_selected": true,
+                "expected_components": true,
+                "positive_trainable_parameters": true,
+                "all_backbone_parameters_trainable_for_full": true,
+                "fp32_full_training_parameters": true
+              },
+              "passed": true,
+              "compute_policy": {
+                "source": "/root/private_data/YPuddinTrainStudio-dtk/acceptance/parallel-source-20260915",
+                "config_deterministic": false,
+                "deterministic_algorithms": false,
+                "cudnn_deterministic": false,
+                "cudnn_benchmark": false,
+                "sdpa": {
+                  "flash": true,
+                  "mem_efficient": true,
+                  "math": true,
+                  "cudnn": true
+                }
+              }
+            }
+          ],
+          "samples": [
+            {
+              "seq": 66,
+              "ts": 1789435250.8358006,
+              "type": "sample.saved",
+              "step": 8,
+              "prompt_index": 0,
+              "prompt": "1girl, smile, outdoors",
+              "seed": 42,
+              "path": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-adapter-g1-r512-20260915-082453-525707993/inprocess-control-20260915-0913/samples/step8_00_42.png",
+              "width": 512,
+              "height": 512,
+              "loss": 0.15682842582464218,
+              "sampler": "euler",
+              "scheduler": "uniform",
+              "steps": 6,
+              "cfg": 4.0,
+              "shift": 3.0,
+              "guidance": null,
+              "er_sde_order": 3,
+              "er_sde_s_noise": 1.0
+            }
+          ],
+          "artifact": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-anima-adapter-g1-r512-20260915-082453-525707993/inprocess-control-20260915-0913/anima-final.safetensors"
+        }
+      },
+      "paired_gpu1_midpoint": {
+        "weights": {
+          "exact": false,
+          "finite": true,
+          "different_tensor_count": 840,
+          "max_absolute_difference": 0.0007867980166338384,
+          "rms_absolute_difference": 0.00011948762522305538,
+          "relative_l2_difference": 0.0011452156302753714,
+          "numerical_metrics_are_diagnostic_only": true,
+          "example_different_keys": [
+            "blocks.0.cross_attn.k_proj.adapter.w1",
+            "blocks.0.cross_attn.k_proj.adapter.w2_a",
+            "blocks.0.cross_attn.k_proj.adapter.w2_b",
+            "blocks.0.cross_attn.output_proj.adapter.w1",
+            "blocks.0.cross_attn.output_proj.adapter.w2_a",
+            "blocks.0.cross_attn.output_proj.adapter.w2_b",
+            "blocks.0.cross_attn.q_proj.adapter.w1",
+            "blocks.0.cross_attn.q_proj.adapter.w2_a",
+            "blocks.0.cross_attn.q_proj.adapter.w2_b",
+            "blocks.0.cross_attn.v_proj.adapter.w1"
+          ],
+          "tensor_count": 840
+        },
+        "state": {
+          "progress_exact": false,
+          "sampler_exact": true,
+          "rng_exact": true,
+          "scheduler_exact": true,
+          "optimizer_exact": false
+        }
+      },
+      "paired_gpu1_final": {
+        "weights": {
+          "exact": false,
+          "finite": true,
+          "different_tensor_count": 840,
+          "max_absolute_difference": 0.0013602260733023286,
+          "rms_absolute_difference": 0.0001865991375924302,
+          "relative_l2_difference": 0.0017884496199756996,
+          "numerical_metrics_are_diagnostic_only": true,
+          "example_different_keys": [
+            "blocks.0.cross_attn.k_proj.adapter.w1",
+            "blocks.0.cross_attn.k_proj.adapter.w2_a",
+            "blocks.0.cross_attn.k_proj.adapter.w2_b",
+            "blocks.0.cross_attn.output_proj.adapter.w1",
+            "blocks.0.cross_attn.output_proj.adapter.w2_a",
+            "blocks.0.cross_attn.output_proj.adapter.w2_b",
+            "blocks.0.cross_attn.q_proj.adapter.w1",
+            "blocks.0.cross_attn.q_proj.adapter.w2_a",
+            "blocks.0.cross_attn.q_proj.adapter.w2_b",
+            "blocks.0.cross_attn.v_proj.adapter.w1"
+          ],
+          "tensor_count": 840
+        },
+        "state": {
+          "progress_exact": false,
+          "sampler_exact": true,
+          "rng_exact": true,
+          "scheduler_exact": true,
+          "optimizer_exact": false
+        }
+      },
+      "resume_branch_vs_gpu0_hot_final": {
+        "weights": {
+          "exact": false,
+          "finite": true,
+          "different_tensor_count": 840,
+          "max_absolute_difference": 0.0013735942775383592,
+          "rms_absolute_difference": 0.00018194466517250512,
+          "relative_l2_difference": 0.0017438400768040993,
+          "numerical_metrics_are_diagnostic_only": true,
+          "example_different_keys": [
+            "blocks.0.cross_attn.k_proj.adapter.w1",
+            "blocks.0.cross_attn.k_proj.adapter.w2_a",
+            "blocks.0.cross_attn.k_proj.adapter.w2_b",
+            "blocks.0.cross_attn.output_proj.adapter.w1",
+            "blocks.0.cross_attn.output_proj.adapter.w2_a",
+            "blocks.0.cross_attn.output_proj.adapter.w2_b",
+            "blocks.0.cross_attn.q_proj.adapter.w1",
+            "blocks.0.cross_attn.q_proj.adapter.w2_a",
+            "blocks.0.cross_attn.q_proj.adapter.w2_b",
+            "blocks.0.cross_attn.v_proj.adapter.w1"
+          ],
+          "tensor_count": 840
+        },
+        "state": {
+          "progress_exact": false,
+          "sampler_exact": true,
+          "rng_exact": true,
+          "scheduler_exact": true,
+          "optimizer_exact": false
+        }
+      },
+      "resume_branch_vs_gpu0_cold_final": {
+        "weights": {
+          "exact": false,
+          "finite": true,
+          "different_tensor_count": 840,
+          "max_absolute_difference": 0.0013669872423633933,
+          "rms_absolute_difference": 0.00018109554335985363,
+          "relative_l2_difference": 0.0017357018946215332,
+          "numerical_metrics_are_diagnostic_only": true,
+          "example_different_keys": [
+            "blocks.0.cross_attn.k_proj.adapter.w1",
+            "blocks.0.cross_attn.k_proj.adapter.w2_a",
+            "blocks.0.cross_attn.k_proj.adapter.w2_b",
+            "blocks.0.cross_attn.output_proj.adapter.w1",
+            "blocks.0.cross_attn.output_proj.adapter.w2_a",
+            "blocks.0.cross_attn.output_proj.adapter.w2_b",
+            "blocks.0.cross_attn.q_proj.adapter.w1",
+            "blocks.0.cross_attn.q_proj.adapter.w2_a",
+            "blocks.0.cross_attn.q_proj.adapter.w2_b",
+            "blocks.0.cross_attn.v_proj.adapter.w1"
+          ],
+          "tensor_count": 840
+        },
+        "state": {
+          "progress_exact": false,
+          "sampler_exact": true,
+          "rng_exact": true,
+          "scheduler_exact": true,
+          "optimizer_exact": false
+        }
+      },
+      "configs_equal_except_output": true,
+      "initial_weight_hashes": [
+        "16181c63de46e161aa1c0584b460ffa745e1864321210a467b4a5e71d91e14c1",
+        "16181c63de46e161aa1c0584b460ffa745e1864321210a467b4a5e71d91e14c1"
+      ],
+      "initial_adapter_weights_equal": true,
+      "preview_sha256": [
+        "4dfb659cfb63e8d79072f5e9db6f2d70d480148d0416e3aa5afb85879ac1e300",
+        "6cc21aa0a430b39576930b5bfcabcdec52721e3924fdcd087ef043b9368242f7"
+      ],
+      "resume_checks": [
+        {
+          "step_and_progress_preserved": true,
+          "parameter_objects_preserved": true,
+          "parameter_layout_preserved": true,
+          "optimizer_binding_preserved": true,
+          "training_mode_preserved": true
+        },
+        {
+          "step_and_progress_preserved": true,
+          "parameter_objects_preserved": true,
+          "parameter_layout_preserved": true,
+          "optimizer_binding_preserved": true,
+          "training_mode_preserved": true
+        }
+      ],
+      "resume_applied": [
+        true,
+        false
+      ],
+      "parameter_version_delta_after_resume": {
+        "0": 405,
+        "1": 840
+      },
+      "worker_exit_codes": [
+        0,
+        0
+      ],
+      "both_worker_exits_observed_by_ssh_tool": true,
+      "no_tolerance_relaxation": true,
+      "comparison_device": "cpu",
+      "step1_latent_text_noise_hashes": "not collected in these workers",
+      "initial_live_frozen_backbone_hashes": "not collected",
+      "python_hash_seed": "not recorded; launch command and wrapper do not set it",
+      "raw_cache_source": "/root/private_data/YPuddinTrainStudio-dtk/cache/training/formal-anima-adapter",
+      "causal_reload_effect_identified": false,
+      "causal_limitation": "Both same-GPU1 fresh runs already differ at step1 and state4, before the conditional _resume. Final differences cannot identify the effect of _resume.",
+      "paired_gpu1_preview_exact": false
+    },
+    "causal_reload_effect_identified": false,
+    "scope": "Two new runs on the same GPU already differ on step1, before the step4 reload. Initial adapter weights, configuration except output directory and sampled indices match; step1 tensors, frozen backbone hashes and PYTHONHASHSEED were not captured. Do not attribute the difference to _resume or the vendor from this experiment."
+  },
+  "sdxl_independent_cold_resumes": {
+    "evidence": {
+      "path": "remaining-formal/klein-full-sdxl-cold-summary-20260915.json",
+      "sha256": "7a4f3d5968561cbc061dd7cd2d54f29dbff99b38fc0ba92260bd3a117523962f",
+      "scope": "Approved filtered numeric/boolean/hash summary; original full reports and preview were not downloaded"
+    },
+    "source_commit": "d2a43f561521656af372f2eb5e3bfbf2254d6a49",
+    "status": "complete",
+    "passed": false,
+    "family": "sdxl",
+    "mode": "full",
+    "source_case": "formal-sdxl-full-g1-r512-20260915-084518-751182275",
+    "second_output": "continued-20260915-092005-688544019",
+    "deterministic": false,
+    "physical_gpu": 0,
+    "source_checkpoint": "reference/state-4",
+    "comparison_target": "first resumed vs independent second continued",
+    "source_reports": {
+      "continued_report_remote_name": "continued-20260915-092005-688544019-report.json",
+      "continued_report_sha256": "b8a37380bb64a11457cfe2b5aa8b7eafd1700b9eb3e16e4e29acad86ca67b73a",
+      "cold_comparison_remote_name": "cold-vs-cold-full-20260915-092005.json",
+      "cold_comparison_sha256": "14537e2d1dcfc2bb6bdc2b0caf9f298041503f5f9b9a1c98914a7cea88c6f295"
+    },
+    "raw_report_downloaded": false,
+    "raw_report_download_block": "Automatic approval rejected full report and preview copy; original remains remote. Only approved numeric/boolean/SHA summary read back.",
+    "configuration_identical_except_output_dir": true,
+    "same_source_checkpoint": true,
+    "initial_step_same": true,
+    "initial_weights_sha256_same": true,
+    "weights": {
+      "exact": false,
+      "finite": true,
+      "different_tensor_count": 1680,
+      "tensor_count": 1680,
+      "max_absolute_difference": 3.524124622344971e-05,
+      "rms_absolute_difference": 1.0602794262925003e-06,
+      "relative_l2_difference": 3.575307384979633e-05
+    },
+    "checkpoint_states": {
+      "progress_exact": false,
+      "sampler_exact": true,
+      "rng_exact": true,
+      "scheduler_exact": true,
+      "optimizer_exact": false
+    },
+    "preview_exact": false,
+    "workers_exited": true,
+    "all_owned_processes_exited": true,
+    "cuda_not_initialized_in_comparator": true,
+    "interpretation": "Two cold resumes also differ. This does not identify the cause or establish repeatable cold resume.",
+    "local_preview_visual_review": false,
+    "conclusion": "Both independent cold resumes start from the same state4 and differ at the final state8. The cause is not established; do not generalize the Anima cold-vs-cold match to SDXL."
+  },
+  "fsdp_toy_cold_resume": {
+    "evidence": {
+      "path": "remaining-formal/fsdp2-toy-full-20260915-101336-738628082-report.json",
+      "sha256": "efc12c4617e2833da674b2d6b394feda67aec4e3c48960629d681ad31f959917"
+    },
+    "scope": "Actual product FSDP2 trainer, two DTK GPUs, explicit toy model; not official Krea2 full-model acceptance",
+    "source_snapshot": "/root/private_data/YPuddinTrainStudio-dtk/acceptance/fsdp-source-20260915-r2",
+    "case": "/root/private_data/YPuddinTrainStudio-dtk/runs/fsdp2-toy-full-20260915-101336-738628082",
+    "family": "toy",
+    "strategy": "fsdp2",
+    "passed": true,
+    "torch": "2.7.1",
+    "hip": "6.3.26093",
+    "world_size": 2,
+    "trainable_parameters": 203728,
+    "optimizer_class": "transformers.optimization.Adafactor",
+    "master_parameter_dtype": "fp32",
+    "gradient_dtype": "fp32",
+    "deterministic": false,
+    "continuous_steps": 4,
+    "resume_from_step": 2,
+    "resume_until_step": 4,
+    "cold_process_restart": true,
+    "reference_checks": {
+      "two_processes": true,
+      "official_size_or_explicit_toy": true,
+      "all_ranks_finished": true,
+      "same_progress": true,
+      "weights_finite_and_changed": true,
+      "fp32_trainable_parameters": true,
+      "parameters_really_sharded": true,
+      "gradients_really_sharded": true,
+      "peak_fits_each_device": true,
+      "hf_adafactor": true,
+      "sample_decodes": true,
+      "complete_checkpoint": true,
+      "native_model_export": true,
+      "rank_data_disjoint": true
+    },
+    "resumed_checks": {
+      "two_processes": true,
+      "official_size_or_explicit_toy": true,
+      "all_ranks_finished": true,
+      "same_progress": true,
+      "weights_finite_and_changed": true,
+      "fp32_trainable_parameters": true,
+      "parameters_really_sharded": true,
+      "gradients_really_sharded": true,
+      "peak_fits_each_device": true,
+      "hf_adafactor": true,
+      "sample_decodes": true,
+      "complete_checkpoint": true,
+      "native_model_export": true,
+      "rank_data_disjoint": true
+    },
+    "resume_comparison": {
+      "different_tensors": 0,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "same_keys": true,
+      "tensor_count": 32,
+      "exact_weights": true,
+      "states": {
+        "optimizer": true,
+        "scheduler": true,
+        "rng": true,
+        "progress": true,
+        "sampler_ranks": true
+      }
+    },
+    "preview_exact": true,
+    "original_assets_unchanged": true,
+    "processes_exited": {
+      "reference": true,
+      "resumed": true
+    },
+    "peak_allocated_bytes_by_rank": {
+      "reference": [
+        148856320,
+        148856320
+      ],
+      "resumed": [
+        148856320,
+        148856320
+      ]
+    }
+  },
+  "dtk_source_commit_scope": "Applies to earlier formal-model/product followups unless an entry declares its own source. FSDP r2 formal/Toy records use 0f229d8; r3 boundary changes/failure use d95c5c2; the final r4 Toy regression uses 4ce0c30. These results are recorded separately.",
+  "fsdp_local_regression": {
+    "evidence": {
+      "path": "final-validation/fsdp-final-test-followup-20260915.json",
+      "sha256": "98e700b1295b51c484aa90f57988db9a68a9a4f4930f160087c40412f653c332"
+    },
+    "scope": "Local full-suite run plus targeted assertion/evaluation regression; not additional DTK official-model execution",
+    "full_suite_prior_to_test_assertion_fix": {
+      "passed": 2282,
+      "failed": 1,
+      "skipped": 5,
+      "duration_seconds": 438.93,
+      "failure": "Only obsolete legacy XYZ message expectation; corrected and entire affected file rerun."
+    },
+    "focused_result": {
+      "files": [
+        "tests/unit/test_xyz_full.py",
+        "tests/unit/test_sharded_evaluation.py"
+      ],
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0,
+      "exit_code": 0,
+      "count_basis": "17 successful pytest progress items at [100%]; quiet configuration omits duration/count footer."
+    },
+    "full_suite_rerun_after_fix": false,
+    "product_code_changed_by_assertion_followup": false,
+    "frontend": {
+      "files_passed": 89,
+      "tests_passed": 693,
+      "evidence": {
+        "path": "final-validation/fsdp-frontend-full-20260915.log",
+        "sha256": "5e4a4b61333e82e46fc646e49b873b2007d2fd09a7c25955e033e188cd36e12c"
+      }
+    },
+    "interpretation": "Do not sum overlapping full/focused tests or describe the entire backend suite as rerun and passed after the obsolete message assertion was corrected."
+  },
+  "krea2_fsdp_reference": {
+    "evidence": {
+      "path": "remaining-formal/fsdp2-krea2-reference-metrics-20260915.json",
+      "sha256": "6c93de4b1382ba6942ac38f9cbb834645e95a8ff97e221490595b91345b077eb"
+    },
+    "scope": "Filtered actual formal Krea2 reference-phase metrics only; cold resume and final complete report are still pending",
+    "case": "/root/private_data/YPuddinTrainStudio-dtk/runs/fsdp2-krea2-full-20260915-102041-318731779",
+    "phase": "reference",
+    "status": "reference_complete_resume_in_progress",
+    "overall_passed": null,
+    "trainable_parameters": 12820073036,
+    "world_size": 2,
+    "continuous_steps": 8,
+    "reference_ranks_finished": true,
+    "local_parameter_bytes_by_rank": [
+      25640146072,
+      25640146072
+    ],
+    "optimizer_state_bytes_by_rank": [
+      13899992,
+      13899992
+    ],
+    "peak_allocated_bytes_by_rank": [
+      56567503872,
+      56570125312
+    ],
+    "peak_reserved_bytes_by_rank": [
+      63977816064,
+      62658707456
+    ],
+    "short_update_timing": {
+      "included_steps": [
+        2,
+        3,
+        5,
+        6,
+        7
+      ],
+      "excluded_steps": [
+        1,
+        4,
+        8
+      ],
+      "excluded_reason": "first-step warmup; steps4/8 save state and run preview hooks",
+      "interval_definition": "For each step, max across ranks of forward_backward_s + optimizer_and_hooks_s",
+      "step_intervals_seconds": [
+        4.056190042756498,
+        3.518175372853875,
+        3.595809853170067,
+        3.8869009364861995,
+        3.7776574182789773
+      ],
+      "mean_interval_seconds": 3.7669467247091233,
+      "global_batch_size": 2,
+      "images_per_interval_second": 0.5309339754876508,
+      "long_duration_benchmark": false,
+      "end_to_end_wall_time_throughput": false,
+      "note": "Short instrumentation observation includes synchronization and hooks; not the original forward/backward-only it_s event, and not a 2x speedup claim"
+    },
+    "limits": [
+      "This is reference-phase evidence only; it does not establish cold-resume equality or final acceptance.",
+      "54.14GiB in the meta plan is an estimate; allocated and reserved values here are separate actual measurements."
+    ],
+    "historical_snapshot_note": "Preserved reference-only status at the time this metric record was created; final results are now separately available under krea2_fsdp_full and krea2_fsdp_native_reload."
+  },
+  "krea2_fsdp_full": {
+    "case": "/root/private_data/YPuddinTrainStudio-dtk/runs/fsdp2-krea2-full-20260915-102041-318731779",
+    "source": "/root/private_data/YPuddinTrainStudio-dtk/acceptance/fsdp-source-20260915-r2",
+    "family": "krea2",
+    "strategy": "fsdp2",
+    "steps": 8,
+    "training_passed": true,
+    "passed": false,
+    "original_assets_unchanged": true,
+    "resume_comparison": {
+      "different_tensors": 430,
+      "max_abs": 5.356059409677982e-05,
+      "relative_l2": 8.061505069316232e-06,
+      "same_keys": true,
+      "tensor_count": 430,
+      "exact_weights": false,
+      "states": {
+        "optimizer": false,
+        "scheduler": true,
+        "rng": true,
+        "progress": false,
+        "sampler_ranks": true
+      }
+    },
+    "preview_exact": false,
+    "evidence": {
+      "path": "remaining-formal/fsdp2-krea2-full-20260915-102041-318731779-report.json",
+      "sha256": "6d473a6f138424b2b806ef2dcedef28034b9f545c706e7e58b3b594551ef8fda"
+    },
+    "source_commit": "0f229d82df74b155571d86bafa8a7a8b92ccff3c",
+    "source_association": {
+      "path": "final-validation/fsdp-r2-git-source-association-20260915.json",
+      "sha256": "1c2a686e70992bb7097546809c808549639ffecbadc8ae63f0c23394657469ad"
+    },
+    "scope": "Official full Krea2 on two DTK GPUs; training/capacity/export execution passed; strict uninterrupted-versus-resumed equivalence failed. No tolerance relaxation or cause attribution.",
+    "configuration": {
+      "world_size": 2,
+      "trainable_parameters": 12820073036,
+      "parameter_tensor_count": 430,
+      "master_parameter_dtype": "float32",
+      "gradient_dtype": "float32",
+      "compute_dtype": "bfloat16",
+      "optimizer_class": "transformers.optimization.Adafactor",
+      "beta1": null,
+      "activation_checkpointing": "block",
+      "cache_latents": true,
+      "text_encoding": "cached",
+      "deterministic": false,
+      "continuous_steps": 8,
+      "resume_from_step": 4,
+      "resume_until_step": 8
+    },
+    "reference": {
+      "checks": {
+        "two_processes": true,
+        "official_size_or_explicit_toy": true,
+        "all_ranks_finished": true,
+        "same_progress": true,
+        "weights_finite_and_changed": true,
+        "fp32_trainable_parameters": true,
+        "parameters_really_sharded": true,
+        "gradients_really_sharded": true,
+        "peak_fits_each_device": true,
+        "hf_adafactor": true,
+        "sample_decodes": true,
+        "complete_checkpoint": true,
+        "native_model_export": true,
+        "rank_data_disjoint": true
+      },
+      "passed": true,
+      "process": {
+        "returncode": 0,
+        "wall_elapsed_s": 801.4233138561249,
+        "all_owned_processes_exited": true
+      },
+      "ranks": [
+        {
+          "rank": 0,
+          "pid": 93114,
+          "torch": "2.7.1",
+          "hip": "6.3.26093",
+          "device": "cuda:0",
+          "device_name": "BW",
+          "world_size": 2,
+          "initial_step": 0,
+          "trainable_parameters": 12820073036,
+          "text_mode": "cached",
+          "optimizer_class": "transformers.optimization.Adafactor",
+          "local_parameter_bytes": 25640146072,
+          "outcome": "finished",
+          "finite_weights": true,
+          "weights_changed": true,
+          "peak_allocated_bytes": 56567503872,
+          "peak_reserved_bytes": 63977816064,
+          "attention_calls": {
+            "training:torch": {
+              "dispatch": 480,
+              "external_attempts": 0,
+              "external_success": 0,
+              "not_implemented_fallback": 0,
+              "sdpa_fallback": 0,
+              "errors": 0,
+              "examples": []
+            },
+            "sampling:torch": {
+              "dispatch": 384,
+              "external_attempts": 0,
+              "external_success": 0,
+              "not_implemented_fallback": 0,
+              "sdpa_fallback": 0,
+              "errors": 0,
+              "examples": []
+            }
+          },
+          "final_step": 8,
+          "optimizer_state_bytes": 13899992
+        },
+        {
+          "rank": 1,
+          "pid": 93115,
+          "torch": "2.7.1",
+          "hip": "6.3.26093",
+          "device": "cuda:1",
+          "device_name": "BW",
+          "world_size": 2,
+          "initial_step": 0,
+          "trainable_parameters": 12820073036,
+          "text_mode": "cached",
+          "optimizer_class": "transformers.optimization.Adafactor",
+          "local_parameter_bytes": 25640146072,
+          "outcome": "finished",
+          "finite_weights": true,
+          "weights_changed": true,
+          "peak_allocated_bytes": 56570125312,
+          "peak_reserved_bytes": 62658707456,
+          "attention_calls": {
+            "training:torch": {
+              "dispatch": 480,
+              "external_attempts": 0,
+              "external_success": 0,
+              "not_implemented_fallback": 0,
+              "sdpa_fallback": 0,
+              "errors": 0,
+              "examples": []
+            },
+            "sampling:torch": {
+              "dispatch": 384,
+              "external_attempts": 0,
+              "external_success": 0,
+              "not_implemented_fallback": 0,
+              "sdpa_fallback": 0,
+              "errors": 0,
+              "examples": []
+            }
+          },
+          "final_step": 8,
+          "optimizer_state_bytes": 13899992
+        }
+      ]
+    },
+    "resumed": {
+      "checks": {
+        "two_processes": true,
+        "official_size_or_explicit_toy": true,
+        "all_ranks_finished": true,
+        "same_progress": true,
+        "weights_finite_and_changed": true,
+        "fp32_trainable_parameters": true,
+        "parameters_really_sharded": true,
+        "gradients_really_sharded": true,
+        "peak_fits_each_device": true,
+        "hf_adafactor": true,
+        "sample_decodes": true,
+        "complete_checkpoint": true,
+        "native_model_export": true,
+        "rank_data_disjoint": true
+      },
+      "passed": true,
+      "process": {
+        "returncode": 0,
+        "wall_elapsed_s": 662.9311020374298,
+        "all_owned_processes_exited": true
+      },
+      "ranks": [
+        {
+          "rank": 0,
+          "pid": 94766,
+          "torch": "2.7.1",
+          "hip": "6.3.26093",
+          "device": "cuda:0",
+          "device_name": "BW",
+          "world_size": 2,
+          "initial_step": 4,
+          "trainable_parameters": 12820073036,
+          "text_mode": "cached",
+          "optimizer_class": "transformers.optimization.Adafactor",
+          "local_parameter_bytes": 25640146072,
+          "outcome": "finished",
+          "finite_weights": true,
+          "weights_changed": true,
+          "peak_allocated_bytes": 56552037376,
+          "peak_reserved_bytes": 64168656896,
+          "attention_calls": {
+            "training:torch": {
+              "dispatch": 240,
+              "external_attempts": 0,
+              "external_success": 0,
+              "not_implemented_fallback": 0,
+              "sdpa_fallback": 0,
+              "errors": 0,
+              "examples": []
+            },
+            "sampling:torch": {
+              "dispatch": 384,
+              "external_attempts": 0,
+              "external_success": 0,
+              "not_implemented_fallback": 0,
+              "sdpa_fallback": 0,
+              "errors": 0,
+              "examples": []
+            }
+          },
+          "final_step": 8,
+          "optimizer_state_bytes": 13899992
+        },
+        {
+          "rank": 1,
+          "pid": 94767,
+          "torch": "2.7.1",
+          "hip": "6.3.26093",
+          "device": "cuda:1",
+          "device_name": "BW",
+          "world_size": 2,
+          "initial_step": 4,
+          "trainable_parameters": 12820073036,
+          "text_mode": "cached",
+          "optimizer_class": "transformers.optimization.Adafactor",
+          "local_parameter_bytes": 25640146072,
+          "outcome": "finished",
+          "finite_weights": true,
+          "weights_changed": true,
+          "peak_allocated_bytes": 56410439680,
+          "peak_reserved_bytes": 63090720768,
+          "attention_calls": {
+            "training:torch": {
+              "dispatch": 240,
+              "external_attempts": 0,
+              "external_success": 0,
+              "not_implemented_fallback": 0,
+              "sdpa_fallback": 0,
+              "errors": 0,
+              "examples": []
+            },
+            "sampling:torch": {
+              "dispatch": 384,
+              "external_attempts": 0,
+              "external_success": 0,
+              "not_implemented_fallback": 0,
+              "sdpa_fallback": 0,
+              "errors": 0,
+              "examples": []
+            }
+          },
+          "final_step": 8,
+          "optimizer_state_bytes": 13899992
+        }
+      ]
+    }
+  },
+  "krea2_fsdp_native_reload": {
+    "source": "/root/private_data/YPuddinTrainStudio-dtk/acceptance/fsdp-source-20260915-r2",
+    "family": "krea2",
+    "physical_gpu": 0,
+    "passed": true,
+    "checks": {
+      "manifest_complete": true,
+      "expected_cell_count": true,
+      "selected_checkpoints_sampled": true,
+      "all_exports_reloaded": true,
+      "all_reloaded_weights_exact": true,
+      "actual_product_forward_observed": true,
+      "all_backbones_fp32_on_selected_gpu": true,
+      "pngs_valid_512": true,
+      "nonconstant_images": true,
+      "grid_created": true
+    },
+    "loads": [
+      {
+        "checkpoint": "export-0",
+        "actual_model_path": "/root/private_data/YPuddinTrainStudio-dtk/runs/fsdp2-krea2-full-20260915-102041-318731779/reference/fsdp-final.model/backbone/model.safetensors",
+        "tensor_count": 430,
+        "elements": 12820073036,
+        "parameters": 12820073036,
+        "different_keys": [],
+        "exact_export_weights": true,
+        "official_size": true,
+        "unquantized_full_model": true
+      },
+      {
+        "checkpoint": "export-1",
+        "actual_model_path": "/root/private_data/YPuddinTrainStudio-dtk/runs/fsdp2-krea2-full-20260915-102041-318731779/resumed/fsdp-final.model/backbone/model.safetensors",
+        "tensor_count": 430,
+        "elements": 12820073036,
+        "parameters": 12820073036,
+        "different_keys": [],
+        "exact_export_weights": true,
+        "official_size": true,
+        "unquantized_full_model": true
+      }
+    ],
+    "forward_calls": 24,
+    "scope": "Native FP32 Krea2 FSDP exports loaded and sampled by unmodified product xyz_worker.generate on one GPU; no quantization or precision reduction; API enqueue/scheduler is not exercised.",
+    "expected_parameters": 12820073036,
+    "expected_tensors": 430,
+    "per_export_forward_calls": {
+      "export-0": 12,
+      "export-1": 12
+    },
+    "images": [
+      {
+        "checkpoint": "export-0",
+        "path": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-krea2-fsdp-artifact-reload-20260915-104630-905782483/samples/cell_z00_y00_x00.png",
+        "size": [
+          512,
+          512
+        ],
+        "variance": [
+          693.5721120608359,
+          845.2683526561013,
+          1531.8537280658347
+        ],
+        "sha256": "91ec7e1690fc543e1dce1c55cf7e57cfc0793c9b6e1cb2100a38785463c1141e"
+      },
+      {
+        "checkpoint": "export-1",
+        "path": "/root/private_data/YPuddinTrainStudio-dtk/runs/formal-krea2-fsdp-artifact-reload-20260915-104630-905782483/samples/cell_z00_y00_x01.png",
+        "size": [
+          512,
+          512
+        ],
+        "variance": [
+          693.5273207532591,
+          846.8460673568625,
+          1534.052236413685
+        ],
+        "sha256": "5d8ad540f91c2c6bbf43d87c519d86f417cacad307754ea931e4b05f7e608f1c"
+      }
+    ],
+    "artifact_signatures_unchanged": true,
+    "referenced_assets_unchanged": true,
+    "wall_elapsed_s": 455.0563918480184,
+    "peak_allocated_bytes": 52001471488,
+    "peak_reserved_bytes": 52099547136,
+    "visible_devices": {
+      "CUDA_VISIBLE_DEVICES": "0",
+      "HIP_VISIBLE_DEVICES": "0"
+    },
+    "torch": "2.7.1",
+    "hip": "6.3.26093",
+    "evidence": {
+      "path": "remaining-formal/krea2-fsdp-artifact-reload-20260915-report.json",
+      "sha256": "fabdae2135b257a519e292d0b85f5b3f8a3295537a071888d60cf902a49de731"
+    },
+    "source_commit": "0f229d82df74b155571d86bafa8a7a8b92ccff3c",
+    "images_downloaded": false,
+    "local_visual_review": false,
+    "image_validation": "Decoded dimensions and nonzero pixel variance; no image quality claim. Equality is each reload against its own export, not reference export against resumed export."
+  },
+  "fsdp_r3_boundary_followup": {
+    "scope": "Subsequent source changes; do not replace or reinterpret r2 formal results.",
+    "source_snapshot": "fsdp-source-20260915-r3",
+    "source_commit": "d95c5c2d52c85d53da39f6c6cf771b6b19dadb64",
+    "source_association": {
+      "path": "final-validation/fsdp-r3-git-source-association-20260915.json",
+      "sha256": "1564baac735a4642e16de457cf6ef7a05201d0e96cbc2e9346bbd65685161525"
+    },
+    "manifest_entry_count": 185,
+    "product_file_count": 184,
+    "source_archive_sha256": "0afa550a47f832e11cb56807660785a768a6a4f87b1687e1cc7e94b7c766adf4",
+    "online_vae": {
+      "evidence": {
+        "path": "remaining-formal/online-vae-plan-validation-summary-20260915.json",
+        "sha256": "8bc83d85e6c456eb2e77a02b8c25dd31709dbda9b1b65563b961ce4f4718d792"
+      },
+      "tests_passed": 39,
+      "record_type": "summary_reconstructed_from_existing_tool_results",
+      "raw_stdout_log_saved": false,
+      "tests_rerun_to_write_summary": false,
+      "gpu_execution": false,
+      "changes": "With latent caching disabled, complete frozen VAE weights and per-device encoding workspace overlap training on each rank and are not divided by GPU count. Cache-enabled prior estimates unchanged."
+    },
+    "scheduler_contract": {
+      "evidence": {
+        "path": "final-validation/fsdp-scheduler-contract-20260915.json",
+        "sha256": "2401dc082dbc887a042464c5f5281f94214d3adc571219102546c9c0b03e7eb8"
+      },
+      "tests_passed": 16,
+      "tests_failed": 0,
+      "tests_skipped": 0,
+      "gpu_execution": false,
+      "changes": "Store complete scheduler recipe and effective total_steps. Reject changed recipe/budget before mutating weights, optimizer or current LR. Authenticate legacy source config by original config hash, pre-read before same-directory prepare; refuse missing or changed source config."
+    },
+    "legacy_metadata_remote_read_only": {
+      "evidence": {
+        "path": "final-validation/fsdp-r3-legacy-contract-dtk-20260915.json",
+        "sha256": "fdb98c6fd9a54dbebb1b068843875b0d7f1425e5d8509cafbd1f6ce03c0e7e15"
+      },
+      "checks_passed": 2,
+      "weight_load": false,
+      "gpu_execution": false
+    },
+    "toy_hardware_revalidation": {
+      "status": "failed_resume_collective_order_timeout",
+      "passed": false,
+      "reference_execution_complete": true,
+      "resume_execution_complete": false,
+      "defect": "The added scheduler check ran within the parent serial-owner prepare stage, so ranks entered all_gather versus broadcast in different order and timed out.",
+      "scope": "Regression added after r2; does not replace r2 Krea2/Toy results.",
+      "case": "/root/private_data/YPuddinTrainStudio-dtk/runs/fsdp2-toy-full-20260915-105603-611392104",
+      "error": "RuntimeError: Resume training failed",
+      "reference_checks": {
+        "two_processes": true,
+        "official_size_or_explicit_toy": true,
+        "all_ranks_finished": true,
+        "same_progress": true,
+        "weights_finite_and_changed": true,
+        "fp32_trainable_parameters": true,
+        "parameters_really_sharded": true,
+        "gradients_really_sharded": true,
+        "peak_fits_each_device": true,
+        "hf_adafactor": true,
+        "sample_decodes": true,
+        "complete_checkpoint": true,
+        "native_model_export": true,
+        "rank_data_disjoint": true
+      },
+      "original_assets_unchanged": true,
+      "processes": {
+        "reference_process": {
+          "returncode": 0,
+          "wall_elapsed_s": 110.88367676734924,
+          "all_owned_processes_exited": true
+        },
+        "resume_process": {
+          "returncode": 1,
+          "wall_elapsed_s": 308.85494589805603,
+          "all_owned_processes_exited": true
+        }
+      },
+      "evidence": {
+        "path": "remaining-formal/fsdp-r3-toy-failed-report-20260915.json",
+        "sha256": "0e696dc6a08c7c29d497e06ce21f2720843bd31b68209ca619d05fbff20d9528"
+      },
+      "resume_log": {
+        "path": "remaining-formal/fsdp-r3-toy-failed-resume-20260915.log",
+        "sha256": "915e67ccdb676d41ecbcd73de36bdebf3342b2dd0cf1d6f9ceaa3fdbaf2d2976"
+      },
+      "timeout_evidence": {
+        "log_lines": [
+          18,
+          19
+        ],
+        "rank_1_operation": "BROADCAST",
+        "rank_1_sequence": 2,
+        "rank_0_operation": "ALLGATHER",
+        "rank_0_sequence": 1,
+        "timeout_ms": 240000
+      },
+      "subsequent_resolution": "Collective pre-read moved before serial prepare; separate r4 Toy hardware regression passed. Original r3 failure remains unchanged; see fsdp_r4_toy_cold_resume."
+    }
+  },
+  "fsdp_r4_toy_cold_resume": {
+    "case": "/root/private_data/YPuddinTrainStudio-dtk/runs/fsdp2-toy-full-20260915-110751-499668099",
+    "source": "/root/private_data/YPuddinTrainStudio-dtk/acceptance/fsdp-source-20260915-r4",
+    "family": "toy",
+    "strategy": "fsdp2",
+    "steps": 4,
+    "training_passed": true,
+    "passed": true,
+    "original_assets_unchanged": true,
+    "resume_comparison": {
+      "different_tensors": 0,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "same_keys": true,
+      "tensor_count": 32,
+      "exact_weights": true,
+      "states": {
+        "optimizer": true,
+        "scheduler": true,
+        "rng": true,
+        "progress": true,
+        "sampler_ranks": true
+      }
+    },
+    "preview_exact": true,
+    "evidence": {
+      "path": "remaining-formal/fsdp-r4-toy-report-20260915.json",
+      "sha256": "d23010fedba7d02f8b25fe020f37fc28f83f93c8491340867c3949d7fb26aace"
+    },
+    "scope": "Final r4 real product two-DTK-GPU explicit Toy cold-process resume regression after the collective-order repair. Does not revalidate official Krea2 r2 numerical equality.",
+    "source_commit": "4ce0c30f279715777d6a4a217e170d9bd4ec63d3",
+    "source_association": {
+      "path": "final-validation/fsdp-r4-git-source-association-20260915.json",
+      "sha256": "9cab9c088d4ef8210e5318be28b0ce3133f0b3fc887748ac82d593e9ad40e0ca"
+    },
+    "product_file_count": 184,
+    "trainable_parameters": 203728,
+    "world_size": 2,
+    "cold_process_restart": true,
+    "resume_from_step": 2,
+    "resume_until_step": 4,
+    "parameter_tensor_count": 32,
+    "reference": {
+      "checks": {
+        "two_processes": true,
+        "official_size_or_explicit_toy": true,
+        "all_ranks_finished": true,
+        "same_progress": true,
+        "weights_finite_and_changed": true,
+        "fp32_trainable_parameters": true,
+        "parameters_really_sharded": true,
+        "gradients_really_sharded": true,
+        "peak_fits_each_device": true,
+        "hf_adafactor": true,
+        "sample_decodes": true,
+        "complete_checkpoint": true,
+        "native_model_export": true,
+        "rank_data_disjoint": true
+      },
+      "passed": true,
+      "process": {
+        "returncode": 0,
+        "wall_elapsed_s": 82.8103563785553,
+        "all_owned_processes_exited": true
+      },
+      "ranks": [
+        {
+          "rank": 0,
+          "initial_step": 0,
+          "trainable_parameters": 203728,
+          "local_parameter_bytes": 407456,
+          "peak_allocated_bytes": 148856320,
+          "peak_reserved_bytes": 167772160,
+          "optimizer_class": "transformers.optimization.Adafactor",
+          "outcome": "finished"
+        },
+        {
+          "rank": 1,
+          "initial_step": 0,
+          "trainable_parameters": 203728,
+          "local_parameter_bytes": 407456,
+          "peak_allocated_bytes": 148856320,
+          "peak_reserved_bytes": 167772160,
+          "optimizer_class": "transformers.optimization.Adafactor",
+          "outcome": "finished"
+        }
+      ]
+    },
+    "resumed": {
+      "checks": {
+        "two_processes": true,
+        "official_size_or_explicit_toy": true,
+        "all_ranks_finished": true,
+        "same_progress": true,
+        "weights_finite_and_changed": true,
+        "fp32_trainable_parameters": true,
+        "parameters_really_sharded": true,
+        "gradients_really_sharded": true,
+        "peak_fits_each_device": true,
+        "hf_adafactor": true,
+        "sample_decodes": true,
+        "complete_checkpoint": true,
+        "native_model_export": true,
+        "rank_data_disjoint": true
+      },
+      "passed": true,
+      "process": {
+        "returncode": 0,
+        "wall_elapsed_s": 106.08877515792847,
+        "all_owned_processes_exited": true
+      },
+      "ranks": [
+        {
+          "rank": 0,
+          "initial_step": 2,
+          "trainable_parameters": 203728,
+          "local_parameter_bytes": 407456,
+          "peak_allocated_bytes": 148856320,
+          "peak_reserved_bytes": 167772160,
+          "optimizer_class": "transformers.optimization.Adafactor",
+          "outcome": "finished"
+        },
+        {
+          "rank": 1,
+          "initial_step": 2,
+          "trainable_parameters": 203728,
+          "local_parameter_bytes": 407456,
+          "peak_allocated_bytes": 148856320,
+          "peak_reserved_bytes": 167772160,
+          "optimizer_class": "transformers.optimization.Adafactor",
+          "outcome": "finished"
+        }
+      ]
+    }
+  },
+  "fsdp_final_process_cleanup": {
+    "observed_unix": 1789441970.9472687,
+    "source": "/root/private_data/YPuddinTrainStudio-dtk/acceptance/fsdp-source-20260915-r4",
+    "remaining_owned_processes": [],
+    "all_owned_processes_exited": true,
+    "gpus": [
+      {
+        "device": "cuda:0",
+        "kind": "dtk",
+        "name": "BW",
+        "mem_total_mb": 65520,
+        "mem_free_mb": 65198,
+        "mem_used_mb": 2,
+        "util_pct": 0.0
+      },
+      {
+        "device": "cuda:1",
+        "kind": "dtk",
+        "name": "BW",
+        "mem_total_mb": 65520,
+        "mem_free_mb": 65198,
+        "mem_used_mb": 2,
+        "util_pct": 0.0
+      }
+    ],
+    "original_service_health": {
+      "status": 200
+    },
+    "scope": "Read-only process and device snapshot after final acceptance; telemetry may allocate its own temporary driver contexts.",
+    "evidence": {
+      "path": "final-validation/fsdp-final-process-cleanup-20260915.json",
+      "sha256": "6343599daaf634b347ff76d579ccadaa48a1c25287b144e45d142ca045d85fd6"
+    },
+    "measurement_note": "Read-only final observation; free and used memory fields are different device telemetry measurements. This is not a process-returncode field added to the original native reload report."
+  },
+  "final_fsdp_work_status": "All bounded FSDP runs and cleanup are complete. Official Krea2 r2 strict numerical equivalence remains failed and unresolved; no new official-model claim is inferred from final r4 Toy success."
+}
