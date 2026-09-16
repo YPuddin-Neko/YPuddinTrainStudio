@@ -22,7 +22,7 @@ from pydantic import BaseModel, ConfigDict
 from ypuddin.runtime_profiles import current_profile, profile_root, selected_key
 
 from .environment import EnvironmentError
-from .torch_environments import ACTIVE, atomic_json
+from .torch_environments import ACTIVE, atomic_json, same_interpreter
 
 RESTART_TOKEN_ENV = "YPUDDIN_SERVICE_RESTART_TOKEN"
 
@@ -37,6 +37,7 @@ class RestartRequest(BaseModel):
 class ServiceRuntime(BaseModel):
     environment_profile: str = "legacy"
     worker_id: int
+    instance_id: str | None = None
     managed: bool
     can_restart: bool
     reason: str | None
@@ -66,6 +67,8 @@ class ServiceLifecycle:
         self.context, self.environment, self.torch = context, environment, torch_environments
         self.profile = getattr(environment, "profile", current_profile())
         self.selected_key = selected_key(self.profile)
+        # A PID can be reused after restart; this identifies this HTTP service instance.
+        self.instance_id = uuid.uuid4().hex
         self.lock = threading.RLock()
         self.control_file: Path | None = None
         self.shutdown = None
@@ -90,16 +93,7 @@ class ServiceLifecycle:
         self.control_file, self.host, self.port, self.shutdown = control_file, host, port, shutdown
         self.original_python = original_python
         self.restart_token = restart_token
-        selected = next(
-            (
-                op.environment_id
-                for op in self.torch.list()
-                if op.environment_id
-                and self.context.db.get_kv("torch.environment." + op.environment_id, {}).get("python")
-                == sys.executable
-            ),
-            None,
-        )
+        selected = self.torch.current_environment()
         self.context.db.set_kv(self.selected_key, {"id": selected})
 
     def _blocked(self) -> str | None:
@@ -139,6 +133,7 @@ class ServiceLifecycle:
         return ServiceRuntime(
             environment_profile=self.profile,
             worker_id=os.getpid(),
+            instance_id=self.instance_id,
             managed=self.shutdown is not None and bool(self.restart_token),
             can_restart=self._blocked() is None,
             reason=self._blocked(),
@@ -153,11 +148,9 @@ class ServiceLifecycle:
             current_python=sys.executable,
             original_python=self.original_python,
             can_restore_original=bool(
-                self.original_python
-                and os.path.normcase(os.path.abspath(self.original_python))
-                != os.path.normcase(os.path.abspath(sys.executable))
+                self.original_python and not same_interpreter(self.original_python, sys.executable)
             ),
-            selected_environment=self.context.db.get_kv(self.selected_key, {}).get("id"),
+            selected_environment=self.torch.current_environment(),
         )
 
     def restart(self, request: RestartRequest):
@@ -170,7 +163,7 @@ class ServiceLifecycle:
                     422, "Choose a prepared environment or restore the original one, not both"
                 )
             python = self.torch.resolve(request.environment_id) if request.environment_id else sys.executable
-            environment_id = request.environment_id or self.context.db.get_kv(self.selected_key, {}).get("id")
+            environment_id = request.environment_id or self.torch.current_environment()
             if request.restore_original_environment:
                 python, environment_id = self.original_python, None
             settings = self.context.settings()["server"]

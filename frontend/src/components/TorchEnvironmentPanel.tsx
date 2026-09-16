@@ -24,7 +24,11 @@ export default function TorchEnvironmentPanel({ disabled = false, operationsTarg
     const data = await apiClient.get<Snapshot>('/environment/torch', { silent: true });
     for (const op of data.operations) if (active(op) || op.status === 'ready') sessionOperations.current.add(op.id);
     setState(data); setError('');
-    setChoice(old => old || data.builds.find(b => b.supported && b.recommended)?.id || data.builds.find(b => b.supported)?.id || '');
+    const installed = data.operations.filter(op => op.status === 'completed' && op.environment_id);
+    const current = installed.find(op => op.environment_id === data.selected_environment);
+    const availableBuild = (id?: string) => data.builds.some(build => build.id === id && build.supported) ? id : undefined;
+    setChoice(old => old || availableBuild(current?.build_id) || availableBuild(installed[0]?.build_id)
+      || data.builds.find(b => b.supported && b.recommended)?.id || data.builds.find(b => b.supported)?.id || '');
   }, []);
   React.useEffect(() => { void refresh().catch(e => setError(formatApiError(e))); }, [refresh]);
   React.useEffect(() => {
@@ -54,9 +58,19 @@ export default function TorchEnvironmentPanel({ disabled = false, operationsTarg
   };
   const operations = state?.operations.filter(op => !op.dismissed_at && (
     active(op) || op.status === 'ready' || sessionOperations.current.has(op.id)
-    // A prepared environment still needs an explicit activation after reopening settings.
-    || op.status === 'completed' && !!op.environment_id && state.selected_environment !== op.environment_id
   )) || [];
+  // Finished logs belong to this visit. Installed environments remain selectable
+  // without reviving every previous installation as an unfinished task.
+  const installedChoices = state?.operations.filter(op => op.build_id === choice && op.status === 'completed' && op.environment_id) || [];
+  const installedChoice = installedChoices.find(op => op.environment_id === state?.selected_environment) || installedChoices[0];
+  const installedChoiceActive = !!installedChoice && installedChoice.environment_id === state?.selected_environment;
+  const showInstalledChoice = !!installedChoice && !operations.some(op => op.id === installedChoice.id);
+  const buildLabel = (build: Snapshot['builds'][number]) => {
+    const installed = state?.operations.filter(op => op.build_id === build.id && op.status === 'completed' && op.environment_id) || [];
+    const status = installed.some(op => op.environment_id === state?.selected_environment) ? text(' · 当前使用', ' · Active')
+      : installed.length ? text(' · 已安装', ' · Installed') : '';
+    return build.label + status + (build.reason?.startsWith('requires_driver') ? text(` · 需 NVIDIA ${build.reason.split('_').at(-1)}+ 驱动`, ` · needs NVIDIA ${build.reason.split('_').at(-1)}+ driver`) : '');
+  };
   React.useEffect(() => { onOperationsVisible?.(operations.length > 0); }, [onOperationsVisible, operations.length]);
   React.useEffect(() => () => onOperationsVisible?.(false), [onOperationsVisible]);
   const operationCards = operations.map(op => <InstallationOperation key={op.id}
@@ -76,7 +90,11 @@ export default function TorchEnvironmentPanel({ disabled = false, operationsTarg
     <section id="environment-torch" data-settings-section tabIndex={-1} className="settings-section">
       <div className="settings-section-heading"><h2>{text('PyTorch 版本', 'PyTorch version')}</h2></div>
       <p className="settings-note">{text('所选版本会安装到独立环境，检查通过后重启使用。原环境保留；xFormers、FlashAttention 等扩展需为新版本重新安装。', 'Install the selected version in an isolated environment, check it, then restart to use it. The original environment is retained; compiled extensions need matching installations.')}</p>
-      <div className="settings-field"><label>{text('选择版本与计算后端', 'Version and compute backend')}</label><div className="settings-field-control"><StudioSelect aria-label={text('选择 PyTorch 版本', 'Choose PyTorch version')} disabled={locked || !state} value={choice} onValueChange={setChoice} options={(state?.builds || []).filter(b => b.supported || b.reason?.startsWith('requires_driver')).map(b => ({ value: b.id, label: b.label + (b.reason?.startsWith('requires_driver') ? text(` · 需 NVIDIA ${b.reason.split('_').at(-1)}+ 驱动`, ` · needs NVIDIA ${b.reason.split('_').at(-1)}+ driver`) : ''), disabled: !b.supported }))}/></div></div>
+      <div className="settings-field"><label>{text('选择版本与计算后端', 'Version and compute backend')}</label><div className="settings-field-control"><StudioSelect aria-label={text('选择 PyTorch 版本', 'Choose PyTorch version')} disabled={locked || !state} value={choice} onValueChange={setChoice} options={(state?.builds || []).filter(b => b.supported || b.reason?.startsWith('requires_driver')).map(b => ({ value: b.id, label: buildLabel(b), disabled: !b.supported }))}/></div></div>
+      {showInstalledChoice && <div className="space-y-2" data-testid="installed-torch-environment">
+        <p className="settings-note">{installedChoiceActive ? text('当前正在使用此环境。', 'This environment is currently active.') : text('此版本已安装，可直接切换，无需重新下载。', 'This version is installed. Switch to it without downloading again.')}</p>
+        {!installedChoiceActive && <ServiceControls key={installedChoice.environment_id} environmentId={installedChoice.environment_id!} disabled={locked} onRestarted={() => void refresh()}/>}
+      </div>}
       {state && <p className="settings-note">{text(`可用空间 ${(state.disk_free_bytes / 1024 ** 3).toFixed(1)} GiB；CUDA 环境至少预留 12 GiB，其他环境至少 8 GiB。`, `Available space: ${(state.disk_free_bytes / 1024 ** 3).toFixed(1)} GiB. Reserve at least 12 GiB for CUDA or 8 GiB for other environments.`)}</p>}
       {disabled && <p className="settings-note">{text('当前任务完成后可安装运行环境。', 'Finish the current task before installing an environment.')}</p>}
       <div className="flex flex-wrap gap-2"><button type="button" className="settings-action" aria-label={text('检查 PyTorch 安装条件', 'Check PyTorch installation requirements')} disabled={locked || !choice} onClick={() => void act('/environment/torch/operations', { build_id: choice })}>{text('检查安装条件', 'Check installation requirements')}</button><button type="button" className="settings-input" disabled={busy} onClick={() => void refresh().catch(e => setError(formatApiError(e)))}>{text('刷新状态', 'Refresh status')}</button></div>

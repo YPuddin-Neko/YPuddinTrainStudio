@@ -5914,6 +5914,8 @@ export interface components {
             environment_profile: string;
             /** Worker Id */
             worker_id: number;
+            /** Instance Id */
+            instance_id?: string | null;
             /** Managed */
             managed: boolean;
             /** Can Restart */
@@ -6467,7 +6469,7 @@ export interface components {
         WindowsAttentionCatalog: {
             /**
              * Source Url
-             * @default https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/tag/v0.9.6
+             * @default https://github.com/mjun0812/flash-attention-prebuild-wheels/releases
              */
             source_url: string;
             /**
@@ -6475,6 +6477,21 @@ export interface components {
              * @default v0.9.6
              */
             release: string;
+            /**
+             * Release Count
+             * @default 1
+             */
+            release_count: number;
+            /**
+             * Limited
+             * @default false
+             */
+            limited: boolean;
+            /**
+             * Unverified Assets
+             * @default 0
+             */
+            unverified_assets: number;
             /**
              * Provider
              * @default mjun0812-community-windows
@@ -6518,6 +6535,11 @@ export interface components {
              * @default https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/tag/v0.9.6
              */
             source_url: string;
+            /**
+             * Release
+             * @default v0.9.6
+             */
+            release: string;
             /**
              * Provider
              * @default mjun0812-community-windows

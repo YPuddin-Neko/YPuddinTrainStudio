@@ -137,6 +137,98 @@ def test_runtime_is_readable_without_managed_launcher(lifecycle):
     assert lifecycle.client.post("/api/service/restart", json={}).status_code == 409
 
 
+def test_runtime_instance_survives_status_reads_but_changes_even_when_pid_is_reused(lifecycle):
+    first = lifecycle.client.get("/api/service/runtime").json()
+    assert first["instance_id"]
+    assert lifecycle.client.get("/api/service/runtime").json()["instance_id"] == first["instance_id"]
+    lifecycle.context.db.set_kv(lifecycle.service.selected_key, {"id": "historical_selection"})
+    unchanged = lifecycle.client.get("/api/service/runtime").json()
+    assert unchanged["instance_id"] == first["instance_id"]
+    assert unchanged["selected_environment"] is None
+    assert lifecycle.client.get("/api/environment/torch").json()["selected_environment"] is None
+
+    replacement = ServiceLifecycle(lifecycle.context, lifecycle.env, lifecycle.torch).status()
+    assert replacement.worker_id == first["worker_id"]
+    assert replacement.instance_id != first["instance_id"]
+    assert "restart_token" not in first
+
+
+@pytest.mark.parametrize(
+    "recorded,current,selected",
+    [
+        (
+            r"J:\Studio\runtimes\torch_new\Scripts\python.exe",
+            "j:/studio/runtimes/torch_new/Scripts/python.exe",
+            True,
+        ),
+        (
+            r"J:\Studio\runtimes\torch_new\Scripts\python.exe",
+            r"\\?\J:\Studio\runtimes\torch_new\Scripts\python.exe",
+            True,
+        ),
+        (r"\\host\share\Studio\python.exe", r"\\?\UNC\HOST\share\studio\python.exe", True),
+        (
+            r"J:\Studio\runtimes\torch_old\Scripts\python.exe",
+            r"J:\Studio\runtimes\torch_new\Scripts\python.exe",
+            False,
+        ),
+    ],
+)
+def test_windows_current_environment_uses_interpreter_location_not_stale_selection(
+    lifecycle, monkeypatch, recorded, current, selected
+):
+    op = TorchOperation(
+        id="torch_new",
+        build_id="2.11.0-cu128",
+        status="completed",
+        phase="ready_to_restart",
+        environment_id="torch_new",
+        created_at=now(),
+        updated_at=now(),
+    )
+    lifecycle.context.db.set_kv("torch.operation." + op.id, op.model_dump())
+    lifecycle.context.db.set_kv("torch.environment." + op.id, {"python": recorded})
+    lifecycle.context.db.set_kv(lifecycle.service.selected_key, {"id": "stale_other_environment"})
+    # Exercise Windows lexical rules without changing this test host's global OS state.
+    monkeypatch.setattr(
+        "ypuddin.server.torch_environments.sys", SimpleNamespace(platform="win32", executable=current)
+    )
+    monkeypatch.setattr("ypuddin.server.lifecycle.sys", SimpleNamespace(executable=current))
+    expected = op.id if selected else None
+    assert lifecycle.client.get("/api/environment/torch").json()["selected_environment"] == expected
+    assert lifecycle.client.get("/api/service/runtime").json()["selected_environment"] == expected
+    lifecycle.service.configure(
+        control_file=lifecycle.context.data_root / "restart.json",
+        host="127.0.0.1",
+        port=8877,
+        shutdown=Mock(),
+        original_python=recorded,
+        restart_token="fixture-worker-capability",
+    )
+    assert lifecycle.context.db.get_kv(lifecycle.service.selected_key) == {"id": expected}
+    assert lifecycle.service.status().can_restore_original is not selected
+    assert lifecycle.torch.get(op.id).phase == "ready_to_restart"
+
+
+def test_unfinished_or_other_profile_environment_is_not_reported_active(lifecycle, monkeypatch):
+    op = TorchOperation(
+        id="torch_unverified",
+        build_id="2.13.0-mps",
+        status="verifying",
+        environment_id="torch_unverified",
+        created_at=now(),
+        updated_at=now(),
+    )
+    lifecycle.context.db.set_kv("torch.operation." + op.id, op.model_dump())
+    lifecycle.context.db.set_kv("torch.environment." + op.id, {"python": sys.executable})
+    assert lifecycle.torch.current_environment() is None
+    lifecycle.torch._update(op.id, status="completed")
+    lifecycle.context.db.set_kv(
+        "torch.environment." + op.id, {"python": sys.executable, "environment_profile": "windows-cuda"}
+    )
+    assert lifecycle.torch.current_environment() is None
+
+
 def test_restart_keeps_effective_address_unless_explicit(lifecycle, monkeypatch):
     configure(lifecycle, monkeypatch)
     lifecycle.context.save_settings({"server": {"host": "0.0.0.0", "port": 8999}})

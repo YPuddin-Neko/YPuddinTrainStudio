@@ -16875,6 +16875,17 @@
             "type": "integer",
             "title": "Worker Id"
           },
+          "instance_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instance Id"
+          },
           "managed": {
             "type": "boolean",
             "title": "Managed"
@@ -18240,12 +18251,27 @@
           "source_url": {
             "type": "string",
             "title": "Source Url",
-            "default": "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/tag/v0.9.6"
+            "default": "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases"
           },
           "release": {
             "type": "string",
             "title": "Release",
             "default": "v0.9.6"
+          },
+          "release_count": {
+            "type": "integer",
+            "title": "Release Count",
+            "default": 1
+          },
+          "limited": {
+            "type": "boolean",
+            "title": "Limited",
+            "default": false
+          },
+          "unverified_assets": {
+            "type": "integer",
+            "title": "Unverified Assets",
+            "default": 0
           },
           "provider": {
             "type": "string",
@@ -18351,6 +18377,11 @@
             "type": "string",
             "title": "Source Url",
             "default": "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/tag/v0.9.6"
+          },
+          "release": {
+            "type": "string",
+            "title": "Release",
+            "default": "v0.9.6"
           },
           "provider": {
             "type": "string",

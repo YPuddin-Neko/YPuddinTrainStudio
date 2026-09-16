@@ -9,7 +9,16 @@ export function InstallationProgress({ label, percent }: { label: string; percen
 }
 
 export function InstallationLog({ label, logs }: { label: string; logs: string[] }) {
-  return <pre aria-label={label} className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded-md bg-slate-950 p-3 font-mono text-[11px] leading-5 text-slate-200">{logs.join('\n')}</pre>;
+  const viewport = React.useRef<HTMLPreElement>(null);
+  const following = React.useRef(true);
+  const content = logs.join('\n');
+  React.useLayoutEffect(() => {
+    if (following.current && viewport.current) viewport.current.scrollTop = viewport.current.scrollHeight;
+  }, [content]);
+  return <pre ref={viewport} aria-label={label} onScroll={event => {
+    const log = event.currentTarget;
+    following.current = log.scrollHeight - log.clientHeight - log.scrollTop <= 2;
+  }} className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded-md bg-slate-950 p-3 font-mono text-[11px] leading-5 text-slate-200">{content}</pre>;
 }
 
 export default function InstallationOperation({ title, action, status, busy = false, failed = false, expanded, onToggle, children }: {

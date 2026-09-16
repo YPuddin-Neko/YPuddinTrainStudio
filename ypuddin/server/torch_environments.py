@@ -8,6 +8,7 @@ Optional compiled attention extensions are deliberately not copied across Torch 
 from __future__ import annotations
 
 import json
+import ntpath
 import os
 import shutil
 import subprocess
@@ -91,6 +92,22 @@ class TorchSnapshot(BaseModel):
 
 def python_in(root: Path) -> Path:
     return root / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+
+def same_interpreter(left: str | None, right: str | None) -> bool:
+    """Compare interpreter locations, not the common binary a venv may link to."""
+    if not isinstance(left, str) or not left or not isinstance(right, str) or not right:
+        return False
+
+    def identity(value: str) -> str:
+        if sys.platform != "win32":
+            return os.path.normcase(os.path.abspath(value))
+        value = ntpath.normcase(ntpath.abspath(value))
+        if value.startswith("\\\\?\\unc\\"):
+            return "\\\\" + value[8:]
+        return value[4:] if value.startswith("\\\\?\\") else value
+
+    return identity(left) == identity(right)
 
 
 def atomic_json(path: Path, value: Any) -> None:
@@ -235,6 +252,17 @@ class TorchEnvironments:
         with self.lock:
             self._update(id_, logs=[*self.get(id_).logs, message[-4000:]][-300:])
 
+    def current_environment(self) -> str | None:
+        for op in self.list():
+            if op.status != "completed" or not op.environment_id:
+                continue
+            record = self.context.db.get_kv("torch.environment." + op.environment_id, {})
+            if record.get("environment_profile", "legacy") != self.profile:
+                continue
+            if same_interpreter(record.get("python"), sys.executable):
+                return op.environment_id
+        return None
+
     def status(self):
         versions = self.environment.versions()
         return TorchSnapshot(
@@ -243,7 +271,7 @@ class TorchEnvironments:
             builds=build_catalog(self.environment.runtime(), self.driver(), self.profile),
             operations=self.list(),
             current_python=sys.executable,
-            selected_environment=self.context.db.get_kv(self.selected_key, {}).get("id"),
+            selected_environment=self.current_environment(),
             environments=[
                 self.context.db.get_kv("torch.environment." + o.environment_id)
                 for o in self.list()

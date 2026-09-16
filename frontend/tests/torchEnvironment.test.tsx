@@ -2,13 +2,14 @@ import { StrictMode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from '../src/api/client';
+import { ApiError } from '../src/api/types';
 import TorchEnvironmentPanel from '../src/components/TorchEnvironmentPanel';
 import ServiceControls from '../src/components/ServiceControls';
 import i18n from '../src/i18n';
 
 const build={id:'2.11.0-cu128',label:'PyTorch 2.11.0 · CU128',supported:true,reason:null,recommended:true,backend:'cu128'};
 const operation=(status='ready')=>({id:'torch_test',build_id:build.id,status,phase:status==='failed'?'failed':'review',logs:[] as string[],error:null as string|null,environment_id:null as string|null,dismissed_at:null as number|null,plan:[{name:'torch',from_version:'2.10.0',version:'2.11.0'},{name:'torchvision',from_version:'0.25.0',version:'0.26.0'}]});
-const snapshot=()=>({builds:[build],operations:[] as ReturnType<typeof operation>[],current_python:'project/venv/python',selected_environment:null, disk_free_bytes:100*1024**3});
+const snapshot=()=>({builds:[build],operations:[] as ReturnType<typeof operation>[],current_python:'project/venv/python',selected_environment:null as string|null, disk_free_bytes:100*1024**3});
 const runtime=()=>({worker_id:11,managed:true,can_restart:true,reason:null as string|null,current_host:'127.0.0.1',current_port:8877,saved_host:'127.0.0.1',saved_port:8765,current_python:'project/venv/python',can_restore_original:false,selected_environment:null as string|null});
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.useRealTimers();});
 beforeEach(async()=>{await i18n.changeLanguage('zh-CN');});
@@ -82,13 +83,32 @@ describe('isolated PyTorch environment controls',()=>{
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     view.unmount();target.remove();
   });
-  it('retains the activation action for an installed environment that has not been selected', async () => {
-    const data=snapshot();data.operations=[{...operation('completed'),phase:'ready_to_restart',environment_id:'new-env'}];
+  it('offers an installed environment without reopening its historical installation log', async () => {
+    const data=snapshot();data.operations=[{...operation('completed'),phase:'ready_to_restart',environment_id:'new-env',logs:['Old completed installation']}];
     vi.spyOn(apiClient,'get').mockImplementation(async(url)=>url==='/service/runtime'?runtime():structuredClone(data));
     render(<TorchEnvironmentPanel/>);
-    expect(await screen.findByText('安装完成，重启后可使用')).toBeInTheDocument();
+    expect(await screen.findByText('此版本已安装，可直接切换，无需重新下载。')).toBeInTheDocument();
     expect(await screen.findByRole('button',{name:'重启并切换到此环境'})).toBeInTheDocument();
+    expect(screen.queryByText('Old completed installation')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading',{name:'安装日志'})).not.toBeInTheDocument();
     expect(screen.queryByRole('button',{name:'关闭结果'})).not.toBeInTheDocument();
+  });
+  it('opens on the active build and omits completed logs across repeated visits', async () => {
+    const currentBuild={...build,id:'2.13.0-cu130',label:'PyTorch 2.13.0 · CU130',recommended:false};
+    const data=snapshot();data.builds.push(currentBuild);data.selected_environment='active-env';
+    data.operations=[{...operation('completed'),id:'older',environment_id:'old-env',logs:['Old environment log']},{...operation('completed'),id:'current',build_id:currentBuild.id,environment_id:'active-env',logs:['Active environment log']}];
+    const get=vi.spyOn(apiClient,'get').mockResolvedValue(data);
+    const visible=vi.fn();
+    const first=render(<TorchEnvironmentPanel onOperationsVisible={visible}/>);
+    expect(await screen.findByRole('combobox',{name:'选择 PyTorch 版本'})).toHaveTextContent('PyTorch 2.13.0 · CU130 · 当前使用');
+    expect(screen.getByText('当前正在使用此环境。')).toBeInTheDocument();
+    first.unmount();render(<TorchEnvironmentPanel onOperationsVisible={visible}/>);
+    await screen.findByText('当前正在使用此环境。');
+    expect(screen.queryByRole('heading',{name:'安装日志'})).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('PyTorch 安装日志')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button',{name:'重启并切换到此环境'})).not.toBeInTheDocument();
+    expect(visible).not.toHaveBeenCalledWith(true);
+    expect(get).not.toHaveBeenCalledWith('/service/runtime',expect.anything());
   });
   it('labels an activated environment correctly even when its completed phase remains ready_to_restart', async () => {
     const data=snapshot();data.operations=[operation('ready')];
@@ -178,7 +198,7 @@ describe('service restart controls',()=>{
     expect(screen.getByRole('alert')).toHaveTextContent('服务暂未响应，请刷新状态。');
     expect(screen.queryByText('Service request timed out')).not.toBeInTheDocument();
   });
-  it('bounds a restart acknowledgement that never returns and releases the controls',async()=>{
+  it('keeps checking after a lost restart acknowledgement and releases controls at the deadline',async()=>{
     vi.spyOn(apiClient,'get').mockResolvedValue(runtime());
     let pending:AbortSignal|undefined;
     vi.spyOn(apiClient,'post').mockImplementation(async(_endpoint,_body,options)=>{
@@ -191,8 +211,52 @@ describe('service restart controls',()=>{
     fireEvent.click(screen.getByRole('button',{name:'重启服务'}));
     await act(async()=>{await vi.advanceTimersByTimeAsync(10000);});
     expect(pending?.aborted).toBe(true);
-    expect(screen.getByRole('alert')).toHaveTextContent('服务暂未响应');
+    expect(screen.getByText('正在重启并重新连接…')).toBeInTheDocument();
+    expect(screen.getByRole('button',{name:'刷新状态'})).toBeDisabled();
+    await act(async()=>{await vi.advanceTimersByTimeAsync(50000);});
+    expect(screen.getByRole('alert')).toHaveTextContent('暂未重新连接');
     expect(screen.getByRole('button',{name:'刷新状态'})).toBeEnabled();
+  });
+  it('recognises a new service instance even if Windows reuses the process id',async()=>{
+    let restarting=false;
+    vi.spyOn(apiClient,'get').mockImplementation(async()=>({...runtime(),instance_id:restarting?'after':'before',selected_environment:restarting?'new-env':null}));
+    vi.spyOn(apiClient,'post').mockImplementation(async()=>{restarting=true;return {address_changed:false,host:'127.0.0.1',port:8877};});
+    const complete=vi.fn();render(<ServiceControls environmentId="new-env" onRestarted={complete}/>);
+    await waitFor(()=>expect(screen.getByRole('button',{name:'重启并切换到此环境'})).toBeEnabled());
+    vi.useFakeTimers();fireEvent.click(screen.getByRole('button',{name:'重启并切换到此环境'}));
+    await act(async()=>{await vi.advanceTimersByTimeAsync(1000);});
+    expect(screen.getByText('服务已重启。')).toBeInTheDocument();
+    expect(complete).toHaveBeenCalledOnce();
+  });
+  it('does not treat an unchanged instance as a completed restart',async()=>{
+    let restarting=false;
+    vi.spyOn(apiClient,'get').mockImplementation(async()=>({...runtime(),instance_id:'same-instance',worker_id:restarting?12:11}));
+    vi.spyOn(apiClient,'post').mockImplementation(async()=>{restarting=true;return {address_changed:false,host:'127.0.0.1',port:8877};});
+    render(<ServiceControls/>);
+    await waitFor(()=>expect(screen.getByRole('button',{name:'重启服务'})).toBeEnabled());
+    vi.useFakeTimers();fireEvent.click(screen.getByRole('button',{name:'重启服务'}));
+    await act(async()=>{await vi.advanceTimersByTimeAsync(1000);});
+    expect(screen.getByText('正在重启并重新连接…')).toBeInTheDocument();
+    expect(screen.queryByText('服务已重启。')).not.toBeInTheDocument();
+  });
+  it('recovers a restart whose acknowledgement was lost without posting twice',async()=>{
+    let restarting=false;
+    vi.spyOn(apiClient,'get').mockImplementation(async()=>({...runtime(),instance_id:restarting?'after':'before'}));
+    const post=vi.spyOn(apiClient,'post').mockImplementation(async()=>{restarting=true;throw new TypeError('Failed to fetch');});
+    render(<ServiceControls/>);
+    await waitFor(()=>expect(screen.getByRole('button',{name:'重启服务'})).toBeEnabled());
+    vi.useFakeTimers();fireEvent.click(screen.getByRole('button',{name:'重启服务'}));
+    await act(async()=>{await vi.advanceTimersByTimeAsync(1000);});
+    expect(screen.getByText('服务已重启。')).toBeInTheDocument();
+    expect(post).toHaveBeenCalledOnce();
+  });
+  it('shows a rejected restart immediately instead of polling it as a lost acknowledgement',async()=>{
+    vi.spyOn(apiClient,'get').mockResolvedValue(runtime());
+    vi.spyOn(apiClient,'post').mockRejectedValue(new ApiError(409,{code:'service_busy',message:'训练任务运行中'}));
+    render(<ServiceControls/>);
+    fireEvent.click(await screen.findByRole('button',{name:'重启服务'}));
+    expect(await screen.findByRole('alert')).toHaveTextContent('训练任务运行中');
+    expect(screen.queryByText('正在重启并重新连接…')).not.toBeInTheDocument();
   });
   it('shows the actual busy reason and does not send a restart',async()=>{
     vi.spyOn(apiClient,'get').mockResolvedValue({...runtime(),can_restart:false,reason:'training_or_data_worker_running'});

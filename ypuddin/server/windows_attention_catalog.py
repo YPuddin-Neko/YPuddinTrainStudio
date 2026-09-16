@@ -1,4 +1,4 @@
-"""Bounded Windows FA2 discovery from a reviewed community publisher's fixed release.
+"""Bounded Windows FA2 discovery from a reviewed community publisher's releases.
 
 The bundled asset metadata was checked against the maintainer's GitHub release on
 2026-09-15. A filename match is an installation candidate, not a GPU qualification.
@@ -24,13 +24,26 @@ from .network import ProxyPolicy
 from .windows_attention_assets import ASSETS
 
 REPOSITORY = "mjun0812/flash-attention-prebuild-wheels"
-RELEASE = "v0.9.6"
-SOURCE_URL = f"https://github.com/{REPOSITORY}/releases/tag/{RELEASE}"
-API_URL = f"https://api.github.com/repos/{REPOSITORY}/releases/tags/{RELEASE}"
-PREFIX = f"https://github.com/{REPOSITORY}/releases/download/{RELEASE}/"
+BUNDLED_RELEASE = "v0.9.6"
+SOURCE_URL = f"https://github.com/{REPOSITORY}/releases"
+API_URL = f"https://api.github.com/repos/{REPOSITORY}/releases"
+DOWNLOAD_PREFIX = f"https://github.com/{REPOSITORY}/releases/download/"
 PROVIDER = "mjun0812-community-windows"
 MAX_METADATA_BYTES = 2 * 1024**2
-NAME = re.compile(r"flash_attn-(\d+\.\d+\.\d+)\+cu(\d{3})torch(\d+\.\d+)-(cp3\d+)-\4-win_amd64\.whl")
+RELEASES_PER_PAGE = 10
+MAX_RELEASE_PAGES = 5
+TAG = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,127}")
+NAME = re.compile(r"flash_attn-(2\.\d+\.\d+)\+cu(\d{3})torch(\d+\.\d+)-(cp3\d+)-\4-win_amd64\.whl")
+
+
+def _download_prefix(release: str) -> str:
+    if not TAG.fullmatch(release):
+        raise ValueError("Invalid community release tag")
+    return DOWNLOAD_PREFIX + urllib.parse.quote(release, safe="") + "/"
+
+
+def _release_url(release: str) -> str:
+    return SOURCE_URL + "/tag/" + urllib.parse.quote(release, safe="")
 
 
 class WindowsAttentionWheel(BaseModel):
@@ -39,7 +52,8 @@ class WindowsAttentionWheel(BaseModel):
     version: str
     filename: str
     url: str
-    source_url: str = SOURCE_URL
+    source_url: str = _release_url(BUNDLED_RELEASE)
+    release: str = BUNDLED_RELEASE
     provider: str = PROVIDER
     size_bytes: int
     sha256: str
@@ -54,7 +68,10 @@ class WindowsAttentionWheel(BaseModel):
 
 class WindowsAttentionCatalog(BaseModel):
     source_url: str = SOURCE_URL
-    release: str = RELEASE
+    release: str = BUNDLED_RELEASE
+    release_count: int = 1
+    limited: bool = False
+    unverified_assets: int = 0
     provider: str = PROVIDER
     origin: Literal["live", "cached", "bundled"]
     checked_at: float | None = None
@@ -64,12 +81,24 @@ class WindowsAttentionCatalog(BaseModel):
     wheels: list[WindowsAttentionWheel]
 
 
-def parse_assets(document: dict) -> tuple[WindowsAttentionWheel, ...]:
-    if document.get("tag_name") != RELEASE or document.get("draft") or document.get("prerelease"):
+def parse_assets(document: dict, *, allow_empty=False) -> tuple[WindowsAttentionWheel, ...]:
+    release = document.get("tag_name")
+    if (
+        not isinstance(release, str)
+        or not TAG.fullmatch(release)
+        or document.get("draft")
+        or document.get("prerelease")
+    ):
         raise ValueError("Release identity does not match the reviewed publisher release")
+    prefix = _download_prefix(release)
     wheels = []
     seen = set()
-    for asset in document.get("assets", []):
+    assets = document.get("assets", [])
+    if not isinstance(assets, list):
+        raise ValueError("Invalid release asset list")
+    for asset in assets:
+        if not isinstance(asset, dict) or not isinstance(asset.get("name", ""), str):
+            raise ValueError("Invalid release asset entry")
         filename = asset.get("name", "")
         match = NAME.fullmatch(filename)
         if not match:
@@ -78,22 +107,26 @@ def parse_assets(document: dict) -> tuple[WindowsAttentionWheel, ...]:
         size = asset.get("size")
         url = asset.get("browser_download_url", "")
         if (
-            not isinstance(digest, str)
-            or not re.fullmatch(r"sha256:[a-f0-9]{64}", digest)
-            or not isinstance(size, int)
+            not isinstance(size, int)
             or not 0 < size <= 2 * 1024**3
-            or url != PREFIX + urllib.parse.quote(filename, safe="")
+            or url != prefix + urllib.parse.quote(filename, safe="")
             or filename in seen
         ):
             raise ValueError("Release contains duplicate or unverified Windows wheel metadata")
         seen.add(filename)
+        # Older releases can lack GitHub's SHA256 metadata. Never turn them into
+        # download candidates, but do not hide verified builds in other releases.
+        if not isinstance(digest, str) or not re.fullmatch(r"sha256:[a-f0-9]{64}", digest):
+            continue
         base, cuda, torch, python = match.groups()
         wheels.append(
             WindowsAttentionWheel(
-                id="mjun0812-" + RELEASE + "-" + filename,
+                id="mjun0812-" + release + "-" + filename,
                 version=f"{base}+cu{cuda}torch{torch}",
                 filename=filename,
                 url=url,
+                source_url=_release_url(release),
+                release=release,
                 size_bytes=size,
                 sha256=digest[7:],
                 torch=torch,
@@ -101,7 +134,7 @@ def parse_assets(document: dict) -> tuple[WindowsAttentionWheel, ...]:
                 python_tag=python,
             )
         )
-    if not wheels:
+    if not wheels and not allow_empty:
         raise ValueError("The reviewed release contains no verified Windows FA2 wheels")
     return tuple(wheels)
 
@@ -139,7 +172,53 @@ def incompatibility(wheel, runtime, versions=None, profile=None):
 class _ReleaseRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         # GitHub metadata needs no redirect. Do not follow changed repositories or login pages.
-        raise ValueError("Release metadata redirected outside its fixed API endpoint")
+        raise ValueError("Release metadata redirected outside its approved API endpoint")
+
+
+def discover(policy):
+    wheels, releases, seen = [], [], set()
+    unverified_assets, limited = 0, False
+    for page in range(1, MAX_RELEASE_PAGES + 1):
+        url = f"{API_URL}?per_page={RELEASES_PER_PAGE}&page={page}"
+        request = urllib.request.Request(
+            url,
+            headers={"Accept": "application/vnd.github+json", "User-Agent": "YPuddin-Windows-FA2/1"},
+        )
+        with policy.opener(_ReleaseRedirect()).open(request, timeout=8) as response:
+            if response.geturl() != url:
+                raise ValueError("Unexpected release metadata response origin")
+            raw = response.read(MAX_METADATA_BYTES + 1)
+        if len(raw) > MAX_METADATA_BYTES:
+            raise ValueError("Release metadata exceeds the size limit")
+        documents = json.loads(raw)
+        if not isinstance(documents, list) or len(documents) > RELEASES_PER_PAGE:
+            raise ValueError("Invalid community release listing")
+        for document in documents:
+            if not isinstance(document, dict):
+                raise ValueError("Invalid community release entry")
+            if document.get("draft") or document.get("prerelease"):
+                continue
+            candidates = parse_assets(document, allow_empty=True)
+            releases.append(document["tag_name"])
+            unverified_assets += sum(
+                bool(NAME.fullmatch(asset.get("name", "")))
+                and not re.fullmatch(r"sha256:[a-f0-9]{64}", str(asset.get("digest", "")))
+                for asset in document.get("assets", [])
+            )
+            for wheel in candidates:
+                identity = (wheel.filename, wheel.sha256)
+                if identity not in seen:
+                    seen.add(identity)
+                    wheels.append(wheel)
+        if len(documents) < RELEASES_PER_PAGE:
+            break
+        limited = page == MAX_RELEASE_PAGES
+    if not wheels:
+        raise ValueError("No verified Windows FA2 wheels were found in the queried releases")
+    wheels.sort(
+        key=lambda w: (Version(w.version.split("+")[0]), Version(w.torch), Version(w.cuda)), reverse=True
+    )
+    return tuple(wheels), releases, limited, unverified_assets
 
 
 class Catalog:
@@ -150,6 +229,9 @@ class Catalog:
         self._attempted_at = 0.0
         self._error = None
         self._policy = None
+        self._releases = [BUNDLED_RELEASE]
+        self._limited = False
+        self._unverified_assets = 0
 
     def snapshot(self, runtime, profile, *, proxy=None, refresh=False):
         policy = proxy or ProxyPolicy()
@@ -157,26 +239,15 @@ class Catalog:
             runtime.get("platform") == "Windows" and not runtime.get("hip_runtime") and profile != "linux-dtk"
         )
         with self._lock:
+            updated = False
             if supported and (
                 refresh or policy != self._policy or time.monotonic() - self._attempted_at > 300
             ):
                 self._attempted_at, self._policy = time.monotonic(), policy
                 try:
-                    request = urllib.request.Request(
-                        API_URL,
-                        headers={
-                            "Accept": "application/vnd.github+json",
-                            "User-Agent": "YPuddin-Windows-FA2/1",
-                        },
-                    )
-                    with policy.opener(_ReleaseRedirect()).open(request, timeout=8) as response:
-                        if response.geturl() != API_URL:
-                            raise ValueError("Unexpected release metadata response origin")
-                        raw = response.read(MAX_METADATA_BYTES + 1)
-                    if len(raw) > MAX_METADATA_BYTES:
-                        raise ValueError("Release metadata exceeds the size limit")
-                    self._wheels = parse_assets(json.loads(raw))
+                    self._wheels, self._releases, self._limited, self._unverified_assets = discover(policy)
                     self._checked_at, self._error = time.time(), None
+                    updated = True
                 except (OSError, ValueError, TypeError, KeyError) as exc:
                     self._error = (
                         "无法更新社区版本目录，已使用已保存的版本信息。请检查网络或全局代理设置。 / Cannot refresh community releases; using saved metadata. Check network/proxy settings. "
@@ -192,7 +263,11 @@ class Catalog:
                 for w in self._wheels
             ]
             return WindowsAttentionCatalog(
-                origin="bundled" if self._checked_at is None else "cached" if self._error else "live",
+                release=self._releases[0],
+                release_count=len(self._releases),
+                limited=self._limited,
+                unverified_assets=self._unverified_assets,
+                origin="bundled" if self._checked_at is None else "live" if updated else "cached",
                 checked_at=self._checked_at,
                 error=self._error,
                 reason=None if any(w.compatible for w in wheels) else "no_matching_build",
@@ -222,10 +297,14 @@ def permitted_download(url: str) -> bool:
     ):
         return False
     if value.hostname == "github.com":
-        return (
-            url.startswith(PREFIX)
-            and not value.query
-            and bool(NAME.fullmatch(urllib.parse.unquote(value.path.rsplit("/", 1)[-1])))
+        if not url.startswith(DOWNLOAD_PREFIX) or value.query:
+            return False
+        parts = url[len(DOWNLOAD_PREFIX) :].split("/")
+        if len(parts) != 2:
+            return False
+        release, filename = map(urllib.parse.unquote, parts)
+        return bool(TAG.fullmatch(release) and NAME.fullmatch(filename)) and url == (
+            _download_prefix(release) + urllib.parse.quote(filename, safe="")
         )
     # GitHub release assets redirect to this signed CDN; no arbitrary GitHubusercontent subdomains.
     return value.hostname == "release-assets.githubusercontent.com" and value.path.startswith(
@@ -246,7 +325,7 @@ def download(wheel, destination, cancel, progress, *, proxy=None, opener=None):
     if cancel.is_set():
         raise InterruptedError()
     if (
-        wheel.url != PREFIX + urllib.parse.quote(wheel.filename, safe="")
+        wheel.url != _download_prefix(wheel.release) + urllib.parse.quote(wheel.filename, safe="")
         or not NAME.fullmatch(wheel.filename)
         or not re.fullmatch(r"[a-f0-9]{64}", wheel.sha256)
     ):

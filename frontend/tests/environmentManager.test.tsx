@@ -462,7 +462,7 @@ it('retains official manual sources when DTK matching fails', async () => {
 
 function windowsCatalog(compatible = false): WindowsAttentionCatalog {
   return {
-    source_url: 'https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/tag/v0.9.6', release: 'v0.9.6',
+    source_url: 'https://github.com/mjun0812/flash-attention-prebuild-wheels/releases', release: 'v0.9.6',
     provider: 'mjun0812-community-windows', origin: 'live', checked_at: 1, error: null, reason: compatible ? null : 'no_matching_build',
     runtime: {python:'3.12.10',torch:compatible ? '2.11.0+cu128' : '2.5.1+cu128',cuda_runtime:'12.8',platform:'Windows',machine:'AMD64'},
     wheels: [{id:'mjun0812-cp312',package:'flash-attn',version:'2.8.3+cu128torch2.11',filename:'flash_attn-2.8.3+cu128torch2.11-cp312-cp312-win_amd64.whl',url:'https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.6/flash_attn-2.8.3%2Bcu128torch2.11-cp312-cp312-win_amd64.whl',source_url:'https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/tag/v0.9.6',provider:'mjun0812-community-windows',size_bytes:250730469,sha256:'a'.repeat(64),torch:'2.11',cuda:'12.8',python_tag:'cp312',platform_tag:'win_amd64',validation:'kernel_probe_required',compatible,reason:compatible ? null : 'torch_version_mismatch'}],
@@ -512,7 +512,7 @@ it('makes catalog failure explicit while allowing bundled matching and manual up
 it('distinguishes no matching build from request failure and keeps the publisher and upload controls', async () => {
   server.use(http.get('/api/environment/windows/wheels',()=>HttpResponse.json(windowsCatalog(false))));
   const view = render(<EnvironmentManagerPanel focusPackage="flash-attn"/>);
-  expect(await screen.findByText(/这个发布批次没有适合当前环境的安装包/)).toBeInTheDocument();
+  expect(await screen.findByText(/已查询的版本列表中没有适合当前环境的安装包/)).toBeInTheDocument();
   expect(screen.getByText('PyTorch 版本不匹配')).toBeInTheDocument();
   expect(screen.queryByRole('combobox',{name:'Windows FlashAttention 版本'})).not.toBeInTheDocument();
   expect(screen.getByRole('button',{name:'上传 wheel'})).toBeEnabled();
