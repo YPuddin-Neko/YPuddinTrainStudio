@@ -39,6 +39,99 @@ const animaDualConfig = (strategy: 'ddp' | 'fsdp') => {
   return value;
 };
 
+function textLoraCase(family: string, backbone = false, gpus = 1) {
+  const config = animaLokrConfig();
+  config.model.family = family; config.model.sdxl_max_token_length = 150;
+  config.adapter.algo = 'lora';
+  config.training.train_backbone = backbone; config.training.train_text_encoder = true;
+  config.dataset.text_encoding = 'online'; config.memory.offload_text_encoder = false;
+  config.loop.gpu_count = gpus; config.loop.distributed_strategy = 'ddp';
+  const components = family === 'sdxl' ? ['text_encoder', 'text_encoder_2'] : ['text_encoder'];
+  const candidate = {
+    ...animaPolicy, id: `dtk-${family}-text-lora-bf16-fp32-contractions-v1`,
+    text_linear_forward: 'bf16-rounded-operands-fp32-contraction-bf16-output',
+    text_linear_backward_implementation: 'linear-bf16-operands-fp32-compute-v1',
+    adapter_implementation: 'lora-bf16-operands-fp32-contractions-v1',
+    adapter_forward: 'bf16-rounded-operands-fp32-contractions-bf16-intermediates',
+    adapter_backward: 'fp32-contractions-grad-original-dtype',
+    trainable_components: backbone ? ['backbone', ...components] : components,
+    operator_components: ['backbone', ...components],
+    distributed_strategy: gpus === 1 ? 'single' : 'ddp',
+    ...(family === 'sdxl' ? {conv_forward: 'fp32-output-bf16', conv_implementation: 'conv2d-fp32-output-bf16-v1', sdxl_max_token_length: 150} : {}),
+  };
+  return {config, candidate};
+}
+
+it.each(['anima', 'sdxl', 'krea2'])('confirms %s text-only and joint LoRA policies including exact component and length identities', family => {
+  for (const backbone of [false, true]) for (const gpus of [1, 2]) {
+    const {config, candidate} = textLoraCase(family, backbone, gpus);
+    expect(confirmedTrainingComputePolicy(candidate, config)).toEqual(candidate);
+    expect(confirmedTrainingComputePolicy(candidate, {...config, dataset: {...config.dataset, text_encoding: 'auto'}})).toEqual(candidate);
+    for (const key of Object.keys(candidate)) {
+      const missing: Record<string, unknown> = {...candidate}; delete missing[key];
+      expect(confirmedTrainingComputePolicy(missing, config)).toBeNull();
+    }
+    for (const invalid of [
+      {...candidate, trainable_components: []}, {...candidate, operator_components: ['text_encoder']},
+      {...candidate, distributed_strategy: gpus === 1 ? 'ddp' : 'single'},
+      {...candidate, linear_forward: 'native-bf16'}, {...candidate, adapter_implementation: 'unknown'},
+      {...candidate, fsdp_param_dtype: 'bfloat16'},
+      {...candidate, sdxl_max_token_length: family === 'sdxl' ? 225 : 150},
+    ]) expect(confirmedTrainingComputePolicy(invalid, config)).toBeNull();
+    expect(currentTrainingComputePolicy(candidate, config, JSON.stringify(config), true)).toBeNull();
+    expect(currentTrainingComputePolicy(candidate, {...config, training: {...config.training, train_backbone: !backbone}}, JSON.stringify(config), false)).toBeNull();
+  }
+});
+
+it('rejects unsupported text LoRA drafts instead of displaying a managed precision', () => {
+  const {config, candidate} = textLoraCase('anima');
+  for (const invalid of [
+    {...config, training: {...config.training, train_text_encoder: false}},
+    {...config, loop: {...config.loop, deterministic: false}},
+    {...config, loop: {...config.loop, distributed_strategy: 'fsdp'}},
+    {...config, loop: {...config.loop, gpu_count: 1.5}},
+    {...config, adapter: {...config.adapter, algo: 'lokr'}},
+    {...config, adapter: {...config.adapter, mode: 'merged'}},
+    {...config, adapter: {...config.adapter, param_dtype: 'bf16'}},
+    {...config, adapter: {...config.adapter, dora: true}},
+    {...config, adapter: {...config.adapter, rules: [{match:'*', algo:'loha'}]}},
+    {...config, memory: {...config.memory, offload_text_encoder: true}},
+    {...config, memory: {...config.memory, base_precision: 'fp8_e4m3'}},
+    {...config, memory: {...config.memory, compile: true}},
+    {...config, memory: {...config.memory, blocks_to_swap: 1}},
+    {...config, memory: {...config.memory, activation_checkpointing: 'unsloth'}},
+    {...config, dataset: {...config.dataset, text_encoding: 'cached'}},
+  ]) expect(confirmedTrainingComputePolicy(candidate, invalid)).toBeNull();
+});
+
+it('shows effective text-only precision and restores the original draft when reproducibility is disabled', () => {
+  const {config: initial, candidate} = textLoraCase('sdxl');
+  function Editor() {
+    const [value, setValue] = React.useState(initial);
+    return <><SchemaForm schema={schema} value={value} onChange={setValue} computePolicy={candidate} compact showAdvanced groupFilter={['loop','memory']}/><output data-testid="draft">{JSON.stringify(value)}</output></>;
+  }
+  render(<Editor/>);
+  expect(screen.getByRole('status', {name:'混合精度'})).toHaveTextContent('使用 FP32 运算提高可复现性');
+  expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('文本编码器 LoRA 训练');
+  expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual(initial);
+  fireEvent.click(screen.getByRole('checkbox', {name:'可复现训练'}));
+  expect(screen.getByRole('combobox', {name:'混合精度'})).toHaveTextContent('BF16');
+  expect(screen.getByRole('checkbox', {name:'允许 TF32'})).toBeChecked();
+  expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual({...initial, loop:{...initial.loop, deterministic:false}});
+});
+
+it.each([150, 225])('keeps SDXL %s-token LoKr separate from the previous short-caption policy', length => {
+  const config = animaLokrConfig(); config.model.family = 'sdxl'; config.model.sdxl_max_token_length = length;
+  const candidate = {...animaPolicy, id:'dtk-sdxl-long-text-bf16-conv-fp32-linear-compute-v1', conv_forward:'fp32-output-bf16', conv_implementation:'conv2d-fp32-output-bf16-v1', sdxl_max_token_length:length};
+  expect(confirmedTrainingComputePolicy(candidate, config)).toEqual(candidate);
+  expect(confirmedTrainingComputePolicy(sdxlPolicy, config)).toBeNull();
+  for (const invalid of [
+    {...candidate, sdxl_max_token_length: 75}, {...candidate, linear_forward: 'native-bf16'},
+    {...candidate, conv_implementation: 'unknown'}, {...candidate, adapter_implementation: 'lora-bf16-operands-fp32-contractions-v1'},
+  ]) expect(confirmedTrainingComputePolicy(invalid, config)).toBeNull();
+  expect(confirmedTrainingComputePolicy(candidate, {...config, model:{...config.model, sdxl_max_token_length:75}})).toBeNull();
+});
+
 it.each(['ddp','fsdp'] as const)('accepts Anima %s only for its complete supported multi-GPU scope', strategy => {
   const config = animaDualConfig(strategy);
   const verified = strategy === 'ddp' ? animaDdpPolicy : animaFsdpPolicy;
@@ -222,7 +315,7 @@ it('presents Anima computation and checkpointing limits in English', async () =>
   expect(hint.textContent).not.toMatch(/[\u4e00-\u9fff]/);
   expect(hint.textContent).not.toContain('native BF16');
   fireEvent.click(within(hint).getByRole('button',{name:'Reproducible training help'}));
-  expect(screen.getByRole('tooltip')).toHaveTextContent('Activation checkpointing must be off or use standard blocks');
+  expect(screen.getByRole('tooltip')).toHaveTextContent('Configuration validation explains the effective settings');
 });
 
 const shardedKreaConfig = () => {
@@ -389,7 +482,7 @@ it('leaves original controls editable without a current runtime policy and does 
   expect(screen.getByRole('checkbox',{name:'允许 TF32'})).toBeChecked();
   expect(screen.queryByText('FP32 计算（关闭混合精度）')).not.toBeInTheDocument();
   expect(configOptionLabel('loop.mixed_precision','no')).toBe('关闭自动混合精度');
-  expect(configFieldHelp('loop.mixed_precision','')).toContain('不等同于所有训练都使用 FP32');
+  expect(configFieldHelp('loop.mixed_precision','')).toContain('不等同于全程 FP32');
 });
 
 it('presents the same effective policy in English without leaking Chinese fallback text', async () => {

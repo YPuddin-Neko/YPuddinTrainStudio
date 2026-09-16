@@ -14,8 +14,13 @@ BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID = "linear-bf16-operands-fp32-compute-
 DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID = "dtk-krea2-fsdp-bf16-linear-fp32-backward-v1"
 DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID = "dtk-sdxl-bf16-conv-fp32-linear-backward-v1"
 DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID = "dtk-sdxl-fsdp-bf16-conv-fp32-linear-backward-v1"
+DTK_SDXL_LONG_TEXT_POLICY_ID = "dtk-sdxl-long-text-bf16-conv-fp32-linear-compute-v1"
 BF16_LINEAR_BACKWARD_IMPLEMENTATION_ID = "linear-bf16-forward-fp32-backward-v1"
 FP32_CONV_IMPLEMENTATION_ID = "conv2d-fp32-output-bf16-v1"
+BF16_LORA_FP32_IMPLEMENTATION_ID = "lora-bf16-operands-fp32-contractions-v1"
+DTK_TEXT_LORA_POLICY_IDS = {
+    family: f"dtk-{family}-text-lora-bf16-fp32-contractions-v1" for family in ("anima", "sdxl", "krea2")
+}
 
 
 class _RequiredTrainingComputePolicy(TypedDict):
@@ -34,6 +39,66 @@ class TrainingComputePolicy(_RequiredTrainingComputePolicy, total=False):
     fsdp_reduce_dtype: Literal["float32"]
     conv_forward: Literal["fp32-output-bf16"]
     conv_implementation: str
+    text_linear_forward: Literal["bf16-rounded-operands-fp32-contraction-bf16-output"]
+    text_linear_backward_implementation: str
+    adapter_forward: Literal["bf16-rounded-operands-fp32-contractions-bf16-intermediates"]
+    adapter_backward: Literal["fp32-contractions-grad-original-dtype"]
+    adapter_implementation: str
+    trainable_components: list[str]
+    operator_components: list[str]
+    distributed_strategy: Literal["single", "ddp"]
+    sdxl_max_token_length: Literal[75, 150, 225]
+
+
+def _text_lora_policy(cfg, device_type, profile):
+    if not (
+        profile == "linux-dtk"
+        and device_type == "cuda"
+        and cfg.model.family in DTK_TEXT_LORA_POLICY_IDS
+        and cfg.loop.deterministic
+        and cfg.loop.mixed_precision == "bf16"
+        and cfg.loop.distributed_strategy == "ddp"
+        and cfg.training.mode == "adapter"
+        and cfg.training.train_text_encoder
+        and cfg.adapter.algo == "lora"
+        and cfg.adapter.mode in {"auto", "bypass"}
+        and cfg.adapter.param_dtype == "fp32"
+        and not cfg.adapter.dora
+        and all(rule.algo in {None, "lora", "none"} for rule in cfg.adapter.rules)
+        and not cfg.memory.base_precision.startswith("fp8")
+        and cfg.memory.activation_checkpointing in {"none", "block"}
+        and not cfg.memory.compile
+        and cfg.memory.blocks_to_swap == 0
+        and cfg.dataset.text_encoding in {"auto", "online"}
+        and not cfg.memory.offload_text_encoder
+    ):
+        return None
+    text = ["text_encoder"] + (["text_encoder_2"] if cfg.model.family == "sdxl" else [])
+    policy: TrainingComputePolicy = {
+        "id": DTK_TEXT_LORA_POLICY_IDS[cfg.model.family],
+        "mixed_precision": "bf16",
+        "allow_tf32": False,
+        "attention": "sdpa",
+        "sdpa_backend": "math",
+        "linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
+        "linear_backward": "fp32-contractions-grad-original-dtype",
+        "linear_backward_implementation": BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID,
+        "text_linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
+        "text_linear_backward_implementation": BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID,
+        "adapter_forward": "bf16-rounded-operands-fp32-contractions-bf16-intermediates",
+        "adapter_backward": "fp32-contractions-grad-original-dtype",
+        "adapter_implementation": BF16_LORA_FP32_IMPLEMENTATION_ID,
+        "trainable_components": sorted(text + (["backbone"] if cfg.training.train_backbone else [])),
+        "operator_components": sorted(["backbone", *text]),
+        "distributed_strategy": "ddp" if cfg.loop.gpu_count > 1 else "single",
+    }
+    if cfg.model.family == "sdxl":
+        policy.update(
+            conv_forward="fp32-output-bf16",
+            conv_implementation=FP32_CONV_IMPLEMENTATION_ID,
+            sdxl_max_token_length=cfg.model.sdxl_max_token_length,
+        )
+    return policy
 
 
 def resolve_training_compute_config(
@@ -46,6 +111,11 @@ def resolve_training_compute_config(
     it neither initializes devices nor changes process-wide backend settings.
     """
     effective = cfg.model_copy(deep=True)
+    text_policy = _text_lora_policy(cfg, device_type, profile)
+    if text_policy is not None:
+        effective.memory.allow_tf32 = False
+        effective.model.attention = "sdpa"
+        return effective, text_policy
     if not (
         profile == "linux-dtk"
         and device_type == "cuda"
@@ -100,6 +170,29 @@ def resolve_training_compute_config(
     )
     if cfg.training.mode != "full" and not sdxl_lokr and not anima_linear:
         return effective, None
+
+    if sdxl_lokr and cfg.model.sdxl_max_token_length > 75:
+        if (
+            cfg.memory.activation_checkpointing not in {"none", "block"}
+            or cfg.memory.compile
+            or cfg.memory.blocks_to_swap
+        ):
+            raise ValueError("SDXL 长文本 BF16 可复现训练需要关闭编译/换块，并使用关闭或逐块重算")
+        effective.memory.allow_tf32 = False
+        effective.model.attention = "sdpa"
+        return effective, {
+            "id": DTK_SDXL_LONG_TEXT_POLICY_ID,
+            "mixed_precision": "bf16",
+            "allow_tf32": False,
+            "attention": "sdpa",
+            "sdpa_backend": "math",
+            "linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
+            "linear_backward": "fp32-contractions-grad-original-dtype",
+            "linear_backward_implementation": BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID,
+            "conv_forward": "fp32-output-bf16",
+            "conv_implementation": FP32_CONV_IMPLEMENTATION_ID,
+            "sdxl_max_token_length": cfg.model.sdxl_max_token_length,
+        }
 
     effective.memory.allow_tf32 = False
     effective.model.attention = "sdpa"

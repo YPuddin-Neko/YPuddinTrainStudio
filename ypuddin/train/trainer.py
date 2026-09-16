@@ -33,6 +33,8 @@ from ypuddin.config.compute_policy import (
     DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
     DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
     DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID,
+    DTK_SDXL_LONG_TEXT_POLICY_ID,
+    DTK_TEXT_LORA_POLICY_IDS,
     resolve_training_compute_config,
     validate_resume_compute_policy,
 )
@@ -439,6 +441,8 @@ class Trainer:
         if self.compute_policy is not None:
             self.progress.extra["compute_policy"] = dict(self.compute_policy)
             self.progress.extra["compute_runtime"] = self.compute_runtime
+        if getattr(self, "_text_adapter_operator_counts", None) is not None:
+            self.progress.extra["text_adapter_operator_counts"] = self._text_adapter_operator_counts
         self._install_signal_handlers()
         self._prepared = True
         self.emit(
@@ -459,7 +463,12 @@ class Trainer:
             DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID,
         }:
             raise ValueError("BF16 分片计算策略必须由 FSDP 分片训练器安装")
-        if (getattr(self, "compute_policy", None) or {}).get("id") == DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID:
+        if (getattr(self, "compute_policy", None) or {}).get("id") in DTK_TEXT_LORA_POLICY_IDS.values():
+            self._install_text_adapter_compute_operators()
+        if (getattr(self, "compute_policy", None) or {}).get("id") in {
+            DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
+            DTK_SDXL_LONG_TEXT_POLICY_ID,
+        }:
             self._install_sdxl_compute_operators()
         if (getattr(self, "compute_policy", None) or {}).get("id") in {
             DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID,
@@ -477,6 +486,19 @@ class Trainer:
         if cfg.memory.compile:
             self.compile_blocks()
 
+    def _text_compute_modules(self):
+        return {"backbone": self.loaded.backbone, **self.loaded.text.trainable_modules()}
+
+    def _install_text_adapter_compute_operators(self) -> None:
+        from .text_adapter_compute import install_text_adapter_compute
+
+        if getattr(self, "_text_adapter_operator_counts", None) is not None:
+            raise ValueError("文本 LoRA 算子策略不能重复安装")
+        self._text_adapter_compute_restore, self._text_adapter_operator_counts = install_text_adapter_compute(
+            self._text_compute_modules(), self.compute_policy
+        )
+        self._validate_training_compute_policy()
+
     def _install_anima_compute_operators(self) -> None:
         """Use BF16-rounded operands and outputs around FP32 training Linear math."""
         from .linear_backward import install_linear_bf16_operands_fp32_compute
@@ -491,11 +513,19 @@ class Trainer:
     def _install_sdxl_compute_operators(self) -> None:
         """Install the same operators before device movement or FSDP wrapping."""
         from .conv_forward import install_conv_fp32_forward
-        from .linear_backward import install_linear_bf16_forward_fp32_backward
+        from .linear_backward import (
+            install_linear_bf16_forward_fp32_backward,
+            install_linear_bf16_operands_fp32_compute,
+        )
 
         if getattr(self, "_linear_backward_counts", None) is not None:
             raise ValueError("BF16 算子计算策略不能重复安装")
-        restore, counts = install_linear_bf16_forward_fp32_backward(self.loaded.backbone)
+        installer = (
+            install_linear_bf16_operands_fp32_compute
+            if self.compute_policy["id"] == DTK_SDXL_LONG_TEXT_POLICY_ID
+            else install_linear_bf16_forward_fp32_backward
+        )
+        restore, counts = installer(self.loaded.backbone)
         try:
             self._conv_forward_restore, self._conv_forward_counts = install_conv_fp32_forward(
                 self.loaded.backbone
@@ -925,6 +955,11 @@ class Trainer:
             restore_rng(rng, {"main": self.gen, "loader": self.loader_gen}, device=self.device)
 
     def _text_cond(self, captions: list[str]) -> TextCond:
+        if (getattr(self, "compute_policy", None) or {}).get("id") in DTK_TEXT_LORA_POLICY_IDS.values():
+            # Online text runs before the backbone autocast context. Verify
+            # actual encoder/adapter bindings before its first computation.
+            self._validate_training_compute_policy()
+            validate_compute_runtime(capture_compute_runtime(self.device), self.compute_runtime)
         if self.text_mode == "cached" and self.text_cache is not None:
             entries = []
             for c in captions:
@@ -968,6 +1003,22 @@ class Trainer:
 
     def _validate_training_compute_policy(self):
         policy = getattr(self, "compute_policy", None)
+        if (policy or {}).get("id") in DTK_TEXT_LORA_POLICY_IDS.values():
+            from .text_adapter_compute import validate_text_adapter_compute
+
+            _, expected = resolve_training_compute_config(self.cfg, self.device.type, current_profile())
+            if (
+                expected != policy
+                or self.compute_dtype != torch.bfloat16
+                or self.cfg.memory.allow_tf32
+                or self.cfg.model.attention != "sdpa"
+            ):
+                raise ValueError("文本 LoRA 计算策略与当前训练设置不一致")
+            counts = getattr(self, "_text_adapter_operator_counts", None)
+            if not counts:
+                raise ValueError("文本 LoRA 计算策略未完整安装")
+            validate_text_adapter_compute(self._text_compute_modules(), counts, policy)
+            return
         if (policy or {}).get("id") not in {
             DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID,
             DTK_ANIMA_DDP_BF16_LINEAR_COMPUTE_POLICY_ID,
@@ -975,6 +1026,7 @@ class Trainer:
             DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
             DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
             DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID,
+            DTK_SDXL_LONG_TEXT_POLICY_ID,
         }:
             return
         from .linear_backward import validate_linear_backward_installation
@@ -1003,7 +1055,11 @@ class Trainer:
             from .linear_backward import validate_lokr_bypass_backbone
 
             validate_lokr_bypass_backbone(self.loaded.backbone)
-        if policy["id"] in {DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID, DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID}:
+        if policy["id"] in {
+            DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
+            DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID,
+            DTK_SDXL_LONG_TEXT_POLICY_ID,
+        }:
             from .conv_forward import validate_conv_forward_installation
 
             validate_conv_forward_installation(
