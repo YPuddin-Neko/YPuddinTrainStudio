@@ -171,8 +171,18 @@ def test_active_policy_drift_fails_before_autocast(tmp_path, monkeypatch):
         trainer._autocast()
 
 
-@pytest.mark.parametrize("mode", ["full", "adapter"])
-def test_anima_product_installs_new_linear_recipe_and_checks_real_modules(tmp_path, monkeypatch, mode):
+@pytest.mark.parametrize(
+    "mode,gpu_count,strategy",
+    [
+        ("full", 1, "ddp"),
+        ("adapter", 1, "ddp"),
+        ("adapter", 2, "ddp"),
+        ("full", 2, "fsdp"),
+    ],
+)
+def test_anima_product_installs_new_linear_recipe_and_checks_real_modules(
+    tmp_path, monkeypatch, mode, gpu_count, strategy
+):
     from torch import nn
 
     from ypuddin.adapters.frozen import FrozenLinear
@@ -182,6 +192,7 @@ def test_anima_product_installs_new_linear_recipe_and_checks_real_modules(tmp_pa
 
     cfg, _ = _trainer(tmp_path, monkeypatch, resume=False, precision="bf16")
     cfg.training.mode = mode
+    cfg.loop.gpu_count, cfg.loop.distributed_strategy = gpu_count, strategy
     trainer = Trainer(cfg, device="cuda:0")  # Device metadata only.
     layer = nn.Linear(4, 4)
     if mode == "adapter":
@@ -189,7 +200,13 @@ def test_anima_product_installs_new_linear_recipe_and_checks_real_modules(tmp_pa
     trainer.loaded = SimpleNamespace(backbone=nn.Sequential(layer))
     with pytest.raises(ValueError, match="未完整安装"):
         trainer._validate_training_compute_policy()
-    trainer._install_anima_compute_operators()
+    if strategy == "fsdp":
+        with pytest.raises(ValueError, match="FSDP"):
+            trainer._place_training_model()
+        trainer._install_anima_compute_operators()
+    else:
+        monkeypatch.setattr(trainer.loaded.backbone, "to", lambda _: trainer.loaded.backbone)
+        trainer._place_training_model()
     try:
         trainer._validate_training_compute_policy()
         with pytest.raises(ValueError, match="重复安装"):
@@ -207,3 +224,31 @@ def test_anima_product_installs_new_linear_recipe_and_checks_real_modules(tmp_pa
                 trainer._validate_training_compute_policy()
     finally:
         trainer._linear_backward_restore()
+
+
+@pytest.mark.parametrize("mode,strategy", [("full", "fsdp"), ("adapter", "ddp")])
+@pytest.mark.parametrize(
+    "saved_id", ["dtk-anima-bf16-linear-fp32-compute-v1", "diagnostic-anima-dual", "dtk-full-fp32-math-v1"]
+)
+def test_anima_distributed_old_policy_rejected_before_loading_or_writing(
+    tmp_path, monkeypatch, mode, strategy, saved_id
+):
+    import ypuddin.train.trainer as module
+
+    cfg, _ = _trainer(tmp_path, monkeypatch, precision="bf16")
+    cfg.training.mode = mode
+    cfg.loop.gpu_count, cfg.loop.distributed_strategy = 2, strategy
+    trainer = Trainer(cfg, device="cuda")
+    _write_metadata(
+        tmp_path, {"deterministic": True, "compute_policy": trainer.compute_policy | {"id": saved_id}}
+    )
+    original = b"preserve original config\n"
+    (tmp_path / "config.toml").write_bytes(original)
+    monkeypatch.setattr(module, "get_family", lambda _: SimpleNamespace())
+    monkeypatch.setattr(trainer, "_check_capabilities", lambda: None)
+    monkeypatch.setattr(
+        trainer, "_seed_all", lambda: pytest.fail("device setup started before policy rejection")
+    )
+    with pytest.raises(ValueError, match="计算"):
+        trainer.prepare_data()
+    assert (tmp_path / "config.toml").read_bytes() == original

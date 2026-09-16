@@ -19,6 +19,9 @@ from transformers.optimization import Adafactor
 
 from ypuddin.config import TrainConfig
 from ypuddin.config.compute_policy import (
+    BF16_LINEAR_BACKWARD_IMPLEMENTATION_ID,
+    BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID,
+    DTK_ANIMA_FSDP_BF16_LINEAR_COMPUTE_POLICY_ID,
     DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
     DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
     DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID,
@@ -28,6 +31,7 @@ from ypuddin.optim.sharded import prepare_sharded_optimizer
 from ypuddin.train.conv_forward import install_conv_fp32_forward, validate_conv_forward_installation
 from ypuddin.train.linear_backward import (
     install_linear_bf16_forward_fp32_backward,
+    install_linear_bf16_operands_fp32_compute,
     validate_linear_backward_installation,
 )
 from ypuddin.train.sharded_state import load_sharded_checkpoint, save_sharded_checkpoint
@@ -40,7 +44,7 @@ class Model(nn.Module):
         self.family = family
         self.blocks = nn.ModuleList(
             [nn.Linear(17, 13), nn.Linear(13, 7)]
-            if family == "krea2"
+            if family != "sdxl"
             else [nn.Conv2d(3, 4, 3, padding=1), nn.Linear(4, 7)]
         )
 
@@ -59,6 +63,7 @@ class ConvBoundary(TorchDispatchMode):
         super().__init__()
         self.forward = []
         self.backward = []
+        self.matrix = []
 
     def __torch_dispatch__(self, func, types, args=(), kwargs=None):
         result = func(*args, **(kwargs or {}))
@@ -66,6 +71,10 @@ class ConvBoundary(TorchDispatchMode):
             self.forward.append(([value.dtype for value in args[:3] if value is not None], result.dtype))
         elif func is torch.ops.aten.convolution_backward.default:
             self.backward.append([value.dtype for value in args[:3]])
+        elif func in {torch.ops.aten.mm.default, torch.ops.aten.bmm.default, torch.ops.aten.addmm.default}:
+            self.matrix.append(
+                ([value.dtype for value in args if isinstance(value, torch.Tensor)], result.dtype)
+            )
         return result
 
 
@@ -125,7 +134,16 @@ def worker(rank, directory, family):
         torch.manual_seed(442)
         model = Model(family)
         original_ids = [id(parameter) for parameter in model.parameters()]
-        restore, counts = install_linear_bf16_forward_fp32_backward(model)
+        restore, counts = (
+            install_linear_bf16_operands_fp32_compute(model)
+            if family == "anima"
+            else install_linear_bf16_forward_fp32_backward(model)
+        )
+        implementation = (
+            BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID
+            if family == "anima"
+            else BF16_LINEAR_BACKWARD_IMPLEMENTATION_ID
+        )
         conv_restore, conv_counts = (
             install_conv_fp32_forward(model) if family == "sdxl" else (lambda: None, None)
         )
@@ -150,7 +168,7 @@ def worker(rank, directory, family):
             hooks.append(
                 block.register_forward_hook(lambda module, inputs, output: output_dtypes.append(output.dtype))
             )
-        validate_linear_backward_installation(model, counts)
+        validate_linear_backward_installation(model, counts, expected_implementation=implementation)
         if conv_counts is not None:
             validate_conv_forward_installation(model, conv_counts)
         optimizer = prepare_sharded_optimizer(
@@ -172,7 +190,7 @@ def worker(rank, directory, family):
         def step(index):
             generator = torch.Generator().manual_seed(442 + rank * 10 + index)
             input_shape, target_shape = (
-                ((2, 5, 17), (2, 5, 7)) if family == "krea2" else ((2, 3, 5, 7), (2, 5, 7, 7))
+                ((2, 5, 17), (2, 5, 7)) if family != "sdxl" else ((2, 3, 5, 7), (2, 5, 7, 7))
             )
             x = torch.randn(input_shape, generator=generator).requires_grad_()
             target = torch.randn(target_shape, generator=generator)
@@ -195,6 +213,11 @@ def worker(rank, directory, family):
                 assert all(set(inputs) == {torch.float32} for inputs in observed.backward)
             else:
                 assert not observed.forward and not observed.backward
+            if family == "anima":
+                assert observed.matrix and all(
+                    set(inputs) == {torch.float32} and output == torch.float32
+                    for inputs, output in observed.matrix
+                )
             for parameter in model.parameters():
                 assert isinstance(parameter, DTensor) and parameter.dtype == torch.float32
                 assert parameter.grad.dtype == parameter.grad.to_local().dtype == torch.float32
@@ -222,6 +245,8 @@ def worker(rank, directory, family):
         assert policy["id"] == (
             DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID
             if family == "krea2"
+            else DTK_ANIMA_FSDP_BF16_LINEAR_COMPUTE_POLICY_ID
+            if family == "anima"
             else DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID
         )
         assert policy["fsdp_param_dtype"] == "bfloat16" and policy["fsdp_reduce_dtype"] == "float32"
@@ -292,7 +317,7 @@ def worker(rank, directory, family):
         scheduler.load_state_dict(loaded["scheduler"])
         assert torch.equal(expected_loss, step(2))
         assert exact(reference, state())
-        validate_linear_backward_installation(model, counts)
+        validate_linear_backward_installation(model, counts, expected_implementation=implementation)
         if conv_counts is not None:
             validate_conv_forward_installation(model, conv_counts)
         conv_restore()
@@ -318,7 +343,7 @@ def worker(rank, directory, family):
         dist.destroy_process_group()
 
 
-@pytest.mark.parametrize("family", ["krea2", "sdxl"])
+@pytest.mark.parametrize("family", ["krea2", "sdxl", "anima"])
 def test_two_rank_bf16_forward_fp32_backward_and_exact_sharded_resume(tmp_path, family):
     if not hasattr(fsdp, "fully_shard"):
         pytest.skip("Installed Torch lacks FSDP2")

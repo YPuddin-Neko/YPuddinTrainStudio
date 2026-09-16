@@ -13,6 +13,8 @@ const bf16Policy = {...policy,id:'dtk-krea2-fsdp-bf16-linear-fp32-backward-v1',m
 const sdxlPolicy = {...policy,id:'dtk-sdxl-bf16-conv-fp32-linear-backward-v1',mixed_precision:'bf16',linear_forward:'native-bf16',linear_backward:'fp32-contractions-grad-original-dtype',linear_backward_implementation:'linear-bf16-forward-fp32-backward-v1',conv_forward:'fp32-output-bf16',conv_implementation:'conv2d-fp32-output-bf16-v1'};
 const sdxlShardedPolicy = {...sdxlPolicy,id:'dtk-sdxl-fsdp-bf16-conv-fp32-linear-backward-v1',fsdp_param_dtype:'bfloat16',fsdp_reduce_dtype:'float32'};
 const animaPolicy = {...policy,id:'dtk-anima-bf16-linear-fp32-compute-v1',mixed_precision:'bf16',linear_forward:'bf16-rounded-operands-fp32-contraction-bf16-output',linear_backward:'fp32-contractions-grad-original-dtype',linear_backward_implementation:'linear-bf16-operands-fp32-compute-v1'};
+const animaDdpPolicy = {...animaPolicy,id:'dtk-anima-ddp-bf16-linear-fp32-compute-v1'};
+const animaFsdpPolicy = {...animaPolicy,id:'dtk-anima-fsdp-bf16-linear-fp32-compute-v1',fsdp_param_dtype:'bfloat16',fsdp_reduce_dtype:'float32'};
 const fullConfig = () => {
   const value = schemaDefaults(schema);
   value.model.family = 'anima'; value.model.attention = 'xformers';
@@ -30,6 +32,104 @@ const animaLokrConfig = () => {
   value.memory.base_precision = 'auto';
   return value;
 };
+
+const animaDualConfig = (strategy: 'ddp' | 'fsdp') => {
+  const value = strategy === 'ddp' ? animaLokrConfig() : fullConfig();
+  value.loop.gpu_count = 2; value.loop.distributed_strategy = strategy;
+  return value;
+};
+
+it.each(['ddp','fsdp'] as const)('accepts Anima %s only for its complete supported multi-GPU scope', strategy => {
+  const config = animaDualConfig(strategy);
+  const verified = strategy === 'ddp' ? animaDdpPolicy : animaFsdpPolicy;
+  for (const gpu_count of [2,4]) for (const activation_checkpointing of ['none','block']) {
+    expect(confirmedTrainingComputePolicy(verified,{...config,loop:{...config.loop,gpu_count},memory:{...config.memory,activation_checkpointing}})).toEqual(verified);
+  }
+  for (const changed of [
+    ...[0,1,1.5,'2'].map(gpu_count=>({...config,loop:{...config.loop,gpu_count}})),
+    {...config,loop:{...config.loop,distributed_strategy:strategy==='ddp'?'fsdp':'ddp'}},
+    {...config,training:{...config.training,mode:strategy==='ddp'?'full':'adapter'}},
+    {...config,training:{...config.training,train_backbone:false}},
+    {...config,training:{...config.training,train_text_encoder:true}},
+    {...config,loop:{...config.loop,deterministic:false}},
+    {...config,loop:{...config.loop,mixed_precision:'fp16'}},
+    {...config,model:{...config.model,family:'sdxl'}},
+    {...config,memory:{...config.memory,activation_checkpointing:'unsloth'}},
+  ]) expect(confirmedTrainingComputePolicy(verified,changed)).toBeNull();
+  if (strategy === 'ddp') {
+    for (const adapter of [
+      {...config.adapter,algo:'lora'}, {...config.adapter,mode:'weight'},
+      {...config.adapter,dora:true}, {...config.adapter,param_dtype:'bf16'},
+      {...config.adapter,rules:[{match:'*',algo:'loha'}]},
+    ]) expect(confirmedTrainingComputePolicy(verified,{...config,adapter})).toBeNull();
+    expect(confirmedTrainingComputePolicy(verified,{...config,memory:{...config.memory,base_precision:'fp8_e4m3'}})).toBeNull();
+  }
+});
+
+it.each(['ddp','fsdp'] as const)('rejects incomplete or conflicting Anima %s metadata without accepting stale validation', strategy => {
+  const config = animaDualConfig(strategy);
+  const verified = strategy === 'ddp' ? animaDdpPolicy : animaFsdpPolicy;
+  for (const key of Object.keys(verified)) {
+    const incomplete: Record<string, unknown> = {...verified}; delete incomplete[key];
+    expect(confirmedTrainingComputePolicy(incomplete,config)).toBeNull();
+  }
+  for (const changed of [
+    {...verified,id:'diagnostic-anima-dual-candidate'},
+    {...verified,linear_forward:'native-bf16'},
+    {...verified,linear_backward_implementation:'linear-bf16-forward-fp32-backward-v1'},
+    {...verified,conv_forward:'fp32-output-bf16'},
+    {...verified,fsdp_param_dtype:'float32'}, {...verified,fsdp_reduce_dtype:'bfloat16'},
+    ...(strategy === 'ddp' ? [{...verified,fsdp_param_dtype:'bfloat16',fsdp_reduce_dtype:'float32'}] : []),
+  ]) expect(confirmedTrainingComputePolicy(changed,config)).toBeNull();
+  const checked = JSON.stringify(config);
+  expect(currentTrainingComputePolicy(verified,config,checked,false)).toEqual(verified);
+  expect(currentTrainingComputePolicy(verified,config,checked,true)).toBeNull();
+  for (const changed of [
+    {...config,loop:{...config.loop,seed:config.loop.seed+1}},
+    {...config,loop:{...config.loop,gpu_count:4}},
+    {...config,loop:{...config.loop,distributed_strategy:strategy==='ddp'?'fsdp':'ddp'}},
+  ]) expect(currentTrainingComputePolicy(verified,changed,checked,false)).toBeNull();
+});
+
+it('does not interchange the three Anima policy identities', () => {
+  const rows = [[animaPolicy,fullConfig()],[animaDdpPolicy,animaDualConfig('ddp')],[animaFsdpPolicy,animaDualConfig('fsdp')]] as const;
+  for (const [index,[candidate]] of rows.entries()) for (const [other,[,config]] of rows.entries()) {
+    expect(confirmedTrainingComputePolicy(candidate,config)).toEqual(index===other ? candidate : null);
+  }
+});
+
+it.each(['ddp','fsdp'] as const)('renders Anima %s managed fields and restores the requested draft when disabled', strategy => {
+  const initial = animaDualConfig(strategy);
+  const candidate = strategy === 'ddp' ? animaDdpPolicy : animaFsdpPolicy;
+  function Editor() {
+    const [value,setValue] = React.useState(initial);
+    return <><SchemaForm schema={schema} value={value} onChange={setValue} computePolicy={candidate} compact showAdvanced groupFilter={['loop','memory']}/><output data-testid="draft">{JSON.stringify(value)}</output></>;
+  }
+  render(<Editor/>);
+  expect(screen.getByRole('status',{name:'混合精度'})).toHaveTextContent('BF16（线性层 FP32 运算）');
+  const hint=screen.getByTestId('field-loop.deterministic');
+  expect(hint).toHaveTextContent(strategy==='ddp' ? '每卡保留完整主模型' : '分担参数、梯度和优化器状态');
+  expect(hint).toHaveTextContent('先按 BF16 舍入输入与参数');
+  expect(hint).not.toHaveTextContent('使用单卡');
+  if (strategy==='fsdp') expect(hint).toHaveTextContent('按 BF16 汇集参数，以 FP32 汇总梯度');
+  expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual(initial);
+  fireEvent.click(screen.getByRole('checkbox',{name:'可复现训练'}));
+  expect(screen.getByRole('combobox',{name:'混合精度'})).toHaveTextContent('BF16');
+  expect(screen.getByRole('checkbox',{name:'允许 TF32'})).toBeChecked();
+  expect(screen.getByRole('combobox',{name:'注意力后端'})).toHaveTextContent('xFormers');
+  expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual({...initial,loop:{...initial.loop,deterministic:false}});
+});
+
+it.each(['ddp','fsdp'] as const)('describes Anima %s parallelism accurately in English', async strategy => {
+  await i18n.changeLanguage('en');
+  render(<SchemaForm schema={schema} value={animaDualConfig(strategy)} onChange={()=>{}} computePolicy={strategy==='ddp'?animaDdpPolicy:animaFsdpPolicy} compact showAdvanced groupFilter={['loop','memory']}/>);
+  const hint=screen.getByTestId('field-loop.deterministic');
+  expect(hint).toHaveTextContent(strategy==='ddp'?'each GPU keeps the complete backbone':'shards parameters, gradients and optimizer states');
+  expect(hint).toHaveTextContent('return BF16 outputs');
+  expect(hint.textContent).not.toMatch(/[\u4e00-\u9fff]/);
+  expect(hint.textContent).not.toContain('all gradients use FP32');
+  expect(screen.getByRole('status',{name:'Mixed Precision'})).toHaveTextContent('BF16 (FP32 linear operations)');
+});
 
 it.each(['full','adapter'])('confirms the Anima %s policy only for supported single-GPU drafts', mode => {
   const config = mode === 'full' ? fullConfig() : animaLokrConfig();

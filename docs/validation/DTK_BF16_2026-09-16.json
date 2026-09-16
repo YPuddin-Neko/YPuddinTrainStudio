@@ -1,7 +1,7 @@
 {
   "status": "in_progress",
   "all_required_validation_complete": false,
-  "recorded_at": "2026-09-16T07:48:51.264433+08:00",
+  "recorded_at": "2026-09-16T11:01:44.221674+08:00",
   "scope": "Real Hygon DTK BF16 strict resume; formal product and external diagnostic cases remain separate. No Windows GPU claim.",
   "source_commit": "4477bad82c69c8227d05f0f9387394579de07fc9",
   "source_product_manifest_sha256": "5a5b1ecd60737e3589829019b50a690b8e5a3d989e93e9773312481a394f0929",
@@ -258,6 +258,186 @@
       "original_assets_unchanged": true,
       "no_resolver_or_operator_patch": true,
       "report_file": "sdxl-product-full-4477bad-result/report.json"
+    },
+    "anima_full_single_2849e61_node10705": {
+      "sha256": "c40f24b5371871de89a2992fc4ce8f6b3fa4e3002dee26a5aef308f7acda56ab",
+      "passed": true,
+      "source_commit": "2849e61a86cfbeb19595046dd84650e9966b20e6",
+      "machine_port": 10705,
+      "product_entry_verification": true,
+      "phase_checks": {
+        "reference": {
+          "finished_all_ranks": true,
+          "expected_final_step": true,
+          "finite_losses": true,
+          "finite_weights": true,
+          "parameters_changed": true,
+          "all_optimizer_updates_observed": true,
+          "rank_parameters_equal": true,
+          "rank_shards_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "preview_file": true,
+          "full_state": true,
+          "no_nonfinite_skips": true,
+          "official_size_and_components_verified": true,
+          "full_model_manifest": true,
+          "only_backbone_exported": true,
+          "export_matches_full_training_state": true,
+          "native_reload_config_present": true,
+          "product_plan_policy": true,
+          "product_state_metadata": true,
+          "assigned_gpu": true,
+          "expected_initial_step": true
+        },
+        "resumed": {
+          "finished_all_ranks": true,
+          "expected_final_step": true,
+          "finite_losses": true,
+          "finite_weights": true,
+          "parameters_changed": true,
+          "all_optimizer_updates_observed": true,
+          "rank_parameters_equal": true,
+          "rank_shards_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "preview_file": true,
+          "full_state": true,
+          "no_nonfinite_skips": true,
+          "official_size_and_components_verified": true,
+          "full_model_manifest": true,
+          "only_backbone_exported": true,
+          "export_matches_full_training_state": true,
+          "native_reload_config_present": true,
+          "product_plan_policy": true,
+          "product_state_metadata": true,
+          "assigned_gpu": true,
+          "expected_initial_step": true
+        }
+      },
+      "comparison": {
+        "exact": true,
+        "finite": true,
+        "different_tensor_count": 0,
+        "max_absolute_difference": 0.0,
+        "rms_absolute_difference": 0.0,
+        "relative_l2_difference": 0.0,
+        "numerical_metrics_are_diagnostic_only": true,
+        "example_different_keys": [],
+        "tensor_count": 685,
+        "expected_tensor_count": 685,
+        "expected_tensor_count_matches": true
+      },
+      "states": {
+        "progress_exact": true,
+        "sampler_exact": true,
+        "rng_exact": true,
+        "scheduler_exact": true,
+        "optimizer_exact": true
+      },
+      "preview_exact": true,
+      "original_assets_unchanged": true,
+      "no_resolver_or_operator_patch": true,
+      "processes": {
+        "reference_process": {
+          "returncode": 0,
+          "wall_elapsed_s": 238.58657131902874,
+          "all_owned_processes_exited": true
+        },
+        "resume_process": {
+          "returncode": 0,
+          "wall_elapsed_s": 357.41663413099013,
+          "all_owned_processes_exited": true
+        }
+      },
+      "report_file": "new-server-10705/anima-single-product-full-result/report.json"
+    },
+    "anima_adapter_single_2849e61_node10705": {
+      "sha256": "a00548c4c50213642a27668dec272b9e52fab02ca2b1770d49a79769f07ece5d",
+      "passed": true,
+      "source_commit": "2849e61a86cfbeb19595046dd84650e9966b20e6",
+      "machine_port": 10705,
+      "product_entry_verification": true,
+      "phase_checks": {
+        "reference": {
+          "finished_all_ranks": true,
+          "expected_final_step": true,
+          "finite_losses": true,
+          "finite_weights": true,
+          "parameters_changed": true,
+          "all_optimizer_updates_observed": true,
+          "rank_parameters_equal": true,
+          "rank_shards_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "preview_file": true,
+          "full_state": true,
+          "no_nonfinite_skips": true,
+          "official_size_and_components_verified": true,
+          "final_adapter_weights": true,
+          "product_plan_policy": true,
+          "product_state_metadata": true,
+          "assigned_gpu": true,
+          "expected_initial_step": true
+        },
+        "resumed": {
+          "finished_all_ranks": true,
+          "expected_final_step": true,
+          "finite_losses": true,
+          "finite_weights": true,
+          "parameters_changed": true,
+          "all_optimizer_updates_observed": true,
+          "rank_parameters_equal": true,
+          "rank_shards_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "preview_file": true,
+          "full_state": true,
+          "no_nonfinite_skips": true,
+          "official_size_and_components_verified": true,
+          "final_adapter_weights": true,
+          "product_plan_policy": true,
+          "product_state_metadata": true,
+          "assigned_gpu": true,
+          "expected_initial_step": true
+        }
+      },
+      "comparison": {
+        "exact": true,
+        "finite": true,
+        "different_tensor_count": 0,
+        "max_absolute_difference": 0.0,
+        "rms_absolute_difference": 0.0,
+        "relative_l2_difference": 0.0,
+        "numerical_metrics_are_diagnostic_only": true,
+        "example_different_keys": [],
+        "tensor_count": 840,
+        "expected_tensor_count": 840,
+        "expected_tensor_count_matches": true
+      },
+      "states": {
+        "progress_exact": true,
+        "sampler_exact": true,
+        "rng_exact": true,
+        "scheduler_exact": true,
+        "optimizer_exact": true
+      },
+      "preview_exact": true,
+      "original_assets_unchanged": true,
+      "no_resolver_or_operator_patch": true,
+      "processes": {
+        "reference_process": {
+          "returncode": 0,
+          "wall_elapsed_s": 107.98242036392912,
+          "all_owned_processes_exited": true
+        },
+        "resume_process": {
+          "returncode": 0,
+          "wall_elapsed_s": 147.1142418719828,
+          "all_owned_processes_exited": true
+        }
+      },
+      "report_file": "new-server-10705/anima-single-product-adapter-result/report.json"
     }
   },
   "diagnostic_results": {
@@ -876,6 +1056,330 @@
       "source_is_frozen_baseline": "ccadcfa46a45bd6b0613596bed4f84ce57545454",
       "product_entry_verification": false,
       "report_file": "anima-linear-fp32-native-lokr-candidate-v1/formal-anima-adapter-g1-r512-20260916-072556-umehara-adapter-linear-fp32-native-lokr-candidate-v1-651277363/report.json"
+    },
+    "anima_ddp_linear_fp32_native_lokr_node10705": {
+      "sha256": "435f3165f9f493d9541d537fc05109de14ade42a9cc717d177be7ecbcecbab31",
+      "passed": true,
+      "source_commit": "6977537109ee46573b6d9365b5e341e198320aa4",
+      "machine_port": 10705,
+      "product_entry_verification": false,
+      "external_diagnostic": true,
+      "phase_checks": {
+        "reference": {
+          "finished_all_ranks": true,
+          "expected_final_step": true,
+          "finite_losses": true,
+          "finite_weights": true,
+          "parameters_changed": true,
+          "all_optimizer_updates_observed": true,
+          "rank_parameters_equal": true,
+          "rank_shards_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "preview_file": true,
+          "full_state": true,
+          "no_nonfinite_skips": true,
+          "official_size_and_components_verified": true,
+          "final_adapter_weights": true,
+          "two_distinct_rank_ids": true,
+          "physical_gpu_masks_0_1": true,
+          "one_local_device_per_rank": true,
+          "rank_data_disjoint": true,
+          "expected_initial_step": true,
+          "runtime_contract_matches_across_ranks": true,
+          "declared_checkpointing_unchanged": true,
+          "actual_compute_dtype_verified": true,
+          "actual_deterministic_runtime_verified": true,
+          "first_update_policy_unchanged": true,
+          "exact_expected_tensor_count": true,
+          "preview_decodes_at_requested_size": true,
+          "state_8_two_rank_rng_and_sampler": true,
+          "state_8_compute_policy": true,
+          "state_8_recorded_runtime": true,
+          "state_4_two_rank_rng_and_sampler": true,
+          "state_4_compute_policy": true,
+          "state_4_recorded_runtime": true
+        },
+        "resumed": {
+          "finished_all_ranks": true,
+          "expected_final_step": true,
+          "finite_losses": true,
+          "finite_weights": true,
+          "parameters_changed": true,
+          "all_optimizer_updates_observed": true,
+          "rank_parameters_equal": true,
+          "rank_shards_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "preview_file": true,
+          "full_state": true,
+          "no_nonfinite_skips": true,
+          "official_size_and_components_verified": true,
+          "final_adapter_weights": true,
+          "two_distinct_rank_ids": true,
+          "physical_gpu_masks_0_1": true,
+          "one_local_device_per_rank": true,
+          "rank_data_disjoint": true,
+          "expected_initial_step": true,
+          "runtime_contract_matches_across_ranks": true,
+          "declared_checkpointing_unchanged": true,
+          "actual_compute_dtype_verified": true,
+          "actual_deterministic_runtime_verified": true,
+          "first_update_policy_unchanged": true,
+          "exact_expected_tensor_count": true,
+          "preview_decodes_at_requested_size": true,
+          "state_8_two_rank_rng_and_sampler": true,
+          "state_8_compute_policy": true,
+          "state_8_recorded_runtime": true
+        }
+      },
+      "diagnostic_checks": {
+        "reference": {
+          "declared_external_operator_identity": true,
+          "actual_bf16_unchanged": true,
+          "native_parameter_identity": true,
+          "operators_before_placement": true,
+          "actual_linear_coverage": true,
+          "actual_280_lokr_bypass": true,
+          "state_4_diagnostic_policy_exact": true,
+          "state_4_diagnostic_runtime_exact": true,
+          "state_8_diagnostic_policy_exact": true,
+          "state_8_diagnostic_runtime_exact": true
+        },
+        "resumed": {
+          "declared_external_operator_identity": true,
+          "actual_bf16_unchanged": true,
+          "native_parameter_identity": true,
+          "operators_before_placement": true,
+          "actual_linear_coverage": true,
+          "actual_280_lokr_bypass": true,
+          "state_8_diagnostic_policy_exact": true,
+          "state_8_diagnostic_runtime_exact": true
+        }
+      },
+      "comparison": {
+        "exact": true,
+        "finite": true,
+        "different_tensor_count": 0,
+        "max_absolute_difference": 0.0,
+        "rms_absolute_difference": 0.0,
+        "relative_l2_difference": 0.0,
+        "numerical_metrics_are_diagnostic_only": true,
+        "example_different_keys": [],
+        "tensor_count": 840
+      },
+      "states": {
+        "optimizer_exact": true,
+        "scheduler_exact": true,
+        "rng_exact": true,
+        "progress_exact": true,
+        "sampler_exact": true
+      },
+      "preview_exact": true,
+      "original_assets_unchanged": true,
+      "runtime_contracts_exact": true,
+      "processes": {
+        "reference_process": {
+          "returncode": 0,
+          "wall_elapsed_s": 465.4263178850524,
+          "all_owned_processes_exited": true
+        },
+        "resumed_process": {
+          "returncode": 0,
+          "wall_elapsed_s": 398.53868082212284,
+          "all_owned_processes_exited": true
+        }
+      },
+      "report_file": "new-server-10705/anima-dual-ddp-candidate-result/report.json"
+    },
+    "anima_fsdp_linear_fp32_node10705": {
+      "sha256": "b703f0331826358e3859b044289daa039771b59ae551dad641027673363d6b78",
+      "passed": true,
+      "source_commit": "6977537109ee46573b6d9365b5e341e198320aa4",
+      "external_diagnostic": true,
+      "product_entry_verification": false,
+      "phase_checks": {
+        "reference": {
+          "two_processes": true,
+          "official_size_backbone": true,
+          "all_ranks_finished": true,
+          "same_progress": true,
+          "weights_finite_and_changed": true,
+          "fp32_trainable_parameters": true,
+          "parameters_really_sharded": true,
+          "gradients_really_sharded": true,
+          "peak_fits_each_device": true,
+          "requested_optimizer_unchanged": true,
+          "complete_checkpoint": true,
+          "rank_data_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "no_nonfinite_skips": true,
+          "all_optimizer_updates_observed": true,
+          "finite_losses": true,
+          "first_update_contract_unchanged": true,
+          "full_model_manifest": true,
+          "only_backbone_exported": true,
+          "export_matches_full_training_state": true,
+          "native_reload_config_present": true,
+          "two_distinct_rank_ids": true,
+          "physical_gpu_masks_0_1": true,
+          "one_local_device_per_rank": true,
+          "expected_initial_step": true,
+          "runtime_contract_matches_across_ranks": true,
+          "declared_checkpointing_unchanged": true,
+          "actual_compute_dtype_verified": true,
+          "actual_deterministic_runtime_verified": true,
+          "final_runtime_flags_unchanged": true,
+          "exact_expected_tensor_count": true,
+          "preview_decodes_at_requested_size": true,
+          "state_8_two_rank_rng_and_sampler": true,
+          "state_8_compute_policy": true,
+          "state_8_recorded_runtime": true,
+          "state_4_two_rank_rng_and_sampler": true,
+          "state_4_compute_policy": true,
+          "state_4_recorded_runtime": true
+        },
+        "resumed": {
+          "two_processes": true,
+          "official_size_backbone": true,
+          "all_ranks_finished": true,
+          "same_progress": true,
+          "weights_finite_and_changed": true,
+          "fp32_trainable_parameters": true,
+          "parameters_really_sharded": true,
+          "gradients_really_sharded": true,
+          "peak_fits_each_device": true,
+          "requested_optimizer_unchanged": true,
+          "complete_checkpoint": true,
+          "rank_data_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "no_nonfinite_skips": true,
+          "all_optimizer_updates_observed": true,
+          "finite_losses": true,
+          "first_update_contract_unchanged": true,
+          "full_model_manifest": true,
+          "only_backbone_exported": true,
+          "export_matches_full_training_state": true,
+          "native_reload_config_present": true,
+          "two_distinct_rank_ids": true,
+          "physical_gpu_masks_0_1": true,
+          "one_local_device_per_rank": true,
+          "expected_initial_step": true,
+          "runtime_contract_matches_across_ranks": true,
+          "declared_checkpointing_unchanged": true,
+          "actual_compute_dtype_verified": true,
+          "actual_deterministic_runtime_verified": true,
+          "final_runtime_flags_unchanged": true,
+          "exact_expected_tensor_count": true,
+          "preview_decodes_at_requested_size": true,
+          "state_8_two_rank_rng_and_sampler": true,
+          "state_8_compute_policy": true,
+          "state_8_recorded_runtime": true
+        }
+      },
+      "diagnostic_checks": {
+        "reference": {
+          "declared_external_operator_identity": true,
+          "actual_bf16_unchanged": true,
+          "native_parameter_identity": true,
+          "operators_before_placement": true,
+          "actual_linear_coverage": true,
+          "actual_35_nonempty_bf16_fp32_groups": true,
+          "state_4_diagnostic_policy_exact": true,
+          "state_4_diagnostic_runtime_exact": true,
+          "state_8_diagnostic_policy_exact": true,
+          "state_8_diagnostic_runtime_exact": true
+        },
+        "resumed": {
+          "declared_external_operator_identity": true,
+          "actual_bf16_unchanged": true,
+          "native_parameter_identity": true,
+          "operators_before_placement": true,
+          "actual_linear_coverage": true,
+          "actual_35_nonempty_bf16_fp32_groups": true,
+          "state_8_diagnostic_policy_exact": true,
+          "state_8_diagnostic_runtime_exact": true
+        }
+      },
+      "comparison": {
+        "exact": true,
+        "finite": true,
+        "different_tensor_count": 0,
+        "max_absolute_difference": 0.0,
+        "rms_absolute_difference": 0.0,
+        "relative_l2_difference": 0.0,
+        "numerical_metrics_are_diagnostic_only": true,
+        "example_different_keys": [],
+        "tensor_count": 685
+      },
+      "states": {
+        "optimizer_exact": true,
+        "scheduler_exact": true,
+        "rng_exact": true,
+        "progress_exact": true,
+        "sampler_exact": true
+      },
+      "preview_exact": true,
+      "original_assets_unchanged": true,
+      "runtime_contracts_exact": true,
+      "processes": {
+        "reference_process": {
+          "returncode": 0,
+          "command": [
+            "/root/private_data/YPuddinTrainStudio-dtk/source/environment/profiles/linux-dtk/venv/bin/python",
+            "-m",
+            "torch.distributed.run",
+            "--standalone",
+            "--nproc_per_node=2",
+            "/root/private_data/YPuddinTrainStudio-dtk/acceptance/runs-10705/work/scripts/anima-dual-linear-candidate-v1/anima_dual_candidate.py",
+            "--root",
+            "/root/private_data/YPuddinTrainStudio-dtk",
+            "--source",
+            "/root/private_data/YPuddinTrainStudio-dtk/acceptance/source-product-sdxl-dual-6977537",
+            "--physical-gpus",
+            "0,1",
+            "worker",
+            "--config",
+            "/root/private_data/YPuddinTrainStudio-dtk/acceptance/runs-10705/work/runs/formal-dual-anima-linear-candidate-10705-v1-anima-full-fsdp-20260916-103810-211042398/reference.json",
+            "--expect-compute",
+            "bf16",
+            "--deterministic"
+          ],
+          "log": "/root/private_data/YPuddinTrainStudio-dtk/acceptance/runs-10705/work/runs/formal-dual-anima-linear-candidate-10705-v1-anima-full-fsdp-20260916-103810-211042398/reference.log",
+          "wall_elapsed_s": 594.024845829932,
+          "all_owned_processes_exited": true
+        },
+        "resumed_process": {
+          "returncode": 0,
+          "command": [
+            "/root/private_data/YPuddinTrainStudio-dtk/source/environment/profiles/linux-dtk/venv/bin/python",
+            "-m",
+            "torch.distributed.run",
+            "--standalone",
+            "--nproc_per_node=2",
+            "/root/private_data/YPuddinTrainStudio-dtk/acceptance/runs-10705/work/scripts/anima-dual-linear-candidate-v1/anima_dual_candidate.py",
+            "--root",
+            "/root/private_data/YPuddinTrainStudio-dtk",
+            "--source",
+            "/root/private_data/YPuddinTrainStudio-dtk/acceptance/source-product-sdxl-dual-6977537",
+            "--physical-gpus",
+            "0,1",
+            "worker",
+            "--config",
+            "/root/private_data/YPuddinTrainStudio-dtk/acceptance/runs-10705/work/runs/formal-dual-anima-linear-candidate-10705-v1-anima-full-fsdp-20260916-103810-211042398/resumed.json",
+            "--expect-compute",
+            "bf16",
+            "--deterministic"
+          ],
+          "log": "/root/private_data/YPuddinTrainStudio-dtk/acceptance/runs-10705/work/runs/formal-dual-anima-linear-candidate-10705-v1-anima-full-fsdp-20260916-103810-211042398/resumed.log",
+          "wall_elapsed_s": 489.1099374620244,
+          "all_owned_processes_exited": true
+        }
+      },
+      "peak_allocated_bytes": 21136847360,
+      "report_file": "new-server-10705/anima-dual-fsdp-candidate-result/report.json"
     }
   },
   "local_checks": {
@@ -895,13 +1399,11 @@
     "chrome_evidence_sha256": "d65201c740885f6653fbcf6df604b21989c0474af75fd7fe814f279508b55826"
   },
   "pending": [
-    "Anima single full candidate final strict report after node shutdown",
-    "Anima adapter/full product entry verification after minimal Linear repair",
-    "SDXL two-GPU DDP adapter and FSDP full product entry verification",
-    "Anima two-GPU strict candidate and product verification"
+    "Anima two-GPU DDP adapter and FSDP full product-entry verification",
+    "SDXL two-GPU DDP adapter and FSDP full product-entry verification"
   ],
   "windows_gpu_tested": false,
-  "remote_status": "User confirmed unexpected shutdown; no new GPU run started. Recover connection, verify state/report completeness and active processes before continuing.",
+  "remote_status": "10705: Anima single full/adapter formal product PASS; Anima DDP/FSDP external candidates PASS. SDXL dual formal product running; Anima dual product source being committed for separate validation.",
   "anima_local_integration_checks": {
     "source_base_commit": "6977537109ee46573b6d9365b5e341e198320aa4",
     "uncommitted_changes": true,
@@ -923,8 +1425,8 @@
       "scope": "Anima and scheduler integration including final FSDP save guard; subsequent caption fix and schema help changes covered by focused regression."
     }
   },
-  "latest_uploaded_gpu_snapshot_source": "6977537109ee46573b6d9365b5e341e198320aa4",
-  "latest_uploaded_gpu_snapshot_product_manifest_sha256": "78b713d23fa7caaff64eb1e8effe4e996a4fd2a6d1dd4ae47bd262d76c6482d6",
+  "latest_uploaded_gpu_snapshot_source": "2849e61a86cfbeb19595046dd84650e9966b20e6",
+  "latest_uploaded_gpu_snapshot_product_manifest_sha256": "53fafcdeb60d4c4cda72254afc36462b6ee5430565a92926a104fd54b67a59bb",
   "offline_followup_checks": {
     "frontend_files": 90,
     "frontend_passed": 718,
@@ -955,5 +1457,51 @@
     "chrome_scope": "Real Chrome with isolated mocked APIs; pending/failure/retry included. Initial selector/HMR fixture attempt did not complete; final stable fixture rerun succeeded. No GPU, user draft or model writes.",
     "report": "docs/LOCAL_REVIEW_2026-09-16.md",
     "hardware_retest_required": true
+  },
+  "node10705": {
+    "work": "/root/private_data/YPuddinTrainStudio-dtk/acceptance/runs-10705/work",
+    "same_32_input_hashes_as_11582": true,
+    "old_tmp_outputs_retained": false,
+    "persistent_output": true,
+    "account_quota_known": false,
+    "cleanup": {
+      "explicit_user_approval": true,
+      "case": "anima single full product 2849e61",
+      "generated_large_files_deleted": 8,
+      "logical_bytes_deleted": 92009222634,
+      "original_models_and_images_retained": true,
+      "reports_configs_logs_metadata_previews_retained": true,
+      "audit_sha256": "e30cc354ee67456a8eef7c761c3f6f8c49fb6a97a20ae9c1f03f7700abcff88b"
+    }
+  },
+  "anima_dual_local_integration_checks": {
+    "source_base_commit": "2849e61a86cfbeb19595046dd84650e9966b20e6",
+    "backend_passed": 2629,
+    "backend_skipped": 5,
+    "backend_skip_reason": "CUDA unavailable on local Mac; actual CUDA pinned-memory tests require CUDA",
+    "backend_failures": 0,
+    "backend_errors": 0,
+    "backend_seconds": 466.07,
+    "backend_junit_sha256": "d1125fff69d1b804ecf5b3ab908ea111fa0a546eed575958187e21f2b217cae5",
+    "frontend_passed": 770,
+    "frontend_files": 95,
+    "frontend_seconds": 77.35,
+    "frontend_log_sha256": "70ec208179f1f029897bc707b7c45a21a0a4adca6926b57b59137aa844290d7c",
+    "eslint_passed": true,
+    "typescript_passed": true,
+    "vite_build_passed": true,
+    "chrome_cases": 8,
+    "chrome_widths": [
+      1172,
+      375
+    ],
+    "chrome_themes": [
+      "light",
+      "dark"
+    ],
+    "chrome_evidence_sha256": "d477eb03d2f6ce1a080dbcfedc7d9d70d7cbfb56880593d8adb9d4eb94fe6423",
+    "chrome_scope": "Real Chrome with isolated mocked APIs; Anima DDP/FSDP layout and stale validation/disable restoration; no GPU claim.",
+    "initial_full_run": "2627 passed, 2 stale fixture failures, 5 skipped; corrected expected FLUX label and historical config fixture fields; full suite rerun passed; numerical thresholds unchanged.",
+    "cpu_fsdp_scope": "Three actual two-rank CPU cases; state loaded into new objects within same workers. Hardware matrix separately uses cold torchrun restarts."
   }
 }

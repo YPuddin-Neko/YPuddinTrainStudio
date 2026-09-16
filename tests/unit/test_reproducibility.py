@@ -102,6 +102,11 @@ def test_legacy_false_hash_preserves_old_bytes_but_not_changed_parameters():
     cfg = TrainConfig.model_validate({"loop": {"deterministic": False}})
     old = cfg.to_dict()
     del old["loop"]["deterministic"]
+    # These disabled options did not exist in the legacy schema. Building an
+    # old payload from today's model must omit them too; otherwise its raw
+    # bytes are not a historical configuration at all.
+    for key in ("scale_v_pred_loss_like_noise_pred", "v_pred_like_loss", "debiased_estimation_loss"):
+        old["objective"].pop(key)
     blob = json.dumps(old, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
     old_hash = hashlib.blake2b(blob, digest_size=8).hexdigest()
     assert config_hash(cfg) == config_hash(old) == old_hash

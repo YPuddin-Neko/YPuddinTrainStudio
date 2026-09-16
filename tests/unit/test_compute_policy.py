@@ -7,6 +7,8 @@ from ypuddin.config.compute_policy import (
     BF16_LINEAR_BACKWARD_IMPLEMENTATION_ID,
     BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID,
     DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID,
+    DTK_ANIMA_DDP_BF16_LINEAR_COMPUTE_POLICY_ID,
+    DTK_ANIMA_FSDP_BF16_LINEAR_COMPUTE_POLICY_ID,
     DTK_FULL_FP32_MATH_POLICY_ID,
     DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
     DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
@@ -167,7 +169,7 @@ def test_krea_bf16_sharding_policy_keeps_native_compute_and_is_idempotent():
         ("loop", "mixed_precision", "no", DTK_FULL_FP32_MATH_POLICY_ID),
         ("loop", "mixed_precision", "fp16", DTK_FULL_FP32_MATH_POLICY_ID),
         ("training", "train_text_encoder", True, DTK_FULL_FP32_MATH_POLICY_ID),
-        ("model", "family", "anima", DTK_FULL_FP32_MATH_POLICY_ID),
+        ("model", "family", "anima", DTK_ANIMA_FSDP_BF16_LINEAR_COMPUTE_POLICY_ID),
         ("loop", "deterministic", False, None),
         ("training", "mode", "adapter", None),
         ("training", "train_backbone", False, None),
@@ -182,7 +184,9 @@ def test_krea_bf16_policy_never_expands_unverified_scope(section, field, value, 
     if expected_id is None:
         assert effective.to_dict() == original
     else:
-        assert effective.loop.mixed_precision == "no"
+        assert effective.loop.mixed_precision == (
+            "bf16" if expected_id == DTK_ANIMA_FSDP_BF16_LINEAR_COMPUTE_POLICY_ID else "no"
+        )
 
 
 @pytest.mark.parametrize(
@@ -365,17 +369,21 @@ def test_anima_bf16_linear_computation_preserves_rounding_and_has_own_resume_ide
             validate_resume_compute_policy(policy, saved)
 
 
-@pytest.mark.parametrize("mode", ["full", "adapter"])
-def test_anima_reentrant_checkpoint_cannot_mix_native_first_forward_with_fp32_recompute(mode):
+@pytest.mark.parametrize("mode,strategy", [("full", "fsdp"), ("adapter", "ddp")])
+@pytest.mark.parametrize("gpu_count", [1, 2])
+def test_anima_reentrant_checkpoint_cannot_mix_native_first_forward_with_fp32_recompute(
+    mode, strategy, gpu_count
+):
     cfg = _config("anima", mode=mode)
+    cfg.loop.gpu_count = gpu_count
+    cfg.loop.distributed_strategy = strategy
     cfg.memory.activation_checkpointing = "unsloth"
     with pytest.raises(ValueError, match="Unsloth"):
         resolve_training_compute_config(cfg, "cuda", "linux-dtk")
 
 
-@pytest.mark.parametrize("mode", ["full", "adapter"])
-@pytest.mark.parametrize("strategy", ["ddp", "fsdp"])
-def test_anima_single_gpu_policy_does_not_claim_unverified_multi_gpu(mode, strategy):
+@pytest.mark.parametrize("mode,strategy", [("full", "ddp"), ("adapter", "fsdp")])
+def test_anima_multi_gpu_policy_rejects_other_training_strategies(mode, strategy):
     cfg = _config("anima", mode=mode)
     cfg.loop.gpu_count = 2
     cfg.loop.distributed_strategy = strategy
@@ -399,8 +407,54 @@ def test_anima_single_gpu_policy_does_not_claim_unverified_multi_gpu(mode, strat
         ("loop", "mixed_precision", "fp16"),
     ],
 )
-def test_anima_other_adapter_paths_do_not_claim_verified_linear_recipe(section, field, value):
+@pytest.mark.parametrize("gpu_count", [1, 2])
+def test_anima_other_adapter_paths_do_not_claim_verified_linear_recipe(section, field, value, gpu_count):
     cfg = _config("anima", mode="adapter")
+    cfg.loop.gpu_count = gpu_count
+    cfg.loop.distributed_strategy = "ddp"
     setattr(getattr(cfg, section), field, value)
     effective, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+    assert policy is None and effective.to_dict() == cfg.to_dict()
+
+
+@pytest.mark.parametrize(
+    "mode,strategy,policy_id",
+    [
+        ("adapter", "ddp", DTK_ANIMA_DDP_BF16_LINEAR_COMPUTE_POLICY_ID),
+        ("full", "fsdp", DTK_ANIMA_FSDP_BF16_LINEAR_COMPUTE_POLICY_ID),
+    ],
+)
+def test_anima_multi_gpu_compute_recipe_has_distinct_resume_boundaries(mode, strategy, policy_id):
+    cfg = _config("anima", mode=mode)
+    _, single = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+    cfg.loop.gpu_count = 2
+    cfg.loop.distributed_strategy = strategy
+    original = cfg.to_dict()
+    effective, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+    expected = single | {"id": policy_id}
+    if strategy == "fsdp":
+        expected.update(fsdp_param_dtype="bfloat16", fsdp_reduce_dtype="float32")
+    assert policy == expected and effective.loop.mixed_precision == "bf16"
+    assert cfg.to_dict() == original
+    again, repeated = resolve_training_compute_config(effective, "cuda", "linux-dtk")
+    assert again.to_dict() == effective.to_dict() and repeated == policy
+    for saved in (
+        None,
+        single,
+        policy | {"id": "diagnostic-anima-dual"},
+        policy | {"linear_backward_implementation": BF16_LINEAR_BACKWARD_IMPLEMENTATION_ID},
+        policy | {"fsdp_reduce_dtype": "bfloat16"},
+    ):
+        with pytest.raises(ValueError, match="计算"):
+            validate_resume_compute_policy(policy, saved)
+
+
+@pytest.mark.parametrize("mode,strategy", [("adapter", "ddp"), ("full", "fsdp")])
+@pytest.mark.parametrize(
+    "device,profile", [("cuda", "linux-cuda"), ("cuda", "windows-cuda"), ("cpu", "linux-dtk")]
+)
+def test_anima_multi_gpu_recipe_does_not_change_other_runtimes(mode, strategy, device, profile):
+    cfg = _config("anima", mode=mode)
+    cfg.loop.gpu_count, cfg.loop.distributed_strategy = 2, strategy
+    effective, policy = resolve_training_compute_config(cfg, device, profile)
     assert policy is None and effective.to_dict() == cfg.to_dict()

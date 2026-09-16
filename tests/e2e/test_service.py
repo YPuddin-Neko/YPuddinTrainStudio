@@ -330,7 +330,7 @@ async def test_response_models_cover_every_json_endpoint(live_server, image_data
         fams = {f["name"]: f for f in (await client.get("/api/families")).json()}
         assert set(fams) >= {"anima", "krea2", "sdxl", "flux2", "toy"}
         assert "flux" not in fams
-        assert fams["flux2"]["label"] == "FLUX.2 Klein"
+        assert fams["flux2"]["label"] == "FLUX.2 Klein 4B / 9B"
         krea = fams["krea2"]
         assert krea["label"] == "Krea 2 Raw 12.9B" and krea["text_modes"] == ["auto", "cached"]
         assert krea["sampling"]["shift"] is None and krea["sampling"]["cfg"] == 5.5

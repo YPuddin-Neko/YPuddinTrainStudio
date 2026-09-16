@@ -27,6 +27,8 @@ from ypuddin.adapters import AdapterSet, build_metadata, inject, save_adapter_fi
 from ypuddin.config import TrainConfig, config_hash, write_config
 from ypuddin.config.compute_policy import (
     DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID,
+    DTK_ANIMA_DDP_BF16_LINEAR_COMPUTE_POLICY_ID,
+    DTK_ANIMA_FSDP_BF16_LINEAR_COMPUTE_POLICY_ID,
     DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
     DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
     DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID,
@@ -437,13 +439,17 @@ class Trainer:
     def _place_training_model(self) -> None:
         """Place selected parameters before binding an optimizer to their final objects."""
         if (getattr(self, "compute_policy", None) or {}).get("id") in {
+            DTK_ANIMA_FSDP_BF16_LINEAR_COMPUTE_POLICY_ID,
             DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
             DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID,
         }:
             raise ValueError("BF16 分片计算策略必须由 FSDP 分片训练器安装")
         if (getattr(self, "compute_policy", None) or {}).get("id") == DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID:
             self._install_sdxl_compute_operators()
-        if (getattr(self, "compute_policy", None) or {}).get("id") == DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID:
+        if (getattr(self, "compute_policy", None) or {}).get("id") in {
+            DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID,
+            DTK_ANIMA_DDP_BF16_LINEAR_COMPUTE_POLICY_ID,
+        }:
             self._install_anima_compute_operators()
         cfg = self.cfg
         if cfg.memory.blocks_to_swap > 0:
@@ -944,6 +950,8 @@ class Trainer:
         policy = getattr(self, "compute_policy", None)
         if (policy or {}).get("id") not in {
             DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID,
+            DTK_ANIMA_DDP_BF16_LINEAR_COMPUTE_POLICY_ID,
+            DTK_ANIMA_FSDP_BF16_LINEAR_COMPUTE_POLICY_ID,
             DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
             DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
             DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID,
@@ -964,7 +972,14 @@ class Trainer:
             counts,
             expected_implementation=policy["linear_backward_implementation"],
         )
-        if policy["id"] == DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID and self.cfg.training.mode == "adapter":
+        if (
+            policy["id"]
+            in {
+                DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID,
+                DTK_ANIMA_DDP_BF16_LINEAR_COMPUTE_POLICY_ID,
+            }
+            and self.cfg.training.mode == "adapter"
+        ):
             from .linear_backward import validate_lokr_bypass_backbone
 
             validate_lokr_bypass_backbone(self.loaded.backbone)

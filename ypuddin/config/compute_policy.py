@@ -8,6 +8,8 @@ from .schema import TrainConfig
 
 DTK_FULL_FP32_MATH_POLICY_ID = "dtk-full-fp32-math-v1"
 DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID = "dtk-anima-bf16-linear-fp32-compute-v1"
+DTK_ANIMA_DDP_BF16_LINEAR_COMPUTE_POLICY_ID = "dtk-anima-ddp-bf16-linear-fp32-compute-v1"
+DTK_ANIMA_FSDP_BF16_LINEAR_COMPUTE_POLICY_ID = "dtk-anima-fsdp-bf16-linear-fp32-compute-v1"
 BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID = "linear-bf16-operands-fp32-compute-v1"
 DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID = "dtk-krea2-fsdp-bf16-linear-fp32-backward-v1"
 DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID = "dtk-sdxl-bf16-conv-fp32-linear-backward-v1"
@@ -82,11 +84,18 @@ def resolve_training_compute_config(
         and all(rule.algo in {None, "lokr", "none"} for rule in cfg.adapter.rules)
         and not cfg.memory.base_precision.startswith("fp8")
     )
+    anima_sharded_full = (
+        cfg.model.family == "anima"
+        and cfg.training.mode == "full"
+        and cfg.loop.gpu_count >= 2
+        and cfg.loop.distributed_strategy == "fsdp"
+    )
+    anima_ddp_lokr = anima_lokr and cfg.loop.gpu_count >= 2 and cfg.loop.distributed_strategy == "ddp"
     anima_linear = (
         cfg.model.family == "anima"
         and (cfg.training.mode == "full" or anima_lokr)
         and not cfg.training.train_text_encoder
-        and cfg.loop.gpu_count == 1
+        and (cfg.loop.gpu_count == 1 or anima_ddp_lokr or anima_sharded_full)
         and cfg.loop.mixed_precision == "bf16"
     )
     if cfg.training.mode != "full" and not sdxl_lokr and not anima_linear:
@@ -103,8 +112,12 @@ def resolve_training_compute_config(
                 "Anima BF16 可复现训练暂不支持“重算并卸载中间输入”（Unsloth）。"
                 "请将“重算中间结果（梯度检查点）”改为“关闭”或“逐块重算”。"
             )
-        return effective, {
-            "id": DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID,
+        anima_policy: TrainingComputePolicy = {
+            "id": DTK_ANIMA_FSDP_BF16_LINEAR_COMPUTE_POLICY_ID
+            if anima_sharded_full
+            else DTK_ANIMA_DDP_BF16_LINEAR_COMPUTE_POLICY_ID
+            if anima_ddp_lokr
+            else DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID,
             "mixed_precision": "bf16",
             "allow_tf32": False,
             "attention": "sdpa",
@@ -113,6 +126,11 @@ def resolve_training_compute_config(
             "linear_backward": "fp32-contractions-grad-original-dtype",
             "linear_backward_implementation": BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID,
         }
+        if anima_sharded_full:
+            # Gathered weights and their VJP round to BF16 before FP32
+            # reduction; keep this boundary distinct from unsharded masters.
+            anima_policy.update(fsdp_param_dtype="bfloat16", fsdp_reduce_dtype="float32")
+        return effective, anima_policy
     if (
         cfg.model.family == "krea2"
         and not cfg.training.train_text_encoder
