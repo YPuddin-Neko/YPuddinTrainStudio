@@ -266,7 +266,8 @@ it('identifies DTK and describes multi-GPU training without NVIDIA requirements'
   expect(screen.getByText('计算后端').parentElement).toHaveTextContent('DTK / HIP');
   const info = screen.getByTestId('environment-training-devices');
   expect(info).toHaveTextContent('可在训练参数中选择显卡数量');
-  expect(info).toHaveTextContent('每张卡仍保存完整模型');
+  expect(info).toHaveTextContent('数据并行（DDP）分担训练数据，每张卡保留完整模型');
+  expect(info).toHaveTextContent('主模型全参训练可选择显存分片（FSDP），分担参数、梯度和优化器状态');
   expect(info).toHaveTextContent('NCCL 兼容接口');
   expect(screen.queryByText('NVIDIA 显卡计算')).not.toBeInTheDocument();
   expect(screen.queryByText('CUDA 版本')).not.toBeInTheDocument();

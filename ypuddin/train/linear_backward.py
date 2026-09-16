@@ -1,6 +1,9 @@
-"""Native BF16 Linear forward with FP32 backward contractions.
+"""Versioned BF16 Linear operands with FP32 backward contractions.
 
-Keep forward operand rounding, layout and dispatch unchanged. Return gradients
+The default keeps native forward rounding, layout and dispatch unchanged. The
+opt-in FP32 computation also rounds operands to BF16, computes the training
+forward in FP32, then returns BF16 outputs; no-grad forwards remain native.
+Return gradients
 in their original operand dtype, including BF16 FSDP all-gather parameters;
 FP32 reduce-scatter does not remove that BF16 gradient rounding boundary.
 """
@@ -15,7 +18,10 @@ from torch import nn
 from torch.autograd.function import once_differentiable
 
 from ypuddin.adapters.frozen import FrozenLinear
-from ypuddin.config.compute_policy import BF16_LINEAR_BACKWARD_IMPLEMENTATION_ID
+from ypuddin.config.compute_policy import (
+    BF16_LINEAR_BACKWARD_IMPLEMENTATION_ID,
+    BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID,
+)
 
 _MARKER = "_ypuddin_bf16_linear_backward"
 
@@ -61,6 +67,35 @@ class _BF16LinearFP32Backward(torch.autograd.Function):
         return dx, dw, db, None
 
 
+class _BF16OperandsFP32Compute(_BF16LinearFP32Backward):
+    @staticmethod
+    def forward(ctx, x, weight, bias, forward_grad_enabled):
+        ctx.device_type = x.device.type
+        ctx.input_dtype = x.dtype
+        ctx.weight_dtype = weight.dtype
+        ctx.bias_dtype = None if bias is None else bias.dtype
+        with torch.autocast(device_type=x.device.type, enabled=False):
+            # Preserve the existing BF16 rounding boundary, including FP32
+            # master weights. Computing from unrounded masters is a different
+            # recipe, even when the final output dtype is still BF16.
+            effective_x = x.to(torch.bfloat16)
+            effective_weight = weight.to(torch.bfloat16)
+            effective_bias = None if bias is None else bias.to(torch.bfloat16)
+            for source, effective in [(x, effective_x), (weight, effective_weight), (bias, effective_bias)]:
+                if source is not None and effective is not source:
+                    effective.requires_grad_(source.requires_grad and forward_grad_enabled)
+            forward_x, forward_weight = effective_x.float(), effective_weight.float()
+            forward_bias = None if effective_bias is None else effective_bias.float()
+            # Custom Function.forward runs under no_grad. Retain native operand
+            # metadata so noncontiguous matmul dispatch does not also change.
+            for source, effective in [(x, forward_x), (weight, forward_weight), (bias, forward_bias)]:
+                if source is not None:
+                    effective.requires_grad_(source.requires_grad and forward_grad_enabled)
+            out = F.linear(forward_x, forward_weight, forward_bias).to(torch.bfloat16)
+        ctx.save_for_backward(effective_x, effective_weight)
+        return out
+
+
 def _uses_bf16(x, weight):
     if torch.is_autocast_enabled(x.device.type):
         return torch.get_autocast_dtype(x.device.type) == torch.bfloat16
@@ -69,6 +104,21 @@ def _uses_bf16(x, weight):
 
 def install_linear_bf16_forward_fp32_backward(backbone):
     """Return (restore, counts). Patch only Linear/FrozenLinear instances below backbone."""
+    return _install_linear_policy(backbone, BF16_LINEAR_BACKWARD_IMPLEMENTATION_ID, _BF16LinearFP32Backward)
+
+
+def install_linear_bf16_operands_fp32_compute(backbone):
+    """Use FP32 training contractions on BF16 operands, with BF16 outputs.
+
+    No-grad evaluation stays native. Reentrant checkpointing must therefore
+    not use this recipe: its first no-grad forward differs from recomputation.
+    """
+    return _install_linear_policy(
+        backbone, BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID, _BF16OperandsFP32Compute
+    )
+
+
+def _install_linear_policy(backbone, implementation, function):
     records = []
     counts = {"nn_linear": 0, "frozen_linear": 0}
     modules = [module for module in backbone.modules() if isinstance(module, (nn.Linear, FrozenLinear))]
@@ -79,7 +129,7 @@ def install_linear_bf16_forward_fp32_backward(backbone):
 
     def make_forward(original, frozen):
         def forward(module, x):
-            # Evaluation has no backward to change. Preserve its exact native
+            # Preserve evaluation's exact native
             # dispatch, including autocast caching/grad-mode special cases.
             if not torch.is_grad_enabled():
                 return original(x)
@@ -89,7 +139,7 @@ def install_linear_bf16_forward_fp32_backward(backbone):
                 bias = bias.to(x.dtype)
             if not _uses_bf16(x, weight):
                 return original(x)
-            return _BF16LinearFP32Backward.apply(x, weight, bias, torch.is_grad_enabled())
+            return function.apply(x, weight, bias, torch.is_grad_enabled())
 
         return forward
 
@@ -100,7 +150,7 @@ def install_linear_bf16_forward_fp32_backward(backbone):
         original = module.forward
         replacement = types.MethodType(make_forward(original, frozen), module)
         module.forward = replacement
-        module.__dict__[_MARKER] = (BF16_LINEAR_BACKWARD_IMPLEMENTATION_ID, replacement)
+        module.__dict__[_MARKER] = (implementation, replacement)
         records.append((module, replacement, had_instance_forward, previous_instance_forward))
         counts["frozen_linear" if frozen else "nn_linear"] += 1
 
@@ -118,7 +168,9 @@ def install_linear_bf16_forward_fp32_backward(backbone):
     return restore, counts
 
 
-def validate_linear_backward_installation(backbone, expected_counts):
+def validate_linear_backward_installation(
+    backbone, expected_counts, *, expected_implementation=BF16_LINEAR_BACKWARD_IMPLEMENTATION_ID
+):
     """Verify real instance forwards, without touching parameters or FSDP hooks."""
     counts = {"nn_linear": 0, "frozen_linear": 0}
     for module in backbone.modules():
@@ -128,7 +180,7 @@ def validate_linear_backward_installation(backbone, expected_counts):
         marker = module.__dict__.get(_MARKER)
         if (
             marker is None
-            or marker[0] != BF16_LINEAR_BACKWARD_IMPLEMENTATION_ID
+            or marker[0] != expected_implementation
             or module.__dict__.get("forward") is not marker[1]
         ):
             raise ValueError("BF16 Linear backward policy is missing or its forward was replaced")
@@ -146,7 +198,7 @@ def validate_lokr_bypass_backbone(backbone):
     count = 0
     for module in backbone.modules():
         if isinstance(module, FrozenLinear) and module.is_fp8:
-            raise ValueError("SDXL BF16 算子策略尚不支持 FP8 冻结权重")
+            raise ValueError("BF16 可复现训练尚不支持 FP8 冻结权重")
         if not isinstance(module, AdaptedLinear):
             continue
         if (
@@ -155,8 +207,8 @@ def validate_lokr_bypass_backbone(backbone):
             or module.dora is not None
             or any(parameter.dtype != torch.float32 for parameter in module.adapter.parameters())
         ):
-            raise ValueError("SDXL BF16 算子策略需要实际 LoKr bypass、无 DoRA、FP32 适配器参数")
+            raise ValueError("BF16 可复现训练需要实际 LoKr bypass、无 DoRA、FP32 适配器参数")
         count += 1
     if not count:
-        raise ValueError("SDXL BF16 算子策略未找到实际 LoKr 适配器")
+        raise ValueError("BF16 可复现训练未找到实际 LoKr 适配器")
     return count

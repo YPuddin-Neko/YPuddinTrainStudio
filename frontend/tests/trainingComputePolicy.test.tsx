@@ -12,6 +12,7 @@ const policy = {id:'dtk-full-fp32-math-v1',mixed_precision:'no',allow_tf32:false
 const bf16Policy = {...policy,id:'dtk-krea2-fsdp-bf16-linear-fp32-backward-v1',mixed_precision:'bf16',linear_forward:'native-bf16',linear_backward:'fp32-contractions-grad-original-dtype',linear_backward_implementation:'linear-bf16-forward-fp32-backward-v1',fsdp_param_dtype:'bfloat16',fsdp_reduce_dtype:'float32'};
 const sdxlPolicy = {...policy,id:'dtk-sdxl-bf16-conv-fp32-linear-backward-v1',mixed_precision:'bf16',linear_forward:'native-bf16',linear_backward:'fp32-contractions-grad-original-dtype',linear_backward_implementation:'linear-bf16-forward-fp32-backward-v1',conv_forward:'fp32-output-bf16',conv_implementation:'conv2d-fp32-output-bf16-v1'};
 const sdxlShardedPolicy = {...sdxlPolicy,id:'dtk-sdxl-fsdp-bf16-conv-fp32-linear-backward-v1',fsdp_param_dtype:'bfloat16',fsdp_reduce_dtype:'float32'};
+const animaPolicy = {...policy,id:'dtk-anima-bf16-linear-fp32-compute-v1',mixed_precision:'bf16',linear_forward:'bf16-rounded-operands-fp32-contraction-bf16-output',linear_backward:'fp32-contractions-grad-original-dtype',linear_backward_implementation:'linear-bf16-operands-fp32-compute-v1'};
 const fullConfig = () => {
   const value = schemaDefaults(schema);
   value.model.family = 'anima'; value.model.attention = 'xformers';
@@ -21,6 +22,108 @@ const fullConfig = () => {
   return value;
 };
 beforeEach(async () => { await i18n.changeLanguage('zh-CN'); });
+
+const animaLokrConfig = () => {
+  const value = fullConfig();
+  value.training.mode = 'adapter'; value.adapter.algo = 'lokr'; value.adapter.mode = 'auto';
+  value.adapter.param_dtype = 'fp32'; value.adapter.dora = false; value.adapter.rules = [];
+  value.memory.base_precision = 'auto';
+  return value;
+};
+
+it.each(['full','adapter'])('confirms the Anima %s policy only for supported single-GPU drafts', mode => {
+  const config = mode === 'full' ? fullConfig() : animaLokrConfig();
+  for (const checkpointing of ['none','block']) {
+    expect(confirmedTrainingComputePolicy(animaPolicy,{...config,memory:{...config.memory,activation_checkpointing:checkpointing}})).toEqual(animaPolicy);
+  }
+  // At one GPU, the selected distributed strategy does not change the backend scope.
+  expect(confirmedTrainingComputePolicy(animaPolicy,{...config,loop:{...config.loop,distributed_strategy:'fsdp'}})).toEqual(animaPolicy);
+  for (const changed of [
+    {...config,model:{...config.model,family:'sdxl'}},
+    {...config,training:{...config.training,train_backbone:false}},
+    {...config,training:{...config.training,train_text_encoder:true}},
+    {...config,loop:{...config.loop,deterministic:false}},
+    {...config,loop:{...config.loop,mixed_precision:'no'}},
+    {...config,loop:{...config.loop,mixed_precision:'fp16'}},
+    {...config,loop:{...config.loop,gpu_count:2,distributed_strategy:'ddp'}},
+    {...config,loop:{...config.loop,gpu_count:2,distributed_strategy:'fsdp'}},
+    {...config,memory:{...config.memory,activation_checkpointing:'unsloth'}},
+  ]) expect(confirmedTrainingComputePolicy(animaPolicy,changed)).toBeNull();
+});
+
+it('rejects unverified Anima adapter paths, including per-layer algorithm overrides', () => {
+  const config = animaLokrConfig();
+  for (const mode of ['auto','bypass']) {
+    expect(confirmedTrainingComputePolicy(animaPolicy,{...config,adapter:{...config.adapter,mode,rules:[{match:'a',algo:null},{match:'b',algo:'lokr'},{match:'c',algo:'none'}]}})).toEqual(animaPolicy);
+  }
+  for (const adapter of [
+    {...config.adapter,algo:'lora'}, {...config.adapter,mode:'merged'},
+    {...config.adapter,dora:true}, {...config.adapter,param_dtype:'bf16'},
+    {...config.adapter,rules:[{match:'*',algo:'loha'}]},
+    {...config.adapter,rules:[null]}, {...config.adapter,rules:{}},
+  ]) expect(confirmedTrainingComputePolicy(animaPolicy,{...config,adapter})).toBeNull();
+  for (const base_precision of ['fp8_e4m3','fp8_e5m2']) {
+    expect(confirmedTrainingComputePolicy(animaPolicy,{...config,memory:{...config.memory,base_precision}})).toBeNull();
+  }
+  // Adapter options are inactive during full-model training.
+  expect(confirmedTrainingComputePolicy(animaPolicy,{...fullConfig(),adapter:{...config.adapter,algo:'loha',dora:true}})).toEqual(animaPolicy);
+});
+
+it('rejects incomplete, forged or stale Anima compute identities', () => {
+  const config = fullConfig();
+  for (const key of Object.keys(animaPolicy)) {
+    const incomplete: Record<string, unknown> = {...animaPolicy}; delete incomplete[key];
+    expect(confirmedTrainingComputePolicy(incomplete,config)).toBeNull();
+  }
+  for (const changed of [
+    {...animaPolicy,id:'diagnostic-anima-linear-fp32-native-lokr-candidate-v1'},
+    {...animaPolicy,linear_forward:'native-bf16'},
+    {...animaPolicy,linear_backward:'native-bf16'},
+    {...animaPolicy,linear_backward_implementation:'linear-bf16-forward-fp32-backward-v1'},
+    {...animaPolicy,allow_tf32:true}, {...animaPolicy,sdpa_backend:'flash'},
+    {...animaPolicy,fsdp_param_dtype:'bfloat16'}, {...animaPolicy,fsdp_reduce_dtype:'float32'},
+    {...animaPolicy,conv_forward:'fp32-output-bf16'}, {...animaPolicy,conv_implementation:'conv2d-fp32-output-bf16-v1'},
+  ]) expect(confirmedTrainingComputePolicy(changed,config)).toBeNull();
+  const checked = JSON.stringify(config);
+  expect(currentTrainingComputePolicy(animaPolicy,config,checked,false)).toEqual(animaPolicy);
+  expect(currentTrainingComputePolicy(animaPolicy,config,checked,true)).toBeNull();
+  expect(currentTrainingComputePolicy(animaPolicy,{...config,loop:{...config.loop,gpu_count:2}},checked,false)).toBeNull();
+});
+
+it('describes Anima rounded BF16 operands and FP32 linear computation without changing the draft', () => {
+  const initial = animaLokrConfig();
+  function Editor() {
+    const [value,setValue] = React.useState(initial);
+    return <><SchemaForm schema={schema} value={value} onChange={setValue} computePolicy={animaPolicy} compact showAdvanced groupFilter={['loop','memory']}/><output data-testid="draft">{JSON.stringify(value)}</output></>;
+  }
+  render(<Editor/>);
+  expect(screen.getByRole('status',{name:'混合精度'})).toHaveTextContent('BF16（线性层 FP32 运算）');
+  const hint = screen.getByTestId('field-loop.deterministic');
+  expect(hint).toHaveTextContent('本次 Anima 使用单卡');
+  expect(hint).toHaveTextContent('先按 BF16 舍入输入与参数');
+  expect(hint).toHaveTextContent('以 FP32 进行矩阵运算并返回 BF16');
+  expect(hint).not.toHaveTextContent('保留 BF16 前向');
+  expect(hint).not.toHaveTextContent('多卡显存分片');
+  expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual(initial);
+  fireEvent.click(screen.getByRole('checkbox',{name:'可复现训练'}));
+  expect(screen.getByRole('combobox',{name:'混合精度'})).toHaveTextContent('BF16');
+  expect(screen.getByRole('checkbox',{name:'允许 TF32'})).toBeChecked();
+  expect(screen.getByRole('combobox',{name:'注意力后端'})).toHaveTextContent('xFormers');
+});
+
+it('presents Anima computation and checkpointing limits in English', async () => {
+  await i18n.changeLanguage('en');
+  render(<SchemaForm schema={schema} value={fullConfig()} onChange={() => {}} computePolicy={animaPolicy} compact showAdvanced groupFilter={['loop','memory']}/>);
+  expect(screen.getByTestId('field-loop.mixed_precision')).toHaveTextContent('BF16 (FP32 linear operations)');
+  const hint = screen.getByTestId('field-loop.deterministic');
+  expect(hint).toHaveTextContent('uses one GPU');
+  expect(hint).toHaveTextContent('rounded to BF16');
+  expect(hint).toHaveTextContent('matrix operations use FP32');
+  expect(hint.textContent).not.toMatch(/[\u4e00-\u9fff]/);
+  expect(hint.textContent).not.toContain('native BF16');
+  fireEvent.click(within(hint).getByRole('button',{name:'Reproducible training help'}));
+  expect(screen.getByRole('tooltip')).toHaveTextContent('Activation checkpointing must be off or use standard blocks');
+});
 
 const shardedKreaConfig = () => {
   const value = fullConfig();

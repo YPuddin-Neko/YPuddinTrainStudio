@@ -28,6 +28,7 @@ from ypuddin.config.training_rules import distributed_training_errors
 from ypuddin.data import BucketBatchSampler
 
 from .events import Emitter, NullEmitter
+from .scheduler_contract import read_resume_scheduler_contract, validate_scheduler_recipe
 from .trainer import StopRequested, Trainer
 from .training_modes import FullTrainingSet
 
@@ -119,6 +120,23 @@ class DistributedTrainer(Trainer):
             raise ValueError("loop.gpu_count differs from torchrun WORLD_SIZE")
 
     def prepare_data(self):
+        if self.cfg.checkpoint.resume and self.cfg.loop.distributed_strategy != "fsdp":
+            # Capture on every rank before rank zero overwrites a same-directory
+            # legacy config. Never place this collective inside the owner loop.
+            error = None
+            try:
+                self._resume_unsharded_scheduler_contract = read_resume_scheduler_contract(
+                    self.cfg.checkpoint.resume
+                )
+                validate_scheduler_recipe(self._resume_unsharded_scheduler_contract.contract, self.cfg)
+            except Exception as exc:
+                error = (
+                    f"rank {self.distributed.rank} scheduler preflight failed: {type(exc).__name__}: {exc}"
+                )
+            errors = [None] * self.distributed.world_size
+            dist.all_gather_object(errors, error)
+            if any(errors):
+                raise ValueError("; ".join(item for item in errors if item))
         # One writer fills shared caches first. Following ranks load and reuse
         # those entries in turn, avoiding manifest/fingerprint/cache temp races.
         for owner in range(self.distributed.world_size):

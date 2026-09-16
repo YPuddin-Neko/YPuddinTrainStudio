@@ -20,6 +20,12 @@ interface SDXLTrainingComputePolicy extends BF16TrainingComputePolicy {
 export type TrainingComputePolicy = (CommonTrainingComputePolicy & {
   id: 'dtk-full-fp32-math-v1';
   mixed_precision: 'no';
+}) | (CommonTrainingComputePolicy & {
+  id: 'dtk-anima-bf16-linear-fp32-compute-v1';
+  mixed_precision: 'bf16';
+  linear_forward: 'bf16-rounded-operands-fp32-contraction-bf16-output';
+  linear_backward: 'fp32-contractions-grad-original-dtype';
+  linear_backward_implementation: 'linear-bf16-operands-fp32-compute-v1';
 }) | (BF16TrainingComputePolicy & {
   id: 'dtk-krea2-fsdp-bf16-linear-fp32-backward-v1';
   fsdp_param_dtype: 'bfloat16';
@@ -40,13 +46,27 @@ export function confirmedTrainingComputePolicy(candidate: unknown, config: Recor
     || config.training?.train_backbone === false || !['anima', 'sdxl', 'krea2'].includes(config.model?.family)) return null;
   const full = config.training?.mode === 'full';
   const rules = config.adapter?.rules ?? [];
-  const sdxlLokr = config.training?.mode === 'adapter' && config.model.family === 'sdxl'
+  const bypassLokr = config.training?.mode === 'adapter'
     && config.adapter?.algo === 'lokr' && ['auto', 'bypass'].includes(config.adapter?.mode ?? 'auto')
     && config.adapter?.dora !== true && (config.adapter?.param_dtype ?? 'fp32') === 'fp32'
     && Array.isArray(rules) && rules.every(rule => rule && typeof rule === 'object' && [null, 'lokr', 'none'].includes(rule.algo ?? null))
     && !String(config.memory?.base_precision ?? 'auto').startsWith('fp8');
-  if (!full && !sdxlLokr) return null;
+  const sdxlLokr = bypassLokr && config.model.family === 'sdxl';
+  const animaLokr = bypassLokr && config.model.family === 'anima';
+  if (!full && !sdxlLokr && !animaLokr) return null;
   if (full && policy.id === 'dtk-full-fp32-math-v1' && policy.mixed_precision === 'no') return policy as unknown as TrainingComputePolicy;
+  if (policy.id === 'dtk-anima-bf16-linear-fp32-compute-v1') {
+    if (config.model.family !== 'anima' || config.loop.gpu_count !== 1
+      || config.training.train_backbone !== true || config.training.train_text_encoder === true
+      || config.loop.mixed_precision !== 'bf16'
+      || !['none', 'block'].includes(config.memory?.activation_checkpointing ?? 'none')
+      || policy.mixed_precision !== 'bf16'
+      || policy.linear_forward !== 'bf16-rounded-operands-fp32-contraction-bf16-output'
+      || policy.linear_backward !== 'fp32-contractions-grad-original-dtype'
+      || policy.linear_backward_implementation !== 'linear-bf16-operands-fp32-compute-v1'
+      || ['conv_forward', 'conv_implementation', 'fsdp_param_dtype', 'fsdp_reduce_dtype'].some(key => key in policy)) return null;
+    return policy as unknown as TrainingComputePolicy;
+  }
   if (policy.mixed_precision !== 'bf16' || policy.linear_forward !== 'native-bf16'
     || policy.linear_backward !== 'fp32-contractions-grad-original-dtype'
     || policy.linear_backward_implementation !== 'linear-bf16-forward-fp32-backward-v1'
@@ -80,7 +100,9 @@ export function trainingComputeManagedField(policy: TrainingComputePolicy | null
     : '由 DTK 可复现训练管理。保留原选择，关闭开关后恢复使用。';
   if (path === 'loop.mixed_precision') return {
     value: policy.mixed_precision,
-    label: 'conv_forward' in policy
+    label: policy.id === 'dtk-anima-bf16-linear-fp32-compute-v1'
+      ? (english ? 'BF16 (FP32 linear operations)' : 'BF16（线性层 FP32 运算）')
+      : 'conv_forward' in policy
       ? (english ? 'BF16 (FP32 convolution and linear backward)' : 'BF16（FP32 卷积、线性层反向）')
       : policy.mixed_precision === 'bf16'
       ? (english ? 'BF16 forward (FP32 linear backward)' : 'BF16 前向（线性层反向 FP32）')
@@ -94,6 +116,9 @@ export function trainingComputeManagedField(policy: TrainingComputePolicy | null
 
 export function trainingComputePolicyHint(policy: TrainingComputePolicy | null, english: boolean) {
   if (!policy) return undefined;
+  if (policy.id === 'dtk-anima-bf16-linear-fp32-compute-v1') return english
+    ? 'This Anima run uses one GPU. Linear inputs and parameters are rounded to BF16, then matrix operations use FP32 and return BF16 outputs. Linear backward matrix operations also use FP32. TF32 is disabled and attention uses SDPA math. Resume requires the same compute policy and environment.'
+    : '本次 Anima 使用单卡。线性层先按 BF16 舍入输入与参数，再以 FP32 进行矩阵运算并返回 BF16；反向矩阵运算也使用 FP32。关闭 TF32，使用 SDPA 数学实现。续训需保持相同计算策略和运行环境。';
   if (policy.id === 'dtk-sdxl-fsdp-bf16-conv-fp32-linear-backward-v1') return english
     ? 'This SDXL run shards the model across GPUs and uses BF16 for gathered parameters and main computation. Convolution, linear backward matrix operations and gradient reduction use FP32. Convolution outputs return to BF16. TF32 is disabled and attention uses native SDPA math. Resume requires the same compute policy and environment.'
     : '本次 SDXL 使用多卡显存分片，按 BF16 汇集参数并进行主体计算。卷积、线性层反向矩阵运算和梯度汇总使用 FP32，卷积输出转回 BF16。关闭 TF32，并使用原生 SDPA 数学实现。续训需保持相同计算策略和运行环境。';

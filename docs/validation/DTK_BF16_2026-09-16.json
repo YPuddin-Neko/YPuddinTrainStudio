@@ -1,7 +1,7 @@
 {
   "status": "in_progress",
   "all_required_validation_complete": false,
-  "recorded_at": "2026-09-16T07:12:18.899532+08:00",
+  "recorded_at": "2026-09-16T07:48:51.264433+08:00",
   "scope": "Real Hygon DTK BF16 strict resume; formal product and external diagnostic cases remain separate. No Windows GPU claim.",
   "source_commit": "4477bad82c69c8227d05f0f9387394579de07fc9",
   "source_product_manifest_sha256": "5a5b1ecd60737e3589829019b50a690b8e5a3d989e93e9773312481a394f0929",
@@ -818,24 +818,142 @@
           "state_8_recorded_runtime": true
         }
       }
+    },
+    "anima_adapter_linear_fp32_compute_plus_lokr_fp32": {
+      "sha256": "bb35d3e193517163f2b412230923cfc444c80e167f2436d5a58a2cbe64529146",
+      "passed": true,
+      "comparison": {
+        "exact": true,
+        "finite": true,
+        "different_tensor_count": 0,
+        "max_absolute_difference": 0.0,
+        "rms_absolute_difference": 0.0,
+        "relative_l2_difference": 0.0,
+        "numerical_metrics_are_diagnostic_only": true,
+        "example_different_keys": [],
+        "tensor_count": 840,
+        "expected_adapter_tensor_count": 840,
+        "expected_tensor_count_matches": true
+      },
+      "states": {
+        "progress_exact": true,
+        "sampler_exact": true,
+        "rng_exact": true,
+        "scheduler_exact": true,
+        "optimizer_exact": true
+      },
+      "preview_exact": true,
+      "original_assets_unchanged": true,
+      "source_is_frozen_baseline": "ccadcfa46a45bd6b0613596bed4f84ce57545454",
+      "product_entry_verification": false,
+      "report_file": "anima-linear-forward-fp32-candidate-v1/formal-anima-adapter-g1-r512-20260916-071734-umehara-adapter-linear-forward-fp32-candidate-v1-845506522/report.json"
+    },
+    "anima_adapter_linear_fp32_compute_native_lokr": {
+      "sha256": "5be3a8db9a2f19d19b328f7039393c97e255f8e060799e21a50e1c7c5c98889b",
+      "passed": true,
+      "comparison": {
+        "exact": true,
+        "finite": true,
+        "different_tensor_count": 0,
+        "max_absolute_difference": 0.0,
+        "rms_absolute_difference": 0.0,
+        "relative_l2_difference": 0.0,
+        "numerical_metrics_are_diagnostic_only": true,
+        "example_different_keys": [],
+        "tensor_count": 840,
+        "expected_adapter_tensor_count": 840,
+        "expected_tensor_count_matches": true
+      },
+      "states": {
+        "progress_exact": true,
+        "sampler_exact": true,
+        "rng_exact": true,
+        "scheduler_exact": true,
+        "optimizer_exact": true
+      },
+      "preview_exact": true,
+      "original_assets_unchanged": true,
+      "source_is_frozen_baseline": "ccadcfa46a45bd6b0613596bed4f84ce57545454",
+      "product_entry_verification": false,
+      "report_file": "anima-linear-fp32-native-lokr-candidate-v1/formal-anima-adapter-g1-r512-20260916-072556-umehara-adapter-linear-fp32-native-lokr-candidate-v1-651277363/report.json"
     }
   },
   "local_checks": {
-    "backend_passed": 2457,
+    "source_commit": "6977537109ee46573b6d9365b5e341e198320aa4",
+    "backend_passed": 2460,
     "backend_hardware_skipped": 5,
-    "frontend_passed": 707,
+    "backend_failures": 0,
+    "backend_errors": 0,
+    "backend_seconds": 476.71,
+    "frontend_passed": 709,
     "frontend_files": 90,
-    "initial_frontend_timeouts": 2,
-    "subsequent_full_frontend_max_workers": 2,
+    "frontend_seconds": 69.22,
+    "full_frontend_max_workers": 2,
     "timeout_and_assertions_unchanged": true,
     "chrome_reviewed_screenshots": 8,
-    "chrome_scope": "Isolated mock planning data with real UI; no GPU validation",
-    "chrome_evidence_sha256": "9dad349ca171dbb9fd21d377bc1b6bd3f337d7a16602b678758cdf14f7a6d248"
+    "chrome_scope": "Real Chrome and isolated mock APIs; SDXL DDP/FSDP at1172/2468 in light/dark. No GPU validation. Initial missing-mock fixture hit refused local connections; fixed and complete screenshots rerun.",
+    "chrome_evidence_sha256": "d65201c740885f6653fbcf6df604b21989c0474af75fd7fe814f279508b55826"
   },
   "pending": [
-    "Anima BF16 full and adapter strict resume repair",
-    "SDXL two-GPU DDP adapter and FSDP full strict resume",
-    "Anima two-GPU strict resume after operator repair"
+    "Anima single full candidate final strict report after node shutdown",
+    "Anima adapter/full product entry verification after minimal Linear repair",
+    "SDXL two-GPU DDP adapter and FSDP full product entry verification",
+    "Anima two-GPU strict candidate and product verification"
   ],
-  "windows_gpu_tested": false
+  "windows_gpu_tested": false,
+  "remote_status": "User confirmed unexpected shutdown; no new GPU run started. Recover connection, verify state/report completeness and active processes before continuing.",
+  "anima_local_integration_checks": {
+    "source_base_commit": "6977537109ee46573b6d9365b5e341e198320aa4",
+    "uncommitted_changes": true,
+    "frontend_passed": 715,
+    "frontend_files": 90,
+    "frontend_seconds": 67.84,
+    "frontend_build_passed": true,
+    "chrome_reviewed_screenshots": 8,
+    "chrome_evidence_sha256": "24ee09746cd8308df5d66388b83788bec1d0092a42b7913f8124c91f44188e5b",
+    "chrome_scope": "Isolated mocked planning responses, Anima full and LoKr, two viewport widths and two themes; no hardware claim.",
+    "operator_and_policy_focused_backend_passed": 148,
+    "full_backend_after_scheduler_changes": {
+      "passed": 2519,
+      "hardware_skipped": 5,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 466.947,
+      "junit_sha256": "d6177a377fd3a8eb2dd1f517d095ba1f32a88f0601b402f2ebc49f7be46716ab",
+      "scope": "Anima and scheduler integration including final FSDP save guard; subsequent caption fix and schema help changes covered by focused regression."
+    }
+  },
+  "latest_uploaded_gpu_snapshot_source": "6977537109ee46573b6d9365b5e341e198320aa4",
+  "latest_uploaded_gpu_snapshot_product_manifest_sha256": "78b713d23fa7caaff64eb1e8effe4e996a4fd2a6d1dd4ae47bd262d76c6482d6",
+  "offline_followup_checks": {
+    "frontend_files": 90,
+    "frontend_passed": 718,
+    "frontend_seconds": 66.81,
+    "frontend_build_passed": true,
+    "frontend_eslint_passed": true,
+    "python_ruff_check_passed": true,
+    "json_caption_targeted_passed": 136,
+    "post_suite_config_caption_targeted_passed": 138,
+    "targeted_counts_overlap_not_additive": true,
+    "chrome_save_status_screenshots": 13,
+    "chrome_precision_screenshots": 2,
+    "chrome_widths": [
+      375,
+      1172,
+      1621,
+      2468
+    ],
+    "chrome_themes": [
+      "light",
+      "dark"
+    ],
+    "chrome_horizontal_overflow": false,
+    "chrome_page_errors": [],
+    "wide_status_alignment_before_px": 8,
+    "wide_status_alignment_after_px": 0,
+    "chrome_evidence_sha256": "8bb9e6a4d11e9df8e1836d2ef60862dd3126c128aec0ac43b805aaa9d6592d98",
+    "chrome_scope": "Real Chrome with isolated mocked APIs; pending/failure/retry included. Initial selector/HMR fixture attempt did not complete; final stable fixture rerun succeeded. No GPU, user draft or model writes.",
+    "report": "docs/LOCAL_REVIEW_2026-09-16.md",
+    "hardware_retest_required": true
+  }
 }

@@ -1,5 +1,5 @@
 import { StrictMode } from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from '../src/api/client';
 import TorchEnvironmentPanel from '../src/components/TorchEnvironmentPanel';
@@ -89,6 +89,26 @@ describe('isolated PyTorch environment controls',()=>{
     expect(await screen.findByText('安装完成，重启后可使用')).toBeInTheDocument();
     expect(await screen.findByRole('button',{name:'重启并切换到此环境'})).toBeInTheDocument();
     expect(screen.queryByRole('button',{name:'关闭结果'})).not.toBeInTheDocument();
+  });
+  it('labels an activated environment correctly even when its completed phase remains ready_to_restart', async () => {
+    const data=snapshot();data.operations=[operation('ready')];
+    let selectedEnvironment:string|null=null;
+    vi.spyOn(apiClient,'get').mockImplementation(async(url)=>url==='/service/runtime'?runtime():structuredClone({...data,selected_environment:selectedEnvironment}));
+    vi.spyOn(apiClient,'post').mockImplementation(async()=>{
+      data.operations=[{...operation('completed'),phase:'ready_to_restart',environment_id:'new-env'}];
+      return structuredClone(data.operations[0]);
+    });
+    render(<TorchEnvironmentPanel/>);
+    fireEvent.click(await screen.findByRole('button',{name:'安装到独立环境'}));
+    expect(await screen.findByText('安装完成，重启后可使用')).toBeInTheDocument();
+    expect(screen.getByRole('button',{name:'重启并切换到此环境'})).toBeInTheDocument();
+    selectedEnvironment='new-env';
+    const section=screen.getByRole('heading',{name:'PyTorch 版本'}).closest('section')!;
+    fireEvent.click(within(section).getByRole('button',{name:'刷新状态'}));
+    expect(await screen.findByText('已启用')).toBeInTheDocument();
+    expect(screen.getByText('当前正在使用')).toBeInTheDocument();
+    expect(screen.queryByText('安装完成，重启后可使用')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button',{name:'重启并切换到此环境'})).not.toBeInTheDocument();
   });
   it('disables environment preparation while an existing task is running',async()=>{
     vi.spyOn(apiClient,'get').mockResolvedValue(snapshot());

@@ -28,7 +28,7 @@ import Dialog from '../../components/Dialog';
 import ParameterSections from '../../components/ParameterSections';
 import { workflowSchema } from '../../utils/parameterWorkflow';
 import { CONFIG_TAB_GROUPS, ConfigTab, ConfigIssue, presentConfigIssues, presentPlanWarning } from '../../utils/configPresentation';
-import { AlertCircle, CheckCircle2, ChevronRight, ChevronDown, Search, Play, Settings2, Brush, Database, Box, Loader2, BarChart3, X } from 'lucide-react';
+import { AlertCircle, Check, CheckCircle2, ChevronRight, ChevronDown, Search, Play, Settings2, Brush, Database, Box, Loader2, BarChart3, X } from 'lucide-react';
 
 const presetFamily = (preset: Preset): string | undefined => { const model = preset.config.model; return model && typeof model === 'object' && 'family' in model && typeof model.family === 'string' ? model.family : undefined; };
 
@@ -134,6 +134,10 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const [isEnqueuing, setIsEnqueuing] = React.useState(false);
   const [enqueueSuccess, setEnqueueSuccess] = React.useState(false);
   const [savedAt, setSavedAt] = React.useState<string | null>(null);
+  const [draftSaveState, setDraftSaveState] = React.useState<'idle' | 'saving' | 'failed'>('idle');
+  const saveStatusRevision = React.useRef(0);
+  const lastSaveError = React.useRef('');
+  const saveStatusMounted = React.useRef(true);
   const [jobName, setJobName] = React.useState('');
   const [gpuDevices, setGpuDevices] = React.useState<string[]>([]);
   const [gpuValid, setGpuValid] = React.useState(true);
@@ -152,6 +156,32 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const submittedConfigRef = React.useRef<string | null>(null);
   const saveQueueRef = React.useRef<Promise<unknown>>(Promise.resolve());
   const draftRef = React.useRef({ projectId, versionId, config, loaded, archived });
+  React.useEffect(() => {
+    saveStatusMounted.current = true;
+    return () => { saveStatusMounted.current = false; };
+  }, []);
+  const persistDraft = React.useCallback(async (owner: string, version: string | null | undefined, draft: Record<string, any>) => {
+    const revision = ++saveStatusRevision.current;
+    const current = () => saveStatusMounted.current && revision === saveStatusRevision.current
+      && draftRef.current.projectId === owner && draftRef.current.versionId === version && draftRef.current.loaded;
+    if (current()) {
+      setDraftSaveState('saving');
+      const previousError = lastSaveError.current;
+      if (previousError) setError(previous => previous === previousError ? '' : previous);
+      lastSaveError.current = '';
+    }
+    try {
+      await apiClient.put(versionConfigUrl(owner, version), draft, { silent: true });
+      if (current()) setDraftSaveState('idle');
+    } catch (err) {
+      if (current()) {
+        lastSaveError.current = formatApiError(err);
+        setDraftSaveState('failed');
+        setError(lastSaveError.current);
+      }
+      throw err;
+    }
+  }, [setError, setDraftSaveState]);
   React.useLayoutEffect(() => {
     draftRef.current = { projectId, versionId, config, loaded, archived };
     if (projectId && loaded && !archived) rememberTrainingDraft(trainingDraftKey(projectId, versionId), config, submittedConfigRef.current || lastSavedRef.current);
@@ -181,7 +211,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
         const submitted = JSON.stringify(latest.config);
         if (submitted === lastSavedRef.current) return;
         submittedConfigRef.current = submitted;
-        try { await apiClient.put(versionConfigUrl(draft.projectId!, draft.versionId), latest.config, { silent: true }); }
+        try { await persistDraft(draft.projectId!, draft.versionId, latest.config); }
         finally { submittedConfigRef.current = null; }
         lastSavedRef.current = submitted;
         clearSavedTrainingDraft(trainingDraftKey(draft.projectId!, draft.versionId), submitted);
@@ -241,6 +271,9 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     setLoaded(false);
     setError('');
     setSavedAt(null);
+    saveStatusRevision.current += 1;
+    setDraftSaveState('idle');
+    lastSaveError.current = '';
     setRecoveredDraft(false);
     Promise.all([
       apiClient.get<any>('/schema/train', { silent: true }),
@@ -318,7 +351,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
           const submitted = JSON.stringify(next);
           if (submitted !== lastSavedRef.current) {
             submittedConfigRef.current = submitted;
-            try { await apiClient.put(versionConfigUrl(projectId, versionId), next, { silent: true }); }
+            try { await persistDraft(projectId, versionId, next); }
             finally { submittedConfigRef.current = null; }
             lastSavedRef.current = submitted;
             clearSavedTrainingDraft(trainingDraftKey(projectId, versionId), submitted);
@@ -330,10 +363,10 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
           rememberTrainingDraft(trainingDraftKey(projectId, versionId), next, lastSavedRef.current);
         }
         setSavedAt(new Date().toLocaleTimeString(undefined, { hour12: false }));
-      }).catch((err) => { setError(formatApiError(err)); });
+      }).catch(() => { /* persistDraft reports only errors belonging to the current draft. */ });
     }, 1000);
     return () => { active = false; clearTimeout(timer); };
-  }, [config, projectId, versionId, loaded, savingNavigation, archived]);
+  }, [config, projectId, versionId, loaded, savingNavigation, archived, persistDraft]);
 
   // 族联动副作用：切换 model.family 后，adapter.preset 与 dataset.text_encoding 不合法时自动回退
   React.useEffect(() => {
@@ -472,7 +505,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     try {
       if (projectId) {
         await saveQueueRef.current.catch(() => {});
-        await apiClient.put(versionConfigUrl(projectId, versionId), config, { silent: true });
+        await persistDraft(projectId, versionId, config);
         lastSavedRef.current = JSON.stringify(config);
         clearSavedTrainingDraft(trainingDraftKey(projectId, versionId), lastSavedRef.current);
       }
@@ -516,7 +549,8 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const dirty = loaded && JSON.stringify(config) !== lastSavedRef.current;
   const familyLabel = inactiveReason ? `${config.model?.family === 'flux' ? 'FLUX.1' : 'FLUX.2 dev'} · ${text('已停用', 'Retired')}` : familyByName(families, config.model?.family)?.label || config.model?.family;
   const familyBadge = familyLabel ? <span className="family-chip" data-testid="training-family-badge" title={familyLabel}>{familyLabel}</span> : null;
-  const draftStatus = <span className="draft-indicator" data-testid={savedAt && !dirty ? 'draft-saved' : undefined}>{savingNavigation ? <><Loader2 size={12} className="animate-spin"/>{text('正在保存草稿…', 'Saving draft…')}</> : dirty ? text('有未保存修改', 'Unsaved changes') : savedAt ? <><CheckCircle2 size={12}/>{t('train.draftSaved', { time: savedAt })}</> : loaded ? text('修改自动保存', 'Changes save automatically') : text('正在加载…', 'Loading…')}</span>;
+  const savingDraft = savingNavigation || draftSaveState === 'saving';
+  const draftStatus = loaded && (savingDraft || dirty || savedAt) ? <span className="draft-indicator" role="status" aria-label={text('配置保存状态', 'Configuration save status')} data-testid={savedAt && !dirty && !savingDraft && draftSaveState !== 'failed' ? 'draft-saved' : undefined}>{savingDraft ? <><Loader2 size={12} className="animate-spin"/>{text('保存中…', 'Saving…')}</> : dirty && draftSaveState === 'failed' ? text('保存失败，请重试', 'Save failed; retry') : dirty ? text('等待保存…', 'Waiting to save…') : savedAt ? <><Check size={12} aria-hidden="true"/>{text(`已保存 ${savedAt}`, `Saved ${savedAt}`)}</> : null}</span> : null;
   if (versionId && (versions.current?.status !== 'ready' || archived)) return <div className="training-studio project-workspace">
     {project && <ProjectWorkspaceHeader project={project} versionId={versionId} versions={versions.versions} current={versions.current} active="train" refresh={versions.refresh} titleBadge={familyBadge} error={versions.error}/>}
     {archived && <Link className="workspace-message" to={projectUrl(projectId || '', versionId, 'results')}>{text('查看此版本的训练结果', 'View this version’s training results')}</Link>}

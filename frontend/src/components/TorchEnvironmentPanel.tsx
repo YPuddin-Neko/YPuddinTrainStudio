@@ -61,7 +61,7 @@ export default function TorchEnvironmentPanel({ disabled = false, operationsTarg
   React.useEffect(() => () => onOperationsVisible?.(false), [onOperationsVisible]);
   const operationCards = operations.map(op => <InstallationOperation key={op.id}
     title={state?.builds.find(build => build.id === op.build_id)?.label || `PyTorch ${op.build_id}`}
-    status={phases[op.phase] ? text(...phases[op.phase]) : phases[op.status] ? text(...phases[op.status]) : text('正在处理', 'Processing')}
+    status={op.status === 'completed' && !!op.environment_id && state?.selected_environment === op.environment_id ? text('已启用', 'Active') : phases[op.phase] ? text(...phases[op.phase]) : phases[op.status] ? text(...phases[op.status]) : text('正在处理', 'Processing')}
     busy={active(op)} failed={op.status === 'failed'}>
     {active(op) && <InstallationProgress label={text('PyTorch 安装进度', 'PyTorch installation progress')}/>}
     {op.status === 'ready' && op.plan && <dl className="space-y-1 text-xs">{op.plan.filter(item => ['torch', 'torchvision'].includes(item.name)).map(item => <div key={item.name} className="flex flex-wrap gap-2"><dt>{item.name === 'torch' ? 'PyTorch' : 'TorchVision'}</dt><dd>{item.from_version || text('未安装', 'Not installed')} → {item.version}</dd></div>)}</dl>}

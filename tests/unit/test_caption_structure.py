@@ -35,6 +35,69 @@ def put_json(tmp_path, data):
     return path
 
 
+@pytest.mark.parametrize("kind", ["full", "nested", "simple"])
+@pytest.mark.parametrize(
+    "full_name,active_field",
+    [
+        ("  alice (adult)  ", "full"),
+        (["  alice (adult)  "], "full"),
+        (" \t\n ", "name"),
+        ([" ", "\t"], "name"),
+    ],
+)
+def test_character_full_normalization_matches_editor_and_preserves_metadata(
+    tmp_path,
+    full,
+    kind,
+    full_name,
+    active_field,
+):
+    full["character"]["full"] = full_name
+    source = (
+        full
+        if kind == "full"
+        else {
+            "character": full["character"],
+            "nl": "Prose.",
+            "custom": {"keep": [1, 2]},
+        }
+    )
+    if kind == "nested":
+        source = {"tags": source, "meta": {"generator": "keep"}}
+    path = put_json(tmp_path, source)
+    original = path.read_bytes()
+    structure = load_caption_structure(path)
+    caption = read_training_caption(path)
+    character_fields = [field for field in structure["fields"] if field["role"].startswith("character_")]
+    prefix = ["tags", "character"] if kind == "nested" else ["character"]
+    if active_field == "full":
+        assert [field["path"] for field in character_fields] == [[*prefix, "full"]]
+        assert "alice (adult)" in caption.fixed
+        assert "alice" not in caption.fixed and "adult" not in caption.fixed
+    else:
+        assert [field["path"] for field in character_fields] == [
+            [*prefix, "name"],
+            [*prefix, "variant"],
+        ]
+        assert "alice" in caption.fixed and "adult" in caption.fixed
+        assert "alice (adult)" not in caption.fixed
+    assert path.read_bytes() == original  # Parsing/inspection never normalizes the stored document.
+
+    replacement = ["bob (adult)"] if isinstance(full_name, list) and active_field == "full" else "bob"
+    write_caption(
+        path, fields=[{"path": [*prefix, active_field], "value": replacement}], revision=structure["revision"]
+    )
+    expected = copy.deepcopy(source)
+    character = expected["tags"]["character"] if kind == "nested" else expected["character"]
+    character[active_field] = replacement
+    assert json.loads(path.read_text()) == expected
+    updated = read_training_caption(path)
+    assert ("bob (adult)" if isinstance(replacement, list) else "bob") in updated.fixed
+    if active_field == "name":
+        assert "adult" in updated.fixed
+        assert character["full"] == full_name  # Retain the inactive field verbatim.
+
+
 @pytest.mark.parametrize("with_flat_caption", [False, True])
 def test_description_only_change_preserves_all_tag_ownership_and_dropout(tmp_path, full, with_flat_caption):
     path = put_json(tmp_path, full)

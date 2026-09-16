@@ -118,8 +118,12 @@
 }
 
 /* Header actions and the editor share the same centered content boundary. */
-.training-title-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 24px; margin-bottom: 0; }
+.training-title-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 24px; margin-bottom: 0; padding-bottom: 16px; }
 .parameter-workspace .training-title-actions > .workspace-navigation.workspace-page-heading { flex: 1 1 260px; min-width: 0; margin: 0; border: 0; position: static; box-shadow: none; }
+/* Keep the shared heading's spacing below the whole row: padding on only the
+   heading makes its status sit above the adjacent launch controls. */
+.app-shell .parameter-workspace .training-title-actions > .workspace-navigation.workspace-page-heading { min-height: 60px; padding: 0; }
+.training-title-actions .draft-indicator { min-height: 20px; font-size: 12px; line-height: 20px; font-variant-numeric: tabular-nums; }
 .training-studio.parameter-workspace .training-header-actions { flex: 0 1 auto; display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; position: relative; padding: 0; margin: 0; border: 0; background: transparent; gap: 8px; z-index: 4; }
 .training-header-actions .launch-status { flex: 0 1 auto; min-width: 0; }
 .training-studio.parameter-workspace .training-header-actions .launch-name { order: initial; flex: 0 1 150px; width: 150px; min-width: 100px; }
@@ -140,6 +144,9 @@
 @container training-workspace (max-width: 1100px) {
   .training-studio.parameter-workspace .training-header-actions { flex-basis: 100%; justify-content: flex-start; }
   .training-header-actions .launch-status { margin-right: auto; }
+}
+@media (max-width: 767px) {
+  .training-title-actions { padding-bottom: 12px; }
 }
 @media (max-width: 520px) {
   .training-studio.parameter-workspace .training-header-actions { display: flex; }

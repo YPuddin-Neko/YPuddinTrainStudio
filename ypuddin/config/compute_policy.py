@@ -7,6 +7,8 @@ from typing import Literal, TypedDict
 from .schema import TrainConfig
 
 DTK_FULL_FP32_MATH_POLICY_ID = "dtk-full-fp32-math-v1"
+DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID = "dtk-anima-bf16-linear-fp32-compute-v1"
+BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID = "linear-bf16-operands-fp32-compute-v1"
 DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID = "dtk-krea2-fsdp-bf16-linear-fp32-backward-v1"
 DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID = "dtk-sdxl-bf16-conv-fp32-linear-backward-v1"
 DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID = "dtk-sdxl-fsdp-bf16-conv-fp32-linear-backward-v1"
@@ -23,7 +25,7 @@ class _RequiredTrainingComputePolicy(TypedDict):
 
 
 class TrainingComputePolicy(_RequiredTrainingComputePolicy, total=False):
-    linear_forward: Literal["native-bf16"]
+    linear_forward: Literal["native-bf16", "bf16-rounded-operands-fp32-contraction-bf16-output"]
     linear_backward: Literal["fp32-contractions-grad-original-dtype"]
     linear_backward_implementation: str
     fsdp_param_dtype: Literal["bfloat16"]
@@ -70,11 +72,47 @@ def resolve_training_compute_config(
         and cfg.loop.gpu_count >= 2
         and cfg.loop.distributed_strategy == "fsdp"
     )
-    if cfg.training.mode != "full" and not sdxl_lokr:
+    anima_lokr = (
+        cfg.model.family == "anima"
+        and cfg.training.mode == "adapter"
+        and cfg.adapter.algo == "lokr"
+        and cfg.adapter.mode in {"auto", "bypass"}
+        and not cfg.adapter.dora
+        and cfg.adapter.param_dtype == "fp32"
+        and all(rule.algo in {None, "lokr", "none"} for rule in cfg.adapter.rules)
+        and not cfg.memory.base_precision.startswith("fp8")
+    )
+    anima_linear = (
+        cfg.model.family == "anima"
+        and (cfg.training.mode == "full" or anima_lokr)
+        and not cfg.training.train_text_encoder
+        and cfg.loop.gpu_count == 1
+        and cfg.loop.mixed_precision == "bf16"
+    )
+    if cfg.training.mode != "full" and not sdxl_lokr and not anima_linear:
         return effective, None
 
     effective.memory.allow_tf32 = False
     effective.model.attention = "sdpa"
+    if anima_linear:
+        if cfg.memory.activation_checkpointing == "unsloth":
+            # Unsloth runs the first forward under no_grad and recomputes with
+            # gradients. This policy deliberately preserves native no_grad
+            # sampling, so those two forward computations would differ.
+            raise ValueError(
+                "Anima BF16 可复现训练暂不支持“重算并卸载中间输入”（Unsloth）。"
+                "请将“重算中间结果（梯度检查点）”改为“关闭”或“逐块重算”。"
+            )
+        return effective, {
+            "id": DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID,
+            "mixed_precision": "bf16",
+            "allow_tf32": False,
+            "attention": "sdpa",
+            "sdpa_backend": "math",
+            "linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
+            "linear_backward": "fp32-contractions-grad-original-dtype",
+            "linear_backward_implementation": BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID,
+        }
     if (
         cfg.model.family == "krea2"
         and not cfg.training.train_text_encoder

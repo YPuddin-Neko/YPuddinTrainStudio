@@ -58,6 +58,22 @@ function fixtures(paths = ['d:\\TRAINING\\B\\']) {
 }
 
 describe('training dataset destinations and saved navigation', () => {
+  it('shows no save hint while loading or before the first edit of a clean configuration', async () => {
+    const state = fixtures();
+    let complete: (() => void) | undefined;
+    server.use(http.get('/api/projects/p_nav/config', async () => {
+      await new Promise<void>(resolve => { complete = resolve; });
+      return HttpResponse.json(state.config);
+    }));
+    show();
+    await waitFor(() => expect(complete).toBeDefined());
+    expect(screen.queryByLabelText('配置保存状态')).not.toBeInTheDocument();
+    complete!();
+    await screen.findByRole('spinbutton', { name: 'loop.epochs' });
+    expect(screen.queryByLabelText('配置保存状态')).not.toBeInTheDocument();
+    expect(screen.queryByText(/修改自动保存|更改会自动保存|草稿已自动保存/)).not.toBeInTheDocument();
+  });
+
   it('opens only current source B even when registered A is first, with Windows spelling normalized', async () => {
     fixtures(); show();
     await screen.findByRole('spinbutton', { name: 'loop.epochs' });
@@ -100,7 +116,7 @@ describe('training dataset destinations and saved navigation', () => {
     await waitFor(() => expect(writes).toHaveLength(1), { timeout: 2000 });
     fireEvent.change(epochs, { target: { value: '9' } });
     fireEvent.click(screen.getByRole('link', { name: /^3\s*训练结果$/ }));
-    expect(await screen.findByText('正在保存草稿…')).toBeInTheDocument();
+    expect(screen.getByLabelText('配置保存状态')).toHaveTextContent('保存中…');
     expect(screen.queryByText(/Destination/)).not.toBeInTheDocument();
     expect(writes).toHaveLength(1);
     writes[0].finish();
@@ -146,19 +162,58 @@ describe('training dataset destinations and saved navigation', () => {
     show();
     const epochs=await screen.findByRole('spinbutton',{name:'loop.epochs'});
     fireEvent.change(epochs,{target:{value:'7'}});
+    expect(screen.getByLabelText('配置保存状态')).toHaveTextContent('等待保存…');
     await waitFor(()=>expect(writes).toHaveLength(1),{timeout:2000});
+    expect(screen.getByLabelText('配置保存状态')).toHaveTextContent('保存中…');
     fireEvent.change(epochs,{target:{value:'2'}});
     expect(JSON.parse(sessionStorage.getItem('training-draft:p_nav:legacy')!).draft.loop.epochs).toBe(2);
     writes[0].finish();
     await waitFor(()=>expect(writes).toHaveLength(2));
     expect(writes[1].config.loop.epochs).toBe(2);
+    expect(screen.getByLabelText('配置保存状态')).toHaveTextContent('保存中…');
+    expect(screen.queryByTestId('draft-saved')).not.toBeInTheDocument();
     expect(JSON.parse(sessionStorage.getItem('training-draft:p_nav:legacy')!).draft.loop.epochs).toBe(2);
     writes[1].finish();
-    await screen.findByTestId('draft-saved');
+    expect(await screen.findByTestId('draft-saved')).toHaveTextContent(/^已保存 \d{2}:\d{2}:\d{2}$/);
     expect(state.config.loop.epochs).toBe(2);
     expect(epochs).toHaveValue(2);
     expect(sessionStorage.getItem('training-draft:p_nav:legacy')).toBeNull();
     expect(writes).toHaveLength(2);
+  });
+
+  it('keeps failed autosave edits and reports saved only after an explicit retry succeeds', async () => {
+    const state = fixtures();
+    let fail = true;
+    let complete: (() => void) | undefined;
+    server.use(http.put('/api/projects/p_nav/config', async ({ request }) => {
+      const body = await request.json();
+      if (fail) return HttpResponse.json({ error: { code: 'storage.error', message: 'Disk is full' } }, { status: 500 });
+      await new Promise<void>(resolve => { complete = resolve; });
+      state.config = body;
+      return HttpResponse.json(body);
+    }));
+    show();
+    const epochs = await screen.findByRole('spinbutton', { name: 'loop.epochs' });
+    fireEvent.change(epochs, { target: { value: '19' } });
+    expect(screen.getByLabelText('配置保存状态')).toHaveTextContent('等待保存…');
+    await waitFor(() => expect(screen.getByLabelText('配置保存状态')).toHaveTextContent('保存失败，请重试'), { timeout: 2000 });
+    expect(screen.getByRole('alert')).toHaveTextContent('Disk is full');
+    expect(screen.queryByTestId('draft-saved')).not.toBeInTheDocument();
+    expect(epochs).toHaveValue(19);
+    expect(state.config.loop.epochs).toBe(2);
+    expect(JSON.parse(sessionStorage.getItem('training-draft:p_nav:legacy')!).draft.loop.epochs).toBe(19);
+
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: '保存草稿' }));
+    await waitFor(() => expect(complete).toBeDefined());
+    expect(screen.getByLabelText('配置保存状态')).toHaveTextContent('保存中…');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('draft-saved')).not.toBeInTheDocument();
+    complete!();
+    expect(await screen.findByTestId('draft-saved')).toHaveTextContent(/^已保存 \d{2}:\d{2}:\d{2}$/);
+    expect(state.config.loop.epochs).toBe(19);
+    expect(sessionStorage.getItem('training-draft:p_nav:legacy')).toBeNull();
+    expect(screen.getByRole('button', { name: '保存草稿' })).toBeDisabled();
   });
 
   it('keeps draft edits across parameter tabs and explicitly saves before reporting saved', async () => {
@@ -169,7 +224,7 @@ describe('training dataset destinations and saved navigation', () => {
     show();
     const epochs=await screen.findByRole('spinbutton',{name:'loop.epochs'});
     fireEvent.change(epochs,{target:{value:'23'}});
-    expect(screen.getByText('有未保存修改')).toBeInTheDocument();
+    expect(screen.getByLabelText('配置保存状态')).toHaveTextContent('等待保存…');
     fireEvent.click(screen.getByRole('button', { name: /数据与分桶$/ }));
     fireEvent.click(screen.getByRole('button', { name: /设备与时长$/ }));
     expect(screen.getByRole('spinbutton',{name:'loop.epochs'})).toHaveValue(23);
@@ -214,7 +269,7 @@ describe('training dataset destinations and saved navigation', () => {
     link.setAttribute('target', '_blank');
     fireEvent.click(link);
     expect(prevented).toEqual([false, false, false, false, false]);
-    expect(screen.queryByText('正在保存草稿…')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('配置保存状态')).not.toHaveTextContent('保存中…');
   });
 
   it('recovers a version draft after browser Back and a failed unmount save, preserving newer server data and clearing only after saving', async () => {

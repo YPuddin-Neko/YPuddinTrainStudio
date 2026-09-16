@@ -26,6 +26,7 @@ from ypuddin.optim.sharded import prepare_sharded_optimizer, sharded_optimizer_s
 
 from .distributed import DistributedTrainer
 from .reproducibility import capture_compute_runtime
+from .scheduler_contract import validate_scheduler_instance, validate_scheduler_recipe
 from .sharded_state import (
     _collective_check,
     export_sharded_model_artifact,
@@ -256,7 +257,15 @@ class ShardedTrainer(DistributedTrainer):
         )
 
     def save_state(self, tag=None):
-        self._validate_training_compute_policy()
+        def validate_save_contract():
+            self._validate_training_compute_policy()
+            validate_scheduler_recipe(self._scheduler_contract, self.cfg, self.progress.total_steps)
+            validate_scheduler_instance(self._scheduler_contract, self.scheduler)
+            return self._scheduler_contract["config"]
+
+        # One rank may have changed its configuration or scheduler instance.
+        # All ranks must reject before any tensor-gather or checkpoint write.
+        scheduler_config = _collective_check(validate_save_contract)
         self.progress.extra["loss_ema"] = self._loss_ema
         path = save_sharded_checkpoint(
             self.run_dir / f"state-{tag or self.progress.step}",
@@ -276,7 +285,7 @@ class ShardedTrainer(DistributedTrainer):
             config_hash=self.config_hash,
             dataset_fingerprint=self.bundle.plan.fingerprint,
             model_identity=self.model_identity,
-            scheduler_config=self.cfg.scheduler.model_dump(mode="json"),
+            scheduler_config=scheduler_config,
         )
         self.emit("checkpoint.saved", kind="full", step=self.progress.step, path=str(path))
         return path

@@ -12,7 +12,7 @@ from ypuddin.train import Trainer
 from ypuddin.train.reproducibility import capture_compute_runtime, validate_compute_runtime
 
 
-def _trainer(tmp_path, monkeypatch, *, resume=True):
+def _trainer(tmp_path, monkeypatch, *, resume=True, precision="fp16"):
     import ypuddin.train.trainer as module
 
     monkeypatch.setattr(module, "current_profile", lambda: "linux-dtk")
@@ -20,7 +20,7 @@ def _trainer(tmp_path, monkeypatch, *, resume=True):
         {
             "model": {"family": "anima", "attention": "xformers"},
             "training": {"mode": "full", "train_backbone": True},
-            "loop": {"deterministic": True, "mixed_precision": "bf16"},
+            "loop": {"deterministic": True, "mixed_precision": precision},
             "memory": {"allow_tf32": True},
             "checkpoint": {
                 "output_dir": str(tmp_path),
@@ -33,31 +33,48 @@ def _trainer(tmp_path, monkeypatch, *, resume=True):
 
 
 def _write_metadata(tmp_path, extra):
+    from ypuddin.train.scheduler_contract import scheduler_recipe
+
     checkpoint = tmp_path / "state-4"
     checkpoint.mkdir(exist_ok=True)
-    (checkpoint / "state.json").write_text(json.dumps({"progress": {"extra": extra}}))
+    cfg = TrainConfig.model_validate({"training": {"mode": "full"}})
+    extra = {**extra, "scheduler_contract": scheduler_recipe(cfg, 8)}
+    (checkpoint / "state.json").write_text(
+        json.dumps(
+            {"format": 3, "training_kind": "full-model", "progress": {"total_steps": 8, "extra": extra}}
+        )
+    )
+    return extra
 
 
-def test_trainer_resolves_policy_before_hash_without_mutating_requested_config(tmp_path, monkeypatch):
+@pytest.mark.parametrize("precision", ["fp16", "bf16"])
+def test_trainer_resolves_policy_before_hash_without_mutating_requested_config(
+    tmp_path, monkeypatch, precision
+):
     from ypuddin.config import config_hash
 
-    requested, trainer = _trainer(tmp_path, monkeypatch, resume=False)
-    assert requested.loop.mixed_precision == "bf16"
+    requested, trainer = _trainer(tmp_path, monkeypatch, resume=False, precision=precision)
+    assert requested.loop.mixed_precision == precision
     assert requested.memory.allow_tf32
     assert requested.model.attention == "xformers"
-    assert trainer.cfg.loop.mixed_precision == "no"
+    assert trainer.cfg.loop.mixed_precision == ("bf16" if precision == "bf16" else "no")
     assert not trainer.cfg.memory.allow_tf32
     assert trainer.cfg.model.attention == "sdpa"
-    assert trainer.compute_dtype == torch.float32
+    assert trainer.compute_dtype == (torch.bfloat16 if precision == "bf16" else torch.float32)
     assert trainer.config_hash == config_hash(trainer.cfg)
-    assert trainer.compute_policy["id"] == "dtk-full-fp32-math-v1"
+    assert trainer.compute_policy["id"] == (
+        "dtk-anima-bf16-linear-fp32-compute-v1" if precision == "bf16" else "dtk-full-fp32-math-v1"
+    )
 
 
 @pytest.mark.parametrize("changed", [None, "id", "mixed_precision", "allow_tf32", "attention"])
-def test_old_or_different_policy_rejected_before_model_load_and_config_write(tmp_path, monkeypatch, changed):
+@pytest.mark.parametrize("precision", ["fp16", "bf16"])
+def test_old_or_different_policy_rejected_before_model_load_and_config_write(
+    tmp_path, monkeypatch, changed, precision
+):
     import ypuddin.train.trainer as module
 
-    _, trainer = _trainer(tmp_path, monkeypatch)
+    _, trainer = _trainer(tmp_path, monkeypatch, precision=precision)
     saved = copy.deepcopy(trainer.compute_policy) if changed is not None else None
     if changed is not None:
         saved[changed] = True if changed == "allow_tf32" else "old"
@@ -67,6 +84,11 @@ def test_old_or_different_policy_rejected_before_model_load_and_config_write(tmp
     monkeypatch.setattr(module, "get_family", lambda _: SimpleNamespace())
     monkeypatch.setattr(trainer, "_check_capabilities", lambda: None)
     monkeypatch.setattr(trainer, "_seed_all", lambda: pytest.fail("GPU setup began before preflight"))
+    monkeypatch.setattr(
+        module,
+        "read_resume_scheduler_contract",
+        lambda *_, **__: pytest.fail("scheduler checks ran before rejecting the compute policy"),
+    )
     with pytest.raises(ValueError, match="计算|旧"):
         trainer.prepare_data()
     assert (tmp_path / "config.toml").read_bytes() == original
@@ -79,7 +101,7 @@ def test_unchanged_compute_metadata_preflight_is_read_only(tmp_path, monkeypatch
         "compute_policy": trainer.compute_policy,
         "compute_runtime": {"torch": "v"},
     }
-    _write_metadata(tmp_path, extra)
+    extra = _write_metadata(tmp_path, extra)
     before = (tmp_path / "state-4" / "state.json").read_bytes()
     assert trainer._read_resume_compute_metadata() == extra
     assert (tmp_path / "state-4" / "state.json").read_bytes() == before
@@ -147,3 +169,41 @@ def test_active_policy_drift_fails_before_autocast(tmp_path, monkeypatch):
     trainer.cfg.loop.mixed_precision = "bf16"
     with pytest.raises(ValueError, match="运行中改变"):
         trainer._autocast()
+
+
+@pytest.mark.parametrize("mode", ["full", "adapter"])
+def test_anima_product_installs_new_linear_recipe_and_checks_real_modules(tmp_path, monkeypatch, mode):
+    from torch import nn
+
+    from ypuddin.adapters.frozen import FrozenLinear
+    from ypuddin.adapters.linear import AdaptedLinear
+    from ypuddin.adapters.lokr import LoKr
+    from ypuddin.train.linear_backward import validate_linear_backward_installation
+
+    cfg, _ = _trainer(tmp_path, monkeypatch, resume=False, precision="bf16")
+    cfg.training.mode = mode
+    trainer = Trainer(cfg, device="cuda:0")  # Device metadata only.
+    layer = nn.Linear(4, 4)
+    if mode == "adapter":
+        layer = AdaptedLinear(FrozenLinear.from_linear(layer), LoKr(4, 4, rank=2), mode="auto")
+    trainer.loaded = SimpleNamespace(backbone=nn.Sequential(layer))
+    with pytest.raises(ValueError, match="未完整安装"):
+        trainer._validate_training_compute_policy()
+    trainer._install_anima_compute_operators()
+    try:
+        trainer._validate_training_compute_policy()
+        with pytest.raises(ValueError, match="重复安装"):
+            trainer._install_anima_compute_operators()
+        # The old native-forward marker must never validate this new recipe.
+        with pytest.raises(ValueError, match="forward was replaced"):
+            validate_linear_backward_installation(trainer.loaded.backbone, trainer._linear_backward_counts)
+        if mode == "adapter":
+            layer.mode = "merged"
+            with pytest.raises(ValueError, match="LoKr"):
+                trainer._validate_training_compute_policy()
+        else:
+            trainer.cfg.memory.activation_checkpointing = "unsloth"
+            with pytest.raises(ValueError, match="Unsloth"):
+                trainer._validate_training_compute_policy()
+    finally:
+        trainer._linear_backward_restore()

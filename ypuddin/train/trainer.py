@@ -12,6 +12,7 @@ import signal
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import replace
 from functools import partial, wraps
 from pathlib import Path
@@ -25,6 +26,7 @@ from torch.utils.data import DataLoader
 from ypuddin.adapters import AdapterSet, build_metadata, inject, save_adapter_file
 from ypuddin.config import TrainConfig, config_hash, write_config
 from ypuddin.config.compute_policy import (
+    DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID,
     DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
     DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
     DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID,
@@ -62,6 +64,12 @@ from .reproducibility import (
     configure_reproducibility,
     validate_compute_runtime,
     validate_resume_reproducibility,
+)
+from .scheduler_contract import (
+    read_resume_scheduler_contract,
+    scheduler_recipe,
+    validate_scheduler_instance,
+    validate_scheduler_recipe,
 )
 from .state import Progress, capture_rng, load_checkpoint, restore_rng, save_checkpoint
 from .training_modes import FullTrainingSet, save_model_artifact
@@ -199,7 +207,8 @@ class Trainer:
                 validate_compute_runtime(self.compute_runtime, resume_extra.get("compute_runtime"))
         if self.is_primary:
             self._logs = TrainingLogs(cfg, self.run_dir)
-            write_config(cfg, self.run_dir / "config.toml")
+            if not cfg.checkpoint.resume:
+                write_config(cfg, self.run_dir / "config.toml")
         self.emit(
             "run.started", config_hash=self.config_hash, device=str(self.device), run_dir=str(self.run_dir)
         )
@@ -384,17 +393,31 @@ class Trainer:
         self.progress.steps_per_epoch = math.ceil(batches / cfg.loop.grad_accum)
         by_epochs = (cfg.loop.epochs or 10**9) * self.progress.steps_per_epoch
         self.progress.total_steps = min(by_epochs, cfg.loop.max_steps or 10**9)
+        captured_scheduler = getattr(self, "_resume_unsharded_scheduler_contract", None)
+        if captured_scheduler is not None:
+            validate_scheduler_recipe(captured_scheduler.contract, cfg, self.progress.total_steps)
         self.scheduler = (
             None
             if manages_learning_rate(cfg.optimizer)
-            else build_scheduler(cfg.scheduler, self.optimizer, self.progress.total_steps)
+            else build_scheduler(
+                cfg.scheduler.model_copy(deep=True), self.optimizer, self.progress.total_steps
+            )
         )
+        self._scheduler_contract = scheduler_recipe(cfg, self.progress.total_steps)
+        validate_scheduler_instance(self._scheduler_contract, self.scheduler)
         if cfg.loop.ema:
             self.ema = {
                 k: v.detach().float().cpu().clone() for k, v in self.adapters.export_state()[0].items()
             }
         if cfg.checkpoint.resume:
             self._resume(cfg.checkpoint.resume)
+            if self.is_primary:
+                # A rejected same-directory legacy resume must preserve the
+                # original config that authenticates its scheduler closure.
+                write_config(cfg, self.run_dir / "config.toml")
+        if cfg.loop.distributed_strategy != "fsdp" or not hasattr(self, "distributed"):
+            # DDP saves on rank zero but every rank must retain identical progress.
+            self.progress.extra["scheduler_contract"] = deepcopy(self._scheduler_contract)
         self.progress.extra["deterministic"] = cfg.loop.deterministic
         if self.compute_policy is not None:
             self.progress.extra["compute_policy"] = dict(self.compute_policy)
@@ -420,6 +443,8 @@ class Trainer:
             raise ValueError("BF16 分片计算策略必须由 FSDP 分片训练器安装")
         if (getattr(self, "compute_policy", None) or {}).get("id") == DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID:
             self._install_sdxl_compute_operators()
+        if (getattr(self, "compute_policy", None) or {}).get("id") == DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID:
+            self._install_anima_compute_operators()
         cfg = self.cfg
         if cfg.memory.blocks_to_swap > 0:
             blocks = self.family.memory_layout(self.loaded).blocks
@@ -430,6 +455,17 @@ class Trainer:
             self.loaded.backbone.to(self.device)
         if cfg.memory.compile:
             self.compile_blocks()
+
+    def _install_anima_compute_operators(self) -> None:
+        """Use BF16-rounded operands and outputs around FP32 training Linear math."""
+        from .linear_backward import install_linear_bf16_operands_fp32_compute
+
+        if getattr(self, "_linear_backward_counts", None) is not None:
+            raise ValueError("BF16 算子计算策略不能重复安装")
+        self._linear_backward_restore, self._linear_backward_counts = (
+            install_linear_bf16_operands_fp32_compute(self.loaded.backbone)
+        )
+        self._validate_training_compute_policy()
 
     def _install_sdxl_compute_operators(self) -> None:
         """Install the same operators before device movement or FSDP wrapping."""
@@ -570,11 +606,26 @@ class Trainer:
         extra = metadata.get("progress", {}).get("extra", {})
         validate_resume_reproducibility(self.cfg.loop.deterministic, extra.get("deterministic"))
         validate_resume_compute_policy(self.compute_policy, extra.get("compute_policy"))
+        if metadata.get("strategy") != "fsdp2":
+            self._resume_unsharded_scheduler_contract = read_resume_scheduler_contract(
+                path.parent,
+                metadata=metadata,
+                captured=getattr(self, "_resume_unsharded_scheduler_contract", None),
+            )
+            validate_scheduler_recipe(self._resume_unsharded_scheduler_contract.contract, self.cfg)
         return extra
 
     def _resume(self, path: str) -> None:
         self._validate_training_compute_policy()
+        validate_scheduler_recipe(self._scheduler_contract, self.cfg, self.progress.total_steps)
+        captured_scheduler = read_resume_scheduler_contract(
+            path, captured=getattr(self, "_resume_unsharded_scheduler_contract", None)
+        )
+        validate_scheduler_recipe(captured_scheduler.contract, self.cfg, self.progress.total_steps)
+        validate_scheduler_instance(captured_scheduler.contract, self.scheduler)
         ck = load_checkpoint(path)
+        if bool(ck["scheduler"]) != (self.scheduler is not None):
+            raise ValueError("保存的学习率调度器状态与原训练合同不一致，不能精确恢复")
         expected_kind = "full-model" if self.cfg.training.mode == "full" else "adapter"
         if ck.get("training_kind", "adapter") != expected_kind:
             raise ValueError(
@@ -735,6 +786,9 @@ class Trainer:
 
     def save_state(self, tag: str | None = None) -> Path:
         self._validate_training_compute_policy()
+        validate_scheduler_recipe(self._scheduler_contract, self.cfg, self.progress.total_steps)
+        validate_scheduler_instance(self._scheduler_contract, self.scheduler)
+        self.progress.extra["scheduler_contract"] = deepcopy(self._scheduler_contract)
         if self.cfg.training.mode == "full":
             # A full-state checkpoint needs the raw optimizer-point weights only.
             # Do not duplicate a complete model in host RAM or switch SF into eval.
@@ -889,6 +943,7 @@ class Trainer:
     def _validate_training_compute_policy(self):
         policy = getattr(self, "compute_policy", None)
         if (policy or {}).get("id") not in {
+            DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID,
             DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
             DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
             DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID,
@@ -904,7 +959,15 @@ class Trainer:
             raise ValueError("BF16 Linear 反向计算策略未完整安装到未量化的训练主干")
         if self.cfg.training.mode == "full" and (not counts.get("nn_linear") or counts.get("frozen_linear")):
             raise ValueError("BF16 Linear 全参策略需要未量化的训练主干")
-        validate_linear_backward_installation(self.loaded.backbone, counts)
+        validate_linear_backward_installation(
+            self.loaded.backbone,
+            counts,
+            expected_implementation=policy["linear_backward_implementation"],
+        )
+        if policy["id"] == DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID and self.cfg.training.mode == "adapter":
+            from .linear_backward import validate_lokr_bypass_backbone
+
+            validate_lokr_bypass_backbone(self.loaded.backbone)
         if policy["id"] in {DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID, DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID}:
             from .conv_forward import validate_conv_forward_installation
 

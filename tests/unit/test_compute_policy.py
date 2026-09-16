@@ -5,6 +5,8 @@ import pytest
 from ypuddin.config import TrainConfig
 from ypuddin.config.compute_policy import (
     BF16_LINEAR_BACKWARD_IMPLEMENTATION_ID,
+    BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID,
+    DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID,
     DTK_FULL_FP32_MATH_POLICY_ID,
     DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
     DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
@@ -79,6 +81,7 @@ def test_other_training_keeps_original_behavior_and_independent_nested_config(
     device, profile, family, mode, backbone, deterministic
 ):
     cfg = _config(family, mode=mode, train_backbone=backbone, deterministic=deterministic)
+    cfg.adapter.algo = "lora"  # The separately verified LoKr recipe is opt-in below.
     original = cfg.to_dict()
     effective, policy = resolve_training_compute_config(cfg, device, profile)
     assert effective.to_dict() == original
@@ -112,7 +115,9 @@ def test_old_state_cannot_be_silently_upgraded_to_new_compute_recipe():
     ],
 )
 def test_changed_compute_policy_cannot_resume(changed):
-    _, policy = resolve_training_compute_config(_config(), "cuda", "linux-dtk")
+    cfg = _config()
+    cfg.loop.mixed_precision = "fp16"
+    _, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
     with pytest.raises(ValueError, match="计算配方与当前设置不同"):
         validate_resume_compute_policy(policy, policy | changed)
 
@@ -326,3 +331,76 @@ def test_sdxl_fsdp_has_distinct_bf16_gather_identity_and_rejects_unsharded_state
     ):
         with pytest.raises(ValueError, match="计算"):
             validate_resume_compute_policy(policy, saved)
+
+
+@pytest.mark.parametrize("mode", ["full", "adapter"])
+@pytest.mark.parametrize("checkpointing", ["none", "block"])
+def test_anima_bf16_linear_computation_preserves_rounding_and_has_own_resume_identity(mode, checkpointing):
+    cfg = _config("anima", mode=mode)
+    cfg.memory.activation_checkpointing = checkpointing
+    original = cfg.to_dict()
+    effective, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+    assert effective.loop.mixed_precision == "bf16"
+    assert not effective.memory.allow_tf32 and effective.model.attention == "sdpa"
+    assert policy == {
+        "id": DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID,
+        "mixed_precision": "bf16",
+        "allow_tf32": False,
+        "attention": "sdpa",
+        "sdpa_backend": "math",
+        "linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
+        "linear_backward": "fp32-contractions-grad-original-dtype",
+        "linear_backward_implementation": BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID,
+    }
+    again, same = resolve_training_compute_config(effective, "cuda", "linux-dtk")
+    assert again.to_dict() == effective.to_dict() and same == policy
+    assert cfg.to_dict() == original
+    for saved in (
+        None,
+        policy | {"linear_forward": "native-bf16"},
+        policy | {"linear_backward_implementation": BF16_LINEAR_BACKWARD_IMPLEMENTATION_ID},
+        policy | {"id": "external-anima-candidate"},
+    ):
+        with pytest.raises(ValueError, match="计算"):
+            validate_resume_compute_policy(policy, saved)
+
+
+@pytest.mark.parametrize("mode", ["full", "adapter"])
+def test_anima_reentrant_checkpoint_cannot_mix_native_first_forward_with_fp32_recompute(mode):
+    cfg = _config("anima", mode=mode)
+    cfg.memory.activation_checkpointing = "unsloth"
+    with pytest.raises(ValueError, match="Unsloth"):
+        resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+
+
+@pytest.mark.parametrize("mode", ["full", "adapter"])
+@pytest.mark.parametrize("strategy", ["ddp", "fsdp"])
+def test_anima_single_gpu_policy_does_not_claim_unverified_multi_gpu(mode, strategy):
+    cfg = _config("anima", mode=mode)
+    cfg.loop.gpu_count = 2
+    cfg.loop.distributed_strategy = strategy
+    effective, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+    if mode == "full":
+        assert policy["id"] == DTK_FULL_FP32_MATH_POLICY_ID
+        assert effective.loop.mixed_precision == "no"
+    else:
+        assert policy is None and effective.to_dict() == cfg.to_dict()
+
+
+@pytest.mark.parametrize(
+    "section,field,value",
+    [
+        ("adapter", "algo", "lora"),
+        ("adapter", "mode", "merged"),
+        ("adapter", "dora", True),
+        ("adapter", "param_dtype", "bf16"),
+        ("memory", "base_precision", "fp8_e4m3"),
+        ("training", "train_text_encoder", True),
+        ("loop", "mixed_precision", "fp16"),
+    ],
+)
+def test_anima_other_adapter_paths_do_not_claim_verified_linear_recipe(section, field, value):
+    cfg = _config("anima", mode="adapter")
+    setattr(getattr(cfg, section), field, value)
+    effective, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+    assert policy is None and effective.to_dict() == cfg.to_dict()

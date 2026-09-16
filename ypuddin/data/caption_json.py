@@ -75,10 +75,15 @@ def _tokens(value: Any, field: str) -> tuple[str, ...]:
     raise ValueError(f"{field} must be a string or an array of strings")
 
 
+def _character_full(value: dict) -> tuple[str, ...]:
+    return _tokens(value.get("full"), "character.full")
+
+
 def _character(value: Any) -> tuple[str, ...]:
     if isinstance(value, dict):
-        if value.get("full"):
-            return _tokens(value["full"], "character.full")
+        full = _character_full(value)
+        if full:
+            return full
         return unique(
             (
                 *_tokens(value.get("name"), "character.name"),
@@ -222,7 +227,7 @@ def _fields(data: dict, fmt: str) -> list[dict]:
         if isinstance(value, dict):
             # A populated full name is authoritative in the training parser. Do not
             # offer ignored name/variant fields as if edits changed training text.
-            if value.get("full"):
+            if _character_full(value):
                 add((*prefix, "character", "full"), "character_full")
             else:
                 add((*prefix, "character", "name"), "character_name")
