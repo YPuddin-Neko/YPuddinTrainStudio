@@ -52,7 +52,7 @@ NVIDIA 提供 WSL2 CUDA 支持。优先评估 WSL2 是因为它与现有 Linux C
 
 本地开发可使用 `--device cpu --device cpu` 跑相同的进程和文件流程。报告会记录实际宿主与设备；CPU 通过不能记为 Windows／CUDA 通过。
 
-需要双卡分片时，在 WSL2 内使用 Linux Python 和 `studio-linux-cuda.sh`，另建 Linux CUDA 环境，模型路径使用 WSL 可见的 Linux 路径。不要复用 Windows 的虚拟环境。先按 [FSDP 指南](FSDP_TRAINING_2026-09-15.md) 检查通信和容量，再以正式模型执行连续训练、冷进程恢复、导出重载和取消退出验收。当前 Krea 2 海光结果中的逐位恢复差异仍未解决，不能因 Windows 预检通过而消除该未通过项。
+需要双卡分片时，在 WSL2 内使用 Linux Python 和 `studio-linux-cuda.sh`，另建 Linux CUDA 环境，模型路径使用 WSL 可见的 Linux 路径。不要复用 Windows 的虚拟环境。先按 [FSDP 指南](FSDP_TRAINING_2026-09-15.md) 检查通信和容量，再以正式模型执行连续训练、冷进程恢复、导出重载和取消退出验收。早期 Krea2 海光 BF16 用例曾有逐位恢复差异；后续正式产品配方已通过，详见 [2026-09-16 海光验证](DTK_BF16_2026-09-16.md)。这不替代 Windows 或 WSL2 的独立显卡验证。
 
 ## 真机仍需补验
 

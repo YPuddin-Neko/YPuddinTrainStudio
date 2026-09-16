@@ -1,12 +1,12 @@
 {
-  "status": "in_progress",
-  "all_required_validation_complete": false,
-  "recorded_at": "2026-09-16T11:01:44.221674+08:00",
+  "status": "completed_for_scoped_dtk_acceptance",
+  "all_required_validation_complete": true,
+  "recorded_at": "2026-09-16T11:22:39.070029+08:00",
   "scope": "Real Hygon DTK BF16 strict resume; formal product and external diagnostic cases remain separate. No Windows GPU claim.",
   "source_commit": "4477bad82c69c8227d05f0f9387394579de07fc9",
   "source_product_manifest_sha256": "5a5b1ecd60737e3589829019b50a690b8e5a3d989e93e9773312481a394f0929",
   "machine": "DTK26.04, vendor Torch2.7.1+das.opt1.dtk2604, HIP6.3.26093, two BW64GiB",
-  "input": "16 original user PNG/TXT pairs;32files verified. Different data from expired-node historical reports.",
+  "input": "10278 to11582 changed to16 original user PNG/TXT pairs;11582 to10705 retains the same32 input hashes. No same-data claim for10278.",
   "strict_contract": {
     "continuous_steps": 8,
     "resume_from": 4,
@@ -103,7 +103,7 @@
           "all_owned_processes_exited": true
         }
       },
-      "report_file": "krea-product-acceptance-v2/fsdp2-product-bf16-krea2-bf16-full-20260916-054445-636535952/report.json"
+      "report_file": "new-server-11582/krea-product-acceptance-v2/fsdp2-product-bf16-krea2-bf16-full-20260916-054445-636535952/report.json"
     },
     "sdxl_adapter_bf16_product_4477bad": {
       "sha256": "317a11195903e00061d1bec5601ec72cb46c049a5edd17c11a566ab903f26b56",
@@ -177,7 +177,7 @@
       "preview_exact": true,
       "original_assets_unchanged": true,
       "no_resolver_or_operator_patch": true,
-      "report_file": "sdxl-product-adapter-4477bad-result/report.json"
+      "report_file": "new-server-11582/sdxl-product-adapter-4477bad-result/report.json"
     },
     "sdxl_full_bf16_product_4477bad": {
       "sha256": "a68408b9f6a18add494b8e5031d92587433b351a868bf5d3bb11ba338c8a1a83",
@@ -257,7 +257,7 @@
       "preview_exact": true,
       "original_assets_unchanged": true,
       "no_resolver_or_operator_patch": true,
-      "report_file": "sdxl-product-full-4477bad-result/report.json"
+      "report_file": "new-server-11582/sdxl-product-full-4477bad-result/report.json"
     },
     "anima_full_single_2849e61_node10705": {
       "sha256": "c40f24b5371871de89a2992fc4ce8f6b3fa4e3002dee26a5aef308f7acda56ab",
@@ -438,6 +438,597 @@
         }
       },
       "report_file": "new-server-10705/anima-single-product-adapter-result/report.json"
+    },
+    "sdxl_ddp_adapter_2849e61_node10705": {
+      "sha256": "a53c327530809edd05515df7dda2e319d5445a77df74742fdbbb470423e41cbf",
+      "passed": true,
+      "source_commit": "2849e61a86cfbeb19595046dd84650e9966b20e6",
+      "product_entry_verification": true,
+      "external_diagnostic": false,
+      "phase_checks": {
+        "reference": {
+          "finished_all_ranks": true,
+          "expected_final_step": true,
+          "finite_losses": true,
+          "finite_weights": true,
+          "parameters_changed": true,
+          "all_optimizer_updates_observed": true,
+          "rank_parameters_equal": true,
+          "rank_shards_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "preview_file": true,
+          "full_state": true,
+          "no_nonfinite_skips": true,
+          "official_size_and_components_verified": true,
+          "final_adapter_weights": true,
+          "two_distinct_rank_ids": true,
+          "physical_gpu_masks_0_1": true,
+          "one_local_device_per_rank": true,
+          "rank_data_disjoint": true,
+          "expected_initial_step": true,
+          "runtime_contract_matches_across_ranks": true,
+          "declared_checkpointing_unchanged": true,
+          "actual_compute_dtype_verified": true,
+          "actual_deterministic_runtime_verified": true,
+          "first_update_policy_unchanged": true,
+          "exact_expected_tensor_count": true,
+          "preview_decodes_at_requested_size": true,
+          "state_8_two_rank_rng_and_sampler": true,
+          "state_8_compute_policy": true,
+          "state_8_recorded_runtime": true,
+          "state_4_two_rank_rng_and_sampler": true,
+          "state_4_compute_policy": true,
+          "state_4_recorded_runtime": true
+        },
+        "resumed": {
+          "finished_all_ranks": true,
+          "expected_final_step": true,
+          "finite_losses": true,
+          "finite_weights": true,
+          "parameters_changed": true,
+          "all_optimizer_updates_observed": true,
+          "rank_parameters_equal": true,
+          "rank_shards_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "preview_file": true,
+          "full_state": true,
+          "no_nonfinite_skips": true,
+          "official_size_and_components_verified": true,
+          "final_adapter_weights": true,
+          "two_distinct_rank_ids": true,
+          "physical_gpu_masks_0_1": true,
+          "one_local_device_per_rank": true,
+          "rank_data_disjoint": true,
+          "expected_initial_step": true,
+          "runtime_contract_matches_across_ranks": true,
+          "declared_checkpointing_unchanged": true,
+          "actual_compute_dtype_verified": true,
+          "actual_deterministic_runtime_verified": true,
+          "first_update_policy_unchanged": true,
+          "exact_expected_tensor_count": true,
+          "preview_decodes_at_requested_size": true,
+          "state_8_two_rank_rng_and_sampler": true,
+          "state_8_compute_policy": true,
+          "state_8_recorded_runtime": true
+        }
+      },
+      "product_checks": {
+        "reference": {
+          "product_chose_policy": true,
+          "actual_bf16_unchanged": true,
+          "actual_conv_coverage": true,
+          "actual_linear_coverage": true,
+          "actual_700_lokr_bypass": true,
+          "state_4_product_policy_exact": true,
+          "state_4_product_runtime_exact": true,
+          "state_4_no_external_diagnostic": true,
+          "state_8_product_policy_exact": true,
+          "state_8_product_runtime_exact": true,
+          "state_8_no_external_diagnostic": true
+        },
+        "resumed": {
+          "product_chose_policy": true,
+          "actual_bf16_unchanged": true,
+          "actual_conv_coverage": true,
+          "actual_linear_coverage": true,
+          "actual_700_lokr_bypass": true,
+          "state_8_product_policy_exact": true,
+          "state_8_product_runtime_exact": true,
+          "state_8_no_external_diagnostic": true
+        }
+      },
+      "integration_checks": {
+        "raw_input_recipe_unchanged": true,
+        "plan_product_policy_exact": true,
+        "source_commit_and_manifest_verified": true
+      },
+      "comparison": {
+        "exact": true,
+        "finite": true,
+        "different_tensor_count": 0,
+        "max_absolute_difference": 0.0,
+        "rms_absolute_difference": 0.0,
+        "relative_l2_difference": 0.0,
+        "numerical_metrics_are_diagnostic_only": true,
+        "example_different_keys": [],
+        "tensor_count": 2100
+      },
+      "states": {
+        "optimizer_exact": true,
+        "scheduler_exact": true,
+        "rng_exact": true,
+        "progress_exact": true,
+        "sampler_exact": true
+      },
+      "preview_exact": true,
+      "original_assets_unchanged": true,
+      "runtime_contracts_exact": true,
+      "peak_allocated_bytes": 14089547264,
+      "processes": {
+        "reference_process": {
+          "returncode": 0,
+          "wall_elapsed_s": 536.7457553709392,
+          "all_owned_processes_exited": true
+        },
+        "resumed_process": {
+          "returncode": 0,
+          "wall_elapsed_s": 260.75545810791664,
+          "all_owned_processes_exited": true
+        }
+      },
+      "report_file": "new-server-10705/sdxl-product-ddp-20260916-110105-result/report.json"
+    },
+    "sdxl_fsdp_full_2849e61_node10705": {
+      "sha256": "9ff38d49abbac19af147e7dbfb6399b48c9b42beaee063e5d5e5a5240ab22dc4",
+      "passed": true,
+      "source_commit": "2849e61a86cfbeb19595046dd84650e9966b20e6",
+      "product_entry_verification": true,
+      "external_diagnostic": false,
+      "phase_checks": {
+        "reference": {
+          "two_processes": true,
+          "official_size_backbone": true,
+          "all_ranks_finished": true,
+          "same_progress": true,
+          "weights_finite_and_changed": true,
+          "fp32_trainable_parameters": true,
+          "parameters_really_sharded": true,
+          "gradients_really_sharded": true,
+          "peak_fits_each_device": true,
+          "requested_optimizer_unchanged": true,
+          "complete_checkpoint": true,
+          "rank_data_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "no_nonfinite_skips": true,
+          "all_optimizer_updates_observed": true,
+          "finite_losses": true,
+          "first_update_contract_unchanged": true,
+          "full_model_manifest": true,
+          "only_backbone_exported": true,
+          "export_matches_full_training_state": true,
+          "native_reload_config_present": true,
+          "two_distinct_rank_ids": true,
+          "physical_gpu_masks_0_1": true,
+          "one_local_device_per_rank": true,
+          "expected_initial_step": true,
+          "runtime_contract_matches_across_ranks": true,
+          "declared_checkpointing_unchanged": true,
+          "actual_compute_dtype_verified": true,
+          "actual_deterministic_runtime_verified": true,
+          "final_runtime_flags_unchanged": true,
+          "exact_expected_tensor_count": true,
+          "preview_decodes_at_requested_size": true,
+          "state_8_two_rank_rng_and_sampler": true,
+          "state_8_compute_policy": true,
+          "state_8_recorded_runtime": true,
+          "state_4_two_rank_rng_and_sampler": true,
+          "state_4_compute_policy": true,
+          "state_4_recorded_runtime": true
+        },
+        "resumed": {
+          "two_processes": true,
+          "official_size_backbone": true,
+          "all_ranks_finished": true,
+          "same_progress": true,
+          "weights_finite_and_changed": true,
+          "fp32_trainable_parameters": true,
+          "parameters_really_sharded": true,
+          "gradients_really_sharded": true,
+          "peak_fits_each_device": true,
+          "requested_optimizer_unchanged": true,
+          "complete_checkpoint": true,
+          "rank_data_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "no_nonfinite_skips": true,
+          "all_optimizer_updates_observed": true,
+          "finite_losses": true,
+          "first_update_contract_unchanged": true,
+          "full_model_manifest": true,
+          "only_backbone_exported": true,
+          "export_matches_full_training_state": true,
+          "native_reload_config_present": true,
+          "two_distinct_rank_ids": true,
+          "physical_gpu_masks_0_1": true,
+          "one_local_device_per_rank": true,
+          "expected_initial_step": true,
+          "runtime_contract_matches_across_ranks": true,
+          "declared_checkpointing_unchanged": true,
+          "actual_compute_dtype_verified": true,
+          "actual_deterministic_runtime_verified": true,
+          "final_runtime_flags_unchanged": true,
+          "exact_expected_tensor_count": true,
+          "preview_decodes_at_requested_size": true,
+          "state_8_two_rank_rng_and_sampler": true,
+          "state_8_compute_policy": true,
+          "state_8_recorded_runtime": true
+        }
+      },
+      "product_checks": {
+        "reference": {
+          "product_chose_policy": true,
+          "actual_bf16_unchanged": true,
+          "actual_conv_coverage": true,
+          "actual_linear_coverage": true,
+          "actual_389_modules_383_nonempty_bf16_fp32_groups": true,
+          "state_4_product_policy_exact": true,
+          "state_4_product_runtime_exact": true,
+          "state_4_no_external_diagnostic": true,
+          "state_8_product_policy_exact": true,
+          "state_8_product_runtime_exact": true,
+          "state_8_no_external_diagnostic": true
+        },
+        "resumed": {
+          "product_chose_policy": true,
+          "actual_bf16_unchanged": true,
+          "actual_conv_coverage": true,
+          "actual_linear_coverage": true,
+          "actual_389_modules_383_nonempty_bf16_fp32_groups": true,
+          "state_8_product_policy_exact": true,
+          "state_8_product_runtime_exact": true,
+          "state_8_no_external_diagnostic": true
+        }
+      },
+      "integration_checks": {
+        "raw_input_recipe_unchanged": true,
+        "plan_product_policy_exact": true,
+        "source_commit_and_manifest_verified": true
+      },
+      "comparison": {
+        "exact": true,
+        "finite": true,
+        "different_tensor_count": 0,
+        "max_absolute_difference": 0.0,
+        "rms_absolute_difference": 0.0,
+        "relative_l2_difference": 0.0,
+        "numerical_metrics_are_diagnostic_only": true,
+        "example_different_keys": [],
+        "tensor_count": 1680
+      },
+      "states": {
+        "optimizer_exact": true,
+        "scheduler_exact": true,
+        "rng_exact": true,
+        "progress_exact": true,
+        "sampler_exact": true
+      },
+      "preview_exact": true,
+      "original_assets_unchanged": true,
+      "runtime_contracts_exact": true,
+      "peak_allocated_bytes": 26122079744,
+      "processes": {
+        "reference_process": {
+          "returncode": 0,
+          "wall_elapsed_s": 336.36318102199584,
+          "all_owned_processes_exited": true
+        },
+        "resumed_process": {
+          "returncode": 0,
+          "wall_elapsed_s": 284.52312755584717,
+          "all_owned_processes_exited": true
+        }
+      },
+      "report_file": "new-server-10705/sdxl-product-fsdp-20260916-112113-result/report.json"
+    },
+    "anima_ddp_adapter_ce1add7_node10705": {
+      "sha256": "08a3273c4e5c89003efe03af8f67f7c839583efef4177bd03a8d4c4cca84ce41",
+      "passed": true,
+      "source_commit": "ce1add7179561f13d534dcd5d959100f8e424b96",
+      "product_entry_verification": true,
+      "external_diagnostic": false,
+      "phase_checks": {
+        "reference": {
+          "finished_all_ranks": true,
+          "expected_final_step": true,
+          "finite_losses": true,
+          "finite_weights": true,
+          "parameters_changed": true,
+          "all_optimizer_updates_observed": true,
+          "rank_parameters_equal": true,
+          "rank_shards_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "preview_file": true,
+          "full_state": true,
+          "no_nonfinite_skips": true,
+          "official_size_and_components_verified": true,
+          "final_adapter_weights": true,
+          "two_distinct_rank_ids": true,
+          "physical_gpu_masks_0_1": true,
+          "one_local_device_per_rank": true,
+          "rank_data_disjoint": true,
+          "expected_initial_step": true,
+          "runtime_contract_matches_across_ranks": true,
+          "declared_checkpointing_unchanged": true,
+          "actual_compute_dtype_verified": true,
+          "actual_deterministic_runtime_verified": true,
+          "first_update_policy_unchanged": true,
+          "exact_expected_tensor_count": true,
+          "preview_decodes_at_requested_size": true,
+          "state_8_two_rank_rng_and_sampler": true,
+          "state_8_compute_policy": true,
+          "state_8_recorded_runtime": true,
+          "state_4_two_rank_rng_and_sampler": true,
+          "state_4_compute_policy": true,
+          "state_4_recorded_runtime": true
+        },
+        "resumed": {
+          "finished_all_ranks": true,
+          "expected_final_step": true,
+          "finite_losses": true,
+          "finite_weights": true,
+          "parameters_changed": true,
+          "all_optimizer_updates_observed": true,
+          "rank_parameters_equal": true,
+          "rank_shards_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "preview_file": true,
+          "full_state": true,
+          "no_nonfinite_skips": true,
+          "official_size_and_components_verified": true,
+          "final_adapter_weights": true,
+          "two_distinct_rank_ids": true,
+          "physical_gpu_masks_0_1": true,
+          "one_local_device_per_rank": true,
+          "rank_data_disjoint": true,
+          "expected_initial_step": true,
+          "runtime_contract_matches_across_ranks": true,
+          "declared_checkpointing_unchanged": true,
+          "actual_compute_dtype_verified": true,
+          "actual_deterministic_runtime_verified": true,
+          "first_update_policy_unchanged": true,
+          "exact_expected_tensor_count": true,
+          "preview_decodes_at_requested_size": true,
+          "state_8_two_rank_rng_and_sampler": true,
+          "state_8_compute_policy": true,
+          "state_8_recorded_runtime": true
+        }
+      },
+      "product_checks": {
+        "reference": {
+          "product_chose_policy": true,
+          "actual_bf16_unchanged": true,
+          "actual_linear_coverage": true,
+          "actual_280_lokr_bypass": true,
+          "state_4_product_policy_exact": true,
+          "state_4_product_runtime_exact": true,
+          "state_4_no_external_diagnostic": true,
+          "state_8_product_policy_exact": true,
+          "state_8_product_runtime_exact": true,
+          "state_8_no_external_diagnostic": true
+        },
+        "resumed": {
+          "product_chose_policy": true,
+          "actual_bf16_unchanged": true,
+          "actual_linear_coverage": true,
+          "actual_280_lokr_bypass": true,
+          "state_8_product_policy_exact": true,
+          "state_8_product_runtime_exact": true,
+          "state_8_no_external_diagnostic": true
+        }
+      },
+      "integration_checks": {
+        "product_methods_not_substituted": true,
+        "raw_input_recipe_unchanged": true,
+        "plan_product_policy_exact": true,
+        "source_commit_and_manifest_verified": true
+      },
+      "comparison": {
+        "exact": true,
+        "finite": true,
+        "different_tensor_count": 0,
+        "max_absolute_difference": 0.0,
+        "rms_absolute_difference": 0.0,
+        "relative_l2_difference": 0.0,
+        "numerical_metrics_are_diagnostic_only": true,
+        "example_different_keys": [],
+        "tensor_count": 840
+      },
+      "states": {
+        "optimizer_exact": true,
+        "scheduler_exact": true,
+        "rng_exact": true,
+        "progress_exact": true,
+        "sampler_exact": true
+      },
+      "preview_exact": true,
+      "original_assets_unchanged": true,
+      "runtime_contracts_exact": true,
+      "peak_allocated_bytes": 16768165376,
+      "processes": {
+        "reference_process": {
+          "returncode": 0,
+          "wall_elapsed_s": 132.27967300196178,
+          "all_owned_processes_exited": true
+        },
+        "resumed_process": {
+          "returncode": 0,
+          "wall_elapsed_s": 71.63949079299346,
+          "all_owned_processes_exited": true
+        }
+      },
+      "report_file": "new-server-10705/anima-dual-product-ddp-result/report.json"
+    },
+    "anima_fsdp_full_ce1add7_node10705": {
+      "sha256": "cdddcba3341c8f400e046f91327c726f8ebbc2d09fd1d870544164211cc2f0c9",
+      "passed": true,
+      "source_commit": "ce1add7179561f13d534dcd5d959100f8e424b96",
+      "product_entry_verification": true,
+      "external_diagnostic": false,
+      "phase_checks": {
+        "reference": {
+          "two_processes": true,
+          "official_size_backbone": true,
+          "all_ranks_finished": true,
+          "same_progress": true,
+          "weights_finite_and_changed": true,
+          "fp32_trainable_parameters": true,
+          "parameters_really_sharded": true,
+          "gradients_really_sharded": true,
+          "peak_fits_each_device": true,
+          "requested_optimizer_unchanged": true,
+          "complete_checkpoint": true,
+          "rank_data_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "no_nonfinite_skips": true,
+          "all_optimizer_updates_observed": true,
+          "finite_losses": true,
+          "first_update_contract_unchanged": true,
+          "full_model_manifest": true,
+          "only_backbone_exported": true,
+          "export_matches_full_training_state": true,
+          "native_reload_config_present": true,
+          "two_distinct_rank_ids": true,
+          "physical_gpu_masks_0_1": true,
+          "one_local_device_per_rank": true,
+          "expected_initial_step": true,
+          "runtime_contract_matches_across_ranks": true,
+          "declared_checkpointing_unchanged": true,
+          "actual_compute_dtype_verified": true,
+          "actual_deterministic_runtime_verified": true,
+          "final_runtime_flags_unchanged": true,
+          "exact_expected_tensor_count": true,
+          "preview_decodes_at_requested_size": true,
+          "state_8_two_rank_rng_and_sampler": true,
+          "state_8_compute_policy": true,
+          "state_8_recorded_runtime": true,
+          "state_4_two_rank_rng_and_sampler": true,
+          "state_4_compute_policy": true,
+          "state_4_recorded_runtime": true
+        },
+        "resumed": {
+          "two_processes": true,
+          "official_size_backbone": true,
+          "all_ranks_finished": true,
+          "same_progress": true,
+          "weights_finite_and_changed": true,
+          "fp32_trainable_parameters": true,
+          "parameters_really_sharded": true,
+          "gradients_really_sharded": true,
+          "peak_fits_each_device": true,
+          "requested_optimizer_unchanged": true,
+          "complete_checkpoint": true,
+          "rank_data_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "no_nonfinite_skips": true,
+          "all_optimizer_updates_observed": true,
+          "finite_losses": true,
+          "first_update_contract_unchanged": true,
+          "full_model_manifest": true,
+          "only_backbone_exported": true,
+          "export_matches_full_training_state": true,
+          "native_reload_config_present": true,
+          "two_distinct_rank_ids": true,
+          "physical_gpu_masks_0_1": true,
+          "one_local_device_per_rank": true,
+          "expected_initial_step": true,
+          "runtime_contract_matches_across_ranks": true,
+          "declared_checkpointing_unchanged": true,
+          "actual_compute_dtype_verified": true,
+          "actual_deterministic_runtime_verified": true,
+          "final_runtime_flags_unchanged": true,
+          "exact_expected_tensor_count": true,
+          "preview_decodes_at_requested_size": true,
+          "state_8_two_rank_rng_and_sampler": true,
+          "state_8_compute_policy": true,
+          "state_8_recorded_runtime": true
+        }
+      },
+      "product_checks": {
+        "reference": {
+          "product_chose_policy": true,
+          "actual_bf16_unchanged": true,
+          "actual_linear_coverage": true,
+          "actual_35_nonempty_bf16_fp32_groups": true,
+          "state_4_product_policy_exact": true,
+          "state_4_product_runtime_exact": true,
+          "state_4_no_external_diagnostic": true,
+          "state_8_product_policy_exact": true,
+          "state_8_product_runtime_exact": true,
+          "state_8_no_external_diagnostic": true
+        },
+        "resumed": {
+          "product_chose_policy": true,
+          "actual_bf16_unchanged": true,
+          "actual_linear_coverage": true,
+          "actual_35_nonempty_bf16_fp32_groups": true,
+          "state_8_product_policy_exact": true,
+          "state_8_product_runtime_exact": true,
+          "state_8_no_external_diagnostic": true
+        }
+      },
+      "integration_checks": {
+        "product_methods_not_substituted": true,
+        "raw_input_recipe_unchanged": true,
+        "plan_product_policy_exact": true,
+        "source_commit_and_manifest_verified": true
+      },
+      "comparison": {
+        "exact": true,
+        "finite": true,
+        "different_tensor_count": 0,
+        "max_absolute_difference": 0.0,
+        "rms_absolute_difference": 0.0,
+        "relative_l2_difference": 0.0,
+        "numerical_metrics_are_diagnostic_only": true,
+        "example_different_keys": [],
+        "tensor_count": 685
+      },
+      "states": {
+        "optimizer_exact": true,
+        "scheduler_exact": true,
+        "rng_exact": true,
+        "progress_exact": true,
+        "sampler_exact": true
+      },
+      "preview_exact": true,
+      "original_assets_unchanged": true,
+      "runtime_contracts_exact": true,
+      "peak_allocated_bytes": 21136847360,
+      "processes": {
+        "reference_process": {
+          "returncode": 0,
+          "wall_elapsed_s": 353.95201680785976,
+          "all_owned_processes_exited": true
+        },
+        "resumed_process": {
+          "returncode": 0,
+          "wall_elapsed_s": 266.92181983590126,
+          "all_owned_processes_exited": true
+        }
+      },
+      "report_file": "new-server-10705/anima-dual-product-fsdp-result/report.json",
+      "visual_review": {
+        "pale_preview_detected": true,
+        "same_as_external_candidate": true,
+        "strict_pass_is_not_a_quality_verdict": true
+      }
     }
   },
   "diagnostic_results": {
@@ -463,7 +1054,7 @@
       "preview_exact": true,
       "source_is_frozen_baseline": "ccadcfa46a45bd6b0613596bed4f84ce57545454",
       "product_entry_verification": false,
-      "report_file": "krea-fsdp-v2-umehara/fsdp2-linear-backward-v2-krea2-bf16-full-20260915-194133-785554481/report.json"
+      "report_file": "new-server-11582/krea-fsdp-v2-umehara/fsdp2-linear-backward-v2-krea2-bf16-full-20260915-194133-785554481/report.json"
     },
     "sdxl_full_bf16_conv_linear_candidate": {
       "sha256": "1e09f16aae9ea07e28ec943fd42df272c7fef8a0a2e79fdf1cbea09e89ff410f",
@@ -489,7 +1080,7 @@
       "preview_exact": true,
       "source_is_frozen_baseline": "ccadcfa46a45bd6b0613596bed4f84ce57545454",
       "product_entry_verification": false,
-      "report_file": "sdxl-bf16-conv-linear-11582-result/report.json"
+      "report_file": "new-server-11582/sdxl-bf16-conv-linear-11582-result/report.json"
     },
     "sdxl_adapter_native_bf16": {
       "sha256": "c329e743023c18f37b059dbacbbebe05cde510fe53a18c1a6dcb52d7eacb6439",
@@ -528,7 +1119,7 @@
       "preview_exact": false,
       "source_is_frozen_baseline": "ccadcfa46a45bd6b0613596bed4f84ce57545454",
       "product_entry_verification": false,
-      "report_file": "sdxl-adapter-native-baseline-result/report.json"
+      "report_file": "new-server-11582/sdxl-adapter-native-baseline-result/report.json"
     },
     "anima_adapter_native_bf16": {
       "sha256": "068b51732e7f3521925dd32317fa69b11025b54df6d0d0335c2e82ac8e81a89c",
@@ -567,7 +1158,7 @@
       "preview_exact": false,
       "source_is_frozen_baseline": "ccadcfa46a45bd6b0613596bed4f84ce57545454",
       "product_entry_verification": false,
-      "report_file": "anima-adapter-native-baseline-result/report.json"
+      "report_file": "new-server-11582/anima-adapter-native-baseline-result/report.json"
     },
     "sdxl_adapter_bf16_conv_linear_candidate": {
       "sha256": "7aa584e14bf98d3cb389c080a8949b62a6c02ea4b6ab5bf5879e01065445e193",
@@ -595,7 +1186,7 @@
       "preview_exact": true,
       "source_is_frozen_baseline": "ccadcfa46a45bd6b0613596bed4f84ce57545454",
       "product_entry_verification": false,
-      "report_file": "sdxl-adapter-conv-linear-candidate-result/report.json"
+      "report_file": "new-server-11582/sdxl-adapter-conv-linear-candidate-result/report.json"
     },
     "anima_adapter_lifetime_control": {
       "sha256": "74b9a2394256bdf642cec1cf9d85973c3ffa997960f014b843f646d1213c7bf2",
@@ -634,7 +1225,7 @@
       "preview_exact": false,
       "source_is_frozen_baseline": "ccadcfa46a45bd6b0613596bed4f84ce57545454",
       "product_entry_verification": false,
-      "report_file": "anima-lifetime-control-v1-result/report.json"
+      "report_file": "new-server-11582/anima-lifetime-control-v1-result/report.json"
     },
     "anima_full_bf16_linear_backward_candidate": {
       "sha256": "414a2fc652cd0e31bef314ae299484634a8452805e7caf836ac8d82cb39f7e8a",
@@ -671,7 +1262,7 @@
       "preview_exact": false,
       "source_is_frozen_baseline": "ccadcfa46a45bd6b0613596bed4f84ce57545454",
       "product_entry_verification": false,
-      "report_file": "anima-bf16-linear-11582-result/comparison-finalized-4threads.json"
+      "report_file": "new-server-11582/anima-bf16-linear-11582-result/comparison-finalized-4threads.json"
     },
     "anima_adapter_linear_backward_candidate": {
       "sha256": "c72400af065faa3bb9bac4911a00e917e5cc4091da20da15efce684f790aeb35",
@@ -710,7 +1301,7 @@
         "optimizer_exact": false
       },
       "preview_exact": false,
-      "report_file": "anima-adapter-linear-candidate-result/report.json"
+      "report_file": "new-server-11582/anima-adapter-linear-candidate-result/report.json"
     },
     "anima_adapter_rms_linear_backward_candidate": {
       "sha256": "0060bbddfb41e7a71528fbb13ac1fe21a8dbae4b43fefdf8635f9a6f1c7f3b85",
@@ -749,7 +1340,7 @@
         "optimizer_exact": false
       },
       "preview_exact": false,
-      "report_file": "anima-adapter-rms-linear-candidate-v1/formal-anima-adapter-g1-r512-20260916-063057-umehara-adapter-rms-linear-candidate-v1-350702016/report.json"
+      "report_file": "new-server-11582/anima-adapter-rms-linear-candidate-v1/formal-anima-adapter-g1-r512-20260916-063057-umehara-adapter-rms-linear-candidate-v1-350702016/report.json"
     },
     "anima_adapter_linear_lokr_backward_candidate": {
       "report": "anima-lokr-backward-candidate-v1/formal-anima-adapter-g1-r512-20260916-063849-umehara-adapter-linear-lokr-candidate-v1-508031147/report.json",
@@ -789,7 +1380,8 @@
       },
       "preview_exact": false,
       "source_is_frozen_baseline": "ccadcfa46a45bd6b0613596bed4f84ce57545454",
-      "product_entry_verification": false
+      "product_entry_verification": false,
+      "report_file": "new-server-11582/anima-lokr-backward-candidate-v1/formal-anima-adapter-g1-r512-20260916-063849-umehara-adapter-linear-lokr-candidate-v1-508031147/report.json"
     },
     "sdxl_ddp_dual_bf16_candidate": {
       "report": "sdxl-dual-ddp-candidate-v1-result/report.json",
@@ -887,7 +1479,8 @@
           "state_8_compute_policy": true,
           "state_8_recorded_runtime": true
         }
-      }
+      },
+      "report_file": "new-server-11582/sdxl-dual-ddp-candidate-v1-result/report.json"
     },
     "sdxl_fsdp_dual_bf16_candidate": {
       "report": "sdxl-dual-fsdp-candidate-v1-result/report.json",
@@ -997,7 +1590,8 @@
           "state_8_compute_policy": true,
           "state_8_recorded_runtime": true
         }
-      }
+      },
+      "report_file": "new-server-11582/sdxl-dual-fsdp-candidate-v1-result/report.json"
     },
     "anima_adapter_linear_fp32_compute_plus_lokr_fp32": {
       "sha256": "bb35d3e193517163f2b412230923cfc444c80e167f2436d5a58a2cbe64529146",
@@ -1026,7 +1620,7 @@
       "original_assets_unchanged": true,
       "source_is_frozen_baseline": "ccadcfa46a45bd6b0613596bed4f84ce57545454",
       "product_entry_verification": false,
-      "report_file": "anima-linear-forward-fp32-candidate-v1/formal-anima-adapter-g1-r512-20260916-071734-umehara-adapter-linear-forward-fp32-candidate-v1-845506522/report.json"
+      "report_file": "new-server-11582/anima-linear-forward-fp32-candidate-v1/formal-anima-adapter-g1-r512-20260916-071734-umehara-adapter-linear-forward-fp32-candidate-v1-845506522/report.json"
     },
     "anima_adapter_linear_fp32_compute_native_lokr": {
       "sha256": "5be3a8db9a2f19d19b328f7039393c97e255f8e060799e21a50e1c7c5c98889b",
@@ -1055,7 +1649,7 @@
       "original_assets_unchanged": true,
       "source_is_frozen_baseline": "ccadcfa46a45bd6b0613596bed4f84ce57545454",
       "product_entry_verification": false,
-      "report_file": "anima-linear-fp32-native-lokr-candidate-v1/formal-anima-adapter-g1-r512-20260916-072556-umehara-adapter-linear-fp32-native-lokr-candidate-v1-651277363/report.json"
+      "report_file": "new-server-11582/anima-linear-fp32-native-lokr-candidate-v1/formal-anima-adapter-g1-r512-20260916-072556-umehara-adapter-linear-fp32-native-lokr-candidate-v1-651277363/report.json"
     },
     "anima_ddp_linear_fp32_native_lokr_node10705": {
       "sha256": "435f3165f9f493d9541d537fc05109de14ade42a9cc717d177be7ecbcecbab31",
@@ -1380,6 +1974,91 @@
       },
       "peak_allocated_bytes": 21136847360,
       "report_file": "new-server-10705/anima-dual-fsdp-candidate-result/report.json"
+    },
+    "anima_full_rms_linear_backward_fp32_candidate": {
+      "report_file": "new-server-11582/anima-full-rms-linear-candidate-result/report.json",
+      "sha256": "f4eb7803cc9ce9fb681c61cdaa5e3a8d38177e7cb8e6c9e677b923154b2c2955",
+      "passed": false,
+      "product_entry_verification": false,
+      "comparison": {
+        "exact": false,
+        "finite": true,
+        "different_tensor_count": 685,
+        "max_absolute_difference": 2.204999327659607e-05,
+        "rms_absolute_difference": 6.882565211483019e-07,
+        "relative_l2_difference": 8.160902603083661e-07,
+        "numerical_metrics_are_diagnostic_only": true,
+        "example_different_keys": [
+          "backbone.blocks.0.adaln_modulation_cross_attn.1.weight",
+          "backbone.blocks.0.adaln_modulation_cross_attn.2.weight",
+          "backbone.blocks.0.adaln_modulation_mlp.1.weight",
+          "backbone.blocks.0.adaln_modulation_mlp.2.weight",
+          "backbone.blocks.0.adaln_modulation_self_attn.1.weight",
+          "backbone.blocks.0.adaln_modulation_self_attn.2.weight",
+          "backbone.blocks.0.cross_attn.k_norm.weight",
+          "backbone.blocks.0.cross_attn.k_proj.weight",
+          "backbone.blocks.0.cross_attn.output_proj.weight",
+          "backbone.blocks.0.cross_attn.q_norm.weight"
+        ],
+        "tensor_count": 685,
+        "expected_full_tensor_count": 685,
+        "expected_tensor_count_matches": true
+      },
+      "states": {
+        "progress_exact": false,
+        "sampler_exact": true,
+        "rng_exact": true,
+        "scheduler_exact": true,
+        "optimizer_exact": false
+      },
+      "preview_exact": false,
+      "original_assets_unchanged": true,
+      "phase_checks": {
+        "reference": {
+          "finished_all_ranks": true,
+          "expected_final_step": true,
+          "finite_losses": true,
+          "finite_weights": true,
+          "parameters_changed": true,
+          "all_optimizer_updates_observed": true,
+          "rank_parameters_equal": true,
+          "rank_shards_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "preview_file": true,
+          "full_state": true,
+          "no_nonfinite_skips": true,
+          "official_size_and_components_verified": true,
+          "full_model_manifest": true,
+          "only_backbone_exported": true,
+          "export_matches_full_training_state": true,
+          "native_reload_config_present": true,
+          "joint_operator_policy": true,
+          "saved_full_rms_identity_verified": true
+        },
+        "resumed": {
+          "finished_all_ranks": true,
+          "expected_final_step": true,
+          "finite_losses": true,
+          "finite_weights": true,
+          "parameters_changed": true,
+          "all_optimizer_updates_observed": true,
+          "rank_parameters_equal": true,
+          "rank_shards_disjoint": true,
+          "one_start_event": true,
+          "one_final_preview": true,
+          "preview_file": true,
+          "full_state": true,
+          "no_nonfinite_skips": true,
+          "official_size_and_components_verified": true,
+          "full_model_manifest": true,
+          "only_backbone_exported": true,
+          "export_matches_full_training_state": true,
+          "native_reload_config_present": true,
+          "joint_operator_policy": true,
+          "saved_full_rms_identity_verified": true
+        }
+      }
     }
   },
   "local_checks": {
@@ -1398,12 +2077,9 @@
     "chrome_scope": "Real Chrome and isolated mock APIs; SDXL DDP/FSDP at1172/2468 in light/dark. No GPU validation. Initial missing-mock fixture hit refused local connections; fixed and complete screenshots rerun.",
     "chrome_evidence_sha256": "d65201c740885f6653fbcf6df604b21989c0474af75fd7fe814f279508b55826"
   },
-  "pending": [
-    "Anima two-GPU DDP adapter and FSDP full product-entry verification",
-    "SDXL two-GPU DDP adapter and FSDP full product-entry verification"
-  ],
+  "pending": [],
   "windows_gpu_tested": false,
-  "remote_status": "10705: Anima single full/adapter formal product PASS; Anima DDP/FSDP external candidates PASS. SDXL dual formal product running; Anima dual product source being committed for separate validation.",
+  "remote_status": "All 10705 formal and diagnostic GPU workers exited. Six new-node formal cases passed; three older-node formal cases retained with provenance. Anima trained nonbridge preview sensitivity investigated; low-LR full-training control restores visible colors without freezing parameters. Original formal results and low-LR raw audit failure preserved.",
   "anima_local_integration_checks": {
     "source_base_commit": "6977537109ee46573b6d9365b5e341e198320aa4",
     "uncommitted_changes": true,
@@ -1425,8 +2101,8 @@
       "scope": "Anima and scheduler integration including final FSDP save guard; subsequent caption fix and schema help changes covered by focused regression."
     }
   },
-  "latest_uploaded_gpu_snapshot_source": "2849e61a86cfbeb19595046dd84650e9966b20e6",
-  "latest_uploaded_gpu_snapshot_product_manifest_sha256": "53fafcdeb60d4c4cda72254afc36462b6ee5430565a92926a104fd54b67a59bb",
+  "latest_uploaded_gpu_snapshot_source": "ce1add7179561f13d534dcd5d959100f8e424b96",
+  "latest_uploaded_gpu_snapshot_product_manifest_sha256": "4ea2eab3e381d6852461c58d2eba3e57bed9e090bb20c4b39d816e13da445f68",
   "offline_followup_checks": {
     "frontend_files": 90,
     "frontend_passed": 718,
@@ -1502,6 +2178,422 @@
     "chrome_evidence_sha256": "d477eb03d2f6ce1a080dbcfedc7d9d70d7cbfb56880593d8adb9d4eb94fe6423",
     "chrome_scope": "Real Chrome with isolated mocked APIs; Anima DDP/FSDP layout and stale validation/disable restoration; no GPU claim.",
     "initial_full_run": "2627 passed, 2 stale fixture failures, 5 skipped; corrected expected FLUX label and historical config fixture fields; full suite rerun passed; numerical thresholds unchanged.",
-    "cpu_fsdp_scope": "Three actual two-rank CPU cases; state loaded into new objects within same workers. Hardware matrix separately uses cold torchrun restarts."
-  }
+    "cpu_fsdp_scope": "Three actual two-rank CPU cases; state loaded into new objects within same workers. Hardware matrix separately uses cold torchrun restarts.",
+    "committed_source": "ce1add7179561f13d534dcd5d959100f8e424b96"
+  },
+  "source_scope": "Mixed historical and current evidence. Top-level source_commit/source_product_manifest_sha256 identify the first historical 4477bad product baseline only; per-result source_commit and report hash are authoritative.",
+  "latest_local_product_commit": "ce1add7179561f13d534dcd5d959100f8e424b96",
+  "anima_dual_product_deployment": {
+    "source_commit": "ce1add7179561f13d534dcd5d959100f8e424b96",
+    "explicit_user_upload_authorization": true,
+    "product_manifest_sha256": "4ea2eab3e381d6852461c58d2eba3e57bed9e090bb20c4b39d816e13da445f68",
+    "files_verified": 190,
+    "pyproject_verified": true,
+    "local_entry_cpu_tests_passed": 26,
+    "remote_contract_only_ddp_passed": true,
+    "remote_contract_only_fsdp_passed": true,
+    "cuda_initialized_during_cpu_contracts": false,
+    "remote_preflight_summary_sha256": "76f985c911222a5ba4a1dd536c0001847a0fd41c0265af3c9b0c61e9975e7667"
+  },
+  "preview_diagnostics": {
+    "anima_fsdp_native_dtype_pair6": {
+      "report_sha256": "9c6a8652605424d6e5ce4aec0533451e954d25ade8953adb42843ceda0d59496",
+      "source_commit": "ce1add7179561f13d534dcd5d959100f8e424b96",
+      "execution_completed": true,
+      "original_inputs_unchanged": true,
+      "runtime_unchanged": true,
+      "native_bf16_exactly_reproduces_original_fsdp_png": true,
+      "native_fp32_also_pale": true,
+      "visual_review_completed": true,
+      "image_quality_pass_claimed": false,
+      "same_fp32_conditioning_vae_input": true,
+      "rope_buffers_unchanged": true,
+      "backbone_parameter_dtype_only_config_change": true,
+      "same_process_allocator_history_limitation": true,
+      "variants": [
+        {
+          "backbone_parameter_dtype": "fp32",
+          "input_dtype": "fp32",
+          "autocast": "bf16",
+          "text_dtype": "fp32-original-cache",
+          "vae_dtype": "fp32",
+          "vae_parameter_dtypes": [
+            "torch.float32"
+          ],
+          "steps": 6,
+          "forward_calls": 12,
+          "elapsed_s": 7.696953732054681,
+          "latents": {
+            "shape": [
+              1,
+              16,
+              64,
+              64
+            ],
+            "dtype": "torch.float32",
+            "sha256": "38f95183b2a755b24abce800379f72a214198d0c392e876cd153bbfb19102749"
+          },
+          "pixels": {
+            "shape": [
+              1,
+              3,
+              512,
+              512
+            ],
+            "dtype": "torch.float32",
+            "sha256": "7035c2da09af12901f364b04825921f332daeb3f7f653b2f580bc8a95d79c5fe"
+          },
+          "png": "/root/private_data/YPuddinTrainStudio-dtk/acceptance/runs-10705/work/runs/anima-preview-dtype-pair6-1789529756015955233/backbone-fp32-steps-6.png",
+          "png_sha256": "b1db166edf6c5cda920cc96bb2c28ad7262dddfbc06659a4b0b61c5d48ab4202",
+          "statistics": {
+            "rgb_mean": [
+              232.96227264404297,
+              253.01467514038086,
+              248.91358184814453
+            ],
+            "luma_mean": 248.4554354339599,
+            "luma_std": 5.714769750667646,
+            "fraction_luma_ge_240": 0.86639404296875,
+            "description": "Descriptive measurements only; no image-quality pass threshold."
+          },
+          "original_fsdp_png_exact": false,
+          "peak_allocated_bytes": 9190850048,
+          "peak_reserved_bytes": 9491709952
+        },
+        {
+          "backbone_parameter_dtype": "bf16",
+          "input_dtype": "fp32",
+          "autocast": "bf16",
+          "text_dtype": "fp32-original-cache",
+          "vae_dtype": "fp32",
+          "vae_parameter_dtypes": [
+            "torch.float32"
+          ],
+          "steps": 6,
+          "forward_calls": 12,
+          "elapsed_s": 1.8780388329178095,
+          "latents": {
+            "shape": [
+              1,
+              16,
+              64,
+              64
+            ],
+            "dtype": "torch.float32",
+            "sha256": "10a96fced473f0f11bf226315cd8c567e9a728115d45599fe254712a11d6041c"
+          },
+          "pixels": {
+            "shape": [
+              1,
+              3,
+              512,
+              512
+            ],
+            "dtype": "torch.float32",
+            "sha256": "ea84092ad4c58cbe7432f0110a446267bac7d7ef8990c3e94265f66828c267b5"
+          },
+          "png": "/root/private_data/YPuddinTrainStudio-dtk/acceptance/runs-10705/work/runs/anima-preview-dtype-pair6-1789529756015955233/backbone-bf16-steps-6.png",
+          "png_sha256": "90051a4e1e93a65787bd749178a5c0842839b0d5f31bbfa31489e03fb6834abe",
+          "statistics": {
+            "rgb_mean": [
+              233.0005645751953,
+              253.02526092529297,
+              248.95307540893555
+            ],
+            "luma_mean": 248.47399868698122,
+            "luma_std": 5.6994766037329185,
+            "fraction_luma_ge_240": 0.8653106689453125,
+            "description": "Descriptive measurements only; no image-quality pass threshold."
+          },
+          "original_fsdp_png_exact": true,
+          "peak_allocated_bytes": 5034434048,
+          "peak_reserved_bytes": 5465178112
+        }
+      ],
+      "report_file": "new-server-10705/anima-fsdp-preview-dtype-diagnostic-v1/result-pair6/report.json"
+    },
+    "anima_fsdp_native_bf16_25_steps": {
+      "report_sha256": "a7c80feb1cd3147d6f4975fa0f6ae9bd1a850b2a3c8566999e7562146c91f885",
+      "execution_completed": true,
+      "original_inputs_unchanged": true,
+      "runtime_unchanged": true,
+      "visual_review_completed": true,
+      "still_visibly_pale": true,
+      "image_quality_pass_claimed": false,
+      "only_steps_changed_from_bf16_pair6_variant": true,
+      "variant": {
+        "backbone_parameter_dtype": "bf16",
+        "input_dtype": "fp32",
+        "autocast": "bf16",
+        "text_dtype": "fp32-original-cache",
+        "vae_dtype": "fp32",
+        "vae_parameter_dtypes": [
+          "torch.float32"
+        ],
+        "steps": 25,
+        "forward_calls": 50,
+        "elapsed_s": 12.369299273006618,
+        "latents": {
+          "shape": [
+            1,
+            16,
+            64,
+            64
+          ],
+          "dtype": "torch.float32",
+          "sha256": "7aabf12a95430b190255e4cf283fcb48b4f9a5df763ca274c53006e9a172a687"
+        },
+        "pixels": {
+          "shape": [
+            1,
+            3,
+            512,
+            512
+          ],
+          "dtype": "torch.float32",
+          "sha256": "2d2ef4fe9d1d5a4ba3ceb0579945d53394cc948f44cad767afca6ec26f392505"
+        },
+        "png": "/root/private_data/YPuddinTrainStudio-dtk/acceptance/runs-10705/work/runs/anima-preview-dtype-bf1625-1789529994795941910/backbone-bf16-steps-25.png",
+        "png_sha256": "409412f8119d2d36d0058568ae0250223808fe0d9ec1e719be8994cbf5137a54",
+        "statistics": {
+          "rgb_mean": [
+            225.6850814819336,
+            248.86545944213867,
+            248.8109016418457
+          ],
+          "luma_mean": 243.93337201461793,
+          "luma_std": 14.786433720795907,
+          "fraction_luma_ge_240": 0.8069038391113281,
+          "description": "Descriptive measurements only; no image-quality pass threshold."
+        },
+        "original_fsdp_png_exact": false,
+        "peak_allocated_bytes": 5036531200,
+        "peak_reserved_bytes": 5419040768
+      },
+      "report_file": "new-server-10705/anima-fsdp-preview-dtype-diagnostic-v1/result-bf1625/report.json"
+    },
+    "anima_original_base_6_and_25_steps": {
+      "report_sha256": "1fd8a4c65d5f0b57ad0b07841655c11a81678e7939e228e4204731dd7e497a91",
+      "report_file": "new-server-10705/anima-base-preview-control-v2/result-base6and25/report.json",
+      "source_commit": "ce1add7179561f13d534dcd5d959100f8e424b96",
+      "root_visually_reviewed": true,
+      "observation": "Same-setting original pretrained base has visible colors in both 6/25-step samples; trained full checkpoint remains pale. This isolates a weight-dependent difference, not proof of an optimizer or FSDP defect."
+    },
+    "anima_trained_weight_update_audit": {
+      "report_sha256": "e8a83aef56296d2248c3b604b9c95d6fb0e68dfcb9cdf0dc2d0e484293b9ece5",
+      "report_file": "new-server-10705/anima-weight-delta-audit-v1/result/anima-weight-delta-1789531768376819880.json",
+      "scope": "Read-only parameter change measurements, not an optimization correctness or image quality verdict",
+      "tensor_count": 685,
+      "numel": 2091068928,
+      "all_finite": true,
+      "changed_tensors": 685,
+      "max_abs_update": 0.0001220703125,
+      "bf16_rounded_changed_fraction": 0.5400597904154788,
+      "relative_l2_update_over_base": 3.649544447991869e-05,
+      "groups": {
+        "other_backbone": {
+          "tensor_count": 567,
+          "numel": 1956405248,
+          "finite": true,
+          "relative_l2_update_over_base": 0.0020029772994121326,
+          "bf16_rounded_changed_fraction": 0.5586272686179178
+        },
+        "llm_adapter": {
+          "tensor_count": 118,
+          "numel": 134663680,
+          "finite": true,
+          "relative_l2_update_over_base": 9.170252188601e-06,
+          "bf16_rounded_changed_fraction": 0.2703099083583636
+        }
+      },
+      "sha_verified_in_same_read": true,
+      "all_input_signatures_unchanged": true
+    },
+    "anima_bridge_swap_25_steps": {
+      "report_sha256": "16a0511e617617540cd27f5eba180446b68abf16f219001d65dc76ab62c71ba5",
+      "report_file": "new-server-10705/anima-bridge-swap-diagnostic-v3/result/report.json",
+      "source_commit": "ce1add7179561f13d534dcd5d959100f8e424b96",
+      "scope": "Controlled bridge-swap inference only, not a repaired or deliverable model",
+      "model_counts": {
+        "tensors": 685,
+        "parameters": 2091068928,
+        "bridge_tensors": 118,
+        "bridge_parameters": 134663680
+      },
+      "conditioning_bitwise_equal_to_base_and_trained_controls": true,
+      "runtime_equal_to_base_and_trained_controls": true,
+      "root_visually_reviewed": true,
+      "variants": [
+        {
+          "label": "A-trained-nonbridge-base-bridge",
+          "png_sha256": "c422a5f4d969e22051665a2f038439a34c8c03f156bf0fc1c10023fcc373d1b5",
+          "statistics": {
+            "rgb_mean": [
+              226.6038055419922,
+              249.06610488891602,
+              250.0191993713379
+            ],
+            "luma_mean": 244.35943346939084,
+            "luma_std": 13.169641476358809,
+            "fraction_luma_ge_240": 0.7804985046386719,
+            "description": "Descriptive measurements only; no image-quality pass threshold."
+          },
+          "steps": 25,
+          "forward_calls": 50,
+          "elapsed_s": 12.90175453783013,
+          "peak_allocated_bytes": 5029191168,
+          "peak_reserved_bytes": 5322571776,
+          "parameters_unchanged_after_inference": true,
+          "buffers_unchanged_after_inference": true,
+          "swap_checks": {
+            "all_parameters_exact_expected_source": true,
+            "every_replacement_bitwise_exact": true,
+            "all_nonbridge_unchanged": true,
+            "parameter_objects_unchanged": true,
+            "all_buffers_unchanged": true
+          },
+          "bridge_tensors_verified": 118,
+          "bridge_tensors_changed_in_bf16": 76
+        },
+        {
+          "label": "B-base-nonbridge-trained-bridge",
+          "png_sha256": "ae98fb4c037fa29930b568c7a4842806f786cecb968ac9aa3b845d4433b49e1c",
+          "statistics": {
+            "rgb_mean": [
+              130.1158790588379,
+              184.2264747619629,
+              137.48422622680664
+            ],
+            "luma_mean": 169.34777177124025,
+            "luma_std": 57.84524724529016,
+            "fraction_luma_ge_240": 0.10597991943359375,
+            "description": "Descriptive measurements only; no image-quality pass threshold."
+          },
+          "steps": 25,
+          "forward_calls": 50,
+          "elapsed_s": 7.197845366084948,
+          "peak_allocated_bytes": 5029191168,
+          "peak_reserved_bytes": 5322571776,
+          "parameters_unchanged_after_inference": true,
+          "buffers_unchanged_after_inference": true,
+          "swap_checks": {
+            "all_parameters_exact_expected_source": true,
+            "every_replacement_bitwise_exact": true,
+            "all_nonbridge_unchanged": true,
+            "parameter_objects_unchanged": true,
+            "all_buffers_unchanged": true
+          },
+          "bridge_tensors_verified": 118,
+          "bridge_tensors_changed_in_bf16": 76
+        }
+      ],
+      "observations": {
+        "A": "Trained nonbridge plus original bridge remains pale.",
+        "B": "Original nonbridge plus trained bridge has visible colors.",
+        "boundary": "At this fixed input and seed, paleness follows the trained nonbridge part; bridge substitution is not a fix or a deliverable model."
+      },
+      "all_owned_processes_exited": true
+    },
+    "anima_full_fsdp_low_lr_stability": {
+      "report_file": "new-server-10705/anima-fsdp-low-lr-result/report.json",
+      "report_sha256": "6027ed26c6752f572a627137784f6208d2a651d732f98ff4776695aa515eb159",
+      "original_execution_passed": false,
+      "original_failed_checks": [
+        "actual_learning_rate"
+      ],
+      "postprocess_correction": {
+        "file": "new-server-10705/anima-fsdp-low-lr-result/postflight-audit.json",
+        "sha256": "8370f5b27aa899d11955c6a4b60794f57633497971574ee7d5f30d3f51560372",
+        "cause": "Original audit iterated dict keys (backbone) instead of numeric dict values. Its CPU fixture had incorrectly replaced the real dictionary with a list.",
+        "correction": "Require exactly eight ordered step events, actual named backbone group dictionary, every finite numeric value exactly 1e-6; no tolerance introduced.",
+        "corrected_checks": {
+          "process_exit_zero": true,
+          "two_ranks": true,
+          "one_local_gpu_each": true,
+          "physical_gpu_masks": true,
+          "fresh_eight_updates": true,
+          "eight_finite_loss_and_grad_norm": true,
+          "actual_learning_rate": true,
+          "no_nonfinite_skips": true,
+          "finite_weights_changed": true,
+          "complete_backbone": true,
+          "fp32_masters_really_sharded": true,
+          "adamw_unchanged": true,
+          "data_disjoint": true,
+          "contracts_same": true,
+          "native_product_operator_coverage": true,
+          "runtime_unchanged": true,
+          "one_25_step_preview": true,
+          "no_large_training_outputs": true,
+          "preview_decodes_512": true
+        },
+        "corrected_execution_checks_passed": true
+      },
+      "first_step_control": {
+        "step": {
+          "baseline": 1,
+          "low_lr": 1,
+          "exact": true
+        },
+        "loss": {
+          "baseline": 0.16602428257465363,
+          "low_lr": 0.16602428257465363,
+          "exact": true
+        },
+        "grad_norm": {
+          "baseline": 2.7004290309846644,
+          "low_lr": 2.7004290309846644,
+          "exact": true
+        }
+      },
+      "initial_parameter_control": [
+        {
+          "rank": 0,
+          "baseline": "1bf9c7adb0a9d2a8773621f8c909b731ed4e1281ee729e9a87188af124c9ed66",
+          "low_lr": "1bf9c7adb0a9d2a8773621f8c909b731ed4e1281ee729e9a87188af124c9ed66",
+          "exact": true
+        },
+        {
+          "rank": 1,
+          "baseline": "75efc6c73eed4c15920835b13303abfdb3ad6d6a690202d2492c05f5fd59163d",
+          "low_lr": "75efc6c73eed4c15920835b13303abfdb3ad6d6a690202d2492c05f5fd59163d",
+          "exact": true
+        }
+      ],
+      "source_commit": "ce1add7179561f13d534dcd5d959100f8e424b96",
+      "disclosure": {
+        "training_change": "AdamW learning rate 1e-5 -> 1e-6; other training configuration unchanged",
+        "io_changes": "No state4/state8 or model exports; save_state_every_steps=None, save_on_finish=False",
+        "evaluation_change": "Final preview 6 -> 25 denoising steps; same prompt, seed, scheduler, CFG and input size",
+        "not_resume_acceptance": true,
+        "no_training_quality_threshold": true,
+        "no_product_algorithm_substitutions": true
+      },
+      "root_visually_reviewed": true,
+      "visual_observation": "Visible girl, blue sky and green grass; severe pale output not reproduced at lr=1e-6. A short stability control, not general image-quality acceptance or a new strict resume case.",
+      "png_sha256": "767eabb970079f9294d46d639715bfcca02ce3f08c370863778b87885daa7f87",
+      "original_assets_unchanged": true,
+      "all_owned_processes_exited": true,
+      "cache_control": {
+        "report_file": "new-server-10705/anima-fsdp-low-lr-result/cache-control.json",
+        "sha256": "3e518d67074bb4c444cceabaf8f0126fe475adb10423863e6ba354afa36f5b8a",
+        "files": 34,
+        "bytes_per_case": 38414088,
+        "all_file_hashes_equal": true
+      },
+      "audit_regression_tests_passed": 12,
+      "independent_audit_sha256": "ca5d195678c75e858767e93beb1bbd0a877f6a01417ff545de9300340d12fb2d"
+    }
+  },
+  "evidence_root": "Maintainer-local remote-testing/dtk-20260914; raw files are audit archives, not product dependencies or included in a source-only clone.",
+  "strict_resume_matrix_complete": true,
+  "last_updated_at": "2026-09-16T04:31:58.249970+00:00",
+  "completion_scope": "Nine listed formal BF16 strict-resume cases across recorded nodes, associated local/UI regressions, and investigation of the observed Anima full preview. Windows GPU and long-run convergence are explicitly outside this completion claim.",
+  "validation_limits": [
+    "No Windows CUDA or WSL2 GPU hardware acceptance in this round.",
+    "Formal GPU cases cover fixed 512-resolution short recipes with frozen external text encoders; not all optimizers/resolutions or long-run quality.",
+    "Anima full lr=1e-5 recipe still produces a pale image; lr=1e-6 stability control does not reproduce severe paleness. No claim that all lr=1e-5 recipes fail or that every FSDP numerical behavior is proven correct.",
+    "Low-LR control did not save full states or exports and used 25-step preview; it is not an additional cold-resume verification."
+  ],
+  "independent_formal_product_audit_sha256": "485bd3bd8201b5ef03332edce85c0a5074b9895839e0f7a1790f47bed48b8e64"
 }

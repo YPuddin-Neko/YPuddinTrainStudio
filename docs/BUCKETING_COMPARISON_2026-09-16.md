@@ -25,7 +25,7 @@ YPuddin 工作区同时存在其他功能修改；这里的算法分析以读取
 | sd-scripts / lora-scripts | 从最小边到最大边枚举宽度，按最大面积向下取整高度并加入转置；桶面积通常不超过最大面积，没有 ALS 式 ±10% 面积带 | 已有完全相同尺寸优先，否则选绝对比例差最小桶；最小/最大边界间接决定可覆盖比例 |
 | diffusion-pipe | 先指定比例列表，或在 `min_ar..max_ar` 之间等比生成；再对每个基准面积解出宽高，并按模型粒度分别四舍五入。也支持直接指定 `(宽, 高, 帧数)` 列表 | 在对数比例空间找最近比例；视频另检查可用帧桶。四舍五入后最终比例和面积会稍变 |
 
-源码依据：我们 [buckets.py](../ypuddin/data/buckets.py) 31–88 行；[ALS dataset.py](../../AnimaLoraStudio/runtime/training/dataset.py) 193–245 行；[sd-scripts dataset.py](../../sd-scripts/library/dataset.py) 229–270 行、[model_util.py](../../sd-scripts/library/model_util.py) 1388–1416 行；[diffusion-pipe dataset.py](../../diffusion-pipe/utils/dataset.py) 416–425、495–507、838–871 行。
+源码依据：我们 [buckets.py](../ypuddin/data/buckets.py) 31–88 行；[ALS dataset.py](https://github.com/WalkingMeatAxolotl/AnimaLoraStudio/blob/3d9d2e86045b879cd19c01ac4aa2337f45a283ab/runtime/training/dataset.py) 193–245 行；[sd-scripts dataset.py](https://github.com/kohya-ss/sd-scripts/blob/4e624302e0088e39933b31cbc71f24212e900f5f/library/dataset.py) 229–270 行、[model_util.py](https://github.com/kohya-ss/sd-scripts/blob/4e624302e0088e39933b31cbc71f24212e900f5f/library/model_util.py) 1388–1416 行；[diffusion-pipe dataset.py](https://github.com/tdrussell/diffusion-pipe/blob/8f83dbf25d03219df705570ec03e62be04bc402f/utils/dataset.py) 416–425、495–507、838–871 行。
 
 **具体差异：** 同为比例上限 2、步长 64、面积容差 10%，实际运行两边原始生成方法得到：
 
@@ -48,7 +48,7 @@ YPuddin 工作区同时存在其他功能修改；这里的算法分析以读取
 - **sd-scripts 常规路径** 按分桶结果缩放，然后中心裁切；开启 `random_crop` 可以改为随机裁切。它与我们固定中心裁切不完全相同。
 - **diffusion-pipe 通用图片预处理** 使用 `ImageOps.fit`，属于覆盖缩放后裁切；透明图先合成白底。模型私有预处理还可能有额外处理，本报告不把通用路径结论扩大到所有视频、控制图和模型分支。
 
-源码依据：[我们的 images.py](../ypuddin/data/images.py) 35–90 行、[buckets.py](../ypuddin/data/buckets.py) 98–131 行；[ALS dataset.py](../../AnimaLoraStudio/runtime/training/dataset.py) 764–787 行；[sd-scripts utils.py](../../sd-scripts/library/utils.py) 206–234 行；[diffusion-pipe models/base.py](../../diffusion-pipe/models/base.py) 41–53、173–197 行。
+源码依据：[我们的 images.py](../ypuddin/data/images.py) 35–90 行、[buckets.py](../ypuddin/data/buckets.py) 98–131 行；[ALS dataset.py](https://github.com/WalkingMeatAxolotl/AnimaLoraStudio/blob/3d9d2e86045b879cd19c01ac4aa2337f45a283ab/runtime/training/dataset.py) 764–787 行；[sd-scripts utils.py](https://github.com/kohya-ss/sd-scripts/blob/4e624302e0088e39933b31cbc71f24212e900f5f/library/utils.py) 206–234 行；[diffusion-pipe models/base.py](https://github.com/tdrussell/diffusion-pipe/blob/8f83dbf25d03219df705570ec03e62be04bc402f/models/base.py) 41–53、173–197 行。
 
 ## 3. `no_upscale` 不是原生尺寸的统一别名
 
@@ -59,7 +59,7 @@ YPuddin 工作区同时存在其他功能修改；这里的算法分析以读取
 | ALS 常规 ARB | 本次桶管理器没有同名 no-upscale 参数；其原生尺寸是另一条显式路径 |
 | diffusion-pipe 通用 ARB | 本次通用桶路径按配置面积得到目标尺寸，可以放大小图；没有核实到与上述两种行为相同的通用 no-upscale 开关 |
 
-依据：[我们的 buckets.py:84](../ypuddin/data/buckets.py)、[sd-scripts dataset.py](../../sd-scripts/library/dataset.py) 272–310、660–665 行。我们的 `align` 与 sd-scripts 的 `reso_steps` 含义也不同，不应直接把两个设置值互换。极小于对齐粒度的输入需要额外检查；本报告的小例均大于对齐粒度，不把它们外推成所有病态尺寸保证。
+依据：[我们的 buckets.py:84](../ypuddin/data/buckets.py)、[sd-scripts dataset.py](https://github.com/kohya-ss/sd-scripts/blob/4e624302e0088e39933b31cbc71f24212e900f5f/library/dataset.py) 272–310、660–665 行。我们的 `align` 与 sd-scripts 的 `reso_steps` 含义也不同，不应直接把两个设置值互换。极小于对齐粒度的输入需要额外检查；本报告的小例均大于对齐粒度，不把它们外推成所有病态尺寸保证。
 
 ## 4. 五种尺寸的可复核小例
 
@@ -94,16 +94,16 @@ YPuddin 工作区同时存在其他功能修改；这里的算法分析以读取
 - diffusion-pipe 的每个比例组会遍历全部 `resolutions` 建尺寸数据集，再应用来源重复次数；其示例配置也明确说明每张图会用于所有指定面积。
 - sd-scripts 是每个 dataset 自己的 resolution/bucket 配置。可以用多个 dataset 配同一来源实现多档，但这里没有发现与上述全局列表完全相同的自动展开接口；不要只对照参数名称推算 epoch。
 
-依据：[我们的 dataset.py](../ypuddin/data/dataset.py) 171–218 行；[ALS dataset.py](../../AnimaLoraStudio/runtime/training/dataset.py) 275–294、486–520 行；[diffusion-pipe dataset.py](../../diffusion-pipe/utils/dataset.py) 229–232、337、419–435 行。
+依据：[我们的 dataset.py](../ypuddin/data/dataset.py) 171–218 行；[ALS dataset.py](https://github.com/WalkingMeatAxolotl/AnimaLoraStudio/blob/3d9d2e86045b879cd19c01ac4aa2337f45a283ab/runtime/training/dataset.py) 275–294、486–520 行；[diffusion-pipe dataset.py](https://github.com/tdrussell/diffusion-pipe/blob/8f83dbf25d03219df705570ec03e62be04bc402f/utils/dataset.py) 229–232、337、419–435 行。
 
 | 项目 | 单卡桶尾 | 多卡分配要点 |
 |---|---|---|
-| 我们 | `drop_last=False`，保留每桶短批，不复制图补满 | 先形成并打乱同尺寸批，再把完整批分给 rank；只保留可整除卡数的批次数，最后不足一组的批会丢弃。不同 rank 同一步不一定同一桶；不能宣称“多卡每轮所有图片必用且绝不丢尾” |
+| 我们 | `drop_last=False`，保留每桶短批，不复制图补满 | 先形成并打乱同尺寸批，再以已形成的批次（包含短批）为单位分给 rank；只保留可整除卡数的批次数，最后不足一组的批会丢弃。不同 rank 同一步不一定同一桶；不能宣称“多卡每轮所有图片必用且绝不丢尾” |
 | ALS | 虽然采样器构造默认 `drop_last=True`，实际训练缓存/非缓存入口都显式传 False，保留短批 | 本次该采样器与入口没有独立 rank 分片实现；未据此验证 ALS 的多卡尾批行为，不能套用我们的结论 |
 | sd-scripts / lora | 每桶按 ceil 生成批索引，最后一批切片可以不足 batch_size | 后续 DataLoader 交给 Accelerate。是否为跨 rank 整齐批次补齐，还取决于安装的 Accelerate 版本/配置；仅看桶管理器不能证明不重复 |
 | diffusion-pipe | 每个尺寸数据集按全局 batch 截断；不足一整个全局 batch 的尺寸桶可能被全部丢弃并警告 | 全局 batch 必须整除数据并行卡数；每个 rank 取该全局批次中的连续片段 |
 
-依据：[我们的 sampler.py](../ypuddin/data/sampler.py) 34–57 行、[distributed.py](../ypuddin/train/distributed.py) 158–188 行；[ALS phases/dataset.py](../../AnimaLoraStudio/runtime/training/phases/dataset.py) 248–275 行；[sd-scripts dataset.py](../../sd-scripts/library/dataset.py) 707–715、989–992 行及 [train_network.py](../../sd-scripts/train_network.py) 1187、1303 行；[diffusion-pipe dataset.py](../../diffusion-pipe/utils/dataset.py) 347–396 行。
+依据：[我们的 sampler.py](../ypuddin/data/sampler.py) 34–57 行、[distributed.py](../ypuddin/train/distributed.py) 158–188 行；[ALS phases/dataset.py](https://github.com/WalkingMeatAxolotl/AnimaLoraStudio/blob/3d9d2e86045b879cd19c01ac4aa2337f45a283ab/runtime/training/phases/dataset.py) 248–275 行；[sd-scripts dataset.py](https://github.com/kohya-ss/sd-scripts/blob/4e624302e0088e39933b31cbc71f24212e900f5f/library/dataset.py) 707–715、989–992 行及 [train_network.py](https://github.com/kohya-ss/sd-scripts/blob/4e624302e0088e39933b31cbc71f24212e900f5f/train_network.py) 1187、1303 行；[diffusion-pipe dataset.py](https://github.com/tdrussell/diffusion-pipe/blob/8f83dbf25d03219df705570ec03e62be04bc402f/utils/dataset.py) 347–396 行。
 
 ## 6. 原生尺寸与 NaViT 要分开看
 
@@ -111,7 +111,7 @@ YPuddin 工作区同时存在其他功能修改；这里的算法分析以读取
 
 **我们目前明确禁止原生模式用于多卡 DDP/FSDP。** 验证层会提示“多卡训练暂不支持原图异形批次，请使用标准分桶”；不能因为 `NativeBatchSampler` 有 rank 分支就写成产品已支持。依据：[native.py](../ypuddin/data/native.py) 31–101、123–144 行；[training_rules.py](../ypuddin/config/training_rules.py) 54–62 行。
 
-ALS 有两层独立概念：原生尺寸规划绕过 ARB；另有显式 `navit_packing` 路径按 token 预算打包多张异形图，通过 Anima 专用块对角前向处理。它不是只把普通 batch sampler 改名；也不能据此认为我们已经有同等 NaViT 实现。依据：[ALS phases/dataset.py](../../AnimaLoraStudio/runtime/training/phases/dataset.py) 229–247 行、[dataset.py](../../AnimaLoraStudio/runtime/training/dataset.py) 1628–1669 行及 [families/anima/navit.py](../../AnimaLoraStudio/runtime/training/families/anima/navit.py) 52–73 行。
+ALS 有两层独立概念：原生尺寸规划绕过 ARB；另有显式 `navit_packing` 路径按 token 预算打包多张异形图，通过 Anima 专用块对角前向处理。它不是只把普通 batch sampler 改名；也不能据此认为我们已经有同等 NaViT 实现。依据：[ALS phases/dataset.py](https://github.com/WalkingMeatAxolotl/AnimaLoraStudio/blob/3d9d2e86045b879cd19c01ac4aa2337f45a283ab/runtime/training/phases/dataset.py) 229–247 行、[dataset.py](https://github.com/WalkingMeatAxolotl/AnimaLoraStudio/blob/3d9d2e86045b879cd19c01ac4aa2337f45a283ab/runtime/training/dataset.py) 1628–1669 行及 [families/anima/navit.py](https://github.com/WalkingMeatAxolotl/AnimaLoraStudio/blob/3d9d2e86045b879cd19c01ac4aa2337f45a283ab/runtime/training/families/anima/navit.py) 52–73 行。
 
 本次没有对 sd-scripts 或 diffusion-pipe 全部模型分支做 NaViT 能力审计；这里仅比较查到的通用分桶和图像路径，不把“本次未核实”写成项目绝对不支持。
 
