@@ -24,6 +24,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 
 from ypuddin.adapters import AdapterSet, build_metadata, inject, save_adapter_file
+from ypuddin.adapters.components import ComponentAdapterSet, inject_text_adapters
 from ypuddin.config import TrainConfig, config_hash, write_config
 from ypuddin.config.compute_policy import (
     DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID,
@@ -117,7 +118,7 @@ class Trainer:
         self.progress = Progress()
         self.family: ModelFamily
         self.loaded: LoadedModel
-        self.adapters: AdapterSet | FullTrainingSet
+        self.adapters: AdapterSet | ComponentAdapterSet | FullTrainingSet
         self.bundle: DataBundle
         self.objective: Any  # family-owned noising, prediction target and loss contract
         self.optimizer: torch.optim.Optimizer
@@ -286,6 +287,9 @@ class Trainer:
             path_fields.add("training_guidance")
         if self.family.spec.name != "flux2":
             path_fields.add("flux2_variant")
+        if self.family.spec.name != "sdxl" or self.cfg.model.sdxl_max_token_length == 75:
+            # Default CLIP context is unchanged in historical checkpoints.
+            path_fields.add("sdxl_max_token_length")
         # Raw is the historical Krea2 training behavior; the new inference-only
         # variant field must not invalidate existing full-state checkpoints.
         path_fields.add("krea2_variant")
@@ -329,18 +333,29 @@ class Trainer:
                 self.adapters.load_weights(cfg.training.resume_weights, self.family.spec.name)
         else:
             presets = self.family.presets()
-            if cfg.adapter.preset not in presets:
+            if cfg.training.train_backbone and cfg.adapter.preset not in presets:
                 raise ValueError(
                     f"unknown adapter preset {cfg.adapter.preset!r} for {self.family.spec.name}; available: {sorted(presets)}"
                 )
             base_precision = cfg.memory.base_precision if cfg.memory.base_precision != "auto" else "keep"
-            self.adapters = inject(
-                self.loaded.backbone,
-                cfg.adapter,
-                presets[cfg.adapter.preset],
-                prefix=self.family.spec.adapter_prefix,
-                base_precision=base_precision,
-            )
+            self.loaded.backbone.requires_grad_(False)
+            components = {}
+            if cfg.training.train_backbone:
+                components["backbone"] = inject(
+                    self.loaded.backbone,
+                    cfg.adapter,
+                    presets[cfg.adapter.preset],
+                    prefix=self.family.spec.adapter_prefix,
+                    base_precision=base_precision,
+                )
+            if cfg.training.train_text_encoder:
+                self.loaded.text.to(self.device)
+                components.update(
+                    inject_text_adapters(self.loaded.text.enable_adapter_training(), cfg.adapter)
+                )
+                self.adapters = ComponentAdapterSet(components)
+            else:
+                self.adapters = components["backbone"]
             if cfg.adapter.resume_weights:
                 from ypuddin.adapters import load_adapter_file
 
@@ -723,6 +738,11 @@ class Trainer:
             steps=self.progress.step,
             epoch=self.progress.epoch,
         )
+        if isinstance(self.adapters, ComponentAdapterSet):
+            metadata["ypuddin.components"] = json.dumps(sorted(self.adapters.components))
+            metadata["ypuddin.component_prefixes"] = json.dumps(
+                {name: item.prefix for name, item in self.adapters.components.items()}
+            )
         if self.cfg.dataset.resolution_mode == "native":
             metadata["ypuddin.resolution_mode"] = "native"
             metadata["ypuddin.native_max_pixels"] = str(self.cfg.dataset.native_max_pixels)

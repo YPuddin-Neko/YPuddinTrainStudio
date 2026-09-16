@@ -161,6 +161,18 @@ class TextPipeline(ABC):
             module.to(dtype=torch.float32).requires_grad_(True).train()
         return modules
 
+    def enable_adapter_training(self) -> dict[str, nn.Module]:
+        """Keep encoder base precision and gradients through online conditioning.
+
+        The caller injects/optimizes only adapter parameters. Frozen embeddings and
+        other encoder weights must not become full-training parameters by accident.
+        """
+        modules = self.trainable_modules()
+        for module in modules.values():
+            module.requires_grad_(False).train()
+        self.training_enabled = True
+        return modules
+
 
 class LatentPipeline(ABC):
     fingerprint: str

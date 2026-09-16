@@ -10,7 +10,9 @@ Anima、SDXL 光辉 v0.1、Klein base 4B、Krea2 Raw 已完成所列配置的 Wi
 
 主模型全量微调还可使用 [FSDP2 显存分片](docs/FSDP_TRAINING_2026-09-15.md)，由多张卡分配参数、梯度和优化器状态。**Anima、SDXL、Krea2 的 r4 正式主干全参 FP32 计算已通过连续 8 步与第 4 步冷恢复至第 8 步的权重、五类状态及 PNG 逐位比较；Krea2 使用双卡 FSDP。** 旧 r2 Krea BF16 严格失败及原生重载记录分别保留，不改写为通过。明确配置、新版“可复现训练”入口证据与验证边界见 [严格续训一致性报告](docs/RESUME_CONSISTENCY_2026-09-15.md) 及 [当前交付报告](docs/DELIVERY_REPORT_2026-09-15.md)。
 
-Windows 环境准备见 [兼容性预检与真机验收](docs/WINDOWS_READINESS_2026-09-15.md)：本地模拟不代替 CUDA 真机验证；原生 Windows 单任务多卡仍未开放。
+2026-09-16 后续新增 Native 原生尺寸多卡、文本编码器 LoRA 类适配器，以及 SDXL 75／150／225 token 标签，见 [训练能力补充与待验范围](docs/TRAINING_COMPLETION_2026-09-16.md)。新增能力的正式模型 GPU 验证仍在进行中，不能直接沿用此前桶模式、冻结文本编码器的通过记录。
+
+Windows 环境准备见 [兼容性预检与真机验收](docs/WINDOWS_READINESS_2026-09-15.md)：原生 Windows DDP 每次启动必须先通过所选显卡的 Gloo 通信探针，FSDP 仍不开放。本轮只有本地模拟与 CPU 协议回归，没有 Windows GPU 实测。
 
 界面提供项目概览、独立版本、数据导入、标签与遮罩编辑、训练配置、任务指标和产物管理。最新 UI 流程见 [2026-09-13 工作区验收](docs/UI_WORKFLOWS_2026-09-13.md)；[训练流程、分桶与三个训练器的对比](docs/TRAINING_PARAMETERS.md)、[JSON 标签](docs/JSON_CAPTIONS.md)、[整图保留与原生分辨率](docs/native-resolution.md)有对应说明。Krea2 的加载、缓存和卸载流程见 [显存说明](docs/KREA2_MEMORY.md)。历史报告中的测试数量、服务路径和“未接入模型”仅代表当时状态。
 

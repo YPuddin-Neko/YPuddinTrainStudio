@@ -5,7 +5,7 @@ from pathlib import Path
 import torch
 
 
-def text_parameter_count(family, cfg) -> int:
+def text_modules_for_plan(family, cfg):
     name = family.spec.name
     # These libraries lazily initialize Dynamo during class import. Performing
     # that import on meta can poison subsequent model imports in the service.
@@ -14,7 +14,11 @@ def text_parameter_count(family, cfg) -> int:
         if name == "toy":
             from .toy import DIM, MAX_LEN, VOCAB
 
-            return (VOCAB + MAX_LEN) * DIM
+            with torch.device("meta"):
+                module = torch.nn.Module()
+                module.register_parameter("embed", torch.nn.Parameter(torch.empty(VOCAB, DIM)))
+                module.register_parameter("pos", torch.nn.Parameter(torch.empty(MAX_LEN, DIM)))
+            return {"text_encoder": module}
         if name == "anima":
             from transformers import AutoConfig, Qwen3Model
 
@@ -39,7 +43,10 @@ def text_parameter_count(family, cfg) -> int:
 
             root = cfg.dit_path or "."
             constructors = [
-                (cls, CLIPTextConfig(**component_config(component_path(root, component, override), component)))
+                (
+                    cls,
+                    CLIPTextConfig(**component_config(component_path(root, component, override), component)),
+                )
                 for component, override, cls in (
                     ("text_encoder", cfg.text_encoder_path, CLIPTextModel),
                     ("text_encoder_2", cfg.text_encoder_2_path, CLIPTextModelWithProjection),
@@ -53,4 +60,13 @@ def text_parameter_count(family, cfg) -> int:
         else:
             raise ValueError(f"{name} has no text-encoder training architecture")
     with torch.device("meta"):
-        return sum(p.numel() for cls, config in constructors for p in cls(config).parameters())
+        return {
+            "text_encoder" if index == 0 else f"text_encoder_{index + 1}": cls(config)
+            for index, (cls, config) in enumerate(constructors)
+        }
+
+
+def text_parameter_count(family, cfg) -> int:
+    return sum(
+        p.numel() for module in text_modules_for_plan(family, cfg).values() for p in module.parameters()
+    )

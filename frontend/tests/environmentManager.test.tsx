@@ -273,6 +273,16 @@ it('identifies DTK and describes multi-GPU training without NVIDIA requirements'
   expect(screen.queryByText('CUDA 版本')).not.toBeInTheDocument();
 });
 
+it('explains Windows DDP startup verification without claiming FSDP or verified CUDA support', async () => {
+  Object.assign(runtime.runtime, {multi_gpu_training:true, gloo_available:true, multi_gpu_backend:'gloo', multi_gpu_probe_required:true});
+  render(<EnvironmentManagerPanel/>);
+  const info = await screen.findByTestId('environment-training-devices');
+  expect(info).toHaveTextContent('每次启动时检查所选显卡的 Gloo 通信，通过后才加载训练模型');
+  expect(info).toHaveTextContent('当前不支持 Windows 原生显存分片（FSDP）');
+  expect(info).toHaveTextContent('实际可用性会在任务启动时检查');
+  expect(info).not.toHaveTextContent('主模型全参训练可选择显存分片');
+});
+
 function dtkCatalog(): DtkCatalog {
   return {source_url:'https://download.sourcefind.cn:65024/4/main/', runtime:{environment_profile:'linux-dtk',torch:'2.4.1+das.opt1.dtk25041',python:'3.10.14',dtk:'25.04.1',machine:'x86_64'},reason:null,
     wheels:[{id:'vendor-flash',package:'flash-attn',version:'2.6.3+dtk25041',filename:'flash_attn_vendor.whl',url:'https://download.sourcefind.cn:65024/file/example.whl',size_bytes:12000000,sha256:'a'.repeat(64),dtk:'25.04.1',torch:'2.4.1',python_tag:'cp310',platform_tag:'linux_x86_64',compatible:true,reason:null},

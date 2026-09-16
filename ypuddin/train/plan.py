@@ -307,7 +307,8 @@ def _append_data_plan(
             "dropped_samples": 0,
         }
         if loop.gpu_count > 1:
-            batch_plan = BucketBatchSampler(
+            sampler_type = NativeBatchSampler if native else BucketBatchSampler
+            batch_plan = sampler_type(
                 [item.bucket.key for item in items], ds.batch_size, seed=seed or 0
             ).plan()
             usable = len(batch_plan) - len(batch_plan) % loop.gpu_count
@@ -322,7 +323,7 @@ def _append_data_plan(
                 )
             if per_rank_batches == 0:
                 out["errors"].append(
-                    {"loc": "loop.gpu_count", "msg": "分桶批次数少于卡数，请增加图片或降低每卡批量"}
+                    {"loc": "loop.gpu_count", "msg": "训练批次数少于卡数，请增加图片或降低每卡批量"}
                 )
     geometry = {}
     padded_images, cropped_images = set(), set()
@@ -361,12 +362,28 @@ def _append_data_plan(
     if native:
         shape_keys = [item.bucket.key for item in items]
         forward_counts: dict[tuple[int, int], int] = {}
+        synchronization_groups = 0
         if seed is not None:
-            for batch in NativeBatchSampler(shape_keys, ds.batch_size, seed=seed).plan():
+            native_plan = NativeBatchSampler(shape_keys, ds.batch_size, seed=seed).plan()
+            if loop is not None and loop.gpu_count > 1:
+                native_plan = native_plan[: len(native_plan) - len(native_plan) % loop.gpu_count]
+            native_groups = []
+            for batch in native_plan:
                 shapes = [shape_keys[index] for index in batch]
-                for group in microbatch_indices(shapes, ds.native_max_pixels):
+                groups = microbatch_indices(shapes, ds.native_max_pixels)
+                native_groups.append([(shapes[group[0]], len(group)) for group in groups])
+                for group in groups:
                     key = shapes[group[0]]
                     forward_counts[key] = forward_counts.get(key, 0) + 1
+            if loop is not None and loop.gpu_count > 1:
+                for offset in range(0, len(native_groups), loop.gpu_count):
+                    ranks = native_groups[offset : offset + loop.gpu_count]
+                    slots = max(map(len, ranks))
+                    for groups in ranks:
+                        padding = slots - len(groups)
+                        key, _ = min(groups, key=lambda entry: math.prod(entry[0]) * entry[1])
+                        forward_counts[key] += padding
+                        synchronization_groups += padding
         for bucket in out["buckets"]:
             bucket["batches"] = (
                 forward_counts.get((bucket["w"], bucket["h"]), 0) if seed is not None else None
@@ -396,6 +413,7 @@ def _append_data_plan(
             "alignment": latent.align,
             "batch_size": ds.batch_size,
             "forward_groups": sum(forward_counts.values()) if seed is not None else None,
+            "synchronization_groups": synchronization_groups,
         }
         out["warnings"].append(
             {
@@ -643,7 +661,7 @@ def plan(
             family.prepare_backbone_for_plan(backbone, cfg.model, compute_dtype)
             presets = family.presets()
             full_training = cfg.training.mode == "full"
-            if not full_training and cfg.adapter.preset not in presets:
+            if not full_training and cfg.training.train_backbone and cfg.adapter.preset not in presets:
                 out["errors"].append(
                     {"loc": "adapter.preset", "msg": f"unknown preset; available: {sorted(presets)}"}
                 )
@@ -672,15 +690,30 @@ def plan(
                         },
                     )
                 else:
-                    aset = inject(
-                        backbone,
-                        cfg.adapter,
-                        presets[cfg.adapter.preset],
-                        prefix=family.spec.adapter_prefix,
-                        base_precision=cfg.memory.base_precision
-                        if cfg.memory.base_precision != "auto"
-                        else "keep",
-                    )
+                    from ypuddin.adapters.components import ComponentAdapterSet, inject_text_adapters
+
+                    components = {}
+                    backbone.requires_grad_(False)
+                    if cfg.training.train_backbone:
+                        components["backbone"] = inject(
+                            backbone,
+                            cfg.adapter,
+                            presets[cfg.adapter.preset],
+                            prefix=family.spec.adapter_prefix,
+                            base_precision=cfg.memory.base_precision
+                            if cfg.memory.base_precision != "auto"
+                            else "keep",
+                        )
+                    if cfg.training.train_text_encoder:
+                        from ypuddin.models.training_parameters import text_modules_for_plan
+
+                        text_modules = text_modules_for_plan(family, cfg.model)
+                        for module in text_modules.values():
+                            module.to(dtype=compute_dtype).requires_grad_(False)
+                        components.update(inject_text_adapters(text_modules, cfg.adapter))
+                        aset = ComponentAdapterSet(components)
+                    else:
+                        aset = components["backbone"]
                 params = {
                     "base": base_params,
                     "trainable": aset.num_params(),
@@ -692,6 +725,10 @@ def plan(
                     params["components"] = {
                         "backbone": base_params if cfg.training.train_backbone else 0,
                         "text_encoder": encoder_params,
+                    }
+                elif cfg.training.train_text_encoder:
+                    params["components"] = {
+                        component: item.num_params() for component, item in aset.components.items()
                     }
                 if params["trainable"] == 0:
                     out["errors"].append(
@@ -798,6 +835,10 @@ def plan(
                     and not cfg.training.train_text_encoder
                 ):
                     text_encoder_mb = family.spec.text.encoder_params * DTYPE_BYTES[effective_dtype] / 2**20
+                if cfg.training.mode == "adapter" and cfg.training.train_text_encoder:
+                    text_encoder_mb = (
+                        sum(_frozen_storage_bytes(module) for module in text_modules.values()) / 2**20
+                    )
                 latent_encoder_mb = latent_workspace_mb = 0.0
                 if sharding is not None and not ds.cache_latents:
                     pixels = max((w * h for w, h in counts), default=max(ds.resolutions) ** 2)

@@ -9529,6 +9529,31 @@
             "title": "Nccl Available",
             "default": false
           },
+          "gloo_available": {
+            "type": "boolean",
+            "title": "Gloo Available",
+            "default": false
+          },
+          "multi_gpu_backend": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "nccl",
+                  "gloo"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Multi Gpu Backend"
+          },
+          "multi_gpu_probe_required": {
+            "type": "boolean",
+            "title": "Multi Gpu Probe Required",
+            "default": false
+          },
           "multi_gpu_training": {
             "type": "boolean",
             "title": "Multi Gpu Training",
@@ -12444,6 +12469,24 @@
               "show_when": "model.family == 'sdxl'"
             }
           },
+          "sdxl_max_token_length": {
+            "type": "integer",
+            "enum": [
+              75,
+              150,
+              225
+            ],
+            "title": "Sdxl Max Token Length",
+            "description": "SDXL 标签正文的最大 token 数，不含 BOS/EOS；150/225 会由两个 CLIP 分别按 75 个 token 分块编码。训练与预览使用相同长度，超出部分截断；更长文本增加编码和交叉注意力的显存与耗时，修改后需重新生成文本缓存。",
+            "default": 75,
+            "x-ui": {
+              "advanced": true,
+              "control": "select",
+              "group": "model",
+              "order": 85,
+              "show_when": "model.family == 'sdxl'"
+            }
+          },
           "training_guidance": {
             "type": "number",
             "maximum": 30.0,
@@ -13051,6 +13094,11 @@
               }
             ],
             "title": "Forward Groups"
+          },
+          "synchronization_groups": {
+            "type": "integer",
+            "title": "Synchronization Groups",
+            "default": 0
           }
         },
         "additionalProperties": true,
@@ -13378,7 +13426,7 @@
             "type": "number",
             "exclusiveMinimum": 0.0,
             "title": "Lr",
-            "description": "每次更新的基础学习率，默认 0.0001。训练振荡或参数变化过快时可降低；换优化器时应按该优化器要求设置，不同算法的数值不能直接比较。目标层规则和分组倍率可覆盖它。",
+            "description": "每次更新的基础学习率，默认 0.0001。全量微调需要单独设置，不能直接沿用适配器学习率。训练振荡或参数变化过快时可降低；换优化器时应按该优化器要求设置，不同算法的数值不能直接比较。目标层规则和分组倍率可覆盖它。",
             "default": 0.0001,
             "x-ui": {
               "group": "optimizer",
@@ -17827,7 +17875,7 @@
           "train_text_encoder": {
             "type": "boolean",
             "title": "Train Text Encoder",
-            "description": "全量微调标签编码器；SDXL 同时训练 CLIP-L 与 CLIP-G，其他模型训练文本解码器。每一步重新编码标签，不使用文本缓存，显存需求明显增加。",
+            "description": "训练文本编码器：适配器模式只更新其线性层的附加权重，全量微调更新其原始参数。SDXL 包含 CLIP-L 与 CLIP-G，其他模型使用各自的文本编码器。每步重新编码标签，不使用文本缓存，显存需求增加。",
             "default": false,
             "x-ui": {
               "control": "switch",

@@ -30,13 +30,28 @@ it('changes actual training components and dependent encoding controls without e
   expect(config().training).toMatchObject({train_backbone:false, train_text_encoder:true});
   fireEvent.click(screen.getByRole('combobox',{name:'训练方式'}));
   fireEvent.click(screen.getByRole('option',{name:'LoRA'}));
-  expect(config().training).toMatchObject({mode:'adapter',train_backbone:true,train_text_encoder:false});
+  expect(config().training).toMatchObject({mode:'adapter',train_backbone:false,train_text_encoder:true});
   expect(screen.getByTestId('field-adapter.algo')).toBeInTheDocument();
-  expect(screen.getByRole('checkbox',{name:'训练主模型（UNet / DiT）'})).toBeChecked();
-  expect(screen.getByRole('checkbox',{name:'训练主模型（UNet / DiT）'})).toBeDisabled();
-  expect(screen.getByRole('checkbox',{name:'训练文本编码器'})).not.toBeChecked();
-  expect(screen.getByRole('checkbox',{name:'训练文本编码器'})).toBeDisabled();
-  expect(screen.getByText('目前尚未实现文本编码器 LoRA，此处保持冻结。全量微调模式可更新文本编码器原始权重。')).toBeInTheDocument();
+  expect(screen.getByRole('checkbox',{name:'训练主模型（UNet / DiT）'})).not.toBeChecked();
+  expect(screen.getByRole('checkbox',{name:'训练主模型（UNet / DiT）'})).toBeEnabled();
+  expect(screen.getByRole('checkbox',{name:'训练文本编码器'})).toBeChecked();
+  expect(screen.getByRole('checkbox',{name:'训练文本编码器'})).toBeEnabled();
+  expect(config().dataset.text_encoding).toBe('online');
+  expect(config().memory.offload_text_encoder).toBe(false);
+});
+
+it('enables online text-encoder LoRA without changing the selected algorithm or learning rate', () => {
+  const initial = schemaDefaults(schema);
+  initial.adapter.algo = 'lokr'; initial.optimizer.lr = 0.0002;
+  render(<Editor initial={initial}/>);
+  fireEvent.click(screen.getByRole('checkbox',{name:'训练文本编码器'}));
+  expect(config().training).toMatchObject({mode:'adapter',train_backbone:true,train_text_encoder:true});
+  expect(config().dataset.text_encoding).toBe('online');
+  expect(config().memory.offload_text_encoder).toBe(false);
+  expect(config().adapter.algo).toBe('lokr');
+  expect(config().optimizer.lr).toBe(0.0002);
+  fireEvent.click(screen.getByRole('checkbox',{name:'训练主模型（UNet / DiT）'}));
+  expect(config().training).toMatchObject({train_backbone:false,train_text_encoder:true});
 });
 
 it('allows correcting incompatible full-mode precision from an imported draft instead of locking an invalid value', () => {

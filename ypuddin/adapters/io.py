@@ -175,6 +175,6 @@ def modules_from_tensors(
         if "lora_A.weight" in sub:  # PEFT-style naming
             sub["lora_down.weight"] = sub.pop("lora_A.weight")
             sub["lora_up.weight"] = sub.pop("lora_B.weight")
-        meta = by_underscored.get(module_key[len(prefix) + 1 :])
+        meta = targets_meta.get(module_key) or by_underscored.get(module_key[len(prefix) + 1 :])
         out[module_key] = (ALGO_CLASSES[algo].from_tensors(sub, meta, dtype=dtype), dora)
     return out

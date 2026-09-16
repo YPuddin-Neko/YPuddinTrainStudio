@@ -494,6 +494,7 @@
   },
   "phase": {
     "starting": "Starting",
+    "checking_communication": "Checking multi-GPU communication",
     "loading": "Loading weights",
     "indexing": "Indexing dataset",
     "caching_latents": "Caching latents",

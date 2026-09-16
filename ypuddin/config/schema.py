@@ -73,6 +73,11 @@ class ModelConfig(_Strict):
         help="仅在 SDXL 模型明确要求 zero terminal SNR 时启用，需同时选择 v_prediction。",
         ui_=ui("model", order=80, control="switch", advanced=True, show_when="model.family == 'sdxl'"),
     )
+    sdxl_max_token_length: Literal[75, 150, 225] = F(
+        75,
+        help="SDXL 标签正文的最大 token 数，不含 BOS/EOS；150/225 会由两个 CLIP 分别按 75 个 token 分块编码。训练与预览使用相同长度，超出部分截断；更长文本增加编码和交叉注意力的显存与耗时，修改后需重新生成文本缓存。",
+        ui_=ui("model", order=85, control="select", advanced=True, show_when="model.family == 'sdxl'"),
+    )
     training_guidance: float = F(
         1.0,
         ge=0,
@@ -542,7 +547,7 @@ class OptimizerConfig(_Strict):
     lr: float = F(
         1e-4,
         gt=0,
-        help="每次更新的基础学习率，默认 0.0001。训练振荡或参数变化过快时可降低；换优化器时应按该优化器要求设置，不同算法的数值不能直接比较。目标层规则和分组倍率可覆盖它。",
+        help="每次更新的基础学习率，默认 0.0001。全量微调需要单独设置，不能直接沿用适配器学习率。训练振荡或参数变化过快时可降低；换优化器时应按该优化器要求设置，不同算法的数值不能直接比较。目标层规则和分组倍率可覆盖它。",
         ui_=ui("optimizer", order=10),
     )
     weight_decay: float = F(
@@ -1355,7 +1360,7 @@ class TrainingConfig(_Strict):
     )
     train_text_encoder: bool = F(
         False,
-        help="全量微调标签编码器；SDXL 同时训练 CLIP-L 与 CLIP-G，其他模型训练文本解码器。每一步重新编码标签，不使用文本缓存，显存需求明显增加。",
+        help="训练文本编码器：适配器模式只更新其线性层的附加权重，全量微调更新其原始参数。SDXL 包含 CLIP-L 与 CLIP-G，其他模型使用各自的文本编码器。每步重新编码标签，不使用文本缓存，显存需求增加。",
         ui_=ui("training", order=20, control="switch"),
     )
     resume_weights: str | None = F(

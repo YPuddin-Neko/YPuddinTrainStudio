@@ -134,6 +134,9 @@ class EnvironmentRuntime(BaseModel):
     cuda_device_count: int = 0
     distributed_available: bool = False
     nccl_available: bool = False
+    gloo_available: bool = False
+    multi_gpu_backend: Literal["nccl", "gloo"] | None = None
+    multi_gpu_probe_required: bool = False
     multi_gpu_training: bool = False
     training_device_policy: Literal["single_device", "exclusive_devices"] = "single_device"
     cuda_applicable: bool = True
@@ -262,11 +265,18 @@ def runtime_info() -> dict[str, Any]:
     distributed = getattr(torch, "distributed", None)
     distributed_available = bool(distributed and distributed.is_available())
     nccl_available = bool(distributed_available and distributed.is_nccl_available())
+    gloo_available = bool(
+        distributed_available and getattr(distributed, "is_gloo_available", lambda: False)()
+    )
     device_count = torch.cuda.device_count() if cuda else 0
     profile = current_profile()
-    multi_gpu = (
-        not profile.endswith("-cpu") and platform.system() == "Linux" and device_count >= 2 and nccl_available
-    )
+    backend = None
+    if not profile.endswith("-cpu") and cuda and device_count >= 2:
+        if platform.system() == "Linux" and nccl_available:
+            backend = "nccl"
+        elif platform.system() == "Windows" and not hip and gloo_available:
+            backend = "gloo"
+    multi_gpu = backend is not None
     return {
         "environment_profile": profile,
         "python": platform.python_version(),
@@ -283,6 +293,9 @@ def runtime_info() -> dict[str, Any]:
         "cuda_device_count": device_count,
         "distributed_available": distributed_available,
         "nccl_available": nccl_available,
+        "gloo_available": gloo_available,
+        "multi_gpu_backend": backend,
+        "multi_gpu_probe_required": backend == "gloo",
         "cuda_applicable": platform.system() != "Darwin" and not hip,
         "nccl_applicable": platform.system() == "Linux" and cuda,
         "multi_gpu_training": multi_gpu,

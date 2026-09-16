@@ -1,5 +1,7 @@
 # 分桶实现对照：YPuddin、AnimaLoraStudio、sd-scripts / lora-scripts、diffusion-pipe
 
+本次源码对照之后新增的 Native 多卡零权重补齐见 [训练能力补充](TRAINING_COMPLETION_2026-09-16.md) 与 [原生尺寸说明](native-resolution.md)；下文保留所列源码快照的比较，不将新实现倒填到旧快照。
+
 本报告对照本地可审计源码，说明同一张图会被怎样分配和变换，以及不同实现的边界。**我们的分桶与 ALS 思路相近，但不是完全相同的算法；`no_upscale`、原生尺寸和多卡尾批也不能按名字视为等价。** 这里没有进行训练质量或吞吐基准，因此不判断哪个更快、效果更好。
 
 ## 版本与取证范围

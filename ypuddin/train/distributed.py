@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import random
+import sys
 import time
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -24,8 +25,10 @@ import torch.distributed as dist
 from torch import nn
 from torch.nn.parallel import DistributedDataParallel
 
+from ypuddin.adapters.components import ComponentAdapterSet
 from ypuddin.config.training_rules import distributed_training_errors
 from ypuddin.data import BucketBatchSampler
+from ypuddin.data.native import NativeBatchSampler
 
 from .events import Emitter, NullEmitter
 from .scheduler_contract import read_resume_scheduler_contract, validate_scheduler_recipe
@@ -42,7 +45,7 @@ class DistributedContext:
     backend: str
 
     @classmethod
-    def initialize(cls, device=None):
+    def initialize(cls, device=None, *, strategy="ddp", required_dtypes=(), deterministic=False):
         required = ("RANK", "WORLD_SIZE", "LOCAL_RANK", "MASTER_ADDR", "MASTER_PORT")
         missing = [name for name in required if name not in os.environ]
         if missing:
@@ -50,6 +53,14 @@ class DistributedContext:
         rank, world, local = (int(os.environ[name]) for name in required[:3])
         if world < 2 or not 0 <= rank < world or local < 0:
             raise ValueError("invalid torchrun rank or world size")
+        if (
+            sys.platform == "win32"
+            and deterministic
+            and (device is None or torch.device(device).type == "cuda")
+        ):
+            # The communication probe runs a real GEMM before Trainer._seed_all.
+            # cuBLAS must see this before the first CUDA use, including device selection.
+            os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
         selected = torch.device(device) if device else Trainer._pick_device()
         if selected.type == "cuda":
             if selected.index is not None:
@@ -62,21 +73,46 @@ class DistributedContext:
             raise ValueError(
                 "DDP training supports CUDA/DTK or CPU; MPS multi-process training is unavailable"
             )
+        windows_cuda = sys.platform == "win32" and selected.type == "cuda"
+        if windows_cuda and strategy != "ddp":
+            raise ValueError("Windows 原生多卡暂不支持显存分片，请使用 Linux CUDA／DTK")
         backend = os.environ.get("YPUDDIN_DISTRIBUTED_BACKEND") or (
-            "nccl" if selected.type == "cuda" else "gloo"
+            "nccl" if selected.type == "cuda" and not windows_cuda else "gloo"
         )
         if backend not in {"nccl", "gloo"}:
             raise ValueError("YPUDDIN_DISTRIBUTED_BACKEND must be nccl or gloo")
-        if selected.type == "cuda" and backend != "nccl":
+        if windows_cuda and backend != "gloo":
+            raise ValueError("Windows 原生数据并行需要 Gloo 通信后端")
+        if selected.type == "cuda" and backend != "nccl" and not (windows_cuda and backend == "gloo"):
             raise ValueError("CUDA/DTK DDP requires the vendor's NCCL-compatible process group")
         if backend == "nccl" and (selected.type != "cuda" or not dist.is_nccl_available()):
             raise ValueError("this PyTorch build has no usable NCCL-compatible CUDA/DTK process group")
+        if backend == "gloo" and not dist.is_gloo_available():
+            raise ValueError("当前 PyTorch 环境不包含 Gloo 多卡通信后端")
         timeout = int(os.environ.get("YPUDDIN_DDP_TIMEOUT_SECONDS", "1800"))
         if timeout <= 0:
             raise ValueError("YPUDDIN_DDP_TIMEOUT_SECONDS must be positive")
         if dist.is_initialized():
             raise RuntimeError("training owns its process group; an existing process group cannot be reused")
-        dist.init_process_group(backend, timeout=timedelta(seconds=timeout))
+        if windows_cuda:
+            # Bound TCPStore connection time independently of training collectives:
+            # large model loads may legitimately exceed the short startup timeout.
+            store, store_rank, store_world = next(dist.rendezvous("env://", timeout=timedelta(seconds=60)))
+            if (store_rank, store_world) != (rank, world):
+                raise RuntimeError("Windows Gloo rendezvous rank/world differs from torchrun")
+            dist.init_process_group(
+                backend, store=store, rank=rank, world_size=world, timeout=timedelta(seconds=timeout)
+            )
+        else:
+            dist.init_process_group(backend, timeout=timedelta(seconds=timeout))
+        if windows_cuda:
+            from .gloo_probe import probe_windows_cuda_ddp
+
+            try:
+                probe_windows_cuda_ddp(selected, required_dtypes=required_dtypes)
+            except BaseException:
+                dist.destroy_process_group()
+                raise
         return cls(rank, world, local, selected, backend)
 
 
@@ -86,7 +122,7 @@ class _TrainingGraph(nn.Module):
     def __init__(self, trainer):
         super().__init__()
         self.backbone = trainer.loaded.backbone
-        if isinstance(trainer.adapters, FullTrainingSet):
+        if isinstance(trainer.adapters, (FullTrainingSet, ComponentAdapterSet)):
             self.components = nn.ModuleDict(trainer.adapters.modules)
         # Trainer is deliberately not a child Module: it owns caches, optimizer and I/O.
         object.__setattr__(self, "trainer", trainer)
@@ -182,7 +218,10 @@ class DistributedTrainer(Trainer):
             torch.manual_seed(seed)
             self.gen.manual_seed(seed)
             self.loader_gen.manual_seed(seed + 1)
-        unsharded = BucketBatchSampler(
+        sampler_type = (
+            NativeBatchSampler if self.cfg.dataset.resolution_mode == "native" else BucketBatchSampler
+        )
+        unsharded = sampler_type(
             self.bundle.train.bucket_keys(), self.cfg.dataset.batch_size, seed=self.cfg.loop.seed
         ).plan()
         usable = len(unsharded) - len(unsharded) % self.distributed.world_size
@@ -288,17 +327,20 @@ class DistributedTrainer(Trainer):
                 self.progress.batch_in_epoch += 1
                 local_count = len(batch["caption"])
                 count += local_count
-                with self._accumulation_context(micro < len(group) - 1):
-                    loss = self._distributed_forward(batch)
-                    finite = torch.tensor(int(torch.isfinite(loss).item()), device=self.device)
-                    dist.all_reduce(finite, op=dist.ReduceOp.MIN)
-                    invalid |= not bool(finite.item())
-                    # Complete every reducer cycle even for rejected batches so
-                    # the following forward cannot hang on unfinished reduction.
-                    backward_loss = loss if finite.item() else torch.nan_to_num(loss) * 0
-                    (backward_loss * local_count).backward()
-                if finite.item():
-                    loss_sum += loss.detach().item() * local_count
+                parts = self._distributed_microbatches(batch)
+                for part_index, (part, part_count) in enumerate(parts):
+                    accumulating = micro < len(group) - 1 or part_index < len(parts) - 1
+                    with self._accumulation_context(accumulating):
+                        loss = self._distributed_forward(part)
+                        finite = torch.tensor(int(torch.isfinite(loss).item()), device=self.device)
+                        dist.all_reduce(finite, op=dist.ReduceOp.MIN)
+                        invalid |= not bool(finite.item())
+                        # Complete every reducer cycle even for rejected batches so
+                        # the following forward cannot hang on unfinished reduction.
+                        backward_loss = loss if finite.item() else torch.nan_to_num(loss) * 0
+                        (backward_loss * part_count).backward()
+                    if finite.item():
+                        loss_sum += loss.detach().item() * part_count
             totals = torch.tensor([count, loss_sum], dtype=torch.float64, device=self.device)
             dist.all_reduce(totals)
             total_count, total_loss = totals.tolist()
@@ -329,6 +371,24 @@ class DistributedTrainer(Trainer):
         self.emit("epoch.finished", epoch=epoch, step=self.progress.step)
         self._epoch_hooks(epoch + 1)
 
+    def _distributed_microbatches(self, batch):
+        """Keep collective order equal when ranks have different native shapes.
+
+        FSDP gathers/reduces on every forward/backward, so a rank cannot simply
+        stop after its last shape group. Missing groups run a zero-weight copy
+        of the smallest local group. They contribute neither samples nor loss;
+        the final normalization uses only real images across all ranks.
+        """
+        if self.cfg.dataset.resolution_mode != "native":
+            return [(batch, len(batch["caption"]))]
+        parts = batch["microbatches"]
+        slots = torch.tensor(len(parts), device=self.device, dtype=torch.int64)
+        dist.all_reduce(slots, op=dist.ReduceOp.MAX)
+        result = [(part, len(part["caption"])) for part in parts]
+        filler = min(parts, key=lambda part: len(part["caption"]) * part["bucket"][0] * part["bucket"][1])
+        result.extend((filler, 0) for _ in range(slots.item() - len(parts)))
+        return result
+
     def _accumulation_context(self, accumulating):
         return self.ddp.no_sync() if accumulating else nullcontext()
 
@@ -337,7 +397,25 @@ class DistributedTrainer(Trainer):
 
 
 def distributed_train(cfg, *, device=None, emitter=None, listeners=None):
-    context = DistributedContext.initialize(device)
+    context = DistributedContext.initialize(
+        device,
+        strategy=cfg.loop.distributed_strategy,
+        deterministic=cfg.loop.deterministic,
+        required_dtypes=tuple(
+            dict.fromkeys(
+                [
+                    torch.float32,
+                    {"bf16": torch.bfloat16, "fp16": torch.float16, "no": torch.float32}[
+                        cfg.loop.mixed_precision
+                    ],
+                    {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}[cfg.model.dtype],
+                    {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}[
+                        cfg.adapter.param_dtype
+                    ],
+                ]
+            )
+        ),
+    )
     try:
         if context.rank == 0:
             Path(cfg.checkpoint.output_dir).mkdir(parents=True, exist_ok=True)

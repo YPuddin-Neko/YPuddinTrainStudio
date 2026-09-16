@@ -67,7 +67,12 @@ class AdapterSet:
         return sum(p.numel() for p in self.parameters())
 
     def param_groups(
-        self, base_lr: float, weight_decay: float, group_lr: dict[str, float] | None = None
+        self,
+        base_lr: float,
+        weight_decay: float,
+        group_lr: dict[str, float] | None = None,
+        *,
+        name_prefix: str = "",
     ) -> list[dict[str, Any]]:
         """Group parameters by (lr, weight_decay). Priority: rule ``lr`` > ``group_lr`` by name
         substring > ``base_lr``; then ``adapter.lr_scale`` by parameter kind. ``w1`` (LoKr) and
@@ -77,7 +82,7 @@ class AdapterSet:
             lr = getattr(layer.adapter, "lr_override", None)
             if lr is None and group_lr:
                 for key, v in group_lr.items():
-                    if key in name:
+                    if key in name_prefix + name:
                         lr = v
                         break
             lr = base_lr if lr is None else lr

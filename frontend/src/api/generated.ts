@@ -3122,6 +3122,18 @@ export interface components {
              */
             nccl_available: boolean;
             /**
+             * Gloo Available
+             * @default false
+             */
+            gloo_available: boolean;
+            /** Multi Gpu Backend */
+            multi_gpu_backend?: ("nccl" | "gloo") | null;
+            /**
+             * Multi Gpu Probe Required
+             * @default false
+             */
+            multi_gpu_probe_required: boolean;
+            /**
              * Multi Gpu Training
              * @default false
              */
@@ -4129,6 +4141,13 @@ export interface components {
              */
             zero_terminal_snr: boolean;
             /**
+             * Sdxl Max Token Length
+             * @description SDXL 标签正文的最大 token 数，不含 BOS/EOS；150/225 会由两个 CLIP 分别按 75 个 token 分块编码。训练与预览使用相同长度，超出部分截断；更长文本增加编码和交叉注意力的显存与耗时，修改后需重新生成文本缓存。
+             * @default 75
+             * @enum {integer}
+             */
+            sdxl_max_token_length: 75 | 150 | 225;
+            /**
              * Training Guidance
              * @description 旧 FLUX 模型的引导条件，仅为读取历史配置保留；Klein 不使用此参数。
              * @default 1
@@ -4334,6 +4353,11 @@ export interface components {
             batch_size: number;
             /** Forward Groups */
             forward_groups: number | null;
+            /**
+             * Synchronization Groups
+             * @default 0
+             */
+            synchronization_groups: number;
         } & {
             [key: string]: unknown;
         };
@@ -4483,7 +4507,7 @@ export interface components {
             type: string;
             /**
              * Lr
-             * @description 每次更新的基础学习率，默认 0.0001。训练振荡或参数变化过快时可降低；换优化器时应按该优化器要求设置，不同算法的数值不能直接比较。目标层规则和分组倍率可覆盖它。
+             * @description 每次更新的基础学习率，默认 0.0001。全量微调需要单独设置，不能直接沿用适配器学习率。训练振荡或参数变化过快时可降低；换优化器时应按该优化器要求设置，不同算法的数值不能直接比较。目标层规则和分组倍率可覆盖它。
              * @default 0.0001
              */
             lr: number;
@@ -6290,7 +6314,7 @@ export interface components {
             train_backbone: boolean;
             /**
              * Train Text Encoder
-             * @description 全量微调标签编码器；SDXL 同时训练 CLIP-L 与 CLIP-G，其他模型训练文本解码器。每一步重新编码标签，不使用文本缓存，显存需求明显增加。
+             * @description 训练文本编码器：适配器模式只更新其线性层的附加权重，全量微调更新其原始参数。SDXL 包含 CLIP-L 与 CLIP-G，其他模型使用各自的文本编码器。每步重新编码标签，不使用文本缓存，显存需求增加。
              * @default false
              */
             train_text_encoder: boolean;

@@ -4,6 +4,7 @@ const labels: Record<string, string> = {
   'model.family': '模型系列', 'model.dit_path': '主模型 / DiT', 'model.text_encoder_path': '文本编码器',
   'model.text_encoder_2_path': '第二文本编码器', 'model.prediction_type': 'SDXL 预测方式',
   'model.zero_terminal_snr': '零终点信噪比（Zero SNR）',
+  'model.sdxl_max_token_length': 'SDXL 文本长度',
   'model.training_guidance': '训练引导值', 'sampling.guidance': '模型引导值',
   'model.flux2_variant': 'Klein 类型',
   'training.mode': '训练方式', 'training.train_backbone': '训练主模型（UNet / DiT）', 'training.train_text_encoder': '训练文本编码器', 'training.resume_weights': '全量模型起始权重',
@@ -76,6 +77,7 @@ const labels: Record<string, string> = {
 };
 
 export function configFieldLabel(path: string, fallback: string, english = false) {
+  if (english && path === 'model.sdxl_max_token_length') return 'SDXL caption length';
   if (path === 'loop.gpu_count') return english ? 'Training GPU count' : labels[path];
   if (path === 'loop.distributed_strategy') return english ? 'Multi-GPU training strategy' : labels[path];
   if (path === 'loop.deterministic') return english ? 'Reproducible training' : labels[path];
@@ -154,7 +156,7 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
     'loop.grad_accum': ['累计多少个小批次后更新一次参数。例如单卡批量 1、累积 4，处理 4 张图后更新一次。有效批量还需乘以显卡数量；它与重算中间结果来节省显存的梯度检查点不同。', 'Number of minibatches before updating parameters. With one GPU, batch size 1 and accumulation 4 update after 4 images. Effective batch size also includes GPU count. This differs from activation checkpointing, which recomputes intermediates to save memory.'],
     'loop.gpu_count': ['1 使用单卡；大于 1 时可选择数据并行或显存分片。需要 Linux CUDA 或 DTK 及可用的 GPU 通信后端，队列会等待足够数量的空闲显卡后一起启动。批大小按每张显卡计算。', '1 uses one GPU; larger values allow data parallelism or memory sharding. Requires Linux CUDA or DTK and GPU collective communication. The queue waits until enough GPUs are free. Batch size is per GPU.'],
     'loop.distributed_strategy': ['数据并行：每张卡保留完整模型，分担图片计算。显存分片：将参数、梯度和优化器状态分配到多张卡，适合单卡装不下的大模型。分片目前支持冻结文本编码器的主模型全量微调，以及 AdamW、Adafactor 或 SGD。实际速度取决于模型和跨卡通信，并非卡越多就一定越快。', 'Data parallelism keeps a full model on each GPU and splits image processing. Memory sharding distributes parameters, gradients and optimizer states across GPUs for models that do not fit on one GPU. Sharding currently supports full backbone training with frozen text encoders and AdamW, Adafactor or SGD. Speed depends on the model and communication; more GPUs are not always faster.'],
-    'optimizer.lr': ['控制每次参数更新的基础步长。可输入 0.0001 或 1e-4，两者表示同一个数值；右侧会显示对应的科学计数法。数值过大容易不稳定，过小学习较慢；自适应优化器会自行调整实际步长。', 'Sets the base step size for parameter updates. Enter 0.0001 or 1e-4 for the same value; the equivalent scientific notation appears on the right. Too large can be unstable; too small can learn slowly. Adaptive optimizers manage the effective step size.'],
+    'optimizer.lr': ['控制每次参数更新的基础步长。可输入 0.0001 或 1e-4，两者表示同一个数值；右侧会显示对应的科学计数法。全量微调需要单独设置，不能直接沿用适配器学习率。数值过大容易不稳定，过小学习较慢；自适应优化器会自行调整实际步长。', 'Sets the base step size for parameter updates. Enter 0.0001 or 1e-4 for the same value; the equivalent scientific notation appears on the right. Set the rate separately for full fine-tuning instead of reusing an adapter rate. Too large can be unstable; too small can learn slowly. Adaptive optimizers manage the effective step size.'],
     'optimizer.weight_decay': ['给权重施加衰减约束，避免权重持续变大。通常保留默认值；过大可能让模型学不到细节，0 表示关闭。', 'Applies a decay constraint to weights. Usually keep the default; too much can prevent learning details. Set to 0 to disable.'],
     'optimizer.betas': ['β1 平滑更新方向，β2 平滑梯度大小的估计。通常保留优化器默认值；调大后反应更平缓，也会更慢适应变化。', 'β1 smooths the update direction; β2 smooths the estimate of gradient size. Usually keep the optimizer defaults. Higher values smooth changes more but respond more slowly.'],
     'optimizer.grad_clip_norm': ['限制异常大的梯度，降低数值失控的风险。通常保留 1；0 表示关闭梯度裁剪。', 'Limits unusually large gradients to reduce numerical instability. Usually keep 1; set to 0 to disable gradient clipping.'],
@@ -182,7 +184,7 @@ export function configFieldHint(path: string, english = false, optimizerType?: s
     'model.attention': ['默认使用 PyTorch 内置 SDPA；其他后端需先在运行环境中安装。', 'Defaults to built-in PyTorch SDPA. Install optional backends in runtime settings first.'],
     'adapter.mode': ['自动模式分别计算底模和适配器的输出，不降低权重精度。', 'Automatic computes the base model and adapter outputs separately without reducing weight precision.'],
 
-    'optimizer.lr': ['基础更新步长；自适应优化器按自身规则管理。', 'Base update step size; adaptive optimizers manage it by their own rules.'],
+    'optimizer.lr': ['基础更新步长；全量微调需单独设置，自适应优化器按自身规则管理。', 'Base update step size; set it separately for full fine-tuning. Adaptive optimizers manage it by their own rules.'],
     'optimizer.weight_decay': ['约束权重增长；通常保留默认值，0 关闭。', 'Constrains weight growth; usually keep the default. 0 disables it.'],
     'optimizer.betas': scheduleFree
       ? ['分别控制权重平均与梯度大小估计，通常保留默认值。', 'Controls weight averaging and gradient-size estimation; usually keep the defaults.']
@@ -228,11 +230,13 @@ export function configOptionLabel(path: string, option: string, english = false)
     'adapter.mode': {auto:['自动 · 分开计算','Automatic · separate computation'],bypass:['分开计算适配器','Compute adapter separately'],weight:['合并权重后计算','Compute merged weights']},
     'memory.activation_checkpointing': {none:['关闭','Off'],block:['逐块重算 · 节省显存','Block recomputation · save memory'],unsloth:['重算并卸载中间输入','Recompute and offload block inputs']},
     'model.prediction_type': { epsilon: ['ε 预测（常规模型）', 'Epsilon (standard)'], v_prediction: ['v 预测', 'v-prediction'] },
+    'model.sdxl_max_token_length': { '75': ['75 tokens · 默认', '75 tokens · default'], '150': ['150 tokens · 2 段', '150 tokens · 2 chunks'], '225': ['225 tokens · 3 段', '225 tokens · 3 chunks'] },
     'model.flux2_variant': { auto: ['自动读取模型配置', 'Read model configuration'], dev: ['FLUX.2 dev（已停用）', 'FLUX.2 dev (retired)'], 'klein-base-4b': ['Klein 基础版 4B', 'Klein base 4B'], 'klein-base-9b': ['Klein 基础版 9B', 'Klein base 9B'] },
     'sampling.sampler': { euler:['Euler', 'Euler'], heun:['Heun', 'Heun'], er_sde:['ER-SDE', 'ER-SDE'] },
     'sampling.scheduler': { uniform:['Uniform', 'Uniform'], simple:['Simple', 'Simple'], sgm_uniform:['SGM Uniform', 'SGM Uniform'], normal:['Normal', 'Normal'] },
     'optimizer.type': {adamw:['AdamW','AdamW'],adam:['Adam','Adam'],sgd:['SGD','SGD'],adamw8bit:['AdamW 8-bit','AdamW 8-bit'],lion:['Lion','Lion'],lion8bit:['Lion 8-bit','Lion 8-bit'],prodigy:['Prodigy','Prodigy'],prodigy_plus_sf:['Prodigy Plus Schedule-Free','Prodigy Plus Schedule-Free'],automagic:['Automagic','Automagic'],adafactor:['Adafactor','Adafactor'],came:['CAME','CAME'],adamw_sf:['AdamW Schedule-Free','AdamW Schedule-Free']},
     'dataset.resolution_mode': { bucket: ['分桶 · 统一基准面积', 'Buckets · target area'], native: ['原生 · 每图独立尺寸', 'Native · individual image sizes'] },
+    'dataset.text_encoding': {auto:['自动','Automatic'],online:['每步在线编码','Encode each step'],cached:['预编码缓存','Cached embeddings']},
     'dataset.image_fit': { pad: ['保留完整画面', 'Preserve the whole image'], crop: ['裁切填满（旧模式）', 'Crop to fill (legacy)'] },
     'dataset.native_overflow': { downscale: ['等比缩小到预算内', 'Downscale to fit budget'], error: ['报错并停止', 'Stop with an error'] },
   };

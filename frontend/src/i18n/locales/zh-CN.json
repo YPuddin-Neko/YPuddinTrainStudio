@@ -494,6 +494,7 @@
   },
   "phase": {
     "starting": "启动中",
+    "checking_communication": "正在检查多卡通信",
     "loading": "加载权重",
     "indexing": "扫描数据集",
     "caching_latents": "生成图像特征缓存",

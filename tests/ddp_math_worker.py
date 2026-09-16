@@ -15,13 +15,18 @@ from ypuddin.train.distributed import DistributedContext, DistributedTrainer, _T
 from ypuddin.train.training_modes import FullTrainingSet
 
 out = Path(sys.argv[1])
-reject_first = len(sys.argv) > 2
+reject_first = "nonfinite" in sys.argv[2:]
+native = "native" in sys.argv[2:]
 context = DistributedContext.initialize("cpu")
 try:
     cfg = TrainConfig.model_validate(
         {
             "model": {"family": "toy"},
-            "dataset": {"sources": [{"path": str(out)}], "batch_size": 2},
+            "dataset": {
+                "sources": [{"path": str(out)}],
+                "batch_size": 2,
+                "resolution_mode": "native" if native else "bucket",
+            },
             "training": {"mode": "full"},
             "memory": {"base_precision": "fp32"},
             "loop": {"epochs": 1, "grad_accum": 2},
@@ -46,6 +51,14 @@ try:
         {"caption": [""] * len(values), "x": torch.tensor(values).view(-1, 1), "micro": micro}
         for micro, values in enumerate(inputs[context.rank])
     ]
+    if native:
+        for batch in trainer.loader:
+            # Deliberately unequal groups per rank and logical batch, including
+            # a tail. Only real images enter the independent global SGD oracle.
+            groups = batch["x"].split(1) if context.rank == 1 else [batch["x"]]
+            batch["microbatches"] = [
+                {"caption": [""] * len(x), "x": x, "micro": batch["micro"], "bucket": (1, 1)} for x in groups
+            ]
     trainer.progress.total_steps = 2
     trainer.progress.steps_per_epoch = 2
 

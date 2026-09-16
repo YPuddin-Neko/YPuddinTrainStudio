@@ -116,6 +116,61 @@ def test_windows_launch_preserves_unicode_space_arguments_and_process_group(wind
     assert load_config(config_path).dataset.sources[0].path == str(image_dataset)
 
 
+@pytest.mark.parametrize("use_libuv", [None, "1"])
+def test_windows_ddp_launch_preserves_masks_and_requires_per_job_probe(
+    windows_queue, image_dataset, monkeypatch, use_libuv
+):
+    queue = windows_queue
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.distributed, "is_available", lambda: True)
+    monkeypatch.setattr(torch.distributed, "is_gloo_available", lambda: True)
+    monkeypatch.setattr(torch.distributed, "is_nccl_available", lambda: False)
+    if use_libuv is None:
+        queue.environment.pop("USE_LIBUV", None)
+    else:
+        queue.environment["USE_LIBUV"] = use_libuv
+    row = enqueue(queue, image_dataset, "cuda:0")
+    config = json.loads(row["config_json"])
+    config["loop"]["gpu_count"] = 2
+    response = queue.client.post(
+        "/api/jobs", json={"name": "DDP 两卡", "config": config, "gpu_devices": ["cuda:1", "cuda:0"]}
+    )
+    assert response.status_code == 201, response.text
+    dual = queue.context.db.fetchone("SELECT * FROM jobs WHERE id=?", (response.json()["id"],))
+    queue.supervisor._launch(dual, device=("cuda:1", "cuda:0"))
+    launched = queue.launched[-1]
+    assert launched.command[1:6] == [
+        "-m",
+        "torch.distributed.run",
+        "--standalone",
+        "--nproc_per_node=2",
+        "-m",
+    ]
+    assert launched.command[-2:] == ["--device", "cuda"]
+    assert launched.kwargs["env"]["CUDA_VISIBLE_DEVICES"] == "3,7"
+    assert launched.kwargs["env"]["YPUDDIN_DISTRIBUTED_BACKEND"] == "gloo"
+    assert launched.kwargs["env"]["USE_LIBUV"] == (use_libuv or "0")
+    assert queue.environment.get("USE_LIBUV") == use_libuv
+    assert launched.kwargs["creationflags"] == 512
+    progress = json.loads(
+        queue.context.db.fetchone("SELECT progress_json FROM jobs WHERE id=?", (dual["id"],))["progress_json"]
+    )
+    assert progress["phase"] == "checking_communication"
+
+
+def test_windows_ddp_build_admission_never_implies_fsdp_support(windows_queue, monkeypatch):
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.distributed, "is_available", lambda: True)
+    monkeypatch.setattr(torch.distributed, "is_gloo_available", lambda: True)
+    inventory = module.gpu_info()
+    assert module.training_device_error(2, inventory) is None  # workers must still pass the real CUDA probe
+    assert "FSDP" in module.training_device_error(2, inventory, strategy="fsdp")
+    monkeypatch.setattr(torch.distributed, "is_gloo_available", lambda: False)
+    assert "Gloo" in module.training_device_error(2, inventory)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    assert "CUDA PyTorch" in module.training_device_error(2, inventory)
+
+
 @pytest.mark.parametrize("inherited", [None, "7,3", "GPU-first,GPU-second"])
 def test_windows_two_jobs_keep_masks_and_wait_for_actual_exit(windows_queue, image_dataset, inherited):
     queue = windows_queue
@@ -207,14 +262,16 @@ def test_windows_stale_force_cancel_cannot_kill_replacement(windows_queue, image
     queue.kill.assert_not_called()
 
 
-def test_windows_single_job_multigpu_remains_rejected(windows_queue, image_dataset):
+def test_windows_single_job_multigpu_without_cuda_remains_rejected(windows_queue, image_dataset, monkeypatch):
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     queue = windows_queue
     row = enqueue(queue, image_dataset, "cuda:0")
     config = json.loads(row["config_json"])
     config["loop"]["gpu_count"] = 2
     response = queue.client.post(
-        "/api/jobs", json={"name": "单任务两卡不支持", "config": config, "gpu_devices": ["cuda:0", "cuda:1"]}
+        "/api/jobs",
+        json={"name": "缺少 CUDA 时拒绝两卡", "config": config, "gpu_devices": ["cuda:0", "cuda:1"]},
     )
     assert response.status_code == 400
-    assert "Linux CUDA" in str(response.json())
+    assert "CUDA PyTorch" in str(response.json())
     assert not queue.launched

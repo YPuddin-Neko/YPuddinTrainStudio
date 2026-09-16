@@ -18,13 +18,14 @@ def _atomic_json(path: Path, value):
     temporary.replace(path)
 
 
-def bind_checkpoint(backbone, path: Path, family: str, prefix: str):
+def bind_checkpoint(backbone, path: Path, family: str, prefix: str, *, text=None):
     """Rebuild each exported adapter, requiring complete name/shape compatibility."""
     import torch
     import torch.nn.functional as F
     from torch import nn
 
     from ypuddin.adapters import AdaptedLinear, FrozenLinear, load_adapter_file, modules_from_tensors
+    from ypuddin.adapters.components import TEXT_ADAPTER_PREFIXES
 
     class ScaledAdapter(AdaptedLinear):
         def forward(self, x):
@@ -41,32 +42,48 @@ def bind_checkpoint(backbone, path: Path, family: str, prefix: str):
     tensors, metadata = load_adapter_file(path)
     if metadata.get("ypuddin.family", family) != family:
         raise ValueError("Adapter model family differs from the selected sampling model")
-    modules = modules_from_tensors(tensors, metadata, prefix=prefix)
     keys = {key.partition(".")[0] for key in tensors}
-    if not modules or keys != modules.keys():
+    component_models = {"backbone": (prefix, backbone)}
+    text_components = [
+        name
+        for name, token in TEXT_ADAPTER_PREFIXES.items()
+        if any(key.startswith(token + "_") for key in keys)
+    ]
+    if text_components:
+        if text is None:
+            raise ValueError("Checkpoint contains text adapters but no text pipeline was supplied")
+        encoders = text.trainable_modules()
+        for name in text_components:
+            if name not in encoders:
+                raise ValueError(f"Checkpoint text component is absent from the sampling model: {name}")
+            component_models[name] = (TEXT_ADAPTER_PREFIXES[name], encoders[name])
+    plans, matched = [], set()
+    for component, (component_prefix, model) in component_models.items():
+        modules = modules_from_tensors(tensors, metadata, prefix=component_prefix)
+        matched.update(modules)
+        names = {
+            component_prefix + "_" + name.replace(".", "_"): (name, module)
+            for name, module in model.named_modules()
+            if isinstance(module, (nn.Linear, FrozenLinear))
+        }
+        for key, (adapter, dora) in modules.items():
+            if key not in names:
+                raise ValueError(f"Checkpoint target is absent from the sampling model: {key}")
+            name, original = names[key]
+            if (original.in_features, original.out_features) != (adapter.in_features, adapter.out_features):
+                raise ValueError(f"Checkpoint target shape differs from the sampling model: {name}")
+            base = original if isinstance(original, FrozenLinear) else FrozenLinear.from_linear(original)
+            wrapper = ScaledAdapter(base, adapter, dora=dora is not None, name=name)
+            wrapper.component = component
+            if dora is not None:
+                wrapper.dora.load_tensor(dora)
+            wrapper.requires_grad_(False).eval()
+            parent_name, _, attr = name.rpartition(".")
+            parent = model.get_submodule(parent_name) if parent_name else model
+            # Restore frozen bases without retaining a second complete CPU weight copy.
+            plans.append((parent, attr, base, wrapper))
+    if not matched or keys != matched:
         raise ValueError("Checkpoint includes unsupported or unmatched adapter modules")
-    names = {
-        prefix + "_" + name.replace(".", "_"): (name, module)
-        for name, module in backbone.named_modules()
-        if isinstance(module, (nn.Linear, FrozenLinear))
-    }
-    plans = []
-    for key, (adapter, dora) in modules.items():
-        if key not in names:
-            raise ValueError(f"Checkpoint target is absent from the sampling model: {key}")
-        name, original = names[key]
-        if (original.in_features, original.out_features) != (adapter.in_features, adapter.out_features):
-            raise ValueError(f"Checkpoint target shape differs from the sampling model: {name}")
-        base = original if isinstance(original, FrozenLinear) else FrozenLinear.from_linear(original)
-        wrapper = ScaledAdapter(base, adapter, dora=dora is not None, name=name)
-        if dora is not None:
-            wrapper.dora.load_tensor(dora)
-        wrapper.requires_grad_(False).eval()
-        parent_name, _, attr = name.rpartition(".")
-        parent = backbone.get_submodule(parent_name) if parent_name else backbone
-        # Keep the same frozen module for restoration. Retaining the old nn.Linear
-        # would leave a second full CPU weight copy after swap masters are created.
-        plans.append((parent, attr, base, wrapper))
     for parent, attr, _, wrapper in plans:
         setattr(parent, attr, wrapper)
     return plans
@@ -233,12 +250,14 @@ def generate(payload: dict, output: Path, emit, cancelled):
             swapper = None
         if loaded and loaded.extra.get("materialized", True):
             loaded.backbone.to("cpu")
+            loaded.text.to("cpu")
 
     conditions = {}
+    base_conditions = {}
     needs_uncond = getattr(family, "sampling_needs_uncond", lambda _loaded, cfg: cfg != 1)
 
     def load_selection(selected_model):
-        nonlocal loaded, model, dtype, conditions
+        nonlocal loaded, model, dtype, conditions, base_conditions
         check()
         model = selected_model
         dtype = (
@@ -259,6 +278,7 @@ def generate(payload: dict, output: Path, emit, cancelled):
         for prompt in dict.fromkeys(prompts):
             check()
             conditions[prompt] = loaded.text.encode([prompt], device=device).to("cpu")
+        base_conditions = dict(conditions)
         loaded.text.unload()
         check()
         family.materialize_backbone(loaded)
@@ -287,6 +307,7 @@ def generate(payload: dict, output: Path, emit, cancelled):
                     for parent, attr, original, _ in bindings:
                         setattr(parent, attr, original)
                     bindings.clear()
+                    conditions = dict(base_conditions)
                     if full:
                         if loaded:
                             loaded.text.unload()
@@ -309,9 +330,14 @@ def generate(payload: dict, output: Path, emit, cancelled):
                         path = Path(checkpoint["path"])
                         if checkpoint_signature(path) != checkpoint["signature"]:
                             raise ValueError("Checkpoint changed after this comparison was queued")
+                        loaded.text.to("cpu")
                         bindings = bind_checkpoint(
-                            loaded.backbone, path, model.family, family.spec.adapter_prefix
+                            loaded.backbone, path, model.family, family.spec.adapter_prefix, text=loaded.text
                         )
+                        if any(wrapper.component != "backbone" for *_, wrapper in bindings):
+                            # Materialization may stage the backbone on CUDA. Encode
+                            # first without keeping both full base models resident.
+                            loaded.backbone.to("cpu")
                     if memory.blocks_to_swap:
                         swapper = BlockSwapper(
                             family.memory_layout(loaded).blocks, memory.blocks_to_swap, device
@@ -320,6 +346,16 @@ def generate(payload: dict, output: Path, emit, cancelled):
                     previous_checkpoint = cell["checkpoint_id"]
                 for *_, wrapper in bindings:
                     wrapper.multiplier = cell["adapter_scale"]
+                if any(getattr(wrapper, "component", "backbone") != "backbone" for *_, wrapper in bindings):
+                    # Embeddings depend on both checkpoint and scale. Keep the installed
+                    # text adapters when parking encoders; unloading would discard them.
+                    emit("phase.changed", phase="encoding_text")
+                    loaded.text.to(device)
+                    conditions = {}
+                    for prompt in base_conditions:
+                        check()
+                        conditions[prompt] = loaded.text.encode([prompt], device=device).to("cpu")
+                    loaded.text.to("cpu")
                 if swapper:
                     swapper.move_model_to_device(loaded.backbone)
                 else:

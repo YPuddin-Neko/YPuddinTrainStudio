@@ -205,9 +205,22 @@ describe('family-driven training fields', () => {
     expect(screen.queryByText(/双分词器自动读取/)).not.toBeInTheDocument();
     view.rerender(<SchemaForm schema={presetEditorSchema(trainSchema)} value={value} onChange={() => {}} compact family={sdxl}/>);
     expect(screen.getByTestId('field-training.mode').closest('[data-group]')).toHaveAttribute('data-group', 'model');
-    expect(screen.getByRole('checkbox', { name: '训练文本编码器' })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: '训练文本编码器' })).toBeEnabled();
     expect(screen.queryByTestId('field-model.family')).not.toBeInTheDocument();
     expect(screen.queryByTestId('field-model.dit_path')).not.toBeInTheDocument();
+  });
+
+  it('stores numeric SDXL long-caption limits and only offers supported chunk lengths', () => {
+    function CaptionLength() {
+      const initial = schemaDefaults(trainSchema); initial.model.family = 'sdxl';
+      const [value, setValue] = React.useState(initial);
+      return <><SchemaForm schema={trainSchema} value={value} onChange={setValue} compact showAdvanced family={sdxl}/><output data-testid="caption-length-value">{JSON.stringify(value.model.sdxl_max_token_length)}</output></>;
+    }
+    render(<CaptionLength/>);
+    fireEvent.click(screen.getByRole('combobox', {name:'SDXL 文本长度'}));
+    expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['75 tokens · 默认', '150 tokens · 2 段', '225 tokens · 3 段']);
+    fireEvent.click(screen.getByRole('option', {name:'225 tokens · 3 段'}));
+    expect(screen.getByTestId('caption-length-value').textContent).toBe('225');
   });
 
   it.each([

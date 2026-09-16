@@ -7,6 +7,7 @@ import pytest
 
 from ypuddin.config import TrainConfig
 from ypuddin.data import BucketBatchSampler, build_data
+from ypuddin.data.native import NativeBatchSampler
 from ypuddin.models import get_family
 from ypuddin.train import Trainer, train
 from ypuddin.train.distributed import DistributedTrainer
@@ -55,7 +56,6 @@ def test_distributed_plan_matches_actual_rank_batches(image_dataset, tmp_path):
 @pytest.mark.parametrize(
     "change",
     [
-        {"dataset": {"resolution_mode": "native"}},
         {"memory": {"blocks_to_swap": 1}},
         {"memory": {"compile": True}},
         {"memory": {"activation_checkpointing": "block"}},
@@ -79,6 +79,31 @@ def test_multi_gpu_never_falls_back_to_single_trainer(image_dataset, tmp_path):
         train(cfg, device="cpu")
     with pytest.raises(ValueError, match="requires torchrun"):
         Trainer(cfg, device="cpu").run()
+
+
+def test_native_multi_gpu_plan_matches_actual_rank_batches(image_dataset, tmp_path):
+    cfg = TrainConfig.model_validate(
+        {
+            "model": {"family": "toy"},
+            "dataset": {
+                "sources": [{"path": str(image_dataset)}],
+                "resolution_mode": "native",
+                "batch_size": 5,
+                "native_max_pixels": 16384,
+            },
+            "loop": {"gpu_count": 2, "grad_accum": 2},
+        }
+    )
+    result = plan(cfg, device="cpu")
+    assert result["ok"], result["errors"]
+    bundle = build_data(cfg, get_family("toy").spec.latent, cache_root=tmp_path / "native-cache")
+    keys = bundle.train.bucket_keys()
+    full_plan = NativeBatchSampler(keys, 5, seed=cfg.loop.seed).plan()
+    shards = [NativeBatchSampler(keys, 5, seed=cfg.loop.seed, world_size=2, rank=i).plan() for i in (0, 1)]
+    assert len(shards[0]) == len(shards[1]) == result["distributed"]["batches_per_rank"]
+    assert set(sum(shards[0], [])).isdisjoint(sum(shards[1], []))
+    assert result["distributed"]["dropped_samples"] == sum(map(len, full_plan[2 * len(shards[0]) :]))
+    assert result["steps_per_epoch"] == math.ceil(len(shards[0]) / cfg.loop.grad_accum)
 
 
 @pytest.mark.parametrize(

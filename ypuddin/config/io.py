@@ -109,6 +109,11 @@ def load_config(
 
 def config_hash(config: TrainConfig | Mapping[str, Any]) -> str:
     data = config.to_dict() if isinstance(config, TrainConfig) else dict(config)
+    # The default retains SDXL's original single CLIP context and cache behavior.
+    # Authenticate old checkpoint configs without inventing a new semantic change.
+    model = data.get("model")
+    if isinstance(model, Mapping) and model.get("sdxl_max_token_length") == 75:
+        data["model"] = {key: value for key, value in model.items() if key != "sdxl_max_token_length"}
     # Older versions had no switch and used nondeterministic kernels. Explicit
     # false retains that fingerprint; true and all other configuration changes
     # remain visible to the checkpoint compatibility check.

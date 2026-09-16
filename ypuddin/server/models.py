@@ -211,6 +211,7 @@ class NativePlan(_Out):
     alignment: int
     batch_size: int
     forward_groups: int | None
+    synchronization_groups: int = 0
 
 
 class ImageFitGeometry(_Out):

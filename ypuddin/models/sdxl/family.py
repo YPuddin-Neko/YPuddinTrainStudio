@@ -172,6 +172,7 @@ class SDXLFamily(ModelFamily):
             tokenizer_paths(path, cfg.tokenizer_path),
             device=device,
             dtype=dtype,
+            max_token_length=cfg.sdxl_max_token_length,
         )
         config = dict(unet.config)
         if config.get("in_channels") != 4 or config.get("out_channels") != 4:

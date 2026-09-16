@@ -4,14 +4,19 @@
 
 可随源码查看的 [验证摘要](validation/WINDOWS_READINESS_2026-09-15.json) 包含测试计数、源码散列及原始证据散列；训练产物保存在仓库外。
 
-## 两种多卡用途
+## 多卡用途与当前边界
 
 | 用途 | 当前产品路径 | 验证边界 |
 | --- | --- | --- |
 | 一张卡训练 A，另一张卡训练 B 或测试模型 | 原生 Windows CUDA，每个任务选择一张卡，队列按设备分别调度 | 本地模拟覆盖 Windows 启动与调度分支；未来真机仍需检查 CUDA 与进程释放。 |
-| 同一个大模型由两张卡共同容纳、训练 | Linux CUDA／DTK 的 FSDP2；Windows 主机可评估 WSL2 Linux CUDA 路线 | 原生 Windows 单任务多卡入口当前明确禁用；本次没有解除，也没有实测 WSL2 的 NVIDIA 双卡。 |
+| 同一个任务在每张卡保留完整模型，按数据并行训练 | Linux CUDA／DTK 的 DDP；原生 Windows CUDA 使用 Gloo，并在每次启动前验证选定显卡的通信 | Windows 路径已增加能力探针和启动接线，本地仅分支模拟与双进程 CPU 协议验证；没有 Windows CUDA 实测。探针不通过就停止，尚不加载训练资产。DDP 不合并两卡显存。 |
+| 同一个大模型由两张卡共同容纳、训练 | Linux CUDA／DTK 的 FSDP2；Windows 主机可评估 WSL2 Linux CUDA 路线 | 原生 Windows FSDP 入口仍明确禁用，也没有实测 WSL2 的 NVIDIA 双卡。 |
 
-原生 Windows 的限制来自当前训练器只接入 NCCL 兼容的 CUDA 分布式路径。PyTorch 2.11 的官方文档仍将 Windows distributed 标为 prototype，且 Windows 不提供 NCCL；该版本已列出 Gloo 的部分 GPU 集体通信支持，因此不能把产品限制解释成“Gloo 永远不能做 GPU 分片”。原生 Windows＋Gloo 的 FSDP2、DTensor、HF Adafactor 和保存恢复组合需要单独移植与验收。[PyTorch 分布式后端](https://docs.pytorch.org/docs/2.11/distributed.html#backends)
+9 月 15 日预检时，训练器只接入 NCCL 兼容的 CUDA 分布式路径，原生 Windows 单任务多卡全部禁用。9 月 16 日增加的 Windows DDP 路径使用 Gloo。PyTorch 官方文档仍将 Windows distributed 标为 prototype，Windows 不提供 NCCL，而 Gloo 提供部分 GPU 集体通信；具体 wheel 与设备仍需真实探针确认。原生 Windows＋Gloo 的 FSDP2、DTensor、HF Adafactor 和保存恢复组合需要另外移植与验收。[PyTorch 分布式后端](https://docs.pytorch.org/docs/2.14/distributed.html#backends-that-come-with-pytorch)
+
+Windows DDP 的运行环境能力显示 `multi_gpu_probe_required=true`，表示允许进入启动前检查，不表示硬件已验收。每次任务在自己的显卡掩码下初始化 Gloo：TCPStore 建连超时为 60 秒，训练进程组仍默认 1800 秒（可通过 `YPUDDIN_DDP_TIMEOUT_SECONDS` 设置），探针通信子组为 30 秒。可复现训练所需的 cuBLAS 工作区环境在探针首次使用 CUDA 前配置，并保留用户显式值。探针先通过 CPU 控制通信汇总所有 rank 的能力和所需精度，再用一致的序列验证实际 CUDA 上的 FP32、FP16、FP64 广播与归约；本次训练需要 BF16 时另外验证 BF16，任意设备不支持则所有 rank 一致拒绝。还检查整数计数／有限性归约、张量与控制信息收集，以及真实小 DDP 图的前向、反向、平均梯度、更新后副本一致性。失败信息包含具体算子；不回退 CPU，也不开始加载正式模型或改写旧检查点。
+
+此路径没有启用 Windows FSDP。后者至少还需实际 CUDA `all_gather_into_tensor`／`reduce_scatter_tensor`、混合精度 DTensor、优化器、分片保存恢复及退出回收验证，不能以 DDP 或 CPU Gloo 通过代替。
 
 NVIDIA 提供 WSL2 CUDA 支持。优先评估 WSL2 是因为它与现有 Linux CUDA 训练路径一致，并不代表本项目已通过 WSL2 实测。[CUDA on WSL 指南](https://docs.nvidia.com/cuda/wsl-user-guide/index.html)
 
@@ -27,6 +32,8 @@ NVIDIA 提供 WSL2 CUDA 支持。优先评估 WSL2 是因为它与现有 Linux C
 | Windows 执行分支与相关队列回归 | 66 通过、3 项未选择 | 含新增 Windows 启动/队列 12 项及显式运行环境矩阵 13 项；其余是相关已有回归。未选择的 3 项是已有 POSIX 真进程/torchrun 用例。 |
 | 服务启动、重启与退出 | 34 通过 | 含 Windows 虚拟环境转发进程的身份校验、重启凭据更新等；仍是本地回归，不是 Windows 内核实测。 |
 | 新增运行检查工具 | 12 通过 | 含真实双 CPU 训练、两层 Python 转发启动、CUDA 不可用时拒绝回退、超时清理、另一任务失败、损坏报告和已有目录保护。 |
+
+上表为 9 月 15 日原始结果，保留历史计数。9 月 16 日 DDP 探针及相关回归共 **95 项通过**，覆盖实际 CPU Gloo 双进程协议、默认通信组和探针子组清理，以及模拟 Windows 的 dtype、超时、失败前不加载模型／写输出、选卡掩码与启动参数。这些检查仍不是 Windows CUDA 实测。新证据：[原始日志](../../remote-testing/windows-ddp-20260916/final.log)、[JUnit](../../remote-testing/windows-ddp-20260916/final.xml)、[范围和源码散列摘要](../../remote-testing/windows-ddp-20260916/validation-summary.json)。
 
 上述测试部分交叉，不能把它们相加为独立覆盖数量。Windows 队列回归检查了中文和空格路径作为独立命令参数、进程组标志、继承的数字/UUID 显卡掩码、跳过等待另一张卡的任务、进程实际退出前不释放占用、保存/暂停/取消只控制当前任务，以及过期取消回调不能杀掉新的进程。三个 `.bat` 入口的 ASCII 与 CRLF 静态检查通过；没有执行 Windows 的 `cmd.exe`。
 
@@ -58,6 +65,7 @@ NVIDIA 提供 WSL2 CUDA 支持。优先评估 WSL2 是因为它与现有 Linux C
 
 - 原生 Windows 的 CUDA 驱动、显卡编号隔离、BF16／FP16 运算、扩展 wheel 加载和真实进程树回收。
 - 两个不同任务通过服务队列并行训练，以及训练与模型测试并行、分别暂停或取消。
+- 原生 Windows Gloo 的每任务通信探针、真实 DDP 模型训练与冷进程恢复、显卡掩码和取消后的进程／显存释放；需在目标 PyTorch wheel 与设备上验证。
 - WSL2 的两卡 NCCL 集体通信、FSDP 正式模型容量、冷进程恢复、产物重载、退出后显存释放和长期训练稳定性。
 
 本次预检不会把以上项目标为通过。已有海光验收见 [交付报告](DELIVERY_REPORT_2026-09-15.md)。

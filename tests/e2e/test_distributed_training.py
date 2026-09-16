@@ -87,8 +87,18 @@ def _config(tmp_path, training):
     }
 
 
-@pytest.mark.parametrize("components", [None, "backbone", "text", "both"])
-def test_two_rank_training_artifacts_and_exact_resume(tmp_path, components):
+@pytest.mark.parametrize(
+    "components,resolution_mode",
+    [
+        (None, "bucket"),
+        ("backbone", "bucket"),
+        ("text", "bucket"),
+        ("both", "bucket"),
+        (None, "native"),
+        ("backbone", "native"),
+    ],
+)
+def test_two_rank_training_artifacts_and_exact_resume(tmp_path, components, resolution_mode):
     training = (
         {"mode": "adapter"}
         if components is None
@@ -99,6 +109,7 @@ def test_two_rank_training_artifacts_and_exact_resume(tmp_path, components):
         }
     )
     config = _config(tmp_path, training)
+    config["dataset"]["resolution_mode"] = resolution_mode
     path = tmp_path / "config.json"
     path.write_text(json.dumps(config))
     _launch(path)
@@ -158,9 +169,9 @@ def test_two_rank_training_artifacts_and_exact_resume(tmp_path, components):
     assert Path(reference_sample).read_bytes() == Path(resumed_sample).read_bytes()
 
 
-def test_unsupported_native_mode_fails_both_ranks_without_hanging(tmp_path):
+def test_unsupported_compile_fails_both_ranks_without_hanging(tmp_path):
     config = _config(tmp_path, {"mode": "adapter"})
-    config["dataset"]["resolution_mode"] = "native"
+    config["memory"]["compile"] = True
     path = tmp_path / "bad.json"
     path.write_text(json.dumps(config))
     result = _launch(path, expect_success=False)
@@ -168,7 +179,8 @@ def test_unsupported_native_mode_fails_both_ranks_without_hanging(tmp_path):
 
 
 @pytest.mark.parametrize("nonfinite", [False, True])
-def test_image_weighted_accumulation_matches_global_sgd(tmp_path, nonfinite):
+@pytest.mark.parametrize("native", [False, True])
+def test_image_weighted_accumulation_matches_global_sgd(tmp_path, nonfinite, native):
     result = subprocess.run(
         [
             sys.executable,
@@ -180,7 +192,8 @@ def test_image_weighted_accumulation_matches_global_sgd(tmp_path, nonfinite):
             "tests.ddp_math_worker",
             str(tmp_path),
         ]
-        + (["nonfinite"] if nonfinite else []),
+        + (["nonfinite"] if nonfinite else [])
+        + (["native"] if native else []),
         cwd=ROOT,
         env={**os.environ, "OMP_NUM_THREADS": "1", "YPUDDIN_DDP_TIMEOUT_SECONDS": "60"},
         capture_output=True,

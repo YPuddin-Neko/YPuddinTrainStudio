@@ -327,7 +327,7 @@ export default function JobDetail() {
     finalizing: t('job.phaseFinalizing', '收尾'),
   };
   const phase = job?.progress?.phase || '';
-  const rawPhase = ['starting', 'loading', 'indexing', 'injecting', 'prepared'].includes(phase) ? 'preparing' : phase.startsWith('caching_') ? 'caching' : phase;
+  const rawPhase = ['starting', 'checking_communication', 'loading', 'indexing', 'injecting', 'prepared'].includes(phase) ? 'preparing' : phase.startsWith('caching_') ? 'caching' : phase;
   const currentPhaseIndex = job?.status === 'completed' ? PHASE_KEYS.length : PHASE_KEYS.findIndex((k) => k === rawPhase);
 
   // 任务状态徽章（文案 + 颜色）

@@ -1746,7 +1746,7 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
     devices = gpu_info()
     from .supervisor import training_device_error
 
-    if error := training_device_error(cfg.loop.gpu_count, devices):
+    if error := training_device_error(cfg.loop.gpu_count, devices, strategy=cfg.loop.distributed_strategy):
         raise ApiError(
             error,
             code="config.invalid",

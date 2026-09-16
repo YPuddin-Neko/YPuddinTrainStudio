@@ -28,17 +28,31 @@ ACTIVE = ("queued", "scheduled", "running", "pausing", "cancelling")
 TERMINAL = ("completed", "failed", "cancelled", "paused")
 
 
-def training_device_error(count: int, inventory: list[dict[str, Any]]) -> str | None:
+def training_device_error(
+    count: int, inventory: list[dict[str, Any]], *, strategy: str = "ddp"
+) -> str | None:
     """Validate requested parallelism against the running service, never a CPU fallback."""
     if count <= 1:
         return None
     import torch
 
-    if current_profile().endswith("-cpu") or sys.platform != "linux":
-        return "多卡训练需要 Linux CUDA 或 DTK 环境；当前环境请使用 1 张显卡。"
+    if current_profile().endswith("-cpu") or sys.platform not in {"linux", "win32"}:
+        return "多卡训练需要 Linux CUDA/DTK 或 Windows CUDA DDP 环境；当前环境请使用 1 张显卡。"
+    if sys.platform == "win32" and strategy != "ddp":
+        return (
+            "原生 Windows 暂不支持显存分片（FSDP）；可使用启动前通信自测的 DDP，或在 Linux 环境运行分片训练。"
+        )
     devices = [g for g in inventory if str(g.get("device", "")).startswith("cuda:")]
     if len(devices) < count:
         return f"请求使用 {count} 张显卡，当前环境仅有 {len(devices)} 张可用显卡。"
+    if sys.platform == "win32":
+        if not torch.cuda.is_available() or getattr(torch.version, "hip", None):
+            return "Windows 多卡 DDP 需要可用的 CUDA PyTorch 环境。"
+        if not torch.distributed.is_available() or not torch.distributed.is_gloo_available():
+            return "当前 PyTorch 未提供 Gloo；Windows 多卡 DDP 无法进行启动前通信检查。"
+        # CUDA collectives are verified on the selected cards in each worker,
+        # before constructing Trainer or loading/writing any training assets.
+        return None
     if not torch.distributed.is_available() or not torch.distributed.is_nccl_available():
         return "当前 PyTorch 未提供 GPU 集体通信后端（NCCL 兼容接口），无法启动多卡训练。"
     return None
@@ -221,7 +235,10 @@ class JobSupervisor:
                 self._publish_admission(job, error="CPU 环境不能启动多卡训练")
                 return None
             return "cpu"
-        if count > 1 and (error := training_device_error(count, inventory)):
+        strategy = (
+            json.loads(job.get("config_json") or "{}").get("loop", {}).get("distributed_strategy", "ddp")
+        )
+        if count > 1 and (error := training_device_error(count, inventory, strategy=strategy)):
             self._publish_admission(job, error=error)
             return None
         if not inventory:
@@ -320,9 +337,7 @@ class JobSupervisor:
                 and json.loads(source["config_json"]).get("training", {}).get("mode") == "full"
                 and payload.get("training", {}).get("mode") != "full"
             ):
-                raise ValueError(
-                    "这个旧的模型测试未固定完整模型权重，请选择已导出的检查点重新创建测试。"
-                )
+                raise ValueError("这个旧的模型测试未固定完整模型权重，请选择已导出的检查点重新创建测试。")
             payload.update(
                 device=worker_device,
                 fingerprint_cache=str(self.data_root / "cache" / "xyz-fingerprints"),
@@ -350,6 +365,9 @@ class JobSupervisor:
             sub = {"train": "train", "cache": "cache"}[job["type"]]
             cmd = [self.python, "-m", "ypuddin.cli", sub, str(cfg_path)]
             if count > 1:
+                if sys.platform == "win32":
+                    env.setdefault("YPUDDIN_DISTRIBUTED_BACKEND", "gloo")
+                    env.setdefault("USE_LIBUV", "0")
                 cmd = [
                     self.python,
                     "-m",
@@ -394,13 +412,14 @@ class JobSupervisor:
             )
         self._procs[job_id] = proc
         self._devices[job_id] = device or "cpu"
+        phase = "checking_communication" if count > 1 and sys.platform == "win32" else "starting"
         self._merge_progress(
             job_id,
             {
                 "device": ", ".join(devices),
                 "devices": list(devices),
                 "gpu_count": count,
-                "phase": "starting",
+                "phase": phase,
                 "wait_reason": "",
                 **({"legacy_cuda_rng_source": legacy_binding} if legacy_binding is not None else {}),
             },
@@ -409,7 +428,7 @@ class JobSupervisor:
         self._set_status(
             job_id, "running", started_at=now(), pid=proc.pid, exit_code=None, resume_from=resume_from
         )
-        self.bus.publish("job.phase", {"job_id": job_id, "phase": "starting"})
+        self.bus.publish("job.phase", {"job_id": job_id, "phase": phase})
 
     # ----------------------------------------------------------------- events
     def _pump_events(self, job_id: str) -> None:
@@ -626,9 +645,7 @@ class JobSupervisor:
         if not job:
             raise KeyError(job_id)
         if job["type"] == "xyz" and command not in {"cancel", "retry"}:
-            raise ValueError(
-                "模型测试支持取消和重试，不能执行训练任务的暂停、恢复或保存操作。"
-            )
+            raise ValueError("模型测试支持取消和重试，不能执行训练任务的暂停、恢复或保存操作。")
         if command in {"resume", "retry"}:
             self._check_job_version(job)
         status = job["status"]

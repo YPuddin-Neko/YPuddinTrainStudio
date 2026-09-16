@@ -1509,6 +1509,24 @@
             "show_when": "model.family == 'sdxl'"
           }
         },
+        "sdxl_max_token_length": {
+          "default": 75,
+          "description": "SDXL 标签正文的最大 token 数，不含 BOS/EOS；150/225 会由两个 CLIP 分别按 75 个 token 分块编码。训练与预览使用相同长度，超出部分截断；更长文本增加编码和交叉注意力的显存与耗时，修改后需重新生成文本缓存。",
+          "enum": [
+            75,
+            150,
+            225
+          ],
+          "title": "Sdxl Max Token Length",
+          "type": "integer",
+          "x-ui": {
+            "advanced": true,
+            "control": "select",
+            "group": "model",
+            "order": 85,
+            "show_when": "model.family == 'sdxl'"
+          }
+        },
         "training_guidance": {
           "default": 1.0,
           "description": "旧 FLUX 模型的引导条件，仅为读取历史配置保留；Klein 不使用此参数。",
@@ -1860,7 +1878,7 @@
         },
         "lr": {
           "default": 0.0001,
-          "description": "每次更新的基础学习率，默认 0.0001。训练振荡或参数变化过快时可降低；换优化器时应按该优化器要求设置，不同算法的数值不能直接比较。目标层规则和分组倍率可覆盖它。",
+          "description": "每次更新的基础学习率，默认 0.0001。全量微调需要单独设置，不能直接沿用适配器学习率。训练振荡或参数变化过快时可降低；换优化器时应按该优化器要求设置，不同算法的数值不能直接比较。目标层规则和分组倍率可覆盖它。",
           "exclusiveMinimum": 0,
           "title": "Lr",
           "type": "number",
@@ -2865,7 +2883,7 @@
         },
         "train_text_encoder": {
           "default": false,
-          "description": "全量微调标签编码器；SDXL 同时训练 CLIP-L 与 CLIP-G，其他模型训练文本解码器。每一步重新编码标签，不使用文本缓存，显存需求明显增加。",
+          "description": "训练文本编码器：适配器模式只更新其线性层的附加权重，全量微调更新其原始参数。SDXL 包含 CLIP-L 与 CLIP-G，其他模型使用各自的文本编码器。每步重新编码标签，不使用文本缓存，显存需求增加。",
           "title": "Train Text Encoder",
           "type": "boolean",
           "x-ui": {

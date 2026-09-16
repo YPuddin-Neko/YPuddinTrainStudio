@@ -293,17 +293,24 @@ def test_fp8_checkpoint_storage_rejected_without_casting_away_scaling(tmp_path, 
 
 
 @pytest.mark.parametrize(
-    "prediction_type,sampler,zero_snr", [("epsilon", "euler", False), ("v_prediction", "heun", True)]
+    "prediction_type,sampler,zero_snr,max_token_length",
+    [
+        ("epsilon", "euler", False, 75),
+        ("v_prediction", "heun", True, 75),
+        ("epsilon", "euler", False, 150),
+        ("epsilon", "euler", False, 225),
+    ],
 )
 def test_real_trainer_cache_train_preview_save_and_reload(
-    tiny_pipeline, tmp_path, prediction_type, sampler, zero_snr
+    tiny_pipeline, tmp_path, prediction_type, sampler, zero_snr, max_token_length
 ):
     from ypuddin.train import Trainer
 
     data = tmp_path / "images"
     data.mkdir()
     Image.new("RGB", (80, 64), (150, 40, 20)).save(data / "cat.png")
-    (data / "cat.txt").write_text("a red cat")
+    caption = "cat " * (max_token_length - 1) + "dog"
+    (data / "cat.txt").write_text(caption)
     config = TrainConfig.model_validate(
         {
             "model": {
@@ -312,6 +319,7 @@ def test_real_trainer_cache_train_preview_save_and_reload(
                 "dtype": "fp32",
                 "prediction_type": prediction_type,
                 "zero_terminal_snr": zero_snr,
+                "sdxl_max_token_length": max_token_length,
             },
             "dataset": {
                 "sources": [{"path": str(data)}],
@@ -331,7 +339,7 @@ def test_real_trainer_cache_train_preview_save_and_reload(
                 "width": 64,
                 "height": 64,
                 "cfg": 1,
-                "prompts": [{"prompt": "a red cat"}],
+                "prompts": [{"prompt": caption}],
             },
             "checkpoint": {"output_dir": str(tmp_path / "run"), "save_on_finish": True},
         }
@@ -340,11 +348,27 @@ def test_real_trainer_cache_train_preview_save_and_reload(
     trainer.prepare()
     assert trainer.text_mode == "cached"
     assert not trainer.loaded.text.models and trainer.loaded.latent.vae is None
+    observed_conditioning = []
+
+    def observe_conditioning(_module, _args, kwargs):
+        observed_conditioning.append(
+            (kwargs["encoder_hidden_states"].shape, kwargs["added_cond_kwargs"]["text_embeds"].shape)
+        )
+
+    handle = trainer.loaded.backbone.register_forward_pre_hook(observe_conditioning, with_kwargs=True)
     before = {k: t.clone() for k, t in trainer.adapters.training_state_dict().items()}
     assert trainer.run() == "finished" and trainer.progress.step == 2
     assert any(not torch.equal(before[k], v) for k, v in trainer.adapters.training_state_dict().items())
     assert torch.isfinite(torch.tensor(trainer.progress.extra["train_loss"]["loss"]))
+    training_calls = len(observed_conditioning)
+    assert training_calls > 0
     samples = trainer.sample_images("verify")
+    handle.remove()
+    assert len(observed_conditioning) > training_calls
+    assert all(
+        shape[1:] == (max_token_length + 2, 80) and pooled[1:] == (32,)
+        for shape, pooled in observed_conditioning
+    )
     assert samples and Image.open(samples[0]).size == (64, 64)
     assert trainer.loaded.latent.vae is None  # preview restores the cache-training residency
     exports = list((tmp_path / "run").glob("*.safetensors"))
