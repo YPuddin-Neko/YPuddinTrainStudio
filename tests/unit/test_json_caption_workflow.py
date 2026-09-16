@@ -197,6 +197,54 @@ def test_unknown_json_remains_read_only_in_api_but_blocks_training_plan(api, tmp
     assert (Path(source["path"]) / "a.json").read_bytes() == original
 
 
+@pytest.mark.parametrize("payload,code,reason", [
+    (b'{"caption":"Keep this prose","metadata":{"score":17}}', "caption_format_unsupported", "unrecognized caption format"),
+    (b'{"tags":42}', "caption_json_invalid", "tags must be a string or an array of strings"),
+    (b'{broken', "caption_json_invalid", "Invalid JSON caption a.json"),
+])
+def test_inspection_keeps_json_filename_specific_reason_and_original_bytes(api, tmp_path, payload, code, reason):
+    source = ingest(api, tmp_path).json()["source"]
+    path = Path(source["path"]) / "a.json"
+    path.write_bytes(payload)
+    result = operation(api, "inspect")
+    assert result["status"] == "completed", result
+    row = next(row for row in result["result"]["inspection"]["images"] if row["rel_path"] == "a.png")
+    errors = [issue for issue in row["issues"] if issue["severity"] == "error"]
+    assert len(errors) == 1
+    assert errors[0]["code"] == code and errors[0]["path"] == "a.json"
+    assert reason in errors[0]["message"]
+    assert row["caption"] == ""  # The neighboring TXT is not a silent fallback.
+    assert path.read_bytes() == payload
+
+
+def test_inspection_and_training_share_txt_only_model_auto_selection(api, tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    from ypuddin.models import get_family
+    from ypuddin.server import routes_core
+
+    source = ingest(api, tmp_path).json()["source"]
+    family = get_family("toy")
+    monkeypatch.setattr(family, "spec", replace(family.spec, caption_formats=("txt",)))
+    monkeypatch.setattr(routes_core, "_FAMILY_INFO", {})
+    assert api[0].get("/api/families/toy").json()["caption_formats"] == ["txt"]
+    path = Path(source["path"]) / "a.json"
+    path.write_text('{"tags":42}')
+    result = operation(api, "inspect")
+    row = next(row for row in result["result"]["inspection"]["images"] if row["rel_path"] == "a.png")
+    assert row["caption"] == "fallback TXT"
+    assert not any(issue["severity"] == "error" for issue in row["issues"])
+    cfg = api[0].get(f"/api/projects/{api[2]['id']}/config").json()
+    cfg["dataset"]["sources"][0]["caption_ext"] = ".json"
+    assert api[0].put(f"/api/projects/{api[2]['id']}/config", json=cfg).status_code == 200
+    result = operation(api, "inspect")
+    row = next(row for row in result["result"]["inspection"]["images"] if row["rel_path"] == "a.png")
+    error = next(issue for issue in row["issues"] if issue["severity"] == "error")
+    assert error["code"] == "caption_model_unsupported" and error["path"] == "a.json"
+    assert "does not support JSON" in error["message"]
+    assert path.read_text() == '{"tags":42}'
+
+
 def test_structured_caption_api_preserves_source_and_rejects_stale_revision(api, tmp_path):
     source = ingest(api, tmp_path).json()["source"]
     path = Path(source["path"]) / "a.json"

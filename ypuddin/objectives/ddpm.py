@@ -59,8 +59,8 @@ def _betas(num_train_timesteps: int, zero_terminal_snr: bool) -> Tensor:
 class DDPMObjective:
     """Epsilon or v-prediction with the same prepare/loss contract as Objective.
 
-    Only uniform/logit_normal timestep sampling and unweighted loss are currently
-    supported. Flow-specific weighting (including snr_like) is not DDPM Min-SNR;
+    Supports uniform/logit_normal sampling and unweighted or Min-SNR loss.
+    Flow-specific weighting (including snr_like) is not DDPM Min-SNR;
     reject it explicitly. Inactive sampler fields, e.g. cfg.shift for uniform,
     remain inactive, matching ObjectiveConfig's existing conditional semantics.
     """
@@ -78,13 +78,25 @@ class DDPMObjective:
         if not isinstance(zero_terminal_snr, bool):
             raise ValueError("zero_terminal_snr must be a bool")
         _validate_step_count(num_train_timesteps)
+        if cfg.scale_v_pred_loss_like_noise_pred and prediction_type != "v_prediction":
+            raise ValueError("objective.scale_v_pred_loss_like_noise_pred requires v_prediction")
+        if cfg.v_pred_like_loss and prediction_type != "epsilon":
+            raise ValueError("objective.v_pred_like_loss requires epsilon prediction")
+        if (
+            zero_terminal_snr
+            and prediction_type == "epsilon"
+            and (cfg.v_pred_like_loss or cfg.debiased_estimation_loss)
+        ):
+            raise ValueError("epsilon SNR reweighting requires a nonzero terminal SNR")
         if cfg.timestep_sampling not in ("uniform", "logit_normal"):
             raise ValueError(
                 "DDPM objective.timestep_sampling must be 'uniform' or 'logit_normal'; "
                 "flow shift/resolution_shift/mode/cosmap sampling is not supported"
             )
-        if cfg.weighting != "none":
-            raise ValueError("DDPM objective.weighting must be 'none'; flow weighting is not DDPM Min-SNR")
+        if cfg.weighting not in ("none", "min_snr"):
+            raise ValueError(
+                "DDPM objective.weighting must be 'none' or 'min_snr'; flow weighting is not DDPM Min-SNR"
+            )
         self.cfg = cfg.model_copy(deep=True)
         self.prediction_type = prediction_type
         self.zero_terminal_snr = zero_terminal_snr
@@ -145,10 +157,42 @@ class DDPMObjective:
             raise ValueError("DDPM prediction and target shapes must match")
         if t.ndim != 1 or len(t) != len(pred):
             raise ValueError("DDPM t must contain exactly one unit timestep per sample")
-        self.timesteps(t)  # Validate even though unweighted loss does not use the index.
+        indices = self.timesteps(t)
+        weights = None
+        modifiers = (
+            self.cfg.scale_v_pred_loss_like_noise_pred
+            or self.cfg.v_pred_like_loss
+            or self.cfg.debiased_estimation_loss
+        )
+        if self.cfg.weighting == "min_snr" or modifiers:
+            alpha_bar = self.alphas_cumprod.to(pred.device)[indices.to(pred.device)]
+            weights = torch.ones_like(alpha_bar)
+        if self.cfg.weighting == "min_snr":
+            # min(SNR, gamma)/SNR for epsilon; min(SNR, gamma)/(SNR+1)
+            # for velocity. The algebra below avoids 0/0 at zero terminal SNR
+            # and retains float32 precision with bf16/fp16 model predictions.
+            capped = torch.minimum(alpha_bar, self.cfg.snr_gamma * (1 - alpha_bar))
+            if self.prediction_type == "v_prediction":
+                weights = capped
+            else:
+                weights = torch.where(
+                    alpha_bar > 0, capped / alpha_bar.clamp_min(torch.finfo(alpha_bar.dtype).tiny), 1
+                )
+        if modifiers:
+            # Match sd-scripts' finite SNR cap for these optional modifiers.
+            snr = (alpha_bar / (1 - alpha_bar)).clamp(max=1000)
+            scale = snr / (snr + 1)
+            if self.cfg.scale_v_pred_loss_like_noise_pred:
+                weights = weights * scale
+            if self.cfg.v_pred_like_loss:
+                weights = weights * (1 + self.cfg.v_pred_like_loss / scale)
+            if self.cfg.debiased_estimation_loss:
+                weights = weights / (snr + 1 if self.prediction_type == "v_prediction" else snr.sqrt())
         per_elem = elementwise_loss(pred, target, self.cfg.loss, self.cfg.huber_c)
         # Share the existing mask normalization and mean-over-batch prior weights.
-        return reduce_loss(per_elem, t, self.cfg, mask=mask, sample_weight=sample_weight)
+        return reduce_loss(
+            per_elem, t, self.cfg, mask=mask, sample_weight=sample_weight, timestep_weights=weights
+        )
 
     def describe(self) -> dict[str, Any]:
         return {

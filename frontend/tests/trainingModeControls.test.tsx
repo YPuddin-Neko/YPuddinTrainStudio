@@ -29,9 +29,14 @@ it('changes actual training components and dependent encoding controls without e
   fireEvent.click(screen.getByRole('checkbox',{name:'训练主模型（UNet / DiT）'}));
   expect(config().training).toMatchObject({train_backbone:false, train_text_encoder:true});
   fireEvent.click(screen.getByRole('combobox',{name:'训练方式'}));
-  fireEvent.click(screen.getByRole('option',{name:'LoRA / LoKr 适配器'}));
+  fireEvent.click(screen.getByRole('option',{name:'LoRA'}));
   expect(config().training).toMatchObject({mode:'adapter',train_backbone:true,train_text_encoder:false});
   expect(screen.getByTestId('field-adapter.algo')).toBeInTheDocument();
+  expect(screen.getByRole('checkbox',{name:'训练主模型（UNet / DiT）'})).toBeChecked();
+  expect(screen.getByRole('checkbox',{name:'训练主模型（UNet / DiT）'})).toBeDisabled();
+  expect(screen.getByRole('checkbox',{name:'训练文本编码器'})).not.toBeChecked();
+  expect(screen.getByRole('checkbox',{name:'训练文本编码器'})).toBeDisabled();
+  expect(screen.getByText('目前尚未实现文本编码器 LoRA，此处保持冻结。全量微调模式可更新文本编码器原始权重。')).toBeInTheDocument();
 });
 
 it('allows correcting incompatible full-mode precision from an imported draft instead of locking an invalid value', () => {
@@ -56,20 +61,20 @@ it('keeps unrelated settings intact and does not mutate the previous draft', () 
   expect(changed.memory.base_precision).toBe('fp32');
 });
 
-it('offers GPU count in common settings and persists the numeric choice', () => {
+it('keeps a manual GPU count before batch size and reveals multi-GPU strategy only when needed', () => {
   function Devices() {
     const [value, setValue] = React.useState(schemaDefaults(schema));
-    return <><SchemaForm schema={schema} value={value} onChange={setValue} compact showAdvanced={false} groupFilter={['loop']}/><output data-testid="training-config">{JSON.stringify(value)}</output></>;
+    return <><SchemaForm schema={schema} value={value} onChange={setValue} compact showAdvanced={false} groupFilter={['loop']}/>
+      <output data-testid="training-config">{JSON.stringify(value)}</output></>;
   }
   render(<Devices/>);
-  const field = screen.getByLabelText('训练显卡数量');
-  expect(field).toHaveValue(1);
+  const count = screen.getByRole('spinbutton', {name:'训练显卡数量'});
+  const fields = Array.from(screen.getByTestId('schema-form').querySelectorAll('[data-field-path]')).map(node => node.getAttribute('data-field-path'));
+  expect(fields.slice(0, 2)).toEqual(['loop.gpu_count', 'dataset.batch_size']);
   expect(screen.queryByRole('combobox', {name:'多卡训练方式'})).not.toBeInTheDocument();
-  fireEvent.change(field, {target: {value: '2'}});
-  fireEvent.blur(field);
+  fireEvent.change(count, {target:{value:'2'}});
   expect(config().loop.gpu_count).toBe(2);
   const strategy = screen.getByRole('combobox', {name:'多卡训练方式'});
-  expect(strategy).toHaveTextContent('数据并行');
   fireEvent.click(strategy);
   expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['数据并行', '显存分片（大模型）']);
   fireEvent.click(screen.getByRole('option', {name:'显存分片（大模型）'}));
@@ -77,13 +82,8 @@ it('offers GPU count in common settings and persists the numeric choice', () => 
   fireEvent.click(screen.getByRole('button', {name:'多卡训练方式 说明'}));
   expect(screen.getByRole('tooltip')).toHaveTextContent('每张卡保留完整模型');
   expect(screen.getByRole('tooltip')).toHaveTextContent('参数、梯度和优化器状态');
-  expect(screen.getByRole('tooltip')).toHaveTextContent('实际速度取决于模型和跨卡通信');
-  expect(screen.getByText('1 为单卡；多卡可选择数据并行或显存分片。')).toBeInTheDocument();
-  expect(screen.getByTestId('field-dataset.batch_size')).toHaveTextContent('每张显卡一次处理的图片数');
   fireEvent.keyDown(document, {key:'Escape'});
-  fireEvent.change(field, {target: {value:'1'}});
-  fireEvent.blur(field);
-  // Keep the incompatible inherited choice visible so users can correct it.
+  fireEvent.change(count, {target:{value:'1'}});
   const inherited = screen.getByRole('combobox', {name:'多卡训练方式'});
   expect(inherited).toHaveTextContent('显存分片（大模型）');
   fireEvent.click(inherited);
@@ -91,7 +91,6 @@ it('offers GPU count in common settings and persists the numeric choice', () => 
   expect(config().loop).toMatchObject({gpu_count:1, distributed_strategy:'ddp'});
   expect(screen.queryByRole('combobox', {name:'多卡训练方式'})).not.toBeInTheDocument();
 });
-
 
 it('shows readable English multi-GPU choices while storing the same strategy identifiers', async () => {
   await i18n.changeLanguage('en');

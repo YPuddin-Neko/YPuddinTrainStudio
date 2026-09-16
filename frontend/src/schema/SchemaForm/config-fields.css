@@ -94,7 +94,19 @@
 .compact-schema [data-group="model"] > .config-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .compact-schema .config-model-assets { display:grid; grid-column:1 / -1; grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr)); gap:16px 20px; min-width:0; }
 .compact-schema .config-model-assets > .config-field { grid-column:auto; min-width:0; }
-.compact-schema [data-field-path="model.family"] { grid-column:1 / -1; width:min(100%,360px); }
+.compact-schema .config-model-identity,
+.compact-schema .config-model-components,
+.compact-schema .config-model-prediction { display:grid; grid-column:1 / -1; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px 20px; min-width:0; align-items:start; }
+.compact-schema .config-model-assets-sdxl { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.compact-schema .config-model-assets-sdxl > [data-field-path="model.dit_path"],
+.compact-schema .config-model-assets-sdxl > [data-field-path="model.vae_path"] { grid-column:1 / -1; }
+.compact-schema .config-model-tokenizers { grid-column:1 / -1; margin:0; color:var(--studio-dim); font-size:12px; line-height:1.6; }
+@container config-form (max-width:520px) {
+  .compact-schema .config-model-identity,
+  .compact-schema .config-model-components,
+  .compact-schema .config-model-prediction,
+  .compact-schema .config-model-assets-sdxl { grid-template-columns:minmax(0,1fr); }
+}
 .compact-schema .config-adapter-structure { grid-template-columns: minmax(130px, .65fr) minmax(0, 1.35fr); }
 .compact-schema .config-adapter-capacity [data-field-path="adapter.parameter_mode"] { grid-column: 1 / -1; }
 .compact-schema .config-adapter-capacity [data-field-path="adapter.parameter_mode"] .studio-select { height: auto; min-height: 38px; }

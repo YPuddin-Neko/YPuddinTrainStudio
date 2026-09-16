@@ -2163,19 +2163,19 @@ export interface components {
             trigger_word?: string | null;
             /**
              * Keep Tokens
-             * @description 前 N 个 tag 固定不洗牌
+             * @description 仅用于 TXT：保留前 N 个标签，不参与打乱或标签丢弃。分类 JSON 按字段分组处理，不使用此计数。
              * @default 0
              */
             keep_tokens: number;
             /**
              * Shuffle
-             * @description 随机打乱 tag 顺序
+             * @description TXT 打乱未保留的标签；分类 JSON 仅分别打乱 appearance、tags、environment 组内的标签，固定信息及自然语言 nl 不动。使用文本缓存时从预生成的随机变体中选择。
              * @default false
              */
             shuffle: boolean;
             /**
              * Tag Dropout
-             * @description 每个 tag 被丢弃的概率
+             * @description 每个可变标签被丢弃的概率。分类 JSON 只作用于 appearance、tags、environment，允许整组丢空；固定信息和 nl 保留。
              * @default 0
              */
             tag_dropout: number;
@@ -3252,6 +3252,8 @@ export interface components {
             adapter_prefix: string;
             /** Capabilities */
             capabilities: string[];
+            /** Caption Formats */
+            caption_formats?: ("txt" | "json")[];
             /** Text Modes */
             text_modes: string[];
             /** Training Capabilities */
@@ -3868,7 +3870,7 @@ export interface components {
             grad_accum: number;
             /**
              * Mixed Precision
-             * @description CUDA / DTK 训练的自动混合精度，默认 bf16；no 关闭自动混合精度，但不改变模型权重本身的精度。fp16 需设备与模型数值兼容，CPU/MPS 当前关闭自动混合精度。DTK 可复现全量微调通常使用 FP32。仅训练主模型并选择 BF16 时，SDXL 单卡全量微调及默认 LoKr 训练使用 FP32 卷积和线性层反向；Krea2 多卡显存分片使用 FP32 线性层反向。两者保留 BF16 主体计算，以参数检查后显示的实际设置为准。此项不同于冻结权重存储精度与导出文件精度。
+             * @description CUDA / DTK 训练的自动混合精度，默认 bf16；no 关闭自动混合精度，但不改变模型权重本身的精度。fp16 需设备与模型数值兼容，CPU/MPS 当前关闭自动混合精度。DTK 可复现训练以参数检查后的实际设置为准。仅训练主模型并选择 BF16 时，单卡 Anima 全量微调或受支持的 LoKr 在线性层先按 BF16 舍入输入与参数，再用 FP32 矩阵运算并返回 BF16，线性层反向也使用 FP32。SDXL 单卡或显存分片全量微调、单卡或数据并行 LoKr 使用 FP32 卷积和线性层反向；Krea2 多卡显存分片使用 FP32 线性层反向。其余主体计算保留 BF16，其他受支持的全量微调使用 FP32。此项不同于冻结权重存储精度与导出文件精度。
              * @default bf16
              * @enum {string}
              */
@@ -3881,7 +3883,7 @@ export interface components {
             seed: number;
             /**
              * Deterministic
-             * @description 默认关闭。开启后请求确定性计算。DTK 上 Anima、SDXL 或 Krea2 主模型全量微调通常使用 FP32；仅训练主模型并选择 BF16 时，SDXL 单卡全量微调及默认 LoKr 训练使用 FP32 卷积和线性层反向；Krea2 多卡显存分片使用 FP32 线性层反向和梯度汇总。两者保留 BF16 主体计算。这些训练关闭 TF32，并使用原生 SDPA 数学实现；以参数检查后显示的实际计算设置为准。可能增加显存占用和耗时，不保证不同设备或软件版本逐位一致。不支持的确定性算子会报错停止；续训必须保持原计算策略和运行环境。
+             * @description 默认关闭。开启后请求确定性计算。DTK 上的实际精度由模型和训练方式决定。仅训练主模型并选择 BF16 时：单卡 Anima 全量微调或受支持的 LoKr 在线性层先按 BF16 舍入输入与参数，再以 FP32 进行矩阵运算并返回 BF16，线性层反向也使用 FP32；仅支持关闭或逐块重算。SDXL 单卡或显存分片全量微调、单卡或数据并行 LoKr 使用 FP32 卷积和线性层反向；Krea2 多卡显存分片使用 FP32 线性层反向和梯度汇总。其他受支持的全量微调使用 FP32。这些训练关闭 TF32，并使用 SDPA 数学实现；以参数检查后的实际设置为准。可能增加显存和耗时，不保证不同设备或软件版本逐位一致。不支持的确定性算子会报错停止；续训须保持原计算策略和运行环境。
              * @default false
              */
             deterministic: boolean;
@@ -3939,7 +3941,7 @@ export interface components {
         MemoryConfig: {
             /**
              * Base Precision
-             * @description 冻结线性层权重的存储精度，默认 auto 保留加载后的精度；不会将适配器参数自动变为该精度。FP8 带逐张量缩放且需要 CUDA，应在显存受限时结合样图与训练检查使用。
+             * @description 可选实验功能，默认 auto 不转换加载后的精度，也不会按剩余显存自动降低精度。适配器训练时只转换其覆盖的、尚未量化的冻结线性层，不修改原模型文件或适配器参数精度。降低存储精度可能减少显存占用，也可能影响训练质量，不保证加速。FP8 在启动时按逐张量缩放量化，不等同于发布方制作的量化模型；已有 FP8 文件须由对应加载器支持。全量微调只接受 auto 或 fp32，以实际训练设置为准。
              * @default auto
              * @enum {string}
              */
@@ -4096,7 +4098,7 @@ export interface components {
             vae_path?: string | null;
             /**
              * Tokenizer Path
-             * @description 附加分词器目录（Anima: 旧版 T5 spiece；留空用内置）
+             * @description 自定义分词器目录。SDXL 需指定同时包含 tokenizer/ 与 tokenizer_2/ 的根目录；Anima 可指定旧版 T5 spiece 目录。留空按模型自动选择，必要时使用内置资源。
              */
             tokenizer_path?: string | null;
             /**
@@ -4429,10 +4431,10 @@ export interface components {
              * @default none
              * @enum {string}
              */
-            weighting: "none" | "sigma_sqrt" | "cosmap" | "snr_like" | "cosmos";
+            weighting: "none" | "sigma_sqrt" | "cosmap" | "snr_like" | "cosmos" | "min_snr";
             /**
              * Snr Gamma
-             * @description snr_like 权重中 SNR 的截断值，默认 5；仅选择 snr_like 时生效。它调节不同噪声区间的损失倍率，通常保持默认。
+             * @description SNR 截断值，默认 5。SDXL 的 Min-SNR 按实际噪声调度和 ε/v 预测计算损失权重；Flow 模型的 snr_like 是不同公式。仅选择对应加权方式时生效，不改变时间步抽样。
              * @default 5
              */
             snr_gamma: number;
@@ -4442,6 +4444,24 @@ export interface components {
              * @default 0
              */
             ip_noise_gamma: number;
+            /**
+             * Scale V Pred Loss Like Noise Pred
+             * @description 仅适用于 SDXL v 预测。按 SNR/(SNR+1) 缩放损失，使其对应 ε 预测的损失尺度；默认关闭。这是可选加权，不是启用 v 预测的必要条件，可与 Min-SNR 叠加。
+             * @default false
+             */
+            scale_v_pred_loss_like_noise_pred: boolean;
+            /**
+             * V Pred Like Loss
+             * @description 仅适用于 SDXL ε 预测，默认 0 关闭。额外加入按 v 预测尺度换算的损失；不能与 v 预测同时启用。系数越大，这部分损失的占比越高。
+             * @default 0
+             */
+            v_pred_like_loss: number;
+            /**
+             * Debiased Estimation Loss
+             * @description 仅适用于 SDXL，默认关闭。ε 预测使用 1/√SNR，v 预测使用 1/(SNR+1) 对损失加权。可与 Min-SNR 叠加，会改变损失尺度，建议分别建立对照。
+             * @default false
+             */
+            debiased_estimation_loss: boolean;
         };
         /** Ok */
         Ok: {
@@ -4879,6 +4899,8 @@ export interface components {
             compute_policy?: {
                 [key: string]: unknown;
             } | null;
+            /** Source Balance */
+            source_balance?: components["schemas"]["PlanSourceBalance"][] | null;
             /**
              * Images
              * @default 0
@@ -5098,6 +5120,27 @@ export interface components {
             components?: {
                 [key: string]: number;
             };
+        } & {
+            [key: string]: unknown;
+        };
+        /** PlanSourceBalance */
+        PlanSourceBalance: {
+            /** Source Index */
+            source_index: number;
+            /** Path */
+            path: string;
+            /** Is Reg */
+            is_reg: boolean;
+            /** Images */
+            images: number;
+            /** Repeats */
+            repeats: number;
+            /** Repeated Images */
+            repeated_images: number;
+            /** Resolution Variants */
+            resolution_variants: number;
+            /** Items */
+            items: number;
         } & {
             [key: string]: unknown;
         };

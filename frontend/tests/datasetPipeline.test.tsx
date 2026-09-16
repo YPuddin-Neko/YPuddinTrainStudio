@@ -29,6 +29,17 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 describe('dataset pipeline', () => {
+  it('shows the selected JSON filename and specific reason without hiding it behind a generic badge', async()=>{
+    const message='Invalid JSON caption labels/a.json: unrecognized caption format; use a supported tags/nl structure or select a TXT caption explicitly';
+    state.inspection={...state.inspection!,errors:1,images:[{...image,rel_path:'a.png',caption:'',issues:[{severity:'error',code:'caption_format_unsupported',path:'labels/a.json',message}]}]};
+    const original=structuredClone(state);
+    show();fireEvent.click(screen.getByRole('button',{name:/检查与筛选/}));
+    const summary=await screen.findByText('此 JSON 标签结构不受支持 · labels/a.json');
+    fireEvent.click(summary);
+    expect(screen.getByText(message)).toBeVisible();
+    expect(screen.getByText('请使用 tags / nl 标签结构，或在标签格式中明确选择 TXT。原文件未修改。')).toBeVisible();
+    expect(state).toEqual(original);expect(submitted).toEqual([]);
+  });
   it('shows Anima field previews without writing captions and navigates to the existing editor', async () => {
     state.inspection = {...state.inspection!, caption_profile:'anima', images:[{
       ...image,rel_path:'a.png',caption:'Some_Artist, Blue_Hair',

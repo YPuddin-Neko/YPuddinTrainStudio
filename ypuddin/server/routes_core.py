@@ -173,6 +173,7 @@ def family_info(name: str) -> dict[str, Any]:
         "objective_weighting": list(spec.objective_weighting),
         "adapter_prefix": spec.adapter_prefix,
         "capabilities": sorted(spec.capabilities),
+        "caption_formats": list(spec.caption_formats),
         "text_modes": text_modes,
         "training_capabilities": training_capabilities(name),
         "presets": presets,

@@ -62,6 +62,9 @@ export function changeModelFamily(config: Record<string, any>, family: FamilyInf
     next.sampling.steps = null; next.sampling.cfg = null; next.sampling.guidance = null;
   }
   if (family.objective !== 'ddpm') {
+    next.objective.scale_v_pred_loss_like_noise_pred = false;
+    next.objective.v_pred_like_loss = 0;
+    next.objective.debiased_estimation_loss = false;
     next.objective.timestep_sampling = family.sampling.shift == null ? 'resolution_shift' : 'shift';
     next.objective.shift = family.sampling.shift ?? 3;
     next.objective.res_shift_tokens = [256, family.name === 'krea2' ? 6400 : 4096];

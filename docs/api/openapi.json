@@ -7068,7 +7068,7 @@
             "type": "integer",
             "minimum": 0.0,
             "title": "Keep Tokens",
-            "description": "前 N 个 tag 固定不洗牌",
+            "description": "仅用于 TXT：保留前 N 个标签，不参与打乱或标签丢弃。分类 JSON 按字段分组处理，不使用此计数。",
             "default": 0,
             "x-ui": {
               "group": "caption",
@@ -7079,7 +7079,7 @@
           "shuffle": {
             "type": "boolean",
             "title": "Shuffle",
-            "description": "随机打乱 tag 顺序",
+            "description": "TXT 打乱未保留的标签；分类 JSON 仅分别打乱 appearance、tags、environment 组内的标签，固定信息及自然语言 nl 不动。使用文本缓存时从预生成的随机变体中选择。",
             "default": false,
             "x-ui": {
               "control": "switch",
@@ -7092,7 +7092,7 @@
             "maximum": 1.0,
             "minimum": 0.0,
             "title": "Tag Dropout",
-            "description": "每个 tag 被丢弃的概率",
+            "description": "每个可变标签被丢弃的概率。分类 JSON 只作用于 appearance、tags、environment，允许整组丢空；固定信息和 nl 保留。",
             "default": 0.0,
             "x-ui": {
               "control": "slider",
@@ -9789,6 +9789,17 @@
             "type": "array",
             "title": "Capabilities"
           },
+          "caption_formats": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "txt",
+                "json"
+              ]
+            },
+            "type": "array",
+            "title": "Caption Formats"
+          },
           "text_modes": {
             "items": {
               "type": "string"
@@ -12360,7 +12371,7 @@
               }
             ],
             "title": "Tokenizer Path",
-            "description": "附加分词器目录（Anima: 旧版 T5 spiece；留空用内置）",
+            "description": "自定义分词器目录。SDXL 需指定同时包含 tokenizer/ 与 tokenizer_2/ 的根目录；Anima 可指定旧版 T5 spiece 目录。留空按模型自动选择，必要时使用内置资源。",
             "x-ui": {
               "advanced": true,
               "control": "path",
@@ -13246,7 +13257,8 @@
               "sigma_sqrt",
               "cosmap",
               "snr_like",
-              "cosmos"
+              "cosmos",
+              "min_snr"
             ],
             "title": "Weighting",
             "description": "给不同噪声时间步的损失乘权重，默认 none 等权；它不改变时间步抽样概率。其他方案会改变优化重点和损失量级，建议先保留默认建立对照。",
@@ -13261,12 +13273,12 @@
             "type": "number",
             "exclusiveMinimum": 0.0,
             "title": "Snr Gamma",
-            "description": "snr_like 权重中 SNR 的截断值，默认 5；仅选择 snr_like 时生效。它调节不同噪声区间的损失倍率，通常保持默认。",
+            "description": "SNR 截断值，默认 5。SDXL 的 Min-SNR 按实际噪声调度和 ε/v 预测计算损失权重；Flow 模型的 snr_like 是不同公式。仅选择对应加权方式时生效，不改变时间步抽样。",
             "default": 5.0,
             "x-ui": {
               "group": "objective",
               "order": 110,
-              "show_when": "objective.weighting == 'snr_like'"
+              "show_when": "objective.weighting in ['snr_like', 'min_snr']"
             }
           },
           "ip_noise_gamma": {
@@ -13279,6 +13291,42 @@
               "advanced": true,
               "group": "objective",
               "order": 120
+            }
+          },
+          "scale_v_pred_loss_like_noise_pred": {
+            "type": "boolean",
+            "title": "Scale V Pred Loss Like Noise Pred",
+            "description": "仅适用于 SDXL v 预测。按 SNR/(SNR+1) 缩放损失，使其对应 ε 预测的损失尺度；默认关闭。这是可选加权，不是启用 v 预测的必要条件，可与 Min-SNR 叠加。",
+            "default": false,
+            "x-ui": {
+              "advanced": true,
+              "group": "objective",
+              "order": 130,
+              "show_when": "model.prediction_type == 'v_prediction'"
+            }
+          },
+          "v_pred_like_loss": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "V Pred Like Loss",
+            "description": "仅适用于 SDXL ε 预测，默认 0 关闭。额外加入按 v 预测尺度换算的损失；不能与 v 预测同时启用。系数越大，这部分损失的占比越高。",
+            "default": 0.0,
+            "x-ui": {
+              "advanced": true,
+              "group": "objective",
+              "order": 140,
+              "show_when": "model.prediction_type == 'epsilon'"
+            }
+          },
+          "debiased_estimation_loss": {
+            "type": "boolean",
+            "title": "Debiased Estimation Loss",
+            "description": "仅适用于 SDXL，默认关闭。ε 预测使用 1/√SNR，v 预测使用 1/(SNR+1) 对损失加权。可与 Min-SNR 叠加，会改变损失尺度，建议分别建立对照。",
+            "default": false,
+            "x-ui": {
+              "advanced": true,
+              "group": "objective",
+              "order": 150
             }
           }
         },
@@ -14335,6 +14383,20 @@
             ],
             "title": "Compute Policy"
           },
+          "source_balance": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PlanSourceBalance"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Balance"
+          },
           "images": {
             "type": "integer",
             "title": "Images",
@@ -14770,6 +14832,55 @@
         "type": "object",
         "title": "PlanParams",
         "description": "Empty (all zeros) when the family cannot build a meta backbone for the config."
+      },
+      "PlanSourceBalance": {
+        "properties": {
+          "source_index": {
+            "type": "integer",
+            "title": "Source Index"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "is_reg": {
+            "type": "boolean",
+            "title": "Is Reg"
+          },
+          "images": {
+            "type": "integer",
+            "title": "Images"
+          },
+          "repeats": {
+            "type": "integer",
+            "title": "Repeats"
+          },
+          "repeated_images": {
+            "type": "integer",
+            "title": "Repeated Images"
+          },
+          "resolution_variants": {
+            "type": "integer",
+            "title": "Resolution Variants"
+          },
+          "items": {
+            "type": "integer",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "source_index",
+          "path",
+          "is_reg",
+          "images",
+          "repeats",
+          "repeated_images",
+          "resolution_variants",
+          "items"
+        ],
+        "title": "PlanSourceBalance"
       },
       "PreprocessOptions": {
         "properties": {

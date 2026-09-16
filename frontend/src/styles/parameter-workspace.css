@@ -26,8 +26,8 @@
 .parameter-step-issues { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: color-mix(in srgb,#d97706 10%,var(--studio-panel)); color: #b45309; font-size: 11px; }
 .dark .parameter-step-issues { color: #fbbf24; }
 .parameter-sections-mobile { display: none; }
-.parameter-mode-toggle { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 3px; padding: 3px; border: 1px solid var(--studio-line); border-radius: 7px; background: var(--studio-muted); }
-.parameter-mode-toggle button { min-height: 32px; padding: 5px 10px; border-radius: 4px; font-size: 12px; white-space: nowrap; }
+.parameter-mode-toggle { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 3px; padding: 3px; border: 1px solid var(--studio-line); border-radius: 999px; background: var(--studio-muted); }
+.parameter-mode-toggle button { min-height: 32px; padding: 5px 14px; border-radius: 999px; font-size: 12px; white-space: nowrap; }
 .parameter-mode-toggle button[aria-pressed=true] { background: var(--studio-panel); color: var(--studio-accent); box-shadow: 0 1px 3px #00000012; font-weight: 650; }
 .training-studio.parameter-workspace .training-launch-bar { position: relative; flex: 0 0 auto; bottom: auto; padding: 12px 20px; margin: 0; border-top: 1px solid var(--studio-line); background: var(--studio-panel); box-shadow: none; gap: 10px; }
 .training-studio.parameter-workspace .training-launch-bar :is(button,input,summary) { min-height: 40px; height: 40px; border-radius: 6px; font-size: 13px; line-height: 20px; }
@@ -154,3 +154,8 @@
   .training-studio.parameter-workspace .training-header-actions .launch-name { flex: 1 1 100px; width: auto; }
   .training-studio.parameter-workspace .training-header-actions .start-training { width: auto; min-width: 100px; }
 }
+.config-field-heading { gap: 8px; align-items: flex-start; }
+.config-field-heading > label { min-width: 0; }
+.config-field-reference { display: inline-flex; align-items: flex-start; justify-content: flex-end; gap: 6px; min-width: 0; max-width: 56%; }
+.config-field-reference > button { flex-shrink: 0; }
+.config-field-key { color: var(--studio-dim); font-size: 10px; line-height: 17px; font-weight: 400; overflow-wrap: anywhere; text-align: right; user-select: text; }

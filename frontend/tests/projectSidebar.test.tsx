@@ -19,10 +19,11 @@ let flush=vi.fn<() => Promise<void>>();
 beforeAll(() => server.listen({onUnhandledRequest:'error'}));
 afterAll(() => server.close());
 beforeEach(async () => {
+  localStorage.removeItem('studio.sidebar.collapsed');
   await i18n.changeLanguage('zh-CN'); flush=vi.fn().mockResolvedValue(undefined);
   server.use(http.get('/api/settings',()=>HttpResponse.json({paths:{},server:{},ui:{theme:'light',language:'zh-CN'}})));
 });
-afterEach(() => {server.resetHandlers();vi.restoreAllMocks();});
+afterEach(() => {server.resetHandlers();vi.restoreAllMocks();localStorage.removeItem('studio.sidebar.collapsed');});
 
 function ProjectPage() {
   const {versionId='v1'}=useParams(); const location=useLocation(); const [draft,setDraft]=React.useState('');
@@ -39,6 +40,22 @@ function Router() {
 function show(){render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter initialEntries={['/projects/p_sidebar/v/v1']}><Router/></MemoryRouter></QueryClientProvider>);}
 
 describe('project navigation belongs to the global sidebar',()=>{
+  it('keeps project stages and version selection accessible after collapsing alongside footer navigation',async()=>{
+    show();
+    const slot=await screen.findByTestId('project-sidebar-slot');
+    fireEvent.click(screen.getByRole('button',{name:'收起侧边栏'}));
+    expect(screen.getByTestId('app-topbar').closest('.app-shell')).toHaveClass('sidebar-collapsed');
+    const stages=within(slot).getByRole('navigation',{name:'项目训练步骤'});
+    expect(within(stages).getAllByRole('link')).toHaveLength(4);
+    expect(within(stages).getByRole('link',{name:'1 训练数据'})).toHaveAttribute('aria-current','step');
+    expect(within(stages).getByRole('link',{name:'2 训练参数'})).toHaveAttribute('title','训练参数 · 设置参数，检查并启动');
+    fireEvent.click(within(slot).getByRole('combobox',{name:'项目版本'}));
+    fireEvent.click(screen.getByRole('option',{name:'v2'}));
+    await waitFor(()=>expect(screen.getByTestId('route')).toHaveTextContent('/projects/p_sidebar/v/v2'));
+    expect(within(slot).getByRole('combobox',{name:'项目版本'})).toHaveTextContent('v2');
+    expect(screen.getByRole('button',{name:'展开侧边栏'})).toHaveAttribute('aria-expanded','false');
+    expect(screen.getByRole('link',{name:'参数预设'}).nextElementSibling).toBe(screen.getByRole('link',{name:'系统设置'}));
+  });
   it('portals project identity, version actions and stages into the sidebar, keeps a single content heading, then cleans the slot when leaving',async()=>{
     show();const slot=await screen.findByTestId('project-sidebar-slot');
     expect(within(slot).getByRole('link',{name:/Character workspace/})).toBeInTheDocument();

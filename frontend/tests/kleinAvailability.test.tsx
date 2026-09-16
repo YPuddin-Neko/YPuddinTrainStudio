@@ -104,7 +104,7 @@ it('filters stale FLUX.1 responses and names Klein in the actual new-project sel
   await waitFor(() => expect(combo).toHaveTextContent('Anima'));
   fireEvent.click(combo);
   expect(screen.queryByRole('option', { name: /FLUX.1/ })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('option', { name: 'FLUX.2 Klein' }));
+  fireEvent.click(screen.getByRole('option', { name: 'FLUX.2 Klein 4B / 9B' }));
   expect(combo).toHaveTextContent('FLUX.2 Klein');
 });
 
@@ -118,7 +118,7 @@ it('offers Klein but no FLUX.1 when creating a standalone preset', async () => {
   const combo = await screen.findByRole('combobox', { name: '适用模型' });
   fireEvent.click(combo);
   expect(screen.queryByRole('option', { name: /FLUX.1/ })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('option', { name: 'FLUX.2 Klein' }));
+  fireEvent.click(screen.getByRole('option', { name: 'FLUX.2 Klein 4B / 9B' }));
   await waitFor(() => expect(defaults).toHaveBeenCalledWith('flux2'));
   expect(defaults).not.toHaveBeenCalledWith('flux');
 });
@@ -150,7 +150,7 @@ it('removes FLUX.1 model registration and download entry points even with a stal
   expect(screen.queryByTestId('download-model-btn')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('combobox', { name: '模型系列' }));
   expect(screen.queryByRole('option', { name: /FLUX.1/ })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('option', { name: 'FLUX.2 Klein' }));
+  fireEvent.click(screen.getByRole('option', { name: 'FLUX.2 Klein 4B / 9B' }));
   expect(await screen.findByTestId('add-model-btn')).toBeInTheDocument();
 });
 

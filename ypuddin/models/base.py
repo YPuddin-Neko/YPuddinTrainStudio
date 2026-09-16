@@ -51,6 +51,8 @@ class ModelSpec:
     text: TextSpec
     sampling: SamplingDefaults
     capabilities: frozenset[str]
+    # The shared caption reader renders supported sidecars to text before encoding.
+    caption_formats: tuple[str, ...] = ("txt", "json")
     objective: str = "rectified_flow"
     t_convention: str = "unit"  # backbone receives t in (0, 1)
     architecture: str = "unknown"  # modelspec.architecture base tag
@@ -325,6 +327,23 @@ class ModelFamily(ABC):
         if self.spec.retired_reason:
             return [{"loc": "model.family", "msg": self.spec.retired_reason}]
         problems = []
+        for key in ("scale_v_pred_loss_like_noise_pred", "v_pred_like_loss", "debiased_estimation_loss"):
+            if getattr(cfg.objective, key) and self.spec.objective != "ddpm":
+                problems.append(
+                    {"loc": f"objective.{key}", "msg": "此损失加权仅适用于 SDXL，不适用于 Flow 模型"}
+                )
+        if self.spec.objective == "ddpm":
+            if (
+                cfg.objective.scale_v_pred_loss_like_noise_pred
+                and cfg.model.prediction_type != "v_prediction"
+            ):
+                problems.append(
+                    {"loc": "objective.scale_v_pred_loss_like_noise_pred", "msg": "此损失缩放仅适用于 v 预测"}
+                )
+            if cfg.objective.v_pred_like_loss and cfg.model.prediction_type != "epsilon":
+                problems.append(
+                    {"loc": "objective.v_pred_like_loss", "msg": "附加 v 预测损失仅适用于 ε 预测"}
+                )
         for key, allowed in (
             ("timestep_sampling", self.spec.objective_timestep_sampling),
             ("weighting", self.spec.objective_weighting),

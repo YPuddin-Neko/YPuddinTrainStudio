@@ -1,6 +1,5 @@
 export const PARAMETER_FLOW: Array<{ group: string; label: [string, string] }> = [
   { group: 'model', label: ['模型选择', 'Model'] },
-  { group: 'training', label: ['训练方式', 'Training mode'] },
   { group: 'dataset', label: ['数据与分桶', 'Data and buckets'] },
   { group: 'caption', label: ['标签处理', 'Captions'] },
   { group: 'loop', label: ['设备与时长', 'Devices and duration'] },
@@ -19,5 +18,5 @@ export const PARAMETER_GROUP_ORDER = PARAMETER_FLOW.map(item => item.group);
 
 /** Preserve backend-added groups while putting the known workflow in one order. */
 export function workflowSchema<T extends { [key: string]: any }>(schema: T): T {
-  return {...schema, 'x-ui-groups': [...PARAMETER_GROUP_ORDER, ...(schema['x-ui-groups'] || []).filter((group: string) => !PARAMETER_GROUP_ORDER.includes(group))]};
+  return {...schema, 'x-ui-groups': [...PARAMETER_GROUP_ORDER, ...(schema['x-ui-groups'] || []).filter((group: string) => group !== 'training' && !PARAMETER_GROUP_ORDER.includes(group))]};
 }

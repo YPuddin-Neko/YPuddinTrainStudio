@@ -56,3 +56,19 @@ it('keeps a short final section selected after a clamped jump, then follows user
   expect(logging).toHaveAttribute('aria-current','step');
   root.remove();
 });
+
+it('maps old training links and component errors to the model section', () => {
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { callback(0); return 1; });
+  const root = document.createElement('div');
+  root.innerHTML = '<section data-group="model"><button class="config-group-title" aria-expanded="true">Model</button></section>';
+  const reveal = vi.fn();
+  render(<ParameterSections rootRef={{current:root}} tab="train" group="training" hasTrainingMode
+    onTabChange={vi.fn()} onRevealAdvanced={reveal} checked planChecked
+    issues={presentConfigIssues([{loc:'training.train_text_encoder',msg:'Unsupported'}])}/>);
+  const model = screen.getByRole('button', {name:/模型选择$/});
+  expect(model).toHaveAttribute('aria-current', 'step');
+  expect(model).toHaveAccessibleDescription('1 项待配置');
+  expect(screen.queryByRole('button', {name:/训练方式$/})).not.toBeInTheDocument();
+  expect(screen.getByRole('button', {name:/优化器$/})).toHaveAccessibleDescription('检查通过');
+  expect(reveal).not.toHaveBeenCalled();
+});

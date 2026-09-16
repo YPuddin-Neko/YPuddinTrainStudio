@@ -735,7 +735,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   };
   const lokrModeLabel = english ? 'LoKr parameter mode' : 'LoKr 参数形式';
   const groups: Record<string, { order: number; fields: React.ReactNode[] }> = {};
-  const conditionValue = { ...value, dataset: { resolution_mode: 'bucket', ...value.dataset } };
+  const conditionValue = { ...value, model: { prediction_type: 'epsilon', ...value.model }, dataset: { resolution_mode: 'bucket', ...value.dataset } };
   const weights = modelFamilyWeights(family);
 
   const renderField = (key: string, prop: SchemaProperty, parentPath: string[] = []) => {
@@ -746,10 +746,13 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const supportedOptions = familyParameterOptions(family, fullPathKey);
     if (parentPath[0] === 'adapter' && value.training?.mode === 'full') return null;
     if (['model.training_guidance', 'sampling.guidance'].includes(fullPathKey)) return null;
+    const ddpmModifier = ['objective.scale_v_pred_loss_like_noise_pred', 'objective.v_pred_like_loss', 'objective.debiased_estimation_loss'].includes(fullPathKey);
+    const incompatibleFamilyLoss = ddpmModifier && family?.objective !== 'ddpm' && !!getNestedValue(value, path);
+    if (ddpmModifier && family?.objective !== 'ddpm' && !incompatibleFamilyLoss) return null;
     if (fullPathKey === 'model.text_encoder_2_path' && value.model?.family !== 'sdxl') return null;
     if (supportedOptions?.length === 0) return null;
-    if (family?.objective === 'ddpm' && ['sampling.shift', 'sampling.er_sde_order', 'sampling.er_sde_s_noise', 'objective.shift', 'objective.res_shift_tokens', 'objective.res_shift_mu', 'objective.mode_scale', 'objective.snr_gamma'].includes(fullPathKey)) return null;
-    if (parentPath[0] === 'model' && key in MODEL_PATH_FIELDS && weights.length && !weightMeta) return null;
+    if (family?.objective === 'ddpm' && ['sampling.shift', 'sampling.er_sde_order', 'sampling.er_sde_s_noise', 'objective.shift', 'objective.res_shift_tokens', 'objective.res_shift_mu', 'objective.mode_scale'].includes(fullPathKey)) return null;
+    if (parentPath[0] === 'model' && key in MODEL_PATH_FIELDS && weights.length && !weightMeta && !(key === 'tokenizer_path' && family?.name === 'sdxl')) return null;
     if (family?.name === 'sdxl' && weightMeta?.required === false && !showAdvanced) return null;
     if (fullPathKey === 'model.zero_terminal_snr' && value.model?.prediction_type !== 'v_prediction' && !value.model?.zero_terminal_snr) return null;
     // Keep legacy cloud-log data in the draft, but do not expose controls that enable it.
@@ -758,8 +761,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (fullPathKey === 'sampling.output_dir') return null;
     if (versionSources && ['checkpoint.output_dir', 'checkpoint.name'].includes(fullPathKey) && !showAdvanced && !editOutput) return null;
     if (fullPathKey === 'adapter.alpha' && value.adapter?.algo === 'lokr' && value.adapter?.rank === 'full') return null;
-    if (['training.train_backbone', 'training.train_text_encoder'].includes(fullPathKey) && value.training?.mode !== 'full') return null;
-    const ui = { ...(prop['x-ui'] || {}), ...(compact && fullPathKey === 'dataset.batch_size' ? {group:'loop'} : {}), ...(fullPathKey === 'model.attention' ? {group:'memory',advanced:false} : {}), ...(fullPathKey === 'loop.gpu_count' ? {group:'loop',advanced:false} : {}) };
+    const ui = { ...(prop['x-ui'] || {}), ...(compact && parentPath[0] === 'training' ? {group:'model'} : {}), ...(compact && fullPathKey === 'dataset.batch_size' ? {group:'loop'} : {}), ...(fullPathKey === 'model.attention' ? {group:'memory',advanced:false} : {}), ...(fullPathKey === 'loop.gpu_count' ? {group:'loop',advanced:false} : {}) };
     if (ui.hidden) return null;
     if (conditionValue.dataset.resolution_mode === 'native' && ['dataset.resolutions', 'dataset.aspect_ratio_limit', 'dataset.area_tolerance', 'dataset.bucket_step', 'dataset.bucket_no_upscale'].includes(fullPathKey)) return null;
     if (compact && !showAdvanced && fullPathKey === 'adapter.rules' && !value.adapter?.rules?.length) return null;
@@ -769,16 +771,17 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       Object.entries(nested.properties).forEach(([childKey, child]) => renderField(childKey, child as SchemaProperty, path));
       return null;
     }
-    const fieldLabel = weightMeta?.label || configFieldLabel(fullPathKey, t(`fields.${key}`, prop.title || key), english);
+    const fieldLabel = weightMeta?.label || (fullPathKey === 'objective.snr_gamma' && value.objective?.weighting === 'min_snr' ? 'Min-SNR Gamma' : configFieldLabel(fullPathKey, t(`fields.${key}`, prop.title || key), english));
     const fieldId = `config-${fullPathKey}`;
     const currentGroup = ui.group || parentPath[0] || 'default';
-    if (groupFilter && !groupFilter.includes(currentGroup)) return null;
+    if (groupFilter && !groupFilter.includes(currentGroup) && !(compact && parentPath[0] === 'training' && groupFilter.includes('training'))) return null;
     if (search.trim() && !`${fieldLabel} ${fullPathKey} ${prop.description || ''} ${lokrRank ? lokrModeLabel : ''}`.toLowerCase().includes(search.trim().toLowerCase())) return null;
 
     const captionOverride = fullPathKey.startsWith('dataset.caption.') && captionOverrideKeys.includes(key);
     const optionalAdvanced = ui.advanced && !(currentGroup === 'optimizer' && key !== 'args');
     if ((optionalAdvanced || captionOverride) && !showAdvanced && !(captionOverride && editCaptionOverrides) && !(editOutput && ['checkpoint.output_dir', 'checkpoint.name'].includes(fullPathKey))) return null;
-    if (ui.show_when) {
+    const incompatiblePredictionLoss = (fullPathKey === 'objective.scale_v_pred_loss_like_noise_pred' && value.objective?.scale_v_pred_loss_like_noise_pred && conditionValue.model.prediction_type !== 'v_prediction') || (fullPathKey === 'objective.v_pred_like_loss' && value.objective?.v_pred_like_loss > 0 && conditionValue.model.prediction_type !== 'epsilon');
+    if (ui.show_when && !incompatiblePredictionLoss && !incompatibleFamilyLoss) {
       try {
         if (!evaluateShowWhen(ui.show_when, conditionValue)) return null;
       } catch (err) {
@@ -802,7 +805,12 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     let control = null;
 
     // 1. 递归对象渲染
-    if (managedReason) {
+    if (managedReason && ['training.train_backbone', 'training.train_text_encoder'].includes(fullPathKey)) {
+      control = <label className="config-toggle-control" data-state={fieldValue ? 'on' : 'off'}>
+        <input id={fieldId} type="checkbox" aria-label={fieldLabel} aria-describedby={`${fieldId}-managed-reason`} checked={!!fieldValue} disabled/>
+        <span>{fieldValue ? (english ? 'Enabled' : '已开启') : (english ? 'Disabled' : '未开启')}</span>
+      </label>;
+    } else if (managedReason) {
       const display = computeManaged?.label ?? (prop.enum ? configOptionLabel(fullPathKey, String(fieldValue), english) : managedValueLabel(fieldValue, english));
       control = <div className="config-managed-value"><output id={fieldId} aria-label={fieldLabel} aria-describedby={`${fieldId}-managed-reason`}>{display}</output><span>{english ? 'Automatic' : '自动管理'}</span></div>;
     } else if (compact && fullPathKey === 'dataset.resolutions') {
@@ -949,8 +957,10 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           onValueChange={next => {
             const updated = setNestedValue(value, path, prop.enum!.find(option => String(option) === next));
             // A full LoKr factor matrix is not a valid numeric rank for LoRA/LoHa.
-            onChange(fullPathKey === 'model.prediction_type' && next !== 'v_prediction'
-              ? setNestedValue(updated, ['model', 'zero_terminal_snr'], false)
+            onChange(fullPathKey === 'model.prediction_type'
+              ? next === 'v_prediction'
+                ? setNestedValue(updated, ['objective', 'v_pred_like_loss'], 0)
+                : setNestedValue(setNestedValue(updated, ['model', 'zero_terminal_snr'], false), ['objective', 'scale_v_pred_loss_like_noise_pred'], false)
               : fullPathKey === 'adapter.algo' && next !== 'lokr' && value.adapter?.rank === 'full'
               ? setNestedValue(updated, ['adapter', 'rank'], lastLowRank.current ?? 16)
               : updated);
@@ -1039,7 +1049,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (!booleanField && !managedReason && React.isValidElement(control) && (typeof control.type === 'string' || control.type === StudioSelect)) {
       control = React.cloneElement(control as React.ReactElement<any>, {id: fieldId, 'aria-label': (control.props as any)['aria-label'] || fieldLabel, 'aria-invalid': !!errorItem});
     }
-    if (!managedReason && ['optimizer.lr', 'optimizer.min_lr', 'optimizer.max_lr'].includes(fullPathKey)) {
+    if (!managedReason && ['optimizer.lr', 'optimizer.min_lr', 'optimizer.max_lr', 'optimizer.d0'].includes(fullPathKey)) {
       const scientific = typeof fieldValue === 'number' && Number.isFinite(fieldValue) ? fieldValue.toExponential().replace('e+', 'e') : '—';
       control = <div className="config-scientific-input">{control}<output aria-label={`${fieldLabel} · ${english ? 'scientific notation' : '科学计数法'}`} title={`${scientific} · ${english ? 'The same value in scientific notation' : '同一数值的科学计数法'}`}>{scientific}</output></div>;
     }
@@ -1053,26 +1063,34 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       showAdvanced && selectedPreset && `${t('preset.layers', {n: selectedPreset.layers})} · ${selectedPreset.name}`,
       showAdvanced && selectedPreset?.include?.length && `${english ? 'Included layers' : '包含层'}：${selectedPreset.include.join(', ')}`,
       showAdvanced && selectedPreset?.exclude?.length && `${english ? 'Excluded layers' : '排除层'}：${selectedPreset.exclude.join(', ')}`,
-    ].filter(Boolean).join('\n\n') : weightMeta?.hint || configFieldHelp(fullPathKey, prop.description, english, value.optimizer?.type, scheduleFree);
-    const hint = managedReason || (fullPathKey === 'loop.deterministic' ? trainingComputePolicyHint(activeComputePolicy, english) : undefined) || configFieldHint(fullPathKey, english, value.optimizer?.type, scheduleFree)
+    ].filter(Boolean).join('\n\n') : fullPathKey === 'model.tokenizer_path' && family?.name === 'sdxl' ? (english ? 'Optional root containing tokenizer/ and tokenizer_2/. Leave blank to use the model directory’s tokenizers, or the built-in CLIP-L / CLIP-G tokenizers when absent.' : '可选根目录，需同时包含 tokenizer/ 和 tokenizer_2/。留空自动读取模型目录；没有时使用内置 CLIP-L / CLIP-G 双分词器。') : weightMeta?.hint || configFieldHelp(fullPathKey, prop.description, english, value.optimizer?.type, scheduleFree);
+    const hint = (incompatibleFamilyLoss ? (english ? 'This loss option only supports SDXL. Turn it off or set it to zero before using this model.' : '此损失参数仅适用于 SDXL，请关闭或设为 0 后再使用当前模型。') : undefined) || (incompatiblePredictionLoss ? (english ? 'This option is incompatible with the selected prediction type. Turn it off or choose the matching prediction type.' : '此参数与当前预测方式不兼容，请关闭此项或选择对应的预测方式。') : undefined) || managedReason || (fullPathKey === 'loop.deterministic' ? trainingComputePolicyHint(activeComputePolicy, english) : undefined) || configFieldHint(fullPathKey, english, value.optimizer?.type, scheduleFree)
       || (currentGroup === 'optimizer' && !['type', 'args', 'group_lr'].includes(key) ? prop.description : undefined);
+    const duplicateHelp = !!help && !!hint && help.replace(/\s+/g, ' ').trim() === hint.replace(/\s+/g, ' ').trim();
     const label = (
       <div key={fullPathKey} id={`field-${fullPathKey}`} data-testid={`field-${fullPathKey}`} data-field-path={fullPathKey} data-control-kind={booleanField ? 'toggle' : undefined} className={compactField ? `config-field ${booleanField ? 'config-field-boolean' : ''} ${wide ? 'config-field-wide' : ''} ${errorItem ? 'config-field-invalid' : ''}` : `flex flex-col space-y-1 p-2 rounded ${errorItem ? 'bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800' : ''}`}>
-        <div className="flex justify-between items-center">
+        <div className="config-field-heading flex justify-between items-center">
           <label htmlFor={fieldId} className="text-sm font-medium text-slate-700 dark:text-slate-300">
             {fieldLabel}{weightMeta?.required === false && family?.name !== 'flux2' && <span className="ml-1 text-xs text-slate-500">{english ? '(optional)' : '（可选）'}</span>}
             {ui.unit && !percentage && ui.control !== 'slider' && <span className="ml-1 text-xs text-slate-500">({ui.unit})</span>}
           </label>
-          {compactField && help && <ConfigHelp label={`${fieldLabel} ${english ? 'help' : '说明'}`}>{help}</ConfigHelp>}
+          <span className="config-field-reference">
+            <code className="config-field-key" title={english ? 'Configuration key' : '配置参数名'}>{fullPathKey}</code>
+            {compactField && help && !duplicateHelp && <ConfigHelp label={`${fieldLabel} ${english ? 'help' : '说明'}`}>{help}</ConfigHelp>}
+          </span>
         </div>
-        {!compactField && help && !weightMeta?.hint && <p className="text-xs text-slate-500 dark:text-slate-400">{help}</p>}
+        {!compactField && help && !weightMeta?.hint && <p id={managedReason && duplicateHelp ? `${fieldId}-managed-reason` : undefined} className="text-xs text-slate-500 dark:text-slate-400">{help}</p>}
         {!compactField && weightMeta?.hint && (
           <p className="text-[11px] text-slate-400 dark:text-slate-500" data-testid={`weight-hint-${key}`}>
             {weightMeta.hint}
           </p>
         )}
         <div className="mt-1">{readOnly ? <fieldset disabled style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>{control}</fieldset> : control}</div>
-        {hint && (compactField || managedReason) && <p id={managedReason ? `${fieldId}-managed-reason` : undefined} className="config-field-hint">{hint}</p>}
+        {hint && (compactField || managedReason && !duplicateHelp) && <p id={managedReason ? `${fieldId}-managed-reason` : undefined} className="config-field-hint">{hint}</p>}
+        {fullPathKey === 'optimizer.d0' && typeof fieldValue === 'number' && fieldValue <= 0 && <p className="config-field-hint">
+          {english ? 'D0 must be greater than zero. The default is 1e-6 (0.000001).' : 'D0 必须大于 0，默认值为 1e-6（0.000001）。'}{' '}
+          <button type="button" className="text-[var(--studio-accent)] underline" disabled={readOnly} onClick={() => onChange(setNestedValue(value, path, prop.default))}>{english ? 'Restore D0 default' : '恢复 D0 默认值'}</button>
+        </p>}
         {fullPathKey === 'adapter.preset' && family && <p className="config-scope-hint">{english ? 'Usually keep the default; a wider scope does not guarantee better results.' : '通常保留默认；范围更大不一定效果更好。'}</p>}
         {errorItem && <p className="text-xs text-red-600 dark:text-red-400">{errorItem.msg}</p>}
       </div>
@@ -1084,9 +1102,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (lokrRank) {
       const modeId = 'config-adapter-parameter-mode';
       groups[groupName].fields.push(<div key="adapter.parameter_mode" id={fieldValue === 'full' ? 'field-adapter.rank' : 'field-adapter.parameter_mode'} data-testid="field-adapter.parameter_mode" data-field-path="adapter.parameter_mode" className={`config-field ${fieldValue === 'full' && errorItem ? 'config-field-invalid' : ''}`}>
-        <div className="flex justify-between items-center">
+        <div className="config-field-heading flex justify-between items-center">
           <label htmlFor={modeId} className="text-sm font-medium text-slate-700 dark:text-slate-300">{lokrModeLabel}</label>
-          <ConfigHelp label={`${lokrModeLabel} ${english ? 'help' : '说明'}`}>{english ? 'Full retains the complete LoKr factor matrices; it does not fine-tune the whole model and does not use Alpha. Low rank decomposes the factors using Rank and Alpha.' : 'Full 保留 LoKr 完整因子矩阵，不是全量微调，也不使用 Alpha。低秩模式通过 Rank 和 Alpha 设置因子分解与缩放。'}</ConfigHelp>
+          <span className="config-field-reference"><code className="config-field-key" title={english ? 'Configuration key' : '配置参数名'}>adapter.rank</code><ConfigHelp label={`${lokrModeLabel} ${english ? 'help' : '说明'}`}>{english ? 'Full retains the complete LoKr factor matrices; it does not fine-tune the whole model and does not use Alpha. Low rank decomposes the factors using Rank and Alpha.' : 'Full 保留 LoKr 完整因子矩阵，不是全量微调，也不使用 Alpha。低秩模式通过 Rank 和 Alpha 设置因子分解与缩放。'}</ConfigHelp></span>
         </div>
         <div className="mt-1"><StudioSelect id={modeId} aria-label={lokrModeLabel} disabled={readOnly} value={fieldValue === 'full' ? 'full' : 'low_rank'}
           aria-invalid={fieldValue === 'full' && !!errorItem}
@@ -1148,21 +1166,40 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
               const label = `${english ? 'Caption format' : '标签格式'} · ${name}`;
               return <div className="caption-source-format" key={`${index}-${source.path}`}>
                 <span className="caption-source-name" title={source.path}>{name}</span>
-                <label><span>{english ? 'Caption format' : '标签格式'}</span><CaptionFormatSelect label={label} value={source.caption_ext || 'auto'} disabled={readOnly} onChange={caption_ext => onChange(setNestedValue(value, ['dataset', 'sources'], captionSources.map((item: any, itemIndex: number) => itemIndex === index ? {...item, caption_ext} : item)))}/></label>
+                <label><span>{english ? 'Caption format' : '标签格式'}</span><CaptionFormatSelect label={label} formats={family?.caption_formats} value={source.caption_ext || 'auto'} disabled={readOnly} onChange={caption_ext => onChange(setNestedValue(value, ['dataset', 'sources'], captionSources.map((item: any, itemIndex: number) => itemIndex === index ? {...item, caption_ext} : item)))}/></label>
               </div>;
             })}
           </div>}
           {groupName === 'caption' && hasCaptionOverrides && !showAdvanced && !editCaptionOverrides && <div className="caption-override-notice" role="status"><span>{english ? 'This configuration adds text to your existing captions.' : '当前配置会额外改写已有标签。'}</span><button type="button" onClick={() => setEditCaptionOverrides(true)}>{english ? 'Edit extra caption changes' : '编辑额外标签改写'}</button></div>}
           {compact && groupName === 'model' ? (() => {
-            const order = ['model.family', 'model.dit_path', 'model.text_encoder_path', 'model.text_encoder_2_path', 'model.vae_path', 'model.tokenizer_path', 'model.dtype', 'model.attention', 'model.prediction_type', 'model.zero_terminal_snr'];
+            const order = ['model.family', 'training.mode', 'training.train_backbone', 'training.train_text_encoder', 'model.dit_path', 'model.text_encoder_path', 'model.text_encoder_2_path', 'model.vae_path', 'model.prediction_type', 'model.zero_terminal_snr', 'model.tokenizer_path', 'model.dtype', 'model.attention'];
             const fields = [...groupData.fields].sort((a, b) => {
               const rank = (node: React.ReactNode) => { const index = order.indexOf(String((node as React.ReactElement).key)); return index < 0 ? order.length : index; };
               return rank(a) - rank(b);
             });
             const path = (node: React.ReactNode) => String((node as React.ReactElement).key);
-            const assets = new Set(['model.dit_path', 'model.text_encoder_path', 'model.text_encoder_2_path', 'model.vae_path']);
-            const assetFields = fields.filter(node => assets.has(path(node)));
-            return <>{fields.filter(node => path(node) === 'model.family')}{assetFields.length > 0 && <div className="config-model-assets">{assetFields}</div>}{fields.filter(node => path(node) !== 'model.family' && !assets.has(path(node)))}</>;
+            const pick = (names: string[]) => fields.filter(node => names.includes(path(node)));
+            const identities = ['model.family', 'training.mode'];
+            const components = ['training.train_backbone', 'training.train_text_encoder'];
+            const assets = ['model.dit_path', 'model.text_encoder_path', 'model.text_encoder_2_path', 'model.vae_path'];
+            const prediction = ['model.prediction_type', 'model.zero_terminal_snr'];
+            const section = (className: string, names: string[]) => {
+              const content = pick(names);
+              return content.length > 0 && <div className={className}>{content}</div>;
+            };
+            const isSdxl = value.model?.family === 'sdxl';
+            const grouped = [...identities, ...components, ...assets, ...prediction];
+            const tokenizerNotice = isSdxl && fields.some(node => path(node).startsWith('model.')) && (!search.trim() || /tokenizer|分词|clip/i.test(search));
+            return <>
+              {section('config-model-identity', identities)}
+              {section('config-model-components', components)}
+              {section(`config-model-assets${isSdxl ? ' config-model-assets-sdxl' : ''}`, assets)}
+              {section('config-model-prediction', prediction)}
+              {tokenizerNotice && <p className="config-model-tokenizers">{value.model?.tokenizer_path
+                ? (english ? 'Using your custom CLIP-L / CLIP-G tokenizer directory.' : '使用自定义 CLIP-L / CLIP-G 双分词器目录。')
+                : (english ? 'CLIP-L / CLIP-G tokenizers are loaded automatically, with built-in resources as fallback.' : 'CLIP-L / CLIP-G 双分词器自动读取，缺省使用内置资源。')}</p>}
+              {fields.filter(node => !grouped.includes(path(node)))}
+            </>;
           })() : groupName === 'adapter' ? (() => {
             const order = ['algo', 'preset', 'dora', 'rules', 'parameter_mode', 'factor', 'rank', 'alpha', 'decompose_both', 'rs_lora', 'init', 'resume_weights', 'dropout', 'rank_dropout', 'module_dropout', 'mode', 'param_dtype', 'lr_scale'];
             const fields = [...groupData.fields].sort((a, b) => {
@@ -1200,6 +1237,10 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           })() : compact && groupName === 'sampling' ? [...groupData.fields].sort((a, b) => {
             const order = ['enabled', 'at_start', 'every_steps', 'every_epochs', 'prompts', 'width', 'height', 'steps', 'cfg', 'shift', 'seed', 'sampler', 'scheduler', 'er_sde_order', 'er_sde_s_noise', 'prompts_file'];
             const rank = (node: React.ReactNode) => { const index = order.indexOf(String((node as React.ReactElement).key).split('.').pop() || ''); return index < 0 ? order.length : index; };
+            return rank(a) - rank(b);
+          }) : compact && groupName === 'loop' ? [...groupData.fields].sort((a, b) => {
+            const order = ['loop.gpu_count', 'dataset.batch_size'];
+            const rank = (node: React.ReactNode) => { const index = order.indexOf(String((node as React.ReactElement).key)); return index < 0 ? order.length : index; };
             return rank(a) - rank(b);
           }) : groupData.fields}
         </FieldGroup>

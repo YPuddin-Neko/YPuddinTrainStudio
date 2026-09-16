@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Activity, ArrowRight, Loader2 } from 'lucide-react';
 import { apiClient } from '../../api/client';
-import type { DatasetInfo, DatasetSource, JobListResponse } from '../../api/types';
+import type { DatasetInfo, DatasetSource, FamilyInfo, JobListResponse } from '../../api/types';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
 import ProjectWorkspaceHeader from '../../components/projects/ProjectWorkspaceHeader';
@@ -39,6 +39,10 @@ function ProjectDetailContent({projectId: id, versionId}: {projectId: string; ve
     queryKey:['project-workspace-config',id,versionId],enabled:!!project && scopedReady,
     queryFn:()=>apiClient.get<Record<string,any>>(versionConfigUrl(id,versionId),{silent:true}),
   });
+  const familiesQuery = useQuery({
+    queryKey:['families'], queryFn:()=>apiClient.get<FamilyInfo[]>('/families',{silent:true}),
+    enabled:!!project && scopedReady && step === 'data',
+  });
   const datasetsQuery = useQuery({
     queryKey:['project-workspace-datasets',id,versionId],enabled:!!project && scopedReady,
     queryFn:async()=>{
@@ -63,6 +67,7 @@ function ProjectDetailContent({projectId: id, versionId}: {projectId: string; ve
     return <Navigate replace to={{ pathname: projectUrl(id, project.active_version_id), search, hash: location.hash }} state={location.state}/>;
   }
   const config = configQuery.data;
+  const captionFormats = Array.isArray(familiesQuery.data) ? familiesQuery.data.find(family=>family.name === config?.model?.family)?.caption_formats : undefined;
   const datasets = datasetsQuery.data || [];
   const jobs = jobsQuery.data?.items || [];
   const activeJob = jobs.find(job => ['running','pausing','cancelling'].includes(job.status));
@@ -81,8 +86,8 @@ function ProjectDetailContent({projectId: id, versionId}: {projectId: string; ve
 
         {versionId ? <DatasetPipelinePanel projectId={id} versionId={versionId} config={config} readOnly={archived} onChanged={imported}
           datasetList={<ProjectDatasetCards datasets={datasets} projectId={id} versionId={versionId} onRefresh={imported}/>}
-          importPanel={<ProjectDataImport key={`${id}/${versionId}`} projectId={id} versionId={versionId} onImported={imported}/>}/>
-          : <div className={archived ? '' : 'version-data-layout'}><ProjectDatasetCards datasets={datasets} projectId={id} versionId={versionId} onRefresh={imported}/>{!archived && <ProjectDataImport key={`${id}/${versionId}`} projectId={id} versionId={versionId} onImported={imported}/>}</div>}
+          importPanel={<ProjectDataImport key={`${id}/${versionId}`} projectId={id} versionId={versionId} onImported={imported} captionFormats={captionFormats}/>}/>
+          : <div className={archived ? '' : 'version-data-layout'}><ProjectDatasetCards datasets={datasets} projectId={id} versionId={versionId} onRefresh={imported}/>{!archived && <ProjectDataImport key={`${id}/${versionId}`} projectId={id} versionId={versionId} onImported={imported} captionFormats={captionFormats}/>}</div>}
       </section>}
     </>}
   </div>;

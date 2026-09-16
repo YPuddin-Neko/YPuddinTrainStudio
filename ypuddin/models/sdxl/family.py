@@ -37,7 +37,7 @@ class SDXLFamily(ModelFamily):
     spec = ModelSpec(
         name="sdxl",
         attention_backends=("auto", "sdpa", "xformers"),
-        label="SDXL",
+        label="SDXL 2.6B",
         latent=LatentSpec(4, 8, 1, "sdxl-vae-f8c4-v1"),
         text=TextSpec(77, "sdxl-dual-clip-penultimate-pooled-v1", encoder_params=817_000_000),
         sampling=SamplingDefaults(steps=28, cfg=7.0, shift=1.0, sampler="euler"),
@@ -56,7 +56,7 @@ class SDXLFamily(ModelFamily):
         sampling_samplers=("euler", "heun"),
         sampling_schedulers=("uniform",),
         objective_timestep_sampling=("uniform", "logit_normal"),
-        objective_weighting=("none",),
+        objective_weighting=("none", "min_snr"),
     )
 
     def validate_config(self, cfg: ModelConfig) -> list[str]:

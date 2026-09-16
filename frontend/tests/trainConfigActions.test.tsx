@@ -64,7 +64,7 @@ describe('training configuration actions', () => {
     fireEvent.click(screen.getByRole('button', {name:'高级'}));
     const form = screen.getByTestId('schema-form');
     const groups = Array.from(form.querySelectorAll(':scope > [data-group]')).map(node => node.getAttribute('data-group'));
-    expect(groups).toEqual(['model','training','dataset','caption','loop','adapter','optimizer','scheduler','memory','objective','sampling','validation','checkpoint','logging']);
+    expect(groups).toEqual(['model','dataset','caption','loop','adapter','optimizer','scheduler','memory','objective','sampling','validation','checkpoint','logging']);
     expect(screen.getByTestId('field-checkpoint.save_dtype')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', {name:/保存与恢复$/}));
     expect(screen.getByTestId('field-model.dit_path')).toBeInTheDocument();
@@ -180,9 +180,10 @@ describe('training configuration actions', () => {
     showConfig();
     expect(enqueue()).toBeDisabled();
     const dynamicField = await screen.findByTestId('field-loop.backend_added');
-    fireEvent.click(screen.getByLabelText('选择运行显卡'));
-    fireEvent.click(screen.getByRole('combobox', {name:'运行显卡'}));
-    fireEvent.click(await screen.findByRole('option', {name:/GPU 1.*空闲/}));
+    expect(within(screen.getByRole('group', {name:'训练启动操作'})).getByRole('button', {name:'训练显卡'})).toHaveTextContent('自动');
+    fireEvent.click(screen.getByRole('button', {name:'训练显卡'}));
+    fireEvent.click(await screen.findByRole('radio', {name:/GPU 1.*空闲/}));
+    fireEvent.keyDown(document, {key:'Escape'});
     fireEvent.change(within(dynamicField).getByRole('textbox'), { target: { value: 'from-current-backend' } });
     fireEvent.change(screen.getByRole('textbox', { name: '任务名称（可选）' }), { target: { value: 'Scheduled training' } });
     fireEvent.click(screen.getByText('排期', {selector:'summary'}));
@@ -191,8 +192,58 @@ describe('training configuration actions', () => {
     await waitFor(() => expect(enqueue()).toBeEnabled());
     fireEvent.click(enqueue());
     await screen.findByText('Created job');
-    expect(submitted).toMatchObject({ name: 'Scheduled training', gpu_devices: ['cuda:1'], priority: 7, project_id: 'p_test', config: { loop: { backend_added: 'from-current-backend' } } });
+    expect(submitted).toMatchObject({ name: 'Scheduled training', gpu_devices: ['cuda:1'], priority: 7, project_id: 'p_test', config: { loop: { gpu_count: 1, backend_added: 'from-current-backend' } } });
     expect(submitted.scheduled_at).toBe(new Date('2026-10-12T08:30').getTime() / 1000);
+  });
+
+  it.each([false, true])('submits matching two-GPU configuration and queue devices (automatic=%s)', async automatic => {
+    let submitted: any;
+    const plans: any[] = [];
+    server.use(
+      http.get('/api/queue/devices', () => HttpResponse.json({devices:[{device:'cuda:0',name:'BW 0',status:'running',job_id:'busy'}, {device:'cuda:1',name:'BW 1',status:'free'}],max_concurrent:null})),
+      http.post('/api/plan', async ({request}) => { const body: any = await request.json(); plans.push(body); return HttpResponse.json({ok:true,errors:[],warnings:[],params:{}}); }),
+      http.post('/api/jobs', async ({request}) => {submitted = await request.json(); return HttpResponse.json({id:'new-job'});}),
+    );
+    showConfig();
+    fireEvent.change(await screen.findByRole('spinbutton', {name:'训练显卡数量'}), {target:{value:'2'}});
+    fireEvent.click(screen.getByRole('button', {name:'训练显卡'}));
+    await screen.findByRole('checkbox', {name:/GPU 1.*BW 1/});
+    if (!automatic) {
+      fireEvent.click(screen.getByRole('checkbox', {name:/GPU 0.*BW 0/}));
+      expect(enqueue()).toBeDisabled();
+      expect(screen.getByText('已选 1 张，还需选择 1 张；也可改为自动。')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('checkbox', {name:/GPU 1.*BW 1/}));
+      expect(screen.getByText('所选显卡正在使用，任务会等待它空闲后启动。')).toBeInTheDocument();
+    }
+    expect(enqueue()).toBeDisabled(); // The previous one-GPU plan cannot approve this edit.
+    fireEvent.keyDown(document, {key:'Escape'});
+    expect(screen.getByRole('combobox', {name:'多卡训练方式'})).toBeInTheDocument();
+    await waitFor(() => expect(enqueue()).toBeEnabled());
+    expect(plans[plans.length - 1].config.loop.gpu_count).toBe(2);
+    fireEvent.click(enqueue());
+    await screen.findByText('Created job');
+    expect(submitted).toMatchObject({gpu_devices:automatic ? [] : ['cuda:0','cuda:1'],config:{loop:{gpu_count:2}}});
+  });
+
+  it('preserves explicit choices when increasing the count and announces removed cards when decreasing it', async () => {
+    server.use(http.get('/api/queue/devices', () => HttpResponse.json({devices:[{device:'cuda:0',name:'BW 0',status:'free'}, {device:'cuda:1',name:'BW 1',status:'free'}],max_concurrent:null})));
+    showConfig();
+    const count = await screen.findByRole('spinbutton', {name:'训练显卡数量'});
+    fireEvent.click(screen.getByRole('button', {name:'训练显卡'}));
+    fireEvent.click(await screen.findByRole('radio', {name:/GPU 1.*BW 1/}));
+    fireEvent.keyDown(document, {key:'Escape'});
+    fireEvent.change(count, {target:{value:'2'}});
+    expect(screen.getByRole('button', {name:'训练显卡'})).toHaveTextContent('GPU 1');
+    expect(screen.getByText('已选 1 张，还需选择 1 张；也可改为自动。')).toBeInTheDocument();
+    expect(enqueue()).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', {name:'训练显卡'}));
+    fireEvent.click(screen.getByRole('checkbox', {name:/GPU 0.*BW 0/}));
+    fireEvent.keyDown(document, {key:'Escape'});
+    fireEvent.change(count, {target:{value:'1'}});
+    expect(screen.getByRole('button', {name:'训练显卡'})).toHaveTextContent('GPU 1');
+    expect(screen.getByRole('button', {name:'训练显卡'})).not.toHaveTextContent('GPU 0');
+    expect(screen.getByText('显卡数量已减少为 1 张，保留前 1 张，已移除 GPU 0。')).toBeInTheDocument();
+    expect(count).toHaveValue(1);
   });
 
   it('imports TOML through validation, saves a preset and exports the current config', async () => {

@@ -4,7 +4,8 @@ import type { StudioSelectOption } from '../components/StudioSelect';
 /** Keep retired engines out of entry points even when connected to an older service. */
 export function availableTrainingFamilies(families: FamilyInfo[]): FamilyInfo[] {
   return families.filter(family => family.name !== 'flux').map(family =>
-    family.name === 'flux2' ? { ...family, label: 'FLUX.2 Klein' } : family);
+    family.name === 'flux2' ? { ...family, label: 'FLUX.2 Klein 4B / 9B' }
+      : family.name === 'sdxl' && (!family.label || family.label === 'SDXL') ? {...family, label:'SDXL 2.6B'} : family);
 }
 
 export function inactiveTrainingReason(config: Record<string, any> | null | undefined, english = false): string | undefined {

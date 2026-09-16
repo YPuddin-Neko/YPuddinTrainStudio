@@ -69,7 +69,7 @@ describe('explicit project version actions', () => {
     await waitFor(() => expect(within(dialog).getByRole('combobox', { name: '训练模型类型' })).toHaveTextContent('FLUX.2 Klein'));
     fireEvent.click(within(dialog).getByRole('combobox', { name: '训练模型类型' }));
     expect(screen.queryByRole('option', { name: 'FLUX.1' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('option', { name: 'FLUX.2 Klein' }));
+    fireEvent.click(screen.getByRole('option', { name: 'FLUX.2 Klein 4B / 9B' }));
     fireEvent.click(within(dialog).getByRole('button', { name: '创建版本' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('FLUX.2 dev 已停用');
     expect(created).not.toHaveBeenCalled();

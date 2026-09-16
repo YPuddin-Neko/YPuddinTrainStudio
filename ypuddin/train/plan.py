@@ -14,7 +14,7 @@ from torch import nn
 
 from ypuddin.adapters import inject
 from ypuddin.adapters.frozen import FrozenLinear
-from ypuddin.config import DatasetConfig, LoopConfig, TrainConfig, ValidationConfig
+from ypuddin.config import DatasetConfig, LoopConfig, ModelConfig, TrainConfig, ValidationConfig
 from ypuddin.config.compute_policy import resolve_training_compute_config, validate_resume_compute_policy
 from ypuddin.data import BucketBatchSampler, IndexDB
 from ypuddin.data.dataset import DataConfigError, item_geometry, prepare_data_layout
@@ -208,6 +208,7 @@ class _LayoutInputs:
 
     dataset: DatasetConfig
     validation: ValidationConfig
+    model: ModelConfig
 
 
 def _append_data_plan(
@@ -240,6 +241,32 @@ def _append_data_plan(
             index.close()
     if layout is None and isinstance(cfg, _LayoutInputs):
         return {}
+    if layout is not None:
+        # Count the shared training items after validation exclusion, before the
+        # sampler drops incomplete multi-rank tail groups. Never use registry totals.
+        source_paths: dict[int, set[str]] = {}
+        source_items: dict[int, int] = {}
+        for item in items:
+            source_index = item.record.source_index
+            source_paths.setdefault(source_index, set()).add(item.record.path)
+            source_items[source_index] = source_items.get(source_index, 0) + 1
+        out["source_balance"] = []
+        for index, source in enumerate(ds.sources):
+            images = len(source_paths.get(index, ()))
+            out["source_balance"].append(
+                {
+                    "source_index": index,
+                    "path": source.path,
+                    "is_reg": source.is_reg,
+                    "images": images,
+                    "repeats": source.repeats,
+                    "repeated_images": images * source.repeats,
+                    "resolution_variants": 1
+                    if ds.resolution_mode == "native"
+                    else len(source.resolutions or ds.resolutions),
+                    "items": source_items.get(index, 0),
+                }
+            )
     counts: dict[tuple[int, int], int] = {}
     for it in items:
         counts[it.bucket.key] = counts.get(it.bucket.key, 0) + 1
@@ -442,7 +469,7 @@ def _preview_invalid_config(
         seed = None
     _append_data_plan(
         out,
-        _LayoutInputs(**fields),
+        _LayoutInputs(**fields, model=ModelConfig(family=family_name)),
         family.spec.latent,
         loop=loop,
         seed=seed,
@@ -462,7 +489,13 @@ def plan(
     Pass the execution device from CLI/service to enforce hardware constraints and account
     for CPU/MPS fp32 execution. This does not require target CUDA hardware to be locally present.
     """
-    out: dict[str, Any] = {"ok": True, "errors": [], "warnings": [], "compute_policy": None}
+    out: dict[str, Any] = {
+        "ok": True,
+        "errors": [],
+        "warnings": [],
+        "compute_policy": None,
+        "source_balance": None,
+    }
     try:
         cfg = TrainConfig.model_validate(cfg)
     except ValidationError as e:

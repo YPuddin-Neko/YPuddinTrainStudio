@@ -3,8 +3,9 @@ import { BarChart3, Grid2X2, Database, Loader2 } from 'lucide-react';
 import type { Plan } from '../../api/types';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatBytesMB, formatParams } from '../../utils/format';
+import SourceBalance from './SourceBalance';
 
-export default function BucketInspector({ plan, loading, onData, hasSources = false, indexed, onIssues }: { plan: Plan | null; loading: boolean; onData: () => void; hasSources?: boolean; indexed?: { images: number; captioned: number }; onIssues?: () => void }) {
+export default function BucketInspector({ plan, loading, onData, hasSources = false, indexed, onIssues, error, onRetry }: { plan: Plan | null; loading: boolean; onData: () => void; hasSources?: boolean; indexed?: { images: number; captioned: number }; onIssues?: () => void; error?:string; onRetry?:()=>void }) {
   const text = useWorkspaceText();
   const [view, setView] = useState<'shape' | 'table'>('shape');
   const [selected, setSelected] = useState<string | null>(null);
@@ -16,12 +17,15 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
   return <section className="bucket-inspector" aria-label={native ? text('原生尺寸与训练估算', 'Native sizes and training estimates') : text('数据分桶与训练估算', 'Buckets and training estimates')}>
     <div className="inspector-heading"><h3><BarChart3 size={15} />{text('数据分布', 'Dataset distribution')}</h3>{loading && <Loader2 size={14} className="animate-spin" aria-label={text('正在更新', 'Updating')} />}</div>
     <div className={`inspector-content ${loading ? 'opacity-60' : ''}`} aria-busy={loading}>
+      {loading && <p role="status" className="inspector-calculation-status">{plan ? text('正在更新数据分布，以下为上次结果…','Updating dataset distribution; the previous results are shown below…') : text('正在计算数据分布…','Calculating dataset distribution…')}</p>}
+      {error && <div role="alert" className="inspector-calculation-error"><strong>{text('数据分布计算失败','Dataset distribution could not be calculated')}</strong><p>{error}</p>{plan && <p>{text('以下为上次计算结果。','The previous calculation is shown below.')}</p>}{onRetry && <button type="button" className="studio-link" onClick={onRetry} disabled={loading}>{text('重新计算','Recalculate')}</button>}</div>}
       <dl className="dataset-metrics">
         <div><dt>{awaitingPlan && indexed ? text('已索引图片', 'Indexed images') : text('原始图片', 'Images')}</dt><dd>{awaitingPlan ? indexed?.images ?? '—' : plan?.images ?? '—'}</dd></div>
         <div><dt>{text('重复后样本', 'Repeated samples')}</dt><dd>{awaitingPlan ? '—' : plan?.items ?? '—'}</dd></div>
         <div><dt>{text('已配标签', 'Captioned')}</dt><dd>{awaitingPlan ? indexed?.captioned ?? '—' : plan?.captioned ?? '—'}</dd></div>
         <div><dt>{native ? text('独立尺寸', 'Distinct sizes') : text('分桶数量', 'Buckets')}</dt><dd>{awaitingPlan ? '—' : plan ? buckets.length : '—'}</dd></div>
       </dl>
+      <SourceBalance sources={plan?.source_balance} loading={loading} hasSources={hasSources}/>
       <div className="bucket-heading"><h4>{native ? text('原生尺寸分布', 'Native size distribution') : text('分桶布局', 'Bucket layout')}</h4><div className="segmented-small"><button type="button" aria-label={text('分桶图形视图', 'Bucket shape view')} aria-pressed={view === 'shape'} onClick={() => setView('shape')}><Grid2X2 size={13} /></button><button type="button" aria-label={text('分桶明细表', 'Bucket table')} aria-pressed={view === 'table'} onClick={() => setView('table')}><BarChart3 size={13} /></button></div></div>
       {buckets.length === 0 ? <div className="bucket-empty"><Database size={23} /><p>{loading ? text('正在计算实际分桶…', 'Computing buckets…') : awaitingPlan ? text('已配置数据来源。完成待配置项后计算分桶与训练估算。', 'Dataset sources are configured. Complete the pending settings to calculate buckets and training estimates.') : text('添加训练图片后，显示实际分桶尺寸与样本分布。', 'Add training images to inspect their bucket dimensions and distribution.')}</p><button type="button" className="studio-link" onClick={awaitingPlan && onIssues ? onIssues : onData}>{awaitingPlan && onIssues ? text('检查待配置项', 'Review pending settings') : text('配置训练数据', 'Configure dataset')}</button></div> : <>
         {view === 'shape' ? <div className="bucket-grid" data-testid="plan-buckets">{buckets.map(bucket => {

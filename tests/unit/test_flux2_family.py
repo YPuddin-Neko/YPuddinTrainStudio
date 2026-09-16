@@ -566,7 +566,7 @@ def test_unconfigured_meta_defaults_to_klein_geometry(variant, blocks, single, h
     assert (model.config.num_attention_heads, model.config.joint_attention_dim) == (heads, width)
     assert model.config.guidance_embeds is False
     assert all(p.is_meta for p in model.parameters())
-    assert Flux2Family.spec.label == "FLUX.2 Klein"
+    assert Flux2Family.spec.label == "FLUX.2 Klein 4B / 9B"
     assert Flux2Family.spec.text.encoder_params == 4_000_000_000
 
 

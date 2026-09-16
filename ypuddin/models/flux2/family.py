@@ -98,7 +98,7 @@ def text_ids(embeds):
 class Flux2Family(ModelFamily):
     spec = ModelSpec(
         name="flux2",
-        label="FLUX.2 Klein",
+        label="FLUX.2 Klein 4B / 9B",
         latent=LatentSpec(128, 16, 1, "flux2-vae-mode-fp32-patch2-bn-v1"),
         text=TextSpec(512, "flux2-variant-hidden-layers-v1", encoder_params=4_000_000_000),
         sampling=SamplingDefaults(steps=50, cfg=4.0, shift=None, sampler="euler"),

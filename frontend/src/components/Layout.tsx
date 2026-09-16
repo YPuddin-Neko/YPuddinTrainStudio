@@ -29,7 +29,7 @@ const NavItem = ({ to, icon: Icon, label, active, state }: any) => (
         : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
     }`}
   >
-    <Icon className="w-[18px] h-[18px]" />
+    <Icon className="w-[18px] h-[18px] shrink-0" />
     <span>{label}</span>
   </Link>
 );
@@ -146,7 +146,6 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
     { to: '/projects', icon: Folder, label: t('nav.projects') },
     { to: '/queue', icon: Layers, label: t('nav.queue') },
     { to: '/sampling', icon: Grid2X2, label: text('模型测试', 'Model testing') },
-    { to: '/presets', icon: SlidersHorizontal, label: text('参数预设', 'Training presets') },
   ];
 
   const runningJob = runningJobs[0];
@@ -178,6 +177,8 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
           ))}
         </nav>
         <div className="sidebar-footer">
+          <NavItem to="/presets" icon={SlidersHorizontal} label={text('参数预设', 'Training presets')}
+            active={location.pathname.startsWith('/presets')}/>
           <NavItem to="/settings" icon={SettingsIcon} label={t('nav.settings')}
             active={location.pathname.startsWith('/settings')}
             state={location.pathname.startsWith('/settings') ? location.state?.backgroundLocation ? { backgroundLocation: location.state.backgroundLocation } : undefined : { backgroundLocation: location }}/>

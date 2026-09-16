@@ -19,6 +19,12 @@ _FIXED = ("quality", "count", "character", "series", "artist")
 _VARIABLE = ("appearance", "tags", "environment")
 
 
+class JSONCaptionError(ValueError):
+    def __init__(self, message: str, *, code: str = "caption_json_invalid"):
+        super().__init__(message)
+        self.code = code
+
+
 @dataclass(frozen=True)
 class StructuredCaption:
     fixed: tuple[str, ...] = ()
@@ -150,7 +156,7 @@ def parse_caption(data: Any, *, filename: str = "caption.json") -> StructuredCap
             raise ValueError("caption root must be an object")
         return _parse(data)
     except ValueError as error:
-        raise ValueError(f"Invalid JSON caption {filename}: {error}") from error
+        raise JSONCaptionError(f"Invalid JSON caption {filename}: {error}") from error
 
 
 def load_caption(path: str | Path, *, require_known_format: bool = False) -> tuple[dict, StructuredCaption]:
@@ -158,12 +164,13 @@ def load_caption(path: str | Path, *, require_known_format: bool = False) -> tup
     try:
         data = json.loads(path.read_text(encoding="utf-8-sig"), parse_constant=_reject_constant)
     except (UnicodeError, json.JSONDecodeError, ValueError) as error:
-        raise ValueError(f"Invalid JSON caption {path.name}: {error}") from error
+        raise JSONCaptionError(f"Invalid JSON caption {path.name}: {error}") from error
     parsed = parse_caption(data, filename=path.name)
     if require_known_format and _format(data) == "unknown":
-        raise ValueError(
+        raise JSONCaptionError(
             f"Invalid JSON caption {path.name}: unrecognized caption format; "
-            "use a supported tags/nl structure or select a TXT caption explicitly"
+            "use a supported tags/nl structure or select a TXT caption explicitly",
+            code="caption_format_unsupported",
         )
     return data, parsed
 

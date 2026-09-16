@@ -115,6 +115,18 @@ def config_hash(config: TrainConfig | Mapping[str, Any]) -> str:
     loop = data.get("loop")
     if isinstance(loop, Mapping) and loop.get("deterministic") is False:
         data["loop"] = {key: value for key, value in loop.items() if key != "deterministic"}
+    # These optional DDPM modifiers did not exist in older full-state checkpoints.
+    # Disabled defaults must not break authentication of their original config.toml.
+    objective = data.get("objective")
+    if isinstance(objective, Mapping):
+        inactive = {
+            "scale_v_pred_loss_like_noise_pred": False,
+            "v_pred_like_loss": 0.0,
+            "debiased_estimation_loss": False,
+        }
+        data["objective"] = {
+            key: value for key, value in objective.items() if key not in inactive or value != inactive[key]
+        }
     blob = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
     return hashlib.blake2b(blob, digest_size=8).hexdigest()
 

@@ -190,3 +190,162 @@ def test_description_records_schedule_without_mutating_shared_config():
     assert obj.describe()["beta_schedule"] == "scaled_linear"
     assert obj.cfg is not cfg
     assert cfg.weighting == "none" and cfg.timestep_sampling == "uniform"
+
+
+@pytest.mark.parametrize("prediction_type", ["epsilon", "v_prediction"])
+@pytest.mark.parametrize("gamma", [0.5, 5.0, 20.0])
+def test_min_snr_uses_discrete_schedule_and_prediction_type(prediction_type, gamma):
+    obj = make_objective(prediction_type=prediction_type, weighting="min_snr", snr_gamma=gamma)
+    t = torch.tensor([0.0, 0.25, 0.6, 1.0])
+    pred = torch.tensor([[1.0, 3.0], [2.0, 2.0], [3.0, 1.0], [4.0, 4.0]], requires_grad=True)
+    # Independent scalar reference, including both sides of the clipping threshold.
+    weights = []
+    for step in [0, 250, 600, 999]:
+        alpha = math.prod(1 - float(beta) for beta in obj.betas[: step + 1])
+        snr = alpha / (1 - alpha)
+        weights.append(min(snr, gamma) / (snr + (1 if prediction_type == "v_prediction" else 0)))
+    expected_weights = torch.tensor(weights)
+    loss, per = obj.loss(pred, torch.zeros_like(pred), t)
+    torch.testing.assert_close(per, pred.detach().square().mean(1))
+    torch.testing.assert_close(loss, (per * expected_weights).mean(), rtol=5e-5, atol=1e-6)
+    loss.backward()
+    torch.testing.assert_close(
+        pred.grad, 2 * pred.detach() / pred.numel() * expected_weights[:, None], rtol=5e-5, atol=1e-6
+    )
+
+
+@pytest.mark.parametrize("prediction_type", ["epsilon", "v_prediction"])
+def test_min_snr_keeps_mask_normalization_prior_weights_and_unweighted_diagnostics(prediction_type):
+    obj = make_objective(prediction_type=prediction_type, weighting="min_snr")
+    pred = torch.tensor([[[2.0, 4.0]], [[3.0, 8.0]]], requires_grad=True)
+    mask = torch.tensor([[[1.0, 0.5]], [[0.0, 0.0]]])
+    t = torch.tensor([0.5, 0.75])
+    loss, per = obj.loss(pred, torch.zeros_like(pred), t, mask=mask, sample_weight=torch.tensor([0.25, 1.0]))
+    alpha = obj.alphas_cumprod[500].item()
+    snr = alpha / (1 - alpha)
+    weight = min(snr, 5) / (snr + (1 if prediction_type == "v_prediction" else 0))
+    assert loss.item() == pytest.approx(8 * 0.25 * weight / 2)
+    torch.testing.assert_close(per, torch.tensor([8.0, 0.0]))
+    loss.backward()
+    assert torch.isfinite(pred.grad).all()
+    assert torch.count_nonzero(pred.grad[1]) == 0
+
+
+@pytest.mark.parametrize("prediction_type,expected", [("epsilon", 1.0), ("v_prediction", 0.0)])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_min_snr_zero_terminal_limit_remains_finite(prediction_type, expected, dtype):
+    obj = make_objective(prediction_type=prediction_type, zero_snr=True, weighting="min_snr")
+    pred = torch.ones(1, 2, dtype=dtype, requires_grad=True)
+    loss, per = obj.loss(pred, torch.zeros_like(pred), torch.tensor([1.0]))
+    assert loss.item() == pytest.approx(expected)
+    assert per.item() == 1.0
+    loss.backward()
+    assert torch.isfinite(pred.grad).all()
+
+
+@pytest.mark.parametrize("prediction_type", ["epsilon", "v_prediction"])
+@pytest.mark.parametrize("min_snr", [False, True])
+@pytest.mark.parametrize("debiased", [False, True])
+def test_optional_ddpm_modifiers_compose_in_upstream_order(prediction_type, min_snr, debiased):
+    cfg = dict(weighting="min_snr" if min_snr else "none", debiased_estimation_loss=debiased)
+    cfg.update(
+        scale_v_pred_loss_like_noise_pred=prediction_type == "v_prediction",
+        v_pred_like_loss=0.2 if prediction_type == "epsilon" else 0,
+    )
+    obj = make_objective(prediction_type=prediction_type, **cfg)
+    pred = torch.ones(3, 2, requires_grad=True)
+    loss, per = obj.loss(pred, torch.zeros_like(pred), torch.tensor([0.0, 0.5, 1.0]))
+    expected = []
+    for step in [0, 500, 999]:
+        alpha = obj.alphas_cumprod[step].item()
+        snr = alpha / (1 - alpha)
+        w = min(snr, 5) / (snr + (1 if prediction_type == "v_prediction" else 0)) if min_snr else 1
+        limited = min(snr, 1000)
+        scale = limited / (limited + 1)
+        w *= scale if prediction_type == "v_prediction" else 1 + 0.2 / scale
+        if debiased:
+            w /= limited + 1 if prediction_type == "v_prediction" else math.sqrt(limited)
+        expected.append(w)
+    torch.testing.assert_close(loss, torch.tensor(expected).mean())
+    torch.testing.assert_close(per, torch.ones(3))
+    loss.backward()
+    torch.testing.assert_close(pred.grad, torch.tensor(expected)[:, None].expand_as(pred) / 3)
+
+
+def test_v_modifiers_stay_finite_at_zero_terminal_snr():
+    obj = make_objective(
+        prediction_type="v_prediction",
+        zero_snr=True,
+        weighting="min_snr",
+        scale_v_pred_loss_like_noise_pred=True,
+        debiased_estimation_loss=True,
+    )
+    pred = torch.ones(1, 2, requires_grad=True)
+    loss, _ = obj.loss(pred, torch.zeros_like(pred), torch.tensor([1.0]))
+    assert loss.item() == 0
+    loss.backward()
+    torch.testing.assert_close(pred.grad, torch.zeros_like(pred))
+
+
+@pytest.mark.parametrize(
+    "prediction_type,options",
+    [
+        ("epsilon", {"scale_v_pred_loss_like_noise_pred": True}),
+        ("v_prediction", {"v_pred_like_loss": 0.1}),
+    ],
+)
+def test_rejects_prediction_specific_loss_mismatch(prediction_type, options):
+    with pytest.raises(ValueError, match="requires"):
+        make_objective(prediction_type=prediction_type, **options)
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"weighting": "min_snr"},
+        {"scale_v_pred_loss_like_noise_pred": True},
+        {"v_pred_like_loss": 0.1},
+        {"debiased_estimation_loss": True},
+    ],
+)
+def test_flow_rejects_ddpm_only_loss_options(options):
+    from ypuddin.objectives.flow import Objective
+
+    with pytest.raises(ValueError, match="DDPM SNR"):
+        Objective(ObjectiveConfig(**options))
+
+
+@pytest.mark.parametrize(
+    "name,value",
+    [
+        ("snr_gamma", float("inf")),
+        ("snr_gamma", float("nan")),
+        ("v_pred_like_loss", float("inf")),
+        ("v_pred_like_loss", float("nan")),
+    ],
+)
+def test_snr_parameters_require_finite_numbers(name, value):
+    with pytest.raises(ValueError, match="finite"):
+        ObjectiveConfig(**{name: value})
+
+
+@pytest.mark.parametrize(
+    "prediction,options,key",
+    [
+        ("epsilon", {"scale_v_pred_loss_like_noise_pred": True}, "scale_v_pred_loss_like_noise_pred"),
+        ("v_prediction", {"v_pred_like_loss": 0.2}, "v_pred_like_loss"),
+    ],
+)
+def test_family_preflight_rejects_incompatible_ddpm_modifiers(prediction, options, key):
+    from ypuddin.config import TrainConfig
+    from ypuddin.models.sdxl.family import SDXLFamily
+
+    config = TrainConfig.model_validate(
+        {
+            "model": {"family": "sdxl", "prediction_type": prediction},
+            "objective": {"timestep_sampling": "uniform", **options},
+            "sampling": {"enabled": False},
+        }
+    )
+    errors = SDXLFamily().training_options_errors(config)
+    assert any(item["loc"] == f"objective.{key}" for item in errors)

@@ -188,7 +188,7 @@ describe('compact user preset management', () => {
     expect(body.config.loop.epochs).toBe(7); expect(body.config.model.family).toBe('anima');
     for (const [group, key] of [['model', 'dit_path'], ['model', 'tokenizer_path'], ['dataset', 'sources'], ['dataset', 'cache_dir'], ['sampling', 'output_dir'], ['sampling', 'prompts_file'], ['adapter', 'resume_weights']]) expect(body.config[group]).not.toHaveProperty(key);
     expect(state.rows.find(row => row.name === 'my-style')?.config.loop).toEqual({ epochs: 4 });
-    fireEvent.click(screen.getByRole('button', { name: /模型加载精度$/ }));
+    fireEvent.click(screen.getByRole('button', { name: /模型与训练方式$/ }));
     expect(screen.queryByTestId('field-model.dit_path')).not.toBeInTheDocument();
     expect(screen.queryByTestId('field-checkpoint.resume')).not.toBeInTheDocument();
   });

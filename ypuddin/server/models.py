@@ -254,11 +254,23 @@ class PlanDistributed(_Out):
     tail_policy: str
 
 
+class PlanSourceBalance(_Out):
+    source_index: int
+    path: str
+    is_reg: bool
+    images: int
+    repeats: int
+    repeated_images: int
+    resolution_variants: int
+    items: int
+
+
 class Plan(_Out):
     ok: bool
     errors: list[ConfigError]
     warnings: list[ConfigWarning]
     compute_policy: dict[str, Any] | None = None
+    source_balance: list[PlanSourceBalance] | None = None
     images: int = 0
     items: int = 0
     captioned: int = 0
@@ -333,6 +345,7 @@ class FamilyInfo(_Out):
     objective_weighting: list[str] = ["none", "sigma_sqrt", "cosmap", "snr_like", "cosmos"]
     adapter_prefix: str
     capabilities: list[str]
+    caption_formats: list[Literal["txt", "json"]] = Field(default_factory=lambda: ["txt", "json"])
     text_modes: list[str]  # valid values for a frozen encoder
     training_capabilities: dict[str, Any] = Field(default_factory=dict)
     presets: list[FamilyPreset]

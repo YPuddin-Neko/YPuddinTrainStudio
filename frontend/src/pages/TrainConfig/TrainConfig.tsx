@@ -19,6 +19,8 @@ import '../../styles/project-workspace.css';
 import BucketInspector from './BucketInspector';
 import StudioSelect from '../../components/StudioSelect';
 import GpuDevicePicker from '../../components/GpuDevicePicker';
+import { useQueueDevices } from '../../api/hooks/useQueueDevices';
+import { gpuDeviceLabel, gpuSelectionValid } from '../../utils/gpuDevices';
 import PresetPreview from '../../components/PresetPreview';
 import { useWorkspaceHeight } from '../../components/projects/useWorkspaceHeight';
 import './training-workspace.css';
@@ -129,6 +131,8 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const [presets, setPresets] = React.useState<Preset[]>([]);
   const [validatedConfig, setValidatedConfig] = React.useState('');
   const [plan, setPlan] = React.useState<Plan | null>(null);
+  const [planError, setPlanError] = React.useState('');
+  const planErrorRef = React.useRef('');
   const [validationErrors, setValidationErrors] = React.useState<ValidationError[]>([]);
   const [validating, setValidating] = React.useState(true);
   const [isEnqueuing, setIsEnqueuing] = React.useState(false);
@@ -140,7 +144,21 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const saveStatusMounted = React.useRef(true);
   const [jobName, setJobName] = React.useState('');
   const [gpuDevices, setGpuDevices] = React.useState<string[]>([]);
-  const [gpuValid, setGpuValid] = React.useState(true);
+  const [gpuSelectionNotice, setGpuSelectionNotice] = React.useState('');
+  const queueDevices = useQueueDevices();
+  const gpuCount = Number(config.loop?.gpu_count ?? 1);
+  const gpuValid = gpuSelectionValid(gpuDevices, gpuCount, queueDevices.snapshot);
+  const previousGpuCount = React.useRef(gpuCount);
+  React.useEffect(() => {
+    if (!Number.isInteger(gpuCount) || gpuCount < 1 || gpuCount > 64) return;
+    const previous = previousGpuCount.current;
+    previousGpuCount.current = gpuCount;
+    if (gpuCount < previous && gpuDevices.length > gpuCount) {
+      const removed = gpuDevices.slice(gpuCount).map(gpuDeviceLabel).join('、');
+      setGpuDevices(gpuDevices.slice(0, gpuCount));
+      setGpuSelectionNotice(text(`显卡数量已减少为 ${gpuCount} 张，保留前 ${gpuCount} 张，已移除 ${removed}。`, `GPU count reduced to ${gpuCount}; kept the first ${gpuCount} and removed ${removed}.`));
+    } else if (previous !== gpuCount) setGpuSelectionNotice('');
+  }, [gpuCount, gpuDevices, text]);
   const [priority, setPriority] = React.useState(0);
   const [scheduledAt, setScheduledAt] = React.useState('');
   const [pendingPreset, setPendingPreset] = React.useState<Preset | null>(null);
@@ -399,6 +417,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     if (!loaded) return;
     const controller = new AbortController();
     setValidating(true);
+    setPlanError('');
     setOutputBinding(null);
     const supporting = <T,>(key: string, request: Promise<T>, fallback: T): Promise<T> => request.then(result => {
       if (!controller.signal.aborted) setAuxiliaryErrors(previous => {const next={...previous};delete next[key];return next;});
@@ -415,6 +434,9 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
         projectId ? supporting<OutputBindingInfo | null>('output', apiClient.post<OutputBindingInfo>(`/projects/${projectId}/output-binding`, { config }, { params: {version_id:versionId}, signal: controller.signal, silent: true }), null) : Promise.resolve(null),
       ]).then(([nextPlan, validation, roles, binding]) => {
         if (controller.signal.aborted) return;
+        const previousPlanError = planErrorRef.current;
+        if (previousPlanError) setError(previous=>previous===previousPlanError?'':previous);
+        planErrorRef.current='';
         setSourceRoles(roles);
         setOutputBinding(binding);
         setConfig(previous => {
@@ -437,7 +459,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
         setValidationErrors([...validation.errors, ...(nextPlan.errors || [])].filter((item, index, all) => all.findIndex((x) => x.loc === item.loc && x.msg === item.msg) === index));
         setValidating(false);
       }).catch((err) => {
-        if (!controller.signal.aborted) { setPlan(null); setError(formatApiError(err)); setValidating(false); }
+        if (!controller.signal.aborted) { const message=formatApiError(err); planErrorRef.current=message; setPlanError(message); setValidatedConfig(''); setError(message); setValidating(false); }
       });
     }, 500);
     return () => { controller.abort(); clearTimeout(timer); };
@@ -564,7 +586,8 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       {issuesOpen && issues.length > 0 && <section className="readiness-panel" aria-label={text('训练前检查', 'Preflight checks')}><div className="readiness-heading"><h2>{text('完成以下配置即可启动训练', 'Complete these settings to start training')}</h2><button onClick={() => setIssuesOpen(false)}>{text('收起', 'Collapse')}</button></div>{issues.map((issue,index) => <div className="readiness-item" key={`${issue.path}-${index}`}><button aria-label={text(`配置${issue.label}`, `Configure ${issue.label}`)} onClick={() => goToIssue(issue)}><span>{issue.label}</span><span>{issue.message}</span><ChevronRight size={14}/></button>{issue.message === '此配置未通过检查，展开详情查看具体原因' && <details><summary>{text('技术详情', 'Technical details')}</summary><code>{issue.detail}</code></details>}</div>)}</section>}
       <div className="launch-status" role="status">{validating ? <><Loader2 size={15} className="animate-spin"/><span>{text('正在检查配置…', 'Checking configuration…')}</span></> : ready ? <><CheckCircle2 size={16} className="text-emerald-500"/><span>{text('可以开始训练', 'Ready to train')}</span></> : <button onClick={() => setIssuesOpen(value => !value)} className="readiness-toggle"><AlertCircle size={16}/><span>{issues.length ? text(`${issues.length} 项待配置`, `${issues.length} settings to complete`) : text('尚未通过检查', 'Checks incomplete')}</span><ChevronRight size={14}/></button>}</div>
       <button type="button" className="launch-plan-toggle" aria-label={text('训练估算与分桶', 'Estimates and buckets')} aria-expanded={inspectorOpen} aria-controls="training-plan-panel" onClick={() => setInspectorOpen(open => !open)}><BarChart3 size={15}/><span>{text('执行估算', 'Estimates')}</span><ChevronDown size={14}/></button>
-      <GpuDevicePicker compact value={gpuDevices} onChange={setGpuDevices} count={Number(config.loop?.gpu_count) || 1} disabled={isEnqueuing || savingNavigation} onValidityChange={setGpuValid}/>
+      <GpuDevicePicker compact training label={text('训练显卡', 'Training GPUs')} value={gpuDevices} count={gpuCount} deviceState={queueDevices}
+        disabled={!loaded || !!inactiveReason || isEnqueuing || savingNavigation} onChange={devices => {setGpuDevices(devices);setGpuSelectionNotice('');}}/>
       <input className="launch-name" aria-label={t('train.jobName')} placeholder={text('任务名称（可选）', 'Job name (optional)')} value={jobName} onChange={event => setJobName(event.target.value)}/>
       <details className="launch-schedule"><summary>{scheduledAt ? text('已排期', 'Scheduled') : text('排期', 'Schedule')}</summary><div><label>{t('queue.priority')}<input aria-label={t('queue.priority')} type="number" step="1" aria-invalid={!Number.isInteger(priority)} value={priority} onChange={event => setPriority(Number(event.target.value))}/></label>{!Number.isInteger(priority) && <p className="text-xs text-amber-600">{text('优先级必须是整数', 'Priority must be an integer')}</p>}<label>{t('train.scheduledAt')}<input aria-label={t('train.scheduledAt')} type="datetime-local" value={scheduledAt} onChange={event => setScheduledAt(event.target.value)}/></label></div></details>
       <button className="studio-primary start-training" onClick={handleEnqueue} disabled={!ready || !gpuValid || isEnqueuing || savingNavigation || !Number.isInteger(priority)}><Play size={14}/>{enqueueSuccess ? t('train.enqueued') : isEnqueuing ? t('train.enqueuing') : text('开始训练', 'Start training')}</button>
@@ -572,6 +595,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     </div>
     {inactiveReason && <div role="alert" className="studio-error" data-testid="retired-training-config">{inactiveReason}</div>}
     {error && <div role="alert" className="studio-error">{error}<button type="button" onClick={() => { setError(''); if (!loaded) setReload(v => v + 1); }}>{loaded ? text('关闭', 'Dismiss') : t('common.retry')}</button></div>}
+    {gpuSelectionNotice && <p className="workspace-message" role="status">{gpuSelectionNotice}</p>}
     {recoveredDraft && loaded && <p className="workspace-message" role="status">{text('已恢复此版本上次未保存的草稿。', 'Recovered the unsaved draft for this version.')}</p>}
     {Object.keys(auxiliaryErrors).length>0 && <div role="alert" className="studio-error" data-testid="training-auxiliary-error"><div>{Object.entries(auxiliaryErrors).map(([key,message])=><p key={key}>{key==='presets'?text('预设列表读取失败','Preset list could not be loaded'):key==='sources'?text('数据目录用途读取失败','Dataset directory ownership could not be loaded'):key==='output'?text('权重保存位置读取失败','Weight output binding could not be loaded'):text('模型库读取失败','Model registry could not be loaded')}: {message}</p>)}<p>{text('本版本配置仍可编辑；重试不会替换当前草稿。','The version configuration remains editable. Retrying will preserve the current draft.')}</p></div><button type="button" disabled={auxiliaryLoading} onClick={()=>setAuxiliaryReload(value=>value+1)}>{text('重试辅助信息','Retry supporting data')}</button></div>}
     <div className="training-toolbar" ref={toolbarRef} role="group" aria-label={text('训练参数工具栏', 'Training parameter controls')}>
@@ -606,7 +630,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
           {!loaded ? <p className="p-6 text-sm text-slate-500">{t('common.loading')}</p> : <SchemaForm key={revealVersion} compact readOnly={!!inactiveReason} schema={orderedSchema} value={config} computePolicy={computePolicy} sourceRoles={sourceRoles} outputBinding={outputBinding} versionSources={!!projectId} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} search={search} onClearSearch={clearSearch} errors={issues.map(issue => ({loc:issue.path,msg:issue.message}))} family={familyByName(families, config?.model?.family)} families={families} />}
         </div>
       </div>
-      <aside id="training-plan-panel" className={`training-inspector ${inspectorOpen ? 'is-open' : ''}`} aria-label={text('训练计划', 'Training plan')}><button type="button" className="inspector-return" onClick={() => setInspectorOpen(false)}>{text('返回参数', 'Back to parameters')}</button><BucketInspector plan={plan} loading={validating} hasSources={!!config.dataset?.sources?.length} indexed={indexedStats || undefined} onIssues={() => setIssuesOpen(true)} onData={() => {setActiveTab('data');setSearch('');setInspectorOpen(false);}}/>
+      <aside id="training-plan-panel" className={`training-inspector ${inspectorOpen ? 'is-open' : ''}`} aria-label={text('训练计划', 'Training plan')}><button type="button" className="inspector-return" onClick={() => setInspectorOpen(false)}>{text('返回参数', 'Back to parameters')}</button><BucketInspector plan={plan} loading={validating} error={planError} onRetry={()=>setAuxiliaryReload(value=>value+1)} hasSources={!!config.dataset?.sources?.length} indexed={indexedStats || undefined} onIssues={() => setIssuesOpen(true)} onData={() => {setActiveTab('data');setSearch('');setInspectorOpen(false);}}/>
         {!!plan?.warnings?.length && <details className="plan-notes"><summary><AlertCircle size={13}/>{text('配置提示', 'Configuration notes')} · {plan.warnings.length}</summary><ul>{plan.warnings.map((warning,index) => <li key={index}>{presentPlanWarning(warning.code,warning.msg,english)}</li>)}</ul></details>}
       </aside>
     </div>

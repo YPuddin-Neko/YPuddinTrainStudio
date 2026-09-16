@@ -2,8 +2,48 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import BucketInspector from '../src/pages/TrainConfig/BucketInspector';
 import i18n from '../src/i18n';
+import type {Plan} from '../src/api/types';
+
+const balancePlan=(repeats=2)=>({ok:true,errors:[],warnings:[],source_balance:[
+  {source_index:0,path:'D:/训练数据/角色',is_reg:false,images:3,repeats,repeated_images:3*repeats,resolution_variants:1,items:3*repeats},
+  {source_index:1,path:'D:/训练数据/正则',is_reg:true,images:2,repeats:1,repeated_images:2,resolution_variants:1,items:2},
+]} as unknown as Plan);
 
 beforeEach(async () => { await i18n.changeLanguage('zh-CN'); });
+
+it('shows real source proportions, repeat formulas and a separate regularization group',()=>{
+  const {rerender}=render(<BucketInspector plan={balancePlan()} loading={false} hasSources onData={()=>{}}/>);
+  const train=screen.getByRole('button',{name:'角色 · 3 张 × 2 次 = 6 项 · 75.0%'});
+  expect(screen.getByRole('button',{name:'正则 · 2 张 × 1 次 = 2 项 · 25.0%'})).toBeVisible();
+  expect(screen.getByRole('heading',{name:/正则集\s*25\.0%/})).toBeVisible();
+  fireEvent.focus(train);
+  expect(screen.getByRole('tooltip')).toHaveTextContent('D:/训练数据/角色');
+  expect(screen.getByRole('tooltip')).toHaveTextContent('3 张 × 2 次 = 6 项 · 75.0%');
+  rerender(<BucketInspector plan={balancePlan(6)} loading={false} hasSources onData={()=>{}}/>);
+  expect(screen.getByRole('button',{name:'角色 · 3 张 × 6 次 = 18 项 · 90.0%'})).toBeVisible();
+  expect(screen.getByRole('img')).toHaveAccessibleName('角色 90.0% · 正则 10.0%');
+});
+
+it('keeps unknown and pending counts distinct from zero and labels old results during recalculation',()=>{
+  const {rerender}=render(<BucketInspector plan={null} loading hasSources onData={()=>{}}/>);
+  expect(screen.getByRole('status')).toHaveTextContent('正在计算数据分布');
+  expect(screen.queryByText('0 项 / 轮')).not.toBeInTheDocument();
+  rerender(<BucketInspector plan={balancePlan()} loading hasSources onData={()=>{}}/>);
+  expect(screen.getByRole('status')).toHaveTextContent('正在更新数据分布，以下为上次结果');
+  expect(screen.getByRole('button',{name:'角色 · 3 张 × 2 次 = 6 项 · 75.0%'})).toBeVisible();
+  rerender(<BucketInspector plan={{...balancePlan(),source_balance:null}} loading={false} hasSources onData={()=>{}}/>);
+  expect(screen.getByText(/配平统计尚不可用/)).toBeVisible();
+  expect(screen.queryByText('0 项 / 轮')).not.toBeInTheDocument();
+});
+
+it('exposes a failed recalculation and retries without pretending the last result is current',()=>{
+  const retry=vi.fn();
+  render(<BucketInspector plan={balancePlan()} loading={false} error="Request timed out" onRetry={retry} onData={()=>{}}/>);
+  expect(screen.getByRole('alert')).toHaveTextContent('数据分布计算失败');
+  expect(screen.getByRole('alert')).toHaveTextContent('以下为上次计算结果');
+  fireEvent.click(screen.getByRole('button',{name:'重新计算'}));
+  expect(retry).toHaveBeenCalledOnce();
+});
 
 it('keeps indexed data visible when incomplete sampling settings block the training plan', () => {
   const onIssues = vi.fn(); const onData = vi.fn();

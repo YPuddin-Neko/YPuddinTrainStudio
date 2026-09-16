@@ -67,6 +67,13 @@ describe('sidebar footer navigation', () => {
     const collapse=sidebar().getByRole('button',{name:'收起侧边栏'});
     const footer=collapse.closest('.sidebar-footer');
     expect(footer).toBeInTheDocument();
+    const presets=sidebar().getByRole('link',{name:'参数预设'});
+    const settingsEntry=sidebar().getByRole('link',{name:'系统设置'});
+    expect(footer?.children[0]).toBe(presets);
+    expect(footer?.children[1]).toBe(settingsEntry);
+    expect(presets).toHaveAttribute('title','参数预设');
+    expect(presets).toHaveAttribute('href','/presets');
+    expect(within(screen.getByRole('navigation',{name:'主导航'})).queryByRole('link',{name:'参数预设'})).not.toBeInTheDocument();
     expect(footer?.lastElementChild).toBe(collapse);
     expect(footer).toContainElement(sidebar().getByRole('link',{name:'系统设置'}));
     expect(collapse).toHaveTextContent('收起侧边栏');
@@ -79,6 +86,8 @@ describe('sidebar footer navigation', () => {
     expect(screen.getByRole('button',{name:'展开侧边栏'})).toHaveAttribute('aria-expanded','false');
     expect(sidebar().getByRole('button',{name:'展开侧边栏'})).toBe(collapse);
     expect(collapse.closest('.sidebar-footer')).toBe(footer);
+    expect(footer?.children[0]).toBe(presets);
+    expect(footer?.children[1]).toBe(settingsEntry);
     expect(footer?.lastElementChild).toBe(collapse);
     expect(collapse).toHaveFocus();
     expect(screen.getByTestId('app-topbar').closest('.app-shell')).toHaveClass('sidebar-collapsed');
@@ -90,6 +99,17 @@ describe('sidebar footer navigation', () => {
     expand.focus();await user.keyboard(' ');expect(localStorage.getItem('studio.sidebar.collapsed')).toBe('false');
     expect(sidebar().getByRole('button',{name:'收起侧边栏'})).toHaveFocus();
     expect(screen.getByTestId('app-topbar').closest('.app-shell')).not.toHaveClass('sidebar-collapsed');expect(writes).toEqual([]);
+  });
+  it('opens footer presets by keyboard while keeping collapsed navigation and the active state',async()=>{
+    const user=userEvent.setup();localStorage.setItem('studio.sidebar.collapsed','true');show();
+    await waitFor(()=>expect(screen.getByLabelText('CPU 占用率')).toHaveTextContent('0%'));
+    const presets=sidebar().getByRole('link',{name:'参数预设'});
+    expect(presets.closest('.sidebar-footer')).toBeInTheDocument();
+    presets.focus();await user.keyboard('{Enter}');
+    expect(screen.getByTestId('route')).toHaveTextContent('/presets');
+    expect(sidebar().getByRole('link',{name:'参数预设'})).toHaveAttribute('aria-current','page');
+    expect(sidebar().getByRole('button',{name:'展开侧边栏'})).toHaveAttribute('aria-expanded','false');
+    expect(writes).toEqual([]);
   });
   it('keeps settings accessible after collapsing the sidebar without changing that preference',async()=>{
     const user=userEvent.setup();show();

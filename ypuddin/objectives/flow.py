@@ -159,6 +159,7 @@ def reduce_loss(
     *,
     mask: Tensor | None = None,
     sample_weight: Tensor | None = None,
+    timestep_weights: Tensor | None = None,
 ) -> tuple[Tensor, Tensor]:
     """Mean over non-batch dims (mask-aware), times timestep and per-sample weights.
 
@@ -172,7 +173,9 @@ def reduce_loss(
         per_sample = (per_elem * m).flatten(1).sum(1) / m.flatten(1).sum(1).clamp(min=1.0)
     else:
         per_sample = per_elem.flatten(1).mean(1)
-    w = timestep_weight(t, cfg.weighting, cfg.snr_gamma).to(per_sample.device)
+    w = (
+        timestep_weight(t, cfg.weighting, cfg.snr_gamma) if timestep_weights is None else timestep_weights
+    ).to(per_sample.device)
     if sample_weight is not None:
         w = w * sample_weight.to(per_sample.device, per_sample.dtype)
     return (per_sample * w).mean(), per_sample.detach()
@@ -182,6 +185,13 @@ class Objective:
     """Bundles sampler + noising + loss so the trainer only sees ``prepare``/``loss``."""
 
     def __init__(self, cfg: ObjectiveConfig):
+        if (
+            cfg.weighting == "min_snr"
+            or cfg.scale_v_pred_loss_like_noise_pred
+            or cfg.v_pred_like_loss
+            or cfg.debiased_estimation_loss
+        ):
+            raise ValueError("DDPM SNR loss options are not supported by rectified flow")
         self.cfg = cfg
         self.sampler = TimestepSampler(cfg)
 

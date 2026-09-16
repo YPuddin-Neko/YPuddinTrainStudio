@@ -30,6 +30,7 @@ const labels: Record<string, string> = {
   'objective.res_shift_mu': '分辨率偏移系数', 'objective.shift': '时间步偏移', 'objective.mode_scale': 'Mode 系数',
   'objective.stratified': '分层时间步采样', 'objective.t_min': '时间步下限', 'objective.t_max': '时间步上限',
   'objective.loss': '损失函数', 'objective.huber_c': 'Huber 系数', 'objective.weighting': '损失加权',
+  'objective.scale_v_pred_loss_like_noise_pred': '按 ε 预测尺度缩放 v 损失', 'objective.v_pred_like_loss': '附加 v 预测损失系数', 'objective.debiased_estimation_loss': '去偏损失加权',
   'objective.snr_gamma': 'SNR Gamma', 'objective.ip_noise_gamma': '输入扰动强度', 'optimizer.type': '优化器',
   'optimizer.lr': '学习率', 'optimizer.weight_decay': '权重衰减', 'optimizer.betas': '更新平滑程度',
   'optimizer.eps': '数值稳定常量', 'optimizer.args': '优化器附加参数', 'optimizer.grad_clip_norm': '梯度保护阈值',
@@ -169,6 +170,7 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
 
 export function configFieldHint(path: string, english = false, optimizerType?: string, scheduleFree = false) {
   const hints: Record<string, [string, string]> = {
+    'model.family': ['B 表示十亿个主模型参数，不含文本编码器与 VAE。Klein 的实际规模由模型版本决定。', 'B denotes billion backbone parameters, excluding text encoders and the VAE. The Klein variant determines its actual size.'],
     'loop.deterministic': ['DTK 会按模型与训练方式管理计算精度。实际设置在参数检查后显示，可能增加显存和耗时。', 'DTK manages compute precision for the model and training mode. Effective settings appear after configuration validation and may increase memory use and runtime.'],
     'loop.gpu_count': ['1 为单卡；多卡可选择数据并行或显存分片。', '1 uses one GPU. Multiple GPUs can use data parallelism or memory sharding.'],
     'loop.distributed_strategy': ['数据并行每卡保留完整模型；显存分片分担参数、梯度和优化器状态。速度取决于跨卡通信。', 'Data parallelism keeps a full model per GPU; memory sharding splits parameters, gradients and optimizer states. Speed depends on communication.'],
@@ -217,9 +219,10 @@ export function configPresetLabel(name: string, description: string, defaultPres
 
 export function configOptionLabel(path: string, option: string, english = false) {
   const options: Record<string, Record<string, [string, string]>> = {
+    'objective.weighting': { min_snr: ['Min-SNR', 'Min-SNR'] },
     'loop.mixed_precision': {bf16:['BF16 · 自动混合精度','BF16 · automatic mixed precision'],fp16:['FP16 · 自动混合精度','FP16 · automatic mixed precision'],no:['关闭自动混合精度','Automatic mixed precision off']},
     'loop.distributed_strategy': {ddp:['数据并行','Data parallelism'],fsdp:['显存分片（大模型）','Memory sharding (large models)']},
-    'training.mode': {adapter:['LoRA / LoKr 适配器','LoRA / LoKr adapter'],full:['全量微调','Full fine-tuning']},
+    'training.mode': {adapter:['LoRA','LoRA'],full:['全量微调','Full fine-tuning']},
     'memory.base_precision': {auto:['不转换（沿用加载精度）','No conversion (keep loaded precision)'],fp32:['FP32 · 32 位','FP32 · 32-bit'],bf16:['BF16 · 16 位','BF16 · 16-bit'],fp16:['FP16 · 16 位','FP16 · 16-bit'],fp8_e4m3:['FP8 E4M3 · 启动时量化','FP8 E4M3 · quantize at startup'],fp8_e5m2:['FP8 E5M2 · 启动时量化','FP8 E5M2 · quantize at startup']},
     'model.attention': {auto:['PyTorch SDPA（默认）','PyTorch SDPA (default)'],sdpa:['PyTorch SDPA','PyTorch SDPA'],xformers:['xFormers','xFormers'],flash_attn:['FlashAttention 2','FlashAttention 2'],sage:['SageAttention · 仅采样','SageAttention · sampling only']},
     'adapter.mode': {auto:['自动 · 分开计算','Automatic · separate computation'],bypass:['分开计算适配器','Compute adapter separately'],weight:['合并权重后计算','Compute merged weights']},

@@ -19,6 +19,7 @@ from ypuddin.models import LatentSpec
 
 from .buckets import Bucket, BucketManager, fit_crop, fit_pad
 from .cache import LatentCache, build_latent_cache
+from .caption_formats import effective_caption_extension, family_caption_formats, require_caption_format
 from .caption_json import StructuredCaption
 from .captions import (
     caption_variants_for_cache,
@@ -449,6 +450,7 @@ def prepare_data_layout(
 ) -> DataLayout:
     """Shared preflight and train data selection; does not load models or create tensor caches."""
     ds = cfg.dataset
+    caption_formats = family_caption_formats(cfg.model.family)
     if not ds.sources:
         raise DataConfigError("dataset.sources", "at least one training dataset source is required")
     extra_sources = list(cfg.validation.sources) if cfg.validation.enabled else []
@@ -479,18 +481,35 @@ def prepare_data_layout(
     def scan(group: list[DatasetSourceConfig], prefix: str, offset: int = 0) -> list[ImageRecord]:
         try:
             records = scan_sources(
-                group,
+                [
+                    source.model_copy(
+                        update={
+                            "caption_ext": effective_caption_extension(source.caption_ext, caption_formats)
+                        }
+                    )
+                    for source in group
+                ],
                 index_db=index_db,
                 progress=(lambda d, t: progress("index", d, t)) if progress else None,
             )
             for record in records:
-                if record.caption_path and Path(record.caption_path).suffix.lower() == ".json":
+                if record.caption_path:
                     try:
-                        read_training_caption(record.caption_path, require_known_format=True)
+                        require_caption_format(record.caption_path, caption_formats, cfg.model.family)
+                        if Path(record.caption_path).suffix.lower() == ".json":
+                            read_training_caption(record.caption_path, require_known_format=True)
                     except (ValueError, OSError) as error:
                         raise DataConfigError(
                             f"{prefix}.{record.source_index}.caption_ext", str(error)
                         ) from error
+            for index, source in enumerate(group):
+                if source.caption_ext.lower() != "auto":
+                    try:
+                        require_caption_format(
+                            Path(source.path) / f"*{source.caption_ext}", caption_formats, cfg.model.family
+                        )
+                    except ValueError as error:
+                        raise DataConfigError(f"{prefix}.{index}.caption_ext", str(error)) from error
             return sorted(
                 (replace(record, source_index=record.source_index + offset) for record in records),
                 key=record_content_key,

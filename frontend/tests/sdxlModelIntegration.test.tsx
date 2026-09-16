@@ -23,7 +23,7 @@ const sdxl: FamilyInfo = {
   capabilities: [], text_modes: ['auto', 'cached', 'online'], presets: [], default_preset: 'all-linear',
   sampling: { steps: 28, cfg: 7, shift: 1, sampler: 'euler', guidance: null },
   sampling_samplers: ['euler', 'heun'], sampling_schedulers: ['uniform'],
-  objective_timestep_sampling: ['uniform', 'logit_normal'], objective_weighting: ['none'],
+  objective_timestep_sampling: ['uniform', 'logit_normal'], objective_weighting: ['none', 'min_snr'],
   latent: { channels: 4, stride: 8, patch: 1, align: 8 }, text_max_len: 77, linear_modules: 1,
   weights: [
     { field: 'dit_path', kind: 'dit', label: 'SDXL 完整模型', hint: '内含双文本编码器和 VAE。', required: true, downloadable: true },
@@ -110,7 +110,7 @@ describe('SDXL model preparation and registration', () => {
     expect(screen.getByTestId('model-component-text_encoder_2')).toHaveTextContent('可选');
     expect(screen.getByRole('button', { name: '准备缺失组件' })).toBeDisabled();
     fireEvent.click(screen.getByRole('combobox', { name: '模型系列' }));
-    expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Anima', 'SDXL']);
+    expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Anima', 'SDXL 2.6B']);
     fireEvent.keyDown(screen.getByRole('combobox', { name: '模型系列' }), { key: 'Escape' });
     fireEvent.click(screen.getByTestId('download-model-btn'));
     choose('组件', 'CLIP-G');
@@ -159,7 +159,13 @@ describe('family-driven training fields', () => {
     expect(screen.getByTestId('field-model.text_encoder_path')).toHaveTextContent('CLIP-L');
     expect(screen.getByTestId('field-model.text_encoder_2_path')).toHaveTextContent('CLIP-G');
     expect(screen.getByTestId('field-model.vae_path')).toHaveTextContent('可选');
-    expect(screen.queryByTestId('field-model.tokenizer_path')).not.toBeInTheDocument();
+    expect(screen.getByTestId('field-model.tokenizer_path')).toBeInTheDocument();
+    const tokenizer = within(screen.getByTestId('field-model.tokenizer_path'));
+    fireEvent.change(tokenizer.getByRole('textbox'), { target: { value: '/models/custom-tokenizers' } });
+    expect(JSON.parse(screen.getByTestId('changed-config').textContent!).model.tokenizer_path).toBe('/models/custom-tokenizers');
+    fireEvent.click(tokenizer.getByRole('button', { name: /说明$/ }));
+    expect(screen.getByRole('tooltip')).toHaveTextContent('tokenizer/ 和 tokenizer_2/');
+    fireEvent.keyDown(document, { key: 'Escape' });
     const registry = await within(screen.getByTestId('field-model.text_encoder_2_path')).findByTestId('model-registry-select');
     fireEvent.click(registry);
     fireEvent.click(screen.getByRole('option', { name: 'my-clip-g.safetensors' }));
@@ -171,9 +177,42 @@ describe('family-driven training fields', () => {
     expect(screen.queryByTestId('field-model.zero_terminal_snr')).not.toBeInTheDocument();
   });
 
+  it('keeps mode beside the model family, component switches together, and SDXL paths in distinct rows', () => {
+    render(<Editor advanced />);
+    const form = screen.getByTestId('schema-form');
+    const identity = form.querySelector('.config-model-identity')!;
+    expect(within(identity as HTMLElement).getByTestId('field-model.family')).toBeInTheDocument();
+    expect(within(identity as HTMLElement).getByTestId('field-training.mode')).toBeInTheDocument();
+    expect(form.querySelector('[data-group="training"]')).toBeNull();
+    const components = form.querySelector('.config-model-components')!;
+    expect(within(components as HTMLElement).getAllByRole('checkbox')).toHaveLength(2);
+    const paths = form.querySelector('.config-model-assets-sdxl')!;
+    expect(Array.from(paths.children).map(node => node.getAttribute('data-field-path'))).toEqual([
+      'model.dit_path', 'model.text_encoder_path', 'model.text_encoder_2_path', 'model.vae_path',
+    ]);
+    const prediction = form.querySelector('.config-model-prediction')!;
+    expect(within(prediction as HTMLElement).getByTestId('field-model.prediction_type')).toBeInTheDocument();
+    expect(within(prediction as HTMLElement).getByTestId('field-model.zero_terminal_snr')).toBeInTheDocument();
+    expect(screen.getByText('CLIP-L / CLIP-G 双分词器自动读取，缺省使用内置资源。')).toBeInTheDocument();
+  });
+
+  it('finds training mode in its new model group and retains the preset editor mode control', () => {
+    const value = schemaDefaults(trainSchema);
+    value.model.family = 'sdxl';
+    const view = render(<SchemaForm schema={trainSchema} value={value} onChange={() => {}} compact search="training.mode" family={sdxl}/>);
+    expect(screen.getByTestId('field-training.mode').closest('[data-group]')).toHaveAttribute('data-group', 'model');
+    expect(screen.queryByTestId('field-model.family')).not.toBeInTheDocument();
+    expect(screen.queryByText(/双分词器自动读取/)).not.toBeInTheDocument();
+    view.rerender(<SchemaForm schema={presetEditorSchema(trainSchema)} value={value} onChange={() => {}} compact family={sdxl}/>);
+    expect(screen.getByTestId('field-training.mode').closest('[data-group]')).toHaveAttribute('data-group', 'model');
+    expect(screen.getByRole('checkbox', { name: '训练文本编码器' })).toBeDisabled();
+    expect(screen.queryByTestId('field-model.family')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('field-model.dit_path')).not.toBeInTheDocument();
+  });
+
   it.each([
     ['sampling.sampler', ['Euler', 'Heun']], ['sampling.scheduler', ['Uniform']],
-    ['objective.timestep_sampling', ['uniform', 'logit_normal']], ['objective.weighting', ['none']],
+    ['objective.timestep_sampling', ['uniform', 'logit_normal']], ['objective.weighting', ['none', 'Min-SNR']],
   ])('offers only SDXL-supported %s choices', async (path, expected) => {
     render(<Editor advanced groupFilter={['sampling', 'objective']} />);
     fireEvent.click(within(screen.getByTestId(`field-${path}`)).getByRole('combobox'));
@@ -181,6 +220,23 @@ describe('family-driven training fields', () => {
     expect(screen.queryByTestId('field-sampling.shift')).not.toBeInTheDocument();
     expect(screen.queryByTestId('field-objective.shift')).not.toBeInTheDocument();
     expect(screen.queryByTestId('field-sampling.er_sde_order')).not.toBeInTheDocument();
+    await act(async () => {});
+  });
+
+  it('exposes DDPM Min-SNR Gamma only when selected and keeps Flow choices separate', async () => {
+    const { unmount } = render(<Editor advanced groupFilter={['objective']} />);
+    expect(screen.queryByTestId('field-objective.snr_gamma')).not.toBeInTheDocument();
+    choose('损失加权', 'Min-SNR');
+    const gamma = screen.getByRole('spinbutton', { name: 'Min-SNR Gamma' });
+    fireEvent.change(gamma, { target: { value: '7' } });
+    expect(JSON.parse(screen.getByTestId('changed-config').textContent!).objective).toMatchObject({ weighting: 'min_snr', snr_gamma: 7 });
+    choose('损失加权', 'none');
+    expect(screen.queryByTestId('field-objective.snr_gamma')).not.toBeInTheDocument();
+    unmount();
+    render(<Editor advanced groupFilter={['objective']} family={flow} />);
+    fireEvent.click(screen.getByRole('combobox', { name: '损失加权' }));
+    expect(screen.queryByRole('option', { name: 'Min-SNR' })).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'snr_like' })).toBeInTheDocument();
     await act(async () => {});
   });
 
@@ -242,7 +298,7 @@ describe('SDXL configuration ownership', () => {
   });
 
   it('derives selectable families and weight kinds from the registry without built-in unsupported entries', () => {
-    expect(trainingFamilyOptions([sdxl])).toEqual([{ value: 'sdxl', label: 'SDXL' }]);
+    expect(trainingFamilyOptions([sdxl])).toEqual([{ value: 'sdxl', label: 'SDXL 2.6B' }]);
     expect(trainingFamilyOptions([{ ...flow, name: 'new-family', label: 'New family' }])).toEqual([{ value: 'new-family', label: 'New family' }]);
     expect(modelFamilyWeights({ ...flow, weights: [{ field: 'dit_path', label: 'Legacy base', hint: '' }] } as FamilyInfo)).toEqual([{ field: 'dit_path', kind: 'dit', label: 'Legacy base', hint: '', required: true, downloadable: true }]);
   });

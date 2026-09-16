@@ -10,8 +10,8 @@ export default function ParameterSections({ rootRef, tab, group, onTabChange, is
   issues?: ConfigIssue[]; checked?: boolean; planChecked?: boolean; preset?: boolean; hasTrainingMode?: boolean; fullTraining?: boolean; onRevealAdvanced: () => void;
 }) {
   const text = useWorkspaceText();
-  const items = flow.filter(item => (item.group !== 'training' || hasTrainingMode) && (item.group !== 'adapter' || !fullTraining)).map(item => item.group === 'model' && preset ? {...item, label:['模型加载精度','Model loading precision'] as [string,string]} : item);
-  const issueGroup = (issue: ConfigIssue) => issue.path === 'model.attention' ? 'memory' : issue.path === 'dataset.batch_size' ? 'loop' : issue.path.startsWith('dataset.caption.') ? 'caption' : issue.path.split('.')[0];
+  const items = flow.filter(item => (item.group !== 'adapter' || !fullTraining)).map(item => item.group === 'model' && preset ? {...item, label:['模型与训练方式','Model and training mode'] as [string,string]} : item);
+  const issueGroup = (issue: ConfigIssue) => issue.path.startsWith('training.') ? 'model' : issue.path === 'model.attention' ? 'memory' : issue.path === 'dataset.batch_size' ? 'loop' : issue.path.startsWith('dataset.caption.') ? 'caption' : issue.path.split('.')[0];
   const hasGlobalIssue = issues.some(issue => !flow.some(item => item.group === issueGroup(issue)));
   const completed = (group: string) => checked && !hasGlobalIssue && !issues.some(issue => issueGroup(issue) === group)
     // A schema failure returns before model paths and cross-group constraints are checked.
@@ -53,8 +53,9 @@ export default function ParameterSections({ rootRef, tab, group, onTabChange, is
   };
   const revealRef = React.useRef(reveal);
   React.useLayoutEffect(() => { revealRef.current = reveal; });
-  const defaultGroup = tab === 'model' ? 'model' : tab === 'data' ? 'dataset' : tab === 'advanced' ? 'objective' : hasTrainingMode ? 'training' : 'loop';
-  const locationGroup = items.some(item => item.group === group) ? group! : defaultGroup;
+  const defaultGroup = tab === 'model' ? 'model' : tab === 'data' ? 'dataset' : tab === 'advanced' ? 'objective' : hasTrainingMode ? 'model' : 'loop';
+  const requestedGroup = group === 'training' ? 'model' : group;
+  const locationGroup = items.some(item => item.group === requestedGroup) ? requestedGroup! : defaultGroup;
   const previousLocation = React.useRef<string | null>(null);
   React.useEffect(() => {
     if (previousLocation.current === locationGroup) return;

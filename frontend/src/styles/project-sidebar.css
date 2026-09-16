@@ -50,10 +50,12 @@
  .sidebar-collapsed .sidebar-start{padding-inline:12px}.sidebar-collapsed .sidebar-start a{padding-inline:0;min-height:38px}.sidebar-collapsed .sidebar-start span{display:none}
  .sidebar-collapsed .app-sidebar>nav>a,.sidebar-collapsed .app-sidebar>nav>a+div{min-width:0}
  .sidebar-collapsed .app-sidebar>nav>a{justify-content:center;padding-inline:0;min-height:38px}.sidebar-collapsed .app-sidebar>nav>a>span{display:none}
- .sidebar-collapsed .project-sidebar{margin:6px 0;padding:8px 0;border-left:0;border-block:1px solid var(--studio-line)}
+ /* Override the expanded workbench indent even when workbench.css loads later. */
+ .app-shell.sidebar-collapsed .project-sidebar{margin:6px 0;padding:8px 0;border-left:0;border-block:1px solid var(--studio-line)}
  .sidebar-collapsed .project-sidebar-identity,.sidebar-collapsed .project-sidebar-version-heading,.sidebar-collapsed .project-sidebar-model,.sidebar-collapsed .project-sidebar-actions,.sidebar-collapsed .project-sidebar-archived{display:none}
- .sidebar-collapsed .project-sidebar>.studio-select{justify-content:center;padding:6px;gap:0;border-color:transparent}.sidebar-collapsed .project-sidebar>.studio-select .studio-select-value,.sidebar-collapsed .project-sidebar>.studio-select .studio-select-chevron{display:none}
- .sidebar-collapsed .project-sidebar .project-workflow a{justify-content:center;min-height:36px}.sidebar-collapsed .project-sidebar .project-workflow a>span{display:none}
+ .app-shell.sidebar-collapsed .project-sidebar>.studio-select{justify-content:center;min-height:38px;padding:0;gap:0;border-color:transparent}.sidebar-collapsed .project-sidebar>.studio-select .studio-select-value,.sidebar-collapsed .project-sidebar>.studio-select .studio-select-chevron{display:none}
+ .app-shell.sidebar-collapsed .project-sidebar .sidebar-project-stages .project-workflow a{justify-content:center;min-height:38px;padding:0;gap:0}.sidebar-collapsed .project-sidebar .project-workflow a>span{display:none}
+ .app-shell.sidebar-collapsed .project-sidebar>.studio-select>svg,.app-shell.sidebar-collapsed .project-sidebar .project-workflow a>svg{width:18px;height:18px;flex:0 0 18px}
  .sidebar-collapsed .sidebar-footer>a,.sidebar-collapsed .sidebar-collapse-control{justify-content:center;padding-inline:0;gap:0}
  .sidebar-collapsed .sidebar-footer>a>span,.sidebar-collapsed .sidebar-collapse-control>span{display:none}
 }

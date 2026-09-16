@@ -15,7 +15,7 @@ import { useDatasetImportProgress } from '../../utils/useDatasetImportProgress';
 import DatasetImportProgress from '../../components/datasets/DatasetImportProgress';
 import './project-data-import.css';
 
-export default function ProjectDataImport({ projectId, versionId, onImported, defaultIsReg = false }: { projectId: string; versionId?: string; onImported: () => void; defaultIsReg?: boolean }) {
+export default function ProjectDataImport({ projectId, versionId, onImported, defaultIsReg = false, captionFormats }: { projectId: string; versionId?: string; onImported: () => void; defaultIsReg?: boolean; captionFormats?: readonly string[] }) {
   const text = useWorkspaceText();
   const repeatsId = React.useId();
   const [mode, setMode] = React.useState<'upload' | 'path'>('upload');
@@ -147,7 +147,7 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
     <div className="project-import-configuration">
       <details className="project-import-options"><summary>{text('导入选项', 'Import options')}</summary>
         <div className="project-import-fields">
-          <label className="project-import-field project-import-caption">{text('标签格式', 'Caption format')}<CaptionFormatSelect value={captionExt} onChange={setCaptionExt} disabled={busy}/></label>
+          <label className="project-import-field project-import-caption">{text('标签格式', 'Caption format')}<CaptionFormatSelect value={captionExt} onChange={setCaptionExt} disabled={busy} formats={captionFormats}/></label>
           <div className="project-import-field project-import-repeats"><div className="project-import-field-label"><label htmlFor={repeatsId}>{text('每张图片重复次数', 'Repeats per image')}</label><ConfigHelp label={text('重复次数说明','Repeats help')}>{text('默认每轮使用每张图一次。次数越高，这组图片的训练占比越大，不复制文件。可从形如 5_character 的目录名读取 5；没有命名约定时不猜测。','Each image is used once per epoch by default. More repeats increase this dataset’s share without copying files. A folder named 5_character can suggest 5 repeats; otherwise no value is inferred.')}</ConfigHelp></div><input id={repeatsId} className={inputClass} type="number" min="1" step="1" required value={repeats} onChange={event => setRepeats(Number(event.target.value))} disabled={busy}/></div>
         </div>
         {detectedRepeats && Number(detectedRepeats)!==repeats && <button type="button" disabled={busy} onClick={()=>setRepeats(Number(detectedRepeats))}>{text(`目录名检测到重复 ${detectedRepeats} 次，应用`, `Folder name suggests ${detectedRepeats} repeats — apply`)}</button>}

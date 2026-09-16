@@ -621,7 +621,8 @@ def test_inspection_reports_unknown_json_as_error_but_preserves_readonly_documen
     assert report["errors"] == 1 and snapshot(api)["inspection"]["errors"] == 1
     images = {image["rel_path"]: image for image in report["images"]}
     errors = [issue for issue in images["a.png"]["issues"] if issue["severity"] == "error"]
-    assert len(errors) == 1 and errors[0]["code"] == "caption_encoding"
+    assert len(errors) == 1 and errors[0]["code"] == "caption_format_unsupported"
+    assert errors[0]["path"] == "a.json"
     assert "a.json" in errors[0]["message"] and "unrecognized caption format" in errors[0]["message"]
     assert images["a.png"]["caption"] == ""  # Does not silently read the existing a.txt.
     assert not any(issue["code"] == "missing_caption" for issue in images["a.png"]["issues"])

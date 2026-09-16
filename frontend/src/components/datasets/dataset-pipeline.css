@@ -77,3 +77,6 @@
 .pipeline-toolbar>div:first-child { min-width:min(240px,100%); }
 .pipeline-selection label { min-width:0; max-width:100%; }
 @media(max-width:520px) { .caption-viewer-toolbar > .caption-viewer-dataset { flex-basis:100%; }.caption-viewer-toolbar form { flex-basis:100%; min-width:0; }.pipeline-stage-navigation { padding-left:4px; }.pipeline-stage-navigation>a { padding-inline:4px; } }
+.pipeline-issues details { min-width:0;max-width:100%;font-size:11px;padding:4px 6px;border-radius:3px; }
+.pipeline-issues details summary { cursor:pointer;overflow-wrap:anywhere; }
+.pipeline-issues details p,.pipeline-issues details pre { margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere; }

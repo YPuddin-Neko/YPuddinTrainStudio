@@ -269,3 +269,21 @@ def test_invalid_toml_null_metadata_has_clear_parse_error(metadata):
 
     with pytest.raises(ValueError, match="null"):
         parse_toml(f"__ypuddin_nulls__ = {metadata}\n[loop]\nmax_steps=3\n")
+
+
+def test_disabled_ddpm_modifiers_preserve_legacy_checkpoint_config_hash():
+    legacy = TrainConfig().to_dict()
+    modifiers = {
+        "scale_v_pred_loss_like_noise_pred": True,
+        "v_pred_like_loss": 0.2,
+        "debiased_estimation_loss": True,
+    }
+    for key in modifiers:
+        legacy["objective"].pop(key)
+    restored = TrainConfig.model_validate(legacy)
+    assert config_hash(restored) == config_hash(legacy)
+    for key, value in modifiers.items():
+        modified = restored.model_copy(deep=True)
+        setattr(modified.objective, key, value)
+        assert config_hash(modified) != config_hash(legacy)
+    assert not any(key in legacy["objective"] for key in modifiers)

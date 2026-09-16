@@ -151,7 +151,7 @@ class DatasetPipeline:
         # Inspection advice depends on the model and the effective caption
         # transforms, even when image/caption bytes have not changed.
         payload: list[Any] = [{
-            "caption_inspection_version": 2,
+            "caption_inspection_version": 3,
             "model_family": config.get("model", {}).get("family"),
             "caption": config.get("dataset", {}).get("caption"),
         }]
@@ -502,6 +502,11 @@ class DatasetPipeline:
 
     def _inspect(self, oid: str, pid: str, vid: str) -> dict:
         from ypuddin.data.anima_caption_inspection import inspect_anima_caption
+        from ypuddin.data.caption_formats import (
+            effective_caption_extension,
+            family_caption_formats,
+            require_caption_format,
+        )
         from ypuddin.data.caption_json import StructuredCaption
         from ypuddin.data.captions import read_training_caption
         from ypuddin.data.index import caption_target
@@ -510,6 +515,8 @@ class DatasetPipeline:
 
         signature = self.signature(pid, vid)
         config = get_project_config(pid, self.c, vid)
+        family_name = config.get("model", {}).get("family", "anima")
+        caption_formats = family_caption_formats(family_name)
         caption_profile = "anima" if config.get("model", {}).get("family") == "anima" else None
         caption_directories = {}
         files, global_issues = [], []
@@ -531,7 +538,8 @@ class DatasetPipeline:
             self._cancelled(oid)
             relative = path.relative_to(source["path"]).as_posix()
             caption = caption_target(
-                path, source.get("caption_ext", "auto"), directory_cache=caption_directories
+                path, effective_caption_extension(source.get("caption_ext", "auto"), caption_formats),
+                directory_cache=caption_directories,
             )
             mask = mask_for(path)
             record = {
@@ -594,6 +602,7 @@ class DatasetPipeline:
                     {"severity": "error", "code": "unreadable_image", "message": str(exc)}
                 )
             try:
+                require_caption_format(caption, caption_formats, family_name)
                 if caption.is_file():
                     raw_caption = read_training_caption(str(caption), None, require_known_format=True)
                     record["caption"] = (
@@ -618,7 +627,12 @@ class DatasetPipeline:
                     )
             except (UnicodeError, OSError, ValueError) as exc:
                 record["issues"].append(
-                    {"severity": "error", "code": "caption_encoding", "message": str(exc)}
+                    {
+                        "severity": "error",
+                        "code": getattr(exc, "code", "caption_encoding"),
+                        "path": caption.relative_to(source["path"]).as_posix(),
+                        "message": str(exc),
+                    }
                 )
             if mask:
                 try:

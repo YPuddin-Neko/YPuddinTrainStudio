@@ -5,6 +5,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { SchemaForm } from '../src/schema/SchemaForm/SchemaForm';
 import schema from '../src/schema/train-schema.json';
 import i18n from '../src/i18n';
+import { schemaDefaults } from '../src/utils/config';
 
 beforeEach(async () => { await i18n.changeLanguage('zh-CN'); });
 
@@ -13,6 +14,39 @@ function NumericEditor({initial}: {initial: Record<string, unknown>}) {
   return <><SchemaForm schema={schema} value={value} onChange={setValue} compact showAdvanced groupFilter={['optimizer', 'adapter']}/>
     <output data-testid="numeric-configuration">{JSON.stringify(value)}</output></>;
 }
+
+it('retains the nonzero D0 default through optimizer selection, exponent edits and reload', async () => {
+  const defaults=schemaDefaults(schema);defaults.optimizer.type='prodigy_plus_sf';
+  const view=render(<NumericEditor initial={defaults}/>);
+  let input=screen.getByRole('spinbutton',{name:'初始步长估计（D0）'});
+  expect(input).toHaveValue(0.000001);
+  expect(screen.getByLabelText('初始步长估计（D0） · 科学计数法')).toHaveTextContent('1e-6');
+  expect(within(screen.getByTestId('field-optimizer.d0')).getByText('optimizer.d0')).toBeInTheDocument();
+  await act(async()=>{await userEvent.clear(input);await userEvent.type(input,'2e-6');});
+  expect(input).toHaveValue(0.000002);
+  const saved=JSON.parse(screen.getByTestId('numeric-configuration').textContent || '{}');
+  view.unmount();render(<NumericEditor initial={saved}/>);
+  input=screen.getByRole('spinbutton',{name:'初始步长估计（D0）'});
+  expect(input).toHaveValue(0.000002);
+});
+
+it('explains an invalid saved D0 and restores it only on explicit user action', () => {
+  render(<NumericEditor initial={{optimizer:{type:'prodigy_plus_sf',d0:0}}}/>);
+  const input=screen.getByRole('spinbutton',{name:'初始步长估计（D0）'});
+  expect(input).toHaveValue(0);
+  expect(screen.getByText(/D0 必须大于 0/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'恢复 D0 默认值'}));
+  expect(input).toHaveValue(0.000001);
+  expect(JSON.parse(screen.getByTestId('numeric-configuration').textContent || '{}').optimizer.d0).toBe(1e-6);
+});
+
+it('does not repeat the visible FOCUS explanation in a question-mark popup', () => {
+  render(<NumericEditor initial={{optimizer:{type:'prodigy_plus_sf'}}}/>);
+  const field=screen.getByTestId('field-optimizer.use_focus');
+  expect(within(field).getByText(/改用 FOCUS 更新方式/)).toBeInTheDocument();
+  expect(within(field).queryByRole('button',{name:'FOCUS 更新方式 说明'})).not.toBeInTheDocument();
+  expect(within(field).getByText('optimizer.use_focus')).toBeInTheDocument();
+});
 
 it('shows the exact learning rate in scientific notation while preserving decimal and exponent editing', async () => {
   render(<NumericEditor initial={{optimizer:{type:'adamw',lr:0.0001}}}/>);

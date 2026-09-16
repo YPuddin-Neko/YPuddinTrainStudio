@@ -50,7 +50,7 @@ class ModelConfig(_Strict):
     vae_path: str | None = F(None, help="VAE 权重", ui_=ui("model", order=30, control="path"))
     tokenizer_path: str | None = F(
         None,
-        help="附加分词器目录（Anima: 旧版 T5 spiece；留空用内置）",
+        help="自定义分词器目录。SDXL 需指定同时包含 tokenizer/ 与 tokenizer_2/ 的根目录；Anima 可指定旧版 T5 spiece 目录。留空按模型自动选择，必要时使用内置资源。",
         ui_=ui("model", order=40, control="path", advanced=True),
     )
     dtype: DType = F(
@@ -108,19 +108,23 @@ class CaptionConfig(_Strict):
     keep_tokens: int = F(
         0,
         ge=0,
-        help="前 N 个 tag 固定不洗牌",
+        help="仅用于 TXT：保留前 N 个标签，不参与打乱或标签丢弃。分类 JSON 按字段分组处理，不使用此计数。",
         ui_=ui(
             "caption",
             order=30,
             show_when="dataset.caption.shuffle == true || dataset.caption.tag_dropout > 0",
         ),
     )
-    shuffle: bool = F(False, help="随机打乱 tag 顺序", ui_=ui("caption", order=40, control="switch"))
+    shuffle: bool = F(
+        False,
+        help="TXT 打乱未保留的标签；分类 JSON 仅分别打乱 appearance、tags、environment 组内的标签，固定信息及自然语言 nl 不动。使用文本缓存时从预生成的随机变体中选择。",
+        ui_=ui("caption", order=40, control="switch"),
+    )
     tag_dropout: float = F(
         0.0,
         ge=0,
         le=1,
-        help="每个 tag 被丢弃的概率",
+        help="每个可变标签被丢弃的概率。分类 JSON 只作用于 appearance、tags、environment，允许整组丢空；固定信息和 nl 保留。",
         ui_=ui("caption", order=50, control="slider", step=0.01),
     )
     caption_dropout: float = F(
@@ -452,7 +456,7 @@ class ObjectiveConfig(_Strict):
         help="Huber/pseudo-Huber 从小误差区域过渡到大误差区域的尺度，默认 0.1；MSE 不使用此值。只在使用对应损失并有误差分布依据时调整。",
         ui_=ui("objective", order=90, show_when="objective.loss != 'mse'"),
     )
-    weighting: Literal["none", "sigma_sqrt", "cosmap", "snr_like", "cosmos"] = F(
+    weighting: Literal["none", "sigma_sqrt", "cosmap", "snr_like", "cosmos", "min_snr"] = F(
         "none",
         help="给不同噪声时间步的损失乘权重，默认 none 等权；它不改变时间步抽样概率。其他方案会改变优化重点和损失量级，建议先保留默认建立对照。",
         ui_=ui("objective", order=100, control="select"),
@@ -460,14 +464,33 @@ class ObjectiveConfig(_Strict):
     snr_gamma: float = F(
         5.0,
         gt=0,
-        help="snr_like 权重中 SNR 的截断值，默认 5；仅选择 snr_like 时生效。它调节不同噪声区间的损失倍率，通常保持默认。",
-        ui_=ui("objective", order=110, show_when="objective.weighting == 'snr_like'"),
+        allow_inf_nan=False,
+        help="SNR 截断值，默认 5。SDXL 的 Min-SNR 按实际噪声调度和 ε/v 预测计算损失权重；Flow 模型的 snr_like 是不同公式。仅选择对应加权方式时生效，不改变时间步抽样。",
+        ui_=ui("objective", order=110, show_when="objective.weighting in ['snr_like', 'min_snr']"),
     )
     ip_noise_gamma: float = F(
         0.0,
         ge=0,
         help="仅给训练输入额外叠加噪声，目标仍使用原始噪声；默认 0 关闭。启用会改变训练任务，应通过固定验证和样图对比，而非将其当作通用提质开关。",
         ui_=ui("objective", order=120, advanced=True),
+    )
+
+    scale_v_pred_loss_like_noise_pred: bool = F(
+        False,
+        help="仅适用于 SDXL v 预测。按 SNR/(SNR+1) 缩放损失，使其对应 ε 预测的损失尺度；默认关闭。这是可选加权，不是启用 v 预测的必要条件，可与 Min-SNR 叠加。",
+        ui_=ui("objective", order=130, advanced=True, show_when="model.prediction_type == 'v_prediction'"),
+    )
+    v_pred_like_loss: float = F(
+        0.0,
+        ge=0,
+        allow_inf_nan=False,
+        help="仅适用于 SDXL ε 预测，默认 0 关闭。额外加入按 v 预测尺度换算的损失；不能与 v 预测同时启用。系数越大，这部分损失的占比越高。",
+        ui_=ui("objective", order=140, advanced=True, show_when="model.prediction_type == 'epsilon'"),
+    )
+    debiased_estimation_loss: bool = F(
+        False,
+        help="仅适用于 SDXL，默认关闭。ε 预测使用 1/√SNR，v 预测使用 1/(SNR+1) 对损失加权。可与 Min-SNR 叠加，会改变损失尺度，建议分别建立对照。",
+        ui_=ui("objective", order=150, advanced=True),
     )
 
     @model_validator(mode="after")
