@@ -11,7 +11,7 @@ from PIL import Image, ImageOps
 
 from ypuddin.config import TrainConfig, config_hash
 from ypuddin.data import build_data
-from ypuddin.data.buckets import fit_pad
+from ypuddin.data.buckets import BUCKET_POLICY, fit_pad
 from ypuddin.data.cache import LatentCache
 from ypuddin.data.dataset import cache_latents
 from ypuddin.data.images import to_padded, valid_image_mask
@@ -201,7 +201,32 @@ def test_compute_loss_ignores_padded_latents_with_user_masks_disabled(tmp_path):
     assert prediction.grad[latent_valid.expand_as(prediction).bool()].gt(0).all()
 
 
-def test_legacy_crop_cache_and_fingerprint_are_byte_compatible(tmp_path):
+@pytest.mark.parametrize("image_fit,shape", [("crop", (832, 1216)), ("pad", (896, 1280))])
+def test_improved_bucket_choice_matches_preview_and_loaded_pixels_with_source_resolution(
+    tmp_path, image_fit, shape
+):
+    source = make_source(tmp_path / "data", size=(692, 1000))
+    cfg = config(
+        source,
+        tmp_path / "out",
+        image_fit=image_fit,
+        resolutions=[512],
+        bucket_step=64,
+        aspect_ratio_limit=2,
+    )
+    cfg.dataset.sources[0].resolutions = [1024]
+    bundle = build_data(cfg, get_family("toy").spec.latent, cache_root=tmp_path / "cache")
+    assert bundle.train.items[0].bucket.key == shape
+    pixels = bundle.train[0]["pixels"]
+    assert tuple(pixels.shape[-2:]) == shape[::-1]
+    preview = plan(cfg, device="cpu")
+    assert preview["ok"], preview.get("errors")
+    assert [(b["w"], b["h"]) for b in preview["buckets"]] == [shape]
+    if image_fit == "pad":
+        assert preview["image_fit"]["cropped_images"] == 0
+
+
+def test_legacy_crop_cache_is_compatible_but_new_bucket_policy_versions_resume(tmp_path):
     source = make_source(tmp_path / "data")
     cfg = config(source, tmp_path / "out", image_fit="crop", cache_latents=True)
     legacy = cfg.to_dict()
@@ -210,36 +235,60 @@ def test_legacy_crop_cache_and_fingerprint_are_byte_compatible(tmp_path):
     assert restored.dataset.image_fit == "crop"
     bundle = build_data(restored, get_family("toy").spec.latent, cache_root=tmp_path / "cache")
     ds = restored.dataset
-    expected = dataset_fingerprint(
-        bundle.records,
-        ds.sources,
-        settings={
-            "dataset": ds.model_dump(
-                mode="json",
-                exclude={
-                    "sources",
-                    "cache_dir",
-                    "num_workers",
-                    "image_fit",
-                    "resolution_mode",
-                    "native_max_pixels",
-                    "native_max_side",
-                    "native_overflow",
-                },
-            ),
-            "validation": restored.validation.model_dump(mode="json", exclude={"sources"}),
-            "validation_content": [],
-        },
-    )
-    assert bundle.plan.fingerprint == expected
+    settings = {
+        "dataset": ds.model_dump(
+            mode="json",
+            exclude={
+                "sources",
+                "cache_dir",
+                "num_workers",
+                "image_fit",
+                "resolution_mode",
+                "native_max_pixels",
+                "native_max_side",
+                "native_overflow",
+            },
+        ),
+        "validation": restored.validation.model_dump(mode="json", exclude={"sources"}),
+        "validation_content": [],
+    }
+    legacy_fingerprint = dataset_fingerprint(bundle.records, ds.sources, settings=settings)
+    assert bundle.plan.fingerprint != legacy_fingerprint
+    settings["bucket_policy"] = BUCKET_POLICY
+    assert bundle.plan.fingerprint == dataset_fingerprint(bundle.records, ds.sources, settings=settings)
     item = bundle.train.items[0]
     assert bundle.train.cache_key(item, False) == LatentCache.key(
         item.record.content_hash, *item.bucket.key, get_family("toy").spec.latent.fingerprint, False
     )
     cfg.dataset.image_fit = "pad"
     padded = build_data(cfg, get_family("toy").spec.latent, cache_root=tmp_path / "cache")
-    assert padded.plan.fingerprint != expected
+    assert padded.plan.fingerprint != bundle.plan.fingerprint
     assert padded.train.cache_key(padded.train.items[0], False) != bundle.train.cache_key(item, False)
+
+
+def test_old_bucket_state_rejected_even_when_this_dataset_keeps_the_same_shapes(tmp_path, monkeypatch):
+    from ypuddin.data import dataset as data_module
+
+    source = make_source(tmp_path / "data")
+    cfg = config(source, tmp_path / "reference", image_fit="crop")
+    original_fingerprint = data_module.dataset_fingerprint
+
+    def legacy_fingerprint(records, sources, *, settings):
+        settings = {k: v for k, v in settings.items() if k != "bucket_policy"}
+        return original_fingerprint(records, sources, settings=settings)
+
+    with monkeypatch.context() as old:
+        old.setattr(data_module, "dataset_fingerprint", legacy_fingerprint)
+        trainer = Trainer(cfg, device="cpu")
+        assert trainer.run() == "finished"
+    state = tmp_path / "reference/state-2"
+    original_metadata = (state / "state.json").read_bytes()
+    resumed = cfg.model_copy(deep=True)
+    resumed.checkpoint.output_dir = str(tmp_path / "resumed")
+    resumed.checkpoint.resume = str(state)
+    with pytest.raises(ValueError, match="fingerprint mismatch"):
+        Trainer(resumed, device="cpu").run()
+    assert (state / "state.json").read_bytes() == original_metadata
 
 
 @pytest.mark.parametrize("native,cached", [(False, False), (False, True), (True, False), (True, True)])

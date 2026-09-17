@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from fractions import Fraction
+
+# Changing bucket membership or selection changes sample order and geometry.
+# Include this identity in bucket-mode resume fingerprints, never latent keys.
+BUCKET_POLICY = "complete-grid-pixel-fit-v2"
 
 
 @dataclass(frozen=True)
@@ -26,7 +31,7 @@ class Bucket:
 
 
 class BucketManager:
-    """Generates buckets for each base resolution and assigns images to the closest aspect ratio."""
+    """Complete area-constrained grids, ranked by the actual image transform."""
 
     def __init__(
         self,
@@ -39,11 +44,17 @@ class BucketManager:
         no_upscale: bool = False,
     ) -> None:
         self.resolutions = sorted(set(resolutions), reverse=True)
+        if align <= 0 or any(r <= 0 for r in self.resolutions):
+            raise ValueError("resolution and alignment must be positive")
+        if not math.isfinite(aspect_ratio_limit) or aspect_ratio_limit < 1:
+            raise ValueError("aspect ratio limit must be finite and at least 1")
+        if not math.isfinite(area_tolerance) or not 0 <= area_tolerance < 1:
+            raise ValueError("area tolerance must be finite and within [0, 1)")
         self.align = align
         # Buckets live on a coarser grid than the alignment (64 px by default, like most trainers)
         # so a 1024 base yields ~40 buckets instead of hundreds of near-duplicates.
         step = max(align, 64) if step is None else step
-        if step % align != 0:
+        if step <= 0 or step % align != 0:
             raise ValueError(f"bucket step {step} must be a multiple of align {align}")
         self.step = step
         self.ar_limit = aspect_ratio_limit
@@ -55,38 +66,71 @@ class BucketManager:
         area = base * base
         lo, hi = area * (1 - self.area_tol), area * (1 + self.area_tol)
         a = self.step
-        min_side = max(a, int(math.floor(base / math.sqrt(self.ar_limit) / a)) * a)
-        max_side = int(math.ceil(base * math.sqrt(self.ar_limit) / a)) * a
+        # Derive bounds from the whole area band, including its upper edge.
+        # Enumerate each feasible height interval, not just neighbours of base²/w.
+        # This visits all legal grid points without scanning a full square grid.
+        min_side = max(a, math.floor(math.sqrt(lo / self.ar_limit) / a) * a)
+        max_side = math.ceil(math.sqrt(hi * self.ar_limit) / a) * a
         out: dict[tuple[int, int], Bucket] = {}
         for w in range(min_side, max_side + 1, a):
-            # pick the h that brings the area closest to base² and check tolerance / aspect
-            h = int(round(area / w / a)) * a
-            for hh in (h - a, h, h + a):
-                if hh < a:
-                    continue
+            low_h = max(a, math.floor(max(lo / w, w / self.ar_limit) / a) * a)
+            high_h = math.ceil(min(hi / w, w * self.ar_limit) / a) * a
+            for hh in range(low_h, high_h + 1, a):
                 if not (lo <= w * hh <= hi):
                     continue
                 if max(w / hh, hh / w) > self.ar_limit + 1e-9:
                     continue
                 out[(w, hh)] = Bucket(w, hh, base)
-        square = max(a, int(round(base / a)) * a)
-        out.setdefault((square, square), Bucket(square, square, base))
-        return sorted(out.values(), key=lambda b: b.aspect)
+        if not out:
+            # Historical fallback for resolutions smaller than the bucket step,
+            # or an area band with no aligned point. Do not add an out-of-band
+            # square when legal buckets already exist.
+            square = max(a, int(round(base / a)) * a)
+            out[(square, square)] = Bucket(square, square, base)
+        return sorted(out.values(), key=lambda b: (b.aspect, b.area, b.width, b.height))
 
     def all_buckets(self) -> list[Bucket]:
         return [b for r in self.resolutions for b in self.buckets[r]]
 
-    def assign(self, width: int, height: int, base: int) -> Bucket:
-        """Closest-aspect bucket for ``base``; with ``no_upscale`` small images get a shrunk bucket."""
-        ar = width / height
+    def assign(self, width: int, height: int, base: int, *, image_fit: str = "crop") -> Bucket:
+        """Minimize real crop/padding, then unnecessary scaling, then area deviation.
+
+        Ranking uses the same integer geometry as RGB/masks and the data plan.
+        It is a geometric objective, not a claim of optimal learned image quality.
+        """
+        if min(width, height) <= 0 or image_fit not in {"crop", "pad"}:
+            raise ValueError("positive image dimensions and crop/pad image fit are required")
+        if self.no_upscale and image_fit == "crop" and min(width, height) < self.align:
+            raise ValueError("原图短边小于模型对齐尺寸，无法在不放大的同时裁切填满；请使用保留完整画面")
         cands = self.buckets[base]
-        best = min(cands, key=lambda b: (abs(math.log(b.aspect) - math.log(ar)), abs(b.area - base * base)))
-        if self.no_upscale and (width < best.width or height < best.height):
-            scale = min(width / best.width, height / best.height)
-            w = max(self.align, int(best.width * scale // self.align) * self.align)
-            h = max(self.align, int(best.height * scale // self.align) * self.align)
-            return Bucket(w, h, base)
-        return best
+        if self.no_upscale:
+            # Rank AFTER the same no-upscale transformation for every candidate;
+            # floor alignment can change which shape best preserves this image.
+            shapes = set()
+            for b in cands:
+                scale = min(Fraction(1), Fraction(width, b.width), Fraction(height, b.height))
+                w = max(self.align, (b.width * scale // self.align) * self.align)
+                h = max(self.align, (b.height * scale // self.align) * self.align)
+                shapes.add((w, h))
+            cands = [Bucket(w, h, base) for w, h in sorted(shapes)]
+
+        def score(b: Bucket):
+            if image_fit == "pad":
+                rw, rh, *_ = fit_pad(
+                    width, height, b.width, b.height, max_scale=1 if self.no_upscale else None
+                )
+                loss = Fraction(b.area - rw * rh, b.area)
+            else:
+                rw, rh, *_ = fit_crop(width, height, b.width, b.height)
+                loss = Fraction(rw * rh - b.area, rw * rh)
+            # Equal geometry: keep more original sampling resolution, then avoid
+            # enlargement. Fractions avoid orientation-dependent float tie breaks.
+            retained = Fraction(min(width, rw) * min(height, rh), width * height)
+            enlarged = Fraction(max(width, rw) * max(height, rh), width * height)
+            oriented = (b.width, b.height) if width >= height else (b.height, b.width)
+            return loss, -retained, enlarged, abs(b.area - base * base), *oriented
+
+        return min(cands, key=score)
 
     def describe(self) -> list[dict]:
         return [

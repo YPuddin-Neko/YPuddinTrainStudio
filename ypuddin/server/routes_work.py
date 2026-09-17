@@ -1031,7 +1031,11 @@ def _cache_stats(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
 
         recs = [replace(rec, source_index=i) for i in range(len(ds.sources)) for rec in recs]
         bm = BucketManager(
-            sorted({resolution for src in ds.sources for resolution in (src.resolutions or ds.resolutions)}),
+            []
+            if ds.resolution_mode == "native"
+            else sorted(
+                {resolution for src in ds.sources for resolution in (src.resolutions or ds.resolutions)}
+            ),
             align=family.spec.latent.align,
             step=family.spec.latent.align if ds.resolution_mode == "native" else ds.bucket_step,
             aspect_ratio_limit=ds.aspect_ratio_limit,

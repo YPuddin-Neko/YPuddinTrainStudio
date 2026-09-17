@@ -1,0 +1,384 @@
+{
+  "policy": "complete-grid-pixel-fit-v2",
+  "old_commit": "a5873d825a60c3dba9543cd6570f83af982f354f",
+  "als_commit": "3d9d2e86045b879cd19c01ac4aa2337f45a283ab",
+  "config": {
+    "base": 1024,
+    "step": 64,
+    "aspect_ratio_limit": 2,
+    "area_tolerance": 0.1,
+    "align": 16
+  },
+  "candidate_count": {
+    "old": 33,
+    "als": 37,
+    "new": 37
+  },
+  "input_sizes_sha256": "19f25d733d4d19771e55c569a0852f1e6ecb6af3768eabcd7912f7edc31f0338",
+  "input_size_histogram": {
+    "1448x2656": 46,
+    "2656x1448": 55
+  },
+  "provided_images": {
+    "crop/no_upscale=False": {
+      "old": {
+        "count": 101,
+        "mean_loss_percent": 0.07097232079489313,
+        "max_loss_percent": 0.07097232079489313,
+        "upscaled": 0,
+        "downscaled": 101,
+        "unchanged_size": 0,
+        "mean_canvas_pixels": 1081344.0,
+        "used_bucket_count": 2,
+        "selection_seconds": 0.0006387910107150674
+      },
+      "als": {
+        "count": 101,
+        "mean_loss_percent": 0.0,
+        "max_loss_percent": 0.0,
+        "upscaled": 0,
+        "downscaled": 101,
+        "unchanged_size": 0,
+        "mean_canvas_pixels": 1081344.0,
+        "used_bucket_count": 2,
+        "selection_seconds": 0.00036579195875674486
+      },
+      "als_shared_transform": {
+        "count": 101,
+        "mean_loss_percent": 0.07097232079489313,
+        "max_loss_percent": 0.07097232079489313,
+        "upscaled": 0,
+        "downscaled": 101,
+        "unchanged_size": 0,
+        "mean_canvas_pixels": 1081344.0,
+        "used_bucket_count": 2,
+        "selection_seconds": 0.0003879169817082584
+      },
+      "new": {
+        "count": 101,
+        "mean_loss_percent": 0.07097232079489313,
+        "max_loss_percent": 0.07097232079489313,
+        "upscaled": 0,
+        "downscaled": 101,
+        "unchanged_size": 0,
+        "mean_canvas_pixels": 1081344.0,
+        "used_bucket_count": 2,
+        "selection_seconds": 0.008261334034614265,
+        "relative_to_old": {
+          "equal": 101
+        }
+      }
+    },
+    "crop/no_upscale=True": {
+      "old": {
+        "count": 101,
+        "mean_loss_percent": 0.07097232079489313,
+        "max_loss_percent": 0.07097232079489313,
+        "upscaled": 0,
+        "downscaled": 101,
+        "unchanged_size": 0,
+        "mean_canvas_pixels": 1081344.0,
+        "used_bucket_count": 2,
+        "selection_seconds": 0.000670708017423749
+      },
+      "new": {
+        "count": 101,
+        "mean_loss_percent": 0.07097232079489313,
+        "max_loss_percent": 0.07097232079489313,
+        "upscaled": 0,
+        "downscaled": 101,
+        "unchanged_size": 0,
+        "mean_canvas_pixels": 1081344.0,
+        "used_bucket_count": 2,
+        "selection_seconds": 0.021407999971415848,
+        "relative_to_old": {
+          "equal": 101
+        }
+      }
+    },
+    "pad/no_upscale=False": {
+      "old": {
+        "count": 101,
+        "mean_loss_percent": 0.0,
+        "max_loss_percent": 0.0,
+        "upscaled": 0,
+        "downscaled": 101,
+        "unchanged_size": 0,
+        "mean_canvas_pixels": 1081344.0,
+        "used_bucket_count": 2,
+        "selection_seconds": 0.0011087920283898711
+      },
+      "new": {
+        "count": 101,
+        "mean_loss_percent": 0.0,
+        "max_loss_percent": 0.0,
+        "upscaled": 0,
+        "downscaled": 101,
+        "unchanged_size": 0,
+        "mean_canvas_pixels": 1081344.0,
+        "used_bucket_count": 2,
+        "selection_seconds": 0.009108625003136694,
+        "relative_to_old": {
+          "equal": 101
+        }
+      }
+    },
+    "pad/no_upscale=True": {
+      "old": {
+        "count": 101,
+        "mean_loss_percent": 0.0,
+        "max_loss_percent": 0.0,
+        "upscaled": 0,
+        "downscaled": 101,
+        "unchanged_size": 0,
+        "mean_canvas_pixels": 1081344.0,
+        "used_bucket_count": 2,
+        "selection_seconds": 0.0006602090434171259
+      },
+      "new": {
+        "count": 101,
+        "mean_loss_percent": 0.0,
+        "max_loss_percent": 0.0,
+        "upscaled": 0,
+        "downscaled": 101,
+        "unchanged_size": 0,
+        "mean_canvas_pixels": 1081344.0,
+        "used_bucket_count": 2,
+        "selection_seconds": 0.02233108296059072,
+        "relative_to_old": {
+          "equal": 101
+        }
+      }
+    }
+  },
+  "synthetic_3002_images": {
+    "crop/no_upscale=False": {
+      "old": {
+        "count": 3002,
+        "mean_loss_percent": 1.3094672567810468,
+        "max_loss_percent": 4.217687074829934,
+        "upscaled": 1130,
+        "downscaled": 1872,
+        "unchanged_size": 0,
+        "mean_canvas_pixels": 1046335.6162558295,
+        "used_bucket_count": 33,
+        "selection_seconds": 0.04707166599109769
+      },
+      "als": {
+        "count": 3002,
+        "mean_loss_percent": 1.1186798162022684,
+        "max_loss_percent": 2.938388625592414,
+        "upscaled": 1130,
+        "downscaled": 1872,
+        "unchanged_size": 0,
+        "mean_canvas_pixels": 1046751.7654896736,
+        "used_bucket_count": 37,
+        "selection_seconds": 0.01209691702388227
+      },
+      "als_shared_transform": {
+        "count": 3002,
+        "mean_loss_percent": 1.1657236011469962,
+        "max_loss_percent": 3.0303030303030276,
+        "upscaled": 1130,
+        "downscaled": 1872,
+        "unchanged_size": 0,
+        "mean_canvas_pixels": 1046751.7654896736,
+        "used_bucket_count": 37,
+        "selection_seconds": 0.012584124982822686
+      },
+      "new": {
+        "count": 3002,
+        "mean_loss_percent": 1.1654246826029746,
+        "max_loss_percent": 2.938388625592414,
+        "upscaled": 1130,
+        "downscaled": 1872,
+        "unchanged_size": 0,
+        "mean_canvas_pixels": 1046635.7894736842,
+        "used_bucket_count": 37,
+        "selection_seconds": 0.26000466698314995,
+        "relative_to_old": {
+          "equal": 2772,
+          "better": 230
+        }
+      }
+    },
+    "crop/no_upscale=True": {
+      "old": {
+        "count": 3002,
+        "mean_loss_percent": 1.3568784388641602,
+        "max_loss_percent": 4.545454545454541,
+        "upscaled": 0,
+        "downscaled": 2964,
+        "unchanged_size": 38,
+        "mean_canvas_pixels": 936062.1239173884,
+        "used_bucket_count": 134,
+        "selection_seconds": 0.020136833016294986
+      },
+      "new": {
+        "count": 3002,
+        "mean_loss_percent": 1.1981844226998124,
+        "max_loss_percent": 3.6144578313253017,
+        "upscaled": 0,
+        "downscaled": 2970,
+        "unchanged_size": 32,
+        "mean_canvas_pixels": 936678.2465023318,
+        "used_bucket_count": 145,
+        "selection_seconds": 0.6133588340017013,
+        "relative_to_old": {
+          "equal": 2682,
+          "better": 320
+        }
+      }
+    },
+    "pad/no_upscale=False": {
+      "old": {
+        "count": 3002,
+        "mean_loss_percent": 1.310533049215282,
+        "max_loss_percent": 4.261363636363635,
+        "upscaled": 1116,
+        "downscaled": 1884,
+        "unchanged_size": 2,
+        "mean_canvas_pixels": 1046335.6162558295,
+        "used_bucket_count": 33,
+        "selection_seconds": 0.02094191696960479
+      },
+      "new": {
+        "count": 3002,
+        "mean_loss_percent": 1.1664740713555615,
+        "max_loss_percent": 2.941176470588236,
+        "upscaled": 1118,
+        "downscaled": 1882,
+        "unchanged_size": 2,
+        "mean_canvas_pixels": 1047069.6762158561,
+        "used_bucket_count": 37,
+        "selection_seconds": 0.27469295798800886,
+        "relative_to_old": {
+          "equal": 2773,
+          "better": 229
+        }
+      }
+    },
+    "pad/no_upscale=True": {
+      "old": {
+        "count": 3002,
+        "mean_loss_percent": 1.3547357721692936,
+        "max_loss_percent": 4.63709677419355,
+        "upscaled": 0,
+        "downscaled": 3002,
+        "unchanged_size": 0,
+        "mean_canvas_pixels": 936062.1239173884,
+        "used_bucket_count": 134,
+        "selection_seconds": 0.046494708978571
+      },
+      "new": {
+        "count": 3002,
+        "mean_loss_percent": 1.1962403226146667,
+        "max_loss_percent": 3.6250000000000004,
+        "upscaled": 0,
+        "downscaled": 3002,
+        "unchanged_size": 0,
+        "mean_canvas_pixels": 936861.420386409,
+        "used_bucket_count": 145,
+        "selection_seconds": 0.6470416249940172,
+        "relative_to_old": {
+          "equal": 2687,
+          "better": 315
+        }
+      }
+    }
+  },
+  "example_522x1000": {
+    "old": {
+      "count": 1,
+      "mean_loss_percent": 4.217687074829934,
+      "max_loss_percent": 4.217687074829934,
+      "upscaled": 1,
+      "downscaled": 0,
+      "unchanged_size": 0,
+      "mean_canvas_pixels": 991232.0,
+      "used_bucket_count": 1,
+      "selection_seconds": 1.3041018974035978e-05,
+      "rows": [
+        {
+          "input": [
+            522,
+            1000
+          ],
+          "bucket": [
+            704,
+            1408
+          ],
+          "resize": [
+            735,
+            1408
+          ],
+          "loss": 0.042176870748299344
+        }
+      ]
+    },
+    "als": {
+      "count": 1,
+      "mean_loss_percent": 0.0,
+      "max_loss_percent": 0.0,
+      "upscaled": 1,
+      "downscaled": 0,
+      "unchanged_size": 0,
+      "mean_canvas_pixels": 1130496.0,
+      "used_bucket_count": 1,
+      "selection_seconds": 6.250047590583563e-06,
+      "rows": [
+        {
+          "input": [
+            522,
+            1000
+          ],
+          "bucket": [
+            768,
+            1472
+          ],
+          "resize": [
+            768,
+            1472
+          ],
+          "loss": 0.0
+        }
+      ]
+    },
+    "new": {
+      "count": 1,
+      "mean_loss_percent": 0.0,
+      "max_loss_percent": 0.0,
+      "upscaled": 1,
+      "downscaled": 0,
+      "unchanged_size": 0,
+      "mean_canvas_pixels": 1130496.0,
+      "used_bucket_count": 1,
+      "selection_seconds": 9.170803241431713e-05,
+      "rows": [
+        {
+          "input": [
+            522,
+            1000
+          ],
+          "bucket": [
+            768,
+            1472
+          ],
+          "resize": [
+            768,
+            1472
+          ],
+          "loss": 0.0
+        }
+      ]
+    }
+  },
+  "limitations": [
+    "Geometry only; no trained-model quality or GPU throughput comparison.",
+    "ALS uses its original absolute-ratio selector and truncating crop resize; YPuddin uses its production rounded geometry.",
+    "als_shared_transform applies YPuddin pixel rounding to ALS bucket choices, isolating the selector from resize differences.",
+    "No-upscale and padding rows compare only YPuddin; ALS is not presented as implementing padding.",
+    "Selection CPU timings include geometry collection; not training throughput.",
+    "Input image files were read only for dimensions and EXIF orientation; no pixels, captions or filenames are in this result."
+  ]
+}

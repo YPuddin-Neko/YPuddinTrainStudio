@@ -17,7 +17,7 @@ from ypuddin.config import CaptionConfig, DatasetConfig, DatasetSourceConfig, Tr
 from ypuddin.config.schema import MAX_SIDE
 from ypuddin.models import LatentSpec
 
-from .buckets import Bucket, BucketManager, fit_crop, fit_pad
+from .buckets import BUCKET_POLICY, Bucket, BucketManager, fit_crop, fit_pad
 from .cache import LatentCache, build_latent_cache
 from .caption_formats import effective_caption_extension, family_caption_formats, require_caption_format
 from .caption_json import StructuredCaption
@@ -200,9 +200,14 @@ def expand_items(
                     if ds.resolution_mode == "native"
                     else None
                 )
-                bucket = Bucket(size.width, size.height, 0) if size else bm.assign(r.width, r.height, base)
+                bucket = (
+                    Bucket(size.width, size.height, 0)
+                    if size
+                    else bm.assign(r.width, r.height, base, image_fit=ds.image_fit)
+                )
             except ValueError as error:
-                raise DataConfigError("dataset.native_max_pixels", f"{Path(r.path).name}: {error}") from error
+                field = "native_max_pixels" if ds.resolution_mode == "native" else "bucket_no_upscale"
+                raise DataConfigError(f"dataset.{field}", f"{Path(r.path).name}: {error}") from error
             for _ in range(src.repeats):
                 items.append(
                     Item(
@@ -468,7 +473,7 @@ def prepare_data_layout(
             raise DataConfigError(f"{prefix}.path", f"dataset source not found: {src.path}")
     try:
         bm = BucketManager(
-            sorted(resolutions, reverse=True),
+            [] if ds.resolution_mode == "native" else sorted(resolutions, reverse=True),
             align=latent_spec.align,
             step=latent_spec.align if ds.resolution_mode == "native" else ds.bucket_step,
             aspect_ratio_limit=ds.aspect_ratio_limit,
@@ -600,6 +605,7 @@ def build_data(
             records + [item.record for item in layout.validation_items],
             layout.sources,
             settings={
+                **({"bucket_policy": BUCKET_POLICY} if ds.resolution_mode == "bucket" else {}),
                 "dataset": ds.model_dump(
                     mode="json",
                     exclude={"sources", "cache_dir", "num_workers"}

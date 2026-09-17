@@ -188,7 +188,7 @@ class DatasetConfig(_Strict):
     )
     resolution_mode: Literal["bucket", "native"] = F(
         "bucket",
-        help="分桶按接近原图的长宽比选择训练尺寸；原生按每图尺寸和预算分组，不放大小图。是否保留完整画面由下方图像适配方式控制，超预算按策略缩小或报错。",
+        help="分桶在面积和比例限制内选择裁切或补边最少的尺寸；效果相同时优先减少缩放。原生按每图尺寸和预算分组，不放大小图。是否保留完整画面由下方图像适配方式控制，超预算按策略缩小或报错。",
         ui_=ui("dataset", order=5, control="select"),
     )
     image_fit: Literal["crop", "pad"] = F(
@@ -242,7 +242,7 @@ class DatasetConfig(_Strict):
     )
     bucket_no_upscale: bool = F(
         False,
-        help="默认允许小图放大到所选桶；启用后缩小该桶以容纳原图，再按模型尺寸要求对齐。想逐图保留原始大小可选原生模式。",
+        help="默认允许小图放大；启用后先缩小并对齐候选桶，再选择裁切或补边最少的尺寸。短边小于模型对齐要求时需选保留完整画面。想逐图保留原始大小可选原生模式。",
         ui_=ui("dataset", order=40, control="switch", show_when="dataset.resolution_mode == 'bucket'"),
     )
     batch_size: int = F(
