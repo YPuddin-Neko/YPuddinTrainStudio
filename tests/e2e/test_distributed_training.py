@@ -18,6 +18,9 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def _launch(config, *, expect_success=True):
     env = {**os.environ, "OMP_NUM_THREADS": "1", "YPUDDIN_DDP_TIMEOUT_SECONDS": "60"}
+    # Keep local CPU tests off hostname DNS and proxy virtual interfaces.
+    if sys.platform == "darwin":
+        env["GLOO_SOCKET_IFNAME"] = "lo0"
     # An outer torchrun must never leak its process group into this independent test.
     for key in ("RANK", "LOCAL_RANK", "WORLD_SIZE", "MASTER_ADDR", "MASTER_PORT"):
         env.pop(key, None)
@@ -26,7 +29,10 @@ def _launch(config, *, expect_success=True):
             sys.executable,
             "-m",
             "torch.distributed.run",
-            "--standalone",
+            "--rdzv_backend=c10d",
+            "--rdzv_endpoint=127.0.0.1:0",
+            "--rdzv_conf=is_host=true",
+            "--local_addr=127.0.0.1",
             "--nproc_per_node=2",
             "-m",
             "tests.ddp_worker",
@@ -99,6 +105,26 @@ def _config(tmp_path, training):
     ],
 )
 def test_two_rank_training_artifacts_and_exact_resume(tmp_path, components, resolution_mode):
+    _assert_two_rank_training(tmp_path, components, resolution_mode)
+
+
+@pytest.mark.parametrize(
+    "resolution_mode,image_fit,cached",
+    [
+        ("bucket", "crop", True),
+        ("bucket", "pad", False),
+        ("native", "pad", True),
+    ],
+)
+def test_standard_lora_frozen_text_two_rank_exact_resume(tmp_path, resolution_mode, image_fit, cached):
+    _assert_two_rank_training(
+        tmp_path, None, resolution_mode, algorithm="lora", image_fit=image_fit, cached=cached
+    )
+
+
+def _assert_two_rank_training(
+    tmp_path, components, resolution_mode, *, algorithm="lokr", image_fit="crop", cached=True
+):
     training = (
         {"mode": "adapter"}
         if components is None
@@ -110,6 +136,8 @@ def test_two_rank_training_artifacts_and_exact_resume(tmp_path, components, reso
     )
     config = _config(tmp_path, training)
     config["dataset"]["resolution_mode"] = resolution_mode
+    config["dataset"].update(image_fit=image_fit, cache_latents=cached)
+    config["adapter"]["algo"] = algorithm
     path = tmp_path / "config.json"
     path.write_text(json.dumps(config))
     _launch(path)
@@ -125,6 +153,8 @@ def test_two_rank_training_artifacts_and_exact_resume(tmp_path, components, reso
     assert rank_reports[0]["pid"] != rank_reports[1]["pid"]
     assert rank_reports[0]["progress"] == rank_reports[1]["progress"]
     assert set(rank_reports[0]["samples"]).isdisjoint(rank_reports[1]["samples"])
+    if components is None:
+        assert all(r["text_frozen"] and r["frozen_unchanged"] and r["adapter_updated"] for r in rank_reports)
     replicas = [load_file(reference / f"rank-{rank}.safetensors") for rank in (0, 1)]
     for key in replicas[0]:
         torch.testing.assert_close(replicas[0][key], replicas[1][key], rtol=0, atol=0)
@@ -186,7 +216,10 @@ def test_image_weighted_accumulation_matches_global_sgd(tmp_path, nonfinite, nat
             sys.executable,
             "-m",
             "torch.distributed.run",
-            "--standalone",
+            "--rdzv_backend=c10d",
+            "--rdzv_endpoint=127.0.0.1:0",
+            "--rdzv_conf=is_host=true",
+            "--local_addr=127.0.0.1",
             "--nproc_per_node=2",
             "-m",
             "tests.ddp_math_worker",

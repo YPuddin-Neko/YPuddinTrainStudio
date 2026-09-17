@@ -1,0 +1,94 @@
+{
+  "product_baseline": "3d79e7a4c827ef7196ec419a76926e69b523f393",
+  "scope": "Local CPU training and reduced real networks; no new DTK/CUDA acceptance",
+  "suites": {
+    "cold_process_and_ddp": {
+      "tests": "21",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "113.665",
+      "junit_sha256": "b29a5915ce32c89b5a0b24312680294baff0a9f3348bf465d73f66d1291073a9"
+    },
+    "geometry_and_text_contracts": {
+      "tests": "136",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "5.377",
+      "junit_sha256": "60e567c7511f4d157390888331d231fb84c1acd28decac87e1fd3afd6501ff68"
+    },
+    "runner_negative_checks": {
+      "tests": "7",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.756",
+      "junit_sha256": "163217a6b416d154986e6bc649d6d13a28c91ab638bf66fe3d13f14f57aaa861"
+    },
+    "model_family_regression": {
+      "tests": "79",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "28.402",
+      "junit_sha256": "e2eeeb74be763fa4b3fddb717791c87fe8be9e6981a2ae937efa9b1b54b56554"
+    }
+  },
+  "runner": {
+    "status": "passed",
+    "strict_passed": true,
+    "device_requested": "cpu",
+    "processes": 2,
+    "family": "toy",
+    "algorithm": "lora",
+    "runtime": {
+      "torch": "2.14.0",
+      "hip": null,
+      "cuda": null
+    },
+    "comparison": {
+      "tensor_count": 40,
+      "weights_exact": true,
+      "states_exact": true,
+      "preview_sha256": [
+        "8bc124f91b4f66030e869c564370784f0e693be185f5cf6d0e27b123d482ef91"
+      ]
+    }
+  },
+  "files": {
+    "tests/ddp_worker.py": "c1ffd1117111765e4e73fd88a8881f7ba0f5a169aa4882e8bdc71f20ada5589f",
+    "tests/e2e/test_distributed_training.py": "d0579353f4c5ab9dd1f63ecc4bd015fe18846e7544cc56e21a9d0e6100822332",
+    "tests/e2e/test_sdxl_frozen_text_resume.py": "2eaad62e2a9331fe02b827c9ed5a466e590d72272999aaaced6e262f92151273",
+    "tests/unit/test_frozen_adapter_acceptance.py": "ab9829be5945291726a3689ed9940f56d25a6a5e9c42aa9eb4c5cc471f12949b",
+    "scripts/verify_frozen_adapter_resume.py": "3f6d6d378dffa64f9b371416c47acbda43cebb21c98f09e8c36c2a17f5669199"
+  },
+  "old_dtk_long_caption_evidence": {
+    "150": {
+      "sha256": "5e87bfd45b92789ac8a2f1d8cf6e2a8bc0aea80178ce50806779c282f8a3972f",
+      "passed": false,
+      "different_tensor_count": 2100,
+      "states": {
+        "progress_exact": false,
+        "sampler_exact": true,
+        "rng_exact": true,
+        "scheduler_exact": true,
+        "optimizer_exact": false
+      },
+      "preview_exact": false
+    },
+    "225": {
+      "sha256": "f9a791bc86d26fdf006b0e6c85d02f101be1bb0563c9b943c26602eac9091af5",
+      "passed": true,
+      "different_tensor_count": 0,
+      "states": {
+        "progress_exact": true,
+        "sampler_exact": true,
+        "rng_exact": true,
+        "scheduler_exact": true,
+        "optimizer_exact": true
+      },
+      "preview_exact": true
+    }
+  }
+}
