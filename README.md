@@ -25,6 +25,7 @@ studio-*.bat/.sh  各环境的安装 + 启动入口（CUDA / DTK / MPS / CPU 各
 ypuddin/          Python 后端包（训练核心 + 服务 API），CLI 入口 `ypuddin`
 frontend/         Web 前端（动态配置表单、数据集、任务监控与产物管理）
 docs/deploy.md    部署与运行指南
+docs/LAYOUT.md    文件夹布局清单（源码树、部署环境与数据根的分工）
 docs/design/      架构设计文档（ADR 风格）
 docs/reference/   对四个参考项目的深度分析报告
 tests/            CPU 可跑的单元 / 集成测试（用玩具模型族端到端验证训练循环）
@@ -51,7 +52,7 @@ HANDOVER.md       当前交接说明与验证边界
 
 首次部署按平台创建独立的 `environment/profiles/<平台>/venv`、选择 PyTorch 安装来源、构建前端并启动服务。已有根目录 `venv` 的旧部署继续使用原环境，不搬移或重建。海光需要匹配的 DTK 用户态运行库与厂商 wheel，准备步骤见 [DTK 独立环境](docs/RUNTIME_DTK.md)；启动器不会安装系统驱动或用 CUDA 包代替。默认地址为 `http://127.0.0.1:8765/`。前端构建需要 Node 20.19+ 或 22.12+；MPS 当前按 FP32 执行，内存预算按统一内存估算。目录、升级与切换边界见 [环境说明](docs/ENVIRONMENT_LIFECYCLE_2026-09-14.md)。
 `<启动入口> doctor` 查看本机环境；`<启动入口> smoke --set model.dit_path=… --set model.text_encoder_path=… --set model.vae_path=…`
-用真实权重自检整条训练链路。完整说明（参数、手动安装、目录结构、常驻服务、远程访问、排障）见 [`docs/deploy.md`](docs/deploy.md)。
+用真实权重自检整条训练链路。完整说明（参数、手动安装、常驻服务、远程访问、排障）见 [`docs/deploy.md`](docs/deploy.md)；目录分工见 [文件夹布局清单](docs/LAYOUT.md)。
 
 升级前保留数据和断点。停止旧服务、更新源码后重新运行启动脚本，才会检查依赖与前端指纹；没有联网程序自更新或生产热更新。v0.4 将旧项目关联到兼容 v1，不移动旧数据、任务目录或断点。完整训练状态仍使用 v2 格式，旧指纹断点不能直接当作新版的精确续训状态使用。缓存依据实际权重、分词器和数据内容识别，修改 caption 或 mask 会影响数据指纹；详细兼容与迁移方式见部署指南。
 
