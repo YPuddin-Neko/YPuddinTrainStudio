@@ -1162,7 +1162,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
               const label = `${english ? 'Caption format' : '标签格式'} · ${name}`;
               return <div className="caption-source-format" key={`${index}-${source.path}`}>
                 <span className="caption-source-name" title={source.path}>{name}</span>
-                <label><span>{english ? 'Caption format' : '标签格式'}</span><CaptionFormatSelect label={label} formats={family?.caption_formats} value={source.caption_ext || 'auto'} disabled={readOnly} onChange={caption_ext => onChange(setNestedValue(value, ['dataset', 'sources'], captionSources.map((item: any, itemIndex: number) => itemIndex === index ? {...item, caption_ext} : item)))}/></label>
+                {/* The card names the dataset; the select keeps "Caption format" as its accessible name. */}
+                <CaptionFormatSelect label={label} formats={family?.caption_formats} value={source.caption_ext || 'auto'} disabled={readOnly} onChange={caption_ext => onChange(setNestedValue(value, ['dataset', 'sources'], captionSources.map((item: any, itemIndex: number) => itemIndex === index ? {...item, caption_ext} : item)))}/>
               </div>;
             })}
           </div>}

@@ -85,10 +85,13 @@
 .preset-preview-table{overflow:auto;min-height:0;max-height:48vh}.preset-preview-table table{width:100%;table-layout:fixed;border-collapse:collapse;text-align:left}
 .preset-preview-table th,.preset-preview-table td{padding:10px;border-bottom:1px solid var(--studio-line);overflow-wrap:anywhere;vertical-align:top}.preset-preview-table small{display:block;font-weight:400;color:var(--studio-dim);font-size:10px}
 
-.caption-source-formats{grid-column:1/-1;display:grid;gap:10px;min-width:0}
-.caption-source-format{display:grid;grid-template-columns:minmax(70px,1fr) minmax(0,2fr);gap:12px;align-items:center;min-width:0}
-.caption-source-name{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.caption-source-format>label{display:grid;gap:5px;min-width:0;font-size:12px}
+/* One card per detected dataset, so more sources widen the grid instead of
+   stacking rows that repeat the same field label. */
+.caption-source-formats{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,232px),1fr));gap:10px;min-width:0}
+.caption-source-format{display:grid;gap:7px;align-content:start;min-width:0;padding:10px;border:1px solid var(--studio-line);border-radius:8px;background:var(--studio-panel)}
+.caption-source-name{font-size:12px;font-weight:600;color:var(--studio-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.caption-source-format .studio-select,.caption-source-format input{width:100%;min-width:0;font-size:12px}
+.caption-source-format .caption-format-control{display:grid;gap:5px;min-width:0}
 .caption-override-notice{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font-size:12px;color:var(--studio-dim)}
 .caption-override-notice button{color:var(--studio-accent);padding:4px 0;text-decoration:underline;text-underline-offset:3px}
 .output-binding-summary{grid-column:1/-1;display:grid;gap:8px;font-size:12px;min-width:0}

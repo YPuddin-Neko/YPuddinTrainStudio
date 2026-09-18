@@ -156,11 +156,11 @@
 }
 .config-field-heading { gap: 8px; align-items: flex-start; }
 .config-field-heading > label { min-width: 0; }
-/* The cap covers the key and the help button together, so it leaves the key the
-   room it had before the button became universal. */
-.config-field-reference { display: inline-flex; align-items: flex-start; justify-content: flex-end; gap: 6px; min-width: 0; max-width: 67%; }
+/* The key is one copyable token, so it keeps its width and the wordy label wraps
+   instead. That way every key in a column starts and ends on the same line. */
+.config-field-reference { display: inline-flex; align-items: flex-start; justify-content: flex-end; gap: 6px; min-width: 0; flex: 0 0 auto; }
 .config-field-reference > button { flex-shrink: 0; }
 /* Keep the configuration key on one column: fields without a help button reserve the same slot. */
 .config-field-reference:not(:has(.config-help-trigger))::after { content: ''; flex: 0 0 28px; }
 @media (pointer: coarse) { .config-field-reference:not(:has(.config-help-trigger))::after { flex-basis: 36px; } }
-.config-field-key { color: var(--studio-dim); font-size: 10px; line-height: 17px; font-weight: 400; overflow-wrap: anywhere; text-align: right; user-select: text; }
+.config-field-key { color: var(--studio-dim); font-size: 10px; line-height: 17px; font-weight: 400; white-space: nowrap; text-align: right; user-select: text; }
