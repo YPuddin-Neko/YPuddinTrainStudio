@@ -7,7 +7,7 @@
 | 项目 | 要求 |
 |---|---|
 | 操作系统 | Linux、Windows、macOS；macOS 是否启用 MPS 取决于硬件、系统与 PyTorch，先运行 `doctor` 检查。各平台完整权重与全新环境验收仍待完成 |
-| Python | 3.10 – 3.12（`studio.sh/.bat` 会自动查找；装了 [uv](https://docs.astral.sh/uv/) 时可自动下载 3.12） |
+| Python | 3.10 – 3.12（启动入口会自动查找；装了 [uv](https://docs.astral.sh/uv/) 时可自动下载 3.12） |
 | GPU / 内存 | CUDA 训练需要匹配的 NVIDIA 驱动与 PyTorch。MPS 当前按 FP32 执行，预算使用统一内存，Block Swap 不会等额释放物理内存。需求随模型、精度、分辨率、优化器和缓存方式变化；尚无经过完整权重实测的最低容量保证 |
 | Node.js | Node 20.x 至少 20.19，或 22.12+；须满足当前 Vite 的 engines，Node 18/21 不支持。仅**构建 Web 界面**时需要，没有 Node 仍可使用 CLI 和 API |
 | 磁盘 | 为 PyTorch 和模型依赖预留数 GB；Anima 权重约 4 GB（DiT）+ 1.2 GB（Qwen3-0.6B）+ 0.25 GB（VAE）。另外预留数据、latent/文本缓存、采样图与完整训练断点空间，大小随配置变化 |
@@ -17,11 +17,15 @@
 
 ```bash
 git clone <本仓库> YPuddinTrainStudio && cd YPuddinTrainStudio/xiangmuyuanma
-./studio.sh            # Linux / macOS
-studio.bat             # Windows（双击或在 PowerShell 里 .\studio.bat）
+studio-windows-cuda.bat      # Windows + NVIDIA CUDA（双击或在 PowerShell 里 .\studio-windows-cuda.bat）
+studio-cpu.bat               # Windows 仅 CPU
+./studio-linux-cuda.sh       # Linux + NVIDIA CUDA
+./studio-linux-dtk.sh        # Linux + 海光 DTK
+./studio-macos.command       # macOS Apple 芯片（MPS）
+./studio-cpu.sh              # Linux / macOS 仅 CPU
 ```
 
-首次部署会按平台创建独立的 `environment/profiles/<平台>/venv`，再安装对应 PyTorch、训练依赖并构建前端。CUDA、CPU、macOS MPS 的依赖环境不共用。建议分别使用 `studio-windows-cuda.bat`、`studio-linux-cuda.sh`、`studio-macos.command`、`studio-cpu.bat/.sh`。普通 `studio.bat/.sh` 发现已有根目录 `venv` 时继续旧部署，不搬移或重建。平台目录和 Torch 切换关系见 [环境说明](ENVIRONMENT_LIFECYCLE_2026-09-14.md)。
+首次部署会按平台创建独立的 `environment/profiles/<平台>/venv`，再安装对应 PyTorch、训练依赖并构建前端。CUDA、CPU、macOS MPS 的依赖环境不共用，各环境只能用上面对应的入口启动；共用阶段在 `scripts/launch.sh` / `scripts/launch.bat`，不是入口。下文用 `<启动入口>` 指代你所在环境的那一个。直接运行共用阶段（不带 `--profile`）会落到根目录 `venv` 的旧部署，不搬移或重建。平台目录和 Torch 切换关系见 [环境说明](ENVIRONMENT_LIFECYCLE_2026-09-14.md)。
 
 CUDA 环境安装 `ypuddin[models,server,optim,logging,nvidia]`，CPU/MPS 不安装 NVIDIA 依赖，也不自动安装注意力扩展。初始地址为 `http://127.0.0.1:8765/`；保存过 host/port 设置后，下次启动使用保存值，命令行参数优先。后续运行只对选中环境增量补齐依赖，保留已有 Torch/CUDA/NumPy 原生栈。
 
@@ -42,13 +46,13 @@ CUDA 环境安装 `ypuddin[models,server,optim,logging,nvidia]`，CPU/MPS 不安
 
 | 命令 | 作用 |
 |---|---|
-| `./studio.sh` 或 `./studio.sh run` | 安装/更新 + 构建 + 启动服务 |
-| `./studio.sh doctor` | 打印本机情况：Python、torch/CUDA/GPU、可选依赖、Node、前端构建状态。**排障先跑这个** |
-| `./studio.sh smoke --set model.dit_path=… --set model.text_encoder_path=… --set model.vae_path=…` | 真实跑 3 步训练 + 出一张预览 + 保存/回读 LoRA，输出报告 `outputs/smoke/smoke-report.json`（见 §6） |
-| `./studio.sh build` | 只构建前端 |
-| `./studio.sh dev` | 后端 + Vite 热更新前端，默认浏览器开 `http://127.0.0.1:3000/`；自定义后端 `--port` 会传给前端代理，`--fe-port` 可改开发前端端口 |
-| `./studio.sh test` | 跑后端 pytest（有 Node 时再跑前端 vitest） |
-| `./studio.sh shell` | 打印如何激活 `venv`（之后可直接用 `ypuddin …` 命令） |
+| `<启动入口>` 或 `<启动入口> run` | 安装/更新 + 构建 + 启动服务 |
+| `<启动入口> doctor` | 打印本机情况：Python、torch/CUDA/GPU、可选依赖、Node、前端构建状态。**排障先跑这个** |
+| `<启动入口> smoke --set model.dit_path=… --set model.text_encoder_path=… --set model.vae_path=…` | 真实跑 3 步训练 + 出一张预览 + 保存/回读 LoRA，输出报告 `outputs/smoke/smoke-report.json`（见 §6） |
+| `<启动入口> build` | 只构建前端 |
+| `<启动入口> dev` | 后端 + Vite 热更新前端，默认浏览器开 `http://127.0.0.1:3000/`；自定义后端 `--port` 会传给前端代理，`--fe-port` 可改开发前端端口 |
+| `<启动入口> test` | 跑后端 pytest（有 Node 时再跑前端 vitest） |
+| `<启动入口> shell` | 打印如何激活 `venv`（之后可直接用 `ypuddin …` 命令） |
 
 ## 3. 手动安装（不用脚本时）
 
@@ -85,13 +89,13 @@ macOS 将上面的 PyTorch 安装行改为 `uv pip install --python venv/bin/pyt
 
 启动器默认安装本地日志和常用优化器依赖，无需从环境页逐项安装。W&B 不再提供安装与前端入口，历史配置仍可读取。`optimizer.fused_backward = true` 尚未实现，配置会明确拒绝。
 
-直接运行 `pip/uv pip install -e` 时，setuptools 仍可能生成根目录 `ypuddin.egg-info`；上述自动校验与清理由 `studio.sh/.bat` 启动器执行，不修改包管理器本身的构建行为。
+直接运行 `pip/uv pip install -e` 时，setuptools 仍可能生成根目录 `ypuddin.egg-info`；上述自动校验与清理由启动入口执行，不修改包管理器本身的构建行为。
 
 ## 4. 目录与数据
 
 ```
 xiangmuyuanma/
-├── venv/                旧部署环境，普通启动入口继续兼容
+├── venv/                旧部署环境，共用阶段在没有 --profile 时继续兼容
 ├── environment/profiles/<平台>/venv/  新部署各平台独立依赖
 ├── studio_data/          服务数据目录（--data-root 可改），包含：
 │   ├── studio.db         SQLite：项目 / 版本 / 数据集 / 任务 / 产物 / 模型注册表
@@ -162,7 +166,7 @@ CUDA 分块换出任务还会检查当前空闲显存：能够放下所选文件
 下面是 CUDA fp8 路径的自检示例；MPS 当前强制 FP32、关闭 autocast，并用系统统一内存作保守预算。CPU/MPS 不支持显式 `memory.base_precision=fp8_*`、SageAttention 或 8-bit 优化器；不能把 CPU 与 MPS 之间的 Block Swap 当作独立显存和内存之间的等额腾挪。
 
 ```bash
-./studio.sh smoke \
+<启动入口> smoke \
   --set model.family=krea2 \
   --set model.dit_path=/models/krea2_fp8_scaled.safetensors \
   --set model.text_encoder_path=/models/Qwen3-VL-4B-Instruct \
@@ -174,7 +178,7 @@ CUDA 分块换出任务还会检查当前空闲显存：能够放下所选文件
 ## 6. 第一次在 GPU 机器上验证
 
 ```bash
-./studio.sh smoke \
+<启动入口> smoke \
   --set model.dit_path=/models/anima-base-v1.0.safetensors \
   --set model.text_encoder_path=/models/Qwen3-0.6B-Base \
   --set model.vae_path=/models/qwen_image_vae.safetensors \
@@ -215,11 +219,11 @@ sudo systemctl daemon-reload && sudo systemctl enable --now ypuddin
 journalctl -u ypuddin -f
 ```
 
-先手动跑一次 `./studio.sh --no-browser` 完成安装和前端构建，再交给 systemd。
+先手动跑一次 `<启动入口> --no-browser` 完成安装和前端构建，再交给 systemd。
 
 ### Windows
 
-「任务计划程序」→ 创建任务 → 触发器「登录时」→ 操作：程序 `C:\...\xiangmuyuanma\venv\Scripts\ypuddin.exe`，参数 `serve --host 127.0.0.1 --port 8765 --data-root D:\studio_data`，起始于 `C:\...\xiangmuyuanma`。或者直接把 `studio.bat --no-browser` 的快捷方式放进启动文件夹。
+「任务计划程序」→ 创建任务 → 触发器「登录时」→ 操作：程序 `C:\...\xiangmuyuanma\venv\Scripts\ypuddin.exe`，参数 `serve --host 127.0.0.1 --port 8765 --data-root D:\studio_data`，起始于 `C:\...\xiangmuyuanma`。或者直接把 `studio-windows-cuda.bat --no-browser` 的快捷方式放进启动文件夹。
 
 ### 远程访问与安全
 
@@ -244,7 +248,7 @@ Web 配置页动态读取后端 Schema，支持 TOML 导入导出（API 也支�
 
 ```bash
 git pull
-./studio.sh          # 依赖签名（pyproject.toml）或前端源码变了会自动重装 / 重建
+<启动入口>          # 依赖签名（pyproject.toml）或前端源码变了会自动重装 / 重建
 ```
 
 更新前备份服务数据与外部输出目录。v0.4 启动包含事务式版本迁移：补充 `project_versions` 与归属列，把旧项目/数据源/任务关联到兼容 v1，产物沿原任务归属；不搬迁文件或重写任务快照。这是明确的兼容迁移，不是任意版本都适用的通用数据迁移工具；更换版本同时阅读 `HANDOVER.md` 与 [当前报告](UI_PIPELINE_2026-09-11.md)。
@@ -261,14 +265,14 @@ git pull
 
 | 现象 | 处理 |
 |---|---|
-| Windows 双击 `studio.bat` 后窗口一直没有任何输出 | 该文件必须是 CRLF 换行：编辑器另存过或 `core.autocrlf=false` 的克隆会把换行变成 LF，cmd.exe 会解析错乱。仓库 `.gitattributes` 已强制 `*.bat` 为 CRLF——`git pull` 后 `git checkout -- studio.bat`（或删掉重新 `git checkout`）即可；不要用手动保存的副本。也可以先开一个 `cmd` 窗口，手动运行 `python scripts\bootstrap.py doctor` 看真实报错 |
-| `doctor` 显示 `cuda_available: false` 但机器有 NVIDIA 卡 | 驱动太旧或装了 CPU 版 torch：`nvidia-smi` 看驱动版本，`./studio.sh --reinstall --torch=cu124`（驱动 ≥550）或 `cu118` |
+| Windows 双击 `studio-windows-cuda.bat` 后窗口一直没有任何输出 | `.bat` 必须是 CRLF 换行：编辑器另存过或 `core.autocrlf=false` 的克隆会把换行变成 LF，cmd.exe 会解析错乱。仓库 `.gitattributes` 已强制 `*.bat` 为 CRLF——`git pull` 后 `git checkout -- studio-windows-cuda.bat scripts/launch.bat`（或删掉重新 `git checkout`）即可；不要用手动保存的副本。也可以先开一个 `cmd` 窗口，手动运行 `python scripts\bootstrap.py doctor` 看真实报错 |
+| `doctor` 显示 `cuda_available: false` 但机器有 NVIDIA 卡 | 驱动太旧或装了 CPU 版 torch：`nvidia-smi` 看驱动版本，`<启动入口> --reinstall --torch=cu124`（驱动 ≥550）或 `cu118` |
 | Windows 上 `ModuleNotFoundError: bitsandbytes` / 训练启动就失败 | 配置里 `optimizer.type` 改回 `adamw`，或在 CUDA 环境安装对应依赖：`.\venv\Scripts\pip install "bitsandbytes>=0.43"` |
-| 页面能开但任务列表 / 数据集为空、控制台 404 | 前端是旧构建：`./studio.sh build`；开发态的 mock 数据请用 `dev` 模式而不是 `run` |
+| 页面能开但任务列表 / 数据集为空、控制台 404 | 前端是旧构建：`<启动入口> build`；开发态的 mock 数据请用 `dev` 模式而不是 `run` |
 | 端口被占用 | `--port 8800`，或找出占用者：`lsof -i :8765`（Linux/macOS）、`netstat -ano \| findstr 8765`（Windows） |
-| 前端构建提示 Node 不支持 | 升级到 Node 20.19+（20.x）或 22.12+，确认 `node --version`，再运行 `./studio.sh build` |
+| 前端构建提示 Node 不支持 | 升级到 Node 20.19+（20.x）或 22.12+，确认 `node --version`，再运行 `<启动入口> build` |
 | 首次安装很慢 / 超时 | 默认镜像优先（中科大 → 清华 → 阿里 → 官方兜底）；境外网络用 `--index=official` 官方优先。PyTorch 轮子约 2.5 GB；某个镜像缺最新版会自动回退到下一个源，日志里有 `source … failed, trying the next one` |
-| RTX 50 系报 `no kernel image is available for execution on the device` / `sm_120 is not compatible` | 装到了旧 CUDA 构建：`./studio.sh --reinstall --torch=cu128`；驱动需 ≥ 570。`./studio.sh doctor` 会对比显卡计算能力与 torch 内核列表并直接给出警告 |
+| RTX 50 系报 `no kernel image is available for execution on the device` / `sm_120 is not compatible` | 装到了旧 CUDA 构建：`<启动入口> --reinstall --torch=cu128`；驱动需 ≥ 570。`<启动入口> doctor` 会对比显卡计算能力与 torch 内核列表并直接给出警告 |
 | Apple GPU 没有被使用 | 先看 `doctor` 的 MPS 可用性并检查 PyTorch/硬件，再用 `--device mps` 自检。当前 MPS 执行 FP32，不能启用显式 fp8、SageAttention 或 8-bit 优化器 |
 | 训练 OOM | 降分辨率与 batch，启用逐块激活重算、cached 文本；CUDA 可进一步尝试适当数量的 Block Swap、已安装且支持的 8-bit 优化器。MPS 的 CPU 换出不等于释放统一物理内存。Plan 可提供估算，实际峰值以设备自检为准 |
 | 任务一直等待设备 | 查看任务等待原因：设备可能被另一任务独占，或估算峰值超过可用内存的 95%。关闭 `memory_admission` 仅跳过内存估算门禁，不解除单设备独占 |
@@ -298,7 +302,7 @@ ypuddin serve    --port 8765 --data-root studio_data
 
 ## 项目版本与设置升级（当前 v0.5.2）
 
-先停止旧服务，在源码目录更新 Git 后重新运行 `studio.bat`（Windows）或 `./studio.sh`。启动器在重启时检查依赖与前端内容指纹，必要时补依赖/重建前端；已有项目、配置、模型文件保留。没有联网程序自更新或生产热更新。匹配的已构建前端无需 Node，需要重建时则必须满足 Node 版本要求。
+先停止旧服务，在源码目录更新 Git 后重新运行本环境的 `<启动入口>`。启动器在重启时检查依赖与前端内容指纹，必要时补依赖/重建前端；已有项目、配置、模型文件保留。没有联网程序自更新或生产热更新。匹配的已构建前端无需 Node，需要重建时则必须满足 Node 版本要求。
 
 项目内按版本进行“训练数据 → 模型准备 → 训练参数 → 任务与结果”。新版本可复制图片、caption、Mask 和验证源，也可只继承参数或使用默认空白配置；任务、采样与产物不复制。新导入目录会生成独立副本，原始目录保留；版本归档也不删除文件。任务仍保存配置快照而非独立图片快照，编辑旧版本数据前应先复制新版本，精确续训继续检查数据指纹。
 
@@ -314,7 +318,7 @@ xFormers 可调用单独安装的 FlashAttention 2。Windows 可在运行环境�
 
 ### 数据准备与中央访问密钥
 
-停止训练器服务后更新源码，再运行 `studio.bat` 或 `studio.sh`。启动器沿用依赖与前端源码指纹检测：依赖变化时补安装，前端过期时重建；已启动的旧 Python 进程仍需重启。保留 `studio_data`、已有模型目录和自定义配置，更新包不包含这些运行数据。
+停止训练器服务后更新源码，再运行本环境的 `<启动入口>`。启动器沿用依赖与前端源码指纹检测：依赖变化时补安装，前端过期时重建；已启动的旧 Python 进程仍需重启。保留 `studio_data`、已有模型目录和自定义配置，更新包不包含这些运行数据。
 
 新增原生分辨率是可选模式，旧分桶配置不会自动切换。到「训练参数 → 数据与分桶」选择原生模式并查看实际尺寸分组、缩小图片数和训练步数。更换分辨率模式或修改素材后重新检查准备状态。
 

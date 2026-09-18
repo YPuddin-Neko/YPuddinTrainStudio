@@ -46,7 +46,7 @@ Windows 追加预检与后续真机检查入口见 [Windows 验收说明](docs/W
 
 - **模型族**：`anima`（Anima 2B，Cosmos-Predict2 DiT + Qwen3-0.6B + Qwen-Image VAE）、`krea2`（Krea 2 Raw 12.9B 单流 MMDiT + Qwen3-VL-4B + 同款 VAE）、`sdxl` 和 `flux2`（Klein）；`flux` 仅供历史格式识别；另有 `toy` 族供 CPU 测试。新族 = 实现 `ModelFamily` 协议（`ypuddin/models/`）。
 - **适配器**：LoKr（自研，与 LyCORIS 文件格式兼容）、LoRA、LoHa、Full、DoRA 包装。目标选择用 preset + 有序 rules（`ypuddin/adapters/rules.py`）。
-- **形态**：Python 包 `ypuddin`（CLI + FastAPI 服务）+ `frontend/`（React/Vite 界面，可选）。一键脚本 `studio.sh` / `studio.bat`。
+- **形态**：Python 包 `ypuddin`（CLI + FastAPI 服务）+ `frontend/`（React/Vite 界面，可选）。各环境独立的启动入口 `studio-*.bat` / `studio-*.sh`（共用阶段 `scripts/launch.sh` / `scripts/launch.bat`）。
 - 许可证 Apache-2.0（参考项目里 diffusion-pipe 与 AnimaLoraStudio 是 GPL——只读不抄；sd-scripts / musubi-tuner 是 Apache-2.0，vendor 的代码见 §7）。
 
 ## 2. 2026-09-12 状态记录（v0.5.9 共享适配器表单）
@@ -139,7 +139,7 @@ ypuddin/            后端包本体
   server/           FastAPI：项目/版本/任务/数据集/模型权重/SSE；versions.py 管理数据副本
   cli.py            ypuddin 命令入口
 frontend/           React 18 + Vite 8 + TanStack Query + Tailwind；schema 驱动表单
-scripts/bootstrap.py  一键部署全部逻辑（studio.sh/.bat 只是壳）
+scripts/bootstrap.py  一键部署全部逻辑（各环境入口与 scripts/launch.sh/.bat 只是壳）
 docs/design/        设计文档（00 架构、02 适配器、03 状态）——改代码要同步改这里
 docs/reference/     对四个参考项目的源码级分析（写新功能前先查）
 docs/deploy.md      部署/排障文档（§9 排障表常更新）
@@ -155,7 +155,7 @@ tests/              unit + e2e（toy 族让完整训练/服务流程在 CPU 几�
 - **LoKr 自研而非依赖 LyCORIS**：LyCORIS 4.0.0 的 `merge_to`/`get_diff_weight` 在 `alpha≠rank` 且 w2 低秩时把 scale 乘两次（实测，合并结果错一半）。我们的实现与之**文件格式兼容已实测**（`tests/unit/test_lycoris_compat.py` 用真 LyCORIS 加载我们的文件，输出逐位一致；需 `pip install lycoris-lora` 才跑，否则跳过）。细节：`docs/design/02-adapters-lokr.md` §7。
 - **Block swap**：前后向双钩子 + 推迟释放（修掉了"块输入无梯度时 backward hook 提前触发"）；开/关 swap 结果逐位一致（有测试）。
 - **配置**：分组 pydantic 模型 → JSON Schema（带 x-ui 提示）→ 前端零手写表单；新增配置项的完整链路见 00 架构文档。
-- **部署**：包源镜像优先（中科大→清华→阿里→官方兜底，逐源回退）；torch CUDA 版本按显卡计算能力+驱动选（RTX 50 系强制 cu128）；uv 缓存与项目跨盘时自动 `UV_LINK_MODE=copy`。`studio.bat` 必须纯 ASCII + CRLF（.gitattributes 强制），不要往里写中文或 chcp。
+- **部署**：包源镜像优先（中科大→清华→阿里→官方兜底，逐源回退）；torch CUDA 版本按显卡计算能力+驱动选（RTX 50 系强制 cu128）；uv 缓存与项目跨盘时自动 `UV_LINK_MODE=copy`。所有 `.bat`（各环境入口与 `scripts/launch.bat`）必须纯 ASCII + CRLF（.gitattributes 强制），不要往里写中文或 chcp。
 
 ## 5. 测试与验证体系
 
@@ -168,8 +168,8 @@ tests/              unit + e2e（toy 族让完整训练/服务流程在 CPU 几�
 
 1. **官方完整权重与 NVIDIA 真机验证**。在有 N 卡的机器上：
    ```bash
-   ./studio.sh          # 或 studio.bat；一键装环境起服务
-   ./studio.sh smoke --set model.dit_path=<官方权重> --set model.text_encoder_path=... --set model.vae_path=...
+   ./studio-linux-cuda.sh   # 本环境的入口；Windows 用 studio-windows-cuda.bat
+   ./studio-linux-cuda.sh smoke --set model.dit_path=<官方权重> --set model.text_encoder_path=... --set model.vae_path=...
    ```
    Anima 与 krea2 各跑一遍（Krea 2 的权重清单见 `docs/deploy.md` §5.1）。产出 `outputs/smoke/smoke-report.json`。最可能出问题：官方权重键名、Qwen3 单文件格式、bf16/fp8 显存行为——CPU 测试覆盖不到这些。
 2. 真机数字出来后：block swap / unsloth 卸载 / sage / fp8 的收益实测，与 sd-scripts、diffusion-pipe 的基准对比（速度、显存、出图）。

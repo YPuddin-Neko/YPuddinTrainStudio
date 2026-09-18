@@ -1,11 +1,20 @@
 @echo off
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0.."
 set PYTHONUTF8=1
 set PYTHONIOENCODING=utf-8
 
 REM ============================================================================
-REM YPuddin Train Studio - Windows launcher
+REM YPuddin Train Studio - shared Windows launcher stage
+REM
+REM Not an entry point. Every environment has its own start script in the
+REM repository root; it selects the environment and then calls this file:
+REM   studio-windows-cuda.bat    Windows + NVIDIA CUDA
+REM   studio-cpu.bat             Windows, CPU only
+REM Linux and macOS use studio-linux-cuda.sh, studio-linux-dtk.sh,
+REM studio-cpu.sh or studio-macos.command. Run those, not this file:
+REM launching without a profile would install into the legacy root venv.
+REM Accepted options are documented in README.md and docs/deploy.md.
 REM
 REM This file must stay PURE ASCII and use CRLF line endings (enforced by
 REM .gitattributes). Do not add Chinese characters here and do not use
@@ -13,22 +22,6 @@ REM "chcp 65001": switching the codepage mid-script makes cmd.exe resume
 REM reading the file at a wrong byte offset (garbled "is not recognized"
 REM errors). All Chinese output is printed by scripts\bootstrap.py, which
 REM writes Unicode to the console correctly on its own.
-REM
-REM Usage:
-REM   studio.bat                 first run: create venv, install the CUDA PyTorch
-REM                              matching your GPU, install deps, build frontend,
-REM                              start the server and open the browser
-REM                              Includes optimizers, local logs and NVIDIA monitoring.
-REM                              Later starts repair missing deps and preserve Torch/CUDA.
-REM   studio.bat --port 8800     change port (default 8765; also --host, --data-root)
-REM   studio.bat --torch=cu126   first install/reinstall: cu128 cu126 cu124 cu118 cpu
-REM                              (default: auto by GPU compute capability + driver)
-REM   studio.bat --index=official  packages: official PyPI first (default: China
-REM                              mirrors first - USTC, Tsinghua, Aliyun, official last)
-REM   studio.bat --reinstall     delete venv and reinstall (studio_data\ is kept)
-REM   studio.bat dev             backend + Vite dev server (frontend development)
-REM   studio.bat build / test / doctor / shell
-REM   studio.bat smoke --set model.dit_path=... --set model.text_encoder_path=... --set model.vae_path=...
 REM
 REM All logic lives in scripts\bootstrap.py; this file only finds a usable Python.
 REM ============================================================================

@@ -223,8 +223,14 @@ def package(output: Path) -> dict:
     required = {
         Path(name)
         for name in (
-            "studio.sh",
-            "studio.bat",
+            "scripts/launch.sh",
+            "scripts/launch.bat",
+            "studio-windows-cuda.bat",
+            "studio-cpu.bat",
+            "studio-cpu.sh",
+            "studio-linux-cuda.sh",
+            "studio-linux-dtk.sh",
+            "studio-macos.command",
             "pyproject.toml",
             ".gitignore",
             "scripts/package_source.py",
@@ -433,8 +439,9 @@ def package(output: Path) -> dict:
     build_files.update(Path("frontend/dist") / name for name in frontend_manifest["outputs"])
     if missing := build_files - files:
         raise ValueError(f"build inputs/outputs excluded from package: {sorted(missing)}")
-    bat = (ROOT / "studio.bat").read_bytes()
-    assert bat.isascii() and bat.count(b"\n") == bat.count(b"\r\n"), "studio.bat must be ASCII CRLF"
+    for name in ("scripts/launch.bat", "studio-windows-cuda.bat", "studio-cpu.bat"):
+        bat = (ROOT / name).read_bytes()
+        assert bat.isascii() and bat.count(b"\n") == bat.count(b"\r\n"), f"{name} must be ASCII CRLF"
     manifest = {
         "files": {
             p.as_posix(): {

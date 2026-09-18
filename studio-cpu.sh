@@ -6,4 +6,4 @@ case "$(uname -s)" in
   Linux) export YPUDDIN_BOOTSTRAP_VENV="environment/profiles/linux-cpu/venv" ;;
   *) echo "[studio] This CPU launcher supports Linux or macOS." >&2; exit 1 ;;
 esac
-exec ./studio.sh --profile=cpu "$@"
+exec scripts/launch.sh --profile=cpu "$@"

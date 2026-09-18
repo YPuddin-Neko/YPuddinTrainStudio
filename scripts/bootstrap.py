@@ -1,6 +1,7 @@
 """YPuddin Train Studio 一键引导脚本（只用标准库，裸系统 Python 即可运行）。
 
-由 ``studio.sh`` / ``studio.bat`` 调用::
+由各环境的启动脚本经 ``scripts/launch.sh`` / ``scripts/launch.bat`` 调用
+（``studio-linux-dtk.sh`` 直接调用本脚本）::
 
     python scripts/bootstrap.py [全局参数] [命令] [命令参数]
 
@@ -1010,7 +1011,7 @@ def doctor() -> int:
                 if cc is not None and archs and f"sm_{int(round(cc * 10))}" not in archs:
                     print(
                         f"  警告       : 已安装的 PyTorch 不含 {name}（sm_{int(round(cc * 10))}）的内核，"
-                        "请运行 ./studio.sh --reinstall --torch=cu128"
+                        "请用本环境的启动脚本运行 --reinstall --torch=cu128"
                     )
         except Exception:  # noqa: BLE001
             pass

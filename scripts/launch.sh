@@ -1,21 +1,18 @@
 #!/usr/bin/env bash
-# YPuddin Train Studio —— Linux / macOS 一键启动脚本
+# YPuddin Train Studio —— Linux / macOS 启动脚本的共用阶段
 #
-#   ./studio.sh                    首次运行：创建 venv、按平台安装 CUDA / MPS / CPU PyTorch、
-#                                  自动安装模型加载、优化器、本地日志和适用的 NVIDIA 监控依赖；
-#                                  构建前端并启动。之后只补缺失依赖，保留已安装的 Torch/CUDA。
-#   ./studio.sh --port 8800        换端口（默认 8765；还有 --host、--data-root）
-#   ./studio.sh --torch=cu126      首次安装或 --reinstall 时选 PyTorch：cu128 cu126 cu124 cu118 cpu
-#   ./studio.sh --index=cn         强制国内镜像优先（中科大 → 清华 → 阿里 → 官方；默认自动探测）
-#   ./studio.sh --reinstall        删掉 venv 重装（studio_data/ 里的项目和权重不受影响）
-#   ./studio.sh dev                后端 + Vite 热更新前端（前端开发用）
-#   ./studio.sh build | test | doctor | shell
-#   ./studio.sh smoke --set model.dit_path=... --set model.text_encoder_path=... --set model.vae_path=...
+# 这不是入口。每种环境在仓库根目录都有自己的启动脚本，由它选定环境后调用本文件：
+#   ./studio-linux-cuda.sh         Linux + NVIDIA CUDA
+#   ./studio-cpu.sh                Linux / macOS，仅 CPU
+#   ./studio-macos.command         macOS Apple 芯片（MPS）
+# 海光 DTK 用 ./studio-linux-dtk.sh，它直接调用 scripts/bootstrap.py。
+# 请运行上面这些脚本，不要直接运行本文件：不带 --profile 启动会装进根目录的
+# legacy venv。可用参数见 README.md 和 docs/deploy.md。
 #
 # 所有逻辑都在 scripts/bootstrap.py（只用标准库）；本文件只负责找到一个可用的 Python。
 
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")"
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 export PYTHONUTF8=1 PYTHONIOENCODING=utf-8
 
 pause_on_error() {
