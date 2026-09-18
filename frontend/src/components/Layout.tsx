@@ -156,7 +156,7 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
       {menuOpen && <button className="app-sidebar-backdrop fixed inset-0 bg-black/40 md:hidden" aria-label={t('hardware.closeMenu')} onClick={dismissMenu} />}
       <aside id="app-sidebar" className={`app-sidebar w-[184px] flex-shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex-col fixed inset-y-0 left-0 md:static ${menuOpen ? 'flex' : 'hidden md:flex'}`}>
         <div className="sidebar-brand-row">
-          <Link to="/projects" className="sidebar-brand" onClick={() => setMenuOpen(false)} aria-label="YPuddin Train Studio">
+          <Link to="/" className="sidebar-brand" onClick={() => setMenuOpen(false)} aria-label="YPuddin Train Studio">
             <BrandMark/>
             <span className="sidebar-brand-text"><strong>YPuddin</strong><span>Train Studio</span></span>
           </Link>

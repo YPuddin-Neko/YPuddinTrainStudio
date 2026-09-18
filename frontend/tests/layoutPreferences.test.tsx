@@ -61,6 +61,15 @@ describe('sidebar footer navigation', () => {
     expect(screen.getByTestId('route')).toHaveTextContent('/sampling');
     expect(writes).toEqual([]);
   });
+  it('opens the overview from the product mark instead of the project list', async () => {
+    const user = userEvent.setup();
+    show();
+    const brand = await sidebar().findByRole('link', { name: 'YPuddin Train Studio' });
+    expect(brand).toHaveAttribute('href', '/');
+    await user.click(brand);
+    expect(screen.getByTestId('route').textContent).toBe('/');
+    expect(writes).toEqual([]);
+  });
   it('persists sidebar collapse without writing trainer settings and restores accessible navigation after remount',async()=>{
     const user=userEvent.setup();
     show();await waitFor(()=>expect(screen.getByLabelText('CPU 占用率')).toHaveTextContent('0%'));
