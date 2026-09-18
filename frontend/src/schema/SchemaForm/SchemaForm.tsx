@@ -351,11 +351,20 @@ const SourcesEditor: React.FC<{
         const folder = String(src.path || '').replace(/\\/g,'/').split('/').filter(Boolean).pop() || text('未选择文件夹','No folder selected');
         return (
         <div key={idx} role="group" aria-label={t('train.sourceN', { n: idx + 1 })} className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between items-center gap-2">
             <span className="font-semibold text-slate-700 dark:text-slate-300">
               {folder}
             </span>
-            <span>{isReg ? text('正则集','Regularization') : text('训练集','Training')} · {role?.images == null ? text('图片数待索引','Count pending indexing') : text(`${role.images} 张图片`,`${role.images} images`)}</span>
+            {/* Removing a source stays next to it: burying it under advanced settings
+                left indexed datasets with an add button and no way back out. */}
+            <span className="flex items-center gap-2">
+              <span>{isReg ? text('正则集','Regularization') : text('训练集','Training')} · {role?.images == null ? text('图片数待索引','Count pending indexing') : text(`${role.images} 张图片`,`${role.images} images`)}</span>
+              <button type="button" onClick={() => removeSource(idx)} className="p-1 text-red-500 hover:text-red-700"
+                aria-label={text(`从本次配置移除来源 ${folder}（保留文件）`,`Remove source ${folder} from this configuration (keep files)`)}
+                title={text('从本次配置移除来源（保留文件）','Remove from this configuration (keep files)')}>
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </span>
           </div>
           <p>{role?.managed ? text(`当前版本 / ${role.is_reg ? 'reg' : 'traindata'}`,`Current version / ${role.is_reg ? 'reg' : 'traindata'}`) : versionSources && !role ? text('目录用途待核对','Directory ownership pending') : text('外部 / 旧版来源','External / legacy source')} · {text(`每图重复 ${src.repeats ?? 1} 次`,`Repeats ${src.repeats ?? 1}`)}{isReg ? text(` · 正则权重 ${src.prior_weight ?? 1}`,` · Prior weight ${src.prior_weight ?? 1}`) : ''}</p>
           <details><summary>{text('高级来源设置','Advanced source settings')}</summary>
@@ -383,7 +392,6 @@ const SourcesEditor: React.FC<{
           </div>
           {role?.managed ? <p>{text('目录归属：当前版本','Directory: current version')} / <strong>{role.is_reg ? 'reg' : 'traindata'}</strong><br/><code className="break-all">{role.root}</code></p> : versionSources && !role ? <p>{text('正在核对目录归属；保留当前用途。','Checking directory ownership; retaining the current purpose.')}</p> : <details><summary>{text('外部 / 旧版来源兼容设置','External / legacy source compatibility')}</summary><p>{text('此路径不属于当前版本的 traindata 或 reg，文件保持原位置。仅为已有外部训练配置显式设置用途。','This path is outside this version’s traindata and reg. Files stay in place; adjust purpose only for existing external training configurations.')}</p><label><input type="checkbox" checked={isReg} onChange={event=>updateSource(idx,'is_reg',event.target.checked)}/>{text('外部来源用于正则训练','Use external source for regularization')}</label></details>}
           <details className="source-fallback"><summary>{text('缺少标签时的默认描述（可选）','Fallback description when captions are missing (optional)')}</summary><input aria-label={text(`默认描述 ${idx+1}`,`Fallback description ${idx+1}`)} value={src.class_prompt ?? ''} onChange={event=>updateSource(idx,'class_prompt',event.target.value || null)} placeholder={text('例如：a person；不生成或修改标签文件','For example: a person; does not create or edit caption files')}/></details>
-          <button type="button" onClick={() => removeSource(idx)} className="text-red-500 hover:text-red-700">{text('从本次配置移除来源（保留文件）','Remove from this configuration (keep files)')}</button>
           </details>
         </div>
       );})}
@@ -1068,7 +1076,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const duplicateHelp = !!help && !!hint && help.replace(/\s+/g, ' ').trim() === hint.replace(/\s+/g, ' ').trim();
     const label = (
       <div key={fullPathKey} id={`field-${fullPathKey}`} data-testid={`field-${fullPathKey}`} data-field-path={fullPathKey} data-control-kind={booleanField ? 'toggle' : undefined} className={compactField ? `config-field ${booleanField ? 'config-field-boolean' : ''} ${wide ? 'config-field-wide' : ''} ${errorItem ? 'config-field-invalid' : ''}` : `flex flex-col space-y-1 p-2 rounded ${errorItem ? 'bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800' : ''}`}>
-        <div className="config-field-heading flex justify-between items-center">
+        <div className="config-field-heading flex justify-between items-baseline">
           <label htmlFor={fieldId} className="text-sm font-medium text-slate-700 dark:text-slate-300">
             {fieldLabel}{weightMeta?.required === false && family?.name !== 'flux2' && <span className="ml-1 text-xs text-slate-500">{english ? '(optional)' : '（可选）'}</span>}
             {ui.unit && !percentage && ui.control !== 'slider' && <span className="ml-1 text-xs text-slate-500">({ui.unit})</span>}
@@ -1098,7 +1106,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (lokrRank) {
       const modeId = 'config-adapter-parameter-mode';
       groups[groupName].fields.push(<div key="adapter.parameter_mode" id={fieldValue === 'full' ? 'field-adapter.rank' : 'field-adapter.parameter_mode'} data-testid="field-adapter.parameter_mode" data-field-path="adapter.parameter_mode" className={`config-field ${fieldValue === 'full' && errorItem ? 'config-field-invalid' : ''}`}>
-        <div className="config-field-heading flex justify-between items-center">
+        <div className="config-field-heading flex justify-between items-baseline">
           <label htmlFor={modeId} className="text-sm font-medium text-slate-700 dark:text-slate-300">{lokrModeLabel}</label>
           <span className="config-field-reference"><code className="config-field-key" title={english ? 'Configuration key' : '配置参数名'}>adapter.rank</code><ConfigHelp label={`${lokrModeLabel} ${english ? 'help' : '说明'}`}>{english ? 'Full retains the complete LoKr factor matrices; it does not fine-tune the whole model and does not use Alpha. Low rank decomposes the factors using Rank and Alpha.' : 'Full 保留 LoKr 完整因子矩阵，不是全量微调，也不使用 Alpha。低秩模式通过 Rank 和 Alpha 设置因子分解与缩放。'}</ConfigHelp></span>
         </div>

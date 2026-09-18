@@ -154,11 +154,12 @@
   .training-studio.parameter-workspace .training-header-actions .launch-name { flex: 1 1 100px; width: auto; }
   .training-studio.parameter-workspace .training-header-actions .start-training { width: auto; min-width: 100px; }
 }
-.config-field-heading { gap: 8px; align-items: flex-start; }
+/* The key is smaller than the label, so tops do not line up - baselines do. */
+.config-field-heading { gap: 8px; align-items: baseline; }
 .config-field-heading > label { min-width: 0; }
 /* The key is one copyable token, so it keeps its width and the wordy label wraps
    instead. That way every key in a column starts and ends on the same line. */
-.config-field-reference { display: inline-flex; align-items: flex-start; justify-content: flex-end; gap: 6px; min-width: 0; flex: 0 0 auto; }
+.config-field-reference { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; flex: 0 0 auto; }
 .config-field-reference > button { flex-shrink: 0; }
 /* Keep the configuration key on one column: fields without a help button reserve the same slot. */
 .config-field-reference:not(:has(.config-help-trigger))::after { content: ''; flex: 0 0 28px; }

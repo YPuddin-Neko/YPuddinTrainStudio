@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach, afterAll, vi } from 'vitest';
 import { setupServer } from 'msw/node';
 import { handlers } from '../src/mocks/handlers';
 import { SchemaForm } from '../src/schema/SchemaForm/SchemaForm';
@@ -75,6 +75,18 @@ describe('SchemaForm advanced controls rendering & logic', () => {
 
     expect(screen.getByTestId('sources-editor')).toBeInTheDocument();
     expect(screen.getByTestId('add-source')).toBeInTheDocument();
+  });
+
+  it('removes a source without expanding its advanced settings', () => {
+    const changed = vi.fn();
+    render(<SchemaForm schema={trainSchema as any} value={sampleConfig} onChange={changed} />);
+    const remove = screen.getByRole('button', {name: /移除来源 images（保留文件）/});
+    // Adding is a top-level action, so removing has to be reachable at the same level.
+    expect(remove.closest('details')).toBeNull();
+    fireEvent.click(remove);
+    expect(changed).toHaveBeenCalledWith(expect.objectContaining({
+      dataset: expect.objectContaining({sources: []}),
+    }));
   });
 
   it('toggles advanced fields and applies show_when logic', () => {

@@ -25,7 +25,7 @@
   padding: 16px;
 }
 .compact-schema .config-field { display: flex; flex-direction: column; gap: 6px; }
-.compact-schema .config-field > div:first-child { align-items: flex-start; min-height: 22px; gap: 8px; }
+.compact-schema .config-field > div:first-child { align-items: baseline; min-height: 22px; gap: 8px; }
 .compact-schema .config-field > div:first-child > label { font-size: 13px; line-height: 20px; color: var(--studio-text); font-weight: 500; }
 .compact-schema .config-field > div:first-child > label > span { font-size: 12px; }
 .compact-schema .config-field > .mt-1 { margin-top: 0; min-width: 0; }
