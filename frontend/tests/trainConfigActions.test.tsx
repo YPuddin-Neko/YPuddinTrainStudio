@@ -87,6 +87,25 @@ describe('training configuration actions', () => {
     fireEvent.click(within(panel).getByText('技术详情'));
     expect(within(panel).getByText(extra)).toBeVisible();
   });
+
+  it('marks a field whose reason has no Chinese wording without repeating the panel instruction on it', async () => {
+    const raw = 'Unsupported by the selected optimizer';
+    server.use(http.post('/api/plan', () => HttpResponse.json({ok:false, errors:[{loc:'optimizer.weight_decay',msg:raw}],warnings:[]})));
+    showConfig();
+    const field = await screen.findByTestId('field-optimizer.weight_decay');
+    await waitFor(() => expect(field).toHaveClass('config-field-invalid'));
+    expect(within(field).getByRole('spinbutton')).toHaveAttribute('aria-invalid','true');
+    // The border carries the rejection; the untranslatable reason belongs to the preflight panel.
+    expect(field.querySelector('.config-field-error')).toBeNull();
+    expect(within(field).queryByText(/展开详情查看具体原因/)).not.toBeInTheDocument();
+    expect(within(field).queryByText(raw)).not.toBeInTheDocument();
+    const launch = screen.getByRole('group', {name:'训练启动操作'});
+    fireEvent.click(await within(launch).findByRole('button', {name:'1 项待配置'}));
+    const panel = screen.getByRole('region', {name:'训练前检查'});
+    expect(within(panel).getByRole('button', {name:'配置权重衰减'})).toHaveTextContent('此配置未通过检查，展开详情查看具体原因');
+    fireEvent.click(within(panel).getByText('技术详情'));
+    expect(within(panel).getByText(raw)).toBeVisible();
+  });
   it('invalidates completed workflow steps on edits and waits for the current server plan', async () => {
     const replies: Array<(result: object) => void> = [];
     server.use(http.post('/api/plan', () => new Promise<Response>(resolve => {

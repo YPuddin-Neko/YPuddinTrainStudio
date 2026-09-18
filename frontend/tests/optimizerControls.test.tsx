@@ -9,9 +9,9 @@ import { schemaDefaults } from '../src/utils/config';
 
 beforeEach(async () => { await i18n.changeLanguage('zh-CN'); });
 
-function NumericEditor({initial}: {initial: Record<string, unknown>}) {
+function NumericEditor({initial, errors}: {initial: Record<string, unknown>; errors?: Array<{loc: string; msg: string}>}) {
   const [value, setValue] = React.useState(initial);
-  return <><SchemaForm schema={schema} value={value} onChange={setValue} compact showAdvanced groupFilter={['optimizer', 'adapter']}/>
+  return <><SchemaForm schema={schema} value={value} onChange={setValue} errors={errors} compact showAdvanced groupFilter={['optimizer', 'adapter']}/>
     <output data-testid="numeric-configuration">{JSON.stringify(value)}</output></>;
 }
 
@@ -30,22 +30,43 @@ it('retains the nonzero D0 default through optimizer selection, exponent edits a
   expect(input).toHaveValue(0.000002);
 });
 
-it('explains an invalid saved D0 and restores it only on explicit user action', () => {
-  render(<NumericEditor initial={{optimizer:{type:'prodigy_plus_sf',d0:0}}}/>);
+it('marks a rejected D0 as an error instead of offering a field-specific recovery link', () => {
+  render(<NumericEditor initial={{optimizer:{type:'prodigy_plus_sf',d0:0}}} errors={[{loc:'optimizer.d0',msg:'输入值应大于 0'}]}/>);
+  const field=screen.getByTestId('field-optimizer.d0');
   const input=screen.getByRole('spinbutton',{name:'初始步长估计（D0）'});
   expect(input).toHaveValue(0);
-  expect(screen.getByText(/D0 必须大于 0/)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button',{name:'恢复 D0 默认值'}));
-  expect(input).toHaveValue(0.000001);
-  expect(JSON.parse(screen.getByTestId('numeric-configuration').textContent || '{}').optimizer.d0).toBe(1e-6);
+  expect(input).toHaveAttribute('aria-invalid','true');
+  expect(field).toHaveClass('config-field-invalid');
+  expect(within(field).getByText('输入值应大于 0')).toHaveClass('config-field-error');
+  expect(within(field).queryByRole('button',{name:/恢复/})).not.toBeInTheDocument();
+  expect(within(field).queryByText(/D0 必须大于 0/)).not.toBeInTheDocument();
 });
 
-it('does not repeat the visible FOCUS explanation in a question-mark popup', () => {
+it('shows the invalid border without a paragraph when the rejection carries no field wording', () => {
+  render(<NumericEditor initial={{optimizer:{type:'prodigy_plus_sf',d0:0}}} errors={[{loc:'optimizer.d0',msg:''}]}/>);
+  const field=screen.getByTestId('field-optimizer.d0');
+  expect(field).toHaveClass('config-field-invalid');
+  expect(screen.getByRole('spinbutton',{name:'初始步长估计（D0）'})).toHaveAttribute('aria-invalid','true');
+  expect(field.querySelector('.config-field-error')).toBeNull();
+});
+
+it('keeps a long optimizer explanation in the question-mark popup rather than under the input', () => {
   render(<NumericEditor initial={{optimizer:{type:'prodigy_plus_sf'}}}/>);
   const field=screen.getByTestId('field-optimizer.use_focus');
-  expect(within(field).getByText(/改用 FOCUS 更新方式/)).toBeInTheDocument();
-  expect(within(field).queryByRole('button',{name:'FOCUS 更新方式 说明'})).not.toBeInTheDocument();
+  expect(within(field).queryByText(/改用 FOCUS 更新方式/)).not.toBeInTheDocument();
+  fireEvent.click(within(field).getByRole('button',{name:'FOCUS 更新方式 说明'}));
+  expect(screen.getByRole('tooltip')).toHaveTextContent(/改用 FOCUS 更新方式/);
   expect(within(field).getByText('optimizer.use_focus')).toBeInTheDocument();
+});
+
+it('gives every optimizer field the same configuration-key column', () => {
+  render(<NumericEditor initial={{optimizer:{type:'prodigy_plus_sf'}}}/>);
+  for (const path of ['optimizer.d_coef','optimizer.d0','optimizer.beta3','optimizer.prodigy_steps','optimizer.split_groups']) {
+    const field=within(screen.getByTestId(`field-${path}`));
+    expect(field.getByText(path)).toBeInTheDocument();
+    // A reserved help slot is what keeps the key aligned, so every row must own the trigger.
+    expect(field.getByRole('button',{name:/说明$/})).toBeInTheDocument();
+  }
 });
 
 it('shows the exact learning rate in scientific notation while preserving decimal and exponent editing', async () => {

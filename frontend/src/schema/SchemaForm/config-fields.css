@@ -44,6 +44,11 @@
   color: var(--studio-text);
   border-radius: 6px;
 }
+/* The compact metrics above also repaint the neutral border, so the invalid state restates it. */
+.compact-schema .config-field-invalid input:not([type="checkbox"]):not([type="range"]),
+.compact-schema .config-field-invalid select,
+.compact-schema .config-field-invalid textarea,
+.compact-schema .config-field-invalid .studio-select { border-color: var(--studio-danger-line); }
 .compact-schema .config-field textarea { font-size: 13px; line-height: 1.6; min-height: 72px; }
 .compact-schema .config-field input[type="checkbox"] { width: 17px; height: 17px; }
 .compact-schema .config-field input[type="range"] { min-height: 24px; }

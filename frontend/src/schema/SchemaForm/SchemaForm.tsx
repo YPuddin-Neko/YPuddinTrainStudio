@@ -1064,8 +1064,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       showAdvanced && selectedPreset?.include?.length && `${english ? 'Included layers' : '包含层'}：${selectedPreset.include.join(', ')}`,
       showAdvanced && selectedPreset?.exclude?.length && `${english ? 'Excluded layers' : '排除层'}：${selectedPreset.exclude.join(', ')}`,
     ].filter(Boolean).join('\n\n') : fullPathKey === 'model.tokenizer_path' && family?.name === 'sdxl' ? (english ? 'Optional root containing tokenizer/ and tokenizer_2/. Leave blank to use the model directory’s tokenizers, or the built-in CLIP-L / CLIP-G tokenizers when absent.' : '可选根目录，需同时包含 tokenizer/ 和 tokenizer_2/。留空自动读取模型目录；没有时使用内置 CLIP-L / CLIP-G 双分词器。') : weightMeta?.hint || configFieldHelp(fullPathKey, prop.description, english, value.optimizer?.type, scheduleFree);
-    const hint = (incompatibleFamilyLoss ? (english ? 'This loss option only supports SDXL. Turn it off or set it to zero before using this model.' : '此损失参数仅适用于 SDXL，请关闭或设为 0 后再使用当前模型。') : undefined) || (incompatiblePredictionLoss ? (english ? 'This option is incompatible with the selected prediction type. Turn it off or choose the matching prediction type.' : '此参数与当前预测方式不兼容，请关闭此项或选择对应的预测方式。') : undefined) || managedReason || (fullPathKey === 'loop.deterministic' ? trainingComputePolicyHint(activeComputePolicy, english) : undefined) || configFieldHint(fullPathKey, english, value.optimizer?.type, scheduleFree)
-      || (currentGroup === 'optimizer' && !['type', 'args', 'group_lr'].includes(key) ? prop.description : undefined);
+    const hint = (incompatibleFamilyLoss ? (english ? 'This loss option only supports SDXL. Turn it off or set it to zero before using this model.' : '此损失参数仅适用于 SDXL，请关闭或设为 0 后再使用当前模型。') : undefined) || (incompatiblePredictionLoss ? (english ? 'This option is incompatible with the selected prediction type. Turn it off or choose the matching prediction type.' : '此参数与当前预测方式不兼容，请关闭此项或选择对应的预测方式。') : undefined) || managedReason || (fullPathKey === 'loop.deterministic' ? trainingComputePolicyHint(activeComputePolicy, english) : undefined) || configFieldHint(fullPathKey, english, value.optimizer?.type, scheduleFree);
     const duplicateHelp = !!help && !!hint && help.replace(/\s+/g, ' ').trim() === hint.replace(/\s+/g, ' ').trim();
     const label = (
       <div key={fullPathKey} id={`field-${fullPathKey}`} data-testid={`field-${fullPathKey}`} data-field-path={fullPathKey} data-control-kind={booleanField ? 'toggle' : undefined} className={compactField ? `config-field ${booleanField ? 'config-field-boolean' : ''} ${wide ? 'config-field-wide' : ''} ${errorItem ? 'config-field-invalid' : ''}` : `flex flex-col space-y-1 p-2 rounded ${errorItem ? 'bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800' : ''}`}>
@@ -1087,12 +1086,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         )}
         <div className="mt-1">{readOnly ? <fieldset disabled style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>{control}</fieldset> : control}</div>
         {hint && (compactField || managedReason && !duplicateHelp) && <p id={managedReason ? `${fieldId}-managed-reason` : undefined} className="config-field-hint">{hint}</p>}
-        {fullPathKey === 'optimizer.d0' && typeof fieldValue === 'number' && fieldValue <= 0 && <p className="config-field-hint">
-          {english ? 'D0 must be greater than zero. The default is 1e-6 (0.000001).' : 'D0 必须大于 0，默认值为 1e-6（0.000001）。'}{' '}
-          <button type="button" className="text-[var(--studio-accent)] underline" disabled={readOnly} onClick={() => onChange(setNestedValue(value, path, prop.default))}>{english ? 'Restore D0 default' : '恢复 D0 默认值'}</button>
-        </p>}
         {fullPathKey === 'adapter.preset' && family && <p className="config-scope-hint">{english ? 'Usually keep the default; a wider scope does not guarantee better results.' : '通常保留默认；范围更大不一定效果更好。'}</p>}
-        {errorItem && <p className="text-xs text-red-600 dark:text-red-400">{errorItem.msg}</p>}
+        {/* A reason Studio cannot phrase for this field stays in the preflight panel; the border still marks it. */}
+        {errorItem?.msg && <p className="config-field-error">{errorItem.msg}</p>}
       </div>
     );
 
@@ -1116,7 +1112,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
             {value: 'full', label: english ? 'Full · full factor matrices' : 'Full · 完整因子矩阵'},
             {value: 'low_rank', label: english ? 'Low rank · factor decomposition' : '低秩 · 分解因子矩阵'},
           ]}/></div>
-        {fieldValue === 'full' && errorItem && <p>{errorItem.msg}</p>}
+        {fieldValue === 'full' && errorItem?.msg && <p className="config-field-error">{errorItem.msg}</p>}
       </div>);
     }
     if (!lokrRank || fieldValue !== 'full') groups[groupName].fields.push(label);

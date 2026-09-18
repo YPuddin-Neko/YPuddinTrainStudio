@@ -258,6 +258,8 @@ export function configTabForPath(path: string): ConfigTab {
 }
 
 export type ConfigIssue = { path: string; label: string; message: string; detail: string; tab: ConfigTab };
+/** Stands in for a reason Studio cannot phrase in Chinese; only usable where the raw detail can be expanded. */
+export const OPAQUE_CONFIG_ISSUE = '此配置未通过检查，展开详情查看具体原因';
 export function presentConfigIssues(errors: Array<{loc?: unknown; msg?: unknown}>, english = false): ConfigIssue[] {
   const issues = errors.map(error => {
     const detail = String(error.msg || '').replace(/^Value error, /, '');
@@ -279,7 +281,7 @@ export function presentConfigIssues(errors: Array<{loc?: unknown; msg?: unknown}
       else if (/valid (integer|number)/i.test(detail)) message = '请输入有效数字';
       else if (/no (images|training images)|dataset is empty/i.test(detail)) message = '数据源中没有可用的训练图片';
       else if (/unknown preset/i.test(detail)) message = '当前模型不支持这个训练范围，请重新选择';
-      else if (Array.from(detail).every(character => character.charCodeAt(0) < 128)) message = '此配置未通过检查，展开详情查看具体原因';
+      else if (Array.from(detail).every(character => character.charCodeAt(0) < 128)) message = OPAQUE_CONFIG_ISSUE;
     }
     return {path, label, message, detail, tab: configTabForPath(path)};
   });

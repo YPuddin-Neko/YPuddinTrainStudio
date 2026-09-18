@@ -20,9 +20,11 @@
 :root { --studio-canvas:#f8fafc; --studio-panel:#fff; --studio-muted:#f8fafc; --studio-line:#e2e8f0; --studio-text:#334155; --studio-dim:#64748b; --studio-accent:#2563eb; --studio-scrollbar-thumb:#94a3b8; --studio-scrollbar-hover:#64748b; }
 /* Filled actions keep a readable foreground; the accent also serves as link text. */
 :root { --studio-action:#2563eb; --studio-action-hover:#1d4ed8; --studio-on-action:#fff; }
+/* Rejected values read as errors, not as advisory notes. */
+:root { --studio-danger:#b91c1c; --studio-danger-line:#dc2626; }
 input[type="checkbox"], input[type="number"] { color-scheme: light; }
 .dark input[type="checkbox"], .dark input[type="number"] { color-scheme: dark; }
-.dark { --studio-canvas:#020617; --studio-panel:#0f172a; --studio-muted:#111c30; --studio-line:#263349; --studio-text:#cbd5e1; --studio-dim:#94a3b8; --studio-accent:#60a5fa; --studio-scrollbar-thumb:#64748b; --studio-scrollbar-hover:#94a3b8; }
+.dark { --studio-canvas:#020617; --studio-panel:#0f172a; --studio-muted:#111c30; --studio-line:#263349; --studio-text:#cbd5e1; --studio-dim:#94a3b8; --studio-accent:#60a5fa; --studio-scrollbar-thumb:#64748b; --studio-scrollbar-hover:#94a3b8; --studio-danger:#fca5a5; --studio-danger-line:#f87171; }
 input::placeholder, textarea::placeholder { color:var(--studio-dim); opacity:1; }
 /* Keep native scrolling in pages, nested lists and portaled dialogs on the same theme. */
 :where(*) { scrollbar-width:thin; scrollbar-color:var(--studio-scrollbar-thumb) transparent; }
@@ -152,9 +154,10 @@ input::placeholder, textarea::placeholder { color:var(--studio-dim); opacity:1; 
 .config-field .config-union { display:flex; flex-wrap:wrap; align-items:center; gap:5px 8px; }
 .config-union > input:not([type=checkbox]), .config-union > select { flex:1; width:0; min-width:48px; order:-1; }
 .config-union > label { font-size:10px; white-space:nowrap; gap:4px; }
-.config-field-invalid input:not([type=checkbox]), .config-field-invalid select { border-color:#d97706; }
-.config-field-invalid > p { color:#b45309; font-size:11px; margin-top:4px; }
-.dark .config-field-invalid > p { color:#fbbf24; }
+.config-field-invalid input:not([type=checkbox]), .config-field-invalid select, .config-field-invalid textarea, .config-field-invalid .studio-select, .config-field-invalid .config-toggle-control { border-color:var(--studio-danger-line); }
+/* Only the rejected value turns red; the field's own guidance stays advisory. */
+.config-field-invalid > p { font-size:11px; margin-top:4px; }
+.config-field-error { color:var(--studio-danger); }
 .config-context-card { display:flex; align-items:center; flex-wrap:wrap; gap:10px 16px; border:1px solid var(--studio-line); border-radius:8px; background:var(--studio-panel); padding:12px; margin-bottom:12px; }
 .config-context-card > div:first-child { flex:1; min-width:180px; }
 .config-context-card strong { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; }
