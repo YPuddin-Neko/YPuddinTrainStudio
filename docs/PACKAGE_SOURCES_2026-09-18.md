@@ -15,10 +15,17 @@
 - Windows 独立测试目录完成真实页面检查：默认中科大、切换清华、保存后刷新保留、恢复中科大；桌面和 720 像素窄屏视觉检查通过。
 - Windows 新 PyTorch 安装操作 torch_f87fb524b6f6 实际日志先访问 mirrors.aliyun.com/pytorch-wheels/cu130，命令锁定 torch==2.13.0+cu130，确认未优先使用官方源。
 
-## 尚未完成的完整安装验收
+## Windows 完整安装与切换验收：已完成
 
-CUDA 13.0 大包完整安装及新环境切换／切回未通过验收：独立下载速度探测在 900 秒仅收到约 178.5 MB（总量约 1.916 GB），随后超时；实际产品安装已主动取消，避免持续占用带宽。镜像优先生效与完整安装成功是不同结论，本报告不将其混为通过。
+2026-09-18 晚间继续实测，产品代码为 70701e2。首次下载超时及取消的记录保留为历史，不再作为当前未完成项。
 
-本轮此前已完成 Windows CUDA 与 CPU 启动器冷启动、环境路径、受控重启、前端构建以及两种设备的 Toy 三步训练／采样冒烟。它们不替代正式模型训练或双卡验收。
+- 阿里云公开 PyTorch 包通过验收辅助脚本分 229 段下载，共 1,915,519,202 字节，耗时 817 秒。SHA256 与官方记录一致：`2efab1e83604ca628c6d85b9e188c153690980498d1297081a9dad704919303c`。
+- 完整包用真实 HTTP 响应元数据写入测试环境的 pip 缓存，产品安装日志确认命中该镜像缓存。分段下载仅为本次验收辅助，不表示产品内置此能力。
+- 操作 `torch_c1171dc11402` 完成独立环境安装；TorchVision 从阿里云下载，普通依赖从中科大下载，pip check 与 CUDA 前向／反向检查通过。
+- 服务通过真实 API 切换到 PyTorch `2.13.0+cu130` / CUDA `13.0`。新环境通过 Toy 模型三步训练、采样、导出与载入冒烟。
+- 再次受控重启仍使用新环境；随后切回原解释器，实际确认恢复 PyTorch `2.11.0+cu128` / CUDA `12.8`，GPU 可用。
+- Windows CPU 启动器再次启动和受控重启也通过。此前 CUDA、CPU 冷启动及两种设备的 Toy 冒烟结果继续保留。
 
-原始日志保留在 Windows 的 studio_data/remote-tests/launcher-20260918 独立目录，以及本机 remote-testing/windows-launcher-20260918。本次不修改 Windows 原仓库或用户模型、数据集。
+证据摘要见 [Windows 安装切换验证记录](validation/WINDOWS_RUNTIME_SWITCH_2026-09-18.json)。完整原始报告归档在本机 `remote-testing/windows-launcher-20260918/completed-reports.tar.gz`，以及 Windows 的 `studio_data/remote-tests/launcher-20260918` 独立目录。
+
+测试完成后已停止自建服务，保留日志和环境。原 Windows 仓库、用户模型和训练数据未修改。本项结论只覆盖单卡 Windows 环境安装、切换与 Toy 冒烟，不替代正式模型训练或海光／多卡验收。

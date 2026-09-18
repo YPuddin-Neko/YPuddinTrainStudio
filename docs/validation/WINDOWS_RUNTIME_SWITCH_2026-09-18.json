@@ -1,0 +1,33 @@
+{
+  "date": "2026-09-18",
+  "product_commit": "70701e2",
+  "platform": "Windows 11 x86_64",
+  "gpu": "NVIDIA GeForce RTX 5070 Ti (single GPU)",
+  "operation_id": "torch_c1171dc11402",
+  "installation_status": "completed",
+  "prefetch": {
+    "source": "https://mirrors.aliyun.com/pytorch-wheels/cu130/torch-2.13.0%2Bcu130-cp312-cp312-win_amd64.whl",
+    "bytes": 1915519202,
+    "sha256": "2efab1e83604ca628c6d85b9e188c153690980498d1297081a9dad704919303c",
+    "official_hash_verified": true,
+    "seconds": 817
+  },
+  "switched_torch": "2.13.0+cu130",
+  "switched_cuda": "13.0",
+  "switch_restart_restore_passed": true,
+  "cuda_smoke": {
+    "ok": true,
+    "family": "toy",
+    "device": "cuda",
+    "steps": 3
+  },
+  "restored_torch": "2.11.0+cu128",
+  "restored_cuda": "12.8",
+  "saved_downloads": {
+    "pypi": "ustc",
+    "pytorch": "mirror",
+    "fallback": true
+  },
+  "evidence_archive_sha256": "6015a229481403a74eb3ba158b390db148bc080cafe0d3cc532a0907c4ad0878",
+  "scope_note": "Toy smoke and runtime lifecycle acceptance; not official-model training or multi-GPU acceptance. Segmented prefetch is a test helper, not a built-in product feature."
+}
