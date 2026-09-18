@@ -180,6 +180,20 @@ def pick_torch_tag(requested: str) -> str:
     return "cpu"
 
 
+def host_arch() -> str:
+    """Normalized CPU architecture; wheels differ across it even on the same OS."""
+    machine = platform.machine().lower()
+    if machine in ("x86_64", "amd64"):
+        return "x86_64"
+    if machine in ("arm64", "aarch64"):
+        return "arm64"
+    return machine or "unknown"
+
+
+# Entries whose PyTorch source has only ever been installed and validated on x86_64.
+X86_ONLY_PROFILES = ("windows-cuda", "linux-cuda", "linux-dtk")
+
+
 def platform_torch_tag(profile: str, requested: str) -> str:
     """Validate an explicit deployment profile before creating or modifying its venv."""
     expected = {"windows-cuda": "Windows", "linux-cuda": "Linux", "linux-dtk": "Linux", "macos-mps": "Darwin"}
@@ -187,6 +201,11 @@ def platform_torch_tag(profile: str, requested: str) -> str:
         die("未知部署类型；请选择 auto/legacy/windows-cuda/linux-cuda/linux-dtk/macos-mps/cpu")
     if profile in expected and platform.system() != expected[profile]:
         die(f"{profile} 启动入口只适用于 {expected[profile]}，当前为 {platform.system()}")
+    if profile in X86_ONLY_PROFILES and host_arch() != "x86_64":
+        die(
+            f"{profile} 启动入口只在 x86_64 上验证过，当前架构是 {host_arch()}；"
+            "请使用 CPU 启动入口，或先为本架构验证对应的 PyTorch 来源。"
+        )
     if profile == "linux-dtk":
         if requested not in ("auto", "dtk"):
             die("DTK 部署入口只能使用匹配海光运行时的厂商 PyTorch，不能安装 CUDA/CPU wheel")
@@ -235,11 +254,18 @@ def select_environment(profile: str, torch_tag: str) -> str:
         path = path.parent
     if MARKER.exists():
         try:
-            owner = json.loads(MARKER.read_text(encoding="utf-8")).get("profile", "legacy")
+            marker = json.loads(MARKER.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             die("环境安装标记损坏，未修改环境；请先检查环境目录")
+        owner = marker.get("profile", "legacy")
         if owner != PROFILE:
             die(f"环境属于 {owner}，不能作为 {PROFILE} 更新或重建")
+        installed_arch = marker.get("arch")
+        if installed_arch and installed_arch != host_arch():
+            die(
+                f"该环境是在 {installed_arch} 上安装的，不能在 {host_arch()} 上更新或重建；"
+                "请为本架构使用独立的环境目录。"
+            )
     return PROFILE
 
 
@@ -795,6 +821,7 @@ def ensure_venv(
             {
                 "signature": sig,
                 "profile": PROFILE,
+                "arch": host_arch(),
                 "torch": torch_tag,
                 "torch_version": after["torch"],
                 "extras": extras,

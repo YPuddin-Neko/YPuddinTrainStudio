@@ -36,14 +36,16 @@ HANDOVER.md       当前交接说明与验证边界
 
 每种环境有各自的启动入口，依赖互不共用。选你的那一个运行：
 
-| 环境 | 启动入口 |
-| --- | --- |
-| Windows + NVIDIA CUDA | `studio-windows-cuda.bat` |
-| Windows 仅 CPU | `studio-cpu.bat` |
-| Linux + NVIDIA CUDA | `./studio-linux-cuda.sh` |
-| Linux + 海光 DTK | `./studio-linux-dtk.sh` |
-| macOS Apple 芯片（MPS） | `./studio-macos.command` |
-| Linux / macOS 仅 CPU | `./studio-cpu.sh` |
+| 环境 | CPU 架构 | 启动入口 |
+| --- | --- | --- |
+| Windows + NVIDIA CUDA | x86_64 | `studio-windows-cuda.bat` |
+| Windows 仅 CPU | x86_64 / arm64 | `studio-cpu.bat` |
+| Linux + NVIDIA CUDA | x86_64 | `./studio-linux-cuda.sh` |
+| Linux + 海光 DTK | x86_64 | `./studio-linux-dtk.sh` |
+| macOS Apple 芯片（MPS） | arm64 | `./studio-macos.command` |
+| Linux / macOS 仅 CPU | x86_64 / arm64 | `./studio-cpu.sh` |
+
+标注 x86_64 的三个加速入口只在 x86_64 上验证过：PyTorch 的 wheel 按架构区分，在 arm64 上启动会直接说明并要求改用 CPU 入口，而不是去装不匹配的包。MPS 入口要求 Apple Silicon。一个环境目录不会被两种架构共用 —— 安装标记记录架构，换架构再启动会拒绝并说明原因。
 
 下文用 `<启动入口>` 指代上表中你所在环境的那一个。
 

@@ -1261,3 +1261,44 @@ def test_dtk_pip_fallback_builds_a_real_isolated_venv_offline(monkeypatch, tmp_p
     prefix, pip_file = json.loads(result.stdout)
     assert Path(prefix) == boot.VENV and Path(pip_file).is_relative_to(boot.VENV)
     assert subprocess.check_output([host_python, "-m", "pip", "--version"], text=True) == host_pip
+
+
+@pytest.mark.parametrize(
+    "profile",
+    ["windows-cuda", "linux-cuda", "linux-dtk"],
+)
+def test_accelerator_entries_refuse_unvalidated_architectures(monkeypatch, profile):
+    """Wheels differ per architecture, so an x86-only entry must say so up front."""
+    system = {"windows-cuda": "Windows", "linux-cuda": "Linux", "linux-dtk": "Linux"}[profile]
+    monkeypatch.setattr(boot.platform, "system", lambda: system)
+    monkeypatch.setattr(boot.platform, "machine", lambda: "aarch64")
+    with pytest.raises(SystemExit):
+        boot.platform_torch_tag(profile, "auto")
+
+
+def test_cpu_entry_accepts_both_architectures(monkeypatch):
+    monkeypatch.setattr(boot.platform, "system", lambda: "Linux")
+    for machine in ("x86_64", "aarch64"):
+        monkeypatch.setattr(boot.platform, "machine", lambda machine=machine: machine)
+        assert boot.platform_torch_tag("cpu", "auto") == "cpu"
+
+
+@pytest.mark.parametrize(
+    ("machine", "expected"),
+    [("x86_64", "x86_64"), ("AMD64", "x86_64"), ("aarch64", "arm64"), ("arm64", "arm64")],
+)
+def test_host_arch_normalizes_vendor_spellings(monkeypatch, machine, expected):
+    monkeypatch.setattr(boot.platform, "machine", lambda: machine)
+    assert boot.host_arch() == expected
+
+
+def test_environment_refuses_reuse_from_another_architecture(monkeypatch, tmp_path):
+    """One environment directory must never be shared by two architectures."""
+    monkeypatch.setattr(boot, "ROOT", tmp_path)
+    monkeypatch.setattr(boot.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(boot.platform, "machine", lambda: "x86_64")
+    marker = tmp_path / "environment/profiles/linux-cpu/venv/.ypuddin-install.json"
+    marker.parent.mkdir(parents=True)
+    marker.write_text(json.dumps({"profile": "linux-cpu", "arch": "arm64"}), encoding="utf-8")
+    with pytest.raises(SystemExit):
+        boot.select_environment("cpu", "cpu")
