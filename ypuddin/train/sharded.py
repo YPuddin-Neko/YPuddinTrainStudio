@@ -54,7 +54,13 @@ def parameter_shard(parameter, world_size):
 
 def sharding_groups(backbone, blocks):
     """Wrap native repeated blocks bottom-up, including text-fusion refiners."""
+    from ypuddin.adapters.base import AdapterModule
+    from ypuddin.adapters.dora import DoRA
+
     selected = {id(block) for block in blocks}
+    # Separate FP32 adapters from frozen BF16 groups, including on older FSDP2
+    # versions that require a uniform storage dtype per communication group.
+    selected.update(id(module) for module in backbone.modules() if isinstance(module, (AdapterModule, DoRA)))
     for module in backbone.modules():
         if isinstance(module, nn.ModuleList):
             selected.update(id(child) for child in module if next(child.parameters(), None) is not None)
@@ -114,8 +120,14 @@ class ShardedTrainer(DistributedTrainer):
             "id"
         ) == DTK_ANIMA_FSDP_BF16_LINEAR_COMPUTE_POLICY_ID:
             self._install_anima_compute_operators()
+        if self.cfg.training.mode == "adapter":
+            from .sharded_adapters import shardable_frozen_weights
+
+            if any(layer.adapter.kind not in {"lora", "lokr"} for layer in self.adapters.layers.values()):
+                raise ValueError("显存分片的适配层规则只能选择 LoRA 或 LoKr")
+            shardable_frozen_weights(model)
         world = self.distributed.world_size
-        mesh = init_device_mesh("cuda", (world,), mesh_dim_names=("data",))
+        mesh = init_device_mesh(self.device.type, (world,), mesh_dim_names=("data",))
         parameters = list(model.parameters())
         ignored = {parameter for parameter in parameters if parameter.numel() < world}
         # Validate every placement before the first FSDP mutation.
@@ -146,13 +158,16 @@ class ShardedTrainer(DistributedTrainer):
                 mp_policy=policy,
                 ignored_params=ignored,
             )
+            if hasattr(self.adapters, "rebind_parameters"):
+                self.adapters.rebind_parameters()
+        if hasattr(self.adapters, "rebind_parameters"):
             self.adapters.rebind_parameters()
-        self.adapters.rebind_parameters()
         self._validate_training_compute_policy()
         self._replicated_parameters = [p for p in self.adapters.parameters() if not isinstance(p, DTensor)]
+        trainable = self.adapters.parameters()
         local_bytes = sum(
             (p.to_local() if isinstance(p, DTensor) else p).numel() * p.element_size()
-            for p in self.adapters.parameters()
+            for p in model.parameters()
         )
         all_bytes = [None] * world
         dist.all_gather_object(all_bytes, local_bytes)
@@ -161,10 +176,11 @@ class ShardedTrainer(DistributedTrainer):
             strategy="fsdp2",
             world_size=world,
             groups=[name or "backbone" for name, _ in [*groups, ("", model)]],
-            global_parameter_bytes=sum(p.numel() * p.element_size() for p in self.adapters.parameters()),
+            global_parameter_bytes=sum(p.numel() * p.element_size() for p in model.parameters()),
+            trainable_parameter_bytes=sum(p.numel() * p.element_size() for p in trainable),
             local_parameter_bytes=all_bytes,
             replicated_parameter_count=sum(p.numel() for p in self._replicated_parameters),
-            master_dtype="fp32",
+            master_dtype=str(trainable[0].dtype),
             compute_dtype=str(self.compute_dtype),
         )
 
@@ -228,13 +244,27 @@ class ShardedTrainer(DistributedTrainer):
             dist.all_gather_object(ranks, local)
             self.emit("distributed.memory", step=self.progress.step, ranks=ranks)
 
+    def _adapter_contract(self):
+        if self.cfg.training.mode != "adapter":
+            return None
+        return self.cfg.adapter.model_dump(mode="json", exclude={"resume_weights"})
+
+    def _checkpoint_modules(self):
+        if self.cfg.training.mode == "adapter":
+            from .sharded_adapters import adapter_modules
+
+            return adapter_modules(self.adapters)
+        return self.adapters.modules
+
     def _resume(self, path):
         self._validate_training_compute_policy()
         expected = optimizer_hyperparameter_snapshot(self.cfg.optimizer, self.optimizer)
         saved = load_sharded_checkpoint(
             path,
-            modules=self.adapters.modules,
+            modules=self._checkpoint_modules(),
             optimizer=self.optimizer,
+            expected_adapter_contract=self._adapter_contract(),
+            expected_training_kind="adapter" if self.cfg.training.mode == "adapter" else "full-model",
             expected_world_size=self.distributed.world_size,
             expected_batch_size=self.cfg.dataset.batch_size,
             expected_grad_accum=self.cfg.loop.grad_accum,
@@ -274,7 +304,7 @@ class ShardedTrainer(DistributedTrainer):
         self.progress.extra["loss_ema"] = self._loss_ema
         path = save_sharded_checkpoint(
             self.run_dir / f"state-{tag or self.progress.step}",
-            modules=self.adapters.modules,
+            modules=self._checkpoint_modules(),
             optimizer=self.optimizer,
             scheduler=self.scheduler,
             sampler_state={
@@ -286,6 +316,8 @@ class ShardedTrainer(DistributedTrainer):
             rng=self._capture_local_checkpoint_rng(),
             batch_size=self.cfg.dataset.batch_size,
             grad_accum=self.cfg.loop.grad_accum,
+            adapter_contract=self._adapter_contract(),
+            training_kind="adapter" if self.cfg.training.mode == "adapter" else "full-model",
             adapter_metadata=self._adapter_metadata(),
             config_hash=self.config_hash,
             dataset_fingerprint=self.bundle.plan.fingerprint,
@@ -296,6 +328,21 @@ class ShardedTrainer(DistributedTrainer):
         return path
 
     def save_weights(self, tag):
+        if self.cfg.training.mode == "adapter":
+            from ypuddin.adapters import save_adapter_file
+
+            from .sharded_adapters import gathered_adapter_export
+
+            tensors = gathered_adapter_export(self.adapters)
+            path = self.run_dir / f"{self.cfg.checkpoint.name}-{tag}.safetensors"
+            self._primary_call(
+                lambda: save_adapter_file(
+                    path, tensors, self._adapter_metadata(), dtype=self.cfg.checkpoint.save_dtype
+                )
+            )
+            self.emit("checkpoint.saved", kind="weights", step=self.progress.step, path=str(path), ema=False)
+            self._primary_call(self._rotate_weights)
+            return path
         path = export_sharded_model_artifact(
             self.run_dir / f"{self.cfg.checkpoint.name}-{tag}.model", self.adapters, self.cfg, self.loaded
         )

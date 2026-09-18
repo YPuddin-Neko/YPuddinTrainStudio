@@ -37,6 +37,13 @@ from ypuddin.server.torch_environments import (
 )
 
 
+@pytest.fixture(autouse=True)
+def isolated_profile(monkeypatch, tmp_path):
+    # Profile-specific tests override this neutral host explicitly.
+    monkeypatch.setattr(sys, "prefix", str(tmp_path / "test-interpreter"))
+    monkeypatch.delenv("YPUDDIN_ENV_PROFILE", raising=False)
+
+
 class StagedInstaller:
     def __init__(self):
         self.calls = []
@@ -637,7 +644,9 @@ def test_profile_launcher_ignores_legacy_selected_interpreter(tmp_path, monkeypa
     assert launch_service(str(tmp_path), "127.0.0.1", 8877) == 0
     command = popen.call_args.args[0]
     assert command[0] == sys.executable
-    assert "environment/profiles/macos-cpu/service" in command[command.index("--control-file") + 1]
+    assert Path(command[command.index("--control-file") + 1]).parent == (
+        tmp_path / "environment/profiles/macos-cpu/service"
+    )
     assert selected.read_bytes() == original
 
 

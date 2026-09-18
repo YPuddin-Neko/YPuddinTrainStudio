@@ -101,6 +101,7 @@ def _fsdp_memory(backbone: nn.Module, blocks: list[nn.Module], cfg: TrainConfig)
     if key not in {"adafactor", "adamw", "sgd"}:
         raise ValueError("显存分片请选择 AdamW、Adafactor 或 SGD")
     parameter_bytes = [0] * world
+    trainable_bytes = [0] * world
     state_bytes = [0] * world
     largest_parameter_bytes = [0] * world
     local_elements: dict[int, list[int]] = {}
@@ -118,7 +119,10 @@ def _fsdp_memory(backbone: nn.Module, blocks: list[nn.Module], cfg: TrainConfig)
                 local_shape[axis] = max(0, min(chunk, shape[axis] - rank * chunk))
             elements = math.prod(local_shape)
             sizes.append(elements)
-            parameter_bytes[rank] += elements * 4
+            parameter_bytes[rank] += elements * parameter.element_size()
+            if not parameter.requires_grad:
+                continue
+            trainable_bytes[rank] += elements * parameter.element_size()
             largest_parameter_bytes[rank] = max(largest_parameter_bytes[rank], elements * 4)
             if key == "adafactor":
                 if len(shape) >= 2:
@@ -157,19 +161,25 @@ def _fsdp_memory(backbone: nn.Module, blocks: list[nn.Module], cfg: TrainConfig)
                 {
                     "name": name or "backbone",
                     "parameter_count": sum(parameter.numel() for parameter in members),
+                    "trainable_count": sum(p.numel() for p in members if p.requires_grad),
+                    "storage_bytes": sum(p.numel() * p.element_size() for p in members),
                     "local_parameter_bytes_by_rank": [
-                        sum(local_elements[id(parameter)][rank] * 4 for parameter in members)
+                        sum(
+                            local_elements[id(parameter)][rank] * parameter.element_size()
+                            for parameter in members
+                        )
                         for rank in range(world)
                     ],
                 }
             )
     largest_groups = sorted((group["parameter_count"] for group in groups), reverse=True)
-    largest_group = max(largest_groups, default=0)
+    largest_trainable_group = max((g["trainable_count"] for g in groups), default=0)
+    largest_storage_group = max((g["storage_bytes"] for g in groups), default=0)
     compute_bytes = DTYPE_BYTES["fp32" if cfg.loop.mixed_precision == "no" else cfg.loop.mixed_precision]
     # Current and prefetched group gathers may coexist; backward also needs a
     # full FP32 reduction input and a local reduction output. Activations and
     # frozen text/VAE cache phases are accounted separately and are NOT divided.
-    communication_bytes = sum(largest_groups[:2]) * compute_bytes + largest_group * 4
+    communication_bytes = sum(largest_groups[:2]) * compute_bytes + largest_trainable_group * 4
     communication_bytes += max((max(group["local_parameter_bytes_by_rank"]) for group in groups), default=0)
     buffer_bytes = sum(buffer.numel() * buffer.element_size() for buffer in backbone.buffers())
     if key == "adafactor":
@@ -181,7 +191,7 @@ def _fsdp_memory(backbone: nn.Module, blocks: list[nn.Module], cfg: TrainConfig)
         # foreach=None permits automatic selection; reserve a tensor-list-sized
         # temporary unless the user explicitly disables it.
         optimizer_workspace = (
-            max(parameter_bytes)
+            max(trainable_bytes)
             if cfg.optimizer.args.get("foreach") is not False
             else max(largest_parameter_bytes, default=0)
         )
@@ -190,14 +200,15 @@ def _fsdp_memory(backbone: nn.Module, blocks: list[nn.Module], cfg: TrainConfig)
         "world_size": world,
         "optimizer": key,
         "optimizer_state_layout": state_layout,
-        "global_parameter_bytes": _count_params(backbone) * 4,
+        "global_parameter_bytes": sum(p.numel() * p.element_size() for p in backbone.parameters()),
+        "local_trainable_bytes_by_rank": trainable_bytes,
         "local_parameter_bytes_by_rank": parameter_bytes,
         "optimizer_state_bytes_by_rank": state_bytes,
         "replicated_parameter_count": replicated_elements,
         "replicated_buffer_bytes": buffer_bytes,
         "communication_bytes_estimate": communication_bytes,
         "optimizer_workspace_bytes_estimate": optimizer_workspace,
-        "initialization_bytes_estimate": max(parameter_bytes) + largest_group * 4 + buffer_bytes,
+        "initialization_bytes_estimate": max(parameter_bytes) + largest_storage_group + buffer_bytes,
         "groups": groups,
     }
 
@@ -674,7 +685,7 @@ def plan(
 
                     if any(isinstance(layer, FrozenLinear) for layer in backbone.modules()):
                         raise ValueError("Full fine-tuning requires unquantized base weights")
-                    backbone.requires_grad_(False)
+                    backbone.to(dtype=torch.float32).requires_grad_(cfg.training.train_backbone)
                     encoder_params = (
                         text_parameter_count(family, cfg.model) if cfg.training.train_text_encoder else 0
                     )
@@ -759,9 +770,13 @@ def plan(
                 initialization_peak = None
                 estimate_notes = []
                 if cfg.loop.distributed_strategy == "fsdp":
+                    if not full_training:
+                        from .sharded_adapters import shardable_frozen_weights
+
+                        shardable_frozen_weights(backbone)
                     sharding = _fsdp_memory(backbone, list(layout.blocks) if layout else [], cfg)
                     adapter_mb = max(sharding["local_parameter_bytes_by_rank"]) / 2**20
-                    gradients_mb = adapter_mb
+                    gradients_mb = max(sharding["local_trainable_bytes_by_rank"]) / 2**20
                     optimizer_mb = max(sharding["optimizer_state_bytes_by_rank"]) / 2**20
                     weights_mb = sharding["replicated_buffer_bytes"] / 2**20
                     communication_mb = sharding["communication_bytes_estimate"] / 2**20

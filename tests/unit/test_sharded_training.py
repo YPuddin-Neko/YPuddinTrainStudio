@@ -43,7 +43,7 @@ def test_fsdp_accepts_full_block_checkpointing_without_changing_ddp_defaults():
     "change, message",
     [
         ({"loop": {"gpu_count": 1, "distributed_strategy": "fsdp"}}, "至少需要两张"),
-        ({"training": {"mode": "adapter"}}, "主模型全量微调"),
+        ({"training": {"mode": "adapter"}, "adapter": {"algo": "loha"}}, "LoRA 或 LoKr"),
         ({"training": {"mode": "full", "train_text_encoder": True}}, "暂不支持同时训练"),
         ({"optimizer": {"type": "adam"}}, "请选择 AdamW"),
         ({"loop": {"gpu_count": 2, "distributed_strategy": "fsdp", "ema": True}}, "EMA"),
@@ -207,3 +207,13 @@ def test_resume_checks_current_scheduler_and_step_budget_before_loading(tmp_path
     monkeypatch.setattr(module, "load_sharded_checkpoint", reject_before_load)
     with pytest.raises(ValueError, match="scheduler preflight rejected"):
         trainer._resume(tmp_path / "state-2")
+
+
+@pytest.mark.parametrize("algorithm", ["lora", "lokr"])
+def test_fsdp_admits_frozen_text_adapters(algorithm):
+    cfg = _config(training={"mode": "adapter"}, adapter={"algo": algorithm})
+    assert cfg.training.train_backbone and not cfg.training.train_text_encoder
+    with pytest.raises(ValueError, match="整层丢弃率"):
+        _config(training={"mode": "adapter"}, adapter={"algo": algorithm, "module_dropout": 0.1})
+    with pytest.raises(ValueError, match="FP8"):
+        _config(training={"mode": "adapter"}, memory={"base_precision": "fp8_e4m3"})

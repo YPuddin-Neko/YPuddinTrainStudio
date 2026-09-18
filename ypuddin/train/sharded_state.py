@@ -272,6 +272,8 @@ def save_sharded_checkpoint(
     rng: dict[str, Any],
     batch_size: int,
     grad_accum: int,
+    training_kind: str = "full-model",
+    adapter_contract: dict[str, Any] | None = None,
     adapter_metadata: dict[str, str] | None = None,
     config_hash: str = "",
     dataset_fingerprint: str = "",
@@ -290,7 +292,8 @@ def save_sharded_checkpoint(
         raise ValueError("各显卡的训练进度不一致，不能保存分片状态")
     meta = {
         "format": _FORMAT,
-        "training_kind": "full-model",
+        "training_kind": training_kind,
+        "adapter_contract": adapter_contract,
         "strategy": "fsdp2",
         "optimizer_class": f"{type(optimizer).__module__}.{type(optimizer).__qualname__}",
         "model_layout": {name: _tensor_layout(value) for name, value in _model_state(modules).items()},
@@ -335,7 +338,7 @@ def read_sharded_checkpoint_metadata(path: str | Path) -> dict[str, Any]:
     meta = json.loads((path / "state.json").read_text(encoding="utf-8"))
     if meta.get("format") != _FORMAT or meta.get("strategy") != "fsdp2":
         raise ValueError("完整训练状态的分布方式不同，请使用导出的完整模型权重开始新的训练任务")
-    if meta.get("training_kind") != "full-model":
+    if meta.get("training_kind") not in {"full-model", "adapter"}:
         raise ValueError("分片训练状态必须包含完整模型")
     if not (path / "complete.json").is_file():
         raise ValueError("分片训练状态未完整写入，不能恢复")
@@ -377,6 +380,8 @@ def load_sharded_checkpoint(
     *,
     modules: dict[str, nn.Module],
     optimizer: torch.optim.Optimizer,
+    expected_training_kind: str = "full-model",
+    expected_adapter_contract: dict[str, Any] | None = None,
     expected_world_size: int | None = None,
     expected_batch_size: int | None = None,
     expected_grad_accum: int | None = None,
@@ -400,6 +405,8 @@ def load_sharded_checkpoint(
     def validate():
         meta = read_sharded_checkpoint_metadata(path)
         checks = {
+            "training_kind": expected_training_kind,
+            "adapter_contract": expected_adapter_contract,
             "world_size": world if expected_world_size is None else expected_world_size,
             "batch_size": expected_batch_size,
             "grad_accum": expected_grad_accum,

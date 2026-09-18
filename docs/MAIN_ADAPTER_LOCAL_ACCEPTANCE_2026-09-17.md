@@ -64,3 +64,7 @@ venv/bin/python scripts/verify_frozen_adapter_resume.py recipe.json acceptance-r
 4. 长期训练画质、显存和吞吐对照；LoRA／LoKr 的 FSDP 分片仍未实现，CPU DDP 通过不会合并显存。
 
 本轮启动阶段先遇到测试 CLI 入口错误和本机 torchrun 的主机名寻址问题；日志中 TCPStore 连接到了 `198.18.*` 虚拟地址。修正 CLI 入口，给测试使用显式回环 rendezvous／本机地址，并在 macOS CPU 测试中指定 `lo0` 后重跑通过，没有改系统代理设置。早期失败／超时不计为通过。一次工具审批因额度限制中断；用户要求继续后重试获准并完成上述测试。
+
+## 2026-09-18 后续进展
+
+LoRA／LoKr 主模型 FSDP 分片现已实现，完成真实 CPU 双进程分片、导出重载与冷续训回归；Windows 单卡正式 Anima／SDXL 的 LoRA／LoKr 严格续训已通过。此前“分片未实现”和 Windows 待测的结论已由本轮进展更新，双 GPU FSDP 正式模型验收仍未完成。范围和证据见 [本轮报告](FSDP_ADAPTER_WINDOWS_2026-09-18.md)。

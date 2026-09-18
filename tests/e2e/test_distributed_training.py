@@ -16,7 +16,7 @@ from tests.conftest import make_image_dataset
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def _launch(config, *, expect_success=True):
+def _launch(config, *, expect_success=True, worker="tests.ddp_worker"):
     env = {**os.environ, "OMP_NUM_THREADS": "1", "YPUDDIN_DDP_TIMEOUT_SECONDS": "60"}
     # Keep local CPU tests off hostname DNS and proxy virtual interfaces.
     if sys.platform == "darwin":
@@ -35,7 +35,7 @@ def _launch(config, *, expect_success=True):
             "--local_addr=127.0.0.1",
             "--nproc_per_node=2",
             "-m",
-            "tests.ddp_worker",
+            worker,
             str(config),
         ],
         cwd=ROOT,

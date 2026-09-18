@@ -88,7 +88,10 @@ class FakeInstaller:
 
 
 @pytest.fixture
-def env(tmp_path):
+def env(tmp_path, monkeypatch):
+    # These installer fixtures use legacy operation keys on every host platform.
+    monkeypatch.setattr(sys, "prefix", str(tmp_path / "test-interpreter"))
+    monkeypatch.delenv("YPUDDIN_ENV_PROFILE", raising=False)
     db = Database(tmp_path / "studio.db")
     bus = EventBus()
     supervisor = JobSupervisor(db, bus, tmp_path)
@@ -149,7 +152,8 @@ def wait_status(manager, id_, expected=("ready", "completed", "failed", "cancell
     raise AssertionError(manager.get(id_))
 
 
-def test_extension_plans_cannot_be_applied_or_uninstalled_from_another_profile(env, monkeypatch):
+def test_extension_plans_cannot_be_applied_or_uninstalled_from_another_profile(env, monkeypatch, tmp_path):
+    monkeypatch.setattr(sys, "prefix", str(tmp_path / "test-interpreter"))
     env.versions["tensorboard"] = "1.0"
     op = start(env, action="uninstall")
     assert op.status == "ready"
@@ -460,8 +464,9 @@ def test_dtk_missing_python_dependency_download_failure_does_not_install_extensi
     ],
 )
 def test_hip_runtime_uses_vendor_backend_and_reports_actual_collective_capability(
-    monkeypatch, system, count, nccl, multi_gpu
+    monkeypatch, tmp_path, system, count, nccl, multi_gpu
 ):
+    monkeypatch.setattr(sys, "prefix", str(tmp_path / "test-interpreter"))
     monkeypatch.setattr("ypuddin.server.hardware.gpu_info", lambda **kwargs: [])
     monkeypatch.setattr("ypuddin.server.environment.platform.system", lambda: system)
     monkeypatch.setenv("YPUDDIN_ENV_PROFILE", "linux-dtk")
@@ -572,7 +577,7 @@ def test_runtime_probes_cleanup_import_side_effects_in_disposable_cwd(monkeypatc
         directory = Path(kwargs["cwd"])
         assert directory != Path.cwd()
         directories.append(directory)
-        (directory / ":memory:.ses").write_text("simulated native import side effect")
+        (directory / "import-side-effect.ses").write_text("simulated native import side effect")
         return SimpleNamespace(
             stdout='YPUDDIN_ENV={"xformers":{"importable":true}}\n', stderr="", returncode=0
         )

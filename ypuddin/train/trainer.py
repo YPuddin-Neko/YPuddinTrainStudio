@@ -751,7 +751,20 @@ class Trainer:
                 "ypuddin.components": json.dumps(sorted(self.adapters.modules)),
                 "ypuddin.config_hash": self.config_hash,
             }
-        _, targets = self.adapters.export_state()
+        # Metadata must not gather or perform arithmetic on sharded parameters.
+        targets = {
+            name: layer.adapter.extra_metadata() | {"dora": layer.dora is not None, "mode": layer.mode}
+            for name, layer in self.adapters.layers.items()
+        }
+        if isinstance(self.adapters, ComponentAdapterSet):
+            from ypuddin.adapters.inject import kohya_key
+
+            targets = {
+                kohya_key(name, item.prefix): layer.adapter.extra_metadata()
+                | {"dora": layer.dora is not None, "mode": layer.mode}
+                for item in self.adapters.components.values()
+                for name, layer in item.layers.items()
+            }
         metadata = build_metadata(
             targets=targets,
             adapter_cfg=self.cfg.adapter.model_dump(mode="json"),

@@ -3858,7 +3858,7 @@ export interface components {
             gpu_count: number;
             /**
              * Distributed Strategy
-             * @description 数据并行（DDP）每卡保留完整模型；显存分片（FSDP）将参数、梯度和优化器状态分到多张卡，适合单卡装不下的全量主模型。分片需要至少两张 CUDA/DTK 显卡，目前支持冻结文本编码器的主模型全量微调，以及 AdamW、Adafactor 或 SGD。可配逐块梯度检查点；实际速度取决于跨卡通信和模型。
+             * @description 数据并行（DDP）每卡保留完整模型；显存分片（FSDP）将参数、梯度和优化器状态分到多张卡，适合单卡装不下的主模型。分片需要至少两张 CUDA/DTK 显卡，支持冻结文本编码器的主模型全量微调、LoRA 和 LoKr，以及 AdamW、Adafactor 或 SGD；适配器分片暂不支持 FP8 底模和整层丢弃。可配逐块梯度检查点；实际速度取决于跨卡通信和模型。
              * @default ddp
              * @enum {string}
              */

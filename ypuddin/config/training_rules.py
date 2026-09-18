@@ -75,14 +75,34 @@ def distributed_training_errors(cfg) -> list[dict[str, str]]:
             [
                 (cfg.loop.gpu_count < 2, "loop.gpu_count", "显存分片至少需要两张显卡"),
                 (
-                    cfg.training.mode != "full" or not cfg.training.train_backbone,
+                    not cfg.training.train_backbone,
                     "training.mode",
-                    "显存分片目前需要选择主模型全量微调",
+                    "显存分片需要启用主模型训练",
                 ),
                 (
                     cfg.training.train_text_encoder,
                     "training.train_text_encoder",
                     "显存分片暂不支持同时训练文本编码器",
+                ),
+                (
+                    cfg.training.mode == "adapter" and cfg.adapter.algo not in {"lora", "lokr"},
+                    "adapter.algo",
+                    "适配器显存分片请选择 LoRA 或 LoKr",
+                ),
+                (
+                    cfg.training.mode == "adapter" and cfg.memory.base_precision.startswith("fp8"),
+                    "memory.base_precision",
+                    "适配器显存分片暂不支持 FP8 底模",
+                ),
+                (
+                    cfg.training.mode == "adapter" and cfg.adapter.module_dropout > 0,
+                    "adapter.module_dropout",
+                    "显存分片需要各卡执行相同的适配层，请将整层丢弃率设为 0；仍可使用普通 Dropout 和 Rank Dropout",
+                ),
+                (
+                    cfg.training.mode == "adapter" and cfg.adapter.param_dtype != "fp32",
+                    "adapter.param_dtype",
+                    "显存分片的适配器训练参数请选择 FP32；底模仍可使用 BF16 或 FP16",
                 ),
                 (cfg.loop.ema, "loop.ema", "显存分片暂不支持 EMA，请关闭 EMA"),
                 (

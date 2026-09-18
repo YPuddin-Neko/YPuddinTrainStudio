@@ -1,0 +1,418 @@
+{
+  "date": "2026-09-18",
+  "hardware": "Windows NVIDIA GeForce RTX 5070 Ti 16 GiB, one GPU",
+  "source_sha256": {
+    "ypuddin/__init__.py": "16375d9cc6cfd0b553c07b375a51bdaca286756e4ed351d49dac80a3f1d9464c",
+    "ypuddin/adapters/__init__.py": "efe895d50f1195c4beeed24d8639de9b6e6a9bee8eefb86f1ab14f919807d45b",
+    "ypuddin/adapters/base.py": "82a09422c993a55eeff007fed88098fab6a2f1ef2fdedd15f8bbae59c829c3f0",
+    "ypuddin/adapters/components.py": "b695ab9272f57f9e915722e648b4d104794e6fa277be3cf6d97f7f91460eac95",
+    "ypuddin/adapters/convert.py": "b71ff68f0c19890e34236a9c6c47f31bd3beec7eadcd32ff1b8aef1adc2ac85f",
+    "ypuddin/adapters/dora.py": "3a7090f107349016b7c1e523807d1478be4edc209255f13becd37614189331e1",
+    "ypuddin/adapters/factorize.py": "3cbe953c7a3adf7ca065f6afcbbfface15f7acea7e716cd890f14ebd9a23a181",
+    "ypuddin/adapters/frozen.py": "7d4e270d3e28cd55f336294c003afdb866c70835be0e5f3aa8476f528e5f3fa5",
+    "ypuddin/adapters/full.py": "e684f36914b44fcbb8b5d97235cb2d23fc0ca57f21a7cebcfc00ad0f2e3e918c",
+    "ypuddin/adapters/inject.py": "c7526a20293615a04ba15dccd4d7a48b1ba978864a6a9b3e0866c9a36e9052b1",
+    "ypuddin/adapters/io.py": "d0fc08446a0b158a70178eb9113fb8afdca2bf6efd2de299a77dc2e3f5dd5376",
+    "ypuddin/adapters/linear.py": "295ebada49cbf369b0a677c33f2429f5c8c5057a78756e860a99ec7ca54071e5",
+    "ypuddin/adapters/loha.py": "0989f6bb55369b106e70333d39eb7f772dc83a41668cc5403a2092a238fbc539",
+    "ypuddin/adapters/lokr.py": "71b4a9dc67cebf0251c9f69ad29550339b249d8f4a2dba7755e17180ff84beb2",
+    "ypuddin/adapters/lora.py": "b12913d01bd5fa88b99c1ed982298f92002f95003fc8b562676772f47be49c45",
+    "ypuddin/adapters/rules.py": "c7b8079244a9927ad308c2e2f0e0ede5c148237e0a743e8a9c07602270034445",
+    "ypuddin/cli.py": "f798d8aa1ce492becdc83776a8d3dfb54e0350d6264995d89bbad174798c9f28",
+    "ypuddin/config/__init__.py": "642dae1b2678ab50fa261af6920904b73c9154e4e99295b391990332e4d8e0b0",
+    "ypuddin/config/compute_policy.py": "6b134e725101941ca580c74325d74e301c9934df259d06fa2f64ec82366eec87",
+    "ypuddin/config/io.py": "666d6e993c2b8786f7c66dca08b89750ac887655cfb827cb8103ead30e450a5c",
+    "ypuddin/config/model_artifact.py": "307577f247cd715e566265ef5a27b12271289d55fa0ba2955f1e54e7316c9455",
+    "ypuddin/config/optimizer_rules.py": "a915c4fe8cb14e5d8491ebb375427b5b06ebc49c7a2dda5b1e9e89ebcadb2d5f",
+    "ypuddin/config/schema.py": "b47ce875054ef6cbd9df709caebf09d135f4332938bbfa10653ecc35b64165aa",
+    "ypuddin/config/show_when.py": "ac834d7ed691c4e3676349fb39efcf7b358cfd678061a1e8670b45abbc5cbde4",
+    "ypuddin/config/training_rules.py": "13a12b718e7092ac259e124c13c3343daf02e2f9b441f22c2abfe805a1aca412",
+    "ypuddin/config/ui.py": "038f421e53fcb01d9feb73690883c5220d408db4d01fd5ccf7680ef52442ad7d",
+    "ypuddin/data/__init__.py": "98e79eca92dab695b2aa87fb1a1cb6be5a065d81f7ca6aa0d5ad336551e9305e",
+    "ypuddin/data/anima_caption_inspection.py": "07f873a36ac6e97e0fc7ad93a9997325412011958406ee8ed2d2e06f3af497e7",
+    "ypuddin/data/buckets.py": "6cc85dc69c9730052624068cae4032ac630b2ef49e44b162ac89ce5dc947d932",
+    "ypuddin/data/cache.py": "4207b3b0be66a09871c9fbcb0b91cc59dc5c138824bbc0b06cd1f70093e3e412",
+    "ypuddin/data/caption_formats.py": "5f6d4425bfd490161a78d3100b88fcd45cb168c895b1a32136c802a349bcd0dd",
+    "ypuddin/data/caption_json.py": "4b4ce7e631fcf5ad4d3665d0bcc3b85fdb43683d94e5bc2eff7c259ca32d6727",
+    "ypuddin/data/captions.py": "77919aea02af772d18577cdffdbb68a4adc6f3ca66b55b78786e6b9472052b35",
+    "ypuddin/data/dataset.py": "722db8774b9d310f9c24f52cff18c4c44aa0b689fd662e3c81379a153d44360f",
+    "ypuddin/data/images.py": "e8579c6314fa99d8bad49be9644addb996465f20fb082cf7817939fe15fa1286",
+    "ypuddin/data/index.py": "a27092b8a067e1f9224e51c71eb5668469a2b435b8d4f767c18108fae91dd43d",
+    "ypuddin/data/native.py": "9bb1dc822a14ae193c05655e944219a804f62877e183237c43b51572bfe31447",
+    "ypuddin/data/sampler.py": "ecc6ab22bc4aa1d3db74815617c07a3cbcdbbf9f78a4efde869c0b1a6d365a26",
+    "ypuddin/memory/__init__.py": "327141ecb6f4fa6153c5e293d8f8ea8fdb23014045306f157bb16e7aff9267e6",
+    "ypuddin/memory/block_swap.py": "f90fa941e37df2946ae107bd0a9ccb06c77070506a249a2912fb3f202a026e84",
+    "ypuddin/models/__init__.py": "019635aae735526eecb8c059db7c5d8df86ed609231ac88f4e8e896cdfc0d026",
+    "ypuddin/models/anima/__init__.py": "36ad5236e51c3c44655efe069b649c8386a3c9521f53b834be36dea9861c0576",
+    "ypuddin/models/anima/checkpoint.py": "cba24a61e7bb7fdd0bb0b887e644a24b34466032b28000ab5d676b0375e0832e",
+    "ypuddin/models/anima/family.py": "7275d251ba22a2bef1259f1b7a7ce8878e44f1a52e4ac29cb32a0074e9313979",
+    "ypuddin/models/anima/text.py": "2949b9e9abdf72ce2316534a4b45a079fa3f4d23236fde333736fb62cc692048",
+    "ypuddin/models/anima/vendor/__init__.py": "caca3e6a7822a43e784de0199f9cec46b8d87fb1bad036f83532f7efcd889eb2",
+    "ypuddin/models/anima/vendor/attention.py": "65b9d63d65f62d074db6a05b2848985d79031323418b795276c831daef8ca9c3",
+    "ypuddin/models/anima/vendor/cosmos_dit.py": "78eea7abe3a11c4ad4726e2a4ece391caf9d4aeabb6668e7daed1fde53b209ab",
+    "ypuddin/models/anima/vendor/qwen_image_vae.py": "4a145b48506d3c3bff3488a409aae2d097ede5c6318fd28673c8d53ffd1994b2",
+    "ypuddin/models/anima/vendor/qwen_image_vae_2d.py": "1df5ec3d4392b1e1c7a72ca201413905d28662d56c5b50635e030a48c5b203dd",
+    "ypuddin/models/base.py": "f322c816df4dfff52fe469d045fa3e3fe4c9ff7ee29d4f705194e3226152e1a5",
+    "ypuddin/models/fingerprints.py": "b7eab1d2602d435b32a413e5d734c1383d8a97cb737271d5485767ba7052f730",
+    "ypuddin/models/flux/__init__.py": "8477d1ba5d743996cf6ea1a0706e68e024d92d67649921a4a390076c1c490b7f",
+    "ypuddin/models/flux/family.py": "e0aaea0443a6efd401149c5df8c7addba6d9892b605e7533edff9f105cbe0291",
+    "ypuddin/models/flux/latent.py": "d66d28406cae1280ddffb2c7231a22ba1add1bd3ec90e6a12bc1506d8c42d878",
+    "ypuddin/models/flux/loading.py": "d9a1519bac6dd438e403a344141280b35b4f62358d7a5de9862cf8cae6105f7c",
+    "ypuddin/models/flux/text.py": "3788f5b7e65dbeb3051ff96132f080e0df55783342be17eaf90c853a027e2c21",
+    "ypuddin/models/flux2/__init__.py": "d6216c12f539df5633cdcac194f02e8dd2818fdf7948c718add8346e79c493c2",
+    "ypuddin/models/flux2/family.py": "3adb09d56e206e320293615d84a51be36d859016d79f4adff545bfbd92785f5f",
+    "ypuddin/models/flux2/latent.py": "b25317af7a5c92841e126d2768deb077eddbf29c38407905a39fde6ac08abb44",
+    "ypuddin/models/flux2/loading.py": "9acb23172574ce27fb576203de66d896f995e32c174767ead0bf47d56aa4b385",
+    "ypuddin/models/flux2/text.py": "f6d39a125142a977458305fab15ae77d6b49c147cec1ca0c35494e27fda3a10f",
+    "ypuddin/models/krea2/__init__.py": "c2d68ebfc42725475aa45cb932eff086ae79174e62feb31d4c901841f11ad5de",
+    "ypuddin/models/krea2/family.py": "27c7a9aa74ae0669122c3fa6454719386207ce382d9479bd1e763616a4203858",
+    "ypuddin/models/krea2/text.py": "a8ec6597510403b5384b6eef65c144500d51b5547684e32ca7b800b0293d7e24",
+    "ypuddin/models/krea2/variants.py": "4571268768affc20a2c1f005dd25b9f51748dc9449cedab68fb662677b4b55a5",
+    "ypuddin/models/krea2/vendor/__init__.py": "df8980c7afdaa33e660a481f502bfc8ef80666f598df589b2e769724a2db0b48",
+    "ypuddin/models/krea2/vendor/krea2_mmdit.py": "73bf856436713796651d87134a7fd68c738b49aec1c657cc357b9fa9bdd161f0",
+    "ypuddin/models/memory.py": "da36b8d07df78a53dcdcd6403d50d0d271bcdb2b2c4a8b330906a94761a2e6d4",
+    "ypuddin/models/registry.py": "c11adbb70cba4c4d4bab4f1975968eb55f1a349a150082489a82b679f6d82629",
+    "ypuddin/models/sdxl/__init__.py": "31908854a184314ca2cc0e13f5c791adf7144db3f7fcdcfd9144f7f92560fbd4",
+    "ypuddin/models/sdxl/family.py": "98ba8bf109d8c17ddb4036a82d50fe41a36fad54977d6e6ff06917719485d1b6",
+    "ypuddin/models/sdxl/latent.py": "9df16dfb1655a2cc6040fb7ade2bf884881bb7aa8b39f132f0d0fbfbb3c4769e",
+    "ypuddin/models/sdxl/loading.py": "a99b1334fc19f28b0030d15016832d3a68d08470b5b6637d38d8b6ac93e5f507",
+    "ypuddin/models/sdxl/text.py": "2b285170d2c0116acb367d595cb775c8b78cd5f8b856d74068761099df67664a",
+    "ypuddin/models/toy.py": "eae6bbee8d01418c4e78a4709fa4c9163b44806fcf6af9bdbd732600b3e5eb5f",
+    "ypuddin/models/training_parameters.py": "7d433a75c870115c548899ab474658e092201b4fd75d345c2e29e724dcdd65b3",
+    "ypuddin/objectives/__init__.py": "4c4892fde242fad98923c816660024cd55864ccd120f944681a2c1f5d1e49227",
+    "ypuddin/objectives/ddpm.py": "7526fc58057fd9a9802f3b8e9e631ed2e0b00455bffeee59e9b00fe3d63e3682",
+    "ypuddin/objectives/flow.py": "6369c8739da73f2e5dec68101120b3b70dfa671be27031e1c81fb13c3b918a63",
+    "ypuddin/optim/__init__.py": "677db6b0d8450d50da48b0689b6c7cdd40cea36468715ba854709a9b719ca85b",
+    "ypuddin/optim/automagic.py": "361a568eedf56ae081271b3140ac7dccd8d416b457b18590ac56f6c9f978eefe",
+    "ypuddin/optim/factory.py": "455545991c57da14452e4336f9f8147c5b7564e85ed51929170314ce5c2d9347",
+    "ypuddin/optim/sharded.py": "4b85cb983a1679bacf085da08e9d65879d3db70690d2f298859c181c371adda2",
+    "ypuddin/runtime_attention.py": "f04fd720ae15e29034f332f2d7c7a86b85e99d99bf70b07d60c05a0dd8a2aa55",
+    "ypuddin/runtime_profiles.py": "dba4fa550635d3622d697967b594f4f0f3ef2ecc1800a452d7e5393174fea0b1",
+    "ypuddin/sampling/__init__.py": "cf1e1c5f796bb976eaa9c70dfd83b855ef56e2e97e78193d0f1d7013ebb5d275",
+    "ypuddin/sampling/ddpm.py": "3bf63ee961e37c8df516dec6654336fa83cbca2c1edfcd202d4a9995d2f445df",
+    "ypuddin/sampling/dispatch.py": "5f9b401ce4dc111469881dfba2590e8a834ce458d43dd53470e74575712962b2",
+    "ypuddin/sampling/er_sde.py": "bef84fbeddf3d48c169695dbd810b7d11d2b25d022d6481babcb68d9ce0342b3",
+    "ypuddin/sampling/euler.py": "e1416aab5b50f7cc97aee91e57eeab7eb139764d68a815d7f67a1dfd9e38ae53",
+    "ypuddin/server/__init__.py": "5abaf4212df43f25dcd2e0cef8da2b25a97b6756bdfe28f38f172d64f7c22a3e",
+    "ypuddin/server/app.py": "ed0659f75beb43dee5e7f048e3906a4219604d46626e1c14f2e1ce2812e85a23",
+    "ypuddin/server/apple_sensors.py": "56aee44ea1320eb14dc4bb523145307ba062cb5ee9005ab9d7e9a4ce9d85d1af",
+    "ypuddin/server/bus.py": "4593a931dc7d1301f80aaae9169e4382051f278a49f9b4b5ddd54c6b2c43fdd4",
+    "ypuddin/server/context.py": "c0665dee9535495f5c54991b77203ac15fd54431fadad1540d989f8e6d0bef0f",
+    "ypuddin/server/dataset_pipeline.py": "e055b4709099879f98caa3294f82b010dded46936406446d8aac3023a2f80a0a",
+    "ypuddin/server/dataset_uploads.py": "1d922352b28f2c86f6dc994fc9b8d04ccd628ff35d01bccf894423d0dd10a0fe",
+    "ypuddin/server/db.py": "fbdce7d3856e06c8e383458d411e80dea7e3d2f65a8403f251cef046135a0d56",
+    "ypuddin/server/dtk_catalog.py": "fca03467ae86225474dfca44b513b47d6861acd5913b47310f10ea874bfb24cb",
+    "ypuddin/server/environment.py": "d9d9a9576d3842fb9ee0e4326532ade10b13df6650ac1436abe298f78ea350e4",
+    "ypuddin/server/errors.py": "64c3a70a6908049098ac293f15389b84366c5d2a441502710108117ff0424c6c",
+    "ypuddin/server/family_config.py": "ed8edd057e9798d90d28a818c1d352d7fe6fb2ae245209f63441e763874570e1",
+    "ypuddin/server/gpu_selection.py": "41c19d1aaefa913ac0ab11a3738b4a4af5cf25dc803a25039da7453f41aa2e20",
+    "ypuddin/server/hardware.py": "86fe3bba6fd0e79aa31e503dca1b100e5008a674a74c75f0d221d3df414dbc1c",
+    "ypuddin/server/http_server.py": "c85a0874c6d7d21d0124712a0a26f8fd94cdb9642215d79a5725d4d8928c69bd",
+    "ypuddin/server/import_progress.py": "2dce49f6152f130f535bab70dcccdc50b38616a10d6d898deba2d8485c9b1b7c",
+    "ypuddin/server/lifecycle.py": "bdc909bc990e567dfa1d204926f660bbcb7f51abb2c27609366900d4e00c22fb",
+    "ypuddin/server/model_catalog.py": "aaf8d0d89aec9cd5bc67e6136cc22045f2fb34e6d09f874b59653e7414dcd8c7",
+    "ypuddin/server/model_credentials.py": "7acaec9c4ebbe0a69bf6b48d5232ae66a77e55bc0dc822908e5540ce074bc4f2",
+    "ypuddin/server/model_downloads.py": "14a2f1736f6aacd9ca9a0e09a089a2eabc2c2d7191bfb57ff5497e0e41390aed",
+    "ypuddin/server/model_inspection.py": "35b27810680a1f62d96cd4a5ad15710a35fbd7f39acdce4be728116b8ca4c094",
+    "ypuddin/server/model_recommendations.py": "f7c7188cdb018490e067ff823514c8e2f17a6ea74bd6978892582196a7c5d058",
+    "ypuddin/server/models.py": "6f78d7c1046bc99bb8fafc13dc6af41ca61a4484872c7715f7213523fc0c28e8",
+    "ypuddin/server/network.py": "fd90caa6a055df5a2de82a4cdf1e345c419cf5b95266602af0ee834d47c2ae53",
+    "ypuddin/server/output_binding.py": "c72d5adf5be741794f4e3dacf7467cc759c7a2816dd4158210cb38f2da9d66ca",
+    "ypuddin/server/project_covers.py": "4c53c3e01538c6fd12f322c08803c3bc99d474f3b4c01b7be12209ce29421335",
+    "ypuddin/server/regularization.py": "167867ad51abb3022b124e411faa85170b434d7c8ca04cbacbb9d4632f3d0d7c",
+    "ypuddin/server/regularization_plan.py": "7f2059095e03551f762decec3fff8802c42abc41c294f37194db22df81634158",
+    "ypuddin/server/regularization_worker.py": "ffffe12f07460a5545c6172b8e16a4713daa2801a4b8ce47b82e9f5b82302f1c",
+    "ypuddin/server/routes_core.py": "05e8c2f002cc9d95686c1c9d8c934af021d5d9072d69e14a9a874855c6c226e9",
+    "ypuddin/server/routes_credentials.py": "942739d76065d918b0362bee0c168fade4324188b323c68a436b2030f78da737",
+    "ypuddin/server/routes_dataset_masks.py": "207214ccb9958c3568c02b954c48ba59185fd4b936471a1828a9751afbca1b9b",
+    "ypuddin/server/routes_dataset_overview.py": "94296adcd39405cfc6ebedd3f2646cc10e2969d28841f238d307c96c0b03c647",
+    "ypuddin/server/routes_dataset_paint.py": "5a0fe681110154d3c92e309ff1c731003fa4587be1684058daa8cfe5d615aefa",
+    "ypuddin/server/routes_dataset_pipeline.py": "d45ad9e41a690129231be59f72b0af4f63a039a1e4fce9495e4faea431effd46",
+    "ypuddin/server/routes_environment.py": "0be2c25b2e7db0bc5ff100a6a01f65a1c05367bd093db7862f65a079f8ea0c67",
+    "ypuddin/server/routes_model_downloads.py": "a7043524f0a1c309e3ba57200ffabb81c4e4b0a6948ad0950e60930eb1b7771c",
+    "ypuddin/server/routes_model_recommendations.py": "5d368aec8dcf628ebd914bff745bc7608e20249acab446d3c73c3fdd7e38cd34",
+    "ypuddin/server/routes_regularization.py": "7a8a62026c0c2da4202de83aaceadd0d50cd98d8b5f39f5a64310881bcccc0e0",
+    "ypuddin/server/routes_work.py": "ea10bc03974731b86ecc9575e969e795481d6a45b926d2755beed49e32734837",
+    "ypuddin/server/routes_xyz.py": "8ed8cef54d4f5463447d834cab4656b330d89168f15009e2a1e3fcc190fc34eb",
+    "ypuddin/server/sample_events.py": "e9faa7143e330e9b2968a0be6af4171c50a76c40d7ae3d158e89dc3e1086567d",
+    "ypuddin/server/source_roles.py": "4d942446af7febbc51d5c0b20203c275c89b3617f17f183815ddc7cfbc10ea9b",
+    "ypuddin/server/supervisor.py": "6453e68f2eface1eb8bd7662c5508ca42d71eb8311ac5760dd8abc421e8bde17",
+    "ypuddin/server/torch_environments.py": "ef4129c10039a3b5f9a5a31ee15422d229445bc774129e8271a25bc7294f7bff",
+    "ypuddin/server/versions.py": "9d153b71ac573cb7ec1ea302e64d6a39776cfab987d8c8c9a7afe040fe523422",
+    "ypuddin/server/windows_attention_assets.py": "e12fb2efe340a80e7f7cb239bd4d0d56139138fba215e2be3fee490076c2c3ca",
+    "ypuddin/server/windows_attention_catalog.py": "c822ad9e9ab4ce5cf9ba4a75420a27cff0c9efcfc28947e37c5a0db4e6ba5375",
+    "ypuddin/server/xyz.py": "13d883612d5a4e60bc1aacb2e4da9479d3e96f2c49b25b8439db167f3511e4b3",
+    "ypuddin/server/xyz_worker.py": "6bffe7b219b37589404aa217b36f81d68dc191b4f9ac3a1fb73483311a506dd8",
+    "ypuddin/tools/__init__.py": "593b38b868a4cf4c91c5935d8246ec1021e57715ac8a35d2ae11911b5e565672",
+    "ypuddin/tools/extract.py": "878dc23d0ec9729b478eb90245cb9953e50374ff1244d236c1308c4a787e2bef",
+    "ypuddin/tools/merge.py": "1110938a856eb046af3e4a7000b4bb1fd699d491453e5a58cda89b711af7c471",
+    "ypuddin/tools/runtime_check.py": "731cb5790d109ddb40469941ec6b27e833d7e17f58d930a4239be3434b403d06",
+    "ypuddin/tools/smoke.py": "12fc6ca4b3cef18ed21718ab0039f567bd38530acdcac908cc37d375e4cb2ece",
+    "ypuddin/train/__init__.py": "738d73e437112a31f6d14fe18b5ca67ab590e9ae17ec32e3e9b97c5a74e1275c",
+    "ypuddin/train/conv_forward.py": "67e26be690ab6051eece2272c4ab94174c61a56e221d92f6e3bd1213d4f32532",
+    "ypuddin/train/distributed.py": "29c99d250ac90c37e6aac95841d67471d39416ce385a26c2864605e1784d4eef",
+    "ypuddin/train/events.py": "9fcab3e00b1dc8683a84789617dd658c3c17dade7ceee407e4dd7b90c0a16eb8",
+    "ypuddin/train/gloo_probe.py": "d44400641effe4e793b599cc558d5852bf5cf6fa8f3b4475cc30b248fd52397a",
+    "ypuddin/train/linear_backward.py": "17185c4e43284346e0dda2b655c3e88a962b05032b81c98ac5c607f7c87bfb44",
+    "ypuddin/train/logging.py": "f7ef0369cc6730a9181abaebf840d9e6e85e3bdd3440b12117539c7679f89faf",
+    "ypuddin/train/plan.py": "745a703109fa675fbfeafd9ea8b90b07d2ed7b60dd2efb69506fddf12f5d96b1",
+    "ypuddin/train/reproducibility.py": "b26daef8e03a7a4d15c86f230ceda2f47dbd0e1bb6cc9b87af29a8818d766fc4",
+    "ypuddin/train/scheduler_contract.py": "fa1762e7b821e6cc137fde0d3e4a3c4047d7131d43e77b265ed64b5fb25378f8",
+    "ypuddin/train/sharded.py": "b18bcfc00c4d76d5b286d9d5ca1bcb7bcc665f7774158132a13a56bbce6174f0",
+    "ypuddin/train/sharded_adapters.py": "0f8d62e3ca958e04c4ca52b013be7b62f7742a19d631dee2602407c2a508b94f",
+    "ypuddin/train/sharded_state.py": "54476aee1675cb2f8eb9932da7f82ed14de22861b7acb8ab743253fe12fb2853",
+    "ypuddin/train/state.py": "2a75f80d6ce987aec94f6b23c3a043d0d99f0a1bd309e5d3b20c000e5fb8c993",
+    "ypuddin/train/text_adapter_compute.py": "d2be86067f66b1bb28be9c945d30162ed9c0c6a1faba6f2ef67daf33675b77b7",
+    "ypuddin/train/trainer.py": "4115759db860ee53216c562f3cafbd5b9b9fea8a151416d66c15a51ca9d30dab",
+    "ypuddin/train/training_modes.py": "cb2d89178d575b59ec114f17e2ac98cd39221c8cd6e810ac5eea39d21d10386b",
+    "scripts/verify_frozen_adapter_resume.py": "e3922e79c6d6dade941b62ccd31591d6f7d1d365b36068052943fa8086280644",
+    "tests/checkpoint_assertions.py": "2895c7f585d5aac424c271b5b9325116b61fd4e377de6099c8483253fe0e4cb0"
+  },
+  "source_matches_local": true,
+  "raw_report_sha256": "f1e611761beef7579e6babd0f60e3def545d2d33da1a7db4f9bb83010043f630",
+  "cases": {
+    "sdxl-lora-150-cu130": {
+      "status": "passed",
+      "strict_passed": true,
+      "device_requested": "cuda",
+      "processes": 1,
+      "strategy": "ddp",
+      "family": "sdxl",
+      "algorithm": "lora",
+      "scope": "Fixed recipe only; CPU is not GPU acceptance",
+      "runtime": {
+        "torch": "2.13.0+cu130",
+        "hip": null,
+        "cuda": "13.0"
+      },
+      "comparison": {
+        "tensor_count": 1120,
+        "weights_exact": true,
+        "states_exact": true,
+        "preview_sha256": [
+          "28b5250ef26c5c496c81b8a8e6ac6c80648fe415c23a717f8bb1f0f018e2305b"
+        ]
+      }
+    },
+    "anima-lokr-cu130": {
+      "status": "passed",
+      "strict_passed": true,
+      "device_requested": "cuda",
+      "processes": 1,
+      "strategy": "ddp",
+      "family": "anima",
+      "algorithm": "lokr",
+      "scope": "Fixed recipe only; CPU is not GPU acceptance",
+      "runtime": {
+        "torch": "2.13.0+cu130",
+        "hip": null,
+        "cuda": "13.0"
+      },
+      "comparison": {
+        "tensor_count": 672,
+        "weights_exact": true,
+        "states_exact": true,
+        "preview_sha256": [
+          "079307d000ae91ec06c7df99be056ec66d442182219c49210d5f7da2914e0709"
+        ]
+      }
+    },
+    "sdxl-lokr-225-cu130": {
+      "status": "passed",
+      "strict_passed": true,
+      "device_requested": "cuda",
+      "processes": 1,
+      "strategy": "ddp",
+      "family": "sdxl",
+      "algorithm": "lokr",
+      "scope": "Fixed recipe only; CPU is not GPU acceptance",
+      "runtime": {
+        "torch": "2.13.0+cu130",
+        "hip": null,
+        "cuda": "13.0"
+      },
+      "comparison": {
+        "tensor_count": 1120,
+        "weights_exact": true,
+        "states_exact": true,
+        "preview_sha256": [
+          "2975f522f0853d7d6a67f346c144bc4b630eb87d6e5f261035b55d5691f402b6"
+        ]
+      }
+    },
+    "anima-lora-native-cu130": {
+      "status": "passed",
+      "strict_passed": true,
+      "device_requested": "cuda",
+      "processes": 1,
+      "strategy": "ddp",
+      "family": "anima",
+      "algorithm": "lora",
+      "scope": "Fixed recipe only; CPU is not GPU acceptance",
+      "runtime": {
+        "torch": "2.13.0+cu130",
+        "hip": null,
+        "cuda": "13.0"
+      },
+      "comparison": {
+        "tensor_count": 448,
+        "weights_exact": true,
+        "states_exact": true,
+        "preview_sha256": [
+          "d2cc1bb2ce9cee6924bef2069c565d0e2970d4efb95f22b5519df251cf5ab168"
+        ]
+      }
+    },
+    "anima-lora-retry": {
+      "status": "passed",
+      "strict_passed": true,
+      "device_requested": "cuda",
+      "processes": 1,
+      "strategy": "ddp",
+      "family": "anima",
+      "algorithm": "lora",
+      "scope": "Fixed recipe only; CPU is not GPU acceptance",
+      "runtime": {
+        "torch": "2.11.0+cu128",
+        "hip": null,
+        "cuda": "12.8"
+      },
+      "comparison": {
+        "tensor_count": 448,
+        "weights_exact": true,
+        "states_exact": true,
+        "preview_sha256": [
+          "da07af4afb298bf8b6f4c1fd8e2be3fa44ab1439357bf1ac84222a008aa37a18"
+        ]
+      }
+    }
+  },
+  "queue": {
+    "ok": true,
+    "checks": {
+      "held_queue_pause_resume_cancel": {
+        "ok": true,
+        "job_id": "j_911783cc810a"
+      },
+      "future_schedule_cancel": {
+        "ok": true,
+        "job_id": "j_325a23e2ad16",
+        "scheduled_at": 1789698899.319238
+      },
+      "worker_pause_resume_cancel_exit": {
+        "ok": true,
+        "job_id": "j_5ff79b84989d",
+        "device": "cuda:0",
+        "paused_step": 2,
+        "resumed_step": 5,
+        "cancelled_step": 9,
+        "first_worker": {
+          "pid": 33024,
+          "exit_code": 0,
+          "status": "paused",
+          "alive": false
+        },
+        "second_worker": {
+          "pid": 32572,
+          "exit_code": 1,
+          "status": "cancelled",
+          "alive": false
+        },
+        "old_log_prefix_preserved": true
+      },
+      "failed_retry_preserves_old_logs": {
+        "ok": true,
+        "failed_job": "j_5cc652dd1756",
+        "retry_job": "j_e91e0adb4779",
+        "original_error": "DataConfigError: dataset source not found: J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\20260918-lora-fsdp\\queue-cuda\\api-control-checks\\failure-data",
+        "old_files": {
+          "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\20260918-lora-fsdp\\queue-cuda\\api-studio\\runs\\j_5cc652dd1756\\run.log": "ff17891cd90d1feb981c51232447ffda5cb26bd018fd0221d8e64fd470b021a6",
+          "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\20260918-lora-fsdp\\queue-cuda\\api-studio\\runs\\j_5cc652dd1756\\events.jsonl": "6ba49e0843da70f3fab838e279d28a43667acf160f6dd63accc0dc11a052f5bb",
+          "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\20260918-lora-fsdp\\queue-cuda\\api-studio\\runs\\j_5cc652dd1756\\job-config.toml": "6c221f135ed79be0f8d07539563fc150206697d8fe23255542770b109920ba4e"
+        },
+        "failed_worker": {
+          "pid": 32308,
+          "exit_code": 1,
+          "status": "failed",
+          "alive": false
+        },
+        "retry_worker": {
+          "pid": 26332,
+          "exit_code": 0,
+          "status": "completed",
+          "alive": false
+        },
+        "retry_steps": 2
+      }
+    },
+    "jobs": [
+      "j_911783cc810a",
+      "j_325a23e2ad16",
+      "j_5ff79b84989d",
+      "j_5cc652dd1756",
+      "j_e91e0adb4779"
+    ],
+    "pid": 33292,
+    "harness_sha256": "6333ccc07b4aa680b95b0b98c069effeedc64608b94a38cf6df8ed0051c99f2d",
+    "scope": "Windows CUDA real service/subprocess acceptance (Toy models)",
+    "cleanup_errors": [],
+    "cpu_service_exit_code": 1,
+    "seconds": 19.234
+  },
+  "local_backend": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "5",
+    "tests": "2846",
+    "time": "671.909",
+    "timestamp": "2026-09-18T10:20:57.158989+08:00",
+    "hostname": "SoradeMac-mini.local"
+  },
+  "frontend": {
+    "files_passed": 95,
+    "tests_passed": 780,
+    "build_passed": true,
+    "lint_passed": true
+  },
+  "not_validated": [
+    "Official-model dual-GPU FSDP adapter training on DTK or CUDA",
+    "Windows multi-GPU DDP/concurrent GPU tasks",
+    "Long-run model quality and FSDP throughput",
+    "New real wheel installation/uninstallation and PyTorch environment switch"
+  ],
+  "windows_contracts_and_cuda_tests": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "3",
+    "tests": "193",
+    "time": "16.031",
+    "timestamp": "2026-09-18T10:41:38.763279+08:00",
+    "hostname": "YPuddindePC",
+    "skipped_cases": [
+      {
+        "name": "test_accelerator_train_resume_and_preview[0-mps]",
+        "reason": "MPS unavailable"
+      },
+      {
+        "name": "test_accelerator_train_resume_and_preview[2-mps]",
+        "reason": "MPS unavailable"
+      },
+      {
+        "name": "test_cpu_noise_generator_matches_on_all_devices[mps]",
+        "reason": "MPS unavailable"
+      }
+    ]
+  },
+  "local_environment_recheck": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "130",
+    "time": "3.149",
+    "timestamp": "2026-09-18T10:40:36.699278+08:00",
+    "hostname": "SoradeMac-mini.local"
+  }
+}

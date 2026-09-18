@@ -68,14 +68,18 @@ def compare(reference, resumed, steps):
     from tests.checkpoint_assertions import assert_checkpoint_value_exact
 
     states = [p / f"state-{steps}" for p in (reference, resumed)]
-    weights = [load_file(p / "training.safetensors") for p in states]
+    metadata = [json.loads((p / "state.json").read_text()) for p in states]
+    assert metadata[0].get("strategy") == metadata[1].get("strategy"), "checkpoint strategy differs"
+    name = "model.safetensors" if metadata[0].get("strategy") == "fsdp2" else "training.safetensors"
+    weights = [load_file(p / name) for p in states]
     assert weights[0] and weights[0].keys() == weights[1].keys(), "weight keys"
     for key in weights[0]:
         assert weights[0][key].dtype == weights[1][key].dtype, f"weight dtype differs: {key}"
         assert torch.isfinite(weights[0][key]).all(), f"nonfinite weight: {key}"
         assert torch.equal(weights[0][key], weights[1][key]), f"weight differs: {key}"
-    metadata = [json.loads((p / "state.json").read_text()) for p in states]
-    for field in ("progress", "sampler"):
+    for field in ("progress", "sampler", "sampler_ranks", "adapter_contract"):
+        if field not in metadata[0] and field not in metadata[1]:
+            continue
         assert_checkpoint_value_exact(metadata[1][field], metadata[0][field], field)
     for component in ("optimizer", "scheduler", "rng"):
         values = [torch.load(p / f"{component}.pt", map_location="cpu", weights_only=False) for p in states]
@@ -104,6 +108,7 @@ def main():
     parser.add_argument("output", type=Path, help="New directory; existing directories are refused")
     parser.add_argument("--device", choices=("cpu", "cuda"), required=True)
     parser.add_argument("--processes", type=int, choices=(1, 2), default=1)
+    parser.add_argument("--strategy", choices=("ddp", "fsdp"), default="ddp")
     parser.add_argument("--steps", type=int, default=8)
     parser.add_argument("--resume-step", type=int, default=4)
     parser.add_argument("--timeout", type=int, default=3600)
@@ -123,10 +128,12 @@ def main():
         or args.timeout < 1
     ):
         parser.error("steps must be a multiple of resume-step and exceed it; timeout must be positive")
+    if args.strategy == "fsdp" and (args.processes != 2 or args.device != "cuda"):
+        parser.error("FSDP requires two CUDA/HIP devices")
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     cfg.loop.max_steps, cfg.loop.epochs = args.steps, None
-    cfg.loop.gpu_count, cfg.loop.distributed_strategy = args.processes, "ddp"
+    cfg.loop.gpu_count, cfg.loop.distributed_strategy = args.processes, args.strategy
     cfg.loop.deterministic = True
     cfg.dataset.cache_dir = str(output / "cache")
     cfg.checkpoint.save_state_every_steps = args.resume_step
@@ -140,6 +147,7 @@ def main():
         "strict_passed": False,
         "device_requested": args.device,
         "processes": args.processes,
+        "strategy": args.strategy,
         "family": cfg.model.family,
         "algorithm": cfg.adapter.algo,
         "source_sha256": identity,

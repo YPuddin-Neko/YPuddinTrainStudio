@@ -14,6 +14,9 @@ class DoRA(nn.Module):
         )
         self.dora_scale = nn.Parameter(norm.to(dtype))
 
+    def forward(self, weight: Tensor) -> Tensor:
+        return self.rescale(weight)
+
     def rescale(self, weight: Tensor) -> Tensor:
         w32 = weight.to(torch.float32)
         norm = w32.reshape(w32.shape[0], -1).norm(dim=1, keepdim=True) + torch.finfo(torch.float32).eps

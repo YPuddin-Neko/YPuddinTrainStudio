@@ -54,6 +54,10 @@ class AdapterModule(nn.Module, ABC):
         else:
             self.scalar = None
 
+    def forward(self, x: Tensor | None = None) -> Tensor:
+        """Keep computations inside Module hooks for distributed parameter residency."""
+        return self.delta_weight() if x is None else self.delta_apply(x)
+
     # ----------------------------------------------------------------- scaling
     @property
     def effective_scalar(self) -> Tensor | float:

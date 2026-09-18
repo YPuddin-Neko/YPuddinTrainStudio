@@ -68,9 +68,9 @@ class AdaptedLinear(nn.Module):
 
     # ----------------------------------------------------------------- forward
     def merged_weight(self, dtype: torch.dtype | None = None) -> Tensor:
-        w = self.base.dequant(torch.float32) + self.multiplier * self.adapter.delta_weight().to(torch.float32)
+        w = self.base.dequant(torch.float32) + self.multiplier * self.adapter().to(torch.float32)
         if self.dora is not None:
-            w = self.dora.rescale(w)
+            w = self.dora(w)
         return w if dtype is None else w.to(dtype)
 
     def forward(self, x: Tensor) -> Tensor:
@@ -79,7 +79,7 @@ class AdaptedLinear(nn.Module):
         if self.multiplier == 0.0 and self.dora is None:
             return self.base(x)
         if self.mode == "bypass":
-            delta = self.adapter.delta_apply(x)
+            delta = self.adapter(x)
             if self.multiplier != 1.0:
                 delta = delta * self.multiplier
             return self.base(x) + delta
