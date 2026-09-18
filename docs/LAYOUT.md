@@ -27,9 +27,7 @@
 ├── frontend/
 │   ├── src/                     前端源码
 │   └── dist/                    构建产物，**不进 Git**；服务就是从这里取页面
-├── environment/
-│   ├── profiles/<profile>/venv  各环境的 Python 虚拟环境（见 §2）
-│   └── …
+├── environment/<profile>/venv   各环境的 Python 虚拟环境（见 §2）
 ├── venv/                        旧版部署的虚拟环境，对应 legacy 环境类型
 ├── tests/                       后端测试；前端测试在 frontend/tests/
 ├── docs/                        部署、设计与验证文档
@@ -43,7 +41,7 @@
 ## 2. 部署环境（源码树内）
 
 ```
-<repo>/environment/profiles/<profile>/venv/
+<repo>/environment/<profile>/venv/
 └── .ypuddin-install.json        安装标记：环境类型、CPU 架构、torch 版本、依赖签名
 ```
 
@@ -65,7 +63,7 @@
 
 ```
 <数据根>/environment/
-└── profiles/<profile>/          legacy 环境没有 profiles/ 这一层，直接在 environment/ 下
+└── <profile>/                   legacy 环境没有这一层，内容直接放在 environment/ 下
     ├── runtimes/<id>/           从界面安装的备选 PyTorch 运行时（ypuddin/server/torch_environments.py）
     ├── service/
     │   ├── selected.json        服务下次用哪个运行时启动
@@ -74,7 +72,15 @@
     └── installer                安装器工作文件（ypuddin/server/environment.py）
 ```
 
-它**不是**虚拟环境的副本。放在数据根是因为运行时体积大，而数据根可以指到大盘上，且一定可写。
+`runtimes/<id>/` 本身也是虚拟环境（`torch_environments.py` 用 `python -m venv` 创建），不是缓存。
+它和源码侧那个的区别在归属：源码侧的基础环境由启动入口按代码重建，数据根这些是运行期产物，
+可以跟着 `--data-root` 放到大盘上，并在源码树被整体替换后继续存在。
+
+已知不彻底的地方：基础环境不受 `--data-root` 控制，体积最大的那个环境只能待在源码树旁边。
+同类问题见 [存储布局审计](STORAGE_LAYOUT_AUDIT_2026-09-13.md)（改 `cache_dir` 不迁移 `environment/cache`）。
+
+两棵树都不再有 `profiles/` 这一层。旧版本装在 `environment/profiles/<profile>/` 下；
+启动入口发现这个旧目录时会打印它的路径并照常安装到新位置，**不会自动删除**，确认新环境可用后自行删除即可。
 
 ## 4. 数据根
 

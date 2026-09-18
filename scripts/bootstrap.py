@@ -244,7 +244,12 @@ def select_environment(profile: str, torch_tag: str) -> str:
                 else (system + "-cuda" if torch_tag.startswith("cu") else "cpu")
             )
         PROFILE = system + "-cpu" if profile == "cpu" else profile
-        VENV = ROOT / "environment" / "profiles" / PROFILE / "venv"
+        VENV = ROOT / "environment" / PROFILE / "venv"
+        # The extra profiles/ level is gone. Name the stale tree instead of deleting
+        # gigabytes on the user's behalf, or of leaving it unexplained.
+        stale = ROOT / "environment" / "profiles"
+        if stale.is_dir():
+            log(f"旧布局 {stale} 已不再使用，本次安装到 {VENV}；确认新环境可用后可自行删除旧目录。")
     MARKER = VENV / ".ypuddin-install.json"
     # Refuse links before either installation or explicit rebuild can affect another directory.
     path = VENV

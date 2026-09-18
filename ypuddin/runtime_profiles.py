@@ -17,13 +17,18 @@ PROFILES = {
     "macos-cpu",
 }
 
+# A profile directory sits directly under environment/, beside the entries a legacy
+# install already keeps there. A name in both places would make one shadow the other.
+_LEGACY_ENTRIES = {"runtimes", "service", "cache", "installer"}
+assert not PROFILES & _LEGACY_ENTRIES, "profile name collides with a legacy environment entry"
+
 
 def current_profile() -> str:
     prefix = Path(sys.prefix)
     inferred = None
-    if prefix.name == "venv" and prefix.parent.parent.name == "profiles":
+    if prefix.name == "venv" and prefix.parent.parent.name == "environment":
         inferred = prefix.parent.name
-    elif prefix.parent.name == "runtimes" and prefix.parent.parent.parent.name == "profiles":
+    elif prefix.parent.name == "runtimes" and prefix.parent.parent.parent.name == "environment":
         inferred = prefix.parent.parent.name
     profile = os.environ.get("YPUDDIN_ENV_PROFILE") or inferred or "legacy"
     if profile not in PROFILES:
@@ -38,7 +43,7 @@ def profile_root(data_root: Path, profile: str | None = None) -> Path:
     if profile not in PROFILES:
         raise ValueError("Invalid environment profile")
     root = Path(data_root) / "environment"
-    return root if profile == "legacy" else root / "profiles" / profile
+    return root if profile == "legacy" else root / profile
 
 
 def selected_key(profile: str | None = None) -> str:

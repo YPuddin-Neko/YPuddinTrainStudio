@@ -703,7 +703,7 @@ def test_platform_directories_are_distinct_and_preserve_legacy(monkeypatch, syst
     cuda_path = boot.VENV
     assert boot.select_environment("cpu", "cpu") == cpu
     assert boot.VENV != cuda_path and legacy not in boot.VENV.parents
-    assert boot.VENV == boot.ROOT / "environment/profiles" / cpu / "venv"
+    assert boot.VENV == boot.ROOT / "environment" / cpu / "venv"
     assert (legacy / "keep.txt").read_text() == "legacy packages"
 
 
@@ -731,7 +731,7 @@ def test_two_real_profile_venvs_do_not_share_packages(monkeypatch):
 
 def test_rebuild_only_changes_selected_profile(monkeypatch):
     fresh_torch(monkeypatch, "cpu")
-    other = boot.ROOT / "environment/profiles/linux-cuda/venv/keep.txt"
+    other = boot.ROOT / "environment/linux-cuda/venv/keep.txt"
     legacy = boot.ROOT / "venv/keep.txt"
     for file in (other, legacy):
         file.parent.mkdir(parents=True, exist_ok=True)
@@ -800,7 +800,7 @@ def test_dtk_profile_never_uses_nvidia_or_official_torch_sources(monkeypatch):
     monkeypatch.setattr(boot.platform, "system", lambda: "Linux")
     monkeypatch.setattr(boot, "nvidia_driver_major", lambda: 580)
     boot.select_environment("linux-dtk", "dtk")
-    assert boot.VENV == boot.ROOT / "environment/profiles/linux-dtk/venv"
+    assert boot.VENV == boot.ROOT / "environment/linux-dtk/venv"
     assert "nvidia" not in boot.choose_extras("dtk")
     assert boot.index_chains("official", "dtk")[1] == []
 
@@ -939,7 +939,7 @@ def test_dtk_launcher_keeps_library_environment_local_and_never_uses_legacy(tmp_
     # The launcher reads no vendor shell code and does not alter the caller's files.
     sentinel = tmp_path / "vendor-script-was-sourced"
     (dtk / "env.sh").write_text(f"touch '{sentinel}'\n")
-    python = tmp_path / "environment/profiles/linux-dtk/venv/bin/python"
+    python = tmp_path / "environment/linux-dtk/venv/bin/python"
     python.parent.mkdir(parents=True)
     python.write_text(
         '#!/bin/sh\nprintf \'%s\\n\' "$@" "${LD_LIBRARY_PATH:-}" "$PYTHONNOUSERSITE" '
@@ -1207,7 +1207,7 @@ def test_failed_dtk_pip_seed_removes_only_its_own_new_environment(monkeypatch, t
     wheelhouse = tmp_path / "wheels"
     wheelhouse.mkdir()
     (wheelhouse / "pip-25.1-py3-none-any.whl").touch()
-    other = boot.ROOT / "environment/profiles/linux-cuda/venv"
+    other = boot.ROOT / "environment/linux-cuda/venv"
     other.mkdir(parents=True)
     sentinel = other / "keep.txt"
     sentinel.write_text("running environment")
@@ -1297,7 +1297,7 @@ def test_environment_refuses_reuse_from_another_architecture(monkeypatch, tmp_pa
     monkeypatch.setattr(boot, "ROOT", tmp_path)
     monkeypatch.setattr(boot.platform, "system", lambda: "Linux")
     monkeypatch.setattr(boot.platform, "machine", lambda: "x86_64")
-    marker = tmp_path / "environment/profiles/linux-cpu/venv/.ypuddin-install.json"
+    marker = tmp_path / "environment/linux-cpu/venv/.ypuddin-install.json"
     marker.parent.mkdir(parents=True)
     marker.write_text(json.dumps({"profile": "linux-cpu", "arch": "arm64"}), encoding="utf-8")
     with pytest.raises(SystemExit):

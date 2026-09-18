@@ -50,7 +50,7 @@ HANDOVER.md       当前交接说明与验证边界
 
 下文用 `<启动入口>` 指代上表中你所在环境的那一个。
 
-首次部署按平台创建独立的 `environment/profiles/<平台>/venv`、选择 PyTorch 安装来源、构建前端并启动服务。已有根目录 `venv` 的旧部署继续使用原环境，不搬移或重建。海光需要匹配的 DTK 用户态运行库与厂商 wheel，准备步骤见 [DTK 独立环境](docs/RUNTIME_DTK.md)；启动器不会安装系统驱动或用 CUDA 包代替。默认地址为 `http://127.0.0.1:8765/`。前端构建需要 Node 20.19+ 或 22.12+；MPS 当前按 FP32 执行，内存预算按统一内存估算。目录、升级与切换边界见 [环境说明](docs/ENVIRONMENT_LIFECYCLE_2026-09-14.md)。
+首次部署按平台创建独立的 `environment/<平台>/venv`、选择 PyTorch 安装来源、构建前端并启动服务。已有根目录 `venv` 的旧部署继续使用原环境，不搬移或重建。海光需要匹配的 DTK 用户态运行库与厂商 wheel，准备步骤见 [DTK 独立环境](docs/RUNTIME_DTK.md)；启动器不会安装系统驱动或用 CUDA 包代替。默认地址为 `http://127.0.0.1:8765/`。前端构建需要 Node 20.19+ 或 22.12+；MPS 当前按 FP32 执行，内存预算按统一内存估算。目录、升级与切换边界见 [环境说明](docs/ENVIRONMENT_LIFECYCLE_2026-09-14.md)。
 `<启动入口> doctor` 查看本机环境；`<启动入口> smoke --set model.dit_path=… --set model.text_encoder_path=… --set model.vae_path=…`
 用真实权重自检整条训练链路。完整说明（参数、手动安装、常驻服务、远程访问、排障）见 [`docs/deploy.md`](docs/deploy.md)；目录分工见 [文件夹布局清单](docs/LAYOUT.md)。
 

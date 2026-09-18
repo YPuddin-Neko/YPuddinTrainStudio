@@ -17,7 +17,7 @@
 
 ```text
 源码目录/
-  environment/profiles/
+  environment/
     windows-cuda/venv/
     linux-cuda/venv/
     linux-dtk/venv/
@@ -27,7 +27,7 @@
     macos-cpu/venv/
   venv/                         旧部署原样保留
 当前数据根/
-  environment/profiles/<平台>/
+  environment/<平台>/
     runtimes/<操作ID>/          本平台准备的其他 Torch 版本
     service/selected.json       本平台当前激活的解释器
     cache/、installer/           本平台的扩展安装工作目录
@@ -51,7 +51,7 @@ macOS 的 PyTorch 安装包本身带有 MPS 支持，所以它的下载源是 Py
 
 界面按当前部署平台、操作系统、NVIDIA 驱动和显卡架构过滤候选。CUDA 环境只切换 CUDA 构建，CPU 环境只切换 CPU 构建，MPS 环境只切换 MPS 构建；跨平台计划和激活请求会被拒绝。2.11.0 + CUDA 12.8 的“小型 CUDA 训练已验证”仅引用此前记录的小型训练范围；其余候选是官方提供的构建，不宣称本项目所有训练模型都已在这些组合上测试。
 
-准备的环境放在当前数据根的 `environment/profiles/<平台>/runtimes/<操作 ID>/`；旧 legacy 部署仍使用原来的 `environment/runtimes/`，旧记录只属于 legacy。新环境固定 Torch/TorchVision 的组合，保留已安装普通依赖和 NumPy 的版本约束，再解析所需训练依赖。xFormers、FlashAttention、SageAttention、bitsandbytes 不跨版本复制；这些扩展要与新环境重新匹配安装。
+准备的环境放在当前数据根的 `environment/<平台>/runtimes/<操作 ID>/`；旧 legacy 部署仍使用原来的 `environment/runtimes/`，旧记录只属于 legacy。新环境固定 Torch/TorchVision 的组合，保留已安装普通依赖和 NumPy 的版本约束，再解析所需训练依赖。xFormers、FlashAttention、SageAttention、bitsandbytes 不跨版本复制；这些扩展要与新环境重新匹配安装。
 
 准备完成必须通过依赖检查、服务模块导入以及选定设备上的微型前向/反向运算。源码通过 `.pth` 关联，不在源码根创建新的 `ypuddin.egg-info`。失败结果保留原因和日志，可以重新创建准备计划；失败环境不会进入可激活列表。安装过程只报告实际阶段和日志，不用虚构百分比表示大文件下载速度。
 

@@ -482,9 +482,9 @@ def test_dtk_profile_cannot_switch_to_official_cuda_or_cpu_torch():
 @pytest.mark.parametrize("suffix", ["venv", "runtimes/torch_test"])
 def test_dtk_profile_paths_are_inferred_and_separated_from_cuda(tmp_path, monkeypatch, suffix):
     monkeypatch.delenv("YPUDDIN_ENV_PROFILE", raising=False)
-    monkeypatch.setattr(sys, "prefix", str(tmp_path / "environment/profiles/linux-dtk" / suffix))
+    monkeypatch.setattr(sys, "prefix", str(tmp_path / "environment/linux-dtk" / suffix))
     assert current_profile() == "linux-dtk"
-    assert profile_root(tmp_path) == tmp_path / "environment/profiles/linux-dtk"
+    assert profile_root(tmp_path) == tmp_path / "environment/linux-dtk"
     assert profile_root(tmp_path) != profile_root(tmp_path, "linux-cuda")
 
 
@@ -645,7 +645,7 @@ def test_profile_launcher_ignores_legacy_selected_interpreter(tmp_path, monkeypa
     command = popen.call_args.args[0]
     assert command[0] == sys.executable
     assert Path(command[command.index("--control-file") + 1]).parent == (
-        tmp_path / "environment/profiles/macos-cpu/service"
+        tmp_path / "environment/macos-cpu/service"
     )
     assert selected.read_bytes() == original
 
@@ -666,7 +666,7 @@ def test_cpu_profile_automatic_training_and_queue_ignore_visible_accelerator(lif
 @pytest.mark.parametrize("suffix", ["venv", "runtimes/torch_selected"])
 def test_profile_is_recovered_when_interpreter_is_started_directly(tmp_path, monkeypatch, suffix):
     monkeypatch.delenv("YPUDDIN_ENV_PROFILE", raising=False)
-    monkeypatch.setattr(sys, "prefix", str(tmp_path / "environment/profiles/windows-cpu" / suffix))
+    monkeypatch.setattr(sys, "prefix", str(tmp_path / "environment/windows-cpu" / suffix))
     assert current_profile() == "windows-cpu"
     monkeypatch.setenv("YPUDDIN_ENV_PROFILE", "windows-cuda")
     with pytest.raises(ValueError, match="Interpreter belongs"):

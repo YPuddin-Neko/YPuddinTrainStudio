@@ -1,6 +1,6 @@
 # 海光 DTK 独立环境
 
-海光 Linux 服务器使用 `studio-linux-dtk.sh`。依赖目录固定为源码下的 `environment/profiles/linux-dtk/venv`，扩展记录、安装缓存和服务状态放在当前数据根的 `environment/profiles/linux-dtk`。它不会使用根目录的旧 `venv`，也不会修改 CUDA、MPS 或 CPU 环境。
+海光 Linux 服务器使用 `studio-linux-dtk.sh`。依赖目录固定为源码下的 `environment/linux-dtk/venv`，扩展记录、安装缓存和服务状态放在当前数据根的 `environment/linux-dtk`。它不会使用根目录的旧 `venv`，也不会修改 CUDA、MPS 或 CPU 环境。
 
 ## 当前能用到哪一步
 
@@ -81,7 +81,7 @@ YPUDDIN_DTK_PYTHON=/usr/bin/python3 \
 ./studio-linux-dtk.sh --dtk-wheelhouse="$PWD/environment/vendor-wheels" --no-browser
 ```
 
-入口会使用 `venv --without-pip` 创建新环境，再以 `--no-index --no-deps` 安装本地 pip，并验证 pip 位于目标环境中。缺少本地 pip wheel 或宿主 pip 太旧时，会在创建前说明缺少什么；不会执行 apt、升级宿主 pip、安装驱动或触碰其他平台的 venv。已有 `environment/profiles/linux-dtk/venv` 仍按原路径启动，不需要重新创建它。
+入口会使用 `venv --without-pip` 创建新环境，再以 `--no-index --no-deps` 安装本地 pip，并验证 pip 位于目标环境中。缺少本地 pip wheel 或宿主 pip 太旧时，会在创建前说明缺少什么；不会执行 apt、升级宿主 pip、安装驱动或触碰其他平台的 venv。已有 `environment/linux-dtk/venv` 仍按原路径启动，不需要重新创建它。
 
 ## 检查与使用
 

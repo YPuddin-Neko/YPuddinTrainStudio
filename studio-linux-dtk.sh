@@ -49,7 +49,7 @@ for studio_dtk_include in \
     export CPLUS_INCLUDE_PATH="$studio_dtk_include${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}"
   fi
 done
-studio_dtk_python=environment/profiles/linux-dtk/venv/bin/python
+studio_dtk_python=environment/linux-dtk/venv/bin/python
 if [ -x "$studio_dtk_python" ]; then
   exec "$studio_dtk_python" scripts/bootstrap.py --profile=linux-dtk "$@"
 fi

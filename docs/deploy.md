@@ -25,7 +25,7 @@ studio-cpu.bat               # Windows 仅 CPU，x86_64 / arm64
 ./studio-cpu.sh              # Linux / macOS 仅 CPU，x86_64 / arm64
 ```
 
-首次部署会按平台创建独立的 `environment/profiles/<平台>/venv`，再安装对应 PyTorch、训练依赖并构建前端。CUDA、CPU、macOS MPS 的依赖环境不共用，各环境只能用上面对应的入口启动；共用阶段在 `scripts/launch.sh` / `scripts/launch.bat`，不是入口。下文用 `<启动入口>` 指代你所在环境的那一个。三个加速入口只在 x86_64 上验证过，在 arm64 上启动会直接拒绝并提示改用 CPU 入口；MPS 入口要求 Apple Silicon。安装标记记录架构，同一个环境目录不会被两种架构共用。直接运行共用阶段（不带 `--profile`）会落到根目录 `venv` 的旧部署，不搬移或重建。平台目录和 Torch 切换关系见 [环境说明](ENVIRONMENT_LIFECYCLE_2026-09-14.md)。
+首次部署会按平台创建独立的 `environment/<平台>/venv`，再安装对应 PyTorch、训练依赖并构建前端。CUDA、CPU、macOS MPS 的依赖环境不共用，各环境只能用上面对应的入口启动；共用阶段在 `scripts/launch.sh` / `scripts/launch.bat`，不是入口。下文用 `<启动入口>` 指代你所在环境的那一个。三个加速入口只在 x86_64 上验证过，在 arm64 上启动会直接拒绝并提示改用 CPU 入口；MPS 入口要求 Apple Silicon。安装标记记录架构，同一个环境目录不会被两种架构共用。直接运行共用阶段（不带 `--profile`）会落到根目录 `venv` 的旧部署，不搬移或重建。平台目录和 Torch 切换关系见 [环境说明](ENVIRONMENT_LIFECYCLE_2026-09-14.md)。
 
 CUDA 环境安装 `ypuddin[models,server,optim,logging,nvidia]`，CPU/MPS 不安装 NVIDIA 依赖，也不自动安装注意力扩展。初始地址为 `http://127.0.0.1:8765/`；保存过 host/port 设置后，下次启动使用保存值，命令行参数优先。后续运行只对选中环境增量补齐依赖，保留已有 Torch/CUDA/NumPy 原生栈。
 
@@ -96,7 +96,7 @@ macOS 将上面的 PyTorch 安装行改为 `uv pip install --python venv/bin/pyt
 ```
 xiangmuyuanma/
 ├── venv/                旧部署环境，共用阶段在没有 --profile 时继续兼容
-├── environment/profiles/<平台>/venv/  新部署各平台独立依赖
+├── environment/<平台>/venv/  新部署各平台独立依赖
 ├── studio_data/          服务数据目录（--data-root 可改），包含：
 │   ├── studio.db         SQLite：项目 / 版本 / 数据集 / 任务 / 产物 / 模型注册表
 │   ├── settings.json     「系统设置」页保存的设置
