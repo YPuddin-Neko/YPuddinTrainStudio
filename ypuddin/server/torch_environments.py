@@ -20,6 +20,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ypuddin.package_sources import pypi_sources, run_sources, torch_sources
 from ypuddin.runtime_profiles import current_profile, selected_key
 
 from .db import new_id, now
@@ -384,6 +385,9 @@ class TorchEnvironments:
                 "--cache-dir",
                 str(self.environment.root / "cache"),
             ]
+            # Bind the backend as well as the release so dependency resolution cannot
+            # replace a CUDA wheel with a CPU build from a general package index.
+            torch_version = build.torch + (f"+{build.backend}" if build.backend.startswith("cu") else "")
             constraints = work / "constraints.txt"
             versions = self.environment.versions()
             constraints.write_text(
@@ -394,24 +398,42 @@ class TorchEnvironments:
                     and name not in OPTIONAL_EXTENSIONS
                     and name != "ypuddin"
                 )
-                + f"torch=={build.torch}\ntorchvision=={build.torchvision}\n",
+                + f"torch=={torch_version}\ntorchvision=={build.torchvision}\n",
                 encoding="utf-8",
             )
             self._update(id_, phase="installing_pytorch")
-            self.installer.run(
+            sources = self.context.settings().get("downloads", {})
+            fallback = sources.get("fallback", True)
+            indexes = pypi_sources(sources.get("pypi", "ustc"), fallback)
+            torch_indexes = (
+                [("index-url", url) for url in indexes]
+                if build.index_url == "https://pypi.org/simple"
+                else torch_sources(build.backend, sources.get("pytorch", "mirror"), fallback)
+            )
+            run_sources(
+                self.installer,
                 [
-                    *pip,
-                    "install",
-                    "--only-binary=:all:",
-                    "--no-input",
-                    "--index-url",
-                    build.index_url,
-                    f"torch=={build.torch}",
-                    f"torchvision=={build.torchvision}",
+                    (
+                        url,
+                        [
+                            *pip,
+                            "install",
+                            "--only-binary=:all:",
+                            "--no-input",
+                            "--no-deps",
+                            *(
+                                ["--no-index", "--find-links", url]
+                                if kind == "find-links"
+                                else ["--index-url", url]
+                            ),
+                            f"torch=={torch_version}",
+                            f"torchvision=={build.torchvision}",
+                        ],
+                    )
+                    for kind, url in torch_indexes
                 ],
                 log,
                 cancel,
-                timeout=3600,
             )
             try:
                 import tomllib
@@ -425,21 +447,29 @@ class TorchEnvironments:
                 r for extra in extras for r in project["optional-dependencies"][extra]
             ]
             self._update(id_, phase="installing_dependencies")
-            self.installer.run(
+            run_sources(
+                self.installer,
                 [
-                    *pip,
-                    "install",
-                    "--only-binary=:all:",
-                    "--no-input",
-                    "--index-url",
-                    "https://pypi.org/simple",
-                    "--constraint",
-                    str(constraints),
-                    *requirements,
+                    (
+                        url,
+                        [
+                            *pip,
+                            "install",
+                            "--only-binary=:all:",
+                            "--no-input",
+                            "--index-url",
+                            url,
+                            "--constraint",
+                            str(constraints),
+                            f"torch=={torch_version}",
+                            f"torchvision=={build.torchvision}",
+                            *requirements,
+                        ],
+                    )
+                    for url in indexes
                 ],
                 log,
                 cancel,
-                timeout=3600,
             )
             # Source linkage gives every environment the same checked-out code without creating egg-info.
             site = work / (

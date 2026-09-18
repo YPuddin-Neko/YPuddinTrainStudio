@@ -19,6 +19,7 @@ from .models import Settings
 from .supervisor import JobSupervisor
 
 DEFAULT_SETTINGS: dict[str, Any] = {
+    "downloads": {"pypi": "ustc", "pytorch": "mirror", "fallback": True},
     "paths": {"data_root": "", "cache_dir": "", "models_dir": "", "output_dir": ""},
     "server": {"host": "127.0.0.1", "port": 8765},
     "ui": {"language": "zh-CN", "theme": "system"},

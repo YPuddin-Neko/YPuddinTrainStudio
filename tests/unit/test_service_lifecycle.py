@@ -671,3 +671,13 @@ def test_profile_is_recovered_when_interpreter_is_started_directly(tmp_path, mon
     monkeypatch.setenv("YPUDDIN_ENV_PROFILE", "windows-cuda")
     with pytest.raises(ValueError, match="Interpreter belongs"):
         current_profile()
+
+
+def test_saved_package_source_controls_runtime_installation(lifecycle):
+    lifecycle.context.save_settings({"downloads": {"pypi": "tuna", "fallback": False}})
+    op = lifecycle.torch.start(TorchRequest(build_id="2.13.0-mps"))
+    lifecycle.torch.apply(op.id)
+    assert finish(lifecycle.torch, op.id).status == "completed"
+    installs = [call for call in lifecycle.installer.calls if "--index-url" in call]
+    assert len(installs) == 2
+    assert all(call[call.index("--index-url") + 1] == "https://pypi.tuna.tsinghua.edu.cn/simple" for call in installs)

@@ -17165,6 +17165,9 @@
           },
           "network": {
             "$ref": "#/components/schemas/SettingsNetwork"
+          },
+          "downloads": {
+            "$ref": "#/components/schemas/SettingsDownloads"
           }
         },
         "additionalProperties": true,
@@ -17175,6 +17178,40 @@
           "ui"
         ],
         "title": "Settings"
+      },
+      "SettingsDownloads": {
+        "properties": {
+          "pypi": {
+            "type": "string",
+            "enum": [
+              "ustc",
+              "tuna",
+              "aliyun",
+              "official"
+            ],
+            "title": "Pypi",
+            "default": "ustc"
+          },
+          "pytorch": {
+            "type": "string",
+            "enum": [
+              "mirror",
+              "aliyun",
+              "sjtu",
+              "official"
+            ],
+            "title": "Pytorch",
+            "default": "mirror"
+          },
+          "fallback": {
+            "type": "boolean",
+            "title": "Fallback",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SettingsDownloads"
       },
       "SettingsNetwork": {
         "properties": {

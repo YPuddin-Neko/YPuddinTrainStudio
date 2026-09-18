@@ -115,11 +115,19 @@ class SettingsNetwork(BaseModel):
     proxy_password_configured: bool = False
 
 
+class SettingsDownloads(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    pypi: Literal["ustc", "tuna", "aliyun", "official"] = "ustc"
+    pytorch: Literal["mirror", "aliyun", "sjtu", "official"] = "mirror"
+    fallback: bool = True
+
+
 class Settings(_Out):
     paths: SettingsPaths
     server: SettingsServer
     ui: SettingsUi
     network: SettingsNetwork = Field(default_factory=SettingsNetwork)
+    downloads: SettingsDownloads = Field(default_factory=SettingsDownloads)
 
 
 class FsEntry(_Out):

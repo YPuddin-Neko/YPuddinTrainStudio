@@ -1302,3 +1302,11 @@ def test_environment_refuses_reuse_from_another_architecture(monkeypatch, tmp_pa
     marker.write_text(json.dumps({"profile": "linux-cpu", "arch": "arm64"}), encoding="utf-8")
     with pytest.raises(SystemExit):
         boot.select_environment("cpu", "cpu")
+
+
+def test_saved_download_settings_drive_bootstrap_sources(monkeypatch):
+    monkeypatch.setattr(boot, "DOWNLOAD_SETTINGS", {"pypi": "tuna", "pytorch": "sjtu", "fallback": False})
+    packages, torch = boot.index_chains("auto", "cu130")
+    assert packages == ["https://pypi.tuna.tsinghua.edu.cn/simple"]
+    assert torch == [("index-url", "https://mirror.sjtu.edu.cn/pytorch-wheels/cu130")]
+    assert boot.index_chains("auto", "dtk")[1] == []

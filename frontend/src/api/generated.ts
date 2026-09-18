@@ -6016,8 +6016,29 @@ export interface components {
             server: components["schemas"]["SettingsServer"];
             ui: components["schemas"]["SettingsUi"];
             network?: components["schemas"]["SettingsNetwork"];
+            downloads?: components["schemas"]["SettingsDownloads"];
         } & {
             [key: string]: unknown;
+        };
+        /** SettingsDownloads */
+        SettingsDownloads: {
+            /**
+             * Pypi
+             * @default ustc
+             * @enum {string}
+             */
+            pypi: "ustc" | "tuna" | "aliyun" | "official";
+            /**
+             * Pytorch
+             * @default mirror
+             * @enum {string}
+             */
+            pytorch: "mirror" | "aliyun" | "sjtu" | "official";
+            /**
+             * Fallback
+             * @default true
+             */
+            fallback: boolean;
         };
         /** SettingsNetwork */
         SettingsNetwork: {

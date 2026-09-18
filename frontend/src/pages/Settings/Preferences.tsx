@@ -1,3 +1,4 @@
+import DownloadPreferences from './DownloadPreferences';
 import NetworkPreferences, { type NetworkSettings } from './NetworkPreferences';
 type SettingsType = ApiSettings;
 
@@ -21,6 +22,7 @@ export default function Preferences() {
   const { t, i18n } = useTranslation();
   const text = useWorkspaceText();
   const [params] = useSearchParams();
+  const downloads = params.get('section') === 'downloads';
   const appearance = params.get('section') === 'interface';
   const [settings, setSettings] = React.useState<SettingsType | null>(null);
   const [saving, setSaving] = React.useState(false);
@@ -87,10 +89,10 @@ export default function Preferences() {
     );
   }
 
-  return <div data-testid="settings-page"><SettingsSections sections={appearance ? [{ id: 'preferences-appearance', label: t('settings.ui') }, { id: 'preferences-service', label: t('settings.server') }, { id: 'preferences-network', label: text('网络代理', 'Network proxy') }] : [{ id: 'preferences-storage', label: t('settings.paths') }]}>
+  return <div data-testid="settings-page"><SettingsSections sections={downloads ? [{ id: 'preferences-downloads', label: text('软件下载源', 'Package sources') }] : appearance ? [{ id: 'preferences-appearance', label: t('settings.ui') }, { id: 'preferences-service', label: t('settings.server') }, { id: 'preferences-network', label: text('网络代理', 'Network proxy') }] : [{ id: 'preferences-storage', label: t('settings.paths') }]}>
     {error && <div role="alert" className="settings-alert">{error}</div>}
     <fieldset disabled={saving} aria-busy={saving} className="contents">
-    {!appearance ? <section id="preferences-storage" data-settings-section tabIndex={-1} className="settings-section">
+    {downloads ? <DownloadPreferences value={settings.downloads ?? { pypi: 'ustc', pytorch: 'mirror', fallback: true }} onChange={value => update(s => ({ ...s, downloads: value }))} /> : !appearance ? <section id="preferences-storage" data-settings-section tabIndex={-1} className="settings-section">
       <div className="settings-section-heading"><div><h2>{t('settings.paths')}</h2><p className="settings-note">{text('训练数据、采样与产物按项目和版本隔离；更改默认路径仅影响新任务。', 'Training data, samples and outputs are isolated by project and version. Path changes apply to new jobs.')}</p></div></div>
       {([['data_root', t('settings.dataRoot')], ['cache_dir', t('settings.cacheDir')], ['models_dir', t('settings.modelsDir')]] as const).map(([key, label]) => <div className="settings-field" key={key}>
         <label htmlFor={`preferences-${key}`}>{label}</label><div className="settings-field-control">

@@ -47,6 +47,15 @@ from email.parser import BytesParser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from ypuddin.package_sources import (  # noqa: E402
+    pypi_sources,
+)
+from ypuddin.package_sources import (  # noqa: E402
+    torch_sources as configured_torch_sources,
+)
+
+DOWNLOAD_SETTINGS = None
 VENV = ROOT / "venv"
 FRONTEND = ROOT / "frontend"
 MARKER = VENV / ".ypuddin-install.json"
@@ -298,6 +307,11 @@ def index_chains(mode: str, torch_tag: str) -> tuple[list[str], list[tuple[str, 
     auto/cn: mirrors first (USTC -> Tsinghua -> Aliyun), official PyPI as the last resort.
     official: official first, mirrors as the fallback.
     """
+    if DOWNLOAD_SETTINGS is not None:
+        sources = DOWNLOAD_SETTINGS
+        return (pypi_sources(sources.get("pypi", "ustc"), sources.get("fallback", True)),
+                [] if torch_tag == "dtk" else configured_torch_sources(
+                    torch_tag, sources.get("pytorch", "mirror"), sources.get("fallback", True)))
     if mode == "official":
         pypi = [PYPI_OFFICIAL, *PYPI_MIRRORS_CN]  # mirrors still serve as a fallback
         torch_src = [("index-url", TORCH_OFFICIAL.format(tag=torch_tag))]
@@ -785,7 +799,7 @@ def ensure_venv(
             log("[3/5] 安装 Apple PyTorch（PyPI wheel 包含 MPS 支持）")
             pip_install(["torch>=2.4"], "torch")
         else:
-            log(f"[3/5] 安装 PyTorch（{torch_tag}，CUDA 版本下载较大，请耐心等待）")
+            log(f"[3/5] 安装 PyTorch（{torch_tag}），首次下载可能需要几分钟")
             torch_install()
         current = torch_runtime()
         expected_cuda = None if torch_tag == "cpu" else f"{torch_tag[2:-1]}.{torch_tag[-1]}"
@@ -1080,6 +1094,8 @@ def doctor() -> int:
 
 # --------------------------------------------------------------------------- main
 def main(argv: list[str]) -> int:
+    global DOWNLOAD_SETTINGS
+    DOWNLOAD_SETTINGS = None
     opts = {
         "torch": "auto",
         "profile": "auto",
@@ -1123,6 +1139,10 @@ def main(argv: list[str]) -> int:
     if opts["index"] not in ("auto", "cn", "official"):
         die(f"--index 取值无效：{opts['index']!r}（可选 auto/cn/official）")
 
+    if not any(a == "--mirror" or a.startswith("--index=") for a in argv):
+        settings_file = Path(opts["data_root"]).expanduser() / "settings.json"
+        if settings_file.exists():
+            DOWNLOAD_SETTINGS = json.loads(settings_file.read_text(encoding="utf-8")).get("downloads")
     torch_tag = platform_torch_tag(opts["profile"], opts["torch"])
     select_environment(opts["profile"], torch_tag)
     if command == "doctor":

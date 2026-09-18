@@ -34,6 +34,7 @@ from packaging.utils import canonicalize_name, parse_wheel_filename
 from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from ypuddin.package_sources import pypi_sources, run_sources, torch_sources
 from ypuddin.runtime_profiles import current_profile, profile_root
 
 from . import dtk_catalog, windows_attention_catalog
@@ -1024,21 +1025,26 @@ class EnvironmentManager:
             ]
             # The official CUDA-specific xFormers wheel index binds its compiled kernels to
             # the actual Torch runtime, not the driver's advertised maximum CUDA version.
+            sources = self.context.settings().get("downloads", {})
+            indexes = pypi_sources(sources.get("pypi", "ustc"), sources.get("fallback", True))
+            plan_sources = [("index-url", url) for url in indexes]
             if self.profile == "linux-dtk" and local_wheel:
                 # Native/declared dependencies must exist. Only the reviewed implicit
                 # Python dependencies are resolved separately below, never vendor kernels.
                 self._validate_installed_requirements(Path(target), versions)
                 args += ["--no-index", "--no-deps"]
+                plan_sources = [("local", "local wheel")]
             elif request.package == "xformers" and not local_wheel:
                 cuda = self.runtime().get("cuda_runtime")
-                args += ["--index-url", "https://download.pytorch.org/whl/cu" + str(cuda).replace(".", "")]
-            else:
-                args += ["--index-url", "https://pypi.org/simple"]
+                plan_sources = torch_sources("cu" + str(cuda).replace(".", ""), sources.get("pytorch", "mirror"), sources.get("fallback", True))
             if request.action == "repair":
                 # Only the requested package is force-reinstalled. Dependencies are checked
                 # separately against the installed environment and never reinstalled en masse.
                 args += ["--force-reinstall", "--no-deps"]
-            self.installer.run([*args, target], log, cancel)
+            run_sources(self.installer, [
+                (url, [*args, *([] if kind == "local" else ["--no-index", "--no-deps", "--find-links", url] if kind == "find-links" else ["--index-url", url]), target])
+                for kind, url in plan_sources
+            ], log, cancel)
             rows = json.loads(report.read_text(encoding="utf-8")).get("install", [])
             supplemental_names = set()
             supplemental_requirements = []
@@ -1051,24 +1057,12 @@ class EnvironmentManager:
             if supplemental_requirements:
                 log("Resolve vendor Python runtime dependencies: " + ", ".join(supplemental_requirements))
                 supplemental_report = work / "python-runtime-report.json"
-                self.installer.run(
-                    [
-                        *cmd,
-                        "install",
-                        "--dry-run",
-                        "--report",
-                        str(supplemental_report),
-                        "--only-binary=:all:",
-                        "--no-input",
-                        "--constraint",
-                        str(constraints),
-                        "--index-url",
-                        "https://pypi.org/simple",
-                        *supplemental_requirements,
-                    ],
-                    log,
-                    cancel,
-                )
+                run_sources(self.installer, [
+                    (url, [*cmd, "install", "--dry-run", "--report", str(supplemental_report),
+                           "--only-binary=:all:", "--no-input", "--constraint", str(constraints),
+                           "--index-url", url, *supplemental_requirements])
+                    for url in indexes
+                ], log, cancel)
                 supplemental_rows = json.loads(supplemental_report.read_text(encoding="utf-8")).get(
                     "install", []
                 )
