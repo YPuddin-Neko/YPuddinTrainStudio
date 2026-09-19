@@ -22,6 +22,8 @@ SPEC.loader.exec_module(boot)
 def isolated_bootstrap_root(monkeypatch, tmp_path_factory):
     root = tmp_path_factory.mktemp("bootstrap-project")
     (root / "pyproject.toml").write_bytes((SOURCE_ROOT / "pyproject.toml").read_bytes())
+    monkeypatch.setattr(boot, "PACKAGE_CACHE_ROOT", None)
+    monkeypatch.setattr(boot, "DOWNLOAD_SETTINGS", None)
     monkeypatch.setattr(boot, "ROOT", root)
     monkeypatch.setattr(boot, "PROFILE", "legacy")
     monkeypatch.setattr(boot, "VENV", root / "venv")
@@ -930,9 +932,20 @@ def test_dtk_launcher_keeps_library_environment_local_and_never_uses_legacy(tmp_
     directories = ["lib", "hip/lib", "lib64", ".hyhal/lib", "bin", "llvm/bin", "hip/bin"]
     if layout == "dtk2604":
         directories += [
-            "llvm/lib", "dcc/lib", "dcc/gcvm/lib", "dcc/comgr/lib", "dcc/bin",
-            "dushmem/lib", "opencl/lib", ".hyhal/lib64", ".hyhal/rocm_smi/lib",
-            "include", "llvm/include", "dcc/gcvm/include", "dushmem/include", "opencl/include",
+            "llvm/lib",
+            "dcc/lib",
+            "dcc/gcvm/lib",
+            "dcc/comgr/lib",
+            "dcc/bin",
+            "dushmem/lib",
+            "opencl/lib",
+            ".hyhal/lib64",
+            ".hyhal/rocm_smi/lib",
+            "include",
+            "llvm/include",
+            "dcc/gcvm/include",
+            "dushmem/include",
+            "opencl/include",
         ]
     for directory in directories:
         (dtk / directory).mkdir(parents=True)
@@ -970,7 +983,9 @@ def test_dtk_launcher_keeps_library_environment_local_and_never_uses_legacy(tmp_
     )
     arguments = result.stdout.splitlines()
     assert arguments[:3] == ["scripts/bootstrap.py", "--profile=linux-dtk", "doctor"]
-    ld_path, user_site, foreign_path, selected, dtkroot, rocm, hip, linker, path, c_path, cpp_path = arguments[3:]
+    ld_path, user_site, foreign_path, selected, dtkroot, rocm, hip, linker, path, c_path, cpp_path = (
+        arguments[3:]
+    )
     assert (user_site, foreign_path) == ("1", "cleared")
     assert (selected, dtkroot, rocm, hip) == (str(dtk), str(dtk), str(dtk), str(dtk / "hip"))
     for variable, value, suffixes in (
@@ -1059,7 +1074,9 @@ def test_dtk_local_triton_is_installed_and_pinned_even_after_ready_marker(
     wheels = dtk_wheelhouse(tmp_path, supplied_triton)
     monkeypatch.setattr(boot, "uv_path", lambda: "uv" if use_uv else None)
     monkeypatch.setattr(boot, "uv_cache_dir", lambda _: tmp_path)
-    monkeypatch.setattr(boot, "torch_runtime", lambda: {"version": native["torch"], "cuda": None, "hip": "6.3"})
+    monkeypatch.setattr(
+        boot, "torch_runtime", lambda: {"version": native["torch"], "cuda": None, "hip": "6.3"}
+    )
     commands = []
 
     def install(command, **kwargs):
@@ -1076,7 +1093,9 @@ def test_dtk_local_triton_is_installed_and_pinned_even_after_ready_marker(
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr(boot.subprocess, "run", install)
-    options = dict(index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE, dtk_wheelhouse=str(wheels))
+    options = dict(
+        index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE, dtk_wheelhouse=str(wheels)
+    )
     boot.ensure_venv("dtk", **options)
     assert sum("--no-index" in command for command in commands) == (initial != "triton-ready")
     assert all(versions[name] == version for name, version in before.items())
@@ -1098,7 +1117,9 @@ def test_dtk_without_supplied_triton_keeps_sdpa_environment_optional(monkeypatch
         versions.update(native)
         boot.MARKER.write_text(json.dumps({"signature": boot.install_signature("dtk", boot.EXTRAS_BASE)}))
     wheels = dtk_wheelhouse(tmp_path)
-    monkeypatch.setattr(boot, "torch_runtime", lambda: {"version": native["torch"], "cuda": None, "hip": "6.3"})
+    monkeypatch.setattr(
+        boot, "torch_runtime", lambda: {"version": native["torch"], "cuda": None, "hip": "6.3"}
+    )
     commands = []
 
     def install(command, **kwargs):
@@ -1118,9 +1139,7 @@ def test_dtk_without_supplied_triton_keeps_sdpa_environment_optional(monkeypatch
 
 
 @pytest.mark.parametrize("invalid", ["plain", "renamed", "corrupt"])
-def test_dtk_triton_must_have_vendor_metadata_before_any_environment_mutation(
-    monkeypatch, tmp_path, invalid
-):
+def test_dtk_triton_must_have_vendor_metadata_before_any_environment_mutation(monkeypatch, tmp_path, invalid):
     versions = existing_environment(monkeypatch, tmp_path)
     monkeypatch.setattr(boot, "PROFILE", "linux-dtk")
     supplied = "3.1.0" if invalid in {"plain", "renamed"} else "3.1.0+das.opt1.dtk2604"
@@ -1310,3 +1329,75 @@ def test_saved_download_settings_drive_bootstrap_sources(monkeypatch):
     assert packages == ["https://pypi.tuna.tsinghua.edu.cn/simple"]
     assert torch == [("index-url", "https://mirror.sjtu.edu.cn/pytorch-wheels/cu130")]
     assert boot.index_chains("auto", "dtk")[1] == []
+
+
+def test_external_environment_root_preserves_default_and_isolates_profiles(monkeypatch, tmp_path):
+    monkeypatch.setattr(boot.platform, "system", lambda: "Windows")
+    default = boot.ROOT / "venv"
+    default.mkdir()
+    (default / "keep.txt").write_text("keep")
+    external = tmp_path / "different-drive"
+    assert boot.select_environment("auto", "cu130", str(external)) == "windows-cuda"
+    assert boot.VENV == external / "windows-cuda" / "venv"
+    assert not external.exists()
+    assert (default / "keep.txt").read_text() == "keep"
+    boot.select_environment("cpu", "cpu", str(external))
+    assert boot.VENV == external / "windows-cpu" / "venv"
+
+
+def test_external_environment_refuses_unowned_venv_and_symlink(monkeypatch, tmp_path):
+    monkeypatch.setattr(boot.platform, "system", lambda: "Windows")
+    external = tmp_path / "custom"
+    venv = external / "windows-cpu" / "venv"
+    venv.mkdir(parents=True)
+    (venv / "user-file").write_text("preserve")
+    with pytest.raises(SystemExit):
+        boot.select_environment("cpu", "cpu", str(external))
+    assert (venv / "user-file").read_text() == "preserve"
+    linked = tmp_path / "linked"
+    linked.symlink_to(external, target_is_directory=True)
+    with pytest.raises(SystemExit):
+        boot.select_environment("cpu", "cpu", str(linked))
+
+
+def test_external_environment_resumes_owned_partial_install(monkeypatch, tmp_path):
+    monkeypatch.setattr(boot.platform, "system", lambda: "Windows")
+    root = tmp_path / "new-environments"
+    venv = root / "windows-cpu" / "venv"
+    venv.mkdir(parents=True)
+    (venv / ".ypuddin-owner.json").write_text(
+        json.dumps({"profile": "windows-cpu", "arch": boot.host_arch()})
+    )
+    boot.select_environment("cpu", "cpu", str(root))
+    assert boot.VENV == venv
+    assert not boot.MARKER.exists()  # ownership is not installation success
+
+
+def test_saved_environment_root_and_explicit_cli_override(monkeypatch, tmp_path):
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "settings.json").write_text(json.dumps({"paths": {"bootstrap_env_dir": str(tmp_path / "saved")}}))
+    monkeypatch.setattr(boot, "platform_torch_tag", lambda *args: "cpu")
+    monkeypatch.setattr(boot, "doctor", lambda: 0)
+    calls = []
+    monkeypatch.setattr(boot, "select_environment", lambda *args, **kwargs: calls.append((args, kwargs)))
+    assert boot.main(["doctor", "--data-root", str(data)]) == 0
+    assert calls[-1][1]["env_root"] == str(tmp_path / "saved")
+    assert boot.main(["doctor", "--data-root", str(data), "--env-root", str(tmp_path / "explicit")]) == 0
+    assert calls[-1][1]["env_root"] == str(tmp_path / "explicit")
+
+
+def test_custom_cache_controls_both_installers_and_keeps_profiles_separate(monkeypatch, tmp_path):
+    monkeypatch.setattr(boot, "PACKAGE_CACHE_ROOT", str(tmp_path / "cache"))
+    monkeypatch.setattr(boot, "PROFILE", "windows-cuda")
+    env = boot._env()
+    assert env["PIP_CACHE_DIR"] == str(tmp_path / "cache/packages/windows-cuda")
+    assert env["UV_CACHE_DIR"] == str(tmp_path / "cache/packages/windows-cuda/uv")
+    monkeypatch.setattr(boot, "PROFILE", "windows-cpu")
+    assert boot._env()["PIP_CACHE_DIR"] != env["PIP_CACHE_DIR"]
+
+
+@pytest.mark.parametrize("arguments", [["--env-root"], ["--env-root", " "], ["--env-root="]])
+def test_empty_environment_root_is_rejected(arguments):
+    with pytest.raises(SystemExit):
+        boot.main(["doctor", *arguments])

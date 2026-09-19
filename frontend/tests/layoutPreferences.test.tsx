@@ -19,7 +19,7 @@ vi.mock('../src/pages/ProjectDetail/ProjectDetail', async () => {
 });
 vi.mock('../src/pages/Settings/EnvironmentSettings', () => ({ default: () => <p>Runtime settings content</p> }));
 const server = setupServer();
-const initialSettings = (): Settings => ({ paths: { data_root: 'D:/studio', cache_dir: 'D:/cache', models_dir: 'D:/models', output_dir: 'D:/runs', output_mode: 'project' }, server: { host: '127.0.0.1', port: 8765 }, ui: { theme: 'system', language: 'zh-CN' } });
+const initialSettings = (): Settings => ({ paths: { bootstrap_env_dir: '', data_root: 'D:/studio', cache_dir: 'D:/cache', models_dir: 'D:/models', output_dir: 'D:/runs', output_mode: 'project' }, server: { host: '127.0.0.1', port: 8765 }, ui: { theme: 'system', language: 'zh-CN' } });
 let settings: Settings;
 let writes: unknown[];
 let mediaChanged: ((event: MediaQueryListEvent) => void) | undefined;

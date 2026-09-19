@@ -6066,6 +6066,11 @@ export interface components {
         };
         /** SettingsPaths */
         SettingsPaths: {
+            /**
+             * Bootstrap Env Dir
+             * @default
+             */
+            bootstrap_env_dir: string;
             /** Data Root */
             data_root: string;
             /** Cache Dir */

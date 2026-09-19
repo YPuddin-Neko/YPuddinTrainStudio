@@ -346,3 +346,33 @@ def test_redirects_cannot_escape_approved_https_release_hosts(url):
     assert not vendor.permitted_download(url)
     with pytest.raises(ValueError):
         vendor._AssetRedirect().redirect_request(None, None, 302, "", {}, url)
+
+
+@pytest.mark.parametrize("cached", [b"correct bytes", b"corrupt bytes"])
+def test_cached_wheel_is_rehashed_and_corruption_is_redownloaded(tmp_path, cached):
+    data = b"correct bytes"
+    wheel = candidate().model_copy(
+        update={"size_bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+    )
+    target = tmp_path / wheel.filename
+    target.write_bytes(cached)
+    calls = []
+
+    def open_url(*args, **kwargs):
+        calls.append(True)
+        return Response(data, wheel.url, len(data))
+
+    result = vendor.download(wheel, tmp_path, threading.Event(), lambda *a: None, opener=open_url)
+    assert result.read_bytes() == data
+    assert bool(calls) == (cached != data)
+
+
+def test_interrupted_metadata_response_keeps_saved_catalog(monkeypatch):
+    import http.client
+    def interrupted(*args):
+        raise http.client.IncompleteRead(b"partial response")
+    monkeypatch.setattr(vendor, "discover", interrupted)
+    catalog = vendor.Catalog()
+    result = catalog.snapshot({"platform": "Windows"}, "windows-cuda", refresh=True)
+    assert result.error and "IncompleteRead" in result.error
+    assert result.wheels

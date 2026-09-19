@@ -932,7 +932,7 @@ def _index_dataset(c: ServiceContext, did: str) -> None:
         class_prompt=row["class_prompt"],
     )
     try:
-        db = IndexDB(c.data_root / "cache" / "index.sqlite")
+        db = IndexDB(c.service_cache_dir("index") / "index.sqlite")
         try:
             records = scan_sources(
                 [src],
@@ -1376,7 +1376,7 @@ def thumb(did: str, h: str, size: int = 256, c: ServiceContext = Depends(ctx)) -
     from PIL import Image
 
     r = _record_by_hash(c, did, h)
-    cache = c.data_root / "thumbs" / f"{h}_{size}.jpg"
+    cache = c.service_cache_dir("thumbnails") / f"{h}_{size}.jpg"
     if not cache.exists():
         cache.parent.mkdir(parents=True, exist_ok=True)
         with Image.open(r["path"]) as im:

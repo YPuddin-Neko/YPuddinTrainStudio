@@ -113,10 +113,20 @@ def main():
     parser.add_argument("--resume-step", type=int, default=4)
     parser.add_argument("--timeout", type=int, default=3600)
     parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument(
+        "--allow-text-encoder",
+        action="store_true",
+        help="Also accept explicit online text-encoder adapter recipes",
+    )
     args = parser.parse_args()
     cfg = load_config(args.config)
-    if cfg.training.mode != "adapter" or not cfg.training.train_backbone or cfg.training.train_text_encoder:
-        parser.error("Recipe must train only main-model adapters with frozen text encoders")
+    if cfg.training.mode != "adapter":
+        parser.error("Recipe must train adapters")
+    if cfg.training.train_text_encoder:
+        if not args.allow_text_encoder or cfg.dataset.text_encoding != "online":
+            parser.error("Text-encoder acceptance requires --allow-text-encoder and online encoding")
+    elif not cfg.training.train_backbone:
+        parser.error("Recipe must train at least one component")
     if cfg.adapter.algo not in {"lora", "lokr"} or cfg.checkpoint.resume:
         parser.error("Use LoRA/LoKr and a recipe without an existing full-state resume")
     if not cfg.sampling.prompts or cfg.sampling.prompts_file:
@@ -150,6 +160,8 @@ def main():
         "strategy": args.strategy,
         "family": cfg.model.family,
         "algorithm": cfg.adapter.algo,
+        "train_backbone": cfg.training.train_backbone,
+        "train_text_encoder": cfg.training.train_text_encoder,
         "source_sha256": identity,
         "scope": "Fixed recipe only; CPU is not GPU acceptance",
     }

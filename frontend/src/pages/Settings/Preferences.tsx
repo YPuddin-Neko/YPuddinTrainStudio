@@ -97,8 +97,13 @@ export default function Preferences() {
       {([['data_root', t('settings.dataRoot')], ['cache_dir', t('settings.cacheDir')], ['models_dir', t('settings.modelsDir')]] as const).map(([key, label]) => <div className="settings-field" key={key}>
         <label htmlFor={`preferences-${key}`}>{label}</label><div className="settings-field-control">
           {key === 'data_root' ? <><input id={`preferences-${key}`} aria-label={label} readOnly value={settings.paths[key]} className="settings-input font-mono opacity-70" /><p className="settings-note">{t('settings.dataRootNote')}</p></> : <PathInput ariaLabel={label} value={settings.paths[key]} onChange={value => update(s => ({ ...s, paths: { ...s.paths, [key]: value } }))} />}
+          {key === 'cache_dir' && <p className="settings-note">{text('自定义缓存目录用于新生成的训练缓存、扫描索引、缩略图和软件包缓存；已有文件保留在原位置。', 'A custom cache directory applies to new training caches, indexes, thumbnails and package downloads. Existing files stay in place.')}</p>}
         </div>
       </div>)}
+      <div className="settings-field"><label>{text('基础环境目录', 'Base environment directory')}</label><div className="settings-field-control">
+        <PathInput ariaLabel={text('基础环境目录', 'Base environment directory')} value={settings.paths.bootstrap_env_dir ?? ''} placeholder={text('留空使用源码目录下的默认位置', 'Leave blank for the default source directory location')} onChange={value => update(s => ({...s, paths: {...s.paths, bootstrap_env_dir: value}}))}/>
+        <p className="settings-note">{text('按平台分别创建 Python 环境。保存后下次从启动脚本启动时生效；新目录需要安装依赖，旧环境不会搬迁或删除。', 'Creates a Python environment per platform. Applies on the next launcher start; a new location requires installation. Old environments are preserved.')}</p>
+      </div></div>
       <div className="settings-field"><label htmlFor="preferences-output-mode">{text('训练产物位置', 'Training output location')}</label><div className="settings-field-control">
         <StudioSelect disabled={saving} id="preferences-output-mode" aria-label={text('训练产物位置', 'Training output location')} value={settings.paths.output_mode === 'custom' ? 'custom' : 'project'}
           options={[{value:'project',label:text('项目版本目录（默认）','Project version directory (default)')},{value:'custom',label:text('自定义输出根目录','Custom output root')}]}

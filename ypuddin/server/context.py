@@ -20,10 +20,15 @@ from .supervisor import JobSupervisor
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "downloads": {"pypi": "ustc", "pytorch": "mirror", "fallback": True},
-    "paths": {"data_root": "", "cache_dir": "", "models_dir": "", "output_dir": ""},
+    "paths": {"bootstrap_env_dir": "", "data_root": "", "cache_dir": "", "models_dir": "", "output_dir": ""},
     "server": {"host": "127.0.0.1", "port": 8765},
     "ui": {"language": "zh-CN", "theme": "system"},
-    "network": {"proxy_mode": "system", "proxy_url": "", "proxy_username": "", "proxy_password_configured": False},
+    "network": {
+        "proxy_mode": "system",
+        "proxy_url": "",
+        "proxy_username": "",
+        "proxy_password_configured": False,
+    },
 }
 
 
@@ -100,8 +105,27 @@ class ServiceContext:
             base["paths"][key] = str(Path(base["paths"][key]).expanduser().resolve())
         base["network"].pop("proxy_password", None)
         revision = base.pop(PASSWORD_REVISION, "")
-        base["network"]["proxy_password_configured"] = bool(ProxyCredentials(self.data_root).password(revision))
+        base["network"]["proxy_password_configured"] = bool(
+            ProxyCredentials(self.data_root).password(revision)
+        )
         return base
+
+    def service_cache_dir(self, kind: str) -> Path:
+        """Preserve default locations; custom roots apply to future cache writes."""
+        if kind not in {"index", "thumbnails"}:
+            raise ValueError("Unknown service cache kind")
+        root = Path(self.settings()["paths"]["cache_dir"])
+        if root.resolve() == (self.data_root / "cache").resolve():
+            return self.data_root / ("thumbs" if kind == "thumbnails" else "cache")
+        return root / "service" / kind
+
+    def package_cache_dir(self, profile: str) -> Path:
+        from ypuddin.runtime_profiles import profile_root
+
+        root = Path(self.settings()["paths"]["cache_dir"])
+        if root.resolve() == (self.data_root / "cache").resolve():
+            return profile_root(self.data_root, profile) / "cache"
+        return root / "packages" / profile
 
     def save_settings(self, patch: dict[str, Any]) -> dict[str, Any]:
         with self._settings_lock:
@@ -120,7 +144,11 @@ class ServiceContext:
             patch["network"] = dict(patch["network"])
             if "proxy_password" in patch["network"]:
                 password = patch["network"].pop("proxy_password")
-                if not isinstance(password, str) or len(password) > 4096 or any(ord(c) < 32 for c in password):
+                if (
+                    not isinstance(password, str)
+                    or len(password) > 4096
+                    or any(ord(c) < 32 for c in password)
+                ):
                     raise ValueError("Invalid proxy password")
         cur = self.settings()
         for k, v in patch.items():
@@ -145,16 +173,24 @@ class ServiceContext:
             if not value or not str(value).strip():
                 raise ValueError(f"paths.{key} must not be empty")
             cur["paths"][key] = str(Path(value).expanduser().resolve())
+        env_root = cur["paths"].get("bootstrap_env_dir", "").strip()
+        cur["paths"]["bootstrap_env_dir"] = str(Path(env_root).expanduser().absolute()) if env_root else ""
         cur["network"] = validate_proxy_settings(cur["network"])
         cur = Settings.model_validate(cur).model_dump()
-        revision = json.loads(self.settings_path.read_text("utf-8")).get(PASSWORD_REVISION, "") if self.settings_path.exists() else ""
+        revision = (
+            json.loads(self.settings_path.read_text("utf-8")).get(PASSWORD_REVISION, "")
+            if self.settings_path.exists()
+            else ""
+        )
         if password is not None:
             next_revision = uuid.uuid4().hex
             ProxyCredentials(self.data_root).prepare(password, revision, next_revision)
             revision = next_revision
             cur["network"]["proxy_password_configured"] = bool(password)
         else:
-            cur["network"]["proxy_password_configured"] = bool(ProxyCredentials(self.data_root).password(revision))
+            cur["network"]["proxy_password_configured"] = bool(
+                ProxyCredentials(self.data_root).password(revision)
+            )
         # This replacement is the single commit point for both the public policy
         # and the private password. Failed/uncommitted preparations remain inactive.
         stored = {**cur, PASSWORD_REVISION: revision}

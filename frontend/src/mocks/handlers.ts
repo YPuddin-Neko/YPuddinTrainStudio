@@ -32,7 +32,7 @@ let mockQueueSettings: QueueSettings = {
 };
 
 let mockSettings: Settings = {
-  paths: {
+  paths: { bootstrap_env_dir: '',
     data_root: '/Volumes/Service/Dev/data',
     cache_dir: '/Volumes/Service/Dev/cache',
     models_dir: '/Volumes/Service/Dev/models',

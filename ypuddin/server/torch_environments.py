@@ -383,7 +383,7 @@ class TorchEnvironments:
                 "--isolated",
                 "--disable-pip-version-check",
                 "--cache-dir",
-                str(self.environment.root / "cache"),
+                str(self.context.package_cache_dir(self.profile)),
             ]
             # Bind the backend as well as the release so dependency resolution cannot
             # replace a CUDA wheel with a CPU build from a general package index.

@@ -680,4 +680,34 @@ def test_saved_package_source_controls_runtime_installation(lifecycle):
     assert finish(lifecycle.torch, op.id).status == "completed"
     installs = [call for call in lifecycle.installer.calls if "--index-url" in call]
     assert len(installs) == 2
-    assert all(call[call.index("--index-url") + 1] == "https://pypi.tuna.tsinghua.edu.cn/simple" for call in installs)
+    assert all(
+        call[call.index("--index-url") + 1] == "https://pypi.tuna.tsinghua.edu.cn/simple" for call in installs
+    )
+
+
+def test_custom_cache_redirects_thumbnail_and_package_writes(lifecycle, tmp_path, monkeypatch):
+    from PIL import Image
+
+    from ypuddin.server import routes_work
+    from ypuddin.server.environment import Installer
+
+    context = lifecycle.context
+    old_thumbs = context.service_cache_dir("thumbnails")
+    old_thumbs.mkdir(parents=True, exist_ok=True)
+    (old_thumbs / "keep.txt").write_text("old cache")
+    custom = tmp_path / "custom-cache"
+    response = context.save_settings(
+        {"paths": {"cache_dir": str(custom), "bootstrap_env_dir": str(tmp_path / "environments")}}
+    )
+    assert response["paths"]["bootstrap_env_dir"] == str(tmp_path / "environments")
+    image = tmp_path / "image.png"
+    Image.new("RGB", (64, 64), "red").save(image)
+    monkeypatch.setattr(routes_work, "_record_by_hash", lambda *args: {"path": str(image)})
+    thumb = routes_work.thumb("test", "testhash", 32, context)
+    assert Path(thumb.path).is_relative_to(custom)
+    assert Path(thumb.path).exists()
+    assert (old_thumbs / "keep.txt").read_text() == "old cache"
+    assert context.service_cache_dir("index").is_relative_to(custom)
+    assert context.package_cache_dir("windows-cuda") != context.package_cache_dir("windows-cpu")
+    installer = Installer(tmp_path / "installer", context=context)
+    assert installer.cache_dir.is_relative_to(custom)

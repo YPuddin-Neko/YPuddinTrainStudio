@@ -20,6 +20,7 @@
   --index=<auto|cn|official>  包源。auto / cn（默认）：国内镜像优先，中科大 -> 清华 -> 阿里 -> 官方兜底，
                   探测不通的源自动排后，逐个尝试直到成功；official：官方源优先（镜像兜底）
   --mirror        等价于 --index=cn
+  --env-root=<目录>  基础环境根目录，按平台隔离；默认源码目录下的 environment
   --reinstall     只重建选中平台的环境（其他环境及 studio_data/ 不受影响）
   --no-browser    服务起来后不自动打开浏览器
   --no-frontend   跳过前端构建（只要 API）
@@ -56,6 +57,7 @@ from ypuddin.package_sources import (  # noqa: E402
 )
 
 DOWNLOAD_SETTINGS = None
+PACKAGE_CACHE_ROOT = None
 VENV = ROOT / "venv"
 FRONTEND = ROOT / "frontend"
 MARKER = VENV / ".ypuddin-install.json"
@@ -237,11 +239,11 @@ def platform_torch_tag(profile: str, requested: str) -> str:
     return tag
 
 
-def select_environment(profile: str, torch_tag: str) -> str:
+def select_environment(profile: str, torch_tag: str, env_root: str | None = None) -> str:
     """Select a directory before all probes/mutations. Never migrate a pre-existing venv."""
     global VENV, MARKER, PROFILE
     system = {"Windows": "windows", "Linux": "linux", "Darwin": "macos"}.get(platform.system())
-    if profile == "legacy" or (profile == "auto" and (ROOT / "venv").exists()):
+    if not env_root and (profile == "legacy" or (profile == "auto" and (ROOT / "venv").exists())):
         PROFILE, VENV = "legacy", ROOT / "venv"
     else:
         if not system:
@@ -253,22 +255,28 @@ def select_environment(profile: str, torch_tag: str) -> str:
                 else (system + "-cuda" if torch_tag.startswith("cu") else "cpu")
             )
         PROFILE = system + "-cpu" if profile == "cpu" else profile
-        VENV = ROOT / "environment" / PROFILE / "venv"
+        base = Path(os.path.abspath(Path(env_root).expanduser())) if env_root else ROOT / "environment"
+        VENV = base / PROFILE / "venv"
         # The extra profiles/ level is gone. Name the stale tree instead of deleting
         # gigabytes on the user's behalf, or of leaving it unexplained.
         stale = ROOT / "environment" / "profiles"
-        if stale.is_dir():
+        if not env_root and stale.is_dir():
             log(f"旧布局 {stale} 已不再使用，本次安装到 {VENV}；确认新环境可用后可自行删除旧目录。")
     MARKER = VENV / ".ypuddin-install.json"
     # Refuse links before either installation or explicit rebuild can affect another directory.
     path = VENV
-    while path != ROOT:
+    while path != ROOT and path.parent != path:
         if path.is_symlink() or (hasattr(path, "is_junction") and path.is_junction()):
             die(f"环境目录不允许链接或目录联接，未修改：{path}")
         path = path.parent
-    if MARKER.exists():
+    owner_marker = MARKER if MARKER.exists() else VENV / ".ypuddin-owner.json"
+    if VENV.exists() and not VENV.is_dir():
+        die(f"环境路径不是目录，未修改：{VENV}")
+    if env_root and VENV.exists() and any(VENV.iterdir()) and not owner_marker.exists():
+        die(f"指定目录已有未登记的环境，未修改：{VENV}；请选择新的环境根目录")
+    if owner_marker.exists():
         try:
-            marker = json.loads(MARKER.read_text(encoding="utf-8"))
+            marker = json.loads(owner_marker.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             die("环境安装标记损坏，未修改环境；请先检查环境目录")
         owner = marker.get("profile", "legacy")
@@ -309,9 +317,14 @@ def index_chains(mode: str, torch_tag: str) -> tuple[list[str], list[tuple[str, 
     """
     if DOWNLOAD_SETTINGS is not None:
         sources = DOWNLOAD_SETTINGS
-        return (pypi_sources(sources.get("pypi", "ustc"), sources.get("fallback", True)),
-                [] if torch_tag == "dtk" else configured_torch_sources(
-                    torch_tag, sources.get("pytorch", "mirror"), sources.get("fallback", True)))
+        return (
+            pypi_sources(sources.get("pypi", "ustc"), sources.get("fallback", True)),
+            []
+            if torch_tag == "dtk"
+            else configured_torch_sources(
+                torch_tag, sources.get("pytorch", "mirror"), sources.get("fallback", True)
+            ),
+        )
     if mode == "official":
         pypi = [PYPI_OFFICIAL, *PYPI_MIRRORS_CN]  # mirrors still serve as a fallback
         torch_src = [("index-url", TORCH_OFFICIAL.format(tag=torch_tag))]
@@ -693,6 +706,11 @@ def ensure_venv(
             create_dtk_venv(base, wheelhouse)
         else:
             run([base, "-m", "venv", str(VENV)])
+        # Record ownership before package downloads so an interrupted installation
+        # can resume without accepting arbitrary pre-existing environments.
+        (VENV / ".ypuddin-owner.json").write_text(
+            json.dumps({"profile": PROFILE, "arch": host_arch()}), encoding="utf-8"
+        )
     else:
         log(f"[2/5] 虚拟环境 {VENV.name}/ 已存在，更新依赖")
     py = str(venv_python())
@@ -1013,6 +1031,10 @@ def _env() -> dict[str, str]:
     env = dict(os.environ)
     env.setdefault("PYTHONUTF8", "1")
     env.setdefault("PYTHONIOENCODING", "utf-8")
+    if PACKAGE_CACHE_ROOT:
+        package_cache = Path(PACKAGE_CACHE_ROOT).expanduser().absolute() / "packages" / PROFILE
+        env["PIP_CACHE_DIR"] = str(package_cache)
+        env["UV_CACHE_DIR"] = str(package_cache / "uv")
     env["YPUDDIN_ENV_PROFILE"] = PROFILE
     env["PYTHONNOUSERSITE"] = "1"
     env.pop("PYTHONHOME", None)
@@ -1094,7 +1116,7 @@ def doctor() -> int:
 
 # --------------------------------------------------------------------------- main
 def main(argv: list[str]) -> int:
-    global DOWNLOAD_SETTINGS
+    global DOWNLOAD_SETTINGS, PACKAGE_CACHE_ROOT
     DOWNLOAD_SETTINGS = None
     opts = {
         "torch": "auto",
@@ -1108,6 +1130,7 @@ def main(argv: list[str]) -> int:
         "data_root": "studio_data",
         "fe_port": "3000",
         "dtk_wheelhouse": None,
+        "env_root": None,
     }
     rest: list[str] = []
     it = iter(argv)
@@ -1116,6 +1139,10 @@ def main(argv: list[str]) -> int:
             opts["torch"] = a.split("=", 1)[1]
         elif a.startswith("--profile="):
             opts["profile"] = a.split("=", 1)[1]
+        elif a.startswith("--env-root="):
+            opts["env_root"] = a.split("=", 1)[1]
+            if not opts["env_root"].strip():
+                die("--env-root 不能为空")
         elif a.startswith("--dtk-wheelhouse="):
             opts["dtk_wheelhouse"] = a.split("=", 1)[1]
         elif a == "--mirror":
@@ -1128,7 +1155,7 @@ def main(argv: list[str]) -> int:
             opts["browser"] = False
         elif a == "--no-frontend":
             opts["frontend"] = False
-        elif a in ("--host", "--port", "--data-root", "--fe-port"):
+        elif a in ("--host", "--port", "--data-root", "--fe-port", "--env-root"):
             opts[a[2:].replace("-", "_")] = next(it, opts[a[2:].replace("-", "_")])
         else:
             rest.append(a)
@@ -1139,12 +1166,25 @@ def main(argv: list[str]) -> int:
     if opts["index"] not in ("auto", "cn", "official"):
         die(f"--index 取值无效：{opts['index']!r}（可选 auto/cn/official）")
 
+    if any(a == "--env-root" for a in argv) and not (opts["env_root"] or "").strip():
+        die("--env-root 不能为空")
+    settings_file = Path(opts["data_root"]).expanduser() / "settings.json"
+    saved_settings = json.loads(settings_file.read_text(encoding="utf-8")) if settings_file.exists() else {}
     if not any(a == "--mirror" or a.startswith("--index=") for a in argv):
-        settings_file = Path(opts["data_root"]).expanduser() / "settings.json"
-        if settings_file.exists():
-            DOWNLOAD_SETTINGS = json.loads(settings_file.read_text(encoding="utf-8")).get("downloads")
+        DOWNLOAD_SETTINGS = saved_settings.get("downloads")
+    configured_cache = saved_settings.get("paths", {}).get("cache_dir")
+    default_cache = Path(opts["data_root"]).expanduser().absolute() / "cache"
+    PACKAGE_CACHE_ROOT = (
+        configured_cache
+        if configured_cache and Path(configured_cache).expanduser().absolute() != default_cache
+        else None
+    )
+    env_root = opts["env_root"] or saved_settings.get("paths", {}).get("bootstrap_env_dir")
     torch_tag = platform_torch_tag(opts["profile"], opts["torch"])
-    select_environment(opts["profile"], torch_tag)
+    if env_root:
+        select_environment(opts["profile"], torch_tag, env_root=env_root)
+    else:
+        select_environment(opts["profile"], torch_tag)
     if command == "doctor":
         return doctor()
     if opts["reinstall"] and Path(sys.prefix).resolve() == VENV.resolve():

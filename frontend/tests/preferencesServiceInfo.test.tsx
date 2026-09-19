@@ -7,7 +7,7 @@ import type { Settings } from '../src/api/types';
 import i18n from '../src/i18n';
 
 const settings: Settings = {
-  paths: { data_root: 'D:/studio', models_dir: 'D:/models', cache_dir: 'D:/cache', output_dir: 'D:/runs', output_mode: 'project' },
+  paths: { bootstrap_env_dir: '', data_root: 'D:/studio', models_dir: 'D:/models', cache_dir: 'D:/cache', output_dir: 'D:/runs', output_mode: 'project' },
   server: { host: '127.0.0.1', port: 8765 },
   ui: { language: 'zh-CN', theme: 'light' },
 };
@@ -44,6 +44,19 @@ describe('service version in appearance and service settings', () => {
     await screen.findByTestId('settings-page');
     expect(screen.queryByTestId('settings-service-version')).not.toBeInTheDocument();
     expect(systemInfo).not.toHaveBeenCalled();
+  });
+
+  it('persists an explicit base environment directory and allows returning to the default', async () => {
+    const put = vi.spyOn(apiClient, 'put').mockImplementation(async (_path, value) => value as never);
+    show('storage');
+    const input = await screen.findByRole('textbox', { name: '基础环境目录' });
+    fireEvent.change(input, { target: { value: 'E:/trainer-environments' } });
+    fireEvent.click(screen.getByTestId('settings-save-btn'));
+    await waitFor(() => expect(put).toHaveBeenCalledWith('/settings', expect.objectContaining({ paths: expect.objectContaining({ bootstrap_env_dir: 'E:/trainer-environments' }) })));
+    await waitFor(() => expect(input).toBeEnabled());
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.click(screen.getByTestId('settings-save-btn'));
+    await waitFor(() => expect(put).toHaveBeenLastCalledWith('/settings', expect.objectContaining({ paths: expect.objectContaining({ bootstrap_env_dir: '' }) })));
   });
 
   it('shows an unavailable value instead of inventing a version when the API omits it', async () => {

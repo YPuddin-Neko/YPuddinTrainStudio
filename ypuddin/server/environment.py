@@ -411,6 +411,10 @@ class Installer:
         self.root = root
         self.context = context
 
+    @property
+    def cache_dir(self) -> Path:
+        return self.context.package_cache_dir(current_profile()) if self.context else self.root / "cache"
+
     def command(self, log, cancel) -> list[str]:
         if importlib.util.find_spec("pip"):
             return [
@@ -420,7 +424,7 @@ class Installer:
                 "--isolated",
                 "--disable-pip-version-check",
                 "--cache-dir",
-                str(self.root / "cache"),
+                str(self.cache_dir),
             ]
         tool = self.root / "installer"
         python = tool / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
@@ -436,7 +440,7 @@ class Installer:
             "--python",
             sys.executable,
             "--cache-dir",
-            str(self.root / "cache"),
+            str(self.cache_dir),
         ]
 
     def run(self, args, log, cancel, *, timeout=1800):
@@ -991,7 +995,13 @@ class EnvironmentManager:
                 from .network import ProxyPolicy
 
                 path = provider.download(
-                    vendor, work / "vendor", cancel, progress, proxy=ProxyPolicy.from_context(self.context)
+                    vendor,
+                    self.installer.cache_dir / "reviewed-wheels" / vendor.sha256
+                    if request.package == "flash-attn" and self.profile == "windows-cuda"
+                    else work / "vendor",
+                    cancel,
+                    progress,
+                    proxy=ProxyPolicy.from_context(self.context),
                 )
                 self._update(id_, phase="validate", bytes_per_second=None, eta_seconds=None)
                 current = self.validate_wheel(path, package=request.package)
@@ -1036,15 +1046,37 @@ class EnvironmentManager:
                 plan_sources = [("local", "local wheel")]
             elif request.package == "xformers" and not local_wheel:
                 cuda = self.runtime().get("cuda_runtime")
-                plan_sources = torch_sources("cu" + str(cuda).replace(".", ""), sources.get("pytorch", "mirror"), sources.get("fallback", True))
+                plan_sources = torch_sources(
+                    "cu" + str(cuda).replace(".", ""),
+                    sources.get("pytorch", "mirror"),
+                    sources.get("fallback", True),
+                )
             if request.action == "repair":
                 # Only the requested package is force-reinstalled. Dependencies are checked
                 # separately against the installed environment and never reinstalled en masse.
                 args += ["--force-reinstall", "--no-deps"]
-            run_sources(self.installer, [
-                (url, [*args, *([] if kind == "local" else ["--no-index", "--no-deps", "--find-links", url] if kind == "find-links" else ["--index-url", url]), target])
-                for kind, url in plan_sources
-            ], log, cancel)
+            run_sources(
+                self.installer,
+                [
+                    (
+                        url,
+                        [
+                            *args,
+                            *(
+                                []
+                                if kind == "local"
+                                else ["--no-index", "--no-deps", "--find-links", url]
+                                if kind == "find-links"
+                                else ["--index-url", url]
+                            ),
+                            target,
+                        ],
+                    )
+                    for kind, url in plan_sources
+                ],
+                log,
+                cancel,
+            )
             rows = json.loads(report.read_text(encoding="utf-8")).get("install", [])
             supplemental_names = set()
             supplemental_requirements = []
@@ -1057,12 +1089,31 @@ class EnvironmentManager:
             if supplemental_requirements:
                 log("Resolve vendor Python runtime dependencies: " + ", ".join(supplemental_requirements))
                 supplemental_report = work / "python-runtime-report.json"
-                run_sources(self.installer, [
-                    (url, [*cmd, "install", "--dry-run", "--report", str(supplemental_report),
-                           "--only-binary=:all:", "--no-input", "--constraint", str(constraints),
-                           "--index-url", url, *supplemental_requirements])
-                    for url in indexes
-                ], log, cancel)
+                run_sources(
+                    self.installer,
+                    [
+                        (
+                            url,
+                            [
+                                *cmd,
+                                "install",
+                                "--dry-run",
+                                "--report",
+                                str(supplemental_report),
+                                "--only-binary=:all:",
+                                "--no-input",
+                                "--constraint",
+                                str(constraints),
+                                "--index-url",
+                                url,
+                                *supplemental_requirements,
+                            ],
+                        )
+                        for url in indexes
+                    ],
+                    log,
+                    cancel,
+                )
                 supplemental_rows = json.loads(supplemental_report.read_text(encoding="utf-8")).get(
                     "install", []
                 )
@@ -1103,6 +1154,10 @@ class EnvironmentManager:
                     "files.pythonhosted.org",
                     "download.pytorch.org",
                     "download-r2.pytorch.org",
+                    "mirrors.ustc.edu.cn",
+                    "pypi.tuna.tsinghua.edu.cn",
+                    "mirrors.aliyun.com",
+                    "mirror.sjtu.edu.cn",
                 ):
                     raise ValueError("Installation plan uses an unsupported wheel source")
                 filename = urllib.parse.unquote(parsed.path).rsplit("/", 1)[-1]

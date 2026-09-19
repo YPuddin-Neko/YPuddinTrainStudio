@@ -90,6 +90,7 @@ class SystemInfo(_Out):
 
 
 class SettingsPaths(_Out):
+    bootstrap_env_dir: str = ""
     data_root: str
     cache_dir: str
     models_dir: str

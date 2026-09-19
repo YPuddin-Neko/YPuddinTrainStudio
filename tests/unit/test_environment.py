@@ -1082,6 +1082,7 @@ def windows_vendor_env(env, monkeypatch):
     from ypuddin.server.network import ProxyPolicy
 
     env.manager.profile = "windows-cuda"
+    env.installer.cache_dir = env.manager.root / "cache"
     env.runtime.update(torch="2.11.0+cu128", gpu_capability=[12, 0])
     env.versions["torch"] = "2.11.0+cu128"
     entry = next(w for w in windows.BUNDLED if w.python_tag == "cp312" and w.cuda == "12.8")
@@ -1152,3 +1153,11 @@ def test_windows_catalog_api_returns_bundled_candidates_and_network_reason(env, 
     catalog = response.json()
     assert catalog["origin"] == "bundled" and "network unavailable" in catalog["error"]
     assert len([w for w in catalog["wheels"] if w["compatible"]]) == 1
+
+
+@pytest.mark.parametrize("host", ["mirrors.ustc.edu.cn", "pypi.tuna.tsinghua.edu.cn", "mirrors.aliyun.com", "mirror.sjtu.edu.cn"])
+def test_reviewed_package_mirrors_are_allowed_in_installation_plan(env, host):
+    row = FakeInstaller.row("tensorboard", "2.18.0")
+    row["download_info"]["url"] = f"https://{host}/packages/tensorboard-2.18.0-py3-none-any.whl"
+    env.installer.rows = [row]
+    assert start(env).status == "ready"

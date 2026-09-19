@@ -87,3 +87,23 @@ def test_comparison_rejects_corruption(tmp_path, corrupt):
         torch.save({"state": torch.tensor([1, 3])}, state / f"{corrupt}.pt")
     with pytest.raises(AssertionError):
         acceptance.compare(*dirs, 4)
+
+
+def test_text_encoder_acceptance_requires_explicit_opt_in(tmp_path, monkeypatch):
+    path = recipe(tmp_path)
+    data = json.loads(path.read_text())
+    data["model"]["family"] = "sdxl"
+    data["training"].update(train_backbone=False, train_text_encoder=True)
+    data["dataset"]["text_encoding"] = "online"
+    path.write_text(json.dumps(data))
+    out = tmp_path / "text-acceptance"
+    args = ["verify", str(path), str(out), "--device", "cuda", "--prepare-only"]
+    monkeypatch.setattr(sys, "argv", args)
+    with pytest.raises(SystemExit):
+        acceptance.main()
+    assert not out.exists()
+    monkeypatch.setattr(sys, "argv", [*args, "--allow-text-encoder"])
+    assert acceptance.main() == 0
+    report = json.loads((out / "report.json").read_text())
+    assert report["train_text_encoder"] and not report["train_backbone"]
+    assert not report["strict_passed"]

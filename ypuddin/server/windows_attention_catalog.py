@@ -8,6 +8,7 @@ Only the Windows cp312/cu128/Torch2.11 build has prior project hardware acceptan
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import re
 import threading
@@ -248,7 +249,7 @@ class Catalog:
                     self._wheels, self._releases, self._limited, self._unverified_assets = discover(policy)
                     self._checked_at, self._error = time.time(), None
                     updated = True
-                except (OSError, ValueError, TypeError, KeyError) as exc:
+                except (OSError, http.client.HTTPException, ValueError, TypeError, KeyError) as exc:
                     self._error = (
                         "无法更新社区版本目录，已使用已保存的版本信息。请检查网络或全局代理设置。 / Cannot refresh community releases; using saved metadata. Check network/proxy settings. "
                         + policy.redact(exc)
@@ -334,13 +335,24 @@ def download(wheel, destination, cancel, progress, *, proxy=None, opener=None):
         raise ValueError("Invalid reviewed wheel size")
     destination.mkdir(parents=True, exist_ok=True)
     target = destination / wheel.filename
+    # Reuse only bytes verified against the current release metadata.
+    if target.is_file() and target.stat().st_size == wheel.size_bytes:
+        digest = hashlib.sha256()
+        with target.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024**2), b""):
+                if cancel.is_set():
+                    raise InterruptedError()
+                digest.update(chunk)
+        if digest.hexdigest() == wheel.sha256:
+            progress(wheel.size_bytes, wheel.size_bytes, None, 0)
+            return target
     temporary = target.with_suffix(".whl.partial")
     total, previous_bytes, previous_at, speed = 0, 0, time.monotonic(), None
     progress(0, wheel.size_bytes, None, None)
     try:
         request = urllib.request.Request(wheel.url, headers={"User-Agent": "YPuddin-Windows-FA2/1"})
         open_url = opener or policy.opener(_AssetRedirect()).open
-        with open_url(request, timeout=10) as response, temporary.open("wb") as stream:
+        with open_url(request, timeout=30) as response, temporary.open("wb") as stream:
             if not permitted_download(response.geturl()):
                 raise ValueError("Unapproved wheel download response origin")
             length = response.headers.get("Content-Length")
@@ -376,7 +388,7 @@ def download(wheel, destination, cancel, progress, *, proxy=None, opener=None):
         return target
     except InterruptedError:
         raise
-    except (urllib.error.URLError, OSError) as exc:
+    except (urllib.error.URLError, OSError, http.client.HTTPException) as exc:
         raise ValueError(
             "社区 wheel 下载失败；请检查全局代理，或从发布页手动下载后上传。 / Community wheel download failed; check proxy settings or download and upload manually. "
             + policy.redact(exc)

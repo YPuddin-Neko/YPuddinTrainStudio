@@ -17247,6 +17247,11 @@
       },
       "SettingsPaths": {
         "properties": {
+          "bootstrap_env_dir": {
+            "type": "string",
+            "title": "Bootstrap Env Dir",
+            "default": ""
+          },
           "data_root": {
             "type": "string",
             "title": "Data Root"
