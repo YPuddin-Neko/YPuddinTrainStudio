@@ -85,6 +85,10 @@ def build_optimizer(cfg: OptimizerConfig, param_groups: list[dict[str, Any]]) ->
         "came",
     ):
         kwargs["betas"] = tuple(cfg.betas)
+    if key == "came":
+        # The shared beta control has two values; CAME additionally requires
+        # its confidence-statistic decay (the upstream default is 0.9999).
+        kwargs["betas"] = (*cfg.betas, 0.9999)
     if key in ("adamw", "adam", "adamw8bit", "adamw_sf", "prodigy", "prodigy_plus_sf", "automagic"):
         kwargs["eps"] = cfg.eps
     if key == "adafactor":
@@ -105,6 +109,24 @@ def build_optimizer(cfg: OptimizerConfig, param_groups: list[dict[str, Any]]) ->
     if cfg.kahan:
         opt = KahanWrapper(opt)
     return opt
+
+
+def load_optimizer_state(cfg: OptimizerConfig, optimizer: Optimizer, state: dict[str, Any]) -> None:
+    """Load PPSF statistics without PyTorch casting them to the parameter dtype.
+
+    PPSF deliberately keeps p0/s in BF16 even with FP32 parameters. The generic
+    loader promotes these buffers, changing subsequent accumulator rounding.
+    Keep the loader's device placement but restore the saved tensor precision.
+    """
+    optimizer.load_state_dict(state)
+    if optimizer_key(cfg.type) != "prodigy_plus_sf":
+        return
+    for saved_group, group in zip(state["param_groups"], optimizer.param_groups, strict=True):
+        for saved_id, parameter in zip(saved_group["params"], group["params"], strict=True):
+            for name, saved in state["state"].get(saved_id, {}).items():
+                current = optimizer.state[parameter].get(name)
+                if isinstance(saved, Tensor) and isinstance(current, Tensor):
+                    optimizer.state[parameter][name] = saved.to(device=current.device, copy=True)
 
 
 def is_schedule_free(cfg: OptimizerConfig) -> bool:

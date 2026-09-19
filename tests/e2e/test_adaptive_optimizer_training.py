@@ -83,6 +83,11 @@ def test_adaptive_optimizer_accumulation_preview_and_resume(
     assert resumed.run() == "finished"
     for key, expected in reference.adapters.training_state_dict().items():
         torch.testing.assert_close(resumed.adapters.training_state_dict()[key], expected, rtol=0, atol=0)
+    from tests.checkpoint_assertions import assert_checkpoint_value_exact
+
+    assert_checkpoint_value_exact(
+        resumed.optimizer.state_dict(), reference.optimizer.state_dict(), "optimizer"
+    )
 
     def events(run_dir):
         return [json.loads(line) for line in (run_dir / "events.jsonl").read_text().splitlines()]

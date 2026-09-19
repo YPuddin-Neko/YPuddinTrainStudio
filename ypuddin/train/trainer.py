@@ -54,6 +54,7 @@ from ypuddin.optim import (
     build_optimizer,
     build_scheduler,
     is_schedule_free,
+    load_optimizer_state,
     manages_learning_rate,
     optimizer_hyperparameter_snapshot,
     optimizer_learning_rates,
@@ -724,7 +725,7 @@ class Trainer:
                 "warning", message="resuming a legacy checkpoint; exact RNG compatibility is not guaranteed"
             )
         expected_optimizer_settings = optimizer_hyperparameter_snapshot(self.cfg.optimizer, self.optimizer)
-        self.optimizer.load_state_dict(ck["optimizer"])
+        load_optimizer_state(self.cfg.optimizer, self.optimizer, ck["optimizer"])
         validate_optimizer_runtime(
             self.cfg.optimizer, self.optimizer, expected_groups=expected_optimizer_settings
         )

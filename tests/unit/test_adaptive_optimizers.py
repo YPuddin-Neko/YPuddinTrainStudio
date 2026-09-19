@@ -11,6 +11,7 @@ from ypuddin.optim import (
     build_optimizer,
     build_scheduler,
     is_schedule_free,
+    load_optimizer_state,
     manages_learning_rate,
     optimizer_hyperparameter_snapshot,
     optimizer_learning_rates,
@@ -55,7 +56,7 @@ def test_real_prodigy_step_and_exact_fp32_state_resume(kind, module):
     restored_params = [nn.Parameter(p.detach().clone()) for p in parameters]
     saved = copy.deepcopy(original.state_dict())
     restored = make(restored_params)
-    restored.load_state_dict(saved)
+    load_optimizer_state(config, restored, saved)
     validate_optimizer_runtime(config, restored)
     advance(original, parameters, 6, 12)
     advance(restored, restored_params, 6, 12)
@@ -63,6 +64,10 @@ def test_real_prodigy_step_and_exact_fp32_state_resume(kind, module):
         assert torch.isfinite(expected).all()
         assert not torch.equal(initial, expected)
         torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    from tests.checkpoint_assertions import assert_checkpoint_value_exact
+
+    assert_checkpoint_value_exact(restored.state_dict(), original.state_dict(), "optimizer")
+
     rates = optimizer_learning_rates(config, original)
     assert rates and all(0 < value < 1 for value in rates.values())
     if is_schedule_free(config):
@@ -72,6 +77,18 @@ def test_real_prodigy_step_and_exact_fp32_state_resume(kind, module):
         original.train()
         for parameter, expected in zip(parameters, raw, strict=True):
             torch.testing.assert_close(parameter, expected, rtol=1e-6, atol=1e-7)
+
+
+def test_came_three_decay_values_and_real_step():
+    pytest.importorskip("pytorch_optimizer")
+    parameter = nn.Parameter(torch.linspace(0.1, 0.7, 64).reshape(8, 8))
+    initial = parameter.detach().clone()
+    optimizer = build_optimizer(OptimizerConfig(type="came"), [{"params": [parameter]}])
+    assert optimizer.param_groups[0]["betas"] == (0.9, 0.99, 0.9999)
+    parameter.grad = torch.ones_like(parameter)
+    optimizer.step()
+    assert torch.isfinite(parameter).all()
+    assert not torch.equal(parameter, initial)
 
 
 @pytest.mark.parametrize("kind,rate", [("prodigy", 1), ("prodigy_plus_sf", 1), ("automagic", 1e-6)])
