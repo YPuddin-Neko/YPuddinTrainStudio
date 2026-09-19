@@ -1,5 +1,7 @@
 # Windows 环境与训练补充验收（2026-09-19）
 
+后续 Krea2／Klein、内置优化器与 SDXL 损失配置补测，以及 PPSF／CAME 修复，见 [2026-09-20 补充报告](OTHER_MODELS_ACCEPTANCE_2026-09-20.md)。下文保留本轮当时的范围，不将新增结果倒填为本轮测试。
+
 产品提交：`2becc030f925f8d24731048c737eaf71ba66fcdc`。测试使用 Windows 11、RTX 5070 Ti 16 GiB 单卡、Python 3.12.10；CUDA 环境为 PyTorch 2.13.0+cu130。所有安装与运行都在 `studio_data/remote-tests/launcher-20260918` 的独立目录进行，不修改原服务、模型或训练图片。
 
 ## 环境设置与安装

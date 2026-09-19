@@ -1,0 +1,4453 @@
+{
+  "date": "2026-09-20",
+  "hardware": "Windows 11 / RTX 5070 Ti 16 GiB / one GPU",
+  "product_fix_commit": "cddb0f7d3099641530deea61db42d5e4794b6000",
+  "versions": {
+    "torch": "2.13.0+cu130",
+    "bitsandbytes": "0.50.2",
+    "pytorch-optimizer": "3.10.1",
+    "transformers": "5.17.0"
+  },
+  "raw_archive_sha256": "a2c91e156cc87b13ed06e6714c57458fe12818a1f317a0684f7a82c8b7de04d8",
+  "source_manifests": {
+    "8449284": {
+      "ypuddin/__init__.py": "16375d9cc6cfd0b553c07b375a51bdaca286756e4ed351d49dac80a3f1d9464c",
+      "ypuddin/adapters/__init__.py": "efe895d50f1195c4beeed24d8639de9b6e6a9bee8eefb86f1ab14f919807d45b",
+      "ypuddin/adapters/base.py": "82a09422c993a55eeff007fed88098fab6a2f1ef2fdedd15f8bbae59c829c3f0",
+      "ypuddin/adapters/components.py": "b695ab9272f57f9e915722e648b4d104794e6fa277be3cf6d97f7f91460eac95",
+      "ypuddin/adapters/convert.py": "b71ff68f0c19890e34236a9c6c47f31bd3beec7eadcd32ff1b8aef1adc2ac85f",
+      "ypuddin/adapters/dora.py": "3a7090f107349016b7c1e523807d1478be4edc209255f13becd37614189331e1",
+      "ypuddin/adapters/factorize.py": "3cbe953c7a3adf7ca065f6afcbbfface15f7acea7e716cd890f14ebd9a23a181",
+      "ypuddin/adapters/frozen.py": "7d4e270d3e28cd55f336294c003afdb866c70835be0e5f3aa8476f528e5f3fa5",
+      "ypuddin/adapters/full.py": "e684f36914b44fcbb8b5d97235cb2d23fc0ca57f21a7cebcfc00ad0f2e3e918c",
+      "ypuddin/adapters/inject.py": "c7526a20293615a04ba15dccd4d7a48b1ba978864a6a9b3e0866c9a36e9052b1",
+      "ypuddin/adapters/io.py": "d0fc08446a0b158a70178eb9113fb8afdca2bf6efd2de299a77dc2e3f5dd5376",
+      "ypuddin/adapters/linear.py": "295ebada49cbf369b0a677c33f2429f5c8c5057a78756e860a99ec7ca54071e5",
+      "ypuddin/adapters/loha.py": "0989f6bb55369b106e70333d39eb7f772dc83a41668cc5403a2092a238fbc539",
+      "ypuddin/adapters/lokr.py": "71b4a9dc67cebf0251c9f69ad29550339b249d8f4a2dba7755e17180ff84beb2",
+      "ypuddin/adapters/lora.py": "b12913d01bd5fa88b99c1ed982298f92002f95003fc8b562676772f47be49c45",
+      "ypuddin/adapters/rules.py": "c7b8079244a9927ad308c2e2f0e0ede5c148237e0a743e8a9c07602270034445",
+      "ypuddin/cli.py": "f798d8aa1ce492becdc83776a8d3dfb54e0350d6264995d89bbad174798c9f28",
+      "ypuddin/config/__init__.py": "642dae1b2678ab50fa261af6920904b73c9154e4e99295b391990332e4d8e0b0",
+      "ypuddin/config/compute_policy.py": "6b134e725101941ca580c74325d74e301c9934df259d06fa2f64ec82366eec87",
+      "ypuddin/config/io.py": "666d6e993c2b8786f7c66dca08b89750ac887655cfb827cb8103ead30e450a5c",
+      "ypuddin/config/model_artifact.py": "307577f247cd715e566265ef5a27b12271289d55fa0ba2955f1e54e7316c9455",
+      "ypuddin/config/optimizer_rules.py": "a915c4fe8cb14e5d8491ebb375427b5b06ebc49c7a2dda5b1e9e89ebcadb2d5f",
+      "ypuddin/config/schema.py": "b47ce875054ef6cbd9df709caebf09d135f4332938bbfa10653ecc35b64165aa",
+      "ypuddin/config/show_when.py": "ac834d7ed691c4e3676349fb39efcf7b358cfd678061a1e8670b45abbc5cbde4",
+      "ypuddin/config/training_rules.py": "13a12b718e7092ac259e124c13c3343daf02e2f9b441f22c2abfe805a1aca412",
+      "ypuddin/config/ui.py": "038f421e53fcb01d9feb73690883c5220d408db4d01fd5ccf7680ef52442ad7d",
+      "ypuddin/data/__init__.py": "98e79eca92dab695b2aa87fb1a1cb6be5a065d81f7ca6aa0d5ad336551e9305e",
+      "ypuddin/data/anima_caption_inspection.py": "07f873a36ac6e97e0fc7ad93a9997325412011958406ee8ed2d2e06f3af497e7",
+      "ypuddin/data/buckets.py": "6cc85dc69c9730052624068cae4032ac630b2ef49e44b162ac89ce5dc947d932",
+      "ypuddin/data/cache.py": "4207b3b0be66a09871c9fbcb0b91cc59dc5c138824bbc0b06cd1f70093e3e412",
+      "ypuddin/data/caption_formats.py": "5f6d4425bfd490161a78d3100b88fcd45cb168c895b1a32136c802a349bcd0dd",
+      "ypuddin/data/caption_json.py": "4b4ce7e631fcf5ad4d3665d0bcc3b85fdb43683d94e5bc2eff7c259ca32d6727",
+      "ypuddin/data/captions.py": "77919aea02af772d18577cdffdbb68a4adc6f3ca66b55b78786e6b9472052b35",
+      "ypuddin/data/dataset.py": "722db8774b9d310f9c24f52cff18c4c44aa0b689fd662e3c81379a153d44360f",
+      "ypuddin/data/images.py": "e8579c6314fa99d8bad49be9644addb996465f20fb082cf7817939fe15fa1286",
+      "ypuddin/data/index.py": "a27092b8a067e1f9224e51c71eb5668469a2b435b8d4f767c18108fae91dd43d",
+      "ypuddin/data/native.py": "9bb1dc822a14ae193c05655e944219a804f62877e183237c43b51572bfe31447",
+      "ypuddin/data/sampler.py": "ecc6ab22bc4aa1d3db74815617c07a3cbcdbbf9f78a4efde869c0b1a6d365a26",
+      "ypuddin/memory/__init__.py": "327141ecb6f4fa6153c5e293d8f8ea8fdb23014045306f157bb16e7aff9267e6",
+      "ypuddin/memory/block_swap.py": "f90fa941e37df2946ae107bd0a9ccb06c77070506a249a2912fb3f202a026e84",
+      "ypuddin/models/__init__.py": "019635aae735526eecb8c059db7c5d8df86ed609231ac88f4e8e896cdfc0d026",
+      "ypuddin/models/anima/__init__.py": "36ad5236e51c3c44655efe069b649c8386a3c9521f53b834be36dea9861c0576",
+      "ypuddin/models/anima/checkpoint.py": "cba24a61e7bb7fdd0bb0b887e644a24b34466032b28000ab5d676b0375e0832e",
+      "ypuddin/models/anima/family.py": "7275d251ba22a2bef1259f1b7a7ce8878e44f1a52e4ac29cb32a0074e9313979",
+      "ypuddin/models/anima/text.py": "2949b9e9abdf72ce2316534a4b45a079fa3f4d23236fde333736fb62cc692048",
+      "ypuddin/models/anima/vendor/__init__.py": "caca3e6a7822a43e784de0199f9cec46b8d87fb1bad036f83532f7efcd889eb2",
+      "ypuddin/models/anima/vendor/attention.py": "65b9d63d65f62d074db6a05b2848985d79031323418b795276c831daef8ca9c3",
+      "ypuddin/models/anima/vendor/cosmos_dit.py": "78eea7abe3a11c4ad4726e2a4ece391caf9d4aeabb6668e7daed1fde53b209ab",
+      "ypuddin/models/anima/vendor/qwen_image_vae.py": "4a145b48506d3c3bff3488a409aae2d097ede5c6318fd28673c8d53ffd1994b2",
+      "ypuddin/models/anima/vendor/qwen_image_vae_2d.py": "1df5ec3d4392b1e1c7a72ca201413905d28662d56c5b50635e030a48c5b203dd",
+      "ypuddin/models/base.py": "f322c816df4dfff52fe469d045fa3e3fe4c9ff7ee29d4f705194e3226152e1a5",
+      "ypuddin/models/fingerprints.py": "b7eab1d2602d435b32a413e5d734c1383d8a97cb737271d5485767ba7052f730",
+      "ypuddin/models/flux/__init__.py": "8477d1ba5d743996cf6ea1a0706e68e024d92d67649921a4a390076c1c490b7f",
+      "ypuddin/models/flux/family.py": "e0aaea0443a6efd401149c5df8c7addba6d9892b605e7533edff9f105cbe0291",
+      "ypuddin/models/flux/latent.py": "d66d28406cae1280ddffb2c7231a22ba1add1bd3ec90e6a12bc1506d8c42d878",
+      "ypuddin/models/flux/loading.py": "d9a1519bac6dd438e403a344141280b35b4f62358d7a5de9862cf8cae6105f7c",
+      "ypuddin/models/flux/text.py": "3788f5b7e65dbeb3051ff96132f080e0df55783342be17eaf90c853a027e2c21",
+      "ypuddin/models/flux2/__init__.py": "d6216c12f539df5633cdcac194f02e8dd2818fdf7948c718add8346e79c493c2",
+      "ypuddin/models/flux2/family.py": "3adb09d56e206e320293615d84a51be36d859016d79f4adff545bfbd92785f5f",
+      "ypuddin/models/flux2/latent.py": "b25317af7a5c92841e126d2768deb077eddbf29c38407905a39fde6ac08abb44",
+      "ypuddin/models/flux2/loading.py": "9acb23172574ce27fb576203de66d896f995e32c174767ead0bf47d56aa4b385",
+      "ypuddin/models/flux2/text.py": "f6d39a125142a977458305fab15ae77d6b49c147cec1ca0c35494e27fda3a10f",
+      "ypuddin/models/krea2/__init__.py": "c2d68ebfc42725475aa45cb932eff086ae79174e62feb31d4c901841f11ad5de",
+      "ypuddin/models/krea2/family.py": "27c7a9aa74ae0669122c3fa6454719386207ce382d9479bd1e763616a4203858",
+      "ypuddin/models/krea2/text.py": "a8ec6597510403b5384b6eef65c144500d51b5547684e32ca7b800b0293d7e24",
+      "ypuddin/models/krea2/variants.py": "4571268768affc20a2c1f005dd25b9f51748dc9449cedab68fb662677b4b55a5",
+      "ypuddin/models/krea2/vendor/__init__.py": "df8980c7afdaa33e660a481f502bfc8ef80666f598df589b2e769724a2db0b48",
+      "ypuddin/models/krea2/vendor/krea2_mmdit.py": "73bf856436713796651d87134a7fd68c738b49aec1c657cc357b9fa9bdd161f0",
+      "ypuddin/models/memory.py": "da36b8d07df78a53dcdcd6403d50d0d271bcdb2b2c4a8b330906a94761a2e6d4",
+      "ypuddin/models/registry.py": "c11adbb70cba4c4d4bab4f1975968eb55f1a349a150082489a82b679f6d82629",
+      "ypuddin/models/sdxl/__init__.py": "31908854a184314ca2cc0e13f5c791adf7144db3f7fcdcfd9144f7f92560fbd4",
+      "ypuddin/models/sdxl/family.py": "98ba8bf109d8c17ddb4036a82d50fe41a36fad54977d6e6ff06917719485d1b6",
+      "ypuddin/models/sdxl/latent.py": "9df16dfb1655a2cc6040fb7ade2bf884881bb7aa8b39f132f0d0fbfbb3c4769e",
+      "ypuddin/models/sdxl/loading.py": "a99b1334fc19f28b0030d15016832d3a68d08470b5b6637d38d8b6ac93e5f507",
+      "ypuddin/models/sdxl/text.py": "2b285170d2c0116acb367d595cb775c8b78cd5f8b856d74068761099df67664a",
+      "ypuddin/models/toy.py": "eae6bbee8d01418c4e78a4709fa4c9163b44806fcf6af9bdbd732600b3e5eb5f",
+      "ypuddin/models/training_parameters.py": "7d433a75c870115c548899ab474658e092201b4fd75d345c2e29e724dcdd65b3",
+      "ypuddin/objectives/__init__.py": "4c4892fde242fad98923c816660024cd55864ccd120f944681a2c1f5d1e49227",
+      "ypuddin/objectives/ddpm.py": "7526fc58057fd9a9802f3b8e9e631ed2e0b00455bffeee59e9b00fe3d63e3682",
+      "ypuddin/objectives/flow.py": "6369c8739da73f2e5dec68101120b3b70dfa671be27031e1c81fb13c3b918a63",
+      "ypuddin/optim/__init__.py": "677db6b0d8450d50da48b0689b6c7cdd40cea36468715ba854709a9b719ca85b",
+      "ypuddin/optim/automagic.py": "361a568eedf56ae081271b3140ac7dccd8d416b457b18590ac56f6c9f978eefe",
+      "ypuddin/optim/factory.py": "455545991c57da14452e4336f9f8147c5b7564e85ed51929170314ce5c2d9347",
+      "ypuddin/optim/sharded.py": "4b85cb983a1679bacf085da08e9d65879d3db70690d2f298859c181c371adda2",
+      "ypuddin/package_sources.py": "1838e1b70add5c9c6a208b3000c4466be27c1e14798a3c4f00474a802d21f80b",
+      "ypuddin/runtime_attention.py": "f04fd720ae15e29034f332f2d7c7a86b85e99d99bf70b07d60c05a0dd8a2aa55",
+      "ypuddin/runtime_profiles.py": "dcbbefcd2fb60e814dc3351c8681d55a0bd72faf79ed3e644c332a8f43d3811d",
+      "ypuddin/sampling/__init__.py": "cf1e1c5f796bb976eaa9c70dfd83b855ef56e2e97e78193d0f1d7013ebb5d275",
+      "ypuddin/sampling/ddpm.py": "3bf63ee961e37c8df516dec6654336fa83cbca2c1edfcd202d4a9995d2f445df",
+      "ypuddin/sampling/dispatch.py": "5f9b401ce4dc111469881dfba2590e8a834ce458d43dd53470e74575712962b2",
+      "ypuddin/sampling/er_sde.py": "bef84fbeddf3d48c169695dbd810b7d11d2b25d022d6481babcb68d9ce0342b3",
+      "ypuddin/sampling/euler.py": "e1416aab5b50f7cc97aee91e57eeab7eb139764d68a815d7f67a1dfd9e38ae53",
+      "ypuddin/server/__init__.py": "5abaf4212df43f25dcd2e0cef8da2b25a97b6756bdfe28f38f172d64f7c22a3e",
+      "ypuddin/server/app.py": "ed0659f75beb43dee5e7f048e3906a4219604d46626e1c14f2e1ce2812e85a23",
+      "ypuddin/server/apple_sensors.py": "56aee44ea1320eb14dc4bb523145307ba062cb5ee9005ab9d7e9a4ce9d85d1af",
+      "ypuddin/server/bus.py": "4593a931dc7d1301f80aaae9169e4382051f278a49f9b4b5ddd54c6b2c43fdd4",
+      "ypuddin/server/context.py": "f5ccf17d0eb3796ff95d6db39779da6d0995e82ffd84c3b13fb6502edfecdc58",
+      "ypuddin/server/dataset_pipeline.py": "e055b4709099879f98caa3294f82b010dded46936406446d8aac3023a2f80a0a",
+      "ypuddin/server/dataset_uploads.py": "1d922352b28f2c86f6dc994fc9b8d04ccd628ff35d01bccf894423d0dd10a0fe",
+      "ypuddin/server/db.py": "fbdce7d3856e06c8e383458d411e80dea7e3d2f65a8403f251cef046135a0d56",
+      "ypuddin/server/dtk_catalog.py": "fca03467ae86225474dfca44b513b47d6861acd5913b47310f10ea874bfb24cb",
+      "ypuddin/server/environment.py": "7b9804d73c8e5b263df25f775e7c88b2c9f019fabc72355061e6d1e6472526db",
+      "ypuddin/server/errors.py": "64c3a70a6908049098ac293f15389b84366c5d2a441502710108117ff0424c6c",
+      "ypuddin/server/family_config.py": "ed8edd057e9798d90d28a818c1d352d7fe6fb2ae245209f63441e763874570e1",
+      "ypuddin/server/gpu_selection.py": "41c19d1aaefa913ac0ab11a3738b4a4af5cf25dc803a25039da7453f41aa2e20",
+      "ypuddin/server/hardware.py": "86fe3bba6fd0e79aa31e503dca1b100e5008a674a74c75f0d221d3df414dbc1c",
+      "ypuddin/server/http_server.py": "c85a0874c6d7d21d0124712a0a26f8fd94cdb9642215d79a5725d4d8928c69bd",
+      "ypuddin/server/import_progress.py": "2dce49f6152f130f535bab70dcccdc50b38616a10d6d898deba2d8485c9b1b7c",
+      "ypuddin/server/lifecycle.py": "bdc909bc990e567dfa1d204926f660bbcb7f51abb2c27609366900d4e00c22fb",
+      "ypuddin/server/model_catalog.py": "aaf8d0d89aec9cd5bc67e6136cc22045f2fb34e6d09f874b59653e7414dcd8c7",
+      "ypuddin/server/model_credentials.py": "7acaec9c4ebbe0a69bf6b48d5232ae66a77e55bc0dc822908e5540ce074bc4f2",
+      "ypuddin/server/model_downloads.py": "14a2f1736f6aacd9ca9a0e09a089a2eabc2c2d7191bfb57ff5497e0e41390aed",
+      "ypuddin/server/model_inspection.py": "35b27810680a1f62d96cd4a5ad15710a35fbd7f39acdce4be728116b8ca4c094",
+      "ypuddin/server/model_recommendations.py": "f7c7188cdb018490e067ff823514c8e2f17a6ea74bd6978892582196a7c5d058",
+      "ypuddin/server/models.py": "a93b3f24bc242905d84de9af0041b54a40792fcaa45db88c020a9d1e8e377791",
+      "ypuddin/server/network.py": "fd90caa6a055df5a2de82a4cdf1e345c419cf5b95266602af0ee834d47c2ae53",
+      "ypuddin/server/output_binding.py": "c72d5adf5be741794f4e3dacf7467cc759c7a2816dd4158210cb38f2da9d66ca",
+      "ypuddin/server/project_covers.py": "4c53c3e01538c6fd12f322c08803c3bc99d474f3b4c01b7be12209ce29421335",
+      "ypuddin/server/regularization.py": "167867ad51abb3022b124e411faa85170b434d7c8ca04cbacbb9d4632f3d0d7c",
+      "ypuddin/server/regularization_plan.py": "7f2059095e03551f762decec3fff8802c42abc41c294f37194db22df81634158",
+      "ypuddin/server/regularization_worker.py": "ffffe12f07460a5545c6172b8e16a4713daa2801a4b8ce47b82e9f5b82302f1c",
+      "ypuddin/server/routes_core.py": "05e8c2f002cc9d95686c1c9d8c934af021d5d9072d69e14a9a874855c6c226e9",
+      "ypuddin/server/routes_credentials.py": "942739d76065d918b0362bee0c168fade4324188b323c68a436b2030f78da737",
+      "ypuddin/server/routes_dataset_masks.py": "207214ccb9958c3568c02b954c48ba59185fd4b936471a1828a9751afbca1b9b",
+      "ypuddin/server/routes_dataset_overview.py": "94296adcd39405cfc6ebedd3f2646cc10e2969d28841f238d307c96c0b03c647",
+      "ypuddin/server/routes_dataset_paint.py": "5a0fe681110154d3c92e309ff1c731003fa4587be1684058daa8cfe5d615aefa",
+      "ypuddin/server/routes_dataset_pipeline.py": "d45ad9e41a690129231be59f72b0af4f63a039a1e4fce9495e4faea431effd46",
+      "ypuddin/server/routes_environment.py": "0be2c25b2e7db0bc5ff100a6a01f65a1c05367bd093db7862f65a079f8ea0c67",
+      "ypuddin/server/routes_model_downloads.py": "a7043524f0a1c309e3ba57200ffabb81c4e4b0a6948ad0950e60930eb1b7771c",
+      "ypuddin/server/routes_model_recommendations.py": "5d368aec8dcf628ebd914bff745bc7608e20249acab446d3c73c3fdd7e38cd34",
+      "ypuddin/server/routes_regularization.py": "7a8a62026c0c2da4202de83aaceadd0d50cd98d8b5f39f5a64310881bcccc0e0",
+      "ypuddin/server/routes_work.py": "e1af75f1b563ada4fa5f838597828a1d0e29745200ac1900eb11800cd9d17d08",
+      "ypuddin/server/routes_xyz.py": "8ed8cef54d4f5463447d834cab4656b330d89168f15009e2a1e3fcc190fc34eb",
+      "ypuddin/server/sample_events.py": "e9faa7143e330e9b2968a0be6af4171c50a76c40d7ae3d158e89dc3e1086567d",
+      "ypuddin/server/source_roles.py": "4d942446af7febbc51d5c0b20203c275c89b3617f17f183815ddc7cfbc10ea9b",
+      "ypuddin/server/supervisor.py": "6453e68f2eface1eb8bd7662c5508ca42d71eb8311ac5760dd8abc421e8bde17",
+      "ypuddin/server/torch_environments.py": "c23f5341bdc049a1e8eb7a514d26541801afc5aee2528898950b323c71a979c1",
+      "ypuddin/server/versions.py": "9d153b71ac573cb7ec1ea302e64d6a39776cfab987d8c8c9a7afe040fe523422",
+      "ypuddin/server/windows_attention_assets.py": "e12fb2efe340a80e7f7cb239bd4d0d56139138fba215e2be3fee490076c2c3ca",
+      "ypuddin/server/windows_attention_catalog.py": "5e3274c2ad699bc5912a4583e9cfb205c6fef7aad78f91ae9c0807dee90813a6",
+      "ypuddin/server/xyz.py": "13d883612d5a4e60bc1aacb2e4da9479d3e96f2c49b25b8439db167f3511e4b3",
+      "ypuddin/server/xyz_worker.py": "6bffe7b219b37589404aa217b36f81d68dc191b4f9ac3a1fb73483311a506dd8",
+      "ypuddin/tools/__init__.py": "593b38b868a4cf4c91c5935d8246ec1021e57715ac8a35d2ae11911b5e565672",
+      "ypuddin/tools/extract.py": "878dc23d0ec9729b478eb90245cb9953e50374ff1244d236c1308c4a787e2bef",
+      "ypuddin/tools/merge.py": "1110938a856eb046af3e4a7000b4bb1fd699d491453e5a58cda89b711af7c471",
+      "ypuddin/tools/runtime_check.py": "731cb5790d109ddb40469941ec6b27e833d7e17f58d930a4239be3434b403d06",
+      "ypuddin/tools/smoke.py": "12fc6ca4b3cef18ed21718ab0039f567bd38530acdcac908cc37d375e4cb2ece",
+      "ypuddin/train/__init__.py": "738d73e437112a31f6d14fe18b5ca67ab590e9ae17ec32e3e9b97c5a74e1275c",
+      "ypuddin/train/conv_forward.py": "67e26be690ab6051eece2272c4ab94174c61a56e221d92f6e3bd1213d4f32532",
+      "ypuddin/train/distributed.py": "29c99d250ac90c37e6aac95841d67471d39416ce385a26c2864605e1784d4eef",
+      "ypuddin/train/events.py": "9fcab3e00b1dc8683a84789617dd658c3c17dade7ceee407e4dd7b90c0a16eb8",
+      "ypuddin/train/gloo_probe.py": "d44400641effe4e793b599cc558d5852bf5cf6fa8f3b4475cc30b248fd52397a",
+      "ypuddin/train/linear_backward.py": "17185c4e43284346e0dda2b655c3e88a962b05032b81c98ac5c607f7c87bfb44",
+      "ypuddin/train/logging.py": "f7ef0369cc6730a9181abaebf840d9e6e85e3bdd3440b12117539c7679f89faf",
+      "ypuddin/train/plan.py": "745a703109fa675fbfeafd9ea8b90b07d2ed7b60dd2efb69506fddf12f5d96b1",
+      "ypuddin/train/reproducibility.py": "b26daef8e03a7a4d15c86f230ceda2f47dbd0e1bb6cc9b87af29a8818d766fc4",
+      "ypuddin/train/scheduler_contract.py": "fa1762e7b821e6cc137fde0d3e4a3c4047d7131d43e77b265ed64b5fb25378f8",
+      "ypuddin/train/sharded.py": "b18bcfc00c4d76d5b286d9d5ca1bcb7bcc665f7774158132a13a56bbce6174f0",
+      "ypuddin/train/sharded_adapters.py": "0f8d62e3ca958e04c4ca52b013be7b62f7742a19d631dee2602407c2a508b94f",
+      "ypuddin/train/sharded_state.py": "54476aee1675cb2f8eb9932da7f82ed14de22861b7acb8ab743253fe12fb2853",
+      "ypuddin/train/state.py": "2a75f80d6ce987aec94f6b23c3a043d0d99f0a1bd309e5d3b20c000e5fb8c993",
+      "ypuddin/train/text_adapter_compute.py": "d2be86067f66b1bb28be9c945d30162ed9c0c6a1faba6f2ef67daf33675b77b7",
+      "ypuddin/train/trainer.py": "4115759db860ee53216c562f3cafbd5b9b9fea8a151416d66c15a51ca9d30dab",
+      "ypuddin/train/training_modes.py": "cb2d89178d575b59ec114f17e2ac98cd39221c8cd6e810ac5eea39d21d10386b",
+      "scripts/verify_frozen_adapter_resume.py": "3b59b083bc70b0f7665d3a7e9b3edf295215ce0ddcc4ec907c9f4899e42aade3",
+      "tests/checkpoint_assertions.py": "2895c7f585d5aac424c271b5b9325116b61fd4e377de6099c8483253fe0e4cb0"
+    },
+    "cddb0f7": {
+      "ypuddin/__init__.py": "16375d9cc6cfd0b553c07b375a51bdaca286756e4ed351d49dac80a3f1d9464c",
+      "ypuddin/adapters/__init__.py": "efe895d50f1195c4beeed24d8639de9b6e6a9bee8eefb86f1ab14f919807d45b",
+      "ypuddin/adapters/base.py": "82a09422c993a55eeff007fed88098fab6a2f1ef2fdedd15f8bbae59c829c3f0",
+      "ypuddin/adapters/components.py": "b695ab9272f57f9e915722e648b4d104794e6fa277be3cf6d97f7f91460eac95",
+      "ypuddin/adapters/convert.py": "b71ff68f0c19890e34236a9c6c47f31bd3beec7eadcd32ff1b8aef1adc2ac85f",
+      "ypuddin/adapters/dora.py": "3a7090f107349016b7c1e523807d1478be4edc209255f13becd37614189331e1",
+      "ypuddin/adapters/factorize.py": "3cbe953c7a3adf7ca065f6afcbbfface15f7acea7e716cd890f14ebd9a23a181",
+      "ypuddin/adapters/frozen.py": "7d4e270d3e28cd55f336294c003afdb866c70835be0e5f3aa8476f528e5f3fa5",
+      "ypuddin/adapters/full.py": "e684f36914b44fcbb8b5d97235cb2d23fc0ca57f21a7cebcfc00ad0f2e3e918c",
+      "ypuddin/adapters/inject.py": "c7526a20293615a04ba15dccd4d7a48b1ba978864a6a9b3e0866c9a36e9052b1",
+      "ypuddin/adapters/io.py": "d0fc08446a0b158a70178eb9113fb8afdca2bf6efd2de299a77dc2e3f5dd5376",
+      "ypuddin/adapters/linear.py": "295ebada49cbf369b0a677c33f2429f5c8c5057a78756e860a99ec7ca54071e5",
+      "ypuddin/adapters/loha.py": "0989f6bb55369b106e70333d39eb7f772dc83a41668cc5403a2092a238fbc539",
+      "ypuddin/adapters/lokr.py": "71b4a9dc67cebf0251c9f69ad29550339b249d8f4a2dba7755e17180ff84beb2",
+      "ypuddin/adapters/lora.py": "b12913d01bd5fa88b99c1ed982298f92002f95003fc8b562676772f47be49c45",
+      "ypuddin/adapters/rules.py": "c7b8079244a9927ad308c2e2f0e0ede5c148237e0a743e8a9c07602270034445",
+      "ypuddin/cli.py": "f798d8aa1ce492becdc83776a8d3dfb54e0350d6264995d89bbad174798c9f28",
+      "ypuddin/config/__init__.py": "642dae1b2678ab50fa261af6920904b73c9154e4e99295b391990332e4d8e0b0",
+      "ypuddin/config/compute_policy.py": "6b134e725101941ca580c74325d74e301c9934df259d06fa2f64ec82366eec87",
+      "ypuddin/config/io.py": "666d6e993c2b8786f7c66dca08b89750ac887655cfb827cb8103ead30e450a5c",
+      "ypuddin/config/model_artifact.py": "307577f247cd715e566265ef5a27b12271289d55fa0ba2955f1e54e7316c9455",
+      "ypuddin/config/optimizer_rules.py": "a915c4fe8cb14e5d8491ebb375427b5b06ebc49c7a2dda5b1e9e89ebcadb2d5f",
+      "ypuddin/config/schema.py": "b47ce875054ef6cbd9df709caebf09d135f4332938bbfa10653ecc35b64165aa",
+      "ypuddin/config/show_when.py": "ac834d7ed691c4e3676349fb39efcf7b358cfd678061a1e8670b45abbc5cbde4",
+      "ypuddin/config/training_rules.py": "13a12b718e7092ac259e124c13c3343daf02e2f9b441f22c2abfe805a1aca412",
+      "ypuddin/config/ui.py": "038f421e53fcb01d9feb73690883c5220d408db4d01fd5ccf7680ef52442ad7d",
+      "ypuddin/data/__init__.py": "98e79eca92dab695b2aa87fb1a1cb6be5a065d81f7ca6aa0d5ad336551e9305e",
+      "ypuddin/data/anima_caption_inspection.py": "07f873a36ac6e97e0fc7ad93a9997325412011958406ee8ed2d2e06f3af497e7",
+      "ypuddin/data/buckets.py": "6cc85dc69c9730052624068cae4032ac630b2ef49e44b162ac89ce5dc947d932",
+      "ypuddin/data/cache.py": "4207b3b0be66a09871c9fbcb0b91cc59dc5c138824bbc0b06cd1f70093e3e412",
+      "ypuddin/data/caption_formats.py": "5f6d4425bfd490161a78d3100b88fcd45cb168c895b1a32136c802a349bcd0dd",
+      "ypuddin/data/caption_json.py": "4b4ce7e631fcf5ad4d3665d0bcc3b85fdb43683d94e5bc2eff7c259ca32d6727",
+      "ypuddin/data/captions.py": "77919aea02af772d18577cdffdbb68a4adc6f3ca66b55b78786e6b9472052b35",
+      "ypuddin/data/dataset.py": "722db8774b9d310f9c24f52cff18c4c44aa0b689fd662e3c81379a153d44360f",
+      "ypuddin/data/images.py": "e8579c6314fa99d8bad49be9644addb996465f20fb082cf7817939fe15fa1286",
+      "ypuddin/data/index.py": "a27092b8a067e1f9224e51c71eb5668469a2b435b8d4f767c18108fae91dd43d",
+      "ypuddin/data/native.py": "9bb1dc822a14ae193c05655e944219a804f62877e183237c43b51572bfe31447",
+      "ypuddin/data/sampler.py": "ecc6ab22bc4aa1d3db74815617c07a3cbcdbbf9f78a4efde869c0b1a6d365a26",
+      "ypuddin/memory/__init__.py": "327141ecb6f4fa6153c5e293d8f8ea8fdb23014045306f157bb16e7aff9267e6",
+      "ypuddin/memory/block_swap.py": "f90fa941e37df2946ae107bd0a9ccb06c77070506a249a2912fb3f202a026e84",
+      "ypuddin/models/__init__.py": "019635aae735526eecb8c059db7c5d8df86ed609231ac88f4e8e896cdfc0d026",
+      "ypuddin/models/anima/__init__.py": "36ad5236e51c3c44655efe069b649c8386a3c9521f53b834be36dea9861c0576",
+      "ypuddin/models/anima/checkpoint.py": "cba24a61e7bb7fdd0bb0b887e644a24b34466032b28000ab5d676b0375e0832e",
+      "ypuddin/models/anima/family.py": "7275d251ba22a2bef1259f1b7a7ce8878e44f1a52e4ac29cb32a0074e9313979",
+      "ypuddin/models/anima/text.py": "2949b9e9abdf72ce2316534a4b45a079fa3f4d23236fde333736fb62cc692048",
+      "ypuddin/models/anima/vendor/__init__.py": "caca3e6a7822a43e784de0199f9cec46b8d87fb1bad036f83532f7efcd889eb2",
+      "ypuddin/models/anima/vendor/attention.py": "65b9d63d65f62d074db6a05b2848985d79031323418b795276c831daef8ca9c3",
+      "ypuddin/models/anima/vendor/cosmos_dit.py": "78eea7abe3a11c4ad4726e2a4ece391caf9d4aeabb6668e7daed1fde53b209ab",
+      "ypuddin/models/anima/vendor/qwen_image_vae.py": "4a145b48506d3c3bff3488a409aae2d097ede5c6318fd28673c8d53ffd1994b2",
+      "ypuddin/models/anima/vendor/qwen_image_vae_2d.py": "1df5ec3d4392b1e1c7a72ca201413905d28662d56c5b50635e030a48c5b203dd",
+      "ypuddin/models/base.py": "f322c816df4dfff52fe469d045fa3e3fe4c9ff7ee29d4f705194e3226152e1a5",
+      "ypuddin/models/fingerprints.py": "b7eab1d2602d435b32a413e5d734c1383d8a97cb737271d5485767ba7052f730",
+      "ypuddin/models/flux/__init__.py": "8477d1ba5d743996cf6ea1a0706e68e024d92d67649921a4a390076c1c490b7f",
+      "ypuddin/models/flux/family.py": "e0aaea0443a6efd401149c5df8c7addba6d9892b605e7533edff9f105cbe0291",
+      "ypuddin/models/flux/latent.py": "d66d28406cae1280ddffb2c7231a22ba1add1bd3ec90e6a12bc1506d8c42d878",
+      "ypuddin/models/flux/loading.py": "d9a1519bac6dd438e403a344141280b35b4f62358d7a5de9862cf8cae6105f7c",
+      "ypuddin/models/flux/text.py": "3788f5b7e65dbeb3051ff96132f080e0df55783342be17eaf90c853a027e2c21",
+      "ypuddin/models/flux2/__init__.py": "d6216c12f539df5633cdcac194f02e8dd2818fdf7948c718add8346e79c493c2",
+      "ypuddin/models/flux2/family.py": "3adb09d56e206e320293615d84a51be36d859016d79f4adff545bfbd92785f5f",
+      "ypuddin/models/flux2/latent.py": "b25317af7a5c92841e126d2768deb077eddbf29c38407905a39fde6ac08abb44",
+      "ypuddin/models/flux2/loading.py": "9acb23172574ce27fb576203de66d896f995e32c174767ead0bf47d56aa4b385",
+      "ypuddin/models/flux2/text.py": "f6d39a125142a977458305fab15ae77d6b49c147cec1ca0c35494e27fda3a10f",
+      "ypuddin/models/krea2/__init__.py": "c2d68ebfc42725475aa45cb932eff086ae79174e62feb31d4c901841f11ad5de",
+      "ypuddin/models/krea2/family.py": "27c7a9aa74ae0669122c3fa6454719386207ce382d9479bd1e763616a4203858",
+      "ypuddin/models/krea2/text.py": "a8ec6597510403b5384b6eef65c144500d51b5547684e32ca7b800b0293d7e24",
+      "ypuddin/models/krea2/variants.py": "4571268768affc20a2c1f005dd25b9f51748dc9449cedab68fb662677b4b55a5",
+      "ypuddin/models/krea2/vendor/__init__.py": "df8980c7afdaa33e660a481f502bfc8ef80666f598df589b2e769724a2db0b48",
+      "ypuddin/models/krea2/vendor/krea2_mmdit.py": "73bf856436713796651d87134a7fd68c738b49aec1c657cc357b9fa9bdd161f0",
+      "ypuddin/models/memory.py": "da36b8d07df78a53dcdcd6403d50d0d271bcdb2b2c4a8b330906a94761a2e6d4",
+      "ypuddin/models/registry.py": "c11adbb70cba4c4d4bab4f1975968eb55f1a349a150082489a82b679f6d82629",
+      "ypuddin/models/sdxl/__init__.py": "31908854a184314ca2cc0e13f5c791adf7144db3f7fcdcfd9144f7f92560fbd4",
+      "ypuddin/models/sdxl/family.py": "98ba8bf109d8c17ddb4036a82d50fe41a36fad54977d6e6ff06917719485d1b6",
+      "ypuddin/models/sdxl/latent.py": "9df16dfb1655a2cc6040fb7ade2bf884881bb7aa8b39f132f0d0fbfbb3c4769e",
+      "ypuddin/models/sdxl/loading.py": "a99b1334fc19f28b0030d15016832d3a68d08470b5b6637d38d8b6ac93e5f507",
+      "ypuddin/models/sdxl/text.py": "2b285170d2c0116acb367d595cb775c8b78cd5f8b856d74068761099df67664a",
+      "ypuddin/models/toy.py": "eae6bbee8d01418c4e78a4709fa4c9163b44806fcf6af9bdbd732600b3e5eb5f",
+      "ypuddin/models/training_parameters.py": "7d433a75c870115c548899ab474658e092201b4fd75d345c2e29e724dcdd65b3",
+      "ypuddin/objectives/__init__.py": "4c4892fde242fad98923c816660024cd55864ccd120f944681a2c1f5d1e49227",
+      "ypuddin/objectives/ddpm.py": "7526fc58057fd9a9802f3b8e9e631ed2e0b00455bffeee59e9b00fe3d63e3682",
+      "ypuddin/objectives/flow.py": "6369c8739da73f2e5dec68101120b3b70dfa671be27031e1c81fb13c3b918a63",
+      "ypuddin/optim/__init__.py": "8d2e04e77ae2ee8d4d1c447396f1ead7ae95fdf168868fd70f63adcaf1cdd6a2",
+      "ypuddin/optim/automagic.py": "361a568eedf56ae081271b3140ac7dccd8d416b457b18590ac56f6c9f978eefe",
+      "ypuddin/optim/factory.py": "37622090936cfd6ee27d15af14bfd93714066e3f337a3cfced7977bc12159912",
+      "ypuddin/optim/sharded.py": "4b85cb983a1679bacf085da08e9d65879d3db70690d2f298859c181c371adda2",
+      "ypuddin/package_sources.py": "1838e1b70add5c9c6a208b3000c4466be27c1e14798a3c4f00474a802d21f80b",
+      "ypuddin/runtime_attention.py": "f04fd720ae15e29034f332f2d7c7a86b85e99d99bf70b07d60c05a0dd8a2aa55",
+      "ypuddin/runtime_profiles.py": "dcbbefcd2fb60e814dc3351c8681d55a0bd72faf79ed3e644c332a8f43d3811d",
+      "ypuddin/sampling/__init__.py": "cf1e1c5f796bb976eaa9c70dfd83b855ef56e2e97e78193d0f1d7013ebb5d275",
+      "ypuddin/sampling/ddpm.py": "3bf63ee961e37c8df516dec6654336fa83cbca2c1edfcd202d4a9995d2f445df",
+      "ypuddin/sampling/dispatch.py": "5f9b401ce4dc111469881dfba2590e8a834ce458d43dd53470e74575712962b2",
+      "ypuddin/sampling/er_sde.py": "bef84fbeddf3d48c169695dbd810b7d11d2b25d022d6481babcb68d9ce0342b3",
+      "ypuddin/sampling/euler.py": "e1416aab5b50f7cc97aee91e57eeab7eb139764d68a815d7f67a1dfd9e38ae53",
+      "ypuddin/server/__init__.py": "5abaf4212df43f25dcd2e0cef8da2b25a97b6756bdfe28f38f172d64f7c22a3e",
+      "ypuddin/server/app.py": "ed0659f75beb43dee5e7f048e3906a4219604d46626e1c14f2e1ce2812e85a23",
+      "ypuddin/server/apple_sensors.py": "56aee44ea1320eb14dc4bb523145307ba062cb5ee9005ab9d7e9a4ce9d85d1af",
+      "ypuddin/server/bus.py": "4593a931dc7d1301f80aaae9169e4382051f278a49f9b4b5ddd54c6b2c43fdd4",
+      "ypuddin/server/context.py": "f5ccf17d0eb3796ff95d6db39779da6d0995e82ffd84c3b13fb6502edfecdc58",
+      "ypuddin/server/dataset_pipeline.py": "e055b4709099879f98caa3294f82b010dded46936406446d8aac3023a2f80a0a",
+      "ypuddin/server/dataset_uploads.py": "1d922352b28f2c86f6dc994fc9b8d04ccd628ff35d01bccf894423d0dd10a0fe",
+      "ypuddin/server/db.py": "fbdce7d3856e06c8e383458d411e80dea7e3d2f65a8403f251cef046135a0d56",
+      "ypuddin/server/dtk_catalog.py": "fca03467ae86225474dfca44b513b47d6861acd5913b47310f10ea874bfb24cb",
+      "ypuddin/server/environment.py": "7b9804d73c8e5b263df25f775e7c88b2c9f019fabc72355061e6d1e6472526db",
+      "ypuddin/server/errors.py": "64c3a70a6908049098ac293f15389b84366c5d2a441502710108117ff0424c6c",
+      "ypuddin/server/family_config.py": "ed8edd057e9798d90d28a818c1d352d7fe6fb2ae245209f63441e763874570e1",
+      "ypuddin/server/gpu_selection.py": "41c19d1aaefa913ac0ab11a3738b4a4af5cf25dc803a25039da7453f41aa2e20",
+      "ypuddin/server/hardware.py": "86fe3bba6fd0e79aa31e503dca1b100e5008a674a74c75f0d221d3df414dbc1c",
+      "ypuddin/server/http_server.py": "c85a0874c6d7d21d0124712a0a26f8fd94cdb9642215d79a5725d4d8928c69bd",
+      "ypuddin/server/import_progress.py": "2dce49f6152f130f535bab70dcccdc50b38616a10d6d898deba2d8485c9b1b7c",
+      "ypuddin/server/lifecycle.py": "bdc909bc990e567dfa1d204926f660bbcb7f51abb2c27609366900d4e00c22fb",
+      "ypuddin/server/model_catalog.py": "aaf8d0d89aec9cd5bc67e6136cc22045f2fb34e6d09f874b59653e7414dcd8c7",
+      "ypuddin/server/model_credentials.py": "7acaec9c4ebbe0a69bf6b48d5232ae66a77e55bc0dc822908e5540ce074bc4f2",
+      "ypuddin/server/model_downloads.py": "14a2f1736f6aacd9ca9a0e09a089a2eabc2c2d7191bfb57ff5497e0e41390aed",
+      "ypuddin/server/model_inspection.py": "35b27810680a1f62d96cd4a5ad15710a35fbd7f39acdce4be728116b8ca4c094",
+      "ypuddin/server/model_recommendations.py": "f7c7188cdb018490e067ff823514c8e2f17a6ea74bd6978892582196a7c5d058",
+      "ypuddin/server/models.py": "a93b3f24bc242905d84de9af0041b54a40792fcaa45db88c020a9d1e8e377791",
+      "ypuddin/server/network.py": "fd90caa6a055df5a2de82a4cdf1e345c419cf5b95266602af0ee834d47c2ae53",
+      "ypuddin/server/output_binding.py": "c72d5adf5be741794f4e3dacf7467cc759c7a2816dd4158210cb38f2da9d66ca",
+      "ypuddin/server/project_covers.py": "4c53c3e01538c6fd12f322c08803c3bc99d474f3b4c01b7be12209ce29421335",
+      "ypuddin/server/regularization.py": "167867ad51abb3022b124e411faa85170b434d7c8ca04cbacbb9d4632f3d0d7c",
+      "ypuddin/server/regularization_plan.py": "7f2059095e03551f762decec3fff8802c42abc41c294f37194db22df81634158",
+      "ypuddin/server/regularization_worker.py": "ffffe12f07460a5545c6172b8e16a4713daa2801a4b8ce47b82e9f5b82302f1c",
+      "ypuddin/server/routes_core.py": "05e8c2f002cc9d95686c1c9d8c934af021d5d9072d69e14a9a874855c6c226e9",
+      "ypuddin/server/routes_credentials.py": "942739d76065d918b0362bee0c168fade4324188b323c68a436b2030f78da737",
+      "ypuddin/server/routes_dataset_masks.py": "207214ccb9958c3568c02b954c48ba59185fd4b936471a1828a9751afbca1b9b",
+      "ypuddin/server/routes_dataset_overview.py": "94296adcd39405cfc6ebedd3f2646cc10e2969d28841f238d307c96c0b03c647",
+      "ypuddin/server/routes_dataset_paint.py": "5a0fe681110154d3c92e309ff1c731003fa4587be1684058daa8cfe5d615aefa",
+      "ypuddin/server/routes_dataset_pipeline.py": "d45ad9e41a690129231be59f72b0af4f63a039a1e4fce9495e4faea431effd46",
+      "ypuddin/server/routes_environment.py": "0be2c25b2e7db0bc5ff100a6a01f65a1c05367bd093db7862f65a079f8ea0c67",
+      "ypuddin/server/routes_model_downloads.py": "a7043524f0a1c309e3ba57200ffabb81c4e4b0a6948ad0950e60930eb1b7771c",
+      "ypuddin/server/routes_model_recommendations.py": "5d368aec8dcf628ebd914bff745bc7608e20249acab446d3c73c3fdd7e38cd34",
+      "ypuddin/server/routes_regularization.py": "7a8a62026c0c2da4202de83aaceadd0d50cd98d8b5f39f5a64310881bcccc0e0",
+      "ypuddin/server/routes_work.py": "e1af75f1b563ada4fa5f838597828a1d0e29745200ac1900eb11800cd9d17d08",
+      "ypuddin/server/routes_xyz.py": "8ed8cef54d4f5463447d834cab4656b330d89168f15009e2a1e3fcc190fc34eb",
+      "ypuddin/server/sample_events.py": "e9faa7143e330e9b2968a0be6af4171c50a76c40d7ae3d158e89dc3e1086567d",
+      "ypuddin/server/source_roles.py": "4d942446af7febbc51d5c0b20203c275c89b3617f17f183815ddc7cfbc10ea9b",
+      "ypuddin/server/supervisor.py": "6453e68f2eface1eb8bd7662c5508ca42d71eb8311ac5760dd8abc421e8bde17",
+      "ypuddin/server/torch_environments.py": "c23f5341bdc049a1e8eb7a514d26541801afc5aee2528898950b323c71a979c1",
+      "ypuddin/server/versions.py": "9d153b71ac573cb7ec1ea302e64d6a39776cfab987d8c8c9a7afe040fe523422",
+      "ypuddin/server/windows_attention_assets.py": "e12fb2efe340a80e7f7cb239bd4d0d56139138fba215e2be3fee490076c2c3ca",
+      "ypuddin/server/windows_attention_catalog.py": "5e3274c2ad699bc5912a4583e9cfb205c6fef7aad78f91ae9c0807dee90813a6",
+      "ypuddin/server/xyz.py": "13d883612d5a4e60bc1aacb2e4da9479d3e96f2c49b25b8439db167f3511e4b3",
+      "ypuddin/server/xyz_worker.py": "6bffe7b219b37589404aa217b36f81d68dc191b4f9ac3a1fb73483311a506dd8",
+      "ypuddin/tools/__init__.py": "593b38b868a4cf4c91c5935d8246ec1021e57715ac8a35d2ae11911b5e565672",
+      "ypuddin/tools/extract.py": "878dc23d0ec9729b478eb90245cb9953e50374ff1244d236c1308c4a787e2bef",
+      "ypuddin/tools/merge.py": "1110938a856eb046af3e4a7000b4bb1fd699d491453e5a58cda89b711af7c471",
+      "ypuddin/tools/runtime_check.py": "731cb5790d109ddb40469941ec6b27e833d7e17f58d930a4239be3434b403d06",
+      "ypuddin/tools/smoke.py": "12fc6ca4b3cef18ed21718ab0039f567bd38530acdcac908cc37d375e4cb2ece",
+      "ypuddin/train/__init__.py": "738d73e437112a31f6d14fe18b5ca67ab590e9ae17ec32e3e9b97c5a74e1275c",
+      "ypuddin/train/conv_forward.py": "67e26be690ab6051eece2272c4ab94174c61a56e221d92f6e3bd1213d4f32532",
+      "ypuddin/train/distributed.py": "29c99d250ac90c37e6aac95841d67471d39416ce385a26c2864605e1784d4eef",
+      "ypuddin/train/events.py": "9fcab3e00b1dc8683a84789617dd658c3c17dade7ceee407e4dd7b90c0a16eb8",
+      "ypuddin/train/gloo_probe.py": "d44400641effe4e793b599cc558d5852bf5cf6fa8f3b4475cc30b248fd52397a",
+      "ypuddin/train/linear_backward.py": "17185c4e43284346e0dda2b655c3e88a962b05032b81c98ac5c607f7c87bfb44",
+      "ypuddin/train/logging.py": "f7ef0369cc6730a9181abaebf840d9e6e85e3bdd3440b12117539c7679f89faf",
+      "ypuddin/train/plan.py": "745a703109fa675fbfeafd9ea8b90b07d2ed7b60dd2efb69506fddf12f5d96b1",
+      "ypuddin/train/reproducibility.py": "b26daef8e03a7a4d15c86f230ceda2f47dbd0e1bb6cc9b87af29a8818d766fc4",
+      "ypuddin/train/scheduler_contract.py": "fa1762e7b821e6cc137fde0d3e4a3c4047d7131d43e77b265ed64b5fb25378f8",
+      "ypuddin/train/sharded.py": "b18bcfc00c4d76d5b286d9d5ca1bcb7bcc665f7774158132a13a56bbce6174f0",
+      "ypuddin/train/sharded_adapters.py": "0f8d62e3ca958e04c4ca52b013be7b62f7742a19d631dee2602407c2a508b94f",
+      "ypuddin/train/sharded_state.py": "54476aee1675cb2f8eb9932da7f82ed14de22861b7acb8ab743253fe12fb2853",
+      "ypuddin/train/state.py": "2a75f80d6ce987aec94f6b23c3a043d0d99f0a1bd309e5d3b20c000e5fb8c993",
+      "ypuddin/train/text_adapter_compute.py": "d2be86067f66b1bb28be9c945d30162ed9c0c6a1faba6f2ef67daf33675b77b7",
+      "ypuddin/train/trainer.py": "d67874e2db31a3089e599c44d2c9e77b62b9692343df91d7538aa42d77221787",
+      "ypuddin/train/training_modes.py": "cb2d89178d575b59ec114f17e2ac98cd39221c8cd6e810ac5eea39d21d10386b",
+      "scripts/verify_frozen_adapter_resume.py": "3b59b083bc70b0f7665d3a7e9b3edf295215ce0ddcc4ec907c9f4899e42aade3",
+      "tests/checkpoint_assertions.py": "2895c7f585d5aac424c271b5b9325116b61fd4e377de6099c8483253fe0e4cb0"
+    }
+  },
+  "all_recorded_source_hashes_match_commits": true,
+  "attempts": [
+    {
+      "name": "flux2-lora-native256",
+      "returncode": 1,
+      "seconds": 5.686999999998079,
+      "strict_passed": false,
+      "error": "RuntimeError: Training exited 1; inspect reference.log",
+      "group": "other-models-20260919"
+    },
+    {
+      "name": "flux2-lokr-native256",
+      "returncode": 1,
+      "seconds": 3.7660000000032596,
+      "strict_passed": false,
+      "error": "RuntimeError: Training exited 1; inspect reference.log",
+      "group": "other-models-20260919"
+    },
+    {
+      "name": "krea2-lora-native256",
+      "returncode": 0,
+      "seconds": 133.9059999999954,
+      "strict_passed": true,
+      "error": null,
+      "group": "other-models-20260919",
+      "report": {
+        "status": "passed",
+        "strict_passed": true,
+        "device_requested": "cuda",
+        "processes": 1,
+        "strategy": "ddp",
+        "family": "krea2",
+        "algorithm": "lora",
+        "train_backbone": true,
+        "train_text_encoder": false,
+        "scope": "Fixed recipe only; CPU is not GPU acceptance",
+        "commands": [
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\krea2-lora-native256\\reference.json",
+            "--device",
+            "cuda"
+          ],
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\krea2-lora-native256\\resumed.json",
+            "--device",
+            "cuda"
+          ]
+        ],
+        "runtime": {
+          "torch": "2.13.0+cu130",
+          "hip": null,
+          "cuda": "13.0"
+        },
+        "comparison": {
+          "tensor_count": 280,
+          "weights_exact": true,
+          "states_exact": true,
+          "preview_sha256": [
+            "078d43aa15d11d284558bb09f79f1238e2ccecacd0f1ec37edf7131362cd29f5"
+          ]
+        }
+      },
+      "updated_tensors_by_prefix": {
+        "blocks": 280
+      },
+      "data_plan": {
+        "seq": 6,
+        "ts": 1789827964.3970757,
+        "type": "data.plan",
+        "images": 4,
+        "items": 4,
+        "captioned": 4,
+        "validation_images": 0,
+        "buckets": [
+          {
+            "base": 0,
+            "w": 192,
+            "h": 256,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 192,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 256,
+            "items": 2
+          }
+        ],
+        "fingerprint": "76bc3b568581a3a6"
+      },
+      "training_steps": [
+        {
+          "seq": 27,
+          "ts": 1789827989.617866,
+          "type": "step",
+          "step": 1,
+          "epoch": 0,
+          "loss": 0.15719486773014069,
+          "loss_ema": 0.15719486773014069,
+          "loss_mean": 0.15719486773014069,
+          "loss_count": 1,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.0008666007197462022,
+          "it_s": 0.36982713540024176,
+          "eta_s": 8.111898000002839,
+          "vram_mb": 13966.7314453125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 28,
+          "ts": 1789827991.6804206,
+          "type": "step",
+          "step": 2,
+          "epoch": 0,
+          "loss": 0.19875885546207428,
+          "loss_ema": 0.15802614748477933,
+          "loss_mean": 0.17797686159610748,
+          "loss_count": 2,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.0033930616918951273,
+          "it_s": 0.4885809113688871,
+          "eta_s": 4.093487799997092,
+          "vram_mb": 13966.7314453125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 35,
+          "ts": 1789828000.4301805,
+          "type": "step",
+          "step": 3,
+          "epoch": 0,
+          "loss": 0.19854736328125,
+          "loss_ema": 0.15883657180070873,
+          "loss_mean": 0.184833695491155,
+          "loss_count": 3,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.0026316868606954813,
+          "it_s": 0.5135416569844732,
+          "eta_s": 1.947261699999217,
+          "vram_mb": 13966.7314453125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 36,
+          "ts": 1789828002.3814812,
+          "type": "step",
+          "step": 4,
+          "epoch": 0,
+          "loss": 0.1586311161518097,
+          "loss_ema": 0.15883246268773074,
+          "loss_mean": 0.17828305065631866,
+          "loss_count": 4,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.0013981203082948923,
+          "it_s": 0.5166618539616283,
+          "eta_s": 0.0,
+          "vram_mb": 13966.7314453125,
+          "vram_metric": "peak_allocated"
+        }
+      ],
+      "peak_allocated_mib": 13966.7314453125,
+      "median_step_seconds": 1.9970027999988815,
+      "source_commit": "8449284"
+    },
+    {
+      "name": "krea2-lokr-native256",
+      "returncode": 0,
+      "seconds": 125.82800000000134,
+      "strict_passed": true,
+      "error": null,
+      "group": "other-models-20260919",
+      "report": {
+        "status": "passed",
+        "strict_passed": true,
+        "device_requested": "cuda",
+        "processes": 1,
+        "strategy": "ddp",
+        "family": "krea2",
+        "algorithm": "lokr",
+        "train_backbone": true,
+        "train_text_encoder": false,
+        "scope": "Fixed recipe only; CPU is not GPU acceptance",
+        "commands": [
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\krea2-lokr-native256\\reference.json",
+            "--device",
+            "cuda"
+          ],
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\krea2-lokr-native256\\resumed.json",
+            "--device",
+            "cuda"
+          ]
+        ],
+        "runtime": {
+          "torch": "2.13.0+cu130",
+          "hip": null,
+          "cuda": "13.0"
+        },
+        "comparison": {
+          "tensor_count": 420,
+          "weights_exact": true,
+          "states_exact": true,
+          "preview_sha256": [
+            "4a1bde53b5b396eb69c8d2c1b4814a6745a5445d150e248b26e132c705626cae"
+          ]
+        }
+      },
+      "updated_tensors_by_prefix": {
+        "blocks": 420
+      },
+      "data_plan": {
+        "seq": 6,
+        "ts": 1789828095.3767135,
+        "type": "data.plan",
+        "images": 4,
+        "items": 4,
+        "captioned": 4,
+        "validation_images": 0,
+        "buckets": [
+          {
+            "base": 0,
+            "w": 192,
+            "h": 256,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 192,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 256,
+            "items": 2
+          }
+        ],
+        "fingerprint": "76bc3b568581a3a6"
+      },
+      "training_steps": [
+        {
+          "seq": 27,
+          "ts": 1789828119.0614948,
+          "type": "step",
+          "step": 1,
+          "epoch": 0,
+          "loss": 0.15719486773014069,
+          "loss_ema": 0.15719486773014069,
+          "loss_mean": 0.15719486773014069,
+          "loss_count": 1,
+          "loss_mean_scope": "run",
+          "lr": {
+            "w1": 0.0001,
+            "w2": 0.0001
+          },
+          "grad_norm": 0.0024734046310186386,
+          "it_s": 0.44588622249905646,
+          "eta_s": 6.728173800001969,
+          "vram_mb": 13969.412109375,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 28,
+          "ts": 1789828121.0111437,
+          "type": "step",
+          "step": 2,
+          "epoch": 0,
+          "loss": 0.19877904653549194,
+          "loss_ema": 0.1580265513062477,
+          "loss_mean": 0.17798695713281631,
+          "loss_count": 2,
+          "loss_mean_scope": "run",
+          "lr": {
+            "w1": 0.0001,
+            "w2": 0.0001
+          },
+          "grad_norm": 0.009311836212873459,
+          "it_s": 0.5194545872281952,
+          "eta_s": 3.850192199999583,
+          "vram_mb": 13969.412109375,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 35,
+          "ts": 1789828129.5162153,
+          "type": "step",
+          "step": 3,
+          "epoch": 0,
+          "loss": 0.1985163539648056,
+          "loss_ema": 0.15883634735941887,
+          "loss_mean": 0.1848300894101461,
+          "loss_count": 3,
+          "loss_mean_scope": "run",
+          "lr": {
+            "w1": 0.0001,
+            "w2": 0.0001
+          },
+          "grad_norm": 0.007030590903013945,
+          "it_s": 0.5344039082453486,
+          "eta_s": 1.8712438000002294,
+          "vram_mb": 13969.412109375,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 36,
+          "ts": 1789828131.325962,
+          "type": "step",
+          "step": 4,
+          "epoch": 0,
+          "loss": 0.15863768756389618,
+          "loss_ema": 0.15883237416350843,
+          "loss_mean": 0.1782819889485836,
+          "loss_count": 4,
+          "loss_mean_scope": "run",
+          "lr": {
+            "w1": 0.0001,
+            "w2": 0.0001
+          },
+          "grad_norm": 0.004614806268364191,
+          "it_s": 0.5600273114099551,
+          "eta_s": 0.0,
+          "vram_mb": 13969.412109375,
+          "vram_metric": "peak_allocated"
+        }
+      ],
+      "peak_allocated_mib": 13969.412109375,
+      "median_step_seconds": 1.8981699500000104,
+      "source_commit": "8449284"
+    },
+    {
+      "name": "anima-lora-adam",
+      "returncode": 0,
+      "seconds": 47.81300000000192,
+      "strict_passed": true,
+      "error": null,
+      "group": "other-models-20260919",
+      "report": {
+        "status": "passed",
+        "strict_passed": true,
+        "device_requested": "cuda",
+        "processes": 1,
+        "strategy": "ddp",
+        "family": "anima",
+        "algorithm": "lora",
+        "train_backbone": true,
+        "train_text_encoder": false,
+        "scope": "Fixed recipe only; CPU is not GPU acceptance",
+        "commands": [
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\anima-lora-adam\\reference.json",
+            "--device",
+            "cuda"
+          ],
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\anima-lora-adam\\resumed.json",
+            "--device",
+            "cuda"
+          ]
+        ],
+        "runtime": {
+          "torch": "2.13.0+cu130",
+          "hip": null,
+          "cuda": "13.0"
+        },
+        "comparison": {
+          "tensor_count": 448,
+          "weights_exact": true,
+          "states_exact": true,
+          "preview_sha256": [
+            "24ded707ce588d4877b27f112cd580d076b7af332023ec6b501180d68fe7f677"
+          ]
+        }
+      },
+      "updated_tensors_by_prefix": {
+        "blocks": 448
+      },
+      "data_plan": {
+        "seq": 6,
+        "ts": 1789828188.9950013,
+        "type": "data.plan",
+        "images": 4,
+        "items": 4,
+        "captioned": 4,
+        "validation_images": 0,
+        "buckets": [
+          {
+            "base": 0,
+            "w": 192,
+            "h": 256,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 192,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 256,
+            "items": 2
+          }
+        ],
+        "fingerprint": "76bc3b568581a3a6"
+      },
+      "training_steps": [
+        {
+          "seq": 26,
+          "ts": 1789828194.7548876,
+          "type": "step",
+          "step": 1,
+          "epoch": 0,
+          "loss": 0.15627390146255493,
+          "loss_ema": 0.15627390146255493,
+          "loss_mean": 0.15627390146255493,
+          "loss_count": 1,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.0371912457048893,
+          "it_s": 1.3244138475412595,
+          "eta_s": 2.265153000000282,
+          "vram_mb": 4182.2236328125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 27,
+          "ts": 1789828195.5380056,
+          "type": "step",
+          "step": 2,
+          "epoch": 0,
+          "loss": 0.22066771984100342,
+          "loss_ema": 0.1575617778301239,
+          "loss_mean": 0.18847081065177917,
+          "loss_count": 2,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.19600534439086914,
+          "it_s": 1.333789667245129,
+          "eta_s": 1.4994867999921553,
+          "vram_mb": 4208.4736328125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 34,
+          "ts": 1789828198.7992475,
+          "type": "step",
+          "step": 3,
+          "epoch": 0,
+          "loss": 0.20060880482196808,
+          "loss_ema": 0.15842271836996077,
+          "loss_mean": 0.19251680870850882,
+          "loss_count": 3,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.09378449618816376,
+          "it_s": 1.4221819713145918,
+          "eta_s": 0.7031448999987333,
+          "vram_mb": 4285.923828125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 35,
+          "ts": 1789828199.60854,
+          "type": "step",
+          "step": 4,
+          "epoch": 0,
+          "loss": 0.16138692200183868,
+          "loss_ema": 0.15848200244259833,
+          "loss_mean": 0.18473433703184128,
+          "loss_count": 4,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.0730976015329361,
+          "it_s": 1.288102390741963,
+          "eta_s": 0.0,
+          "vram_mb": 4285.923828125,
+          "vram_metric": "peak_allocated"
+        }
+      ],
+      "peak_allocated_mib": 4285.923828125,
+      "median_step_seconds": 0.7523971999980857,
+      "source_commit": "8449284"
+    },
+    {
+      "name": "anima-lora-sgd",
+      "returncode": 0,
+      "seconds": 46.34300000000076,
+      "strict_passed": true,
+      "error": null,
+      "group": "other-models-20260919",
+      "report": {
+        "status": "passed",
+        "strict_passed": true,
+        "device_requested": "cuda",
+        "processes": 1,
+        "strategy": "ddp",
+        "family": "anima",
+        "algorithm": "lora",
+        "train_backbone": true,
+        "train_text_encoder": false,
+        "scope": "Fixed recipe only; CPU is not GPU acceptance",
+        "commands": [
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\anima-lora-sgd\\reference.json",
+            "--device",
+            "cuda"
+          ],
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\anima-lora-sgd\\resumed.json",
+            "--device",
+            "cuda"
+          ]
+        ],
+        "runtime": {
+          "torch": "2.13.0+cu130",
+          "hip": null,
+          "cuda": "13.0"
+        },
+        "comparison": {
+          "tensor_count": 448,
+          "weights_exact": true,
+          "states_exact": true,
+          "preview_sha256": [
+            "688254f57884db442827df4ae3dab2d3034973a2e5265a0432fa07a37b4b38a8"
+          ]
+        }
+      },
+      "updated_tensors_by_prefix": {
+        "blocks": 448
+      },
+      "data_plan": {
+        "seq": 6,
+        "ts": 1789828236.7280786,
+        "type": "data.plan",
+        "images": 4,
+        "items": 4,
+        "captioned": 4,
+        "validation_images": 0,
+        "buckets": [
+          {
+            "base": 0,
+            "w": 192,
+            "h": 256,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 192,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 256,
+            "items": 2
+          }
+        ],
+        "fingerprint": "76bc3b568581a3a6"
+      },
+      "training_steps": [
+        {
+          "seq": 26,
+          "ts": 1789828242.5719352,
+          "type": "step",
+          "step": 1,
+          "epoch": 0,
+          "loss": 0.15627390146255493,
+          "loss_ema": 0.15627390146255493,
+          "loss_mean": 0.15627390146255493,
+          "loss_count": 1,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.0371912457048893,
+          "it_s": 1.2578059436911484,
+          "eta_s": 2.3851055999912205,
+          "vram_mb": 4182.2236328125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 27,
+          "ts": 1789828243.3577535,
+          "type": "step",
+          "step": 2,
+          "epoch": 0,
+          "loss": 0.22027628123760223,
+          "loss_ema": 0.1575539490580559,
+          "loss_mean": 0.18827509135007858,
+          "loss_count": 2,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.1866431087255478,
+          "it_s": 1.3058374459611026,
+          "eta_s": 1.5315841999981785,
+          "vram_mb": 4182.2236328125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 34,
+          "ts": 1789828246.5639474,
+          "type": "step",
+          "step": 3,
+          "epoch": 0,
+          "loss": 0.20022474229335785,
+          "loss_ema": 0.15840736492276192,
+          "loss_mean": 0.19225830833117166,
+          "loss_count": 3,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.09692695736885071,
+          "it_s": 1.2856858169659815,
+          "eta_s": 0.7777949999945122,
+          "vram_mb": 4259.673828125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 35,
+          "ts": 1789828247.3576763,
+          "type": "step",
+          "step": 4,
+          "epoch": 0,
+          "loss": 0.16114352643489838,
+          "loss_ema": 0.15846208815300464,
+          "loss_mean": 0.18447961285710335,
+          "loss_count": 4,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.08424919843673706,
+          "it_s": 1.291631878726294,
+          "eta_s": 0.0,
+          "vram_mb": 4259.673828125,
+          "vram_metric": "peak_allocated"
+        }
+      ],
+      "peak_allocated_mib": 4259.673828125,
+      "median_step_seconds": 0.7760046999937913,
+      "source_commit": "8449284"
+    },
+    {
+      "name": "anima-lora-lion",
+      "returncode": 0,
+      "seconds": 48.11000000000058,
+      "strict_passed": true,
+      "error": null,
+      "group": "other-models-20260919",
+      "report": {
+        "status": "passed",
+        "strict_passed": true,
+        "device_requested": "cuda",
+        "processes": 1,
+        "strategy": "ddp",
+        "family": "anima",
+        "algorithm": "lora",
+        "train_backbone": true,
+        "train_text_encoder": false,
+        "scope": "Fixed recipe only; CPU is not GPU acceptance",
+        "commands": [
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\anima-lora-lion\\reference.json",
+            "--device",
+            "cuda"
+          ],
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\anima-lora-lion\\resumed.json",
+            "--device",
+            "cuda"
+          ]
+        ],
+        "runtime": {
+          "torch": "2.13.0+cu130",
+          "hip": null,
+          "cuda": "13.0"
+        },
+        "comparison": {
+          "tensor_count": 448,
+          "weights_exact": true,
+          "states_exact": true,
+          "preview_sha256": [
+            "9b49ebf6456e081a641e6db30bf1c9b6cf6f6bc29ff8f9f79f9f3bc90b5dd030"
+          ]
+        }
+      },
+      "updated_tensors_by_prefix": {
+        "blocks": 448
+      },
+      "data_plan": {
+        "seq": 6,
+        "ts": 1789828283.4556684,
+        "type": "data.plan",
+        "images": 4,
+        "items": 4,
+        "captioned": 4,
+        "validation_images": 0,
+        "buckets": [
+          {
+            "base": 0,
+            "w": 192,
+            "h": 256,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 192,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 256,
+            "items": 2
+          }
+        ],
+        "fingerprint": "76bc3b568581a3a6"
+      },
+      "training_steps": [
+        {
+          "seq": 26,
+          "ts": 1789828289.424034,
+          "type": "step",
+          "step": 1,
+          "epoch": 0,
+          "loss": 0.15627390146255493,
+          "loss_ema": 0.15627390146255493,
+          "loss_mean": 0.15627390146255493,
+          "loss_count": 1,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.0371912457048893,
+          "it_s": 1.2138573960363628,
+          "eta_s": 2.4714599999933853,
+          "vram_mb": 4182.2236328125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 27,
+          "ts": 1789828290.3109572,
+          "type": "step",
+          "step": 2,
+          "epoch": 0,
+          "loss": 0.2197631597518921,
+          "loss_ema": 0.15754368662834167,
+          "loss_mean": 0.1880185306072235,
+          "loss_count": 2,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.18464578688144684,
+          "it_s": 1.2584004522242955,
+          "eta_s": 1.5893191999930423,
+          "vram_mb": 4195.3486328125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 34,
+          "ts": 1789828293.7014508,
+          "type": "step",
+          "step": 3,
+          "epoch": 0,
+          "loss": 0.2006322741508484,
+          "loss_ema": 0.1584054583787918,
+          "loss_mean": 0.1922231117884318,
+          "loss_count": 3,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.09649360179901123,
+          "it_s": 1.2557098697363416,
+          "eta_s": 0.7963623000032385,
+          "vram_mb": 4272.798828125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 35,
+          "ts": 1789828294.59002,
+          "type": "step",
+          "step": 4,
+          "epoch": 0,
+          "loss": 0.16185130178928375,
+          "loss_ema": 0.15847437524700164,
+          "loss_mean": 0.1846301592886448,
+          "loss_count": 4,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.08658578246831894,
+          "it_s": 1.2583537385832881,
+          "eta_s": 0.0,
+          "vram_mb": 4272.798828125,
+          "vram_metric": "peak_allocated"
+        }
+      ],
+      "peak_allocated_mib": 4272.798828125,
+      "median_step_seconds": 0.7955257000030542,
+      "source_commit": "8449284"
+    },
+    {
+      "name": "anima-lora-adafactor",
+      "returncode": 0,
+      "seconds": 49.95300000000134,
+      "strict_passed": true,
+      "error": null,
+      "group": "other-models-20260919",
+      "report": {
+        "status": "passed",
+        "strict_passed": true,
+        "device_requested": "cuda",
+        "processes": 1,
+        "strategy": "ddp",
+        "family": "anima",
+        "algorithm": "lora",
+        "train_backbone": true,
+        "train_text_encoder": false,
+        "scope": "Fixed recipe only; CPU is not GPU acceptance",
+        "commands": [
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\anima-lora-adafactor\\reference.json",
+            "--device",
+            "cuda"
+          ],
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\anima-lora-adafactor\\resumed.json",
+            "--device",
+            "cuda"
+          ]
+        ],
+        "runtime": {
+          "torch": "2.13.0+cu130",
+          "hip": null,
+          "cuda": "13.0"
+        },
+        "comparison": {
+          "tensor_count": 448,
+          "weights_exact": true,
+          "states_exact": true,
+          "preview_sha256": [
+            "65202492556c9dd63529e2b1cfc00f09a2b2e6ee061ca89cb955a382f4b6dc4f"
+          ]
+        }
+      },
+      "updated_tensors_by_prefix": {
+        "blocks": 448
+      },
+      "data_plan": {
+        "seq": 6,
+        "ts": 1789828331.801319,
+        "type": "data.plan",
+        "images": 4,
+        "items": 4,
+        "captioned": 4,
+        "validation_images": 0,
+        "buckets": [
+          {
+            "base": 0,
+            "w": 192,
+            "h": 256,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 192,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 256,
+            "items": 2
+          }
+        ],
+        "fingerprint": "76bc3b568581a3a6"
+      },
+      "training_steps": [
+        {
+          "seq": 26,
+          "ts": 1789828337.9651315,
+          "type": "step",
+          "step": 1,
+          "epoch": 0,
+          "loss": 0.15627390146255493,
+          "loss_ema": 0.15627390146255493,
+          "loss_mean": 0.15627390146255493,
+          "loss_count": 1,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.0371912457048893,
+          "it_s": 1.1082376970352956,
+          "eta_s": 2.707000500005961,
+          "vram_mb": 4182.2236328125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 27,
+          "ts": 1789828339.042051,
+          "type": "step",
+          "step": 2,
+          "epoch": 0,
+          "loss": 0.2219526618719101,
+          "loss_ema": 0.15758747667074205,
+          "loss_mean": 0.1891132816672325,
+          "loss_count": 2,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.19329845905303955,
+          "it_s": 1.259869185262544,
+          "eta_s": 1.5874664000002667,
+          "vram_mb": 4185.9423828125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 34,
+          "ts": 1789828342.7360237,
+          "type": "step",
+          "step": 3,
+          "epoch": 0,
+          "loss": 0.2006361037492752,
+          "loss_ema": 0.15844844921231271,
+          "loss_mean": 0.19295422236124674,
+          "loss_count": 3,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.09472444653511047,
+          "it_s": 1.2464325542298607,
+          "eta_s": 0.8022896999973455,
+          "vram_mb": 4263.392578125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 35,
+          "ts": 1789828343.8110478,
+          "type": "step",
+          "step": 4,
+          "epoch": 0,
+          "loss": 0.1613546758890152,
+          "loss_ema": 0.15850657374584676,
+          "loss_mean": 0.18505433574318886,
+          "loss_count": 4,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.07086838781833649,
+          "it_s": 1.2633016185664168,
+          "eta_s": 0.0,
+          "vram_mb": 4263.392578125,
+          "vram_metric": "peak_allocated"
+        }
+      ],
+      "peak_allocated_mib": 4263.392578125,
+      "median_step_seconds": 0.7980114499987394,
+      "source_commit": "8449284"
+    },
+    {
+      "name": "anima-lora-prodigy",
+      "returncode": 0,
+      "seconds": 49.29699999999866,
+      "strict_passed": true,
+      "error": null,
+      "group": "other-models-20260919",
+      "report": {
+        "status": "passed",
+        "strict_passed": true,
+        "device_requested": "cuda",
+        "processes": 1,
+        "strategy": "ddp",
+        "family": "anima",
+        "algorithm": "lora",
+        "train_backbone": true,
+        "train_text_encoder": false,
+        "scope": "Fixed recipe only; CPU is not GPU acceptance",
+        "commands": [
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\anima-lora-prodigy\\reference.json",
+            "--device",
+            "cuda"
+          ],
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\anima-lora-prodigy\\resumed.json",
+            "--device",
+            "cuda"
+          ]
+        ],
+        "runtime": {
+          "torch": "2.13.0+cu130",
+          "hip": null,
+          "cuda": "13.0"
+        },
+        "comparison": {
+          "tensor_count": 448,
+          "weights_exact": true,
+          "states_exact": true,
+          "preview_sha256": [
+            "46ed0e18d2dcb5c9f379a5a729d59721d770c0ba9846853b6e073fd74f28e3e1"
+          ]
+        }
+      },
+      "updated_tensors_by_prefix": {
+        "blocks": 448
+      },
+      "data_plan": {
+        "seq": 6,
+        "ts": 1789828381.3996274,
+        "type": "data.plan",
+        "images": 4,
+        "items": 4,
+        "captioned": 4,
+        "validation_images": 0,
+        "buckets": [
+          {
+            "base": 0,
+            "w": 192,
+            "h": 256,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 192,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 256,
+            "items": 2
+          }
+        ],
+        "fingerprint": "76bc3b568581a3a6"
+      },
+      "training_steps": [
+        {
+          "seq": 26,
+          "ts": 1789828387.4000778,
+          "type": "step",
+          "step": 1,
+          "epoch": 0,
+          "loss": 0.15627390146255493,
+          "loss_ema": 0.15627390146255493,
+          "loss_mean": 0.15627390146255493,
+          "loss_count": 1,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 1e-06,
+            "up": 1e-06
+          },
+          "grad_norm": 0.0371912457048893,
+          "it_s": 1.1055827062100176,
+          "eta_s": 2.7135011999998824,
+          "vram_mb": 4182.2236328125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 27,
+          "ts": 1789828388.2610068,
+          "type": "step",
+          "step": 2,
+          "epoch": 0,
+          "loss": 0.22022071480751038,
+          "loss_ema": 0.15755283772945405,
+          "loss_mean": 0.18824730813503265,
+          "loss_count": 2,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 1e-06,
+            "up": 1e-06
+          },
+          "grad_norm": 0.185879185795784,
+          "it_s": 1.549278601662823,
+          "eta_s": 1.2909233999962453,
+          "vram_mb": 4227.8330078125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 34,
+          "ts": 1789828391.8641257,
+          "type": "step",
+          "step": 3,
+          "epoch": 0,
+          "loss": 0.20060135424137115,
+          "loss_ema": 0.1584138080596924,
+          "loss_mean": 0.19236532350381216,
+          "loss_count": 3,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 1e-06,
+            "up": 1e-06
+          },
+          "grad_norm": 0.09294700622558594,
+          "it_s": 1.4238996139357247,
+          "eta_s": 0.7022967000011704,
+          "vram_mb": 4305.283203125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 35,
+          "ts": 1789828392.8732727,
+          "type": "step",
+          "step": 4,
+          "epoch": 0,
+          "loss": 0.16084565222263336,
+          "loss_ema": 0.15846244494295122,
+          "loss_mean": 0.18448540568351746,
+          "loss_count": 4,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 1e-06,
+            "up": 1e-06
+          },
+          "grad_norm": 0.08762270212173462,
+          "it_s": 1.2585567701580809,
+          "eta_s": 0.0,
+          "vram_mb": 4305.283203125,
+          "vram_metric": "peak_allocated"
+        }
+      ],
+      "peak_allocated_mib": 4305.283203125,
+      "median_step_seconds": 0.7484288000014203,
+      "source_commit": "8449284"
+    },
+    {
+      "name": "anima-lora-prodigy_plus_sf",
+      "returncode": 1,
+      "seconds": 50.95300000000134,
+      "strict_passed": false,
+      "error": "AssertionError: optimizer.state.0.p0",
+      "group": "other-models-20260919"
+    },
+    {
+      "name": "anima-lora-adamw_sf",
+      "returncode": 0,
+      "seconds": 48.11000000000058,
+      "strict_passed": true,
+      "error": null,
+      "group": "other-models-20260919",
+      "report": {
+        "status": "passed",
+        "strict_passed": true,
+        "device_requested": "cuda",
+        "processes": 1,
+        "strategy": "ddp",
+        "family": "anima",
+        "algorithm": "lora",
+        "train_backbone": true,
+        "train_text_encoder": false,
+        "scope": "Fixed recipe only; CPU is not GPU acceptance",
+        "commands": [
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\anima-lora-adamw_sf\\reference.json",
+            "--device",
+            "cuda"
+          ],
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\anima-lora-adamw_sf\\resumed.json",
+            "--device",
+            "cuda"
+          ]
+        ],
+        "runtime": {
+          "torch": "2.13.0+cu130",
+          "hip": null,
+          "cuda": "13.0"
+        },
+        "comparison": {
+          "tensor_count": 448,
+          "weights_exact": true,
+          "states_exact": true,
+          "preview_sha256": [
+            "ceafeeecebe618182d9df6dfa1988ba915a9d082e99bebfd3504266f90e8e3ed"
+          ]
+        }
+      },
+      "updated_tensors_by_prefix": {
+        "blocks": 448
+      },
+      "data_plan": {
+        "seq": 6,
+        "ts": 1789828481.1775954,
+        "type": "data.plan",
+        "images": 4,
+        "items": 4,
+        "captioned": 4,
+        "validation_images": 0,
+        "buckets": [
+          {
+            "base": 0,
+            "w": 192,
+            "h": 256,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 192,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 256,
+            "items": 2
+          }
+        ],
+        "fingerprint": "76bc3b568581a3a6"
+      },
+      "training_steps": [
+        {
+          "seq": 26,
+          "ts": 1789828487.1386356,
+          "type": "step",
+          "step": 1,
+          "epoch": 0,
+          "loss": 0.15627390146255493,
+          "loss_ema": 0.15627390146255493,
+          "loss_mean": 0.15627390146255493,
+          "loss_count": 1,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.0371912457048893,
+          "it_s": 1.2312139831451696,
+          "eta_s": 2.4366194999965956,
+          "vram_mb": 4182.2236328125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 27,
+          "ts": 1789828487.9202974,
+          "type": "step",
+          "step": 2,
+          "epoch": 0,
+          "loss": 0.2218121886253357,
+          "loss_ema": 0.15758466720581055,
+          "loss_mean": 0.1890430450439453,
+          "loss_count": 2,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.17247110605239868,
+          "it_s": 1.3141224402014862,
+          "eta_s": 1.5219282000034582,
+          "vram_mb": 4208.4736328125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 34,
+          "ts": 1789828491.4331052,
+          "type": "step",
+          "step": 3,
+          "epoch": 0,
+          "loss": 0.20090021193027496,
+          "loss_ema": 0.15845097810029982,
+          "loss_mean": 0.1929954340060552,
+          "loss_count": 3,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.09263730049133301,
+          "it_s": 1.279703518295775,
+          "eta_s": 0.7814309999957914,
+          "vram_mb": 4299.048828125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 35,
+          "ts": 1789828492.2520368,
+          "type": "step",
+          "step": 4,
+          "epoch": 0,
+          "loss": 0.16117286682128906,
+          "loss_ema": 0.1585054158747196,
+          "loss_mean": 0.18503979220986366,
+          "loss_count": 4,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.07780645787715912,
+          "it_s": 1.2519753040305557,
+          "eta_s": 0.0,
+          "vram_mb": 4299.048828125,
+          "vram_metric": "peak_allocated"
+        }
+      ],
+      "peak_allocated_mib": 4299.048828125,
+      "median_step_seconds": 0.7900843999996141,
+      "source_commit": "8449284"
+    },
+    {
+      "name": "anima-lora-automagic",
+      "returncode": 0,
+      "seconds": 50.75,
+      "strict_passed": true,
+      "error": null,
+      "group": "other-models-20260919",
+      "report": {
+        "status": "passed",
+        "strict_passed": true,
+        "device_requested": "cuda",
+        "processes": 1,
+        "strategy": "ddp",
+        "family": "anima",
+        "algorithm": "lora",
+        "train_backbone": true,
+        "train_text_encoder": false,
+        "scope": "Fixed recipe only; CPU is not GPU acceptance",
+        "commands": [
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\anima-lora-automagic\\reference.json",
+            "--device",
+            "cuda"
+          ],
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\anima-lora-automagic\\resumed.json",
+            "--device",
+            "cuda"
+          ]
+        ],
+        "runtime": {
+          "torch": "2.13.0+cu130",
+          "hip": null,
+          "cuda": "13.0"
+        },
+        "comparison": {
+          "tensor_count": 448,
+          "weights_exact": true,
+          "states_exact": true,
+          "preview_sha256": [
+            "3f51b841bdc60f6bb04f7d13e6e7fd9fc1a5a88144f4bbcc3544a72fd1671840"
+          ]
+        }
+      },
+      "updated_tensors_by_prefix": {
+        "blocks": 448
+      },
+      "data_plan": {
+        "seq": 6,
+        "ts": 1789828530.2822597,
+        "type": "data.plan",
+        "images": 4,
+        "items": 4,
+        "captioned": 4,
+        "validation_images": 0,
+        "buckets": [
+          {
+            "base": 0,
+            "w": 192,
+            "h": 256,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 192,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 256,
+            "items": 2
+          }
+        ],
+        "fingerprint": "76bc3b568581a3a6"
+      },
+      "training_steps": [
+        {
+          "seq": 26,
+          "ts": 1789828536.3252814,
+          "type": "step",
+          "step": 1,
+          "epoch": 0,
+          "loss": 0.15627390146255493,
+          "loss_ema": 0.15627390146255493,
+          "loss_mean": 0.15627390146255493,
+          "loss_count": 1,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 2.000000083115788e-06,
+            "up": 1.0513180573720353e-06
+          },
+          "grad_norm": 0.0371912457048893,
+          "it_s": 1.1445233071877219,
+          "eta_s": 2.6211785999985295,
+          "vram_mb": 4182.2236328125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 27,
+          "ts": 1789828537.4080112,
+          "type": "step",
+          "step": 2,
+          "epoch": 0,
+          "loss": 0.22133971750736237,
+          "loss_ema": 0.1575752177834511,
+          "loss_mean": 0.18880680948495865,
+          "loss_count": 2,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 1.99800944050812e-06,
+            "up": 1.3203899860465235e-06
+          },
+          "grad_norm": 0.17115315794944763,
+          "it_s": 1.4075952431804655,
+          "eta_s": 1.4208629999920959,
+          "vram_mb": 4202.1298828125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 34,
+          "ts": 1789828541.184229,
+          "type": "step",
+          "step": 3,
+          "epoch": 0,
+          "loss": 0.20029321312904358,
+          "loss_ema": 0.15842957769036295,
+          "loss_mean": 0.19263561069965363,
+          "loss_count": 3,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 2.004053830929405e-06,
+            "up": 1.435510317345948e-06
+          },
+          "grad_norm": 0.0946647971868515,
+          "it_s": 1.2668600064041513,
+          "eta_s": 0.7893531999943662,
+          "vram_mb": 4279.580078125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 35,
+          "ts": 1789828542.3454673,
+          "type": "step",
+          "step": 4,
+          "epoch": 0,
+          "loss": 0.1610153615474701,
+          "loss_ema": 0.1584812933675051,
+          "loss_mean": 0.18473054841160774,
+          "loss_count": 4,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 2.138866040361475e-06,
+            "up": 1.646178653962644e-06
+          },
+          "grad_norm": 0.07562032341957092,
+          "it_s": 1.264639306534623,
+          "eta_s": 0.0,
+          "vram_mb": 4279.580078125,
+          "vram_metric": "peak_allocated"
+        }
+      ],
+      "peak_allocated_mib": 4279.580078125,
+      "median_step_seconds": 0.7900462499965215,
+      "source_commit": "8449284"
+    },
+    {
+      "name": "anima-lora-came",
+      "returncode": 1,
+      "seconds": 26.04699999999866,
+      "strict_passed": false,
+      "error": "RuntimeError: Training exited 1; inspect reference.log",
+      "group": "other-models-20260919"
+    },
+    {
+      "name": "anima-lora-adamw8bit",
+      "returncode": 1,
+      "seconds": 24.764999999999418,
+      "strict_passed": false,
+      "error": "RuntimeError: Training exited 1; inspect reference.log",
+      "group": "other-models-20260919"
+    },
+    {
+      "name": "anima-lora-lion8bit",
+      "returncode": 1,
+      "seconds": 24.656999999999243,
+      "strict_passed": false,
+      "error": "RuntimeError: Training exited 1; inspect reference.log",
+      "group": "other-models-20260919"
+    },
+    {
+      "name": "sdxl-lora-minsnr",
+      "returncode": 0,
+      "seconds": 98.81199999999808,
+      "strict_passed": true,
+      "error": null,
+      "group": "other-models-20260919",
+      "report": {
+        "status": "passed",
+        "strict_passed": true,
+        "device_requested": "cuda",
+        "processes": 1,
+        "strategy": "ddp",
+        "family": "sdxl",
+        "algorithm": "lora",
+        "train_backbone": true,
+        "train_text_encoder": false,
+        "scope": "Fixed recipe only; CPU is not GPU acceptance",
+        "commands": [
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\sdxl-lora-minsnr\\reference.json",
+            "--device",
+            "cuda"
+          ],
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\sdxl-lora-minsnr\\resumed.json",
+            "--device",
+            "cuda"
+          ]
+        ],
+        "runtime": {
+          "torch": "2.13.0+cu130",
+          "hip": null,
+          "cuda": "13.0"
+        },
+        "comparison": {
+          "tensor_count": 1120,
+          "weights_exact": true,
+          "states_exact": true,
+          "preview_sha256": [
+            "28b5250ef26c5c496c81b8a8e6ac6c80648fe415c23a717f8bb1f0f018e2305b"
+          ]
+        }
+      },
+      "updated_tensors_by_prefix": {
+        "down_blocks": 384,
+        "mid_block": 160,
+        "up_blocks": 576
+      },
+      "data_plan": {
+        "seq": 6,
+        "ts": 1789828675.7611518,
+        "type": "data.plan",
+        "images": 2,
+        "items": 2,
+        "captioned": 2,
+        "validation_images": 0,
+        "buckets": [
+          {
+            "base": 256,
+            "w": 256,
+            "h": 256,
+            "items": 2
+          }
+        ],
+        "fingerprint": "5d2d0850d95bdee4"
+      },
+      "training_steps": [
+        {
+          "seq": 22,
+          "ts": 1789828687.4322596,
+          "type": "step",
+          "step": 1,
+          "epoch": 0,
+          "loss": 0.031669437885284424,
+          "loss_ema": 0.031669437885284424,
+          "loss_mean": 0.031669437885284424,
+          "loss_count": 1,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.006138651166111231,
+          "it_s": 0.6905044452596972,
+          "eta_s": 4.344649800004845,
+          "vram_mb": 5176.77685546875,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 23,
+          "ts": 1789828688.8840897,
+          "type": "step",
+          "step": 2,
+          "epoch": 0,
+          "loss": 0.025545062497258186,
+          "loss_ema": 0.0315469503775239,
+          "loss_mean": 0.028607250191271305,
+          "loss_count": 2,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.0048991781659424305,
+          "it_s": 0.7194227006946395,
+          "eta_s": 2.7800067999924067,
+          "vram_mb": 5221.07373046875,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 32,
+          "ts": 1789828692.5761795,
+          "type": "step",
+          "step": 3,
+          "epoch": 1,
+          "loss": 0.02648562379181385,
+          "loss_ema": 0.031445723845809695,
+          "loss_mean": 0.027900041391452152,
+          "loss_count": 3,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.0076903086155653,
+          "it_s": 0.7503169526377877,
+          "eta_s": 1.3327701000016532,
+          "vram_mb": 5641.44189453125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 33,
+          "ts": 1789828693.9851792,
+          "type": "step",
+          "step": 4,
+          "epoch": 1,
+          "loss": 0.4122612774372101,
+          "loss_ema": 0.0390620349176377,
+          "loss_mean": 0.12399035040289164,
+          "loss_count": 4,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.03459895774722099,
+          "it_s": 0.7420912919239755,
+          "eta_s": 0.0,
+          "vram_mb": 5641.44189453125,
+          "vram_metric": "peak_allocated"
+        }
+      ],
+      "peak_allocated_mib": 5641.44189453125,
+      "median_step_seconds": 1.3687732499965932,
+      "source_commit": "8449284"
+    },
+    {
+      "name": "sdxl-lora-debiased",
+      "returncode": 0,
+      "seconds": 108.93800000000192,
+      "strict_passed": true,
+      "error": null,
+      "group": "other-models-20260919",
+      "report": {
+        "status": "passed",
+        "strict_passed": true,
+        "device_requested": "cuda",
+        "processes": 1,
+        "strategy": "ddp",
+        "family": "sdxl",
+        "algorithm": "lora",
+        "train_backbone": true,
+        "train_text_encoder": false,
+        "scope": "Fixed recipe only; CPU is not GPU acceptance",
+        "commands": [
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\sdxl-lora-debiased\\reference.json",
+            "--device",
+            "cuda"
+          ],
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\sdxl-lora-debiased\\resumed.json",
+            "--device",
+            "cuda"
+          ]
+        ],
+        "runtime": {
+          "torch": "2.13.0+cu130",
+          "hip": null,
+          "cuda": "13.0"
+        },
+        "comparison": {
+          "tensor_count": 1120,
+          "weights_exact": true,
+          "states_exact": true,
+          "preview_sha256": [
+            "47e471834ca15b63550ff7ab946d63cfc031186ac3401d7f7f5c62ec4a160180"
+          ]
+        }
+      },
+      "updated_tensors_by_prefix": {
+        "down_blocks": 384,
+        "mid_block": 160,
+        "up_blocks": 576
+      },
+      "data_plan": {
+        "seq": 6,
+        "ts": 1789828781.428828,
+        "type": "data.plan",
+        "images": 2,
+        "items": 2,
+        "captioned": 2,
+        "validation_images": 0,
+        "buckets": [
+          {
+            "base": 256,
+            "w": 256,
+            "h": 256,
+            "items": 2
+          }
+        ],
+        "fingerprint": "5d2d0850d95bdee4"
+      },
+      "training_steps": [
+        {
+          "seq": 22,
+          "ts": 1789828793.7868047,
+          "type": "step",
+          "step": 1,
+          "epoch": 0,
+          "loss": 0.24072743952274323,
+          "loss_ema": 0.24072743952274323,
+          "loss_mean": 0.24072743952274323,
+          "loss_count": 1,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.04667076840996742,
+          "it_s": 0.5844227606724363,
+          "eta_s": 5.133270299993455,
+          "vram_mb": 5176.77685546875,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 23,
+          "ts": 1789828795.2258112,
+          "type": "step",
+          "step": 2,
+          "epoch": 0,
+          "loss": 0.21542882919311523,
+          "loss_ema": 0.24022146731615066,
+          "loss_mean": 0.22807813435792923,
+          "loss_count": 2,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.04143797233700752,
+          "it_s": 0.7249118869626161,
+          "eta_s": 2.758955999990576,
+          "vram_mb": 5221.07373046875,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 32,
+          "ts": 1789828799.130636,
+          "type": "step",
+          "step": 3,
+          "epoch": 1,
+          "loss": 0.2088504284620285,
+          "loss_ema": 0.2395940465390682,
+          "loss_mean": 0.22166889905929565,
+          "loss_count": 3,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.06016938388347626,
+          "it_s": 0.7304007548237443,
+          "eta_s": 1.3691114000030211,
+          "vram_mb": 5641.44189453125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 33,
+          "ts": 1789828800.623182,
+          "type": "step",
+          "step": 4,
+          "epoch": 1,
+          "loss": 0.45389509201049805,
+          "loss_ema": 0.2438800674484968,
+          "loss_mean": 0.27972544729709625,
+          "loss_count": 4,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.038137517869472504,
+          "it_s": 0.6980912927502247,
+          "eta_s": 0.0,
+          "vram_mb": 5641.44189453125,
+          "vram_metric": "peak_allocated"
+        }
+      ],
+      "peak_allocated_mib": 5641.44189453125,
+      "median_step_seconds": 1.4059776999965834,
+      "source_commit": "8449284"
+    },
+    {
+      "name": "sdxl-lora-noise-offset",
+      "returncode": 0,
+      "seconds": 104.21800000000076,
+      "strict_passed": true,
+      "error": null,
+      "group": "other-models-20260919",
+      "report": {
+        "status": "passed",
+        "strict_passed": true,
+        "device_requested": "cuda",
+        "processes": 1,
+        "strategy": "ddp",
+        "family": "sdxl",
+        "algorithm": "lora",
+        "train_backbone": true,
+        "train_text_encoder": false,
+        "scope": "Fixed recipe only; CPU is not GPU acceptance",
+        "commands": [
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\sdxl-lora-noise-offset\\reference.json",
+            "--device",
+            "cuda"
+          ],
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\sdxl-lora-noise-offset\\resumed.json",
+            "--device",
+            "cuda"
+          ]
+        ],
+        "runtime": {
+          "torch": "2.13.0+cu130",
+          "hip": null,
+          "cuda": "13.0"
+        },
+        "comparison": {
+          "tensor_count": 1120,
+          "weights_exact": true,
+          "states_exact": true,
+          "preview_sha256": [
+            "d3fe2bb4e3a2aeff59cb20ba7b68fdd5edbbd9a9b17e3d627db61b9c7086be1e"
+          ]
+        }
+      },
+      "updated_tensors_by_prefix": {
+        "down_blocks": 384,
+        "mid_block": 160,
+        "up_blocks": 576
+      },
+      "data_plan": {
+        "seq": 6,
+        "ts": 1789828889.560866,
+        "type": "data.plan",
+        "images": 2,
+        "items": 2,
+        "captioned": 2,
+        "validation_images": 0,
+        "buckets": [
+          {
+            "base": 256,
+            "w": 256,
+            "h": 256,
+            "items": 2
+          }
+        ],
+        "fingerprint": "5d2d0850d95bdee4"
+      },
+      "training_steps": [
+        {
+          "seq": 22,
+          "ts": 1789828898.8997712,
+          "type": "step",
+          "step": 1,
+          "epoch": 0,
+          "loss": 0.040968429297208786,
+          "loss_ema": 0.040968429297208786,
+          "loss_mean": 0.040968429297208786,
+          "loss_count": 1,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.005512045696377754,
+          "it_s": 0.5808570766886814,
+          "eta_s": 5.1647817000048235,
+          "vram_mb": 5176.77685546875,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 23,
+          "ts": 1789828900.2951949,
+          "type": "step",
+          "step": 2,
+          "epoch": 0,
+          "loss": 0.35128235816955566,
+          "loss_ema": 0.047174707874655726,
+          "loss_mean": 0.19612539373338223,
+          "loss_count": 2,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.027338631451129913,
+          "it_s": 0.7485284865623331,
+          "eta_s": 2.6719089999969583,
+          "vram_mb": 5221.07373046875,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 32,
+          "ts": 1789828904.0444703,
+          "type": "step",
+          "step": 3,
+          "epoch": 1,
+          "loss": 0.5196540355682373,
+          "loss_ema": 0.05662429442852735,
+          "loss_mean": 0.30396827434500057,
+          "loss_count": 3,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.054895173758268356,
+          "it_s": 0.7887736683344971,
+          "eta_s": 1.2677908000041498,
+          "vram_mb": 5641.44189453125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 33,
+          "ts": 1789828905.485343,
+          "type": "step",
+          "step": 4,
+          "epoch": 1,
+          "loss": 0.5281440019607544,
+          "loss_ema": 0.06605468857917189,
+          "loss_mean": 0.36001220624893904,
+          "loss_count": 4,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.03853696584701538,
+          "it_s": 0.7255867802130774,
+          "eta_s": 0.0,
+          "vram_mb": 5641.44189453125,
+          "vram_metric": "peak_allocated"
+        }
+      ],
+      "peak_allocated_mib": 5641.44189453125,
+      "median_step_seconds": 1.3570747000012489,
+      "source_commit": "8449284"
+    },
+    {
+      "name": "klein-lora-native256",
+      "returncode": 0,
+      "seconds": 78.8440000000046,
+      "strict_passed": true,
+      "error": null,
+      "group": "klein-explicit-20260919",
+      "report": {
+        "status": "passed",
+        "strict_passed": true,
+        "device_requested": "cuda",
+        "processes": 1,
+        "strategy": "ddp",
+        "family": "flux2",
+        "algorithm": "lora",
+        "train_backbone": true,
+        "train_text_encoder": false,
+        "scope": "Fixed recipe only; CPU is not GPU acceptance",
+        "commands": [
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\klein-explicit-20260919\\klein-lora-native256\\reference.json",
+            "--device",
+            "cuda"
+          ],
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\klein-explicit-20260919\\klein-lora-native256\\resumed.json",
+            "--device",
+            "cuda"
+          ]
+        ],
+        "runtime": {
+          "torch": "2.13.0+cu130",
+          "hip": null,
+          "cuda": "13.0"
+        },
+        "comparison": {
+          "tensor_count": 160,
+          "weights_exact": true,
+          "states_exact": true,
+          "preview_sha256": [
+            "4645f316e56c006b2cd0201e50678333bde85dafff23aa26c440f6d2185b5f82"
+          ]
+        }
+      },
+      "updated_tensors_by_prefix": {
+        "single_transformer_blocks": 80,
+        "transformer_blocks": 80
+      },
+      "data_plan": {
+        "seq": 6,
+        "ts": 1789828991.3954291,
+        "type": "data.plan",
+        "images": 4,
+        "items": 4,
+        "captioned": 4,
+        "validation_images": 0,
+        "buckets": [
+          {
+            "base": 0,
+            "w": 192,
+            "h": 256,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 192,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 256,
+            "items": 2
+          }
+        ],
+        "fingerprint": "76bc3b568581a3a6"
+      },
+      "training_steps": [
+        {
+          "seq": 27,
+          "ts": 1789829006.4331243,
+          "type": "step",
+          "step": 1,
+          "epoch": 0,
+          "loss": 0.9356304407119751,
+          "loss_ema": 0.9356304407119751,
+          "loss_mean": 0.9356304407119751,
+          "loss_count": 1,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.06783150136470795,
+          "it_s": 1.6337047670082536,
+          "eta_s": 1.8363170999946306,
+          "vram_mb": 9294.689453125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 28,
+          "ts": 1789829006.8911808,
+          "type": "step",
+          "step": 2,
+          "epoch": 0,
+          "loss": 0.8179091811180115,
+          "loss_ema": 0.9332760155200958,
+          "loss_mean": 0.8767698109149933,
+          "loss_count": 2,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.023800553753972054,
+          "it_s": 2.2305416469215094,
+          "eta_s": 0.896643199987011,
+          "vram_mb": 9294.689453125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 35,
+          "ts": 1789829009.1328075,
+          "type": "step",
+          "step": 3,
+          "epoch": 0,
+          "loss": 0.6292340755462646,
+          "loss_ema": 0.9271951767206191,
+          "loss_mean": 0.7942578991254171,
+          "loss_count": 3,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.028713354840874672,
+          "it_s": 1.9746588085734598,
+          "eta_s": 0.5064166000011028,
+          "vram_mb": 9294.689453125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 36,
+          "ts": 1789829009.6403508,
+          "type": "step",
+          "step": 4,
+          "epoch": 0,
+          "loss": 0.6330201029777527,
+          "loss_ema": 0.9213116752457619,
+          "loss_mean": 0.753948450088501,
+          "loss_count": 4,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.03996630758047104,
+          "it_s": 2.0099157182180214,
+          "eta_s": 0.0,
+          "vram_mb": 9294.689453125,
+          "vram_metric": "peak_allocated"
+        }
+      ],
+      "peak_allocated_mib": 9294.689453125,
+      "median_step_seconds": 0.5019749499988393,
+      "source_commit": "8449284"
+    },
+    {
+      "name": "klein-lokr-native256",
+      "returncode": 0,
+      "seconds": 87.65600000000006,
+      "strict_passed": true,
+      "error": null,
+      "group": "klein-resumed-20260920",
+      "report": {
+        "status": "passed",
+        "strict_passed": true,
+        "device_requested": "cuda",
+        "processes": 1,
+        "strategy": "ddp",
+        "family": "flux2",
+        "algorithm": "lokr",
+        "train_backbone": true,
+        "train_text_encoder": false,
+        "scope": "Fixed recipe only; CPU is not GPU acceptance",
+        "commands": [
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\klein-resumed-20260920\\klein-lokr-native256\\reference.json",
+            "--device",
+            "cuda"
+          ],
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\klein-resumed-20260920\\klein-lokr-native256\\resumed.json",
+            "--device",
+            "cuda"
+          ]
+        ],
+        "runtime": {
+          "torch": "2.13.0+cu130",
+          "hip": null,
+          "cuda": "13.0"
+        },
+        "comparison": {
+          "tensor_count": 240,
+          "weights_exact": true,
+          "states_exact": true,
+          "preview_sha256": [
+            "5d8e7c1faaffd86bc69579cfb2edb3e375e6f0ad4412c065f5d781eec0db7177"
+          ]
+        }
+      },
+      "updated_tensors_by_prefix": {
+        "single_transformer_blocks": 120,
+        "transformer_blocks": 120
+      },
+      "data_plan": {
+        "seq": 6,
+        "ts": 1789855325.008217,
+        "type": "data.plan",
+        "images": 4,
+        "items": 4,
+        "captioned": 4,
+        "validation_images": 0,
+        "buckets": [
+          {
+            "base": 0,
+            "w": 192,
+            "h": 256,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 192,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 256,
+            "items": 2
+          }
+        ],
+        "fingerprint": "76bc3b568581a3a6"
+      },
+      "training_steps": [
+        {
+          "seq": 27,
+          "ts": 1789855341.3613312,
+          "type": "step",
+          "step": 1,
+          "epoch": 0,
+          "loss": 0.9356304407119751,
+          "loss_ema": 0.9356304407119751,
+          "loss_mean": 0.9356304407119751,
+          "loss_count": 1,
+          "loss_mean_scope": "run",
+          "lr": {
+            "w1": 0.0001,
+            "w2": 0.0001
+          },
+          "grad_norm": 0.15407724678516388,
+          "it_s": 1.369398918777397,
+          "eta_s": 2.1907421999999883,
+          "vram_mb": 9294.689453125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 28,
+          "ts": 1789855341.984289,
+          "type": "step",
+          "step": 2,
+          "epoch": 0,
+          "loss": 0.8179792761802673,
+          "loss_ema": 0.933277417421341,
+          "loss_mean": 0.8768048584461212,
+          "loss_count": 2,
+          "loss_mean_scope": "run",
+          "lr": {
+            "w1": 0.0001,
+            "w2": 0.0001
+          },
+          "grad_norm": 0.05457853898406029,
+          "it_s": 1.6409545498253861,
+          "eta_s": 1.2188028000000486,
+          "vram_mb": 9294.689453125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 35,
+          "ts": 1789855344.9234278,
+          "type": "step",
+          "step": 3,
+          "epoch": 0,
+          "loss": 0.629342257976532,
+          "loss_ema": 0.9271987142324448,
+          "loss_mean": 0.7943173249562582,
+          "loss_count": 3,
+          "loss_mean_scope": "run",
+          "lr": {
+            "w1": 0.0001,
+            "w2": 0.0001
+          },
+          "grad_norm": 0.0669652670621872,
+          "it_s": 1.5055753714366604,
+          "eta_s": 0.6641979000000333,
+          "vram_mb": 9294.689453125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 36,
+          "ts": 1789855345.5673234,
+          "type": "step",
+          "step": 4,
+          "epoch": 0,
+          "loss": 0.6334217190742493,
+          "loss_ema": 0.9213231743292809,
+          "loss_mean": 0.7540934234857559,
+          "loss_count": 4,
+          "loss_mean_scope": "run",
+          "lr": {
+            "w1": 0.0001,
+            "w2": 0.0001
+          },
+          "grad_norm": 0.0880783423781395,
+          "it_s": 1.5857676717155804,
+          "eta_s": 0.0,
+          "vram_mb": 9294.689453125,
+          "vram_metric": "peak_allocated"
+        }
+      ],
+      "peak_allocated_mib": 9294.689453125,
+      "median_step_seconds": 0.6474036500000295,
+      "source_commit": "cddb0f7"
+    },
+    {
+      "name": "klein-lora-native512",
+      "returncode": 0,
+      "seconds": 88.93700000000001,
+      "strict_passed": true,
+      "error": null,
+      "group": "klein-resumed-20260920",
+      "report": {
+        "status": "passed",
+        "strict_passed": true,
+        "device_requested": "cuda",
+        "processes": 1,
+        "strategy": "ddp",
+        "family": "flux2",
+        "algorithm": "lora",
+        "train_backbone": true,
+        "train_text_encoder": false,
+        "scope": "Fixed recipe only; CPU is not GPU acceptance",
+        "commands": [
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\klein-resumed-20260920\\klein-lora-native512\\reference.json",
+            "--device",
+            "cuda"
+          ],
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\klein-resumed-20260920\\klein-lora-native512\\resumed.json",
+            "--device",
+            "cuda"
+          ]
+        ],
+        "runtime": {
+          "torch": "2.13.0+cu130",
+          "hip": null,
+          "cuda": "13.0"
+        },
+        "comparison": {
+          "tensor_count": 160,
+          "weights_exact": true,
+          "states_exact": true,
+          "preview_sha256": [
+            "4d69839c8d402f2fba4e9306d52fdb46ce5ddd6466baf308b2e1e84748867a5a"
+          ]
+        }
+      },
+      "updated_tensors_by_prefix": {
+        "single_transformer_blocks": 80,
+        "transformer_blocks": 80
+      },
+      "data_plan": {
+        "seq": 6,
+        "ts": 1789855414.0221696,
+        "type": "data.plan",
+        "images": 4,
+        "items": 4,
+        "captioned": 4,
+        "validation_images": 0,
+        "buckets": [
+          {
+            "base": 0,
+            "w": 368,
+            "h": 512,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 496,
+            "h": 512,
+            "items": 2
+          },
+          {
+            "base": 0,
+            "w": 512,
+            "h": 368,
+            "items": 1
+          }
+        ],
+        "fingerprint": "1f00d8aa9b4220f6"
+      },
+      "training_steps": [
+        {
+          "seq": 27,
+          "ts": 1789855429.0002441,
+          "type": "step",
+          "step": 1,
+          "epoch": 0,
+          "loss": 0.8361946940422058,
+          "loss_ema": 0.8361946940422058,
+          "loss_mean": 0.8361946940422058,
+          "loss_count": 1,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.03434091433882713,
+          "it_s": 1.1409874881594382,
+          "eta_s": 2.6293013999999175,
+          "vram_mb": 9293.689453125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 28,
+          "ts": 1789855429.8174276,
+          "type": "step",
+          "step": 2,
+          "epoch": 0,
+          "loss": 0.7133872509002686,
+          "loss_ema": 0.833738545179367,
+          "loss_mean": 0.7747909724712372,
+          "loss_count": 2,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.009326509200036526,
+          "it_s": 1.2396670650956767,
+          "eta_s": 1.6133363999999801,
+          "vram_mb": 9293.689453125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 35,
+          "ts": 1789855432.7700105,
+          "type": "step",
+          "step": 3,
+          "epoch": 0,
+          "loss": 0.4032471477985382,
+          "loss_ema": 0.8251287172317503,
+          "loss_mean": 0.6509430309136709,
+          "loss_count": 3,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.03701876103878021,
+          "it_s": 1.0082597648194658,
+          "eta_s": 0.9918078999999125,
+          "vram_mb": 9293.689453125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 36,
+          "ts": 1789855433.773212,
+          "type": "step",
+          "step": 4,
+          "epoch": 0,
+          "loss": 0.4714908301830292,
+          "loss_ema": 0.8180559594907759,
+          "loss_mean": 0.6060799807310104,
+          "loss_count": 4,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.024450862780213356,
+          "it_s": 1.0073879819822305,
+          "eta_s": 0.0,
+          "vram_mb": 9293.689453125,
+          "vram_metric": "peak_allocated"
+        }
+      ],
+      "peak_allocated_mib": 9293.689453125,
+      "median_step_seconds": 0.9341208499999425,
+      "source_commit": "cddb0f7"
+    },
+    {
+      "name": "klein-lokr-native512",
+      "returncode": 0,
+      "seconds": 88.75,
+      "strict_passed": true,
+      "error": null,
+      "group": "klein-resumed-20260920",
+      "report": {
+        "status": "passed",
+        "strict_passed": true,
+        "device_requested": "cuda",
+        "processes": 1,
+        "strategy": "ddp",
+        "family": "flux2",
+        "algorithm": "lokr",
+        "train_backbone": true,
+        "train_text_encoder": false,
+        "scope": "Fixed recipe only; CPU is not GPU acceptance",
+        "commands": [
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\klein-resumed-20260920\\klein-lokr-native512\\reference.json",
+            "--device",
+            "cuda"
+          ],
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\klein-resumed-20260920\\klein-lokr-native512\\resumed.json",
+            "--device",
+            "cuda"
+          ]
+        ],
+        "runtime": {
+          "torch": "2.13.0+cu130",
+          "hip": null,
+          "cuda": "13.0"
+        },
+        "comparison": {
+          "tensor_count": 240,
+          "weights_exact": true,
+          "states_exact": true,
+          "preview_sha256": [
+            "68cf5dcce7801c4c6e49a63f8b0553cfe103d86d340c8dc163a9d791af4e87e7"
+          ]
+        }
+      },
+      "updated_tensors_by_prefix": {
+        "single_transformer_blocks": 120,
+        "transformer_blocks": 120
+      },
+      "data_plan": {
+        "seq": 6,
+        "ts": 1789855500.8561277,
+        "type": "data.plan",
+        "images": 4,
+        "items": 4,
+        "captioned": 4,
+        "validation_images": 0,
+        "buckets": [
+          {
+            "base": 0,
+            "w": 368,
+            "h": 512,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 496,
+            "h": 512,
+            "items": 2
+          },
+          {
+            "base": 0,
+            "w": 512,
+            "h": 368,
+            "items": 1
+          }
+        ],
+        "fingerprint": "1f00d8aa9b4220f6"
+      },
+      "training_steps": [
+        {
+          "seq": 27,
+          "ts": 1789855516.9061313,
+          "type": "step",
+          "step": 1,
+          "epoch": 0,
+          "loss": 0.8361946940422058,
+          "loss_ema": 0.8361946940422058,
+          "loss_mean": 0.8361946940422058,
+          "loss_count": 1,
+          "loss_mean_scope": "run",
+          "lr": {
+            "w1": 0.0001,
+            "w2": 0.0001
+          },
+          "grad_norm": 0.07760481536388397,
+          "it_s": 1.022270991363624,
+          "eta_s": 2.9346426000000747,
+          "vram_mb": 9293.689453125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 28,
+          "ts": 1789855517.8657029,
+          "type": "step",
+          "step": 2,
+          "epoch": 0,
+          "loss": 0.713375985622406,
+          "loss_ema": 0.8337383198738098,
+          "loss_mean": 0.7747853398323059,
+          "loss_count": 2,
+          "loss_mean_scope": "run",
+          "lr": {
+            "w1": 0.0001,
+            "w2": 0.0001
+          },
+          "grad_norm": 0.022310715168714523,
+          "it_s": 1.0632875106036819,
+          "eta_s": 1.8809587999999167,
+          "vram_mb": 9293.689453125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 35,
+          "ts": 1789855521.092189,
+          "type": "step",
+          "step": 3,
+          "epoch": 0,
+          "loss": 0.4033372104167938,
+          "loss_ema": 0.8251302976846694,
+          "loss_mean": 0.6509692966938019,
+          "loss_count": 3,
+          "loss_mean_scope": "run",
+          "lr": {
+            "w1": 0.0001,
+            "w2": 0.0001
+          },
+          "grad_norm": 0.03059333935379982,
+          "it_s": 0.8784916088238591,
+          "eta_s": 1.1383147999999892,
+          "vram_mb": 9293.689453125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 36,
+          "ts": 1789855522.244812,
+          "type": "step",
+          "step": 4,
+          "epoch": 0,
+          "loss": 0.47163665294647217,
+          "loss_ema": 0.8180604247899055,
+          "loss_mean": 0.6061361357569695,
+          "loss_count": 4,
+          "loss_mean_scope": "run",
+          "lr": {
+            "w1": 0.0001,
+            "w2": 0.0001
+          },
+          "grad_norm": 0.055189359933137894,
+          "it_s": 0.8786214359380207,
+          "eta_s": 0.0,
+          "vram_mb": 9293.689453125,
+          "vram_metric": "peak_allocated"
+        }
+      ],
+      "peak_allocated_mib": 9293.689453125,
+      "median_step_seconds": 1.0581804000000261,
+      "source_commit": "cddb0f7"
+    },
+    {
+      "name": "anima-lora-prodigy_plus_sf",
+      "returncode": 0,
+      "seconds": 76.57799999999997,
+      "strict_passed": true,
+      "error": null,
+      "group": "optimizer-fixed-20260919",
+      "report": {
+        "status": "passed",
+        "strict_passed": true,
+        "device_requested": "cuda",
+        "processes": 1,
+        "strategy": "ddp",
+        "family": "anima",
+        "algorithm": "lora",
+        "train_backbone": true,
+        "train_text_encoder": false,
+        "scope": "Fixed recipe only; CPU is not GPU acceptance",
+        "commands": [
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\optimizer-fixed-20260919\\anima-lora-prodigy_plus_sf\\reference.json",
+            "--device",
+            "cuda"
+          ],
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\optimizer-fixed-20260919\\anima-lora-prodigy_plus_sf\\resumed.json",
+            "--device",
+            "cuda"
+          ]
+        ],
+        "runtime": {
+          "torch": "2.13.0+cu130",
+          "hip": null,
+          "cuda": "13.0"
+        },
+        "comparison": {
+          "tensor_count": 448,
+          "weights_exact": true,
+          "states_exact": true,
+          "preview_sha256": [
+            "d1d29cfc76245921353a646659afe7522c7da7df31ab929b4a3599e6a4feded0"
+          ]
+        }
+      },
+      "updated_tensors_by_prefix": {
+        "blocks": 448
+      },
+      "data_plan": {
+        "seq": 6,
+        "ts": 1789855094.074901,
+        "type": "data.plan",
+        "images": 4,
+        "items": 4,
+        "captioned": 4,
+        "validation_images": 0,
+        "buckets": [
+          {
+            "base": 0,
+            "w": 192,
+            "h": 256,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 192,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 256,
+            "items": 2
+          }
+        ],
+        "fingerprint": "76bc3b568581a3a6"
+      },
+      "training_steps": [
+        {
+          "seq": 26,
+          "ts": 1789855101.6979198,
+          "type": "step",
+          "step": 1,
+          "epoch": 0,
+          "loss": 0.15627390146255493,
+          "loss_ema": 0.15627390146255493,
+          "loss_mean": 0.15627390146255493,
+          "loss_count": 1,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 1e-06,
+            "up": 1e-06
+          },
+          "grad_norm": 0.0371912457048893,
+          "it_s": 1.0941390690145774,
+          "eta_s": 2.7418817999999874,
+          "vram_mb": 4182.2255859375,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 27,
+          "ts": 1789855102.9794228,
+          "type": "step",
+          "step": 2,
+          "epoch": 0,
+          "loss": 0.22126325964927673,
+          "loss_ema": 0.15757368862628937,
+          "loss_mean": 0.18876858055591583,
+          "loss_count": 2,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 5.5e-07,
+            "up": 5.5e-07
+          },
+          "grad_norm": 0.18017259240150452,
+          "it_s": 1.2013225600327901,
+          "eta_s": 1.6648318000000017,
+          "vram_mb": 4199.8896484375,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 34,
+          "ts": 1789855107.0641608,
+          "type": "step",
+          "step": 3,
+          "epoch": 0,
+          "loss": 0.20030109584331512,
+          "loss_ema": 0.1584282367706299,
+          "loss_mean": 0.19261275231838226,
+          "loss_count": 3,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 3.999999999999999e-07,
+            "up": 3.999999999999999e-07
+          },
+          "grad_norm": 0.10233785957098007,
+          "it_s": 1.2215562162003095,
+          "eta_s": 0.8186278999999956,
+          "vram_mb": 4290.46484375,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 35,
+          "ts": 1789855108.3466353,
+          "type": "step",
+          "step": 4,
+          "epoch": 0,
+          "loss": 0.16102562844753265,
+          "loss_ema": 0.15848018460416793,
+          "loss_mean": 0.18471597135066986,
+          "loss_count": 4,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 3.2499999999999996e-07,
+            "up": 3.2499999999999996e-07
+          },
+          "grad_norm": 0.07675887644290924,
+          "it_s": 1.2284794961858738,
+          "eta_s": 0.0,
+          "vram_mb": 4290.46484375,
+          "vram_metric": "peak_allocated"
+        }
+      ],
+      "peak_allocated_mib": 4290.46484375,
+      "median_step_seconds": 0.8255218999999983,
+      "source_commit": "cddb0f7"
+    },
+    {
+      "name": "anima-lora-came",
+      "returncode": 0,
+      "seconds": 53.20300000000003,
+      "strict_passed": true,
+      "error": null,
+      "group": "optimizer-fixed-20260919",
+      "report": {
+        "status": "passed",
+        "strict_passed": true,
+        "device_requested": "cuda",
+        "processes": 1,
+        "strategy": "ddp",
+        "family": "anima",
+        "algorithm": "lora",
+        "train_backbone": true,
+        "train_text_encoder": false,
+        "scope": "Fixed recipe only; CPU is not GPU acceptance",
+        "commands": [
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\optimizer-fixed-20260919\\anima-lora-came\\reference.json",
+            "--device",
+            "cuda"
+          ],
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\optimizer-fixed-20260919\\anima-lora-came\\resumed.json",
+            "--device",
+            "cuda"
+          ]
+        ],
+        "runtime": {
+          "torch": "2.13.0+cu130",
+          "hip": null,
+          "cuda": "13.0"
+        },
+        "comparison": {
+          "tensor_count": 448,
+          "weights_exact": true,
+          "states_exact": true,
+          "preview_sha256": [
+            "8099b4a96bba18974da951483b4c1a14448862182bd375166b11a234bc3fc0ec"
+          ]
+        }
+      },
+      "updated_tensors_by_prefix": {
+        "blocks": 448
+      },
+      "data_plan": {
+        "seq": 6,
+        "ts": 1789855149.0731053,
+        "type": "data.plan",
+        "images": 4,
+        "items": 4,
+        "captioned": 4,
+        "validation_images": 0,
+        "buckets": [
+          {
+            "base": 0,
+            "w": 192,
+            "h": 256,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 192,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 256,
+            "items": 2
+          }
+        ],
+        "fingerprint": "76bc3b568581a3a6"
+      },
+      "training_steps": [
+        {
+          "seq": 26,
+          "ts": 1789855155.7570355,
+          "type": "step",
+          "step": 1,
+          "epoch": 0,
+          "loss": 0.15627390146255493,
+          "loss_ema": 0.15627390146255493,
+          "loss_mean": 0.15627390146255493,
+          "loss_count": 1,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.0371912457048893,
+          "it_s": 1.1672232960028321,
+          "eta_s": 2.5702022999999485,
+          "vram_mb": 4182.2236328125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 27,
+          "ts": 1789855156.9890563,
+          "type": "step",
+          "step": 2,
+          "epoch": 0,
+          "loss": 0.21525779366493225,
+          "loss_ema": 0.15745357930660248,
+          "loss_mean": 0.1857658475637436,
+          "loss_count": 2,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.17589546740055084,
+          "it_s": 1.2636488289577306,
+          "eta_s": 1.5827181999999311,
+          "vram_mb": 4202.5673828125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 34,
+          "ts": 1789855160.895836,
+          "type": "step",
+          "step": 3,
+          "epoch": 0,
+          "loss": 0.2014186978340149,
+          "loss_ema": 0.1583328816771507,
+          "loss_mean": 0.1909834643205007,
+          "loss_count": 3,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.13744425773620605,
+          "it_s": 1.2756299570980387,
+          "eta_s": 0.7839263999999844,
+          "vram_mb": 4280.017578125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 35,
+          "ts": 1789855162.1181622,
+          "type": "step",
+          "step": 4,
+          "epoch": 0,
+          "loss": 0.1550360769033432,
+          "loss_ema": 0.15826694558167456,
+          "loss_mean": 0.18199661746621132,
+          "loss_count": 4,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.16319780051708221,
+          "it_s": 1.2814240414115468,
+          "eta_s": 0.0,
+          "vram_mb": 4280.017578125,
+          "vram_metric": "peak_allocated"
+        }
+      ],
+      "peak_allocated_mib": 4280.017578125,
+      "median_step_seconds": 0.787642749999975,
+      "source_commit": "cddb0f7"
+    },
+    {
+      "name": "anima-lora-adamw8bit",
+      "returncode": 0,
+      "seconds": 47.875,
+      "strict_passed": true,
+      "error": null,
+      "group": "optimizer-fixed-20260919",
+      "report": {
+        "status": "passed",
+        "strict_passed": true,
+        "device_requested": "cuda",
+        "processes": 1,
+        "strategy": "ddp",
+        "family": "anima",
+        "algorithm": "lora",
+        "train_backbone": true,
+        "train_text_encoder": false,
+        "scope": "Fixed recipe only; CPU is not GPU acceptance",
+        "commands": [
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\optimizer-fixed-20260919\\anima-lora-adamw8bit\\reference.json",
+            "--device",
+            "cuda"
+          ],
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\optimizer-fixed-20260919\\anima-lora-adamw8bit\\resumed.json",
+            "--device",
+            "cuda"
+          ]
+        ],
+        "runtime": {
+          "torch": "2.13.0+cu130",
+          "hip": null,
+          "cuda": "13.0"
+        },
+        "comparison": {
+          "tensor_count": 448,
+          "weights_exact": true,
+          "states_exact": true,
+          "preview_sha256": [
+            "e1c2990f67a6fd5f54f619e7533ecfd237d90e5b0f36f35ccc370dde2cb9d484"
+          ]
+        }
+      },
+      "updated_tensors_by_prefix": {
+        "blocks": 448
+      },
+      "data_plan": {
+        "seq": 6,
+        "ts": 1789855200.8802001,
+        "type": "data.plan",
+        "images": 4,
+        "items": 4,
+        "captioned": 4,
+        "validation_images": 0,
+        "buckets": [
+          {
+            "base": 0,
+            "w": 192,
+            "h": 256,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 192,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 256,
+            "items": 2
+          }
+        ],
+        "fingerprint": "76bc3b568581a3a6"
+      },
+      "training_steps": [
+        {
+          "seq": 26,
+          "ts": 1789855207.8571024,
+          "type": "step",
+          "step": 1,
+          "epoch": 0,
+          "loss": 0.15627390146255493,
+          "loss_ema": 0.15627390146255493,
+          "loss_mean": 0.15627390146255493,
+          "loss_count": 1,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.0371912457048893,
+          "it_s": 1.680760120402858,
+          "eta_s": 1.7849067000000787,
+          "vram_mb": 4182.2236328125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 27,
+          "ts": 1789855208.5002453,
+          "type": "step",
+          "step": 2,
+          "epoch": 0,
+          "loss": 0.2218121886253357,
+          "loss_ema": 0.15758466720581055,
+          "loss_mean": 0.1890430450439453,
+          "loss_count": 2,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.1724710762500763,
+          "it_s": 1.6052840815053837,
+          "eta_s": 1.2458854000000201,
+          "vram_mb": 4189.2255859375,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 34,
+          "ts": 1789855210.308543,
+          "type": "step",
+          "step": 3,
+          "epoch": 0,
+          "loss": 0.20029059052467346,
+          "loss_ema": 0.1584387856721878,
+          "loss_mean": 0.1927922268708547,
+          "loss_count": 3,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.10096444189548492,
+          "it_s": 1.6516471381414763,
+          "eta_s": 0.6054561999999919,
+          "vram_mb": 4266.67578125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 35,
+          "ts": 1789855210.934602,
+          "type": "step",
+          "step": 4,
+          "epoch": 0,
+          "loss": 0.16092829406261444,
+          "loss_ema": 0.15848857583999634,
+          "loss_mean": 0.18482624366879463,
+          "loss_count": 4,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.09015659987926483,
+          "it_s": 1.6526270490096773,
+          "eta_s": 0.0,
+          "vram_mb": 4266.67578125,
+          "vram_metric": "peak_allocated"
+        }
+      ],
+      "peak_allocated_mib": 4266.67578125,
+      "median_step_seconds": 0.6052766999999903,
+      "source_commit": "cddb0f7"
+    },
+    {
+      "name": "anima-lora-lion8bit",
+      "returncode": 0,
+      "seconds": 51.25,
+      "strict_passed": true,
+      "error": null,
+      "group": "optimizer-fixed-20260919",
+      "report": {
+        "status": "passed",
+        "strict_passed": true,
+        "device_requested": "cuda",
+        "processes": 1,
+        "strategy": "ddp",
+        "family": "anima",
+        "algorithm": "lora",
+        "train_backbone": true,
+        "train_text_encoder": false,
+        "scope": "Fixed recipe only; CPU is not GPU acceptance",
+        "commands": [
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\optimizer-fixed-20260919\\anima-lora-lion8bit\\reference.json",
+            "--device",
+            "cuda"
+          ],
+          [
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+            "-m",
+            "ypuddin.cli",
+            "train",
+            "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\optimizer-fixed-20260919\\anima-lora-lion8bit\\resumed.json",
+            "--device",
+            "cuda"
+          ]
+        ],
+        "runtime": {
+          "torch": "2.13.0+cu130",
+          "hip": null,
+          "cuda": "13.0"
+        },
+        "comparison": {
+          "tensor_count": 448,
+          "weights_exact": true,
+          "states_exact": true,
+          "preview_sha256": [
+            "0e539c69023e0510d6ecf5277811d8857a429a13eab2a4ff4ecf958c4b553ed4"
+          ]
+        }
+      },
+      "updated_tensors_by_prefix": {
+        "blocks": 448
+      },
+      "data_plan": {
+        "seq": 6,
+        "ts": 1789855248.7446053,
+        "type": "data.plan",
+        "images": 4,
+        "items": 4,
+        "captioned": 4,
+        "validation_images": 0,
+        "buckets": [
+          {
+            "base": 0,
+            "w": 192,
+            "h": 256,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 192,
+            "items": 1
+          },
+          {
+            "base": 0,
+            "w": 256,
+            "h": 256,
+            "items": 2
+          }
+        ],
+        "fingerprint": "76bc3b568581a3a6"
+      },
+      "training_steps": [
+        {
+          "seq": 26,
+          "ts": 1789855256.383634,
+          "type": "step",
+          "step": 1,
+          "epoch": 0,
+          "loss": 0.15627390146255493,
+          "loss_ema": 0.15627390146255493,
+          "loss_mean": 0.15627390146255493,
+          "loss_count": 1,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.0371912457048893,
+          "it_s": 1.1188691008185971,
+          "eta_s": 2.6812788000000296,
+          "vram_mb": 4182.2236328125,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 27,
+          "ts": 1789855257.2642431,
+          "type": "step",
+          "step": 2,
+          "epoch": 0,
+          "loss": 0.2197631597518921,
+          "loss_ema": 0.15754368662834167,
+          "loss_mean": 0.1880185306072235,
+          "loss_count": 2,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.18464578688144684,
+          "it_s": 1.2076673349897649,
+          "eta_s": 1.6560852000000068,
+          "vram_mb": 4185.724609375,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 34,
+          "ts": 1789855260.722681,
+          "type": "step",
+          "step": 3,
+          "epoch": 0,
+          "loss": 0.20075510442256927,
+          "loss_ema": 0.1584079149842262,
+          "loss_mean": 0.19226405521233877,
+          "loss_count": 3,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.09157218039035797,
+          "it_s": 1.2729279787533214,
+          "eta_s": 0.7855903999999896,
+          "vram_mb": 4263.1748046875,
+          "vram_metric": "peak_allocated"
+        },
+        {
+          "seq": 35,
+          "ts": 1789855261.567737,
+          "type": "step",
+          "step": 4,
+          "epoch": 0,
+          "loss": 0.16129054129123688,
+          "loss_ema": 0.15846556751036642,
+          "loss_mean": 0.1845206767320633,
+          "loss_count": 4,
+          "loss_mean_scope": "run",
+          "lr": {
+            "down": 0.0001,
+            "up": 0.0001
+          },
+          "grad_norm": 0.07768825441598892,
+          "it_s": 1.254395086785351,
+          "eta_s": 0.0,
+          "vram_mb": 4263.1748046875,
+          "vram_metric": "peak_allocated"
+        }
+      ],
+      "peak_allocated_mib": 4263.1748046875,
+      "median_step_seconds": 0.8126197999999931,
+      "source_commit": "cddb0f7"
+    }
+  ],
+  "strict_passed_count": 20,
+  "portable_model_test": [
+    {
+      "name": "krea2-lora-native256",
+      "passed": true,
+      "artifact": "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\krea2-lora-native256\\reference\\smoke-final.safetensors",
+      "images": [
+        {
+          "name": "cell_z00_y00_x00.png",
+          "size": [
+            256,
+            256
+          ],
+          "sha256": "b19d5ef01de7c800d0a0fdb44385e680f803b7a4e7b55a8184c0b4971b10c2be",
+          "spread": 148
+        },
+        {
+          "name": "cell_z00_y01_x00.png",
+          "size": [
+            256,
+            256
+          ],
+          "sha256": "d648bd077cb8c7e0f6602c743cdf0fffe6fd37cc4f73d8e5d0973a6acc3efbc8",
+          "spread": 147
+        },
+        {
+          "name": "grid_z00.png",
+          "size": [
+            400,
+            684
+          ],
+          "sha256": "20fca61ea7ca007726fb4d1bf0b2f352c076e8cae1831f893fecc9b5d2f2930d",
+          "spread": 223
+        }
+      ],
+      "manifest": {
+        "cells": [
+          {
+            "width": 256,
+            "height": 256,
+            "steps": 4,
+            "cfg": 1.0,
+            "seed": 1,
+            "sampler": "euler",
+            "scheduler": "uniform",
+            "shift": 1.6487212707001282,
+            "guidance": null,
+            "adapter_scale": 0,
+            "checkpoint_id": "trained",
+            "sampling_model_id": null,
+            "index": 0,
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "x_value": "trained",
+            "y_value": 0,
+            "z_value": null,
+            "file": "cell_z00_y00_x00.png",
+            "checkpoint_name": "krea2-lora-native256"
+          },
+          {
+            "width": 256,
+            "height": 256,
+            "steps": 4,
+            "cfg": 1.0,
+            "seed": 1,
+            "sampler": "euler",
+            "scheduler": "uniform",
+            "shift": 1.6487212707001282,
+            "guidance": null,
+            "adapter_scale": 1,
+            "checkpoint_id": "trained",
+            "sampling_model_id": null,
+            "index": 1,
+            "x": 0,
+            "y": 1,
+            "z": 0,
+            "x_value": "trained",
+            "y_value": 1,
+            "z_value": null,
+            "file": "cell_z00_y01_x00.png",
+            "checkpoint_name": "krea2-lora-native256"
+          }
+        ],
+        "grids": [
+          {
+            "z": 0,
+            "z_value": null,
+            "file": "grid_z00.png",
+            "axes": {
+              "x": {
+                "key": "checkpoint",
+                "values": [
+                  "trained"
+                ],
+                "label": "Checkpoint",
+                "labels": [
+                  "krea2-lora-native256"
+                ]
+              },
+              "y": {
+                "key": "adapter_scale",
+                "values": [
+                  0,
+                  1
+                ],
+                "label": "Adapter strength",
+                "labels": [
+                  "0",
+                  "1"
+                ]
+              }
+            }
+          }
+        ],
+        "axes": {
+          "x": {
+            "key": "checkpoint",
+            "values": [
+              "trained"
+            ],
+            "label": "Checkpoint",
+            "labels": [
+              "krea2-lora-native256"
+            ]
+          },
+          "y": {
+            "key": "adapter_scale",
+            "values": [
+              0,
+              1
+            ],
+            "label": "Adapter strength",
+            "labels": [
+              "0",
+              "1"
+            ]
+          }
+        },
+        "complete": true
+      },
+      "seconds": 52.422000000000025
+    },
+    {
+      "name": "krea2-lokr-native256",
+      "passed": true,
+      "artifact": "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\other-models-20260919\\krea2-lokr-native256\\reference\\smoke-final.safetensors",
+      "images": [
+        {
+          "name": "cell_z00_y00_x00.png",
+          "size": [
+            256,
+            256
+          ],
+          "sha256": "b19d5ef01de7c800d0a0fdb44385e680f803b7a4e7b55a8184c0b4971b10c2be",
+          "spread": 148
+        },
+        {
+          "name": "cell_z00_y01_x00.png",
+          "size": [
+            256,
+            256
+          ],
+          "sha256": "752e1208278dba578a14497042408b68ca88931161a70a944574459586432ba4",
+          "spread": 148
+        },
+        {
+          "name": "grid_z00.png",
+          "size": [
+            400,
+            684
+          ],
+          "sha256": "99fd0db2db4e5313a45467b95d94f4bc3125bde57a4c2a08603bceaa57178593",
+          "spread": 223
+        }
+      ],
+      "manifest": {
+        "cells": [
+          {
+            "width": 256,
+            "height": 256,
+            "steps": 4,
+            "cfg": 1.0,
+            "seed": 1,
+            "sampler": "euler",
+            "scheduler": "uniform",
+            "shift": 1.6487212707001282,
+            "guidance": null,
+            "adapter_scale": 0,
+            "checkpoint_id": "trained",
+            "sampling_model_id": null,
+            "index": 0,
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "x_value": "trained",
+            "y_value": 0,
+            "z_value": null,
+            "file": "cell_z00_y00_x00.png",
+            "checkpoint_name": "krea2-lokr-native256"
+          },
+          {
+            "width": 256,
+            "height": 256,
+            "steps": 4,
+            "cfg": 1.0,
+            "seed": 1,
+            "sampler": "euler",
+            "scheduler": "uniform",
+            "shift": 1.6487212707001282,
+            "guidance": null,
+            "adapter_scale": 1,
+            "checkpoint_id": "trained",
+            "sampling_model_id": null,
+            "index": 1,
+            "x": 0,
+            "y": 1,
+            "z": 0,
+            "x_value": "trained",
+            "y_value": 1,
+            "z_value": null,
+            "file": "cell_z00_y01_x00.png",
+            "checkpoint_name": "krea2-lokr-native256"
+          }
+        ],
+        "grids": [
+          {
+            "z": 0,
+            "z_value": null,
+            "file": "grid_z00.png",
+            "axes": {
+              "x": {
+                "key": "checkpoint",
+                "values": [
+                  "trained"
+                ],
+                "label": "Checkpoint",
+                "labels": [
+                  "krea2-lokr-native256"
+                ]
+              },
+              "y": {
+                "key": "adapter_scale",
+                "values": [
+                  0,
+                  1
+                ],
+                "label": "Adapter strength",
+                "labels": [
+                  "0",
+                  "1"
+                ]
+              }
+            }
+          }
+        ],
+        "axes": {
+          "x": {
+            "key": "checkpoint",
+            "values": [
+              "trained"
+            ],
+            "label": "Checkpoint",
+            "labels": [
+              "krea2-lokr-native256"
+            ]
+          },
+          "y": {
+            "key": "adapter_scale",
+            "values": [
+              0,
+              1
+            ],
+            "label": "Adapter strength",
+            "labels": [
+              "0",
+              "1"
+            ]
+          }
+        },
+        "complete": true
+      },
+      "seconds": 29.54600000000005
+    },
+    {
+      "name": "klein-lora-native256",
+      "passed": true,
+      "artifact": "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\klein-explicit-20260919\\klein-lora-native256\\reference\\smoke-final.safetensors",
+      "images": [
+        {
+          "name": "cell_z00_y00_x00.png",
+          "size": [
+            256,
+            256
+          ],
+          "sha256": "4024f366148b0d04cd822bf78f424a9fea353a4d0c6c18583f2fb34648551894",
+          "spread": 229
+        },
+        {
+          "name": "cell_z00_y01_x00.png",
+          "size": [
+            256,
+            256
+          ],
+          "sha256": "9526cea8b43eb61d16ab5e650d1aa9026d6cdd1142a9f8bf9a7cbf649f7cae98",
+          "spread": 231
+        },
+        {
+          "name": "grid_z00.png",
+          "size": [
+            400,
+            684
+          ],
+          "sha256": "da7948487fcab40745bb6da41209f5a55ffed3a38f3e56f4609f2094a19c229b",
+          "spread": 255
+        }
+      ],
+      "manifest": {
+        "cells": [
+          {
+            "width": 256,
+            "height": 256,
+            "steps": 4,
+            "cfg": 1.0,
+            "seed": 1,
+            "sampler": "euler",
+            "scheduler": "uniform",
+            "shift": 7.138960385000885,
+            "guidance": null,
+            "adapter_scale": 0,
+            "checkpoint_id": "trained",
+            "sampling_model_id": null,
+            "index": 0,
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "x_value": "trained",
+            "y_value": 0,
+            "z_value": null,
+            "file": "cell_z00_y00_x00.png",
+            "checkpoint_name": "klein-lora-native256"
+          },
+          {
+            "width": 256,
+            "height": 256,
+            "steps": 4,
+            "cfg": 1.0,
+            "seed": 1,
+            "sampler": "euler",
+            "scheduler": "uniform",
+            "shift": 7.138960385000885,
+            "guidance": null,
+            "adapter_scale": 1,
+            "checkpoint_id": "trained",
+            "sampling_model_id": null,
+            "index": 1,
+            "x": 0,
+            "y": 1,
+            "z": 0,
+            "x_value": "trained",
+            "y_value": 1,
+            "z_value": null,
+            "file": "cell_z00_y01_x00.png",
+            "checkpoint_name": "klein-lora-native256"
+          }
+        ],
+        "grids": [
+          {
+            "z": 0,
+            "z_value": null,
+            "file": "grid_z00.png",
+            "axes": {
+              "x": {
+                "key": "checkpoint",
+                "values": [
+                  "trained"
+                ],
+                "label": "Checkpoint",
+                "labels": [
+                  "klein-lora-native256"
+                ]
+              },
+              "y": {
+                "key": "adapter_scale",
+                "values": [
+                  0,
+                  1
+                ],
+                "label": "Adapter strength",
+                "labels": [
+                  "0",
+                  "1"
+                ]
+              }
+            }
+          }
+        ],
+        "axes": {
+          "x": {
+            "key": "checkpoint",
+            "values": [
+              "trained"
+            ],
+            "label": "Checkpoint",
+            "labels": [
+              "klein-lora-native256"
+            ]
+          },
+          "y": {
+            "key": "adapter_scale",
+            "values": [
+              0,
+              1
+            ],
+            "label": "Adapter strength",
+            "labels": [
+              "0",
+              "1"
+            ]
+          }
+        },
+        "complete": true
+      },
+      "seconds": 46.06299999999999
+    },
+    {
+      "name": "klein-lokr-native256",
+      "passed": true,
+      "artifact": "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\klein-resumed-20260920\\klein-lokr-native256\\reference\\smoke-final.safetensors",
+      "images": [
+        {
+          "name": "cell_z00_y00_x00.png",
+          "size": [
+            256,
+            256
+          ],
+          "sha256": "4024f366148b0d04cd822bf78f424a9fea353a4d0c6c18583f2fb34648551894",
+          "spread": 229
+        },
+        {
+          "name": "cell_z00_y01_x00.png",
+          "size": [
+            256,
+            256
+          ],
+          "sha256": "a9f8c307d6ea54becd28ded0da155c5f0dc87339411a2828e2881e9111341272",
+          "spread": 228
+        },
+        {
+          "name": "grid_z00.png",
+          "size": [
+            400,
+            684
+          ],
+          "sha256": "5527bd84e85dcefb72961c9031f4fe66dd7eab45ff24a11a452c93bac875d65a",
+          "spread": 255
+        }
+      ],
+      "manifest": {
+        "cells": [
+          {
+            "width": 256,
+            "height": 256,
+            "steps": 4,
+            "cfg": 1.0,
+            "seed": 1,
+            "sampler": "euler",
+            "scheduler": "uniform",
+            "shift": 7.138960385000885,
+            "guidance": null,
+            "adapter_scale": 0,
+            "checkpoint_id": "trained",
+            "sampling_model_id": null,
+            "index": 0,
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "x_value": "trained",
+            "y_value": 0,
+            "z_value": null,
+            "file": "cell_z00_y00_x00.png",
+            "checkpoint_name": "klein-lokr-native256"
+          },
+          {
+            "width": 256,
+            "height": 256,
+            "steps": 4,
+            "cfg": 1.0,
+            "seed": 1,
+            "sampler": "euler",
+            "scheduler": "uniform",
+            "shift": 7.138960385000885,
+            "guidance": null,
+            "adapter_scale": 1,
+            "checkpoint_id": "trained",
+            "sampling_model_id": null,
+            "index": 1,
+            "x": 0,
+            "y": 1,
+            "z": 0,
+            "x_value": "trained",
+            "y_value": 1,
+            "z_value": null,
+            "file": "cell_z00_y01_x00.png",
+            "checkpoint_name": "klein-lokr-native256"
+          }
+        ],
+        "grids": [
+          {
+            "z": 0,
+            "z_value": null,
+            "file": "grid_z00.png",
+            "axes": {
+              "x": {
+                "key": "checkpoint",
+                "values": [
+                  "trained"
+                ],
+                "label": "Checkpoint",
+                "labels": [
+                  "klein-lokr-native256"
+                ]
+              },
+              "y": {
+                "key": "adapter_scale",
+                "values": [
+                  0,
+                  1
+                ],
+                "label": "Adapter strength",
+                "labels": [
+                  "0",
+                  "1"
+                ]
+              }
+            }
+          }
+        ],
+        "axes": {
+          "x": {
+            "key": "checkpoint",
+            "values": [
+              "trained"
+            ],
+            "label": "Checkpoint",
+            "labels": [
+              "klein-lokr-native256"
+            ]
+          },
+          "y": {
+            "key": "adapter_scale",
+            "values": [
+              0,
+              1
+            ],
+            "label": "Adapter strength",
+            "labels": [
+              "0",
+              "1"
+            ]
+          }
+        },
+        "complete": true
+      },
+      "seconds": 28.40599999999995
+    }
+  ],
+  "windows_optimizer_tests": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "24",
+    "time": "11.667",
+    "timestamp": "2026-09-20T06:02:20.151721+08:00",
+    "hostname": "YPuddindePC"
+  },
+  "interruption": "Klein LoKr 256 was interrupted by machine reboot in klein-explicit-20260919 and rerun in klein-resumed-20260920. Original files preserved."
+}
