@@ -1,0 +1,794 @@
+{
+  "date": "2026-09-19",
+  "product_commit": "2becc030f925f8d24731048c737eaf71ba66fcdc",
+  "hardware": "Windows 11 / RTX 5070 Ti 16 GiB / single GPU",
+  "raw_archive_sha256": "5ddaaeed5273316b1c76fd9989efdb227ff27bffe516d83df6b172a5844809a3",
+  "operations": {
+    "attention-plan.json": {
+      "id": "env_0fdc0aa61dbe",
+      "package": "flash-attn",
+      "action": "install",
+      "status": "ready",
+      "error": null,
+      "plan": [
+        {
+          "name": "flash-attn",
+          "from_version": null,
+          "version": "2.8.3+cu130torch2.13",
+          "url": "file:///J:/AI/YPuddinTrainStudio/studio_data/remote-tests/launcher-20260918/cuda-data/environment/windows-cuda/env_0fdc0aa61dbe/vendor/flash_attn-2.8.3%2Bcu130torch2.13-cp312-cp312-win_amd64.whl",
+          "sha256": "048a26d824861261faf305f6159fff0ffd6ac145a8ea6f3ebfc5ae3500402cd9",
+          "filename": "flash_attn-2.8.3+cu130torch2.13-cp312-cp312-win_amd64.whl",
+          "source_url": "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.52/flash_attn-2.8.3%2Bcu130torch2.13-cp312-cp312-win_amd64.whl",
+          "provider": "mjun0812-community-windows"
+        }
+      ]
+    },
+    "attention-install.json": {
+      "id": "env_0fdc0aa61dbe",
+      "package": "flash-attn",
+      "action": "install",
+      "status": "completed",
+      "error": null,
+      "plan": [
+        {
+          "name": "flash-attn",
+          "from_version": null,
+          "version": "2.8.3+cu130torch2.13",
+          "url": "file:///J:/AI/YPuddinTrainStudio/studio_data/remote-tests/launcher-20260918/cuda-data/environment/windows-cuda/env_0fdc0aa61dbe/vendor/flash_attn-2.8.3%2Bcu130torch2.13-cp312-cp312-win_amd64.whl",
+          "sha256": "048a26d824861261faf305f6159fff0ffd6ac145a8ea6f3ebfc5ae3500402cd9",
+          "filename": "flash_attn-2.8.3+cu130torch2.13-cp312-cp312-win_amd64.whl",
+          "source_url": "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.52/flash_attn-2.8.3%2Bcu130torch2.13-cp312-cp312-win_amd64.whl",
+          "provider": "mjun0812-community-windows"
+        }
+      ]
+    },
+    "flash-attn-install.json": {
+      "id": "env_b745140c2562",
+      "package": "flash-attn",
+      "action": "install",
+      "status": "completed",
+      "error": null,
+      "plan": [
+        {
+          "name": "flash-attn",
+          "from_version": null,
+          "version": "2.8.3+cu130torch2.13",
+          "url": "file:///J:/AI/YPuddinTrainStudio/studio_data/remote-tests/launcher-20260918/cuda-data/environment/windows-cuda/uploads/upload_e3aa59bd5e58/flash_attn-2.8.3%2Bcu130torch2.13-cp312-cp312-win_amd64.whl",
+          "sha256": "048a26d824861261faf305f6159fff0ffd6ac145a8ea6f3ebfc5ae3500402cd9",
+          "filename": "flash_attn-2.8.3+cu130torch2.13-cp312-cp312-win_amd64.whl"
+        }
+      ]
+    },
+    "flash-attn-repair.json": {
+      "id": "env_f9864a60c6d6",
+      "package": "flash-attn",
+      "action": "repair",
+      "status": "completed",
+      "error": null,
+      "plan": [
+        {
+          "name": "flash-attn",
+          "from_version": "2.8.3+cu130torch2.13",
+          "version": "2.8.3+cu130torch2.13",
+          "url": "file:///J:/AI/YPuddinTrainStudio/studio_data/remote-tests/launcher-20260918/cuda-data/environment/windows-cuda/cache/reviewed-wheels/048a26d824861261faf305f6159fff0ffd6ac145a8ea6f3ebfc5ae3500402cd9/flash_attn-2.8.3%2Bcu130torch2.13-cp312-cp312-win_amd64.whl",
+          "sha256": "048a26d824861261faf305f6159fff0ffd6ac145a8ea6f3ebfc5ae3500402cd9",
+          "filename": "flash_attn-2.8.3+cu130torch2.13-cp312-cp312-win_amd64.whl",
+          "source_url": "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.52/flash_attn-2.8.3%2Bcu130torch2.13-cp312-cp312-win_amd64.whl",
+          "provider": "mjun0812-community-windows"
+        }
+      ]
+    },
+    "flash-attn-uninstall.json": {
+      "id": "env_abce16ba3175",
+      "package": "flash-attn",
+      "action": "uninstall",
+      "status": "completed",
+      "error": null,
+      "plan": [
+        {
+          "name": "flash-attn",
+          "from_version": "2.8.3+cu130torch2.13",
+          "version": null
+        }
+      ]
+    },
+    "xformers-install.json": {
+      "id": "env_31a41b0410f4",
+      "package": "xformers",
+      "action": "install",
+      "status": "failed",
+      "error": "xFormers å·²å®è£å¹¶å¯å¯¼å¥ï¼ä½å½å wheel æ²¡æå¯ç¨äºæ­¤ GPUï¼SM120ï¼çæ³¨æåè®¡ç®åæ ¸ãéè¦å¼å®¹ç attention åæ ¸ãå¯å°è¯å¹éå½å PythonãPyTorchãCUDA ä¸æ¯ææ­¤ GPU ç FlashAttention 2 wheelï¼å®è£åéæ°æ£æµãPyTorch SDPA æ­£ååæ£æµéè¿ï¼å¯ç»§ç»­ä½¿ç¨ SDPAã\nåå§éè¯¯ï¼No operator found for `memory_efficient_attention_forward` with inputs:\n     query       : shape=(1, 32, 2, 64) (torch.float16)\n     key         : shape=(1, 32, 2, 64) (torch.float16)\n     value       : shape=(1, 32, 2, 64) (torch.float16)\n     attn_bias   : <class 'NoneType'>\n     p           : 0.0\n`fa3F@0.0.0` is not supported because:\n    requires device with capability <= (9, 0) but your GPU has capability (12, 0) (too new)\n    operator wasn't built - see `python -m xformers.info` for more info\n`fa2F@0.0.0` is not supported because:\n    operator wasn't built - see `python -m xformers.info` for more info\n`cutlassF-pt` is not supported because:\n    requires device with capability <= (9, 0) but your GPU has capability (12, 0) (too new)",
+      "plan": [
+        {
+          "name": "xformers",
+          "from_version": null,
+          "version": "0.0.35",
+          "url": "https://mirrors.aliyun.com/pytorch-wheels/cu130/xformers-0.0.35-py39-none-win_amd64.whl",
+          "sha256": "517d5a92d0b08393185f02580cf03ad17e9db12d739fc21e790ed1393df85cf4",
+          "filename": "xformers-0.0.35-py39-none-win_amd64.whl"
+        }
+      ]
+    },
+    "xformers-repair.json": {
+      "id": "env_8e88e05b11be",
+      "package": "xformers",
+      "action": "repair",
+      "status": "completed",
+      "error": null,
+      "plan": [
+        {
+          "name": "xformers",
+          "from_version": "0.0.35",
+          "version": "0.0.35",
+          "url": "https://mirrors.aliyun.com/pytorch-wheels/cu130/xformers-0.0.35-py39-none-win_amd64.whl",
+          "sha256": "517d5a92d0b08393185f02580cf03ad17e9db12d739fc21e790ed1393df85cf4",
+          "filename": "xformers-0.0.35-py39-none-win_amd64.whl"
+        }
+      ]
+    },
+    "xformers-uninstall.json": {
+      "id": "env_5ff0607af8ee",
+      "package": "xformers",
+      "action": "uninstall",
+      "status": "completed",
+      "error": null,
+      "plan": [
+        {
+          "name": "xformers",
+          "from_version": "0.0.35",
+          "version": null
+        }
+      ]
+    }
+  },
+  "probes": {
+    "flash-attn-install-probe.json": {
+      "runtime": {
+        "environment_profile": "windows-cuda",
+        "python": "3.12.10",
+        "python_executable": "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+        "platform": "Windows",
+        "machine": "AMD64",
+        "distribution": null,
+        "distribution_id": null,
+        "distribution_version": null,
+        "kernel_release": "11",
+        "glibc_version": null,
+        "dtk_root": null,
+        "installed_dtk": null,
+        "driver_version": null,
+        "torch": "2.13.0+cu130",
+        "cuda_runtime": "13.0",
+        "hip_runtime": null,
+        "compute_backend": "cuda",
+        "cuda_available": true,
+        "mps_available": false,
+        "gpu_capability": [
+          12,
+          0
+        ],
+        "cxx11_abi": true,
+        "gpus": [
+          {
+            "index": 0,
+            "kind": "cuda",
+            "device": "cuda:0",
+            "name": "NVIDIA GeForce RTX 5070 Ti",
+            "mem_total_mb": 16303,
+            "mem_used_mb": 1266,
+            "util_pct": 12,
+            "temp_c": 60,
+            "power_w": 63.527,
+            "power_limit_w": 300.0,
+            "uuid": "2cd98e50-f5a4-80e5-6664-919eee26c015",
+            "cuda_available": true,
+            "hip_runtime": null,
+            "telemetry_source": "nvml",
+            "mem_free_mb": 15037
+          }
+        ],
+        "virtual_environment": true,
+        "cuda_device_count": 1,
+        "distributed_available": true,
+        "nccl_available": false,
+        "gloo_available": true,
+        "multi_gpu_backend": null,
+        "multi_gpu_probe_required": false,
+        "multi_gpu_training": false,
+        "training_device_policy": "single_device",
+        "cuda_applicable": true,
+        "nccl_applicable": false,
+        "distributed_purpose": "multi_process_communication"
+      },
+      "packages": [
+        {
+          "name": "xformers",
+          "version": "0.0.35",
+          "backend": "xformers",
+          "docs_url": "https://github.com/facebookresearch/xformers#installing-xformers",
+          "supported": true,
+          "reason": "supported",
+          "importable": true,
+          "kernel_tested": true,
+          "error": null,
+          "available": true,
+          "wheel_required": false
+        },
+        {
+          "name": "flash-attn",
+          "version": "2.8.3+cu130torch2.13",
+          "backend": "flash_attn",
+          "docs_url": "https://github.com/Dao-AILab/flash-attention#installation-and-features",
+          "supported": true,
+          "reason": "supported",
+          "importable": true,
+          "kernel_tested": true,
+          "error": null,
+          "available": true,
+          "wheel_required": true
+        }
+      ]
+    },
+    "flash-attn-repair-probe.json": {
+      "runtime": {
+        "environment_profile": "windows-cuda",
+        "python": "3.12.10",
+        "python_executable": "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+        "platform": "Windows",
+        "machine": "AMD64",
+        "distribution": null,
+        "distribution_id": null,
+        "distribution_version": null,
+        "kernel_release": "11",
+        "glibc_version": null,
+        "dtk_root": null,
+        "installed_dtk": null,
+        "driver_version": null,
+        "torch": "2.13.0+cu130",
+        "cuda_runtime": "13.0",
+        "hip_runtime": null,
+        "compute_backend": "cuda",
+        "cuda_available": true,
+        "mps_available": false,
+        "gpu_capability": [
+          12,
+          0
+        ],
+        "cxx11_abi": true,
+        "gpus": [
+          {
+            "index": 0,
+            "kind": "cuda",
+            "device": "cuda:0",
+            "name": "NVIDIA GeForce RTX 5070 Ti",
+            "mem_total_mb": 16303,
+            "mem_used_mb": 1266,
+            "util_pct": 7,
+            "temp_c": 46,
+            "power_w": 54.027,
+            "power_limit_w": 300.0,
+            "uuid": "2cd98e50-f5a4-80e5-6664-919eee26c015",
+            "cuda_available": true,
+            "hip_runtime": null,
+            "telemetry_source": "nvml",
+            "mem_free_mb": 15037
+          }
+        ],
+        "virtual_environment": true,
+        "cuda_device_count": 1,
+        "distributed_available": true,
+        "nccl_available": false,
+        "gloo_available": true,
+        "multi_gpu_backend": null,
+        "multi_gpu_probe_required": false,
+        "multi_gpu_training": false,
+        "training_device_policy": "single_device",
+        "cuda_applicable": true,
+        "nccl_applicable": false,
+        "distributed_purpose": "multi_process_communication"
+      },
+      "packages": [
+        {
+          "name": "xformers",
+          "version": null,
+          "backend": "xformers",
+          "docs_url": "https://github.com/facebookresearch/xformers#installing-xformers",
+          "supported": true,
+          "reason": "supported",
+          "importable": false,
+          "kernel_tested": false,
+          "error": null,
+          "available": false,
+          "wheel_required": false
+        },
+        {
+          "name": "flash-attn",
+          "version": "2.8.3+cu130torch2.13",
+          "backend": "flash_attn",
+          "docs_url": "https://github.com/Dao-AILab/flash-attention#installation-and-features",
+          "supported": true,
+          "reason": "supported",
+          "importable": true,
+          "kernel_tested": true,
+          "error": null,
+          "available": true,
+          "wheel_required": true
+        }
+      ]
+    },
+    "flash-attn-uninstall-probe.json": {
+      "runtime": {
+        "environment_profile": "windows-cuda",
+        "python": "3.12.10",
+        "python_executable": "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+        "platform": "Windows",
+        "machine": "AMD64",
+        "distribution": null,
+        "distribution_id": null,
+        "distribution_version": null,
+        "kernel_release": "11",
+        "glibc_version": null,
+        "dtk_root": null,
+        "installed_dtk": null,
+        "driver_version": null,
+        "torch": "2.13.0+cu130",
+        "cuda_runtime": "13.0",
+        "hip_runtime": null,
+        "compute_backend": "cuda",
+        "cuda_available": true,
+        "mps_available": false,
+        "gpu_capability": [
+          12,
+          0
+        ],
+        "cxx11_abi": true,
+        "gpus": [
+          {
+            "index": 0,
+            "kind": "cuda",
+            "device": "cuda:0",
+            "name": "NVIDIA GeForce RTX 5070 Ti",
+            "mem_total_mb": 16303,
+            "mem_used_mb": 1266,
+            "util_pct": 12,
+            "temp_c": 61,
+            "power_w": 64.813,
+            "power_limit_w": 300.0,
+            "uuid": "2cd98e50-f5a4-80e5-6664-919eee26c015",
+            "cuda_available": true,
+            "hip_runtime": null,
+            "telemetry_source": "nvml",
+            "mem_free_mb": 15037
+          }
+        ],
+        "virtual_environment": true,
+        "cuda_device_count": 1,
+        "distributed_available": true,
+        "nccl_available": false,
+        "gloo_available": true,
+        "multi_gpu_backend": null,
+        "multi_gpu_probe_required": false,
+        "multi_gpu_training": false,
+        "training_device_policy": "single_device",
+        "cuda_applicable": true,
+        "nccl_applicable": false,
+        "distributed_purpose": "multi_process_communication"
+      },
+      "packages": [
+        {
+          "name": "xformers",
+          "version": null,
+          "backend": "xformers",
+          "docs_url": "https://github.com/facebookresearch/xformers#installing-xformers",
+          "supported": true,
+          "reason": "supported",
+          "importable": false,
+          "kernel_tested": false,
+          "error": null,
+          "available": false,
+          "wheel_required": false
+        },
+        {
+          "name": "flash-attn",
+          "version": null,
+          "backend": "flash_attn",
+          "docs_url": "https://github.com/Dao-AILab/flash-attention#installation-and-features",
+          "supported": true,
+          "reason": "supported",
+          "importable": false,
+          "kernel_tested": false,
+          "error": null,
+          "available": false,
+          "wheel_required": true
+        }
+      ]
+    },
+    "xformers-repair-probe.json": {
+      "runtime": {
+        "environment_profile": "windows-cuda",
+        "python": "3.12.10",
+        "python_executable": "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+        "platform": "Windows",
+        "machine": "AMD64",
+        "distribution": null,
+        "distribution_id": null,
+        "distribution_version": null,
+        "kernel_release": "11",
+        "glibc_version": null,
+        "dtk_root": null,
+        "installed_dtk": null,
+        "driver_version": null,
+        "torch": "2.13.0+cu130",
+        "cuda_runtime": "13.0",
+        "hip_runtime": null,
+        "compute_backend": "cuda",
+        "cuda_available": true,
+        "mps_available": false,
+        "gpu_capability": [
+          12,
+          0
+        ],
+        "cxx11_abi": true,
+        "gpus": [
+          {
+            "index": 0,
+            "kind": "cuda",
+            "device": "cuda:0",
+            "name": "NVIDIA GeForce RTX 5070 Ti",
+            "mem_total_mb": 16303,
+            "mem_used_mb": 1266,
+            "util_pct": 16,
+            "temp_c": 60,
+            "power_w": 63.716,
+            "power_limit_w": 300.0,
+            "uuid": "2cd98e50-f5a4-80e5-6664-919eee26c015",
+            "cuda_available": true,
+            "hip_runtime": null,
+            "telemetry_source": "nvml",
+            "mem_free_mb": 15037
+          }
+        ],
+        "virtual_environment": true,
+        "cuda_device_count": 1,
+        "distributed_available": true,
+        "nccl_available": false,
+        "gloo_available": true,
+        "multi_gpu_backend": null,
+        "multi_gpu_probe_required": false,
+        "multi_gpu_training": false,
+        "training_device_policy": "single_device",
+        "cuda_applicable": true,
+        "nccl_applicable": false,
+        "distributed_purpose": "multi_process_communication"
+      },
+      "packages": [
+        {
+          "name": "xformers",
+          "version": "0.0.35",
+          "backend": "xformers",
+          "docs_url": "https://github.com/facebookresearch/xformers#installing-xformers",
+          "supported": true,
+          "reason": "supported",
+          "importable": true,
+          "kernel_tested": true,
+          "error": null,
+          "available": true,
+          "wheel_required": false
+        },
+        {
+          "name": "flash-attn",
+          "version": "2.8.3+cu130torch2.13",
+          "backend": "flash_attn",
+          "docs_url": "https://github.com/Dao-AILab/flash-attention#installation-and-features",
+          "supported": true,
+          "reason": "supported",
+          "importable": true,
+          "kernel_tested": true,
+          "error": null,
+          "available": true,
+          "wheel_required": true
+        }
+      ]
+    },
+    "xformers-uninstall-probe.json": {
+      "runtime": {
+        "environment_profile": "windows-cuda",
+        "python": "3.12.10",
+        "python_executable": "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\cuda-data\\environment\\windows-cuda\\runtimes\\torch_c1171dc11402\\Scripts\\python.exe",
+        "platform": "Windows",
+        "machine": "AMD64",
+        "distribution": null,
+        "distribution_id": null,
+        "distribution_version": null,
+        "kernel_release": "11",
+        "glibc_version": null,
+        "dtk_root": null,
+        "installed_dtk": null,
+        "driver_version": null,
+        "torch": "2.13.0+cu130",
+        "cuda_runtime": "13.0",
+        "hip_runtime": null,
+        "compute_backend": "cuda",
+        "cuda_available": true,
+        "mps_available": false,
+        "gpu_capability": [
+          12,
+          0
+        ],
+        "cxx11_abi": true,
+        "gpus": [
+          {
+            "index": 0,
+            "kind": "cuda",
+            "device": "cuda:0",
+            "name": "NVIDIA GeForce RTX 5070 Ti",
+            "mem_total_mb": 16303,
+            "mem_used_mb": 1266,
+            "util_pct": 11,
+            "temp_c": 60,
+            "power_w": 64.531,
+            "power_limit_w": 300.0,
+            "uuid": "2cd98e50-f5a4-80e5-6664-919eee26c015",
+            "cuda_available": true,
+            "hip_runtime": null,
+            "telemetry_source": "nvml",
+            "mem_free_mb": 15037
+          }
+        ],
+        "virtual_environment": true,
+        "cuda_device_count": 1,
+        "distributed_available": true,
+        "nccl_available": false,
+        "gloo_available": true,
+        "multi_gpu_backend": null,
+        "multi_gpu_probe_required": false,
+        "multi_gpu_training": false,
+        "training_device_policy": "single_device",
+        "cuda_applicable": true,
+        "nccl_applicable": false,
+        "distributed_purpose": "multi_process_communication"
+      },
+      "packages": [
+        {
+          "name": "xformers",
+          "version": null,
+          "backend": "xformers",
+          "docs_url": "https://github.com/facebookresearch/xformers#installing-xformers",
+          "supported": true,
+          "reason": "supported",
+          "importable": false,
+          "kernel_tested": false,
+          "error": null,
+          "available": false,
+          "wheel_required": false
+        },
+        {
+          "name": "flash-attn",
+          "version": "2.8.3+cu130torch2.13",
+          "backend": "flash_attn",
+          "docs_url": "https://github.com/Dao-AILab/flash-attention#installation-and-features",
+          "supported": true,
+          "reason": "supported",
+          "importable": true,
+          "kernel_tested": true,
+          "error": null,
+          "available": true,
+          "wheel_required": true
+        }
+      ]
+    }
+  },
+  "custom_paths": {
+    "runtime": {
+      "environment_profile": "windows-cpu",
+      "worker_id": 11268,
+      "instance_id": "b17ec65de62e4ceca704adac51d437e0",
+      "managed": true,
+      "can_restart": true,
+      "reason": null,
+      "current_host": "127.0.0.1",
+      "current_port": 8896,
+      "saved_host": "127.0.0.1",
+      "saved_port": 8765,
+      "restart_required": false,
+      "restarting": false,
+      "current_python": "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\custom-envs\\windows-cpu\\venv\\Scripts\\python.exe",
+      "original_python": "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\custom-envs\\windows-cpu\\venv\\Scripts\\python.exe",
+      "can_restore_original": false,
+      "selected_environment": null
+    },
+    "old_cpu_preserved": true,
+    "custom_cache_exists": true,
+    "restart_passed": true
+  },
+  "custom_cache": {
+    "thumbnail": "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\custom-cache\\service\\thumbnails\\custom-probe_128.jpg",
+    "thumbnail_exists": true,
+    "index": "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\custom-cache\\service\\index",
+    "package_cache": "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\custom-cache\\packages\\windows-cpu"
+  },
+  "local_backend_tests": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "308",
+    "time": "8.864",
+    "timestamp": "2026-09-19T11:30:21.786256+08:00",
+    "hostname": "SoradeMac-mini.local"
+  },
+  "frontend_tests": {
+    "files": 3,
+    "tests": 29,
+    "passed": true
+  },
+  "frontend_build": true,
+  "browser": "Windows API through SSH tunnel: storage setting saved, reloaded and restored; desktop screenshot inspected",
+  "scope_notes": [
+    "xFormers 0.0.35 alone has no usable SM120 kernel in this build; with the compatible external FlashAttention 2 wheel its real CUDA forward/backward probe passes.",
+    "The cache-reuse test seeded the new cache location with the SHA256-verified wheel previously downloaded through the product.",
+    "Custom cache verified using real indexing of two fixture images, SQLite storage and thumbnail routes; not a large-gallery load test.",
+    "Not a DTK or multiple-GPU result."
+  ],
+  "custom_dataset_scan": {
+    "passed": true,
+    "stats": {
+      "images": 2,
+      "captioned": 2,
+      "resolutions": [
+        {
+          "w": 32,
+          "h": 24,
+          "count": 1
+        },
+        {
+          "w": 24,
+          "h": 32,
+          "count": 1
+        }
+      ],
+      "ar_hist": [
+        {
+          "ar": "0.8",
+          "count": 1
+        },
+        {
+          "ar": "1.3",
+          "count": 1
+        }
+      ],
+      "masks": 0
+    },
+    "index": "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\custom-cache\\service\\index\\index.sqlite",
+    "thumbnails": [
+      "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\custom-cache\\service\\thumbnails\\f7e8929592073076_64.jpg",
+      "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\custom-cache\\service\\thumbnails\\575742c6ee65a17c_64.jpg"
+    ],
+    "scope": "Real dataset scan, index cache and thumbnail routes on two generated fixture images"
+  },
+  "custom_cpu_training": {
+    "ok": true,
+    "environment": {
+      "platform": "Windows-11-10.0.22631-SP0",
+      "python": "3.12.10",
+      "torch": "2.14.0+cpu",
+      "cuda": null,
+      "cuda_available": false,
+      "mps_available": false,
+      "gpus": []
+    },
+    "checks": [
+      {
+        "name": "model loaded",
+        "ok": true,
+        "detail": "family=toy device=cpu trainable=3072"
+      },
+      {
+        "name": "adapters injected",
+        "ok": true,
+        "detail": "20 layers, by_algo={'lokr': 20}"
+      },
+      {
+        "name": "training finished",
+        "ok": true,
+        "detail": "outcome=finished steps=3"
+      },
+      {
+        "name": "losses finite",
+        "ok": true,
+        "detail": "losses=[1.3185, 1.3297, 1.7151]"
+      },
+      {
+        "name": "sample is not a flat image",
+        "ok": true,
+        "detail": "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\smoke-custom-cpu-v2\\samples\\smoke_00_1.png size=(64, 64) value_spread=255"
+      },
+      {
+        "name": "sample saved",
+        "ok": true,
+        "detail": "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\smoke-custom-cpu-v2\\samples\\smoke_00_1.png size=(64, 64) value_spread=255"
+      },
+      {
+        "name": "adapter file keys use the family prefix",
+        "ok": true,
+        "detail": "60 tensors, 20 modules, e.g. ['lora_unet_blocks_0_cross_attn_k_proj.alpha', 'lora_unet_blocks_0_cross_attn_k_proj.lokr_w1']"
+      },
+      {
+        "name": "adapter file round-trips",
+        "ok": true,
+        "detail": "20 modules on disk vs 20 injected"
+      }
+    ],
+    "timings_s": {
+      "prepare": 8.47,
+      "train": 0.15,
+      "per_step_median": 0.015,
+      "sample": 0.03
+    },
+    "memory_mb": {},
+    "config_hash": "11af6950adff3881",
+    "device": "cpu",
+    "family": "toy",
+    "dit_config": {},
+    "adapters": {
+      "layers": 20,
+      "trainable_params": 3072,
+      "by_algo": {
+        "lokr": 20
+      }
+    },
+    "total_steps": 3,
+    "outcome": "finished",
+    "losses": [
+      1.318464756011963,
+      1.3296817541122437,
+      1.715149164199829
+    ],
+    "sample": {
+      "path": "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\smoke-custom-cpu-v2\\samples\\smoke_00_1.png",
+      "size": [
+        64,
+        64
+      ],
+      "value_spread": 255
+    },
+    "export": {
+      "path": "J:\\AI\\YPuddinTrainStudio\\studio_data\\remote-tests\\launcher-20260918\\smoke-custom-cpu-v2\\smoke-smoke.safetensors",
+      "tensors": 60,
+      "modules": 20,
+      "metadata_keys": [
+        "modelspec.architecture",
+        "modelspec.date",
+        "modelspec.hash_sha256",
+        "modelspec.implementation",
+        "modelspec.resolution",
+        "modelspec.sai_model_spec",
+        "modelspec.title",
+        "ss_base_model_version",
+        "ss_epoch",
+        "ss_network_alpha",
+        "ss_network_args",
+        "ss_network_dim",
+        "ss_network_module",
+        "ss_resolution",
+        "ss_steps",
+        "ss_training_finished_at",
+        "ypuddin.adapter",
+        "ypuddin.config_hash",
+        "ypuddin.dataset_fingerprint",
+        "ypuddin.family",
+        "ypuddin.format",
+        "ypuddin.targets",
+        "ypuddin.version"
+      ],
+      "example_keys": [
+        "lora_unet_blocks_0_cross_attn_k_proj.alpha",
+        "lora_unet_blocks_0_cross_attn_k_proj.lokr_w1",
+        "lora_unet_blocks_0_cross_attn_k_proj.lokr_w2",
+        "lora_unet_blocks_0_cross_attn_output_proj.alpha",
+        "lora_unet_blocks_0_cross_attn_output_proj.lokr_w1",
+        "lora_unet_blocks_0_cross_attn_output_proj.lokr_w2"
+      ]
+    }
+  }
+}
