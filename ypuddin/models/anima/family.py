@@ -169,7 +169,11 @@ class AnimaLatent(LatentPipeline):
                 from .vendor.qwen_image_vae_2d import load_vae
             else:
                 from .vendor.qwen_image_vae import load_vae
-            vae = load_vae(str(self.path), device="cpu")
+            # Loading frozen VAE weights initializes temporary CPU parameters.
+            # A cold resume can reach this lazy load after restoring training
+            # RNG; model construction must not advance that saved stream.
+            with torch.random.fork_rng(devices=[]):
+                vae = load_vae(str(self.path), device="cpu")
             vae = vae.to(device=self.device, dtype=self.dtype)
             vae.requires_grad_(False)
             vae.eval()

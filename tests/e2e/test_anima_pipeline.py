@@ -121,6 +121,40 @@ def _cfg(tiny_models, image_dataset, out, **overrides) -> TrainConfig:
     return TrainConfig.model_validate(base)
 
 
+def test_uncached_anima_cold_vae_resume_preserves_all_rng(
+    tiny_models, tiny_vae_loader, image_dataset, tmp_path
+):
+    from tests.checkpoint_assertions import assert_checkpoint_value_exact
+
+    cfg = _cfg(
+        tiny_models,
+        image_dataset,
+        tmp_path / "reference",
+        dataset={"cache_latents": False, "text_encoding": "cached", "flip": True},
+        adapter={"dropout": 0.1},
+        loop={"epochs": None, "max_steps": 4, "grad_accum": 2, "deterministic": True},
+        validation={"enabled": False},
+        sampling={"enabled": False},
+        checkpoint={"save_every_epochs": None, "save_state_every_steps": 2},
+    )
+    reference = Trainer(cfg, device="cpu")
+    assert reference.run() == "finished"
+    cfg = cfg.model_copy(deep=True)
+    cfg.checkpoint.output_dir = str(tmp_path / "resumed")
+    cfg.checkpoint.resume = str(reference.run_dir / "state-2")
+    resumed = Trainer(cfg, device="cpu")
+    assert resumed.run() == "finished"
+    for filename in ("rng.pt", "optimizer.pt", "scheduler.pt"):
+        saved = [
+            torch.load(t.run_dir / "state-4" / filename, map_location="cpu", weights_only=False)
+            for t in (reference, resumed)
+        ]
+        assert_checkpoint_value_exact(saved[1], saved[0], filename)
+    assert_checkpoint_value_exact(
+        resumed.adapters.training_state_dict(), reference.adapters.training_state_dict(), "weights"
+    )
+
+
 def _events(path):
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 

@@ -137,6 +137,23 @@ def test_latent_pipeline_wrapper_with_tiny_vae(tmp_path):
     assert lat.vae is None
 
 
+@pytest.mark.parametrize("use_2d", [True, False])
+def test_lazy_vae_load_and_reload_preserve_training_rng(tmp_path, monkeypatch, use_2d):
+    from ypuddin.models.anima.vendor import qwen_image_vae, qwen_image_vae_2d
+
+    path = tmp_path / "vae.safetensors"
+    path.write_bytes(b"loader boundary fixture")
+    vendor = qwen_image_vae_2d if use_2d else qwen_image_vae
+    monkeypatch.setattr(vendor, "load_vae", lambda *args, **kwargs: torch.nn.Linear(8, 8))
+    latent = AnimaLatent(path, use_2d=use_2d)
+    before = torch.get_rng_state().clone()
+    latent._ensure()
+    assert torch.equal(torch.get_rng_state(), before)
+    latent.unload()
+    latent._ensure()
+    assert torch.equal(torch.get_rng_state(), before)
+
+
 def test_validate_config_reports_missing_paths():
     fam = get_family("anima")
     problems = fam.validate_config(ModelConfig(family="anima", dit_path="/nope.safetensors"))
