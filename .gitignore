@@ -124,3 +124,24 @@ _[Nn][Ee][Tt][Rr][Cc]
 
 # Agent 协作交接文件（本机工作区状态，不分发）
 .handoff/
+
+# Remote acceptance workspaces and authentication material (never product source).
+remote-testing/
+.windows-auth/
+.ssh/
+[Ii][Dd]_[Rr][Ss][Aa]*
+[Ii][Dd]_[Dd][Ss][Aa]*
+[Ii][Dd]_[Ee][Cc][Dd][Ss][Aa]*
+[Ii][Dd]_[Ee][Dd]25519*
+*.[Pp][Ee][Mm]
+*.[Kk][Ee][Yy]
+*.[Pp]12
+*.[Pp][Ff][Xx]
+*.[Ww][Hh][Ll]
+*.[Nn][Pp][Yy]
+
+# Generated browser acceptance output; curated documentation images remain tracked.
+/frontend/screenshots/
+playwright-report/
+test-results/
+blob-report/

@@ -50,6 +50,8 @@ def excluded_reason(name: str | Path, *, built_ui: bool = False) -> str | None:
         return "root runtime directory"
     if "studio_data" in parts:
         return "Studio runtime data"
+    if parts[:2] == ("frontend", "screenshots"):
+        return "generated browser acceptance screenshots"
     build_output = built_ui and parts[:2] == ("frontend", "dist")
     directories = parts[:-1]
     if build_output:
@@ -60,6 +62,12 @@ def excluded_reason(name: str | Path, *, built_ui: bool = False) -> str | None:
         "node_modules",
         ".git",
         ".handoff",
+        "remote-testing",
+        ".windows-auth",
+        ".ssh",
+        "playwright-report",
+        "test-results",
+        "blob-report",
         "__pycache__",
         ".pytest_cache",
         ".ruff_cache",
@@ -82,6 +90,8 @@ def excluded_reason(name: str | Path, *, built_ui: bool = False) -> str | None:
         return "local OS or coverage file"
     if filename in {".env", "secrets.json", "credentials.json", ".netrc", "_netrc", ".npmrc", ".pypirc"}:
         return "local credentials or environment"
+    if filename.startswith(("id_rsa", "id_dsa", "id_ecdsa", "id_ed25519")):
+        return "local SSH authentication material"
     if filename.startswith((".secrets-", "secrets.json.", "credentials.json.")):
         return "local credential backup or temporary file"
     if filename.startswith(".env.") and filename not in {".env.example", ".env.sample"}:
@@ -89,6 +99,12 @@ def excluded_reason(name: str | Path, *, built_ui: bool = False) -> str | None:
     if len(parts) == 1 and filename in {"settings.json", "source_manifest.json"}:
         return "generated local settings or package manifest"
     suffixes = (
+        ".pem",
+        ".key",
+        ".p12",
+        ".pfx",
+        ".whl",
+        ".npy",
         ".zip",
         ".7z",
         ".rar",
