@@ -126,6 +126,7 @@ class Trainer:
         self.objective: Any  # family-owned noising, prediction target and loss contract
         self.optimizer: torch.optim.Optimizer
         self.scheduler: Any
+        self.grad_scaler: torch.amp.GradScaler | None = None
         self.sampler: BucketBatchSampler
         self.loader: DataLoader
         self.text_cache: TextCache | None = None
@@ -389,6 +390,7 @@ class Trainer:
             cfg.optimizer.lr, cfg.optimizer.weight_decay, cfg.optimizer.group_lr
         )
         self.optimizer = self._build_training_optimizer(groups)
+        self._prepare_grad_scaler()
         if is_schedule_free(cfg.optimizer):
             self.optimizer.train()
         native = cfg.dataset.resolution_mode == "native"
@@ -667,6 +669,29 @@ class Trainer:
             validate_scheduler_recipe(self._resume_unsharded_scheduler_contract.contract, self.cfg)
         return extra
 
+    def _prepare_grad_scaler(self) -> None:
+        if self.device.type != "cuda" or self.compute_dtype != torch.float16:
+            return
+        if self.cfg.loop.gpu_count > 1:
+            raise ValueError("FP16 动态梯度缩放暂只支持单卡；多卡请使用 BF16 或 FP32")
+        if any(p.dtype == torch.float16 for g in self.optimizer.param_groups for p in g["params"]):
+            raise ValueError("FP16 混合精度需要 FP32 或 BF16 可训练参数；请将适配器参数精度设为 FP32")
+        self.grad_scaler = torch.amp.GradScaler("cuda")
+
+    def _backward(self, loss: Tensor) -> None:
+        scaler = getattr(self, "grad_scaler", None)
+        (scaler.scale(loss) if scaler is not None else loss).backward()
+
+    def _restore_grad_scaler(self, extra: dict) -> None:
+        saved = extra.get("grad_scaler")
+        scaler = getattr(self, "grad_scaler", None)
+        if (scaler is not None) != bool(saved):
+            raise ValueError(
+                "检查点的 FP16 梯度缩放状态与当前训练不一致，不能精确恢复；旧检查点可仅加载权重开始新训练"
+            )
+        if scaler is not None:
+            scaler.load_state_dict(saved)
+
     def _resume(self, path: str) -> None:
         self._validate_training_compute_policy()
         validate_scheduler_recipe(self._scheduler_contract, self.cfg, self.progress.total_steps)
@@ -676,6 +701,7 @@ class Trainer:
         validate_scheduler_recipe(captured_scheduler.contract, self.cfg, self.progress.total_steps)
         validate_scheduler_instance(captured_scheduler.contract, self.scheduler)
         ck = load_checkpoint(path)
+        self._restore_grad_scaler(ck["progress"].extra)
         if bool(ck["scheduler"]) != (self.scheduler is not None):
             raise ValueError("保存的学习率调度器状态与原训练合同不一致，不能精确恢复")
         expected_kind = "full-model" if self.cfg.training.mode == "full" else "adapter"
@@ -869,6 +895,8 @@ class Trainer:
                 tensors, _ = self.adapters.export_state()
             training_tensors = self.adapters.training_state_dict()
         self.progress.extra["loss_ema"] = self._loss_ema
+        if self.grad_scaler is not None:
+            self.progress.extra["grad_scaler"] = self.grad_scaler.state_dict()
         # The sampler cursor is the iterator's starting point. DataLoader can
         # prefetch ahead, so only consumer progress identifies committed batches.
         sampler_state = {
@@ -1210,7 +1238,7 @@ class Trainer:
                 if self.progress.nan_skips >= cfg.loop.nan_skip_limit:
                     raise RuntimeError(f"{self.progress.nan_skips} consecutive non-finite losses")
                 continue
-            (loss / accum).backward()
+            self._backward(loss / accum)
             if self.swapper is not None:
                 self.swapper.release_all()
             group_loss += loss.item() / accum
@@ -1289,7 +1317,7 @@ class Trainer:
                         raise RuntimeError(f"{self.progress.nan_skips} consecutive non-finite losses")
                     invalid = True
                     break
-                (loss * (count / target)).backward()
+                self._backward(loss * (count / target))
                 if self.swapper is not None:
                     self.swapper.release_all()
                 loss_sum += loss.item() * count
@@ -1319,8 +1347,26 @@ class Trainer:
 
     def _optimizer_step(self, group_loss: float, elapsed: float) -> None:
         cfg = self.cfg
+        scaler = getattr(self, "grad_scaler", None)
+        if scaler is not None:
+            scaler.unscale_(self.optimizer)
         grad_norm = self._gradient_norm_and_clip()
         if not math.isfinite(grad_norm):
+            if scaler is not None:
+                old_scale = scaler.get_scale()
+                # Explicitly back off even if the norm overflowed while each
+                # individual gradient remained finite.
+                scaler.update(new_scale=old_scale * scaler.get_backoff_factor())
+                scale_state = scaler.state_dict()
+                scale_state["_growth_tracker"] = 0
+                scaler.load_state_dict(scale_state)
+                self.emit(
+                    "warning",
+                    code="amp.overflow",
+                    scale_before=old_scale,
+                    scale_after=scaler.get_scale(),
+                    step=self.progress.step,
+                )
             self.optimizer.zero_grad(set_to_none=True)
             self.progress.nan_skips += 1
             self.emit(
@@ -1333,7 +1379,11 @@ class Trainer:
         next_step = self.progress.step + 1
         will_log = next_step % cfg.loop.log_every == 0 or next_step == self.progress.total_steps
         rate_snapshot = optimizer_rate_snapshot(self.optimizer) if will_log else None
-        self.optimizer.step()
+        if scaler is None:
+            self.optimizer.step()
+        else:
+            scaler.step(self.optimizer)
+            scaler.update()
         lrs = (
             optimizer_learning_rates(cfg.optimizer, self.optimizer, before_step=rate_snapshot)
             if will_log
