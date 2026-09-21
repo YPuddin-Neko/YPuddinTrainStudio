@@ -21,7 +21,7 @@ export default defineConfig(({ mode }) => ({
     fs: { allow: ['..'] },
     proxy: {
       '/api': {
-        target: loadEnv(mode, '.', '').VITE_BACKEND_URL || 'http://127.0.0.1:8765',
+        target: loadEnv(mode, '.', '').VITE_BACKEND_URL || 'http://127.0.0.1:8123',
         changeOrigin: true,
         ws: true,
       },

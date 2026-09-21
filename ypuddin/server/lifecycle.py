@@ -204,7 +204,7 @@ def saved_address(root: Path, host: str | None, port: int | None) -> tuple[str, 
         settings = json.loads((root / "settings.json").read_text(encoding="utf-8")).get("server", {})
     except (OSError, ValueError):
         pass
-    return host or settings.get("host", "127.0.0.1"), port or settings.get("port", 8765)
+    return host or settings.get("host", "127.0.0.1"), port or settings.get("port", 8123)
 
 
 def launch_service(data_root: str, host: str | None, port: int | None) -> int:

@@ -100,7 +100,7 @@ venv/bin/pytest -q                         # 全部 CPU 测试
 venv/bin/ypuddin plan config.toml          # 预检；读取权重几何信息，不执行模型训练
 venv/bin/ypuddin plan config.toml --device cuda  # 按指定设备增加能力检查和预算
 venv/bin/ypuddin train config.toml         # 训练（事件写到 <output_dir>/events.jsonl）
-venv/bin/ypuddin serve --port 8765 --data-root ./studio_data   # 服务（前端 dist 存在时同域托管）
+venv/bin/ypuddin serve --port 8123 --data-root ./studio_data   # 服务（前端 dist 存在时同域托管）
 ```
 
 **GPU 机器首次验证（一条命令）**：真实跑 3 步 + 出一张 512 预览 + 保存/回读适配器，输出时序 / 峰值显存 / loss / 键格式，报告写到 `outputs/smoke/smoke-report.json`（失败时含完整 traceback，直接贴给我即可）：

@@ -28,7 +28,7 @@ studio-cpu.bat               # Windows 仅 CPU，x86_64 / arm64
 
 首次部署会按平台创建独立的 `environment/<平台>/venv`，再安装对应 PyTorch、训练依赖并构建前端。CUDA、CPU、macOS MPS 的依赖环境不共用，各环境只能用上面对应的入口启动；共用阶段在 `scripts/launch.sh` / `scripts/launch.bat`，不是入口。下文用 `<启动入口>` 指代你所在环境的那一个。三个加速入口只在 x86_64 上验证过，在 arm64 上启动会直接拒绝并提示改用 CPU 入口；MPS 入口要求 Apple Silicon。安装标记记录架构，同一个环境目录不会被两种架构共用。直接运行共用阶段（不带 `--profile`）会落到根目录 `venv` 的旧部署，不搬移或重建。平台目录和 Torch 切换关系见 [环境说明](ENVIRONMENT_LIFECYCLE_2026-09-14.md)。
 
-CUDA 环境安装 `ypuddin[models,server,optim,logging,nvidia]`，CPU/MPS 不安装 NVIDIA 依赖，也不自动安装注意力扩展。初始地址为 `http://127.0.0.1:8765/`；保存过 host/port 设置后，下次启动使用保存值，命令行参数优先。后续运行只对选中环境增量补齐依赖，保留已有 Torch/CUDA/NumPy 原生栈。
+CUDA 环境安装 `ypuddin[models,server,optim,logging,nvidia]`，CPU/MPS 不安装 NVIDIA 依赖，也不自动安装注意力扩展。初始地址为 `http://127.0.0.1:8123/`；保存过 host/port 设置后，下次启动使用保存值，命令行参数优先。后续运行只对选中环境增量补齐依赖，保留已有 Torch/CUDA/NumPy 原生栈。
 
 安装完成后，启动器会校验 `venv` 内的独立安装信息，再自动删除根目录的 `ypuddin.egg-info` 构建副本。已有部署更新代码后正常启动即可清理旧残留，无需删除环境或数据。即使依赖安装被跳过，也会执行此清理；Windows 文件被占用时会提示并在下次启动重试。运行所需的 `venv` 内 `.dist-info` 保留，旧式安装先更新为现代 editable 安装再清理。
 
@@ -36,7 +36,7 @@ CUDA 环境安装 `ypuddin[models,server,optim,logging,nvidia]`，CPU/MPS 不安
 
 | 参数 | 作用 |
 |---|---|
-| `--port 8800` / `--host 0.0.0.0` / `--data-root /data/studio` | 覆盖服务端口 / 绑定地址 / 数据目录。初始默认 `127.0.0.1`、`8765`、`./studio_data`；host/port 可从设置读取，data-root 始终由本次启动参数决定 |
+| `--port 8800` / `--host 0.0.0.0` / `--data-root /data/studio` | 覆盖服务端口 / 绑定地址 / 数据目录。初始默认 `127.0.0.1`、`8123`、`./studio_data`；host/port 可从设置读取，data-root 始终由本次启动参数决定 |
 | `--torch=cu128` | 首次安装或 `--reinstall` 时选择 PyTorch 来源：`cu128` `cu126` `cu124` `cu118` `cpu`。默认 `auto`：脚本识别到 Blackwell 时选 cu128 并检查驱动；其余按驱动主版本 ≥570→cu128、≥560→cu126、≥550→cu124、≥450→cu118，否则 cpu。macOS 自动使用 PyPI 的 CPU/MPS 轮子。这是安装选择规则，安装后仍应通过 `doctor` 和真实 smoke 验证 |
 | `--index=auto\|cn\|official` | 包源。`auto` / `cn`（默认）：镜像优先——中科大 → 清华 → 阿里 → 官方兜底，某个源缺包或报错就自动换下一个，探测不通的源先排到后面；CUDA 轮子走阿里 → 上交 → 官方。`official`：普通依赖官方优先、镜像兜底，CUDA 轮子使用官方索引。`--mirror` 等价于 `--index=cn` |
 | `--profile=legacy` | 明确使用旧的根目录 `venv`；平台专用入口默认使用独立环境 |
@@ -73,7 +73,7 @@ uv pip install --python venv/bin/python -e ".[models,server,optim,logging]"     
 uv pip install --python venv/bin/python -e ".[cuda,nvidia]"              # CUDA 可选：bitsandbytes 8-bit、Prodigy 等
 uv pip install --python venv/bin/python sageattention                   # 可选：仅无梯度采样使用 Sage，训练反向保持 SDPA
 cd frontend && npm ci && npm run build && cd ..                          # 可选：Web 界面
-venv/bin/ypuddin serve --host 127.0.0.1 --port 8765 --data-root studio_data
+venv/bin/ypuddin serve --host 127.0.0.1 --port 8123 --data-root studio_data
 ```
 
 macOS 将上面的 PyTorch 安装行改为 `uv pip install --python venv/bin/python torch`，不要安装 CUDA 专属依赖。Windows 将 `venv/bin/python` 换成 `venv\Scripts\python.exe`，其他可执行文件也使用 `Scripts` 下对应路径。pip 用户把 `uv pip install --python venv/bin/python` 换成 `venv/bin/pip install` 即可。extras 含义：
@@ -210,7 +210,7 @@ After=network.target
 User=trainer
 WorkingDirectory=/opt/YPuddinTrainStudio/xiangmuyuanma
 Environment=PYTHONUTF8=1
-ExecStart=/opt/YPuddinTrainStudio/xiangmuyuanma/venv/bin/ypuddin serve --host 127.0.0.1 --port 8765 --data-root /data/studio
+ExecStart=/opt/YPuddinTrainStudio/xiangmuyuanma/venv/bin/ypuddin serve --host 127.0.0.1 --port 8123 --data-root /data/studio
 Restart=on-failure
 RestartSec=5
 
@@ -227,13 +227,13 @@ journalctl -u ypuddin -f
 
 ### Windows
 
-「任务计划程序」→ 创建任务 → 触发器「登录时」→ 操作：程序 `C:\...\xiangmuyuanma\venv\Scripts\ypuddin.exe`，参数 `serve --host 127.0.0.1 --port 8765 --data-root D:\studio_data`，起始于 `C:\...\xiangmuyuanma`。或者直接把 `studio-windows-cuda.bat --no-browser` 的快捷方式放进启动文件夹。
+「任务计划程序」→ 创建任务 → 触发器「登录时」→ 操作：程序 `C:\...\xiangmuyuanma\venv\Scripts\ypuddin.exe`，参数 `serve --host 127.0.0.1 --port 8123 --data-root D:\studio_data`，起始于 `C:\...\xiangmuyuanma`。或者直接把 `studio-windows-cuda.bat --no-browser` 的快捷方式放进启动文件夹。
 
 ### 远程访问与安全
 
 服务**没有登录认证**，默认只监听 `127.0.0.1`。要从别的机器访问，二选一：
 
-- SSH 端口转发（推荐）：`ssh -L 8765:127.0.0.1:8765 user@gpu-box`，然后本机开 `http://127.0.0.1:8765/`。
+- SSH 端口转发（推荐）：`ssh -L 8123:127.0.0.1:8123 user@gpu-box`，然后本机开 `http://127.0.0.1:8123/`。
 - 放在 Nginx/Caddy 之类反向代理后面，由代理做 HTTP Basic Auth / OAuth，再把 `--host` 改成 `0.0.0.0`。**不要**把裸服务直接暴露到公网：文件浏览接口（`/api/fs/list`）与训练任务可以读写 `--data-root` 及配置里写到的任何路径。
 
 SSE（`/api/events`）需要代理关闭响应缓冲（Nginx：`proxy_buffering off; proxy_read_timeout 1h;`）。
@@ -273,7 +273,7 @@ git pull
 | `doctor` 显示 `cuda_available: false` 但机器有 NVIDIA 卡 | 驱动太旧或装了 CPU 版 torch：`nvidia-smi` 看驱动版本，`<启动入口> --reinstall --torch=cu124`（驱动 ≥550）或 `cu118` |
 | Windows 上 `ModuleNotFoundError: bitsandbytes` / 训练启动就失败 | 配置里 `optimizer.type` 改回 `adamw`，或在 CUDA 环境安装对应依赖：`.\venv\Scripts\pip install "bitsandbytes>=0.43"` |
 | 页面能开但任务列表 / 数据集为空、控制台 404 | 前端是旧构建：`<启动入口> build`；开发态的 mock 数据请用 `dev` 模式而不是 `run` |
-| 端口被占用 | `--port 8800`，或找出占用者：`lsof -i :8765`（Linux/macOS）、`netstat -ano \| findstr 8765`（Windows） |
+| 端口被占用 | `--port 8800`，或找出占用者：`lsof -i :8123`（Linux/macOS）、`netstat -ano \| findstr 8123`（Windows） |
 | 前端构建提示 Node 不支持 | 升级到 Node 20.19+（20.x）或 22.12+，确认 `node --version`，再运行 `<启动入口> build` |
 | 首次安装很慢 / 超时 | 默认镜像优先（中科大 → 清华 → 阿里 → 官方兜底）；境外网络用 `--index=official` 官方优先。PyTorch 轮子约 2.5 GB；某个镜像缺最新版会自动回退到下一个源，日志里有 `source … failed, trying the next one` |
 | RTX 50 系报 `no kernel image is available for execution on the device` / `sm_120 is not compatible` | 装到了旧 CUDA 构建：`<启动入口> --reinstall --torch=cu128`；驱动需 ≥ 570。`<启动入口> doctor` 会对比显卡计算能力与 torch 内核列表并直接给出警告 |
@@ -298,7 +298,7 @@ ypuddin inspect  lora.safetensors            # 看元数据与模块
 ypuddin convert  lora.safetensors --to comfyui -o out.safetensors
 ypuddin merge    --base anima-base.safetensors --adapter lora.safetensors --family anima -o merged.safetensors
 ypuddin extract  --base a.safetensors --tuned b.safetensors --algo lokr -o diff-lokr.safetensors
-ypuddin serve    --port 8765 --data-root studio_data
+ypuddin serve    --port 8123 --data-root studio_data
 ```
 
 配置文件支持 TOML 与 JSON（`ypuddin schema` 打印带说明的 JSON Schema）；`--set a.b=c` 可覆盖字段，CLI 的 `--preset preset.toml` 叠加**预设文件**，Web 内置预设通过界面选择。配置校验/导入导出无需加载模型；Plan 还会检查数据和权重几何信息，CLI 默认检测本机设备，也可用 `--device` 指定目标。Python API 的 `plan(..., device=None)` 可只作离线预检，不启用实际设备门禁。最小 Anima 配置见 `docs/design/03-status.md`。

@@ -87,7 +87,7 @@ YPUDDIN_DTK_PYTHON=/usr/bin/python3 \
 
 ```bash
 DTK_ROOT=/opt/dtk ./studio-linux-dtk.sh doctor
-DTK_ROOT=/opt/dtk ./studio-linux-dtk.sh --host 127.0.0.1 --port 8765 --no-browser
+DTK_ROOT=/opt/dtk ./studio-linux-dtk.sh --host 127.0.0.1 --port 8123 --no-browser
 ```
 
 上面的 `/opt/dtk` 应替换为创建该环境时选定的运行时目录。后续启动也要沿用匹配的 `DTK_ROOT`；改变这个变量不会转换 venv 里的 Torch、Triton 或其他原生包。新环境创建时可用 `YPUDDIN_DTK_PYTHON` 指定基础 Python；已有默认 venv 时，启动器优先使用该 venv，不会切换到另一个解释器。

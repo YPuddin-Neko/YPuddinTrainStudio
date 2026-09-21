@@ -28,7 +28,7 @@
   ```
 
 - 后端就绪前，用 **MSW（Mock Service Worker）** 按本文契约造 mock（放在 `frontend/src/mocks/`），使所有页面在无后端时可运行。真实后端上线后，`docs/api/openapi.json` 会出现，请用 `openapi-typescript` 生成类型并替换手写类型。
-- 开发服务器把 `/api` 代理到 `http://127.0.0.1:8765`。生产构建产物 `frontend/dist/` 由后端静态托管在 `/`。
+- 开发服务器把 `/api` 代理到 `http://127.0.0.1:8123`。生产构建产物 `frontend/dist/` 由后端静态托管在 `/`。
 
 ## 1. 技术栈（要求）
 

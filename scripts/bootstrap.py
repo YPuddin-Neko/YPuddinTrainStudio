@@ -299,16 +299,6 @@ def url_ok(url: str, timeout: float = 4.0) -> bool:
         return False
 
 
-def order_by_reachability(indexes: list[str]) -> list[str]:
-    """Indexes that answer a quick probe first (original order kept within each group), so a dead
-    mirror costs one 4 s probe instead of a full pip timeout per package."""
-    alive = [u for u in indexes if url_ok(u.rstrip("/") + "/pip/")]
-    dead = [u for u in indexes if u not in alive]
-    if dead:
-        log("以下包源探测不通，排到最后再试: " + ", ".join(dead))
-    return alive + dead
-
-
 def index_chains(mode: str, torch_tag: str) -> tuple[list[str], list[tuple[str, str]]]:
     """(PyPI index urls in order, torch sources as (kind, url) with kind in {find-links, index-url}).
 
@@ -329,12 +319,12 @@ def index_chains(mode: str, torch_tag: str) -> tuple[list[str], list[tuple[str, 
         pypi = [PYPI_OFFICIAL, *PYPI_MIRRORS_CN]  # mirrors still serve as a fallback
         torch_src = [("index-url", TORCH_OFFICIAL.format(tag=torch_tag))]
     else:
-        pypi = order_by_reachability([*PYPI_MIRRORS_CN, PYPI_OFFICIAL])
+        pypi = pypi_sources()
         torch_src = [(kind, url.format(tag=torch_tag)) for kind, url in TORCH_MIRRORS_CN] + [
             ("index-url", TORCH_OFFICIAL.format(tag=torch_tag))
         ]
     if mode == "auto":
-        log("包源选择: 国内镜像优先（中科大 → 清华 → 阿里 → 官方兜底；探测不通的自动排后）")
+        log("包源选择: 国内镜像优先（中科大 → 清华 → 阿里 → 官方兜底；安装失败后依次回退）")
     return pypi, [] if torch_tag == "dtk" else torch_src
 
 
@@ -761,6 +751,9 @@ def ensure_venv(
         )
         log(f"[3/5] 保留现有 PyTorch {current['version']} / {backend}")
     pypi_chain, torch_sources = index_chains(index_mode, torch_tag)
+    log("普通依赖下载源顺序: " + " → ".join(pypi_chain))
+    if torch_sources:
+        log("PyTorch 专用下载源顺序: " + " → ".join(url for _, url in torch_sources))
 
     env = _env()
     if uv and needs_copy_link_mode(st_dev_of(uv_cache_dir(uv) or VENV), st_dev_of(ROOT)):
@@ -960,7 +953,7 @@ def server_address(host: str | None, port: int | None, data_root: str) -> tuple[
         saved = json.loads((path / "settings.json").read_text(encoding="utf-8")).get("server", {})
     except (OSError, ValueError):
         pass
-    return host or saved.get("host", "127.0.0.1"), int(port or saved.get("port", 8765))
+    return host or saved.get("host", "127.0.0.1"), int(port or saved.get("port", 8123))
 
 
 # --------------------------------------------------------------------------- service

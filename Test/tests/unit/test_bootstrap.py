@@ -93,12 +93,10 @@ def test_index_chains_orders_mirrors_then_official(monkeypatch):
     assert boot.index_chains("auto", "cu128")[0][0].startswith("https://mirrors.ustc.edu.cn")
     monkeypatch.setattr(boot, "url_ok", lambda url, timeout=4.0: "pypi.org" not in url)
     assert boot.index_chains("auto", "cu128")[0][0].startswith("https://mirrors.ustc.edu.cn")
-    # dead mirrors are moved behind the live ones instead of costing a pip timeout each
-    monkeypatch.setattr(boot, "url_ok", lambda url, timeout=4.0: "ustc" not in url and "tuna" not in url)
-    chain = boot.index_chains("cn", "cu128")[0]
-    assert (
-        "aliyun" in chain[0] and chain[1] == boot.PYPI_OFFICIAL and "ustc" in chain[2] and "tuna" in chain[3]
-    )
+    # A quick failed probe must never override the configured priority.
+    monkeypatch.setattr(boot, "url_ok", lambda url, timeout=4.0: "aliyun" in url)
+    assert boot.index_chains("cn", "cu128")[0] == [*boot.PYPI_MIRRORS_CN, boot.PYPI_OFFICIAL]
+
 
 
 @pytest.mark.parametrize(
@@ -1401,3 +1399,12 @@ def test_custom_cache_controls_both_installers_and_keeps_profiles_separate(monke
 def test_empty_environment_root_is_rejected(arguments):
     with pytest.raises(SystemExit):
         boot.main(["doctor", *arguments])
+
+
+def test_default_server_port_matches_service(tmp_path):
+    from ypuddin.server.context import DEFAULT_SETTINGS
+    from ypuddin.server.lifecycle import saved_address
+
+    assert boot.server_address(None, None, str(tmp_path)) == ("127.0.0.1", 8123)
+    assert saved_address(tmp_path, None, None) == ("127.0.0.1", 8123)
+    assert DEFAULT_SETTINGS["server"]["port"] == 8123
