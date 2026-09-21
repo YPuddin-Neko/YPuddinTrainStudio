@@ -16,12 +16,12 @@ def pypi_sources(source="ustc", fallback=True):
 def torch_sources(backend, source="mirror", fallback=True):
     official = ("index-url", f"https://download.pytorch.org/whl/{backend}")
     mirrors = [
-        ("find-links", f"https://mirrors.aliyun.com/pytorch-wheels/{backend}"),
         ("index-url", f"https://mirror.sjtu.edu.cn/pytorch-wheels/{backend}"),
+        ("find-links", f"https://mirrors.aliyun.com/pytorch-wheels/{backend}"),
     ]
     if source == "mirror":
         return mirrors + ([official] if fallback else [])
-    selected = {"aliyun": mirrors[0], "sjtu": mirrors[1], "official": official}[source]
+    selected = {"sjtu": mirrors[0], "aliyun": mirrors[1], "official": official}[source]
     return [selected] + ([item for item in [*mirrors, official] if item != selected] if fallback else [])
 
 

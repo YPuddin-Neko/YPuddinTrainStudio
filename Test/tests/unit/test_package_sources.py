@@ -17,7 +17,7 @@ def test_defaults_and_explicit_source_without_fallback():
 
 def test_cuda_sources_never_use_general_pypi():
     sources = torch_sources("cu130")
-    assert sources[0] == ("find-links", "https://mirrors.aliyun.com/pytorch-wheels/cu130")
+    assert sources[0] == ("index-url", "https://mirror.sjtu.edu.cn/pytorch-wheels/cu130")
     assert sources[-1][1] == "https://download.pytorch.org/whl/cu130"
     assert "download.pytorch.org" not in str(torch_sources("cu130", fallback=False))
     assert torch_sources("cu130", "official", False) == [sources[-1]]

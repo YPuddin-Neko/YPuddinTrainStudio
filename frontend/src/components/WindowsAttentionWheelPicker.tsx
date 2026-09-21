@@ -48,7 +48,7 @@ export default function WindowsAttentionWheelPicker({ selected, onSelect, disabl
   };
   return <div className="space-y-3" data-testid="windows-attention-wheels">
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <strong className="text-sm">{text('Windows 社区预编译版本', 'Windows community builds')}</strong>
+      <strong className="text-sm">{text('社区预编译版本', 'Community builds')}</strong>
       <div className="flex flex-wrap items-center gap-2">
         <a className="studio-link inline-flex items-center gap-1 text-xs" href={catalog?.source_url || source} target="_blank" rel="noreferrer">{text('维护者发布页', 'Publisher release')}<ExternalLink size={12}/></a>
         <button type="button" className="settings-input inline-flex items-center gap-1.5" disabled={disabled || loading} onClick={() => { onSelect(null); setRevision(value => value + 1); }}><RefreshCw size={13}/>{text('刷新版本', 'Refresh builds')}</button>

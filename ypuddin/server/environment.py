@@ -674,7 +674,7 @@ class EnvironmentManager:
                         and bool(probe.get("importable"))
                         and (not backend or bool(probe.get("kernel_tested"))),
                         "wheel_required": bool(
-                            (backend in ("flash_attn", "sage") and runtime["platform"] == "Windows")
+                            (backend in ("flash_attn", "sage") and runtime["platform"] in ("Windows", "Linux"))
                             or (self.profile == "linux-dtk" and name in ("flash-attn", "xformers"))
                         ),
                     }

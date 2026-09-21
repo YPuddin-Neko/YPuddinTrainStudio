@@ -74,8 +74,8 @@ TORCH_OFFICIAL = "https://download.pytorch.org/whl/{tag}"
 # mirrors of download.pytorch.org tried before the official index: Aliyun serves one flat wheel listing per
 # CUDA tag (--find-links), SJTU mirrors the PEP 503 layout (--index-url)
 TORCH_MIRRORS_CN = (
-    ("find-links", "https://mirrors.aliyun.com/pytorch-wheels/{tag}"),
     ("index-url", "https://mirror.sjtu.edu.cn/pytorch-wheels/{tag}"),
+    ("find-links", "https://mirrors.aliyun.com/pytorch-wheels/{tag}"),
 )
 # minimum NVIDIA driver (major) able to run each CUDA wheel flavour, newest first
 CUDA_TAGS = (("cu128", 570), ("cu126", 560), ("cu124", 550), ("cu118", 450))

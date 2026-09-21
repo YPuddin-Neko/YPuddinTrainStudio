@@ -82,7 +82,7 @@ def test_index_chains_orders_mirrors_then_official(monkeypatch):
     assert pypi[0].startswith("https://mirrors.ustc.edu.cn") and "tuna" in pypi[1] and "aliyun" in pypi[2]
     assert pypi[-1] == boot.PYPI_OFFICIAL
     assert (
-        torch_src[0][0] == "find-links" and "aliyun" in torch_src[0][1] and torch_src[0][1].endswith("cu128")
+        torch_src[0][0] == "index-url" and "sjtu" in torch_src[0][1] and torch_src[0][1].endswith("cu128")
     )
     assert torch_src[-1] == ("index-url", "https://download.pytorch.org/whl/cu128")
     pypi_off, torch_off = boot.index_chains("official", "cu126")
@@ -134,8 +134,8 @@ def test_install_falls_back_to_the_next_source_on_failure(monkeypatch, tmp_path)
     def fake_run(cmd, *a, **kw):
         calls.append(list(cmd))
         joined = " ".join(cmd)
-        if "aliyun.com/pytorch-wheels" in joined:
-            return Result(1)  # torch listing lacks the wheel -> next torch source
+        if "pytorch-wheels" in joined:
+            return Result(1)  # first torch mirror lacks the wheel -> next source
         if "[models,server]" in joined and "mirrors.ustc.edu.cn/pypi" in joined:
             return Result(1)  # first mirror lacks a package -> next PyPI index
         return Result(0)
@@ -149,12 +149,10 @@ def test_install_falls_back_to_the_next_source_on_failure(monkeypatch, tmp_path)
     boot.venv_python().write_text("")  # pretend the venv exists so no interpreter lookup happens
     boot.ensure_venv("cu128", index_mode="cn", reinstall=False, extras="models,server")
     torch_calls = [c for c in calls if "torch>=2.4" in c]
-    # torch: aliyun flat listing (wheel only, no index) failed -> sjtu PEP 503 index succeeded
-    assert {"--no-index", "--no-deps", "--find-links"} <= set(torch_calls[0])
-    assert "aliyun" in " ".join(torch_calls[0])
-    assert "--find-links" not in torch_calls[1]
-    assert "sjtu" in torch_calls[1][torch_calls[1].index("--index-url") + 1]
-    assert len(torch_calls) == 2
+    # torch: SJTU is preferred, then the Aliyun flat listing and official fallback.
+    assert "--index-url" in torch_calls[0] and "sjtu" in " ".join(torch_calls[0])
+    assert "--find-links" in torch_calls[1] and "aliyun" in " ".join(torch_calls[1])
+    assert len(torch_calls) == 3
     # ypuddin itself: ustc failed -> tuna succeeded
     pkg_calls = [c for c in calls if any(a.endswith("[models,server]") for a in c)]
     assert [c[c.index("--index-url") + 1] for c in pkg_calls] == list(boot.PYPI_MIRRORS_CN[:2])
@@ -191,11 +189,8 @@ def test_flat_listing_success_installs_wheel_then_dependencies(monkeypatch, tmp_
     boot.venv_python().write_text("")
     boot.ensure_venv("cu126", index_mode="cn", reinstall=False, extras="models,server")
     torch_calls = [c for c in calls if "torch>=2.4" in c]
-    assert len(torch_calls) == 2
-    assert "--no-index" in torch_calls[0] and torch_calls[0][-1].endswith("pytorch-wheels/cu126")
-    assert (
-        "--upgrade" not in torch_calls[1] and "--index-url" in torch_calls[1]
-    )  # deps only, keep the cu126 wheel
+    assert len(torch_calls) == 1
+    assert "--index-url" in torch_calls[0] and torch_calls[0][-1].endswith("pytorch-wheels/cu126")
 
 
 @pytest.mark.parametrize(

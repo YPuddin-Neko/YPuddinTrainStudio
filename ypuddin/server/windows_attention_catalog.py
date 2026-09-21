@@ -34,7 +34,9 @@ MAX_METADATA_BYTES = 2 * 1024**2
 RELEASES_PER_PAGE = 10
 MAX_RELEASE_PAGES = 5
 TAG = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,127}")
-NAME = re.compile(r"flash_attn-(2\.\d+\.\d+)\+cu(\d{3})torch(\d+\.\d+)-(cp3\d+)-\4-win_amd64\.whl")
+NAME = re.compile(
+    r"flash_attn-(2\.\d+\.\d+)\+cu(\d{3})torch(\d+\.\d+)-(cp3\d+)-\4-(win_amd64|linux_x86_64|manylinux_2_24_x86_64)\.whl"
+)
 
 
 def _download_prefix(release: str) -> str:
@@ -119,7 +121,7 @@ def parse_assets(document: dict, *, allow_empty=False) -> tuple[WindowsAttention
         # download candidates, but do not hide verified builds in other releases.
         if not isinstance(digest, str) or not re.fullmatch(r"sha256:[a-f0-9]{64}", digest):
             continue
-        base, cuda, torch, python = match.groups()
+        base, cuda, torch, python, platform = match.groups()
         wheels.append(
             WindowsAttentionWheel(
                 id="mjun0812-" + release + "-" + filename,
@@ -133,6 +135,7 @@ def parse_assets(document: dict, *, allow_empty=False) -> tuple[WindowsAttention
                 torch=torch,
                 cuda=cuda[:-1] + "." + cuda[-1],
                 python_tag=python,
+                platform_tag=platform,
             )
         )
     if not wheels and not allow_empty:
@@ -146,11 +149,14 @@ BUNDLED = parse_assets(ASSETS)
 def incompatibility(wheel, runtime, versions=None, profile=None):
     if profile == "linux-dtk" or runtime.get("hip_runtime"):
         return "requires_windows_cuda"
-    if runtime.get("platform") != "Windows" or str(runtime.get("machine", "")).lower() not in (
+    expected_platform = "win_amd64" if runtime.get("platform") == "Windows" else "linux_x86_64"
+    if runtime.get("platform") not in ("Windows", "Linux") or str(runtime.get("machine", "")).lower() not in (
         "amd64",
         "x86_64",
     ):
         return "requires_windows_x86_64"
+    if wheel.platform_tag not in (expected_platform, "manylinux_2_24_x86_64"):
+        return "platform_mismatch"
     if not runtime.get("cuda_available"):
         return "cuda_runtime_unavailable"
     try:
@@ -237,7 +243,9 @@ class Catalog:
     def snapshot(self, runtime, profile, *, proxy=None, refresh=False):
         policy = proxy or ProxyPolicy()
         supported = (
-            runtime.get("platform") == "Windows" and not runtime.get("hip_runtime") and profile != "linux-dtk"
+            runtime.get("platform") in ("Windows", "Linux")
+            and not runtime.get("hip_runtime")
+            and profile != "linux-dtk"
         )
         with self._lock:
             updated = False
