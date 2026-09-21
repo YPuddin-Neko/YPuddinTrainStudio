@@ -114,7 +114,9 @@ export default function Models({ embedded = false }: { embedded?: boolean }) {
   const entries = catalog.filter(entry => entry.family === family && !models.some(model => modelAssetUnsupportedReason(model) && (model.id === entry.model_id || model.path === entry.available_path)));
   const catalogProviders = (['huggingface', 'modelscope'] as Provider[]).filter(item => entries.some(entry => entry.sources.some(source => source.provider === item)));
   const catalogProvider = catalogProviders.includes(provider) ? provider : catalogProviders[0] || provider;
-  const tasks = downloads.filter(task => task.family === family);
+  // Completed downloads are already represented by the local model library.
+  // Keep only tasks that still need attention or can be retried.
+  const tasks = downloads.filter(task => task.family === family && task.status !== 'completed');
   const ready = kinds.filter(kind => supportedSelected.some(model => model.kind === kind && model.is_default && model.exists));
   const required = weights.filter(weight => weight.required).map(weight => weight.kind);
   const readyRequired = required.filter(kind => ready.includes(kind));
@@ -132,7 +134,7 @@ export default function Models({ embedded = false }: { embedded?: boolean }) {
   const currentPage = Math.min(page, pages);
   const slice = <T,>(items: T[]) => items.slice((currentPage - 1) * 12, currentPage * 12);
   const settingsLink = (tab: string) => `/settings/environment?tab=${tab}&family=${family}`;
-  const tabs = [{ key: 'prepare', label: text('准备模型', 'Prepare models') }, { key: 'library', label: `${text('本地模型', 'Local models')} · ${selected.length}` }, { key: 'downloads', label: `${text('下载记录', 'Downloads')}${tasks.some(isActive) ? ` · ${tasks.filter(isActive).length} ${text('进行中', 'active')}` : ''}` }];
+  const tabs = [{ key: 'prepare', label: text('准备模型', 'Prepare models') }, { key: 'library', label: `${text('本地模型', 'Local models')} · ${selected.length}` }, ...(tasks.length ? [{ key: 'downloads', label: `${text('下载任务', 'Download tasks')}${tasks.some(isActive) ? ` · ${tasks.filter(isActive).length} ${text('进行中', 'active')}` : ''}` }] : [])];
   const statusLabel = (task: ModelDownload) => ({ queued: text('排队中', 'Queued'), downloading: text('下载中', 'Downloading'), completed: text('已就绪', 'Ready'), failed: text('下载失败', 'Failed'), cancelled: text('已取消', 'Cancelled') }[task.status]);
 
   return <div className="models-workspace" data-testid="models-page">
