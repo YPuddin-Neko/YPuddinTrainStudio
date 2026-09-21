@@ -252,10 +252,12 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
               {hipBackend && wheelUpload(pkg.name)}
               {pkg.version && <><button className={button} disabled={locked || (hipBackend ? !wheel && !vendorWheel : !pkg.supported || pkg.wheel_required && !wheel && !vendorWheel)} onClick={() => void plan(pkg.name, 'repair')}>{copy('重装当前版本', 'Reinstall current version')}</button><button className={button} disabled={locked} onClick={() => void plan(pkg.name, 'uninstall')}>{copy('卸载', 'Uninstall')}</button></>}
             </div>
-            {!hipBackend && <details className="settings-inline-details" open={pkg.wheel_required}><summary>{pkg.wheel_required ? copy('手动上传 wheel', 'Upload wheel manually') : copy('手动版本与 wheel', 'Manual version and wheel')}</summary>
-            <div className="flex flex-wrap items-center gap-2">{!pkg.wheel_required && <label className="flex items-center gap-2 text-xs">{copy('版本', 'Version')}<input className={`${input} w-40`} aria-label={`${pkg.name} ${copy('版本', 'version')}`} placeholder={copy('自动匹配兼容版本', 'Compatible version')} value={version} onChange={event => setVersion(event.target.value)} disabled={locked || !!wheel}/></label>}
+            {!hipBackend && (pkg.wheel_required ? <div className="flex flex-wrap items-center gap-2" aria-label={copy('上传匹配 wheel', 'Upload matching wheel')}>
               {wheelUpload(pkg.name)}
-            </div></details>}
+            </div> : <details className="settings-inline-details"><summary>{copy('手动版本与 wheel', 'Manual version and wheel')}</summary>
+              <div className="flex flex-wrap items-center gap-2"><label className="flex items-center gap-2 text-xs">{copy('版本', 'Version')}<input className={`${input} w-40`} aria-label={`${pkg.name} ${copy('版本', 'version')}`} placeholder={copy('自动匹配兼容版本', 'Compatible version')} value={version} onChange={event => setVersion(event.target.value)} disabled={locked || !!wheel}/></label>
+                {wheelUpload(pkg.name)}
+              </div></details>)}
             {pkg.wheel_required && !wheel && !vendorWheel && <p className="settings-note">{copy('先选择兼容构建或上传 wheel，即可检查安装条件。', 'Choose a compatible build or upload a wheel to review the install plan.')}</p>}
             {wheel && <p className="flex items-center gap-2 break-all text-xs text-emerald-700 dark:text-emerald-400"><Check size={13} />{wheel.filename}<button className="text-slate-500 dark:text-slate-400" aria-label={copy('清除 wheel', 'Clear wheel')} onClick={() => { setWheel(null); setVendorWheel(null); setVersion(''); }}><X size={13} /></button></p>}
           </>
