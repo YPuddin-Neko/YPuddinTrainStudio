@@ -7,7 +7,7 @@
 .settings-tabs>button[aria-selected=true]{color:#2563eb;border-color:#2563eb;font-weight:600}
 .dark .settings-tabs>button[aria-selected=true]{color:#60a5fa;border-color:#60a5fa}
 .settings-tabs>button:focus-visible,.settings-index button:focus-visible{outline:2px solid #3b82f6;outline-offset:-2px;border-radius:3px}
-.settings-scroll{min-height:0;flex:1;overflow-y:auto;overscroll-behavior:contain;padding:20px 24px 30px;scroll-padding-top:20px}
+.settings-scroll{min-height:0;flex:1;overflow-y:auto;overscroll-behavior:contain;padding:20px 24px 120px;scroll-padding-top:20px}
 .settings-columns{display:grid;grid-template-columns:minmax(0,1fr) 154px;align-items:start;gap:24px;min-width:0}
 .settings-main{min-width:0;display:flex;flex-direction:column;gap:18px}
 .settings-index{position:sticky;top:0;border-left:1px solid var(--settings-line);padding-left:15px;display:flex;flex-direction:column;gap:2px}
