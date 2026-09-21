@@ -10,6 +10,7 @@ from ypuddin.models.fingerprints import content_fingerprint
 from ypuddin.models.memory import release_model_memory
 
 from .loading import DEV_UNSUPPORTED, KLEIN_VARIANTS, read_json, shapes
+from .single_text import load_single_text, text_config
 
 
 class Flux2Text(TextPipeline):
@@ -23,9 +24,8 @@ class Flux2Text(TextPipeline):
         self.path, self.tokenizer_path, self.variant = path, tokenizer_path, variant
         self.dtype, self.device = dtype, torch.device(device)
         self.model, self.tokenizer = None, None
-        if not path.is_dir():
-            raise ValueError("FLUX.2 text encoder must be a complete local HF directory")
-        config = read_json(path / "config.json")
+        config = text_config(path)
+        self.config = config
         if config.get("model_type") != "qwen3":
             raise ValueError(f"FLUX.2 {variant} requires a Qwen3 text encoder")
         self.layers = (9, 18, 27)
@@ -40,8 +40,17 @@ class Flux2Text(TextPipeline):
         token_cfg = read_json(tokenizer_path / "tokenizer_config.json")
         if not token_cfg.get("chat_template") and not any(tokenizer_path.glob("*chat_template*")):
             raise ValueError("FLUX.2 tokenizer is missing the required chat template")
+        fingerprint_paths = [path, tokenizer_path]
+        if path.is_file():
+            sidecar = path.parent / "config.json"
+            bundled = (
+                Path(__file__).parent
+                / "assets"
+                / ("qwen3-4b.json" if variant == "klein-base-4b" else "qwen3-8b.json")
+            )
+            fingerprint_paths.append(sidecar if sidecar.is_file() else bundled)
         self.fingerprint = content_fingerprint(
-            [path, tokenizer_path], namespace=f"flux2-{variant}-layers{self.layers}-len512-v1:{dtype}"
+            fingerprint_paths, namespace=f"flux2-{variant}-layers{self.layers}-len512-v1:{dtype}"
         )
 
     def _ensure(self):
@@ -54,19 +63,23 @@ class Flux2Text(TextPipeline):
         if self.model is None:
             from transformers import Qwen3ForCausalLM
 
-            self.model, info = Qwen3ForCausalLM.from_pretrained(
-                str(self.path),
-                local_files_only=True,
-                use_safetensors=True,
-                dtype=self.dtype,
-                low_cpu_mem_usage=True,
-                output_loading_info=True,
-            )
-            if any(
-                info.get(key) for key in ("missing_keys", "unexpected_keys", "mismatched_keys", "error_msgs")
-            ):
-                self.model = None
-                raise ValueError(f"FLUX.2 text encoder weights do not match config: {info}")
+            if self.path.is_file():
+                self.model = load_single_text(self.path, self.config, self.dtype)
+            else:
+                self.model, info = Qwen3ForCausalLM.from_pretrained(
+                    str(self.path),
+                    local_files_only=True,
+                    use_safetensors=True,
+                    dtype=self.dtype,
+                    low_cpu_mem_usage=True,
+                    output_loading_info=True,
+                )
+                if any(
+                    info.get(key)
+                    for key in ("missing_keys", "unexpected_keys", "mismatched_keys", "error_msgs")
+                ):
+                    self.model = None
+                    raise ValueError(f"FLUX.2 text encoder weights do not match config: {info}")
             self.model.to(self.device).requires_grad_(False).eval()
 
     def to(self, device):

@@ -91,6 +91,96 @@ def _entry(
 ANIMA = "circlestone-labs/Anima"
 KREA = "Comfy-Org/Krea-2"
 RECOMMENDATIONS = [
+    RecommendedModel(
+        id="flux2-klein-base-4b",
+        family="flux2",
+        kind="dit",
+        name="FLUX.2 Klein Base 4B · BF16",
+        dtype="bf16",
+        size=7751105712,
+        sha256="9c5fed22b76baea749d88fc2abe3ad53245e7b21a0d353a762665eea00043b92",
+        sources=[
+            RecommendedSource(
+                provider="huggingface",
+                repo_id="black-forest-labs/FLUX.2-klein-base-4B",
+                filename="flux-2-klein-base-4b.safetensors",
+                revision="a3b4f4849157f664bdbc776fd7453c2783562f4d",
+                url="https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B/blob/a3b4f4849157f664bdbc776fd7453c2783562f4d/flux-2-klein-base-4b.safetensors",
+            )
+        ],
+    ),
+    RecommendedModel(
+        id="flux2-klein-base-9b",
+        family="flux2",
+        kind="dit",
+        name="FLUX.2 Klein Base 9B · BF16",
+        dtype="bf16",
+        size=18157185168,
+        sha256="4a54fad7f5f741b99eee217198daac20b8d8e515e2a1f5b064fd51cf074f95bd",
+        sources=[
+            RecommendedSource(
+                provider="huggingface",
+                repo_id="black-forest-labs/FLUX.2-klein-base-9B",
+                filename="flux-2-klein-base-9b.safetensors",
+                revision="32773329fbe7e81a90ef971740e8ba4b0364ecf3",
+                url="https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9B/blob/32773329fbe7e81a90ef971740e8ba4b0364ecf3/flux-2-klein-base-9b.safetensors",
+            )
+        ],
+    ),
+    RecommendedModel(
+        id="flux2-qwen3-4b",
+        family="flux2",
+        kind="text_encoder",
+        name="Qwen3 4B · Klein 4B 文本编码器",
+        dtype="bf16",
+        size=8044982048,
+        sha256="6c671498573ac2f7a5501502ccce8d2b08ea6ca2f661c458e708f36b36edfc5a",
+        sources=[
+            RecommendedSource(
+                provider="huggingface",
+                repo_id="Comfy-Org/flux2-klein-4B",
+                filename="split_files/text_encoders/qwen_3_4b.safetensors",
+                revision="5f526678002e43af5551dadb73ce2e8c91b43afe",
+                url="https://huggingface.co/Comfy-Org/flux2-klein-4B/blob/5f526678002e43af5551dadb73ce2e8c91b43afe/split_files/text_encoders/qwen_3_4b.safetensors",
+            )
+        ],
+    ),
+    RecommendedModel(
+        id="flux2-qwen3-8b",
+        family="flux2",
+        kind="text_encoder",
+        name="Qwen3 8B · Klein 9B 文本编码器",
+        dtype="bf16",
+        size=16381517176,
+        sha256="f0ff9239d56269ca1d05e5f86da6a79fac111af464955681f11c7ab0ec5ef6c1",
+        sources=[
+            RecommendedSource(
+                provider="huggingface",
+                repo_id="Comfy-Org/flux2-klein-9B",
+                filename="split_files/text_encoders/qwen_3_8b.safetensors",
+                revision="3f62d9d8ae1fec33c6e91453d5c712855b096b55",
+                url="https://huggingface.co/Comfy-Org/flux2-klein-9B/blob/3f62d9d8ae1fec33c6e91453d5c712855b096b55/split_files/text_encoders/qwen_3_8b.safetensors",
+            )
+        ],
+    ),
+    RecommendedModel(
+        id="flux2-vae",
+        family="flux2",
+        kind="vae",
+        name="FLUX.2 VAE · Klein 4B / 9B 共用",
+        dtype="fp32",
+        size=336211292,
+        sha256="868fe7b343cc8f3a19dbcfcafbc3d5f888802be3f89bd81b65b3621a066ce8f3",
+        sources=[
+            RecommendedSource(
+                provider="huggingface",
+                repo_id="Comfy-Org/flux2-klein-4B",
+                filename="split_files/vae/flux2-vae.safetensors",
+                revision="5f526678002e43af5551dadb73ce2e8c91b43afe",
+                url="https://huggingface.co/Comfy-Org/flux2-klein-4B/blob/5f526678002e43af5551dadb73ce2e8c91b43afe/split_files/vae/flux2-vae.safetensors",
+            )
+        ],
+    ),
     *[
         RecommendedModel(
             id=f"krea2-turbo-{dtype}",

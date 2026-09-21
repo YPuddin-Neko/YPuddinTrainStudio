@@ -11,10 +11,9 @@ local safetensors assets only. No weight or tokenizer download is triggered.
 
 The original BFL Klein transformer and shared FLUX.2 VAE single-file formats and local Diffusers
 component directories are accepted. A single transformer requires explicit
-text-encoder, VAE and tokenizer assets. Text encoders must be local HF
-directories; quantized text or transformer checkpoints are rejected. Klein base
+text-encoder and VAE paths. Qwen3-4B and Qwen3-8B accept BF16/FP16 single files or local HF directories; the exact Klein tokenizer and model geometry are bundled for offline single-file use. Quantized text or transformer checkpoints are rejected. Klein base
 and distilled weights have identical geometry: automatic selection requires an HF
-`model_index.json` declaring `is_distilled=false`. Otherwise the user must select
+`model_index.json` declaring `is_distilled=false`, or the verified single-file download companion `.ypuddin.json`. Otherwise the user must select
 `model.flux2_variant`; a declaration of distilled weights is always rejected.
 Legacy dev settings and dev transformer checkpoints are explicitly rejected before
 any transformer payload or text encoder is loaded. They are never reinterpreted as

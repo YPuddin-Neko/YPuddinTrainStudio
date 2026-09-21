@@ -553,10 +553,13 @@ def _check_model_admission(path: Path, family: str, kind: str, c: ServiceContext
 
     if reason := training_rejection({}, family):
         raise ApiError(reason, code="model.unsupported", status=422)
-    if family == "flux2" and kind == "text_encoder" and not path.is_dir():
-        raise ApiError(
-            "Klein 文本编码器需要完整本地 HF 目录，不支持单独权重文件。", code="model.component", status=422
-        )
+    if family == "flux2" and kind == "text_encoder" and path.is_file():
+        from ypuddin.models.flux2.single_text import text_config
+
+        try:
+            text_config(path)
+        except (ValueError, OSError) as error:
+            raise ApiError(str(error), code="model.component", status=422) from error
     if family == "flux2" and not (path.is_dir() or path.suffix.lower() == ".safetensors"):
         raise ApiError(
             "Klein 组件仅支持 safetensors 权重或完整本地 HF 目录。", code="model.component", status=422

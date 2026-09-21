@@ -110,7 +110,7 @@ class Flux2Family(ModelFamily):
             (
                 "text_encoder_path",
                 "文本编码器",
-                "完整模型目录可留空；单独 DiT 须选择 Qwen3 本地 HF 目录：Klein 4B 使用 Qwen3-4B，Klein 9B 使用 Qwen3-8B",
+                "完整模型目录可留空；单独 DiT 可选择 Qwen3 单文件或本地 HF 目录：Klein 4B 使用 Qwen3-4B，Klein 9B 使用 Qwen3-8B",
             ),
             (
                 "vae_path",
@@ -124,17 +124,19 @@ class Flux2Family(ModelFamily):
             ),
         ),
         optional_weights=("text_encoder_path", "vae_path", "tokenizer_path"),
-        directory_only_weights=("text_encoder_path",),
+        directory_only_weights=(),
     )
 
     @staticmethod
     def _paths(cfg):
         root = Path(cfg.dit_path or ".").expanduser()
+        from .single_text import default_tokenizer
+
         text = component(root, "text_encoder", cfg.text_encoder_path)
         tokenizer = (
             Path(cfg.tokenizer_path).expanduser()
             if cfg.tokenizer_path
-            else (root / "tokenizer" if (root / "tokenizer").is_dir() else text)
+            else (root / "tokenizer" if (root / "tokenizer").is_dir() else default_tokenizer(text))
         )
         return root, component(root, "transformer"), text, component(root, "vae", cfg.vae_path), tokenizer
 
@@ -155,7 +157,10 @@ class Flux2Family(ModelFamily):
             _, _, text, vae, tokenizer = self._paths(cfg)
             for path in (text, vae):
                 shapes(path)
-            if not (text / "config.json").is_file() or not (tokenizer / "tokenizer_config.json").is_file():
+            from .single_text import text_config
+
+            text_config(text)
+            if not (tokenizer / "tokenizer_config.json").is_file():
                 problems.append("FLUX.2 text encoder/tokenizer local directory is incomplete")
         except (OSError, ValueError, KeyError, TypeError, SafetensorError) as error:
             problems.append(str(error))
@@ -290,7 +295,9 @@ class Flux2Family(ModelFamily):
             "attn-only": TargetPreset(
                 "attn-only", attn, description="训练注意力投影；单流模块的投影同时包含融合的前馈部分。"
             ),
-            "attn-mlp": TargetPreset("attn-mlp", attn + mlp, description="训练双流和单流模块的注意力及前馈层。"),
+            "attn-mlp": TargetPreset(
+                "attn-mlp", attn + mlp, description="训练双流和单流模块的注意力及前馈层。"
+            ),
         }
 
     def memory_layout(self, loaded):

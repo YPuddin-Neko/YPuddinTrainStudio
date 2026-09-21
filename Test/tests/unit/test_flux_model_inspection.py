@@ -2,7 +2,6 @@
 
 import json
 import math
-from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -255,7 +254,7 @@ def test_qwen_and_mistral_need_config_to_resolve_shared_shapes(
         and result["kind"] == "text_encoder"
     )
     with safe_open(str(path), framework="pt", device="cpu") as weights:
-        with pytest.raises(ValueError, match="完整本地 HF 目录"):
+        with pytest.raises(ValueError, match="Qwen3"):
             check_component(weights, "flux2", "text_encoder")
 
 
@@ -410,22 +409,44 @@ def test_flux2_declared_mistral3_cannot_hide_decoder_only_config(tmp_path):
         inspect_model(root)
 
 
-def test_flux2_download_rejected_before_network_or_registration(tmp_path):
-    app = create_app(tmp_path / "studio", frontend_dist=tmp_path / "missing")
-    with TestClient(app) as client:
-        app.state.model_downloads.opener = SimpleNamespace(
-            open=lambda *a, **k: pytest.fail("incomplete TE must not download")
+def test_flux2_single_text_download_request_is_admitted_but_shards_are_not():
+    from ypuddin.server.model_downloads import ModelDownloadRequest
+
+    request = ModelDownloadRequest(
+        family="flux2", kind="text_encoder", repo_id="example/model", filename="qwen_3_4b.safetensors"
+    )
+    assert request.kind == "text_encoder"
+    with pytest.raises(ValueError, match="shard"):
+        ModelDownloadRequest(
+            family="flux2",
+            kind="text_encoder",
+            repo_id="example/model",
+            filename="model-00001-of-00002.safetensors",
         )
-        response = client.post(
-            "/api/models/downloads",
-            json={
-                "family": "flux2",
-                "kind": "text_encoder",
-                "repo_id": "example/model",
-                "filename": "model.safetensors",
-            },
+
+
+@pytest.mark.parametrize("hidden,intermediate,variant", [(2560, 9728, "4b"), (4096, 12288, "8b")])
+def test_single_qwen3_geometry_and_registry_defaults(tmp_path, hidden, intermediate, variant):
+    from ypuddin.models.flux2.single_text import default_tokenizer, text_config
+    from ypuddin.server.family_config import _default_model_paths
+
+    root = tmp_path / "studio"
+    root.mkdir()
+    shapes = decoder_shapes(hidden, 151936)
+    shapes["model.layers.0.mlp.gate_proj.weight"] = [intermediate, hidden]
+    shapes.update({f"model.layers.{i}.self_attn.q_norm.weight": [128] for i in range(36)})
+    path = sparse_headers(root / f"qwen_3_{variant}.safetensors", shapes)
+    assert text_config(path)["hidden_size"] == hidden
+    assert (default_tokenizer(path) / "tokenizer_config.json").is_file()
+    with safe_open(str(path), framework="pt") as weights:
+        check_component(weights, "flux2", "text_encoder")
+    with TestClient(create_app(root)) as client:
+        result = client.post(
+            "/api/models",
+            json={"family": "flux2", "kind": "text_encoder", "path": str(path), "is_default": True},
         )
-        assert response.status_code == 422, response.text
-        assert "complete local HF directory" in response.text
-        assert client.get("/api/models/downloads").json() == []
-        assert client.get("/api/models").json() == []
+        assert result.status_code == 200, result.text
+        assert _default_model_paths(client.app.state.ctx, "flux2")["text_encoder_path"] == str(path)
+        families = client.get("/api/families").json()
+        entry = next(x for x in families if x["name"] == "flux2")
+        assert next(x for x in entry["weights"] if x["kind"] == "text_encoder")["downloadable"]

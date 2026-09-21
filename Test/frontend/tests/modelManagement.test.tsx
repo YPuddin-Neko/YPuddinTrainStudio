@@ -219,3 +219,26 @@ describe('real model management UI contracts',()=>{
     choose('模型系列','Krea 2');await screen.findByText('krea-history.safetensors');expect(screen.getByRole('textbox',{name:'搜索模型或下载'})).toHaveValue('');expect(screen.queryByText('history-1.safetensors')).not.toBeInTheDocument();
   });
 });
+
+it('shows both Klein base sizes and submits the 9B single-file catalog entry', async()=>{
+  const catalog=[
+    ['flux2-klein-base-4b','dit','FLUX.2 Klein Base 4B · BF16'],
+    ['flux2-klein-base-9b','dit','FLUX.2 Klein Base 9B · BF16'],
+    ['flux2-qwen3-4b','text_encoder','Qwen3 4B · Klein 4B 文本编码器'],
+    ['flux2-qwen3-8b','text_encoder','Qwen3 8B · Klein 9B 文本编码器'],
+    ['flux2-vae','vae','FLUX.2 VAE · Klein 4B / 9B 共用'],
+  ].map(([id,kind,name])=>({id,kind,name,family:'flux2',dtype:'bf16',size:1024,recommended:true,purpose:'training',model_id:null,available_path:null,is_default:false,sources:[{provider:'huggingface',url:'https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9B',repo_id:'official/klein',filename:id+'.safetensors',revision:'pinned'}]}));
+  const request=vi.fn();
+  server.use(
+    http.get('/api/families',()=>HttpResponse.json([{name:'flux2',label:'FLUX.2 Klein 4B / 9B',weights:['dit','text_encoder','vae'].map(kind=>({field:kind==='dit'?'dit_path':kind+'_path',kind,required:true,downloadable:true}))}])),
+    http.get('/api/models/recommendations',()=>HttpResponse.json(catalog)),
+    http.post('/api/models/recommendations/:id/download',async({params,request:incoming})=>{request(params.id,await incoming.json());return HttpResponse.json(task({family:'flux2',kind:'dit'}),{status:202});}),
+  );
+  mount(<Models/>,'/models?family=flux2&view=prepare');
+  expect(await screen.findByText('FLUX.2 Klein Base 4B · BF16')).toBeVisible();
+  const title=await screen.findByText('FLUX.2 Klein Base 9B · BF16');
+  expect(await screen.findByText('Qwen3 8B · Klein 9B 文本编码器')).toBeVisible();
+  expect(screen.getByText('FLUX.2 VAE · Klein 4B / 9B 共用')).toBeVisible();
+  fireEvent.click(within(title.closest('.model-catalog-row') as HTMLElement).getByRole('button',{name:'下载'}));
+  await waitFor(()=>expect(request).toHaveBeenCalledWith('flux2-klein-base-9b',{provider:'huggingface',is_default:true}));
+});

@@ -57,8 +57,10 @@ def _default_model_paths(c: Any, family: str) -> dict[str, str]:
                 if family == "flux2":
                     from .model_inspection import inspect_model, training_rejection
 
-                    if kind == "text_encoder" and not path.is_dir():
-                        continue
+                    if kind == "text_encoder" and path.is_file():
+                        from ypuddin.models.flux2.single_text import text_config
+
+                        text_config(path)
                     if training_rejection(inspect_model(path, allowed=c.is_allowed), family):
                         continue  # Retain legacy dev rows without selecting them for a new Klein recipe.
                 paths[field] = str(path)

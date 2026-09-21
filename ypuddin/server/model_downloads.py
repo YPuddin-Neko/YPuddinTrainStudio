@@ -68,10 +68,6 @@ class ModelDownloadRequest(BaseModel):
             raise ValueError(
                 "Krea 2 Raw/Turbo have identical geometry; confirm the variant before downloading"
             )
-        if self.family == "flux2" and self.kind == "text_encoder":
-            raise ValueError(
-                "FLUX.2 text encoders require a complete local HF directory with tokenizer assets; register that directory instead of downloading a single weight file"
-            )
         resolve_source(self)
         return self
 
@@ -209,10 +205,6 @@ def check_component(weights: Any, family: str, kind: str) -> None:
 
     if reason := training_rejection({}, family):
         raise ValueError(reason)
-    if family == "flux2" and kind in ("text_encoder", "text_encoder_2"):
-        raise ValueError(
-            "FLUX.2 文本编码器需要包含配置、权重和 tokenizer/processor 的完整本地 HF 目录，不支持单文件下载。"
-        )
     names = {}
     for key in weights.keys():
         clean = key
@@ -222,6 +214,10 @@ def check_component(weights: Any, family: str, kind: str) -> None:
                 break
         names[clean] = key
     shapes = {key: weights.get_slice(original).get_shape() for key, original in names.items()}
+    if family == "flux2" and kind in {"text_encoder", "text_encoder_2"}:
+        from ypuddin.models.flux2.single_text import infer_text_config
+
+        infer_text_config(shapes)
     sdxl_kind = sdxl_component(shapes)
     flux = flux_component(shapes)
     if flux and (reason := training_rejection(flux, family)):
@@ -540,9 +536,13 @@ class ModelDownloads:
                             measured = (done - last_bytes) / max(current - last, 0.001)
                             rate = measured if not rate else 0.3 * measured + 0.7 * rate
                             remaining = self.tasks[id_].get("total_bytes")
-                            self._update(id_, downloaded_bytes=done, bytes_per_second=rate,
-                                         eta_seconds=max(0, remaining - done) / rate if remaining else None,
-                                         progress_at=now())
+                            self._update(
+                                id_,
+                                downloaded_bytes=done,
+                                bytes_per_second=rate,
+                                eta_seconds=max(0, remaining - done) / rate if remaining else None,
+                                progress_at=now(),
+                            )
                             last, last_bytes = current, done
                     if not received or total is not None and received != total:
                         raise ValueError(f"incomplete download: received {received} of {total} bytes")
@@ -562,6 +562,10 @@ class ModelDownloads:
                     if not keys or all(k.startswith(("lora_", "lycoris_")) for k in keys):
                         raise ValueError("expected a base model component, not empty or adapter weights")
                     check_component(weights, row["family"], row["kind"])
+            if verified and row.get("recommendation_id") in {"flux2-klein-base-4b", "flux2-klein-base-9b"}:
+                partial.with_name(partial.name + ".ypuddin.json").write_text(
+                    json.dumps({"_class_name": "Flux2KleinPipeline", "is_distilled": False}), encoding="utf-8"
+                )
             with self.lock:
                 if event.is_set() or self.closed:
                     raise _Cancelled()

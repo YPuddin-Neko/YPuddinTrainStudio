@@ -230,7 +230,10 @@ def flux_component(shapes: dict[str, list[int]], config: dict | None = None) -> 
     ):
         if types & {"qwen3_vl", "qwen3_vl_text"}:
             return None  # Preserve the explicit Qwen3-VL/Krea2 classification below.
-        if "qwen3" in types:
+        native_qwen3 = shapes.get("model.layers.0.mlp.gate_proj.weight") == (
+            [9728, 2560] if embed[1] == 2560 else [12288, 4096]
+        ) and all(f"model.layers.{i}.self_attn.q_norm.weight" in shapes for i in range(36))
+        if "qwen3" in types or native_qwen3:
             return result(
                 "flux2",
                 "text_encoder",

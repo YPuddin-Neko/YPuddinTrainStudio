@@ -730,3 +730,40 @@ def test_full_finetune_native_components_and_reload(tiny_root, tmp_path, backbon
     assert resumed.run() == "finished"
     for k, value in resumed.adapters.training_state_dict().items():
         torch.testing.assert_close(value, after[k], rtol=0, atol=0)
+
+
+def test_single_file_text_matches_directory_conditioning_and_rejects_missing_keys(tiny_root, tmp_path):
+    from ypuddin.models.flux2.text import Flux2Text
+
+    folder = tmp_path / "single"
+    folder.mkdir()
+    shutil.copyfile(tiny_root / "text_encoder/config.json", folder / "config.json")
+    path = folder / "qwen.safetensors"
+    shutil.copyfile(tiny_root / "text_encoder/model.safetensors", path)
+    reference = Flux2Text(
+        tiny_root / "text_encoder", tiny_root / "tokenizer", variant="klein-base-4b", dtype=torch.float32
+    )
+    single = Flux2Text(path, tiny_root / "tokenizer", variant="klein-base-4b", dtype=torch.float32)
+    torch.testing.assert_close(
+        reference.encode(["a red cat"], "cpu")["embeds"],
+        single.encode(["a red cat"], "cpu")["embeds"],
+        rtol=0,
+        atol=0,
+    )
+    state = load_file(str(path))
+    state.pop("model.layers.0.self_attn.q_proj.weight")
+    save_file(state, str(path))
+    broken = Flux2Text(path, tiny_root / "tokenizer", variant="klein-base-4b", dtype=torch.float32)
+    with pytest.raises(RuntimeError, match="Missing key"):
+        broken._ensure()
+
+
+def test_single_file_base_variant_uses_file_specific_proof(tmp_path):
+    path = tmp_path / "base.safetensors"
+    path.touch()
+    config = {"joint_attention_dim": 7680, "guidance_embeds": False}
+    (tmp_path / "model_index.json").write_text(json.dumps({"is_distilled": False}))
+    with pytest.raises(ValueError, match="explicitly"):
+        resolve_variant(path, config)
+    path.with_name(path.name + ".ypuddin.json").write_text(json.dumps({"is_distilled": False}))
+    assert resolve_variant(path, config) == "klein-base-4b"

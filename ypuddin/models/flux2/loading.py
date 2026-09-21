@@ -175,7 +175,9 @@ def resolve_variant(root: Path, config: dict, requested: str = "auto") -> str:
     if config.get("in_channels", 128) != 128 or config.get("out_channels") not in (None, 128):
         raise ValueError("FLUX.2 requires 128 patchified latent channels")
     inferred = "klein-base-9b" if config.get("joint_attention_dim") == 12288 else "klein-base-4b"
-    manifest_file = root / "model_index.json"
+    manifest_file = (
+        root / "model_index.json" if root.is_dir() else root.with_name(root.name + ".ypuddin.json")
+    )
     manifest = read_json(manifest_file) if manifest_file.is_file() else {}
     if manifest.get("_class_name") == "Flux2Pipeline":
         raise ValueError(DEV_UNSUPPORTED)
