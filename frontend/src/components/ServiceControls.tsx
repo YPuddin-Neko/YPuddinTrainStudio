@@ -95,7 +95,6 @@ export default function ServiceControls({environmentId, onRestarted, refreshTarg
     <div className="flex flex-wrap items-center gap-2">
       <button type="button" className={secondary ? "settings-input" : "settings-action"} disabled={busy||disabled||!runtime?.can_restart} onClick={()=>void restart(environmentId?{environment_id:environmentId}:{})}>{busy?<Loader2 size={14} className="animate-spin"/>:<RefreshCw size={14}/>} {environmentId?text('重启并切换到此环境','Restart in this environment'):text('重启服务','Restart service')}</button>
       {!environmentId && runtime?.can_restore_original && <button type="button" className="settings-input" disabled={busy||disabled||!runtime.can_restart} onClick={()=>void restart({restore_original_environment:true})}>{text('恢复原环境并重启','Restore original environment')}</button>}
-      {!environmentId && runtime && (runtime.saved_host!==runtime.current_host||runtime.saved_port!==runtime.current_port) && <button type="button" className="settings-input" disabled={busy||disabled||!runtime.can_restart} onClick={()=>void restart({apply_saved_address:true})}>{text(`切换到保存的地址并重启（${runtime.saved_host}:${runtime.saved_port}）`,`Switch to saved address and restart (${runtime.saved_host}:${runtime.saved_port})`)}</button>}
       {refreshTarget ? createPortal(refreshButton, refreshTarget) : refreshButton}
     </div>
     {runtime?.reason&&<p className="settings-note">{reasons[runtime.reason]?text(...reasons[runtime.reason]):text('当前有操作占用服务，请稍后重试。','The service is busy. Try again later.')}</p>}
