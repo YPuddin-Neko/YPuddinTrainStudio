@@ -448,7 +448,7 @@ Anima-relevant docs (`$ROOT/docs/`): `anima_train_network.md` (LoRA guide: args,
 20. TODO/FIXME density: 101 occurrences across core/library/networks (e.g. `train_network.py:71,430,524,1099,1119,1391,1492,1536`; `strategy_base.py:224,379,477,639`).
 
 **Tests**
-21. `tests/` (~3.6k lines) covers offloading utils, optimizer factory, orthogonal networks, mask generator, Lumina strategy/models/utils, FLUX train utils, SAI spec, 2D VAE, inpainting. **Zero tests for Anima** (`grep -rl anima tests/` empty), none for `train_network.py` loop, dataset/bucketing, caching formats, `lora_anima`, LoKr on Anima. CI (`.github/workflows/tests.yml`) is CPU-only pytest on torch 2.4/2.6, python 3.10.
+21. `Test/tests/` (~3.6k lines) covers offloading utils, optimizer factory, orthogonal networks, mask generator, Lumina strategy/models/utils, FLUX train utils, SAI spec, 2D VAE, inpainting. **Zero tests for Anima** (`grep -rl anima Test/tests/` empty), none for `train_network.py` loop, dataset/bucketing, caching formats, `lora_anima`, LoKr on Anima. CI (`.github/workflows/tests.yml`) is CPU-only pytest on torch 2.4/2.6, python 3.10.
 
 ---
 

@@ -1,18 +1,18 @@
 # 最新项目状态：2026-09-13 模型接入
 
-源码版本 0.5.9。新增 SDXL（光辉 v0.1 默认下载、手选权重、ε/v）、FLUX.2 Klein base 4B/9B；FLUX.1/dev 已退出可选与执行范围。详见 [模型支持与验收](../MODEL_FAMILIES_2026-09-13.md)，当前 UI 布局见 [工作区验收](../UI_WORKFLOWS_2026-09-13.md)。
+源码版本 0.5.9。新增 SDXL（光辉 v0.1 默认下载、手选权重、ε/v）、FLUX.2 Klein base 4B/9B；FLUX.1/dev 已退出可选与执行范围。详见 [模型支持与验收](../MODEL_FAMILIES_2026-09-13.md)，当前 UI 布局见 工作区验收（本地验收记录）。
 
 缓存→训练→预览→保存回读已经以缩小的真实组件实测；FLUX LoRA/LoKr 导出做了独立 ComfyUI 数值映射验收。新模型完整权重 GPU、ComfyUI 应用画面、质量/性能尚未验收。FLUX.2 支持 block swap，但尚无逐层文本编码器卸载，不能承诺大 TE 在 16GB 设备可用。以下均为历史快照，不覆盖本节和最新报告。
 
 # 历史项目版本状态：v0.5.5
 
-更新：2026-09-12。本轮完成独立参数预设与差异预览、帮助浮层、JSON 标签全链路、优化器选择与参数说明、LoKr Full 模式选择，以及训练预览/正则生成共用的 ER-SDE 与噪声调度器。详情见 [v0.5.5 报告](../UI_PARAMETERS_V055_2026-09-12.md)、[参数说明](../TRAINING_PARAMETERS.md)、[JSON 标签契约](../JSON_CAPTIONS.md)；机器证据见 [v0.5.5.json](../validation/v0.5.5.json)。
+更新：2026-09-12。本轮完成独立参数预设与差异预览、帮助浮层、JSON 标签全链路、优化器选择与参数说明、LoKr Full 模式选择，以及训练预览/正则生成共用的 ER-SDE 与噪声调度器。详情见 v0.5.5 报告（本地验收记录）、[参数说明](../TRAINING_PARAMETERS.md)、[JSON 标签契约](../JSON_CAPTIONS.md)；机器证据见 v0.5.5.json（本地验收记录）。
 
 前端 331 通过，后端 771 通过 / 3 CUDA 跳过；正式 8876 已升级并保留业务数据。v0.5.3/0.5.4 的项目导航、封面分类、模型族版本和同 step 采样 Loss 继续生效。Windows/NVIDIA、完整权重训练质量与性能、全新机器安装仍未验收，不宣称整个产品已生产就绪。
 
 # 历史项目版本状态：v0.5.2
 
-更新：2026-09-12。当前变更见 [UI_DESIGN_REVIEW_2026-09-12.md](../UI_DESIGN_REVIEW_2026-09-12.md)。官方完整权重、Windows/CUDA 与性能边界没有因页面重做或新增小文件测试而改变；最终全量数量、浏览器及发布包证据由最新报告收口。
+更新：2026-09-12。当前变更见 UI_DESIGN_REVIEW_2026-09-12.md（本地验收记录）。官方完整权重、Windows/CUDA 与性能边界没有因页面重做或新增小文件测试而改变；最终全量数量、浏览器及发布包证据由最新报告收口。
 
 - **访问密钥集中管理**：设置新增第五分区，保存/清除 HF、ModelScope、Danbooru 和 Gelbooru 凭据，只显示已配置状态，不回填已保存账号或密钥。错误与成功消息在对应来源表单内显示；正则任务默认读取同一本机 store，任务配置不写凭据。旧模型接口与完整一次性站点凭据覆盖保持兼容。
 - **官方模型准备**：Anima/Krea 的 DiT、文本编码器与共享 VAE 提供显式双来源映射和大小/SHA-256 验证。推荐下载验证完成后才登记，跨来源同目录互斥，重试保留原校验。本地候选在设为推荐默认前验 SHA，结果按文件状态缓存，VAE 可复用已验证路径；自定义模型仍可登记，但不自动视为同一官方文件。
@@ -23,7 +23,7 @@
 
 # 历史项目版本状态：v0.5.1
 
-以下保留 2026-09-12 的 v0.5.1 快照，[UI_SIMPLIFICATION_2026-09-12.md](../UI_SIMPLIFICATION_2026-09-12.md) 记录当时行为。站点凭据由最新 v0.5.2 集中设置取代；WD14 自动打标和旧环境包管理页面不再是当前功能。
+以下保留 2026-09-12 的 v0.5.1 快照，UI_SIMPLIFICATION_2026-09-12.md（本地验收记录） 记录当时行为。站点凭据由最新 v0.5.2 集中设置取代；WD14 自动打标和旧环境包管理页面不再是当前功能。
 
 - **项目与版本目录**：新项目分别填写显示名称和稳定的项目 ID。ID 允许 1–64 位 ASCII 字母、数字、下划线，拒绝 Windows 保留设备名、大小写重复与已有目录冲突。新布局为 `studio_data/project/<project_id>/v1/`、`v2/`；版本目录内分为 `traindata/<dataset_batch>/`、`reg/<regularization_batch>/`、`samples/<job_id>/`、`output/<job_id>/`、`cache/` 和 `config.json`。显示名称修改不改变项目 ID 或物理目录。版本 API ID 仍独立且全局唯一，v1/v2 由版本编号决定。
 - **旧数据与输出归属**：既有项目、数据和任务不自动搬到新目录；旧任务继续使用已保存路径。默认输出跟随项目版本，自定义输出根继续追加项目、版本和任务层级。新任务采样独立归属版本下的 `samples/<job_id>`；完整训练状态与权重留在该任务输出目录。全局 `studio.db`、`datasets/<dataset_id>.json` 索引记录及 `cache/index.sqlite` 不属于单个版本的模型缓存。自定义缓存根仍按项目 ID 和版本 API ID 隔离；界面/API 返回路径是实际归属依据。
@@ -37,33 +37,33 @@
 
 # 历史项目版本状态：v0.5.0
 
-2026-09-11：补齐版本内数据准备流水线、可视裁剪与可撤销修改、HF/魔搭下载来源和独立令牌设置；原生分辨率保留独立尺寸，通过有界前向分组累积同一逻辑批次梯度，兼容 Mask 与在线 VAE。高级参数的大块空白、百分比控件、监控布局及服务重启后的事件连接已修正。当时验证与硬件边界见 [UI_PIPELINE_2026-09-11.md](../UI_PIPELINE_2026-09-11.md)，算法规则见 [native-resolution.md](../native-resolution.md)。
+2026-09-11：补齐版本内数据准备流水线、可视裁剪与可撤销修改、HF/魔搭下载来源和独立令牌设置；原生分辨率保留独立尺寸，通过有界前向分组累积同一逻辑批次梯度，兼容 Mask 与在线 VAE。高级参数的大块空白、百分比控件、监控布局及服务重启后的事件连接已修正。当时验证与硬件边界见 UI_PIPELINE_2026-09-11.md（本地验收记录），算法规则见 [native-resolution.md](../native-resolution.md)。
 
 # 历史项目版本状态：v0.4.0
 
-2026-09-11：实际参考 AnimaLoraStudio 0.27.0 后统一项目/训练页布局，加入真实版本数据副本、空白/仅参数版本、参数比较、归档和目录展示。旧项目关联兼容 v1，旧文件与任务快照不移动；数据、缓存、任务、采样和权重按明确版本归属管理。设置为四类宽抽屉，产物回到项目结果；顶部硬件四组读数和 GPU 四项读数均使用真实接口，开发 mock 改为显式 opt-in。最终数量与浏览器/打包证据见 [UI_VERSIONS_2026-09-11.md](../UI_VERSIONS_2026-09-11.md)，尚未补入前不沿用历史测试数。高级 TOML 外部路径与可编辑版本数据的边界同见该报告。
+2026-09-11：实际参考 AnimaLoraStudio 0.27.0 后统一项目/训练页布局，加入真实版本数据副本、空白/仅参数版本、参数比较、归档和目录展示。旧项目关联兼容 v1，旧文件与任务快照不移动；数据、缓存、任务、采样和权重按明确版本归属管理。设置为四类宽抽屉，产物回到项目结果；顶部硬件四组读数和 GPU 四项读数均使用真实接口，开发 mock 改为显式 opt-in。最终数量与浏览器/打包证据见 UI_VERSIONS_2026-09-11.md（本地验收记录），尚未补入前不沿用历史测试数。高级 TOML 外部路径与可编辑版本数据的边界同见该报告。
 
 # 历史工作区状态：v0.3.0
 
-2026-09-11 新增紧凑配置、真实分桶可视化、手绘训练遮罩与环境依赖管理。当时模型和训练产物归入设置，产物入口已在 v0.4 回到项目结果。历史使用/验证边界见 [UI_REDESIGN_2026-09-11.md](../UI_REDESIGN_2026-09-11.md)。下面保留上一轮工作流和训练核心记录。
+2026-09-11 新增紧凑配置、真实分桶可视化、手绘训练遮罩与环境依赖管理。当时模型和训练产物归入设置，产物入口已在 v0.4 回到项目结果。历史使用/验证边界见 UI_REDESIGN_2026-09-11.md（本地验收记录）。下面保留上一轮工作流和训练核心记录。
 
 # 历史工作流状态：v0.2.0
 
-2026-09-11 后续改造已接通浏览器数据上传、项目四步工作区、常用参数/首屏启动、模型组件下载与默认路径、功率采集和内容指纹打包。下方原训练核心记录保持作历史依据，当时 UI 与交付结果见 [UI_WORKFLOW_2026-09-11.md](../UI_WORKFLOW_2026-09-11.md)。Windows NVIDIA 官方完整模型训练仍待实机验收。
+2026-09-11 后续改造已接通浏览器数据上传、项目四步工作区、常用参数/首屏启动、模型组件下载与默认路径、功率采集和内容指纹打包。下方原训练核心记录保持作历史依据，当时 UI 与交付结果见 UI_WORKFLOW_2026-09-11.md（本地验收记录）。Windows NVIDIA 官方完整模型训练仍待实机验收。
 
 # 实现状态（对照 00-architecture.md 里程碑）
 
-更新：2026-09-12。下表区分训练核心代码接通、自动化回归与完整模型硬件验收；历史核心修复证据见[修复报告](../FIX_REPORT_2026-09-11.md)，本轮产品变更见 [v0.5.2 报告](../UI_DESIGN_REVIEW_2026-09-12.md)。设计文档中的目标不能替代本表的验证边界。
+更新：2026-09-12。下表区分训练核心代码接通、自动化回归与完整模型硬件验收；历史核心修复证据见修复报告（本地验收记录），本轮产品变更见 v0.5.2 报告（本地验收记录）。设计文档中的目标不能替代本表的验证边界。
 
 | 里程碑 | 状态 | 证据 |
 |---|---|---|
-| M0 骨架 / 配置 / 事件 / toy 族 / 最小循环 | 已实现；状态格式升级为 v2 | `tests/unit/test_config.py`、`tests/e2e/test_toy_training.py`；精确续训仅能在测试覆盖的配置与设备条件下作出结论 |
-| M1 适配器引擎（LoRA / LoKr / LoHa / Full / DoRA）+ 存取转换 + 工具 | 已实现注入、导出、转换、merge / extract / resize；实际 ComfyUI 加载待验收；LyCORIS 加载器交叉测试已通过 | `tests/unit/test_adapters.py`、`tests/unit/test_tools.py`：factorization、scale/scalar、bypass、冻结层和存取往返 |
-| M2 数据流水线 + 验证集 + Plan | 已实现；本轮修复切分、分桶、数据与资产指纹、mask 缓存和预检错误 | `tests/unit/test_data.py`、`test_plan.py`、`test_fingerprints.py`；Plan 与训练共享数据布局计算 |
-| M3 Anima 族 | 缩小版真实组件的 CPU 训练链路已有测试；官方完整权重的 NVIDIA 训练待验收 | `ypuddin/models/anima/`、`tests/unit/test_anima_vendor.py`、`test_anima_family.py`、`tests/e2e/test_anima_pipeline.py`；包含 online/cached 文本、验证、采样、导出与键转换 |
-| M3b Krea 2 族 | 缩小版真实组件的 CPU 训练链路已有测试；官方完整权重的 NVIDIA 训练待验收 | `ypuddin/models/krea2/`、`tests/unit/test_krea2_family.py`、`tests/e2e/test_krea2_pipeline.py`；包含 Qwen3-VL 文本管线、raw / ComfyUI 前缀 / fp8_scaled 加载与转换 |
-| M4 内存与执行后端 | CPU 分阶段加载、Block Swap、激活检查点、fp8 冻结层等已有实现与局部回归；CUDA 性能与完整模型峰值待实测 | `tests/unit/test_block_swap.py`、`test_optim.py`；MPS 当前强制 FP32，按统一内存保守估算，不能套用 CUDA 显存节省比例 |
-| M5 服务 API + 队列 + SSE + Web | 主要工作流已接通，包含动态配置、TOML、任务进度、版本产物/正则、集中密钥及已校验模型推荐；完整权重的浏览器验收待完成 | `tests/e2e/test_service.py`、`test_model_recommendations.py` 与 `frontend/` 测试；真实服务和小模型回归不等于正式模型 GPU 验收 |
+| M0 骨架 / 配置 / 事件 / toy 族 / 最小循环 | 已实现；状态格式升级为 v2 | `Test/tests/unit/test_config.py`、`Test/tests/e2e/test_toy_training.py`；精确续训仅能在测试覆盖的配置与设备条件下作出结论 |
+| M1 适配器引擎（LoRA / LoKr / LoHa / Full / DoRA）+ 存取转换 + 工具 | 已实现注入、导出、转换、merge / extract / resize；实际 ComfyUI 加载待验收；LyCORIS 加载器交叉测试已通过 | `Test/tests/unit/test_adapters.py`、`Test/tests/unit/test_tools.py`：factorization、scale/scalar、bypass、冻结层和存取往返 |
+| M2 数据流水线 + 验证集 + Plan | 已实现；本轮修复切分、分桶、数据与资产指纹、mask 缓存和预检错误 | `Test/tests/unit/test_data.py`、`test_plan.py`、`test_fingerprints.py`；Plan 与训练共享数据布局计算 |
+| M3 Anima 族 | 缩小版真实组件的 CPU 训练链路已有测试；官方完整权重的 NVIDIA 训练待验收 | `ypuddin/models/anima/`、`Test/tests/unit/test_anima_vendor.py`、`test_anima_family.py`、`Test/tests/e2e/test_anima_pipeline.py`；包含 online/cached 文本、验证、采样、导出与键转换 |
+| M3b Krea 2 族 | 缩小版真实组件的 CPU 训练链路已有测试；官方完整权重的 NVIDIA 训练待验收 | `ypuddin/models/krea2/`、`Test/tests/unit/test_krea2_family.py`、`Test/tests/e2e/test_krea2_pipeline.py`；包含 Qwen3-VL 文本管线、raw / ComfyUI 前缀 / fp8_scaled 加载与转换 |
+| M4 内存与执行后端 | CPU 分阶段加载、Block Swap、激活检查点、fp8 冻结层等已有实现与局部回归；CUDA 性能与完整模型峰值待实测 | `Test/tests/unit/test_block_swap.py`、`test_optim.py`；MPS 当前强制 FP32，按统一内存保守估算，不能套用 CUDA 显存节省比例 |
+| M5 服务 API + 队列 + SSE + Web | 主要工作流已接通，包含动态配置、TOML、任务进度、版本产物/正则、集中密钥及已校验模型推荐；完整权重的浏览器验收待完成 | `Test/tests/e2e/test_service.py`、`test_model_recommendations.py` 与 `frontend/` 测试；真实服务和小模型回归不等于正式模型 GPU 验收 |
 | M6 文档 / 预设 / 基准对比 | 部署说明与内置预设已有；基准未完成 | 本目录、`docs/deploy.md`、`docs/reference/`；无已验证的最低显存或优于参考项目的速度结论 |
 
 ## 当前实现契约
@@ -79,7 +79,7 @@
 9. **Web 配置与产物**：配置表单从后端 JSON Schema 获取字段和条件显示规则，模型族能力参与选项展示；配置支持 TOML 导入导出（API 也支持 JSON）。任务页接入 step、phase、checkpoint 等 SSE 更新，提供产物下载与按完整断点续训。EMA 启用时另存 EMA 推理权重；它与普通权重、完整训练断点用途不同。
 10. **采样与验证**：固定验证集、时间步和噪声种子用于可比较的验证损失；cached 文本支持有界、确定性的 caption 变体，并预编码采样提示词。采样阶段临时使用 VAE，并在退出时恢复训练资源和模式；需要在完整模型设备上继续验证数值和图像质量。
 11. **适配器与格式工具**：LoKr 的 scale/scalar、factorization 和 bypass 路径有回归；`extract` / `merge` 处理模型前缀，`convert` 提供 kohya/ComfyUI 键转换。格式与数值单元测试不能代替实际 ComfyUI 加载验收。
-12. **可重复自检入口**：`ypuddin smoke` 使用真实 trainer 执行短训练、预览、保存和回读，写出检查结果、耗时与可用的设备内存指标。toy 和缩小版组件降低了回归成本；历史通过情况见[核心修复报告](../FIX_REPORT_2026-09-11.md)，当前结果以最新发布验证记录为准。
+12. **可重复自检入口**：`ypuddin smoke` 使用真实 trainer 执行短训练、预览、保存和回读，写出检查结果、耗时与可用的设备内存指标。toy 和缩小版组件降低了回归成本；历史通过情况见核心修复报告（本地验收记录），当前结果以最新发布验证记录为准。
 
 ## 待办（按优先级）
 

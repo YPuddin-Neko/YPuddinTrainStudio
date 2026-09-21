@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint . --max-warnings 0",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "lint": "node ../Test/frontend/lint.mjs",
+    "test": "vitest run --config ../Test/frontend/vitest.config.ts",
+    "test:watch": "vitest --config ../Test/frontend/vitest.config.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.28.4",
@@ -49,7 +49,7 @@
   },
   "msw": {
     "workerDirectory": [
-      "public"
+      "../Test/frontend/public"
     ]
   }
 }

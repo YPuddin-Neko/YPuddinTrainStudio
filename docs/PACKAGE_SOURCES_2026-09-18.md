@@ -26,6 +26,6 @@
 - 再次受控重启仍使用新环境；随后切回原解释器，实际确认恢复 PyTorch `2.11.0+cu128` / CUDA `12.8`，GPU 可用。
 - Windows CPU 启动器再次启动和受控重启也通过。此前 CUDA、CPU 冷启动及两种设备的 Toy 冒烟结果继续保留。
 
-证据摘要见 [Windows 安装切换验证记录](validation/WINDOWS_RUNTIME_SWITCH_2026-09-18.json)。完整原始报告归档在本机 `remote-testing/windows-launcher-20260918/completed-reports.tar.gz`，以及 Windows 的 `studio_data/remote-tests/launcher-20260918` 独立目录。
+证据摘要见 Windows 安装切换验证记录（本地验收记录）。完整原始报告归档在本机 `remote-testing/windows-launcher-20260918/completed-reports.tar.gz`，以及 Windows 的 `studio_data/remote-Test/tests/launcher-20260918` 独立目录。
 
 测试完成后已停止自建服务，保留日志和环境。原 Windows 仓库、用户模型和训练数据未修改。本项结论只覆盖单卡 Windows 环境安装、切换与 Toy 冒烟，不替代正式模型训练或海光／多卡验收。

@@ -16,7 +16,8 @@
 ## 2. 一键启动（推荐）
 
 ```bash
-git clone <本仓库> YPuddinTrainStudio && cd YPuddinTrainStudio/xiangmuyuanma
+git clone https://github.com/YPuddin-Neko/YPuddinTrainStudio.git
+cd YPuddinTrainStudio
 studio-windows-cuda.bat      # Windows + NVIDIA CUDA，x86_64（双击或在 PowerShell 里 .\studio-windows-cuda.bat）
 studio-cpu.bat               # Windows 仅 CPU，x86_64 / arm64
 ./studio-linux-cuda.sh       # Linux + NVIDIA CUDA，x86_64
@@ -121,7 +122,7 @@ xiangmuyuanma/
 - **备份**包括 `studio_data/`、自定义输出目录以及外部原始数据集的图片/caption/mask；模型权重也应另行保存或记录可重获来源。缓存可重建，完整训练断点不能用推理权重代替。
 - 模型权重放哪都行，在界面「模型权重」页注册或在配置里填绝对路径；建议一个固定目录（如 `/models`），并在「系统设置」里把 `paths.models_dir` 指向它。
 - 数据集是一个图片目录（递归），每张图旁边同名 `.txt` 是 caption；`.mask.png` 或 alpha 通道可做遮罩 loss。v0.4 的上传与服务器目录导入保存为当前版本的独立副本，caption/Mask 编辑修改该副本。旧迁移数据或高级 TOML 直接引用的外部目录仍使用原文件，不会仅因升级自动复制。
-- 旧项目迁移成兼容 v1 时不移动文件：原 `projects/<pid>/config.json` 继续作为该版本草稿，历史任务读取原运行/缓存/断点路径；新任务采用版本目录。新项目采用手填 ID 和上述 vN 目录；既有 projects 布局不移动。详见 [v0.5.1 目录说明](UI_SIMPLIFICATION_2026-09-12.md)。
+- 旧项目迁移成兼容 v1 时不移动文件：原 `projects/<pid>/config.json` 继续作为该版本草稿，历史任务读取原运行/缓存/断点路径；新任务采用版本目录。新项目采用手填 ID 和上述 vN 目录；既有 projects 布局不移动。详见 v0.5.1 目录说明（本地验收记录）。
 
 ### 路径设置何时生效
 
@@ -190,7 +191,7 @@ CUDA 分块换出任务还会检查当前空闲显存：能够放下所选文件
 # 显存紧张：追加 --set memory.blocks_to_swap=10 --set dataset.text_encoding=cached --resolution 512
 ```
 
-它会用真实训练器跑 3 步、出一张 512 预览、保存并回读适配器，最后打印每项检查的通过情况、耗时、可用的设备内存指标，并写 `outputs/smoke/smoke-report.json`（失败时含完整 traceback）。这是本机配置的短程验收入口：通过表示这组加载、训练、预览与保存流程能够完成，长时间训练稳定性、其他分辨率和图像质量仍需分别验证。历史自动化修复记录见 [2026-09-11 修复报告](FIX_REPORT_2026-09-11.md)。
+它会用真实训练器跑 3 步、出一张 512 预览、保存并回读适配器，最后打印每项检查的通过情况、耗时、可用的设备内存指标，并写 `outputs/smoke/smoke-report.json`（失败时含完整 traceback）。这是本机配置的短程验收入口：通过表示这组加载、训练、预览与保存流程能够完成，长时间训练稳定性、其他分辨率和图像质量仍需分别验证。历史自动化修复记录见 2026-09-11 修复报告（本地验收记录）。
 
 MPS 可先用 `--device mps --set model.dtype=fp32 --set loop.mixed_precision=no` 自检。默认配置中的 bf16 在 MPS 上会告警并按 FP32 执行；这条路径仍需完整模型的耗时、内存和图像质量验证。
 
@@ -254,7 +255,7 @@ git pull
 <启动入口>          # 依赖签名（pyproject.toml）或前端源码变了会自动重装 / 重建
 ```
 
-更新前备份服务数据与外部输出目录。v0.4 启动包含事务式版本迁移：补充 `project_versions` 与归属列，把旧项目/数据源/任务关联到兼容 v1，产物沿原任务归属；不搬迁文件或重写任务快照。这是明确的兼容迁移，不是任意版本都适用的通用数据迁移工具；更换版本同时阅读 `HANDOVER.md` 与 [当前报告](UI_PIPELINE_2026-09-11.md)。
+更新前备份服务数据与外部输出目录。v0.4 启动包含事务式版本迁移：补充 `project_versions` 与归属列，把旧项目/数据源/任务关联到兼容 v1，产物沿原任务归属；不搬迁文件或重写任务快照。这是明确的兼容迁移，不是任意版本都适用的通用数据迁移工具；更换版本同时阅读 `HANDOVER.md` 与 当前报告（本地验收记录）。
 
 本轮完整训练状态升级为 **state v2**，另存原始可训练参数、scalar、优化器/调度器、采样器、RNG（含 DataLoader 独立生成器）与 EMA。推理 `.safetensors` 的用途仍是加载/分发模型适配器。
 
@@ -333,4 +334,4 @@ xFormers 可调用单独安装的 FlashAttention 2。Windows 可在运行环境�
 
 “模型权重 → 准备模型”按模型族列出主模型、文本编码器和 VAE，可选择 Hugging Face 或魔搭官方来源。推荐文件下载时核验字节数、SHA-256 和组件类型，完成后才登记；重新下载从头开始并保留原校验。共享 VAE 可复用已有文件。本地候选第一次设为推荐默认时需要读取内容验 SHA，大文件会有等待时间，之后按文件状态复用校验；列表刷新不反复读取全部权重。受限仓库仍需在发布平台取得权限，自定义下载不自动具有官方推荐身份。
 
-完整用法、设计来源与验证边界见 [v0.5.2 说明](UI_DESIGN_REVIEW_2026-09-12.md)，原有目录规则见 [v0.5.1 说明](UI_SIMPLIFICATION_2026-09-12.md)。
+完整用法、设计来源与验证边界见 v0.5.2 说明（本地验收记录），原有目录规则见 v0.5.1 说明（本地验收记录）。

@@ -2,7 +2,7 @@
 
 ## 现在应该选哪个
 
-2026-09-14，**DTK 26.04 / 厂商 Torch 2.7.1** 已完成 Krea2 Raw 正式 BF16 权重、512×512、8 步 LoKr 的六组测试：SDPA、FlashAttention、xFormers 各测单卡与双卡，训练、保存、采样及严格恢复全部通过。详见 [DTK 验收记录](DTK_ACCEPTANCE_2026-09-14.md) 和 [六组精简数据](validation/DTK_KREA2_2026-09-14.json)。
+2026-09-14，**DTK 26.04 / 厂商 Torch 2.7.1** 已完成 Krea2 Raw 正式 BF16 权重、512×512、8 步 LoKr 的六组测试：SDPA、FlashAttention、xFormers 各测单卡与双卡，训练、保存、采样及严格恢复全部通过。详见 DTK 验收记录（本地验收记录） 和 六组精简数据（本地验收记录）。
 
 | 当前环境 | 注意力选项 | 验收结论 |
 | --- | --- | --- |

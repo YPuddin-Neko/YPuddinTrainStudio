@@ -8,19 +8,19 @@
 
 共享适配器表单将算法/目标层、LoKr 形式/分解因子、Rank/Alpha 成对排列，开关使用紧凑行，窄容器切为单列，输入与下拉框统一高度。训练参数与预设编辑沿用同一实现；Full 切回低秩或 LoRA/LoHa 恢复有效 Rank，其他参数保持。训练后端功能、配置格式及 IOReport/SMC 遥测契约保持；不以界面调整推断训练效果发生改变。
 
-40 项前端回归、TypeScript、ESLint 和生产构建通过，后端测试未重跑。正式服务升级使用新鲜业务快照核对数据、设置、凭据及构建资源保留。字段排列、交互与浏览器验收证据见 [适配器表单说明](docs/ADAPTER_FORM_LAYOUT_2026-09-12.md)和 `docs/validation/v0.5.9.json`；提交与归档校验以发布包旁 verification JSON 为准。
+40 项前端回归、TypeScript、ESLint 和生产构建通过，后端测试未重跑。正式服务升级使用新鲜业务快照核对数据、设置、凭据及构建资源保留。字段排列、交互与浏览器验收证据见 [适配器表单说明](docs/ADAPTER_FORM_LAYOUT_2026-09-12.md)和 `Test/validation/v0.5.9.json`；提交与归档校验以发布包旁 verification JSON 为准。
 
 ## 0.5.8（2026-09-12 Apple GPU 功率与温度）
 
 本轮接入 Mac GPU 功率和温度：`power_w` 表示 IOReport 估算的 GPU 功率，`temp_c` 表示 SMC 中可用 GPU 区域传感器的平均温度。它们与 GPU 利用率、系统统一内存各自独立，不能解释为训练进程功耗或单一芯片热点温度。无法采集时保留未知，不通过利用率推算或填零。
 
-来源说明、最高温度/有效传感器数量与兼容边界以 [Mac GPU 传感器说明](docs/MAC_GPU_SENSORS_2026-09-12.md) 和 `docs/validation/v0.5.8.json` 为准。Apple M4 的 QA 页面及正式服务均已读取到功率和温度；正式升级重新采集并核对了 194 个业务文件、数据库、设置与凭据状态。其他芯片、系统版本与正式大模型训练不由本次遥测验收推断。提交与归档校验以发布包旁的 verification JSON 为准。
+来源说明、最高温度/有效传感器数量与兼容边界以 [Mac GPU 传感器说明](docs/MAC_GPU_SENSORS_2026-09-12.md) 和 `Test/validation/v0.5.8.json` 为准。Apple M4 的 QA 页面及正式服务均已读取到功率和温度；正式升级重新采集并核对了 194 个业务文件、数据库、设置与凭据状态。其他芯片、系统版本与正式大模型训练不由本次遥测验收推断。提交与归档校验以发布包旁的 verification JSON 为准。
 
 ## 0.5.7（2026-09-12 Apple GPU 占用监控）
 
 Apple Silicon 的 GPU 占用不再固定显示未知：从 macOS IORegistry 中唯一可识别的 AGX 加速器读取驱动提供的 `Device Utilization %`，使用 2 秒缓存与 2 秒探测超时。缺少字段、来源不唯一、无效数值或探测失败仍返回未知，不保留过期读数、不使用统一内存占用冒充 GPU 利用率。
 
-顶栏与设备卡说明该数值是整个系统 GPU 的利用率，驱动平均窗口未公开，不能视为当前训练进程占用。功率、温度和统一内存分别说明；未知读数保持未知。无需 sudo，不安装额外依赖。实际测试、浏览器与运行服务证据见 [Mac GPU 监控说明](docs/MAC_GPU_TELEMETRY_2026-09-12.md)和 `docs/validation/v0.5.7.json`；提交与归档校验以发布包旁的 verification JSON 为准。
+顶栏与设备卡说明该数值是整个系统 GPU 的利用率，驱动平均窗口未公开，不能视为当前训练进程占用。功率、温度和统一内存分别说明；未知读数保持未知。无需 sudo，不安装额外依赖。实际测试、浏览器与运行服务证据见 [Mac GPU 监控说明](docs/MAC_GPU_TELEMETRY_2026-09-12.md)和 `Test/validation/v0.5.7.json`；提交与归档校验以发布包旁的 verification JSON 为准。
 
 ## 0.5.6（2026-09-12 数据用途、整图保留与模型检测）
 
@@ -30,7 +30,7 @@ Apple Silicon 的 GPU 占用不再固定显示未知：从 macOS IORegistry 中�
 
 本地模型登记读取 safetensors 文件头、HF 配置与分片索引，自动识别已知结构/实际权重精度；未知信息允许明确确认，共用 VAE 保留系列候选。扫描取消仅凭文件名猜测。运行环境显示 PyTorch / CUDA 构建与可用设备，以及 distributed / NCCL 构建能力；当前每个任务仍只使用一张卡，未接入单任务 DDP。
 
-实现、参数语义与验收边界见 [v0.5.6 审查报告](docs/UI_REVIEW_V056_2026-09-12.md)，最终自动化、浏览器及交付证据由 `docs/validation/v0.5.6.json` 和发布包旁的 verification JSON 记录。未将小型模型、受控文件头检测或界面回归等同于正式大模型、Windows/CUDA 或多卡通信验收。
+实现、参数语义与验收边界见 v0.5.6 审查报告（本地验收记录），最终自动化、浏览器及交付证据由 `Test/validation/v0.5.6.json` 和发布包旁的 verification JSON 记录。未将小型模型、受控文件头检测或界面回归等同于正式大模型、Windows/CUDA 或多卡通信验收。
 
 ## 0.5.2（2026-09-12 工作区设计复审与中央凭据）
 
@@ -42,7 +42,7 @@ Apple Silicon 的 GPU 占用不再固定显示未知：从 macOS IORegistry 中�
 
 训练草稿按版本保存会话兜底，Back 后恢复并解决旧保存请求覆盖新修改的竞态。Dialog 独立导入样式，修复直接进入冷路由时的弹窗布局。
 
-本版不搬动既有项目/数据、不改完整状态格式。后端 562 通过 / 3 CUDA 跳过，前端 45 文件 / 263 测试通过，lint、类型检查和生产构建通过。当前验证与未覆盖的正式模型、Windows/CUDA 和外部账号权限见 [设计审查与验收记录](docs/UI_DESIGN_REVIEW_2026-09-12.md)；机器证据统一在 `docs/validation/v0.5.2.json`，提交及交付包校验保存在发布包旁的 verification JSON。
+本版不搬动既有项目/数据、不改完整状态格式。后端 562 通过 / 3 CUDA 跳过，前端 45 文件 / 263 测试通过，lint、类型检查和生产构建通过。当前验证与未覆盖的正式模型、Windows/CUDA 和外部账号权限见 设计审查与验收记录（本地验收记录）；机器证据统一在 `Test/validation/v0.5.2.json`，提交及交付包校验保存在发布包旁的 verification JSON。
 
 ## 0.5.1（2026-09-12 界面精简与正则图）
 

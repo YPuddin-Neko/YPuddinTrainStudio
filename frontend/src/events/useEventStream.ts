@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiUrl } from '../api/client';
 import { EventType, EVENT_TYPES } from './eventTypes';
-import { createMockEventSource, shouldUseMockEvents } from './mockEventSource';
+import { createMockEventSource, shouldUseMockEvents } from '../../../Test/frontend/mocks/mockEventSource';
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 

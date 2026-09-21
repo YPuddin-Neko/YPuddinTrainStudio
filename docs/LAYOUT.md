@@ -29,7 +29,7 @@
 │   └── dist/                    构建产物，**不进 Git**；服务就是从这里取页面
 ├── environment/<profile>/venv   各环境的 Python 虚拟环境（见 §2）
 ├── venv/                        旧版部署的虚拟环境，对应 legacy 环境类型
-├── tests/                       后端测试；前端测试在 frontend/tests/
+├── Test/tests/                       后端测试；前端测试在 Test/frontend/tests/
 ├── docs/                        部署、设计与验证文档
 └── studio_data/                 默认数据根（见 §4），可用 --data-root 换到别处
 ```
@@ -77,7 +77,7 @@
 可以跟着 `--data-root` 放到大盘上，并在源码树被整体替换后继续存在。
 
 已知不彻底的地方：基础环境不受 `--data-root` 控制，体积最大的那个环境只能待在源码树旁边。
-同类问题见 [存储布局审计](STORAGE_LAYOUT_AUDIT_2026-09-13.md)（改 `cache_dir` 不迁移 `environment/cache`）。
+同类问题见 存储布局审计（本地验收记录）（改 `cache_dir` 不迁移 `environment/cache`）。
 
 两棵树都不再有 `profiles/` 这一层。旧版本装在 `environment/profiles/<profile>/` 下；
 启动入口发现这个旧目录时会打印它的路径并照常安装到新位置，**不会自动删除**，确认新环境可用后自行删除即可。

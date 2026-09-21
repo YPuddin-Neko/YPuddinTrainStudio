@@ -95,4 +95,4 @@
 
 这些检查仅在选择 Anima 模型族时启用。JSON 支持表示结构可以正确读取和编辑，不代表其中的标签适合所有模型，更不等于训练效果已经验证。
 
-实现与回归：[解析器](../ypuddin/data/caption_json.py)、[标签读取与变换](../ypuddin/data/captions.py)、[文件选择与数据身份](../ypuddin/data/index.py)、[Anima 只读检查](../ypuddin/data/anima_caption_inspection.py)、[JSON 单元测试](../tests/unit/test_caption_json.py)、[导入、编辑、恢复与版本隔离测试](../tests/unit/test_json_caption_workflow.py)。其他训练参数见 [训练参数说明](TRAINING_PARAMETERS.md)。
+实现与回归：[解析器](../ypuddin/data/caption_json.py)、[标签读取与变换](../ypuddin/data/captions.py)、[文件选择与数据身份](../ypuddin/data/index.py)、[Anima 只读检查](../ypuddin/data/anima_caption_inspection.py)、[JSON 单元测试](../Test/tests/unit/test_caption_json.py)、[导入、编辑、恢复与版本隔离测试](../Test/tests/unit/test_json_caption_workflow.py)。其他训练参数见 [训练参数说明](TRAINING_PARAMETERS.md)。

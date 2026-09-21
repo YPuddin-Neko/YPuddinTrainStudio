@@ -145,3 +145,29 @@ remote-testing/
 playwright-report/
 test-results/
 blob-report/
+
+# Local acceptance evidence and development handover; keep regression test code.
+/docs/validation/
+/docs/screenshots/
+/HANDOVER.md
+/docs/*ACCEPTANCE*.md
+/docs/*REPORT*.md
+/docs/*AUDIT*.md
+/docs/*REVIEW*.md
+/docs/*RESUME_CONSISTENCY*.md
+/docs/*TRAINING_COMPLETION*.md
+/docs/*TRAINING_TEST_GAPS*.md
+/docs/*FSDP_ADAPTER_WINDOWS*.md
+/docs/*WINDOWS_READINESS*.md
+/docs/*DTK_BF16*.md
+/docs/*UI_WORKFLOW*.md
+/docs/ANIMA_FULL_TRAINING_DIAGNOSTIC_*.md
+/docs/UI_AND_LAUNCHER_CHANGES_*.md
+/docs/UI_*_????-??-??.md
+/docs/ADAPTER_FORM_LAYOUT_*.md
+
+# Test workspace: evidence stays local; test sources remain versioned.
+/Test/reports/
+/Test/validation/
+/Test/screenshots/
+/Test/artifacts/

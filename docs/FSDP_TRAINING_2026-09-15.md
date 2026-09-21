@@ -1,12 +1,12 @@
 # 大模型分片训练（FSDP）
 
-后续 Native 多卡与 Windows 每任务 DDP 探针等能力变化见 [训练能力补充](TRAINING_COMPLETION_2026-09-16.md)；下文较早的 Windows 全部多卡禁用说明保留为历史，原生 Windows FSDP 与文本编码器 FSDP 仍不支持。
+后续 Native 多卡与 Windows 每任务 DDP 探针等能力变化见 训练能力补充（本地验收记录）；下文较早的 Windows 全部多卡禁用说明保留为历史，原生 Windows FSDP 与文本编码器 FSDP 仍不支持。
 
-**2026-09-16 更新：** 下方 r2–r5 数值结果保留为历史记录。当前 BF16 计算策略、正式产品验收进度和具体配方见 [海光 BF16 验证](DTK_BF16_2026-09-16.md)，不要将历史 FP32 策略理解为当前所有配置均强制 FP32。
+**2026-09-16 更新：** 下方 r2–r5 数值结果保留为历史记录。当前 BF16 计算策略、正式产品验收进度和具体配方见 海光 BF16 验证（本地验收记录），不要将历史 FP32 策略理解为当前所有配置均强制 FP32。
 
 本项目已实现 FSDP2 主模型全量微调：同一个训练任务将参数、梯度和优化器状态分配到多张显卡，各卡共同完成训练。**正式 Krea 2 在 r4 双卡 FP32 计算下已通过严格续训：连续 8 步与第 4 步冷恢复至第 8 步，430 个权重张量、五类状态及 PNG 全部逐位一致，两阶段各 14 项执行检查通过。** 33 个分片组使用 FP32 参数计算与梯度归约，主干全部 12,820,073,036 个参数参与训练；文本编码器冻结，优化器为 HF Adafactor。
 
-Anima / SDXL 的 r4 主干全参 FP32 对照也已严格通过，完整配置与证据见 [严格续训一致性报告](RESUME_CONSISTENCY_2026-09-15.md)。新版 r5 自动配置入口也已独立通过：Anima / SDXL 正式规模，以及 Krea2 原生小宽度模型的双卡保存与恢复。Krea2 12.8B 容量由 r4 正式用例证明。下文 r2 BF16 失败、容量数字和历史运行时间保留，不能当作 FP32 的峰值或把旧失败改写为通过。
+Anima / SDXL 的 r4 主干全参 FP32 对照也已严格通过，完整配置与证据见 严格续训一致性报告（本地验收记录）。新版 r5 自动配置入口也已独立通过：Anima / SDXL 正式规模，以及 Krea2 原生小宽度模型的双卡保存与恢复。Krea2 12.8B 容量由 r4 正式用例证明。下文 r2 BF16 失败、容量数字和历史运行时间保留，不能当作 FP32 的峰值或把旧失败改写为通过。
 
 ## 与数据并行的区别
 
@@ -110,14 +110,14 @@ Adafactor 原有状态初始化会生成普通 Tensor，与 DTensor 混用时报
 
 | 验证 | 结果与范围 | 证据 |
 | --- | --- | --- |
-| DTK 双卡 FSDP2 小矩阵 | 74,380 个参数，含奇数行、向量与 `1×12` 列分片。NCCL、FP32 主参数／BF16 计算／FP32 归约；AdamW 与产品 HF Adafactor 加状态钩子均通过。 | [原始报告](../../remote-testing/dtk-20260914/remaining-formal/fsdp-dtk-probe-20260915-094407/report.json)；SHA `89647bdbb78c7459bb669f05af6b5187b0e766515b54d4d179cd26f67a184d77` |
+| DTK 双卡 FSDP2 小矩阵 | 74,380 个参数，含奇数行、向量与 `1×12` 列分片。NCCL、FP32 主参数／BF16 计算／FP32 归约；AdamW 与产品 HF Adafactor 加状态钩子均通过。 | 原始报告（本地验收记录）；SHA `89647bdbb78c7459bb669f05af6b5187b0e766515b54d4d179cd26f67a184d77` |
 | DTK 小矩阵恢复 | 第 1 步写入文件，新建模型与优化器，恢复后第 2、3 步的参数、优化器状态和 loss 一致。**仍在同一分布式进程组内，不是冷进程重启测试。** | 同上；原始 HF Adafactor 的 Tensor／DTensor 混用失败对照同时保留。 |
-| DTK 真实训练器 Toy 全参冷恢复 | `fsdp-source-20260915-r2` 独立快照，203,728 个主模型参数、HF Adafactor、两卡。连续 4 步与全新 `torchrun` 进程组从第 2 步恢复至第 4 步，两个阶段各 14 项检查通过；32 个权重张量、优化器／调度器／随机状态／进度／各卡采样位置及预览 PNG 全等。两批进程均已退出。 | [原始报告](../../remote-testing/dtk-20260914/remaining-formal/fsdp2-toy-full-20260915-101336-738628082-report.json)；SHA `efc12c4617e2833da674b2d6b394feda67aec4e3c48960629d681ad31f959917` |
-| CPU 分片状态与优化器 | 5 项联合测试通过，覆盖 AdamW、SGD、HF Adafactor 的状态布局、恢复与原生导出；另有临时状态目录不可发现的回归。 | [摘要](../../remote-testing/dtk-20260914/final-validation/sharded-state-cpu-20260915.json)；SHA `0525f9d54eb9fe783c7b3e10de8c0b256edb6682fa0b0e8220a6d2b4d37b7afc` |
-| 每卡估算与训练准入 | 35 项相关测试通过，包括实际 HTTP 创建任务、保存每卡估算、队列选卡；使用伪显卡信息与元模型，不启动 GPU。 | [测试日志](../../remote-testing/dtk-20260914/final-validation/sharded-plan-cpu-20260915.log)；SHA `72a047042a6ae8ee3c3e6b7445cab88fd69eeb9af4c093e6105c1f895f8b5b57` |
-| Krea 2 分片容量规划 | 官方对应形状的元模型计算；没有加载正式张量或执行训练，缺少模型与数据路径的校验错误保留。 | [估算报告](../../remote-testing/dtk-20260914/final-validation/krea2-fsdp-meta-plan-20260915.json)；SHA `043e6d8c97cce51ed16e654cc07bf1abc644018ec81a4d4a7d351fd390adba31` |
-| 独立缓存准入 | 10 项相关测试通过：Krea 2 缓存估算 22,462 MiB、完整单卡训练估算 196,635 MiB，在伪 24 GiB 显卡上分别准入／等待。没有 GPU 执行。 | [摘要](../../remote-testing/dtk-20260914/final-validation/fsdp-cache-admission-20260915.json)；SHA `560d59570ce929bad87a91c1797f7c5e6ee4ea2f0078b8d73a70fd3ee4733c84` |
-| FSDP 追加后的本地回归 | 后端完整集合 2282 通过、1 个旧名称断言失败、5 跳过；修正断言后整个受影响文件与新增分片评估回归合计 17 通过、0 跳过，未再跑完整集合。评估回归覆盖退出评估后重新分片、恢复参数绑定／模式／RNG，并验证下一步更新一致。前端完整集合为 89 文件、693 通过。 | [修正范围与回归摘要](../../remote-testing/dtk-20260914/final-validation/fsdp-final-test-followup-20260915.json)；SHA `98e700b1295b51c484aa90f57988db9a68a9a4f4930f160087c40412f653c332` |
+| DTK 真实训练器 Toy 全参冷恢复 | `fsdp-source-20260915-r2` 独立快照，203,728 个主模型参数、HF Adafactor、两卡。连续 4 步与全新 `torchrun` 进程组从第 2 步恢复至第 4 步，两个阶段各 14 项检查通过；32 个权重张量、优化器／调度器／随机状态／进度／各卡采样位置及预览 PNG 全等。两批进程均已退出。 | 原始报告（本地验收记录）；SHA `efc12c4617e2833da674b2d6b394feda67aec4e3c48960629d681ad31f959917` |
+| CPU 分片状态与优化器 | 5 项联合测试通过，覆盖 AdamW、SGD、HF Adafactor 的状态布局、恢复与原生导出；另有临时状态目录不可发现的回归。 | 摘要（本地验收记录）；SHA `0525f9d54eb9fe783c7b3e10de8c0b256edb6682fa0b0e8220a6d2b4d37b7afc` |
+| 每卡估算与训练准入 | 35 项相关测试通过，包括实际 HTTP 创建任务、保存每卡估算、队列选卡；使用伪显卡信息与元模型，不启动 GPU。 | 测试日志（本地验收记录）；SHA `72a047042a6ae8ee3c3e6b7445cab88fd69eeb9af4c093e6105c1f895f8b5b57` |
+| Krea 2 分片容量规划 | 官方对应形状的元模型计算；没有加载正式张量或执行训练，缺少模型与数据路径的校验错误保留。 | 估算报告（本地验收记录）；SHA `043e6d8c97cce51ed16e654cc07bf1abc644018ec81a4d4a7d351fd390adba31` |
+| 独立缓存准入 | 10 项相关测试通过：Krea 2 缓存估算 22,462 MiB、完整单卡训练估算 196,635 MiB，在伪 24 GiB 显卡上分别准入／等待。没有 GPU 执行。 | 摘要（本地验收记录）；SHA `560d59570ce929bad87a91c1797f7c5e6ee4ea2f0078b8d73a70fd3ee4733c84` |
+| FSDP 追加后的本地回归 | 后端完整集合 2282 通过、1 个旧名称断言失败、5 跳过；修正断言后整个受影响文件与新增分片评估回归合计 17 通过、0 跳过，未再跑完整集合。评估回归覆盖退出评估后重新分片、恢复参数绑定／模式／RNG，并验证下一步更新一致。前端完整集合为 89 文件、693 通过。 | 修正范围与回归摘要（本地验收记录）；SHA `98e700b1295b51c484aa90f57988db9a68a9a4f4930f160087c40412f653c332` |
 
 DTK 探针中的 `torch.optim.Adafactor` 仅为额外对照，产品仍使用 HF 实现；Gloo 默认进程组对照中的 CUDA mesh 实际仍采用 NCCL，不能把它写成纯 Gloo 显卡通信通过。该探针没有覆盖极小普通标量的手工梯度归约，相关逻辑目前只有 CPU 侧覆盖。Toy 冷恢复测试使用真实产品训练器，确认了进程退出后重新加载的路径；它仍是明确的小模型，不能作为正式 Krea 2 容量、吞吐或恢复的通过证据。上述测试组有交叉，计数不作简单求和。
 
@@ -127,19 +127,19 @@ DTK 探针中的 `torch.optim.Adafactor` 仅为额外对照，产品仍使用 HF
 
 | r3 验证 | 结果与范围 | 证据 |
 | --- | --- | --- |
-| 在线 VAE 显存估算 | 39 项相关检查通过，覆盖元模型、每卡驻留与工作区、模拟显卡准入；缓存开启的原估算不变。该文件从既有工具输出整理，**不是原始 stdout 日志**，没有为摘要重跑或启动 GPU。 | [测试摘要](../../remote-testing/dtk-20260914/remaining-formal/online-vae-plan-validation-summary-20260915.json)；SHA `8bc83d85e6c456eb2e77a02b8c25dd31709dbda9b1b65563b961ce4f4718d792` |
-| 调度器配置与总步数约束 | 16 项 CPU 检查通过，包含实际双 rank DTensor 的新旧状态恢复、调度配方／总步数变更在状态修改前拒绝，以及同目录恢复的原配置预读。 | [测试与源码摘要](../../remote-testing/dtk-20260914/final-validation/fsdp-scheduler-contract-20260915.json)；SHA `2401dc082dbc887a042464c5f5281f94214d3adc571219102546c9c0b03e7eb8` |
-| 既有 r2 元数据兼容 | r3 在测试机只读核验 Krea 2 与 Toy 旧状态的原配置散列与调度配方，两项通过；没有加载完整权重或启动 GPU。 | [只读验证](../../remote-testing/dtk-20260914/final-validation/fsdp-r3-legacy-contract-dtk-20260915.json)；SHA `fdb98c6fd9a54dbebb1b068843875b0d7f1425e5d8509cafbd1f6ce03c0e7e15` |
+| 在线 VAE 显存估算 | 39 项相关检查通过，覆盖元模型、每卡驻留与工作区、模拟显卡准入；缓存开启的原估算不变。该文件从既有工具输出整理，**不是原始 stdout 日志**，没有为摘要重跑或启动 GPU。 | 测试摘要（本地验收记录）；SHA `8bc83d85e6c456eb2e77a02b8c25dd31709dbda9b1b65563b961ce4f4718d792` |
+| 调度器配置与总步数约束 | 16 项 CPU 检查通过，包含实际双 rank DTensor 的新旧状态恢复、调度配方／总步数变更在状态修改前拒绝，以及同目录恢复的原配置预读。 | 测试与源码摘要（本地验收记录）；SHA `2401dc082dbc887a042464c5f5281f94214d3adc571219102546c9c0b03e7eb8` |
+| 既有 r2 元数据兼容 | r3 在测试机只读核验 Krea 2 与 Toy 旧状态的原配置散列与调度配方，两项通过；没有加载完整权重或启动 GPU。 | 只读验证（本地验收记录）；SHA `fdb98c6fd9a54dbebb1b068843875b0d7f1425e5d8509cafbd1f6ce03c0e7e15` |
 
-r3 独立快照共 185 个条目，其中 184 个产品文件与上述本地提交逐项一致；其余是源码外验收脚本。源码归档 SHA 为 `0afa550a47f832e11cb56807660785a768a6a4f87b1687e1cc7e94b7c766adf4`，本地 Git／归档关联见 [核对记录](../../remote-testing/dtk-20260914/final-validation/fsdp-r3-git-source-association-20260915.json)，SHA `1564baac735a4642e16de457cf6ef7a05201d0e96cbc2e9346bbd65685161525`。**r3 双卡 Toy 回归随后发现恢复阶段的同步顺序缺陷：连续阶段完成，恢复时原调度器检查位于串行准备阶段，集体通信顺序不一致，导致超时。** 原始报告记录连续阶段 14 项检查通过、返回码 0，恢复进程返回码 1，错误为 `Resume training failed`；两批所属进程已退出。日志第 18、19 行分别记录 rank 1 的 `BROADCAST` 和 rank 0 的 `ALLGATHER` 在 240 秒超时。后续修复及 r4 复验结果见下节；r3 本身仍保留恢复失败。该缺陷属于后加的 r3 检查，不回写 r2 正式 Krea 或 Toy 结果。
+r3 独立快照共 185 个条目，其中 184 个产品文件与上述本地提交逐项一致；其余是源码外验收脚本。源码归档 SHA 为 `0afa550a47f832e11cb56807660785a768a6a4f87b1687e1cc7e94b7c766adf4`，本地 Git／归档关联见 核对记录（本地验收记录），SHA `1564baac735a4642e16de457cf6ef7a05201d0e96cbc2e9346bbd65685161525`。**r3 双卡 Toy 回归随后发现恢复阶段的同步顺序缺陷：连续阶段完成，恢复时原调度器检查位于串行准备阶段，集体通信顺序不一致，导致超时。** 原始报告记录连续阶段 14 项检查通过、返回码 0，恢复进程返回码 1，错误为 `Resume training failed`；两批所属进程已退出。日志第 18、19 行分别记录 rank 1 的 `BROADCAST` 和 rank 0 的 `ALLGATHER` 在 240 秒超时。后续修复及 r4 复验结果见下节；r3 本身仍保留恢复失败。该缺陷属于后加的 r3 检查，不回写 r2 正式 Krea 或 Toy 结果。
 
-r3 失败记录见 [原始报告](../../remote-testing/dtk-20260914/remaining-formal/fsdp-r3-toy-failed-report-20260915.json)，SHA `0e696dc6a08c7c29d497e06ce21f2720843bd31b68209ca619d05fbff20d9528`；[恢复日志](../../remote-testing/dtk-20260914/remaining-formal/fsdp-r3-toy-failed-resume-20260915.log)，SHA `915e67ccdb676d41ecbcd73de36bdebf3342b2dd0cf1d6f9ceaa3fdbaf2d2976`。
+r3 失败记录见 原始报告（本地验收记录），SHA `0e696dc6a08c7c29d497e06ce21f2720843bd31b68209ca619d05fbff20d9528`；恢复日志（本地验收记录），SHA `915e67ccdb676d41ecbcd73de36bdebf3342b2dd0cf1d6f9ceaa3fdbaf2d2976`。
 
 ## r4 修复与最终小模型复验
 
-恢复前的集体检查已移到 `ShardedTrainer.prepare_data` 的所有 rank 共同入口，在父级串行准备之前完成，从而避免 r3 中不同 rank 进入不同通信操作。r4 产品源码的 **184 个文件**与本地提交 `4ce0c30f279715777d6a4a217e170d9bd4ec63d3` 一致，验收脚本继续独立存放。源码对应关系见 [核对记录](../../remote-testing/dtk-20260914/final-validation/fsdp-r4-git-source-association-20260915.json)，SHA `9cab9c088d4ef8210e5318be28b0ce3133f0b3fc887748ac82d593e9ad40e0ca`；源码匹配本身不代替运行验收。
+恢复前的集体检查已移到 `ShardedTrainer.prepare_data` 的所有 rank 共同入口，在父级串行准备之前完成，从而避免 r3 中不同 rank 进入不同通信操作。r4 产品源码的 **184 个文件**与本地提交 `4ce0c30f279715777d6a4a217e170d9bd4ec63d3` 一致，验收脚本继续独立存放。源码对应关系见 核对记录（本地验收记录），SHA `9cab9c088d4ef8210e5318be28b0ce3133f0b3fc887748ac82d593e9ad40e0ca`；源码匹配本身不代替运行验收。
 
-在两张海光 BW 上，r4 实际产品训练器对 **203,728 参数的 Toy 主模型**完成连续 4 步，并启动全新 `torchrun` 进程组，从第 2 步状态恢复到第 4 步。两个阶段各 **14 项检查通过**；32 个权重张量、优化器、调度器、RNG、进度、各卡采样状态与预览 PNG 全部严格一致，最大权重差为 0。两批进程返回码均为 0、均已退出，原资产未变。原始报告见 [r4 Toy 冷恢复](../../remote-testing/dtk-20260914/remaining-formal/fsdp-r4-toy-report-20260915.json)，SHA `d23010fedba7d02f8b25fe020f37fc28f83f93c8491340867c3949d7fb26aace`。
+在两张海光 BW 上，r4 实际产品训练器对 **203,728 参数的 Toy 主模型**完成连续 4 步，并启动全新 `torchrun` 进程组，从第 2 步状态恢复到第 4 步。两个阶段各 **14 项检查通过**；32 个权重张量、优化器、调度器、RNG、进度、各卡采样状态与预览 PNG 全部严格一致，最大权重差为 0。两批进程返回码均为 0、均已退出，原资产未变。原始报告见 r4 Toy 冷恢复（本地验收记录），SHA `d23010fedba7d02f8b25fe020f37fc28f83f93c8491340867c3949d7fb26aace`。
 
 该结果确认 r3 所引入的恢复同步缺陷在 r4 小模型回归中修复。**它不是在 r4 上重新进行正式 Krea 2 全模型比对，不能覆盖下节 r2 的严格恢复失败。** r2、r3、r4 的原始报告各自保留。
 
@@ -162,16 +162,16 @@ r3 失败记录见 [原始报告](../../remote-testing/dtk-20260914/remaining-fo
 
 | 证据 | SHA-256 |
 | --- | --- |
-| [完整训练、恢复与严格比较报告](../../remote-testing/dtk-20260914/remaining-formal/fsdp2-krea2-full-20260915-102041-318731779-report.json) | `6d473a6f138424b2b806ef2dcedef28034b9f545c706e7e58b3b594551ef8fda` |
-| [连续阶段指标及更新计时](../../remote-testing/dtk-20260914/remaining-formal/fsdp2-krea2-reference-metrics-20260915.json) | `6c93de4b1382ba6942ac38f9cbb834645e95a8ff97e221490595b91345b077eb` |
-| [两份完整产物原生重载](../../remote-testing/dtk-20260914/remaining-formal/krea2-fsdp-artifact-reload-20260915-report.json) | `fabdae2135b257a519e292d0b85f5b3f8a3295537a071888d60cf902a49de731` |
-| [r2 产品文件与本地提交对应关系](../../remote-testing/dtk-20260914/final-validation/fsdp-r2-git-source-association-20260915.json) | `1c2a686e70992bb7097546809c808549639ffecbadc8ae63f0c23394657469ad` |
+| 完整训练、恢复与严格比较报告（本地验收记录） | `6d473a6f138424b2b806ef2dcedef28034b9f545c706e7e58b3b594551ef8fda` |
+| 连续阶段指标及更新计时（本地验收记录） | `6c93de4b1382ba6942ac38f9cbb834645e95a8ff97e221490595b91345b077eb` |
+| 两份完整产物原生重载（本地验收记录） | `fabdae2135b257a519e292d0b85f5b3f8a3295537a071888d60cf902a49de731` |
+| r2 产品文件与本地提交对应关系（本地验收记录） | `1c2a686e70992bb7097546809c808549639ffecbadc8ae63f0c23394657469ad` |
 
 ## 历史批次最终进程与设备状态
 
 全部验收结束后的独立只读检查记录 `remaining_owned_processes=[]`；两卡利用率均为 0%，每卡空闲 65,198 MiB、总量 65,520 MiB，设备用量字段各为 2 MiB。空闲量和用量字段来自不同设备观测口径，不能互相相减反推；这是检查时的快照，不代表以后一直空闲。原 8879 服务健康检查返回 HTTP 200，没有为清理测试进程停止原服务。
 
-该记录确认此前批次在检查时没有遗留工作进程；独立清理结果不伪装成原生重载报告自带的进程返回字段。见 [最终进程与设备检查](../../remote-testing/dtk-20260914/final-validation/fsdp-final-process-cleanup-20260915.json)，SHA `6343599daaf634b347ff76d579ccadaa48a1c25287b144e45d142ca045d85fd6`。后续 r4 正式 FP32 严格通过与 9 月 16 日 BF16 产品验证见顶部链接；旧 BF16 失败、适配器及平台／长期训练边界仍分别保留。
+该记录确认此前批次在检查时没有遗留工作进程；独立清理结果不伪装成原生重载报告自带的进程返回字段。见 最终进程与设备检查（本地验收记录），SHA `6343599daaf634b347ff76d579ccadaa48a1c25287b144e45d142ca045d85fd6`。后续 r4 正式 FP32 严格通过与 9 月 16 日 BF16 产品验证见顶部链接；旧 BF16 失败、适配器及平台／长期训练边界仍分别保留。
 
 ## 2026-09-18：主模型适配器分片
 

@@ -9,7 +9,7 @@
 
 ## 0. 协作方式
 
-- 你只在 `frontend/` 目录内工作（以及 `.handoff/frontend-status.md`）。不要修改 `ypuddin/`、`tests/`、`docs/design/`。
+- 你只在 `frontend/` 目录内工作（以及 `.handoff/frontend-status.md`）。不要修改 `ypuddin/`、`Test/tests/`、`docs/design/`。
 - 每完成一个里程碑（见 §8），更新 `.handoff/frontend-status.md`，格式：
 
   ```markdown
@@ -56,7 +56,7 @@ frontend/
     mocks/       MSW handlers + 假数据生成器
     i18n/        locales/zh-CN.json  locales/en.json
     styles/
-  tests/         组件与 hooks 测试
+  Test/tests/         组件与 hooks 测试
 ```
 
 ## 3. 页面与功能

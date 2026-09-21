@@ -47,12 +47,12 @@ ALS 在这组图上记录的裁切为 0%，因为其缩放尺寸用 `int` 向下
 
 ALS 的原始选择与原始取整在这组扫描中平均裁切 1.1187%。把 ALS 的桶选择接到我们相同的缩放取整函数，平均为 1.1657%，最坏为 3.0303%；新版分别为 1.1654%、2.9384%。这说明默认配置下，**相对 ALS 的额外平均改善很小，主要收益来自修复我们原先漏桶，以及小图、横竖一致性和同构图缩放策略**；不能宣称全面超越 ALS。
 
-完整指标见 [JSON 记录](validation/BUCKET_OPTIMIZATION_2026-09-17.json)。仅读取用户图片尺寸和 EXIF 方向，没有修改图片，记录不包含图片、标签或原始文件名。
+完整指标见 JSON 记录（本地验收记录）。仅读取用户图片尺寸和 EXIF 方向，没有修改图片，记录不包含图片、标签或原始文件名。
 
 复现几何比较（相邻目录需要有含固定提交的 AnimaLoraStudio 仓库）：
 
 ```bash
-venv/bin/python scripts/compare_bucket_geometry.py /path/to/images /tmp/bucket-result.json
+venv/bin/python Test/scripts/compare_bucket_geometry.py /path/to/images /tmp/bucket-result.json
 ```
 
 ## 成本与兼容
@@ -67,7 +67,7 @@ venv/bin/python scripts/compare_bucket_geometry.py /path/to/images /tmp/bucket-r
 
 ## 验证范围
 
-后端完整回归：**2810 通过，5 项 CUDA 测试因本机无 CUDA 跳过**，没有失败；包含本地多进程训练、完整状态恢复及原生路径回归。随后针对新增的来源分辨率覆盖、裁切/补边选择、数据分布与实际加载尺寸一致性检查，连同几何和图片适配测试一起重跑：**47 项全部通过**（其中 2 项是全量回归后补充的新用例，其余为重叠检查，不能简单相加）。机器可读结果见 [验证记录](validation/BUCKET_OPTIMIZATION_TESTS_2026-09-17.json)。
+后端完整回归：**2810 通过，5 项 CUDA 测试因本机无 CUDA 跳过**，没有失败；包含本地多进程训练、完整状态恢复及原生路径回归。随后针对新增的来源分辨率覆盖、裁切/补边选择、数据分布与实际加载尺寸一致性检查，连同几何和图片适配测试一起重跑：**47 项全部通过**（其中 2 项是全量回归后补充的新用例，其余为重叠检查，不能简单相加）。机器可读结果见 验证记录（本地验收记录）。
 
 前端 **95 个文件、780 项测试通过**；TypeScript/Vite 构建及 ESLint 通过。首次高并发运行有 6 项超时或异步界面断言失败；限制两个 worker、单项上限 20 秒后全量通过，没有改产品代码或删断言来避开失败。
 

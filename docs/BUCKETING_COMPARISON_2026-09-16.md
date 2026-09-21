@@ -1,6 +1,6 @@
 # 分桶实现对照：YPuddin、AnimaLoraStudio、sd-scripts / lora-scripts、diffusion-pipe
 
-本次源码对照之后新增的 Native 多卡零权重补齐见 [训练能力补充](TRAINING_COMPLETION_2026-09-16.md) 与 [原生尺寸说明](native-resolution.md)；下文保留所列源码快照的比较，不将新实现倒填到旧快照。
+本次源码对照之后新增的 Native 多卡零权重补齐见 训练能力补充（本地验收记录） 与 [原生尺寸说明](native-resolution.md)；下文保留所列源码快照的比较，不将新实现倒填到旧快照。
 
 本报告对照本地可审计源码，说明同一张图会被怎样分配和变换，以及不同实现的边界。**我们的分桶与 ALS 思路相近，但不是完全相同的算法；`no_upscale`、原生尺寸和多卡尾批也不能按名字视为等价。** 这里没有进行训练质量或吞吐基准，因此不判断哪个更快、效果更好。
 
@@ -85,7 +85,7 @@ YPuddin 工作区同时存在其他功能修改；这里的算法分析以读取
 | 2048×512 | 1024×512 | 2048×512 |
 | 400×300 | 400×288 | 384×256 |
 
-原始数值、源码 SHA、具体参数与脚本保存在本次工作区外证据：[static-examples.json](../../remote-testing/bucketing-comparison-20260916/static-examples.json)、[static_examples.py](../../remote-testing/bucketing-comparison-20260916/static_examples.py)。脚本抽取并执行现有原始类/函数，不重新实现它们的桶选择算法；没有图片解码或模型计算。
+原始数值、源码 SHA、具体参数与脚本保存在本次工作区外证据：static-examples.json（本地验收记录）、static_examples.py（本地验收记录）。脚本抽取并执行现有原始类/函数，不重新实现它们的桶选择算法；没有图片解码或模型计算。
 
 ## 5. 多分辨率、重复次数与尾批
 

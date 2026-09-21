@@ -61,6 +61,6 @@ FP8 文件中的缩放值决定了权重在计算时如何还原。此前，这�
 - [Krea 2 延迟加载](../ypuddin/models/krea2/family.py#L327)、[真实权重物化](../ypuddin/models/krea2/family.py#L398)、[CUDA 暂存条件与预算](../ypuddin/models/krea2/family.py#L81)。
 - [FP8 缩放引用与加载字典清理](../ypuddin/models/krea2/family.py#L163)、[按块打包主机存储与换出](../ypuddin/memory/block_swap.py#L35)。
 - [VAE 按需加载与卸载](../ypuddin/models/anima/family.py#L152)、[文本编码器按需加载与卸载](../ypuddin/models/krea2/text.py#L229)、[文本缓存批量](../ypuddin/data/cache.py#L130)。
-- [延迟加载与真实小模型训练/采样回归](../tests/unit/test_krea2_deferred.py)、[FP8 数值、存储预算与引用释放回归](../tests/unit/test_krea2_family.py)、[换出与梯度一致性回归](../tests/unit/test_block_swap.py)。
+- [延迟加载与真实小模型训练/采样回归](../Test/tests/unit/test_krea2_deferred.py)、[FP8 数值、存储预算与引用释放回归](../Test/tests/unit/test_krea2_family.py)、[换出与梯度一致性回归](../Test/tests/unit/test_block_swap.py)。
 
 这些检查分别验证加载顺序、数值与引用生命周期。具体机器上的 RAM / 显存峰值、长时间训练稳定性和图像质量，需要按实际模型与配置分别验收。

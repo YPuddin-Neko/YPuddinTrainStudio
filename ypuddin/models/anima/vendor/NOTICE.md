@@ -68,7 +68,7 @@ and with sd-scripts / ComfyUI / diffusion-pipe LoRA key conventions.
    frequencies come from `head_dim` and the `*_extrapolation_ratio` NTK factors alone, and `seq[:H]` is the
    same `0..H-1` for any table at least that long, so outputs are bit-identical for every input that fits in
    both settings -- the larger value is pure extrapolation head-room for high-resolution training, exactly as in
-   AnimaLoraStudio / diffusion-pipe. Verified by `tests/unit/test_anima_vendor.py::test_max_img_size_is_pure_extrapolation`.
+   AnimaLoraStudio / diffusion-pipe. Verified by `Test/tests/unit/test_anima_vendor.py::test_max_img_size_is_pure_extrapolation`.
 6. Module docstring documenting the training / sampling forward-call contract; `__all__`; `# ruff: noqa`.
 7. **AdaLN precision boundary (2026-09-13)**: block and final-layer modulation preserve the caller's
    BF16 autocast context instead of disabling it when `use_fp32=False`. This permits the family's FP32

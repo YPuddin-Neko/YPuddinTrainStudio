@@ -83,7 +83,8 @@ include = ["ypuddin*"]
 "*" = ["assets/**/*", "*.txt", "*.md"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["Test/tests"]
+cache_dir = "Test/artifacts/pytest-cache"
 addopts = "-q"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
