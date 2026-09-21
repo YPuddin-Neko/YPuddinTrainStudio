@@ -551,24 +551,32 @@ const ModelPathInput: React.FC<{
   familyName?: string;
 }> = ({ value, kind, onChange, label, familyName }) => {
   const { t } = useTranslation();
-  const [models, setModels] = React.useState<Array<{ id: string; path: string; kind: string; family: string; exists?: boolean; unsupported_reason?: string | null }>>([]);
+  const [defaultPath, setDefaultPath] = React.useState('');
+  React.useEffect(() => {
+    let active = true;
+    setDefaultPath('');
+    if (kind) void apiClient.get<{path:string}>('/models/browse-root', { params: {kind}, silent: true })
+      .then(result => { if (active) setDefaultPath(result.path); }).catch(() => {});
+    return () => { active = false; };
+  }, [kind]);
+  const [models, setModels] = React.useState<Array<{ id: string; path: string; kind: string; family: string; compatible_families?: string[]; exists?: boolean; unsupported_reason?: string | null }>>([]);
 
   React.useEffect(() => {
     if (!kind) return;
     let active = true;
     const refresh = () => void apiClient
-      .get<Array<{ id: string; path: string; kind: string; family: string; exists?: boolean; unsupported_reason?: string | null }>>('/models', { silent: true })
+      .get<Array<{ id: string; path: string; kind: string; family: string; compatible_families?: string[]; exists?: boolean; unsupported_reason?: string | null }>>('/models', { silent: true })
       .then((list) => { if (active) setModels(Array.isArray(list) ? list : []); })
       .catch(() => { if (active) setModels([]); });
     refresh(); window.addEventListener('studio-models-changed', refresh); window.addEventListener('focus', refresh);
     return () => { active = false; window.removeEventListener('studio-models-changed', refresh); window.removeEventListener('focus', refresh); };
   }, [kind]);
 
-  const matched = kind ? models.filter((m) => m.exists !== false && (m as typeof m & {purpose?:string}).purpose !== 'inference' && !modelAssetUnsupportedReason(m) && m.kind === kind && (!familyName || m.family === familyName)) : [];
+  const matched = kind ? models.filter((m) => m.exists !== false && (m as typeof m & {purpose?:string}).purpose !== 'inference' && !modelAssetUnsupportedReason(m) && m.kind === kind && (!familyName || m.family === familyName || m.compatible_families?.includes(familyName))) : [];
 
   return (
     <div className={`model-path-control ${matched.length > 0 ? 'has-registry' : ''}`}>
-      <PathInput ariaLabel={label} value={value} onChange={onChange} />
+      <PathInput ariaLabel={label} value={value} defaultPath={defaultPath} onChange={onChange} />
       {matched.length > 0 && (
         <StudioSelect aria-label={`${label || kind} · ${t('models.fromRegistry')}`} value={matched.some(model => model.path === value) ? value : ''} onValueChange={onChange} data-testid="model-registry-select"
           placeholder={t('models.fromRegistry')} options={matched.map(model=>({value:model.path,label:model.path.split(/[\\/]/).pop() || model.path}))}/>

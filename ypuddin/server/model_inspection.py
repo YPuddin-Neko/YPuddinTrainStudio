@@ -692,6 +692,16 @@ def inspect_model(path: Path, *, allowed=None, _budget: dict[str, int] | None = 
         family, kind = "krea2", "dit"
         evidence.append("Krea 2 single-stream projection + layerwise text-fusion keys")
     elif (
+        shapes.get("conv1.weight") == [32, 32, 1, 1, 1]
+        and shapes.get("conv2.weight") == [16, 16, 1, 1, 1]
+        and shapes.get("encoder.conv1.weight") == [96, 3, 3, 3, 3]
+        and shapes.get("decoder.conv1.weight") == [384, 16, 3, 3, 3]
+        and shapes.get("encoder.head.2.weight") == [32, 384, 3, 3, 3]
+    ):
+        kind = "vae"
+        candidates = ["anima", "krea2"]
+        evidence.append("Native Qwen-Image causal VAE convolution geometry; shared by Anima and Krea 2")
+    elif (
         any(key.startswith("encoder.") for key in shapes)
         and any(key.startswith("decoder.") for key in shapes)
         and "quant_conv.weight" in shapes

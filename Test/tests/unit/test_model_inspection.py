@@ -438,3 +438,20 @@ def test_diffusers_index_rejects_unsafe_or_pickle_shards(tmp_path, filename):
     )
     with pytest.raises(ValueError, match="missing or outside"):
         inspect_model(tmp_path)
+
+
+def test_native_qwen_image_vae_shared_geometry(tmp_path):
+    shapes = {
+        'conv1.weight': [32, 32, 1, 1, 1],
+        'conv2.weight': [16, 16, 1, 1, 1],
+        'encoder.conv1.weight': [96, 3, 3, 3, 3],
+        'decoder.conv1.weight': [384, 16, 3, 3, 3],
+        'encoder.head.2.weight': [32, 384, 3, 3, 3],
+    }
+    path = sparse_headers(tmp_path/'unrelated-name.safetensors', shapes)
+    result = inspect_model(path)
+    assert result['kind'] == 'vae'
+    assert result['family_candidates'] == ['anima', 'krea2']
+    shapes['conv2.weight'] = [8, 8, 1, 1, 1]
+    other = sparse_headers(tmp_path/'qwen_image_vae.safetensors', shapes)
+    assert inspect_model(other)['family_candidates'] == []

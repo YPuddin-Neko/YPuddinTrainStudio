@@ -343,7 +343,9 @@ class ModelDownloads:
         if not self.context.is_allowed(root):
             raise ApiError("model directory is outside allowed storage roots", status=403)
         identity = recommendation.sha256 if recommendation else hashlib.sha256(source.encode()).hexdigest()
-        folder = root / body.family / body.kind / identity[:12]
+        from .model_layout import model_folder
+
+        folder = model_folder(root, body.family, body.kind) / identity[:12]
         target = folder / filename
         with self.lock:
             if self.closed:

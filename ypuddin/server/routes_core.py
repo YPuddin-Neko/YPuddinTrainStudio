@@ -598,6 +598,15 @@ def _check_model_admission(path: Path, family: str, kind: str, c: ServiceContext
 def _model_row(r: dict[str, Any], c: ServiceContext) -> dict[str, Any]:
     p = Path(r["path"])
     projected = {**r, "exists": p.exists(), "is_default": bool(r["is_default"])}
+    if r["kind"] == "vae" and p.is_file() and c.is_allowed(p.resolve()):
+        from .model_inspection import inspect_model
+
+        try:
+            detected = inspect_model(p, allowed=c.is_allowed)
+            if detected.get("kind") == "vae":
+                projected["compatible_families"] = detected.get("family_candidates", [])
+        except (ValueError, OSError, OverflowError):
+            pass
     if r["family"] == "krea2" and r["kind"] == "dit":
         from ypuddin.models.krea2.variants import verified_variant
 
@@ -614,6 +623,24 @@ def _model_row(r: dict[str, Any], c: ServiceContext) -> dict[str, Any]:
         except ApiError as error:
             projected["unsupported_reason"] = str(error)
     return projected
+
+
+@router.get("/models/browse-root")
+def model_browse_root(kind: str, c: ServiceContext = Depends(ctx)) -> dict[str, str]:
+    from .model_layout import model_category
+
+    root = Path(c.settings()["paths"]["models_dir"]).resolve()
+    try:
+        category = model_category(kind)
+    except ValueError as exc:
+        raise ApiError(str(exc), code="model.kind") from exc
+    path = root / category
+    # New installations may not have downloaded this component yet.
+    while not path.is_dir() and path != path.parent:
+        path = path.parent
+    if not c.is_allowed(path):
+        raise ApiError("model directory is outside allowed storage roots", status=403)
+    return {"path": str(path)}
 
 
 @router.get("/models", response_model=list[m.ModelAsset], response_model_exclude_unset=True)

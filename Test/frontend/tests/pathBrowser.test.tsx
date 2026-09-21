@@ -96,3 +96,11 @@ describe('server path browser', () => {
     await waitFor(() => expect(screen.getByRole('textbox', { name: '文件或目录路径' })).toHaveValue('E:\\data'));
   });
 });
+
+it('starts an empty model field in its server-provided category directory', async () => {
+  const get = vi.spyOn(apiClient, 'get').mockResolvedValue(listing('D:\\models\\vae') as any);
+  render(<PathInput value="" defaultPath={'D:\\models\\vae'} onChange={() => {}} />);
+  fireEvent.click(screen.getByRole('button', {name:'浏览'}));
+  await screen.findByRole('button', {name:'选择当前目录'});
+  expect(get).toHaveBeenCalledWith('/fs/list', expect.objectContaining({params:{path:'D:\\models\\vae'}}));
+});

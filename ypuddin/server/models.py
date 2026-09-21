@@ -368,6 +368,7 @@ class FamilyInfo(_Out):
 
 
 class ModelAsset(_Out):
+    compatible_families: list[str] = Field(default_factory=list)
     id: str
     family: str
     kind: str

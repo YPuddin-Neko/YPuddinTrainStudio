@@ -69,7 +69,7 @@ def test_recommended_download_verifies_bytes_and_explicit_provider_mapping(tiny,
     assert job["recommendation_id"] == entry.id
     assert job["expected_size"] == entry.size and job["sha256"] == entry.sha256
     target = Path(job["target_path"])
-    assert target == root / "anima" / "dit" / entry.sha256[:12] / "tiny.safetensors"
+    assert target == root / "diffusion_models" / "anima" / entry.sha256[:12] / "tiny.safetensors"
     assert target.read_bytes() == control.payload
     request = control.requests[-1]
     if provider == "huggingface":

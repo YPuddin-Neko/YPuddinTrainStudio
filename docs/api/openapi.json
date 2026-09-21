@@ -716,6 +716,49 @@
         }
       }
     },
+    "/api/models/browse-root": {
+      "get": {
+        "summary": "Model Browse Root",
+        "operationId": "model_browse_root_api_models_browse_root_get",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Model Browse Root Api Models Browse Root Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/models": {
       "get": {
         "summary": "List Models",
@@ -12038,6 +12081,13 @@
       },
       "ModelAsset": {
         "properties": {
+          "compatible_families": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Compatible Families"
+          },
           "id": {
             "type": "string",
             "title": "Id"

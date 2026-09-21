@@ -130,7 +130,8 @@ export const PathInput: React.FC<{
   onChange: (val: string) => void;
   placeholder?: string;
   ariaLabel?: string;
-}> = ({ value = '', onChange, placeholder, ariaLabel }) => {
+  defaultPath?: string;
+}> = ({ value = '', onChange, placeholder, ariaLabel, defaultPath }) => {
   const { t } = useTranslation();
   const [modalOpen, setModalOpen] = React.useState(false);
   return (
@@ -140,7 +141,7 @@ export const PathInput: React.FC<{
       <button type="button" onClick={() => setModalOpen(true)} className="path-input-browse studio-secondary shrink-0">
         <FolderOpen className="w-4 h-4" /><span>{t('common.browse')}</span>
       </button>
-      <PathPickerModal isOpen={modalOpen} initialPath={value || '/'} onSelect={onChange} onClose={() => setModalOpen(false)} />
+      <PathPickerModal isOpen={modalOpen} initialPath={value || defaultPath || '/'} onSelect={onChange} onClose={() => setModalOpen(false)} />
     </div>
   );
 };

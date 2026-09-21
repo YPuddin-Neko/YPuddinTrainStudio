@@ -710,6 +710,11 @@ export const handlers = [
     return fam ? HttpResponse.json(fam) : new HttpResponse(null, { status: 404 });
   }),
 
+  http.get('/api/models/browse-root', ({ request }) => {
+    const kind = new URL(request.url).searchParams.get('kind');
+    const category = kind === 'vae' ? 'vae' : kind === 'dit' ? 'diffusion_models' : 'text_encoders';
+    return HttpResponse.json({path: `/models/${category}`});
+  }),
   http.get('/api/models', () => HttpResponse.json(mockModels)),
 
   http.post('/api/models', async ({ request }) => {

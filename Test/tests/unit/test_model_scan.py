@@ -94,3 +94,24 @@ def test_recognized_unsharded_component_does_not_register_its_weight_file(api, t
     assert [(row["path"], row["kind"]) for row in response.json()] == [(str(component), "dit")]
     assert client.post("/api/models/scan", json={"path": str(component), "family": "sdxl"}).json() == []
     assert len(client.get("/api/models").json()) == 1
+
+
+def test_native_shared_vae_scan_exposes_both_training_families(api, tmp_path):
+    from Test.tests.unit.test_model_inspection import sparse_headers
+    client, _ = api
+    root = tmp_path/'models'
+    folder = root/'vae/shared'
+    folder.mkdir(parents=True)
+    sparse_headers(folder/'qwen.safetensors', {
+        'conv1.weight': [32,32,1,1,1], 'conv2.weight': [16,16,1,1,1],
+        'encoder.conv1.weight': [96,3,3,3,3],
+        'decoder.conv1.weight': [384,16,3,3,3],
+        'encoder.head.2.weight': [32,384,3,3,3],
+    })
+    response = client.post('/api/models/scan', json={'path':str(root),'family':'anima'})
+    assert response.status_code == 200
+    assets = client.get('/api/models').json()
+    assert len(assets) == 1
+    assert assets[0]['kind'] == 'vae'
+    assert assets[0]['compatible_families'] == ['anima','krea2']
+    assert client.post('/api/models/scan', json={'path':str(root),'family':'krea2'}).json() == []
