@@ -19,6 +19,7 @@ from ypuddin.adapters.lokr import LoKr
 from ypuddin.adapters.lora import LoRA
 from ypuddin.config import TrainConfig
 from ypuddin.config.compute_policy import (
+    DTK_ANIMA_LORA_FSDP_PREVIEW_POLICY_ID,
     DTK_BACKBONE_ADAPTER_POLICY_IDS,
     resolve_training_compute_config,
     validate_resume_compute_policy,
@@ -51,7 +52,11 @@ def test_versioned_scope_and_strict_resume_identity(family, algo, strategy):
     assert cfg.to_dict() == original
     assert effective.loop.mixed_precision == "bf16"
     assert not effective.memory.allow_tf32 and effective.model.attention == "sdpa"
-    assert policy["id"] == DTK_BACKBONE_ADAPTER_POLICY_IDS[(family, algo, strategy)]
+    assert policy["id"] == (
+        DTK_ANIMA_LORA_FSDP_PREVIEW_POLICY_ID
+        if (family, algo, strategy) == ("anima", "lora", "fsdp")
+        else DTK_BACKBONE_ADAPTER_POLICY_IDS[(family, algo, strategy)]
+    )
     assert policy["operator_components"] == policy["trainable_components"] == ["backbone"]
     assert policy["distributed_strategy"] == strategy
     assert ("adapter_implementation" in policy) == (algo == "lora")

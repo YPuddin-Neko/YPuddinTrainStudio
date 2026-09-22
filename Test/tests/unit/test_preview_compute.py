@@ -20,21 +20,25 @@ from ypuddin.config import TrainConfig
 from ypuddin.config.compute_policy import (
     BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID,
     BF16_LINEAR_PREVIEW_IMPLEMENTATION_ID,
+    BF16_LORA_FP32_IMPLEMENTATION_ID,
+    DTK_ANIMA_LORA_FSDP_PREVIEW_POLICY_ID,
+    DTK_BACKBONE_ADAPTER_ALL_POLICY_IDS,
     DTK_BACKBONE_ADAPTER_POLICY_IDS,
     DTK_SDXL_LONG_TEXT_POLICY_ID,
     DTK_SDXL_LONG_TEXT_PREVIEW_POLICY_IDS,
     resolve_training_compute_config,
     validate_resume_compute_policy,
 )
+from ypuddin.config.schema import AdapterRule
 from ypuddin.train.linear_backward import install_linear_bf16_operands_fp32_compute
 from ypuddin.train.preview_compute import preview_linear_compute
 from ypuddin.train.trainer import Trainer
 
 
-def config(algo="lora", strategy="ddp", length=150):
+def config(algo="lora", strategy="ddp", length=150, family="sdxl"):
     return TrainConfig.model_validate(
         {
-            "model": {"family": "sdxl", "sdxl_max_token_length": length},
+            "model": {"family": family, "sdxl_max_token_length": length},
             "training": {"mode": "adapter", "train_backbone": True, "train_text_encoder": False},
             "adapter": {"algo": algo, "mode": "bypass", "param_dtype": "fp32"},
             "loop": {
@@ -49,6 +53,103 @@ def config(algo="lora", strategy="ddp", length=150):
 
 def policy(algo="lora", strategy="ddp", length=150):
     return resolve_training_compute_config(config(algo, strategy, length), "cuda", "linux-dtk")[1]
+
+
+@pytest.mark.parametrize("gpu_count", [2, 4])
+@pytest.mark.parametrize("adapter_mode", ["auto", "bypass"])
+@pytest.mark.parametrize("checkpointing", ["none", "block"])
+def test_anima_fsdp_preview_keeps_legacy_training_fields_and_versions_resume(
+    gpu_count, adapter_mode, checkpointing
+):
+    cfg = config(strategy="fsdp", family="anima")
+    cfg.loop.gpu_count = gpu_count
+    cfg.adapter.mode = adapter_mode
+    cfg.memory.activation_checkpointing = checkpointing
+    original = cfg.to_dict()
+    effective, actual = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+    # Snapshot the previous v1 contract, including every training dtype/operator.
+    legacy = {
+        "id": DTK_BACKBONE_ADAPTER_POLICY_IDS[("anima", "lora", "fsdp")],
+        "mixed_precision": "bf16",
+        "allow_tf32": False,
+        "attention": "sdpa",
+        "sdpa_backend": "math",
+        "linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
+        "linear_backward": "fp32-contractions-grad-original-dtype",
+        "linear_backward_implementation": BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID,
+        "adapter_algorithm": "lora",
+        "trainable_components": ["backbone"],
+        "operator_components": ["backbone"],
+        "distributed_strategy": "fsdp",
+        "adapter_forward": "bf16-rounded-operands-fp32-contractions-bf16-intermediates",
+        "adapter_backward": "fp32-contractions-grad-original-dtype",
+        "adapter_implementation": BF16_LORA_FP32_IMPLEMENTATION_ID,
+        "fsdp_param_dtype": "bfloat16",
+        "fsdp_reduce_dtype": "float32",
+    }
+    assert actual == legacy | {
+        "id": DTK_ANIMA_LORA_FSDP_PREVIEW_POLICY_ID,
+        "preview_operator_components": ["backbone"],
+        "preview_linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
+        "preview_linear_implementation": BF16_LINEAR_PREVIEW_IMPLEMENTATION_ID,
+    }
+    assert actual["id"] in DTK_BACKBONE_ADAPTER_ALL_POLICY_IDS
+    assert cfg.to_dict() == original
+    expected_effective = copy.deepcopy(original)
+    expected_effective["model"]["attention"] = "sdpa"
+    expected_effective["memory"]["allow_tf32"] = False
+    assert effective.to_dict() == expected_effective
+    assert resolve_training_compute_config(effective, "cuda", "linux-dtk")[1] == actual
+    validate_resume_compute_policy(actual, copy.deepcopy(actual))
+    # Neither direction may silently mix the old and new preview numeric recipe.
+    with pytest.raises(ValueError, match="计算"):
+        validate_resume_compute_policy(actual, legacy)
+    with pytest.raises(ValueError, match="计算"):
+        validate_resume_compute_policy(legacy, actual)
+    for field in ("preview_operator_components", "preview_linear_forward", "preview_linear_implementation"):
+        missing = {key: value for key, value in actual.items() if key != field}
+        changed = actual | {field: ["text_encoder"] if field == "preview_operator_components" else "old"}
+        for saved in (missing, changed):
+            with pytest.raises(ValueError, match="计算"):
+                validate_resume_compute_policy(actual, saved)
+
+
+@pytest.mark.parametrize(
+    "section,field,value",
+    [
+        ("loop", "gpu_count", 1),
+        ("loop", "distributed_strategy", "ddp"),
+        ("loop", "deterministic", False),
+        ("loop", "mixed_precision", "fp16"),
+        ("loop", "mixed_precision", "no"),
+        ("training", "mode", "full"),
+        ("training", "train_backbone", False),
+        ("training", "train_text_encoder", True),
+        ("adapter", "algo", "lokr"),
+        ("adapter", "mode", "merged"),
+        ("adapter", "param_dtype", "bf16"),
+        ("adapter", "dora", True),
+        ("adapter", "rules", [AdapterRule(match="*", algo="lokr")]),
+        ("memory", "base_precision", "fp8_e4m3"),
+        ("memory", "activation_checkpointing", "unsloth"),
+        ("memory", "compile", True),
+        ("memory", "blocks_to_swap", 1),
+    ],
+)
+def test_anima_preview_does_not_expand_existing_supported_recipe(section, field, value):
+    cfg = config(strategy="fsdp", family="anima")
+    setattr(getattr(cfg, section), field, value)
+    _, actual = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+    assert not any(key.startswith("preview_") for key in (actual or {}))
+
+
+@pytest.mark.parametrize(
+    "device,profile", [("cpu", "linux-dtk"), ("cuda", "linux-cuda"), ("cuda", "windows-cuda")]
+)
+def test_anima_preview_is_not_selected_outside_dtk_gpu(device, profile):
+    cfg = config(strategy="fsdp", family="anima")
+    effective, actual = resolve_training_compute_config(cfg, device, profile)
+    assert actual is None and effective.to_dict() == cfg.to_dict()
 
 
 @pytest.mark.parametrize("algo", ["lora", "lokr"])
@@ -214,14 +315,21 @@ def test_preview_context_exception_restores_native_and_does_not_change_training_
         r2()
 
 
-@pytest.mark.parametrize("algo", ["lora", "lokr"])
-@pytest.mark.parametrize("strategy", ["ddp", "fsdp"])
-def test_actual_trainer_installs_preview_coverage_and_leaves_adapter_native(monkeypatch, algo, strategy):
+@pytest.mark.parametrize(
+    "family,algo,strategy",
+    [("sdxl", algo, strategy) for algo in ("lora", "lokr") for strategy in ("ddp", "fsdp")]
+    + [("anima", "lora", "fsdp")],
+)
+def test_actual_trainer_installs_preview_coverage_and_leaves_adapter_native(
+    monkeypatch, family, algo, strategy
+):
     import ypuddin.train.trainer as module
 
     monkeypatch.setattr(module, "current_profile", lambda: "linux-dtk")
     obj = object.__new__(Trainer)
-    obj.cfg, obj.compute_policy = resolve_training_compute_config(config(algo, strategy), "cuda", "linux-dtk")
+    obj.cfg, obj.compute_policy = resolve_training_compute_config(
+        config(algo, strategy, family=family), "cuda", "linux-dtk"
+    )
     obj.device = torch.device("cuda")
     adapter = (LoRA if algo == "lora" else LoKr)(8, 8, rank=2)
     native = copy.deepcopy(adapter)
@@ -242,8 +350,9 @@ def test_actual_trainer_installs_preview_coverage_and_leaves_adapter_native(monk
     assert trace.dtypes and set(trace.dtypes) == {torch.bfloat16}
 
 
-def test_product_sample_entry_enables_only_backbone_predictions(tmp_path):
-    cfg = config()
+@pytest.mark.parametrize("family,strategy", [("sdxl", "ddp"), ("anima", "fsdp")])
+def test_product_sample_entry_enables_only_backbone_predictions(tmp_path, family, strategy):
+    cfg = config(family=family, strategy=strategy)
     cfg.sampling.prompts = [{"prompt": "one"}]
     # Validate the complete sampling config after supplying a simple prompt.
     cfg = TrainConfig.model_validate(cfg.to_dict())
@@ -266,7 +375,7 @@ def test_product_sample_entry_enables_only_backbone_predictions(tmp_path):
 
     fake = SimpleNamespace(
         cfg=cfg,
-        compute_policy=policy(),
+        compute_policy=resolve_training_compute_config(cfg, "cuda", "linux-dtk")[1],
         device=torch.device("cpu"),
         run_dir=tmp_path,
         progress=SimpleNamespace(step=8, extra={}),

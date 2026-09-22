@@ -69,7 +69,8 @@ function backboneAdapterCase(family: string, algo: 'lora' | 'lokr', strategy: 's
   config.loop.gpu_count = strategy === 'single' ? 1 : 2;
   config.loop.distributed_strategy = strategy === 'fsdp' ? 'fsdp' : 'ddp';
   const linear = family === 'sdxl' && algo === 'lokr' && tokens === 75 ? sdxlPolicy : animaPolicy;
-  const stablePreview = family === 'sdxl' && tokens > 75 && strategy !== 'single';
+  const stablePreview = (family === 'sdxl' && tokens > 75 && strategy !== 'single')
+    || (family === 'anima' && algo === 'lora' && strategy === 'fsdp');
   const candidate = {
     ...linear, id: `dtk-${family}-backbone-${algo}-${strategy}-bf16-compute-${stablePreview ? 'preview-v2' : 'v1'}`,
     adapter_algorithm: algo, trainable_components: ['backbone'], operator_components: ['backbone'], distributed_strategy: strategy,
@@ -161,8 +162,9 @@ it.each(['anima', 'sdxl'])('does not expose new %s LoKr policies for single-GPU 
   }
 });
 
-it.each(backboneCases.filter(row => row.family === 'sdxl' && row.tokens > 75 && row.strategy !== 'single'))(
-  'requires the complete preview identity for $algo $strategy $tokens-token training', ({family, algo, strategy, tokens}) => {
+it.each(backboneCases.filter(row => (row.family === 'sdxl' && row.tokens > 75 && row.strategy !== 'single')
+  || (row.family === 'anima' && row.algo === 'lora' && row.strategy === 'fsdp')))(
+  'requires the complete preview identity for $family $algo $strategy $tokens-token training', ({family, algo, strategy, tokens}) => {
     const {config, candidate} = backboneAdapterCase(family, algo, strategy, tokens);
     for (const invalid of [
       {...candidate, preview_operator_components:['backbone', 'text_encoder']},
@@ -172,22 +174,30 @@ it.each(backboneCases.filter(row => row.family === 'sdxl' && row.tokens > 75 && 
     ]) expect(confirmedTrainingComputePolicy(invalid, config)).toBeNull();
     const obsolete: Record<string, unknown> = {...candidate};
     for (const key of Object.keys(obsolete)) if (key.startsWith('preview_')) delete obsolete[key];
-    obsolete.id = `dtk-sdxl-backbone-${algo}-${strategy}-bf16-compute-v1`;
+    obsolete.id = `dtk-${family}-backbone-${algo}-${strategy}-bf16-compute-v1`;
     expect(confirmedTrainingComputePolicy(obsolete, config)).toBeNull();
+    expect(confirmedTrainingComputePolicy({...candidate, id:obsolete.id}, config)).toBeNull();
     expect(confirmedTrainingComputePolicy(candidate, {...config, loop:{...config.loop, gpu_count:1}})).toBeNull();
-    expect(confirmedTrainingComputePolicy(candidate, {...config, model:{...config.model, sdxl_max_token_length:75}})).toBeNull();
-    if (algo === 'lokr' && strategy === 'ddp') {
+    if (family === 'sdxl') {
+      expect(confirmedTrainingComputePolicy(candidate, {...config, model:{...config.model, sdxl_max_token_length:75}})).toBeNull();
+    }
+    if (family === 'sdxl' && algo === 'lokr' && strategy === 'ddp') {
       const legacy = {...animaPolicy, id:'dtk-sdxl-long-text-bf16-conv-fp32-linear-compute-v1', conv_forward:'fp32-output-bf16', conv_implementation:'conv2d-fp32-output-bf16-v1', sdxl_max_token_length:tokens};
       expect(confirmedTrainingComputePolicy(legacy, config)).toBeNull();
     }
   },
 );
 
-it('does not extend preview metadata to single-GPU, short-caption, Anima or text-training policies', () => {
+it('keeps unmeasured Anima, single-GPU, short-caption and text-training previews unchanged', () => {
   const rows = [
     backboneAdapterCase('sdxl', 'lora', 'single', 150),
     backboneAdapterCase('sdxl', 'lora', 'ddp', 75),
     backboneAdapterCase('anima', 'lora', 'ddp'),
+    backboneAdapterCase('anima', 'lora', 'single'),
+    backboneAdapterCase('anima', 'lokr', 'fsdp'),
+    {config:animaDualConfig('ddp'), candidate:animaDdpPolicy},
+    {config:animaDualConfig('fsdp'), candidate:animaFsdpPolicy},
+    textLoraCase('anima', true, 2),
     textLoraCase('sdxl', true, 2),
   ];
   for (const {config, candidate} of rows) {
@@ -224,6 +234,41 @@ it.each(['single', 'ddp', 'fsdp'] as const)('describes frozen-encoder LoRA %s an
   expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual({...initial, loop:{...initial.loop, deterministic:false}});
 });
 
+it('uses the server-confirmed Anima LoRA FSDP preview contract only for multiple GPUs', () => {
+  const {config, candidate} = backboneAdapterCase('anima', 'lora', 'fsdp');
+  expect(candidate.id).toBe('dtk-anima-backbone-lora-fsdp-bf16-compute-preview-v2');
+  for (const gpu_count of [2, 4]) {
+    const draft = {...config, loop:{...config.loop, gpu_count}};
+    expect(confirmedTrainingComputePolicy(candidate, draft)).toEqual(candidate);
+    // The editor must not infer a DTK recipe on NVIDIA or an unvalidated host.
+    expect(currentTrainingComputePolicy(null, draft, JSON.stringify(draft), false)).toBeNull();
+  }
+  expect(confirmedTrainingComputePolicy(candidate, {...config, loop:{...config.loop, distributed_strategy:'ddp'}})).toBeNull();
+});
+
+it('shows Anima FSDP preview arithmetic in the existing hint and restores user choices on disable', () => {
+  const {config:initial, candidate} = backboneAdapterCase('anima', 'lora', 'fsdp');
+  function Editor() {
+    const [value,setValue] = React.useState(initial);
+    return <><SchemaForm schema={schema} value={value} onChange={setValue} computePolicy={candidate} compact showAdvanced groupFilter={['loop','memory']}/><output data-testid="draft">{JSON.stringify(value)}</output></>;
+  }
+  render(<Editor/>);
+  const hint = screen.getByTestId('field-loop.deterministic');
+  expect(hint).toHaveTextContent('FSDP 将模型参数、适配器梯度和优化器状态分摊到多卡');
+  expect(hint).toHaveTextContent('文本编码器保持冻结');
+  expect(hint).toHaveTextContent('预览的主模型线性层也保留 BF16 舍入与输出，并使用 FP32 运算');
+  expect(hint).toHaveTextContent('不可混用旧策略的训练状态');
+  expect(hint).not.toHaveTextContent('标签长度');
+  expect(hint).not.toHaveTextContent('卷积使用 FP32');
+  expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual(initial);
+  fireEvent.click(screen.getByRole('checkbox', {name:'可复现训练'}));
+  expect(hint).not.toHaveTextContent('重复预览');
+  expect(screen.getByRole('combobox', {name:'混合精度'})).toHaveTextContent('BF16');
+  expect(screen.getByRole('checkbox', {name:'允许 TF32'})).toBeChecked();
+  expect(screen.getByRole('combobox', {name:'注意力后端'})).toHaveTextContent('xFormers');
+  expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual({...initial, loop:{...initial.loop, deterministic:false}});
+});
+
 it.each(backboneCases)('explains $family $algo $strategy $tokens-token arithmetic in both languages', ({family, algo, strategy, tokens}) => {
   const {config, candidate} = backboneAdapterCase(family, algo, strategy, tokens);
   const confirmed = confirmedTrainingComputePolicy(candidate, config);
@@ -233,7 +278,8 @@ it.each(backboneCases)('explains $family $algo $strategy $tokens-token arithmeti
   expect(english).toContain('Text encoders stay frozen');
   expect(english).toContain('Memory use and runtime may increase');
   expect(english).toContain('states from previous policies cannot be mixed');
-  if (family === 'sdxl' && tokens > 75 && strategy !== 'single') {
+  if ((family === 'sdxl' && tokens > 75 && strategy !== 'single')
+    || (family === 'anima' && algo === 'lora' && strategy === 'fsdp')) {
     expect(english).toContain('Preview backbone linear layers also use FP32 operations with BF16 rounding and outputs');
     expect(chinese).toContain('预览的主模型线性层也保留 BF16 舍入与输出');
   } else {

@@ -33,8 +33,11 @@ DTK_SDXL_LONG_TEXT_PREVIEW_POLICY_IDS = {
     for algo in ("lora", "lokr")
     for strategy in ("ddp", "fsdp")
 }
-DTK_BACKBONE_ADAPTER_ALL_POLICY_IDS = frozenset(DTK_BACKBONE_ADAPTER_POLICY_IDS.values()) | frozenset(
-    DTK_SDXL_LONG_TEXT_PREVIEW_POLICY_IDS.values()
+DTK_ANIMA_LORA_FSDP_PREVIEW_POLICY_ID = "dtk-anima-backbone-lora-fsdp-bf16-compute-preview-v2"
+DTK_BACKBONE_ADAPTER_ALL_POLICY_IDS = (
+    frozenset(DTK_BACKBONE_ADAPTER_POLICY_IDS.values())
+    | frozenset(DTK_SDXL_LONG_TEXT_PREVIEW_POLICY_IDS.values())
+    | {DTK_ANIMA_LORA_FSDP_PREVIEW_POLICY_ID}
 )
 
 
@@ -212,6 +215,24 @@ def _with_sdxl_long_text_preview(cfg, policy):
     }
 
 
+def _with_anima_lora_fsdp_preview(cfg, policy):
+    """Version the frozen-text Anima LoRA FSDP preview without changing training."""
+    if not (
+        cfg.model.family == "anima"
+        and cfg.adapter.algo == "lora"
+        and cfg.loop.distributed_strategy == "fsdp"
+        and cfg.loop.gpu_count >= 2
+        and policy["id"] == DTK_BACKBONE_ADAPTER_POLICY_IDS[("anima", "lora", "fsdp")]
+    ):
+        return policy
+    return policy | {
+        "id": DTK_ANIMA_LORA_FSDP_PREVIEW_POLICY_ID,
+        "preview_operator_components": ["backbone"],
+        "preview_linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
+        "preview_linear_implementation": BF16_LINEAR_PREVIEW_IMPLEMENTATION_ID,
+    }
+
+
 def resolve_training_compute_config(
     cfg: TrainConfig, device_type: str | None, profile: str
 ) -> tuple[TrainConfig, TrainingComputePolicy | None]:
@@ -226,7 +247,8 @@ def resolve_training_compute_config(
     if adapter_policy is not None:
         effective.memory.allow_tf32 = False
         effective.model.attention = "sdpa"
-        return effective, _with_sdxl_long_text_preview(cfg, adapter_policy)
+        adapter_policy = _with_sdxl_long_text_preview(cfg, adapter_policy)
+        return effective, _with_anima_lora_fsdp_preview(cfg, adapter_policy)
     text_policy = _text_lora_policy(cfg, device_type, profile)
     if text_policy is not None:
         effective.memory.allow_tf32 = False

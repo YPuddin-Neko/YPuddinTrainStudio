@@ -36,10 +36,11 @@ const textLoraPolicyIds = new Set([
   'dtk-krea2-text-lora-bf16-fp32-contractions-v1',
 ]);
 
-const previewPolicyIds = new Set(
-  ['lora', 'lokr'].flatMap(algo => ['ddp', 'fsdp'].map(strategy =>
+const previewPolicyIds = new Set([
+  ...['lora', 'lokr'].flatMap(algo => ['ddp', 'fsdp'].map(strategy =>
     `dtk-sdxl-backbone-${algo}-${strategy}-bf16-compute-preview-v2`)),
-);
+  'dtk-anima-backbone-lora-fsdp-bf16-compute-preview-v2',
+]);
 const previewPolicyFields = {
   preview_operator_components: ['backbone'],
   preview_linear_forward: 'bf16-rounded-operands-fp32-contraction-bf16-output',
@@ -55,7 +56,8 @@ const backboneAdapterPolicyIds = new Set(
 
 interface BackboneAdapterComputePolicy extends CommonTrainingComputePolicy {
   id: `dtk-${'anima' | 'sdxl'}-backbone-${`lora-${'single' | 'ddp' | 'fsdp'}` | 'lokr-fsdp'}-bf16-compute-v1`
-    | `dtk-sdxl-backbone-${'lora' | 'lokr'}-${'ddp' | 'fsdp'}-bf16-compute-preview-v2`;
+    | `dtk-sdxl-backbone-${'lora' | 'lokr'}-${'ddp' | 'fsdp'}-bf16-compute-preview-v2`
+    | 'dtk-anima-backbone-lora-fsdp-bf16-compute-preview-v2';
   mixed_precision: 'bf16';
   linear_forward: 'native-bf16' | 'bf16-rounded-operands-fp32-contraction-bf16-output';
   linear_backward: 'fp32-contractions-grad-original-dtype';
@@ -126,7 +128,10 @@ function confirmedBackboneAdapterPolicy(policy: Record<string, unknown>, config:
   const strategy = gpuCount > 1 ? config.loop?.distributed_strategy : 'single';
   const rules = config.adapter?.rules ?? [];
   const tokens = config.model?.sdxl_max_token_length ?? 75;
-  const stablePreview = family === 'sdxl' && [150, 225].includes(tokens) && gpuCount >= 2;
+  const stablePreview = gpuCount >= 2 && (
+    (family === 'sdxl' && [150, 225].includes(tokens))
+    || (family === 'anima' && algo === 'lora' && strategy === 'fsdp')
+  );
   if (!['anima', 'sdxl'].includes(family) || !['lora', 'lokr'].includes(algo)
     || !Number.isInteger(gpuCount) || gpuCount < 1
     || !['ddp', 'fsdp'].includes(config.loop?.distributed_strategy)
