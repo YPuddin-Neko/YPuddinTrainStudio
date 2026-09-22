@@ -256,7 +256,13 @@ def cmd_serve(args: argparse.Namespace) -> int:
             # Keep the capability in this worker, not in later training/probe subprocesses.
             restart_token=os.environ.pop(RESTART_TOKEN_ENV, None),
         )
-    server.run()
+    try:
+        server.run()
+    except KeyboardInterrupt:
+        # Uvicorn lets the asyncio runner re-raise Ctrl+C after its graceful
+        # shutdown logs. Treat an interactive stop as a normal service exit so
+        # the launcher never prints a misleading traceback.
+        return 0
     return 0 if server.started else 1
 
 
