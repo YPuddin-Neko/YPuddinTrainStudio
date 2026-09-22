@@ -7,6 +7,8 @@ import sqlite3
 import threading
 import time
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -131,6 +133,20 @@ class Database:
                 raise
 
     # ----------------------------------------------------------------- generic helpers
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        """Group short writes on the shared connection, including nested callers."""
+        with self.lock:
+            name = "batch_" + uuid.uuid4().hex
+            self.conn.execute(f"SAVEPOINT {name}")
+            try:
+                yield
+                self.conn.execute(f"RELEASE SAVEPOINT {name}")
+            except BaseException:
+                self.conn.execute(f"ROLLBACK TO SAVEPOINT {name}")
+                self.conn.execute(f"RELEASE SAVEPOINT {name}")
+                raise
+
     def execute(self, sql: str, params: tuple | dict = ()) -> sqlite3.Cursor:
         with self.lock:
             return self.conn.execute(sql, params)

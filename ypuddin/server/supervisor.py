@@ -8,6 +8,7 @@ import logging
 import os
 import subprocess
 import sys
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,8 @@ log = logging.getLogger(__name__)
 
 ACTIVE = ("queued", "scheduled", "running", "pausing", "cancelling")
 TERMINAL = ("completed", "failed", "cancelled", "paused")
+EVENT_BATCH_SIZE = 128
+EVENT_BATCH_BYTES = 256 * 1024
 
 
 def training_device_error(
@@ -115,6 +118,9 @@ class JobSupervisor:
         self._task: asyncio.Task | None = None
         self._event_loop: asyncio.AbstractEventLoop | None = None
         self._stopping = False
+        self._pending_events: ContextVar[list[tuple[str, dict[str, Any]]] | None] = ContextVar(
+            "supervisor_pending_events", default=None
+        )
 
     # ----------------------------------------------------------------- lifecycle
     async def start(self) -> None:
@@ -144,9 +150,8 @@ class JobSupervisor:
         deadline = asyncio.get_running_loop().time() + 20
         while self._procs and asyncio.get_running_loop().time() < deadline:
             for job_id, proc in list(self._procs.items()):
-                self._pump_events(job_id)
-                if proc.poll() is not None:
-                    self._pump_events(job_id)
+                drained = self._pump_events(job_id)
+                if proc.poll() is not None and drained and self._pump_events(job_id):
                     self._on_exit(job_id, proc.returncode)
                     del self._procs[job_id]
                     self._devices.pop(job_id, None)
@@ -155,32 +160,44 @@ class JobSupervisor:
         for job_id, proc in list(self._procs.items()):
             self._kill_process_tree(proc)
             await asyncio.to_thread(proc.wait, 5)
-            self._pump_events(job_id)
+            while not self._pump_events(job_id):
+                await asyncio.sleep(0)
             self._on_exit(job_id, proc.returncode)
         self._procs.clear()
         self._devices.clear()
 
     async def _loop(self) -> None:
         while not self._stopping:
+            backlog = False
             try:
-                self._tick()
+                backlog = self._tick()
             except Exception:  # noqa: BLE001
                 log.exception("supervisor tick failed")
-            await asyncio.sleep(self.poll)
+            # Drain bursts promptly without starving HTTP or limiting ingestion
+            # to one small batch per polling interval.
+            await asyncio.sleep(0 if backlog else self.poll)
 
     # ----------------------------------------------------------------- scheduling
-    def _tick(self) -> None:
+    def _tick(self) -> bool:
+        backlog = False
         for job_id in list(self._procs):
-            self._pump_events(job_id)
+            drained = self._pump_events(job_id)
+            backlog |= not drained
             proc = self._procs[job_id]
             if proc.poll() is not None:
-                self._pump_events(job_id)
+                # An exited worker may leave several batches behind. Its terminal
+                # event and artifacts must arrive before exit-code reconciliation.
+                if not drained:
+                    continue
+                if not self._pump_events(job_id):
+                    backlog = True
+                    continue
                 self._on_exit(job_id, proc.returncode)
                 del self._procs[job_id]
                 self._devices.pop(job_id, None)
         settings = self.db.get_kv("queue.settings", {"held": False, "max_concurrent": self.max_concurrent})
         if settings.get("held") or maintenance_blocked(self.db):
-            return
+            return backlog
         t = now()
         self.db.execute(
             "UPDATE jobs SET status='queued' WHERE status='scheduled' AND scheduled_at IS NOT NULL AND scheduled_at <= ?",
@@ -220,6 +237,7 @@ class JobSupervisor:
             except Exception as exc:
                 log.exception("could not launch job %s", nxt["id"])
                 self._set_status(nxt["id"], "failed", error=str(exc), finished_at=now())
+        return backlog
 
     def _choose_device(
         self, job: dict[str, Any], *, check_memory: bool = True
@@ -290,7 +308,7 @@ class JobSupervisor:
                 latest = json.loads(current.get("progress_json") or "{}")
                 if any(latest.get(key) != value for key, value in progress.items()):
                     self._merge_progress(job["id"], progress)
-                    self.bus.publish("job.phase", {"job_id": job["id"], **progress})
+                    self._publish("job.phase", {"job_id": job["id"], **progress})
 
     @staticmethod
     def _gpu_count(job: dict[str, Any]) -> int:
@@ -428,33 +446,73 @@ class JobSupervisor:
         self._set_status(
             job_id, "running", started_at=now(), pid=proc.pid, exit_code=None, resume_from=resume_from
         )
-        self.bus.publish("job.phase", {"job_id": job_id, "phase": phase})
+        self._publish("job.phase", {"job_id": job_id, "phase": phase})
 
     # ----------------------------------------------------------------- events
-    def _pump_events(self, job_id: str) -> None:
+    def _publish(self, type_: str, data: dict[str, Any]) -> None:
+        pending = self._pending_events.get()
+        if pending is None:
+            self.bus.publish(type_, data)
+        else:
+            pending.append((type_, data))
+
+    def _pump_events(self, job_id: str) -> bool:
+        """Consume one bounded batch; return whether no complete backlog remains.
+
+        Workers can emit much faster than a network-backed SQLite file commits.
+        One transaction per batch avoids a durable write per progress event, and
+        a bounded batch gives HTTP requests and other jobs a turn between polls.
+        """
         job = self.db.fetchone("SELECT run_dir, status FROM jobs WHERE id=?", (job_id,))
         if not job:
-            return
+            return True
         path = Path(job["run_dir"]) / "events.jsonl"
         if not path.exists():
-            return
+            return True
         offset = self._offsets.get(job_id, 0)
+        end = offset
+        events = []
         with open(path, "rb") as f:
             f.seek(offset)
-            chunk = f.read()
-        if not chunk:
-            return
-        # only consume complete lines
-        cut = chunk.rfind(b"\n")
-        if cut < 0:
-            return
-        self._offsets[job_id] = offset + cut + 1
-        for line in chunk[: cut + 1].splitlines():
+            drained = True
+            for _ in range(EVENT_BATCH_SIZE):
+                line = f.readline()
+                if not line.endswith(b"\n"):
+                    break  # Leave a partially written line for the next poll.
+                end = f.tell()
+                events.append(line)
+                if end - offset >= EVENT_BATCH_BYTES:
+                    drained = not f.read(1)
+                    break
+            else:
+                drained = not f.read(1)
+        if not events:
+            return drained
+        # Neither SSE nor the read cursor can get ahead of committed state. A
+        # ContextVar isolates HTTP-control publications from this synchronous batch.
+        pending: list[tuple[str, dict[str, Any]]] = []
+        with self.db.lock:
+            outcome_seen = job_id in self._outcome_seen
+            token = self._pending_events.set(pending)
             try:
-                ev = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            self._handle_event(job_id, ev)
+                with self.db.transaction():
+                    for line in events:
+                        try:
+                            ev = json.loads(line)
+                        except (json.JSONDecodeError, UnicodeDecodeError):
+                            continue
+                        if isinstance(ev, dict):
+                            self._handle_event(job_id, ev)
+            except BaseException:
+                if not outcome_seen:
+                    self._outcome_seen.discard(job_id)
+                raise
+            finally:
+                self._pending_events.reset(token)
+            self._offsets[job_id] = end
+            for type_, data in pending:
+                self.bus.publish(type_, data)
+        return drained
 
     def _handle_event(self, job_id: str, ev: dict[str, Any]) -> None:
         t = ev.get("type")
@@ -484,7 +542,7 @@ class JobSupervisor:
             self.db.update(
                 "jobs", job_id, {"progress_json": json.dumps(progress), "latest_json": json.dumps(latest)}
             )
-            self.bus.publish("job.step", data)
+            self._publish("job.step", data)
         elif t == "run.prepared":
             self.db.update("jobs", job_id, {"resume_from": None})
             self._merge_progress(
@@ -495,30 +553,30 @@ class JobSupervisor:
                     "preparing": False,
                 },
             )
-            self.bus.publish(
+            self._publish(
                 "job.phase",
                 {"job_id": job_id, "phase": "prepared", **{k: v for k, v in data.items() if k != "job_id"}},
             )
         elif t == "phase.changed":
             self._merge_progress(job_id, {"phase": ev.get("phase")})
-            self.bus.publish("job.phase", data)
+            self._publish("job.phase", data)
         elif t == "cache.progress":
             self._merge_progress(
                 job_id,
                 {"cache_done": ev.get("done"), "cache_total": ev.get("total"), "cache_kind": ev.get("kind")},
             )
-            self.bus.publish("job.cache_progress", data)
+            self._publish("job.cache_progress", data)
         elif t == "sample.progress":
-            self.bus.publish("job.sample_progress", data)
+            self._publish("job.sample_progress", data)
         elif t == "xyz.progress":
             self._merge_progress(job_id, {k: v for k, v in data.items() if k != "job_id"})
-            self.bus.publish("job.xyz_progress", data)
+            self._publish("job.xyz_progress", data)
         elif t == "validation":
-            self.bus.publish("job.validation", data)
+            self._publish("job.validation", data)
         elif t == "sample.saved":
             row = self.db.fetchone("SELECT run_dir FROM jobs WHERE id=?", (job_id,))
             events_path = Path(row["run_dir"]) / "events.jsonl" if row and row["run_dir"] else None
-            self.bus.publish(
+            self._publish(
                 "job.sample",
                 {
                     **data,
@@ -530,13 +588,13 @@ class JobSupervisor:
         elif t == "checkpoint.saved":
             if ev.get("kind") in {"weights", "model"}:
                 self._register_artifact(job_id, ev)
-            self.bus.publish("job.checkpoint", data)
+            self._publish("job.checkpoint", data)
         elif t == "warning":
-            self.bus.publish("job.warning", data)
+            self._publish("job.warning", data)
         elif t in ("run.finished", "run.paused", "run.stopped", "run.failed"):
             self._set_terminal(job_id, t, ev)
         else:
-            self.bus.publish("job.event", data)
+            self._publish("job.event", data)
 
     def _merge_progress(self, job_id: str, patch: dict[str, Any]) -> None:
         row = self.db.fetchone("SELECT progress_json FROM jobs WHERE id=?", (job_id,))
@@ -568,7 +626,7 @@ class JobSupervisor:
                 "meta_json": "{}",
             },
         )
-        self.bus.publish("artifact.created", {"job_id": job_id, "artifact_id": aid, "path": str(path)})
+        self._publish("artifact.created", {"job_id": job_id, "artifact_id": aid, "path": str(path)})
 
     def _set_terminal(self, job_id: str, event_type: str, event: dict[str, Any] | None = None) -> None:
         status = {
@@ -624,7 +682,7 @@ class JobSupervisor:
     def _set_status(self, job_id: str, status: str, **fields: Any) -> None:
         self.db.update("jobs", job_id, {"status": status, **fields})
         row = self.db.fetchone("SELECT progress_json, error FROM jobs WHERE id=?", (job_id,))
-        self.bus.publish(
+        self._publish(
             "job.state",
             {
                 "job_id": job_id,
@@ -633,7 +691,7 @@ class JobSupervisor:
                 "error": row["error"] if row else None,
             },
         )
-        self.bus.publish("queue.changed", {})
+        self._publish("queue.changed", {})
 
     # ----------------------------------------------------------------- control
     def request(self, job_id: str, command: str) -> dict[str, Any]:
@@ -784,7 +842,7 @@ class JobSupervisor:
                 "latest_json": "{}",
             },
         )
-        self.bus.publish("queue.changed", {})
+        self._publish("queue.changed", {})
         return self.db.fetchone("SELECT * FROM jobs WHERE id=?", (new,))
 
     def is_running(self, job_id: str) -> bool:
