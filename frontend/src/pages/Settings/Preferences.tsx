@@ -128,6 +128,6 @@ export default function Preferences() {
       <NetworkPreferences value={settings.network ?? defaultNetworkSettings} password={proxyPassword} disabled={saving} onChange={network => update(s => ({ ...s, network }))} onPasswordChange={value => { if (!savingRef.current) { setProxyPassword(value); setSaved(false); } }}/>
     </>}
     </fieldset>
-    <div className="settings-save">{appearance && <ServiceControls secondary disabled={saving} refreshTarget={serviceRefreshTarget} refreshKey={serviceRefreshKey}/>}<button onClick={handleSave} disabled={saving} className="settings-action" data-testid="settings-save-btn">{saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}<span>{saved ? text('已保存，请重启服务', 'Saved; restart service to apply') : saving ? t('settings.saving') : t('settings.save')}</span></button></div>
+    <div className="settings-save">{appearance && <ServiceControls secondary disabled={saving} refreshTarget={serviceRefreshTarget} refreshKey={serviceRefreshKey}/>}<span role="status" className="settings-note">{saved && text('已保存，请重启服务后生效', 'Saved; restart the service to apply')}</span><button onClick={handleSave} disabled={saving} className="settings-action" data-testid="settings-save-btn">{saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}<span>{saving ? t('settings.saving') : t('settings.save')}</span></button></div>
   </SettingsSections></div>;
 }
