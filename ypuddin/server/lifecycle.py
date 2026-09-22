@@ -207,6 +207,14 @@ def saved_address(root: Path, host: str | None, port: int | None) -> tuple[str, 
     return host or settings.get("host", "127.0.0.1"), port or settings.get("port", 8123)
 
 
+def pending_data_root(root: Path) -> Path | None:
+    try:
+        value = json.loads((root / "settings.json").read_text(encoding="utf-8")).get("_pending_data_root")
+    except (OSError, ValueError, TypeError):
+        return None
+    return Path(value).expanduser().resolve() if isinstance(value, str) and value.strip() else None
+
+
 def launch_service(data_root: str, host: str | None, port: int | None) -> int:
     root = Path(data_root).expanduser().resolve()
     environment_root = profile_root(root)
@@ -315,6 +323,13 @@ def launch_service(data_root: str, host: str | None, port: int | None) -> int:
                     atomic_json(selected, {"id": environment_id, "python": python})
                 else:
                     selected.unlink(missing_ok=True)
+                if (next_root := pending_data_root(root)) is not None and next_root != root:
+                    root = next_root
+                    environment_root = profile_root(root)
+                    folder = environment_root / "service"
+                    folder.mkdir(parents=True, exist_ok=True)
+                    control = folder / f"restart-{uuid.uuid4().hex}.json"
+                    selected = folder / "selected.json"
                 continue
             if request is not None:
                 print(

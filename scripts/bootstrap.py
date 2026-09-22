@@ -956,6 +956,18 @@ def server_address(host: str | None, port: int | None, data_root: str) -> tuple[
     return host or saved.get("host", "127.0.0.1"), int(port or saved.get("port", 8123))
 
 
+def configured_data_root(data_root: str) -> str:
+    """Use a data root saved by the UI on the next launcher start."""
+    path = Path(data_root).expanduser()
+    if not path.is_absolute():
+        path = ROOT / path
+    try:
+        value = json.loads((path / "settings.json").read_text(encoding="utf-8")).get("_pending_data_root")
+    except (OSError, ValueError, TypeError):
+        value = None
+    return str(Path(value).expanduser()) if isinstance(value, str) and value.strip() else data_root
+
+
 # --------------------------------------------------------------------------- service
 def wait_for(url: str, timeout: float = 60) -> bool:
     t0 = time.time()
@@ -970,6 +982,7 @@ def wait_for(url: str, timeout: float = 60) -> bool:
 
 
 def serve(host: str | None, port: int | None, data_root: str, open_browser: bool) -> int:
+    data_root = configured_data_root(data_root)
     host, port = server_address(host, port, data_root)
     ypuddin = venv_bin("ypuddin")
     cmd = [str(ypuddin), "serve", "--host", host, "--port", str(port), "--data-root", data_root]
@@ -994,6 +1007,7 @@ def serve(host: str | None, port: int | None, data_root: str, open_browser: bool
 
 
 def dev(host: str | None, port: int | None, data_root: str, fe_port: int, open_browser: bool) -> int:
+    data_root = configured_data_root(data_root)
     host, port = server_address(host, port, data_root)
     npm = shutil.which("npm") or shutil.which("npm.cmd")
     if not npm:

@@ -74,6 +74,14 @@ class ServiceContext:
     def settings_path(self) -> Path:
         return self.data_root / "settings.json"
 
+    def pending_data_root(self) -> str | None:
+        """Return a data root saved for the next launcher restart, if any."""
+        try:
+            value = json.loads(self.settings_path.read_text(encoding="utf-8")).get("_pending_data_root")
+        except (OSError, ValueError, TypeError):
+            return None
+        return str(value) if isinstance(value, str) and value.strip() else None
+
     def settings(self) -> dict[str, Any]:
         with self._settings_lock:
             return self._settings()
@@ -164,10 +172,12 @@ class ServiceContext:
                 == (self.data_root / "runs").resolve()
                 else "custom"
             )
-        if Path(cur["paths"]["data_root"]).expanduser().resolve() != self.data_root.resolve():
-            raise ValueError(
-                "data_root is controlled by --data-root; changing it requires a separate data migration"
-            )
+        requested_data_root = Path(cur["paths"]["data_root"]).expanduser().resolve()
+        pending_data_root = None if requested_data_root == self.data_root.resolve() else str(requested_data_root)
+        # Keep the running context bound to its current root. The launcher reads
+        # this pending value after restart, so the UI can save it without changing
+        # the database and model paths underneath the live service.
+        cur["paths"]["data_root"] = str(self.data_root)
         for key in ("cache_dir", "output_dir", "models_dir"):
             value = cur["paths"][key]
             if not value or not str(value).strip():
@@ -194,6 +204,10 @@ class ServiceContext:
         # This replacement is the single commit point for both the public policy
         # and the private password. Failed/uncommitted preparations remain inactive.
         stored = {**cur, PASSWORD_REVISION: revision}
+        if pending_data_root:
+            stored["_pending_data_root"] = pending_data_root
+        else:
+            stored.pop("_pending_data_root", None)
         with tempfile.NamedTemporaryFile(
             mode="w", dir=self.data_root, suffix=".tmp", delete=False, encoding="utf-8"
         ) as f:

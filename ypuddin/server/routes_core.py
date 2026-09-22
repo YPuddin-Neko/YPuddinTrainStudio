@@ -224,13 +224,19 @@ def get_family_info(name: str) -> dict[str, Any]:
 # --------------------------------------------------------------------------- settings / fs
 @router.get("/settings", response_model=m.Settings, response_model_exclude_unset=True)
 def get_settings(c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    return c.settings()
+    result = c.settings()
+    if pending := c.pending_data_root():
+        result["paths"]["data_root"] = pending
+    return result
 
 
 @router.put("/settings", response_model=m.Settings, response_model_exclude_unset=True)
 def put_settings(patch: dict[str, Any], c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     try:
-        return c.save_settings(patch)
+        result = c.save_settings(patch)
+        if pending := c.pending_data_root():
+            result["paths"]["data_root"] = pending
+        return result
     except (ValueError, TypeError, KeyError) as exc:
         raise ApiError(str(exc), code="settings.invalid") from exc
 

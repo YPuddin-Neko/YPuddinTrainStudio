@@ -116,7 +116,10 @@ def test_settings_new_paths_preserve_old_jobs_and_delete_custom_run(api, image_d
     assert {key: saved_old[key] for key in ("run_dir", "samples_dir", "config_json")} == {
         key: old[key] for key in ("run_dir", "samples_dir", "config_json")
     }
-    assert client.put("/api/settings", json={"paths": {"data_root": str(tmp_path)}}).status_code == 400
+    switched = client.put("/api/settings", json={"paths": {"data_root": str(tmp_path)}})
+    assert switched.status_code == 200
+    assert switched.json()["paths"]["data_root"] == str(tmp_path)
+    assert json.loads(ctx.settings_path.read_text())["_pending_data_root"] == str(tmp_path)
     assert client.put("/api/settings", json={"server": {"port": 99999}}).status_code == 400
     run = Path(new["run_dir"])
     run.mkdir(parents=True)
