@@ -57,7 +57,7 @@ beforeEach(async () => {
     }),
     http.post('/api/models/recommendations/:id/download',async({params,request})=>{
       const body=await request.json() as {provider:'huggingface'|'modelscope';is_default:boolean};catalogDownload(params.id,body);
-      const entry=entries.find(entry=>entry.id===params.id)!;downloads=[task({kind:entry.kind,filename:entry.filename,provider:body.provider})];return HttpResponse.json(downloads[0],{status:202});
+      const entry=entries.find(entry=>entry.id===params.id)!;const started=task({kind:entry.kind,filename:entry.filename,provider:body.provider,recommendation_id:entry.id});downloads.unshift(started);return HttpResponse.json(started,{status:202});
     }),
     http.patch('/api/models/:id',async({params,request})=>{
       const body=await request.json() as {is_default:boolean};patch(params.id,body);const row=models.find(model=>model.id===params.id)!;
@@ -167,12 +167,72 @@ describe('real model management UI contracts',()=>{
     expect(progress).toHaveAttribute('value','500');expect(progress).toHaveAttribute('max','1000');
     expect(screen.getByRole('button',{name:'下载中'})).toBeDisabled();expect(cancel).not.toHaveBeenCalled();expect(models.some(model=>model.kind==='text_encoder')).toBe(false);
   });
-  it('shows failed download errors inline and retries without a download page',async()=>{
-    downloads=[task({id:'failed',status:'failed',error:'<urlopen error timed out>'})];
-    const retry=vi.fn();server.use(http.post('/api/models/downloads/failed/retry',()=>{retry();downloads=[task({id:'retry',status:'downloading'})];return HttpResponse.json(downloads[0],{status:202});}));
+  it('keeps only the current catalog attempt through retry, transfer and completion with retained server history',async()=>{
+    downloads=[
+      task({id:'older-failed',recommendation_id:'anima-encoder',created_at:1,status:'failed',error:'Old network failure'}),
+      task({id:'failed',recommendation_id:'anima-encoder',created_at:2,status:'failed',error:'<urlopen error timed out>'}),
+    ];
+    const retry=vi.fn();server.use(http.post('/api/models/downloads/failed/retry',()=>{
+      retry();const started=task({id:'retry',recommendation_id:'anima-encoder',created_at:3,status:'queued',downloaded_bytes:0});
+      downloads.push(started);return HttpResponse.json(started,{status:202});
+    }));
+    mount(<Models/>,'/models?family=anima&view=downloads');
+    const card=await screen.findByTestId('model-component-text_encoder');
+    expect(await within(card).findByRole('alert')).toHaveTextContent('下载失败：<urlopen error timed out>');
+    expect(within(card).getByRole('alert')).toHaveClass('model-download-error');
+    expect(screen.queryByText(/Old network failure/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('region',{name:'下载状态'})).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab',{name:/下载/})).not.toBeInTheDocument();
+    expect(screen.queryByRole('button',{name:'更换来源'})).not.toBeInTheDocument();
+    fireEvent.click(within(card).getByRole('button',{name:'重试'}));await waitFor(()=>expect(retry).toHaveBeenCalledOnce());
+    expect(await within(card).findByRole('button',{name:'下载中'})).toBeDisabled();
+    expect(within(card).getByRole('button',{name:'下载中'})).toHaveClass('model-button-downloading');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region',{name:'下载状态'})).not.toBeInTheDocument();
+    downloads=downloads.map(row=>row.id==='retry'?{...row,status:'downloading',downloaded_bytes:750}:row);
+    fireEvent.click(screen.getByRole('button',{name:'刷新模型'}));
+    await waitFor(()=>expect(within(card).getByRole('progressbar')).toHaveAttribute('value','750'));
+    expect(within(card).getByRole('button',{name:'下载中'})).toBeDisabled();
+    downloads=downloads.map(row=>row.id==='retry'?{...row,status:'completed',downloaded_bytes:1000}:row);
+    models.push({...models[0],id:'encoder-ready',kind:'text_encoder',path:'D:\\models\\encoder.safetensors',is_default:true});
+    fireEvent.click(screen.getByRole('button',{name:'刷新模型'}));
+    await within(card).findByText('当前默认');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button',{name:'重试'})).not.toBeInTheDocument();
+    expect(screen.queryByRole('button',{name:'下载中'})).not.toBeInTheDocument();
+    expect(screen.queryByRole('region',{name:'下载状态'})).not.toBeInTheDocument();
+    expect(downloads).toHaveLength(3);
+  });
+  it('keeps independent same-name custom downloads separate without resurrecting their completed history',async()=>{
+    const first={filename:'encoder.safetensors',target_path:'D:\\models\\custom-one\\encoder.safetensors',source_url:'https://huggingface.co/one/model/resolve/main/encoder.safetensors'};
+    const second={filename:'encoder.safetensors',target_path:'D:\\models\\custom-two\\encoder.safetensors',source_url:'https://huggingface.co/two/model/resolve/main/encoder.safetensors'};
+    downloads=[
+      task({...first,id:'one-failed',created_at:1,status:'failed',error:'Completed history failure'}),
+      task({...second,id:'two-failed',created_at:2,status:'failed',error:'Custom model timed out'}),
+      task({...first,id:'one-complete',created_at:3,status:'completed'}),
+    ];
+    server.use(http.post('/api/models/downloads/two-failed/retry',()=>{
+      const started=task({...second,id:'two-retry',created_at:4,status:'downloading'});downloads.unshift(started);
+      return HttpResponse.json(started,{status:202});
+    }));
     mount(<Models/>);
-    expect(await screen.findByText('下载失败：<urlopen error timed out>')).toBeInTheDocument();expect(screen.queryByRole('tab',{name:/下载/})).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button',{name:'重试'}));await waitFor(()=>expect(retry).toHaveBeenCalledOnce());
+    const state=await screen.findByRole('region',{name:'下载状态'});
+    expect(within(state).getAllByText('encoder.safetensors')).toHaveLength(1);
+    expect(within(state).getByRole('alert')).toHaveTextContent('Custom model timed out');
+    expect(screen.queryByText(/Completed history failure/)).not.toBeInTheDocument();
+    const card=screen.getByTestId('model-component-text_encoder');
+    expect(within(card).queryByRole('alert')).not.toBeInTheDocument();
+    expect(within(card).getByRole('button',{name:'下载'})).toBeEnabled();
+    fireEvent.click(within(state).getByRole('button',{name:'重试'}));
+    expect(await within(state).findByRole('button',{name:'下载中'})).toBeDisabled();
+    expect(within(state).getByRole('button',{name:'下载中'})).toHaveClass('model-button-downloading');
+    expect(within(state).queryByRole('alert')).not.toBeInTheDocument();
+    expect(within(state).getAllByText('encoder.safetensors')).toHaveLength(1);
+    downloads=downloads.map(row=>row.id==='two-retry'?{...row,status:'completed'}:row);
+    fireEvent.click(screen.getByRole('button',{name:'刷新模型'}));
+    await waitFor(()=>expect(screen.queryByRole('region',{name:'下载状态'})).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole('tab',{name:'本地模型 · 1'}));
+    expect(await screen.findByText('anima.safetensors')).toBeInTheDocument();
   });
   it('preferences broadcasts saved appearance without duplicating model settings',async()=>{
     mount(<Preferences/>,'/settings/preferences?section=interface');const page=await screen.findByTestId('settings-page');
@@ -212,7 +272,7 @@ describe('real model management UI contracts',()=>{
   });
   it('retries a failed server task without replacing its source with a client URL',async()=>{
     downloads=[task({id:'failed',provider:'modelscope',status:'failed',error:'HTTP 403: save credentials'})];const retry=vi.fn();
-    server.use(http.post('/api/models/downloads/failed/retry',()=>{retry();downloads=[task({id:'retry',provider:'modelscope',status:'queued'})];return HttpResponse.json(downloads[0],{status:202});}));
+    server.use(http.post('/api/models/downloads/failed/retry',()=>{retry();const started=task({id:'retry',provider:'modelscope',created_at:2,status:'queued'});downloads.unshift(started);return HttpResponse.json(started,{status:202});}));
     mount(<Models/>,'/models?family=anima&view=downloads');fireEvent.click(await screen.findByRole('button',{name:'重试'}));await waitFor(()=>expect(retry).toHaveBeenCalledOnce());expect(download).not.toHaveBeenCalled();
   });
   it('keeps completed downloads out of the model preparation page',async()=>{
