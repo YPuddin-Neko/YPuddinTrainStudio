@@ -31,13 +31,18 @@ BF16_LINEAR_PREVIEW_IMPLEMENTATION_ID = "linear-native-dispatch-bf16-operands-fp
 DTK_SDXL_LONG_TEXT_PREVIEW_POLICY_IDS = {
     (algo, strategy): f"dtk-sdxl-backbone-{algo}-{strategy}-bf16-compute-preview-v2"
     for algo in ("lora", "lokr")
-    for strategy in ("ddp", "fsdp")
+    for strategy in ("single", "ddp", "fsdp")
 }
 DTK_ANIMA_LORA_FSDP_PREVIEW_POLICY_ID = "dtk-anima-backbone-lora-fsdp-bf16-compute-preview-v2"
+DTK_ANIMA_LOKR_FSDP_PREVIEW_POLICY_ID = "dtk-anima-backbone-lokr-fsdp-bf16-compute-preview-v2"
+DTK_ANIMA_FSDP_PREVIEW_POLICY_IDS = {
+    "lora": DTK_ANIMA_LORA_FSDP_PREVIEW_POLICY_ID,
+    "lokr": DTK_ANIMA_LOKR_FSDP_PREVIEW_POLICY_ID,
+}
 DTK_BACKBONE_ADAPTER_ALL_POLICY_IDS = (
     frozenset(DTK_BACKBONE_ADAPTER_POLICY_IDS.values())
     | frozenset(DTK_SDXL_LONG_TEXT_PREVIEW_POLICY_IDS.values())
-    | {DTK_ANIMA_LORA_FSDP_PREVIEW_POLICY_ID}
+    | frozenset(DTK_ANIMA_FSDP_PREVIEW_POLICY_IDS.values())
 )
 
 
@@ -188,18 +193,18 @@ def _backbone_adapter_policy(cfg, device_type, profile):
 
 
 def _with_sdxl_long_text_preview(cfg, policy):
-    """Version only the measured multi-GPU frozen-text long-caption recipe.
+    """Version the measured frozen-text long-caption preview recipe.
 
     Training contractions are unchanged. The separate preview fields prevent
     old checkpoints from silently claiming the new inference numeric behavior.
     """
-    key = (cfg.adapter.algo, cfg.loop.distributed_strategy)
+    strategy = cfg.loop.distributed_strategy if cfg.loop.gpu_count > 1 else "single"
+    key = (cfg.adapter.algo, strategy)
     if not (
         cfg.model.family == "sdxl"
         and cfg.model.sdxl_max_token_length > 75
         and cfg.training.mode == "adapter"
         and not cfg.training.train_text_encoder
-        and cfg.loop.gpu_count >= 2
         and key in DTK_SDXL_LONG_TEXT_PREVIEW_POLICY_IDS
     ):
         return policy
@@ -208,25 +213,25 @@ def _with_sdxl_long_text_preview(cfg, policy):
         "adapter_algorithm": cfg.adapter.algo,
         "trainable_components": ["backbone"],
         "operator_components": ["backbone"],
-        "distributed_strategy": cfg.loop.distributed_strategy,
+        "distributed_strategy": strategy,
         "preview_operator_components": ["backbone"],
         "preview_linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
         "preview_linear_implementation": BF16_LINEAR_PREVIEW_IMPLEMENTATION_ID,
     }
 
 
-def _with_anima_lora_fsdp_preview(cfg, policy):
-    """Version the frozen-text Anima LoRA FSDP preview without changing training."""
+def _with_anima_fsdp_preview(cfg, policy):
+    """Version frozen-text Anima adapter FSDP previews without changing training."""
     if not (
         cfg.model.family == "anima"
-        and cfg.adapter.algo == "lora"
+        and cfg.adapter.algo in DTK_ANIMA_FSDP_PREVIEW_POLICY_IDS
         and cfg.loop.distributed_strategy == "fsdp"
         and cfg.loop.gpu_count >= 2
-        and policy["id"] == DTK_BACKBONE_ADAPTER_POLICY_IDS[("anima", "lora", "fsdp")]
+        and policy["id"] == DTK_BACKBONE_ADAPTER_POLICY_IDS[("anima", cfg.adapter.algo, "fsdp")]
     ):
         return policy
     return policy | {
-        "id": DTK_ANIMA_LORA_FSDP_PREVIEW_POLICY_ID,
+        "id": DTK_ANIMA_FSDP_PREVIEW_POLICY_IDS[cfg.adapter.algo],
         "preview_operator_components": ["backbone"],
         "preview_linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
         "preview_linear_implementation": BF16_LINEAR_PREVIEW_IMPLEMENTATION_ID,
@@ -248,7 +253,7 @@ def resolve_training_compute_config(
         effective.memory.allow_tf32 = False
         effective.model.attention = "sdpa"
         adapter_policy = _with_sdxl_long_text_preview(cfg, adapter_policy)
-        return effective, _with_anima_lora_fsdp_preview(cfg, adapter_policy)
+        return effective, _with_anima_fsdp_preview(cfg, adapter_policy)
     text_policy = _text_lora_policy(cfg, device_type, profile)
     if text_policy is not None:
         effective.memory.allow_tf32 = False

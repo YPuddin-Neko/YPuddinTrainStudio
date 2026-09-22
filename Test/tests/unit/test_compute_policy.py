@@ -393,7 +393,7 @@ def test_anima_multi_gpu_policy_rejects_other_training_strategies(mode, strategy
         assert policy["id"] == DTK_FULL_FP32_MATH_POLICY_ID
         assert effective.loop.mixed_precision == "no"
     else:
-        assert policy["id"] == DTK_BACKBONE_ADAPTER_POLICY_IDS[("anima", "lokr", "fsdp")]
+        assert policy["id"] == "dtk-anima-backbone-lokr-fsdp-bf16-compute-preview-v2"
         assert effective.loop.mixed_precision == "bf16"
 
 
