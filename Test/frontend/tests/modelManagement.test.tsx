@@ -128,7 +128,6 @@ describe('real model management UI contracts',()=>{
     mount(<Models/>,'/models?family=anima&view=library');
     expect(await screen.findByText('C:\\models\\anima.safetensors')).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('推荐模型：Service Unavailable');
-    fireEvent.click(screen.getByRole('tab',{name:/下载记录/}));
     expect(await screen.findByText('encoder.safetensors')).toBeInTheDocument();
     failing=false;
     fireEvent.click(screen.getByRole('button',{name:'重新读取'}));
@@ -164,10 +163,16 @@ describe('real model management UI contracts',()=>{
     fireEvent.click(within(card).getByRole('button',{name:'下载'}));
     await waitFor(()=>expect(catalogDownload).toHaveBeenCalledWith('anima-encoder',{provider:'modelscope',is_default:true}));
     expect(download).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('tab',{name:/^下载记录/}));const list=await screen.findByTestId('model-downloads');
-    expect(within(list).getByRole('progressbar')).toHaveAttribute('value','500');expect(within(list).getByRole('progressbar')).toHaveAttribute('max','1000');
-    fireEvent.click(within(list).getByRole('button',{name:'取消'}));await waitFor(()=>expect(cancel).toHaveBeenCalledWith('dl1'));
-    await waitFor(()=>expect(within(list).queryByRole('progressbar')).not.toBeInTheDocument());expect(models.some(model=>model.kind==='text_encoder')).toBe(false);
+    const progress=await screen.findByRole('progressbar');
+    expect(progress).toHaveAttribute('value','500');expect(progress).toHaveAttribute('max','1000');
+    expect(screen.getByRole('button',{name:'下载中'})).toBeDisabled();expect(cancel).not.toHaveBeenCalled();expect(models.some(model=>model.kind==='text_encoder')).toBe(false);
+  });
+  it('shows failed download errors inline and retries without a download page',async()=>{
+    downloads=[task({id:'failed',status:'failed',error:'<urlopen error timed out>'})];
+    const retry=vi.fn();server.use(http.post('/api/models/downloads/failed/retry',()=>{retry();downloads=[task({id:'retry',status:'downloading'})];return HttpResponse.json(downloads[0],{status:202});}));
+    mount(<Models/>);
+    expect(await screen.findByText('下载失败：<urlopen error timed out>')).toBeInTheDocument();expect(screen.queryByRole('tab',{name:/下载/})).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button',{name:'重试'}));await waitFor(()=>expect(retry).toHaveBeenCalledOnce());
   });
   it('preferences broadcasts saved appearance without duplicating model settings',async()=>{
     mount(<Preferences/>,'/settings/preferences?section=interface');const page=await screen.findByTestId('settings-page');
@@ -178,9 +183,9 @@ describe('real model management UI contracts',()=>{
   });
   it('keeps server downloads running when settings closes and restores progress on reopen',async()=>{
     const view=mount(<Models embedded/>);await openCustom();enterRepo();fireEvent.click(screen.getByTestId('model-download-start'));
-    await screen.findByTestId('model-downloads');view.unmount();expect(cancel).not.toHaveBeenCalled();
-    mount(<Models embedded/>,'/settings/environment?tab=models&family=anima&view=downloads');
-    const list=await screen.findByTestId('model-downloads');expect(within(list).getByRole('progressbar')).toHaveAttribute('value','500');expect(cancel).not.toHaveBeenCalled();
+    await screen.findByRole('progressbar');view.unmount();expect(cancel).not.toHaveBeenCalled();
+    mount(<Models embedded/>,'/settings/environment?tab=models&family=anima');
+    expect(await screen.findByRole('progressbar')).toHaveAttribute('value','500');expect(cancel).not.toHaveBeenCalled();
   });
   it('registers local files through a dialog and keeps the selected family and actual path',async()=>{
     server.use(http.post('/api/models/inspect',()=>HttpResponse.json({path:'D:\\shared\\vae.safetensors',family:null,family_candidates:['anima','krea2'],kind:'vae',dtype:'fp32',dtypes:{F32:100},confidence:'partial',evidence:['Shared VAE'],warnings:[],files_inspected:1})));
@@ -208,15 +213,12 @@ describe('real model management UI contracts',()=>{
   it('retries a failed server task without replacing its source with a client URL',async()=>{
     downloads=[task({id:'failed',provider:'modelscope',status:'failed',error:'HTTP 403: save credentials'})];const retry=vi.fn();
     server.use(http.post('/api/models/downloads/failed/retry',()=>{retry();downloads=[task({id:'retry',provider:'modelscope',status:'queued'})];return HttpResponse.json(downloads[0],{status:202});}));
-    mount(<Models/>,'/models?family=anima&view=downloads');fireEvent.click(await screen.findByRole('button',{name:'重新下载'}));await waitFor(()=>expect(retry).toHaveBeenCalledOnce());expect(download).not.toHaveBeenCalled();
+    mount(<Models/>,'/models?family=anima&view=downloads');fireEvent.click(await screen.findByRole('button',{name:'重试'}));await waitFor(()=>expect(retry).toHaveBeenCalledOnce());expect(download).not.toHaveBeenCalled();
   });
-  it('pages through all download history and resets pagination for search and another family',async()=>{
+  it('keeps completed downloads out of the model preparation page',async()=>{
     downloads=Array.from({length:26},(_,index)=>task({id:`history-${index}`,filename:`history-${index}.safetensors`,status:'completed'}));downloads.push(task({id:'krea-history',family:'krea2',filename:'krea-history.safetensors',status:'completed'}));
-    mount(<Models/>,'/models?family=anima&view=downloads');await screen.findByText('history-0.safetensors');expect(screen.queryByText('history-25.safetensors')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button',{name:'下一页'}));await screen.findByText('history-12.safetensors');fireEvent.click(screen.getByRole('button',{name:'下一页'}));await screen.findByText('history-25.safetensors');
-    expect(screen.getByRole('button',{name:'下一页'})).toBeDisabled();
-    fireEvent.change(screen.getByRole('textbox',{name:'搜索模型或下载'}),{target:{value:'history-1.safetensors'}});await screen.findByText('history-1.safetensors');expect(screen.getByText('1 / 1')).toBeInTheDocument();
-    choose('模型系列','Krea 2');await screen.findByText('krea-history.safetensors');expect(screen.getByRole('textbox',{name:'搜索模型或下载'})).toHaveValue('');expect(screen.queryByText('history-1.safetensors')).not.toBeInTheDocument();
+    mount(<Models/>,'/models?family=anima&view=downloads');await screen.findByRole('tab',{name:'准备模型'});
+    expect(screen.queryByRole('tab',{name:/下载/})).not.toBeInTheDocument();expect(screen.queryByText('history-0.safetensors')).not.toBeInTheDocument();expect(screen.queryByText('history-25.safetensors')).not.toBeInTheDocument();
   });
 });
 
