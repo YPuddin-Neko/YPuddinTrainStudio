@@ -82,6 +82,7 @@ CUDA_TAGS = (("cu128", 570), ("cu126", 560), ("cu124", 550), ("cu118", 450))
 # GPUs with compute capability >= 12.0 (RTX 50 series / Blackwell) only have kernels in the cu128+ wheels
 BLACKWELL_CC = 12.0
 EXTRAS_BASE = "models,server,optim,logging"
+DTK_NUMPY1_TORCH = "2.7.1+das.opt1.dtk2604"
 
 
 def log(msg: str) -> None:
@@ -519,24 +520,159 @@ def validate_dtk_runtime(current: dict) -> None:
 
 
 def dtk_compatibility_constraints(versions: dict[str, str]) -> list[str]:
-    """Transformers 5 disables its Torch backend with vendor Torch 2.4.
-
-    Torch is optional in Transformers' package metadata, so pip's dependency
-    checker cannot detect this incompatibility. Keep the rule scoped to DTK.
-    """
+    """Observed vendor-build incompatibilities missing from package metadata."""
+    constraints = []
     if PROFILE == "linux-dtk" and "torch" in versions:
         torch_version = tuple(int(n) for n in re.findall(r"\d+", versions["torch"])[:2])
         if torch_version < (2, 5):
-            return ["transformers<5"]
-    return []
+            constraints.append("transformers<5")
+        if versions["torch"] == DTK_NUMPY1_TORCH:
+            constraints.append("numpy>=1.26,<2")
+    return constraints
 
 
 def dtk_compatibility_issues(versions: dict[str, str]) -> list[str]:
-    if dtk_compatibility_constraints(versions):
+    constraints = dtk_compatibility_constraints(versions)
+    issues = []
+    if "transformers<5" in constraints:
         transformers = versions.get("transformers", "")
         if transformers and int(re.match(r"\d+", transformers)[0]) >= 5:
-            return [f"transformers<5 is required by DTK Torch {versions['torch']} (installed {transformers})"]
-    return []
+            issues.append(
+                f"transformers<5 is required by DTK Torch {versions['torch']} (installed {transformers})"
+            )
+    numpy = versions.get("numpy", "")
+    if "numpy>=1.26,<2" in constraints and numpy and int(re.match(r"\d+", numpy)[0]) >= 2:
+        issues.append(
+            f"DTK Torch {versions['torch']} 与 NumPy {numpy} 的桥接 ABI 不兼容，需要 numpy>=1.26,<2"
+        )
+    return issues
+
+
+def torch_numpy_bridge() -> dict:
+    """Exercise both CPU bridges; importing Torch can merely warn about a broken ABI."""
+    return venv_json("""
+import json
+try:
+    import numpy as np
+    import torch
+    values = np.array([1.25, -2.5], dtype=np.float32)
+    tensor = torch.from_numpy(values)
+    tensor[0] = 3.5
+    restored = tensor.numpy()
+    assert tensor.device.type == 'cpu'
+    assert values[0] == 3.5 and np.array_equal(restored, values)
+    print(json.dumps({'ok': True}))
+except Exception as exc:
+    print(json.dumps({'ok': False, 'error': type(exc).__name__ + ': ' + str(exc)}))
+""")
+
+
+def validate_dtk_numpy_version(versions: dict[str, str]) -> None:
+    issue = next((item for item in dtk_compatibility_issues(versions) if "NumPy" in item), None)
+    if issue:
+        die(
+            issue
+            + "。未改动既有包；请在独立环境准备匹配依赖后重试，或用 --reinstall 和完整厂商 wheel 集合重建。"
+        )
+
+
+def validate_dtk_numpy_bridge(versions: dict[str, str]) -> None:
+    validate_dtk_numpy_version(versions)
+    try:
+        result = torch_numpy_bridge()
+    except Exception as exc:
+        result = {"ok": False, "error": str(exc)}
+    if result.get("ok") is not True:
+        die(
+            "DTK 的 NumPy ↔ PyTorch CPU 桥接检查失败："
+            + str(result.get("error", "unknown error"))
+            + "。不会自动更换现有 NumPy 或厂商 PyTorch；请检查匹配依赖后重试，未写入安装成功标记。"
+        )
+
+
+def dtk_native_numpy_constraints(
+    wheelhouse: Path,
+    versions: dict[str, str],
+    *,
+    uv: str | None,
+    py: str,
+    constraints: Path,
+    requirements: list[str],
+) -> list[str]:
+    """Resolve the actual local Torch candidate before applying its ABI constraint.
+
+    A wheelhouse may contain several builds or Python tags. Let the same installer
+    select a compatible dependency solution, then pin that exact Torch version so
+    the second resolution cannot switch builds underneath the NumPy constraint.
+    """
+    if "torch" in versions:
+        return [value for value in dtk_compatibility_constraints(versions) if value.startswith("numpy")]
+    candidates = set()
+    for wheel in sorted(wheelhouse.glob("torch-*.whl")):
+        try:
+            with zipfile.ZipFile(wheel) as archive:
+                entries = [name for name in archive.namelist() if name.endswith(".dist-info/METADATA")]
+                if len(entries) != 1:
+                    raise ValueError("wheel 需要唯一的 METADATA")
+                metadata = BytesParser().parsebytes(archive.read(entries[0]))
+            version = metadata.get("Version", "")
+            if metadata.get("Name", "").lower() != "torch" or wheel.name.split("-")[1] != version:
+                raise ValueError("Torch wheel 文件名与 METADATA 不一致")
+            candidates.add(version)
+        except (OSError, ValueError, zipfile.BadZipFile, KeyError) as exc:
+            die(f"无法核验厂商 Torch wheel {wheel.name}：{exc}；未安装原生包")
+    if DTK_NUMPY1_TORCH not in candidates:
+        return []
+    common = ["--python", py] if uv else []
+    common += [
+        "--no-index",
+        "--only-binary=:all:",
+        "--find-links",
+        str(wheelhouse),
+        "--constraint",
+        str(constraints),
+    ]
+    if uv:
+        request = constraints.parent / "native-request.txt"
+        request.write_text("\n".join(requirements) + "\n", encoding="utf-8")
+        plan = constraints.parent / "native-plan.txt"
+        run(
+            [
+                uv,
+                "pip",
+                "compile",
+                str(request),
+                *common,
+                "--no-header",
+                "--no-annotate",
+                "--output-file",
+                str(plan),
+            ],
+            env=_env(),
+        )
+        selected = re.findall(r"(?m)^torch==([^\s;\\]+)\s*$", plan.read_text(encoding="utf-8"))
+    else:
+        plan = constraints.parent / "native-plan.json"
+        run(
+            [py, "-m", "pip", "install", *common, "--dry-run", "--report", str(plan), *requirements],
+            env=_env(),
+        )
+        selected = [
+            item["metadata"]["version"]
+            for item in json.loads(plan.read_text(encoding="utf-8"))["install"]
+            if item.get("metadata", {}).get("name", "").lower() == "torch"
+        ]
+    if len(selected) != 1 or selected[0] not in candidates:
+        die("无法确认安装器实际选择的本地厂商 Torch 构建，未安装原生包。")
+    validate_dtk_numpy_version({**versions, "torch": selected[0]})
+    return [
+        f"torch=={selected[0]}",
+        *[
+            value
+            for value in dtk_compatibility_constraints({"torch": selected[0]})
+            if value.startswith("numpy")
+        ],
+    ]
 
 
 def dtk_wheelhouse_has_triton(wheelhouse: Path) -> bool:
@@ -682,6 +818,7 @@ def ensure_venv(
     if ready:
         if PROFILE == "linux-dtk":
             validate_dtk_runtime(torch_runtime())
+            validate_dtk_numpy_bridge(installed_versions())
         cleanup_build_metadata()
         log("[2/5] 常规依赖已齐全，跳过安装")
         return
@@ -705,6 +842,8 @@ def ensure_venv(
         log(f"[2/5] 虚拟环境 {VENV.name}/ 已存在，更新依赖")
     py = str(venv_python())
     versions = installed_versions()
+    if PROFILE == "linux-dtk" and "torch" in versions and "numpy" in versions:
+        validate_dtk_numpy_bridge(versions)
     preserved = protected_versions(versions)
     required_native = ["torch", "torchvision"] + (["triton"] if vendor_triton else [])
     if PROFILE == "linux-dtk" and not all(name in versions for name in required_native):
@@ -722,6 +861,11 @@ def ensure_venv(
                 "".join(f"{name}=={version}\n" for name, version in sorted(preserved.items()))
             )
             requirements = ["torch>=2.4", "torchvision>=0.19"] + (["triton"] if vendor_triton else [])
+            compatibility = dtk_native_numpy_constraints(
+                wheelhouse, versions, uv=uv, py=py, constraints=constraints, requirements=requirements
+            )
+            with constraints.open("a", encoding="utf-8") as stream:
+                stream.write("".join(value + "\n" for value in compatibility))
             run([*command, "--constraint", str(constraints), *requirements], env=_env())
         versions = installed_versions()
         changed = [name for name, version in preserved.items() if versions.get(name) != version]
@@ -843,6 +987,8 @@ def ensure_venv(
     issues = dependency_issues(extras) + dtk_compatibility_issues(after)
     if issues:
         die("安装后依赖仍不完整：" + "; ".join(issues[:12]) + "；下次启动会重试补齐。")
+    if PROFILE == "linux-dtk":
+        validate_dtk_numpy_bridge(after)
     if not editable_install_ready():
         die("未能验证 venv 中训练器的独立安装信息；保留根目录元数据，未写入成功标记。")
     cleanup_build_metadata()

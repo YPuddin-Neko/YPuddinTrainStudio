@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import venv
@@ -16,6 +17,7 @@ SPEC = importlib.util.spec_from_file_location("ypuddin_bootstrap", SOURCE_ROOT /
 boot = importlib.util.module_from_spec(SPEC)
 sys.modules["ypuddin_bootstrap"] = boot
 SPEC.loader.exec_module(boot)
+REAL_TORCH_NUMPY_BRIDGE = boot.torch_numpy_bridge
 
 
 @pytest.fixture(autouse=True)
@@ -29,6 +31,35 @@ def isolated_bootstrap_root(monkeypatch, tmp_path_factory):
     monkeypatch.setattr(boot, "VENV", root / "venv")
     monkeypatch.setattr(boot, "MARKER", root / "venv" / ".ypuddin-install.json")
     monkeypatch.setattr(boot, "FRONTEND", root / "frontend")
+    monkeypatch.setattr(boot, "torch_numpy_bridge", lambda: {"ok": True})
+
+
+def native_wheel(directory, name, version, tag="cp311-cp311-manylinux_2_28_x86_64", requires=()):
+    wheel = directory / f"{name}-{version}-{tag}.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr(
+            f"{name}-{version}.dist-info/METADATA",
+            f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n"
+            + "".join(f"Requires-Dist: {requirement}\n" for requirement in requires),
+        )
+        archive.writestr(
+            f"{name}-{version}.dist-info/WHEEL",
+            f"Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: {tag}\n",
+        )
+        archive.writestr(f"{name}-{version}.dist-info/RECORD", "")
+    return wheel
+
+
+def native_plan(command, selected=boot.DTK_NUMPY1_TORCH):
+    if "--report" in command:
+        Path(command[command.index("--report") + 1]).write_text(
+            json.dumps({"install": [{"metadata": {"name": "torch", "version": selected}}]})
+        )
+        return True
+    if "compile" in command:
+        Path(command[command.index("--output-file") + 1]).write_text(f"torch=={selected}\nnumpy==2.4.6\n")
+        return True
+    return False
 
 
 def build_metadata():
@@ -81,9 +112,7 @@ def test_index_chains_orders_mirrors_then_official(monkeypatch):
     pypi, torch_src = boot.index_chains("cn", "cu128")
     assert pypi[0].startswith("https://mirrors.ustc.edu.cn") and "tuna" in pypi[1] and "aliyun" in pypi[2]
     assert pypi[-1] == boot.PYPI_OFFICIAL
-    assert (
-        torch_src[0][0] == "index-url" and "sjtu" in torch_src[0][1] and torch_src[0][1].endswith("cu128")
-    )
+    assert torch_src[0][0] == "index-url" and "sjtu" in torch_src[0][1] and torch_src[0][1].endswith("cu128")
     assert torch_src[-1] == ("index-url", "https://download.pytorch.org/whl/cu128")
     pypi_off, torch_off = boot.index_chains("official", "cu126")
     assert pypi_off[0] == boot.PYPI_OFFICIAL and len(pypi_off) == 4  # mirrors remain as fallback
@@ -96,7 +125,6 @@ def test_index_chains_orders_mirrors_then_official(monkeypatch):
     # A quick failed probe must never override the configured priority.
     monkeypatch.setattr(boot, "url_ok", lambda url, timeout=4.0: "aliyun" in url)
     assert boot.index_chains("cn", "cu128")[0] == [*boot.PYPI_MIRRORS_CN, boot.PYPI_OFFICIAL]
-
 
 
 @pytest.mark.parametrize(
@@ -1010,8 +1038,8 @@ def test_dtk_vendor_wheel_failure_never_falls_back_to_online_torch(monkeypatch, 
     boot.venv_python().touch()
     wheels = tmp_path / "wheels"
     wheels.mkdir()
-    for name in ("torch", "torchvision"):
-        (wheels / f"{name}-vendor.whl").touch()
+    native_wheel(wheels, "torch", "2.5.1+das.opt1.dtk25041")
+    native_wheel(wheels, "torchvision", "0.20.1+das.opt1.dtk25041")
     monkeypatch.setattr(boot, "installed_versions", lambda: {})
     monkeypatch.setattr(boot, "uv_path", lambda: None)
     calls = []
@@ -1034,8 +1062,8 @@ def test_dtk_vendor_wheel_failure_never_falls_back_to_online_torch(monkeypatch, 
 def dtk_wheelhouse(tmp_path, triton_version=None):
     wheels = tmp_path / "vendor-wheels"
     wheels.mkdir()
-    for name in ("torch", "torchvision"):
-        (wheels / f"{name}-vendor.whl").touch()
+    native_wheel(wheels, "torch", boot.DTK_NUMPY1_TORCH)
+    native_wheel(wheels, "torchvision", "0.22.0+das.opt1.dtk2604.torch271")
     if triton_version:
         wheel = wheels / f"triton-{triton_version}-cp311-cp311-manylinux_2_28_x86_64.whl"
         with zipfile.ZipFile(wheel, "w") as archive:
@@ -1044,6 +1072,234 @@ def dtk_wheelhouse(tmp_path, triton_version=None):
                 f"Metadata-Version: 2.1\nName: triton\nVersion: {triton_version}\nRequires-Dist: torch==2.7.1\n",
             )
     return wheels
+
+
+@pytest.mark.parametrize(
+    "profile,version,expected",
+    [
+        ("linux-dtk", boot.DTK_NUMPY1_TORCH, ["numpy>=1.26,<2"]),
+        ("linux-cuda", boot.DTK_NUMPY1_TORCH, []),
+        ("linux-dtk", "2.7.1+das.opt1.dtk2604.other", []),
+        ("linux-dtk", "2.7.1+das.opt2.dtk2604", []),
+        ("linux-dtk", "2.8.0+das.opt1.dtk2604", []),
+        ("linux-dtk", "2.7.1", []),
+    ],
+)
+def test_dtk_numpy_constraint_is_limited_to_the_observed_vendor_build(
+    monkeypatch, profile, version, expected
+):
+    monkeypatch.setattr(boot, "PROFILE", profile)
+    assert boot.dtk_compatibility_constraints({"torch": version}) == expected
+    issues = boot.dtk_compatibility_issues({"torch": version, "numpy": "2.4.6", "transformers": "5.17.0"})
+    assert bool(issues) == bool(expected)
+    assert all("NumPy" in issue and "transformers" not in issue for issue in issues)
+
+
+@pytest.mark.parametrize("use_uv", [False, True])
+@pytest.mark.parametrize("selected", [boot.DTK_NUMPY1_TORCH, "2.8.0+das.opt1.dtk2604"])
+def test_dtk_numpy_constraint_follows_the_resolved_candidate_not_any_wheel(
+    monkeypatch, tmp_path, use_uv, selected
+):
+    monkeypatch.setattr(boot, "PROFILE", "linux-dtk")
+    wheels = dtk_wheelhouse(tmp_path)
+    native_wheel(wheels, "torch", "2.8.0+das.opt1.dtk2604", "cp312-cp312-manylinux_2_28_x86_64")
+    pins = tmp_path / "constraints.txt"
+    pins.write_text("")
+    commands = []
+
+    def resolve(command, **kwargs):
+        commands.append(command)
+        assert "--no-index" in command and "--index-url" not in command
+        assert command[command.index("--find-links") + 1] == str(wheels)
+        assert native_plan(command, selected)
+        assert "compile" in command if use_uv else "--dry-run" in command
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(boot, "run", resolve)
+    result = boot.dtk_native_numpy_constraints(
+        wheels,
+        {},
+        uv="uv" if use_uv else None,
+        py="/target/python",
+        constraints=pins,
+        requirements=["torch>=2.4", "torchvision>=0.19"],
+    )
+    assert result == [
+        f"torch=={selected}",
+        *(["numpy>=1.26,<2"] if selected == boot.DTK_NUMPY1_TORCH else []),
+    ]
+    assert len(commands) == 1
+
+
+@pytest.mark.parametrize("use_uv", [False, True])
+@pytest.mark.parametrize("selected", [boot.DTK_NUMPY1_TORCH, "2.8.0+das.opt1.dtk2604"])
+def test_dtk_real_offline_resolver_selects_dependency_compatible_torch(
+    monkeypatch, tmp_path, use_uv, selected
+):
+    uv = shutil.which("uv") if use_uv else None
+    if use_uv and not uv:
+        pytest.skip("uv is unavailable")
+    monkeypatch.setattr(boot, "PROFILE", "linux-dtk")
+    monkeypatch.setenv("UV_CACHE_DIR", str(tmp_path / "uv-cache"))
+    monkeypatch.setenv("UV_OFFLINE", "1")
+    monkeypatch.setenv("UV_NO_MANAGED_PYTHON", "1")
+    target = tmp_path / "resolver-venv"
+    venv.EnvBuilder(with_pip=not use_uv).create(target)
+    py = str(target / ("Scripts/python.exe" if os.name == "nt" else "bin/python"))
+    wheels = tmp_path / "offline-wheels"
+    wheels.mkdir()
+    for version in [boot.DTK_NUMPY1_TORCH, "2.8.0+das.opt1.dtk2604"]:
+        native_wheel(wheels, "torch", version, "py3-none-any")
+    native_wheel(wheels, "torchvision", "0.22.0", "py3-none-any", [f"torch=={selected}"])
+    pins = tmp_path / "constraints.txt"
+    pins.write_text("")
+    result = boot.dtk_native_numpy_constraints(
+        wheels, {}, uv=uv, py=py, constraints=pins, requirements=["torch>=2.4", "torchvision>=0.19"]
+    )
+    assert result == [
+        f"torch=={selected}",
+        *(["numpy>=1.26,<2"] if selected == boot.DTK_NUMPY1_TORCH else []),
+    ]
+    # Planning must not install even our harmless metadata-only placeholder packages.
+    code = "import importlib.util; assert importlib.util.find_spec('torch') is None"
+    subprocess.run([py, "-c", code], check=True)
+
+
+@pytest.mark.parametrize("use_uv", [False, True])
+def test_dtk_empty_environment_constrains_numpy_before_first_native_install(monkeypatch, tmp_path, use_uv):
+    versions = existing_environment(monkeypatch, tmp_path)
+    versions.clear()
+    monkeypatch.setattr(boot, "PROFILE", "linux-dtk")
+    monkeypatch.setattr(boot, "uv_path", lambda: "uv" if use_uv else None)
+    monkeypatch.setattr(boot, "uv_cache_dir", lambda _: tmp_path)
+    native = {
+        "torch": boot.DTK_NUMPY1_TORCH,
+        "torchvision": "0.22.0+das.opt1.dtk2604.torch271",
+        "numpy": "1.26.4",
+    }
+    monkeypatch.setattr(
+        boot, "torch_runtime", lambda: {"version": native["torch"], "cuda": None, "hip": "6.3"}
+    )
+    wheels = dtk_wheelhouse(tmp_path)
+    calls = []
+
+    def execute(command, **kwargs):
+        calls.append(command)
+        if native_plan(command):
+            assert not versions
+            return subprocess.CompletedProcess(command, 0)
+        if "--constraint" in command:
+            pins = Path(command[command.index("--constraint") + 1]).read_text()
+            assert "numpy>=1.26,<2\n" in pins
+            assert f"torch=={boot.DTK_NUMPY1_TORCH}\n" in pins
+            if "--no-index" in command:
+                assert not versions
+                versions.update(native)
+            else:
+                assert "numpy==1.26.4\n" in pins
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(boot.subprocess, "run", execute)
+    boot.ensure_venv(
+        "dtk", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE, dtk_wheelhouse=str(wheels)
+    )
+    assert versions == native and boot.MARKER.exists()
+    assert sum("--dry-run" in command or "compile" in command for command in calls) == 1
+
+
+def test_dtk_selected_affected_wheel_diagnoses_preexisting_numpy2_before_install(
+    monkeypatch, tmp_path, capsys
+):
+    monkeypatch.setattr(boot, "PROFILE", "linux-dtk")
+    wheels = dtk_wheelhouse(tmp_path)
+    constraints = tmp_path / "constraints.txt"
+    constraints.write_text("numpy==2.4.6\n")
+
+    def resolve(command, **kwargs):
+        assert native_plan(command)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(boot, "run", resolve)
+    with pytest.raises(SystemExit):
+        boot.dtk_native_numpy_constraints(
+            wheels,
+            {"numpy": "2.4.6"},
+            uv=None,
+            py="/target/python",
+            constraints=constraints,
+            requirements=["torch>=2.4", "torchvision>=0.19"],
+        )
+    assert "NumPy 2.4.6" in capsys.readouterr().err
+    assert constraints.read_text() == "numpy==2.4.6\n"
+
+
+@pytest.mark.parametrize("ready", [False, True])
+def test_dtk_existing_numpy2_is_diagnosed_without_package_changes(monkeypatch, tmp_path, ready, capsys):
+    versions = existing_environment(monkeypatch, tmp_path)
+    versions.clear()
+    versions.update(
+        torch=boot.DTK_NUMPY1_TORCH, numpy="2.4.6", torchvision="0.22.0+das.opt1.dtk2604.torch271"
+    )
+    before = versions.copy()
+    monkeypatch.setattr(boot, "PROFILE", "linux-dtk")
+    if ready:
+        boot.MARKER.write_text(json.dumps({"signature": boot.install_signature("dtk", boot.EXTRAS_BASE)}))
+    monkeypatch.setattr(
+        boot.subprocess,
+        "run",
+        lambda *a, **k: pytest.fail("must not invoke installer or replace existing packages"),
+    )
+    with pytest.raises(SystemExit):
+        boot.ensure_venv("dtk", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE)
+    assert versions == before
+    assert "NumPy 2.4.6" in capsys.readouterr().err
+    assert boot.MARKER.exists() == ready
+
+
+def test_dtk_ready_marker_requires_actual_numpy_bridge_health(monkeypatch, tmp_path, capsys):
+    versions = existing_environment(monkeypatch, tmp_path)
+    versions.clear()
+    versions.update(torch="2.8.0+das.opt1.dtk2604", numpy="2.4.6")
+    monkeypatch.setattr(boot, "PROFILE", "linux-dtk")
+    monkeypatch.setattr(
+        boot, "torch_runtime", lambda: {"version": versions["torch"], "hip": "6.3", "cuda": None}
+    )
+    monkeypatch.setattr(
+        boot, "torch_numpy_bridge", lambda: {"ok": False, "error": "RuntimeError: Numpy is not available"}
+    )
+    boot.MARKER.write_text(json.dumps({"signature": boot.install_signature("dtk", boot.EXTRAS_BASE)}))
+    monkeypatch.setattr(boot.subprocess, "run", lambda *a, **k: pytest.fail("must not install packages"))
+    with pytest.raises(SystemExit):
+        boot.ensure_venv("dtk", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE)
+    assert "CPU 桥接检查失败" in capsys.readouterr().err
+    assert versions["numpy"] == "2.4.6"
+
+
+def test_dtk_bridge_probe_exercises_real_cpu_numpy_round_trip(monkeypatch):
+    pytest.importorskip("numpy")
+    pytest.importorskip("torch")
+    monkeypatch.setattr(
+        boot,
+        "venv_json",
+        lambda code: json.loads(subprocess.check_output([sys.executable, "-c", code], text=True)),
+    )
+    assert REAL_TORCH_NUMPY_BRIDGE() == {"ok": True}
+
+
+def test_dtk_bridge_probe_rejects_import_warning_without_working_numpy_bridge(monkeypatch, tmp_path):
+    pytest.importorskip("numpy")
+    (tmp_path / "torch.py").write_text(
+        "import warnings\nwarnings.warn('NumPy ABI unavailable')\ndef from_numpy(value):\n    raise RuntimeError('Numpy is not available')\n"
+    )
+    monkeypatch.setattr(
+        boot,
+        "venv_json",
+        lambda code: json.loads(
+            subprocess.check_output([sys.executable, "-c", code], text=True, cwd=tmp_path)
+        ),
+    )
+    result = REAL_TORCH_NUMPY_BRIDGE()
+    assert result == {"ok": False, "error": "RuntimeError: Numpy is not available"}
 
 
 @pytest.mark.parametrize("use_uv", [False, True])
@@ -1073,6 +1329,8 @@ def test_dtk_local_triton_is_installed_and_pinned_even_after_ready_marker(
     commands = []
 
     def install(command, **kwargs):
+        if native_plan(command):
+            return subprocess.CompletedProcess(command, 0)
         commands.append(command)
         if "--constraint" in command:
             pins = Path(command[command.index("--constraint") + 1]).read_text()
@@ -1116,6 +1374,8 @@ def test_dtk_without_supplied_triton_keeps_sdpa_environment_optional(monkeypatch
     commands = []
 
     def install(command, **kwargs):
+        if native_plan(command):
+            return subprocess.CompletedProcess(command, 0)
         commands.append(command)
         assert "triton" not in command
         if "--no-index" in command:
