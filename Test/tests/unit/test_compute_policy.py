@@ -9,6 +9,7 @@ from ypuddin.config.compute_policy import (
     DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID,
     DTK_ANIMA_DDP_BF16_LINEAR_COMPUTE_POLICY_ID,
     DTK_ANIMA_FSDP_BF16_LINEAR_COMPUTE_POLICY_ID,
+    DTK_BACKBONE_ADAPTER_POLICY_IDS,
     DTK_FULL_FP32_MATH_POLICY_ID,
     DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
     DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
@@ -72,7 +73,6 @@ def test_dtk_full_recipe_resolves_explicit_effective_config_without_mutation(fam
         ("cuda", "linux-cuda", "anima", "full", True, True),
         ("cuda", "windows-cuda", "anima", "full", True, True),
         ("cuda", "legacy", "anima", "full", True, True),
-        ("cuda", "linux-dtk", "anima", "adapter", True, True),
         ("cuda", "linux-dtk", "flux2", "full", True, True),
         ("cuda", "linux-dtk", "toy", "full", True, True),
         ("cuda", "linux-dtk", "anima", "full", False, True),
@@ -83,7 +83,7 @@ def test_other_training_keeps_original_behavior_and_independent_nested_config(
     device, profile, family, mode, backbone, deterministic
 ):
     cfg = _config(family, mode=mode, train_backbone=backbone, deterministic=deterministic)
-    cfg.adapter.algo = "lora"  # The separately verified LoKr recipe is opt-in below.
+    cfg.adapter.algo = "lora"
     original = cfg.to_dict()
     effective, policy = resolve_training_compute_config(cfg, device, profile)
     assert effective.to_dict() == original
@@ -185,7 +185,7 @@ def test_krea_bf16_policy_never_expands_unverified_scope(section, field, value, 
         assert effective.to_dict() == original
     else:
         assert effective.loop.mixed_precision == (
-            "bf16" if expected_id == DTK_ANIMA_FSDP_BF16_LINEAR_COMPUTE_POLICY_ID else "no"
+            "no" if expected_id == DTK_FULL_FP32_MATH_POLICY_ID else "bf16"
         )
 
 
@@ -278,7 +278,6 @@ def test_sdxl_lokr_bypass_recipe_with_homogeneous_rules(mode, gpu_count):
 @pytest.mark.parametrize(
     "section,field,value",
     [
-        ("adapter", "algo", "lora"),
         ("adapter", "mode", "merged"),
         ("adapter", "dora", True),
         ("adapter", "param_dtype", "bf16"),
@@ -308,7 +307,9 @@ def test_sdxl_adapter_sharding_does_not_claim_ddp_bf16_policy():
     cfg.loop.gpu_count = 2
     cfg.loop.distributed_strategy = "fsdp"
     effective, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
-    assert policy is None and effective.to_dict() == cfg.to_dict()
+    assert policy["id"] == DTK_BACKBONE_ADAPTER_POLICY_IDS[("sdxl", "lokr", "fsdp")]
+    assert policy["fsdp_param_dtype"] == "bfloat16"
+    assert effective.loop.mixed_precision == "bf16"
 
 
 def test_sdxl_fsdp_has_distinct_bf16_gather_identity_and_rejects_unsharded_state():
@@ -392,13 +393,13 @@ def test_anima_multi_gpu_policy_rejects_other_training_strategies(mode, strategy
         assert policy["id"] == DTK_FULL_FP32_MATH_POLICY_ID
         assert effective.loop.mixed_precision == "no"
     else:
-        assert policy is None and effective.to_dict() == cfg.to_dict()
+        assert policy["id"] == DTK_BACKBONE_ADAPTER_POLICY_IDS[("anima", "lokr", "fsdp")]
+        assert effective.loop.mixed_precision == "bf16"
 
 
 @pytest.mark.parametrize(
     "section,field,value",
     [
-        ("adapter", "algo", "lora"),
         ("adapter", "mode", "merged"),
         ("adapter", "dora", True),
         ("adapter", "param_dtype", "bf16"),

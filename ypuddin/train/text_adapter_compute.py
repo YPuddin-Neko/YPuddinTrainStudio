@@ -1,4 +1,4 @@
-"""Versioned native-dtype boundaries for DTK text LoRA training.
+"""Versioned native-dtype boundaries for DTK backbone and text LoRA training.
 
 Cover the frozen backbone's VJP, all online text encoders, and LoRA's direct
 contractions. FP32 inputs outside BF16 autocast and no-grad LoRA/Linear evaluation
@@ -23,6 +23,7 @@ from ypuddin.config.compute_policy import (
 from .conv_forward import install_conv_fp32_forward, validate_conv_forward_installation
 from .linear_backward import (
     _BF16OperandsFP32Compute,
+    _is_plain_or_fsdp,
     _uses_bf16,
     install_linear_bf16_forward_fp32_backward,
     install_linear_bf16_operands_fp32_compute,
@@ -39,8 +40,10 @@ def _lora_layers(module):
             raise ValueError("文本 LoRA 可复现策略不支持 FP8 冻结权重")
         if not isinstance(child, AdaptedLinear):
             continue
+        # fully_shard creates an FSDPModule/LoRA subclass without replacing
+        # delta_apply; retain the coverage check after parameter rebinding.
         if (
-            type(child.adapter) is not LoRA
+            not _is_plain_or_fsdp(child.adapter, LoRA)
             or child.mode != "bypass"
             or child.dora is not None
             or any(p.dtype != torch.float32 for p in child.adapter.parameters())

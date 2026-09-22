@@ -16,6 +16,7 @@ from ypuddin.config.compute_policy import (
     BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID,
     DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
     DTK_SDXL_LONG_TEXT_POLICY_ID,
+    DTK_SDXL_LONG_TEXT_PREVIEW_POLICY_IDS,
     DTK_TEXT_LORA_POLICY_IDS,
     resolve_training_compute_config,
     validate_resume_compute_policy,
@@ -87,7 +88,11 @@ def test_text_policy_does_not_claim_unsupported_scope(section, key, value):
     cfg = config(joint=True)
     setattr(getattr(cfg, section), key, value)
     _, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
-    assert policy is None
+    if key == "train_text_encoder":
+        assert policy["id"] not in DTK_TEXT_LORA_POLICY_IDS.values()
+        assert policy["operator_components"] == ["backbone"]
+    else:
+        assert policy is None
 
 
 @pytest.mark.parametrize(
@@ -202,7 +207,9 @@ def test_sdxl_long_text_has_separate_numeric_identity(length, count):
     cfg.model.sdxl_max_token_length = length
     effective, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
     assert effective.loop.mixed_precision == "bf16"
-    assert policy["id"] == DTK_SDXL_LONG_TEXT_POLICY_ID
+    assert policy["id"] == (
+        DTK_SDXL_LONG_TEXT_POLICY_ID if count == 1 else DTK_SDXL_LONG_TEXT_PREVIEW_POLICY_IDS[("lokr", "ddp")]
+    )
     assert policy["sdxl_max_token_length"] == length
     assert policy["linear_backward_implementation"] == BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID
     with pytest.raises(ValueError, match="计算"):

@@ -27,9 +27,11 @@ from ypuddin.adapters import AdapterSet, build_metadata, inject, save_adapter_fi
 from ypuddin.adapters.components import ComponentAdapterSet, inject_text_adapters
 from ypuddin.config import TrainConfig, config_hash, write_config
 from ypuddin.config.compute_policy import (
+    BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID,
     DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID,
     DTK_ANIMA_DDP_BF16_LINEAR_COMPUTE_POLICY_ID,
     DTK_ANIMA_FSDP_BF16_LINEAR_COMPUTE_POLICY_ID,
+    DTK_BACKBONE_ADAPTER_ALL_POLICY_IDS,
     DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
     DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
     DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID,
@@ -460,6 +462,11 @@ class Trainer:
 
     def _place_training_model(self) -> None:
         """Place selected parameters before binding an optimizer to their final objects."""
+        policy = getattr(self, "compute_policy", None) or {}
+        if policy.get("id") in DTK_BACKBONE_ADAPTER_ALL_POLICY_IDS:
+            if policy["distributed_strategy"] == "fsdp":
+                raise ValueError("BF16 分片计算策略必须由 FSDP 分片训练器安装")
+            self._install_backbone_adapter_compute_operators()
         if (getattr(self, "compute_policy", None) or {}).get("id") in {
             DTK_ANIMA_FSDP_BF16_LINEAR_COMPUTE_POLICY_ID,
             DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
@@ -490,7 +497,39 @@ class Trainer:
             self.compile_blocks()
 
     def _text_compute_modules(self):
+        if (getattr(self, "compute_policy", None) or {}).get("operator_components") == ["backbone"]:
+            return {"backbone": self.loaded.backbone}
         return {"backbone": self.loaded.backbone, **self.loaded.text.trainable_modules()}
+
+    def _install_backbone_adapter_compute_operators(self) -> None:
+        if self.compute_policy["adapter_algorithm"] == "lora":
+            self._install_text_adapter_compute_operators()
+            return
+        from .conv_forward import install_conv_fp32_forward
+        from .linear_backward import (
+            install_linear_bf16_forward_fp32_backward,
+            install_linear_bf16_operands_fp32_compute,
+        )
+
+        if getattr(self, "_linear_backward_counts", None) is not None:
+            raise ValueError("BF16 算子计算策略不能重复安装")
+        install = (
+            install_linear_bf16_operands_fp32_compute
+            if self.compute_policy["linear_backward_implementation"]
+            == BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID
+            else install_linear_bf16_forward_fp32_backward
+        )
+        restore, counts = install(self.loaded.backbone)
+        try:
+            if "conv_implementation" in self.compute_policy:
+                self._conv_forward_restore, self._conv_forward_counts = install_conv_fp32_forward(
+                    self.loaded.backbone
+                )
+        except BaseException:
+            restore()
+            raise
+        self._linear_backward_restore, self._linear_backward_counts = restore, counts
+        self._validate_training_compute_policy()
 
     def _install_text_adapter_compute_operators(self) -> None:
         from .text_adapter_compute import install_text_adapter_compute
@@ -1045,7 +1084,10 @@ class Trainer:
 
     def _validate_training_compute_policy(self):
         policy = getattr(self, "compute_policy", None)
-        if (policy or {}).get("id") in DTK_TEXT_LORA_POLICY_IDS.values():
+        backbone_adapter_policy = (policy or {}).get("id") in DTK_BACKBONE_ADAPTER_ALL_POLICY_IDS
+        if (policy or {}).get("id") in DTK_TEXT_LORA_POLICY_IDS.values() or (
+            backbone_adapter_policy and policy["adapter_algorithm"] == "lora"
+        ):
             from .text_adapter_compute import validate_text_adapter_compute
 
             _, expected = resolve_training_compute_config(self.cfg, self.device.type, current_profile())
@@ -1061,7 +1103,7 @@ class Trainer:
                 raise ValueError("文本 LoRA 计算策略未完整安装")
             validate_text_adapter_compute(self._text_compute_modules(), counts, policy)
             return
-        if (policy or {}).get("id") not in {
+        if not backbone_adapter_policy and (policy or {}).get("id") not in {
             DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID,
             DTK_ANIMA_DDP_BF16_LINEAR_COMPUTE_POLICY_ID,
             DTK_ANIMA_FSDP_BF16_LINEAR_COMPUTE_POLICY_ID,
@@ -1087,7 +1129,8 @@ class Trainer:
             expected_implementation=policy["linear_backward_implementation"],
         )
         if (
-            policy["id"]
+            backbone_adapter_policy
+            or policy["id"]
             in {
                 DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID,
                 DTK_ANIMA_DDP_BF16_LINEAR_COMPUTE_POLICY_ID,
@@ -1097,11 +1140,7 @@ class Trainer:
             from .linear_backward import validate_lokr_bypass_backbone
 
             validate_lokr_bypass_backbone(self.loaded.backbone)
-        if policy["id"] in {
-            DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
-            DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID,
-            DTK_SDXL_LONG_TEXT_POLICY_ID,
-        }:
+        if "conv_implementation" in policy:
             from .conv_forward import validate_conv_forward_installation
 
             validate_conv_forward_installation(
@@ -1535,6 +1574,8 @@ class Trainer:
     def sample_images(self, tag: str) -> list[Path]:
         from PIL import Image
 
+        from .preview_compute import preview_linear_compute
+
         scfg = self.cfg.sampling
         prompts = list(scfg.prompts)
         if scfg.prompts_file:
@@ -1584,7 +1625,7 @@ class Trainer:
             def predict(
                 x: Tensor, t: Tensor, c: TextCond = cond, dt: torch.dtype = model_dtype, g=guidance
             ) -> Tensor:
-                with self._autocast():
+                with self._autocast(), preview_linear_compute(self.compute_policy):
                     return self.family.forward(
                         self.loaded, x.to(dt), t.to(self.device), c, inference=True, guidance=g
                     ).float()

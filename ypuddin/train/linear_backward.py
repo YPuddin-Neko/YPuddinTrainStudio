@@ -2,7 +2,8 @@
 
 The default keeps native forward rounding, layout and dispatch unchanged. The
 opt-in FP32 computation also rounds operands to BF16, computes the training
-forward in FP32, then returns BF16 outputs; no-grad forwards remain native.
+forward in FP32, then returns BF16 outputs. No-grad forwards remain native
+outside the separately versioned backbone preview context.
 Return gradients
 in their original operand dtype, including BF16 FSDP all-gather parameters;
 FP32 reduce-scatter does not remove that BF16 gradient rounding boundary.
@@ -110,7 +111,7 @@ def install_linear_bf16_forward_fp32_backward(backbone):
 def install_linear_bf16_operands_fp32_compute(backbone):
     """Use FP32 training contractions on BF16 operands, with BF16 outputs.
 
-    No-grad evaluation stays native. Reentrant checkpointing must therefore
+    No-grad evaluation outside the preview context stays native. Reentrant checkpointing must therefore
     not use this recipe: its first no-grad forward differs from recomputation.
     """
     return _install_linear_policy(
@@ -132,7 +133,9 @@ def _install_linear_policy(backbone, implementation, function):
             # Preserve evaluation's exact native
             # dispatch, including autocast caching/grad-mode special cases.
             if not torch.is_grad_enabled():
-                return original(x)
+                from .preview_compute import linear_preview_forward
+
+                return linear_preview_forward(original, x)
             weight = module.dequant(x.dtype) if frozen else module.weight
             bias = module.bias
             if frozen and bias is not None:
@@ -190,6 +193,21 @@ def validate_linear_backward_installation(
     return counts
 
 
+def _is_plain_or_fsdp(module, algorithm):
+    if type(module) is algorithm:
+        return True
+    if not isinstance(module, algorithm):
+        return False
+    try:
+        from torch.distributed.fsdp import FSDPModule
+    except ImportError:
+        return False
+
+    # Preserve the concrete-algorithm contract: accept FSDP's generated class,
+    # not arbitrary subclasses that may change adapter computations.
+    return type(module).__bases__ == (FSDPModule, algorithm)
+
+
 def validate_lokr_bypass_backbone(backbone):
     """Check resolved adapters, including rule overrides and already-frozen weights."""
     from ypuddin.adapters.linear import AdaptedLinear
@@ -201,8 +219,9 @@ def validate_lokr_bypass_backbone(backbone):
             raise ValueError("BF16 可复现训练尚不支持 FP8 冻结权重")
         if not isinstance(module, AdaptedLinear):
             continue
+        # FSDP wraps the concrete algorithm in a dynamic subclass.
         if (
-            type(module.adapter) is not LoKr
+            not _is_plain_or_fsdp(module.adapter, LoKr)
             or module.mode != "bypass"
             or module.dora is not None
             or any(parameter.dtype != torch.float32 for parameter in module.adapter.parameters())

@@ -19,6 +19,7 @@ from torch.distributed.tensor import DTensor, Shard
 
 from ypuddin.config.compute_policy import (
     DTK_ANIMA_FSDP_BF16_LINEAR_COMPUTE_POLICY_ID,
+    DTK_BACKBONE_ADAPTER_ALL_POLICY_IDS,
     DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
     DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID,
 )
@@ -103,7 +104,11 @@ class ShardedTrainer(DistributedTrainer):
         from torch.distributed.fsdp import MixedPrecisionPolicy, fully_shard
 
         model = self.loaded.backbone
-        if (getattr(self, "compute_policy", None) or {}).get("id") == DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID:
+        if (getattr(self, "compute_policy", None) or {}).get("id") in DTK_BACKBONE_ADAPTER_ALL_POLICY_IDS:
+            if self.compute_policy["distributed_strategy"] != "fsdp":
+                raise ValueError("FSDP 训练器需要显存分片的计算策略")
+            self._install_backbone_adapter_compute_operators()
+        elif (getattr(self, "compute_policy", None) or {}).get("id") == DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID:
             from .linear_backward import install_linear_bf16_forward_fp32_backward
 
             if getattr(self, "_linear_backward_counts", None) is not None:

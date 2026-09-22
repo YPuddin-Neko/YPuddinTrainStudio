@@ -21,6 +21,21 @@ BF16_LORA_FP32_IMPLEMENTATION_ID = "lora-bf16-operands-fp32-contractions-v1"
 DTK_TEXT_LORA_POLICY_IDS = {
     family: f"dtk-{family}-text-lora-bf16-fp32-contractions-v1" for family in ("anima", "sdxl", "krea2")
 }
+DTK_BACKBONE_ADAPTER_POLICY_IDS = {
+    (family, algo, strategy): f"dtk-{family}-backbone-{algo}-{strategy}-bf16-compute-v1"
+    for family in ("anima", "sdxl")
+    for algo, strategies in (("lora", ("single", "ddp", "fsdp")), ("lokr", ("fsdp",)))
+    for strategy in strategies
+}
+BF16_LINEAR_PREVIEW_IMPLEMENTATION_ID = "linear-native-dispatch-bf16-operands-fp32-preview-v1"
+DTK_SDXL_LONG_TEXT_PREVIEW_POLICY_IDS = {
+    (algo, strategy): f"dtk-sdxl-backbone-{algo}-{strategy}-bf16-compute-preview-v2"
+    for algo in ("lora", "lokr")
+    for strategy in ("ddp", "fsdp")
+}
+DTK_BACKBONE_ADAPTER_ALL_POLICY_IDS = frozenset(DTK_BACKBONE_ADAPTER_POLICY_IDS.values()) | frozenset(
+    DTK_SDXL_LONG_TEXT_PREVIEW_POLICY_IDS.values()
+)
 
 
 class _RequiredTrainingComputePolicy(TypedDict):
@@ -46,8 +61,12 @@ class TrainingComputePolicy(_RequiredTrainingComputePolicy, total=False):
     adapter_implementation: str
     trainable_components: list[str]
     operator_components: list[str]
-    distributed_strategy: Literal["single", "ddp"]
+    distributed_strategy: Literal["single", "ddp", "fsdp"]
+    adapter_algorithm: Literal["lora", "lokr"]
     sdxl_max_token_length: Literal[75, 150, 225]
+    preview_operator_components: list[str]
+    preview_linear_forward: Literal["bf16-rounded-operands-fp32-contraction-bf16-output"]
+    preview_linear_implementation: str
 
 
 def _text_lora_policy(cfg, device_type, profile):
@@ -101,6 +120,98 @@ def _text_lora_policy(cfg, device_type, profile):
     return policy
 
 
+def _backbone_adapter_policy(cfg, device_type, profile):
+    strategy = cfg.loop.distributed_strategy if cfg.loop.gpu_count > 1 else "single"
+    key = (cfg.model.family, cfg.adapter.algo, strategy)
+    if not (
+        profile == "linux-dtk"
+        and device_type == "cuda"
+        and key in DTK_BACKBONE_ADAPTER_POLICY_IDS
+        and cfg.loop.deterministic
+        and cfg.loop.mixed_precision == "bf16"
+        and cfg.training.mode == "adapter"
+        and cfg.training.train_backbone
+        and not cfg.training.train_text_encoder
+        and cfg.adapter.mode in {"auto", "bypass"}
+        and cfg.adapter.param_dtype == "fp32"
+        and not cfg.adapter.dora
+        and all(rule.algo in {None, cfg.adapter.algo, "none"} for rule in cfg.adapter.rules)
+        and not cfg.memory.base_precision.startswith("fp8")
+        and cfg.memory.activation_checkpointing in {"none", "block"}
+        and not cfg.memory.compile
+        and cfg.memory.blocks_to_swap == 0
+    ):
+        return None
+    # LoKr keeps its native contractions. Its FSDP backbone uses the same
+    # operators as the existing family recipe, with a separate resume identity.
+    fp32_forward = (
+        cfg.adapter.algo == "lora"
+        or cfg.model.family == "anima"
+        or (cfg.model.family == "sdxl" and cfg.model.sdxl_max_token_length > 75)
+    )
+    policy: TrainingComputePolicy = {
+        "id": DTK_BACKBONE_ADAPTER_POLICY_IDS[key],
+        "mixed_precision": "bf16",
+        "allow_tf32": False,
+        "attention": "sdpa",
+        "sdpa_backend": "math",
+        "linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output"
+        if fp32_forward
+        else "native-bf16",
+        "linear_backward": "fp32-contractions-grad-original-dtype",
+        "linear_backward_implementation": BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID
+        if fp32_forward
+        else BF16_LINEAR_BACKWARD_IMPLEMENTATION_ID,
+        "adapter_algorithm": cfg.adapter.algo,
+        "trainable_components": ["backbone"],
+        "operator_components": ["backbone"],
+        "distributed_strategy": strategy,
+    }
+    if cfg.adapter.algo == "lora":
+        policy.update(
+            adapter_forward="bf16-rounded-operands-fp32-contractions-bf16-intermediates",
+            adapter_backward="fp32-contractions-grad-original-dtype",
+            adapter_implementation=BF16_LORA_FP32_IMPLEMENTATION_ID,
+        )
+    if strategy == "fsdp":
+        policy.update(fsdp_param_dtype="bfloat16", fsdp_reduce_dtype="float32")
+    if cfg.model.family == "sdxl":
+        policy.update(
+            conv_forward="fp32-output-bf16",
+            conv_implementation=FP32_CONV_IMPLEMENTATION_ID,
+            sdxl_max_token_length=cfg.model.sdxl_max_token_length,
+        )
+    return policy
+
+
+def _with_sdxl_long_text_preview(cfg, policy):
+    """Version only the measured multi-GPU frozen-text long-caption recipe.
+
+    Training contractions are unchanged. The separate preview fields prevent
+    old checkpoints from silently claiming the new inference numeric behavior.
+    """
+    key = (cfg.adapter.algo, cfg.loop.distributed_strategy)
+    if not (
+        cfg.model.family == "sdxl"
+        and cfg.model.sdxl_max_token_length > 75
+        and cfg.training.mode == "adapter"
+        and not cfg.training.train_text_encoder
+        and cfg.loop.gpu_count >= 2
+        and key in DTK_SDXL_LONG_TEXT_PREVIEW_POLICY_IDS
+    ):
+        return policy
+    return policy | {
+        "id": DTK_SDXL_LONG_TEXT_PREVIEW_POLICY_IDS[key],
+        "adapter_algorithm": cfg.adapter.algo,
+        "trainable_components": ["backbone"],
+        "operator_components": ["backbone"],
+        "distributed_strategy": cfg.loop.distributed_strategy,
+        "preview_operator_components": ["backbone"],
+        "preview_linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
+        "preview_linear_implementation": BF16_LINEAR_PREVIEW_IMPLEMENTATION_ID,
+    }
+
+
 def resolve_training_compute_config(
     cfg: TrainConfig, device_type: str | None, profile: str
 ) -> tuple[TrainConfig, TrainingComputePolicy | None]:
@@ -111,6 +222,11 @@ def resolve_training_compute_config(
     it neither initializes devices nor changes process-wide backend settings.
     """
     effective = cfg.model_copy(deep=True)
+    adapter_policy = _backbone_adapter_policy(cfg, device_type, profile)
+    if adapter_policy is not None:
+        effective.memory.allow_tf32 = False
+        effective.model.attention = "sdpa"
+        return effective, _with_sdxl_long_text_preview(cfg, adapter_policy)
     text_policy = _text_lora_policy(cfg, device_type, profile)
     if text_policy is not None:
         effective.memory.allow_tf32 = False
@@ -180,19 +296,22 @@ def resolve_training_compute_config(
             raise ValueError("SDXL 长文本 BF16 可复现训练需要关闭编译/换块，并使用关闭或逐块重算")
         effective.memory.allow_tf32 = False
         effective.model.attention = "sdpa"
-        return effective, {
-            "id": DTK_SDXL_LONG_TEXT_POLICY_ID,
-            "mixed_precision": "bf16",
-            "allow_tf32": False,
-            "attention": "sdpa",
-            "sdpa_backend": "math",
-            "linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
-            "linear_backward": "fp32-contractions-grad-original-dtype",
-            "linear_backward_implementation": BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID,
-            "conv_forward": "fp32-output-bf16",
-            "conv_implementation": FP32_CONV_IMPLEMENTATION_ID,
-            "sdxl_max_token_length": cfg.model.sdxl_max_token_length,
-        }
+        return effective, _with_sdxl_long_text_preview(
+            cfg,
+            {
+                "id": DTK_SDXL_LONG_TEXT_POLICY_ID,
+                "mixed_precision": "bf16",
+                "allow_tf32": False,
+                "attention": "sdpa",
+                "sdpa_backend": "math",
+                "linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
+                "linear_backward": "fp32-contractions-grad-original-dtype",
+                "linear_backward_implementation": BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID,
+                "conv_forward": "fp32-output-bf16",
+                "conv_implementation": FP32_CONV_IMPLEMENTATION_ID,
+                "sdxl_max_token_length": cfg.model.sdxl_max_token_length,
+            },
+        )
 
     effective.memory.allow_tf32 = False
     effective.model.attention = "sdpa"
