@@ -140,13 +140,13 @@ export default function Models({ embedded = false }: { embedded?: boolean }) {
   return <div className="models-workspace" data-testid="models-page">
     <div className="models-toolbar">
       <div className="models-heading"><div><h2>{text('模型权重', 'Model weights')}</h2>{!embedded && <p>{text('准备模型组件，供项目选择。', 'Prepare components for your projects.')}</p>}</div>
+        {settings?.paths.models_dir && <div className="models-heading-path" title={settings.paths.models_dir}><span>{text('模型目录', 'Model directory')}</span><strong>{settings.paths.models_dir}</strong><Link to="/settings/preferences?section=storage" replace state={location.state}>{text('更改', 'Change')}</Link></div>}
         <div className="model-actions"><Link to={settingsLink('credentials')} replace state={location.state} className={secondary}><KeyRound size={14}/>{text('访问密钥', 'Access keys')}</Link><button className={secondary} onClick={() => void refresh()} aria-label={text('刷新模型', 'Refresh models')}><RefreshCw size={14}/></button></div>
       </div>
       <div className="models-filters"><StudioSelect aria-label={text('模型系列', 'Model family')} value={family} disabled={familiesLoading || !!familiesError} options={trainingFamilyOptions(families)} onValueChange={family => updateParams({ family })}/>
         <div className="models-view-tabs" role="tablist" aria-label={text('模型管理视图', 'Model management views')}>{tabs.map(tab => <button key={tab.key} role="tab" aria-selected={view === tab.key} onClick={() => updateParams({ view: tab.key })}>{tab.label}</button>)}</div>
       </div>
     </div>
-    <p className="models-storage-note">{text('模型目录', 'Model directory')}：<span title={settings?.paths.models_dir}>{settings?.paths.models_dir}</span><Link to="/settings/preferences?section=storage" replace state={location.state}>{text('更改', 'Change')}</Link></p>
     {error && <div role="alert" className="settings-alert">{error}<button className={secondary} onClick={() => void refresh()}>{text('重试', 'Retry')}</button></div>}
     {Object.keys(loadErrors).length > 0 && <div role="alert" className="settings-alert"><div>{Object.entries(loadErrors).map(([key, message]) => <p key={key}>{({ library: text('本地模型', 'Local models'), downloads: text('下载记录', 'Downloads'), settings: text('存储设置', 'Storage settings'), prepare: text('推荐模型', 'Recommended models') })[key]}：{message}</p>)}</div><button className={secondary} onClick={() => void refresh()}>{text('重新读取', 'Reload')}</button></div>}
     {notice && <p className="model-notice" role="status">{notice}</p>}
