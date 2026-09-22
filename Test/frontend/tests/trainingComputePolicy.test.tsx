@@ -69,8 +69,8 @@ function backboneAdapterCase(family: string, algo: 'lora' | 'lokr', strategy: 's
   config.loop.gpu_count = strategy === 'single' ? 1 : 2;
   config.loop.distributed_strategy = strategy === 'fsdp' ? 'fsdp' : 'ddp';
   const linear = family === 'sdxl' && algo === 'lokr' && tokens === 75 ? sdxlPolicy : animaPolicy;
-  const stablePreview = (family === 'sdxl' && tokens > 75 && strategy !== 'single')
-    || (family === 'anima' && algo === 'lora' && strategy === 'fsdp');
+  const stablePreview = (family === 'sdxl' && tokens > 75)
+    || (family === 'anima' && strategy === 'fsdp');
   const candidate = {
     ...linear, id: `dtk-${family}-backbone-${algo}-${strategy}-bf16-compute-${stablePreview ? 'preview-v2' : 'v1'}`,
     adapter_algorithm: algo, trainable_components: ['backbone'], operator_components: ['backbone'], distributed_strategy: strategy,
@@ -94,7 +94,7 @@ const backboneCases = [...['anima', 'sdxl'].flatMap(family =>
   (['lora', 'lokr'] as const).flatMap(algo =>
     (algo === 'lora' ? ['single', 'ddp', 'fsdp'] as const : ['fsdp'] as const).flatMap(strategy =>
       (family === 'sdxl' ? [75, 150, 225] : [75]).map(tokens => ({family, algo, strategy, tokens})))),
-), ...[150, 225].map(tokens => ({family:'sdxl', algo:'lokr' as const, strategy:'ddp' as const, tokens}))];
+), ...(['single', 'ddp'] as const).flatMap(strategy => [150, 225].map(tokens => ({family:'sdxl', algo:'lokr' as const, strategy, tokens})))];
 
 it.each(backboneCases)('confirms only the complete $family $algo $strategy $tokens-token backbone contract', ({family, algo, strategy, tokens}) => {
   const {config, candidate} = backboneAdapterCase(family, algo, strategy, tokens);
@@ -162,8 +162,8 @@ it.each(['anima', 'sdxl'])('does not expose new %s LoKr policies for single-GPU 
   }
 });
 
-it.each(backboneCases.filter(row => (row.family === 'sdxl' && row.tokens > 75 && row.strategy !== 'single')
-  || (row.family === 'anima' && row.algo === 'lora' && row.strategy === 'fsdp')))(
+it.each(backboneCases.filter(row => (row.family === 'sdxl' && row.tokens > 75)
+  || (row.family === 'anima' && row.strategy === 'fsdp')))(
   'requires the complete preview identity for $family $algo $strategy $tokens-token training', ({family, algo, strategy, tokens}) => {
     const {config, candidate} = backboneAdapterCase(family, algo, strategy, tokens);
     for (const invalid of [
@@ -177,7 +177,7 @@ it.each(backboneCases.filter(row => (row.family === 'sdxl' && row.tokens > 75 &&
     obsolete.id = `dtk-${family}-backbone-${algo}-${strategy}-bf16-compute-v1`;
     expect(confirmedTrainingComputePolicy(obsolete, config)).toBeNull();
     expect(confirmedTrainingComputePolicy({...candidate, id:obsolete.id}, config)).toBeNull();
-    expect(confirmedTrainingComputePolicy(candidate, {...config, loop:{...config.loop, gpu_count:1}})).toBeNull();
+    expect(confirmedTrainingComputePolicy(candidate, {...config, loop:{...config.loop, gpu_count:strategy === 'single' ? 2 : 1}})).toBeNull();
     if (family === 'sdxl') {
       expect(confirmedTrainingComputePolicy(candidate, {...config, model:{...config.model, sdxl_max_token_length:75}})).toBeNull();
     }
@@ -188,13 +188,11 @@ it.each(backboneCases.filter(row => (row.family === 'sdxl' && row.tokens > 75 &&
   },
 );
 
-it('keeps unmeasured Anima, single-GPU, short-caption and text-training previews unchanged', () => {
+it('keeps unmeasured Anima, short-caption and text-training previews unchanged', () => {
   const rows = [
-    backboneAdapterCase('sdxl', 'lora', 'single', 150),
     backboneAdapterCase('sdxl', 'lora', 'ddp', 75),
     backboneAdapterCase('anima', 'lora', 'ddp'),
     backboneAdapterCase('anima', 'lora', 'single'),
-    backboneAdapterCase('anima', 'lokr', 'fsdp'),
     {config:animaDualConfig('ddp'), candidate:animaDdpPolicy},
     {config:animaDualConfig('fsdp'), candidate:animaFsdpPolicy},
     textLoraCase('anima', true, 2),
@@ -224,8 +222,7 @@ it.each(['single', 'ddp', 'fsdp'] as const)('describes frozen-encoder LoRA %s an
   expect(hint).toHaveTextContent('可能增加显存和耗时');
   expect(hint).toHaveTextContent('相同计算策略和运行环境及标签长度');
   expect(hint).toHaveTextContent('不可混用旧策略的训练状态');
-  if (strategy !== 'single') expect(hint).toHaveTextContent('提高重复预览的一致性');
-  else expect(hint).not.toHaveTextContent('提高重复预览的一致性');
+  expect(hint).toHaveTextContent('提高重复预览的一致性');
   expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual(initial);
   fireEvent.click(screen.getByRole('checkbox', {name:'可复现训练'}));
   expect(screen.getByRole('combobox', {name:'混合精度'})).toHaveTextContent('BF16');
@@ -278,8 +275,8 @@ it.each(backboneCases)('explains $family $algo $strategy $tokens-token arithmeti
   expect(english).toContain('Text encoders stay frozen');
   expect(english).toContain('Memory use and runtime may increase');
   expect(english).toContain('states from previous policies cannot be mixed');
-  if ((family === 'sdxl' && tokens > 75 && strategy !== 'single')
-    || (family === 'anima' && algo === 'lora' && strategy === 'fsdp')) {
+  if ((family === 'sdxl' && tokens > 75)
+    || (family === 'anima' && strategy === 'fsdp')) {
     expect(english).toContain('Preview backbone linear layers also use FP32 operations with BF16 rounding and outputs');
     expect(chinese).toContain('预览的主模型线性层也保留 BF16 舍入与输出');
   } else {
@@ -365,16 +362,13 @@ it('shows effective text-only precision and restores the original draft when rep
   expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual({...initial, loop:{...initial.loop, deterministic:false}});
 });
 
-it.each([150, 225])('keeps SDXL %s-token LoKr separate from the previous short-caption policy', length => {
-  const config = animaLokrConfig(); config.model.family = 'sdxl'; config.model.sdxl_max_token_length = length;
-  const candidate = {...animaPolicy, id:'dtk-sdxl-long-text-bf16-conv-fp32-linear-compute-v1', conv_forward:'fp32-output-bf16', conv_implementation:'conv2d-fp32-output-bf16-v1', sdxl_max_token_length:length};
+it.each([150, 225])('requires the versioned preview contract for SDXL %s-token single-GPU LoKr', length => {
+  const {config, candidate} = backboneAdapterCase('sdxl', 'lokr', 'single', length);
+  const legacy = {...animaPolicy, id:'dtk-sdxl-long-text-bf16-conv-fp32-linear-compute-v1', conv_forward:'fp32-output-bf16', conv_implementation:'conv2d-fp32-output-bf16-v1', sdxl_max_token_length:length};
   expect(confirmedTrainingComputePolicy(candidate, config)).toEqual(candidate);
+  expect(confirmedTrainingComputePolicy(legacy, config)).toBeNull();
   expect(confirmedTrainingComputePolicy(sdxlPolicy, config)).toBeNull();
-  for (const invalid of [
-    {...candidate, sdxl_max_token_length: 75}, {...candidate, linear_forward: 'native-bf16'},
-    {...candidate, conv_implementation: 'unknown'}, {...candidate, adapter_implementation: 'lora-bf16-operands-fp32-contractions-v1'},
-  ]) expect(confirmedTrainingComputePolicy(invalid, config)).toBeNull();
-  expect(confirmedTrainingComputePolicy(candidate, {...config, model:{...config.model, sdxl_max_token_length:75}})).toBeNull();
+  expect(trainingComputePolicyHint(confirmedTrainingComputePolicy(candidate, config), false)).toContain('LoKr 运算保持原生实现');
 });
 
 it.each(['ddp','fsdp'] as const)('accepts Anima %s only for its complete supported multi-GPU scope', strategy => {

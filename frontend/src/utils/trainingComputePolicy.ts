@@ -37,9 +37,10 @@ const textLoraPolicyIds = new Set([
 ]);
 
 const previewPolicyIds = new Set([
-  ...['lora', 'lokr'].flatMap(algo => ['ddp', 'fsdp'].map(strategy =>
+  ...['lora', 'lokr'].flatMap(algo => ['single', 'ddp', 'fsdp'].map(strategy =>
     `dtk-sdxl-backbone-${algo}-${strategy}-bf16-compute-preview-v2`)),
   'dtk-anima-backbone-lora-fsdp-bf16-compute-preview-v2',
+  'dtk-anima-backbone-lokr-fsdp-bf16-compute-preview-v2',
 ]);
 const previewPolicyFields = {
   preview_operator_components: ['backbone'],
@@ -56,8 +57,8 @@ const backboneAdapterPolicyIds = new Set(
 
 interface BackboneAdapterComputePolicy extends CommonTrainingComputePolicy {
   id: `dtk-${'anima' | 'sdxl'}-backbone-${`lora-${'single' | 'ddp' | 'fsdp'}` | 'lokr-fsdp'}-bf16-compute-v1`
-    | `dtk-sdxl-backbone-${'lora' | 'lokr'}-${'ddp' | 'fsdp'}-bf16-compute-preview-v2`
-    | 'dtk-anima-backbone-lora-fsdp-bf16-compute-preview-v2';
+    | `dtk-sdxl-backbone-${'lora' | 'lokr'}-${'single' | 'ddp' | 'fsdp'}-bf16-compute-preview-v2`
+    | `dtk-anima-backbone-${'lora' | 'lokr'}-fsdp-bf16-compute-preview-v2`;
   mixed_precision: 'bf16';
   linear_forward: 'native-bf16' | 'bf16-rounded-operands-fp32-contraction-bf16-output';
   linear_backward: 'fp32-contractions-grad-original-dtype';
@@ -128,10 +129,8 @@ function confirmedBackboneAdapterPolicy(policy: Record<string, unknown>, config:
   const strategy = gpuCount > 1 ? config.loop?.distributed_strategy : 'single';
   const rules = config.adapter?.rules ?? [];
   const tokens = config.model?.sdxl_max_token_length ?? 75;
-  const stablePreview = gpuCount >= 2 && (
-    (family === 'sdxl' && [150, 225].includes(tokens))
-    || (family === 'anima' && algo === 'lora' && strategy === 'fsdp')
-  );
+  const stablePreview = (family === 'sdxl' && [150, 225].includes(tokens))
+    || (family === 'anima' && gpuCount >= 2 && strategy === 'fsdp');
   if (!['anima', 'sdxl'].includes(family) || !['lora', 'lokr'].includes(algo)
     || !Number.isInteger(gpuCount) || gpuCount < 1
     || !['ddp', 'fsdp'].includes(config.loop?.distributed_strategy)
@@ -229,22 +228,7 @@ export function confirmedTrainingComputePolicy(candidate: unknown, config: Recor
   const animaLokr = bypassLokr && config.model.family === 'anima';
   if (!full && !sdxlLokr && !animaLokr) return null;
   if (full && policy.id === 'dtk-full-fp32-math-v1' && policy.mixed_precision === 'no') return policy as unknown as TrainingComputePolicy;
-  if (policy.id === 'dtk-sdxl-long-text-bf16-conv-fp32-linear-compute-v1') {
-    if (!sdxlLokr || config.training?.train_text_encoder === true
-      || ![150, 225].includes(config.model?.sdxl_max_token_length)
-      || policy.sdxl_max_token_length !== config.model.sdxl_max_token_length
-      || config.loop?.mixed_precision !== 'bf16' || policy.mixed_precision !== 'bf16'
-      || config.loop.gpu_count !== 1
-      || config.loop.distributed_strategy !== 'ddp' || config.memory?.compile === true
-      || (config.memory?.blocks_to_swap ?? 0) !== 0
-      || !['none', 'block'].includes(config.memory?.activation_checkpointing ?? 'none')
-      || policy.linear_forward !== 'bf16-rounded-operands-fp32-contraction-bf16-output'
-      || policy.linear_backward !== 'fp32-contractions-grad-original-dtype'
-      || policy.linear_backward_implementation !== 'linear-bf16-operands-fp32-compute-v1'
-      || policy.conv_forward !== 'fp32-output-bf16' || policy.conv_implementation !== 'conv2d-fp32-output-bf16-v1'
-      || ['fsdp_param_dtype', 'fsdp_reduce_dtype', 'adapter_implementation', 'text_linear_forward'].some(key => key in policy)) return null;
-    return policy as unknown as TrainingComputePolicy;
-  }
+  if (policy.id === 'dtk-sdxl-long-text-bf16-conv-fp32-linear-compute-v1') return null;
   if (animaPolicyIds.has(policy.id as string)) {
     if (config.model.family !== 'anima'
       || config.training.train_backbone !== true || config.training.train_text_encoder === true
