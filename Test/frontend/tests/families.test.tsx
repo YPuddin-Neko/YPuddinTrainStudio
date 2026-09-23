@@ -76,8 +76,8 @@ describe('FE-M7: family-driven SchemaForm', () => {
   it('explains training scope separately and reserves technical identifiers for advanced help', () => {
     const {rerender} = render(<SchemaForm schema={trainSchema} value={baseConfig} onChange={() => {}} family={krea2Family} compact/>);
     fireEvent.click(screen.getByRole('button', {name: '适配器作用范围 说明'}));
-    expect(screen.getByRole('tooltip')).toHaveTextContent('决定本次训练可以调整模型的哪些部分');
-    expect(screen.getByRole('tooltip')).toHaveTextContent('不保证效果更好');
+    expect(screen.getByRole('tooltip')).toHaveTextContent('选择参与训练的层');
+    expect(screen.getByRole('tooltip')).toHaveTextContent('增加参数和显存占用');
     expect(screen.getByRole('tooltip')).not.toHaveTextContent('all-linear');
     fireEvent.keyDown(document, {key: 'Escape'});
     rerender(<SchemaForm schema={trainSchema} value={baseConfig} onChange={() => {}} family={krea2Family} compact showAdvanced/>);

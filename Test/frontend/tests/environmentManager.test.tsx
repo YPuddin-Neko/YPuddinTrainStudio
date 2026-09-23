@@ -83,7 +83,7 @@ describe('optional Metal FlashAttention management', () => {
     expect(screen.queryByTestId('environment-package-flash-attn')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '检查安装条件' })).not.toBeInTheDocument();
     fireEvent.click(within(row).getByRole('button', { name: '安装' }));
-    expect(screen.getByText(/安装兼容的预编译加速包/)).toBeVisible();
+    expect(screen.getByText(/使用预编译安装包/)).toBeVisible();
     expect(screen.queryByRole('button', { name: '上传 wheel' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('mtlattn 版本')).not.toBeInTheDocument();
     expect(screen.queryByText('手动版本与 wheel')).not.toBeInTheDocument();
@@ -98,7 +98,7 @@ describe('optional Metal FlashAttention management', () => {
     expect(apply).not.toHaveBeenCalled();
     fireEvent.click(confirm);
     await waitFor(() => expect(apply).toHaveBeenCalledWith('env_test'));
-    expect(await screen.findByText(/重启前队列不会启动新任务/)).toBeInTheDocument();
+    expect(await screen.findByText(/重启服务后生效/)).toBeInTheDocument();
   });
 
   it('explains the PyTorch 2.13 requirement without changing the active environment automatically', async () => {
@@ -256,13 +256,13 @@ describe('real environment management UI contracts', () => {
     expect(screen.getByLabelText('安装日志')).toHaveTextContent('Torch unchanged');
     fireEvent.click(confirm);
     await waitFor(() => expect(apply).toHaveBeenCalledWith('env_test'));
-    expect(await screen.findByText(/重启前队列不会启动新任务/)).toBeInTheDocument();
+    expect(await screen.findByText(/重启服务后生效/)).toBeInTheDocument();
   });
 
   it('blocks environment modifications while training and leaves attention selection to the training form', async () => {
     runtime.running_jobs = true; runtime.probe_deferred = true;
     render(<EnvironmentManagerPanel />);
-    expect(await screen.findByText(/训练或缓存任务正在运行/)).toBeInTheDocument();
+    expect(await screen.findByText(/任务运行中/)).toBeInTheDocument();
     expect(within(screen.getByTestId('environment-package-xformers')).getByRole('button', { name: '安装' })).toBeDisabled();
     expect(screen.queryByRole('combobox', { name: '新任务默认注意力' })).not.toBeInTheDocument();
     expect(create).not.toHaveBeenCalled();
@@ -438,9 +438,9 @@ describe('real environment management UI contracts', () => {
 it('reports Torch multi-device capability separately from single-device trainer support', async () => {
   render(<EnvironmentManagerPanel/>);
   const info=await screen.findByTestId('environment-training-devices');
-  expect(info).toHaveTextContent('PyTorch 可用显卡：2 张');
-  expect(info).toHaveTextContent('当前环境使用单设备训练');
-  expect(info).toHaveTextContent('当前平台不适用，不影响单设备训练');
+  expect(within(info).getByText('可用显卡').parentElement).toHaveTextContent('2');
+  expect(within(info).getByText('多卡通信').parentElement).toHaveTextContent('不可用');
+  expect(info).not.toHaveTextContent('当前平台不适用');
 });
 
 it('identifies DTK and describes multi-GPU training without NVIDIA requirements', async () => {
@@ -450,10 +450,7 @@ it('identifies DTK and describes multi-GPU training without NVIDIA requirements'
   expect(screen.getByText('HIP 运行时').parentElement).toHaveTextContent('6.3.42134');
   expect(screen.getByText('计算后端').parentElement).toHaveTextContent('DTK / HIP');
   const info = screen.getByTestId('environment-training-devices');
-  expect(info).toHaveTextContent('可在训练参数中选择显卡数量');
-  expect(info).toHaveTextContent('数据并行（DDP）分担训练数据，每张卡保留完整模型');
-  expect(info).toHaveTextContent('主模型全参训练可选择显存分片（FSDP），分担参数、梯度和优化器状态');
-  expect(info).toHaveTextContent('NCCL 兼容接口');
+  expect(within(info).getByText('多卡通信').parentElement).toHaveTextContent('NCCL');
   expect(screen.queryByText('NVIDIA 显卡计算')).not.toBeInTheDocument();
   expect(screen.queryByText('CUDA 版本')).not.toBeInTheDocument();
 });
@@ -462,9 +459,7 @@ it('explains Windows DDP startup verification without claiming FSDP or verified 
   Object.assign(runtime.runtime, {multi_gpu_training:true, gloo_available:true, multi_gpu_backend:'gloo', multi_gpu_probe_required:true});
   render(<EnvironmentManagerPanel/>);
   const info = await screen.findByTestId('environment-training-devices');
-  expect(info).toHaveTextContent('每次启动时检查所选显卡的 Gloo 通信，通过后才加载训练模型');
-  expect(info).toHaveTextContent('当前不支持 Windows 原生显存分片（FSDP）');
-  expect(info).toHaveTextContent('实际可用性会在任务启动时检查');
+  expect(within(info).getByText('多卡通信').parentElement).toHaveTextContent('Gloo · 启动任务时检测');
   expect(info).not.toHaveTextContent('主模型全参训练可选择显存分片');
 });
 
@@ -539,7 +534,8 @@ it('selects an official DTK wheel by server-issued ID and leaves incompatible bu
   fireEvent.click(screen.getByRole('option',{name:/2.6.3\+dtk25041/}));
   expect(screen.queryByRole('option',{name:/2.7.4/})).not.toBeInTheDocument();
   fireEvent.click(screen.getByText('包信息与运行要求'));
-  expect(screen.getByText(/显卡检测只验证常规 FlashAttention 运算/)).toBeVisible();
+  expect(screen.queryByText(/显卡检测只验证常规 FlashAttention 运算/)).not.toBeInTheDocument();
+  expect(screen.getByText('PyTorch 要求')).toBeVisible();
   fireEvent.click(screen.getByText('查看其他版本与不匹配原因'));
   expect(screen.getByText('Torch 版本不匹配')).toBeVisible();
   fireEvent.click(screen.getByRole('button',{name:'下载并检查安装包'}));
@@ -595,9 +591,9 @@ it('describes Python-only vendor builds as pending device validation rather than
   fireEvent.click(await screen.findByRole('combobox',{name:'DTK 适配版本'}));
   expect(screen.queryByRole('option',{name:'选择适配版本'})).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('option',{name:/0.0.33/}));
-  expect(screen.getByText(/版本要求已满足/)).toHaveTextContent('安装完成后会测试扩展能否在当前显卡上运行');
+  expect(screen.queryByText(/版本要求已满足/)).not.toBeInTheDocument();
   fireEvent.click(screen.getByText('包信息与运行要求'));
-  expect(screen.getByText(/此包提供纯 Python 接口/)).toHaveTextContent('仍需检查依赖并通过显卡检测');
+  expect(screen.queryByText(/此包提供纯 Python 接口/)).not.toBeInTheDocument();
   expect(screen.getByText('发布目录 DTK 标签').parentElement).toHaveTextContent('26.04');
   expect(screen.getByText('PyTorch 要求').parentElement).toHaveTextContent('>=2.5');
   expect(screen.getByText('安装包声明的依赖').parentElement).toHaveTextContent('>=2.1.0');
@@ -617,7 +613,7 @@ it('replaces empty CUDA runtime controls with matched DTK guidance and direct ma
   const panel = await screen.findByTestId('dtk-runtime-guidance');
   expect(await within(panel).findByText(/Ubuntu 22.04.5 LTS/)).toBeInTheDocument();
   expect(within(panel).getByText('6.3.31-V1.5.3.beta')).toBeInTheDocument();
-  expect(within(panel).getByText(/DTK 26.04 要求驱动/)).toHaveTextContent('安装前请确认当前驱动是否兼容');
+  expect(within(panel).getByText(/DTK 26.04 要求驱动/)).toHaveTextContent('6.3.30-V1.4.1a');
   expect(within(panel).getByRole('link',{name:'下载 DTK 26.04'})).toHaveAttribute('href',catalog.guidance.recommendation!.toolkit_url);
   expect(within(panel).getByRole('link',{name:'手动下载 torch 2.7.1+dtk2604'})).toHaveAttribute('href',catalog.guidance.recommendation!.wheels[0].url);
   expect(within(panel).getByRole('link',{name:'DTK 版本目录'})).toHaveAttribute('href','https://download.sourcefind.cn:65024/1/main');
@@ -669,7 +665,7 @@ it('offers a matching Windows community build and stages a plan before any insta
   server.use(http.get('/api/environment/windows/wheels', () => HttpResponse.json(windowsCatalog(true))));
   render(<EnvironmentManagerPanel focusPackage="flash-attn"/>);
   const select = await screen.findByRole('combobox',{name:'Windows FlashAttention 版本'});
-  expect(screen.getByText(/并非 FlashAttention 官方提供/)).toBeInTheDocument();
+  expect(screen.getByText(/安装包由社区维护者 mjun0812 提供/)).toBeInTheDocument();
   expect(screen.queryByLabelText('flash-attn 版本')).not.toBeInTheDocument();
   expect(screen.getByRole('button',{name:'检查安装条件'})).toBeDisabled();
   expect(select).toHaveTextContent('选择兼容版本');

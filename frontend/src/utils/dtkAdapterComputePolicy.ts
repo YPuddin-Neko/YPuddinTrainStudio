@@ -88,28 +88,8 @@ export function extraAdapterPrecisionLabel(id: string, english: boolean) {
 
 export function extraAdapterPolicyHint(id: string, english: boolean) {
   if (!extraAdapterPolicyIds.has(id)) return undefined;
-  const flash = id.endsWith('-flash-v1');
-  const attention = flash ? (english ? 'Backbone attention uses the DTK FlashAttention public API; other SDPA operations use math. ' : '主模型注意力使用海光 FlashAttention 公共接口，其他 SDPA 运算使用数学实现。') : '';
-  const ending = english
-    ? ' Parameter storage is unchanged. TF32 is off and attention uses SDPA math. Memory use and runtime may increase; resume requires the same compute policy and environment.'
-    : '参数存储精度不变。关闭 TF32，使用 SDPA 数学实现，可能增加显存和耗时；续训须使用相同计算策略和运行环境。';
-  if (id === animaFp16) return (english
-    ? 'Anima single-GPU LoRA keeps FP16 rounding, intermediates and outputs, with FP32 matrix operations. AMP and GradScaler remain active; previews use native operations.'
-    : 'Anima 单卡 LoRA 保留 FP16 舍入、中间结果与输出，矩阵运算使用 FP32。自动混合精度和梯度缩放保持启用，预览使用原生计算。') + ending;
-  if (id === sdxlFp16) return (english
-    ? 'SDXL single-GPU LoKr retains native FP16 training and GradScaler. Only preview backbone linear contractions use FP32, retaining FP16 rounding and outputs.'
-    : 'SDXL 单卡 LoKr 保留原生 FP16 训练和梯度缩放。仅预览主模型线性层使用 FP32 矩阵运算，仍保留 FP16 舍入与输出。') + ending;
-  const size = id.startsWith('dtk-klein9b-') ? '9B' : '4B';
-  const strategy = id.includes('-fsdp-')
-    ? (english ? `Klein ${size} uses two-GPU FSDP sharding. ` : `Klein ${size} 使用双卡 FSDP 显存分片。`)
-    : (english ? `Klein ${size} uses two-GPU DDP data parallelism. ` : `Klein ${size} 使用双卡 DDP 数据并行。`);
-  if (size === '9B') return strategy + attention + (english
-    ? `Backbone and frozen Qwen3 linear layers${id.includes('-lora-') ? ' and LoRA' : ''} use FP32 matrix operations, preserving BF16 rounding and outputs. Memory and runtime may increase; resume requires the same settings and environment.`
-    : `主模型与冻结 Qwen3 的线性层${id.includes('-lora-') ? ' 和 LoRA' : ''} 使用 FP32 矩阵运算，保留 BF16 舍入与输出。可能增加显存和耗时；续训须保持相同设置与环境。`);
-  return strategy + attention + (id.includes('-lora-')
-    ? (english ? 'Backbone linear layers and LoRA retain BF16 rounding and outputs with FP32 matrix operations. ' : '主模型线性层和 LoRA 保留 BF16 舍入与输出，矩阵运算使用 FP32。')
-    : id.includes('-fsdp-')
-    ? (english ? 'Backbone linear layers use FP32 contractions with BF16 rounding and outputs; LoKr operations remain native. ' : '主模型线性层使用 FP32 矩阵运算并保留 BF16 舍入与输出，LoKr 运算保持原生实现。')
-    : (english ? 'Training retains native BF16 operations. ' : '训练保持原生 BF16 计算。'))
-    + (english ? 'Preview backbone linear layers use FP32 contractions with BF16 rounding and outputs. Text encoders remain frozen.' : '预览主模型线性层使用 FP32 矩阵运算，保留 BF16 舍入与输出。文本编码器保持冻结。') + (flash ? (english ? ' TF32 is off. Resume requires the same compute policy and environment.' : '关闭 TF32；续训须保持相同计算策略和环境。') : ending);
+  const attention = id.endsWith('-flash-v1') ? 'FlashAttention' : 'SDPA';
+  return english
+    ? `Uses ${attention} with precision settings managed for reproducibility. Memory use and training time may increase. Resume with the same settings and environment.`
+    : `使用 ${attention}，精度由可复现训练管理，可能增加显存与训练耗时。续训须保持相同设置和环境。`;
 }

@@ -2535,26 +2535,26 @@ export interface components {
             resolution_mode: "bucket" | "native";
             /**
              * Image Fit
-             * @description 保留完整画面：等比缩放后补齐尺寸，补边不计入直接训练损失，但仍是模型看到的上下文。裁切填满尺寸：使用旧版等比覆盖后中心裁剪。新项目默认保留完整画面；缺少此字段的旧配置继续裁切，不改变历史训练。
+             * @description 保留完整画面：等比缩放后补边，补边区域不计入直接损失，但仍作为模型输入。裁切填满尺寸：等比缩放至填满后中心裁剪。新项目默认保留完整画面；旧配置沿用原来的裁切设置。
              * @default crop
              * @enum {string}
              */
             image_fit: "crop" | "pad";
             /**
              * Native Max Pixels
-             * @description 原生模式单图及一次前向的像素上限；1048576 = 1024²。不同尺寸分组前向后按图片数累积梯度，像素预算不保证整体显存不会溢出
+             * @description 原生模式单图及一次计算的像素上限，1048576 = 1024²。不同尺寸分组计算后，按图片数累积梯度；显存占用还受模型和批量大小影响。
              * @default 1048576
              */
             native_max_pixels: number;
             /**
              * Native Max Side
-             * @description 原生模式包含对齐补边在内的单边上限；超限时等比缩小，或按策略报错。旧裁切模式沿用向下对齐。
+             * @description 原生模式单边长度上限，包含对齐补边；超限后按下方策略等比缩小或报错。
              * @default 4096
              */
             native_max_side: number;
             /**
              * Native Overflow
-             * @description 超出像素或单边预算：等比缩小，或报错要求调整；不会悄悄跳过图片
+             * @description 图片超出像素或单边上限时，选择等比缩小或停止并提示调整。
              * @default downscale
              * @enum {string}
              */
@@ -2615,13 +2615,13 @@ export interface components {
             cache_dir?: string | null;
             /**
              * Cache Latents
-             * @description 训练开始前在本机自动准备图像编码缓存，后续可复用；关闭后每批在本机处理图像。
+             * @description 训练前缓存图像编码并在后续复用；关闭后每批重新编码。
              * @default true
              */
             cache_latents: boolean;
             /**
              * Text Encoding
-             * @description 自动按模型选择。每步处理标签支持每步变化；训练前缓存标签先计算结果并卸载编码器以降低驻留显存。两种都在训练电脑本地处理。
+             * @description 自动按模型选择。每步处理适合动态标签；训练前缓存可卸载文本编码器，减少显存占用。
              * @default auto
              * @enum {string}
              */
@@ -2752,7 +2752,7 @@ export interface components {
             repeats: number;
             /**
              * Caption Ext
-             * @description 标签格式：auto 自动查找同名标签文件，JSON 优先于 TXT；指定 .txt、.json 或自定义后缀时只读取该格式。已有显式后缀配置保持原行为。
+             * @description auto 查找同名标签文件，JSON 优先于 TXT；指定 .txt、.json 或自定义后缀时只读取该格式。
              * @default auto
              */
             caption_ext: string;
@@ -3901,7 +3901,7 @@ export interface components {
             grad_accum: number;
             /**
              * Mixed Precision
-             * @description CUDA / DTK 训练的自动混合精度，默认 BF16；关闭后不改变模型权重本身的精度，因此不等同于全程 FP32。FP16 需设备与模型支持；CPU/MPS 当前关闭自动混合精度。DTK 可复现训练可能调整部分运算精度，以参数检查后显示的本次设置为准。此项不同于冻结权重存储精度与导出文件精度。
+             * @description CUDA/DTK 训练的自动混合精度，默认 BF16；FP16 需设备和模型支持。关闭只停用自动混合精度，不改变权重本身精度。CPU/MPS 不使用自动混合精度；可复现训练以参数检查显示的有效设置为准。
              * @default bf16
              * @enum {string}
              */
@@ -3914,7 +3914,7 @@ export interface components {
             seed: number;
             /**
              * Deterministic
-             * @description 默认关闭。开启后请求确定性计算。DTK 按模型和训练组件管理实际计算精度、关闭 TF32 并使用 SDPA 数学实现；参数检查后会说明本次设置。可能增加显存和耗时，不保证跨设备或软件版本逐位一致。续训须保持原计算策略与运行环境，不支持的确定性算子会报错停止。
+             * @description 默认关闭。开启后在相同设备、软件版本、数据和设置下更稳定地复现训练，可能增加显存和耗时。实际精度与注意力后端会在参数检查中显示；严格续训需保持原设置与环境，不支持的算子会停止并提示。
              * @default false
              */
             deterministic: boolean;
@@ -3926,13 +3926,13 @@ export interface components {
             ema: boolean;
             /**
              * Ema Decay
-             * @description EMA 对历史权重的保留比例，默认 0.999；越接近 1，平均权重变化越慢。仅启用 EMA 时有效，不保证平均权重一定优于当前权重。
+             * @description EMA 对历史权重的保留比例，默认 0.999；越接近 1，平均权重变化越慢。
              * @default 0.999
              */
             ema_decay: number;
             /**
              * Nan Skip Limit
-             * @description 连续出现 NaN/Inf 损失或梯度时的容忍上限，默认 50，达到后报错停止。它用于防止无限跳过；遇到问题应检查数据、精度和学习率，不宜只提高上限。
+             * @description 连续出现 NaN/Inf 损失或梯度时，最多跳过的步数，默认 50；达到后停止。请检查数据、精度和学习率。
              * @default 50
              */
             nan_skip_limit: number;
@@ -3972,7 +3972,7 @@ export interface components {
         MemoryConfig: {
             /**
              * Base Precision
-             * @description 可选实验功能，默认 auto 不转换加载后的精度，也不会按剩余显存自动降低精度。适配器训练时只转换其覆盖的、尚未量化的冻结线性层，不修改原模型文件或适配器参数精度。降低存储精度可能减少显存占用，也可能影响训练质量，不保证加速。FP8 在启动时按逐张量缩放量化，不等同于发布方制作的量化模型；已有 FP8 文件须由对应加载器支持。全量微调只接受 auto 或 fp32，以实际训练设置为准。
+             * @description 实验选项，仅转换适配器覆盖的、尚未量化的冻结线性层。auto 保留加载精度；降低精度可能减少显存，也可能影响训练质量。适配器参数精度单独设置。FP8 在启动时按逐张量缩放量化，已有 FP8 文件需模型加载器支持。全量微调仅接受 auto 或 fp32。
              * @default auto
              * @enum {string}
              */
@@ -3998,13 +3998,13 @@ export interface components {
             offload_text_encoder: boolean;
             /**
              * Compile
-             * @description 对模型块使用 torch.compile，默认关闭；首次会编译，实际收益取决于设备与输入形状。当前仅 CUDA 路径启用，不能与块换出同时使用，先确认普通训练可运行。
+             * @description 使用 torch.compile 编译模型块，默认关闭；首次启动需编译。仅支持 CUDA，不能与块换出同时使用。
              * @default false
              */
             compile: boolean;
             /**
              * Allow Tf32
-             * @description 默认允许支持此格式的 NVIDIA GPU 使用 TF32 矩阵乘法；仅设置 PyTorch CUDA 后端许可，不影响 CPU/MPS。严格对照数值精度时可关闭。
+             * @description 允许支持 TF32 的 NVIDIA GPU 使用 TF32 矩阵乘法；需要更严格的数值精度时可关闭。CPU/MPS 不适用。
              * @default true
              */
             allow_tf32: boolean;
@@ -4136,14 +4136,14 @@ export interface components {
             tokenizer_path?: string | null;
             /**
              * Dtype
-             * @description CUDA 上加载模型时使用的精度，默认 bf16；应与显卡和权重兼容。CPU/MPS 实际按 fp32 加载。训练算子的混合精度另由训练设置控制，冻结权重存储精度另由显存设置控制。
+             * @description 模型加载精度，CUDA 默认 bf16，CPU/MPS 使用 fp32。混合精度计算和冻结权重存储精度分别在训练、显存设置中调整。
              * @default bf16
              * @enum {string}
              */
             dtype: "bf16" | "fp16" | "fp32";
             /**
              * Attention
-             * @description 默认 auto 使用 PyTorch 内置 SDPA。xFormers/FlashAttention 需匹配的 CUDA 或海光扩展；Metal FlashAttention 用于 Apple MPS，需在运行环境中安装匹配的 mtlattn。Metal 路径加速支持的 FP32 主模型注意力，mask、dropout 等其他调用保留内置 SDPA；文本编码器和 VAE 不变。Sage 仅用于无梯度推理。
+             * @description 默认使用内置 SDPA。xFormers/FlashAttention 需要匹配的 CUDA 或海光扩展；Apple Metal FlashAttention 需要匹配的 mtlattn，仅加速受支持的 FP32 主模型注意力，带 mask 或 dropout 的调用使用 SDPA。文本编码器和 VAE 保持原后端，Sage 仅用于采样。
              * @default auto
              * @enum {string}
              */
@@ -4163,7 +4163,7 @@ export interface components {
             zero_terminal_snr: boolean;
             /**
              * Sdxl Max Token Length
-             * @description SDXL 标签正文的最大 token 数，不含 BOS/EOS；150/225 会由两个 CLIP 分别按 75 个 token 分块编码。训练与预览使用相同长度，超出部分截断；更长文本增加编码和交叉注意力的显存与耗时，修改后需重新生成文本缓存。
+             * @description SDXL 标签长度，不含 BOS/EOS；150/225 按 75 token 分块编码，超出部分截断。训练与预览共用此长度；增加长度会增加显存和耗时，修改后需重建文本缓存。
              * @default 75
              * @enum {integer}
              */
@@ -4176,14 +4176,14 @@ export interface components {
             training_guidance: number;
             /**
              * Flux2 Variant
-             * @description 完整 FLUX.2 目录会读取模型配置。Klein 单文件无法从权重尺寸区分基础版和蒸馏版，请按模型发布说明选择对应基础版；当前不支持 Klein 蒸馏版训练。
+             * @description 完整目录可自动读取类型；Klein 单文件请按发布说明选择基础版 4B 或 9B。蒸馏版不支持训练。
              * @default auto
              * @enum {string}
              */
             flux2_variant: "auto" | "dev" | "klein-base-4b" | "klein-base-9b";
             /**
              * Krea2 Variant
-             * @description Raw 用于训练；Turbo 是仅采样的蒸馏模型。自动识别需要已校验的下载记录，不能从相同的权重形状或文件名判断。
+             * @description Raw 用于训练，Turbo 仅用于采样。自动识别需有已校验的下载记录；自行添加的模型请手动选择。
              * @default raw
              * @enum {string}
              */
@@ -4386,7 +4386,7 @@ export interface components {
         ObjectiveConfig: {
             /**
              * Timestep Sampling
-             * @description 决定训练时抽到哪些噪声强度：t 越大噪声越多。默认 shift 先做 logit-normal 抽样再应用 shift=3；uniform 均匀抽样，resolution_shift 按图像 token 数调整。它不同于生成预览图的噪声调度器，修改前应固定数据与种子做对比。
+             * @description 训练噪声强度分布，t 越大噪声越多。默认 shift 在 logit-normal 抽样后应用 shift=3；uniform 均匀抽样，resolution_shift 按图像 token 数调整。预览图使用独立的噪声调度设置。
              * @default shift
              * @enum {string}
              */
@@ -4399,7 +4399,7 @@ export interface components {
             logit_mean: number;
             /**
              * Logit Std
-             * @description logit-normal 在 sigmoid 变换前的标准差，默认 1；提高会增加靠近低噪声和高噪声端点的样本。仅在有分布对比目标时调整。
+             * @description logit-normal 在 sigmoid 变换前的标准差，默认 1；提高会增加靠近低噪声和高噪声端点的样本。
              * @default 1
              */
             logit_std: number;
@@ -4417,7 +4417,7 @@ export interface components {
             ];
             /**
              * Res Shift Mu
-             * @description 上述两个 token 参考位置对应的 mu，默认 0.5 和 1.15；先线性插值 mu，再用 exp(mu) 得到 shift。通常保留当前模型的配置，仅在研究分辨率相关噪声分布时调整。
+             * @description 两个 token 参考位置对应的 mu，默认 0.5 和 1.15；线性插值后用 exp(mu) 得到 shift。通常保留模型默认值。
              * @default [
              *       0.5,
              *       1.15
@@ -4459,14 +4459,14 @@ export interface components {
             t_max: number;
             /**
              * Loss
-             * @description 预测速度与目标速度的误差度量，默认 MSE 平方误差。Huber/pseudo-Huber 改变大误差的惩罚方式；更换后损失数值不可直接与 MSE 比较，也不保证样图更好。
+             * @description 默认 MSE 平方误差。Huber/pseudo-Huber 调整大误差的惩罚方式，更换后损失数值不能直接与 MSE 比较。
              * @default mse
              * @enum {string}
              */
             loss: "mse" | "huber" | "pseudo_huber";
             /**
              * Huber C
-             * @description Huber/pseudo-Huber 从小误差区域过渡到大误差区域的尺度，默认 0.1；MSE 不使用此值。只在使用对应损失并有误差分布依据时调整。
+             * @description Huber/pseudo-Huber 从小误差过渡到大误差区域的尺度，默认 0.1；MSE 不使用此值。
              * @default 0.1
              */
             huber_c: number;
@@ -4485,7 +4485,7 @@ export interface components {
             snr_gamma: number;
             /**
              * Ip Noise Gamma
-             * @description 仅给训练输入额外叠加噪声，目标仍使用原始噪声；默认 0 关闭。启用会改变训练任务，应通过固定验证和样图对比，而非将其当作通用提质开关。
+             * @description 给训练输入额外叠加噪声，训练目标仍使用原始噪声；默认 0 关闭。
              * @default 0
              */
             ip_noise_gamma: number;
@@ -4522,7 +4522,7 @@ export interface components {
         OptimizerConfig: {
             /**
              * Type
-             * @description 默认 AdamW。内置选项对应真实优化器实现；8-bit 选项需要 CUDA 和 bitsandbytes，其他扩展优化器需要对应依赖。缺失时会报错，不会自动换用其他优化器。高级用户也可填已安装的 module.Class；其额外参数填写在优化器参数中。
+             * @description 默认 AdamW。8-bit 选项需要 CUDA 和 bitsandbytes，扩展优化器需要安装对应依赖。自定义优化器填写 module.Class，额外参数填在下方。
              * @default adamw
              */
             type: string;
@@ -4558,7 +4558,7 @@ export interface components {
             eps: number | null;
             /**
              * Args
-             * @description 用于自定义优化器或尚无独立控件的扩展参数。已有控件的参数会迁移到对应字段；同名冲突或覆盖自动管理参数会明确报错。
+             * @description 填写自定义优化器或尚无独立控件的参数；避免与已有控件或自动管理的参数重复。
              */
             args?: {
                 [key: string]: unknown;
@@ -4577,7 +4577,7 @@ export interface components {
             kahan: boolean;
             /**
              * Fused Backward
-             * @description 预留的反向即时更新选项，当前尚未实现，必须保持关闭；开启会明确拒绝启动，不会静默改成普通训练。
+             * @description 反向即时更新尚不支持，请保持关闭。
              * @default false
              */
             fused_backward: boolean;
@@ -5844,12 +5844,12 @@ export interface components {
             prompts_file?: string | null;
             /**
              * Steps
-             * @description 生成一张预览的积分步数，留空使用模型族默认（Anima 25、Krea 2 为 28）。更多步通常增加生成耗时，不等于训练更多步，也不保证更好；单条提示词设置优先。
+             * @description 生成预览图的步数，留空使用模型默认（Anima 25、Krea 2 为 28）。步数越多通常耗时越长；单条提示词设置优先。
              */
             steps?: number | null;
             /**
              * Cfg
-             * @description 提示词引导强度，留空使用模型族默认（Anima 4、Krea 2 为 5.5）。1 只用正向条件，0 使用负向/空条件；更高值会放大条件差异，不保证效果更好。单条提示词设置优先。
+             * @description 提示词引导强度，留空使用模型默认（Anima 4、Krea 2 为 5.5）。1 只用正向条件，0 使用负向/空条件；提高会放大正负条件的差异。单条提示词设置优先。
              */
             cfg?: number | null;
             /**
@@ -5877,21 +5877,21 @@ export interface components {
             seed: number;
             /**
              * Sampler
-             * @description 预览图的计算方式，默认 Euler 每步评估一次速度；Heun 先预测再校正，除末步外通常多评估一次；ER-SDE 使用历史结果与随机噪声，默认阶数由内部逐步处理，无需按阶数挑质量档位。开启提示词引导时，每次评估还可能分别计算正向与负向条件。改变算法不改变训练目标。
+             * @description 预览图的采样算法，默认 Euler 每步评估一次；Heun 先预测再校正，除末步外通常多评估一次；ER-SDE 使用历史结果与随机噪声。开启 CFG 引导时还需分别计算正向和负向条件。
              * @default euler
              * @enum {string}
              */
             sampler: "euler" | "heun" | "er_sde";
             /**
              * Scheduler
-             * @description 决定每个预览积分步骤经过的噪声时间点。默认 uniform 保留旧版连续均匀网格再应用 shift；simple、sgm_uniform、normal 使用不同网格或端点。它与采样算法、学习率调度是独立设置。
+             * @description 预览采样使用的噪声时间点。默认 uniform 使用均匀网格并应用 shift；simple、sgm_uniform、normal 使用不同网格或端点。与采样算法、学习率调度分别设置。
              * @default uniform
              * @enum {string}
              */
             scheduler: "uniform" | "simple" | "sgm_uniform" | "normal";
             /**
              * Er Sde Order
-             * @description ER-SDE 允许的最高阶数，默认 3；开始时历史不足会从低阶逐步升阶。可选 1/2 做对照，阶数更高不保证每个模型或步数下都更好。
+             * @description ER-SDE 的最高阶数，默认 3；开始时从低阶逐步升阶，也可选择 1 或 2。
              * @default 3
              * @enum {integer}
              */
@@ -5921,7 +5921,7 @@ export interface components {
         SchedulerConfig: {
             /**
              * Type
-             * @description 控制学习率随优化步骤变化的曲线，默认 cosine 逐渐衰减；constant 保持基础倍率。它不控制图像生成的噪声时间步。换优化器时应确认该算法对外部学习率调度的要求。
+             * @description 学习率随训练步数变化的曲线，默认 cosine 逐渐衰减；constant 保持不变。请按优化器要求选择。
              * @default cosine
              * @enum {string}
              */
@@ -5940,7 +5940,7 @@ export interface components {
             min_lr_ratio: number;
             /**
              * Num Cycles
-             * @description 余弦重启调度的周期数，默认 1；更多周期会反复降再升学习率，仅 cosine_restarts 使用。需要多次重启实验时才调整。
+             * @description cosine_restarts 的周期数，默认 1；每个周期会先降低再恢复学习率。
              * @default 1
              */
             num_cycles: number;

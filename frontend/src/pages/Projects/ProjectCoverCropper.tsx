@@ -29,7 +29,7 @@ export default function ProjectCoverCropper({ file, initialCrop, onCancel, onApp
     setView({ zoom: next.zoom, cx: bounded.x + bounded.width / 2, cy: bounded.y + bounded.height / 2 });
   };
   return <div className="cover-crop-editor">
-    <p id="cover-crop-help">{text('拖动图片、调整缩放，框内就是封面显示的内容。', 'Drag the image and adjust zoom. The frame shows your project cover.')}</p>
+    <p id="cover-crop-help">{text('拖动或缩放图片裁切封面。', 'Drag or zoom to crop the cover.')}</p>
     <div ref={frame} className="cover-crop-frame" tabIndex={0} role="group" aria-label={text('封面裁切区域', 'Cover crop area')} aria-describedby="cover-crop-help cover-crop-keyboard"
       onPointerDown={event => {
         if (!crop || event.button !== 0 || drag.current) return;

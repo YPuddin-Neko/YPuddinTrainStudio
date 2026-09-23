@@ -377,7 +377,7 @@ function DatasetContent({id}: {id?:string}) {
             <code>{info?.source.path}</code>
             <p>{t('dataset.repeats')} ×{info?.source.repeats ?? '--'} · {t('dataset.caption')}: {info?.source.caption_ext || '--'}</p>
             {info?.cache?.latents && <p>{t('dataset.latents')}: {info.cache.latents.cached}/{info.cache.latents.total} · {t('dataset.text')}: {info.cache.text?.cached ?? 0}/{info.cache.text?.total ?? 0}</p>}
-            <p>{canEdit ? text('点击图片编辑标签，用“编辑遮罩”绘制训练区域。', 'Click an image to edit captions; choose Edit mask to paint the training area.') : text('点击图片查看原图与标签。', 'Click an image to view the original and its caption.')}</p>
+
             <p>{text('白色参与训练，黑色忽略。没有独立遮罩时使用原图 Alpha；没有 Alpha 时全图参与。启用遮罩训练后生效。', 'White trains, black is ignored. Without a sidecar, image alpha is used; without alpha, the whole image participates. Enable masked training to apply these weights.')}</p>
           </div></details>
         </div>

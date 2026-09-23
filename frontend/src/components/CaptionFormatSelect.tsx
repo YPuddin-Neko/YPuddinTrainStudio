@@ -14,7 +14,7 @@ export default function CaptionFormatSelect({value='auto',onChange,disabled=fals
       {value:'.txt',label:text('仅 TXT','TXT only')},...(supportsJson ? [{value:'.json',label:text('仅 JSON','JSON only')}] : []),
       {value:'custom',label:text('自定义扩展名…','Custom extension…')},
     ]}/>
-    {unsupported && <p role="alert">{text('当前模型不支持 JSON 标签。请选择 TXT 或其他纯文本标签；原配置尚未更改。','This model does not support JSON captions. Choose TXT or another plain-text caption format; the saved selection is unchanged.')}</p>}
+    {unsupported && <p role="alert">{text('当前模型不支持 JSON 标签，请选择 TXT 或其他纯文本格式。','This model does not support JSON captions. Choose TXT or another plain-text format.')}</p>}
     {custom && <input aria-label={text('自定义标签扩展名','Custom caption extension')} value={value} disabled={disabled} onChange={event=>onChange(event.target.value)} placeholder=".caption"/>}
   </div>;
 }

@@ -109,7 +109,7 @@ export default function Projects() {
       : !error && <div className="projects-empty-state" data-testid={query || category || uncategorized ? 'projects-no-results' : projects.length ? 'projects-all-archived' : 'projects-empty'}>
         {query || category || uncategorized ? <SearchX size={28}/> : projects.length ? <Archive size={28}/> : <FolderOpen size={28}/>}
         <h3>{query || category || uncategorized ? text('没有匹配的项目', 'No matching projects') : projects.length ? t('projects.allArchivedTitle', '所有项目都已归档') : t('projects.emptyTitle', '还没有项目')}</h3>
-        <p>{query || category || uncategorized ? text('试试其他分类或关键词。', 'Try another category or search.') : projects.length ? t('projects.allArchivedHint', '勾选上方「显示已归档」查看。') : text('新建项目后可手动上传封面，导入训练数据。', 'Create a project, choose its cover and import training data.')}</p>
+
         {(query || category || uncategorized) && <button className="projects-page-button" onClick={() => changeFilter({ q: null, category: null, uncategorized: null })}>{text('清除筛选', 'Clear filters')}</button>}
         {!query && !category && !uncategorized && projects.length > 0 && !showArchived && <button className="projects-page-button" onClick={() => changeFilter({ archived: '1' })}>{text('查看已归档项目', 'View archived projects')}</button>}
         {!query && !category && !uncategorized && projects.length === 0 && <button className="projects-create-button" onClick={() => setEditor('new')}><FolderPlus size={15}/>{text('创建第一个项目', 'Create your first project')}</button>}

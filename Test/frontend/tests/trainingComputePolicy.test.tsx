@@ -5,7 +5,7 @@ import {SchemaForm} from '../../../frontend/src/schema/SchemaForm/SchemaForm';
 import schema from '../../../frontend/src/schema/train-schema.json';
 import {schemaDefaults} from '../../../frontend/src/utils/config';
 import {configFieldHelp, configOptionLabel} from '../../../frontend/src/utils/configPresentation';
-import {confirmedTrainingComputePolicy, currentTrainingComputePolicy, trainingComputePolicyHint} from '../../../frontend/src/utils/trainingComputePolicy';
+import {confirmedTrainingComputePolicy, currentTrainingComputePolicy, trainingComputeManagedField, trainingComputePolicyHint} from '../../../frontend/src/utils/trainingComputePolicy';
 import backendPolicies from '../fixtures/trainingComputePolicies.json';
 import i18n from '../../../frontend/src/i18n';
 
@@ -222,15 +222,11 @@ it.each(['single', 'ddp', 'fsdp'] as const)('describes frozen-encoder LoRA %s an
   render(<Editor/>);
   expect(screen.getByRole('status', {name:'混合精度'})).toHaveTextContent('BF16（FP32 线性层与 LoRA 运算）');
   const hint = screen.getByTestId('field-loop.deterministic');
-  expect(hint).toHaveTextContent(strategy === 'fsdp' ? 'FSDP 将模型参数、适配器梯度和优化器状态分摊到多卡' : strategy === 'ddp' ? 'DDP 每卡保留完整模型' : '本次使用单卡');
-  expect(hint).toHaveTextContent('文本编码器保持冻结');
-  expect(hint).toHaveTextContent('保留 BF16 舍入和输出');
-  expect(hint).toHaveTextContent('LoRA 也保留 BF16 操作数舍入和中间结果');
-  expect(hint).toHaveTextContent('卷积使用 FP32，输出转回 BF16');
-  expect(hint).toHaveTextContent('可能增加显存和耗时');
-  expect(hint).toHaveTextContent('相同计算策略和运行环境及标签长度');
-  expect(hint).toHaveTextContent('不可混用旧策略的训练状态');
-  expect(hint).toHaveTextContent('提高重复预览的一致性');
+  expect(hint).toHaveTextContent('已自动设置精度和注意力');
+  expect(hint).toHaveTextContent('可能增加显存与训练耗时');
+  expect(hint).toHaveTextContent('续训须保持相同设置和环境');
+  expect(screen.getByRole('status', {name:'注意力后端'})).toHaveTextContent('PyTorch SDPA（数学实现）');
+  expect(screen.getByRole('status', {name:'允许 TF32'})).toHaveTextContent('关闭');
   expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual(initial);
   fireEvent.click(screen.getByRole('checkbox', {name:'可复现训练'}));
   expect(screen.getByRole('combobox', {name:'混合精度'})).toHaveTextContent('BF16');
@@ -251,7 +247,7 @@ it('uses the server-confirmed Anima LoRA FSDP preview contract only for multiple
   expect(confirmedTrainingComputePolicy(candidate, {...config, loop:{...config.loop, distributed_strategy:'ddp'}})).toBeNull();
 });
 
-it('shows Anima FSDP preview arithmetic in the existing hint and restores user choices on disable', () => {
+it('shows Anima FSDP effective precision and restores user choices on disable', () => {
   const {config:initial, candidate} = backboneAdapterCase('anima', 'lora', 'fsdp');
   function Editor() {
     const [value,setValue] = React.useState(initial);
@@ -259,56 +255,38 @@ it('shows Anima FSDP preview arithmetic in the existing hint and restores user c
   }
   render(<Editor/>);
   const hint = screen.getByTestId('field-loop.deterministic');
-  expect(hint).toHaveTextContent('FSDP 将模型参数、适配器梯度和优化器状态分摊到多卡');
-  expect(hint).toHaveTextContent('文本编码器保持冻结');
-  expect(hint).toHaveTextContent('预览的主模型线性层也保留 BF16 舍入与输出，并使用 FP32 运算');
-  expect(hint).toHaveTextContent('不可混用旧策略的训练状态');
-  expect(hint).not.toHaveTextContent('标签长度');
-  expect(hint).not.toHaveTextContent('卷积使用 FP32');
+  expect(hint).toHaveTextContent('已自动设置精度和注意力');
+  expect(hint).toHaveTextContent('续训须保持相同设置和环境');
+  expect(screen.getByRole('status', {name:'混合精度'})).toHaveTextContent('BF16（FP32 线性层与 LoRA 运算）');
   expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual(initial);
   fireEvent.click(screen.getByRole('checkbox', {name:'可复现训练'}));
-  expect(hint).not.toHaveTextContent('重复预览');
+  expect(hint).not.toHaveTextContent('已自动设置精度和注意力');
   expect(screen.getByRole('combobox', {name:'混合精度'})).toHaveTextContent('BF16');
   expect(screen.getByRole('checkbox', {name:'允许 TF32'})).toBeChecked();
   expect(screen.getByRole('combobox', {name:'注意力后端'})).toHaveTextContent('xFormers');
   expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual({...initial, loop:{...initial.loop, deterministic:false}});
 });
 
-it.each(backboneCases)('explains $family $algo $strategy $tokens-token arithmetic in both languages', ({family, algo, strategy, tokens}) => {
+it.each(backboneCases)('shows $family $algo $strategy $tokens-token effective precision and concise impact in both languages', ({family, algo, strategy, tokens}) => {
   const {config, candidate} = backboneAdapterCase(family, algo, strategy, tokens);
   const confirmed = confirmedTrainingComputePolicy(candidate, config);
   const chinese = trainingComputePolicyHint(confirmed, false)!;
   const english = trainingComputePolicyHint(confirmed, true)!;
   expect(english).not.toMatch(/[\u4e00-\u9fff]/);
-  expect(english).toContain('Text encoders stay frozen');
-  expect(english).toContain('Memory use and runtime may increase');
-  expect(english).toContain('states from previous policies cannot be mixed');
-  if ((family === 'sdxl' && tokens > 75)
-    || (family === 'anima' && strategy === 'fsdp')) {
-    expect(english).toContain('Preview backbone linear layers also use FP32 operations with BF16 rounding and outputs');
-    expect(chinese).toContain('预览的主模型线性层也保留 BF16 舍入与输出');
-  } else {
-    expect(english).not.toContain('Preview backbone');
-    expect(chinese).not.toContain('重复预览');
-  }
-  if (algo === 'lokr') {
-    expect(chinese).toContain('LoKr 运算保持原生实现');
-    expect(english).toContain('LoKr operations remain native');
-    expect(chinese).not.toContain('LoRA');
-  }
+  expect(english).toContain('Memory use and training time may increase');
+  expect(english).toContain('Resume with the same settings and environment');
+  expect(chinese).toContain('可能增加显存与训练耗时');
+  expect(chinese).toContain('续训须保持相同设置和环境');
+  const precision = trainingComputeManagedField(confirmed, 'loop.mixed_precision', false)!;
+  const precisionEnglish = trainingComputeManagedField(confirmed, 'loop.mixed_precision', true)!;
+  expect(precision.value).toBe('bf16');
+  expect(precisionEnglish.label).not.toMatch(/[\u4e00-\u9fff]/);
   if (family === 'sdxl' && algo === 'lokr' && tokens === 75) {
-    expect(chinese).toContain('原生 BF16 前向');
-    expect(english).toContain('linear forward uses native BF16');
+    expect(precision.label).toBe('BF16（FP32 卷积、线性层反向）');
+  } else if (algo === 'lora') {
+    expect(precision.label).toBe('BF16（FP32 线性层与 LoRA 运算）');
   } else {
-    expect(chinese).toContain('线性层保留 BF16 舍入和输出，矩阵运算使用 FP32');
-    expect(english).toContain('linear operations retain BF16 rounding and outputs, with FP32 matrix operations');
-  }
-  if (strategy === 'fsdp') {
-    expect(english).toContain('gathering parameters in BF16 and reducing gradients in FP32');
-    expect(chinese).not.toContain('每卡保留完整模型');
-  } else if (strategy === 'ddp') {
-    expect(english).toContain('DDP keeps the complete model on each GPU');
-    expect(chinese).not.toContain('分摊到多卡');
+    expect(precision.label).toBe(family === 'sdxl' ? 'BF16（FP32 卷积、线性层运算）' : 'BF16（线性层 FP32 运算）');
   }
 });
 
@@ -362,7 +340,7 @@ it('shows effective text-only precision and restores the original draft when rep
   }
   render(<Editor/>);
   expect(screen.getByRole('status', {name:'混合精度'})).toHaveTextContent('使用 FP32 运算提高可复现性');
-  expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('文本编码器 LoRA 训练');
+  expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('已自动设置精度和注意力');
   expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual(initial);
   fireEvent.click(screen.getByRole('checkbox', {name:'可复现训练'}));
   expect(screen.getByRole('combobox', {name:'混合精度'})).toHaveTextContent('BF16');
@@ -376,7 +354,7 @@ it.each([150, 225])('requires the versioned preview contract for SDXL %s-token s
   expect(confirmedTrainingComputePolicy(candidate, config)).toEqual(candidate);
   expect(confirmedTrainingComputePolicy(legacy, config)).toBeNull();
   expect(confirmedTrainingComputePolicy(sdxlPolicy, config)).toBeNull();
-  expect(trainingComputePolicyHint(confirmedTrainingComputePolicy(candidate, config), false)).toContain('LoKr 运算保持原生实现');
+  expect(trainingComputeManagedField(confirmedTrainingComputePolicy(candidate, config), 'loop.mixed_precision', false)?.label).toBe('BF16（FP32 卷积、线性层运算）');
 });
 
 it.each(['ddp','fsdp'] as const)('accepts Anima %s only for its complete supported multi-GPU scope', strategy => {
@@ -448,10 +426,8 @@ it.each(['ddp','fsdp'] as const)('renders Anima %s managed fields and restores t
   render(<Editor/>);
   expect(screen.getByRole('status',{name:'混合精度'})).toHaveTextContent('BF16（线性层 FP32 运算）');
   const hint=screen.getByTestId('field-loop.deterministic');
-  expect(hint).toHaveTextContent(strategy==='ddp' ? '每卡保留完整主模型' : '分担参数、梯度和优化器状态');
-  expect(hint).toHaveTextContent('先按 BF16 舍入输入与参数');
-  expect(hint).not.toHaveTextContent('使用单卡');
-  if (strategy==='fsdp') expect(hint).toHaveTextContent('按 BF16 汇集参数，以 FP32 汇总梯度');
+  expect(hint).toHaveTextContent('已自动设置精度和注意力');
+  expect(hint).toHaveTextContent('续训须保持相同设置和环境');
   expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual(initial);
   fireEvent.click(screen.getByRole('checkbox',{name:'可复现训练'}));
   expect(screen.getByRole('combobox',{name:'混合精度'})).toHaveTextContent('BF16');
@@ -460,12 +436,12 @@ it.each(['ddp','fsdp'] as const)('renders Anima %s managed fields and restores t
   expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual({...initial,loop:{...initial.loop,deterministic:false}});
 });
 
-it.each(['ddp','fsdp'] as const)('describes Anima %s parallelism accurately in English', async strategy => {
+it.each(['ddp','fsdp'] as const)('shows Anima %s precision and reproducibility impact in English', async strategy => {
   await i18n.changeLanguage('en');
   render(<SchemaForm schema={schema} value={animaDualConfig(strategy)} onChange={()=>{}} computePolicy={strategy==='ddp'?animaDdpPolicy:animaFsdpPolicy} compact showAdvanced groupFilter={['loop','memory']}/>);
   const hint=screen.getByTestId('field-loop.deterministic');
-  expect(hint).toHaveTextContent(strategy==='ddp'?'each GPU keeps the complete backbone':'shards parameters, gradients and optimizer states');
-  expect(hint).toHaveTextContent('return BF16 outputs');
+  expect(hint).toHaveTextContent('Precision and attention settings are managed for reproducibility');
+  expect(hint).toHaveTextContent('Resume with the same settings and environment');
   expect(hint.textContent).not.toMatch(/[\u4e00-\u9fff]/);
   expect(hint.textContent).not.toContain('all gradients use FP32');
   expect(screen.getByRole('status',{name:'Mixed Precision'})).toHaveTextContent('BF16 (FP32 linear operations)');
@@ -530,7 +506,7 @@ it('rejects incomplete, forged or stale Anima compute identities', () => {
   expect(currentTrainingComputePolicy(animaPolicy,{...config,loop:{...config.loop,gpu_count:2}},checked,false)).toBeNull();
 });
 
-it('describes Anima rounded BF16 operands and FP32 linear computation without changing the draft', () => {
+it('shows Anima effective BF16 precision and short impact without changing the draft', () => {
   const initial = animaLokrConfig();
   function Editor() {
     const [value,setValue] = React.useState(initial);
@@ -539,11 +515,8 @@ it('describes Anima rounded BF16 operands and FP32 linear computation without ch
   render(<Editor/>);
   expect(screen.getByRole('status',{name:'混合精度'})).toHaveTextContent('BF16（线性层 FP32 运算）');
   const hint = screen.getByTestId('field-loop.deterministic');
-  expect(hint).toHaveTextContent('本次 Anima 使用单卡');
-  expect(hint).toHaveTextContent('先按 BF16 舍入输入与参数');
-  expect(hint).toHaveTextContent('以 FP32 进行矩阵运算并返回 BF16');
-  expect(hint).not.toHaveTextContent('保留 BF16 前向');
-  expect(hint).not.toHaveTextContent('多卡显存分片');
+  expect(hint).toHaveTextContent('已自动设置精度和注意力');
+  expect(hint).toHaveTextContent('可能增加显存与训练耗时');
   expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual(initial);
   fireEvent.click(screen.getByRole('checkbox',{name:'可复现训练'}));
   expect(screen.getByRole('combobox',{name:'混合精度'})).toHaveTextContent('BF16');
@@ -551,18 +524,17 @@ it('describes Anima rounded BF16 operands and FP32 linear computation without ch
   expect(screen.getByRole('combobox',{name:'注意力后端'})).toHaveTextContent('xFormers');
 });
 
-it('presents Anima computation and checkpointing limits in English', async () => {
+it('presents Anima effective precision and keeps useful reproducibility help in English', async () => {
   await i18n.changeLanguage('en');
   render(<SchemaForm schema={schema} value={fullConfig()} onChange={() => {}} computePolicy={animaPolicy} compact showAdvanced groupFilter={['loop','memory']}/>);
   expect(screen.getByTestId('field-loop.mixed_precision')).toHaveTextContent('BF16 (FP32 linear operations)');
   const hint = screen.getByTestId('field-loop.deterministic');
-  expect(hint).toHaveTextContent('uses one GPU');
-  expect(hint).toHaveTextContent('rounded to BF16');
-  expect(hint).toHaveTextContent('matrix operations use FP32');
+  expect(hint).toHaveTextContent('Precision and attention settings are managed for reproducibility');
+  expect(hint).toHaveTextContent('Resume with the same settings and environment');
   expect(hint.textContent).not.toMatch(/[\u4e00-\u9fff]/);
   expect(hint.textContent).not.toContain('native BF16');
   fireEvent.click(within(hint).getByRole('button',{name:'Reproducible training help'}));
-  expect(screen.getByRole('tooltip')).toHaveTextContent('Configuration validation explains the effective settings');
+  expect(screen.getByRole('tooltip')).toHaveTextContent('same configuration, device and software environment');
 });
 
 const shardedKreaConfig = () => {
@@ -600,7 +572,7 @@ it('renders actual BF16 forward and FP32 backward without changing the selected 
   }
   render(<Editor/>);
   expect(screen.getByRole('status',{name:'混合精度'})).toHaveTextContent('BF16 前向（线性层反向 FP32）');
-  expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('本次 Krea2 使用多卡显存分片');
+  expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('已自动设置精度和注意力');
   expect(screen.queryByText('FP32 计算（关闭混合精度）')).not.toBeInTheDocument();
   expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual(initial);
   fireEvent.click(screen.getByRole('checkbox',{name:'可复现训练'}));
@@ -613,7 +585,7 @@ it('shows the BF16 policy in English with no Chinese fallback', async () => {
   render(<SchemaForm schema={schema} value={shardedKreaConfig()} onChange={() => {}} computePolicy={bf16Policy} compact showAdvanced groupFilter={['loop','memory']}/>);
   expect(screen.getByTestId('field-loop.mixed_precision')).toHaveTextContent('BF16 forward (FP32 linear backward)');
   const hint = screen.getByTestId('field-loop.deterministic');
-  expect(hint).toHaveTextContent('shards the model across GPUs');
+  expect(hint).toHaveTextContent('Precision and attention settings are managed for reproducibility');
   expect(hint.textContent).not.toMatch(/[\u4e00-\u9fff]/);
 });
 
@@ -625,7 +597,7 @@ it('shows the SDXL convolution policy only for the checked single-GPU backbone c
   expect(confirmedTrainingComputePolicy(sdxlPolicy,{...config,model:{...config.model,family:'anima'}})).toBeNull();
   render(<SchemaForm schema={schema} value={config} onChange={() => {}} computePolicy={sdxlPolicy} compact showAdvanced groupFilter={['loop','memory']}/>);
   expect(screen.getByRole('status',{name:'混合精度'})).toHaveTextContent('BF16（FP32 卷积、线性层反向）');
-  expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('卷积输出转回 BF16');
+  expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('已自动设置精度和注意力');
   expect(screen.getByTestId('field-loop.deterministic')).not.toHaveTextContent('本次 Krea2');
 });
 
@@ -644,7 +616,7 @@ it('shows the same verified SDXL policy for supported LoKr, without accepting un
   expect(confirmedTrainingComputePolicy(sdxlPolicy,{...config,memory:{...config.memory,base_precision:'fp8_e4m3'}})).toBeNull();
   render(<SchemaForm schema={schema} value={config} onChange={() => {}} computePolicy={sdxlPolicy} compact showAdvanced groupFilter={['loop','memory']}/>);
   expect(screen.getByRole('status',{name:'混合精度'})).toHaveTextContent('BF16（FP32 卷积、线性层反向）');
-  expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('本次 SDXL 保留 BF16');
+  expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('续训须保持相同设置和环境');
 });
 
 it('only uses a confirmed policy for the current server-checked draft', () => {
@@ -680,7 +652,7 @@ it('shows SDXL sharding only for the matching full-model policy and BF16 gather 
   ]) expect(confirmedTrainingComputePolicy(changed,config)).toBeNull();
   render(<SchemaForm schema={schema} value={config} onChange={() => {}} computePolicy={sdxlShardedPolicy} compact showAdvanced groupFilter={['loop','memory']}/>);
   expect(screen.getByRole('status',{name:'混合精度'})).toHaveTextContent('BF16（FP32 卷积、线性层反向）');
-  expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('本次 SDXL 使用多卡显存分片');
+  expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('已自动设置精度和注意力');
 });
 
 it.each(['anima','sdxl','krea2'])('accepts the server-confirmed full-backbone policy for %s', family => {
@@ -710,8 +682,8 @@ it('displays actual managed values and restores original choices without changin
   expect(screen.getByRole('status',{name:'混合精度'})).toHaveTextContent('FP32 计算（关闭混合精度）');
   expect(screen.getByRole('status',{name:'允许 TF32'})).toHaveTextContent('关闭');
   expect(screen.getByRole('status',{name:'注意力后端'})).toHaveTextContent('PyTorch SDPA（数学实现）');
-  expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('本次 DTK 主模型全量微调');
-  expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('激活显存和训练耗时');
+  expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('已自动设置精度和注意力');
+  expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('可能增加显存与训练耗时');
   expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual(initial);
   fireEvent.click(screen.getByRole('checkbox',{name:'可复现训练'}));
   expect(screen.getByRole('combobox',{name:'混合精度'})).toHaveTextContent('BF16');
@@ -729,7 +701,7 @@ it('leaves original controls editable without a current runtime policy and does 
   expect(screen.getByRole('checkbox',{name:'允许 TF32'})).toBeChecked();
   expect(screen.queryByText('FP32 计算（关闭混合精度）')).not.toBeInTheDocument();
   expect(configOptionLabel('loop.mixed_precision','no')).toBe('关闭自动混合精度');
-  expect(configFieldHelp('loop.mixed_precision','')).toContain('不等同于全程 FP32');
+  expect(configFieldHelp('loop.mixed_precision','')).toContain('不改变权重本身的精度');
 });
 
 it('presents the same effective policy in English without leaking Chinese fallback text', async () => {
@@ -739,10 +711,10 @@ it('presents the same effective policy in English without leaking Chinese fallba
   expect(within(mixed).getByRole('status')).toHaveTextContent('FP32 computation (mixed precision off)');
   expect(mixed).toHaveTextContent('Your original choice is retained');
   const deterministic = screen.getByTestId('field-loop.deterministic');
-  expect(deterministic).toHaveTextContent('Activation memory and training time may increase');
+  expect(deterministic).toHaveTextContent('Memory use and training time may increase');
   expect(deterministic.textContent).not.toMatch(/[\u4e00-\u9fff]/);
   fireEvent.click(within(deterministic).getByRole('button',{name:'Reproducible training help'}));
-  expect(screen.getByRole('tooltip')).toHaveTextContent('Bitwise equality is not guaranteed');
+  expect(screen.getByRole('tooltip')).toHaveTextContent('same configuration, device and software environment');
 });
 
 
@@ -768,12 +740,11 @@ it.each(backendPolicies)('accepts the actual backend $name payload and rejects s
   const cn=trainingComputePolicyHint(confirmed,false)!;
   const en=trainingComputePolicyHint(confirmed,true)!;
   expect(cn).toContain('相同'); expect(en).toContain('same'); expect(en).not.toMatch(/[\u4e00-\u9fff]/);
-  if(config.loop.mixed_precision==='fp16') {
-    expect(cn).toContain('梯度缩放');expect(en).toContain('GradScaler');
-  }
+  expect(trainingComputeManagedField(confirmed,'model.attention',false)?.label).toContain(policy.attention === 'flash_attn' ? 'FlashAttention' : 'SDPA');
+  expect(trainingComputeManagedField(confirmed,'model.attention',true)?.label).toContain(policy.attention === 'flash_attn' ? 'FlashAttention' : 'SDPA');
+  expect(trainingComputeManagedField(confirmed,'loop.mixed_precision',false)?.label).toContain(config.loop.mixed_precision.toUpperCase());
   if(config.model.family==='flux2') {
     const size=config.model.flux2_variant==='klein-base-9b' ? '9B' : '4B';
-    expect(cn).toContain(`Klein ${size}`);expect(en).toContain(`Klein ${size}`);
     const changed={...config,model:{...config.model,flux2_variant:size==='9B' ? 'klein-base-4b' : 'klein-base-9b'}};
     expect(confirmedTrainingComputePolicy(policy,changed)).toBeNull();
   }
@@ -794,6 +765,6 @@ it.each(backendPolicies.filter(row=>row.config.loop.mixed_precision==='fp16'))('
 it.each(backendPolicies.filter(row => row.policy.attention === 'flash_attn'))('shows actual Flash attention for $name without changing the saved selection', ({config,policy}) => {
   render(<SchemaForm schema={schema} value={config} onChange={() => {}} computePolicy={policy} compact showAdvanced groupFilter={['model','loop','memory']}/>);
   expect(within(screen.getByTestId('field-model.attention')).getByRole('status')).toHaveTextContent('FlashAttention 2 (DTK)');
-  expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('FlashAttention 公共接口');
+  expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('使用 FlashAttention');
   expect(confirmedTrainingComputePolicy(policy,{...config,model:{...config.model,attention:'sdpa'}})).toBeNull();
 });

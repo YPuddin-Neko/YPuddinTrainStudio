@@ -75,10 +75,7 @@ export default function DtkWheelPicker({ packageName, selected, onSelect, disabl
         onValueChange={id => onSelect(compatible.find(item => item.id === id) || null)}/> : <p role="status" className="settings-note">{catalog?.reason === 'dtk_profile_required' ? text('请使用独立的 Linux DTK 启动入口后匹配安装包。', 'Use the dedicated Linux DTK launcher to match builds.') : text('官方目录中暂未找到与当前环境匹配的版本。可以上传已取得的厂商适配 wheel。', 'No matching build was found in the official catalog. You can upload a vendor-compatible wheel obtained separately.')}</p>}
       {selected && <div className="space-y-2">
         <p className="settings-note break-all">{selected.filename}</p>
-        <p className="settings-note">{text('版本要求已满足；安装完成后会测试扩展能否在当前显卡上运行。', 'Version requirements match. After installation, the extension will be tested on the current GPU.')}</p>
         <details className="settings-inline-details"><summary>{text('包信息与运行要求', 'Build information and requirements')}</summary>
-          {selected.binary === false && <p className="settings-note">{text('此包提供纯 Python 接口，目录的 DTK 标签不限制二进制兼容性；仍需检查依赖并通过显卡检测。', 'This package provides Python-only interfaces. Its catalog DTK label does not constrain binary compatibility; dependencies and GPU operation still need validation.')}</p>}
-          {selected.package === 'flash-attn' && <p className="settings-note">{text('显卡检测只验证常规 FlashAttention 运算。Klein 等模型使用的 Diffusers 接口需要单独验证。', 'The GPU check covers standard FlashAttention operations. Diffusers interfaces used by models such as Klein need separate validation.')}</p>}
           <dl className="settings-facts text-xs">
           <div><dt>{text('发布目录 DTK 标签', 'Catalog DTK label')}</dt><dd>{selected.dtk.split(' ')[0]}</dd></div>
           <div><dt>{text('PyTorch 要求', 'PyTorch requirement')}</dt><dd>{selected.torch}</dd></div>

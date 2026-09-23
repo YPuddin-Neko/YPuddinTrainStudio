@@ -28,7 +28,7 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
       <SourceBalance sources={plan?.source_balance} loading={loading} hasSources={hasSources}/>
       {!!native?.synchronization_groups && <p className="inspector-note">{text(`多卡每轮包含 ${native.synchronization_groups} 次同步补齐前向，权重为 0，不增加训练样本。`, `Multi-GPU synchronization adds ${native.synchronization_groups} zero-weight forwards per epoch without adding training samples.`)}</p>}
       <div className="bucket-heading"><h4>{native ? text('原生尺寸分布', 'Native size distribution') : text('分桶布局', 'Bucket layout')}</h4><div className="segmented-small"><button type="button" aria-label={text('分桶图形视图', 'Bucket shape view')} aria-pressed={view === 'shape'} onClick={() => setView('shape')}><Grid2X2 size={13} /></button><button type="button" aria-label={text('分桶明细表', 'Bucket table')} aria-pressed={view === 'table'} onClick={() => setView('table')}><BarChart3 size={13} /></button></div></div>
-      {buckets.length === 0 ? <div className="bucket-empty"><Database size={23} /><p>{loading ? text('正在计算实际分桶…', 'Computing buckets…') : awaitingPlan ? text('已配置数据来源。完成待配置项后计算分桶与训练估算。', 'Dataset sources are configured. Complete the pending settings to calculate buckets and training estimates.') : text('添加训练图片后，显示实际分桶尺寸与样本分布。', 'Add training images to inspect their bucket dimensions and distribution.')}</p><button type="button" className="studio-link" onClick={awaitingPlan && onIssues ? onIssues : onData}>{awaitingPlan && onIssues ? text('检查待配置项', 'Review pending settings') : text('配置训练数据', 'Configure dataset')}</button></div> : <>
+      {buckets.length === 0 ? <div className="bucket-empty"><Database size={23} /><p>{loading ? text('正在计算实际分桶…', 'Computing buckets…') : awaitingPlan ? text('请完成待配置项后计算。', 'Complete the pending settings to calculate.') : text('尚无训练图片。', 'No training images yet.')}</p><button type="button" className="studio-link" onClick={awaitingPlan && onIssues ? onIssues : onData}>{awaitingPlan && onIssues ? text('检查待配置项', 'Review pending settings') : text('配置训练数据', 'Configure dataset')}</button></div> : <>
         {view === 'shape' ? <div className="bucket-grid" data-testid="plan-buckets">{buckets.map(bucket => {
           const key = `${bucket.w}x${bucket.h}`;
           const longest = Math.max(bucket.w, bucket.h);
@@ -39,7 +39,7 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
           </button>;
         })}</div> : <div className="bucket-table-wrap" data-testid="plan-buckets"><table className="bucket-table"><thead><tr><th>{text('尺寸', 'Size')}</th><th>{text('样本', 'Items')}</th><th>{native ? text('前向次数', 'Forwards') : text('批次', 'Batches')}</th></tr></thead><tbody>{buckets.map(bucket => <tr key={`${bucket.w}x${bucket.h}`}><td>{bucket.w} × {bucket.h}</td><td>{bucket.items}</td><td>{bucket.batches ?? '—'}</td></tr>)}</tbody></table></div>}
         {chosen && <div className="bucket-selection"><strong>{chosen.w} × {chosen.h}</strong><span>{chosen.items} {text('样本', 'samples')} · {chosen.batches ?? '—'} {native ? text('前向 / 轮', 'forwards / epoch') : text('批次 / 轮', 'batches / epoch')}</span><span>{text('长宽比', 'Aspect ratio')} {(chosen.w / chosen.h).toFixed(2)}</span></div>}
-        <p className="inspector-note">{native ? text('保留每图独立尺寸，不放大小图；超出预算才按策略处理。同尺寸图片分组前向，梯度按图片数等权累积。', 'Retains individual sizes without upscaling; only over-budget images follow the overflow policy. Same-size images run together, with equal per-image gradient weights.') : text('矩形按实际长宽比展示，横条表示样本数量。调整分辨率和分桶参数后自动更新。', 'Shapes represent aspect ratios; bars represent item counts. Updates with resolution and bucket settings.')}</p>
+        <p className="inspector-note">{native ? text('保留每图尺寸，不放大小图；超出预算按设置处理，每张图等权累积梯度。', 'Keep individual sizes without upscaling; apply the selected overflow policy and weight each image equally.') : text('形状表示长宽比，横条表示样本数。', 'Shapes show aspect ratios; bars show sample counts.')}</p>
       </>}
       {plan?.image_fit && <div className="image-fit-summary">
         <strong>{plan.image_fit.mode==='pad'?text('完整画面保留','Whole image preserved'):text('沿用裁切模式','Legacy crop mode')}</strong>
@@ -58,7 +58,7 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
         <div><dt>{text('总训练步数', 'Total steps')}</dt><dd>{plan?.total_steps ?? '—'}</dd></div>
         <div><dt>{text('可训练参数', 'Trainable parameters')}</dt><dd>{formatParams(plan?.params?.trainable)}</dd></div>
         <div><dt>{plan?.distributed && plan.distributed.world_size > 1 ? text('每卡显存峰值估算', 'Estimated peak per GPU') : text('显存峰值估算', 'Estimated peak memory')}</dt><dd>{formatBytesMB(plan?.memory?.peak_mb_estimate)}</dd></div>
-      </dl><p className="inspector-note">{text('显存是规划估算；实际占用以训练时的设备监控为准。', 'Memory is a planning estimate; observe actual device use during training.')}</p></div>
+      </dl></div>
     </div>
   </section>;
 }

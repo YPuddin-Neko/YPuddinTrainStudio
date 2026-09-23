@@ -94,7 +94,7 @@ describe('explicit project version actions', () => {
     fireEvent.click(within(dialog).getByRole('combobox',{name:'训练模型类型'}));
     expect(screen.queryByRole('option',{name:/Flux/})).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('option',{name:'Krea2'}));
-    expect(within(dialog).getByText(/模型类型不同：/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/更换模型类型会重置/)).toBeInTheDocument();
     expect(within(dialog).getByRole('radio', {name:/复制数据，使用新模型配置/})).toBeChecked();
     expect(within(dialog).getByRole('radio', {name:/使用新模型配置，重新准备数据/})).not.toBeChecked();
     expect(within(dialog).getByText('按所选模型类型重建默认参数，清空数据来源。')).toBeInTheDocument();

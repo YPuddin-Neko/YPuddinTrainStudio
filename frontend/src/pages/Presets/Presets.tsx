@@ -119,7 +119,7 @@ export default function Presets() {
       const next = { ...draft, name: item.name, description: item.description, config: item.config, originalName: item.name, builtin: false };
       setDraft(next); setSaved(JSON.stringify(presetPayload(next)));
       queryClient.setQueryData<Preset[]>(KEY, previous => [...(previous || []).filter(row => row.name !== item.name), item]);
-      setNotice(text('预设已保存，可在项目训练参数中加载。', 'Preset saved. It is available in project training parameters.'));
+      setNotice(text('预设已保存。', 'Preset saved.'));
       return true;
     } catch (failure) {
       setError(formatApiError(failure));
@@ -165,7 +165,7 @@ export default function Presets() {
   const options = userPresets.map(item=>({value:item.name,label:`${item.name} · ${familyName(presetFamily(item.config))}`}));
   return <section className="presets-page parameter-workspace">
     <div className="parameter-workspace-header">
-    <header className="presets-page-heading"><div><h1>{text('参数预设', 'Presets')}</h1><p>{text('保存常用训练参数，在项目版本中预览后应用。', 'Save reusable training parameters, then preview and apply them in a project version.')}</p></div><span>{text(`${userPresets.length} 个预设`, `${userPresets.length} presets`)}</span></header>
+    <header className="presets-page-heading"><div><h1>{text('参数预设', 'Presets')}</h1></div><span>{text(`${userPresets.length} 个预设`, `${userPresets.length} presets`)}</span></header>
     <div className="presets-toolbar" ref={toolbarRef} role="group" aria-label={text('预设操作', 'Preset actions')}>
       <div className="presets-switcher"><span>{text('当前预设', 'Current preset')}</span><StudioSelect searchable aria-label={text('选择预设', 'Choose preset')} value={draft?.originalName || ''} disabled={busy || !userPresets.length} placeholder={text('新预设', 'New preset')} options={options} onValueChange={name=>{const item=userPresets.find(row=>row.name===name);if(item && name!==draft?.originalName)requestAction(()=>void begin(item));}}/></div>
       <div className="presets-actions">

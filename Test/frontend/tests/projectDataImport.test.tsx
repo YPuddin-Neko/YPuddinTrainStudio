@@ -159,7 +159,7 @@ describe('project import with browser folder collection and actual multipart req
     const { onImported } = show(); selectImage(); submit();
     expect(await screen.findByRole('progressbar', { name: '导入进度 · 上传文件' })).toHaveAttribute('aria-valuenow', '50');
     expect(screen.getByText('0.50 MiB/s')).toBeInTheDocument();
-    expect(screen.getByText('当前阶段：1.0 MiB / 2.0 MiB')).toBeInTheDocument();
+    expect(screen.getByText('1.0 MiB / 2.0 MiB')).toBeInTheDocument();
     await waitFor(() => expect(requestId).toBe(polledId));
     expect(requestId).toMatch(/^[\da-f-]{36}$/);
     expect(onImported).not.toHaveBeenCalled();

@@ -169,7 +169,8 @@ describe('stable system telemetry', () => {
     const {rerender}=render(<SystemTelemetry stats={data}/>);
     expect(screen.getByLabelText('全系统 GPU 占用率')).toHaveTextContent(`${value}%`);
     const group=screen.getByTestId('telemetry-gpu');
-    expect(group).toHaveAttribute('title',expect.stringContaining('全系统 Apple GPU 活动'));
+    expect(group).toHaveAttribute('title',expect.stringContaining('全系统 Apple GPU 利用率'));
+    expect(group).toHaveAttribute('title',expect.stringContaining('包含桌面与其他应用'));
     expect(group).toHaveAttribute('title',expect.stringContaining('IORegistry'));
     expect(group.getAttribute('title')).not.toContain('不提供');
     expect(group.getAttribute('title')).not.toContain('未取得 GPU 利用率');
@@ -202,7 +203,7 @@ describe('stable system telemetry', () => {
     const powerCell=screen.getByLabelText('GPU 估算功率').parentElement!;
     expect(powerCell).toHaveAttribute('title',expect.stringContaining('IOReport'));
     expect(powerCell).toHaveAttribute('title',expect.stringContaining('平均采样区间：1.25 秒'));
-    expect(powerCell).toHaveAttribute('title',expect.stringContaining('不是整机输入功率'));
+    expect(powerCell).toHaveAttribute('title',expect.stringContaining('采样期间全系统 GPU 的估算平均功率'));
     expect(screen.getByText('均温')).toBeInTheDocument();
     const temperature=screen.getByLabelText('GPU 均温');
     expect(temperature).toHaveTextContent('45.6 °C');

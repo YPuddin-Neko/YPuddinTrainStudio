@@ -72,7 +72,7 @@ describe('central access keys',()=>{
     fireEvent.change(screen.getByLabelText('Danbooru 用户名'),{target:{value:'test_user'}});
     const secret=screen.getByLabelText('Danbooru API Key');fireEvent.change(secret,{target:{value:'fake-secret'}});
     fireEvent.click(within(secret.closest('form')!).getByRole('button',{name:'保存'}));
-    expect(await within(secret.closest('form')!).findByRole('alert')).toHaveTextContent('服务器错误详情已隐藏');
+    expect(await within(secret.closest('form')!).findByRole('alert')).toHaveTextContent('操作失败，请重试。');
     expect(screen.queryByRole('button',{name:'重试读取'})).not.toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/fake-secret|fake%2Dsecret|dGVzdF91c2Vy/);
     expect(within(secret.closest('section')!).getByRole('status')).toHaveTextContent('未配置');

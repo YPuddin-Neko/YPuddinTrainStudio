@@ -105,7 +105,7 @@ describe('existing caption viewer',()=>{
     await waitFor(()=>expect(calls.at(-1)?.params.page).toBe(2));
     await waitFor(()=>expect(screen.getByRole('button',{name:'刷新标签'})).toBeEnabled());
     sources=[];fireEvent.click(screen.getByRole('button',{name:'刷新标签'}));
-    await screen.findByText('导入图片后，即可在这里查看对应标签。');
+    await screen.findByText('请先导入图片。');
     expect(screen.queryByTestId('existing-caption')).not.toBeInTheDocument();
     const previousRequests=calls.length;
     sources=[source('d_replacement')];fireEvent.click(screen.getByRole('button',{name:'刷新标签'}));
@@ -132,7 +132,7 @@ describe('existing caption viewer',()=>{
   });
   it('handles an empty version without requesting an unrelated dataset or requiring inspection',async()=>{
     vi.mocked(apiClient.get).mockResolvedValue([] as any);
-    show('v_empty');await screen.findByText('导入图片后，即可在这里查看对应标签。');
+    show('v_empty');await screen.findByText('请先导入图片。');
     fireEvent.click(screen.getByRole('button',{name:'刷新标签'}));
     await waitFor(()=>expect(apiClient.get).toHaveBeenCalledTimes(2));
     expect(vi.mocked(apiClient.get).mock.calls.every(([url])=>url==='/projects/p_1/datasets')).toBe(true);

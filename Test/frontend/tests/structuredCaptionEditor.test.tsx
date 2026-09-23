@@ -54,7 +54,7 @@ describe('structured JSON caption editing',()=>{
     structure.document={tags:['active'],_ypuddin_caption_edit:1,fixed:{quality:'historical'}};
     structure.fields=[{path:['tags'],role:'tags',value:['active'],present:true}];
     render(<Editor structure={structure}/>);
-    expect(screen.getByText(/此文件曾被合并为普通标签/)).toBeInTheDocument();
+    expect(screen.getByText(/编辑当前使用的标签/)).toBeInTheDocument();
     expect(screen.queryByRole('textbox',{name:'画面质量'})).not.toBeInTheDocument();
     fireEvent.change(screen.getByRole('textbox',{name:'画面内容 · 标签 1'}),{target:{value:'updated'}});
     expect(changes()).toEqual([{path:['tags'],value:['updated']}]);

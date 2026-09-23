@@ -326,69 +326,7 @@ export function trainingComputeManagedField(policy: TrainingComputePolicy | null
 export function trainingComputePolicyHint(policy: TrainingComputePolicy | null, english: boolean) {
   if (!policy) return undefined;
   if (extraAdapterPolicyIds.has(policy.id)) return extraAdapterPolicyHint(policy.id, english);
-  if (backboneAdapterPolicyIds.has(policy.id)) {
-    const adapterPolicy = policy as BackboneAdapterComputePolicy;
-    const parallel = adapterPolicy.distributed_strategy === 'fsdp'
-      ? (english ? 'FSDP shards model parameters, adapter gradients and optimizer states across GPUs, gathering parameters in BF16 and reducing gradients in FP32. ' : 'FSDP 将模型参数、适配器梯度和优化器状态分摊到多卡，按 BF16 汇集参数，以 FP32 汇总梯度。')
-      : adapterPolicy.distributed_strategy === 'ddp'
-      ? (english ? 'DDP keeps the complete model on each GPU and synchronizes adapter gradients. ' : 'DDP 每卡保留完整模型并汇总适配器梯度。')
-      : (english ? 'This run uses one GPU. ' : '本次使用单卡。');
-    const linear = adapterPolicy.linear_forward === 'native-bf16'
-      ? (english ? 'Backbone linear forward uses native BF16 and backward matrix operations use FP32. ' : '主模型线性层使用原生 BF16 前向，反向矩阵运算使用 FP32。')
-      : (english ? 'Backbone linear operations retain BF16 rounding and outputs, with FP32 matrix operations. ' : '主模型线性层保留 BF16 舍入和输出，矩阵运算使用 FP32。');
-    const adapter = adapterPolicy.adapter_algorithm === 'lora'
-      ? (english ? 'LoRA also uses BF16-rounded operands and intermediates with FP32 matrix operations. ' : 'LoRA 也保留 BF16 操作数舍入和中间结果，矩阵运算使用 FP32。')
-      : (english ? 'LoKr operations remain native. ' : 'LoKr 运算保持原生实现。');
-    const conv = adapterPolicy.conv_forward
-      ? (english ? 'Convolution uses FP32 and returns BF16 outputs. ' : '卷积使用 FP32，输出转回 BF16。') : '';
-    return parallel + (english ? 'Text encoders stay frozen. ' : '文本编码器保持冻结。') + linear + adapter + conv
-      + (previewPolicyIds.has(policy.id)
-        ? (english ? 'Preview backbone linear layers also use FP32 operations with BF16 rounding and outputs for consistent repeated previews. ' : '预览的主模型线性层也保留 BF16 舍入与输出，并使用 FP32 运算以提高重复预览的一致性。') : '')
-      + (english
-        ? 'TF32 is off and attention uses SDPA math. Memory use and runtime may increase. Resume requires the same compute policy and environment'
-        : '关闭 TF32，使用 SDPA 数学实现，可能增加显存和耗时。续训须保持相同计算策略和运行环境')
-      + (adapterPolicy.sdxl_max_token_length ? (english ? ' and token limit' : '及标签长度') : '')
-      + (english ? '; states from previous policies cannot be mixed.' : '，不可混用旧策略的训练状态。');
-  }
-  if (policy.id === 'dtk-sdxl-long-text-bf16-conv-fp32-linear-compute-v1') return english
-    ? 'This SDXL long-caption LoKr run retains BF16 rounding and outputs. Training linear matrix operations and convolution use FP32; TF32 is off and attention uses SDPA math. Memory use and runtime may increase. Resume requires the same token limit, compute policy and environment.'
-    : '本次 SDXL 长标签 LoKr 训练保留 BF16 舍入和输出，训练中的线性层矩阵运算及卷积使用 FP32。关闭 TF32，使用 SDPA 数学实现，可能增加显存和耗时。续训须保持相同标签长度、计算策略和运行环境。';
-  if (textLoraPolicyIds.has(policy.id)) {
-    const textPolicy = policy as TextLoraComputePolicy;
-    const parallel = textPolicy.distributed_strategy === 'ddp'
-      ? (english ? 'Each GPU keeps the complete model and synchronizes adapter gradients. ' : '每卡保留完整模型并汇总适配器梯度。')
-      : (english ? 'This run uses one GPU. ' : '本次使用单卡。');
-    const backbone = textPolicy.id.startsWith('dtk-sdxl-')
-      ? (english ? 'Backbone linear operations and convolution also use FP32. ' : '主模型线性层运算及卷积也使用 FP32。')
-      : (english ? 'Backbone linear operations also use FP32. ' : '主模型线性层运算也使用 FP32。');
-    return parallel + (english
-      ? 'Text-encoder LoRA training keeps BF16 rounding and outputs, with FP32 matrix operations in text linear layers and LoRA projections. '
-      : '文本编码器 LoRA 训练保留 BF16 舍入和输出，文本线性层与 LoRA 矩阵运算使用 FP32。')
-      + backbone + (textPreviewPolicyIds.has(policy.id)
-        ? (english ? 'Preview backbone linear layers also use FP32 contractions with BF16 rounding and outputs; text preview operations stay native. ' : '预览主模型线性层也使用 FP32 矩阵运算，保留 BF16 舍入与输出；文本预览保持原生计算。') : '')
-      + (english
-        ? 'TF32 is off and attention uses SDPA math. Memory use and runtime may increase. Resume requires this same policy and environment; states from the previous native BF16 path cannot be mixed.'
-        : '关闭 TF32，使用 SDPA 数学实现，可能增加显存和耗时。续训须保持相同策略和环境，不能混用旧版原生 BF16 路径的训练状态。');
-  }
-  if (policy.id === 'dtk-anima-ddp-bf16-linear-fp32-compute-v1') return english
-    ? 'This Anima LoKr run uses data parallelism: each GPU keeps the complete backbone, processes its own data and synchronizes adapter gradients. Linear inputs and parameters are rounded to BF16, then matrix operations use FP32 and return BF16 outputs. Linear backward matrix operations also use FP32. TF32 is disabled and attention uses SDPA math. Multi-GPU speed depends on communication. Resume requires the same compute policy and environment.'
-    : '本次 Anima LoKr 使用多卡数据并行：每卡保留完整主模型，分别处理数据并汇总适配器梯度。线性层先按 BF16 舍入输入与参数，再以 FP32 进行矩阵运算并返回 BF16；反向矩阵运算也使用 FP32。关闭 TF32，使用 SDPA 数学实现。多卡速度取决于跨卡通信；续训需保持相同计算策略和运行环境。';
-  if (policy.id === 'dtk-anima-fsdp-bf16-linear-fp32-compute-v1') return english
-    ? 'This Anima full-model run shards parameters, gradients and optimizer states across GPUs. Parameters are gathered in BF16 and gradients are reduced in FP32. Linear inputs and parameters are rounded to BF16, then matrix operations use FP32 and return BF16 outputs. Linear backward matrix operations also use FP32. TF32 is disabled and attention uses SDPA math. Multi-GPU speed depends on communication. Resume requires the same compute policy and environment.'
-    : '本次 Anima 全量微调使用多卡显存分片，分担参数、梯度和优化器状态。按 BF16 汇集参数，以 FP32 汇总梯度。线性层先按 BF16 舍入输入与参数，再以 FP32 进行矩阵运算并返回 BF16；反向矩阵运算也使用 FP32。关闭 TF32，使用 SDPA 数学实现。多卡速度取决于跨卡通信；续训需保持相同计算策略和运行环境。';
-  if (policy.id === 'dtk-anima-bf16-linear-fp32-compute-v1') return english
-    ? 'This Anima run uses one GPU. Linear inputs and parameters are rounded to BF16, then matrix operations use FP32 and return BF16 outputs. Linear backward matrix operations also use FP32. TF32 is disabled and attention uses SDPA math. Resume requires the same compute policy and environment.'
-    : '本次 Anima 使用单卡。线性层先按 BF16 舍入输入与参数，再以 FP32 进行矩阵运算并返回 BF16；反向矩阵运算也使用 FP32。关闭 TF32，使用 SDPA 数学实现。续训需保持相同计算策略和运行环境。';
-  if (policy.id === 'dtk-sdxl-fsdp-bf16-conv-fp32-linear-backward-v1') return english
-    ? 'This SDXL run shards the model across GPUs and uses BF16 for gathered parameters and main computation. Convolution, linear backward matrix operations and gradient reduction use FP32. Convolution outputs return to BF16. TF32 is disabled and attention uses native SDPA math. Resume requires the same compute policy and environment.'
-    : '本次 SDXL 使用多卡显存分片，按 BF16 汇集参数并进行主体计算。卷积、线性层反向矩阵运算和梯度汇总使用 FP32，卷积输出转回 BF16。关闭 TF32，并使用原生 SDPA 数学实现。续训需保持相同计算策略和运行环境。';
-  if (policy.id === 'dtk-krea2-fsdp-bf16-linear-fp32-backward-v1') return english
-    ? 'This Krea2 run shards the model across GPUs and retains BF16 forward computation. Linear backward matrix operations and gradient reduction use FP32, with TF32 disabled and native SDPA math. Resume requires the same compute policy and environment.'
-    : '本次 Krea2 使用多卡显存分片，保留 BF16 前向计算。线性层反向矩阵运算和梯度汇总使用 FP32，关闭 TF32，并使用原生 SDPA 数学实现。续训需保持相同计算策略和运行环境。';
-  if (policy.id === 'dtk-sdxl-bf16-conv-fp32-linear-backward-v1') return english
-    ? 'This SDXL run retains BF16 computation, with FP32 convolution and linear backward matrix operations. Convolution outputs return to BF16. TF32 is disabled and attention uses native SDPA math. Resume requires the same compute policy and environment.'
-    : '本次 SDXL 保留 BF16 主体计算，卷积和线性层反向矩阵运算使用 FP32，卷积输出转回 BF16。关闭 TF32，并使用原生 SDPA 数学实现。续训需保持相同计算策略和运行环境。';
   return english
-    ? 'This DTK full-backbone run uses FP32 computation, disables TF32 and uses native SDPA math. The three settings below are managed by this switch. Activation memory and training time may increase; bitwise equality is not guaranteed across environments.'
-    : '本次 DTK 主模型全量微调使用 FP32 计算、关闭 TF32，并使用原生 SDPA 数学实现。这三项设置由此开关管理，可能增加激活显存和训练耗时，不保证不同环境逐位一致。';
+    ? 'Precision and attention settings are managed for reproducibility. Memory use and training time may increase. Resume with the same settings and environment.'
+    : '已自动设置精度和注意力，可能增加显存与训练耗时。续训须保持相同设置和环境。';
 }

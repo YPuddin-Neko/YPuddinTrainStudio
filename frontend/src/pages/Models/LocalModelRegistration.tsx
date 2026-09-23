@@ -58,11 +58,11 @@ export default function LocalModelRegistration({ initialFamily, families: servic
     setSaving(true);onBusyChange(true);setError('');
     void apiClient.post('/models',{family,kind,path:detected.path,dtype:dtype||null,is_default:inferenceOnly?false:isDefault,...(needsVariant?{variant,purpose:inferenceOnly?'inference':'training'}:{})},{silent:true}).then(()=>onRegistered(family)).catch(error=>setError(formatApiError(error))).finally(()=>{setSaving(false);onBusyChange(false);});
   }}>
-    <p className="model-help-text">{text('选择权重文件或完整编码器目录，自动识别模型系列、组件和权重精度。','Select a weight file or complete encoder directory to detect its model family, component and precision.')}</p>
+    <p className="model-help-text">{text('选择权重文件或完整编码器目录。','Select a weight file or complete encoder directory.')}</p>
     <fieldset disabled={saving}>
       <label>{text('文件路径','File path')}<PathInput ariaLabel={text('文件路径','File path')} value={path} onChange={value=>{setPath(value);setDetected(null);inspectedPath.current='';}}/></label>
       {detecting&&<p role="status"><Loader2 size={14} className="animate-spin"/>{text('正在检测模型…','Inspecting model…')}</p>}
-      {ready&&<p role="status" data-testid="model-inspection-status">{detected.confidence==='high'?text('已识别模型结构','Model structure identified'):text('部分信息未识别，请确认下方选项','Some information is unknown; confirm the choices below')}{text('；这不代替实际模型加载验收。','; this does not replace a real model-load validation.')}</p>}
+      {ready&&<p role="status" data-testid="model-inspection-status">{detected.confidence==='high'?text('已识别模型结构','Model structure identified'):text('部分信息未识别，请确认下方选项','Some information is unknown; confirm the choices below')}</p>}
       <div className="model-form-grid">
         <label>{text('模型系列','Model family')}<StudioSelect aria-label={text('登记模型系列','Registration model family')} value={family} disabled={!ready||!!detected?.family} onValueChange={next=>{setFamily(next);if(!detected?.kind)setKind('');}} placeholder={text('请选择','Choose')} options={families.filter(item=>item.name!=='toy'&&(!detected?.family_candidates.length||detected.family_candidates.includes(item.name))).map(item=>({value:item.name,label:item.label||item.name}))}/></label>
         <label>{text('组件','Component')}<StudioSelect aria-label={text('组件','Component')} value={knownComponent ? kind : ''} disabled={!ready||!!detected?.kind} onValueChange={setKind} placeholder={text('未识别，请选择','Unknown; choose')} options={weights.map(weight=>({value:weight.kind,label:label(weight.kind)}))}/></label>

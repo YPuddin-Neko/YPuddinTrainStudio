@@ -23,7 +23,8 @@ describe('GPU telemetry presentation', () => {
     const gpu={index:0,name:'Apple M4 GPU',kind:'mps' as const,telemetry_source:'ioreg',telemetry_note:'mps_power_unavailable',util_pct:value,power_w:null,temp_c:null,mem_used_mb:8192,mem_total_mb:16384};
     const {rerender}=render(<MemoryRouter><GpuCard gpu={gpu}/></MemoryRouter>);
     expect(screen.getByText('全系统 GPU 占用率').nextElementSibling).toHaveTextContent(`${value}%`);
-    expect(screen.getByText(/全系统 Apple GPU 活动/)).toHaveTextContent('IORegistry');
+    expect(screen.getByText(/全系统 Apple GPU 利用率/)).toHaveTextContent('包含桌面与其他应用');
+    expect(screen.getByText(/全系统 Apple GPU 利用率/)).toHaveTextContent('IORegistry');
     expect(screen.getByText('系统统一内存').parentElement).toHaveAttribute('title',expect.stringContaining('并非 GPU 专用显存或训练进程分配量'));
     expect(screen.getByText(/当前未取得 GPU 功率读数/)).toHaveTextContent('当前未取得 GPU 温度读数');
     expect(screen.queryByText(/不提供功率|适配开发中/)).not.toBeInTheDocument();
@@ -41,7 +42,7 @@ describe('GPU telemetry presentation', () => {
     expect(screen.getByText('GPU 估算功率')).toBeInTheDocument();
     expect(screen.getByTestId('gpu-power')).toHaveTextContent(`${power}W`);
     expect(screen.getByTestId('gpu-power').parentElement).toHaveAttribute('title',expect.stringContaining('平均采样区间：1.25 秒'));
-    expect(screen.getByTestId('gpu-power').parentElement).toHaveAttribute('title',expect.stringContaining('不是整机输入功率'));
+    expect(screen.getByTestId('gpu-power').parentElement).toHaveAttribute('title',expect.stringContaining('采样期间全系统 GPU 的估算平均功率'));
     expect(screen.getByText('GPU 均温').nextElementSibling).toHaveTextContent('45.6 °C');
     expect(screen.getByText('GPU 均温').parentElement).toHaveAttribute('title',expect.stringContaining('最高温：49.8 °C'));
     expect(screen.getByText('GPU 均温').parentElement).toHaveAttribute('title',expect.stringContaining('有效传感器：8 个'));

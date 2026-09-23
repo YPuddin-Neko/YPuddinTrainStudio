@@ -55,7 +55,7 @@ describe('JobDetail Page (B1, B2, B3, B4)', () => {
     fireEvent.click(screen.getByRole('button', { name: '学习率、梯度与性能诊断' }));
     expect(screen.getAllByTestId('echarts-mock').length).toBeGreaterThanOrEqual(4);
     for (const chart of screen.getAllByTestId('echarts-mock')) expect(chart).toHaveAttribute('data-zoom-types', 'slider');
-    expect(screen.getByText('拖动图下方滑块缩放或调整查看范围。')).toBeInTheDocument();
+    expect(screen.getByRole('slider', { name: '显示 EMA 系数' })).toBeEnabled();
     expect(screen.queryByText(/Ctrl.*滚轮/)).not.toBeInTheDocument();
   });
 

@@ -178,7 +178,7 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
     </div>
     {(datasets.error || images.error || error) && <p role="alert" className="caption-workspace-error">{error || formatApiError(datasets.error || images.error)}</p>}
     {datasets.isPending || source && images.isPending ? <p className="caption-workspace-empty" role="status"><Loader2 size={16} className="animate-spin"/>{text('读取图片与标签…', 'Loading images and captions…')}</p>
-      : !source ? <p className="caption-workspace-empty">{text('导入图片后，即可在这里编辑标签并查看统计。', 'Import images to edit captions and view statistics here.')}</p>
+      : !source ? <p className="caption-workspace-empty">{text('请先导入图片。', 'Import images first.')}</p>
         : <>
           <div className="caption-workspace-pagination"><span className="caption-workspace-filter-count">{text(`符合条件 ${images.data?.total ?? 0} 张`, `${images.data?.total ?? 0} matching images`)}{images.isFetching && <span role="status" className="caption-workspace-refresh-status"><Loader2 size={12} className="animate-spin"/>{text('正在更新筛选结果…', 'Updating filtered images…')}</span>}</span><div><button type="button" aria-label={text('上一页', 'Previous page')} disabled={page <= 1 || images.isFetching || saving} onClick={() => perform(() => updateNavigation({ page: page - 1, selected: '' }))}><ChevronLeft size={14}/></button><span>{page} / {pages}</span><button type="button" aria-label={text('下一页', 'Next page')} disabled={page >= pages || images.isFetching || saving} onClick={() => perform(() => updateNavigation({ page: page + 1, selected: '' }))}><ChevronRight size={14}/></button></div></div>
           <div className="caption-workspace-content">

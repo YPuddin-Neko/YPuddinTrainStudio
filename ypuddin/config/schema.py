@@ -55,12 +55,12 @@ class ModelConfig(_Strict):
     )
     dtype: DType = F(
         "bf16",
-        help="CUDA 上加载模型时使用的精度，默认 bf16；应与显卡和权重兼容。CPU/MPS 实际按 fp32 加载。训练算子的混合精度另由训练设置控制，冻结权重存储精度另由显存设置控制。",
+        help="模型加载精度，CUDA 默认 bf16，CPU/MPS 使用 fp32。混合精度计算和冻结权重存储精度分别在训练、显存设置中调整。",
         ui_=ui("model", order=50, control="select", advanced=True),
     )
     attention: Literal["auto", "sdpa", "sage", "xformers", "flash_attn", "metal_flash"] = F(
         "auto",
-        help="默认 auto 使用 PyTorch 内置 SDPA。xFormers/FlashAttention 需匹配的 CUDA 或海光扩展；Metal FlashAttention 用于 Apple MPS，需在运行环境中安装匹配的 mtlattn。Metal 路径加速支持的 FP32 主模型注意力，mask、dropout 等其他调用保留内置 SDPA；文本编码器和 VAE 不变。Sage 仅用于无梯度推理。",
+        help="默认使用内置 SDPA。xFormers/FlashAttention 需要匹配的 CUDA 或海光扩展；Apple Metal FlashAttention 需要匹配的 mtlattn，仅加速受支持的 FP32 主模型注意力，带 mask 或 dropout 的调用使用 SDPA。文本编码器和 VAE 保持原后端，Sage 仅用于采样。",
         ui_=ui("model", order=60, control="select", advanced=True),
     )
     prediction_type: Literal["epsilon", "v_prediction"] = F(
@@ -75,7 +75,7 @@ class ModelConfig(_Strict):
     )
     sdxl_max_token_length: Literal[75, 150, 225] = F(
         75,
-        help="SDXL 标签正文的最大 token 数，不含 BOS/EOS；150/225 会由两个 CLIP 分别按 75 个 token 分块编码。训练与预览使用相同长度，超出部分截断；更长文本增加编码和交叉注意力的显存与耗时，修改后需重新生成文本缓存。",
+        help="SDXL 标签长度，不含 BOS/EOS；150/225 按 75 token 分块编码，超出部分截断。训练与预览共用此长度；增加长度会增加显存和耗时，修改后需重建文本缓存。",
         ui_=ui("model", order=85, control="select", advanced=True, show_when="model.family == 'sdxl'"),
     )
     training_guidance: float = F(
@@ -87,12 +87,12 @@ class ModelConfig(_Strict):
     )
     flux2_variant: Literal["auto", "dev", "klein-base-4b", "klein-base-9b"] = F(
         "auto",
-        help="完整 FLUX.2 目录会读取模型配置。Klein 单文件无法从权重尺寸区分基础版和蒸馏版，请按模型发布说明选择对应基础版；当前不支持 Klein 蒸馏版训练。",
+        help="完整目录可自动读取类型；Klein 单文件请按发布说明选择基础版 4B 或 9B。蒸馏版不支持训练。",
         ui_=ui("model", order=5, control="select", show_when="model.family == 'flux2'"),
     )
     krea2_variant: Literal["raw", "auto", "turbo"] = F(
         "raw",
-        help="Raw 用于训练；Turbo 是仅采样的蒸馏模型。自动识别需要已校验的下载记录，不能从相同的权重形状或文件名判断。",
+        help="Raw 用于训练，Turbo 仅用于采样。自动识别需有已校验的下载记录；自行添加的模型请手动选择。",
         ui_=ui("model", order=5, control="select", show_when="model.family == 'krea2'"),
     )
 
@@ -161,7 +161,7 @@ class DatasetSourceConfig(_Strict):
     )
     caption_ext: str = F(
         "auto",
-        help="标签格式：auto 自动查找同名标签文件，JSON 优先于 TXT；指定 .txt、.json 或自定义后缀时只读取该格式。已有显式后缀配置保持原行为。",
+        help="auto 查找同名标签文件，JSON 优先于 TXT；指定 .txt、.json 或自定义后缀时只读取该格式。",
     )
     is_reg: bool = F(
         False,
@@ -193,26 +193,26 @@ class DatasetConfig(_Strict):
     )
     image_fit: Literal["crop", "pad"] = F(
         "crop",
-        help="保留完整画面：等比缩放后补齐尺寸，补边不计入直接训练损失，但仍是模型看到的上下文。裁切填满尺寸：使用旧版等比覆盖后中心裁剪。新项目默认保留完整画面；缺少此字段的旧配置继续裁切，不改变历史训练。",
+        help="保留完整画面：等比缩放后补边，补边区域不计入直接损失，但仍作为模型输入。裁切填满尺寸：等比缩放至填满后中心裁剪。新项目默认保留完整画面；旧配置沿用原来的裁切设置。",
         ui_=ui("dataset", order=6, control="select"),
     )
     native_max_pixels: int = F(
         1_048_576,
         ge=1024,
         le=67_108_864,
-        help="原生模式单图及一次前向的像素上限；1048576 = 1024²。不同尺寸分组前向后按图片数累积梯度，像素预算不保证整体显存不会溢出",
+        help="原生模式单图及一次计算的像素上限，1048576 = 1024²。不同尺寸分组计算后，按图片数累积梯度；显存占用还受模型和批量大小影响。",
         ui_=ui("dataset", order=11, show_when="dataset.resolution_mode == 'native'"),
     )
     native_max_side: int = F(
         4096,
         ge=32,
         le=8192,
-        help="原生模式包含对齐补边在内的单边上限；超限时等比缩小，或按策略报错。旧裁切模式沿用向下对齐。",
+        help="原生模式单边长度上限，包含对齐补边；超限后按下方策略等比缩小或报错。",
         ui_=ui("dataset", order=12, show_when="dataset.resolution_mode == 'native'", advanced=True),
     )
     native_overflow: Literal["downscale", "error"] = F(
         "downscale",
-        help="超出像素或单边预算：等比缩小，或报错要求调整；不会悄悄跳过图片",
+        help="图片超出像素或单边上限时，选择等比缩小或停止并提示调整。",
         ui_=ui(
             "dataset",
             order=13,
@@ -270,12 +270,12 @@ class DatasetConfig(_Strict):
     )
     cache_latents: bool = F(
         True,
-        help="训练开始前在本机自动准备图像编码缓存，后续可复用；关闭后每批在本机处理图像。",
+        help="训练前缓存图像编码并在后续复用；关闭后每批重新编码。",
         ui_=ui("dataset", order=110, control="switch", advanced=True),
     )
     text_encoding: Literal["auto", "online", "cached"] = F(
         "auto",
-        help="自动按模型选择。每步处理标签支持每步变化；训练前缓存标签先计算结果并卸载编码器以降低驻留显存。两种都在训练电脑本地处理。",
+        help="自动按模型选择。每步处理适合动态标签；训练前缓存可卸载文本编码器，减少显存占用。",
         ui_=ui("dataset", order=120, control="select", advanced=True),
     )
 
@@ -378,7 +378,7 @@ class AdapterConfig(_Strict):
 class ObjectiveConfig(_Strict):
     timestep_sampling: Literal["uniform", "logit_normal", "shift", "resolution_shift", "mode", "cosmap"] = F(
         "shift",
-        help="决定训练时抽到哪些噪声强度：t 越大噪声越多。默认 shift 先做 logit-normal 抽样再应用 shift=3；uniform 均匀抽样，resolution_shift 按图像 token 数调整。它不同于生成预览图的噪声调度器，修改前应固定数据与种子做对比。",
+        help="训练噪声强度分布，t 越大噪声越多。默认 shift 在 logit-normal 抽样后应用 shift=3；uniform 均匀抽样，resolution_shift 按图像 token 数调整。预览图使用独立的噪声调度设置。",
         ui_=ui("objective", order=0, control="select"),
     )
     logit_mean: float = F(
@@ -393,7 +393,7 @@ class ObjectiveConfig(_Strict):
     logit_std: float = F(
         1.0,
         gt=0,
-        help="logit-normal 在 sigmoid 变换前的标准差，默认 1；提高会增加靠近低噪声和高噪声端点的样本。仅在有分布对比目标时调整。",
+        help="logit-normal 在 sigmoid 变换前的标准差，默认 1；提高会增加靠近低噪声和高噪声端点的样本。",
         ui_=ui(
             "objective",
             order=20,
@@ -412,7 +412,7 @@ class ObjectiveConfig(_Strict):
     )
     res_shift_mu: tuple[float, float] = F(
         (0.5, 1.15),
-        help="上述两个 token 参考位置对应的 mu，默认 0.5 和 1.15；先线性插值 mu，再用 exp(mu) 得到 shift。通常保留当前模型的配置，仅在研究分辨率相关噪声分布时调整。",
+        help="两个 token 参考位置对应的 mu，默认 0.5 和 1.15；线性插值后用 exp(mu) 得到 shift。通常保留模型默认值。",
         ui_=ui(
             "objective",
             order=26,
@@ -452,13 +452,13 @@ class ObjectiveConfig(_Strict):
     )
     loss: Literal["mse", "huber", "pseudo_huber"] = F(
         "mse",
-        help="预测速度与目标速度的误差度量，默认 MSE 平方误差。Huber/pseudo-Huber 改变大误差的惩罚方式；更换后损失数值不可直接与 MSE 比较，也不保证样图更好。",
+        help="默认 MSE 平方误差。Huber/pseudo-Huber 调整大误差的惩罚方式，更换后损失数值不能直接与 MSE 比较。",
         ui_=ui("objective", order=80, control="select"),
     )
     huber_c: float = F(
         0.1,
         gt=0,
-        help="Huber/pseudo-Huber 从小误差区域过渡到大误差区域的尺度，默认 0.1；MSE 不使用此值。只在使用对应损失并有误差分布依据时调整。",
+        help="Huber/pseudo-Huber 从小误差过渡到大误差区域的尺度，默认 0.1；MSE 不使用此值。",
         ui_=ui("objective", order=90, show_when="objective.loss != 'mse'"),
     )
     weighting: Literal["none", "sigma_sqrt", "cosmap", "snr_like", "cosmos", "min_snr"] = F(
@@ -476,7 +476,7 @@ class ObjectiveConfig(_Strict):
     ip_noise_gamma: float = F(
         0.0,
         ge=0,
-        help="仅给训练输入额外叠加噪声，目标仍使用原始噪声；默认 0 关闭。启用会改变训练任务，应通过固定验证和样图对比，而非将其当作通用提质开关。",
+        help="给训练输入额外叠加噪声，训练目标仍使用原始噪声；默认 0 关闭。",
         ui_=ui("objective", order=120, advanced=True),
     )
 
@@ -522,7 +522,7 @@ class OptimizerConfig(_Strict):
 
     type: str = F(
         "adamw",
-        help="默认 AdamW。内置选项对应真实优化器实现；8-bit 选项需要 CUDA 和 bitsandbytes，其他扩展优化器需要对应依赖。缺失时会报错，不会自动换用其他优化器。高级用户也可填已安装的 module.Class；其额外参数填写在优化器参数中。",
+        help="默认 AdamW。8-bit 选项需要 CUDA 和 bitsandbytes，扩展优化器需要安装对应依赖。自定义优化器填写 module.Class，额外参数填在下方。",
         ui_={
             "x-ui": {
                 **ui("optimizer", order=0, control="select")["x-ui"],
@@ -577,7 +577,7 @@ class OptimizerConfig(_Strict):
     )
     args: dict[str, Any] = F(
         default_factory=dict,
-        help="用于自定义优化器或尚无独立控件的扩展参数。已有控件的参数会迁移到对应字段；同名冲突或覆盖自动管理参数会明确报错。",
+        help="填写自定义优化器或尚无独立控件的参数；避免与已有控件或自动管理的参数重复。",
         ui_=ui("optimizer", order=50, advanced=True),
     )
     grad_clip_norm: float = F(
@@ -593,7 +593,7 @@ class OptimizerConfig(_Strict):
     )
     fused_backward: bool = F(
         False,
-        help="预留的反向即时更新选项，当前尚未实现，必须保持关闭；开启会明确拒绝启动，不会静默改成普通训练。",
+        help="反向即时更新尚不支持，请保持关闭。",
         ui_={"x-ui": {**ui("optimizer", order=80, control="switch", advanced=True)["x-ui"], "hidden": True}},
     )
     group_lr: dict[str, float] = F(
@@ -929,7 +929,7 @@ class SchedulerConfig(_Strict):
         "constant", "linear", "cosine", "cosine_restarts", "polynomial", "warmup_stable_decay", "rex"
     ] = F(
         "cosine",
-        help="控制学习率随优化步骤变化的曲线，默认 cosine 逐渐衰减；constant 保持基础倍率。它不控制图像生成的噪声时间步。换优化器时应确认该算法对外部学习率调度的要求。",
+        help="学习率随训练步数变化的曲线，默认 cosine 逐渐衰减；constant 保持不变。请按优化器要求选择。",
         ui_=ui("scheduler", order=0, control="select"),
     )
     warmup_steps: float = F(
@@ -948,7 +948,7 @@ class SchedulerConfig(_Strict):
     num_cycles: int = F(
         1,
         ge=1,
-        help="余弦重启调度的周期数，默认 1；更多周期会反复降再升学习率，仅 cosine_restarts 使用。需要多次重启实验时才调整。",
+        help="cosine_restarts 的周期数，默认 1；每个周期会先降低再恢复学习率。",
         ui_=ui("scheduler", order=30, show_when="scheduler.type == 'cosine_restarts'"),
     )
     power: float = F(
@@ -968,7 +968,7 @@ class SchedulerConfig(_Strict):
 class MemoryConfig(_Strict):
     base_precision: Literal["auto", "bf16", "fp16", "fp32", "fp8_e4m3", "fp8_e5m2"] = F(
         "auto",
-        help="可选实验功能，默认 auto 不转换加载后的精度，也不会按剩余显存自动降低精度。适配器训练时只转换其覆盖的、尚未量化的冻结线性层，不修改原模型文件或适配器参数精度。降低存储精度可能减少显存占用，也可能影响训练质量，不保证加速。FP8 在启动时按逐张量缩放量化，不等同于发布方制作的量化模型；已有 FP8 文件须由对应加载器支持。全量微调只接受 auto 或 fp32，以实际训练设置为准。",
+        help="实验选项，仅转换适配器覆盖的、尚未量化的冻结线性层。auto 保留加载精度；降低精度可能减少显存，也可能影响训练质量。适配器参数精度单独设置。FP8 在启动时按逐张量缩放量化，已有 FP8 文件需模型加载器支持。全量微调仅接受 auto 或 fp32。",
         ui_=ui("memory", order=0, control="select", advanced=True),
     )
     blocks_to_swap: int = F(
@@ -989,12 +989,12 @@ class MemoryConfig(_Strict):
     )
     compile: bool = F(
         False,
-        help="对模型块使用 torch.compile，默认关闭；首次会编译，实际收益取决于设备与输入形状。当前仅 CUDA 路径启用，不能与块换出同时使用，先确认普通训练可运行。",
+        help="使用 torch.compile 编译模型块，默认关闭；首次启动需编译。仅支持 CUDA，不能与块换出同时使用。",
         ui_=ui("memory", order=40, control="switch", advanced=True),
     )
     allow_tf32: bool = F(
         True,
-        help="默认允许支持此格式的 NVIDIA GPU 使用 TF32 矩阵乘法；仅设置 PyTorch CUDA 后端许可，不影响 CPU/MPS。严格对照数值精度时可关闭。",
+        help="允许支持 TF32 的 NVIDIA GPU 使用 TF32 矩阵乘法；需要更严格的数值精度时可关闭。CPU/MPS 不适用。",
         ui_=ui("memory", order=50, control="switch", advanced=True),
     )
 
@@ -1038,7 +1038,7 @@ class LoopConfig(_Strict):
     )
     mixed_precision: Literal["bf16", "fp16", "no"] = F(
         "bf16",
-        help="CUDA / DTK 训练的自动混合精度，默认 BF16；关闭后不改变模型权重本身的精度，因此不等同于全程 FP32。FP16 需设备与模型支持；CPU/MPS 当前关闭自动混合精度。DTK 可复现训练可能调整部分运算精度，以参数检查后显示的本次设置为准。此项不同于冻结权重存储精度与导出文件精度。",
+        help="CUDA/DTK 训练的自动混合精度，默认 BF16；FP16 需设备和模型支持。关闭只停用自动混合精度，不改变权重本身精度。CPU/MPS 不使用自动混合精度；可复现训练以参数检查显示的有效设置为准。",
         ui_=ui("loop", order=30, control="select"),
     )
     seed: int = F(
@@ -1048,7 +1048,7 @@ class LoopConfig(_Strict):
     )
     deterministic: bool = F(
         False,
-        help="默认关闭。开启后请求确定性计算。DTK 按模型和训练组件管理实际计算精度、关闭 TF32 并使用 SDPA 数学实现；参数检查后会说明本次设置。可能增加显存和耗时，不保证跨设备或软件版本逐位一致。续训须保持原计算策略与运行环境，不支持的确定性算子会报错停止。",
+        help="默认关闭。开启后在相同设备、软件版本、数据和设置下更稳定地复现训练，可能增加显存和耗时。实际精度与注意力后端会在参数检查中显示；严格续训需保持原设置与环境，不支持的算子会停止并提示。",
         ui_=ui("loop", order=45, control="switch", advanced=True),
     )
     ema: bool = F(
@@ -1060,13 +1060,13 @@ class LoopConfig(_Strict):
         0.999,
         gt=0,
         lt=1,
-        help="EMA 对历史权重的保留比例，默认 0.999；越接近 1，平均权重变化越慢。仅启用 EMA 时有效，不保证平均权重一定优于当前权重。",
+        help="EMA 对历史权重的保留比例，默认 0.999；越接近 1，平均权重变化越慢。",
         ui_=ui("loop", order=60, advanced=True, show_when="loop.ema == true"),
     )
     nan_skip_limit: int = F(
         50,
         ge=1,
-        help="连续出现 NaN/Inf 损失或梯度时的容忍上限，默认 50，达到后报错停止。它用于防止无限跳过；遇到问题应检查数据、精度和学习率，不宜只提高上限。",
+        help="连续出现 NaN/Inf 损失或梯度时，最多跳过的步数，默认 50；达到后停止。请检查数据、精度和学习率。",
         ui_=ui("loop", order=70, advanced=True),
     )
     log_every: int = F(
@@ -1202,14 +1202,14 @@ class SamplingConfig(_Strict):
         None,
         ge=1,
         le=1000,
-        help="生成一张预览的积分步数，留空使用模型族默认（Anima 25、Krea 2 为 28）。更多步通常增加生成耗时，不等于训练更多步，也不保证更好；单条提示词设置优先。",
+        help="生成预览图的步数，留空使用模型默认（Anima 25、Krea 2 为 28）。步数越多通常耗时越长；单条提示词设置优先。",
         ui_=ui("sampling", order=60, show_when="sampling.enabled == true"),
     )
     cfg: float | None = F(
         None,
         ge=0,
         allow_inf_nan=False,
-        help="提示词引导强度，留空使用模型族默认（Anima 4、Krea 2 为 5.5）。1 只用正向条件，0 使用负向/空条件；更高值会放大条件差异，不保证效果更好。单条提示词设置优先。",
+        help="提示词引导强度，留空使用模型默认（Anima 4、Krea 2 为 5.5）。1 只用正向条件，0 使用负向/空条件；提高会放大正负条件的差异。单条提示词设置优先。",
         ui_=ui("sampling", order=70, show_when="sampling.enabled == true"),
     )
     shift: float | None = F(
@@ -1240,17 +1240,17 @@ class SamplingConfig(_Strict):
     )
     sampler: Literal["euler", "heun", "er_sde"] = F(
         "euler",
-        help="预览图的计算方式，默认 Euler 每步评估一次速度；Heun 先预测再校正，除末步外通常多评估一次；ER-SDE 使用历史结果与随机噪声，默认阶数由内部逐步处理，无需按阶数挑质量档位。开启提示词引导时，每次评估还可能分别计算正向与负向条件。改变算法不改变训练目标。",
+        help="预览图的采样算法，默认 Euler 每步评估一次；Heun 先预测再校正，除末步外通常多评估一次；ER-SDE 使用历史结果与随机噪声。开启 CFG 引导时还需分别计算正向和负向条件。",
         ui_=ui("sampling", order=120, control="select", show_when="sampling.enabled == true"),
     )
     scheduler: Literal["uniform", "simple", "sgm_uniform", "normal"] = F(
         "uniform",
-        help="决定每个预览积分步骤经过的噪声时间点。默认 uniform 保留旧版连续均匀网格再应用 shift；simple、sgm_uniform、normal 使用不同网格或端点。它与采样算法、学习率调度是独立设置。",
+        help="预览采样使用的噪声时间点。默认 uniform 使用均匀网格并应用 shift；simple、sgm_uniform、normal 使用不同网格或端点。与采样算法、学习率调度分别设置。",
         ui_=ui("sampling", order=130, control="select", show_when="sampling.enabled == true"),
     )
     er_sde_order: Literal[1, 2, 3] = F(
         3,
-        help="ER-SDE 允许的最高阶数，默认 3；开始时历史不足会从低阶逐步升阶。可选 1/2 做对照，阶数更高不保证每个模型或步数下都更好。",
+        help="ER-SDE 的最高阶数，默认 3；开始时从低阶逐步升阶，也可选择 1 或 2。",
         ui_=ui(
             "sampling",
             order=140,

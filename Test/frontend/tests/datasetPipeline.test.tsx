@@ -53,9 +53,9 @@ describe('dataset pipeline', () => {
     show(); fireEvent.click(screen.getByRole('button',{name:/检查与筛选/}));
     await screen.findByText('Anima 标签格式建议 · 1 张可预览');
     fireEvent.click(screen.getByText('Anima 标签格式建议 · 1 张可预览'));
-    expect(screen.getByText(/原文件未修改/)).toBeInTheDocument();
+    expect(screen.getByText(/不会自动修改文件/)).toBeInTheDocument();
     expect(screen.getByText('@some artist')).toBeInTheDocument();
-    expect(screen.getByText(/自然语言可以与标签混排/)).toBeInTheDocument();
+    expect(screen.getByText(/TXT 含完整句子时/)).toBeInTheDocument();
     expect(screen.getByRole('link',{name:'查看模型作者的标签指南'})).toHaveAttribute('href','https://huggingface.co/circlestone-labs/Anima#prompting');
     expect(screen.getByText('画师名前建议加 @')).toBeInTheDocument();
     expect(state).toEqual(original);
@@ -186,7 +186,7 @@ describe('dataset pipeline', () => {
   it('makes legacy copy discoverable and keeps archived mutations disabled', async () => {
     state.inspection!.images.forEach(item => item.editable=false);
     show({readOnly:true}); fireEvent.click(screen.getByRole('button',{name:/检查与筛选/}));
-    await screen.findByText(/旧版或外部引用素材/);
+    await screen.findByText(/外部或旧版素材需先复制/);
     expect(screen.getByRole('button',{name:'检查数据'})).toBeDisabled();
     expect(screen.getByRole('checkbox',{name:'选择 a.png'})).toBeDisabled();
     expect(screen.getByRole('button',{name:'复制为可处理的新版本'})).toBeDisabled();
@@ -215,7 +215,7 @@ it('shows the real paint staging phase in readable language',async()=>{
   expect(screen.getByRole('region',{name:'图像涂抹与遮罩'})).toHaveTextContent('准备绘制文件');
 });
 
-it('explains concrete inspection checks and keeps read-only logs at the bottom',async()=>{
+it('keeps inspection scope and operation history without repeating read-only notices',async()=>{
   state.operations=[{...operation,action:'inspect',can_undo:false,result:{}}];
   show();fireEvent.click(screen.getByRole('button',{name:/检查与筛选/}));
   await screen.findByText('检查哪些内容');
@@ -225,7 +225,8 @@ it('explains concrete inspection checks and keeps read-only logs at the bottom',
   const footer=screen.getByTestId('dataset-pipeline').lastElementChild;
   expect(footer?.tagName).toBe('FOOTER');
   fireEvent.click(screen.getByText('操作记录'));
-  expect(screen.getByText('只读取数据，未修改文件。')).toBeVisible();
+  expect(screen.queryByText('只读取数据，未修改文件。')).not.toBeInTheDocument();
+  expect(screen.getByText('数据检查')).toBeVisible();
   expect(screen.queryByRole('button',{name:'恢复此操作前的文件'})).not.toBeInTheDocument();
 });
 it('does not invent a percentage before an operation knows its total',async()=>{

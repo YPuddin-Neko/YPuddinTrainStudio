@@ -104,8 +104,6 @@ function DevicePicker({ value, onChange, count = 1, disabled = false, compact = 
     {training ? <>
       <label className="gpu-picker-auto"><input type={count === 1 ? 'radio' : 'checkbox'} name={`${menuId}-device`} checked={value.length === 0} disabled={disabled}
         onChange={event => onChange(event.target.checked ? [] : devices.filter(device => device.status !== 'unavailable').slice(0, count).map(device => device.device))}/>{text(`自动选择 ${count} 张空闲显卡`, `Automatically choose ${count} free GPU${count === 1 ? '' : 's'}`)}</label>
-      <p>{count === 1 ? text('单选；选择另一张显卡会替换当前选择。', 'Select one GPU; choosing another replaces the current selection.')
-        : text(`最多选择 ${count} 张；显卡数量在训练参数中修改。`, `Select up to ${count} GPUs. Change the count in training parameters.`)}</p>
       <div className="gpu-picker-cards" role="group" aria-label={text('选择训练显卡', 'Choose training GPUs')}>{devices.map(device => <label key={device.device}>
         <input type={count === 1 ? 'radio' : 'checkbox'} name={`${menuId}-device`} disabled={disabled || !value.includes(device.device) && (device.status === 'unavailable' || count > 1 && value.length >= count)} checked={value.includes(device.device)}
           onChange={event => onChange(event.target.checked ? count === 1 ? [device.device] : [...value, device.device] : value.filter(selected => selected !== device.device))}/>
@@ -126,7 +124,7 @@ function DevicePicker({ value, onChange, count = 1, disabled = false, compact = 
     {snapshot && !devices.length && <p>{text('未检测到可调度显卡，将使用当前环境的默认设备。', 'No schedulable GPU was detected; the current environment will use its default device.')}</p>}
     {!training && !valid && <p role="alert" className="gpu-picker-warning">{invalidMessage}</p>}
     {value.some(id => devices.find(device => device.device === id)?.job_id) && <p>{text('所选显卡正在使用，任务会等待它空闲后启动。', 'A selected GPU is busy. This job will wait until it is free.')}</p>}
-    {snapshot?.max_concurrent === 1 && devices.length > 1 && <p>{text('队列目前限制为同时运行 1 个任务；需要并行时，在队列调度设置中改为自动。', 'The queue currently allows one job at a time. Use automatic concurrency in queue settings to run on separate GPUs in parallel.')}</p>}
+    {snapshot?.max_concurrent === 1 && devices.length > 1 && <p>{text('队列并发数为 1；如需多卡并行运行任务，请在队列设置中调整。', 'Queue concurrency is 1. Adjust queue settings to run jobs on separate GPUs.')}</p>}
   </div>;
   if (training) return <div className="gpu-picker gpu-picker-training">
     <button ref={trigger} type="button" id={id} className="gpu-picker-trigger" aria-label={label || text('训练显卡', 'Training GPUs')}

@@ -84,7 +84,7 @@ describe('training monitor interactions and events', () => {
     expect(lrChart().series.find((item: any) => item.name === '学习率 · new_group').data).toEqual([[1, null], [2, null], [3, 0.002]]);
     expect(lrChart().series.find((item: any) => item.name === '学习率 · w1').data.at(-1)).toEqual([3,0.0001]);
     expect(lrChart().series.find((item: any) => item.name === '学习率 · w2').data.at(-1)).toEqual([3,0.0002]);
-    expect(screen.getByText(/LoKr 的 w1 \/ w2 是两组矩阵参数/)).toBeInTheDocument();
+    expect(screen.getByText('每条线代表一个参数组；LoKr 的 w1 / w2 可设置不同学习率。')).toBeInTheDocument();
     expect(chart().series).toHaveLength(2);
     emit('job.step', { job_id: 'job_01', step: 2, loss: 100 });
     expect(screen.getByText('3 / 100')).toBeInTheDocument();

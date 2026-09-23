@@ -51,7 +51,8 @@ describe('regularization preparation',()=>{
     await waitFor(()=>expect(pending.at(-1)?.body).toMatchObject({excluded_tags:['subject_trigger'],source_ids:['d_first'],generation_scope:'all'}));
     await act(async()=>pending.at(-1)!.resolve({...preview,signature:'b'.repeat(64),planned_images:1,eligible_images:1,examples:[{source_id:'d_first',rel_path:'same.png',prompt:'dog'}]}));
     await waitFor(()=>expect(screen.getByRole('button',{name:'生成正则图'})).toBeEnabled());
-    expect(screen.getByText(/原图片与标签保持原样/)).toBeInTheDocument();
+    expect(screen.getByText(/排除词只影响生成提示词/)).toHaveTextContent('每批最多 200 张');
+    expect(screen.getByText('另建批次，保留旧结果并跳过重复图片。')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button',{name:'生成正则图'}));
     await waitFor(()=>expect(apiClient.post).toHaveBeenCalledWith('/projects/dogs/versions/v1/regularization',expect.objectContaining({prompt_source:'training_tags',excluded_tags:['subject_trigger'],source_ids:['d_first'],generation_scope:'all',plan_signature:'b'.repeat(64)}),{silent:true}));
   });

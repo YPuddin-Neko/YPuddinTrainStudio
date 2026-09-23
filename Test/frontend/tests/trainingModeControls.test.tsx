@@ -95,7 +95,7 @@ it('keeps a manual GPU count before batch size and reveals multi-GPU strategy on
   fireEvent.click(screen.getByRole('option', {name:'显存分片（大模型）'}));
   expect(config().loop.distributed_strategy).toBe('fsdp');
   fireEvent.click(screen.getByRole('button', {name:'多卡训练方式 说明'}));
-  expect(screen.getByRole('tooltip')).toHaveTextContent('每张卡保留完整模型');
+  expect(screen.getByRole('tooltip')).toHaveTextContent('每卡保留完整模型');
   expect(screen.getByRole('tooltip')).toHaveTextContent('参数、梯度和优化器状态');
   fireEvent.keyDown(document, {key:'Escape'});
   fireEvent.change(count, {target:{value:'1'}});

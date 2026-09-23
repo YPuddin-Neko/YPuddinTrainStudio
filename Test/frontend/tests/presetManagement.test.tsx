@@ -170,7 +170,7 @@ describe('compact user preset management', () => {
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByRole('textbox', { name: '用途与说明' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '保存预设' }));
-    await screen.findByText('预设已保存，可在项目训练参数中加载。');
+    await screen.findByText('预设已保存。');
     expect(state.writes[0].body.description).toBe('更适合细节训练');
     fireEvent.click(toggle);
     expect(screen.getByRole('textbox', { name: '用途与说明' })).toHaveValue('更适合细节训练');
@@ -182,7 +182,7 @@ describe('compact user preset management', () => {
     const epochs = await ready('my-style-copy'); expect(epochs).toBeEnabled();
     fireEvent.change(epochs, { target: { value: '7' } });
     fireEvent.click(screen.getByRole('button', { name: '保存预设' }));
-    await screen.findByText('预设已保存，可在项目训练参数中加载。');
+    await screen.findByText('预设已保存。');
     expect(state.writes).toHaveLength(1); expect(state.writes[0].method).toBe('POST');
     const body = state.writes[0].body;
     expect(body.config.loop.epochs).toBe(7); expect(body.config.model.family).toBe('anima');
@@ -203,7 +203,7 @@ describe('compact user preset management', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: '预设名称' })).toHaveValue('新的_Krea参数');
     fireEvent.click(screen.getByRole('button', { name: '保存预设' }));
-    await screen.findByText('预设已保存，可在项目训练参数中加载。');
+    await screen.findByText('预设已保存。');
     expect(state.requestedFamilies).toContain('krea2');
     expect(state.writes[0].body.config).toMatchObject({ model: { family: 'krea2' }, sampling: { steps: 28, cfg: 5.5 }, dataset: { text_encoding: 'cached' } });
   });
@@ -224,7 +224,7 @@ describe('compact user preset management', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('loop.epochs: must be positive');
     expect(epochs).toHaveValue(8); expect(screen.getByRole('textbox', { name: '用途与说明' })).toHaveValue('保留我的描述');
     fail = false; fireEvent.click(screen.getByRole('button', { name: '保存预设' }));
-    await screen.findByText('预设已保存，可在项目训练参数中加载。');
+    await screen.findByText('预设已保存。');
     expect(state.writes).toEqual([{ method: 'PUT', name: 'my-style', body: expect.objectContaining({ description: '保留我的描述', config: expect.objectContaining({ loop: expect.objectContaining({ epochs: 8 }) }) }) }]);
   });
 

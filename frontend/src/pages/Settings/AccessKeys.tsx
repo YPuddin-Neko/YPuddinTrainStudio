@@ -33,7 +33,7 @@ export default function AccessKeys() {
     const code = failure && typeof failure === 'object' && 'status' in failure ? failure.status : undefined;
     if (code === 422) return text('账号或密钥格式不正确，请检查后重试。', 'Check the account and key format, then retry.');
     if (code === 503) return text('凭据文件暂时不可读写，请检查服务数据目录权限后重试。', 'The credentials file is unavailable. Check service data directory permissions and retry.');
-    return text('操作失败，请重试。服务器错误详情已隐藏以保护密钥。', 'The request failed. Retry; server error details are hidden to protect access keys.');
+    return text('操作失败，请重试。', 'The request failed. Please retry.');
   };
   const refresh = React.useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -68,7 +68,7 @@ export default function AccessKeys() {
       if (mounted.current) {
         setStatus(old => old ? { ...old, [provider.id]: result } : old);
         setDraft(old => ({ ...old, [provider.id]: { account: '', secret: '' } }));
-        const notice = clear ? text('已清除，后续任务不再使用此凭据。', 'Cleared. Future tasks will not use this credential.') : text('已保存，将用于此来源的后续任务。', 'Saved for future tasks using this source.');
+        const notice = clear ? text('已清除', 'Cleared') : text('已保存', 'Saved');
         setFeedback(old => ({ ...old, [provider.id]: { notice } }));
       }
       window.dispatchEvent(new Event('credentials.changed'));
@@ -87,6 +87,6 @@ export default function AccessKeys() {
         {feedback[provider.id]?.notice && <p role="status" className="access-key-feedback access-key-notice">{feedback[provider.id]?.notice}</p>}
       </form>
     </section>)}
-    <p className="settings-note">{text('凭据保存在运行服务的电脑，仅发送给对应官方来源。HF-Mirror 使用匿名下载；清除模型令牌后，不会继续使用同源环境变量或 CLI 令牌。运行中的任务保留启动时的凭据。', 'Credentials stay on the computer running Studio and are sent only to their official source. HF-Mirror downloads anonymously. Clearing model tokens also disables environment/CLI fallback for that source. Running tasks keep their starting credentials.')}</p>
+    <p className="settings-note">{text('密钥保存在服务器，仅用于对应来源。修改后对新任务生效。', 'Keys are stored on the server and used only for their source. Changes apply to new tasks.')}</p>
   </SettingsSections></div>;
 }

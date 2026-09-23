@@ -42,7 +42,7 @@ export default function DatasetImportProgress({ operation }: { operation: Datase
   const rate = measured && snapshot.bytes_per_second != null && Number.isFinite(snapshot.bytes_per_second) && snapshot.bytes_per_second >= 0 ? snapshot.bytes_per_second : null;
   return <DatasetOperationProgress label={text('导入进度', 'Import progress')} phaseText={phaseText}
     state={state} done={done} total={total}
-    detail={state === 'completed' ? text('图片目录已加入当前版本，可继续检查图片与标签。', 'Image folders are now in this version. You can continue by checking images and captions.') : counts.length ? text('当前阶段：', 'Current phase: ') + counts.join(' · ') : undefined}
+    detail={counts.length ? counts.join(' · ') : undefined}
     speed={state === 'active' ? rate != null ? `${(rate / 1024 ** 2).toFixed(2)} MiB/s` : null : undefined}
     elapsed={operation.elapsed} remaining={measured ? snapshot.eta_seconds : null}/>
 }

@@ -116,7 +116,7 @@ export default function ProjectEditor({ project, categories, onClose, onSaved, o
       {partial && !project && <p role="status" className="project-editor-note">{text(`项目 ${savedProject?.id} 已创建；关闭窗口会保留此项目，重试不会重复创建。`, `Project ${savedProject?.id} exists. Closing keeps it; retrying will not create a duplicate.`)}</p>}
       <fieldset disabled={busy} className="project-editor-fields">
         <div className="project-cover-editor"><div className="project-cover-preview"><ProjectCover source={activeCover} crop={file ? crop : undefined} name={name || text('项目', 'Project')}/></div><div className="project-cover-controls">
-          <strong>{text('项目封面', 'Project cover')}</strong><p>{text('上传后可拖动、缩放，决定封面显示范围。', 'Drag and zoom after uploading to choose the cover framing.')}</p>
+          <strong>{text('项目封面', 'Project cover')}</strong>
           <input ref={uploadInput} className="project-cover-file" type="file" tabIndex={-1} accept="image/jpeg,image/png,image/webp" aria-label={text('上传项目封面', 'Upload project cover')}
             onChange={event => { chooseFile(event.target.files?.[0]); event.target.value = ''; }}/>
           <div className="project-cover-buttons"><button type="button" className="projects-page-button" onClick={() => uploadInput.current?.click()}><ImagePlus size={14}/>{activeCover ? text('更换封面', 'Replace cover') : text('上传封面', 'Upload cover')}</button>

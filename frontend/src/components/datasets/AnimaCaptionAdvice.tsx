@@ -22,9 +22,9 @@ export default function AnimaCaptionAdvice({ images, onEdit }: { images: AdviceI
   const proposed = images.filter(image => !!image.caption_format?.suggestions.length);
   return <details className="anima-caption-advice">
     <summary>{text('Anima 标签格式建议', 'Anima caption format advice')}{proposed.length > 0 && ` · ${text(`${proposed.length} 张可预览`, `${proposed.length} image previews`)}`}</summary>
-    <p>{text('一般标签建议使用小写与空格；score_* 分数标签保留下划线，画师名加 @。这是格式建议，不是训练限制。', 'Use lowercase and spaces in ordinary tags, retain underscores in score_* tags, and prefix artist names with @. This is advice, not a training restriction.')}</p>
-    <p>{text('自然语言可以与标签混排，保留正常大小写。TXT 混入完整句子时，请核对标签打乱和丢弃设置；JSON 的自然语言字段不会按逗号打乱。', 'Natural language can appear before or after tags and keeps normal capitalization. For TXT containing sentences, review tag shuffle and dropout settings. The JSON prose field is not shuffled by commas.')}</p>
-    <p>{text('以下仅预览已知 JSON 分类字段；原文件未修改，触发词、score_*、自然语言和其他元数据保持原样。TXT 不推断画师或自动改写。', 'Previews cover known JSON tag fields only. Original files, triggers, score_* tokens, prose and other metadata are unchanged. TXT artist roles are not inferred and TXT is not rewritten.')}</p>
+    <p>{text('建议普通标签用小写和空格，score_* 保留下划线，画师名加 @。', 'Use lowercase and spaces for ordinary tags, keep underscores in score_* tags, and prefix artists with @.')}</p>
+    <p>{text('自然语言保留正常大小写。TXT 含完整句子时，请核对标签打乱和丢弃设置；JSON 自然语言字段不打乱。', 'Keep normal capitalization in prose. For TXT captions containing sentences, check shuffle and dropout settings. JSON prose fields are not shuffled.')}</p>
+    <p>{text('以下为 JSON 标签格式预览，不会自动修改文件。', 'Preview of JSON tag formatting; files are not changed automatically.')}</p>
     <a href="https://huggingface.co/circlestone-labs/Anima#prompting" target="_blank" rel="noreferrer">{text('查看模型作者的标签指南', 'Read the model author’s prompting guide')}</a>
     {proposed.length > 0 && <>
       <div className="anima-caption-previews">

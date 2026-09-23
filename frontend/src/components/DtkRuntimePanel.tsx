@@ -39,12 +39,11 @@ export default function DtkRuntimePanel() {
     {guidance?.current_stack_reason === 'torch24_transformers5_diffusers040_conflict' && <p className="settings-note">{text('当前 PyTorch 2.4 不满足新版 Diffusers 和 Transformers 的要求，升级时需使用配套组合。', 'PyTorch 2.4 does not meet the requirements of newer Diffusers and Transformers. Upgrade these packages as a matching set.')}</p>}
     <div className="settings-field"><span className="settings-field-label">{text('当前驱动', 'Current driver')}</span><div className="settings-field-control">
       <p className="break-words text-sm">{guidance?.driver_version || text('未检测到版本', 'Version not detected')}</p>
-      {recommendation && <p className="settings-note">{text(`DTK ${recommendation.dtk} 要求驱动 ${recommendation.minimum_driver}。安装前请确认当前驱动是否兼容。`, `DTK ${recommendation.dtk} requires driver ${recommendation.minimum_driver}. Check driver compatibility before installing.`)}</p>}
+      {recommendation && <p className="settings-note">{text(`DTK ${recommendation.dtk} 要求驱动 ${recommendation.minimum_driver}。`, `DTK ${recommendation.dtk} requires driver ${recommendation.minimum_driver}.`)}</p>}
     </div></div>
     {recommendation ? <div className="space-y-3" data-testid="dtk-runtime-recommendation">
       <div className="settings-field"><span className="settings-field-label">{text('可选的 DTK 版本', 'Available DTK version')}</span><div className="settings-field-control">
         <p className="text-sm font-medium">DTK {recommendation.dtk} · Python {runtime?.python.split('.').slice(0,2).join('.') || recommendation.python_tag}</p>
-        <p className="settings-note">{text('以下软件包按本机系统和 Python 版本筛选。核对驱动要求后，请在独立环境中安装这些配套版本，再测试训练。', 'Packages are selected for this system and Python version. Check the driver requirements, install this package set in an isolated environment, then test training.')}</p>
       </div></div>
       <div className="flex flex-wrap gap-2">
         <a className={linkButton} href={recommendation.toolkit_url} target="_blank" rel="noreferrer"><Download size={13}/>{text(`下载 DTK ${recommendation.dtk}`, `Download DTK ${recommendation.dtk}`)}</a>
@@ -60,6 +59,6 @@ export default function DtkRuntimePanel() {
       <a className={linkButton} href={guidance?.driver_source_url || driverSource} target="_blank" rel="noreferrer">{text('驱动下载目录', 'Driver downloads')}<ExternalLink size={12}/></a>
       {guidance?.compatibility_source_url && <a className={linkButton} href={guidance.compatibility_source_url} target="_blank" rel="noreferrer">{text('驱动配套表', 'Driver compatibility')}<ExternalLink size={12}/></a>}
     </div>
-    <p className="settings-note mt-3">{text('请在训练服务器上手动安装 DTK、驱动及配套的 PyTorch 等软件包。xFormers 和 FlashAttention 可在下方上传 .whl 安装包后安装。', 'Install DTK, drivers and matching runtime packages such as PyTorch manually on the training server. Upload xFormers and FlashAttention .whl files below to install them.')}</p>
+    <p className="settings-note mt-3">{text('DTK 和驱动需在服务器上安装；注意力扩展可在下方安装。', 'Install DTK and drivers on the server; install attention extensions below.')}</p>
   </section>;
 }

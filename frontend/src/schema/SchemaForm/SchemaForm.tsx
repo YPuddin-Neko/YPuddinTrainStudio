@@ -386,16 +386,16 @@ const SourcesEditor: React.FC<{
             </button>
           </div>
           <div className="source-settings-grid">
-            <label><span>{t('dataset.repeats')}<ConfigHelp label={text('重复次数说明','Repeats help')}>{text('每轮让这组图片出现几次；默认 1。例如 20 张图重复 5 次计为 100 个样本，不复制文件。增加次数会增加训练占比和总步数，也可能过拟合。图片本身不能决定这个数值。','How often these images appear per epoch; default 1. Twenty images repeated five times count as 100 samples without copying files. More repeats increase their training share and step count, and may overfit. The image itself cannot determine this setting.')}</ConfigHelp></span><input aria-label={text(`重复次数 ${idx+1}`,`Repeats ${idx+1}`)} type="number" min="1" step="1" value={src.repeats ?? 1} onChange={event=>updateSource(idx,'repeats',event.target.value === '' ? '' : Number(event.target.value))}/></label>
-            <div className="source-reg-toggle"><span>{isReg ? text('正则集','Regularization') : text('训练集','Training')}</span><ConfigHelp label={text('数据用途说明','Dataset purpose help')}>{text('当前版本 traindata 中的图片自动作为训练集，reg 中的图片自动作为正则集。正则图用于类别先验保持，默认不继承训练触发词。外部与旧版来源保留已有用途。','Images inside this version’s traindata are training examples; images inside reg are regularization examples. Class priors do not inherit the training trigger by default. External and legacy sources retain their existing purpose.')}</ConfigHelp></div>
-            {isReg && <label><span>{text('正则损失权重','Regularization loss weight')}<ConfigHelp label={text('正则损失权重说明','Regularization loss weight help')}>{text('只对正则图片的损失生效。默认 1；0.5 表示这些图片的损失乘以一半，0 则不贡献训练梯度。它不是生成正则图片的数量。','Applies only to regularization-image losses. Default 1; 0.5 halves their contribution, while 0 contributes no training gradient. This is not the number of images to generate.')}</ConfigHelp></span><input aria-label={text(`正则损失权重 ${idx+1}`,`Regularization loss weight ${idx+1}`)} type="number" min="0" step="0.1" value={src.prior_weight ?? 1} onChange={event=>updateSource(idx,'prior_weight',event.target.value === '' ? '' : Number(event.target.value))}/></label>}
+            <label><span>{t('dataset.repeats')}<ConfigHelp label={text('重复次数说明','Repeats help')}>{text('每轮重复使用这组图片的次数。默认 1；20 张图重复 5 次计为 100 个样本。增加次数会增加训练占比和总步数，也可能过拟合。','Uses per image per epoch, default 1. Twenty images repeated five times count as 100 samples. More repeats increase their training share and total steps, with a risk of overfitting.')}</ConfigHelp></span><input aria-label={text(`重复次数 ${idx+1}`,`Repeats ${idx+1}`)} type="number" min="1" step="1" value={src.repeats ?? 1} onChange={event=>updateSource(idx,'repeats',event.target.value === '' ? '' : Number(event.target.value))}/></label>
+            <div className="source-reg-toggle"><span>{isReg ? text('正则集','Regularization') : text('训练集','Training')}</span><ConfigHelp label={text('数据用途说明','Dataset purpose help')}>{text('traindata 用作训练集，reg 用作正则集。正则图默认不继承训练触发词。','traindata contains training images; reg contains regularization images. Regularization images do not inherit the training trigger by default.')}</ConfigHelp></div>
+            {isReg && <label><span>{text('正则损失权重','Regularization loss weight')}<ConfigHelp label={text('正则损失权重说明','Regularization loss weight help')}>{text('正则图片的损失乘数。默认 1；0.5 减半，0 不贡献训练梯度。','Multiplier for regularization-image loss. Default 1; 0.5 halves it, while 0 contributes no training gradient.')}</ConfigHelp></span><input aria-label={text(`正则损失权重 ${idx+1}`,`Regularization loss weight ${idx+1}`)} type="number" min="0" step="0.1" value={src.prior_weight ?? 1} onChange={event=>updateSource(idx,'prior_weight',event.target.value === '' ? '' : Number(event.target.value))}/></label>}
           </div>
-          {role?.managed ? <p>{text('目录归属：当前版本','Directory: current version')} / <strong>{role.is_reg ? 'reg' : 'traindata'}</strong><br/><code className="break-all">{role.root}</code></p> : versionSources && !role ? <p>{text('正在核对目录归属；保留当前用途。','Checking directory ownership; retaining the current purpose.')}</p> : <details><summary>{text('外部 / 旧版来源兼容设置','External / legacy source compatibility')}</summary><p>{text('此路径不属于当前版本的 traindata 或 reg，文件保持原位置。仅为已有外部训练配置显式设置用途。','This path is outside this version’s traindata and reg. Files stay in place; adjust purpose only for existing external training configurations.')}</p><label><input type="checkbox" checked={isReg} onChange={event=>updateSource(idx,'is_reg',event.target.checked)}/>{text('外部来源用于正则训练','Use external source for regularization')}</label></details>}
+          {role?.managed ? <p>{text('目录归属：当前版本','Directory: current version')} / <strong>{role.is_reg ? 'reg' : 'traindata'}</strong><br/><code className="break-all">{role.root}</code></p> : versionSources && !role ? <p>{text('正在核对目录归属；保留当前用途。','Checking directory ownership; retaining the current purpose.')}</p> : <details><summary>{text('外部 / 旧版来源兼容设置','External / legacy source compatibility')}</summary><p>{text('文件保持在外部目录；可在此设置是否用于正则训练。','Files remain in the external folder. Choose whether to use them for regularization.')}</p><label><input type="checkbox" checked={isReg} onChange={event=>updateSource(idx,'is_reg',event.target.checked)}/>{text('外部来源用于正则训练','Use external source for regularization')}</label></details>}
           <details className="source-fallback"><summary>{text('缺少标签时的默认描述（可选）','Fallback description when captions are missing (optional)')}</summary><input aria-label={text(`默认描述 ${idx+1}`,`Fallback description ${idx+1}`)} value={src.class_prompt ?? ''} onChange={event=>updateSource(idx,'class_prompt',event.target.value || null)} placeholder={text('例如：a person；不生成或修改标签文件','For example: a person; does not create or edit caption files')}/></details>
           </details>
         </div>
       );})}
-      <details><summary>{text('高级：引用已有数据目录','Advanced: reference an existing dataset folder')}</summary><p>{text('管理、上传或导入图片请使用项目的训练数据步骤。此处仅为兼容已有外部配置。','Manage, upload and import images in the project’s training-data step. This option supports existing external configurations.')}</p><button
+      <details><summary>{text('高级：引用已有数据目录','Advanced: reference an existing dataset folder')}</summary><button
         type="button"
         onClick={addSource}
         data-testid="add-source"
@@ -1070,8 +1070,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       control = <div className="config-scientific-input">{control}<output aria-label={`${fieldLabel} · ${english ? 'scientific notation' : '科学计数法'}`} title={`${scientific} · ${english ? 'The same value in scientific notation' : '同一数值的科学计数法'}`}>{scientific}</output></div>;
     }
     const scopeHelp = fullPathKey === 'adapter.preset' ? (english
-      ? 'Determines which parts of the model this training can adjust. Usually keep the default. A wider scope generally adds parameters and memory use, without guaranteeing better results.'
-      : '决定本次训练可以调整模型的哪些部分。通常保留默认；扩大范围通常增加参数和占用，不保证效果更好。') : null;
+      ? 'Chooses trainable layers. A wider scope uses more parameters and memory.'
+      : '选择参与训练的层；扩大范围会增加参数和显存占用。') : null;
     const selectedPreset = fullPathKey === 'adapter.preset' ? family?.presets?.find(preset => preset.name === (fieldValue || family.default_preset)) : undefined;
     const help = scopeHelp ? [
       scopeHelp,
@@ -1102,7 +1102,6 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         )}
         <div className="mt-1">{readOnly ? <fieldset disabled style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>{control}</fieldset> : control}</div>
         {hint && (compactField || managedReason && !duplicateHelp) && <p id={managedReason ? `${fieldId}-managed-reason` : undefined} className="config-field-hint">{hint}</p>}
-        {fullPathKey === 'adapter.preset' && family && <p className="config-scope-hint">{english ? 'Usually keep the default; a wider scope does not guarantee better results.' : '通常保留默认；范围更大不一定效果更好。'}</p>}
         {/* A reason Studio cannot phrase for this field stays in the preflight panel; the border still marks it. */}
         {errorItem?.msg && <p className="config-field-error">{errorItem.msg}</p>}
       </div>

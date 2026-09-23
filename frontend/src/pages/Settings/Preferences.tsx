@@ -93,22 +93,22 @@ export default function Preferences() {
     {error && <div role="alert" className="settings-alert">{error}</div>}
     <fieldset disabled={saving} aria-busy={saving} className="contents">
     {downloads ? <DownloadPreferences value={settings.downloads ?? { pypi: 'ustc', pytorch: 'mirror', fallback: true }} onChange={value => update(s => ({ ...s, downloads: value }))} /> : !appearance ? <section id="preferences-storage" data-settings-section tabIndex={-1} className="settings-section">
-      <div className="settings-section-heading"><div><h2>{t('settings.paths')}</h2><p className="settings-note">{text('训练数据、采样与产物按项目和版本隔离；更改默认路径仅影响新任务。', 'Training data, samples and outputs are isolated by project and version. Path changes apply to new jobs.')}</p></div></div>
+      <div className="settings-section-heading"><div><h2>{t('settings.paths')}</h2><p className="settings-note">{text('路径变更仅用于新任务，已有文件不迁移。', 'Path changes apply to new jobs; existing files stay in place.')}</p></div></div>
       {([['data_root', t('settings.dataRoot')], ['cache_dir', t('settings.cacheDir')], ['models_dir', t('settings.modelsDir')]] as const).map(([key, label]) => <div className="settings-field" key={key}>
         <label htmlFor={`preferences-${key}`}>{label}</label><div className="settings-field-control">
-          {key === 'data_root' ? <><PathInput ariaLabel={label} value={settings.paths[key]} onChange={value => update(s => ({ ...s, paths: { ...s.paths, data_root: value } }))} /><p className="settings-note">{text('保存后写入配置，重启服务后生效；当前服务继续使用现有目录。', 'Saved to configuration and applied after restarting; the current service keeps using its existing directory.')}</p></> : <PathInput ariaLabel={label} value={settings.paths[key]} onChange={value => update(s => ({ ...s, paths: { ...s.paths, [key]: value } }))} />}
-          {key === 'cache_dir' && <p className="settings-note">{text('自定义缓存目录用于新生成的训练缓存、扫描索引、缩略图和软件包缓存；已有文件保留在原位置。', 'A custom cache directory applies to new training caches, indexes, thumbnails and package downloads. Existing files stay in place.')}</p>}
+          {key === 'data_root' ? <><PathInput ariaLabel={label} value={settings.paths[key]} onChange={value => update(s => ({ ...s, paths: { ...s.paths, data_root: value } }))} /><p className="settings-note">{text('重启服务后生效。', 'Applies after restarting the service.')}</p></> : <PathInput ariaLabel={label} value={settings.paths[key]} onChange={value => update(s => ({ ...s, paths: { ...s.paths, [key]: value } }))} />}
+          {key === 'cache_dir' && <p className="settings-note">{text('用于训练、缩略图和安装包缓存。', 'Stores training, thumbnail and package caches.')}</p>}
         </div>
       </div>)}
       <div className="settings-field"><label>{text('基础环境目录', 'Base environment directory')}</label><div className="settings-field-control">
         <PathInput ariaLabel={text('基础环境目录', 'Base environment directory')} value={settings.paths.bootstrap_env_dir ?? ''} placeholder={text('留空使用源码目录下的默认位置', 'Leave blank for the default source directory location')} onChange={value => update(s => ({...s, paths: {...s.paths, bootstrap_env_dir: value}}))}/>
-        <p className="settings-note">{text('按平台分别创建 Python 环境。保存后下次从启动脚本启动时生效；新目录需要安装依赖，旧环境不会搬迁或删除。', 'Creates a Python environment per platform. Applies on the next launcher start; a new location requires installation. Old environments are preserved.')}</p>
+        <p className="settings-note">{text('下次从启动脚本启动时生效；新目录需安装依赖，旧环境保留。', 'Applies on the next launcher start. New directories need dependencies; old environments are retained.')}</p>
       </div></div>
       <div className="settings-field"><label htmlFor="preferences-output-mode">{text('训练产物位置', 'Training output location')}</label><div className="settings-field-control">
         <StudioSelect disabled={saving} id="preferences-output-mode" aria-label={text('训练产物位置', 'Training output location')} value={settings.paths.output_mode === 'custom' ? 'custom' : 'project'}
           options={[{value:'project',label:text('项目版本目录（默认）','Project version directory (default)')},{value:'custom',label:text('自定义输出根目录','Custom output root')}]}
           onValueChange={value => update(s => ({...s,paths:{...s.paths,output_mode:value === 'custom' ? 'custom' : 'project'}}))}/>
-        {settings.paths.output_mode === 'custom' ? <><div className="mt-2"><PathInput ariaLabel={t('settings.outputDir')} value={settings.paths.output_dir} onChange={value => update(s => ({...s,paths:{...s.paths,output_dir:value}}))}/></div><p className="settings-note">{text('在此目录下按项目 ID、版本号和任务 ID 分开保存，避免重复训练互相覆盖。','Outputs under this root are separated by project ID, version and job ID.')}</p></>
+        {settings.paths.output_mode === 'custom' ? <><div className="mt-2"><PathInput ariaLabel={t('settings.outputDir')} value={settings.paths.output_dir} onChange={value => update(s => ({...s,paths:{...s.paths,output_dir:value}}))}/></div><p className="settings-note">{text('按项目、版本和训练任务分别保存。','Outputs are organized by project, version and training run.')}</p></>
           : <p className="settings-note font-mono">project/{'<project_id>'}/v1/output/{'<job_id>'}/</p>}
       </div></div>
 

@@ -72,7 +72,7 @@ describe('Windows community FA2 release discovery', () => {
     }))));
     render(<Picker/>);
     expect(await screen.findByRole('alert')).toHaveTextContent('请检查网络或全局代理');
-    expect(screen.getByText(/内置列表仅含 v0.9.6 的历史构建/)).toBeInTheDocument();
+    expect(screen.getByText(/当前使用 v0.9.6 缓存列表/)).toBeInTheDocument();
     expect(screen.getByText(/已查询的版本列表中没有适合当前环境的安装包/)).toBeInTheDocument();
     expect(screen.queryByText(/已查询 1 个发布批次/)).not.toBeInTheDocument();
   });
@@ -84,8 +84,8 @@ describe('Windows community FA2 release discovery', () => {
     render(<Picker/>);
     await screen.findByRole('combobox', { name: 'Windows FlashAttention 版本' });
     expect(screen.getByText(/使用上次获取的版本列表/)).toBeInTheDocument();
-    expect(screen.getByText(/已达到本次查询上限/)).toHaveTextContent('已查询 50 个发布批次');
-    expect(screen.getByText(/3 个安装包未提供 SHA256/)).toBeInTheDocument();
+    expect(screen.queryByText(/已查询 50 个发布批次/)).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', {name: 'Windows FlashAttention 版本'})).toBeEnabled();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });

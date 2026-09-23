@@ -14,8 +14,8 @@ export function inactiveTrainingReason(config: Record<string, any> | null | unde
   if (name !== 'flux' && !(name === 'flux2' && variant === 'dev')) return undefined;
   const model = name === 'flux' ? 'FLUX.1' : 'FLUX.2 dev';
   return english
-    ? `${model} is retired. This configuration remains available to view; create a new configuration with supported model weights to train. Existing files are preserved.`
-    : `${model} 已停用。此配置仍可查看；如需训练，请使用受支持的模型权重新建配置。已有文件保持原样。`;
+    ? `${model} is retired. Create a new configuration with a supported model to train.`
+    : `${model} 已停用，请选择受支持的模型新建训练配置。`;
 }
 
 /** The server inspects actual weights; filenames cannot identify a retired variant. */

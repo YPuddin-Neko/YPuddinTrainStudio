@@ -69,7 +69,7 @@ describe('import progress polling and phase display', () => {
     render(<DatasetImportProgress operation={{ id: 'unknown', mode: 'path', state: 'active', elapsed: 3, unavailable: false,
       snapshot: snapshot('unknown', { phase: 'validating', bytes_done: 0, bytes_total: null, files_done: 4, files_total: null, bytes_per_second: null, eta_seconds: null }) }}/>);
     expect(screen.getByRole('progressbar')).not.toHaveAttribute('aria-valuenow');
-    expect(screen.getByText('当前阶段：已处理 4 个文件')).toBeInTheDocument();
+    expect(screen.getByText('已处理 4 个文件')).toBeInTheDocument();
     expect(screen.queryByText(/MiB\/s/)).not.toBeInTheDocument();
     expect(screen.getByText('3s')).toBeInTheDocument();
   });

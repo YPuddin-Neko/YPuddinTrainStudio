@@ -53,12 +53,12 @@ function StatCard({ label, value, hint }: { label: string; value: React.ReactNod
 }
 
 /** 空态：lucide 图标 + 标题 + 一行提示 */
-function EmptyState({ icon: Icon, title, hint }: { icon: React.ComponentType<{ className?: string }>; title: string; hint: string }) {
+function EmptyState({ icon: Icon, title, hint }: { icon: React.ComponentType<{ className?: string }>; title: string; hint?: string }) {
   return (
     <div className="col-span-full flex flex-col items-center justify-center py-14 text-center">
       <Icon className="w-8 h-8 text-slate-300 dark:text-slate-600" />
       <p className="mt-3 text-sm font-medium text-slate-500 dark:text-slate-400">{title}</p>
-      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{hint}</p>
+      {hint && <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{hint}</p>}
     </div>
   );
 }
@@ -502,17 +502,17 @@ export default function JobDetail() {
             </div>
             <label className="job-metrics-smoothing">{text('显示 EMA 系数','Display EMA coefficient')}<input aria-label={text('显示 EMA 系数','Display EMA coefficient')} type="range" min="0" max="0.99" step="0.01" value={emaAlpha} onChange={event => setEmaAlpha(Number(event.target.value))}/><output>{emaAlpha.toFixed(2)}</output></label>
           </div>
-          {!metrics?.steps.length ? <EmptyState icon={Activity} title={t('job.noMetrics', '暂无训练指标')} hint={text('任务记录训练步数后，损失曲线会显示在这里。','Loss appears here when the job records training steps.')}/> : <>
+          {!metrics?.steps.length ? <EmptyState icon={Activity} title={t('job.noMetrics', '暂无训练指标')} hint={text('等待训练步数记录。','Waiting for recorded training steps.')}/> : <>
             <section className="job-metrics-chart" aria-label={labels.loss}>
-              <h2>{labels.loss}</h2><p>{text('原始损失来自训练记录；显示 EMA 仅平滑这张图，系数越大越平稳，不改变训练参数或权重 EMA。','Raw loss comes from training records. Display EMA smooths only this chart; a larger coefficient is smoother. It changes neither training parameters nor weight EMA.')}</p>
-              <p>{text('拖动图下方滑块缩放或调整查看范围。', 'Drag the slider below a chart to zoom or adjust the visible range.')}</p>
+              <h2>{labels.loss}</h2><p>{text('EMA 系数越大，曲线越平滑；不改变训练参数或权重 EMA。','A higher EMA coefficient smooths the chart more; training parameters and weight EMA are unchanged.')}</p>
+
               <EChart option={lossChartOption} style={{ height: 320 }}/>
             </section>
             <section className="job-metrics-diagnostics">
               <button className="job-metrics-diagnostics-toggle" aria-expanded={showDiagnostics} aria-controls="job-metrics-diagnostic-charts" onClick={() => setShowDiagnostics(value => !value)}>{text('学习率、梯度与性能诊断','Learning rate, gradients and performance')}<ChevronDown size={15}/></button>
               {showDiagnostics && <div id="job-metrics-diagnostic-charts">
-                <section className="job-metrics-chart" aria-label={labels.lr}><h2>{labels.lr}</h2><p>{text('lr 表示学习率，每条线对应优化器的一个参数组。LoKr 的 w1 / w2 是两组矩阵参数，可使用不同学习率。','lr means learning rate. Each line is an optimizer parameter group. In LoKr, w1 / w2 are two matrix parameter groups that can use different learning rates.')}</p><EChart option={learningRateChartOption} style={{height:300}}/></section>
-                <section className="job-metrics-chart" aria-label={labels.gradient}><h2>{labels.gradient}</h2><p>{text('衡量训练步的梯度大小，用于观察更新是否稳定；与损失使用独立刻度。','Measures gradient magnitude at each recorded step to help inspect update stability. It uses a separate scale from loss.')}</p><EChart option={gradientChartOption} style={{height:280}}/></section>
+                <section className="job-metrics-chart" aria-label={labels.lr}><h2>{labels.lr}</h2><p>{text('每条线代表一个参数组；LoKr 的 w1 / w2 可设置不同学习率。','Each line represents a parameter group; LoKr w1 / w2 can use different learning rates.')}</p><EChart option={learningRateChartOption} style={{height:300}}/></section>
+                <section className="job-metrics-chart" aria-label={labels.gradient}><h2>{labels.gradient}</h2><p>{text('每步梯度的大小，用于观察更新是否稳定。','Gradient magnitude per step, to inspect update stability.')}</p><EChart option={gradientChartOption} style={{height:280}}/></section>
                 {validationChartOption && <section className="job-metrics-chart" aria-label={labels.validation}><h2>{t('job.validationTitle')}</h2><EChart option={validationChartOption} style={{height:280}}/></section>}
                 <section className="job-metrics-chart" aria-label={text('吞吐与内存诊断','Throughput and memory diagnostics')}><h2>{t(chartVramMetric === 'current_allocated' ? 'job.currentMemoryPerfTitle' : 'job.perfTitle')}</h2><EChart option={perfChartOption} style={{height:300}}/></section>
               </div>}
@@ -528,7 +528,7 @@ export default function JobDetail() {
             <EmptyState
               icon={ImageIcon}
               title={t('job.noSamples', '暂无采样图片')}
-              hint={t('job.noSamplesHint', '训练过程中的采样预览会自动出现在这里。')}
+
             />
           )}
           {visibleSamples.map((s, idx) => (
@@ -547,7 +547,7 @@ export default function JobDetail() {
       )}
 
       {activeTab === 'checkpoints' && <section className="job-checkpoints" aria-label={text('训练权重与恢复状态','Weights and training states')}>
-        {checkpoints.length === 0 ? <EmptyState icon={Layers} title={t('job.noCheckpoints')} hint={t('job.noCheckpointsHint')}/> : checkpoints.map((cp,index) => <article key={`${cp.path}-${index}`} className="job-checkpoint">
+        {checkpoints.length === 0 ? <EmptyState icon={Layers} title={t('job.noCheckpoints')}/> : checkpoints.map((cp,index) => <article key={`${cp.path}-${index}`} className="job-checkpoint">
           <div className="job-checkpoint-file"><strong>{cp.path.replace(/\\/g,'/').split('/').pop()}</strong><div><span>{checkpointKindLabel(cp.kind)}{cp.ema ? ' · EMA' : ''}</span><span>{text('步','Step')} {cp.step}</span>{stepsPerEpoch && <span>{text('轮','Epoch')} {(cp.step/stepsPerEpoch).toFixed(2).replace(/\.00$/,'')}</span>}<span>{formatBytes(cp.size)}</span></div></div>
           <div className="job-checkpoint-actions">{cp.kind === 'full' ? <button disabled={resuming || !configSnapshot} onClick={() => resumeCheckpoint(cp)} className="task-button">{t('job.continueTraining')}</button> : cp.artifact_id ? <a href={apiUrl(`/artifacts/${cp.artifact_id}/download`)} className="task-button"><Download size={14}/>{t('job.download')}</a> : <span>{t('job.downloadUnavailable')}</span>}</div>
           <details className="job-checkpoint-details"><summary>{text('文件详情','File details')}</summary><dl><div><dt>{text('保存时间','Saved')}</dt><dd>{formatTime(cp.created_at)}</dd></div><div><dt>{text('本机位置','Local location')}</dt><dd><code>{cp.path}</code></dd></div></dl></details>
@@ -592,7 +592,7 @@ export default function JobDetail() {
             <EmptyState
               icon={Code}
               title={t('job.noConfig', '暂无配置快照')}
-              hint={t('job.noConfigHint', '任务启动时记录的训练配置会显示在这里。')}
+
             />
           ) : (
             <pre className="text-xs font-mono bg-slate-50 dark:bg-slate-900 p-4 rounded-lg overflow-x-auto">

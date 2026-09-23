@@ -20,7 +20,7 @@ export default function StructuredCaptionEditor({ structure, draft, onChange, di
   if (!structure) return <p className="structured-caption-notice">{text('未取得 JSON 分类数据，请刷新后再编辑。', 'JSON fields could not be loaded. Refresh before editing.')}</p>;
   const locked = disabled || readOnly || !structure.editable;
   return <div className="structured-caption-editor" aria-label={text('JSON 分类标签', 'Structured JSON captions')}>
-    {structure.legacy_override && <p className="structured-caption-notice">{text('此文件曾被合并为普通标签。这里编辑当前实际使用的标签；历史分类保留在原文中。', 'This file was previously flattened. Edit its active tags here; historical categories remain in the source document.')}</p>}
+    {structure.legacy_override && <p className="structured-caption-notice">{text('编辑当前使用的标签；旧分类可在 JSON 原文中查看。', 'Edit the active tags. Previous categories are available in the original JSON.')}</p>}
     {!structure.editable && <p className="structured-caption-notice">{text('此 JSON 格式暂不能按分类编辑，可查看原文。', 'This JSON format is available for inspection but does not support category editing.')}</p>}
     <div className="structured-caption-fields">
       {structure.fields.map(field => {
