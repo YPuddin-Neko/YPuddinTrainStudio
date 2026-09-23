@@ -18,6 +18,7 @@ from typing import Any
 from PIL import Image, ImageOps
 
 from ypuddin.config import TrainConfig
+from ypuddin.data.image_metadata import alpha_channel
 from ypuddin.data.index import IMAGE_EXTS, content_hash, iter_images, mask_for
 
 from .db import new_id, now
@@ -152,6 +153,7 @@ class DatasetPipeline:
         # transforms, even when image/caption bytes have not changed.
         payload: list[Any] = [{
             "caption_inspection_version": 3,
+            "transparency_inspection_version": 3,
             "model_family": config.get("model", {}).get("family"),
             "caption": config.get("dataset", {}).get("caption"),
         }]
@@ -568,17 +570,13 @@ class DatasetPipeline:
                 with Image.open(path) as image:
                     image.load()
                     record["width"], record["height"] = ImageOps.exif_transpose(image).size
-                    has_alpha = "A" in image.getbands() or "transparency" in image.info
-                    record["has_alpha"] = has_alpha
-                    # Palette transparency and PNG color keys become an alpha
-                    # channel on conversion. Inspect pixels, not just metadata:
-                    # a fully opaque channel or unused transparent palette entry
-                    # does not make the image transparent.
-                    record["has_transparency"] = (
-                        image.convert("RGBA").getchannel("A").getextrema()[0] < 255
-                        if has_alpha
-                        else False
-                    )
+                    alpha = alpha_channel(image)
+                    histogram = alpha.histogram() if alpha is not None else None
+                    transparent_pixels = sum(histogram[:255]) if histogram else 0
+                    record["has_alpha"] = alpha is not None
+                    record["has_transparency"] = transparent_pixels > 0
+                    record["transparent_pixels"] = transparent_pixels
+                    record["min_alpha"] = alpha.getextrema()[0] if alpha is not None else 255
                 record["hash"] = content_hash(path)
                 groups.setdefault(digest, []).append(len(records))
                 if record["has_transparency"]:

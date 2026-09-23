@@ -15,8 +15,8 @@ from ypuddin.config import TrainConfig
 from ypuddin.config.compute_policy import (
     BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID,
     DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
-    DTK_SDXL_LONG_TEXT_POLICY_ID,
     DTK_SDXL_LONG_TEXT_PREVIEW_POLICY_IDS,
+    DTK_SDXL_TEXT_LORA_PREVIEW_POLICY_IDS,
     DTK_TEXT_LORA_POLICY_IDS,
     resolve_training_compute_config,
     validate_resume_compute_policy,
@@ -27,7 +27,7 @@ from ypuddin.train import Trainer
 def config(family="anima", joint=False, count=1):
     return TrainConfig.model_validate(
         {
-            "model": {"family": family, "attention": "xformers"},
+            "model": {"family": family, "attention": "xformers", "dtype": "bf16"},
             "training": {"mode": "adapter", "train_backbone": joint, "train_text_encoder": True},
             "adapter": {"algo": "lora", "rank": 2, "param_dtype": "fp32", "mode": "auto"},
             "loop": {"mixed_precision": "bf16", "deterministic": True, "gpu_count": count},
@@ -207,9 +207,9 @@ def test_sdxl_long_text_has_separate_numeric_identity(length, count):
     cfg.model.sdxl_max_token_length = length
     effective, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
     assert effective.loop.mixed_precision == "bf16"
-    assert policy["id"] == (
-        DTK_SDXL_LONG_TEXT_POLICY_ID if count == 1 else DTK_SDXL_LONG_TEXT_PREVIEW_POLICY_IDS[("lokr", "ddp")]
-    )
+    strategy = "single" if count == 1 else "ddp"
+    assert policy["id"] == DTK_SDXL_LONG_TEXT_PREVIEW_POLICY_IDS[("lokr", strategy)]
+    assert policy["preview_operator_components"] == ["backbone"]
     assert policy["sdxl_max_token_length"] == length
     assert policy["linear_backward_implementation"] == BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID
     with pytest.raises(ValueError, match="计算"):
@@ -217,7 +217,12 @@ def test_sdxl_long_text_has_separate_numeric_identity(length, count):
     cfg.training.train_text_encoder = True
     cfg.adapter.algo = "lora"
     _, te = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
-    assert te["sdxl_max_token_length"] == length and te["id"] == DTK_TEXT_LORA_POLICY_IDS["sdxl"]
+    assert te["sdxl_max_token_length"] == length
+    assert te["id"] == (DTK_SDXL_TEXT_LORA_PREVIEW_POLICY_IDS[strategy] if length == 150 else DTK_TEXT_LORA_POLICY_IDS["sdxl"])
+    if length == 150:
+        assert te["preview_operator_components"] == ["backbone"]
+    else:
+        assert "preview_operator_components" not in te
 
 
 @pytest.mark.parametrize(

@@ -397,6 +397,8 @@ class DistributedTrainer(Trainer):
 
 
 def distributed_train(cfg, *, device=None, emitter=None, listeners=None):
+    from ypuddin.models.precision import model_load_precision
+
     context = DistributedContext.initialize(
         device,
         strategy=cfg.loop.distributed_strategy,
@@ -408,7 +410,9 @@ def distributed_train(cfg, *, device=None, emitter=None, listeners=None):
                     {"bf16": torch.bfloat16, "fp16": torch.float16, "no": torch.float32}[
                         cfg.loop.mixed_precision
                     ],
-                    {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}[cfg.model.dtype],
+                    {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}[
+                        model_load_precision(cfg.model, "cuda")
+                    ],
                     {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}[
                         cfg.adapter.param_dtype
                     ],

@@ -323,3 +323,25 @@ def test_unavailable_ids_sources_and_unpermitted_registered_paths_are_rejected(t
     assert client.get("/api/models/recommendations").json()[0]["available_path"] is None
     assert client.post(f"/api/models/recommendations/{entry.id}/use", json={}).status_code == 404
     assert not control.requests
+
+
+def test_retry_switches_catalog_provider_and_keeps_digest(tiny):
+    client, control, _root, _app, entry = tiny
+    control.mode = "invalid"
+    failed = wait_for(
+        client,
+        client.post(
+            f"/api/models/recommendations/{entry.id}/download", json={"provider": "huggingface"}
+        ).json()["id"],
+    )
+    assert failed["status"] == "failed"
+    control.mode = "ok"
+    response = client.post(f"/api/models/downloads/{failed['id']}/retry", json={"provider": "modelscope"})
+    assert response.status_code == 202, response.text
+    complete = wait_for(client, response.json()["id"])
+    assert complete["status"] == "completed", complete
+    assert complete["provider"] == "modelscope"
+    assert "modelscope.cn" in complete["source_url"]
+    assert complete["sha256"] == failed["sha256"] == entry.sha256
+    assert complete["expected_size"] == entry.size
+    assert "modelscope.cn" in control.requests[-1].full_url

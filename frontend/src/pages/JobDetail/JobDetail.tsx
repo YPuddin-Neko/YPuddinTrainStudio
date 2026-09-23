@@ -1,6 +1,6 @@
 import { mergeJobEvent } from '../../utils/jobs';
 import React from 'react';
-import { Link, useParams, useNavigate, useSearchParams, useLocation, Navigate } from 'react-router-dom';
+import { Link, useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { EChart } from '../../components/EChart';
 import { apiClient, apiUrl } from '../../api/client';
@@ -10,7 +10,6 @@ import { EVENT_TYPES } from '../../events/eventTypes';
 import {
   Activity,
   Layers,
-  Grid2X2,
   Image as ImageIcon,
   Download,
   Terminal,
@@ -27,7 +26,6 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import StudioSelect from '../../components/StudioSelect';
 import { JobActions } from '../Queue/jobPresentation';
 import SampleLoss from '../../components/SampleLoss';
-import { samplingUrl } from '../../utils/samplingRoutes';
 import ConfigHelp from '../../components/ConfigHelp';
 import { metricChartBase, metricLabels } from './metricPresentation';
 import '../Queue/queue.css';
@@ -99,8 +97,8 @@ export default function JobDetail() {
   const [sampleProgress, setSampleProgress] = React.useState<{ step: number; promptIndex: number; prompts: number; done: number; total: number } | null>(null);
 
   const requestedTab = params.get('tab') || '';
-  const allowedTabs = job?.type === 'xyz' ? ['xyz', 'logs', 'config'] : ['metrics', 'samples', 'checkpoints', 'logs', 'config', 'xyz'];
-  const activeTab = allowedTabs.includes(requestedTab) ? requestedTab : job?.type === 'xyz' ? 'xyz' : 'metrics';
+  const allowedTabs = job?.type === 'xyz' ? ['logs', 'config'] : ['metrics', 'samples', 'checkpoints', 'logs', 'config'];
+  const activeTab = allowedTabs.includes(requestedTab) ? requestedTab : job?.type === 'xyz' ? 'logs' : 'metrics';
   const setActiveTab = (tab: string) => { const next = new URLSearchParams(params); next.set('tab', tab); setParams(next, { state: location.state }); };
   const [xAxisMode, setXAxisMode] = React.useState<'step' | 'epoch'>('step');
   const [emaAlpha, setEmaAlpha] = React.useState<number>(0.9);
@@ -128,9 +126,15 @@ export default function JobDetail() {
       const response = await apiClient.get<{ lines: JobLogLine[]; next_offset: number; has_more?: boolean }>(`/jobs/${id}/log`, { params: { offset: logOffset, limit: 500, tail: logMode === 'live' }, signal: controller.signal, silent: true });
       if (!controller.signal.aborted) { setLogs(response.lines || []); setNextLogOffset(response.next_offset); setHasMoreLogs(response.has_more ?? response.lines.length >= 500); }
     } catch (error) { if (!controller.signal.aborted) setLogError(formatApiError(error)); }
-    finally { if (!controller.signal.aborted) setLogLoading(false); }
+    finally { if (!controller.signal.aborted) setLogLoading(false); if (logRequest.current === controller) logRequest.current = null; }
   }, [id, logMode, logOffset]);
   React.useEffect(() => { void fetchLogs(); return () => logRequest.current?.abort(); }, [fetchLogs]);
+  React.useEffect(() => {
+    if (activeTab !== 'logs' || logMode !== 'live') return;
+    void fetchLogs();
+    const timer = window.setInterval(() => { if (!logRequest.current) void fetchLogs(); }, 1500);
+    return () => window.clearInterval(timer);
+  }, [activeTab, logMode, fetchLogs]);
 
 
   const logContainerRef = React.useRef<HTMLDivElement>(null);
@@ -180,6 +184,7 @@ export default function JobDetail() {
     if (data.job_id === id) {
       setJob((prev) => prev ? mergeJobEvent(prev, data) : null);
       if (['completed', 'failed', 'cancelled', 'paused'].includes(data.status)) {
+        if (logMode === 'live') void fetchLogs();
         void refreshSamples();
         void apiClient.get<VersionedJob>(`/jobs/${id}`, {silent:true}).then(updated => setJob(previous => previous?.id === updated.id ? updated : previous)).catch(() => {});
       }
@@ -366,7 +371,6 @@ export default function JobDetail() {
   const tabs = [
     { key: 'metrics', icon: Activity, label: t('job.tabMetrics') },
     { key: 'samples', icon: ImageIcon, label: `${t('job.tabSamples')} (${samples.length})` },
-    ...(job?.type === 'train' || job?.type === 'xyz' ? [{ key: 'xyz', icon: Grid2X2, label: text('模型测试', 'Model testing') }] : []),
     { key: 'checkpoints', icon: Layers, label: `${t('job.tabCheckpoints')} (${checkpoints.length})` },
     { key: 'logs', icon: Terminal, label: t('job.tabLogs') },
     { key: 'config', icon: Code, label: t('job.tabConfig') },
@@ -521,7 +525,6 @@ export default function JobDetail() {
         </div>
       )}
 
-      {activeTab === 'xyz' && id && (job?.type === 'train' ? <Navigate replace to={samplingUrl(id, null, job.project_id, job.version_id)}/> : job?.type === 'xyz' && configSnapshot?.xyz?.source_job_id ? <Navigate replace to={samplingUrl(configSnapshot.xyz.source_job_id, id, job.project_id, job.version_id)}/> : null)}
       {activeTab === 'samples' && (
         <section><div className="job-sample-controls"><StudioSelect aria-label={text('采样步数', 'Sample step')} value={sampleStep} options={[{ value: '', label: text('全部步数', 'All steps') }, ...[...new Set(samples.map(sample => sample.step))].sort((a,b) => b-a).map(step => ({ value: String(step), label: `${text('步数', 'Step')} ${step}` }))]} onValueChange={value => { setSampleStep(value); setSamplePage(1); }}/><span>{text(`共 ${filteredSamples.length} 张 · 每页 24 张`, `${filteredSamples.length} samples · 24 per page`)}</span>{samplePages > 1 && <div className="task-actions"><button className="task-button" disabled={samplePage <= 1} onClick={() => setSamplePage(page => page - 1)}>{text('上一页', 'Previous')}</button><span>{samplePage} / {samplePages}</span><button className="task-button" disabled={samplePage >= samplePages} onClick={() => setSamplePage(page => page + 1)}>{text('下一页', 'Next')}</button></div>}</div><div className="job-sample-gallery" data-testid="samples-gallery">
           {samples.length === 0 && (
@@ -556,7 +559,7 @@ export default function JobDetail() {
 
       {activeTab === 'logs' && (
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3">
-          <div className="job-log-toolbar"><StudioSelect aria-label={text('日志模式', 'Log mode')} value={logMode} options={[{ value: 'live', label: text('实时末尾 · 500 行', 'Live tail · 500 lines') }, { value: 'history', label: text('完整历史 · 分页读取', 'Full history · paginated') }]} onValueChange={value => { setLogMode(value as 'live' | 'history'); setLogOffsets([0]); setLogs([]); }}/><StudioSelect aria-label={text('日志级别', 'Log level')} value={logFilter} options={LOG_LEVELS.map(value => ({ value, label: logLevelLabels[value] }))} onValueChange={setLogFilter}/><input aria-label={text('搜索当前页日志', 'Search this log page')} value={logQuery} onChange={event => setLogQuery(event.target.value)} placeholder={text('搜索当前页日志', 'Search this log page')}/><button className="task-button" disabled={logLoading} onClick={() => void fetchLogs()}>{text('刷新日志', 'Refresh logs')}</button><label><input type="checkbox" checked={autoScrollLog} onChange={event => setAutoScrollLog(event.target.checked)}/>{t('job.followBottom')}</label></div>
+          <div className="job-log-toolbar"><StudioSelect aria-label={text('日志模式', 'Log mode')} value={logMode} options={[{ value: 'live', label: text('实时末尾 · 500 行', 'Live tail · 500 lines') }, { value: 'history', label: text('完整历史 · 分页读取', 'Full history · paginated') }]} onValueChange={value => { setLogMode(value as 'live' | 'history'); setLogOffsets([0]); setLogs([]); }}/><StudioSelect aria-label={text('日志级别', 'Log level')} value={logFilter} options={LOG_LEVELS.map(value => ({ value, label: logLevelLabels[value] }))} onValueChange={setLogFilter}/><input aria-label={text('搜索当前页日志', 'Search this log page')} value={logQuery} onChange={event => setLogQuery(event.target.value)} placeholder={text('搜索当前页日志', 'Search this log page')}/>{logMode === 'history' || logError ? <button className="task-button" disabled={logLoading} onClick={() => void fetchLogs()}>{text('刷新日志', 'Refresh logs')}</button> : <span className="text-xs text-slate-500">{text('自动刷新', 'Auto refresh')}</span>}<label><input type="checkbox" checked={autoScrollLog} onChange={event => setAutoScrollLog(event.target.checked)}/>{t('job.followBottom')}</label></div>
           {logError && <p role="alert" className="task-error">{logError}</p>}
           {logMode === 'history' && <div className="task-pagination"><span>{text('按原始顺序读取，每页最多 500 行；筛选作用于当前页。', 'Original order, up to 500 lines per page; filters apply to this page.')}</span><div><button className="task-button" disabled={logLoading || logOffsets.length === 1} onClick={() => { setLogs([]); setLogOffsets(offsets => offsets.slice(0, -1)); }}>{text('上一页日志', 'Previous log page')}</button><span>{logOffsets.length}</span><button className="task-button" disabled={logLoading || !hasMoreLogs} onClick={() => { setLogs([]); setLogOffsets(offsets => [...offsets, nextLogOffset]); }}>{text('下一页日志', 'Next log page')}</button></div></div>}
           <div

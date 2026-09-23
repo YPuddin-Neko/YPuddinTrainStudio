@@ -20,12 +20,13 @@ describe('compact configuration workbench contracts', () => {
 
   it('reads legacy automatic attention as SDPA and exposes each explicit backend once', () => {
     const changes: unknown[] = [];
-    render(<SchemaForm schema={trainSchema} value={{model:{attention:'auto'}}} onChange={value=>changes.push(value)} compact showAdvanced groupFilter={['memory']}/>);
+    render(<SchemaForm schema={trainSchema} family={{name:'anima', attention_backends:['auto','sdpa','xformers','flash_attn']} as any} value={{model:{attention:'auto'}}} onChange={value=>changes.push(value)} compact showAdvanced groupFilter={['memory']}/>);
     const attention = screen.getByRole('combobox',{name:'注意力后端'});
     expect(attention).toHaveTextContent(/^PyTorch SDPA$/);
     fireEvent.click(attention);
     expect(screen.getAllByRole('option',{name:/PyTorch SDPA/})).toHaveLength(1);
     expect(screen.queryByRole('option',{name:/默认/})).not.toBeInTheDocument();
+    expect(screen.queryByRole('option',{name:/Metal/})).not.toBeInTheDocument();
     expect(changes).toHaveLength(0);
     fireEvent.click(screen.getByRole('option',{name:'xFormers'}));
     expect(changes).toEqual([{model:{attention:'xformers'}}]);
@@ -91,7 +92,7 @@ describe('compact configuration workbench contracts', () => {
   it('distinguishes native forwards from logical batches in the plan', () => {
     const plan = {ok:true,images:4,items:8,captioned:4,total_steps:4,steps_per_epoch:2,buckets:[{w:512,h:768,items:8,batches:4}],native:{images:4,downscaled:1,sizes:1,logical_batches:2,max_pixels:1048576,alignment:32,batch_size:4,forward_groups:4}} as Plan;
     render(<BucketInspector plan={plan} loading={false} onData={()=>{}}/>);
-    expect(screen.getByText('原生尺寸分布')).toBeInTheDocument();
+    expect(screen.getByText('实际训练尺寸')).toBeInTheDocument();
     expect(screen.getByText('逻辑批次 / 轮').nextElementSibling).toHaveTextContent('2');
     expect(screen.getByText('分组前向 / 轮').nextElementSibling).toHaveTextContent('4');
     fireEvent.click(screen.getByRole('button',{name:'分桶明细表'}));
@@ -101,7 +102,7 @@ describe('compact configuration workbench contracts', () => {
   it('retains native geometry without inventing forward counts for an invalid seed', () => {
     const plan = {ok:false,images:8,items:8,captioned:8,buckets:[{w:64,h:80,items:8,batches:null}],native:{images:8,downscaled:2,sizes:1,logical_batches:3,max_pixels:4096,alignment:16,batch_size:3,forward_groups:null}} as unknown as Plan;
     render(<BucketInspector plan={plan} loading={false} onData={()=>{}}/>);
-    expect(screen.getByText('原生尺寸分布')).toBeInTheDocument();
+    expect(screen.getByText('实际训练尺寸')).toBeInTheDocument();
     expect(screen.getByText('分组前向 / 轮').nextElementSibling).toHaveTextContent('—');
     expect(screen.getByText('总训练步数').nextElementSibling).toHaveTextContent('—');
     fireEvent.click(screen.getByRole('button',{name:'64 × 80, 8 样本'}));

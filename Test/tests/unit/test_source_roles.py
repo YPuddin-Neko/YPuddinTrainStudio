@@ -116,6 +116,74 @@ def test_unscoped_version_is_rejected_by_both_preflight_endpoints(api):
         )
 
 
+def test_folder_plan_filters_other_version_sources_and_preserves_repeats(api):
+    client, _, project = api
+    train, reg = upload(api), upload(api, True)
+    cfg = client.get(f"/api/projects/{project['id']}/config").json()
+    cfg["dataset"]["sources"][0]["repeats"] = 3
+    body = {"config": cfg, "project_id": project["id"], "version_id": project["active_version_id"]}
+    whole = client.post("/api/plan", json=body).json()
+    assert whole["images"] == 2 and whole["items"] == 4
+    result = client.post("/api/plan", json={**body, "dataset_ids": [train["id"]]})
+    assert result.status_code == 200, result.text
+    folder = result.json()
+    assert folder["images"] == 1 and folder["items"] == 3
+    assert [source["path"] for source in folder["source_balance"]] == [train["path"]]
+    assert len(cfg["dataset"]["sources"]) == 2
+    missing = client.post("/api/plan", json={**body, "dataset_ids": ["missing"]})
+    assert missing.status_code == 404
+    other = client.post("/api/projects", json={"name": "other", "family": "toy"}).json()
+    wrong = client.post("/api/plan", json={**body, "project_id": other["id"], "version_id": other["active_version_id"], "dataset_ids": [reg["id"]]})
+    assert wrong.status_code == 422
+
+
+def test_folder_plan_intersects_recursive_parent_sources_and_deduplicates_nested_selections(
+    api, tmp_path, monkeypatch
+):
+    client, context, project = api
+    parent = tmp_path / "train"
+    selected = parent / "images"
+    nested = selected / "nested"
+    image(parent / "outside.png")
+    image(selected / "a.png", "blue")
+    image(nested / "b.png", "green")
+    dataset_ids = []
+    for path in (selected, nested):
+        dataset_id = routes_work._register_dataset(
+            context, project["id"], routes_work.DatasetBody(path=str(path))
+        )
+        routes_work._index_dataset(context, dataset_id)
+        dataset_ids.append(dataset_id)
+    selected_id, nested_id = dataset_ids
+    source = {"path": str(parent), "repeats": 3, "is_reg": True, "prior_weight": 2.5,
+              "class_prompt": "class subject", "caption": {"prefix": "prefix"}, "resolutions": [64]}
+    cfg = client.get(f"/api/projects/{project['id']}/config").json()
+    cfg["dataset"]["sources"] = [source]
+    body = {"config": cfg, "project_id": project["id"], "version_id": project["active_version_id"]}
+    planned = []
+    make_plan = routes_core.make_plan
+
+    def capture(config, **kwargs):
+        planned.append(config)
+        return make_plan(config, **kwargs)
+
+    monkeypatch.setattr(routes_core, "make_plan", capture)
+    whole = client.post("/api/plan", json=body).json()
+    assert whole["images"] == 3 and whole["items"] == 9
+    response = client.post("/api/plan", json={**body, "dataset_ids": [nested_id, selected_id, nested_id]})
+    assert response.status_code == 200, response.text
+    subset = response.json()
+    assert subset["images"] == 2 and subset["items"] == 6
+    assert planned[-1]["dataset"]["sources"] == [{**source, "path": str(selected)}]
+    assert cfg["dataset"]["sources"] == [source]
+    # A separately configured source retains its own repeats, even under the same root.
+    cfg["dataset"]["sources"] = [source, {**source, "path": str(nested), "repeats": 2}]
+    response = client.post("/api/plan", json={**body, "dataset_ids": [selected_id, nested_id]})
+    assert response.status_code == 200, response.text
+    assert response.json()["items"] == 8
+    assert planned[-1]["dataset"]["sources"][1] == cfg["dataset"]["sources"][1]
+
+
 def test_real_ancestry_recognizes_aliases_but_not_names_or_escaped_links(api, tmp_path):
     _, c, p = api
     pid, vid = p["id"], p["active_version_id"]

@@ -37,7 +37,7 @@ export function confirmedExtraAdapterPolicy(policy: Record<string, unknown>, con
   const anima = family === 'anima' && algo === 'lora';
   const sdxl = family === 'sdxl' && algo === 'lokr' && config.model?.sdxl_max_token_length === 150;
   if ((!klein && !anima && !sdxl) || config.loop?.deterministic !== true
-    || config.model?.dtype !== 'bf16' || !['auto','bf16'].includes(config.memory?.base_precision ?? 'auto')
+    || !['auto', 'bf16'].includes(config.model?.dtype) || !['auto','bf16'].includes(config.memory?.base_precision ?? 'auto')
     || config.training?.mode !== 'adapter' || config.training?.train_backbone !== true
     || config.training?.train_text_encoder === true || !['lora','lokr'].includes(algo)
     || !['auto','bypass'].includes(config.adapter?.mode ?? 'auto') || config.adapter?.dora === true

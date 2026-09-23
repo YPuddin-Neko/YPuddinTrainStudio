@@ -397,7 +397,7 @@ class ModelDownloads:
                 self.cancelled[id_].set()
             return dict(self.tasks[id_])
 
-    def retry(self, id_: str) -> dict[str, Any]:
+    def retry(self, id_: str, *, provider: Provider | None = None) -> dict[str, Any]:
         with self.lock:
             row = self.tasks.get(id_)
             if row is None:
@@ -412,6 +412,47 @@ class ModelDownloads:
                 raise ApiError(FLUX1_RETIRED_REASON, status=410, code="download.retired")
             if row["status"] not in {"failed", "cancelled"}:
                 raise Conflict("only failed or cancelled downloads can be retried", code="download.retry")
+            if provider is not None and provider != row["provider"] and row.get("recommendation_id"):
+                from .model_recommendations import find_recommendation
+
+                entry = find_recommendation(row["recommendation_id"])
+                if entry is None:
+                    raise NotFound("recommended model not found", code="model.recommendation")
+                source = next((item for item in entry.sources if item.provider == provider), None)
+                if source is None:
+                    raise ApiError(
+                        "this model is not available from the selected provider", code="model.source"
+                    )
+                try:
+                    verification = DownloadVerification(
+                        id=row["recommendation_id"],
+                        size=row.get("expected_size"),
+                        sha256=row.get("sha256"),
+                        purpose=row.get("purpose", "training"),
+                        variant=row.get("variant") or entry.variant,
+                    )
+                except ValidationError:
+                    raise Conflict(
+                        "saved recommendation verification is incomplete; start from the catalog again",
+                        code="download.verification",
+                    ) from None
+                return self.start(
+                    ModelDownloadRequest(
+                        family=row["family"],
+                        kind=row["kind"],
+                        dtype=row["dtype"],
+                        provider=provider,
+                        repo_id=source.repo_id,
+                        filename=source.filename,
+                        revision=source.revision,
+                        is_default=row["is_default"],
+                        purpose=entry.purpose,
+                        variant=entry.variant,
+                    ),
+                    recommendation=verification,
+                )
+            if provider is not None and provider != row["provider"]:
+                raise ApiError("自定义下载不能自动映射到另一平台，请填写新来源。", code="model.source")
             variant = row.get("variant")
             if row["family"] == "krea2" and row["kind"] == "dit" and variant is None:
                 from ypuddin.models.krea2.variants import KNOWN_VARIANTS

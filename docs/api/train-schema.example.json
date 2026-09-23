@@ -1445,9 +1445,10 @@
           }
         },
         "dtype": {
-          "default": "bf16",
-          "description": "模型加载精度，CUDA 默认 bf16，CPU/MPS 使用 fp32。混合精度计算和冻结权重存储精度分别在训练、显存设置中调整。",
+          "default": "auto",
+          "description": "跟随模型读取权重精度；受支持的 FP8 权重使用 BF16 计算，CPU/Apple 使用 FP32。也可手动指定加载精度。",
           "enum": [
+            "auto",
             "bf16",
             "fp16",
             "fp32"
@@ -1562,7 +1563,7 @@
         },
         "krea2_variant": {
           "default": "raw",
-          "description": "Raw 用于训练，Turbo 仅用于采样。自动识别需有已校验的下载记录；自行添加的模型请手动选择。",
+          "description": "已登记模型沿用其 Raw/Turbo 类型；无法识别的本地文件需要按发布说明确认。Turbo 仅用于采样。",
           "enum": [
             "raw",
             "auto",

@@ -14,6 +14,7 @@ interface Props {
   className?: string;
   icon?: React.ReactNode;
   triggerDescription?: string;
+  fallbackLabel?: string;
   /** Trigger-only guidance. Keep real empty-value states (for example All or Off) in options. */
   placeholder?: string;
   searchable?: boolean;
@@ -25,7 +26,7 @@ interface Props {
 }
 
 /** A select-only combobox; focus stays on the trigger while its list is open. */
-export default function StudioSelect({ id, value, options, onValueChange, disabled, className = '', icon, triggerDescription, placeholder, searchable = false, ...aria }: Props) {
+export default function StudioSelect({ id, value, options, onValueChange, disabled, className = '', icon, triggerDescription, fallbackLabel, placeholder, searchable = false, ...aria }: Props) {
   const text = useWorkspaceText();
   const generatedId = React.useId();
   const triggerId = id || `studio-select-${generatedId}`;
@@ -41,7 +42,7 @@ export default function StudioSelect({ id, value, options, onValueChange, disabl
   const selected = options.findIndex(option => option.value === value);
   const unavailable = disabled || options.length === 0;
   const visible = open && !unavailable;
-  const triggerLabel = options[selected]?.displayLabel ?? options[selected]?.label ?? (value || placeholder || text(options.length ? '请选择' : '暂无可选项', options.length ? 'Choose' : 'No options available'));
+  const triggerLabel = options[selected]?.displayLabel ?? options[selected]?.label ?? (fallbackLabel || value || placeholder || text(options.length ? '请选择' : '暂无可选项', options.length ? 'Choose' : 'No options available'));
   const matches = options.map((option, index) => ({ option, index })).filter(({ option }) => !searchable || option.label.toLocaleLowerCase().includes(filter.trim().toLocaleLowerCase()));
   const openList = (last = false, edge = false) => {
     const fallback = last ? options.reduce((index, option, current) => option.disabled ? index : current, -1) : options.findIndex(option => !option.disabled);

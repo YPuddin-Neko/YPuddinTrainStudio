@@ -39,6 +39,25 @@ def test_native_geometry_retains_scale_and_respects_budget():
         native_size(15, 512, align=16, max_pixels=1024**2, max_side=4096)
 
 
+def test_native_plan_recomputes_source_shapes_when_pixel_limit_changes(tmp_path):
+    root = tmp_path / "pictures"
+    root.mkdir()
+    for index, size in enumerate(((1896, 2656), (3000, 2448))):
+        Image.new("RGB", size).save(root / f"{index}.png")
+    cfg = TrainConfig.model_validate({"model": {"family": "toy"}, "dataset": {
+        "sources": [{"path": str(root)}], "resolution_mode": "native",
+        "native_max_pixels": 1024**2, "native_max_side": 4096,
+    }})
+    limited = plan(cfg, device="cpu")
+    assert limited["native"]["downscaled"] == 2
+    assert {(bucket["w"], bucket["h"]) for bucket in limited["buckets"]} == {(864, 1200), (1120, 912)}
+    cfg.dataset.native_max_pixels = 4096**2
+    preserved = plan(cfg, device="cpu")
+    assert preserved["native"]["downscaled"] == 0
+    assert {(bucket["w"], bucket["h"]) for bucket in preserved["buckets"]} == {(1888, 2656), (2992, 2448)}
+    assert preserved["native"]["max_pixels"] == 4096**2
+
+
 def test_native_sampler_keeps_singleton_shapes_and_resumes_without_repetition():
     shapes = [(64 + 16 * i, 64) for i in range(11)]
     sampler = NativeBatchSampler(shapes, 4, seed=9)

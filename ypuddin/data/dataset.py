@@ -69,6 +69,9 @@ class Item:
 
 
 def item_latent_key(item: Item, fingerprint: str, flip: bool) -> str:
+    if item.record.color_key_transparency:
+        # Older loaders ignored RGB/grayscale PNG color keys when compositing.
+        fingerprint += "|color-key-white-v1"
     if item.image_fit == "pad":
         rw, rh, *_ = fit_pad(
             item.record.width,

@@ -45,3 +45,20 @@ it('clears a stored password only through the explicit clear action', async () =
   fireEvent.click(screen.getByTestId('settings-save-btn'));
   await waitFor(() => expect(apiClient.put).toHaveBeenCalledWith('/settings', expect.objectContaining({ network: expect.objectContaining({ proxy_password: '' }) })));
 });
+
+it('does not ask for a service restart after saving proxy settings', async () => {
+  show();
+  await screen.findByLabelText('代理密码（可选）');
+  fireEvent.click(screen.getByTestId('settings-save-btn'));
+  await screen.findByText('已保存');
+  expect(screen.queryByText('已保存，重启服务后生效')).not.toBeInTheDocument();
+});
+
+it('keeps the restart requirement when the listening address changes', async () => {
+  vi.mocked(apiClient.put).mockImplementation(async (_path, body) => body as any);
+  show();
+  const host = await screen.findByLabelText('监听地址');
+  fireEvent.change(host, {target: {value: '0.0.0.0'}});
+  fireEvent.click(screen.getByTestId('settings-save-btn'));
+  await screen.findByText('已保存，重启服务后生效');
+});

@@ -148,6 +148,7 @@ def test_proxy_policy_snapshots_reload_after_save_and_do_not_mutate_process(api,
     monkeypatch.setenv("ALL_PROXY", "http://fallback:1080")
     monkeypatch.setenv("hTtP_PrOxY", "http://mixed-case:1080")
     monkeypatch.setenv("NO_PROXY", "internal.example")
+    monkeypatch.setenv("no_proxy", "localhost")
     original = dict(os.environ)
     system = ProxyPolicy.from_context(state.ctx)
     assert system.subprocess_env()["HTTPS_PROXY"] == "http://inherited:3128"

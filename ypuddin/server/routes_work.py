@@ -33,6 +33,7 @@ from .errors import ApiError, NotFound
 from .gpu_selection import GpuSelection, selection_error
 from .hardware import gpu_info
 from .import_progress import ImportProgress
+from .job_logs import parse_log_lines
 from .project_covers import cover_path, cover_url, read_cover_upload, remove_cover, replace_cover, thumbnail
 from .sample_events import read_events, samples_with_loss
 from .versions import ACTIVE_JOBS, assert_version_writable, version_row
@@ -1049,7 +1050,9 @@ def _cache_stats(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
         from ypuddin.models.fingerprints import fingerprint_cache
 
         devices = gpu_info()
-        dtype = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}[cfg.model.dtype]
+        from ypuddin.models.precision import model_load_precision
+
+        dtype = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}[model_load_precision(cfg.model)]
         if not devices or devices[0]["kind"] == "mps":
             dtype = torch.float32
         with fingerprint_cache(cache_root / "fingerprints"):
@@ -2035,16 +2038,7 @@ def job_log(
                     break
         next_offset = stream.tell()
         has_more = bool(stream.read(1))
-    out = []
-    for ln in lines:
-        level = "info"
-        low = ln.lower()
-        if " error" in low or "traceback" in low or "exception" in low:
-            level = "error"
-        elif "warn" in low:
-            level = "warn"
-        out.append({"ts": None, "level": level, "msg": ln})
-    return {"lines": out, "next_offset": next_offset, "has_more": has_more}
+    return {"lines": parse_log_lines(lines), "next_offset": next_offset, "has_more": has_more}
 
 
 # --------------------------------------------------------------------------- queue settings

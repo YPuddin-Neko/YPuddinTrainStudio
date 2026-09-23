@@ -467,7 +467,7 @@ def test_hip_runtime_uses_vendor_backend_and_reports_actual_collective_capabilit
     monkeypatch, tmp_path, system, count, nccl, multi_gpu
 ):
     monkeypatch.setattr(sys, "prefix", str(tmp_path / "test-interpreter"))
-    monkeypatch.setattr("ypuddin.server.hardware.gpu_info", lambda **kwargs: [])
+    monkeypatch.setattr("ypuddin.server.hardware.gpu_info", lambda **kwargs: [{"cuda_available": True, "compute_capability": [9, 0]}] * count)
     monkeypatch.setattr("ypuddin.server.environment.platform.system", lambda: system)
     monkeypatch.setenv("YPUDDIN_ENV_PROFILE", "linux-dtk")
     torch = SimpleNamespace(
@@ -878,7 +878,7 @@ def test_running_job_defers_cuda_probe(env):
 def test_probe_holds_launch_maintenance_and_restores_existing_state(env):
     observed = []
     env.probe.side_effect = lambda: observed.append(maintenance_blocked(env.context.db)) or {}
-    env.manager.status()
+    env.manager.status(refresh=True)
     assert observed == [True]
     assert not maintenance_blocked(env.context.db)
     env.context.db.set_kv("environment.maintenance", {"blocked": True, "restart_required": True})
@@ -1057,6 +1057,9 @@ def test_sdpa_snapshot_has_separate_cached_status_without_changing_install_catal
 
     env.probe.side_effect = probe
     state = env.client.get("/api/environment").json()
+    assert state["sdpa"] is None
+    env.probe.assert_not_called()
+    state = env.client.get("/api/environment?refresh=true").json()
     assert state["sdpa"] == result
     assert {item["name"] for item in state["packages"]} == previous_names
     assert env.client.get("/api/environment").json()["sdpa"] == result

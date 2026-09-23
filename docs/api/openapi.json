@@ -737,11 +737,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Model Browse Root Api Models Browse Root Get"
+                  "$ref": "#/components/schemas/ModelBrowseRoot"
                 }
               }
             }
@@ -4168,6 +4164,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetryDownloadRequest",
+                "default": {}
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "description": "Successful Response",
@@ -9781,6 +9787,23 @@
       },
       "FamilyInfo": {
         "properties": {
+          "runtime_backend": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "cuda",
+                  "hip",
+                  "mps",
+                  "cpu"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Backend"
+          },
           "attention_backends": {
             "items": {
               "type": "string"
@@ -12280,6 +12303,20 @@
         ],
         "title": "ModelBody"
       },
+      "ModelBrowseRoot": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "title": "ModelBrowseRoot"
+      },
       "ModelCatalogEntry": {
         "properties": {
           "id": {
@@ -12470,13 +12507,14 @@
           "dtype": {
             "type": "string",
             "enum": [
+              "auto",
               "bf16",
               "fp16",
               "fp32"
             ],
             "title": "Dtype",
-            "description": "模型加载精度，CUDA 默认 bf16，CPU/MPS 使用 fp32。混合精度计算和冻结权重存储精度分别在训练、显存设置中调整。",
-            "default": "bf16",
+            "description": "跟随模型读取权重精度；受支持的 FP8 权重使用 BF16 计算，CPU/Apple 使用 FP32。也可手动指定加载精度。",
+            "default": "auto",
             "x-ui": {
               "advanced": true,
               "control": "select",
@@ -12591,7 +12629,7 @@
               "turbo"
             ],
             "title": "Krea2 Variant",
-            "description": "Raw 用于训练，Turbo 仅用于采样。自动识别需有已校验的下载记录；自行添加的模型请手动选择。",
+            "description": "已登记模型沿用其 Raw/Turbo 类型；无法识别的本地文件需要按发布说明确认。Turbo 仅用于采样。",
             "default": "raw",
             "x-ui": {
               "control": "select",
@@ -16452,6 +16490,28 @@
           "address_changed"
         ],
         "title": "RestartResult"
+      },
+      "RetryDownloadRequest": {
+        "properties": {
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "huggingface",
+                  "modelscope"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "RetryDownloadRequest"
       },
       "SamplePrompt": {
         "properties": {

@@ -84,7 +84,7 @@ describe('dataset pipeline', () => {
     expect(screen.getByText('3 张带透明通道')).toBeInTheDocument();
     expect(screen.getAllByText('含透明或半透明像素')).toHaveLength(2);
     expect(screen.getByText(/透明通道全部不透明/)).toBeInTheDocument();
-    expect(screen.getByText(/含透明像素仅作提示，可继续训练/)).toBeInTheDocument();
+    expect(screen.getByText(/透明区域以白色合成/)).toBeInTheDocument();
     const filter = screen.getByRole('combobox',{name:'显示'});
     fireEvent.click(filter);
     fireEvent.click(screen.getByRole('option',{name:'含透明像素'}));
@@ -103,6 +103,21 @@ describe('dataset pipeline', () => {
     await screen.findByRole('checkbox',{name:'选择 a.png'});
     expect(screen.getByText('这份检查结果尚未包含透明像素检测，重新检查可补充。')).toBeInTheDocument();
     expect(screen.queryByText('0 张含透明像素')).not.toBeInTheDocument();
+  });
+  it('clears hidden selections when changing filters and excludes only visible results', async () => {
+    state.inspection = {...state.inspection!, transparent_images:1, alpha_images:2, images:[
+      {...image,rel_path:'subtle.png',has_alpha:true,has_transparency:true,transparent_pixels:1,min_alpha:254,issues:[]},
+      {...image,rel_path:'opaque.png',has_alpha:true,has_transparency:false,issues:[]},
+    ]};
+    show(); fireEvent.click(screen.getByRole('button',{name:/检查与筛选/}));
+    fireEvent.click(await screen.findByRole('checkbox',{name:'选择 opaque.png'}));
+    expect(screen.getByText(/1 个透明或半透明像素/)).toHaveTextContent('最低不透明度 99.6%');
+    fireEvent.click(screen.getByRole('combobox',{name:'显示'}));
+    fireEvent.click(screen.getByRole('option',{name:'含透明像素'}));
+    expect(screen.getByRole('button',{name:'排除 0 张选中图片'})).toBeDisabled();
+    fireEvent.click(screen.getByRole('button',{name:'选择当前筛选结果'}));
+    fireEvent.click(screen.getByRole('button',{name:'排除 1 张选中图片'}));
+    await waitFor(() => expect(submitted[0].body.images).toEqual([{dataset_id:'d_1',rel_path:'subtle.png'}]));
   });
   it('persists the selected stage in URL and per-version memory with browser back support', async()=>{
     const first=show();

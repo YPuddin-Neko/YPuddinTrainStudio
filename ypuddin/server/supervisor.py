@@ -264,7 +264,7 @@ class JobSupervisor:
         used = {device for allocation in self._devices.values() for device in self._allocation(allocation)}
         estimate = json.loads(job.get("progress_json") or "{}").get("estimated_peak_mb") or 0
         selected = []
-        for gpu in sorted(inventory, key=lambda g: g.get("mem_free_mb", 0), reverse=True):
+        for gpu in sorted(inventory, key=lambda g: g.get("mem_free_mb") or 0, reverse=True):
             device = gpu["device"]
             if requested and device not in requested:
                 continue

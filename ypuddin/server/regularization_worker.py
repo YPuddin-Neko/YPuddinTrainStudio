@@ -7,6 +7,8 @@ import sys
 from contextlib import nullcontext
 from pathlib import Path
 
+from ypuddin.models.precision import model_load_precision
+
 
 def generate(request: dict, output: Path, emit, cancelled) -> None:
     import torch
@@ -25,7 +27,12 @@ def generate(request: dict, output: Path, emit, cancelled) -> None:
         raise ValueError("; ".join(f"{item['loc']}: {item['msg']}" for item in errors))
     device = torch.device(request["device"])
     dtype = (
-        getattr(torch, {"bf16": "bfloat16", "fp16": "float16", "fp32": "float32"}[model.dtype])
+        getattr(
+            torch,
+            {"bf16": "bfloat16", "fp16": "float16", "fp32": "float32"}[
+                model_load_precision(model, device.type)
+            ],
+        )
         if device.type == "cuda"
         else torch.float32
     )

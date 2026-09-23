@@ -5,12 +5,26 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatBytesMB, formatParams } from '../../utils/format';
 import SourceBalance from './SourceBalance';
 
-export default function BucketInspector({ plan, loading, onData, hasSources = false, indexed, onIssues, error, onRetry }: { plan: Plan | null; loading: boolean; onData: () => void; hasSources?: boolean; indexed?: { images: number; captioned: number }; onIssues?: () => void; error?:string; onRetry?:()=>void }) {
+type DatasetSizing = { resolution_mode?: string; native_max_pixels?: number; native_max_side?: number };
+function SizingLimit({ label, value, min, max, step, onChange }: { label: string; value: number; min: number; max: number; step: number; onChange: (value: number) => void }) {
+  const [draft, setDraft] = useState<{ source: number; text: string } | null>(null);
+  const text = draft?.source === value ? draft.text : String(value);
+  const valid = text !== '' && Number.isInteger(Number(text)) && Number(text) >= min && Number(text) <= max;
+  return <label>{label}<input type="number" min={min} max={max} step={step} value={text} aria-invalid={!valid} onChange={event => {
+    const next = event.target.value, number = Number(next);
+    setDraft({source: value, text: next});
+    if (next !== '' && Number.isInteger(number) && number >= min && number <= max) onChange(number);
+  }} onBlur={() => { if (!valid) setDraft(null); }}/></label>;
+}
+export default function BucketInspector({ plan, loading, onData, hasSources = false, indexed, onIssues, error, onRetry, dataset, onSizingChange, readOnly = false }: { plan: Plan | null; loading: boolean; onData: () => void; hasSources?: boolean; indexed?: { images: number; captioned: number }; onIssues?: () => void; error?:string; onRetry?:()=>void; dataset?: DatasetSizing; onSizingChange?: (changes: DatasetSizing) => void; readOnly?: boolean }) {
   const text = useWorkspaceText();
   const [view, setView] = useState<'shape' | 'table'>('shape');
   const [selected, setSelected] = useState<string | null>(null);
   const buckets = plan?.buckets || [];
   const native = plan?.native;
+  const nativeMode = dataset ? dataset.resolution_mode === 'native' : !!native;
+  const pixelLimit = dataset?.native_max_pixels ?? native?.max_pixels ?? 1048576;
+  const squareSide = Math.sqrt(pixelLimit);
   const awaitingPlan = hasSources && !buckets.length && !plan?.ok;
   const maxCount = Math.max(1, ...buckets.map(bucket => bucket.items));
   const chosen = buckets.find(bucket => `${bucket.w}x${bucket.h}` === selected);
@@ -27,7 +41,14 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
       </dl>
       <SourceBalance sources={plan?.source_balance} loading={loading} hasSources={hasSources}/>
       {!!native?.synchronization_groups && <p className="inspector-note">{text(`多卡每轮包含 ${native.synchronization_groups} 次同步补齐前向，权重为 0，不增加训练样本。`, `Multi-GPU synchronization adds ${native.synchronization_groups} zero-weight forwards per epoch without adding training samples.`)}</p>}
-      <div className="bucket-heading"><h4>{native ? text('原生尺寸分布', 'Native size distribution') : text('分桶布局', 'Bucket layout')}</h4><div className="segmented-small"><button type="button" aria-label={text('分桶图形视图', 'Bucket shape view')} aria-pressed={view === 'shape'} onClick={() => setView('shape')}><Grid2X2 size={13} /></button><button type="button" aria-label={text('分桶明细表', 'Bucket table')} aria-pressed={view === 'table'} onClick={() => setView('table')}><BarChart3 size={13} /></button></div></div>
+      <div className="bucket-heading"><h4>{nativeMode ? text('实际训练尺寸', 'Training sizes') : text('分桶布局', 'Bucket layout')}</h4><div className="segmented-small"><button type="button" aria-label={text('分桶图形视图', 'Bucket shape view')} aria-pressed={view === 'shape'} onClick={() => setView('shape')}><Grid2X2 size={13} /></button><button type="button" aria-label={text('分桶明细表', 'Bucket table')} aria-pressed={view === 'table'} onClick={() => setView('table')}><BarChart3 size={13} /></button></div></div>
+      {nativeMode && <div className="native-sizing-controls">
+        {onSizingChange ? <fieldset disabled={readOnly}>
+          <SizingLimit label={text('像素上限', 'Pixel limit')} min={1024} max={67108864} step={1024} value={pixelLimit} onChange={value => onSizingChange({native_max_pixels:value})}/>
+          <SizingLimit label={text('单边上限（px）', 'Side limit (px)')} min={32} max={8192} step={16} value={dataset?.native_max_side ?? 4096} onChange={value => onSizingChange({native_max_side:value})}/>
+        </fieldset> : <span>{text('像素上限', 'Pixel limit')} {pixelLimit.toLocaleString()}</span>}
+        <small>{Number.isInteger(squareSide) ? `${squareSide}² = ` : ''}{pixelLimit.toLocaleString()} {text('像素', 'pixels')}{native && !loading && native.downscaled > 0 ? text(` · ${native.downscaled} 张因上限缩小`, ` · ${native.downscaled} images downscaled to fit`) : ''}</small>
+      </div>}
       {buckets.length === 0 ? <div className="bucket-empty"><Database size={23} /><p>{loading ? text('正在计算实际分桶…', 'Computing buckets…') : awaitingPlan ? text('请完成待配置项后计算。', 'Complete the pending settings to calculate.') : text('尚无训练图片。', 'No training images yet.')}</p><button type="button" className="studio-link" onClick={awaitingPlan && onIssues ? onIssues : onData}>{awaitingPlan && onIssues ? text('检查待配置项', 'Review pending settings') : text('配置训练数据', 'Configure dataset')}</button></div> : <>
         {view === 'shape' ? <div className="bucket-grid" data-testid="plan-buckets">{buckets.map(bucket => {
           const key = `${bucket.w}x${bucket.h}`;
@@ -39,7 +60,7 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
           </button>;
         })}</div> : <div className="bucket-table-wrap" data-testid="plan-buckets"><table className="bucket-table"><thead><tr><th>{text('尺寸', 'Size')}</th><th>{text('样本', 'Items')}</th><th>{native ? text('前向次数', 'Forwards') : text('批次', 'Batches')}</th></tr></thead><tbody>{buckets.map(bucket => <tr key={`${bucket.w}x${bucket.h}`}><td>{bucket.w} × {bucket.h}</td><td>{bucket.items}</td><td>{bucket.batches ?? '—'}</td></tr>)}</tbody></table></div>}
         {chosen && <div className="bucket-selection"><strong>{chosen.w} × {chosen.h}</strong><span>{chosen.items} {text('样本', 'samples')} · {chosen.batches ?? '—'} {native ? text('前向 / 轮', 'forwards / epoch') : text('批次 / 轮', 'batches / epoch')}</span><span>{text('长宽比', 'Aspect ratio')} {(chosen.w / chosen.h).toFixed(2)}</span></div>}
-        <p className="inspector-note">{native ? text('保留每图尺寸，不放大小图；超出预算按设置处理，每张图等权累积梯度。', 'Keep individual sizes without upscaling; apply the selected overflow policy and weight each image equally.') : text('形状表示长宽比，横条表示样本数。', 'Shapes show aspect ratios; bars show sample counts.')}</p>
+        {!nativeMode && <p className="inspector-note">{text('形状表示长宽比，横条表示样本数。', 'Shapes show aspect ratios; bars show sample counts.')}</p>}
       </>}
       {plan?.image_fit && <div className="image-fit-summary">
         <strong>{plan.image_fit.mode==='pad'?text('完整画面保留','Whole image preserved'):text('沿用裁切模式','Legacy crop mode')}</strong>

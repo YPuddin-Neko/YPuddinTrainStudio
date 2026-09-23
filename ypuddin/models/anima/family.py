@@ -35,7 +35,7 @@ from ypuddin.models.memory import release_model_memory
 from ypuddin.models.registry import register
 
 from .checkpoint import check_unquantized_checkpoint
-from .text import AnimaText
+from .text import AnimaText, require_qwen3_runtime
 
 log = logging.getLogger(__name__)
 
@@ -278,6 +278,7 @@ class AnimaFamily(ModelFamily):
         problems = self.validate_config(cfg)
         if problems:
             raise FileNotFoundError("; ".join(problems))
+        require_qwen3_runtime()
         # The trainer stages the backbone on CPU while VAE/text caches are built.
         # Direct family callers retain the usual load-on-device behaviour.
         dit, config = load_dit(cfg.dit_path, device=backbone_device or device, dtype=dtype)
@@ -362,14 +363,24 @@ class AnimaFamily(ModelFamily):
                 include=attn + mlp,
                 description="训练图像模型的注意力和前馈层。适合大多数 LoRA / LoKr 训练。",
             ),
-            "attn-only": TargetPreset("attn-only", include=attn, description="仅训练图像模型的注意力投影，训练参数更少。"),
+            "attn-only": TargetPreset(
+                "attn-only", include=attn, description="仅训练图像模型的注意力投影，训练参数更少。"
+            ),
             "full-linear": TargetPreset(
-                "full-linear", include=attn + mlp + adaln, description="训练图像模型各主模块中的全部线性层，包括注意力、前馈和条件调制层。"
+                "full-linear",
+                include=attn + mlp + adaln,
+                description="训练图像模型各主模块中的全部线性层，包括注意力、前馈和条件调制层。",
             ),
             "with-adapter": TargetPreset(
-                "with-adapter", include=attn + mlp + adapter, description="训练图像模型的注意力、前馈层，以及连接文字特征的适配层。"
+                "with-adapter",
+                include=attn + mlp + adapter,
+                description="训练图像模型的注意力、前馈层，以及连接文字特征的适配层。",
             ),
-            "adapter-only": TargetPreset("adapter-only", include=adapter, description="只训练连接文字特征与图像模型的适配层，不训练文本编码器本身。"),
+            "adapter-only": TargetPreset(
+                "adapter-only",
+                include=adapter,
+                description="只训练连接文字特征与图像模型的适配层，不训练文本编码器本身。",
+            ),
         }
 
     def memory_layout(self, loaded: LoadedModel) -> MemoryLayout:

@@ -29,6 +29,8 @@ export default function Preferences() {
   const savingRef = React.useRef(false);
   const [proxyPassword, setProxyPassword] = React.useState<string | undefined>();
   const [saved, setSaved] = React.useState(false);
+  const loadedSettings = React.useRef<SettingsType | null>(null);
+  const [restartNeeded, setRestartNeeded] = React.useState(false);
   const [serviceRefreshTarget, setServiceRefreshTarget] = React.useState<HTMLSpanElement | null>(null);
   const [serviceRefreshKey, setServiceRefreshKey] = React.useState(0);
   const [error, setError] = React.useState('');
@@ -38,6 +40,7 @@ export default function Preferences() {
     try {
       const config = await apiClient.get<SettingsType>('/settings');
       setSettings(config);
+      loadedSettings.current = config;
     } catch (e) { setError(formatApiError(e)); }
   }, []);
 
@@ -63,6 +66,9 @@ export default function Preferences() {
     setSaving(true); setError('');
     apiClient.put<SettingsType>('/settings', { ...settings, ...(proxyPassword !== undefined ? { network: { ...(settings.network ?? defaultNetworkSettings), proxy_password: proxyPassword } } : {}) })
       .then((res) => {
+        const previous = loadedSettings.current;
+        setRestartNeeded(!!previous && (previous.paths.data_root !== res.paths.data_root || previous.server.host !== res.server.host || previous.server.port !== res.server.port));
+        loadedSettings.current = res;
         setSettings(res);
         setProxyPassword(undefined);
         // 即时生效：语言
@@ -93,7 +99,7 @@ export default function Preferences() {
     {error && <div role="alert" className="settings-alert">{error}</div>}
     <fieldset disabled={saving} aria-busy={saving} className="contents">
     {downloads ? <DownloadPreferences value={settings.downloads ?? { pypi: 'ustc', pytorch: 'mirror', fallback: true }} onChange={value => update(s => ({ ...s, downloads: value }))} /> : !appearance ? <section id="preferences-storage" data-settings-section tabIndex={-1} className="settings-section">
-      <div className="settings-section-heading"><div><h2>{t('settings.paths')}</h2><p className="settings-note">{text('路径变更仅用于新任务，已有文件不迁移。', 'Path changes apply to new jobs; existing files stay in place.')}</p></div></div>
+      <div className="settings-section-heading"><div><h2>{t('settings.paths')}</h2><p className="settings-note">{text('更改路径不会移动已有文件。', 'Changing paths does not move existing files.')}</p></div></div>
       {([['data_root', t('settings.dataRoot')], ['cache_dir', t('settings.cacheDir')], ['models_dir', t('settings.modelsDir')]] as const).map(([key, label]) => <div className="settings-field" key={key}>
         <label htmlFor={`preferences-${key}`}>{label}</label><div className="settings-field-control">
           {key === 'data_root' ? <><PathInput ariaLabel={label} value={settings.paths[key]} onChange={value => update(s => ({ ...s, paths: { ...s.paths, data_root: value } }))} /><p className="settings-note">{text('重启服务后生效。', 'Applies after restarting the service.')}</p></> : <PathInput ariaLabel={label} value={settings.paths[key]} onChange={value => update(s => ({ ...s, paths: { ...s.paths, [key]: value } }))} />}
@@ -128,6 +134,6 @@ export default function Preferences() {
       <NetworkPreferences value={settings.network ?? defaultNetworkSettings} password={proxyPassword} disabled={saving} onChange={network => update(s => ({ ...s, network }))} onPasswordChange={value => { if (!savingRef.current) { setProxyPassword(value); setSaved(false); } }}/>
     </>}
     </fieldset>
-    <div className="settings-save">{appearance && <ServiceControls secondary applySavedAddress disabled={saving} refreshTarget={serviceRefreshTarget} refreshKey={serviceRefreshKey}/>}<span role="status" className="settings-note">{saved && text('已保存，请重启服务后生效', 'Saved; restart the service to apply')}</span><button onClick={handleSave} disabled={saving} className="settings-action" data-testid="settings-save-btn">{saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}<span>{saving ? t('settings.saving') : t('settings.save')}</span></button></div>
+    <div className="settings-save">{appearance && <ServiceControls secondary applySavedAddress disabled={saving} refreshTarget={serviceRefreshTarget} refreshKey={serviceRefreshKey}/>}<span role="status" className="settings-note">{saved && (restartNeeded ? text('已保存，重启服务后生效', 'Saved; restart the service to apply') : text('已保存', 'Saved'))}</span><button onClick={handleSave} disabled={saving} className="settings-action" data-testid="settings-save-btn">{saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}<span>{saving ? t('settings.saving') : t('settings.save')}</span></button></div>
   </SettingsSections></div>;
 }

@@ -150,8 +150,8 @@ class ProxyPolicy:
             for key in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
                 env[key] = self.authenticated_url()
         # The application never proxies its own loopback health/control endpoints.
-        bypass = env.get("no_proxy", env.get("NO_PROXY", ""))
-        hosts = [part.strip() for part in bypass.split(",") if part.strip()]
+        bypass = ",".join(value for key, value in env.items() if key.lower() == "no_proxy")
+        hosts = list(dict.fromkeys(part.strip() for part in bypass.split(",") if part.strip()))
         for host in ("localhost", "127.0.0.1", "::1"):
             if host not in hosts:
                 hosts.append(host)

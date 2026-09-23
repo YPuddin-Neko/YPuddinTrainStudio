@@ -17,6 +17,8 @@ from pydantic import BaseModel
 from starlette.datastructures import UploadFile
 from starlette.formparsers import MultiPartException, MultiPartParser
 
+from ypuddin.data.image_metadata import alpha_channel
+
 from .context import ServiceContext
 from .errors import ApiError, NotFound
 from .routes_work import _get_dataset, _records, _records_path, ctx
@@ -97,10 +99,8 @@ def _load(image: Path, target: Path) -> tuple[Image.Image, MaskInfo]:
                     gray = ImageOps.fit(gray, size, method=Image.Resampling.BILINEAR)
                 source = "sidecar"
                 version_path = sidecar
-            elif oriented.mode in ("RGBA", "LA") or (
-                oriented.mode == "P" and "transparency" in oriented.info
-            ):
-                gray = oriented.convert("RGBA").getchannel("A")
+            elif (alpha := alpha_channel(oriented)) is not None:
+                gray = alpha
                 source = "alpha"
                 version_path = image
             else:

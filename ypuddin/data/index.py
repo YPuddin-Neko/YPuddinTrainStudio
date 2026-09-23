@@ -15,6 +15,8 @@ from PIL import Image
 
 from ypuddin.config import DatasetSourceConfig
 
+from .image_metadata import has_alpha, has_color_key
+
 log = logging.getLogger(__name__)
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".avif", ".jxl"}
@@ -31,6 +33,7 @@ class ImageRecord:
     caption_path: str | None
     mask_path: str | None
     has_alpha: bool
+    color_key_transparency: bool = False
 
     @property
     def stem(self) -> str:
@@ -180,7 +183,7 @@ def probe_image(path: Path) -> tuple[int, int, bool]:
         return (
             width,
             height,
-            im.mode in ("RGBA", "LA", "P") and ("transparency" in im.info or im.mode != "P"),
+            has_alpha(im),
         )
 
 
@@ -199,7 +202,7 @@ def scan_sources(
     for i, (si, p, src) in enumerate(paths):
         st = p.stat()
         signature = json.dumps(
-            ("exif-size-v1", st.st_mtime_ns, st.st_ctime_ns, st.st_size, st.st_ino, st.st_dev)
+            ("exif-size-alpha-v2", st.st_mtime_ns, st.st_ctime_ns, st.st_size, st.st_ino, st.st_dev)
         )
         cached = (
             index_db.lookup(str(p), st.st_mtime, st.st_size, stat_signature=signature) if index_db else None
@@ -215,6 +218,10 @@ def scan_sources(
                 index_db.store(str(p), st.st_mtime, st.st_size, digest, w, h, alpha, stat_signature=signature)
         else:
             digest, w, h, alpha = cached
+        color_key = False
+        if alpha:
+            with Image.open(p) as image:
+                color_key = has_color_key(image)
         if p.parent not in caption_directories:
             caption_directories[p.parent] = _caption_siblings(p.parent)
         records.append(
@@ -227,6 +234,7 @@ def scan_sources(
                 caption_path=_caption_for(p, src.caption_ext, caption_directories[p.parent]),
                 mask_path=mask_for(p),
                 has_alpha=alpha,
+                color_key_transparency=color_key,
             )
         )
         if progress and (i % 50 == 0 or i == total - 1):
@@ -245,7 +253,7 @@ def record_content_key(record: ImageRecord) -> tuple[int, str, str, str]:
         caption_hash = "structured-json-v1:" + caption_hash
     return (
         record.source_index,
-        record.content_hash,
+        ("color-key-white-v1:" if record.color_key_transparency else "") + record.content_hash,
         caption_hash,
         content_hash(record.mask_path) if record.mask_path else "",
     )

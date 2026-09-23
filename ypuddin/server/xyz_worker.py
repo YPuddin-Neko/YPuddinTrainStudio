@@ -9,6 +9,8 @@ import sys
 from contextlib import nullcontext
 from pathlib import Path
 
+from ypuddin.models.precision import model_load_precision
+
 from .xyz import AXES, XyzRequest, checkpoint_signature, expand_cells, full_checkpoint_model
 
 
@@ -213,7 +215,12 @@ def generate(payload: dict, output: Path, emit, cancelled):
         raise ValueError("Full-model checkpoints require full-model XYZ mode")
     device = torch.device(payload["device"])
     dtype = (
-        getattr(torch, {"bf16": "bfloat16", "fp16": "float16", "fp32": "float32"}[model.dtype])
+        getattr(
+            torch,
+            {"bf16": "bfloat16", "fp16": "float16", "fp32": "float32"}[
+                model_load_precision(model, device.type)
+            ],
+        )
         if device.type == "cuda"
         else torch.float32
     )
@@ -261,7 +268,12 @@ def generate(payload: dict, output: Path, emit, cancelled):
         check()
         model = selected_model
         dtype = (
-            getattr(torch, {"bf16": "bfloat16", "fp16": "float16", "fp32": "float32"}[model.dtype])
+            getattr(
+                torch,
+                {"bf16": "bfloat16", "fp16": "float16", "fp32": "float32"}[
+                    model_load_precision(model, device.type)
+                ],
+            )
             if device.type == "cuda"
             else torch.float32
         )

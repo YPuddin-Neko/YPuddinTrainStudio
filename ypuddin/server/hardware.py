@@ -353,6 +353,16 @@ def _nvml_metrics(entries: list[dict[str, Any]]) -> None:
                         handle = matches[0]
                 except Exception:  # noqa: BLE001
                     continue
+                try:
+                    memory = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                    entry.update(
+                        mem_total_mb=round(memory.total / 2**20),
+                        mem_used_mb=round(memory.used / 2**20),
+                        mem_free_mb=round(memory.free / 2**20),
+                        telemetry_source="nvml",
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
                 readers = {
                     "util_pct": lambda handle=handle: pynvml.nvmlDeviceGetUtilizationRates(handle).gpu,
                     "temp_c": lambda handle=handle: pynvml.nvmlDeviceGetTemperature(
@@ -378,6 +388,40 @@ def _nvml_metrics(entries: list[dict[str, Any]]) -> None:
 
 
 @lru_cache(maxsize=1)
+def _cuda_inventory() -> list[dict[str, Any]]:
+    """Discover CUDA/HIP ordinals in a short-lived process, leaving the server GPU-free.
+
+    Torch device properties initialize a primary CUDA context. Keep that allocation
+    out of the long-lived HTTP process; the worker inherits device masks and ordering.
+    Live memory readings come from the driver, not this temporary process.
+    """
+    code = """
+import json, torch
+out = []
+for i in range(torch.cuda.device_count() if torch.cuda.is_available() else 0):
+    p = torch.cuda.get_device_properties(i)
+    out.append(dict(index=i, name=p.name, mem_total_mb=round(p.total_memory / 2**20),
+                    uuid=str(p.uuid) if getattr(p, 'uuid', None) else None,
+                    pci_bus_id=str(p.pci_bus_id) if getattr(p, 'pci_bus_id', None) else None,
+                    compute_capability=[p.major, p.minor]))
+print(json.dumps(out))
+"""
+    try:
+        result = subprocess.run(
+            [sys.executable, "-I", "-c", code],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        rows = json.loads(result.stdout.strip().splitlines()[-1])
+        return rows if isinstance(rows, list) else []
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+        return []
+
+
+@lru_cache(maxsize=1)
 def _apple_name() -> str:
     try:
         result = subprocess.run(
@@ -397,43 +441,39 @@ def _apple_name() -> str:
 
 def gpu_info(*, include_unavailable: bool = False, system_memory: Any | None = None) -> list[dict[str, Any]]:
     """Read accelerators, optionally reusing the caller's system-memory snapshot for MPS."""
+    profile = current_profile()
+    if profile.endswith("-cpu"):
+        return []
     hip = getattr(torch.version, "hip", None)
-    if torch.cuda.is_available():
+    devices = _cuda_inventory() if profile != "macos-mps" and (hip or torch.version.cuda) else []
+    if devices:
         out = []
-        for i in range(torch.cuda.device_count()):
-            props = torch.cuda.get_device_properties(i)
+        for device in devices:
+            i = device["index"]
             entry: dict[str, Any] = {
+                **device,
                 "index": i,
-                "kind": ("dtk" if current_profile() == "linux-dtk" else "rocm") if hip else "cuda",
+                "kind": ("dtk" if profile == "linux-dtk" else "rocm") if hip else "cuda",
                 "device": f"cuda:{i}",
-                "name": props.name,
-                "mem_total_mb": round(props.total_memory / 2**20),
                 "mem_used_mb": None,
+                "mem_free_mb": None,
                 "util_pct": None,
                 "temp_c": None,
                 "power_w": None,
                 "power_limit_w": None,
-                "uuid": str(props.uuid) if getattr(props, "uuid", None) else None,
                 "cuda_available": True,
                 "hip_runtime": hip,
                 "telemetry_source": "torch",
             }
-            if hip and (pci := _pci_address(getattr(props, "pci_bus_id", None))):
-                entry["pci_bus_id"] = pci
-            try:
-                free, total = torch.cuda.mem_get_info(i)
-                entry.update(mem_used_mb=round((total - free) / 2**20), mem_free_mb=round(free / 2**20))
-            except RuntimeError:
-                pass
             out.append(entry)
         if hip:
             # HIP deliberately reuses torch.cuda. NVIDIA telemetry APIs must never
             # be applied to these local indices, even if the machine also has NVIDIA cards.
             for entry, reading in zip(out, _hip_sysfs_metrics(out), strict=True):
-                # Scheduling needs HIP's allocatable memory, which can exclude
-                # runtime reservations absent from the driver's used-VRAM counter.
-                if entry.get("mem_free_mb") is not None:
-                    reading.pop("mem_free_mb", None)
+                # Driver-free memory changes with other processes. Torch's visible
+                # capacity remains an upper bound, including partitioned devices.
+                if reading.get("mem_free_mb") is not None:
+                    reading["mem_free_mb"] = min(reading["mem_free_mb"], entry["mem_total_mb"])
                 entry.update(reading)
                 entry["telemetry_source"] = "torch-hip+sysfs" if reading else "torch-hip"
                 entry["telemetry_note"] = (
@@ -467,8 +507,16 @@ def gpu_info(*, include_unavailable: bool = False, system_memory: Any | None = N
             if not matches and not entry.get("uuid"):
                 matches = [g for g in fallback if g["name"] == entry["name"]]
             if len(matches) == 1:
-                for key in ("util_pct", "temp_c", "power_w", "power_limit_w", "mem_used_mb", "mem_free_mb"):
-                    if entry.get(key) is None and matches[0].get(key) is not None:
+                for key in (
+                    "util_pct",
+                    "temp_c",
+                    "power_w",
+                    "power_limit_w",
+                    "mem_total_mb",
+                    "mem_used_mb",
+                    "mem_free_mb",
+                ):
+                    if (entry.get(key) is None or key == "mem_total_mb") and matches[0].get(key) is not None:
                         entry[key] = matches[0][key]
                         entry["telemetry_source"] = (
                             "nvml+nvidia-smi"
@@ -478,7 +526,11 @@ def gpu_info(*, include_unavailable: bool = False, system_memory: Any | None = N
             if entry["power_w"] is None:
                 entry["telemetry_note"] = "nvidia_power_unavailable"
         return out
-    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+    if (
+        profile in ("legacy", "macos-mps")
+        and getattr(torch.backends, "mps", None)
+        and torch.backends.mps.is_available()
+    ):
         vm = system_memory if system_memory is not None else psutil.virtual_memory()
         utilization = _apple_gpu_utilization()
         sensors = _apple_gpu_sensors()

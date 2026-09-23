@@ -21,7 +21,7 @@ export default function NetworkPreferences({ value, password, disabled, onChange
         { value: 'direct', label: text('直接连接', 'Direct connection') },
         { value: 'custom', label: text('自定义代理', 'Custom proxy') },
       ]}/>
-      <p className="settings-note">{value.proxy_mode === 'system' ? text('沿用服务器代理。', 'Uses the server proxy settings.') : value.proxy_mode === 'direct' ? text('新请求不经过代理。', 'New requests bypass proxies.') : text('代理地址须能从服务器访问；127.0.0.1 指服务器本机。', 'Use a proxy reachable from the server; 127.0.0.1 refers to the server itself.')}</p>
+      {value.proxy_mode === 'custom' && <p className="settings-note">{text('代理地址须能从服务器访问；127.0.0.1 指服务器本机。', 'Use a proxy reachable from the server; 127.0.0.1 refers to the server itself.')}</p>}
     </div></div>
     {value.proxy_mode === 'custom' && <>
       <div className="settings-field"><label htmlFor="preferences-proxy-url">{text('代理地址', 'Proxy address')}</label><div className="settings-field-control"><input id="preferences-proxy-url" className="settings-input font-mono" type="url" placeholder="http://127.0.0.1:7890" value={value.proxy_url} onChange={event => onChange({ ...value, proxy_url: event.target.value })} autoComplete="off"/><p className="settings-note">{text('支持 HTTP / HTTPS。', 'Supports HTTP / HTTPS.')}</p></div></div>

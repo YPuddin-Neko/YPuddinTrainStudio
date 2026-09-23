@@ -19,3 +19,9 @@ it('defaults to USTC and saves selected sources independently from model downloa
   await waitFor(()=>expect(pypi).toBeEnabled());
   expect(pypi).toHaveTextContent('清华大学');
 });
+it('uses the Python package source on macOS without a redundant PyTorch source selector', async()=>{
+  vi.mocked(apiClient.get).mockImplementation(async endpoint => endpoint === '/system/info' ? {platform: 'macOS-15.7.9-arm64'} as any : structuredClone(settings));
+  render(<MemoryRouter initialEntries={['/settings/preferences?section=downloads']}><Preferences/></MemoryRouter>);
+  await screen.findByRole('combobox', {name: 'Python 依赖包'});
+  await waitFor(()=>expect(screen.queryByRole('combobox',{name:'PyTorch'})).not.toBeInTheDocument());
+});

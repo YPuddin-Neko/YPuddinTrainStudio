@@ -53,9 +53,9 @@ class ModelConfig(_Strict):
         help="自定义分词器目录。SDXL 需指定同时包含 tokenizer/ 与 tokenizer_2/ 的根目录；Anima 可指定旧版 T5 spiece 目录。留空按模型自动选择，必要时使用内置资源。",
         ui_=ui("model", order=40, control="path", advanced=True),
     )
-    dtype: DType = F(
-        "bf16",
-        help="模型加载精度，CUDA 默认 bf16，CPU/MPS 使用 fp32。混合精度计算和冻结权重存储精度分别在训练、显存设置中调整。",
+    dtype: Literal["auto", "bf16", "fp16", "fp32"] = F(
+        "auto",
+        help="跟随模型读取权重精度；受支持的 FP8 权重使用 BF16 计算，CPU/Apple 使用 FP32。也可手动指定加载精度。",
         ui_=ui("model", order=50, control="select", advanced=True),
     )
     attention: Literal["auto", "sdpa", "sage", "xformers", "flash_attn", "metal_flash"] = F(
@@ -92,7 +92,7 @@ class ModelConfig(_Strict):
     )
     krea2_variant: Literal["raw", "auto", "turbo"] = F(
         "raw",
-        help="Raw 用于训练，Turbo 仅用于采样。自动识别需有已校验的下载记录；自行添加的模型请手动选择。",
+        help="已登记模型沿用其 Raw/Turbo 类型；无法识别的本地文件需要按发布说明确认。Turbo 仅用于采样。",
         ui_=ui("model", order=5, control="select", show_when="model.family == 'krea2'"),
     )
 

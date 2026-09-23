@@ -17,6 +17,29 @@ const result=(repeats:number)=>({ok:true,errors:[],warnings:[],params:{},source_
   {source_index:1,path:'/data/正则',is_reg:true,images:2,repeats:1,repeated_images:2,resolution_variants:1,items:2},
 ]});
 
+it('saves a changed native pixel limit and replaces the displayed training sizes from the new plan',async()=>{
+  const plans:number[]=[];const saved:number[]=[];
+  server.use(
+    http.get('/api/projects/p_native',()=>HttpResponse.json({id:'p_native',name:'Native',family:'toy'})),
+    http.get('/api/projects/p_native/config',()=>HttpResponse.json({model:{family:'toy',dtype:'fp32'},dataset:{resolution_mode:'native',native_max_pixels:1048576,native_max_side:4096,sources:[{path:'/photos'}]}})),
+    http.put('/api/projects/p_native/config',async({request})=>{const config=await request.json() as any;saved.push(config.dataset.native_max_pixels);return HttpResponse.json(config);}),
+    http.post('/api/plan',async({request})=>{
+      const {config}=await request.json() as any;const pixels=config.dataset.native_max_pixels;plans.push(pixels);
+      return HttpResponse.json({ok:true,errors:[],warnings:[],native:{max_pixels:pixels,downscaled:pixels===1048576?1:0},buckets:[pixels===1048576?{w:864,h:1200,items:1,batches:1}:{w:1888,h:2656,items:1,batches:1}]});
+    }),
+  );
+  render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter initialEntries={['/projects/p_native/train']}><Routes><Route path="/projects/:id/train" element={<TrainConfig/>}/></Routes></MemoryRouter></QueryClientProvider>);
+  await screen.findByTestId('field-loop.epochs');
+  await waitFor(()=>expect(plans).toContain(1048576));
+  await screen.findByRole('button',{name:'864 × 1200, 1 样本'});
+  const pixels=screen.getByRole('spinbutton',{name:'像素上限'});
+  fireEvent.change(pixels,{target:{value:'16777216'}});
+  expect(await screen.findByRole('button',{name:'1888 × 2656, 1 样本'})).toBeInTheDocument();
+  expect(screen.queryByRole('button',{name:'864 × 1200, 1 样本'})).not.toBeInTheDocument();
+  await waitFor(()=>expect(saved).toContain(16777216));
+  expect(plans.at(-1)).toBe(16777216);
+});
+
 it('retains the last distribution, retries failures and ignores an older pending response',async()=>{
   const replies:Array<(response:Response)=>void>=[];
   server.use(http.post('/api/plan',()=>new Promise<Response>(resolve=>replies.push(resolve))));

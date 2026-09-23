@@ -96,7 +96,6 @@ class BucketManager:
         """Minimize real crop/padding, then unnecessary scaling, then area deviation.
 
         Ranking uses the same integer geometry as RGB/masks and the data plan.
-        It is a geometric objective, not a claim of optimal learned image quality.
         """
         if min(width, height) <= 0 or image_fit not in {"crop", "pad"}:
             raise ValueError("positive image dimensions and crop/pad image fit are required")

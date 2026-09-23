@@ -125,6 +125,18 @@ it('keeps actions present in logs and reads history with byte cursors', async ()
   await waitFor(() => expect(requests.at(-1)?.searchParams.get('offset')).toBe('0'));
 });
 
+it('updates live disk logs without a manual refresh or SSE log event', async () => {
+  let message = 'loading model';
+  server.use(http.get('/api/jobs/job_01/log', () => HttpResponse.json({
+    lines: [{ level: 'info', msg: message, ts: 1790162822.198 }], next_offset: 100, has_more: false,
+  })));
+  render(<MemoryRouter initialEntries={['/jobs/job_01?tab=logs']}><Routes><Route path="/jobs/:id" element={<JobDetail/>}/></Routes></MemoryRouter>);
+  await screen.findByText('loading model');
+  message = 'cached 152 latents';
+  expect(await screen.findByText('cached 152 latents', {}, { timeout: 3000 })).toBeInTheDocument();
+  expect(screen.queryByText('[--]')).not.toBeInTheDocument();
+});
+
 it('paginates a large sample history and preserves full-image links', async () => {
   server.use(http.get('/api/jobs/job_01/samples', () => HttpResponse.json(Array.from({ length: 60 }, (_, step) => ({ step, prompt_index: 0, prompt: `sample ${step}`, seed: 7, url: `/api/jobs/job_01/files?path=${step}.png&kind=sample`, width: 64, height: 64, created_at: step })))));
   render(<MemoryRouter initialEntries={['/jobs/job_01?tab=samples']}><Routes><Route path="/jobs/:id" element={<JobDetail/>}/></Routes></MemoryRouter>);
@@ -165,7 +177,7 @@ it.each(['logs', 'config'])('keeps XYZ %s free of training metrics when navigati
   server.use(http.get('/api/jobs/job_01', () => HttpResponse.json({...mockJobs[0], id: 'job_01', name: 'XYZ 对比任务', type: 'xyz', status: 'completed'})));
   const {container} = render(<MemoryRouter initialEntries={[`/jobs/job_01?tab=${tab}`]}><Routes><Route path="/jobs/:id" element={<JobDetail/>}/></Routes></MemoryRouter>);
   await screen.findByRole('heading', {name: 'XYZ 对比任务'});
-  expect(screen.getByRole('tab', { name: '模型测试' })).toBeInTheDocument();
+  expect(screen.queryByRole('tab', { name: '模型测试' })).not.toBeInTheDocument();
   expect(container.querySelector('.job-monitor-summary')).not.toBeInTheDocument();
   expect(screen.getByText('运行时长')).toBeInTheDocument();
   expect(screen.getByText('任务配置')).toBeInTheDocument();
@@ -173,4 +185,16 @@ it.each(['logs', 'config'])('keeps XYZ %s free of training metrics when navigati
   fireEvent.click(screen.getByRole('tab', {name: tab === 'logs' ? '配置快照' : '日志'}));
   expect(container.querySelector('.job-monitor-summary')).not.toBeInTheDocument();
   expect(screen.queryByText('训练时长')).not.toBeInTheDocument();
+});
+
+it.each([['train', '指标图表'], ['xyz', '日志']])('keeps a legacy model-testing tab URL on the %s task monitor', async (type, tab) => {
+  server.use(http.get('/api/jobs/job_01', () => HttpResponse.json({...mockJobs[0], type, status:'completed'})));
+  function CurrentLocation() { const location = useLocation(); return <output data-testid="current-location">{location.pathname}</output>; }
+  render(<MemoryRouter initialEntries={['/jobs/job_01?tab=xyz']}><Routes><Route path="/jobs/:id" element={<JobDetail/>}/><Route path="/sampling" element={<div>Unexpected model testing redirect</div>}/></Routes><CurrentLocation/></MemoryRouter>);
+  await screen.findByRole('heading', {name:/chara-v1/i});
+  expect(screen.getByTestId('current-location')).toHaveTextContent('/jobs/job_01');
+  expect(screen.getByRole('tab', {name:tab})).toHaveAttribute('aria-selected','true');
+  expect(screen.queryByRole('tab', {name:'模型测试'})).not.toBeInTheDocument();
+  expect(screen.queryByText('Unexpected model testing redirect')).not.toBeInTheDocument();
+  if (type === 'train') expect(screen.getByRole('tab', {name:/采样图/})).toBeInTheDocument();
 });

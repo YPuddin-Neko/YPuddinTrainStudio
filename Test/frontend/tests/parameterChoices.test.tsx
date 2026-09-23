@@ -38,7 +38,7 @@ it('keeps prior weighting out of training sources and exposes it through externa
   expect(screen.queryByRole('spinbutton',{name:'正则损失权重 1'})).not.toBeInTheDocument();
   expect(screen.queryByRole('checkbox',{name:'这是正则集'})).not.toBeInTheDocument();
   fireEvent.click(screen.getByText('高级来源设置'));
-  fireEvent.click(screen.getByText('外部 / 旧版来源兼容设置'));
+  fireEvent.click(screen.getByText('外部来源用途'));
   fireEvent.click(screen.getByRole('checkbox',{name:'外部来源用于正则训练'}));
   expect(screen.getByRole('spinbutton',{name:'正则损失权重 1'})).toHaveValue(.5);
   expect(value().dataset.sources[0]).toMatchObject({path:'/dataset',caption_ext:'.txt',is_reg:true,prior_weight:.5});

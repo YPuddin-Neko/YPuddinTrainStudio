@@ -96,3 +96,27 @@ def test_log_cursor_handles_crlf_unicode_tail_and_final_line(api):
         client.get("/api/jobs/j_0/log", params={"offset": -5, "limit": 1}).json()["lines"][0]["msg"]
         == lines[0]
     )
+
+
+def test_log_reads_python_timestamp_level_and_multiline_traceback(api):
+    from datetime import datetime
+
+    client, c, _ = api
+    root = Path(c.db.fetchone("SELECT run_dir FROM jobs WHERE id='j_0'")["run_dir"])
+    root.mkdir()
+    (root / "run.log").write_text(
+        "2026-09-23 19:27:02,198 INFO ypuddin.models.anima.family: loaded Anima DiT\n"
+        "2026-09-23 19:27:03,005 WARNING ypuddin.train: low memory\n"
+        "Traceback (most recent call last):\n"
+        '  File "loader.py", line 3\n'
+        "RuntimeError: operator torchvision::nms does not exist\n"
+        "2026-09-23 19:27:04,001 DEBUG ypuddin.train: cleanup\n"
+    )
+    lines = client.get("/api/jobs/j_0/log").json()["lines"]
+    assert lines[0] == {
+        "ts": datetime(2026, 9, 23, 19, 27, 2, 198000).timestamp(),
+        "level": "info",
+        "msg": "ypuddin.models.anima.family: loaded Anima DiT",
+    }
+    assert [line["level"] for line in lines] == ["info", "warn", "error", "error", "error", "debug"]
+    assert lines[2]["ts"] is None

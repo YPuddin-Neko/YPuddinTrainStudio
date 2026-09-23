@@ -514,6 +514,88 @@ def torch_runtime() -> dict:
     )
 
 
+def model_runtime() -> dict:
+    return venv_json("""
+import ast, importlib.metadata as metadata, json
+out = {'ok': False, 'stage': 'torchvision'}
+for name in ('torch', 'torchvision', 'transformers'):
+    try: out[name] = metadata.version(name)
+    except metadata.PackageNotFoundError: out[name] = None
+try:
+    version_file = metadata.distribution('torchvision').locate_file('torchvision/version.py')
+    for node in ast.parse(version_file.read_text()).body:
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == '__version__' for t in node.targets):
+            out['torchvision_build'] = ast.literal_eval(node.value)
+except (OSError, SyntaxError, ValueError, metadata.PackageNotFoundError):
+    pass
+try:
+    import torch
+    out.update(cuda=torch.version.cuda, hip=getattr(torch.version, 'hip', None))
+    import torchvision
+    torchvision.ops.nms(torch.tensor([[0., 0., 1., 1.]]), torch.tensor([1.]), 0.5)
+    if torch.version.cuda:
+        vision_cuda = torch.ops.torchvision._cuda_version()
+        major, minor = (int(v) for v in torch.version.cuda.split('.')[:2])
+        if vision_cuda < 0 or (vision_cuda // 1000, (vision_cuda % 1000) // 10) != (major, minor):
+            raise RuntimeError(f'Torch CUDA {torch.version.cuda} / TorchVision CUDA {vision_cuda} do not match')
+    out['stage'] = 'qwen3'
+    from transformers.models.qwen3.modeling_qwen3 import Qwen3ForCausalLM
+    out['ok'] = True
+except Exception as exc:
+    out['error'] = f'{type(exc).__name__}: {exc}'
+print(json.dumps(out))
+""")
+
+
+def ensure_model_runtime(extras: str, index_mode: str) -> None:
+    if "models" not in extras.split(","):
+        return
+    report = model_runtime()
+    if report.get("ok"):
+        return
+    # A PyPI TorchVision can satisfy metadata requirements while carrying different
+    # native CUDA operators. Replace only that wheel, keeping Torch and its dependencies.
+    if (
+        report.get("stage") == "torchvision"
+        and report.get("cuda")
+        and not report.get("hip")
+        and report.get("torchvision")
+    ):
+        before = installed_versions()
+        tag = "cu" + report["cuda"].replace(".", "")
+        _, sources = index_chains(index_mode, tag)
+        requirement = "torchvision==" + report["torchvision"].split("+")[0]
+        uv, py = uv_path(), str(venv_python())
+        command = (
+            [uv, "pip", "install", "--python", py, "--reinstall-package", "torchvision"]
+            if uv
+            else [py, "-m", "pip", "install", "--force-reinstall"]
+        )
+        log(f"修复 TorchVision 原生算子（{tag}），保留 PyTorch {report.get('torch')}")
+        for kind, url in sources:
+            source_args = ["--index-url", url] if kind == "index-url" else ["--no-index", "--find-links", url]
+            result = subprocess.run([*command, "--no-deps", requirement, *source_args], env=_env())
+            if result.returncode == 0:
+                after = installed_versions()
+                changed = [
+                    name
+                    for name, version in before.items()
+                    if name != "torchvision" and after.get(name) != version
+                ]
+                if changed:
+                    die("TorchVision 修复改变了其他依赖，停止启动：" + ", ".join(changed))
+                report = model_runtime()
+                if report.get("ok"):
+                    return
+    display = report | {"torchvision": report.get("torchvision_build") or report.get("torchvision")}
+    versions = " / ".join(
+        f"{name} {display.get(name) or '未安装'}" for name in ("torch", "torchvision", "transformers")
+    )
+    die(
+        f"模型依赖加载失败（{versions}）：{report.get('error', '未知错误')}。请运行 doctor 检查；尚未启动训练。"
+    )
+
+
 def validate_dtk_runtime(current: dict) -> None:
     if not current.get("hip") or current.get("cuda"):
         die("DTK 环境需要厂商 HIP PyTorch；当前解释器不是 HIP 构建，未继续安装普通依赖。")
@@ -819,6 +901,7 @@ def ensure_venv(
         if PROFILE == "linux-dtk":
             validate_dtk_runtime(torch_runtime())
             validate_dtk_numpy_bridge(installed_versions())
+        ensure_model_runtime(extras, index_mode)
         cleanup_build_metadata()
         log("[2/5] 常规依赖已齐全，跳过安装")
         return
@@ -934,13 +1017,17 @@ def ensure_venv(
     def torch_install() -> None:
         for i, (kind, url) in enumerate(torch_sources):
             if kind == "index-url":
-                ok = attempt(pip_cmd(["torch>=2.4"], url))
+                ok = attempt(pip_cmd(["torch>=2.4", "torchvision>=0.19"], url))
             else:
                 # flat wheel listing: take the CUDA wheel from the listing only (PyPI's newer plain build would
                 # win otherwise -- CPU-only on Windows), then let the PyPI chain fill in its dependencies
                 ok = attempt(
-                    pip_cmd(["torch>=2.4"], None, extra=["--no-index", "--no-deps", "--find-links", url])
-                ) and attempt(pip_cmd(["torch>=2.4"], pypi_chain[0], upgrade=False))
+                    pip_cmd(
+                        ["torch>=2.4", "torchvision>=0.19"],
+                        None,
+                        extra=["--no-index", "--no-deps", "--find-links", url],
+                    )
+                ) and attempt(pip_cmd(["torch>=2.4", "torchvision>=0.19"], pypi_chain[0], upgrade=False))
             if ok:
                 return
             log(f"  PyTorch：来源 {url} 失败" + ("，换下一个来源重试" if i + 1 < len(torch_sources) else ""))
@@ -952,7 +1039,7 @@ def ensure_venv(
     if "torch" not in versions:
         if platform.system() == "Darwin":
             log("[3/5] 安装 Apple PyTorch（PyPI wheel 包含 MPS 支持）")
-            pip_install(["torch>=2.4"], "torch")
+            pip_install(["torch>=2.4", "torchvision>=0.19"], "torch / torchvision")
         else:
             log(f"[3/5] 安装 PyTorch（{torch_tag}），首次下载可能需要几分钟")
             torch_install()
@@ -989,6 +1076,7 @@ def ensure_venv(
         die("安装后依赖仍不完整：" + "; ".join(issues[:12]) + "；下次启动会重试补齐。")
     if PROFILE == "linux-dtk":
         validate_dtk_numpy_bridge(after)
+    ensure_model_runtime(extras, index_mode)
     if not editable_install_ready():
         die("未能验证 venv 中训练器的独立安装信息；保留根目录元数据，未写入成功标记。")
     cleanup_build_metadata()
@@ -1254,6 +1342,14 @@ def doctor() -> int:
             print(f"  {name:<28}: {versions.get(name, '未安装（可选，启动器不会自动安装）')}")
         issues = dependency_issues(choose_extras(pick_torch_tag("auto")))
         print("依赖完整性 : " + ("通过" if not issues else "; ".join(issues[:12])))
+        try:
+            native = model_runtime()
+            print(
+                "模型依赖   : "
+                + ("TorchVision 原生算子、Qwen3 导入通过" if native.get("ok") else str(native))
+            )
+        except Exception as exc:
+            print(f"模型依赖   : {exc}")
     npm = shutil.which("npm") or shutil.which("npm.cmd")
     print(f"Node/npm   : {shutil.which('node') or '未安装'} / {npm or '未安装'}")
     print(

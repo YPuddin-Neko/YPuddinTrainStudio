@@ -10,6 +10,7 @@ Conventions (must match the official ComfyUI / sd-scripts behaviour):
 from __future__ import annotations
 
 import logging
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 import torch
@@ -25,6 +26,25 @@ PAD_FLOOR = 512
 QWEN_HIDDEN = 1024
 T5_PAD_ID = 0
 T5_EOS_ID = 1
+
+
+def require_qwen3_runtime() -> None:
+    try:
+        from transformers.models.qwen3.modeling_qwen3 import Qwen3ForCausalLM  # noqa: F401
+    except Exception as exc:
+        packages = []
+        for name in ("torch", "torchvision", "transformers"):
+            try:
+                packages.append(f"{name} {version(name)}")
+            except PackageNotFoundError:
+                packages.append(f"{name} 未安装")
+        raise RuntimeError(
+            "Anima 文字编码器依赖加载失败（"
+            + " / ".join(packages)
+            + "）："
+            + str(exc)
+            + "。请使用对应平台的启动脚本检查并修复依赖。"
+        ) from exc
 
 
 def tokenizer_assets(root: str | Path) -> list[Path]:

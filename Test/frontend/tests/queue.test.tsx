@@ -1,7 +1,8 @@
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import Queue from '../../../frontend/src/pages/Queue/Queue';
+import Sampling from '../../../frontend/src/pages/Sampling/Sampling';
 import { apiClient } from '../../../frontend/src/api/client';
 import { mockJobs } from '../mocks/mockStore';
 import i18n from '../../../frontend/src/i18n';
@@ -124,4 +125,26 @@ it('distinguishes actual device assignment from a waiting request', async () => 
   expect(await screen.findByTestId('job-row-live')).toHaveTextContent('实际显卡: GPU 1');
   fireEvent.click(screen.getByRole('tab', {name:/等待调度/}));
   expect(await screen.findByTestId('job-row-waiting')).toHaveTextContent('申请显卡: GPU 0');
+});
+
+it('reloads all queue groups when returning from independent model testing without adding a test-only filter', async () => {
+  render(<MemoryRouter initialEntries={['/queue']}><nav><Link to="/sampling">模型测试</Link></nav><Routes><Route path="/queue" element={<Queue/>}/><Route path="/sampling" element={<Sampling/>}/></Routes><Location/></MemoryRouter>);
+  await screen.findByTestId('job-row-live');
+  expect(screen.getByRole('tab', { name: '运行与暂停1' })).toBeInTheDocument();
+  expect(screen.getByRole('tab', { name: '等待调度1' })).toBeInTheDocument();
+  expect(screen.getByRole('tab', { name: '训练历史24' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('link', { name: '模型测试' }));
+  await screen.findByRole('heading', { name: '模型测试' });
+  jobs.push(make('new-waiting', 'queued'), make('new-failed', 'failed'));
+  vi.mocked(apiClient.get).mockClear();
+  fireEvent.click(screen.getByRole('link', { name: '任务队列' }));
+  await screen.findByTestId('job-row-live');
+  expect(screen.getByTestId('location')).toBeEmptyDOMElement();
+  expect(screen.getByRole('combobox', { name: '任务类型' })).toHaveTextContent('所有类型');
+  expect(screen.getByRole('tab', { name: '运行与暂停1' })).toBeInTheDocument();
+  expect(screen.getByRole('tab', { name: '等待调度2' })).toBeInTheDocument();
+  expect(screen.getByRole('tab', { name: '训练历史25' })).toBeInTheDocument();
+  for (const group of ['active', 'waiting', 'history']) expect(apiClient.get).toHaveBeenCalledWith('/jobs', expect.objectContaining({params:expect.objectContaining({group,page_size:1,type:undefined})}));
+  fireEvent.click(screen.getByRole('tab', { name: '等待调度2' }));
+  expect(await screen.findByTestId('job-row-new-waiting')).toBeInTheDocument();
 });

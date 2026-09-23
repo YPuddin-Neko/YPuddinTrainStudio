@@ -38,7 +38,7 @@ def _forward(module, input):
 
 
 def install_conv_fp32_forward(backbone):
-    """Install the verified ordinary Conv2d strategy without replacing parameters."""
+    """Install the ordinary Conv2d strategy without replacing parameters."""
     modules = [module for module in backbone.modules() if isinstance(module, nn.Conv2d)]
     if not modules or any(type(module) is not nn.Conv2d for module in modules):
         raise ValueError("FP32 convolution policy requires ordinary nn.Conv2d modules")

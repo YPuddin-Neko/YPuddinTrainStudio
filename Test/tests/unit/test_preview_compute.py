@@ -39,7 +39,7 @@ from ypuddin.train.trainer import Trainer
 def config(algo="lora", strategy="ddp", length=150, family="sdxl"):
     return TrainConfig.model_validate(
         {
-            "model": {"family": family, "sdxl_max_token_length": length},
+            "model": {"family": family, "sdxl_max_token_length": length, "dtype": "bf16"},
             "training": {"mode": "adapter", "train_backbone": True, "train_text_encoder": False},
             "adapter": {"algo": algo, "mode": "bypass", "param_dtype": "fp32"},
             "loop": {

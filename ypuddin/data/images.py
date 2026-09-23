@@ -8,28 +8,27 @@ from PIL import Image, ImageOps
 from torch import Tensor
 
 from .buckets import fit_crop, fit_pad
+from .image_metadata import alpha_channel
 
 
 def load_rgb(path: str) -> tuple[Image.Image, Image.Image | None]:
     """Open an image, composite transparency on white; returns ``(rgb, alpha_or_None)``."""
-    im = Image.open(path)
-    im = ImageOps.exif_transpose(im)
-    alpha = None
-    if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
-        im = im.convert("RGBA")
-        alpha = im.getchannel("A")
-        bg = Image.new("RGBA", im.size, (255, 255, 255, 255))
-        im = Image.alpha_composite(bg, im)
-    return im.convert("RGB"), alpha
+    with Image.open(path) as image:
+        im = ImageOps.exif_transpose(image)
+        alpha = alpha_channel(im)
+        if alpha is not None:
+            bg = Image.new("RGBA", im.size, (255, 255, 255, 255))
+            im = im.convert("RGBA")
+            im.putalpha(alpha)
+            im = Image.alpha_composite(bg, im)
+        return im.convert("RGB"), alpha
 
 
 def load_alpha(path: str) -> Image.Image | None:
     """Load just the current alpha channel, without compositing or constructing RGB tensors."""
     with Image.open(path) as image:
         im = ImageOps.exif_transpose(image)
-        if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
-            return im.convert("RGBA").getchannel("A")
-    return None
+        return alpha_channel(im)
 
 
 def to_bucket(

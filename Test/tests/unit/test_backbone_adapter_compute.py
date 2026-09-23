@@ -30,7 +30,7 @@ from ypuddin.train.trainer import Trainer
 def config(family="anima", algo="lora", strategy="ddp"):
     return TrainConfig.model_validate(
         {
-            "model": {"family": family, "attention": "flash_attn"},
+            "model": {"family": family, "attention": "flash_attn", "dtype": "bf16"},
             "training": {"mode": "adapter", "train_backbone": True, "train_text_encoder": False},
             "adapter": {"algo": algo, "param_dtype": "fp32", "mode": "bypass"},
             "loop": {

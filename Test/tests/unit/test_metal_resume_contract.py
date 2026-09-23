@@ -26,7 +26,7 @@ RUNTIME = {
 @pytest.mark.parametrize("device,profile", [("cuda", "linux-dtk"), ("mps", "macos-mps"), ("cpu", "macos-cpu")])
 def test_apple_choice_is_not_rewritten_into_a_dtk_sdpa_policy(device, profile):
     cfg = TrainConfig.model_validate({
-        "model": {"family": "anima", "attention": "metal_flash"},
+        "model": {"family": "anima", "attention": "metal_flash", "dtype": "bf16"},
         "training": {"mode": "full"},
         "loop": {"deterministic": True, "mixed_precision": "fp16"},
     })

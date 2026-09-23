@@ -103,25 +103,33 @@ def info() -> dict[str, Any]:
 
     import torch
 
+    from ypuddin.runtime_profiles import current_profile
+
     mods = {}
     for name in ("torch", "transformers", "safetensors", "pydantic", "fastapi"):
         try:
-            mods[name] = __import__(name).__version__
-        except Exception:  # noqa: BLE001
+            mods[name] = version(name)
+        except PackageNotFoundError:
             mods[name] = None
     try:
         mods["nvidia-ml-py"] = version("nvidia-ml-py")
     except PackageNotFoundError:
         mods["nvidia-ml-py"] = None
+    profile = current_profile()
+    cuda_available = (
+        not profile.endswith("-cpu")
+        and profile != "macos-mps"
+        and any(gpu.get("cuda_available") for gpu in gpu_info())
+    )
     return {
         "python": sys.version.split()[0],
         "platform": platform.platform(),
         "packages": mods,
         "ypuddin": ypuddin.__version__,
         "cuda": torch.version.cuda,
-        "cuda_available": torch.cuda.is_available(),
+        "cuda_available": cuda_available,
         "hip": getattr(torch.version, "hip", None),
-        "hip_available": bool(getattr(torch.version, "hip", None) and torch.cuda.is_available()),
+        "hip_available": bool(getattr(torch.version, "hip", None) and cuda_available),
     }
 
 
@@ -209,16 +217,52 @@ def family_info(name: str) -> dict[str, Any]:
     return info
 
 
+def runtime_family_info(name: str) -> dict[str, Any]:
+    from ypuddin.runtime_profiles import current_profile
+
+    profile = current_profile()
+    if profile == "legacy":
+        import torch
+
+        backend = (
+            "cuda"
+            if torch.version.cuda or getattr(torch.version, "hip", None)
+            else "mps"
+            if torch.backends.mps.is_available()
+            else "cpu"
+        )
+        runtime_backend = "hip" if getattr(torch.version, "hip", None) else backend
+    else:
+        backend = (
+            "cuda" if profile.endswith(("-cuda", "-dtk")) else "mps" if profile.endswith("-mps") else "cpu"
+        )
+        runtime_backend = "hip" if profile == "linux-dtk" else backend
+    allowed = {"auto", "sdpa"}
+    allowed.update(
+        {"xformers", "flash_attn", "sage"}
+        if backend == "cuda"
+        else {"metal_flash"}
+        if backend == "mps"
+        else set()
+    )
+    info = family_info(name)
+    return {
+        **info,
+        "runtime_backend": runtime_backend,
+        "attention_backends": [option for option in info["attention_backends"] if option in allowed],
+    }
+
+
 @router.get("/families", response_model=list[m.FamilyInfo], response_model_exclude_unset=True)
 def list_families() -> list[dict[str, Any]]:
-    return [family_info(n) for n in available_families()]
+    return [runtime_family_info(n) for n in available_families()]
 
 
 @router.get("/families/{name}", response_model=m.FamilyInfo, response_model_exclude_unset=True)
 def get_family_info(name: str) -> dict[str, Any]:
     if name not in available_families():
         raise NotFound(f"unknown model family {name!r}")
-    return family_info(name)
+    return runtime_family_info(name)
 
 
 # --------------------------------------------------------------------------- settings / fs
@@ -372,6 +416,48 @@ def config_validate(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[
 def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     # plan keeps full validation errors while previewing independently valid data fields.
     cfg = _scoped_config(body, c)
+    if body.dataset_ids is not None:
+        from .routes_work import _get_dataset
+
+        roots = []
+        for dataset_id in body.dataset_ids:
+            row = _get_dataset(c, dataset_id)
+            if (body.project_id and row["project_id"] != body.project_id) or (
+                body.version_id and row.get("version_id") != body.version_id
+            ):
+                raise ApiError(
+                    "dataset does not belong to this project version", code="dataset.scope", status=422
+                )
+            roots.append(Path(row["path"]).expanduser().resolve())
+        selected_roots: list[Path] = []
+        for root in sorted(set(roots), key=lambda path: (len(path.parts), str(path))):
+            if not any(root.is_relative_to(parent) for parent in selected_roots):
+                selected_roots.append(root)
+
+        def intersections(source: dict[str, Any]) -> list[dict[str, Any]]:
+            if not isinstance(source, dict) or not isinstance(source.get("path"), str):
+                return [source]  # Preserve malformed fields for normal config validation.
+            path = Path(source["path"]).expanduser().resolve()
+            if any(path.is_relative_to(root) for root in selected_roots):
+                return [source]
+            return [{**source, "path": str(root)} for root in selected_roots if root.is_relative_to(path)]
+
+        # A folder preview uses its configured repeats and overrides, without
+        # counting other folders in the version's training or validation sources.
+        cfg = {
+            **cfg,
+            **{
+                section: {
+                    **cfg.get(section, {}),
+                    "sources": [
+                        selected
+                        for source in cfg.get(section, {}).get("sources", [])
+                        for selected in intersections(source)
+                    ],
+                }
+                for section in ("dataset", "validation")
+            },
+        }
     gpus = gpu_info()
     result = make_plan(
         cfg,
@@ -634,7 +720,7 @@ def _model_row(r: dict[str, Any], c: ServiceContext) -> dict[str, Any]:
     return projected
 
 
-@router.get("/models/browse-root")
+@router.get("/models/browse-root", response_model=m.ModelBrowseRoot)
 def model_browse_root(kind: str, c: ServiceContext = Depends(ctx)) -> dict[str, str]:
     from .model_layout import model_category
 

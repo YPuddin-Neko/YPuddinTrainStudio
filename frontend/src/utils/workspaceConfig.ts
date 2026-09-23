@@ -26,12 +26,14 @@ export function fillDefaultModels<T extends Record<string, any>>(config: T, asse
   for (const [field, kind] of Object.entries(MODEL_PATH_FIELDS)) {
     if (!model[field]) model[field] = assets.find((asset) => asset.family === model.family && asset.kind === kind && asset.is_default && asset.exists && !modelAssetUnsupportedReason(asset))?.path ?? null;
   }
+  const selected = assets.find(asset => asset.path === model.dit_path && asset.family === model.family && asset.kind === 'dit');
+  if (model.family === 'krea2' && selected?.variant) model.krea2_variant = selected.variant;
   return { ...config, model };
 }
 
 /** Only call on an explicit family change, never on imported configurations. */
 export function changeModelFamily(config: Record<string, any>, family: FamilyInfo, assets: ModelAsset[]) {
-  const model = { ...config.model, family: family.name, prediction_type: 'epsilon', zero_terminal_snr: false, training_guidance: 1, flux2_variant: 'auto' };
+  const model = { ...config.model, family: family.name, prediction_type: 'epsilon', zero_terminal_snr: false, training_guidance: 1, flux2_variant: 'auto', krea2_variant: 'auto', dtype: 'auto' };
   for (const field of Object.keys(MODEL_PATH_FIELDS)) model[field] = null;
   const attention = familyParameterOptions(family, 'model.attention');
   if (attention?.length && !attention.includes(model.attention)) model.attention = 'auto';

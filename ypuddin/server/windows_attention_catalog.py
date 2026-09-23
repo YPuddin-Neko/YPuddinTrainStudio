@@ -155,7 +155,10 @@ def incompatibility(wheel, runtime, versions=None, profile=None):
         "x86_64",
     ):
         return "requires_windows_x86_64"
-    if wheel.platform_tag not in (expected_platform, "manylinux_2_24_x86_64"):
+    platforms = {expected_platform}
+    if runtime.get("platform") == "Linux":
+        platforms.add("manylinux_2_24_x86_64")
+    if wheel.platform_tag not in platforms:
         return "platform_mismatch"
     if not runtime.get("cuda_available"):
         return "cuda_runtime_unavailable"

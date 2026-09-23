@@ -385,6 +385,11 @@ def resolve_training_compute_config(
     it neither initializes devices nor changes process-wide backend settings.
     """
     effective = cfg.model_copy(deep=True)
+    if cfg.model.dtype == "auto":
+        from ypuddin.models.precision import model_load_precision
+
+        effective.model.dtype = model_load_precision(cfg.model, device_type)
+        cfg = effective
     if cfg.model.attention == "metal_flash":
         # Keep an explicit Apple backend intact so device validation can reject
         # it on CUDA/DTK rather than silently rewriting it as an SDPA policy.

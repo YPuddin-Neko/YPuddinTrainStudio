@@ -111,6 +111,14 @@ def test_inspection_distinguishes_alpha_metadata_from_actual_transparent_pixels(
     # The palette declares transparency, but no pixel uses the transparent entry.
     palette.putpixel((0, 0), 1)
     palette.save(root / "palette-opaque.png", transparency=0)
+    Image.new("RGB", (256, 256), (10, 20, 30)).save(root / "rgb-key.png", transparency=(10, 20, 30))
+    Image.new("L", (256, 256), 10).save(root / "gray-key.png", transparency=10)
+    gray16 = Image.new("I;16", (256, 256), 60000)
+    gray16.putpixel((0, 0), 1234)
+    gray16.save(root / "gray16-key.png", transparency=1234)
+    subtle = Image.new("RGBA", (256, 256), (10, 20, 30, 255))
+    subtle.putpixel((0, 0), (10, 20, 30, 254))
+    subtle.save(root / "subtle-alpha.png")
     for path in root.glob("*.png"):
         path.with_suffix(".txt").write_text("test image", encoding="utf8")
     before = {path.name: path.read_bytes() for path in root.iterdir()}
@@ -125,6 +133,10 @@ def test_inspection_distinguishes_alpha_metadata_from_actual_transparent_pixels(
         ("palette-transparent.png", True, True),
         ("palette-opaque.png", True, False),
         ("rgb.png", False, False),
+        ("rgb-key.png", True, True),
+        ("gray-key.png", True, True),
+        ("gray16-key.png", True, True),
+        ("subtle-alpha.png", True, True),
     ):
         record = records[name]
         assert record["has_alpha"] is alpha
@@ -132,7 +144,13 @@ def test_inspection_distinguishes_alpha_metadata_from_actual_transparent_pixels(
         notices = [issue for issue in record["issues"] if issue["code"] == "transparent_image"]
         assert len(notices) == int(transparent)
         assert all(issue["severity"] == "warning" for issue in notices)
-    assert report["alpha_images"] == 4 and report["transparent_images"] == 2
+    assert report["alpha_images"] == 8 and report["transparent_images"] == 6
+    assert records["rgb-key.png"]["transparent_pixels"] == 256 * 256
+    assert records["subtle-alpha.png"]["transparent_pixels"] == 1
+    assert records["subtle-alpha.png"]["min_alpha"] == 254
+    assert records["opaque-alpha.png"]["transparent_pixels"] == 0
+    assert records["gray16-key.png"]["transparent_pixels"] == 1
+    assert records["gray16-key.png"]["min_alpha"] == 0
     assert report["errors"] == 0  # Transparency is informational, not a training blocker.
     assert {path.name: path.read_bytes() for path in root.iterdir()} == before
 

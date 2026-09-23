@@ -99,12 +99,20 @@ def test_reviewed_metal_install_protects_torch_and_requires_kernel_before_defaul
 
 def test_installed_metal_with_failed_backward_is_not_available_or_default(apple):
     apple.versions["mtlattn"] = "0.4.1"
+    cached = next(p for p in apple.manager.status(refresh=True)["packages"] if p["name"] == "mtlattn")
+    assert cached["available"] and cached["kernel_tested"]
+    apple.probe.reset_mock()
     apple.probe.side_effect = lambda: {"mtlattn": {
         "importable": True, "kernel_tested": False, "error": "native backward failed",
     }}
-    status = next(p for p in apple.manager.status()["packages"] if p["name"] == "mtlattn")
+    status = next(p for p in apple.manager.status(refresh=True)["packages"] if p["name"] == "mtlattn")
     assert status["supported"] and status["importable"] and not status["available"]
+    assert not status["kernel_tested"] and status["error"] == "native backward failed"
+    apple.probe.assert_called_once()
+    assert next(p for p in apple.manager.status()["packages"] if p["name"] == "mtlattn") == status
+    apple.probe.assert_called_once()
     assert apple.client.put("/api/environment/settings", json={"attention_default": "metal_flash"}).status_code == 422
+    assert apple.probe.call_count == 2
 
 
 def test_metal_upload_accepts_reviewed_apple_wheel_without_cuda_tags_and_rejects_tampering(apple):

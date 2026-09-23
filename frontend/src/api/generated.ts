@@ -3224,6 +3224,8 @@ export interface components {
         };
         /** FamilyInfo */
         FamilyInfo: {
+            /** Runtime Backend */
+            runtime_backend?: ("cuda" | "hip" | "mps" | "cpu") | null;
             /** Attention Backends */
             attention_backends?: string[];
             /** Name */
@@ -4070,6 +4072,13 @@ export interface components {
             /** Variant */
             variant?: ("raw" | "turbo") | null;
         };
+        /** ModelBrowseRoot */
+        ModelBrowseRoot: {
+            /** Path */
+            path: string;
+        } & {
+            [key: string]: unknown;
+        };
         /** ModelCatalogEntry */
         ModelCatalogEntry: {
             /** Id */
@@ -4136,11 +4145,11 @@ export interface components {
             tokenizer_path?: string | null;
             /**
              * Dtype
-             * @description 模型加载精度，CUDA 默认 bf16，CPU/MPS 使用 fp32。混合精度计算和冻结权重存储精度分别在训练、显存设置中调整。
-             * @default bf16
+             * @description 跟随模型读取权重精度；受支持的 FP8 权重使用 BF16 计算，CPU/Apple 使用 FP32。也可手动指定加载精度。
+             * @default auto
              * @enum {string}
              */
-            dtype: "bf16" | "fp16" | "fp32";
+            dtype: "auto" | "bf16" | "fp16" | "fp32";
             /**
              * Attention
              * @description 默认使用内置 SDPA。xFormers/FlashAttention 需要匹配的 CUDA 或海光扩展；Apple Metal FlashAttention 需要匹配的 mtlattn，仅加速受支持的 FP32 主模型注意力，带 mask 或 dropout 的调用使用 SDPA。文本编码器和 VAE 保持原后端，Sage 仅用于采样。
@@ -4183,7 +4192,7 @@ export interface components {
             flux2_variant: "auto" | "dev" | "klein-base-4b" | "klein-base-9b";
             /**
              * Krea2 Variant
-             * @description Raw 用于训练，Turbo 仅用于采样。自动识别需有已校验的下载记录；自行添加的模型请手动选择。
+             * @description 已登记模型沿用其 Raw/Turbo 类型；无法识别的本地文件需要按发布说明确认。Turbo 仅用于采样。
              * @default raw
              * @enum {string}
              */
@@ -5779,6 +5788,11 @@ export interface components {
             address_changed: boolean;
             /** Environment Id */
             environment_id?: string | null;
+        };
+        /** RetryDownloadRequest */
+        RetryDownloadRequest: {
+            /** Provider */
+            provider?: ("huggingface" | "modelscope") | null;
         };
         /** SamplePrompt */
         SamplePrompt: {
@@ -7482,9 +7496,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["ModelBrowseRoot"];
                 };
             };
             /** @description Validation Error */
@@ -9701,7 +9713,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RetryDownloadRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             202: {

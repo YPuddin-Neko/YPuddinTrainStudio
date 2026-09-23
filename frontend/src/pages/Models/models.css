@@ -21,3 +21,7 @@
 
 .models-workspace .model-download-error{margin:6px 0;font-size:12px;color:#dc2626;white-space:pre-wrap;overflow-wrap:anywhere}.dark .models-workspace .model-download-error{color:#fca5a5}
 .model-button.model-button-downloading:disabled{background:#e5e7eb;border-color:#d1d5db;color:#6b7280;opacity:1}.dark .model-button.model-button-downloading:disabled{background:#374151;border-color:#4b5563;color:#d1d5db}
+
+.model-button-downloading{position:relative;min-width:76px}.model-download-cancel-label{display:none;align-items:center;gap:4px}.model-button-downloading:hover:not(:disabled),.model-button-downloading:focus-visible{color:var(--studio-danger,#b91c1c);background:var(--studio-danger-soft,#fef2f2);border-color:var(--studio-danger,#b91c1c)}.model-button-downloading:hover .model-download-active-label,.model-button-downloading:focus-visible .model-download-active-label{display:none}.model-button-downloading:hover .model-download-cancel-label,.model-button-downloading:focus-visible .model-download-cancel-label{display:inline-flex}@media(hover:none){.model-button-downloading .model-download-active-label{display:none}.model-button-downloading .model-download-cancel-label{display:inline-flex}}
+
+.dark .model-button-downloading:hover:not(:disabled),.dark .model-button-downloading:focus-visible{background:#3b1520}

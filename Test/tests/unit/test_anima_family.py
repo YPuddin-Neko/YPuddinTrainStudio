@@ -14,6 +14,24 @@ from ypuddin.models.anima.vendor.qwen_image_vae_2d import AutoencoderKLQwenImage
 TINY_CFG = dict(ANIMA_2B_CONFIG, max_img_h=64, max_img_w=64, model_channels=128, num_blocks=2, num_heads=2)
 
 
+def test_broken_text_runtime_fails_before_loading_backbone(monkeypatch):
+    from ypuddin.config import MemoryConfig
+    from ypuddin.models.anima import family
+
+    model = get_family("anima")
+    monkeypatch.setattr(model, "validate_config", lambda cfg: [])
+
+    def broken():
+        raise RuntimeError("operator torchvision::nms does not exist")
+
+    monkeypatch.setattr(family, "require_qwen3_runtime", broken)
+    monkeypatch.setattr(
+        family, "load_dit", lambda *a, **kw: pytest.fail("weights loaded before dependency check")
+    )
+    with pytest.raises(RuntimeError, match="torchvision::nms"):
+        model.load(ModelConfig(family="anima"), MemoryConfig(), device="cpu", dtype=torch.float32)
+
+
 def _tiny_checkpoint(tmp_path, prefix="net."):
     torch.manual_seed(0)
     dit = Anima(**TINY_CFG)

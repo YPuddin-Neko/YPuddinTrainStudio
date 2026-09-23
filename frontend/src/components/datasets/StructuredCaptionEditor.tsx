@@ -29,7 +29,7 @@ export default function StructuredCaptionEditor({ structure, draft, onChange, di
         const origin = field.path[0] === 'from_path' ? text('来自目录', 'From folder') : '';
         const name = origin ? `${label} · ${origin}` : label;
         const update = (next: typeof value) => onChange({ ...draft, [id]: next });
-        return <section className={`structured-caption-field${field.role === 'nl' ? ' structured-caption-prose' : ''}`} key={id} aria-label={name}>
+        return <section className={`structured-caption-field${field.role === 'nl' ? ' structured-caption-prose' : Array.isArray(value) ? ' structured-caption-array' : ' structured-caption-scalar'}`} key={id} aria-label={name}>
           <header><h4 title={field.path.join('.')}>{name}</h4>{Array.isArray(value) && <span>{value.length}</span>}</header>
           {Array.isArray(value) ? <><div className="structured-caption-tag-list">
             {value.map((tag, index) => <div className="structured-caption-tag" key={index}>

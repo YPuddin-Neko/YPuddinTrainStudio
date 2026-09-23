@@ -23,7 +23,7 @@ from ypuddin.config.compute_policy import (
 def _config(family="anima", *, mode="full", train_backbone=True, deterministic=True):
     return TrainConfig.model_validate(
         {
-            "model": {"family": family, "attention": "flash_attn"},
+            "model": {"family": family, "attention": "flash_attn", "dtype": "bf16"},
             "training": {
                 "mode": mode,
                 "train_backbone": train_backbone,

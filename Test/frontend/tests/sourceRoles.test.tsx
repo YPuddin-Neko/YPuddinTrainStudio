@@ -22,7 +22,8 @@ it('shows the server-derived managed purpose/count and never exposes a manual ro
   expect(summary.closest('details')).not.toHaveAttribute('open');
   expect(screen.queryByRole('checkbox',{name:/正则/})).not.toBeInTheDocument();
   fireEvent.click(summary);
-  expect(screen.getByText('/project/v2/reg')).toBeVisible();
+  expect(screen.getByRole('textbox', {name: '图片目录 1'})).toHaveValue(source.path);
+  expect(screen.queryByText('目录归属：当前版本')).not.toBeInTheDocument();
   expect(screen.queryByRole('checkbox',{name:/正则/})).not.toBeInTheDocument();
   expect(screen.queryByRole('combobox',{name:/标签格式/})).not.toBeInTheDocument();
   expect(screen.getByRole('spinbutton',{name:'正则损失权重 1'})).toHaveValue(.3);
@@ -36,8 +37,8 @@ it('preserves legacy role and format until the explicitly expanded compatibility
   expect(screen.getByText('reg_named_folder')).toBeVisible();
   expect(screen.getByText('训练集 · 2 张图片')).toBeVisible();
   fireEvent.click(screen.getByText('高级来源设置'));
-  expect(screen.getByText('外部 / 旧版来源兼容设置').closest('details')).not.toHaveAttribute('open');
-  fireEvent.click(screen.getByText('外部 / 旧版来源兼容设置'));
+  expect(screen.getByText('外部来源用途').closest('details')).not.toHaveAttribute('open');
+  fireEvent.click(screen.getByText('外部来源用途'));
   fireEvent.click(screen.getByRole('checkbox',{name:'外部来源用于正则训练'}));
   expect(saved().dataset.sources[0]).toMatchObject({path,is_reg:true,caption_ext:'.json'});
 });
@@ -55,7 +56,7 @@ it('shows registered legacy metadata when a supplied recipe omits the compatibil
   render(<Editor initial={{dataset:{sources:[{path:'/legacy/class',repeats:1}]}}} roles={[{path:'/legacy/class',section:'dataset',is_reg:true,managed:false,root:null,origin:'registered',images:3}]}/>);
   expect(screen.getByText('正则集 · 3 张图片')).toBeVisible();
   fireEvent.click(screen.getByText('高级来源设置'));
-  fireEvent.click(screen.getByText('外部 / 旧版来源兼容设置'));
+  fireEvent.click(screen.getByText('外部来源用途'));
   expect(screen.getByRole('checkbox',{name:'外部来源用于正则训练'})).toBeChecked();
   fireEvent.click(screen.getByRole('checkbox',{name:'外部来源用于正则训练'}));
   expect(saved().dataset.sources[0].is_reg).toBe(false);

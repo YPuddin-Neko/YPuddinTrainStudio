@@ -56,6 +56,26 @@ async function editCaption() {
 }
 
 describe('dataset project sidebar and navigation protection', () => {
+  it('calculates only this folder with the saved version settings and offers its sizing controls',async()=>{
+    const requested:any[]=[];
+    server.use(
+      http.get('/api/projects/p_dataset/config',({request})=>{
+        expect(new URL(request.url).searchParams.get('version_id')).toBe('v2');
+        return HttpResponse.json({dataset:{resolution_mode:'native',native_max_pixels:16777216}});
+      }),
+      http.post('/api/plan',async({request})=>{requested.push(await request.json());return HttpResponse.json({ok:true,errors:[],buckets:[{w:2992,h:2448,items:1,batches:1}],native:{max_pixels:16777216}});}),
+    );
+    show();await screen.findByRole('combobox',{name:'项目版本'});
+    fireEvent.click(screen.getByRole('button',{name:'分布与分桶'}));
+    expect(await screen.findByText('2992×2448')).toBeVisible();
+    expect(requested).toHaveLength(1);
+    expect(requested[0]).toMatchObject({dataset_ids:['d_known'],project_id:'p_dataset',version_id:'v2',config:{dataset:{native_max_pixels:16777216}}});
+    expect(screen.getByText('原生 · 像素上限 16,777,216')).toBeVisible();
+    expect(screen.getByRole('link',{name:/调整分辨率与分桶/})).toHaveAttribute('href','/projects/p_dataset/v/v2/train?tab=data&group=dataset');
+    fireEvent.focus(window);
+    await waitFor(()=>expect(requested).toHaveLength(2));
+    expect(await screen.findByText('2992×2448')).toBeVisible();
+  });
   it('edits JSON by original field path and targets the selected relative path even with duplicate hashes',async()=>{
     const structure={format:'full',editable:true,legacy_override:false,revision:'json-file-sha',document:{ai_output:{appearance:['blue coat'],nl:'Natural prose.'},meta:{score:2}},fields:[{path:['ai_output','appearance'],role:'appearance',value:['blue coat'],present:true},{path:['ai_output','nl'],role:'nl',value:'Natural prose.',present:true}]};
     imageFixtures.items=['first/a.png','second/a.png'].map(rel_path=>({hash:'same',rel_path,width:64,height:64,has_mask:false,caption:'blue coat. Natural prose.',caption_format:'json',caption_structure:structure}));

@@ -17,6 +17,10 @@ class _Out(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class ModelBrowseRoot(_Out):
+    path: str
+
+
 # --------------------------------------------------------------------------- system
 class GpuInfo(_Out):
     index: int
@@ -337,6 +341,7 @@ class FamilyLatent(_Out):
 
 
 class FamilyInfo(_Out):
+    runtime_backend: Literal["cuda", "hip", "mps", "cpu"] | None = None
     attention_backends: list[str] = Field(default_factory=lambda: ["auto", "sdpa", "xformers", "flash_attn"])
     name: str
     label: str

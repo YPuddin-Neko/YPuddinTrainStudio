@@ -18,6 +18,7 @@ boot = importlib.util.module_from_spec(SPEC)
 sys.modules["ypuddin_bootstrap"] = boot
 SPEC.loader.exec_module(boot)
 REAL_TORCH_NUMPY_BRIDGE = boot.torch_numpy_bridge
+REAL_MODEL_RUNTIME = boot.model_runtime
 
 
 @pytest.fixture(autouse=True)
@@ -32,6 +33,7 @@ def isolated_bootstrap_root(monkeypatch, tmp_path_factory):
     monkeypatch.setattr(boot, "MARKER", root / "venv" / ".ypuddin-install.json")
     monkeypatch.setattr(boot, "FRONTEND", root / "frontend")
     monkeypatch.setattr(boot, "torch_numpy_bridge", lambda: {"ok": True})
+    monkeypatch.setattr(boot, "model_runtime", lambda: {"ok": True})
 
 
 def native_wheel(directory, name, version, tag="cp311-cp311-manylinux_2_28_x86_64", requires=()):
@@ -181,6 +183,7 @@ def test_install_falls_back_to_the_next_source_on_failure(monkeypatch, tmp_path)
     assert "--index-url" in torch_calls[0] and "sjtu" in " ".join(torch_calls[0])
     assert "--find-links" in torch_calls[1] and "aliyun" in " ".join(torch_calls[1])
     assert len(torch_calls) == 3
+    assert all("torchvision>=0.19" in command for command in torch_calls)
     # ypuddin itself: ustc failed -> tuna succeeded
     pkg_calls = [c for c in calls if any(a.endswith("[models,server]") for a in c)]
     assert [c[c.index("--index-url") + 1] for c in pkg_calls] == list(boot.PYPI_MIRRORS_CN[:2])
@@ -1663,3 +1666,76 @@ def test_default_server_port_matches_service(tmp_path):
     assert boot.server_address(None, None, str(tmp_path)) == ("127.0.0.1", 8123)
     assert saved_address(tmp_path, None, None) == ("127.0.0.1", 8123)
     assert DEFAULT_SETTINGS["server"]["port"] == 8123
+
+
+@pytest.mark.parametrize(
+    "torch_version,vision_version,cuda",
+    [
+        ("2.6.0+cu126", "0.21.0+cpu", "12.6"),
+        ("2.11.0+cu128", "0.26.0", "12.8"),
+    ],
+)
+def test_broken_torchvision_repair_uses_installed_cuda_channel_and_replaces_only_vision(
+    monkeypatch, torch_version, vision_version, cuda
+):
+    tag = "cu" + cuda.replace(".", "")
+    vision_base = vision_version.split("+")[0]
+    reports = iter(
+        [
+            {
+                "ok": False,
+                "stage": "torchvision",
+                "torch": torch_version,
+                "torchvision": vision_version,
+                "cuda": cuda,
+                "hip": None,
+                "error": "operator torchvision::nms does not exist",
+            },
+            {"ok": True},
+        ]
+    )
+    monkeypatch.setattr(boot, "model_runtime", lambda: next(reports))
+    snapshots = iter(
+        [
+            {"torch": torch_version, "torchvision": vision_version, "numpy": "2.2.0"},
+            {"torch": torch_version, "torchvision": vision_base + "+" + tag, "numpy": "2.2.0"},
+        ]
+    )
+    monkeypatch.setattr(boot, "installed_versions", lambda: next(snapshots))
+    selected = []
+
+    def sources(mode, tag):
+        selected.append((mode, tag))
+        return [], [("index-url", "https://download.pytorch.org/whl/" + tag)]
+
+    monkeypatch.setattr(boot, "index_chains", sources)
+    monkeypatch.setattr(boot, "uv_path", lambda: None)
+    commands = []
+    monkeypatch.setattr(
+        boot.subprocess,
+        "run",
+        lambda command, **kwargs: commands.append(command) or type("Result", (), {"returncode": 0})(),
+    )
+    boot.ensure_model_runtime("models,server", "official")
+    assert selected == [("official", tag)]
+    assert "torchvision==" + vision_base in commands[0] and "--no-deps" in commands[0]
+    assert "--force-reinstall" in commands[0]
+    assert not any(arg.startswith("torch==") for arg in commands[0])
+
+
+def test_qwen_import_failure_stops_startup_without_reinstalling_native_packages(monkeypatch, capsys):
+    monkeypatch.setattr(
+        boot, "model_runtime", lambda: {"ok": False, "stage": "qwen3", "error": "Qwen3 import failed"}
+    )
+    monkeypatch.setattr(boot.subprocess, "run", lambda *a, **k: pytest.fail("unexpected installation"))
+    with pytest.raises(SystemExit):
+        boot.ensure_model_runtime("models,server", "official")
+    output = capsys.readouterr()
+    assert "Qwen3 import failed" in output.out + output.err
+
+
+def test_model_native_probe_runs_nms_and_qwen3_without_loading_weights(monkeypatch):
+    monkeypatch.setattr(boot, "venv_python", lambda: Path(sys.executable))
+    result = REAL_MODEL_RUNTIME()
+    assert result["ok"], result
+    assert result["stage"] == "qwen3"

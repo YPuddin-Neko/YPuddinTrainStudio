@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronRight, Plus, Trash2, ArrowUp, ArrowDown, FolderOpen } from 'lucide-react';
 import { PathInput, PathPickerModal } from '../../components/PathBrowser';
 import { apiClient } from '../../api/client';
-import { FamilyInfo } from '../../api/types';
+import { FamilyInfo, ModelAsset } from '../../api/types';
 import { configFieldHelp, configFieldHint, configFieldLabel, configOptionLabel, configPresetLabel } from '../../utils/configPresentation';
 import { MODEL_PATH_FIELDS } from '../../utils/workspaceConfig';
 import { familyParameterOptions, modelAssetUnsupportedReason, modelFamilyWeights, trainingFamilyOptions } from '../../utils/trainingFamilies';
@@ -351,14 +351,12 @@ const SourcesEditor: React.FC<{
         const folder = String(src.path || '').replace(/\\/g,'/').split('/').filter(Boolean).pop() || text('未选择文件夹','No folder selected');
         return (
         <div key={idx} role="group" aria-label={t('train.sourceN', { n: idx + 1 })} className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
-          <div className="flex justify-between items-center gap-2">
-            <span className="font-semibold text-slate-700 dark:text-slate-300">
+          <div className="flex flex-wrap justify-between items-center gap-2">
+            <span className="min-w-0 flex-1 truncate font-semibold text-slate-700 dark:text-slate-300" title={src.path}>
               {folder}
             </span>
-            {/* Removing a source stays next to it: burying it under advanced settings
-                left indexed datasets with an add button and no way back out. */}
             <span className="flex items-center gap-2">
-              <span>{isReg ? text('正则集','Regularization') : text('训练集','Training')} · {role?.images == null ? text('图片数待索引','Count pending indexing') : text(`${role.images} 张图片`,`${role.images} images`)}</span>
+              <span>{isReg ? text('正则集','Regularization') : text('训练集','Training')} · {role?.images == null ? text('图片数待索引','Count pending indexing') : text(`${role.images} 张图片`,`${role.images} images`)}</span><ConfigHelp label={text('数据用途说明','Dataset purpose help')}>{text('traindata 用作训练集，reg 用作正则集。正则图默认不继承训练触发词。','traindata contains training images; reg contains regularization images. Regularization images do not inherit the training trigger by default.')}</ConfigHelp>
               <button type="button" onClick={() => removeSource(idx)} className="p-1 text-red-500 hover:text-red-700"
                 aria-label={text(`从本次配置移除来源 ${folder}（保留文件）`,`Remove source ${folder} from this configuration (keep files)`)}
                 title={text('从本次配置移除来源（保留文件）','Remove from this configuration (keep files)')}>
@@ -368,18 +366,19 @@ const SourcesEditor: React.FC<{
           </div>
           <p>{role?.managed ? text(`当前版本 / ${role.is_reg ? 'reg' : 'traindata'}`,`Current version / ${role.is_reg ? 'reg' : 'traindata'}`) : versionSources && !role ? text('目录用途待核对','Directory ownership pending') : text('外部 / 旧版来源','External / legacy source')} · {text(`每图重复 ${src.repeats ?? 1} 次`,`Repeats ${src.repeats ?? 1}`)}{isReg ? text(` · 正则权重 ${src.prior_weight ?? 1}`,` · Prior weight ${src.prior_weight ?? 1}`) : ''}</p>
           <details><summary>{text('高级来源设置','Advanced source settings')}</summary>
-          <div className="flex space-x-2">
+          <div className="source-path-control flex min-w-0 gap-2">
             <input
               type="text"
+              aria-label={text(`图片目录 ${idx+1}`, `Image folder ${idx+1}`)}
               placeholder="/path/to/dataset"
               value={src.path || ''}
               onChange={(e) => updateSource(idx, 'path', e.target.value)}
-              className="flex-1 px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600 font-mono"
+              className="min-w-0 flex-1 px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600 font-mono"
             />
             <button
               type="button"
               onClick={() => setModalIndex(idx)}
-              className="px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded hover:bg-slate-300 dark:hover:bg-slate-600 flex items-center space-x-1"
+              className="studio-secondary shrink-0 px-2 py-1 flex items-center gap-1"
             >
               <FolderOpen className="w-3.5 h-3.5" />
               <span>{t('common.browse')}</span>
@@ -387,10 +386,9 @@ const SourcesEditor: React.FC<{
           </div>
           <div className="source-settings-grid">
             <label><span>{t('dataset.repeats')}<ConfigHelp label={text('重复次数说明','Repeats help')}>{text('每轮重复使用这组图片的次数。默认 1；20 张图重复 5 次计为 100 个样本。增加次数会增加训练占比和总步数，也可能过拟合。','Uses per image per epoch, default 1. Twenty images repeated five times count as 100 samples. More repeats increase their training share and total steps, with a risk of overfitting.')}</ConfigHelp></span><input aria-label={text(`重复次数 ${idx+1}`,`Repeats ${idx+1}`)} type="number" min="1" step="1" value={src.repeats ?? 1} onChange={event=>updateSource(idx,'repeats',event.target.value === '' ? '' : Number(event.target.value))}/></label>
-            <div className="source-reg-toggle"><span>{isReg ? text('正则集','Regularization') : text('训练集','Training')}</span><ConfigHelp label={text('数据用途说明','Dataset purpose help')}>{text('traindata 用作训练集，reg 用作正则集。正则图默认不继承训练触发词。','traindata contains training images; reg contains regularization images. Regularization images do not inherit the training trigger by default.')}</ConfigHelp></div>
             {isReg && <label><span>{text('正则损失权重','Regularization loss weight')}<ConfigHelp label={text('正则损失权重说明','Regularization loss weight help')}>{text('正则图片的损失乘数。默认 1；0.5 减半，0 不贡献训练梯度。','Multiplier for regularization-image loss. Default 1; 0.5 halves it, while 0 contributes no training gradient.')}</ConfigHelp></span><input aria-label={text(`正则损失权重 ${idx+1}`,`Regularization loss weight ${idx+1}`)} type="number" min="0" step="0.1" value={src.prior_weight ?? 1} onChange={event=>updateSource(idx,'prior_weight',event.target.value === '' ? '' : Number(event.target.value))}/></label>}
           </div>
-          {role?.managed ? <p>{text('目录归属：当前版本','Directory: current version')} / <strong>{role.is_reg ? 'reg' : 'traindata'}</strong><br/><code className="break-all">{role.root}</code></p> : versionSources && !role ? <p>{text('正在核对目录归属；保留当前用途。','Checking directory ownership; retaining the current purpose.')}</p> : <details><summary>{text('外部 / 旧版来源兼容设置','External / legacy source compatibility')}</summary><p>{text('文件保持在外部目录；可在此设置是否用于正则训练。','Files remain in the external folder. Choose whether to use them for regularization.')}</p><label><input type="checkbox" checked={isReg} onChange={event=>updateSource(idx,'is_reg',event.target.checked)}/>{text('外部来源用于正则训练','Use external source for regularization')}</label></details>}
+          {!role?.managed && (versionSources && !role ? <p>{text('正在核对目录归属；保留当前用途。','Checking directory ownership; retaining the current purpose.')}</p> : <details><summary>{text('外部来源用途','External source purpose')}</summary><label><input type="checkbox" checked={isReg} onChange={event=>updateSource(idx,'is_reg',event.target.checked)}/>{text('外部来源用于正则训练','Use external source for regularization')}</label></details>)}
           <details className="source-fallback"><summary>{text('缺少标签时的默认描述（可选）','Fallback description when captions are missing (optional)')}</summary><input aria-label={text(`默认描述 ${idx+1}`,`Fallback description ${idx+1}`)} value={src.class_prompt ?? ''} onChange={event=>updateSource(idx,'class_prompt',event.target.value || null)} placeholder={text('例如：a person；不生成或修改标签文件','For example: a person; does not create or edit caption files')}/></details>
           </details>
         </div>
@@ -549,7 +547,8 @@ const ModelPathInput: React.FC<{
   onChange: (val: string) => void;
   label?: string;
   familyName?: string;
-}> = ({ value, kind, onChange, label, familyName }) => {
+  models: ModelAsset[];
+}> = ({ value, kind, onChange, label, familyName, models }) => {
   const { t } = useTranslation();
   const [defaultPath, setDefaultPath] = React.useState('');
   React.useEffect(() => {
@@ -559,19 +558,6 @@ const ModelPathInput: React.FC<{
       .then(result => { if (active) setDefaultPath(result.path); }).catch(() => {});
     return () => { active = false; };
   }, [kind]);
-  const [models, setModels] = React.useState<Array<{ id: string; path: string; kind: string; family: string; compatible_families?: string[]; exists?: boolean; unsupported_reason?: string | null }>>([]);
-
-  React.useEffect(() => {
-    if (!kind) return;
-    let active = true;
-    const refresh = () => void apiClient
-      .get<Array<{ id: string; path: string; kind: string; family: string; compatible_families?: string[]; exists?: boolean; unsupported_reason?: string | null }>>('/models', { silent: true })
-      .then((list) => { if (active) setModels(Array.isArray(list) ? list : []); })
-      .catch(() => { if (active) setModels([]); });
-    refresh(); window.addEventListener('studio-models-changed', refresh); window.addEventListener('focus', refresh);
-    return () => { active = false; window.removeEventListener('studio-models-changed', refresh); window.removeEventListener('focus', refresh); };
-  }, [kind]);
-
   const matched = kind ? models.filter((m) => m.exists !== false && (m as typeof m & {purpose?:string}).purpose !== 'inference' && !modelAssetUnsupportedReason(m) && m.kind === kind && (!familyName || m.family === familyName || m.compatible_families?.includes(familyName))) : [];
 
   return (
@@ -719,6 +705,20 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   const english = i18n.resolvedLanguage?.startsWith('en') || false;
   const value = React.useMemo(() => normalizeOptimizerConfig(schema, sourceValue), [schema, sourceValue]);
   const activeComputePolicy = confirmedTrainingComputePolicy(computePolicy, value);
+  const [modelAssets, setModelAssets] = React.useState<ModelAsset[]>([]);
+  React.useEffect(() => {
+    let active = true;
+    const refresh = () => void apiClient.get<ModelAsset[]>('/models', { silent: true }).then(items => { if (active) setModelAssets(Array.isArray(items) ? items : []); }).catch(() => {});
+    refresh(); window.addEventListener('studio-models-changed', refresh); window.addEventListener('focus', refresh);
+    return () => { active = false; window.removeEventListener('studio-models-changed', refresh); window.removeEventListener('focus', refresh); };
+  }, []);
+  const selectedModel = modelAssets.find(asset => asset.family === value.model?.family && asset.kind === 'dit' && asset.path === value.model?.dit_path);
+  React.useEffect(() => {
+    if (!readOnly && value.model?.family === 'krea2' && selectedModel?.variant && value.model.krea2_variant !== selectedModel.variant) {
+      onValueChange({...sourceValue, model:{...sourceValue.model, krea2_variant:selectedModel.variant}});
+    }
+  }, [readOnly, selectedModel?.variant, sourceValue, value.model, onValueChange]);
+
   const scheduleFree = value.optimizer?.type === 'adamw_sf' || (value.optimizer?.type === 'prodigy_plus_sf' && value.optimizer?.use_schedulefree !== false);
   const [editCaptionOverrides, setEditCaptionOverrides] = React.useState(false);
   const [editOutput, setEditOutput] = React.useState(false);
@@ -765,6 +765,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const ddpmModifier = ['objective.scale_v_pred_loss_like_noise_pred', 'objective.v_pred_like_loss', 'objective.debiased_estimation_loss'].includes(fullPathKey);
     const incompatibleFamilyLoss = ddpmModifier && family?.objective !== 'ddpm' && !!getNestedValue(value, path);
     if (ddpmModifier && family?.objective !== 'ddpm' && !incompatibleFamilyLoss) return null;
+    if (fullPathKey === 'model.krea2_variant' && selectedModel?.variant && selectedModel.variant === value.model?.krea2_variant) return null;
     if (fullPathKey === 'model.text_encoder_2_path' && value.model?.family !== 'sdxl') return null;
     if (supportedOptions?.length === 0) return null;
     if (family?.objective === 'ddpm' && ['sampling.shift', 'sampling.er_sde_order', 'sampling.er_sde_s_noise', 'objective.shift', 'objective.res_shift_tokens', 'objective.res_shift_mu', 'objective.mode_scale'].includes(fullPathKey)) return null;
@@ -909,7 +910,15 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           kind={modelKind}
           label={fieldLabel}
           familyName={value.model?.family}
-          onChange={(val) => onChange(setNestedValue(value, path, val === '' && prop.anyOf?.some((p) => p.type === 'null') ? null : val))}
+          models={modelAssets}
+          onChange={(val) => {
+            let next = setNestedValue(value, path, val === '' && prop.anyOf?.some((p) => p.type === 'null') ? null : val);
+            if (fullPathKey === 'model.dit_path' && value.model?.family === 'krea2') {
+              const asset = modelAssets.find(item => item.path === val && item.family === 'krea2' && item.kind === 'dit');
+              next = setNestedValue(next, ['model', 'krea2_variant'], asset?.variant || 'auto');
+            }
+            onChange(next);
+          }}
         />
       );
     } else if (fullPathKey === 'adapter.rank') {
@@ -952,9 +961,18 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           )}
         </div>
       );
+    } else if (fullPathKey === 'model.krea2_variant') {
+      control = <StudioSelect aria-label={fieldLabel} value={fieldValue === 'auto' ? '' : fieldValue || ''}
+        placeholder={english ? 'Confirm local model type' : '确认本地模型类型'}
+        onValueChange={next => onChange(setNestedValue(value, path, next))}
+        options={['raw', 'turbo'].map(option => ({value:option, label:configOptionLabel(fullPathKey, option, english)}))}/>;
+    } else if (fullPathKey === 'model.dtype') {
+      control = <StudioSelect aria-label={fieldLabel} value={fieldValue || 'auto'}
+        onValueChange={next => onChange(setNestedValue(value, path, next))}
+        options={['auto', 'bf16', 'fp16', 'fp32'].map(option => ({value:option, label:configOptionLabel(fullPathKey, option, english)}))}/>;
     } else if (fullPathKey === 'model.attention') {
-      const attentionOptions = (supportedOptions || prop.enum?.map(String) || ['sdpa']).filter(option => option !== 'auto');
-      control = <StudioSelect aria-label={fieldLabel} value={!fieldValue || fieldValue === 'auto' ? 'sdpa' : String(fieldValue)}
+      const attentionOptions = (supportedOptions || ['sdpa']).filter(option => option !== 'auto');
+      control = <StudioSelect aria-label={fieldLabel} value={!fieldValue || fieldValue === 'auto' ? 'sdpa' : String(fieldValue)} fallbackLabel={configOptionLabel(fullPathKey, String(fieldValue), english)}
         onValueChange={next => onChange(setNestedValue(value, path, next))}
         options={attentionOptions.map(option => ({value:option, label:configOptionLabel(fullPathKey, option, english)}))}/>;
     } else if (supportedOptions) {
@@ -1060,7 +1078,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       );
     }
 
-    const wide = ['sources', 'rules', 'prompts', 'resolutions', 'args', 'group_lr'].includes(key) || ui.control === 'path' || key.endsWith('_path') || key === 'output_dir' || fullPathKey === 'adapter.lr_scale';
+    const wide = fullPathKey !== 'adapter.resume_weights' && (['sources', 'rules', 'prompts', 'resolutions', 'args', 'group_lr'].includes(key) || ui.control === 'path' || key.endsWith('_path') || key === 'output_dir' || fullPathKey === 'adapter.lr_scale');
     const booleanField = prop.type === 'boolean' || ui.control === 'switch';
     if (!booleanField && !managedReason && React.isValidElement(control) && (typeof control.type === 'string' || control.type === StudioSelect)) {
       control = React.cloneElement(control as React.ReactElement<any>, {id: fieldId, 'aria-label': (control.props as any)['aria-label'] || fieldLabel, 'aria-invalid': !!errorItem});
@@ -1073,14 +1091,26 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       ? 'Chooses trainable layers. A wider scope uses more parameters and memory.'
       : '选择参与训练的层；扩大范围会增加参数和显存占用。') : null;
     const selectedPreset = fullPathKey === 'adapter.preset' ? family?.presets?.find(preset => preset.name === (fieldValue || family.default_preset)) : undefined;
-    const help = scopeHelp ? [
+    const modelPrecisionHint = family?.runtime_backend === 'mps'
+      ? (english ? 'The current Apple GPU uses FP32 for model loading and computation.' : '当前 Apple GPU 使用 FP32 加载和计算。')
+      : family?.runtime_backend === 'cpu'
+        ? (english ? 'The current CPU runtime uses FP32 for model loading and computation.' : '当前 CPU 环境使用 FP32 加载和计算。')
+        : family?.runtime_backend === 'cuda' || family?.runtime_backend === 'hip'
+          ? (english
+            ? `Follow model reads the checkpoint precision.${value.model?.family === 'krea2' ? ' Supported FP8 weights use BF16 compute.' : ''}`
+            : `跟随模型读取权重精度。${value.model?.family === 'krea2' ? '受支持的 FP8 权重使用 BF16 计算。' : ''}`)
+          : (english ? 'Loads using a precision compatible with the model and runtime.' : '按模型与平台兼容的精度加载。');
+    const help = fullPathKey === 'model.dtype' ? modelPrecisionHint : scopeHelp ? [
       scopeHelp,
       selectedPreset?.description,
       showAdvanced && selectedPreset && `${t('preset.layers', {n: selectedPreset.layers})} · ${selectedPreset.name}`,
       showAdvanced && selectedPreset?.include?.length && `${english ? 'Included layers' : '包含层'}：${selectedPreset.include.join(', ')}`,
       showAdvanced && selectedPreset?.exclude?.length && `${english ? 'Excluded layers' : '排除层'}：${selectedPreset.exclude.join(', ')}`,
     ].filter(Boolean).join('\n\n') : fullPathKey === 'model.tokenizer_path' && family?.name === 'sdxl' ? (english ? 'Optional root containing tokenizer/ and tokenizer_2/. Leave blank to use the model directory’s tokenizers, or the built-in CLIP-L / CLIP-G tokenizers when absent.' : '可选根目录，需同时包含 tokenizer/ 和 tokenizer_2/。留空自动读取模型目录；没有时使用内置 CLIP-L / CLIP-G 双分词器。') : weightMeta?.hint || configFieldHelp(fullPathKey, prop.description, english, value.optimizer?.type, scheduleFree);
-    const hint = (incompatibleFamilyLoss ? (english ? 'This loss option only supports SDXL. Turn it off or set it to zero before using this model.' : '此损失参数仅适用于 SDXL，请关闭或设为 0 后再使用当前模型。') : undefined) || (incompatiblePredictionLoss ? (english ? 'This option is incompatible with the selected prediction type. Turn it off or choose the matching prediction type.' : '此参数与当前预测方式不兼容，请关闭此项或选择对应的预测方式。') : undefined) || managedReason || (fullPathKey === 'loop.deterministic' ? trainingComputePolicyHint(activeComputePolicy, english) : undefined) || configFieldHint(fullPathKey, english, value.optimizer?.type, scheduleFree);
+    const modelHint = fullPathKey === 'model.dit_path' && selectedModel
+      ? [selectedModel.variant?.toUpperCase(), selectedModel.dtype?.toUpperCase()].filter(Boolean).join(' · ')
+      : fullPathKey === 'model.dtype' ? modelPrecisionHint : undefined;
+    const hint = modelHint || (incompatibleFamilyLoss ? (english ? 'This loss option only supports SDXL. Turn it off or set it to zero before using this model.' : '此损失参数仅适用于 SDXL，请关闭或设为 0 后再使用当前模型。') : undefined) || (incompatiblePredictionLoss ? (english ? 'This option is incompatible with the selected prediction type. Turn it off or choose the matching prediction type.' : '此参数与当前预测方式不兼容，请关闭此项或选择对应的预测方式。') : undefined) || managedReason || (fullPathKey === 'loop.deterministic' ? trainingComputePolicyHint(activeComputePolicy, english) : undefined) || configFieldHint(fullPathKey, english, value.optimizer?.type, scheduleFree);
     const duplicateHelp = !!help && !!hint && help.replace(/\s+/g, ' ').trim() === hint.replace(/\s+/g, ' ').trim();
     const label = (
       <div key={fullPathKey} id={`field-${fullPathKey}`} data-testid={`field-${fullPathKey}`} data-field-path={fullPathKey} data-control-kind={booleanField ? 'toggle' : undefined} className={compactField ? `config-field ${booleanField ? 'config-field-boolean' : ''} ${wide ? 'config-field-wide' : ''} ${errorItem ? 'config-field-invalid' : ''}` : `flex flex-col space-y-1 p-2 rounded ${errorItem ? 'bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800' : ''}`}>
@@ -1090,18 +1120,18 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
             {ui.unit && !percentage && ui.control !== 'slider' && <span className="ml-1 text-xs text-slate-500">({ui.unit})</span>}
           </label>
           <span className="config-field-reference">
-            <code className="config-field-key" title={english ? 'Configuration key' : '配置参数名'}>{fullPathKey}</code>
+            <code className="config-field-key" title={fullPathKey}>{fullPathKey}</code>
             {compactField && help && !duplicateHelp && <ConfigHelp label={`${fieldLabel} ${english ? 'help' : '说明'}`}>{help}</ConfigHelp>}
           </span>
         </div>
-        {!compactField && help && !weightMeta?.hint && <p id={managedReason && duplicateHelp ? `${fieldId}-managed-reason` : undefined} className="text-xs text-slate-500 dark:text-slate-400">{help}</p>}
+        {!compactField && fullPathKey !== 'model.dtype' && help && !weightMeta?.hint && <p id={managedReason && duplicateHelp ? `${fieldId}-managed-reason` : undefined} className="text-xs text-slate-500 dark:text-slate-400">{help}</p>}
         {!compactField && weightMeta?.hint && (
           <p className="text-[11px] text-slate-400 dark:text-slate-500" data-testid={`weight-hint-${key}`}>
             {weightMeta.hint}
           </p>
         )}
         <div className="mt-1">{readOnly ? <fieldset disabled style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>{control}</fieldset> : control}</div>
-        {hint && (compactField || managedReason && !duplicateHelp) && <p id={managedReason ? `${fieldId}-managed-reason` : undefined} className="config-field-hint">{hint}</p>}
+        {hint && (fullPathKey === 'model.dtype' || compactField || managedReason && !duplicateHelp) && <p id={managedReason ? `${fieldId}-managed-reason` : undefined} className="config-field-hint">{hint}</p>}
         {/* A reason Studio cannot phrase for this field stays in the preflight panel; the border still marks it. */}
         {errorItem?.msg && <p className="config-field-error">{errorItem.msg}</p>}
       </div>
@@ -1115,7 +1145,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       groups[groupName].fields.push(<div key="adapter.parameter_mode" id={fieldValue === 'full' ? 'field-adapter.rank' : 'field-adapter.parameter_mode'} data-testid="field-adapter.parameter_mode" data-field-path="adapter.parameter_mode" className={`config-field ${fieldValue === 'full' && errorItem ? 'config-field-invalid' : ''}`}>
         <div className="config-field-heading flex justify-between items-baseline">
           <label htmlFor={modeId} className="text-sm font-medium text-slate-700 dark:text-slate-300">{lokrModeLabel}</label>
-          <span className="config-field-reference"><code className="config-field-key" title={english ? 'Configuration key' : '配置参数名'}>adapter.rank</code><ConfigHelp label={`${lokrModeLabel} ${english ? 'help' : '说明'}`}>{english ? 'Full retains the complete LoKr factor matrices; it does not fine-tune the whole model and does not use Alpha. Low rank decomposes the factors using Rank and Alpha.' : 'Full 保留 LoKr 完整因子矩阵，不是全量微调，也不使用 Alpha。低秩模式通过 Rank 和 Alpha 设置因子分解与缩放。'}</ConfigHelp></span>
+          <span className="config-field-reference"><code className="config-field-key" title={fullPathKey}>adapter.rank</code><ConfigHelp label={`${lokrModeLabel} ${english ? 'help' : '说明'}`}>{english ? 'Full retains the complete LoKr factor matrices; it does not fine-tune the whole model and does not use Alpha. Low rank decomposes the factors using Rank and Alpha.' : 'Full 保留 LoKr 完整因子矩阵，不是全量微调，也不使用 Alpha。低秩模式通过 Rank 和 Alpha 设置因子分解与缩放。'}</ConfigHelp></span>
         </div>
         <div className="mt-1"><StudioSelect id={modeId} aria-label={lokrModeLabel} disabled={readOnly} value={fieldValue === 'full' ? 'full' : 'low_rank'}
           aria-invalid={fieldValue === 'full' && !!errorItem}

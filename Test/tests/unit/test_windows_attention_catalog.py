@@ -190,7 +190,7 @@ def test_malformed_listing_retains_bundled_fallback(monkeypatch, malformed):
 @pytest.mark.parametrize(
     "changes,reason",
     [
-        ({"platform": "Linux"}, "requires_windows_x86_64"),
+        ({"platform": "Linux"}, "platform_mismatch"),
         ({"machine": "arm64"}, "requires_windows_x86_64"),
         ({"hip_runtime": "6.3"}, "requires_windows_cuda"),
         ({"cuda_available": False}, "cuda_runtime_unavailable"),
@@ -376,3 +376,9 @@ def test_interrupted_metadata_response_keeps_saved_catalog(monkeypatch):
     result = catalog.snapshot({"platform": "Windows"}, "windows-cuda", refresh=True)
     assert result.error and "IncompleteRead" in result.error
     assert result.wheels
+
+
+def test_linux_binary_is_never_accepted_on_windows():
+    wheel = candidate().model_copy(update={"platform_tag": "manylinux_2_24_x86_64"})
+    assert vendor.incompatibility(wheel, runtime()) == "platform_mismatch"
+    assert vendor.incompatibility(wheel, {**runtime(), "platform": "Linux"}) is None

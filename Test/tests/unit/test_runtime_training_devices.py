@@ -35,7 +35,12 @@ def test_runtime_distinguishes_pytorch_build_capabilities_from_trainer_support(
     monkeypatch.setattr(
         environment,
         "platform",
-        SimpleNamespace(system=lambda: system, python_version=lambda: "3.12.10", machine=lambda: "AMD64"),
+        SimpleNamespace(
+            system=lambda: system,
+            python_version=lambda: "3.12.10",
+            machine=lambda: "AMD64",
+            mac_ver=lambda: ("15.7", (), "arm64"),
+        ),
     )
     monkeypatch.setattr(environment, "current_profile", lambda: profile)
     monkeypatch.setattr(environment.dtk_catalog, "system_info", lambda: {})
@@ -52,9 +57,11 @@ def test_runtime_distinguishes_pytorch_build_capabilities_from_trainer_support(
             is_available=lambda: distributed, is_nccl_available=lambda: nccl, is_gloo_available=lambda: gloo
         ),
     )
-    monkeypatch.setattr(hardware, "gpu_info", lambda **kwargs: [{"name": "Driver-visible GPU"}] * 2)
+    cards = [{"name": "Driver-visible GPU", "cuda_available": cuda}] * (count if cuda else 2)
+    monkeypatch.setattr(hardware, "gpu_info", lambda **kwargs: cards)
     result = runtime_info()
-    assert result["cuda_device_count"] == (count if cuda else 0)
+    expected_cuda = cuda and not profile.endswith("-cpu") and profile != "macos-mps"
+    assert result["cuda_device_count"] == (count if expected_cuda else 0)
     assert result["distributed_available"] == distributed
     assert result["nccl_available"] == (distributed and nccl)
     assert result["environment_profile"] == profile
@@ -66,5 +73,5 @@ def test_runtime_distinguishes_pytorch_build_capabilities_from_trainer_support(
     assert result["multi_gpu_probe_required"] is (expected_multi and system == "Windows")
     assert result["training_device_policy"] == ("exclusive_devices" if expected_multi else "single_device")
     # Driver inventory must not turn CPU Torch into CUDA-capable Torch.
-    assert len(result["gpus"]) == 2
-    assert result["cuda_available"] is cuda
+    assert len(result["gpus"]) == len(cards)
+    assert result["cuda_available"] is expected_cuda

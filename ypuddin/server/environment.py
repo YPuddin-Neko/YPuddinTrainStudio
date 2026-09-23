@@ -278,17 +278,23 @@ def runtime_info() -> dict[str, Any]:
 
     from .hardware import gpu_info
 
-    cuda = torch.cuda.is_available()
+    profile = current_profile()
+    accelerators_allowed = not profile.endswith("-cpu")
+    gpus = gpu_info(include_unavailable=True)
+    cuda = accelerators_allowed and profile != "macos-mps" and any(gpu.get("cuda_available") for gpu in gpus)
     hip = getattr(torch.version, "hip", None)
-    mps = bool(hasattr(torch.backends, "mps") and torch.backends.mps.is_available())
+    mps = bool(
+        accelerators_allowed
+        and profile in ("legacy", "macos-mps")
+        and any(gpu.get("kind") == "mps" for gpu in gpus)
+    )
     distributed = getattr(torch, "distributed", None)
     distributed_available = bool(distributed and distributed.is_available())
     nccl_available = bool(distributed_available and distributed.is_nccl_available())
     gloo_available = bool(
         distributed_available and getattr(distributed, "is_gloo_available", lambda: False)()
     )
-    device_count = torch.cuda.device_count() if cuda else 0
-    profile = current_profile()
+    device_count = sum(bool(gpu.get("cuda_available")) for gpu in gpus) if cuda else 0
     backend = None
     if not profile.endswith("-cpu") and cuda and device_count >= 2:
         if platform.system() == "Linux" and nccl_available:
@@ -321,11 +327,13 @@ def runtime_info() -> dict[str, Any]:
         "multi_gpu_training": multi_gpu,
         "training_device_policy": "exclusive_devices" if multi_gpu else "single_device",
         "mps_available": mps,
-        "gpu_capability": list(torch.cuda.get_device_capability()) if cuda else None,
+        "gpu_capability": next(
+            (gpu.get("compute_capability") for gpu in gpus if gpu.get("cuda_available")), None
+        ),
         "cxx11_abi": bool(torch.compiled_with_cxx11_abi())
         if hasattr(torch, "compiled_with_cxx11_abi")
         else None,
-        "gpus": gpu_info(include_unavailable=True),
+        "gpus": gpus,
         "virtual_environment": sys.prefix != sys.base_prefix,
     }
 
@@ -344,6 +352,9 @@ try:
 except Exception as exc:
     out["sdpa"] = {"status": "not_tested", "reason": "probe_failed", "error": str(exc)[-1500:]}
 for name, module in names.items():
+    if name in ("xformers", "flash-attn", "sageattention") and (not accelerators_allowed or current_profile() == "macos-mps"):
+        out[name] = {"importable": False, "kernel_tested": False, "error": None}
+        continue
     imported = False
     try:
         m = importlib.import_module(module)
@@ -640,11 +651,7 @@ class EnvironmentManager:
             versions = self.versions()
             running = self._running()
             # Avoid taking VRAM for probes while a real job owns the GPU.
-            if (
-                not running
-                and not any(op.status in MUTATING for op in self.list())
-                and (self._probe_cache is None or refresh or time.monotonic() - self._probe_time > 120)
-            ):
+            if refresh and not running and not any(op.status in MUTATING for op in self.list()):
                 with self.context.db.lock:
                     # Share the supervisor's launch boundary: the CUDA probe cannot race
                     # with a queued worker acquiring the same accelerator.
@@ -700,7 +707,10 @@ class EnvironmentManager:
                         and bool(probe.get("importable"))
                         and (not backend or bool(probe.get("kernel_tested"))),
                         "wheel_required": bool(
-                            (backend in ("flash_attn", "sage") and runtime["platform"] in ("Windows", "Linux"))
+                            (
+                                backend in ("flash_attn", "sage")
+                                and runtime["platform"] in ("Windows", "Linux")
+                            )
                             or (self.profile == "linux-dtk" and name in ("flash-attn", "xformers"))
                         ),
                     }
@@ -719,7 +729,7 @@ class EnvironmentManager:
 
     def save_settings(self, settings: EnvironmentSettings):
         if settings.attention_default not in ("auto", "sdpa"):
-            status = self.status()
+            status = self.status(refresh=True)
             if not any(
                 p["backend"] == settings.attention_default and p["available"] for p in status["packages"]
             ):
@@ -1377,9 +1387,7 @@ class EnvironmentManager:
                         + str(probe.get("error") or "Selected device kernel unavailable")
                     )
             self._update(id_, status="completed", restart_required=True)
-            log(
-                "Dependency change verified. Restart Studio to release maintenance and load the new environment."
-            )
+            log("依赖已更新。重启 Studio 后生效并恢复任务队列。")
         except Exception as exc:
             self._update(id_, status="failed", error=str(exc), restart_required=mutation_started)
             log(str(exc))

@@ -38,8 +38,7 @@ def probe_sdpa(torch_module=None) -> dict[str, Any]:
     """Check small forward/backward SDPA paths in the existing isolated probe process.
 
     No kernel backend is forced: CUDA/HIP checks available half precisions; MPS
-    checks FP32, matching the current training path. This does not identify or
-    certify a Flash kernel, every model shape or every card. Inputs use under
+    checks FP32, matching the current training path. Inputs use under
     1 MiB per case; no model is loaded. Explicit CPU profiles never allocate GPU
     tensors, and the Apple profile never probes a CUDA device.
     """

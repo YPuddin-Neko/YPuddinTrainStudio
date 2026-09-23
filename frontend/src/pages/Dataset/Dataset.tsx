@@ -46,8 +46,8 @@ function Histogram({ data, label, barColor }: { data: Array<{ name: string; coun
       <div className="text-xs text-slate-400 mb-1.5">{label}</div>
       <div className="flex items-end space-x-1 h-16">
         {data.map((d, i) => (
-          <div key={i} className="flex-1 flex flex-col items-center justify-end min-w-0" title={`${d.name}: ${d.count}`}>
-            <div className={`w-full rounded-t ${barColor}`} style={{ height: `${(d.count / max) * 100}%` }} />
+          <div key={i} className="flex-1 flex flex-col items-center justify-end min-w-0 h-full" title={`${d.name}: ${d.count}`}>
+            <div className={`w-full rounded-t flex-shrink-0 ${barColor}`} style={{ height: `${(d.count / max) * 48}px` }} />
             <div className="text-[9px] text-slate-400 mt-0.5 truncate w-full text-center">{d.name}</div>
           </div>
         ))}
@@ -67,6 +67,7 @@ function DatasetContent({id}: {id?:string}) {
   const allowedDestination = React.useRef<string | null>(null);
   const { t } = useTranslation();
   const text = useWorkspaceText();
+  const english = text('zh', 'en') === 'en';
   const navigationRef = useWorkspaceHeight('--workspace-head-height');
   const contextProblem = text('无法确认此数据集所属的项目版本。','The dataset project/version could not be verified.');
 
@@ -96,6 +97,9 @@ function DatasetContent({id}: {id?:string}) {
   const [batchRemove, setBatchRemove] = React.useState('');
   const [buckets, setBuckets] = React.useState<Plan['buckets'] | null>(null);
   const [showDistribution, setShowDistribution] = React.useState(false);
+  const [bucketError, setBucketError] = React.useState('');
+  const [bucketContext, setBucketContext] = React.useState('');
+  const bucketRequest = React.useRef<AbortController | null>(null);
   const [busyAction, setBusyAction] = React.useState<string | null>(null);
   const [versionAccess, setVersionAccess] = React.useState<{ key: string; editable: boolean; archived: boolean; error?: string } | null>(null);
   const versionRequest = React.useRef<AbortController | null>(null);
@@ -311,15 +315,30 @@ function DatasetContent({id}: {id?:string}) {
       .finally(() => setBusyAction(null));
   };
 
-  const handleBucketPreview = () => {
-    if (!info) return;
-    setBusyAction('buckets');
-    apiClient.get<any>(versionConfigUrl(info.source.project_id || '', info.source.version_id))
-      .then((config) => apiClient.post<Plan>('/plan', { config, dataset_ids: [id] }))
-      .then((plan) => { setBuckets(plan.buckets || []); setShowDistribution(true); })
-      .catch(console.error)
-      .finally(() => setBusyAction(null));
-  };
+  const handleBucketPreview = React.useCallback(async () => {
+    if (!info?.source.project_id || !id) return;
+    bucketRequest.current?.abort();
+    const controller = new AbortController(); bucketRequest.current = controller;
+    setBusyAction('buckets'); setBucketError(''); setBuckets(null);
+    try {
+      const config = await apiClient.get<any>(versionConfigUrl(info.source.project_id, info.source.version_id), {signal:controller.signal,silent:true});
+      const plan = await apiClient.post<Plan>('/plan', {config,dataset_ids:[id],project_id:info.source.project_id,version_id:info.source.version_id}, {signal:controller.signal,silent:true});
+      if (controller.signal.aborted) return;
+      setBuckets(plan.buckets || []);
+      setBucketContext(config.dataset?.resolution_mode === 'native'
+        ? `${english ? 'Native · pixel limit ' : '原生 · 像素上限 '}${(plan.native?.max_pixels ?? config.dataset.native_max_pixels ?? 1048576).toLocaleString()}`
+        : `${english ? 'Buckets · base ' : '分桶 · 基准 '}${(config.dataset?.resolutions || [1024]).join(' / ')}`);
+      if (!plan.buckets?.length && plan.errors?.length) setBucketError(plan.errors.map(issue => issue.msg).join('；'));
+    } catch(error) { if (!controller.signal.aborted) setBucketError(formatApiError(error)); }
+    finally { if (!controller.signal.aborted) setBusyAction(null); }
+  }, [info, id, english]);
+  React.useEffect(() => {
+    if (!showDistribution) return;
+    void handleBucketPreview();
+    const refresh = () => { void handleBucketPreview(); };
+    window.addEventListener('focus', refresh);
+    return () => { bucketRequest.current?.abort(); window.removeEventListener('focus', refresh); };
+  }, [showDistribution, handleBucketPreview]);
 
   const statusLabel = (status?: string): string => {
     switch (status) {
@@ -424,7 +443,10 @@ function DatasetContent({id}: {id?:string}) {
             />
           </div>
           <div className="max-h-40 min-w-0 overflow-auto">
-            <div className="mb-1.5 flex items-center justify-between gap-2 text-xs text-slate-400"><span>{t('dataset.bucketsTitle')}</span><button onClick={handleBucketPreview} disabled={busyAction === 'buckets'} className="text-blue-500 disabled:opacity-50">{busyAction === 'buckets' ? t('dataset.computing') : text('计算分桶', 'Calculate buckets')}</button></div>
+            <div className="mb-1.5 flex items-center justify-between gap-2 text-xs text-slate-500"><span>{text('本目录实际训练尺寸', 'Training sizes for this folder')}</span><button onClick={() => void handleBucketPreview()} disabled={busyAction === 'buckets'} className="text-blue-500 disabled:opacity-50">{busyAction === 'buckets' ? t('dataset.computing') : text('重新计算', 'Recalculate')}</button></div>
+            {info?.source.project_id && <Link className="mb-2 block text-xs text-blue-600" to={`${projectUrl(info.source.project_id,info.source.version_id,'train')}?tab=data&group=dataset`}>{text('调整分辨率与分桶', 'Configure resolution and buckets')} · {projectContext?.current?.name || info.source.version_id || text('项目参数', 'Project settings')}</Link>}
+            {!!bucketContext && <p className="mb-2 text-xs text-slate-500">{bucketContext}</p>}
+            {bucketError && <p role="alert" className="mb-2 text-xs text-red-600">{bucketError}</p>}
             {buckets ? (
               <table className="w-full text-xs">
                 <thead>
@@ -445,7 +467,7 @@ function DatasetContent({id}: {id?:string}) {
                 </tbody>
               </table>
             ) : (
-              <div className="text-xs text-slate-400">{t('dataset.bucketsHint')}</div>
+              <div className="text-xs text-slate-400">{busyAction === 'buckets' ? t('dataset.computing') : text('暂无尺寸结果', 'No size results yet')}</div>
             )}
           </div>
       </div>}

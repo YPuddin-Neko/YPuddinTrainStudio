@@ -31,9 +31,18 @@ def cancel_download(download_id: str, service: ModelDownloads = Depends(download
     return service.cancel(download_id)
 
 
+class RetryDownloadRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    provider: Provider | None = None
+
+
 @router.post("/models/downloads/{download_id}/retry", response_model=ModelDownload, status_code=202)
-def retry_download(download_id: str, service: ModelDownloads = Depends(downloads)):
-    return service.retry(download_id)
+def retry_download(
+    download_id: str,
+    body: RetryDownloadRequest = RetryDownloadRequest(),
+    service: ModelDownloads = Depends(downloads),
+):
+    return service.retry(download_id, provider=body.provider)
 
 
 @router.get("/models/credentials", response_model=CredentialStates)

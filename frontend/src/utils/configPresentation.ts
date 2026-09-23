@@ -6,7 +6,7 @@ const labels: Record<string, string> = {
   'model.zero_terminal_snr': '零终点信噪比（Zero SNR）',
   'model.sdxl_max_token_length': 'SDXL 文本长度',
   'model.training_guidance': '训练引导值', 'sampling.guidance': '模型引导值',
-  'model.flux2_variant': 'Klein 类型',
+  'model.flux2_variant': 'Klein 类型', 'model.krea2_variant': 'Krea 2 类型',
   'training.mode': '训练方式', 'training.train_backbone': '训练主模型（UNet / DiT）', 'training.train_text_encoder': '训练文本编码器', 'training.resume_weights': '全量模型起始权重',
   'model.vae_path': 'VAE', 'model.tokenizer_path': '分词器目录', 'model.dtype': '底模加载精度', 'model.attention': '注意力后端',
   'dataset.sources': '训练数据源', 'dataset.resolutions': '训练分辨率', 'dataset.aspect_ratio_limit': '最大长宽比',
@@ -149,6 +149,7 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
     ? 'β1 controls schedule-free weight averaging; β2 smooths the estimate of gradient size. These have different roles. Usually keep this optimizer’s defaults.'
     : 'β1 控制免调度训练中的权重平均，β2 平滑梯度大小的估计。两者作用不同，通常保留当前优化器的默认值。';
   const help: Record<string, [string, string]> = {
+    'adapter.resume_weights': ['可选。加载已有 LoRA / LoKr 权重作为本次训练起点；优化器和步数重新开始。接着上次任务训练请使用完整训练状态。', 'Optional. Start from existing LoRA / LoKr weights with a fresh optimizer and step count. Use a full training state to resume a previous run.'],
     'loop.deterministic': ['默认关闭。在相同配置、设备和软件环境下提高重复训练的一致性。开启后可能固定部分计算精度和注意力设置，增加显存与耗时；具体值会显示在对应字段。完整续训需保持原设置和环境。', 'Off by default. Improves repeatability with the same configuration, device and software environment. May manage precision and attention settings and increase memory use and runtime; effective values appear in the fields. Keep the same settings and environment when resuming.'],
     'loop.mixed_precision': ['控制训练运算的自动混合精度。关闭只停用自动混合精度，不改变权重本身的精度。底模存储和导出文件的精度分别设置；可复现训练可能调整实际计算精度。', 'Controls automatic mixed precision during training. Disabling it does not change weight precision. Base-weight storage and export precision are configured separately; reproducible training may adjust compute precision.'],
     'memory.base_precision': ['适配器训练时转换其覆盖的未量化冻结线性层，降低存储精度可节省显存，但可能影响训练质量；原模型文件和适配器精度不变。FP8 需要受支持的 CUDA 或海光环境。全量微调使用沿用精度或 FP32。', 'Converts unquantized frozen linear layers covered by adapters. Lower storage precision saves memory but may affect training quality; source files and adapter precision are unchanged. FP8 requires supported CUDA or DTK hardware. Full fine-tuning uses the loaded precision or FP32.'],
@@ -181,7 +182,6 @@ export function configFieldHint(path: string, english = false, optimizerType?: s
     'memory.base_precision': ['降低底模存储精度可节省显存，但可能影响训练质量。默认不转换。', 'Lower precision saves memory but may affect training quality. Conversion is off by default.'],
     'memory.activation_checkpointing': ['重新计算中间结果，节省显存但增加耗时。', 'Recomputes intermediate results to save memory at the cost of time.'],
     'loop.grad_accum': ['累积多个小批次后再更新一次参数。', 'Accumulate multiple minibatches before one parameter update.'],
-    'model.attention': ['默认使用 PyTorch 内置 SDPA。Apple 可选 Metal FlashAttention，需先在运行环境中安装匹配版本。', 'Defaults to built-in PyTorch SDPA. Apple can use Metal FlashAttention after installing a compatible build in runtime settings.'],
     'adapter.mode': ['自动模式分别计算底模和适配器的输出，不降低权重精度。', 'Automatic computes the base model and adapter outputs separately without reducing weight precision.'],
 
     'optimizer.lr': ['基础更新步长；全量微调需单独设置，自适应优化器按自身规则管理。', 'Base update step size; set it separately for full fine-tuning. Adaptive optimizers manage it by their own rules.'],
@@ -227,10 +227,13 @@ export function configOptionLabel(path: string, option: string, english = false)
     'training.mode': {adapter:['LoRA','LoRA'],full:['全量微调','Full fine-tuning']},
     'memory.base_precision': {auto:['不转换（沿用加载精度）','No conversion (keep loaded precision)'],fp32:['FP32 · 32 位','FP32 · 32-bit'],bf16:['BF16 · 16 位','BF16 · 16-bit'],fp16:['FP16 · 16 位','FP16 · 16-bit'],fp8_e4m3:['FP8 E4M3 · 启动时量化','FP8 E4M3 · quantize at startup'],fp8_e5m2:['FP8 E5M2 · 启动时量化','FP8 E5M2 · quantize at startup']},
     'model.attention': {auto:['PyTorch SDPA（默认）','PyTorch SDPA (default)'],sdpa:['PyTorch SDPA','PyTorch SDPA'],xformers:['xFormers','xFormers'],flash_attn:['FlashAttention 2','FlashAttention 2'],metal_flash:['Metal FlashAttention · Apple','Metal FlashAttention · Apple'],sage:['SageAttention · 仅采样','SageAttention · sampling only']},
+    'adapter.init': {default:['默认初始化','Default initialization'],scalar:['随机权重 + 零值缩放','Random weights + zero scale']},
     'adapter.mode': {auto:['自动 · 分开计算','Automatic · separate computation'],bypass:['分开计算适配器','Compute adapter separately'],weight:['合并权重后计算','Compute merged weights']},
     'memory.activation_checkpointing': {none:['关闭','Off'],block:['逐块重算 · 节省显存','Block recomputation · save memory'],unsloth:['重算并卸载中间输入','Recompute and offload block inputs']},
     'model.prediction_type': { epsilon: ['ε 预测（常规模型）', 'Epsilon (standard)'], v_prediction: ['v 预测', 'v-prediction'] },
     'model.sdxl_max_token_length': { '75': ['75 tokens · 默认', '75 tokens · default'], '150': ['150 tokens · 2 段', '150 tokens · 2 chunks'], '225': ['225 tokens · 3 段', '225 tokens · 3 chunks'] },
+    'model.dtype': {auto:['跟随模型','Follow model'],bf16:['BF16','BF16'],fp16:['FP16','FP16'],fp32:['FP32','FP32']},
+    'model.krea2_variant': {auto:['读取模型记录','Read model record'],raw:['Raw · 训练模型','Raw · training model'],turbo:['Turbo · 仅采样','Turbo · sampling only']},
     'model.flux2_variant': { auto: ['自动读取模型配置', 'Read model configuration'], dev: ['FLUX.2 dev（已停用）', 'FLUX.2 dev (retired)'], 'klein-base-4b': ['Klein 基础版 4B', 'Klein base 4B'], 'klein-base-9b': ['Klein 基础版 9B', 'Klein base 9B'] },
     'sampling.sampler': { euler:['Euler', 'Euler'], heun:['Heun', 'Heun'], er_sde:['ER-SDE', 'ER-SDE'] },
     'sampling.scheduler': { uniform:['Uniform', 'Uniform'], simple:['Simple', 'Simple'], sgm_uniform:['SGM Uniform', 'SGM Uniform'], normal:['Normal', 'Normal'] },

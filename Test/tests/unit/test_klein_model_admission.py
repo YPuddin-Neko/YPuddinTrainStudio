@@ -159,7 +159,12 @@ def test_klein_rejects_dev_mistral_encoder_and_bare_qwen_file(api, tmp_path):
             "path": str(klein / "text_encoder/model.safetensors"),
         },
     )
-    assert response.status_code == 422 and "完整本地 HF 目录" in response.text
+    assert response.status_code == 200, response.text
+    bare = sparse_headers(tmp_path / "bare-qwen.safetensors", {"model.embed_tokens.weight": [151936, 2560]})
+    response = client.post(
+        "/api/models", json={"family": "flux2", "kind": "text_encoder", "path": str(bare)}
+    )
+    assert response.status_code == 422 and "MLP geometry mismatch" in response.text
     response = client.post(
         "/api/models", json={"family": "flux2", "kind": "text_encoder", "path": str(klein / "text_encoder")}
     )

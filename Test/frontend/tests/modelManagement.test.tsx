@@ -32,6 +32,7 @@ function task(overrides: Partial<ModelDownload> = {}): ModelDownload {
   return {id:'dl1',provider:'huggingface',mirror:'official',family:'anima',kind:'text_encoder',source_url:'https://huggingface.co/official/anima/resolve/main/encoder.safetensors',filename:'encoder.safetensors',target_path:'D:\\models\\encoder.safetensors',status:'downloading',bytes_per_second:0,eta_seconds:null,progress_at:null,downloaded_bytes:500,total_bytes:1000,error:null,model_id:null,dtype:'bf16',is_default:true,purpose:'training',created_at:1,finished_at:null,...overrides};
 }
 beforeEach(async () => {
+  localStorage.removeItem('studio.model-download-provider');
   await i18n.changeLanguage('zh-CN');
   models = [
     {id:'a',family:'anima',kind:'dit',path:'C:\\models\\anima.safetensors',dtype:'bf16',exists:true,is_default:false,purpose:'training',size:1024,created_at:1},
@@ -165,7 +166,7 @@ describe('real model management UI contracts',()=>{
     expect(download).not.toHaveBeenCalled();
     const progress=await screen.findByRole('progressbar');
     expect(progress).toHaveAttribute('value','500');expect(progress).toHaveAttribute('max','1000');
-    expect(screen.getByRole('button',{name:'下载中'})).toBeDisabled();expect(cancel).not.toHaveBeenCalled();expect(models.some(model=>model.kind==='text_encoder')).toBe(false);
+    expect(screen.getByRole('button',{name:/取消下载 /})).toBeEnabled();expect(cancel).not.toHaveBeenCalled();expect(models.some(model=>model.kind==='text_encoder')).toBe(false);
   });
   it('keeps only the current catalog attempt through retry, transfer and completion with retained server history',async()=>{
     downloads=[
@@ -185,21 +186,21 @@ describe('real model management UI contracts',()=>{
     expect(screen.queryByRole('tab',{name:/下载/})).not.toBeInTheDocument();
     expect(screen.queryByRole('button',{name:'更换来源'})).not.toBeInTheDocument();
     fireEvent.click(within(card).getByRole('button',{name:'重试'}));await waitFor(()=>expect(retry).toHaveBeenCalledOnce());
-    expect(await within(card).findByRole('button',{name:'下载中'})).toBeDisabled();
-    expect(within(card).getByRole('button',{name:'下载中'})).toHaveClass('model-button-downloading');
+    expect(await within(card).findByRole('button',{name:/取消下载 /})).toBeEnabled();
+    expect(within(card).getByRole('button',{name:/取消下载 /})).toHaveClass('model-button-downloading');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByRole('region',{name:'下载状态'})).not.toBeInTheDocument();
     downloads=downloads.map(row=>row.id==='retry'?{...row,status:'downloading',downloaded_bytes:750}:row);
     fireEvent.click(screen.getByRole('button',{name:'刷新模型'}));
     await waitFor(()=>expect(within(card).getByRole('progressbar')).toHaveAttribute('value','750'));
-    expect(within(card).getByRole('button',{name:'下载中'})).toBeDisabled();
+    expect(within(card).getByRole('button',{name:/取消下载 /})).toBeEnabled();
     downloads=downloads.map(row=>row.id==='retry'?{...row,status:'completed',downloaded_bytes:1000}:row);
     models.push({...models[0],id:'encoder-ready',kind:'text_encoder',path:'D:\\models\\encoder.safetensors',is_default:true});
     fireEvent.click(screen.getByRole('button',{name:'刷新模型'}));
     await within(card).findByText('当前默认');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByRole('button',{name:'重试'})).not.toBeInTheDocument();
-    expect(screen.queryByRole('button',{name:'下载中'})).not.toBeInTheDocument();
+    expect(screen.queryByRole('button',{name:/取消下载 /})).not.toBeInTheDocument();
     expect(screen.queryByRole('region',{name:'下载状态'})).not.toBeInTheDocument();
     expect(downloads).toHaveLength(3);
   });
@@ -224,8 +225,8 @@ describe('real model management UI contracts',()=>{
     expect(within(card).queryByRole('alert')).not.toBeInTheDocument();
     expect(within(card).getByRole('button',{name:'下载'})).toBeEnabled();
     fireEvent.click(within(state).getByRole('button',{name:'重试'}));
-    expect(await within(state).findByRole('button',{name:'下载中'})).toBeDisabled();
-    expect(within(state).getByRole('button',{name:'下载中'})).toHaveClass('model-button-downloading');
+    expect(await within(state).findByRole('button',{name:/取消下载 /})).toBeEnabled();
+    expect(within(state).getByRole('button',{name:/取消下载 /})).toHaveClass('model-button-downloading');
     expect(within(state).queryByRole('alert')).not.toBeInTheDocument();
     expect(within(state).getAllByText('encoder.safetensors')).toHaveLength(1);
     downloads=downloads.map(row=>row.id==='two-retry'?{...row,status:'completed'}:row);
@@ -307,4 +308,37 @@ it.each(['huggingface','modelscope'])('shows both Klein base sizes and submits t
   expect(within(row).getByRole('button',{name:'下载'})).toBeEnabled();
   fireEvent.click(within(title.closest('.model-catalog-row') as HTMLElement).getByRole('button',{name:'下载'}));
   await waitFor(()=>expect(request).toHaveBeenCalledWith('flux2-klein-base-9b',{provider,is_default:true}));
+});
+
+
+it('cancels an active catalog download from its progress button', async () => {
+  downloads=[task({recommendation_id:'anima-encoder'})];
+  mount(<Models/>);
+  fireEvent.click(await screen.findByRole('button', {name:'取消下载 encoder.safetensors'}));
+  await waitFor(() => expect(cancel).toHaveBeenCalledWith('dl1'));
+  expect(await screen.findByText('下载已取消，可以重新下载。')).toBeInTheDocument();
+});
+
+it('persists the selected download provider across reopening the page', async () => {
+  const first=mount(<Models/>);
+  await screen.findByTestId('model-provider');
+  choose('下载来源','魔搭 ModelScope');
+  first.unmount();
+  mount(<Models/>);
+  expect(await screen.findByTestId('model-provider')).toHaveTextContent('魔搭 ModelScope');
+});
+
+it('retries a recommended model using the newly selected provider', async () => {
+  downloads=[task({id:'failed-source',recommendation_id:'anima-encoder',status:'failed',error:'timeout'})];
+  const retry=vi.fn();
+  server.use(http.post('/api/models/downloads/failed-source/retry',async ({request}) => {
+    retry(await request.json());
+    downloads=[task({id:'new-source',recommendation_id:'anima-encoder',provider:'modelscope'})];
+    return HttpResponse.json(downloads[0],{status:202});
+  }));
+  mount(<Models/>);
+  await screen.findByTestId('model-provider');
+  choose('下载来源','魔搭 ModelScope');
+  fireEvent.click(screen.getByRole('button',{name:'重试'}));
+  await waitFor(() => expect(retry).toHaveBeenCalledWith({provider:'modelscope'}));
 });

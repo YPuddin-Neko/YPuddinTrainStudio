@@ -768,3 +768,10 @@ it.each(backendPolicies.filter(row => row.policy.attention === 'flash_attn'))('s
   expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('使用 FlashAttention');
   expect(confirmedTrainingComputePolicy(policy,{...config,model:{...config.model,attention:'sdpa'}})).toBeNull();
 });
+
+
+it.each(backendPolicies)('retains the confirmed $name policy when loading precision follows the model', ({config, policy:candidate}) => {
+  const automatic = {...config, model:{...config.model, dtype:'auto'}};
+  expect(confirmedTrainingComputePolicy(candidate, automatic)).toEqual(candidate);
+  expect(confirmedTrainingComputePolicy(null, automatic)).toBeNull();
+});

@@ -42,6 +42,8 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
   const [leavePrompt, setLeavePrompt] = React.useState(false);
   const leavePending = React.useRef<{ promise: Promise<boolean>; resolve: (leave: boolean) => void } | null>(null);
   const mounted = React.useRef(true);
+  const workspace = React.useRef<HTMLElement>(null);
+  const editor = React.useRef<HTMLDivElement>(null);
   const grid = React.useRef<HTMLDivElement>(null);
   const datasets = useQuery({ queryKey: ['caption-datasets', projectId, versionId], refetchOnWindowFocus: false, refetchOnReconnect: false,
     queryFn: ({ signal }) => apiClient.get<DatasetInfo[]>(`/projects/${projectId}/datasets`, { params: { version_id: versionId }, signal, silent: true }) });
@@ -76,6 +78,30 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
   const tags = parseTags(activeDraft.caption);
   const locked = readOnly || saving || invalid || images.isFetching || isJson && !structure?.editable;
   const statsTags = (stats.data?.tags || []).filter(item => item.tag.toLocaleLowerCase().includes(statsSearch.trim().toLocaleLowerCase()));
+
+  React.useLayoutEffect(() => {
+    const root = workspace.current, panel = editor.current;
+    if (!root || !panel) return;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      let top = panel.getBoundingClientRect().top + window.scrollY;
+      // Use the unscrolled position so scrolling cannot resize the editor in a loop.
+      for (let ancestor = panel.parentElement; ancestor && ancestor !== document.body; ancestor = ancestor.parentElement) top += ancestor.scrollTop;
+      const height = `${Math.max(280, Math.floor(window.innerHeight - top - 16))}px`;
+      if (root.style.getPropertyValue('--caption-editor-height') !== height) root.style.setProperty('--caption-editor-height', height);
+    };
+    const schedule = () => { if (!frame) frame = window.requestAnimationFrame(update); };
+    update();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule);
+    for (let ancestor: HTMLElement | null = root; ancestor && ancestor !== document.body; ancestor = ancestor.parentElement) observer?.observe(ancestor);
+    window.addEventListener('resize', schedule);
+    return () => {
+      observer?.disconnect(); window.removeEventListener('resize', schedule);
+      if (frame) window.cancelAnimationFrame(frame);
+      root.style.removeProperty('--caption-editor-height');
+    };
+  }, [key]);
 
   React.useEffect(() => { mounted.current = true; return () => { mounted.current = false; leavePending.current?.resolve(false); leavePending.current = null; }; }, []);
   React.useEffect(() => {
@@ -162,7 +188,7 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
   const refresh = () => perform(() => { void datasets.refetch(); if (source) { void images.refetch(); void stats.refetch(); } });
   const setFilter = (patch: Partial<typeof navigation>) => perform(() => updateNavigation({ ...patch, page: 1, selected: '' }));
 
-  return <section className="caption-workspace" aria-label={text('标签工作区', 'Caption workspace')}>
+  return <section ref={workspace} className="caption-workspace" aria-label={text('标签工作区', 'Caption workspace')}>
     {dataRouter && <DatasetNavigationGuard shouldBlock={() => dirty || saving} beforeLeave={beforeLeave} onError={failure => { if (failure instanceof Error && failure.message) setError(formatApiError(failure)); }}/>}
     <div className="caption-workspace-toolbar" role="group" aria-label={text('选择图片目录', 'Choose image folder')}>
       <label className="caption-workspace-source"><span><Folder size={17}/>{text('图片目录', 'Image folder')}</span><StudioSelect searchable aria-label={text('图片目录', 'Image folder')} value={source?.source.id || ''} disabled={saving || !source} options={(datasets.data || []).map(item => ({ value: item.source.id, label: nameOf(item.source.path) }))} onValueChange={value => perform(() => setDatasetId(value))}/></label>
@@ -190,7 +216,8 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
               </>}
             <div className="caption-workspace-gallery" ref={grid} role="region" aria-busy={images.isFetching} aria-label={text('图片缩略图', 'Image thumbnails')} tabIndex={0}>{items.map(item => <button type="button" key={imageKey(item)} aria-label={text(`选择图片：${item.rel_path}`, `Select image: ${item.rel_path}`)} aria-pressed={item === image} disabled={saving || images.isFetching} onClick={() => perform(() => updateNavigation({ selected: imageKey(item) }))}><img src={apiUrl(`/datasets/${source.source.id}/images/${item.hash}/thumb?size=256`)} alt={item.rel_path} loading="lazy"/><span title={item.rel_path}>{item.rel_path}</span>{(item.caption_error || item.caption_status === 'invalid') ? <small className="caption-workspace-error">{text('标签错误', 'Invalid caption')}</small> : !item.caption && <small>{text('缺少标签', 'No caption')}</small>}</button>)}</div>
             </div>
-            {image && <div className="caption-workspace-editor" aria-label={text('当前图片标签编辑器', 'Current image caption editor')} role="region">
+            {image && <div ref={editor} className="caption-workspace-editor" aria-label={text('当前图片标签编辑器', 'Current image caption editor')} role="region">
+              <div className="caption-workspace-editor-fields">
               {invalid && <p role="alert" className="caption-workspace-error">{text('此标签文件无法解析，修复格式后刷新再编辑。', 'This caption file cannot be parsed. Fix its format, then refresh to edit.')}{image.caption_error && ` ${image.caption_error}`}</p>}
               {isJson ? <StructuredCaptionEditor key={key} structure={structure} draft={activeDraft.fields} onChange={fields => updateDraft({ fields })} disabled={locked} readOnly={readOnly}/> : <>
               <div className="caption-workspace-editor-tabs" role="group" aria-label={text('标签编辑方式', 'Caption editing mode')}><button type="button" aria-pressed={editorMode === 'tags'} onClick={() => setEditorMode('tags')}>{text('标签', 'Tags')}</button><button type="button" aria-pressed={editorMode === 'text'} onClick={() => setEditorMode('text')}>{text('文本 / 自然语言', 'Text / natural language')}</button></div>
@@ -199,6 +226,7 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
                   : <div className="caption-workspace-tags"><div>{tags.map((item, index) => <span className="caption-workspace-chip" key={`${item}/${index}`}>{activeDraft.editing?.index === index ? <input autoFocus aria-label={text(`编辑标签：${item}`, `Edit tag: ${item}`)} value={activeDraft.editing.value} onChange={event => updateDraft({ editing: { index, value: event.target.value } })} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); applyTagEdit(); } if (event.key === 'Escape') updateDraft({ editing: null }); }} onBlur={applyTagEdit}/> : <button type="button" aria-label={text(`编辑标签：${item}`, `Edit tag: ${item}`)} onClick={() => updateDraft({ editing: { index, value: item } })}>{item}</button>}{!readOnly && <button type="button" aria-label={text(`删除标签：${item}`, `Remove tag: ${item}`)} onClick={() => updateDraft({ caption: serializeTags(tags.filter((_, i) => i !== index)), editing: null })}><X size={12}/></button>}</span>)}</div>{!readOnly && <div className="caption-workspace-tag-add"><input aria-label={text('添加标签', 'Add tags')} placeholder={text('输入标签，多个用逗号分隔', 'Enter tags separated by commas')} value={activeDraft.adding} onChange={event => updateDraft({ adding: event.target.value })} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addTags(); } }}/><button type="button" onClick={addTags}>{text('添加', 'Add')}</button></div>}</div>}
               </fieldset>
               </>}
+              </div>
               <div className="caption-workspace-save"><span role="status">{saving ? text('正在保存…', 'Saving…') : dirty ? text('有未保存的修改', 'Unsaved changes') : message || (readOnly ? text('只读', 'Read only') : '')}</span>{!readOnly && <><button type="button" disabled={!dirty || saving} onClick={() => perform(() => setDraft(null))}>{text('放弃修改', 'Discard changes')}</button><button type="button" className="caption-workspace-primary" disabled={!dirty || locked} onClick={() => { void save(); }}><Save size={14}/>{text('保存标签', 'Save caption')}</button></>}</div>
             </div>}
           </div>}
