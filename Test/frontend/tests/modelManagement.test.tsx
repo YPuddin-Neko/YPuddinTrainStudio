@@ -282,14 +282,14 @@ describe('real model management UI contracts',()=>{
   });
 });
 
-it('shows both Klein base sizes and submits the 9B single-file catalog entry', async()=>{
+it.each(['huggingface','modelscope'])('shows both Klein base sizes and submits the 9B single-file entry through %s', async(provider)=>{
   const catalog=[
     ['flux2-klein-base-4b','dit','FLUX.2 Klein Base 4B · BF16'],
     ['flux2-klein-base-9b','dit','FLUX.2 Klein Base 9B · BF16'],
     ['flux2-qwen3-4b','text_encoder','Qwen3 4B · Klein 4B 文本编码器'],
     ['flux2-qwen3-8b','text_encoder','Qwen3 8B · Klein 9B 文本编码器'],
     ['flux2-vae','vae','FLUX.2 VAE · Klein 4B / 9B 共用'],
-  ].map(([id,kind,name])=>({id,kind,name,family:'flux2',dtype:'bf16',size:1024,recommended:true,purpose:'training',model_id:null,available_path:null,is_default:false,sources:[{provider:'huggingface',url:'https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9B',repo_id:'official/klein',filename:id+'.safetensors',revision:'pinned'}]}));
+  ].map(([id,kind,name])=>({id,kind,name,family:'flux2',dtype:'bf16',size:1024,recommended:true,purpose:'training',model_id:null,available_path:null,is_default:false,sources:['huggingface','modelscope'].map(source=>({provider:source,url:`https://${source==='modelscope'?'modelscope.cn/models':'huggingface.co'}/black-forest-labs/FLUX.2-klein-base-9B`,repo_id:'official/klein',filename:id+'.safetensors',revision:'pinned'}))}));
   const request=vi.fn();
   server.use(
     http.get('/api/families',()=>HttpResponse.json([{name:'flux2',label:'FLUX.2 Klein 4B / 9B',weights:['dit','text_encoder','vae'].map(kind=>({field:kind==='dit'?'dit_path':kind+'_path',kind,required:true,downloadable:true}))}])),
@@ -301,6 +301,10 @@ it('shows both Klein base sizes and submits the 9B single-file catalog entry', a
   const title=await screen.findByText('FLUX.2 Klein Base 9B · BF16');
   expect(await screen.findByText('Qwen3 8B · Klein 9B 文本编码器')).toBeVisible();
   expect(screen.getByText('FLUX.2 VAE · Klein 4B / 9B 共用')).toBeVisible();
+  if(provider==='modelscope') choose('下载来源','魔搭 ModelScope');
+  const row=title.closest('.model-catalog-row') as HTMLElement;
+  expect(within(row).getByRole('link',{name:'发布页'})).toHaveAttribute('href',`https://${provider==='modelscope'?'modelscope.cn/models':'huggingface.co'}/black-forest-labs/FLUX.2-klein-base-9B`);
+  expect(within(row).getByRole('button',{name:'下载'})).toBeEnabled();
   fireEvent.click(within(title.closest('.model-catalog-row') as HTMLElement).getByRole('button',{name:'下载'}));
-  await waitFor(()=>expect(request).toHaveBeenCalledWith('flux2-klein-base-9b',{provider:'huggingface',is_default:true}));
+  await waitFor(()=>expect(request).toHaveBeenCalledWith('flux2-klein-base-9b',{provider,is_default:true}));
 });

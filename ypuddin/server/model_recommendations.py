@@ -4,6 +4,7 @@ Source metadata checked 2026-09-13 using the Hugging Face tree API and ModelScop
 repo/files API. Provider mappings are explicit; a matching repository name is never
 assumed by the client. Updated upstream bytes must pass the pinned SHA-256 check.
 Illustrious v0.1 and Krea Raw BF16 ModelScope sources rechecked 2026-09-15.
+Klein Base 4B/9B, Qwen3 4B/8B and FLUX.2 VAE ModelScope sources checked 2026-09-23.
 """
 
 import hashlib
@@ -106,7 +107,14 @@ RECOMMENDATIONS = [
                 filename="flux-2-klein-base-4b.safetensors",
                 revision="a3b4f4849157f664bdbc776fd7453c2783562f4d",
                 url="https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B/blob/a3b4f4849157f664bdbc776fd7453c2783562f4d/flux-2-klein-base-4b.safetensors",
-            )
+            ),
+            RecommendedSource(
+                provider="modelscope",
+                repo_id="black-forest-labs/FLUX.2-klein-base-4B",
+                filename="flux-2-klein-base-4b.safetensors",
+                revision="384cd13880a8dd205782035743eead9ec374df5c",
+                url="https://modelscope.cn/models/black-forest-labs/FLUX.2-klein-base-4B/files",
+            ),
         ],
     ),
     RecommendedModel(
@@ -124,7 +132,14 @@ RECOMMENDATIONS = [
                 filename="flux-2-klein-base-9b.safetensors",
                 revision="32773329fbe7e81a90ef971740e8ba4b0364ecf3",
                 url="https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9B/blob/32773329fbe7e81a90ef971740e8ba4b0364ecf3/flux-2-klein-base-9b.safetensors",
-            )
+            ),
+            RecommendedSource(
+                provider="modelscope",
+                repo_id="black-forest-labs/FLUX.2-klein-base-9B",
+                filename="flux-2-klein-base-9b.safetensors",
+                revision="332e29c86837a0143b3984ebda6f875fd9df76ab",
+                url="https://modelscope.cn/models/black-forest-labs/FLUX.2-klein-base-9B/files",
+            ),
         ],
     ),
     RecommendedModel(
@@ -142,7 +157,14 @@ RECOMMENDATIONS = [
                 filename="split_files/text_encoders/qwen_3_4b.safetensors",
                 revision="5f526678002e43af5551dadb73ce2e8c91b43afe",
                 url="https://huggingface.co/Comfy-Org/flux2-klein-4B/blob/5f526678002e43af5551dadb73ce2e8c91b43afe/split_files/text_encoders/qwen_3_4b.safetensors",
-            )
+            ),
+            RecommendedSource(
+                provider="modelscope",
+                repo_id="Comfy-Org/flux2-klein-4B",
+                filename="split_files/text_encoders/qwen_3_4b.safetensors",
+                revision="305618a79d0d7b2b167266c8a4082ee99e948ca2",
+                url="https://modelscope.cn/models/Comfy-Org/flux2-klein-4B/files",
+            ),
         ],
     ),
     RecommendedModel(
@@ -160,7 +182,14 @@ RECOMMENDATIONS = [
                 filename="split_files/text_encoders/qwen_3_8b.safetensors",
                 revision="3f62d9d8ae1fec33c6e91453d5c712855b096b55",
                 url="https://huggingface.co/Comfy-Org/flux2-klein-9B/blob/3f62d9d8ae1fec33c6e91453d5c712855b096b55/split_files/text_encoders/qwen_3_8b.safetensors",
-            )
+            ),
+            RecommendedSource(
+                provider="modelscope",
+                repo_id="Comfy-Org/flux2-klein-9B",
+                filename="split_files/text_encoders/qwen_3_8b.safetensors",
+                revision="0bb21a1a5059384ac93399fc1f31e752e605d1ee",
+                url="https://modelscope.cn/models/Comfy-Org/flux2-klein-9B/files",
+            ),
         ],
     ),
     RecommendedModel(
@@ -178,7 +207,14 @@ RECOMMENDATIONS = [
                 filename="split_files/vae/flux2-vae.safetensors",
                 revision="5f526678002e43af5551dadb73ce2e8c91b43afe",
                 url="https://huggingface.co/Comfy-Org/flux2-klein-4B/blob/5f526678002e43af5551dadb73ce2e8c91b43afe/split_files/vae/flux2-vae.safetensors",
-            )
+            ),
+            RecommendedSource(
+                provider="modelscope",
+                repo_id="Comfy-Org/flux2-klein-4B",
+                filename="split_files/vae/flux2-vae.safetensors",
+                revision="305618a79d0d7b2b167266c8a4082ee99e948ca2",
+                url="https://modelscope.cn/models/Comfy-Org/flux2-klein-4B/files",
+            ),
         ],
     ),
     *[
