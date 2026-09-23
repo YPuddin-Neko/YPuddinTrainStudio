@@ -138,6 +138,32 @@ describe('isolated PyTorch environment controls',()=>{
     expect(screen.getByRole('combobox',{name:'选择 PyTorch 版本'})).toBeDisabled();
     expect(post).not.toHaveBeenCalled();
   });
+  it.each(['mps','cpu'])('keeps the %s environment guidance free of CUDA extension and storage requirements',async backend=>{
+    const data=snapshot();
+    data.builds=[{...build,id:`2.11.0-${backend}`,label:`PyTorch 2.11.0 · ${backend.toUpperCase()}`,backend}];
+    vi.spyOn(apiClient,'get').mockResolvedValue(data);
+    render(<TorchEnvironmentPanel showAttentionExtensions={false}/>);
+    const space=await screen.findByText(/可用空间/);
+    expect(space).toHaveTextContent('8 GiB');
+    expect(space).not.toHaveTextContent('12 GiB');
+    const section=screen.getByRole('heading',{name:'PyTorch 版本'}).closest('section')!;
+    expect(section).not.toHaveTextContent(/xFormers|FlashAttention|CUDA/);
+    expect(screen.getByRole('button',{name:'检查 PyTorch 安装条件'})).toBeEnabled();
+  });
+  it('keeps CUDA extension guidance and updates storage requirements when the selected build changes',async()=>{
+    const data=snapshot();
+    data.builds.push({...build,id:'2.11.0-cpu',label:'PyTorch 2.11.0 · CPU',backend:'cpu',recommended:false});
+    vi.spyOn(apiClient,'get').mockResolvedValue(data);
+    render(<TorchEnvironmentPanel/>);
+    expect(await screen.findByText(/可用空间/)).toHaveTextContent('12 GiB');
+    const section=screen.getByRole('heading',{name:'PyTorch 版本'}).closest('section')!;
+    expect(section).toHaveTextContent('xFormers');
+    expect(section).toHaveTextContent('FlashAttention');
+    fireEvent.click(screen.getByRole('combobox',{name:'选择 PyTorch 版本'}));
+    fireEvent.click(screen.getByRole('option',{name:'PyTorch 2.11.0 · CPU'}));
+    expect(screen.getByText(/可用空间/)).toHaveTextContent('8 GiB');
+    expect(screen.getByText(/可用空间/)).not.toHaveTextContent('12 GiB');
+  });
 });
 
 describe('service restart controls',()=>{

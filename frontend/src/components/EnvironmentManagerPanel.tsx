@@ -44,6 +44,19 @@ const input = 'rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm
 const busyStatus = (op: Operation) => ['planning', 'installing', 'verifying'].includes(op.status);
 const managedPackages = new Set(['xformers', 'flash-attn']);
 
+function runtimeTarget(runtime: EnvironmentStatus['runtime']): 'cpu' | 'mps' | 'cuda' | 'hip' {
+  const profile = runtime.environment_profile || 'legacy';
+  if (profile.endsWith('-cpu')) return 'cpu';
+  if (profile === 'macos-mps') return 'mps';
+  if (profile === 'linux-dtk') return 'hip';
+  if (profile.endsWith('-cuda')) return 'cuda';
+  // Legacy environments have no launcher-owned target; inspect the loaded runtime.
+  if (runtime.compute_backend === 'hip' || runtime.hip_runtime) return 'hip';
+  if (runtime.compute_backend === 'mps') return 'mps';
+  if (runtime.cuda_runtime || runtime.cuda_available || runtime.compute_backend === 'cuda') return 'cuda';
+  return runtime.mps_available ? 'mps' : 'cpu';
+}
+
 function DownloadProgress({ operation, copy }: {operation: Operation; copy: (zh: string, en: string) => string}) {
   const downloading = operation.status === 'planning' && operation.phase === 'download';
   const downloaded = Math.max(0, operation.downloaded_bytes || 0);
@@ -94,7 +107,12 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     if (current) { observedOperations.current.add(`${current.id}:${current.status}`); setExpanded(current.id); }
   }, [operations, createdOperations]);
   const [uploading, setUploading] = React.useState(false);
-  const focusAvailable = !!focusPackage && managedPackages.has(focusPackage) && !!status?.packages.some(pkg => pkg.name === focusPackage);
+  const profile = status?.runtime.environment_profile || 'legacy';
+  const target = status ? runtimeTarget(status.runtime) : 'cpu';
+  const cpuProfile = target === 'cpu';
+  const hipBackend = target === 'hip';
+  const showAttentionExtensions = target === 'cuda' || hipBackend;
+  const focusAvailable = showAttentionExtensions && !!focusPackage && managedPackages.has(focusPackage) && !!status?.packages.some(pkg => pkg.name === focusPackage);
   React.useEffect(() => {
     if (!focusAvailable || !focusPackage) return;
     setSelected(focusPackage);
@@ -170,25 +188,22 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
   };
   const textUnavailable = () => copy(' · 驱动可见，当前 PyTorch 不可用',' · visible to driver, unavailable to current PyTorch');
   const locked = busy || uploading || operations.some(busyStatus) || !!status?.running_jobs;
-  const profile = status?.runtime.environment_profile || 'legacy';
   const profileLabel = ({ 'windows-cuda': 'Windows CUDA', 'linux-cuda': 'Linux CUDA', 'linux-dtk': 'Linux DTK', 'macos-mps': 'macOS MPS', 'windows-cpu': 'Windows CPU', 'linux-cpu': 'Linux CPU', 'macos-cpu': 'macOS CPU', legacy: copy('旧版环境', 'Legacy environment') } as Record<string, string>)[profile] || copy('未知环境', 'Unknown environment');
-  const cpuProfile = profile.endsWith('-cpu');
-  const hipBackend = status?.runtime.compute_backend === 'hip' || !!status?.runtime.hip_runtime || profile === 'linux-dtk';
   const wheelUpload = (packageName: string) => <>
     <button type="button" className={button} disabled={locked} onClick={() => wheelInputRef.current?.click()}><Upload size={13}/>{uploading ? copy('上传并校验…', 'Uploading and checking…') : copy('上传 wheel', 'Upload wheel')}</button>
     <input ref={wheelInputRef} type="file" accept=".whl" hidden aria-label={`${packageName} wheel`} disabled={locked} onChange={event => {const file = event.target.files?.[0]; if (file) void upload(file, packageName); event.target.value = '';}}/>
   </>;
-  const computeBackend = cpuProfile ? 'CPU' : status?.runtime.cuda_available
+  const computeBackend = cpuProfile ? 'CPU' : target === 'mps' ? status?.runtime.mps_available ? 'Apple MPS' : 'CPU' : status?.runtime.cuda_available
     ? hipBackend ? 'DTK / HIP' : `CUDA ${status.runtime.cuda_runtime || ''}`.trim()
     : status?.runtime.mps_available ? 'Apple MPS' : 'CPU';
   const facts = status && [
     [copy('部署环境', 'Deployment environment'), profileLabel],
     ['Python', status.runtime.python],
     ['PyTorch', status.runtime.torch],
-    ...(status.runtime.mps_available ? [] : [[hipBackend ? copy('HIP 运行时', 'HIP runtime') : copy('CUDA 版本', 'CUDA version'), (hipBackend ? status.runtime.hip_runtime : status.runtime.cuda_runtime) || copy('未检测到', 'Not detected')], [hipBackend ? copy('海光显卡计算', 'Hygon GPU compute') : copy('NVIDIA 显卡计算', 'NVIDIA GPU compute'), !cpuProfile && status.runtime.cuda_available ? copy('可用', 'Available') : copy('未启用', 'Not enabled')]]),
+    ...(!showAttentionExtensions ? [] : [[hipBackend ? copy('HIP 运行时', 'HIP runtime') : copy('CUDA 版本', 'CUDA version'), (hipBackend ? status.runtime.hip_runtime : status.runtime.cuda_runtime) || copy('未检测到', 'Not detected')], [hipBackend ? copy('海光显卡计算', 'Hygon GPU compute') : copy('NVIDIA 显卡计算', 'NVIDIA GPU compute'), status.runtime.cuda_available ? copy('可用', 'Available') : copy('未启用', 'Not enabled')]]),
     [copy('计算后端', 'Compute backend'), computeBackend],
-    [copy('设备', 'Device'), cpuProfile ? 'CPU' : status.runtime.gpus.map(g => g.name).join(' / ') || (status.runtime.mps_available ? 'Apple GPU' : 'CPU')],
   ];
+  const detectedDevices = status && status.runtime.gpus.length > 0 && <ul className="space-y-1" aria-label={copy('已检测设备', 'Detected devices')}>{status.runtime.gpus.map((gpu, index) => <li key={`${gpu.device || index}:${gpu.name}`}><strong>{gpu.name}</strong><span className="settings-note"> · {gpu.device || `GPU ${index + 1}`}{gpu.mem_total_mb != null ? ` · ${(gpu.mem_total_mb / 1024).toFixed(1)} GiB ${gpu.memory_scope === 'unified_system' ? copy('统一内存', 'unified memory') : copy('设备内存', 'device memory')}` : ''}{gpu.cuda_available === false ? textUnavailable() : ''}</span></li>)}</ul>;
 
   return <div data-testid="environment-manager"><SettingsSections sections={[
     { id: 'environment-runtime', label: copy('当前环境', 'Current runtime') },
@@ -204,9 +219,9 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     {error && <div ref={errorRef} role="alert" className="whitespace-pre-wrap rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
     {loading && !status && <p role="status" className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400"><Loader2 size={16} className="animate-spin" />{copy('检测当前环境与已安装扩展…', 'Checking runtime and installed extensions…')}</p>}
     {status && <>
-      <dl className="settings-facts">{facts?.map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-xs text-slate-500 dark:text-slate-400">{label}</dt><dd className="mt-1 break-words text-sm font-medium">{value}</dd></div>)}</dl>
-      {status.runtime.gpus.length>0&&<ul className="settings-note" aria-label={copy('已检测设备','Detected devices')}>{status.runtime.gpus.map((gpu,index)=><li key={`${gpu.device||index}:${gpu.name}`}><strong>{gpu.device||`GPU ${index+1}`}</strong> · {gpu.name}{gpu.mem_total_mb!=null?` · ${(gpu.mem_total_mb/1024).toFixed(1)} GiB ${gpu.memory_scope==='unified_system'?copy('统一内存','unified memory'):copy('设备内存','device memory')}`:''}{gpu.cuda_available===false?textUnavailable():''}</li>)}</ul>}
+      <dl className="settings-facts">{facts?.map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-xs text-slate-500 dark:text-slate-400">{label}</dt><dd className="mt-1 break-words text-sm font-medium">{value}</dd></div>)}<div className="min-w-0"><dt className="text-xs text-slate-500 dark:text-slate-400">{copy('设备', 'Device')}</dt><dd className="mt-1 break-words text-sm font-medium">{cpuProfile ? 'CPU' : detectedDevices || (status.runtime.mps_available ? 'Apple GPU' : 'CPU')}</dd></div></dl>
       <details className="settings-inline-details"><summary>{copy('解释器与显卡诊断', 'Interpreter & GPU diagnostics')}</summary><p className="font-mono break-all">{status.runtime.python_executable}</p><p>{status.runtime.platform} · {status.runtime.machine}</p><p>{copy('这里显示当前服务实际加载的解释器。', 'This is the interpreter loaded by the running service.')}</p>
+        {cpuProfile && detectedDevices}
         <div className="settings-note" data-testid="environment-training-devices">
           <p>{!cpuProfile && status.runtime.multi_gpu_probe_required
             ? copy('Windows 数据并行（DDP）会在每次启动时检查所选显卡的 Gloo 通信，通过后才加载训练模型；检查失败会停止启动并显示原因。每张卡保留完整模型，当前不支持 Windows 原生显存分片（FSDP）。', 'Windows DDP checks Gloo communication on the selected GPUs before loading the training model. A failed check stops startup and explains why. Each GPU holds the full model; native Windows FSDP is not supported.')
@@ -218,21 +233,23 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
         </div>
         {status.runtime.gpus.some(g => g.telemetry_source) && <p>{status.runtime.gpus.map(g => `${g.name}: ${g.telemetry_source || '—'}${g.telemetry_note ? ` (${t(`hardware.${g.telemetry_note}`)})` : ''}`).join(' / ')}</p>}
       </details>
-      {!status.runtime.cuda_available && !status.runtime.mps_available && <p className="settings-note">{hipBackend ? copy('当前 DTK / HIP 无法访问显卡，请检查厂商运行时、驱动及库路径后重启。', 'DTK / HIP cannot access the GPUs. Check the vendor runtime, driver and library paths, then restart.') : status.runtime.cuda_runtime ? copy(`当前 PyTorch 含 CUDA ${status.runtime.cuda_runtime}，但无法使用 CUDA。请检查显卡驱动后重启。`, `PyTorch includes CUDA ${status.runtime.cuda_runtime}, but CUDA is unavailable. Check the GPU driver and restart.`) : copy('当前使用 CPU 计算。若需使用 NVIDIA 显卡，请通过启动器配置 CUDA 版 PyTorch。', 'Currently using CPU compute. To use an NVIDIA GPU, configure CUDA-enabled PyTorch through the launcher.')}</p>}
+      {target === 'mps' && !status.runtime.mps_available && <p className="settings-note">{copy('当前 PyTorch 无法使用 Apple MPS，请检查 macOS 与 PyTorch 环境。', 'Apple MPS is unavailable in the current PyTorch environment. Check macOS and PyTorch compatibility.')}</p>}
+      {showAttentionExtensions && !status.runtime.cuda_available && <p className="settings-note">{hipBackend ? copy('当前 DTK / HIP 无法访问显卡，请检查厂商运行时、驱动及库路径后重启。', 'DTK / HIP cannot access the GPUs. Check the vendor runtime, driver and library paths, then restart.') : status.runtime.cuda_runtime ? copy(`当前 PyTorch 含 CUDA ${status.runtime.cuda_runtime}，但无法使用 CUDA。请检查显卡驱动后重启。`, `PyTorch includes CUDA ${status.runtime.cuda_runtime}, but CUDA is unavailable. Check the GPU driver and restart.`) : copy('当前 PyTorch 未提供 CUDA 运行时，请检查此 CUDA 环境的 PyTorch 安装。', 'This PyTorch build has no CUDA runtime. Check the PyTorch installation in this CUDA environment.')}</p>}
       {(status.running_jobs || status.restart_required) && <p role="status" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">{status.running_jobs ? copy('训练或缓存任务正在运行。等待任务完成或停止、工作进程退出后，才能修改环境。', 'Training or caching is running. Wait for the task to finish or stop and its worker to exit before changing dependencies.') : copy('环境已发生变更，请停止并重新启动 Studio。重启前队列不会启动新任务；如安装失败，可先在这里修复或卸载。', 'The environment changed. Stop and restart Studio before new queued jobs can start. Failed packages can be repaired or removed here first.')}</p>}
     </>}
     </section>
     {status && <>
-      {profile === 'linux-dtk' ? <DtkRuntimePanel/> : <TorchEnvironmentPanel disabled={status.running_jobs || busy || operations.some(busyStatus)} operationsTarget={torchOperationsTarget} onOperationsVisible={setTorchOperationsVisible}/>}
+      {profile === 'linux-dtk' ? <DtkRuntimePanel/> : <TorchEnvironmentPanel showAttentionExtensions={showAttentionExtensions} disabled={status.running_jobs || busy || operations.some(busyStatus)} operationsTarget={torchOperationsTarget} onOperationsVisible={setTorchOperationsVisible}/>}
       <section id="environment-attention" data-settings-section tabIndex={-1} className="settings-section">
-        <div className="settings-section-heading"><div><h2>{copy('注意力加速', 'Attention acceleration')}</h2><p className="settings-note">{hipBackend ? copy('使用当前 DTK 适配版 PyTorch 的 SDPA；扩展包需要与厂商运行时匹配。', 'Use SDPA from the DTK-compatible PyTorch build. Extension packages must match the vendor runtime.') : copy('默认 SDPA 即可训练；可选扩展用于 CUDA 加速。', 'SDPA is ready for training. Optional extensions provide CUDA acceleration.')}</p></div></div>
-      {hipBackend && <div className="settings-sdpa-status" data-testid="environment-sdpa">
-        <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">PyTorch SDPA</strong><span className={`text-xs ${status.sdpa?.status === 'passed' ? 'text-emerald-700 dark:text-emerald-400' : status.sdpa?.status === 'failed' ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}`}>{status.sdpa?.status === 'passed' ? copy('已通过前向与反向检测', 'Forward and backward checks passed') : status.sdpa?.status === 'failed' ? copy('当前计算路径不可用', 'Current compute path unavailable') : status.probe_deferred ? copy('任务运行中，检测已延后', 'Probe deferred while a job runs') : copy('尚未检测', 'Not tested yet')}</span></div>
-        {status.sdpa?.status === 'passed' && <p className="settings-note">{copy('已检查当前设备的 FP16 / BF16 小规模运算；具体模型仍以训练结果为准。', 'Checked small FP16 / BF16 operations on the current device; individual models still need training validation.')}{status.sdpa.device && ` · ${status.sdpa.device}${status.sdpa.device_name ? ` · ${status.sdpa.device_name}` : ''}`}</p>}
-        {status.sdpa?.reason === 'hip_sdpa_flash_library_missing' ? <div className="mt-2 space-y-2"><p className="settings-note">{copy('当前厂商 PyTorch 的这条 SDPA 路径需要 FlashAttention 动态库。请安装匹配当前 DTK / PyTorch 的官方 FlashAttention 包，重启后重新检测。', 'This vendor PyTorch SDPA path needs a FlashAttention library. Install the official build matching DTK / PyTorch, restart, and check again.')}</p><button type="button" className={button} disabled={locked} onClick={() => { setSelected('flash-attn'); setVersion(''); setWheel(null); setVendorWheel(null); document.getElementById('environment-package-flash-attn')?.scrollIntoView?.({ block: 'nearest' }); }}>{copy('查看匹配的 FlashAttention 包', 'View matching FlashAttention builds')}</button></div> : status.sdpa?.error && <p role="alert" className="settings-note whitespace-pre-wrap break-words">{status.sdpa.error}</p>}
-        {status.sdpa?.error && status.sdpa.reason === 'hip_sdpa_flash_library_missing' && <details className="settings-inline-details"><summary>{copy('查看检测详情', 'Probe details')}</summary><pre className="whitespace-pre-wrap break-words text-xs">{status.sdpa.detail || status.sdpa.error}</pre></details>}
+        <div className="settings-section-heading"><div><h2>{copy('注意力加速', 'Attention acceleration')}</h2>{target !== 'mps' && <p className="settings-note">{hipBackend ? copy('使用当前 DTK 适配版 PyTorch 的 SDPA；扩展包需要与厂商运行时匹配。', 'Use SDPA from the DTK-compatible PyTorch build. Extension packages must match the vendor runtime.') : showAttentionExtensions ? copy('默认 SDPA 即可训练；可选扩展用于 CUDA 加速。', 'SDPA is ready for training. Optional extensions provide CUDA acceleration.') : copy('CPU 使用 PyTorch 内置 SDPA，无需安装额外注意力扩展。', 'CPU uses built-in PyTorch SDPA; no additional attention extension is needed.')}</p>}</div></div>
+      {(hipBackend || target === 'mps') && <div className="settings-sdpa-status" data-testid="environment-sdpa">
+        <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">{target === 'mps' ? copy('Apple GPU 内置加速', 'Built-in Apple GPU acceleration') : 'PyTorch SDPA'}</strong><span className={`text-xs ${status.sdpa?.status === 'passed' ? 'text-emerald-700 dark:text-emerald-400' : status.sdpa?.status === 'failed' ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}`}>{status.sdpa?.status === 'passed' ? target === 'mps' ? copy('检测正常', 'Check passed') : copy('已通过前向与反向检测', 'Forward and backward checks passed') : status.sdpa?.status === 'failed' ? target === 'mps' ? copy('检测失败', 'Check failed') : copy('当前计算路径不可用', 'Current compute path unavailable') : status.probe_deferred ? copy('任务运行中，检测已延后', 'Probe deferred while a job runs') : copy('尚未检测', 'Not tested yet')}</span></div>
+        {target === 'mps' && <p className="settings-note">{copy('使用 PyTorch 自带的 SDPA，无需额外安装。', 'Uses SDPA included with PyTorch. No extra installation is needed.')}</p>}
+        {status.sdpa?.status === 'passed' && (target === 'mps' ? <details className="settings-inline-details"><summary>{copy('检测详情', 'Check details')}</summary><p className="settings-note">{copy('已在 Apple MPS 上完成 FP32 注意力前向计算和梯度反向检查；这不是模型训练效果或速度测试。', 'Completed FP32 attention forward and gradient backward checks on Apple MPS. This is not a model quality or speed test.')}</p></details> : <p className="settings-note">{copy('已检查当前设备的 FP16 / BF16 小规模运算；具体模型仍以训练结果为准。', 'Checked small FP16 / BF16 operations on the current device; individual models still need training validation.')}{status.sdpa.device && ` · ${status.sdpa.device}${status.sdpa.device_name ? ` · ${status.sdpa.device_name}` : ''}`}</p>)}
+        {hipBackend && status.sdpa?.reason === 'hip_sdpa_flash_library_missing' ? <div className="mt-2 space-y-2"><p className="settings-note">{copy('当前厂商 PyTorch 的这条 SDPA 路径需要 FlashAttention 动态库。请安装匹配当前 DTK / PyTorch 的官方 FlashAttention 包，重启后重新检测。', 'This vendor PyTorch SDPA path needs a FlashAttention library. Install the official build matching DTK / PyTorch, restart, and check again.')}</p><button type="button" className={button} disabled={locked} onClick={() => { setSelected('flash-attn'); setVersion(''); setWheel(null); setVendorWheel(null); document.getElementById('environment-package-flash-attn')?.scrollIntoView?.({ block: 'nearest' }); }}>{copy('查看匹配的 FlashAttention 包', 'View matching FlashAttention builds')}</button></div> : status.sdpa?.error && <p role="alert" className="settings-note whitespace-pre-wrap break-words">{status.sdpa.error}</p>}
+        {hipBackend && status.sdpa?.error && status.sdpa.reason === 'hip_sdpa_flash_library_missing' && <details className="settings-inline-details"><summary>{copy('查看检测详情', 'Probe details')}</summary><pre className="whitespace-pre-wrap break-words text-xs">{status.sdpa.detail || status.sdpa.error}</pre></details>}
       </div>}
-      <div className="settings-dependencies">{status.packages.filter(pkg => managedPackages.has(pkg.name)).map(pkg => <div key={pkg.name} className="settings-dependency">
+      <div className="settings-dependencies">{status.packages.filter(pkg => showAttentionExtensions && managedPackages.has(pkg.name)).map(pkg => <div key={pkg.name} className="settings-dependency">
         <div id={`environment-package-${pkg.name}`} className="settings-dependency-row" data-testid={`environment-package-${pkg.name}`}>
           <div className="settings-dependency-info"><button type="button" disabled={uploading || busy} className="settings-dependency-name disabled:opacity-50" aria-expanded={selected === pkg.name} aria-controls={`environment-details-${pkg.name}`} onClick={() => { setSelected(selected === pkg.name ? null : pkg.name); setVersion(''); setWheel(null); setVendorWheel(null); }}>{selected === pkg.name ? <ChevronDown size={13} /> : <ChevronRight size={13} />}{packageLabel(pkg.name)}</button><p className="settings-dependency-purpose">{purpose(pkg.name)}</p></div>
           <span className="settings-dependency-version break-all font-mono text-xs">{pkg.version || copy('未安装', 'Not installed')}</span>

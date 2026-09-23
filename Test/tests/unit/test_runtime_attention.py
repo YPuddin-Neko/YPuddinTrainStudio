@@ -11,11 +11,16 @@ from ypuddin.runtime_attention import AttentionEnvironmentError, attention_depen
 MISSING = "No matching libraries found for flash_attn_2_cuda*.so"
 
 
-def fake_accelerator(*, hip="6.3.26093", bf16=True, failure=None):
+@pytest.fixture(autouse=True)
+def legacy_profile(monkeypatch):
+    monkeypatch.setattr("ypuddin.runtime_attention.current_profile", lambda: "legacy")
+
+
+def fake_accelerator(*, hip="6.3.26093", bf16=True, failure=None, device="cuda:0"):
     tensors, calls = [], []
 
     def randn(*shape, **kwargs):
-        assert kwargs.pop("device") == "cuda:0"
+        assert kwargs.pop("device") == device
         tensor = torch.randn(*shape, device="cpu", **kwargs)
         tensors.append(tensor)
         return tensor
@@ -29,6 +34,8 @@ def fake_accelerator(*, hip="6.3.26093", bf16=True, failure=None):
     fake = SimpleNamespace(
         __version__="2.7.1+das.opt1.dtk2604",
         version=SimpleNamespace(hip=hip),
+        backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: device == "mps")),
+        mps=SimpleNamespace(synchronize=Mock()),
         cuda=SimpleNamespace(
             is_available=lambda: True,
             current_device=lambda: 0,
@@ -41,6 +48,7 @@ def fake_accelerator(*, hip="6.3.26093", bf16=True, failure=None):
         isfinite=torch.isfinite,
         float16=torch.float16,
         bfloat16=torch.bfloat16,
+        float32=torch.float32,
         nn=SimpleNamespace(functional=SimpleNamespace(scaled_dot_product_attention=sdpa)),
     )
     return fake, tensors, calls
@@ -99,6 +107,85 @@ def test_unsupported_bfloat16_is_not_falsely_tested_and_unavailable_gpu_never_al
     tensors.clear()
     assert probe_sdpa(fake)["status"] == "not_tested"
     assert not tensors
+
+
+def test_apple_profile_checks_fp32_mps_forward_and_backward_without_probing_cuda(monkeypatch):
+    monkeypatch.setattr("ypuddin.runtime_attention.current_profile", lambda: "macos-mps")
+    fake, tensors, calls = fake_accelerator(hip=None, device="mps")
+    fake.cuda.is_available = Mock(side_effect=AssertionError("Apple profile must not query CUDA"))
+    result = probe_sdpa(fake)
+    assert result["status"] == "passed" and result["error"] is None
+    assert result["device"] == "mps" and result["device_name"] == "Apple MPS"
+    assert calls == [([1, 2, 32, 64], torch.float32), ([1, 2, 256, 128], torch.float32)]
+    assert len(tensors) == 6
+    assert all(t.grad is not None and bool(torch.isfinite(t.grad).all()) for t in tensors)
+    assert all(check["passed"] and check["dtype"] == "fp32" for check in result["checks"])
+    assert max(t.numel() * t.element_size() for t in tensors) * 3 < 1024**2
+    assert fake.mps.synchronize.call_count == 2
+    fake.cuda.synchronize.assert_not_called()
+    fake.cuda.is_available.assert_not_called()
+
+
+def test_legacy_apple_environment_uses_mps_when_cuda_is_unavailable():
+    fake, _, calls = fake_accelerator(hip=None, device="mps")
+    fake.cuda.is_available = lambda: False
+    result = probe_sdpa(fake)
+    assert result["status"] == "passed" and result["device"] == "mps"
+    assert len(calls) == 2
+
+
+def test_unavailable_apple_profile_does_not_fall_back_to_available_cuda(monkeypatch):
+    monkeypatch.setattr("ypuddin.runtime_attention.current_profile", lambda: "macos-mps")
+    fake, tensors, calls = fake_accelerator()
+    fake.cuda.is_available = Mock(side_effect=AssertionError("Apple profile must not query CUDA"))
+    result = probe_sdpa(fake)
+    assert result["status"] == "not_tested" and result["reason"] == "mps_unavailable"
+    assert result["device"] is None and result["checks"] == []
+    assert not tensors and not calls
+    fake.cuda.is_available.assert_not_called()
+
+
+@pytest.mark.parametrize("profile", ["macos-cpu", "linux-cpu", "windows-cpu"])
+def test_cpu_profile_never_probes_available_accelerators(monkeypatch, profile):
+    monkeypatch.setattr("ypuddin.runtime_attention.current_profile", lambda: profile)
+    fake, tensors, calls = fake_accelerator(device="mps")
+    fake.cuda.is_available = Mock(side_effect=AssertionError("CPU profile must not query CUDA"))
+    fake.backends.mps.is_available = Mock(side_effect=AssertionError("CPU profile must not query MPS"))
+    result = probe_sdpa(fake)
+    assert result["status"] == "not_tested" and result["reason"] == "cpu_profile"
+    assert result["device"] is None and result["checks"] == []
+    assert not tensors and not calls
+    fake.cuda.synchronize.assert_not_called()
+    fake.mps.synchronize.assert_not_called()
+
+
+def test_mps_kernel_failure_keeps_original_error_and_stops_without_cuda_fallback(monkeypatch):
+    monkeypatch.setattr("ypuddin.runtime_attention.current_profile", lambda: "macos-mps")
+    fake, _, calls = fake_accelerator(device="mps", failure=lambda q: RuntimeError(MISSING))
+    result = probe_sdpa(fake)
+    assert result["status"] == "failed" and result["reason"] == "sdpa_probe_failed"
+    assert result["error"] == MISSING and result["detail"] == MISSING
+    assert result["device"] == "mps" and len(calls) == 1
+    assert len(result["checks"]) == 1 and not result["checks"][0]["passed"]
+    fake.cuda.synchronize.assert_not_called()
+
+
+@pytest.mark.parametrize("invalid", ["output", "gradient"])
+def test_mps_probe_rejects_nonfinite_outputs_or_gradients(monkeypatch, invalid):
+    monkeypatch.setattr("ypuddin.runtime_attention.current_profile", lambda: "macos-mps")
+    fake, _, _ = fake_accelerator(hip=None, device="mps")
+
+    def bad_sdpa(q, k, v, **kwargs):
+        if invalid == "output":
+            return q * float("nan")
+        q.register_hook(lambda grad: grad * float("nan"))
+        return torch.nn.functional.scaled_dot_product_attention(q, k, v, **kwargs)
+
+    fake.nn.functional.scaled_dot_product_attention = bad_sdpa
+    result = probe_sdpa(fake)
+    assert result["status"] == "failed" and result["reason"] == "sdpa_probe_failed"
+    assert invalid in result["error"] and len(result["checks"]) == 1
+    fake.cuda.synchronize.assert_not_called()
 
 
 def test_attention_shim_has_precise_dependency_diagnosis_without_catching_oom(monkeypatch):

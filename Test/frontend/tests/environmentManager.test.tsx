@@ -91,6 +91,55 @@ describe('real environment management UI contracts', () => {
     expect(screen.queryByText('环境操作记录')).not.toBeInTheDocument();
     expect(within(screen.getByRole('navigation')).getAllByRole('button')).toHaveLength(3);
   });
+  it.each(['macos-mps', 'windows-cpu', 'linux-cpu', 'macos-cpu'])('uses native attention for explicit %s even when CUDA metadata remains', async profile => {
+    Object.assign(runtime.runtime, { environment_profile: profile, compute_backend: 'cuda' });
+    const view = render(<EnvironmentManagerPanel focusPackage="flash-attn" />);
+    const attention = (await screen.findByRole('heading', { name: '注意力加速' })).closest('section')!;
+    expect(attention).toHaveTextContent(/PyTorch.*SDPA/);
+    expect(within(attention).queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('environment-package-xformers')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('environment-package-flash-attn')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('flash-attn wheel')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '上传 wheel' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '检查安装条件' })).not.toBeInTheDocument();
+    const torch = screen.getByRole('heading', { name: 'PyTorch 版本' }).closest('section')!;
+    expect(torch).not.toHaveTextContent(/xFormers|FlashAttention/);
+    view.rerender(<EnvironmentManagerPanel focusPackage="xformers" />);
+    expect(screen.queryByLabelText('xformers 版本')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('environment-package-xformers')).not.toBeInTheDocument();
+    expect(create).not.toHaveBeenCalled();
+    expect(apply).not.toHaveBeenCalled();
+  });
+  it.each(['windows-cuda', 'linux-cuda', 'linux-dtk'])('retains unsupported extension diagnostics in %s when no device is currently available', async profile => {
+    Object.assign(runtime.runtime, { environment_profile: profile, compute_backend: 'cpu', cuda_available: false, mps_available: false, cuda_runtime: null, hip_runtime: null, gpus: [] });
+    const flash = runtime.packages.find(pkg => pkg.name === 'flash-attn')!;
+    Object.assign(flash, { supported: false, reason: profile === 'linux-dtk' ? 'requires_dtk_wheel' : 'requires_ampere' });
+    render(<EnvironmentManagerPanel />);
+    const row = await screen.findByTestId('environment-package-flash-attn');
+    expect(screen.getByTestId('environment-package-xformers')).toBeInTheDocument();
+    expect(row).toHaveTextContent(profile === 'linux-dtk' ? '需要匹配的 DTK 适配包' : '需要 Ampere 或更新的显卡');
+    const install = within(row).getByRole('button', { name: '安装' });
+    if (profile === 'linux-dtk') expect(install).toBeEnabled();
+    else expect(install).toBeDisabled();
+  });
+  it.each([
+    ['MPS device', { mps_available: true }, false],
+    ['MPS runtime without an active device', { compute_backend: 'mps', cuda_runtime: '12.8' }, false],
+    ['CPU runtime', { compute_backend: 'cpu' }, false],
+    ['CUDA compute backend', { compute_backend: 'cuda' }, true],
+    ['CUDA runtime with an unavailable device', { compute_backend: 'cpu', cuda_runtime: '12.8' }, true],
+    ['HIP compute backend', { compute_backend: 'hip' }, true],
+    ['HIP runtime with an unavailable device', { hip_runtime: '6.3' }, true],
+  ] as const)('derives legacy extension visibility from the actual %s', async (_label, actual, extensionsVisible) => {
+    Object.assign(runtime.runtime, { environment_profile: 'legacy', compute_backend: undefined, cuda_available: false, mps_available: false, cuda_runtime: null, hip_runtime: null, gpus: [], ...actual });
+    render(<EnvironmentManagerPanel />);
+    const attention = (await screen.findByRole('heading', { name: '注意力加速' })).closest('section')!;
+    for (const name of ['xformers', 'flash-attn']) {
+      if (extensionsVisible) expect(screen.getByTestId(`environment-package-${name}`)).toBeInTheDocument();
+      else expect(screen.queryByTestId(`environment-package-${name}`)).not.toBeInTheDocument();
+    }
+    if (!extensionsVisible) expect(attention).toHaveTextContent(/PyTorch.*SDPA/);
+  });
   it('shows the target runtime and requires plan review before mutation', async () => {
     render(<EnvironmentManagerPanel />);
     expect(await screen.findByText('2.5.1+cu128')).toBeInTheDocument();
@@ -232,13 +281,56 @@ describe('real environment management UI contracts', () => {
   });
 
   it('shows the actual Apple backend instead of reporting missing CUDA as a fault', async () => {
-    runtime.runtime.cuda_available = false;
-    runtime.runtime.mps_available = true;
-    runtime.runtime.gpus = [];
+    Object.assign(runtime.runtime, { compute_backend: 'mps', platform: 'Darwin', machine: 'arm64', torch: '2.11.0', cuda_runtime: null, cuda_available: false, mps_available: true, gpus: [] });
     render(<EnvironmentManagerPanel />);
     expect(await screen.findByText('Apple MPS')).toBeInTheDocument();
     expect(screen.getByText('Apple GPU')).toBeInTheDocument();
     expect(screen.queryByText(/但无法使用 CUDA/)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('environment-package-xformers')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('environment-package-flash-attn')).not.toBeInTheDocument();
+  });
+  it('explains built-in Apple acceleration and keeps FP32 probe details collapsed until requested', async () => {
+    Object.assign(runtime.runtime, { environment_profile: 'macos-mps', compute_backend: 'mps', platform: 'Darwin', machine: 'arm64', torch: '2.11.0', cuda_runtime: null, cuda_available: false, mps_available: true, gpus: [] });
+    Object.assign(runtime, { sdpa: { status: 'passed', reason: null, error: null, detail: 'FP32 output and query/key/value gradients are finite', device: 'mps', device_name: 'Apple M4 Max', checked_at: 1 } });
+    render(<EnvironmentManagerPanel />);
+    const sdpa = await screen.findByTestId('environment-sdpa');
+    expect(within(sdpa).getByText('Apple GPU 内置加速')).toBeVisible();
+    expect(within(sdpa).getByText('检测正常')).toBeVisible();
+    expect(within(sdpa).getByText('使用 PyTorch 自带的 SDPA，无需额外安装。')).toBeVisible();
+    const details = within(sdpa).getByText(/已在 Apple MPS 上完成 FP32/);
+    expect(details).not.toBeVisible();
+    const expand = within(sdpa).getByText('检测详情');
+    expect(expand).toBeVisible();
+    fireEvent.click(expand);
+    expect(details).toBeVisible();
+    expect(details).toHaveTextContent('FP32 注意力前向计算和梯度反向检查');
+    expect(sdpa).not.toHaveTextContent(/FP16|BF16/);
+    expect(within(sdpa).queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('environment-package-flash-attn')).not.toBeInTheDocument();
+  });
+  it('shows the actual MPS probe failure without offering CUDA or DTK extension installation', async () => {
+    Object.assign(runtime.runtime, { environment_profile: 'macos-mps', compute_backend: 'mps', cuda_runtime: null, cuda_available: false, mps_available: true, gpus: [] });
+    const error = 'MPS SDPA output or gradients contain non-finite values';
+    Object.assign(runtime, { sdpa: { status: 'failed', reason: 'mps_sdpa_non_finite', error, detail: error, device: 'mps', device_name: 'Apple M4 Max', checked_at: 1 } });
+    render(<EnvironmentManagerPanel />);
+    const sdpa = await screen.findByTestId('environment-sdpa');
+    expect(within(sdpa).getByText('检测失败')).toBeVisible();
+    expect(within(sdpa).getByRole('alert')).toHaveTextContent(error);
+    expect(within(sdpa).getByRole('alert')).toBeVisible();
+    expect(sdpa).not.toHaveTextContent('检测正常');
+    expect(within(sdpa).queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '查看匹配的 FlashAttention 包' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('environment-package-xformers')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('environment-package-flash-attn')).not.toBeInTheDocument();
+  });
+  it('does not show a stale MPS probe in an explicit CPU deployment', async () => {
+    Object.assign(runtime.runtime, { environment_profile: 'macos-cpu', compute_backend: 'mps', cuda_runtime: null, cuda_available: false, mps_available: true, gpus: [] });
+    Object.assign(runtime, { sdpa: { status: 'passed', reason: null, error: null, device: 'mps', device_name: 'Apple M4 Max', checked_at: 1 } });
+    render(<EnvironmentManagerPanel />);
+    const attention = (await screen.findByRole('heading', { name: '注意力加速' })).closest('section')!;
+    expect(attention).toHaveTextContent('CPU 使用 PyTorch 内置 SDPA');
+    expect(screen.queryByTestId('environment-sdpa')).not.toBeInTheDocument();
+    expect(screen.queryByText('检测正常')).not.toBeInTheDocument();
   });
 
   it('renders the English controls without Chinese fallbacks', async () => {

@@ -11,8 +11,8 @@ type Operation = { plan?: { name: string; from_version?: string | null; version?
 type Snapshot = { builds: { id: string; label: string; supported: boolean; reason: string | null; recommended: boolean; backend: string }[]; operations: Operation[]; current_python: string; selected_environment: string | null; disk_free_bytes: number; minimum_free_bytes?: number; optional_extensions?: string[] };
 const active = (op: Operation) => ['planning', 'installing', 'verifying'].includes(op.status);
 
-export default function TorchEnvironmentPanel({ disabled = false, operationsTarget, onOperationsVisible }: {
-  disabled?: boolean; operationsTarget?: HTMLElement | null; onOperationsVisible?: (visible: boolean) => void;
+export default function TorchEnvironmentPanel({ disabled = false, operationsTarget, onOperationsVisible, showAttentionExtensions = true }: {
+  disabled?: boolean; operationsTarget?: HTMLElement | null; onOperationsVisible?: (visible: boolean) => void; showAttentionExtensions?: boolean;
 }) {
   const text = useWorkspaceText();
   const [state, setState] = React.useState<Snapshot | null>(null);
@@ -64,6 +64,8 @@ export default function TorchEnvironmentPanel({ disabled = false, operationsTarg
   const installedChoices = state?.operations.filter(op => op.build_id === choice && op.status === 'completed' && op.environment_id) || [];
   const installedChoice = installedChoices.find(op => op.environment_id === state?.selected_environment) || installedChoices[0];
   const installedChoiceActive = !!installedChoice && installedChoice.environment_id === state?.selected_environment;
+  const selectedBackend = state?.builds.find(build => build.id === choice)?.backend;
+  const minimumSpaceGiB = selectedBackend?.startsWith('cu') ? 12 : 8;
   const showInstalledChoice = !!installedChoice && !operations.some(op => op.id === installedChoice.id);
   const buildLabel = (build: Snapshot['builds'][number]) => {
     const installed = state?.operations.filter(op => op.build_id === build.id && op.status === 'completed' && op.environment_id) || [];
@@ -89,13 +91,13 @@ export default function TorchEnvironmentPanel({ disabled = false, operationsTarg
   return <>
     <section id="environment-torch" data-settings-section tabIndex={-1} className="settings-section">
       <div className="settings-section-heading"><h2>{text('PyTorch 版本', 'PyTorch version')}</h2></div>
-      <p className="settings-note">{text('所选版本会安装到独立环境，检查通过后重启使用。原环境保留；xFormers、FlashAttention 等扩展需为新版本重新安装。', 'Install the selected version in an isolated environment, check it, then restart to use it. The original environment is retained; compiled extensions need matching installations.')}</p>
+      <p className="settings-note">{showAttentionExtensions ? text('所选版本会安装到独立环境，检查通过后重启使用。原环境保留；xFormers、FlashAttention 等扩展需为新版本重新安装。', 'Install the selected version in an isolated environment, check it, then restart to use it. The original environment is retained; compiled extensions need matching installations.') : text('所选版本会安装到独立环境，检查通过后重启使用，原环境保留。', 'Install the selected version in an isolated environment, check it, then restart to use it. The original environment is retained.')}</p>
       <div className="settings-field"><label>{text('选择版本与计算后端', 'Version and compute backend')}</label><div className="settings-field-control"><StudioSelect aria-label={text('选择 PyTorch 版本', 'Choose PyTorch version')} disabled={locked || !state} value={choice} onValueChange={setChoice} options={(state?.builds || []).filter(b => b.supported || b.reason?.startsWith('requires_driver')).map(b => ({ value: b.id, label: buildLabel(b), disabled: !b.supported }))}/></div></div>
       {showInstalledChoice && <div className="space-y-2" data-testid="installed-torch-environment">
         <p className="settings-note">{installedChoiceActive ? text('当前正在使用此环境。', 'This environment is currently active.') : text('此版本已安装，可直接切换，无需重新下载。', 'This version is installed. Switch to it without downloading again.')}</p>
         {!installedChoiceActive && <ServiceControls key={installedChoice.environment_id} environmentId={installedChoice.environment_id!} disabled={locked} onRestarted={() => void refresh()}/>}
       </div>}
-      {state && <p className="settings-note">{text(`可用空间 ${(state.disk_free_bytes / 1024 ** 3).toFixed(1)} GiB；CUDA 环境至少预留 12 GiB，其他环境至少 8 GiB。`, `Available space: ${(state.disk_free_bytes / 1024 ** 3).toFixed(1)} GiB. Reserve at least 12 GiB for CUDA or 8 GiB for other environments.`)}</p>}
+      {state && <p className="settings-note">{text(`可用空间 ${(state.disk_free_bytes / 1024 ** 3).toFixed(1)} GiB；${selectedBackend ? `所选环境至少预留 ${minimumSpaceGiB} GiB。` : '选择版本后检查所需空间。'}`, `Available space: ${(state.disk_free_bytes / 1024 ** 3).toFixed(1)} GiB. ${selectedBackend ? `Reserve at least ${minimumSpaceGiB} GiB for the selected environment.` : 'Choose a build to check required space.'}`)}</p>}
       {disabled && <p className="settings-note">{text('当前任务完成后可安装运行环境。', 'Finish the current task before installing an environment.')}</p>}
       <div className="flex flex-wrap gap-2"><button type="button" className="settings-action" aria-label={text('检查 PyTorch 安装条件', 'Check PyTorch installation requirements')} disabled={locked || !choice} onClick={() => void act('/environment/torch/operations', { build_id: choice })}>{text('检查安装条件', 'Check installation requirements')}</button><button type="button" className="settings-input" disabled={busy} onClick={() => void refresh().catch(e => setError(formatApiError(e)))}>{text('刷新状态', 'Refresh status')}</button></div>
       {error && <p role="alert" className="settings-alert">{error}</p>}
