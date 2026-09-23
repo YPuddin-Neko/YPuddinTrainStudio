@@ -1,4 +1,4 @@
-"""Model-local Metal Flash attention for the verified mtlattn FP32 contract.
+"""Model-local Metal Flash attention for the mtlattn FP32 contract.
 
 Only eligible backbone attention calls enter the portable Metal kernels. Native
 SDPA retains unsupported semantics; an error from a selected kernel is never
@@ -49,7 +49,7 @@ def metal_flash_runtime_identity() -> dict[str, str]:
             "Metal FlashAttention requires mtlattn 0.4.1; install its matching build in Environment settings"
         ) from exc
     if version != "0.4.1":
-        raise ValueError("Metal FlashAttention requires the verified mtlattn 0.4.1 build")
+        raise ValueError("Metal FlashAttention requires mtlattn 0.4.1")
     package = import_module("mtlattn")
     if not callable(getattr(package, "varlen_attention", None)) or not callable(
         getattr(getattr(package, "_C", None), "varlen_attention_bwd", None)

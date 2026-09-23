@@ -2,7 +2,7 @@
 
 The bundled asset metadata was checked against the maintainer's GitHub release on
 2026-09-15. A filename match is an installation candidate, not a GPU qualification.
-Only the Windows cp312/cu128/Torch2.11 build has prior project hardware acceptance.
+Only the Windows cp312/cu128/Torch2.11 build has been tested on project hardware.
 """
 
 from __future__ import annotations
@@ -105,7 +105,7 @@ def parse_assets(document: dict, *, allow_empty=False) -> tuple[WindowsAttention
         filename = asset.get("name", "")
         match = NAME.fullmatch(filename)
         if not match:
-            continue  # FA3, Linux and source archives are not FA2 Windows candidates.
+            continue  # FA3, other platforms and source archives are not FA2 candidates.
         digest = asset.get("digest", "")
         size = asset.get("size")
         url = asset.get("browser_download_url", "")
@@ -262,7 +262,7 @@ class Catalog:
                     updated = True
                 except (OSError, http.client.HTTPException, ValueError, TypeError, KeyError) as exc:
                     self._error = (
-                        "无法更新社区版本目录，已使用已保存的版本信息。请检查网络或全局代理设置。 / Cannot refresh community releases; using saved metadata. Check network/proxy settings. "
+                        "无法更新社区版本目录，已使用保存的版本信息。请检查网络或全局代理设置。\n"
                         + policy.redact(exc)
                     )
             wheels = [
@@ -401,7 +401,7 @@ def download(wheel, destination, cancel, progress, *, proxy=None, opener=None):
         raise
     except (urllib.error.URLError, OSError, http.client.HTTPException) as exc:
         raise ValueError(
-            "社区 wheel 下载失败；请检查全局代理，或从发布页手动下载后上传。 / Community wheel download failed; check proxy settings or download and upload manually. "
+            "社区 wheel 下载失败，请检查网络或全局代理，或从发布页手动下载后上传。\n"
             + policy.redact(exc)
         ) from None
     finally:

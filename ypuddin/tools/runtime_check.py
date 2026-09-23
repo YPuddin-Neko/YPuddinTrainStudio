@@ -172,9 +172,9 @@ def run_runtime_check(devices, out: Path, *, timeout: float = 180) -> dict:
             report["workers"][i].update(pid=proc.pid, log=str(out / f"worker-{i}.log"))
         while any(proc.poll() is None for proc in processes):
             if any(proc.poll() not in (None, 0) for proc in processes):
-                raise RuntimeError("一个验收任务失败，正在停止本次验收的其他任务；请查看各任务日志")
+                raise RuntimeError("一个检查任务失败，正在停止本次检查的其他任务；请查看各任务日志")
             if time.monotonic() >= deadline:
-                raise TimeoutError("独立任务验收超时，已请求清理本次创建的子进程")
+                raise TimeoutError("运行时检查超时，已请求清理本次创建的子进程")
             time.sleep(0.05)
     except BaseException as exc:
         report["error"] = f"{type(exc).__name__}: {exc}"
@@ -193,7 +193,7 @@ def run_runtime_check(devices, out: Path, *, timeout: float = 180) -> dict:
                     if not isinstance(result, dict) or (
                         "first_step" in result and not isinstance(result["first_step"], dict)
                     ):
-                        raise ValueError("验收任务报告必须是对象，且 first_step 必须是对象")
+                        raise ValueError("检查任务报告必须是对象，且 first_step 必须是对象")
                     row["result"] = result
                 except (OSError, ValueError) as exc:
                     row["report_error"] = f"{type(exc).__name__}: {exc}"
@@ -235,7 +235,7 @@ def _run_worker(index, out, requested_device, deadline):
     # actual parent process, never an arbitrary existing --out directory.
     invocation = json.loads((out / "invocation.json").read_text(encoding="utf-8"))
     if not isinstance(invocation, dict):
-        raise ValueError("验收主进程记录无效")
+        raise ValueError("运行时检查主进程记录无效")
     # Windows venv python.exe can insert a redirector process. Verify the live
     # ancestor identity, including creation time, rather than requiring direct PPID.
     owned = any(
@@ -251,7 +251,7 @@ def _run_worker(index, out, requested_device, deadline):
         or invocation.get("deadline") != deadline
         or invocation.get("devices", [])[index : index + 1] != [requested_device]
     ):
-        raise ValueError("内部 worker 必须由当前验收主进程在新目录中创建")
+        raise ValueError("内部 worker 必须由当前运行时检查主进程在新目录中创建")
     import torch
     from PIL import Image
 

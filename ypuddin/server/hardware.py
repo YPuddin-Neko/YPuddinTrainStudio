@@ -534,7 +534,7 @@ def gpu_info(*, include_unavailable: bool = False, system_memory: Any | None = N
         vm = system_memory if system_memory is not None else psutil.virtual_memory()
         utilization = _apple_gpu_utilization()
         sensors = _apple_gpu_sensors()
-        # This is system unified-memory usage, not a fabricated GPU-process allocation.
+        # Apple reports system unified-memory usage, not per-process GPU allocation.
         return [
             {
                 "index": 0,

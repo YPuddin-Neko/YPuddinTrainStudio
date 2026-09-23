@@ -65,7 +65,7 @@ def distributed_training_errors(cfg) -> list[dict[str, str]]:
             "memory.activation_checkpointing",
             "显存分片请选择逐块梯度检查点或关闭"
             if sharded
-            else "多卡数据并行暂不支持梯度检查点，请选择 none",
+            else "多卡数据并行暂不支持梯度检查点，请选择关闭",
         ),
     ]
     if sharded:

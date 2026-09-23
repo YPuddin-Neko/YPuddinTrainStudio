@@ -12,7 +12,7 @@ import { CanvasRenderer } from 'echarts/renderers';
 import type { EChartsCoreOption } from 'echarts/core';
 import { readChartTheme, updateChartTheme } from './chartTheme';
 
-// 按需注册：只打包用得到的模块（完整 echarts 包约 1 MB，这里约 1/3）
+// 按需注册，避免打包未使用的图表模块。
 echarts.use([
   LineChart,
   GridComponent,
@@ -28,7 +28,6 @@ interface EChartProps {
   style?: React.CSSProperties;
 }
 
-/** 轻量 ECharts 封装：init / setOption / resize / dispose（替代 echarts-for-react，支持 echarts 6 按需引入） */
 export function EChart({ option, style }: EChartProps) {
   const ref = React.useRef<HTMLDivElement>(null);
   const chartRef = React.useRef<echarts.ECharts | null>(null);
@@ -48,7 +47,7 @@ export function EChart({ option, style }: EChartProps) {
       updateChartTheme(chart, readChartTheme(root));
     });
     themeObserver.observe(root, {attributes: true, attributeFilter: ['class']});
-    // jsdom（测试环境）没有 ResizeObserver，退化为 window resize 监听
+    // 没有 ResizeObserver 时使用窗口 resize 事件。
     const onResize = () => chart.resize();
     let observer: ResizeObserver | null = null;
     if (typeof ResizeObserver !== 'undefined') {

@@ -181,7 +181,7 @@ def test_fsdp_dynamic_adapter_class_keeps_validation_and_native_lokr(monkeypatch
     adapter = obj.loaded.backbone.adapter
     native = copy.deepcopy(adapter)
     obj._install_backbone_adapter_compute_operators()
-    # fully_shard applies this same dynamic inheritance; no fake sharding claims.
+    # Match the dynamic inheritance that fully_shard applies to adapter modules.
     adapter.__class__ = type(f"FSDP{type(adapter).__name__}", (FSDPModule, type(adapter)), {})
     obj._validate_training_compute_policy()
     if algo == "lokr":

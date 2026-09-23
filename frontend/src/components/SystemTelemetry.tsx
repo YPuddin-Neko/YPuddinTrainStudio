@@ -66,8 +66,8 @@ export default function SystemTelemetry({ stats }: { stats: SystemStats | null }
       ? description
       : text(`仅收到 ${count}/${gpus.length} 张显卡的${label}，暂不显示平均值。`, `${label} is available for only ${count}/${gpus.length} GPUs; no average is shown.`);
   };
-  const utilizationDescription = aggregate ? averageDescription(gpus.map(item => item.util_pct), text('占用率', 'utilization'), text('每张显卡占用率的平均值。\n例如两张卡分别为 0% 和 100%，这里显示 50%。', 'Average GPU utilization.\nFor example, two GPUs at 0% and 100% show 50%.')) : [unified ? t('hardware.systemGpuScope') : '', unified && gpu?.telemetry_source === 'ioreg' ? t('hardware.appleGpuDriverSource') : '', !known(gpu?.util_pct) ? t('hardware.gpuUtilizationMissing') : ''].filter(Boolean).join(' ');
-  const powerDescription = aggregate ? averageDescription(gpus.map(item => item.power_w), text('功率', 'power'), text('平均每张显卡的功率，单位为瓦（W）。', 'Average power per GPU, in watts (W).')) : gpuPowerDescription(gpu, t);
+  const utilizationDescription = aggregate ? averageDescription(gpus.map(item => item.util_pct), text('占用率', 'utilization'), text('每张显卡占用率的平均值。', 'Average GPU utilization.')) : [unified ? t('hardware.systemGpuScope') : '', unified && gpu?.telemetry_source === 'ioreg' ? t('hardware.appleGpuDriverSource') : '', !known(gpu?.util_pct) ? t('hardware.gpuUtilizationMissing') : ''].filter(Boolean).join(' ');
+  const powerDescription = aggregate ? averageDescription(gpus.map(item => item.power_w), text('功率', 'power'), text('平均每张显卡的功率。', 'Average power per GPU.')) : gpuPowerDescription(gpu, t);
   const temperatureDescription = aggregate ? averageDescription(gpus.map(item => item.temp_c), text('温度', 'temperature'), text('每张显卡当前温度的平均值。', 'Average current temperature of the GPUs.')) : gpuTemperatureDescription(gpu, t);
   const gpuDescription = aggregate ? undefined : [gpu?.name || text('未检测到显卡', 'No GPU detected'), gpuNote, utilizationDescription, powerDescription, temperatureDescription, unified ? t('hardware.unifiedMemoryScope') : ''].filter(Boolean).join(' · ');
   const gpuMemory = capacity(gpu?.mem_used_mb, gpu?.mem_total_mb, 1024);

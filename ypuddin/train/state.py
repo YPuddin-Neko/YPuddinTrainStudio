@@ -47,8 +47,8 @@ def restore_rng(
         target = torch.cuda.current_device() if target is None else target
         visible = torch.cuda.device_count()
         if len(cuda) != visible and source is None:
-            # Old service workers exposed every GPU and saved every RNG. The
-            # supervisor can recover their actual device from durable job progress.
+            # Legacy states hold one RNG per GPU visible to the saving worker and no device
+            # index. The supervisor can recover the actual device from durable job progress.
             legacy = os.environ.get("YPUDDIN_LEGACY_CUDA_RNG_INDEX")
             source = int(legacy) if legacy is not None and legacy.isdecimal() else None
         if (len(cuda) != visible and source is None) or (

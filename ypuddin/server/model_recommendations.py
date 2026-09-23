@@ -1,4 +1,4 @@
-"""Training-compatible single-file weights, verified against each listed publisher.
+"""Download sources and pinned metadata for the model catalog.
 
 Source metadata checked 2026-09-13 using the Hugging Face tree API and ModelScope
 repo/files API. Provider mappings are explicit; a matching repository name is never

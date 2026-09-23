@@ -1,7 +1,4 @@
-"""Preview-only DTK policy boundaries and real CPU BF16 contraction coverage.
-
-Hardware reproducibility must still pass the separate official-weight GPU runs.
-"""
+"""Preview-only DTK policy boundaries and CPU BF16 contraction tests."""
 
 import copy
 from contextlib import nullcontext

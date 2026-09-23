@@ -43,7 +43,7 @@ def training_device_error(
         return "多卡训练需要 Linux CUDA/DTK 或 Windows CUDA DDP 环境；当前环境请使用 1 张显卡。"
     if sys.platform == "win32" and strategy != "ddp":
         return (
-            "原生 Windows 暂不支持显存分片（FSDP）；可使用启动前通信自测的 DDP，或在 Linux 环境运行分片训练。"
+            "原生 Windows 暂不支持显存分片（FSDP）；可改用 DDP，或在 Linux 环境运行分片训练。"
         )
     devices = [g for g in inventory if str(g.get("device", "")).startswith("cuda:")]
     if len(devices) < count:
@@ -52,7 +52,7 @@ def training_device_error(
         if not torch.cuda.is_available() or getattr(torch.version, "hip", None):
             return "Windows 多卡 DDP 需要可用的 CUDA PyTorch 环境。"
         if not torch.distributed.is_available() or not torch.distributed.is_gloo_available():
-            return "当前 PyTorch 未提供 Gloo；Windows 多卡 DDP 无法进行启动前通信检查。"
+            return "当前 PyTorch 未提供 Gloo，无法启动 Windows 多卡 DDP。"
         # CUDA collectives are verified on the selected cards in each worker,
         # before constructing Trainer or loading/writing any training assets.
         return None

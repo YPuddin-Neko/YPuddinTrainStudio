@@ -47,7 +47,8 @@ it('does not guess role from folder text or allow compatibility changes while ow
   render(<Editor initial={{dataset:{sources:[source]}}} roles={[]}/>);
   expect(screen.getByText(/目录用途待核对/)).toBeVisible();
   fireEvent.click(screen.getByText('高级来源设置'));
-  expect(screen.getByText('正在核对目录归属；保留当前用途。')).toBeVisible();
+  expect(screen.getByText(/目录用途待核对/)).toBeVisible();
+  expect(screen.queryByText('外部来源用途')).not.toBeInTheDocument();
   expect(screen.queryByRole('checkbox',{name:/正则/})).not.toBeInTheDocument();
   expect(saved().dataset.sources[0].is_reg).toBe(false);
 });

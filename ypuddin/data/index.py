@@ -248,8 +248,9 @@ def record_content_key(record: ImageRecord) -> tuple[int, str, str, str]:
     """Semantic ordering: renaming/moving an image and its sidecars keeps its sampler position."""
     caption_hash = content_hash(record.caption_path) if record.caption_path else ""
     if record.caption_path and Path(record.caption_path).suffix.lower() == ".json":
-        # Existing TXT fingerprints and resume ordering are unchanged. JSON previously
-        # trained as raw file text must not silently resume with new structured semantics.
+        # TXT hashes stay unprefixed to keep their fingerprints and resume ordering. The
+        # prefix keeps checkpoints that trained JSON as raw file text from resuming with
+        # structured semantics.
         caption_hash = "structured-json-v1:" + caption_hash
     return (
         record.source_index,

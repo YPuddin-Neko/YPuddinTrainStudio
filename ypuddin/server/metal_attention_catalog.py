@@ -1,4 +1,4 @@
-"""Reviewed mtlattn release and its narrower, verified deployment requirements.
+"""Pinned mtlattn wheels and supported deployment requirements.
 
 PyPI metadata declares only ``torch``. The publisher documents that these
 extension wheels were built against Torch 2.13; package metadata alone therefore
@@ -24,11 +24,11 @@ WHEELS = {
 }
 
 MESSAGES = {
-    "metal_requires_apple_silicon": "Metal FlashAttention 需要 Apple Silicon macOS，不能安装到 CUDA / HIP 环境。",
-    "metal_requires_mps_profile": "Metal FlashAttention 需要 Apple MPS 环境，不能用于 CPU 或其他平台环境。",
-    "metal_requires_macos_15": "本版 Metal FlashAttention 已核查的最低系统为 macOS 15。",
-    "metal_requires_python_311_312": "本版 Metal FlashAttention 使用已核查的 Python 3.11 / 3.12 预编译 wheel。",
-    "metal_requires_torch_2_13": "mtlattn 0.4.1 的预编译包需要 PyTorch 2.13.x；请先创建并切换至兼容的 Apple MPS 环境，不会自动降级当前 PyTorch。",
+    "metal_requires_apple_silicon": "Metal FlashAttention 需要 Apple Silicon macOS。",
+    "metal_requires_mps_profile": "Metal FlashAttention 需要 Apple MPS 环境。",
+    "metal_requires_macos_15": "本版 Metal FlashAttention 需要 macOS 15 或更新版本。",
+    "metal_requires_python_311_312": "本版 Metal FlashAttention 需要 Python 3.11 或 3.12。",
+    "metal_requires_torch_2_13": "mtlattn 0.4.1 的预编译包需要 PyTorch 2.13.x；请先创建并切换至兼容的 Apple MPS 环境。",
     "metal_requires_mps": "当前 PyTorch 无法使用 Apple MPS；Metal FlashAttention 检测或安装已停止。",
 }
 

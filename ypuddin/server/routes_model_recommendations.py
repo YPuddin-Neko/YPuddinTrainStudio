@@ -1,4 +1,4 @@
-"""A small, verified training model catalog separate from retired tagger catalogs."""
+"""Recommended model catalog and download/registration endpoints."""
 
 from pathlib import Path
 

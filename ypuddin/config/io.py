@@ -114,14 +114,14 @@ def config_hash(config: TrainConfig | Mapping[str, Any]) -> str:
     model = data.get("model")
     if isinstance(model, Mapping) and model.get("sdxl_max_token_length") == 75:
         data["model"] = {key: value for key, value in model.items() if key != "sdxl_max_token_length"}
-    # Older versions had no switch and used nondeterministic kernels. Explicit
-    # false retains that fingerprint; true and all other configuration changes
+    # A config without this switch runs nondeterministic kernels. Explicit false
+    # keeps that fingerprint; true and all other configuration changes
     # remain visible to the checkpoint compatibility check.
     loop = data.get("loop")
     if isinstance(loop, Mapping) and loop.get("deterministic") is False:
         data["loop"] = {key: value for key, value in loop.items() if key != "deterministic"}
-    # These optional DDPM modifiers did not exist in older full-state checkpoints.
-    # Disabled defaults must not break authentication of their original config.toml.
+    # Full-state checkpoints may predate these optional DDPM modifiers. Disabled
+    # defaults must not break authentication of their original config.toml.
     objective = data.get("objective")
     if isinstance(objective, Mapping):
         inactive = {

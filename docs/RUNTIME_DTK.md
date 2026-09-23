@@ -73,7 +73,7 @@ YPUDDIN_DTK_PYTHON=/path/to/matching/python3 \
 python -m pip download --only-binary=:all: --no-deps pip --dest pip-wheel
 ```
 
-目标服务器的宿主 pip 需要支持 `--python`（pip 22.3 或更新）。以本次服务器的 `/usr/bin/python3` 为例，准备好本地 wheel 后直接运行：
+目标服务器的宿主 pip 需要支持 `--python`（pip 22.3 或更新）。以 `/usr/bin/python3` 为例，准备好本地 wheel 后直接运行：
 
 ```bash
 DTK_ROOT=/opt/dtk \
@@ -102,8 +102,6 @@ HIP PyTorch 沿用 `torch.cuda` Python 接口，所以代码里的 `cuda:0` 可�
 
 首次启动、服务尚未运行时的依赖安装仍使用启动终端的代理环境变量；完成启动后，再通过上述设置管理服务内的下载请求。
 
-启动隔离、框架导入、单卡运算、双卡通信、训练器多卡执行是不同的验证项目。真实硬件的训练、保存、续训、采样与通信结果以对应验收报告为准，不由启动脚本是否成功推断。
-
 ## 三类安装包分别做什么
 
 | 安装层 | 用途 | 官方来源 | 安装方式 |
@@ -112,7 +110,7 @@ HIP PyTorch 沿用 `torch.cuda` Python 接口，所以代码里的 `cuda:0` 可�
 | DTK 用户态运行库 | HIP、数学库、编译器等运行文件；不是 Python 包 | [DTK 版本目录](https://download.sourcefind.cn:65024/1/main) | 使用匹配系统的包，放在独立路径，通过 `DTK_ROOT` 选择 |
 | 厂商 Python wheel | PyTorch、TorchVision、Triton、FlashAttention、xFormers | [AI 软件包目录](https://download.sourcefind.cn:65024/4/main/) | 基础框架放进独立 venv；已核查的注意力扩展可在前端自动下载或上传安装 |
 
-先核对 [DTK 与驱动配套表](https://download.sourcefind.cn:65024/file/1/DTK%E4%B8%8E%E9%A9%B1%E5%8A%A8%E7%89%88%E6%9C%AC%E9%85%8D%E5%A5%97%E5%85%B3%E7%B3%BB%E8%A1%A8.md)。这个表列出的 DTK 26.04 驱动要求为 `>=6.3.30-V1.4.1a`，卡型包含 BW。本机 `6.3.31-V1.5.3.beta` 已完成上面的运行验证，但这不代替厂商对 beta 驱动的配套确认，也不能只按版本数字为其他机器推荐。DTK 26.04.1 的配套要求不同，不能把 26.04 与 26.04.1 混用。
+先核对 [DTK 与驱动配套表](https://download.sourcefind.cn:65024/file/1/DTK%E4%B8%8E%E9%A9%B1%E5%8A%A8%E7%89%88%E6%9C%AC%E9%85%8D%E5%A5%97%E5%85%B3%E7%B3%BB%E8%A1%A8.md)。这个表列出的 DTK 26.04 驱动要求为 `>=6.3.30-V1.4.1a`，卡型包含 BW。上述测试使用 `6.3.31-V1.5.3.beta` 驱动；生产部署仍按厂商配套表选择驱动。DTK 26.04.1 的配套要求不同，不能把 26.04 与 26.04.1 混用。
 
 ## Ubuntu 22.04 / x86_64 / Python 3.11 的已测组合
 

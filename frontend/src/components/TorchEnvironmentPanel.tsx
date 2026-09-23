@@ -85,7 +85,6 @@ export default function TorchEnvironmentPanel({ disabled = false, operationsTarg
     {op.logs.length > 0 && <InstallationLog label={text('PyTorch 安装日志', 'PyTorch installation log')} logs={op.logs}/>}
     {op.status === 'ready' && <div className="flex flex-wrap gap-2"><button type="button" className="settings-action" disabled={locked} onClick={() => void act(`/environment/torch/operations/${op.id}/apply`)}>{text('安装到独立环境', 'Install in an isolated environment')}</button><button type="button" className="settings-input" disabled={busy} onClick={() => void act(`/environment/torch/operations/${op.id}/cancel`)}>{text('取消安装', 'Cancel installation')}</button></div>}
     {op.status === 'completed' && op.environment_id && state?.selected_environment !== op.environment_id && <ServiceControls environmentId={op.environment_id} onRestarted={() => void refresh()}/>}
-    {op.status === 'completed' && state?.selected_environment === op.environment_id && <p className="settings-note">{text('当前正在使用', 'Currently active')}</p>}
     {active(op) && <div className="flex flex-wrap gap-2"><button type="button" className="settings-input" disabled={busy} onClick={() => void act(`/environment/torch/operations/${op.id}/cancel`)}>{text('取消安装', 'Cancel installation')}</button></div>}
   </InstallationOperation>);
   return <>
@@ -93,9 +92,9 @@ export default function TorchEnvironmentPanel({ disabled = false, operationsTarg
       <div className="settings-section-heading"><h2>{text('PyTorch 版本', 'PyTorch version')}</h2></div>
       <p className="settings-note">{showAttentionExtensions ? text('所选版本会安装到独立环境，检查通过后重启使用。原环境保留；xFormers、FlashAttention 等扩展需为新版本重新安装。', 'Install the selected version in an isolated environment, check it, then restart to use it. The original environment is retained; compiled extensions need matching installations.') : text('所选版本会安装到独立环境，检查通过后重启使用，原环境保留。', 'Install the selected version in an isolated environment, check it, then restart to use it. The original environment is retained.')}</p>
       <div className="settings-field"><label>{text('选择版本与计算后端', 'Version and compute backend')}</label><div className="settings-field-control"><StudioSelect aria-label={text('选择 PyTorch 版本', 'Choose PyTorch version')} disabled={locked || !state} value={choice} onValueChange={setChoice} options={(state?.builds || []).filter(b => b.supported || b.reason?.startsWith('requires_driver')).map(b => ({ value: b.id, label: buildLabel(b), disabled: !b.supported }))}/></div></div>
-      {showInstalledChoice && <div className="space-y-2" data-testid="installed-torch-environment">
-        <p className="settings-note">{installedChoiceActive ? text('当前正在使用此环境。', 'This environment is currently active.') : text('此版本已安装，可直接切换，无需重新下载。', 'This version is installed. Switch to it without downloading again.')}</p>
-        {!installedChoiceActive && <ServiceControls key={installedChoice.environment_id} environmentId={installedChoice.environment_id!} disabled={locked} onRestarted={() => void refresh()}/>}
+      {showInstalledChoice && !installedChoiceActive && <div className="space-y-2" data-testid="installed-torch-environment">
+        <p className="settings-note">{text('此版本已安装，可直接切换，无需重新下载。', 'This version is installed. Switch to it without downloading again.')}</p>
+        <ServiceControls key={installedChoice.environment_id} environmentId={installedChoice.environment_id!} disabled={locked} onRestarted={() => void refresh()}/>
       </div>}
       {state && <p className="settings-note">{text(`可用空间 ${(state.disk_free_bytes / 1024 ** 3).toFixed(1)} GiB；${selectedBackend ? `所选环境至少预留 ${minimumSpaceGiB} GiB。` : '选择版本后检查所需空间。'}`, `Available space: ${(state.disk_free_bytes / 1024 ** 3).toFixed(1)} GiB. ${selectedBackend ? `Reserve at least ${minimumSpaceGiB} GiB for the selected environment.` : 'Choose a build to check required space.'}`)}</p>}
       {disabled && <p className="settings-note">{text('当前任务完成后可安装运行环境。', 'Finish the current task before installing an environment.')}</p>}

@@ -101,9 +101,9 @@ describe('isolated PyTorch environment controls',()=>{
     const visible=vi.fn();
     const first=render(<TorchEnvironmentPanel onOperationsVisible={visible}/>);
     expect(await screen.findByRole('combobox',{name:'选择 PyTorch 版本'})).toHaveTextContent('PyTorch 2.13.0 · CU130 · 当前使用');
-    expect(screen.getByText('当前正在使用此环境。')).toBeInTheDocument();
+    expect(screen.queryByTestId('installed-torch-environment')).not.toBeInTheDocument();
     first.unmount();render(<TorchEnvironmentPanel onOperationsVisible={visible}/>);
-    await screen.findByText('当前正在使用此环境。');
+    expect(await screen.findByRole('combobox',{name:'选择 PyTorch 版本'})).toHaveTextContent('PyTorch 2.13.0 · CU130 · 当前使用');
     expect(screen.queryByRole('heading',{name:'安装日志'})).not.toBeInTheDocument();
     expect(screen.queryByLabelText('PyTorch 安装日志')).not.toBeInTheDocument();
     expect(screen.queryByRole('button',{name:'重启并切换到此环境'})).not.toBeInTheDocument();
@@ -126,7 +126,7 @@ describe('isolated PyTorch environment controls',()=>{
     const section=screen.getByRole('heading',{name:'PyTorch 版本'}).closest('section')!;
     fireEvent.click(within(section).getByRole('button',{name:'刷新状态'}));
     expect(await screen.findByText('已启用')).toBeInTheDocument();
-    expect(screen.getByText('当前正在使用')).toBeInTheDocument();
+    expect(screen.getByRole('combobox',{name:'选择 PyTorch 版本'})).toHaveTextContent('当前使用');
     expect(screen.queryByText('安装完成，重启后可使用')).not.toBeInTheDocument();
     expect(screen.queryByRole('button',{name:'重启并切换到此环境'})).not.toBeInTheDocument();
   });

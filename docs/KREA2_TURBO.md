@@ -21,12 +21,6 @@
 | `krea2-turbo-fp8` | 13,141,730,784 字节 | FP8 scaled，仅采样 |
 | `krea2-turbo-bf16` | 26,283,332,608 字节 | BF16，仅采样 |
 
-来源为 [Comfy-Org/Krea-2 固定版本目录](https://huggingface.co/Comfy-Org/Krea-2/tree/e5ea8b4dd7f38f348b138eb0fe29f92c0e367e96/diffusion_models)。FP8 减少权重存储，不代表运行时只需要与文件相同大小的内存或显存。
+来源为 [Comfy-Org/Krea-2 固定版本目录](https://huggingface.co/Comfy-Org/Krea-2/tree/e5ea8b4dd7f38f348b138eb0fe29f92c0e367e96/diffusion_models)。FP8 减少权重存储，运行时还需为激活、缓存和临时计算结果预留内存或显存。
 
 Raw 和 Turbo 的权重结构相同，文件名也可以随意修改。程序不会靠名称或形状猜版本：推荐文件校验完成后会在旁边写一个小型 `.ypuddin.json` 记录，绑定当前文件的大小、时间和文件身份；修改、重新复制文件后，需要重新校验或明确选择版本。未验证的本地模型或自定义下载需要用户按发布说明选择 Raw / Turbo。旧训练配置继续默认 Raw；自动模式不能确认时会报错，不会静默猜测。
-
-## 本次验证范围
-
-已通过 CPU 数值检查（CFG、固定时间表、显式参数覆盖）、现有缩小 Krea2 BF16 / FP8 加载回归，以及本地 HTTP 小权重的真实下载、校验、登记、再次使用和训练默认保护。模型管理界面也有对应交互回归。
-
-这些 CPU 回归没有加载完整模型进行 GPU 推理，不能作为某张显卡能容纳完整 Krea2 的证明。正式权重下载校验和 GPU 出图验收分别记录，以对应测试记录为准。

@@ -1,7 +1,7 @@
 """Optimizer controls shared by config validation and the schema-driven editor.
 
-The learning-rate locks are Studio's product policy, not constructor restrictions
-claimed on behalf of the upstream optimizers. D Coef remains adjustable.
+Studio enforces the learning-rate locks through config validation, independently
+of the upstream optimizer constructors. D Coef remains adjustable.
 """
 
 from __future__ import annotations

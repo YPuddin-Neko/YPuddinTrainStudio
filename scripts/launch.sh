@@ -1,15 +1,6 @@
 #!/usr/bin/env bash
-# YPuddin Train Studio —— Linux / macOS 启动脚本的共用阶段
-#
-# 这不是入口。每种环境在仓库根目录都有自己的启动脚本，由它选定环境后调用本文件：
-#   ./studio-linux-cuda.sh         Linux + NVIDIA CUDA
-#   ./studio-cpu.sh                Linux / macOS，仅 CPU
-#   ./studio-macos.command         macOS Apple 芯片（MPS）
-# 海光 DTK 用 ./studio-linux-dtk.sh，它直接调用 scripts/bootstrap.py。
-# 请运行上面这些脚本，不要直接运行本文件：不带 --profile 启动会装进根目录的
-# legacy venv。可用参数见 README.md 和 docs/deploy.md。
-#
-# 所有逻辑都在 scripts/bootstrap.py（只用标准库）；本文件只负责找到一个可用的 Python。
+# Linux / macOS 启动的共用阶段：由 studio-linux-cuda.sh、studio-cpu.sh、studio-macos.command
+# 选定 --profile 后调用。本文件只负责找到可用的 Python，其余逻辑在 scripts/bootstrap.py。
 
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -18,13 +9,13 @@ export PYTHONUTF8=1 PYTHONIOENCODING=utf-8
 pause_on_error() {
   local rc=$?
   if [ "$rc" -ne 0 ] && [ "$rc" -ne 130 ] && [ -t 0 ] && [ -t 1 ]; then
-    printf '[studio] 脚本以错误码 %s 结束（上面有原因）—— 按回车关闭\n' "$rc"
+    printf '[studio] 已退出（错误码 %s），原因见上方输出。按回车关闭。\n' "$rc"
     read -r _ || true
   fi
 }
 trap pause_on_error EXIT
 
-# venv 已存在：直接用它自己的 Python，不再依赖系统 Python
+# 优先使用已创建环境里的 Python
 if [ -n "${YPUDDIN_BOOTSTRAP_VENV:-}" ] && [ -x "$YPUDDIN_BOOTSTRAP_VENV/bin/python" ]; then
   exec "$YPUDDIN_BOOTSTRAP_VENV/bin/python" scripts/bootstrap.py "$@"
 fi

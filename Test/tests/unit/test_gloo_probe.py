@@ -41,7 +41,7 @@ def test_cuda_probe_selects_real_requested_device_and_supported_dtypes(mocked_cu
     result = gloo_probe.probe_windows_cuda_ddp("cuda:1", required_dtypes=(torch.float16,))
     expected = (torch.float32, torch.float16, torch.float64)
     exercise.assert_called_once_with(torch.device("cuda:1"), group, expected)
-    assert result["checks"] == ["mocked"]  # simulation is not promoted to hardware evidence
+    assert result["checks"] == ["mocked"]
     assert distributed.new_group.call_args.kwargs["timeout"].total_seconds() == 30
     distributed.destroy_process_group.assert_called_once_with(group)
 

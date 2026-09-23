@@ -1,4 +1,4 @@
-"""Actual dataset pipeline operations scoped to one project version."""
+"""Dataset pipeline operations scoped to one project version."""
 
 from __future__ import annotations
 

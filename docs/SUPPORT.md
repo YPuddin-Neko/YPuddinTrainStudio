@@ -1,8 +1,6 @@
 # 支持范围
 
 - 支持 Anima、SDXL、Krea2、FLUX.2 Klein base 4B／9B；具体训练选项按模型能力显示。
-- Windows 原生多卡使用 DDP，不支持 FSDP。Linux FSDP 用于分配多卡显存，但新增 LoRA／LoKr 分片路径仍缺正式双 GPU 验收。
+- Windows 原生多卡只支持 DDP；Linux CUDA／DTK 可以使用 FSDP 分配多卡显存。
 - FP16 动态梯度缩放目前只开放单卡，不接受 FP16 可训练参数；建议使用 FP32 适配器参数。
 - SDXL 冻结文本编码器时使用文本缓存，目前不开放在线编码。
-- 海光 SDXL 150 token 的历史严格续训差异仍待 DTK 真机复验。
-- 已有短程测试不代表所有模型、硬件与参数组合都经过验证，显存需求和长期效果需按实际任务确认。

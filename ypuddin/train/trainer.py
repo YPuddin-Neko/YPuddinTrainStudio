@@ -291,17 +291,17 @@ class Trainer:
             backbone = sha256_of_tensors(self.loaded.backbone.state_dict())
         path_fields = {"dit_path", "text_encoder_path", "text_encoder_2_path", "vae_path", "tokenizer_path"}
         if self.family.spec.objective != "ddpm":
-            # New SDXL-only defaults do not invalidate existing Anima/Krea/Toy checkpoints.
+            # DDPM-only fields must not change the identity of non-DDPM checkpoints.
             path_fields.update({"prediction_type", "zero_terminal_snr"})
         if self.family.spec.name not in {"flux", "flux2"}:
             path_fields.add("training_guidance")
         if self.family.spec.name != "flux2":
             path_fields.add("flux2_variant")
         if self.family.spec.name != "sdxl" or self.cfg.model.sdxl_max_token_length == 75:
-            # Default CLIP context is unchanged in historical checkpoints.
+            # The default 75-token context keeps the identity of checkpoints saved without this option.
             path_fields.add("sdxl_max_token_length")
-        # Raw is the historical Krea2 training behavior; the new inference-only
-        # variant field must not invalidate existing full-state checkpoints.
+        # Krea2 training always uses Raw; the inference-only variant field must not
+        # change the identity of full-state checkpoints.
         path_fields.add("krea2_variant")
         payload = {
             "version": 1,
@@ -778,7 +778,7 @@ class Trainer:
         )
         self._restore_grad_scaler(ck["progress"].extra)
         if bool(ck["scheduler"]) != (self.scheduler is not None):
-            raise ValueError("保存的学习率调度器状态与原训练合同不一致，不能精确恢复")
+            raise ValueError("保存的学习率调度器状态与原训练设置不一致，不能精确恢复")
         expected_kind = "full-model" if self.cfg.training.mode == "full" else "adapter"
         if ck.get("training_kind", "adapter") != expected_kind:
             raise ValueError(

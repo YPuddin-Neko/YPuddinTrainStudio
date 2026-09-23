@@ -1870,7 +1870,7 @@ def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends
             (jid,),
         ):
             raise ApiError(
-                "请先删除使用此训练任务的模型测试记录，这些记录仍依赖该任务。",
+                "请先删除使用此训练任务的模型测试记录。",
                 code="job.xyz_dependencies",
                 status=409,
             )

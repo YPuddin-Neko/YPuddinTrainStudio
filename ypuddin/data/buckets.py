@@ -82,7 +82,7 @@ class BucketManager:
                     continue
                 out[(w, hh)] = Bucket(w, hh, base)
         if not out:
-            # Historical fallback for resolutions smaller than the bucket step,
+            # Fallback for resolutions smaller than the bucket step,
             # or an area band with no aligned point. Do not add an out-of-band
             # square when legal buckets already exist.
             square = max(a, int(round(base / a)) * a)

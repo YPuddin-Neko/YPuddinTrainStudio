@@ -1,4 +1,4 @@
-/** Exact contracts for the measured FP16 and Klein 4B/9B paths. Host confirmation is required. */
+/** Versioned DTK compute policies must match the contract returned by the server. */
 export interface ExtraAdapterComputePolicy {
   id: 'dtk-anima-backbone-lora-single-fp16-compute-v1'
     | 'dtk-sdxl-backbone-lokr-single-fp16-preview-v1'

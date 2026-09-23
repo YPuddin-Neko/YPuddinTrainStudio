@@ -157,7 +157,7 @@ describe('optional Metal FlashAttention management', () => {
     operations = [operation('mtlattn', 'installing')];
     render(<EnvironmentManagerPanel />);
     const row = await screen.findByTestId('environment-package-mtlattn');
-    expect(row).toHaveTextContent('检测正常');
+    expect(row).toHaveTextContent('检测通过');
     expect(row).not.toHaveTextContent(/CUDA|DTK/);
     expect(within(row).getByRole('button', { name: '管理' })).toBeDisabled();
     expect(await screen.findByLabelText('安装日志')).toHaveTextContent('Torch unchanged');
@@ -394,7 +394,7 @@ describe('real environment management UI contracts', () => {
     render(<EnvironmentManagerPanel />);
     const sdpa = await screen.findByTestId('environment-sdpa');
     expect(within(sdpa).getByText('Apple GPU 内置加速')).toBeVisible();
-    expect(within(sdpa).getByText('检测正常')).toBeVisible();
+    expect(within(sdpa).getByText('检测通过')).toBeVisible();
     expect(within(sdpa).getByText('使用 PyTorch 自带的 SDPA，无需额外安装。')).toBeVisible();
     expect(within(sdpa).queryByText('检测详情')).not.toBeInTheDocument();
     expect(sdpa).not.toHaveTextContent(/FP32|FP16|BF16|前向|反向|模型训练效果|速度测试/);
@@ -410,7 +410,7 @@ describe('real environment management UI contracts', () => {
     expect(within(sdpa).getByText('检测失败')).toBeVisible();
     expect(within(sdpa).getByRole('alert')).toHaveTextContent(error);
     expect(within(sdpa).getByRole('alert')).toBeVisible();
-    expect(sdpa).not.toHaveTextContent('检测正常');
+    expect(sdpa).not.toHaveTextContent('检测通过');
     expect(within(sdpa).queryByRole('button')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '查看匹配的 FlashAttention 包' })).not.toBeInTheDocument();
     expect(screen.queryByTestId('environment-package-xformers')).not.toBeInTheDocument();
@@ -423,7 +423,7 @@ describe('real environment management UI contracts', () => {
     const attention = (await screen.findByRole('heading', { name: '注意力加速' })).closest('section')!;
     expect(attention).toHaveTextContent('CPU 使用 PyTorch 内置 SDPA');
     expect(screen.queryByTestId('environment-sdpa')).not.toBeInTheDocument();
-    expect(screen.queryByText('检测正常')).not.toBeInTheDocument();
+    expect(screen.queryByText('检测通过')).not.toBeInTheDocument();
   });
 
   it('renders the English controls without Chinese fallbacks', async () => {
@@ -664,7 +664,7 @@ it('offers a matching Windows community build and stages a plan before any insta
   runtime.runtime.torch = '2.11.0+cu128';
   server.use(http.get('/api/environment/windows/wheels', () => HttpResponse.json(windowsCatalog(true))));
   render(<EnvironmentManagerPanel focusPackage="flash-attn"/>);
-  const select = await screen.findByRole('combobox',{name:'Windows FlashAttention 版本'});
+  const select = await screen.findByRole('combobox',{name:'FlashAttention 版本'});
   expect(screen.getByText(/安装包由社区维护者 mjun0812 提供/)).toBeInTheDocument();
   expect(screen.queryByLabelText('flash-attn 版本')).not.toBeInTheDocument();
   expect(screen.getByRole('button',{name:'检查安装条件'})).toBeDisabled();
@@ -690,7 +690,7 @@ it('makes catalog failure explicit while allowing bundled matching and manual up
   render(<EnvironmentManagerPanel focusPackage="flash-attn"/>);
   expect(await screen.findByRole('alert')).toHaveTextContent('无法连接发布页');
   expect(screen.getByText(/^Python .*使用内置版本列表/, {selector:'p.settings-note.break-words'})).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('combobox',{name:'Windows FlashAttention 版本'}));
+  fireEvent.click(screen.getByRole('combobox',{name:'FlashAttention 版本'}));
   fireEvent.click(screen.getByRole('option',{name:/2.8.3\+cu128torch2.11/}));
   expect(screen.getByRole('button',{name:'上传 wheel'})).toBeEnabled();
   fireEvent.change(screen.getByLabelText('flash-attn wheel'),{target:{files:[new File(['fake'], 'offline.whl')]}});
@@ -705,7 +705,7 @@ it('distinguishes no matching build from request failure and keeps the publisher
   const view = render(<EnvironmentManagerPanel focusPackage="flash-attn"/>);
   expect(await screen.findByText(/已查询的版本列表中没有适合当前环境的安装包/)).toBeInTheDocument();
   expect(screen.getByText('PyTorch 版本不匹配')).toBeInTheDocument();
-  expect(screen.queryByRole('combobox',{name:'Windows FlashAttention 版本'})).not.toBeInTheDocument();
+  expect(screen.queryByRole('combobox',{name:'FlashAttention 版本'})).not.toBeInTheDocument();
   expect(screen.getByRole('button',{name:'上传 wheel'})).toBeEnabled();
   view.unmount();
   server.use(http.get('/api/environment/windows/wheels',()=>HttpResponse.json({error:{code:'catalog.unavailable',message:'无法读取目录'}},{status:503})));

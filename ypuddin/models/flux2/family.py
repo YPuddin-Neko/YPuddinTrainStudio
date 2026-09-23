@@ -72,8 +72,8 @@ def _set_attention_backend(model, attention, device):
         if getattr(torch.version, "hip", None):
             message = (
                 f"FLUX.2 Klein 无法启用当前 DTK / HIP {label} 扩展：未满足接口或运行时要求。"
-                "请将“注意力后端”改为“SDPA”；如需使用该扩展，请选择与 DTK、PyTorch 和 Diffusers "
-                "配套并经过验证的厂商构建。常规内核检测通过不代表 Klein 所需接口可用。"
+                "请将“注意力后端”改为“SDPA”；如需使用该扩展，请选择与当前 DTK、PyTorch 和 Diffusers "
+                "版本配套的厂商构建。"
             )
         else:
             message = (

@@ -479,7 +479,7 @@ class Krea2Family(ModelFamily):
             "all-linear": TargetPreset(
                 "all-linear",
                 include=("*",),
-                description="训练模型中的全部线性层，包括文字融合、嵌入与输出层。参数量随所选范围增大。",
+                description="训练模型中的全部线性层，包括文字融合、嵌入与输出层。",
             ),
             "attn-mlp": TargetPreset(
                 "attn-mlp",

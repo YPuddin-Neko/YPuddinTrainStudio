@@ -44,5 +44,5 @@ def check_unquantized_checkpoint(path: str | Path, component: str) -> None:
                     raise ValueError(
                         f"{component} 暂不支持直接加载现成 FP8 或带量化缩放的权重；"
                         "请选择 BF16、FP16 或 FP32 原始权重。"
-                        "底模设置中的 FP8 是启动时量化，并不代表支持现成 FP8 文件。"
+                        "底模设置中的 FP8 会在启动时量化原始权重。"
                     )

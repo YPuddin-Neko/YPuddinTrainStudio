@@ -277,7 +277,7 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--device", default=None)
     t.set_defaults(fn=cmd_train)
 
-    c = sub.add_parser("cache", help="pre-encode latents only")
+    c = sub.add_parser("cache", help="pre-encode latent and text caches without training")
     _add_config_args(c)
     c.add_argument("--device", default=None)
     c.set_defaults(fn=cmd_cache)
@@ -325,7 +325,10 @@ def build_parser() -> argparse.ArgumentParser:
         "smoke", help="run a few real training steps + one preview + save/reload and print a report"
     )
     sm.add_argument(
-        "config", nargs="?", help="config file; only model/adapter/memory sections matter, defaults otherwise"
+        "config",
+        nargs="?",
+        help="config file; steps, resolution, batch size, checkpoints, validation and previews are "
+        "overridden, and synthetic images are used when no dataset source is set",
     )
     sm.add_argument("--preset", action="append", default=[])
     sm.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")

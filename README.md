@@ -57,6 +57,7 @@ cd YPuddinTrainStudio
 - [原生分辨率与整图保留](docs/native-resolution.md)
 - [文件夹布局](docs/LAYOUT.md)
 - [Krea2 显存配置](docs/KREA2_MEMORY.md)
+- [模型存放目录](docs/MODEL_STORAGE.md)
 - [支持范围与限制](docs/SUPPORT.md)
 
 ## 开发
@@ -66,5 +67,3 @@ cd YPuddinTrainStudio
 ## 许可证
 
 项目许可证见 [Apache-2.0](LICENSE)。第三方组件的声明与许可证见对应目录中的 `NOTICE`／`LICENSE` 文件；模型权重遵循各自的许可条款。
-
-模型目录分类与共用组件：[模型存放目录](docs/MODEL_STORAGE.md)。

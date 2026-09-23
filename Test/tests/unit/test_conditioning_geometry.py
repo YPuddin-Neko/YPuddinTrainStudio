@@ -108,7 +108,7 @@ def test_geometry_matches_actual_pixels_and_cached_latents(
         expected = ImageOps.mirror(expected)
     torch.testing.assert_close(online["pixels"], pil_to_tensor(expected))
 
-    # This small CPU encoder exercises the real safetensors cache path, not a GPU/VAE claim.
+    # This small CPU encoder exercises safetensors cache writes and reloads.
     def encode(pixels):
         return torch.nn.functional.avg_pool2d(pixels, 8)
 

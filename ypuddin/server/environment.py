@@ -388,7 +388,6 @@ for name, module in names.items():
             runtime_label = 'DTK / HIP' if hip else 'CUDA'
             error = (
                 f"xFormers 已安装并可导入，但当前 wheel 没有可用于此 GPU（{device_label}）的注意力计算内核。"
-                "需要兼容的 attention 内核。"
                 f"可尝试匹配当前 Python、PyTorch、{runtime_label} 且支持此 GPU 的 FlashAttention 2 wheel，安装后重新检测。"
             )
             try:

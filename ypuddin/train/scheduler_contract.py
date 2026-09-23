@@ -108,5 +108,5 @@ def read_resume_scheduler_contract(
         or "scheduler_class" not in contract
         or "managed_by_optimizer" not in contract
     ):
-        raise ValueError("训练状态的学习率调度合同无效，不能精确恢复")
+        raise ValueError("训练状态的学习率调度记录无效，不能精确恢复")
     return ResumeSchedulerContract(path, digest, contract)

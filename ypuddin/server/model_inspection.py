@@ -12,7 +12,7 @@ HEADER_LIMIT = 32 * 1024 * 1024
 CONFIG_LIMIT = 2 * 1024 * 1024
 TOKENIZER_LIMIT = 32 * 1024 * 1024
 MAX_FILES = 1024
-FLUX1_RETIRED_REASON = "当前 FLUX 训练仅保留 FLUX.2 Klein base 4B/9B；不再接入 FLUX.1，已有记录和文件仍保留。"
+FLUX1_RETIRED_REASON = "当前 FLUX 训练仅支持 FLUX.2 Klein base 4B/9B，不支持 FLUX.1；已有记录和文件仍保留。"
 FLUX2_DEV_UNSUPPORTED_REASON = (
     "检测到 FLUX.2 dev；当前仅支持 FLUX.2 Klein base 4B/9B，dev 及其 Mistral 编码器不能登记为 Klein。"
 )
@@ -141,7 +141,6 @@ def flux_component(shapes: dict[str, list[int]], config: dict | None = None) -> 
             "dit",
             ["flux"],
             f"FLUX.1 64-channel packed input, T5 width 4096 and dual/single-stream blocks; guidance={guided}",
-            ["仅凭 FLUX.1 主干形状不能排除同形状的 Kontext 等衍生模型；具体支持范围由加载器校验。"],
             unsupported_reason=FLUX1_RETIRED_REASON,
         )
     widths = {6144: (15360, "dev"), 3072: (7680, "Klein 4B"), 4096: (12288, "Klein 9B")}
@@ -220,7 +219,7 @@ def flux_component(shapes: dict[str, list[int]], config: dict | None = None) -> 
             family,
             "text_encoder",
             ["flux2"],
-            "Mistral 5120-wide text decoder compatible with FLUX.2 dev; complete local processor/model directory required",
+            "Mistral 5120-wide text decoder compatible with FLUX.2 dev",
             unsupported_reason=FLUX2_DEV_UNSUPPORTED_REASON,
         )
     if (
@@ -769,14 +768,14 @@ def inspect_model(path: Path, *, allowed=None, _budget: dict[str, int] | None = 
         warnings.append(
             "模型系列尚不能唯一确定，请确认兼容系列。"
             if candidates
-            else "未识别模型系列；请根据模型来源确认，不按文件名猜测。"
+            else "未识别模型系列，请根据模型来源确认。"
         )
     if not kind:
         warnings.append("未识别组件类型，请手动确认。")
     if dtype == "mixed":
         warnings.append("矩阵权重包含多种精度，已标记为 mixed。")
     if not dtype and kind != "tokenizer":
-        warnings.append("未识别浮点权重精度，保留未知。")
+        warnings.append("未识别浮点权重精度。")
     if unsupported_reason:
         warnings.append(unsupported_reason)
     variant = None
@@ -787,7 +786,7 @@ def inspect_model(path: Path, *, allowed=None, _budget: dict[str, int] | None = 
         variant = verified_variant(files[0] if len(files) == 1 else path)
         purpose = ("inference" if variant == "turbo" else "training") if variant else None
         if not variant:
-            warnings.append("Raw 与 Turbo 权重形状相同；请按模型发布说明确认用途，不能根据文件名自动判断。")
+            warnings.append("Raw 与 Turbo 权重形状相同，请按模型发布说明确认版本。")
     return {
         "path": str(
             files[0]

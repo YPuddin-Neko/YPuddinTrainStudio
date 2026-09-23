@@ -138,7 +138,7 @@ def driver_version() -> str | None:
 
 def guidance(runtime: dict) -> DtkGuidance:
     # This bundle's METADATA/version.py were inspected from the official DAS1.8 wheels.
-    # Package matching is not driver qualification or a completed model-training test.
+    # Package metadata does not describe runtime kernel support.
     result = DtkGuidance(driver_version=runtime.get("driver_version"))
     try:
         if Version(str(runtime.get("torch", "0"))) < Version("2.5"):

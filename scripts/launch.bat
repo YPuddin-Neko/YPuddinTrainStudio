@@ -5,25 +5,13 @@ set PYTHONUTF8=1
 set PYTHONIOENCODING=utf-8
 
 REM ============================================================================
-REM YPuddin Train Studio - shared Windows launcher stage
+REM Shared Windows launcher stage, called by studio-windows-cuda.bat and
+REM studio-cpu.bat after they select a profile. It only finds a usable Python;
+REM all logic lives in scripts\bootstrap.py.
 REM
-REM Not an entry point. Every environment has its own start script in the
-REM repository root; it selects the environment and then calls this file:
-REM   studio-windows-cuda.bat    Windows + NVIDIA CUDA
-REM   studio-cpu.bat             Windows, CPU only
-REM Linux and macOS use studio-linux-cuda.sh, studio-linux-dtk.sh,
-REM studio-cpu.sh or studio-macos.command. Run those, not this file:
-REM launching without a profile would install into the legacy root venv.
-REM Accepted options are documented in README.md and docs/deploy.md.
-REM
-REM This file must stay PURE ASCII and use CRLF line endings (enforced by
-REM .gitattributes). Do not add Chinese characters here and do not use
-REM "chcp 65001": switching the codepage mid-script makes cmd.exe resume
-REM reading the file at a wrong byte offset (garbled "is not recognized"
-REM errors). All Chinese output is printed by scripts\bootstrap.py, which
-REM writes Unicode to the console correctly on its own.
-REM
-REM All logic lives in scripts\bootstrap.py; this file only finds a usable Python.
+REM Keep this file pure ASCII with CRLF line endings (enforced by .gitattributes).
+REM Do not use "chcp 65001": switching the code page mid-script makes cmd.exe
+REM resume reading at a wrong byte offset. Chinese output comes from bootstrap.py.
 REM ============================================================================
 
 echo [studio] YPuddin Train Studio

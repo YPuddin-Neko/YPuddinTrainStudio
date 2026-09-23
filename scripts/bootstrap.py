@@ -17,8 +17,8 @@
 全局参数
   --profile=<auto|legacy|windows-cuda|linux-cuda|linux-dtk|macos-mps|cpu>  独立平台环境；auto 保留已有 legacy venv
   --torch=<cu128|cu126|cu124|cu118|cpu|auto>  首次安装/重建的 PyTorch 类型（默认 auto）
-  --index=<auto|cn|official>  包源。auto / cn（默认）：国内镜像优先，中科大 -> 清华 -> 阿里 -> 官方兜底，
-                  探测不通的源自动排后，逐个尝试直到成功；official：官方源优先（镜像兜底）
+  --index=<auto|cn|official>  包源；未指定时使用界面保存的下载源设置，没有保存时为 auto。
+                  auto / cn：中科大 -> 清华 -> 阿里 -> 官方，失败后依次换源；official：普通依赖官方优先、镜像兜底，PyTorch 仅用官方源
   --mirror        等价于 --index=cn
   --env-root=<目录>  基础环境根目录，按平台隔离；默认源码目录下的 environment
   --reinstall     只重建选中平台的环境（其他环境及 studio_data/ 不受影响）
@@ -214,10 +214,7 @@ def platform_torch_tag(profile: str, requested: str) -> str:
     if profile in expected and platform.system() != expected[profile]:
         die(f"{profile} 启动入口只适用于 {expected[profile]}，当前为 {platform.system()}")
     if profile in X86_ONLY_PROFILES and host_arch() != "x86_64":
-        die(
-            f"{profile} 启动入口只在 x86_64 上验证过，当前架构是 {host_arch()}；"
-            "请使用 CPU 启动入口，或先为本架构验证对应的 PyTorch 来源。"
-        )
+        die(f"{profile} 启动入口只支持 x86_64，当前架构是 {host_arch()}；请使用 CPU 启动入口。")
     if profile == "linux-dtk":
         if requested not in ("auto", "dtk"):
             die("DTK 部署入口只能使用匹配海光运行时的厂商 PyTorch，不能安装 CUDA/CPU wheel")
@@ -258,11 +255,10 @@ def select_environment(profile: str, torch_tag: str, env_root: str | None = None
         PROFILE = system + "-cpu" if profile == "cpu" else profile
         base = Path(os.path.abspath(Path(env_root).expanduser())) if env_root else ROOT / "environment"
         VENV = base / PROFILE / "venv"
-        # The extra profiles/ level is gone. Name the stale tree instead of deleting
-        # gigabytes on the user's behalf, or of leaving it unexplained.
+        # Old environment/profiles/ layout: report it instead of deleting gigabytes on the user's behalf.
         stale = ROOT / "environment" / "profiles"
         if not env_root and stale.is_dir():
-            log(f"旧布局 {stale} 已不再使用，本次安装到 {VENV}；确认新环境可用后可自行删除旧目录。")
+            log(f"旧版环境目录 {stale} 已不再使用；确认 {VENV} 可用后可以删除。")
     MARKER = VENV / ".ypuddin-install.json"
     # Refuse links before either installation or explicit rebuild can affect another directory.
     path = VENV
@@ -324,8 +320,6 @@ def index_chains(mode: str, torch_tag: str) -> tuple[list[str], list[tuple[str, 
         torch_src = [(kind, url.format(tag=torch_tag)) for kind, url in TORCH_MIRRORS_CN] + [
             ("index-url", TORCH_OFFICIAL.format(tag=torch_tag))
         ]
-    if mode == "auto":
-        log("包源选择: 国内镜像优先（中科大 → 清华 → 阿里 → 官方兜底；安装失败后依次回退）")
     return pypi, [] if torch_tag == "dtk" else torch_src
 
 
@@ -447,10 +441,10 @@ def cleanup_build_metadata() -> None:
             log("  未清理 ypuddin.egg-info：此路径不是普通目录，请检查链接或同名文件。")
             return
         shutil.rmtree(directory)
-        log("  已清理根目录 ypuddin.egg-info；运行所需安装信息保留在 venv 中。")
+        log("  已清理根目录残留的 ypuddin.egg-info。")
     except OSError as exc:
         # An occupied Windows file must not trigger another dependency install.
-        log(f"  未能清理 ypuddin.egg-info（{exc}），下次启动会重试；训练环境已保留。")
+        log(f"  未能清理 ypuddin.egg-info（{exc}），下次启动会重试。")
 
 
 def dependency_issues(extras: str) -> list[str]:
@@ -591,9 +585,7 @@ def ensure_model_runtime(extras: str, index_mode: str) -> None:
     versions = " / ".join(
         f"{name} {display.get(name) or '未安装'}" for name in ("torch", "torchvision", "transformers")
     )
-    die(
-        f"模型依赖加载失败（{versions}）：{report.get('error', '未知错误')}。请运行 doctor 检查；尚未启动训练。"
-    )
+    die(f"模型依赖加载失败（{versions}）：{report.get('error', '未知错误')}。请运行 doctor 检查。")
 
 
 def validate_dtk_runtime(current: dict) -> None:
@@ -652,10 +644,7 @@ except Exception as exc:
 def validate_dtk_numpy_version(versions: dict[str, str]) -> None:
     issue = next((item for item in dtk_compatibility_issues(versions) if "NumPy" in item), None)
     if issue:
-        die(
-            issue
-            + "。未改动既有包；请在独立环境准备匹配依赖后重试，或用 --reinstall 和完整厂商 wheel 集合重建。"
-        )
+        die(issue + "。请准备匹配的依赖后重试，或使用 --reinstall 配合完整的厂商 wheel 集合重建。")
 
 
 def validate_dtk_numpy_bridge(versions: dict[str, str]) -> None:
@@ -668,7 +657,7 @@ def validate_dtk_numpy_bridge(versions: dict[str, str]) -> None:
         die(
             "DTK 的 NumPy ↔ PyTorch CPU 桥接检查失败："
             + str(result.get("error", "unknown error"))
-            + "。不会自动更换现有 NumPy 或厂商 PyTorch；请检查匹配依赖后重试，未写入安装成功标记。"
+            + "。请检查 NumPy 与厂商 PyTorch 是否匹配后重试。"
         )
 
 
@@ -803,8 +792,8 @@ def create_dtk_venv(base: str, wheelhouse: Path) -> None:
     # Check every bootstrap prerequisite before creating a partial environment.
     if not any(wheelhouse.glob("pip-*.whl")):
         die(
-            "当前 Python 缺少 ensurepip。请将支持本机 Python 的 pip-*.whl 放入 --dtk-wheelhouse 目录后重试，"
-            "或准备 uv / 自带 ensurepip 的匹配 Python；未修改系统或已有环境。"
+            "当前 Python 缺少 ensurepip。请把与本机 Python 匹配的 pip-*.whl 放入 --dtk-wheelhouse 目录后重试，"
+            "或改用 uv / 自带 ensurepip 的 Python。"
         )
     try:
         host_pip = subprocess.run(
@@ -820,8 +809,8 @@ def create_dtk_venv(base: str, wheelhouse: Path) -> None:
         can_target = False
     if not can_target:
         die(
-            "当前 Python 缺少 ensurepip，且宿主 pip 不支持 --python（需要 pip 22.3 或更新）。"
-            "请使用已有 uv 或选择带 ensurepip 的匹配 Python；训练器不会升级系统 pip 或安装系统软件包。"
+            "当前 Python 缺少 ensurepip，且系统 pip 不支持 --python（需要 pip 22.3 或更新）。"
+            "请安装 uv，或改用自带 ensurepip 的 Python。"
         )
     owned = not VENV.exists()
     try:
@@ -853,10 +842,7 @@ def create_dtk_venv(base: str, wheelhouse: Path) -> None:
         # bootstrap so the next attempt cannot mistake it for a ready environment.
         if owned and VENV.is_dir() and not VENV.is_symlink():
             shutil.rmtree(VENV)
-        die(
-            "独立 DTK 环境的 pip 引导失败；请核对本地 pip wheel 与 Python 版本后重试。"
-            "未修改宿主 pip、驱动或其他环境。"
-        )
+        die("独立 DTK 环境的 pip 引导失败，请核对本地 pip wheel 与 Python 版本后重试。")
 
 
 def ensure_venv(
@@ -866,15 +852,15 @@ def ensure_venv(
     vendor_triton = False
     if dtk_wheelhouse:
         if PROFILE != "linux-dtk":
-            die("--dtk-wheelhouse 只能用于 linux-dtk 环境，未修改环境")
+            die("--dtk-wheelhouse 只能用于 linux-dtk 环境")
         wheelhouse = Path(dtk_wheelhouse).expanduser().resolve()
         if not wheelhouse.is_dir() or not all(
             any(wheelhouse.glob(name + "-*.whl")) for name in ("torch", "torchvision")
         ):
-            die("DTK wheel 目录需要包含匹配的 torch 与 torchvision wheel；未修改环境")
+            die("DTK wheel 目录需要包含匹配的 torch 与 torchvision wheel")
         vendor_triton = dtk_wheelhouse_has_triton(wheelhouse)
     if PROFILE == "linux-dtk" and (reinstall or not venv_python().exists()) and not wheelhouse:
-        die("请先提供匹配本机 DTK / Python 的本地厂商 wheel：--dtk-wheelhouse=目录；未创建或删除任何环境")
+        die("请用 --dtk-wheelhouse=目录 提供匹配本机 DTK / Python 的厂商 wheel")
     if reinstall and VENV.exists():
         log(f"--reinstall：删除旧的虚拟环境 {VENV}（studio_data/ 不受影响）")
         shutil.rmtree(VENV)
@@ -892,7 +878,7 @@ def ensure_venv(
                 if not issues:
                     ready = editable_install_ready()
                     if not ready:
-                        log("[2/5] 更新训练器安装信息（保留现有环境和依赖）")
+                        log("[2/5] 更新训练器安装信息")
                 else:
                     log("[2/5] 检测到缺失或不满足版本要求的依赖，自动补齐: " + "; ".join(issues[:8]))
         except Exception:  # noqa: BLE001
@@ -931,9 +917,7 @@ def ensure_venv(
     required_native = ["torch", "torchvision"] + (["triton"] if vendor_triton else [])
     if PROFILE == "linux-dtk" and not all(name in versions for name in required_native):
         if not wheelhouse:
-            die(
-                "DTK 独立环境缺少厂商 torch / torchvision，请指定本地 --dtk-wheelhouse；未安装普通包源的替代构建"
-            )
+            die("DTK 独立环境缺少厂商 torch / torchvision，请用 --dtk-wheelhouse 指定本地 wheel 目录")
         # Native vendor packages and their dependencies must all come from this exact, explicit collection.
         # No CUDA/CPU fallback and no system package or driver installation.
         command = [uv, "pip", "install", "--python", py] if uv else [py, "-m", "pip", "install"]
@@ -964,15 +948,15 @@ def ensure_venv(
         try:
             current = torch_runtime()
         except Exception as exc:
-            die(f"已有 PyTorch 无法加载，未修改环境：{exc}。请运行 doctor 检查；需要重建时使用 --reinstall。")
+            die(f"已有 PyTorch 无法加载：{exc}。请运行 doctor 检查，需要重建时使用 --reinstall。")
         if tuple(int(n) for n in re.findall(r"\d+", current["version"])[:2]) < (2, 4):
-            die("已有 PyTorch 低于 2.4，自动补依赖不会替换它；请使用 --reinstall 重建环境。")
+            die("已有 PyTorch 低于 2.4，请使用 --reinstall 重建环境。")
         if PROFILE == "linux-dtk":
             validate_dtk_runtime(current)
         elif PROFILE != "legacy" and (
             bool(current["cuda"]) != PROFILE.endswith("-cuda") or current.get("hip")
         ):
-            die(f"已有 PyTorch 与 {PROFILE} 平台不符；未修改或重建环境，请检查是否手动混装过包。")
+            die(f"已有 PyTorch 与 {PROFILE} 平台不符，请检查是否手动混装过包。")
         backend = (
             f"HIP {current['hip']}" if current.get("hip") else f"CUDA {current['cuda'] or '无（CPU/MPS）'}"
         )
@@ -1038,7 +1022,7 @@ def ensure_venv(
         pip_install(["pip", "wheel"], "pip/wheel")
     if "torch" not in versions:
         if platform.system() == "Darwin":
-            log("[3/5] 安装 Apple PyTorch（PyPI wheel 包含 MPS 支持）")
+            log("[3/5] 安装 PyTorch（macOS）")
             pip_install(["torch>=2.4", "torchvision>=0.19"], "torch / torchvision")
         else:
             log(f"[3/5] 安装 PyTorch（{torch_tag}），首次下载可能需要几分钟")
@@ -1051,7 +1035,7 @@ def ensure_venv(
             )
         preserved = protected_versions(installed_versions())
     if "torch" not in preserved:
-        die("无法确认已安装 PyTorch 的版本，停止安装以保护训练环境。")
+        die("无法确认已安装 PyTorch 的版本，停止安装。")
     log(f"[4/5] 安装训练器 ypuddin 及其依赖 [{extras}]")
     # Exact constraints apply to the whole dependency resolution, not just the
     # explicitly requested torch package. Conflicting accelerators fail before
@@ -1065,12 +1049,12 @@ def ensure_venv(
         )
         pip_install(
             ["--constraint", str(constraints), "-e", f"{ROOT}[{extras}]"],
-            f"ypuddin[{extras}]（保留现有 PyTorch/CUDA）",
+            f"ypuddin[{extras}]",
         )
     after = installed_versions()
     changed = [name for name, version in preserved.items() if after.get(name) != version]
     if changed:
-        die("安装器意外改变了受保护的原生依赖：" + ", ".join(changed) + "；未写入成功标记，请检查环境。")
+        die("安装器意外改变了受保护的原生依赖：" + ", ".join(changed) + "，请检查环境。")
     issues = dependency_issues(extras) + dtk_compatibility_issues(after)
     if issues:
         die("安装后依赖仍不完整：" + "; ".join(issues[:12]) + "；下次启动会重试补齐。")
@@ -1078,7 +1062,7 @@ def ensure_venv(
         validate_dtk_numpy_bridge(after)
     ensure_model_runtime(extras, index_mode)
     if not editable_install_ready():
-        die("未能验证 venv 中训练器的独立安装信息；保留根目录元数据，未写入成功标记。")
+        die("训练器安装校验失败（venv 中的可编辑安装信息不完整），下次启动会重试。")
     cleanup_build_metadata()
     MARKER.write_text(
         json.dumps(
@@ -1293,13 +1277,14 @@ def doctor() -> int:
     print(f"虚拟环境   : {'已创建' if py.exists() else '未创建'} ({VENV})")
     if MARKER.exists():
         print(f"上次安装   : {MARKER.read_text().strip()}")
-    driver = None if PROFILE == "linux-dtk" else nvidia_driver_major()
-    gpus = [] if PROFILE == "linux-dtk" else nvidia_gpus()
+    nvidia = PROFILE != "linux-dtk" and not PROFILE.endswith("-cpu") and platform.system() != "Darwin"
+    driver = nvidia_driver_major() if nvidia else None
+    gpus = nvidia_gpus() if nvidia else []
     if PROFILE == "linux-dtk":
-        print("DTK        : 使用独立环境中的厂商 HIP PyTorch；不自动安装或切换 CUDA / CPU 构建")
-    else:
+        print("DTK        : 使用独立环境中的厂商 HIP PyTorch")
+    elif nvidia:
         print(
-            f"NVIDIA     : {'驱动 ' + str(driver) if driver else '未找到 nvidia-smi'} -> 自动选择的 PyTorch 版本 {pick_torch_tag('auto')}"
+            f"NVIDIA     : {'驱动 ' + str(driver) if driver else '未找到 nvidia-smi'} -> 自动选择的 PyTorch 类型 {pick_torch_tag('auto')}"
         )
     for name, cc in gpus:
         print(f"  显卡       : {name}（计算能力 {cc}）")
@@ -1338,8 +1323,16 @@ def doctor() -> int:
             print(f"  {name:<28}: {versions.get(name, '缺失，下次启动自动补齐')}")
         if platform.system() in {"Windows", "Linux"} and driver is not None:
             print(f"  {'nvidia-ml-py':<28}: {versions.get('nvidia-ml-py', '缺失，下次启动自动补齐')}")
-        for name in ("xformers", "flash-attn", "sageattention", "bitsandbytes"):
-            print(f"  {name:<28}: {versions.get(name, '未安装（可选，启动器不会自动安装）')}")
+        if PROFILE == "macos-mps":
+            optional = ("mtlattn",)
+        elif PROFILE == "linux-dtk":
+            optional = ("xformers", "flash-attn", "bitsandbytes")
+        elif driver is not None:
+            optional = ("xformers", "flash-attn", "sageattention", "bitsandbytes")
+        else:
+            optional = ()
+        for name in optional:
+            print(f"  {name:<28}: {versions.get(name, '未安装（可选）')}")
         issues = dependency_issues(choose_extras(pick_torch_tag("auto")))
         print("依赖完整性 : " + ("通过" if not issues else "; ".join(issues[:12])))
         try:
@@ -1440,19 +1433,21 @@ def main(argv: list[str]) -> int:
         # In Windows the interpreter executing this file cannot delete itself.
         base = getattr(sys, "_base_executable", None)
         if not base or Path(base).resolve().is_relative_to(VENV.resolve()):
-            die("请用系统 Python 运行 --reinstall；当前解释器位于待重建目录内，未删除环境")
+            die("请用系统 Python 运行 --reinstall：当前解释器位于待重建的环境内。")
         return subprocess.run([base, str(Path(__file__).resolve()), *argv], cwd=ROOT, env=_env()).returncode
     extras = choose_extras(torch_tag) + (",dev" if command == "test" else "")
-    gpus = [] if PROFILE == "linux-dtk" else nvidia_gpus()
-    gpu_desc = (
-        "厂商 DTK / HIP 环境"
-        if PROFILE == "linux-dtk"
-        else "、".join(n for n, _ in gpus)
-        if gpus
-        else "未检测到 NVIDIA 显卡"
-    )
+    if PROFILE == "linux-dtk":
+        gpu_desc = "厂商 DTK / HIP 环境"
+    elif PROFILE == "macos-mps":
+        gpu_desc = "Apple GPU（MPS）"
+    elif PROFILE.endswith("-cpu"):
+        gpu_desc = "不使用"
+    else:
+        gpus = nvidia_gpus()
+        gpu_desc = "、".join(n for n, _ in gpus) if gpus else "未检测到 NVIDIA 显卡"
+    torch_label = "MPS" if PROFILE == "macos-mps" else torch_tag
     log(
-        f"[1/5] 环境检查：Python {platform.python_version()} · 显卡：{gpu_desc} · PyTorch 版本：{torch_tag} · 安装工具：{'uv' if uv_path() else 'pip'}"
+        f"[1/5] 环境检查：Python {platform.python_version()} · 显卡：{gpu_desc} · PyTorch 类型：{torch_label} · 安装工具：{'uv' if uv_path() else 'pip'}"
     )
     ensure_venv(
         torch_tag,

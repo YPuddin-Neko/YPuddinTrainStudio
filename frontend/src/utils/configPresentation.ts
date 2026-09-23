@@ -146,8 +146,8 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
     ? 'Clips gradients before they reach the optimizer. Automagic defaults this external clipping to 0 (off); its internal clipping threshold applies to normalized updates instead.'
     : '在梯度进入优化器前做外部裁剪。Automagic 默认 0 关闭；其内部保护阈值限制的是归一化后的更新，两者作用位置不同。';
   if (path === 'optimizer.betas' && scheduleFree) return english
-    ? 'β1 controls schedule-free weight averaging; β2 smooths the estimate of gradient size. These have different roles. Usually keep this optimizer’s defaults.'
-    : 'β1 控制免调度训练中的权重平均，β2 平滑梯度大小的估计。两者作用不同，通常保留当前优化器的默认值。';
+    ? 'β1 controls schedule-free weight averaging; β2 smooths the estimate of gradient size. Usually keep this optimizer’s defaults.'
+    : 'β1 控制免调度训练中的权重平均，β2 平滑梯度大小的估计。通常保留当前优化器的默认值。';
   const help: Record<string, [string, string]> = {
     'adapter.resume_weights': ['可选。加载已有 LoRA / LoKr 权重作为本次训练起点；优化器和步数重新开始。接着上次任务训练请使用完整训练状态。', 'Optional. Start from existing LoRA / LoKr weights with a fresh optimizer and step count. Use a full training state to resume a previous run.'],
     'loop.deterministic': ['默认关闭。在相同配置、设备和软件环境下提高重复训练的一致性。开启后可能固定部分计算精度和注意力设置，增加显存与耗时；具体值会显示在对应字段。完整续训需保持原设置和环境。', 'Off by default. Improves repeatability with the same configuration, device and software environment. May manage precision and attention settings and increase memory use and runtime; effective values appear in the fields. Keep the same settings and environment when resuming.'],

@@ -30,7 +30,7 @@ export default function SourceBalance({sources,loading,hasSources=false}: {sourc
         </div>;
       })}
       {selected && <div role="tooltip" className="source-balance-tooltip"><strong>{selected.path}</strong><span>{formula(selected)} · {ratio(selected.items).toFixed(1)}%</span></div>}
-      <p className="inspector-note">{text('占比含正则集、不含验证集，未扣除多卡末尾跳过的样本；不代表损失权重。','Shares include regularization, exclude validation, and are counted before multi-GPU tail dropping; they are not loss weights.')}</p>
+      <p className="inspector-note">{text('占比按样本数计算，含正则集、不含验证集，未扣除多卡末尾跳过的样本。','Shares are based on sample counts; they include regularization, exclude validation, and are counted before multi-GPU tail dropping.')}</p>
     </>}
   </section>;
 }

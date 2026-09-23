@@ -47,7 +47,7 @@ describe('Windows community FA2 release discovery', () => {
       return HttpResponse.json(catalog(url.searchParams.get('refresh') === 'true' ? [newest] : [newest, older, wheel('v0.9.6', '2.6.3', false)]));
     }));
     render(<Picker/>);
-    const select = await screen.findByRole('combobox', { name: 'Windows FlashAttention 版本' });
+    const select = await screen.findByRole('combobox', { name: 'FlashAttention 版本' });
     expect(screen.getByRole('link', { name: '维护者发布页' })).toHaveAttribute('href', source);
     expect(screen.queryByText(/发布批次 v0.9.6/)).not.toBeInTheDocument();
     fireEvent.click(select);
@@ -58,7 +58,7 @@ describe('Windows community FA2 release discovery', () => {
     fireEvent.click(screen.getByRole('button', { name: '刷新版本' }));
     await waitFor(() => expect(urls).toHaveLength(2));
     expect(urls[1].searchParams.get('refresh')).toBe('true');
-    const refreshed = await screen.findByRole('combobox', { name: 'Windows FlashAttention 版本' });
+    const refreshed = await screen.findByRole('combobox', { name: 'FlashAttention 版本' });
     expect(refreshed).toHaveTextContent('选择兼容版本');
     expect(screen.queryByText(older.filename)).not.toBeInTheDocument();
     fireEvent.click(refreshed);
@@ -72,7 +72,7 @@ describe('Windows community FA2 release discovery', () => {
     }))));
     render(<Picker/>);
     expect(await screen.findByRole('alert')).toHaveTextContent('请检查网络或全局代理');
-    expect(screen.getByText(/当前使用 v0.9.6 缓存列表/)).toBeInTheDocument();
+    expect(screen.getByText(/使用内置版本列表 v0.9.6/)).toBeInTheDocument();
     expect(screen.getByText(/已查询的版本列表中没有适合当前环境的安装包/)).toBeInTheDocument();
     expect(screen.queryByText(/已查询 1 个发布批次/)).not.toBeInTheDocument();
   });
@@ -82,10 +82,10 @@ describe('Windows community FA2 release discovery', () => {
       origin: 'cached', release_count: 50, limited: true, unverified_assets: 3,
     }))));
     render(<Picker/>);
-    await screen.findByRole('combobox', { name: 'Windows FlashAttention 版本' });
+    await screen.findByRole('combobox', { name: 'FlashAttention 版本' });
     expect(screen.getByText(/使用上次获取的版本列表/)).toBeInTheDocument();
     expect(screen.queryByText(/已查询 50 个发布批次/)).not.toBeInTheDocument();
-    expect(screen.getByRole('combobox', {name: 'Windows FlashAttention 版本'})).toBeEnabled();
+    expect(screen.getByRole('combobox', {name: 'FlashAttention 版本'})).toBeEnabled();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });

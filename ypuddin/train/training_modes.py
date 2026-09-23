@@ -1,8 +1,7 @@
 """Full component training, independent of LyCORIS linear-layer delta adapters.
 
 A full-model artifact contains native component weights and a portable training-state
-bundle. Frozen assets (for example the VAE) remain explicit references in config.toml;
-this is not presented as a self-contained copy of every original model asset.
+bundle. Frozen assets (for example the VAE) remain explicit references in config.toml.
 """
 
 from __future__ import annotations

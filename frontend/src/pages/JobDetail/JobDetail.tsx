@@ -210,7 +210,7 @@ export default function JobDetail() {
     setSamples(previous => mergeSamples(previous, [{ ...sample, created_at: sample.created_at ?? sample.ts ?? Date.now() / 1000 }]));
   });
 
-  // 采样进度：让预览生成阶段有明确进度，不再像"卡死"
+  // 采样进度
   useEventStream(EVENT_TYPES.JOB_SAMPLE_PROGRESS, (data: any) => {
     if (data.job_id !== id) return;
     if (data.done >= data.total && data.prompt_index + 1 >= (data.prompts || 1)) {
@@ -570,7 +570,6 @@ export default function JobDetail() {
               <div className="h-full flex flex-col items-center justify-center text-center">
                 <Terminal className="w-6 h-6 text-slate-600" />
                 <p className="mt-2 text-slate-400">{t('job.noLogs', '暂无日志')}</p>
-                <p className="mt-1 text-slate-400">{t('job.noLogsHint', '任务运行日志会实时输出到这里。')}</p>
               </div>
             ) : (
               filteredLogs.map((l, idx) => (

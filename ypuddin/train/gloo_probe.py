@@ -2,8 +2,7 @@
 
 Build availability alone does not prove that a Windows wheel implements CUDA
 collectives. Run the operations on the selected devices and a small real DDP
-graph. CPU execution of the inner protocol is useful for tests, never evidence
-of Windows CUDA support. FSDP is deliberately outside this contract.
+graph. FSDP is deliberately outside this contract.
 """
 
 from __future__ import annotations

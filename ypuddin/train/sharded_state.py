@@ -351,9 +351,9 @@ def _scheduler_contract(path: Path, meta: dict[str, Any]) -> dict[str, Any]:
     contract = meta.get("scheduler_contract")
     if contract is not None:
         return contract
-    # r2 saved the LambdaLR state but not its Python closure. Only trust the
-    # original run config if its fingerprint matches this checkpoint, never a
-    # newly edited config or the current resume job's output/resume paths.
+    # States without scheduler_contract hold the LambdaLR state but not its Python
+    # closure. Only trust the original run config if its fingerprint matches this
+    # checkpoint, never a newly edited config or the current resume job's output/resume paths.
     try:
         original = load_config(path.parent / "config.toml")
         if not meta.get("config_hash") or config_hash(original) != meta["config_hash"]:

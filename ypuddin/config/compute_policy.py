@@ -330,10 +330,10 @@ def _klein_adapter_policy(cfg, device_type, profile):
 
 
 def _with_sdxl_long_text_preview(cfg, policy):
-    """Version the measured frozen-text long-caption preview recipe.
+    """Version the frozen-text long-caption preview recipe.
 
-    Training contractions are unchanged. The separate preview fields prevent
-    old checkpoints from silently claiming the new inference numeric behavior.
+    Separate preview fields detect numeric changes during checkpoint compatibility
+    checks without changing the training contraction identity.
     """
     strategy = cfg.loop.distributed_strategy if cfg.loop.gpu_count > 1 else "single"
     key = (cfg.adapter.algo, strategy)
@@ -555,7 +555,10 @@ def resolve_training_compute_config(
             or cfg.memory.compile
             or cfg.memory.blocks_to_swap
         ):
-            raise ValueError("SDXL 长文本 BF16 可复现训练需要关闭编译/换块，并使用关闭或逐块重算")
+            raise ValueError(
+                "SDXL 长文本 BF16 可复现训练需要关闭“编译模型”，将“换出到 CPU 的层数”设为 0，"
+                "并将“重算中间结果（梯度检查点）”设为“关闭”或“逐块重算”。"
+            )
         effective.memory.allow_tf32 = False
         effective.model.attention = "sdpa"
         return effective, _with_sdxl_long_text_preview(

@@ -487,7 +487,7 @@ def _preview_invalid_config(
     try:
         loop = LoopConfig.model_validate(raw.get("loop", {}))
     except ValidationError:
-        # A bad stop condition or accumulation value cannot produce an honest step estimate.
+        # Step estimates require a valid stop condition and accumulation count.
         loop = None
     try:
         loop_raw = raw.get("loop", {})
@@ -803,10 +803,13 @@ def plan(
                     initialization_peak = sharding["initialization_bytes_estimate"] / 2**20 + 512
                     estimate_notes = [
                         "显存按单张卡中占用最大的分片估算；主参数、梯度和优化器状态分片，少量小参数及缓冲区在各卡保留。",
-                        "Adafactor 按实际行、列状态计算；设置 beta1 会额外保留一份 FP32 一阶动量。",
                         "激活和文本、图片编码缓存按每卡计算，不随卡数平均分摊。",
-                        "通信缓冲区、优化器临时张量和激活峰值是估算；实际占用需以运行监控为准。分片不保证按卡数成倍提速。",
+                        "通信缓冲区、优化器临时张量和激活峰值是估算；分片不保证按卡数成倍提速。",
                     ]
+                    if sharding["optimizer"] == "adafactor":
+                        estimate_notes.insert(
+                            1, "Adafactor 按实际行、列状态计算；设置 beta1 会额外保留一份 FP32 一阶动量。"
+                        )
                 if layout and cfg.memory.blocks_to_swap > len(layout.blocks):
                     out["errors"].append(
                         {
@@ -974,7 +977,7 @@ def plan(
                         sharding["optimizer"] != "adafactor" or cfg.optimizer.args.get("beta1") is not None
                     ):
                         memory["suggestions"].append(
-                            "可评估使用 Adafactor 且不设置 beta1，以减少优化器状态；这会改变优化算法，请按训练需求选择。"
+                            "可改用 Adafactor 且不设置 beta1，以减少优化器状态；这会改变优化算法。"
                         )
                     if text_encoder_mb:
                         memory["suggestions"].append(
