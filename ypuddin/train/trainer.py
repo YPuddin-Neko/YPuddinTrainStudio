@@ -31,12 +31,13 @@ from ypuddin.config.compute_policy import (
     DTK_ANIMA_BF16_LINEAR_COMPUTE_POLICY_ID,
     DTK_ANIMA_DDP_BF16_LINEAR_COMPUTE_POLICY_ID,
     DTK_ANIMA_FSDP_BF16_LINEAR_COMPUTE_POLICY_ID,
+    DTK_ANIMA_LORA_SINGLE_FP16_POLICY_ID,
     DTK_BACKBONE_ADAPTER_ALL_POLICY_IDS,
     DTK_KREA2_FSDP_BF16_LINEAR_POLICY_ID,
     DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
     DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID,
     DTK_SDXL_LONG_TEXT_POLICY_ID,
-    DTK_TEXT_LORA_POLICY_IDS,
+    DTK_TEXT_LORA_ALL_POLICY_IDS,
     resolve_training_compute_config,
     validate_resume_compute_policy,
 )
@@ -448,6 +449,8 @@ class Trainer:
             self.progress.extra["compute_runtime"] = self.compute_runtime
         if getattr(self, "_text_adapter_operator_counts", None) is not None:
             self.progress.extra["text_adapter_operator_counts"] = self._text_adapter_operator_counts
+        if getattr(self, "_fp16_adapter_operator_counts", None) is not None:
+            self.progress.extra["fp16_adapter_operator_counts"] = self._fp16_adapter_operator_counts
         self._install_signal_handlers()
         self._prepared = True
         self.emit(
@@ -463,6 +466,15 @@ class Trainer:
     def _place_training_model(self) -> None:
         """Place selected parameters before binding an optimizer to their final objects."""
         policy = getattr(self, "compute_policy", None) or {}
+        if policy.get("id") == DTK_ANIMA_LORA_SINGLE_FP16_POLICY_ID:
+            from .fp16_adapter_compute import install_fp16_adapter_compute
+
+            if getattr(self, "_fp16_adapter_operator_counts", None) is not None:
+                raise ValueError("FP16 算子计算策略不能重复安装")
+            self._fp16_adapter_restore, self._fp16_adapter_operator_counts = install_fp16_adapter_compute(
+                self.loaded.backbone
+            )
+            self._validate_training_compute_policy()
         if policy.get("id") in DTK_BACKBONE_ADAPTER_ALL_POLICY_IDS:
             if policy["distributed_strategy"] == "fsdp":
                 raise ValueError("BF16 分片计算策略必须由 FSDP 分片训练器安装")
@@ -473,7 +485,7 @@ class Trainer:
             DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID,
         }:
             raise ValueError("BF16 分片计算策略必须由 FSDP 分片训练器安装")
-        if (getattr(self, "compute_policy", None) or {}).get("id") in DTK_TEXT_LORA_POLICY_IDS.values():
+        if (getattr(self, "compute_policy", None) or {}).get("id") in DTK_TEXT_LORA_ALL_POLICY_IDS:
             self._install_text_adapter_compute_operators()
         if (getattr(self, "compute_policy", None) or {}).get("id") in {
             DTK_SDXL_BF16_CONV_LINEAR_POLICY_ID,
@@ -1036,7 +1048,7 @@ class Trainer:
             restore_rng(rng, {"main": self.gen, "loader": self.loader_gen}, device=self.device)
 
     def _text_cond(self, captions: list[str]) -> TextCond:
-        if (getattr(self, "compute_policy", None) or {}).get("id") in DTK_TEXT_LORA_POLICY_IDS.values():
+        if (getattr(self, "compute_policy", None) or {}).get("id") in DTK_TEXT_LORA_ALL_POLICY_IDS:
             # Online text runs before the backbone autocast context. Verify
             # actual encoder/adapter bindings before its first computation.
             self._validate_training_compute_policy()
@@ -1084,8 +1096,23 @@ class Trainer:
 
     def _validate_training_compute_policy(self):
         policy = getattr(self, "compute_policy", None)
+        if (policy or {}).get("id") == DTK_ANIMA_LORA_SINGLE_FP16_POLICY_ID:
+            from .fp16_adapter_compute import validate_fp16_adapter_compute
+
+            _, expected = resolve_training_compute_config(self.cfg, self.device.type, current_profile())
+            if (
+                expected != policy
+                or self.compute_dtype != torch.float16
+                or self.cfg.memory.allow_tf32
+                or self.cfg.model.attention != "sdpa"
+            ):
+                raise ValueError("FP16 LoRA 计算策略与当前训练设置不一致")
+            validate_fp16_adapter_compute(
+                self.loaded.backbone, getattr(self, "_fp16_adapter_operator_counts", None)
+            )
+            return
         backbone_adapter_policy = (policy or {}).get("id") in DTK_BACKBONE_ADAPTER_ALL_POLICY_IDS
-        if (policy or {}).get("id") in DTK_TEXT_LORA_POLICY_IDS.values() or (
+        if (policy or {}).get("id") in DTK_TEXT_LORA_ALL_POLICY_IDS or (
             backbone_adapter_policy and policy["adapter_algorithm"] == "lora"
         ):
             from .text_adapter_compute import validate_text_adapter_compute
@@ -1625,7 +1652,7 @@ class Trainer:
             def predict(
                 x: Tensor, t: Tensor, c: TextCond = cond, dt: torch.dtype = model_dtype, g=guidance
             ) -> Tensor:
-                with self._autocast(), preview_linear_compute(self.compute_policy):
+                with self._autocast(), preview_linear_compute(self.compute_policy, self.loaded.backbone):
                     return self.family.forward(
                         self.loaded, x.to(dt), t.to(self.device), c, inference=True, guidance=g
                     ).float()

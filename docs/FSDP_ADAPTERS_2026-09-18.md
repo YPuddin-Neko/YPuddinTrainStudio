@@ -39,6 +39,23 @@ Anima LoRA／LoKr FSDP 多卡，以及 SDXL 单卡、DDP／FSDP LoRA／LoKr 使�
 
 Anima 的 LoRA／LoKr 预览分别使用 `dtk-anima-backbone-lora-fsdp-bf16-compute-preview-v2` 和 `dtk-anima-backbone-lokr-fsdp-bf16-compute-preview-v2` 计算合同。原生 BF16 路径曾在相同训练状态下出现 VAE 解码之前的预览张量差异；不能仅凭最终训练权重一致判断预览也可复现。验收因此分别核对训练状态与预览，并在独立空用户内核缓存下比较连续训练、恢复训练和多轮结果。此策略针对已观测的主模型预览差异，不将其归因为某个尚未确认的厂商内核。
 
+## 其他海光可复现配置
+
+以下策略只在海光 DTK、开启可复现训练且配置满足范围时启用；默认训练路径不因此改变。底模仍使用 BF16 存储，适配器使用 FP32 参数。前端展示服务器确认的实际计算方式，关闭可复现训练后恢复原来的配置选项。
+
+| 配置 | 训练计算 | 训练预览 |
+| --- | --- | --- |
+| Anima 单卡 LoRA，FP16 混合精度，冻结文本编码器 | 主模型线性层与 LoRA 保留 FP16 操数舍入、中间结果和输出，矩阵运算使用 FP32；AMP 和 GradScaler 继续工作 | 保持原生实现 |
+| SDXL 单卡 LoKr，FP16 混合精度，150 token，BF16 底模，冻结文本编码器 | 保持原生 FP16 训练和 GradScaler | 仅主模型线性层的矩阵运算使用 FP32，保留 FP16 舍入与输出 |
+| SDXL 单卡／双卡 DDP LoRA，BF16，150 token，同时训练主模型与两个文本编码器 | 沿用文本编码器 LoRA 的 BF16 舍入、FP32 运算策略 | 增加主模型线性层的 BF16 舍入、FP32 运算；文本预览保持原生实现 |
+| Klein Base 4B 双卡 DDP／FSDP LoRA，BF16，冻结文本编码器 | 主模型线性层与 LoRA 保留 BF16 舍入和输出，矩阵运算使用 FP32 | 主模型线性层的 BF16 舍入、FP32 运算 |
+| Klein Base 4B 双卡 DDP LoKr，BF16，冻结文本编码器 | 保持原生 BF16 训练 | 主模型线性层的 BF16 舍入、FP32 运算 |
+| Klein Base 4B 双卡 FSDP LoKr，BF16，冻结文本编码器 | 主模型线性层的 BF16 舍入、FP32 运算；LoKr 因子运算保持原生实现 | 主模型线性层的 BF16 舍入、FP32 运算 |
+
+Klein 策略要求明确选择“基础版 4B”（`model.flux2_variant = "klein-base-4b"`）；自动识别不据此推断同一计算策略。这些配置不涵盖 Klein 9B、DoRA、混合适配器算法、编译、层换出或多卡 FP16。策略与运行环境写入完整状态；切换策略后不能将旧状态当成严格续训。普通适配器导出仍可用于新训练或推理。实际显存、速度和正式硬件通过范围以对应验收记录为准，短程状态一致不代表长期学习质量已验证。
+
+SDXL 的预测方式必须匹配底模：普通 epsilon 模型使用 epsilon；v-pred 模型使用 v prediction，并按发布方说明设置 Zero SNR。切换选项不会将普通 epsilon 权重变成 v-pred 权重。
+
 显存估算按真实 dtype 计算冻结底模分片，仅给训练参数计入梯度与优化器状态。每卡还需容纳当前汇集的模块、激活、缓存和通信临时空间；总显存相加并不代表任何尺寸都能装下，也不保证两倍速度。
 
 验收脚本 `Test/scripts/verify_frozen_adapter_resume.py` 支持 `--strategy fsdp --device cuda --processes 2`，指定新的输出目录。其通过标准仍是权重、完整状态和预览精确一致。各次硬件结果保存在本地 `Test/reports/` 和 `Test/remote-testing/`；本地 CPU 结果不能替代双 GPU 正式模型结果。

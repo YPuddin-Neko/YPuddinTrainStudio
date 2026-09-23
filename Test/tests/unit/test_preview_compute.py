@@ -285,7 +285,7 @@ def test_preview_recipe_versions_only_inference_and_refuses_older_state(algo, st
             validate_resume_compute_policy(actual, saved)
 
 
-@pytest.mark.parametrize("change", ["75", "anima", "text", "not_deterministic", "nvidia"])
+@pytest.mark.parametrize("change", ["75", "anima", "text_only", "not_deterministic", "nvidia"])
 def test_preview_does_not_expand_to_unmeasured_or_unrelated_scope(change):
     cfg = config()
     profile = "linux-dtk"
@@ -293,7 +293,8 @@ def test_preview_does_not_expand_to_unmeasured_or_unrelated_scope(change):
         cfg.model.sdxl_max_token_length = 75
     elif change == "anima":
         cfg.model.family = "anima"
-    elif change == "text":
+    elif change == "text_only":
+        cfg.training.train_backbone = False
         cfg.training.train_text_encoder = True
         cfg.dataset.text_encoding = "online"
     elif change == "not_deterministic":
@@ -468,6 +469,7 @@ def test_product_sample_entry_enables_only_backbone_predictions(tmp_path, family
         emit=lambda *_args, **_kwargs: None,
         loaded=SimpleNamespace(
             dtype=torch.bfloat16,
+            backbone=modules["backbone"],
             latent=SimpleNamespace(to=lambda _: None, decode=lambda x: compute("vae", x)[:, :3]),
         ),
         family=SimpleNamespace(

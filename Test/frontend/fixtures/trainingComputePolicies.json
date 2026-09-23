@@ -1,0 +1,508 @@
+[
+  {
+    "name": "anima-lora-single-backbone",
+    "config": {
+      "model": {
+        "family": "anima",
+        "dtype": "bf16",
+        "flux2_variant": "auto",
+        "sdxl_max_token_length": 150
+      },
+      "training": {
+        "mode": "adapter",
+        "train_backbone": true,
+        "train_text_encoder": false
+      },
+      "adapter": {
+        "algo": "lora",
+        "mode": "bypass",
+        "param_dtype": "fp32",
+        "dora": false,
+        "rules": []
+      },
+      "loop": {
+        "gpu_count": 1,
+        "distributed_strategy": "ddp",
+        "deterministic": true,
+        "mixed_precision": "fp16"
+      },
+      "memory": {
+        "base_precision": "bf16",
+        "compile": false,
+        "blocks_to_swap": 0,
+        "activation_checkpointing": "none",
+        "offload_text_encoder": true
+      },
+      "dataset": {
+        "text_encoding": "cached"
+      }
+    },
+    "policy": {
+      "id": "dtk-anima-backbone-lora-single-fp16-compute-v1",
+      "mixed_precision": "fp16",
+      "allow_tf32": false,
+      "attention": "sdpa",
+      "sdpa_backend": "math",
+      "linear_forward": "fp16-rounded-operands-fp32-contraction-fp16-output",
+      "linear_backward": "fp32-contractions-grad-original-dtype",
+      "linear_backward_implementation": "linear-lora-fp16-operands-fp32-compute-v1",
+      "adapter_forward": "fp16-rounded-operands-fp32-contractions-fp16-intermediates",
+      "adapter_backward": "fp32-contractions-grad-original-dtype",
+      "adapter_implementation": "linear-lora-fp16-operands-fp32-compute-v1",
+      "adapter_algorithm": "lora",
+      "operator_components": [
+        "backbone"
+      ],
+      "trainable_components": [
+        "backbone"
+      ],
+      "distributed_strategy": "single"
+    }
+  },
+  {
+    "name": "sdxl-lokr-single-backbone",
+    "config": {
+      "model": {
+        "family": "sdxl",
+        "dtype": "bf16",
+        "flux2_variant": "auto",
+        "sdxl_max_token_length": 150
+      },
+      "training": {
+        "mode": "adapter",
+        "train_backbone": true,
+        "train_text_encoder": false
+      },
+      "adapter": {
+        "algo": "lokr",
+        "mode": "bypass",
+        "param_dtype": "fp32",
+        "dora": false,
+        "rules": []
+      },
+      "loop": {
+        "gpu_count": 1,
+        "distributed_strategy": "ddp",
+        "deterministic": true,
+        "mixed_precision": "fp16"
+      },
+      "memory": {
+        "base_precision": "bf16",
+        "compile": false,
+        "blocks_to_swap": 0,
+        "activation_checkpointing": "none",
+        "offload_text_encoder": true
+      },
+      "dataset": {
+        "text_encoding": "cached"
+      }
+    },
+    "policy": {
+      "id": "dtk-sdxl-backbone-lokr-single-fp16-preview-v1",
+      "mixed_precision": "fp16",
+      "allow_tf32": false,
+      "attention": "sdpa",
+      "sdpa_backend": "math",
+      "preview_operator_components": [
+        "backbone"
+      ],
+      "preview_linear_forward": "fp16-rounded-operands-fp32-contraction-fp16-output",
+      "preview_linear_implementation": "linear-native-dispatch-fp16-operands-fp32-preview-v1"
+    }
+  },
+  {
+    "name": "flux2-lora-ddp-backbone",
+    "config": {
+      "model": {
+        "family": "flux2",
+        "dtype": "bf16",
+        "flux2_variant": "klein-base-4b",
+        "sdxl_max_token_length": 150
+      },
+      "training": {
+        "mode": "adapter",
+        "train_backbone": true,
+        "train_text_encoder": false
+      },
+      "adapter": {
+        "algo": "lora",
+        "mode": "bypass",
+        "param_dtype": "fp32",
+        "dora": false,
+        "rules": []
+      },
+      "loop": {
+        "gpu_count": 2,
+        "distributed_strategy": "ddp",
+        "deterministic": true,
+        "mixed_precision": "bf16"
+      },
+      "memory": {
+        "base_precision": "bf16",
+        "compile": false,
+        "blocks_to_swap": 0,
+        "activation_checkpointing": "none",
+        "offload_text_encoder": true
+      },
+      "dataset": {
+        "text_encoding": "cached"
+      }
+    },
+    "policy": {
+      "id": "dtk-klein4b-backbone-lora-ddp-bf16-compute-preview-v1",
+      "mixed_precision": "bf16",
+      "allow_tf32": false,
+      "attention": "sdpa",
+      "sdpa_backend": "math",
+      "linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
+      "linear_backward": "fp32-contractions-grad-original-dtype",
+      "linear_backward_implementation": "linear-bf16-operands-fp32-compute-v1",
+      "adapter_algorithm": "lora",
+      "trainable_components": [
+        "backbone"
+      ],
+      "operator_components": [
+        "backbone"
+      ],
+      "distributed_strategy": "ddp",
+      "preview_operator_components": [
+        "backbone"
+      ],
+      "preview_linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
+      "preview_linear_implementation": "linear-native-dispatch-bf16-operands-fp32-preview-v1",
+      "adapter_forward": "bf16-rounded-operands-fp32-contractions-bf16-intermediates",
+      "adapter_backward": "fp32-contractions-grad-original-dtype",
+      "adapter_implementation": "lora-bf16-operands-fp32-contractions-v1"
+    }
+  },
+  {
+    "name": "flux2-lora-fsdp-backbone",
+    "config": {
+      "model": {
+        "family": "flux2",
+        "dtype": "bf16",
+        "flux2_variant": "klein-base-4b",
+        "sdxl_max_token_length": 150
+      },
+      "training": {
+        "mode": "adapter",
+        "train_backbone": true,
+        "train_text_encoder": false
+      },
+      "adapter": {
+        "algo": "lora",
+        "mode": "bypass",
+        "param_dtype": "fp32",
+        "dora": false,
+        "rules": []
+      },
+      "loop": {
+        "gpu_count": 2,
+        "distributed_strategy": "fsdp",
+        "deterministic": true,
+        "mixed_precision": "bf16"
+      },
+      "memory": {
+        "base_precision": "bf16",
+        "compile": false,
+        "blocks_to_swap": 0,
+        "activation_checkpointing": "none",
+        "offload_text_encoder": true
+      },
+      "dataset": {
+        "text_encoding": "cached"
+      }
+    },
+    "policy": {
+      "id": "dtk-klein4b-backbone-lora-fsdp-bf16-compute-preview-v1",
+      "mixed_precision": "bf16",
+      "allow_tf32": false,
+      "attention": "sdpa",
+      "sdpa_backend": "math",
+      "linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
+      "linear_backward": "fp32-contractions-grad-original-dtype",
+      "linear_backward_implementation": "linear-bf16-operands-fp32-compute-v1",
+      "adapter_algorithm": "lora",
+      "trainable_components": [
+        "backbone"
+      ],
+      "operator_components": [
+        "backbone"
+      ],
+      "distributed_strategy": "fsdp",
+      "preview_operator_components": [
+        "backbone"
+      ],
+      "preview_linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
+      "preview_linear_implementation": "linear-native-dispatch-bf16-operands-fp32-preview-v1",
+      "adapter_forward": "bf16-rounded-operands-fp32-contractions-bf16-intermediates",
+      "adapter_backward": "fp32-contractions-grad-original-dtype",
+      "adapter_implementation": "lora-bf16-operands-fp32-contractions-v1",
+      "fsdp_param_dtype": "bfloat16",
+      "fsdp_reduce_dtype": "float32"
+    }
+  },
+  {
+    "name": "flux2-lokr-ddp-backbone",
+    "config": {
+      "model": {
+        "family": "flux2",
+        "dtype": "bf16",
+        "flux2_variant": "klein-base-4b",
+        "sdxl_max_token_length": 150
+      },
+      "training": {
+        "mode": "adapter",
+        "train_backbone": true,
+        "train_text_encoder": false
+      },
+      "adapter": {
+        "algo": "lokr",
+        "mode": "bypass",
+        "param_dtype": "fp32",
+        "dora": false,
+        "rules": []
+      },
+      "loop": {
+        "gpu_count": 2,
+        "distributed_strategy": "ddp",
+        "deterministic": true,
+        "mixed_precision": "bf16"
+      },
+      "memory": {
+        "base_precision": "bf16",
+        "compile": false,
+        "blocks_to_swap": 0,
+        "activation_checkpointing": "none",
+        "offload_text_encoder": true
+      },
+      "dataset": {
+        "text_encoding": "cached"
+      }
+    },
+    "policy": {
+      "id": "dtk-klein4b-backbone-lokr-ddp-bf16-compute-preview-v1",
+      "mixed_precision": "bf16",
+      "allow_tf32": false,
+      "attention": "sdpa",
+      "sdpa_backend": "math",
+      "adapter_algorithm": "lokr",
+      "distributed_strategy": "ddp",
+      "preview_operator_components": [
+        "backbone"
+      ],
+      "preview_linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
+      "preview_linear_implementation": "linear-native-dispatch-bf16-operands-fp32-preview-v1"
+    }
+  },
+  {
+    "name": "flux2-lokr-fsdp-backbone",
+    "config": {
+      "model": {
+        "family": "flux2",
+        "dtype": "bf16",
+        "flux2_variant": "klein-base-4b",
+        "sdxl_max_token_length": 150
+      },
+      "training": {
+        "mode": "adapter",
+        "train_backbone": true,
+        "train_text_encoder": false
+      },
+      "adapter": {
+        "algo": "lokr",
+        "mode": "bypass",
+        "param_dtype": "fp32",
+        "dora": false,
+        "rules": []
+      },
+      "loop": {
+        "gpu_count": 2,
+        "distributed_strategy": "fsdp",
+        "deterministic": true,
+        "mixed_precision": "bf16"
+      },
+      "memory": {
+        "base_precision": "bf16",
+        "compile": false,
+        "blocks_to_swap": 0,
+        "activation_checkpointing": "none",
+        "offload_text_encoder": true
+      },
+      "dataset": {
+        "text_encoding": "cached"
+      }
+    },
+    "policy": {
+      "id": "dtk-klein4b-backbone-lokr-fsdp-bf16-compute-preview-v2",
+      "mixed_precision": "bf16",
+      "allow_tf32": false,
+      "attention": "sdpa",
+      "sdpa_backend": "math",
+      "linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
+      "linear_backward": "fp32-contractions-grad-original-dtype",
+      "linear_backward_implementation": "linear-bf16-operands-fp32-compute-v1",
+      "adapter_algorithm": "lokr",
+      "trainable_components": [
+        "backbone"
+      ],
+      "operator_components": [
+        "backbone"
+      ],
+      "distributed_strategy": "fsdp",
+      "preview_operator_components": [
+        "backbone"
+      ],
+      "preview_linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
+      "preview_linear_implementation": "linear-native-dispatch-bf16-operands-fp32-preview-v1",
+      "fsdp_param_dtype": "bfloat16",
+      "fsdp_reduce_dtype": "float32"
+    }
+  },
+  {
+    "name": "sdxl-lora-single-text",
+    "config": {
+      "model": {
+        "family": "sdxl",
+        "dtype": "bf16",
+        "flux2_variant": "auto",
+        "sdxl_max_token_length": 150
+      },
+      "training": {
+        "mode": "adapter",
+        "train_backbone": true,
+        "train_text_encoder": true
+      },
+      "adapter": {
+        "algo": "lora",
+        "mode": "bypass",
+        "param_dtype": "fp32",
+        "dora": false,
+        "rules": []
+      },
+      "loop": {
+        "gpu_count": 1,
+        "distributed_strategy": "ddp",
+        "deterministic": true,
+        "mixed_precision": "bf16"
+      },
+      "memory": {
+        "base_precision": "bf16",
+        "compile": false,
+        "blocks_to_swap": 0,
+        "activation_checkpointing": "none",
+        "offload_text_encoder": false
+      },
+      "dataset": {
+        "text_encoding": "online"
+      }
+    },
+    "policy": {
+      "id": "dtk-sdxl-text-lora-single-bf16-compute-preview-v2",
+      "mixed_precision": "bf16",
+      "allow_tf32": false,
+      "attention": "sdpa",
+      "sdpa_backend": "math",
+      "linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
+      "linear_backward": "fp32-contractions-grad-original-dtype",
+      "linear_backward_implementation": "linear-bf16-operands-fp32-compute-v1",
+      "text_linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
+      "text_linear_backward_implementation": "linear-bf16-operands-fp32-compute-v1",
+      "adapter_forward": "bf16-rounded-operands-fp32-contractions-bf16-intermediates",
+      "adapter_backward": "fp32-contractions-grad-original-dtype",
+      "adapter_implementation": "lora-bf16-operands-fp32-contractions-v1",
+      "trainable_components": [
+        "backbone",
+        "text_encoder",
+        "text_encoder_2"
+      ],
+      "operator_components": [
+        "backbone",
+        "text_encoder",
+        "text_encoder_2"
+      ],
+      "distributed_strategy": "single",
+      "conv_forward": "fp32-output-bf16",
+      "conv_implementation": "conv2d-fp32-output-bf16-v1",
+      "sdxl_max_token_length": 150,
+      "preview_operator_components": [
+        "backbone"
+      ],
+      "preview_linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
+      "preview_linear_implementation": "linear-native-dispatch-bf16-operands-fp32-preview-v1"
+    }
+  },
+  {
+    "name": "sdxl-lora-ddp-text",
+    "config": {
+      "model": {
+        "family": "sdxl",
+        "dtype": "bf16",
+        "flux2_variant": "auto",
+        "sdxl_max_token_length": 150
+      },
+      "training": {
+        "mode": "adapter",
+        "train_backbone": true,
+        "train_text_encoder": true
+      },
+      "adapter": {
+        "algo": "lora",
+        "mode": "bypass",
+        "param_dtype": "fp32",
+        "dora": false,
+        "rules": []
+      },
+      "loop": {
+        "gpu_count": 2,
+        "distributed_strategy": "ddp",
+        "deterministic": true,
+        "mixed_precision": "bf16"
+      },
+      "memory": {
+        "base_precision": "bf16",
+        "compile": false,
+        "blocks_to_swap": 0,
+        "activation_checkpointing": "none",
+        "offload_text_encoder": false
+      },
+      "dataset": {
+        "text_encoding": "online"
+      }
+    },
+    "policy": {
+      "id": "dtk-sdxl-text-lora-ddp-bf16-compute-preview-v2",
+      "mixed_precision": "bf16",
+      "allow_tf32": false,
+      "attention": "sdpa",
+      "sdpa_backend": "math",
+      "linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
+      "linear_backward": "fp32-contractions-grad-original-dtype",
+      "linear_backward_implementation": "linear-bf16-operands-fp32-compute-v1",
+      "text_linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
+      "text_linear_backward_implementation": "linear-bf16-operands-fp32-compute-v1",
+      "adapter_forward": "bf16-rounded-operands-fp32-contractions-bf16-intermediates",
+      "adapter_backward": "fp32-contractions-grad-original-dtype",
+      "adapter_implementation": "lora-bf16-operands-fp32-contractions-v1",
+      "trainable_components": [
+        "backbone",
+        "text_encoder",
+        "text_encoder_2"
+      ],
+      "operator_components": [
+        "backbone",
+        "text_encoder",
+        "text_encoder_2"
+      ],
+      "distributed_strategy": "ddp",
+      "conv_forward": "fp32-output-bf16",
+      "conv_implementation": "conv2d-fp32-output-bf16-v1",
+      "sdxl_max_token_length": 150,
+      "preview_operator_components": [
+        "backbone"
+      ],
+      "preview_linear_forward": "bf16-rounded-operands-fp32-contraction-bf16-output",
+      "preview_linear_implementation": "linear-native-dispatch-bf16-operands-fp32-preview-v1"
+    }
+  }
+]

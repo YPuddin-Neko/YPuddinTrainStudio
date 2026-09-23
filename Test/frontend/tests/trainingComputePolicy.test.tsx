@@ -6,6 +6,7 @@ import schema from '../../../frontend/src/schema/train-schema.json';
 import {schemaDefaults} from '../../../frontend/src/utils/config';
 import {configFieldHelp, configOptionLabel} from '../../../frontend/src/utils/configPresentation';
 import {confirmedTrainingComputePolicy, currentTrainingComputePolicy, trainingComputePolicyHint} from '../../../frontend/src/utils/trainingComputePolicy';
+import backendPolicies from '../fixtures/trainingComputePolicies.json';
 import i18n from '../../../frontend/src/i18n';
 
 const policy = {id:'dtk-full-fp32-math-v1',mixed_precision:'no',allow_tf32:false,attention:'sdpa',sdpa_backend:'math'};
@@ -48,7 +49,14 @@ function textLoraCase(family: string, backbone = false, gpus = 1) {
   config.loop.gpu_count = gpus; config.loop.distributed_strategy = 'ddp';
   const components = family === 'sdxl' ? ['text_encoder', 'text_encoder_2'] : ['text_encoder'];
   const candidate = {
-    ...animaPolicy, id: `dtk-${family}-text-lora-bf16-fp32-contractions-v1`,
+    ...animaPolicy, id: family === 'sdxl' && backbone && [1,2].includes(gpus)
+      ? `dtk-sdxl-text-lora-${gpus === 1 ? 'single' : 'ddp'}-bf16-compute-preview-v2`
+      : `dtk-${family}-text-lora-bf16-fp32-contractions-v1`,
+    ...(family === 'sdxl' && backbone && [1,2].includes(gpus) ? {
+      preview_operator_components:['backbone'],
+      preview_linear_forward:'bf16-rounded-operands-fp32-contraction-bf16-output',
+      preview_linear_implementation:'linear-native-dispatch-bf16-operands-fp32-preview-v1',
+    } : {}),
     text_linear_forward: 'bf16-rounded-operands-fp32-contraction-bf16-output',
     text_linear_backward_implementation: 'linear-bf16-operands-fp32-compute-v1',
     adapter_implementation: 'lora-bf16-operands-fp32-contractions-v1',
@@ -196,7 +204,7 @@ it('keeps unmeasured Anima, short-caption and text-training previews unchanged',
     {config:animaDualConfig('ddp'), candidate:animaDdpPolicy},
     {config:animaDualConfig('fsdp'), candidate:animaFsdpPolicy},
     textLoraCase('anima', true, 2),
-    textLoraCase('sdxl', true, 2),
+    textLoraCase('sdxl', false, 2),
   ];
   for (const {config, candidate} of rows) {
     expect(confirmedTrainingComputePolicy(candidate, config)).toEqual(candidate);
@@ -735,4 +743,44 @@ it('presents the same effective policy in English without leaking Chinese fallba
   expect(deterministic.textContent).not.toMatch(/[\u4e00-\u9fff]/);
   fireEvent.click(within(deterministic).getByRole('button',{name:'Reproducible training help'}));
   expect(screen.getByRole('tooltip')).toHaveTextContent('Bitwise equality is not guaranteed');
+});
+
+
+it.each(backendPolicies)('accepts the actual backend $name payload and rejects stale or changed drafts', ({config, policy}) => {
+  const confirmed=confirmedTrainingComputePolicy(policy, config);
+  expect(confirmed).toEqual(policy);
+  expect(currentTrainingComputePolicy(null, config, JSON.stringify(config), false)).toBeNull();
+  expect(currentTrainingComputePolicy(policy, config, JSON.stringify(config), true)).toBeNull();
+  for (const key of Object.keys(policy)) {
+    const incomplete:Record<string, unknown>={...policy}; delete incomplete[key];
+    expect(confirmedTrainingComputePolicy(incomplete,config),key).toBeNull();
+  }
+  for (const changed of [
+    {...config,loop:{...config.loop,deterministic:false}},
+    {...config,loop:{...config.loop,gpu_count:config.loop.gpu_count===1 ? 2 : 1}},
+    {...config,loop:{...config.loop,mixed_precision:config.loop.mixed_precision==='fp16' ? 'bf16' : 'fp16'}},
+    {...config,training:{...config.training,train_backbone:false}},
+    {...config,adapter:{...config.adapter,param_dtype:'bf16'}},
+    {...config,adapter:{...config.adapter,dora:true}},
+    {...config,memory:{...config.memory,compile:true}},
+  ]) expect(confirmedTrainingComputePolicy(policy,changed)).toBeNull();
+  expect(confirmedTrainingComputePolicy({...policy,id:policy.id+'-old'},config)).toBeNull();
+  const cn=trainingComputePolicyHint(confirmed,false)!;
+  const en=trainingComputePolicyHint(confirmed,true)!;
+  expect(cn).toContain('相同'); expect(en).toContain('same'); expect(en).not.toMatch(/[\u4e00-\u9fff]/);
+  if(config.loop.mixed_precision==='fp16') {
+    expect(cn).toContain('梯度缩放');expect(en).toContain('GradScaler');
+  }
+});
+
+it.each(backendPolicies.filter(row=>row.config.loop.mixed_precision==='fp16'))('keeps FP16 visible and restores its original choice for $name', ({config,policy}) => {
+  const initial={...config,model:{...config.model,attention:'xformers'},memory:{...config.memory,allow_tf32:true}};
+  function Editor(){const [value,setValue]=React.useState<Record<string, any>>(initial);return <SchemaForm schema={schema} value={value} onChange={setValue} computePolicy={policy} compact showAdvanced groupFilter={['loop','memory']}/>;}
+  render(<Editor/>);
+  expect(screen.getByRole('status',{name:'混合精度'})).toHaveTextContent('FP16');
+  expect(screen.getByRole('status',{name:'混合精度'})).not.toHaveTextContent('FP32 计算（关闭混合精度）');
+  fireEvent.click(screen.getByRole('checkbox',{name:'可复现训练'}));
+  expect(screen.getByRole('combobox',{name:'混合精度'})).toHaveTextContent('FP16');
+  expect(screen.getByRole('combobox',{name:'注意力后端'})).toHaveTextContent('xFormers');
+  expect(screen.getByRole('checkbox',{name:'允许 TF32'})).toBeChecked();
 });

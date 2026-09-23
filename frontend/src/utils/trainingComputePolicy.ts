@@ -1,3 +1,5 @@
+import {confirmedExtraAdapterPolicy, extraAdapterPolicyIds, extraAdapterPrecisionLabel, extraAdapterPolicyHint, type ExtraAdapterComputePolicy} from './dtkAdapterComputePolicy';
+
 /** A server-confirmed effective policy; never infer the host runtime in the editor. */
 interface CommonTrainingComputePolicy {
   allow_tf32: false;
@@ -33,9 +35,12 @@ const animaPolicyIds = new Set([
 const textLoraPolicyIds = new Set([
   'dtk-anima-text-lora-bf16-fp32-contractions-v1',
   'dtk-sdxl-text-lora-bf16-fp32-contractions-v1',
+  'dtk-sdxl-text-lora-single-bf16-compute-preview-v2',
+  'dtk-sdxl-text-lora-ddp-bf16-compute-preview-v2',
   'dtk-krea2-text-lora-bf16-fp32-contractions-v1',
 ]);
 
+const textPreviewPolicyIds = new Set(['dtk-sdxl-text-lora-single-bf16-compute-preview-v2', 'dtk-sdxl-text-lora-ddp-bf16-compute-preview-v2']);
 const previewPolicyIds = new Set([
   ...['lora', 'lokr'].flatMap(algo => ['single', 'ddp', 'fsdp'].map(strategy =>
     `dtk-sdxl-backbone-${algo}-${strategy}-bf16-compute-preview-v2`)),
@@ -81,7 +86,7 @@ interface BackboneAdapterComputePolicy extends CommonTrainingComputePolicy {
 }
 
 interface TextLoraComputePolicy extends AnimaTrainingComputePolicy {
-  id: 'dtk-anima-text-lora-bf16-fp32-contractions-v1' | 'dtk-sdxl-text-lora-bf16-fp32-contractions-v1' | 'dtk-krea2-text-lora-bf16-fp32-contractions-v1';
+  id: 'dtk-anima-text-lora-bf16-fp32-contractions-v1' | 'dtk-sdxl-text-lora-bf16-fp32-contractions-v1' | 'dtk-krea2-text-lora-bf16-fp32-contractions-v1' | `dtk-sdxl-text-lora-${'single' | 'ddp'}-bf16-compute-preview-v2`;
   mixed_precision: 'bf16';
   text_linear_forward: 'bf16-rounded-operands-fp32-contraction-bf16-output';
   text_linear_backward_implementation: 'linear-bf16-operands-fp32-compute-v1';
@@ -96,7 +101,7 @@ interface TextLoraComputePolicy extends AnimaTrainingComputePolicy {
   sdxl_max_token_length?: 75 | 150 | 225;
 }
 
-export type TrainingComputePolicy = (CommonTrainingComputePolicy & {
+export type TrainingComputePolicy = ExtraAdapterComputePolicy | (CommonTrainingComputePolicy & {
   id: 'dtk-full-fp32-math-v1';
   mixed_precision: 'no';
 }) | (AnimaTrainingComputePolicy & {
@@ -173,7 +178,15 @@ function confirmedTextLoraPolicy(policy: Record<string, unknown>, config: Record
   const family = config.model?.family;
   const rules = config.adapter?.rules ?? [];
   const gpuCount = config.loop?.gpu_count;
-  if (policy.id !== `dtk-${family}-text-lora-bf16-fp32-contractions-v1`
+  const stablePreview = family === 'sdxl' && config.model?.sdxl_max_token_length === 150
+    && config.training?.train_backbone === true && [1,2].includes(gpuCount);
+  const expectedId = stablePreview ? `dtk-sdxl-text-lora-${gpuCount === 1 ? 'single' : 'ddp'}-bf16-compute-preview-v2`
+    : `dtk-${family}-text-lora-bf16-fp32-contractions-v1`;
+  if (stablePreview && !Object.entries(previewPolicyFields).every(([key, value]) => Array.isArray(value)
+    ? Array.isArray(policy[key]) && policy[key].length === value.length && policy[key].every((item, index) => item === value[index])
+    : policy[key] === value)) return null;
+  if (Object.keys(policy).some(key => key.startsWith('preview_') && !(stablePreview && key in previewPolicyFields))) return null;
+  if (policy.id !== expectedId
     || config.training?.mode !== 'adapter' || config.training?.train_text_encoder !== true
     || config.loop?.mixed_precision !== 'bf16' || policy.mixed_precision !== 'bf16'
     || !Number.isInteger(gpuCount) || gpuCount < 1 || config.loop?.distributed_strategy !== 'ddp'
@@ -212,8 +225,9 @@ export function confirmedTrainingComputePolicy(candidate: unknown, config: Recor
   if (!candidate || typeof candidate !== 'object') return null;
   const policy = candidate as Record<string, unknown>;
   if (policy.allow_tf32 !== false || policy.attention !== 'sdpa' || policy.sdpa_backend !== 'math') return null;
+  if (extraAdapterPolicyIds.has(policy.id as string)) return confirmedExtraAdapterPolicy(policy, config);
   if (config.loop?.deterministic !== true || !['anima', 'sdxl', 'krea2'].includes(config.model?.family)) return null;
-  if (!previewPolicyIds.has(policy.id as string) && Object.keys(previewPolicyFields).some(key => key in policy)) return null;
+  if (!previewPolicyIds.has(policy.id as string) && !textPreviewPolicyIds.has(policy.id as string) && Object.keys(previewPolicyFields).some(key => key in policy)) return null;
   if (backboneAdapterPolicyIds.has(policy.id as string)) return confirmedBackboneAdapterPolicy(policy, config);
   if (textLoraPolicyIds.has(policy.id as string)) return confirmedTextLoraPolicy(policy, config);
   if (config.training?.train_backbone === false) return null;
@@ -285,7 +299,7 @@ export function trainingComputeManagedField(policy: TrainingComputePolicy | null
     : '由 DTK 可复现训练管理。保留原选择，关闭开关后恢复使用。';
   if (path === 'loop.mixed_precision') return {
     value: policy.mixed_precision,
-    label: backboneAdapterPolicyIds.has(policy.id) && 'adapter_algorithm' in policy && policy.adapter_algorithm === 'lora'
+    label: extraAdapterPrecisionLabel(policy.id, english) ?? (backboneAdapterPolicyIds.has(policy.id) && 'adapter_algorithm' in policy && policy.adapter_algorithm === 'lora'
       ? (english ? 'BF16 (FP32 linear and LoRA operations)' : 'BF16（FP32 线性层与 LoRA 运算）')
       : backboneAdapterPolicyIds.has(policy.id) && 'linear_forward' in policy && policy.linear_forward !== 'native-bf16'
       ? ('conv_forward' in policy
@@ -301,7 +315,7 @@ export function trainingComputeManagedField(policy: TrainingComputePolicy | null
       ? (english ? 'BF16 (FP32 convolution and linear backward)' : 'BF16（FP32 卷积、线性层反向）')
       : policy.mixed_precision === 'bf16'
       ? (english ? 'BF16 forward (FP32 linear backward)' : 'BF16 前向（线性层反向 FP32）')
-      : (english ? 'FP32 computation (mixed precision off)' : 'FP32 计算（关闭混合精度）'),
+      : (english ? 'FP32 computation (mixed precision off)' : 'FP32 计算（关闭混合精度）')),
     reason,
   };
   if (path === 'memory.allow_tf32') return { value: policy.allow_tf32, label: english ? 'Disabled' : '关闭', reason };
@@ -311,6 +325,7 @@ export function trainingComputeManagedField(policy: TrainingComputePolicy | null
 
 export function trainingComputePolicyHint(policy: TrainingComputePolicy | null, english: boolean) {
   if (!policy) return undefined;
+  if (extraAdapterPolicyIds.has(policy.id)) return extraAdapterPolicyHint(policy.id, english);
   if (backboneAdapterPolicyIds.has(policy.id)) {
     const adapterPolicy = policy as BackboneAdapterComputePolicy;
     const parallel = adapterPolicy.distributed_strategy === 'fsdp'
@@ -349,7 +364,9 @@ export function trainingComputePolicyHint(policy: TrainingComputePolicy | null, 
     return parallel + (english
       ? 'Text-encoder LoRA training keeps BF16 rounding and outputs, with FP32 matrix operations in text linear layers and LoRA projections. '
       : '文本编码器 LoRA 训练保留 BF16 舍入和输出，文本线性层与 LoRA 矩阵运算使用 FP32。')
-      + backbone + (english
+      + backbone + (textPreviewPolicyIds.has(policy.id)
+        ? (english ? 'Preview backbone linear layers also use FP32 contractions with BF16 rounding and outputs; text preview operations stay native. ' : '预览主模型线性层也使用 FP32 矩阵运算，保留 BF16 舍入与输出；文本预览保持原生计算。') : '')
+      + (english
         ? 'TF32 is off and attention uses SDPA math. Memory use and runtime may increase. Resume requires this same policy and environment; states from the previous native BF16 path cannot be mixed.'
         : '关闭 TF32，使用 SDPA 数学实现，可能增加显存和耗时。续训须保持相同策略和环境，不能混用旧版原生 BF16 路径的训练状态。');
   }
