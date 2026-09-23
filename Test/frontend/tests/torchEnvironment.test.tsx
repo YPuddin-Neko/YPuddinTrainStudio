@@ -281,19 +281,40 @@ describe('service restart controls',()=>{
   it('does not report a failed environment switch as successful after launcher fallback',async()=>{
     let restarting=false;
     vi.spyOn(apiClient,'get').mockImplementation(async()=>({...runtime(),worker_id:restarting?12:11}));
-    vi.spyOn(apiClient,'post').mockImplementation(async()=>{restarting=true;return {address_changed:false,port:8877,host:'127.0.0.1'};});
-    render(<ServiceControls environmentId="torch_new"/>);
+    const post=vi.spyOn(apiClient,'post').mockImplementation(async()=>{restarting=true;return {address_changed:false,port:8877,host:'127.0.0.1'};});
+    render(<ServiceControls environmentId="torch_new" applySavedAddress/>);
     await waitFor(()=>expect(screen.getByRole('button',{name:'重启并切换到此环境'})).toBeEnabled());
     fireEvent.click(screen.getByRole('button',{name:'重启并切换到此环境'}));
     expect(await screen.findByRole('alert', {}, { timeout: 4000 })).toHaveTextContent('新环境启动失败，服务已恢复原环境');
+    expect(post).toHaveBeenCalledWith('/service/restart',{environment_id:'torch_new'},{silent:true,signal:expect.any(AbortSignal)});
     expect(screen.queryByText('服务已重启。')).not.toBeInTheDocument();
   });
-  it('changes the address only from the explicit saved-address action',async()=>{
-    vi.spyOn(apiClient,'get').mockResolvedValue({...runtime(),saved_host:'10.10.10.16',saved_port:9000});
-    const post=vi.spyOn(apiClient,'post').mockResolvedValue({address_changed:true,port:9000,host:'10.10.10.16',reconnect_url:'http://10.10.10.16:9000/'});
-    render(<ServiceControls/>);
-    fireEvent.click(await screen.findByRole('button',{name:'应用已保存地址并重启（10.10.10.16:9000）'}));
-    expect(await screen.findByRole('link',{name:'打开新的服务地址'})).toHaveAttribute('href','http://10.10.10.16:9000/');
+  it('restores the original environment without also applying a saved address',async()=>{
+    vi.spyOn(apiClient,'get').mockResolvedValue({...runtime(),can_restore_original:true});
+    const post=vi.spyOn(apiClient,'post').mockResolvedValue({address_changed:false,port:8877,host:'127.0.0.1'});
+    render(<ServiceControls applySavedAddress/>);
+    fireEvent.click(await screen.findByRole('button',{name:'恢复原环境并重启'}));
+    await waitFor(()=>expect(post).toHaveBeenCalledWith('/service/restart',{restore_original_environment:true},{silent:true,signal:expect.any(AbortSignal)}));
+  });
+  it.each([
+    ['10.10.10.16','10.10.10.16'],
+    ['127.0.0.1','127.0.0.1'],
+    ['0.0.0.0',null],
+    ['::',null],
+  ] as const)('applies saved address %s:9000 through the single restart action and reconnects to a usable host',async(savedHost,reconnectHost)=>{
+    vi.spyOn(apiClient,'get').mockResolvedValue({...runtime(),saved_host:savedHost,saved_port:9000});
+    const post=vi.spyOn(apiClient,'post').mockResolvedValue({address_changed:true,port:9000,host:savedHost,reconnect_url:'http://127.0.0.1:9000/'});
+    render(<ServiceControls applySavedAddress/>);
+    const restart=screen.getByRole('button',{name:'重启服务'});
+    await waitFor(()=>expect(restart).toBeEnabled());
+    expect(screen.getAllByRole('button',{name:/重启/})).toEqual([restart]);
+    expect(post).not.toHaveBeenCalled();
+    fireEvent.click(restart);
+    const link=await screen.findByRole('link',{name:'打开新的服务地址'});
+    const address=new URL(link.getAttribute('href')!);
+    expect(address.hostname).toBe(reconnectHost??window.location.hostname);
+    expect(address.port).toBe('9000');
+    expect(post).toHaveBeenCalledOnce();
     expect(post).toHaveBeenCalledWith('/service/restart',{apply_saved_address:true},{silent:true,signal:expect.any(AbortSignal)});
   });
   it('aborts a hanging reconnect probe after three seconds and can then reconnect',async()=>{

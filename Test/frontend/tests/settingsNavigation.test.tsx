@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import Settings from '../../../frontend/src/pages/Settings/Settings';
@@ -16,6 +16,12 @@ beforeEach(async () => {
     if (endpoint === '/credentials') return {huggingface:{configured:false},modelscope:{configured:false},danbooru:{configured:false},gelbooru:{configured:false}} as any;
     if (endpoint === '/settings') return config as any;
     if (endpoint === '/system/info') return { ypuddin: 'test' } as any;
+    if (endpoint === '/service/runtime') return {
+      worker_id: 11, managed: true, can_restart: true, reason: null,
+      current_host: config.server.host, current_port: config.server.port,
+      saved_host: config.server.host, saved_port: config.server.port,
+      current_python: 'project/venv/python', can_restore_original: false, selected_environment: null,
+    } as any;
     throw new Error(`Unexpected GET ${endpoint}`);
   });
 });
@@ -47,13 +53,19 @@ describe('settings drawer content navigation', () => {
     fireEvent.click(screen.getByRole('tab', { name: '存储路径' }));
     const page = await screen.findByTestId('settings-page');
     expect(screen.getByTestId('location')).toHaveTextContent('/settings/preferences?section=storage');
-    expect(within(page).getByRole('textbox', { name: i18n.t('settings.dataRoot') })).toHaveAttribute('readonly');
+    const dataRoot = within(page).getByRole('textbox', { name: i18n.t('settings.dataRoot') });
+    expect(dataRoot).toBeEnabled();
+    expect(dataRoot).not.toHaveAttribute('readonly');
+    expect(dataRoot).toHaveValue('D:/studio');
+    fireEvent.change(dataRoot, { target: { value: 'E:/studio' } });
+    expect(dataRoot).toHaveValue('E:/studio');
     expect(screen.queryByTestId('settings-theme')).not.toBeInTheDocument();
     expect(screen.queryByTestId('runtime-panel')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: '界面与服务' }));
     expect(screen.getByTestId('settings-theme')).toHaveTextContent(i18n.t('settings.themeLight'));
     expect(screen.queryByRole('textbox', { name: i18n.t('settings.dataRoot') })).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: i18n.t('settings.host') })).toHaveValue('127.0.0.1');
+    await waitFor(() => expect(screen.getByRole('button', { name: '重启服务' })).toBeEnabled());
     const index = screen.getByRole('navigation', { name: '当前页章节' });
     fireEvent.click(within(index).getByRole('button', { name: i18n.t('settings.server') }));
     expect(document.getElementById('preferences-service')).toHaveFocus();

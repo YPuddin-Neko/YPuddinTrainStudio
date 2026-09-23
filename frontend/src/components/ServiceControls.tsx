@@ -36,7 +36,7 @@ async function requestWithTimeout<T>(request: (signal: AbortSignal) => Promise<T
   finally { window.clearTimeout(timer); controllers.delete(controller); }
 }
 
-export default function ServiceControls({environmentId, onRestarted, refreshTarget, secondary = false, disabled = false, refreshKey = 0}: {environmentId?: string; onRestarted?:()=>void; refreshTarget?: HTMLElement | null; secondary?: boolean; disabled?: boolean; refreshKey?: number}) {
+export default function ServiceControls({environmentId, onRestarted, refreshTarget, secondary = false, disabled = false, refreshKey = 0, applySavedAddress = false}: {environmentId?: string; onRestarted?:()=>void; refreshTarget?: HTMLElement | null; secondary?: boolean; disabled?: boolean; refreshKey?: number; applySavedAddress?: boolean}) {
   const text = useWorkspaceText();
   const [runtime, setRuntime] = React.useState<ServiceRuntime | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -93,7 +93,7 @@ export default function ServiceControls({environmentId, onRestarted, refreshTarg
   const refreshButton = <button type="button" className="settings-input service-refresh" disabled={busy || disabled} onClick={()=>void refresh().then(current=>{setError('');if(environmentId&&current.selected_environment===environmentId){setNotice(text('当前正在使用此环境。','This environment is currently active.'));onRestarted?.();}}).catch(e=>setError(formatApiError(e)))}><RefreshCw size={14}/>{text('刷新状态','Refresh status')}</button>;
   return <div className={`service-controls${secondary ? ' service-controls-secondary' : ''}`}>
     <div className="flex flex-wrap items-center gap-2">
-      <button type="button" className={secondary ? "settings-input" : "settings-action"} disabled={busy||disabled||!runtime?.can_restart} onClick={()=>void restart(environmentId?{environment_id:environmentId}:{})}>{busy?<Loader2 size={14} className="animate-spin"/>:<RefreshCw size={14}/>} {environmentId?text('重启并切换到此环境','Restart in this environment'):text('重启服务','Restart service')}</button>
+      <button type="button" className={secondary ? "settings-input" : "settings-action"} disabled={busy||disabled||!runtime?.can_restart} onClick={()=>void restart(environmentId?{environment_id:environmentId}:applySavedAddress?{apply_saved_address:true}:{})}>{busy?<Loader2 size={14} className="animate-spin"/>:<RefreshCw size={14}/>} {environmentId?text('重启并切换到此环境','Restart in this environment'):text('重启服务','Restart service')}</button>
       {!environmentId && runtime?.can_restore_original && <button type="button" className="settings-input" disabled={busy||disabled||!runtime.can_restart} onClick={()=>void restart({restore_original_environment:true})}>{text('恢复原环境并重启','Restore original environment')}</button>}
       {refreshTarget ? createPortal(refreshButton, refreshTarget) : refreshButton}
     </div>
