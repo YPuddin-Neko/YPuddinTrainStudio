@@ -24,6 +24,7 @@ class Flux2Text(TextPipeline):
         self.path, self.tokenizer_path, self.variant = path, tokenizer_path, variant
         self.dtype, self.device = dtype, torch.device(device)
         self.model, self.tokenizer = None, None
+        self.compute_implementation = None
         config = text_config(path)
         self.config = config
         if config.get("model_type") != "qwen3":
@@ -52,6 +53,23 @@ class Flux2Text(TextPipeline):
         self.fingerprint = content_fingerprint(
             fingerprint_paths, namespace=f"flux2-{variant}-layers{self.layers}-len512-v1:{dtype}"
         )
+
+    def configure_compute(self, implementation):
+        from ypuddin.config.compute_policy import KLEIN9B_TEXT_COMPUTE_ID
+
+        if (
+            implementation != KLEIN9B_TEXT_COMPUTE_ID
+            or self.variant != "klein-base-9b"
+            or self.dtype != torch.bfloat16
+            or self.model is not None
+            or self.compute_implementation is not None
+            or getattr(self, "training_enabled", False)
+        ):
+            raise ValueError("Frozen Qwen3 compute policy must be selected before loading or caching")
+        self.compute_implementation = implementation
+        # Bind both cache keys and strict-resume model identity to the actual
+        # encoding recipe. Native cache entries must never satisfy this recipe.
+        self.fingerprint = f"{self.fingerprint}:{implementation}"
 
     def _ensure(self):
         if self.tokenizer is None:
@@ -105,15 +123,18 @@ class Flux2Text(TextPipeline):
         self._ensure()
         from diffusers import Flux2KleinPipeline
 
-        embeds = Flux2KleinPipeline._get_qwen3_prompt_embeds(
-            self.model,
-            self.tokenizer,
-            captions,
-            device=self.device,
-            dtype=self.dtype,
-            max_sequence_length=self.max_len,
-            hidden_states_layers=self.layers,
-        )
+        from .text_compute import frozen_text_compute
+
+        with frozen_text_compute(self.model, self.compute_implementation):
+            embeds = Flux2KleinPipeline._get_qwen3_prompt_embeds(
+                self.model,
+                self.tokenizer,
+                captions,
+                device=self.device,
+                dtype=self.dtype,
+                max_sequence_length=self.max_len,
+                hidden_states_layers=self.layers,
+            )
         return TextCond({"embeds": embeds}).to(device)
 
     @torch.no_grad()

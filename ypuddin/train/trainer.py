@@ -244,6 +244,8 @@ class Trainer:
             self.loaded = self.family.load(
                 cfg.model, cfg.memory, device=self.device, dtype=model_dtype, backbone_device="cpu"
             )
+            if (self.compute_policy or {}).get("frozen_text_implementation"):
+                self.loaded.text.configure_compute(self.compute_policy["frozen_text_implementation"])
             self.model_identity = self._model_identity()
         self.objective = self.family.build_objective(self.loaded, cfg.objective)
         self.loaded.text.to(self.device)

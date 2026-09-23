@@ -771,6 +771,12 @@ it.each(backendPolicies)('accepts the actual backend $name payload and rejects s
   if(config.loop.mixed_precision==='fp16') {
     expect(cn).toContain('梯度缩放');expect(en).toContain('GradScaler');
   }
+  if(config.model.family==='flux2') {
+    const size=config.model.flux2_variant==='klein-base-9b' ? '9B' : '4B';
+    expect(cn).toContain(`Klein ${size}`);expect(en).toContain(`Klein ${size}`);
+    const changed={...config,model:{...config.model,flux2_variant:size==='9B' ? 'klein-base-4b' : 'klein-base-9b'}};
+    expect(confirmedTrainingComputePolicy(policy,changed)).toBeNull();
+  }
 });
 
 it.each(backendPolicies.filter(row=>row.config.loop.mixed_precision==='fp16'))('keeps FP16 visible and restores its original choice for $name', ({config,policy}) => {

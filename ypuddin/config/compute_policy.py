@@ -17,6 +17,7 @@ DTK_SDXL_FSDP_BF16_CONV_LINEAR_POLICY_ID = "dtk-sdxl-fsdp-bf16-conv-fp32-linear-
 DTK_SDXL_LONG_TEXT_POLICY_ID = "dtk-sdxl-long-text-bf16-conv-fp32-linear-compute-v1"
 BF16_LINEAR_BACKWARD_IMPLEMENTATION_ID = "linear-bf16-forward-fp32-backward-v1"
 FP32_CONV_IMPLEMENTATION_ID = "conv2d-fp32-output-bf16-v1"
+KLEIN9B_TEXT_COMPUTE_ID = "qwen3-bf16-linear-fp32-v1"
 BF16_LORA_FP32_IMPLEMENTATION_ID = "lora-bf16-operands-fp32-contractions-v1"
 DTK_TEXT_LORA_POLICY_IDS = {
     family: f"dtk-{family}-text-lora-bf16-fp32-contractions-v1" for family in ("anima", "sdxl", "krea2")
@@ -57,10 +58,16 @@ DTK_KLEIN4B_ADAPTER_POLICY_IDS = {
     for algo in ("lora", "lokr")
     for strategy in ("ddp", "fsdp")
 }
+DTK_KLEIN9B_ADAPTER_POLICY_IDS = {
+    (algo, strategy): (f"dtk-klein9b-backbone-{algo}-{strategy}-bf16-compute-preview-v4")
+    for algo in ("lora", "lokr")
+    for strategy in ("ddp", "fsdp")
+}
 DTK_BACKBONE_ADAPTER_ALL_POLICY_IDS = (
     frozenset(DTK_BACKBONE_ADAPTER_POLICY_IDS.values())
     | frozenset(DTK_SDXL_LONG_TEXT_PREVIEW_POLICY_IDS.values())
     | frozenset(DTK_ANIMA_FSDP_PREVIEW_POLICY_IDS.values())
+    | frozenset(DTK_KLEIN9B_ADAPTER_POLICY_IDS.values())
     | frozenset(
         value
         for (algo, _strategy), value in DTK_KLEIN4B_ADAPTER_POLICY_IDS.items()
@@ -237,17 +244,20 @@ def _backbone_adapter_policy(cfg, device_type, profile):
     return policy
 
 
-def _klein4b_adapter_policy(cfg, device_type, profile):
+def _klein_adapter_policy(cfg, device_type, profile):
     key = (cfg.adapter.algo, cfg.loop.distributed_strategy)
+    policy_ids = {
+        "klein-base-4b": DTK_KLEIN4B_ADAPTER_POLICY_IDS,
+        "klein-base-9b": DTK_KLEIN9B_ADAPTER_POLICY_IDS,
+    }.get(cfg.model.flux2_variant, {})
     if not (
         profile == "linux-dtk"
         and device_type == "cuda"
         and cfg.model.family == "flux2"
-        and cfg.model.flux2_variant == "klein-base-4b"
         and cfg.model.dtype == "bf16"
         and cfg.memory.base_precision in {"auto", "bf16"}
         and cfg.loop.gpu_count == 2
-        and key in DTK_KLEIN4B_ADAPTER_POLICY_IDS
+        and key in policy_ids
         and cfg.loop.deterministic
         and cfg.loop.mixed_precision == "bf16"
         and cfg.training.mode == "adapter"
@@ -262,11 +272,11 @@ def _klein4b_adapter_policy(cfg, device_type, profile):
         and not cfg.memory.blocks_to_swap
     ):
         return None
-    if cfg.adapter.algo == "lokr" and cfg.loop.distributed_strategy == "ddp":
-        # This measured DDP route uses native training and a preview-only identity.
-        # FSDP also requires the versioned training backbone contractions below.
+    if cfg.model.flux2_variant == "klein-base-4b" and key == ("lokr", "ddp"):
+        # Only 4B LoKr/DDP uses native training with a preview-only identity.
+        # 9B also needs stable training backbone contractions under DDP.
         return {
-            "id": DTK_KLEIN4B_ADAPTER_POLICY_IDS[key],
+            "id": policy_ids[key],
             "mixed_precision": "bf16",
             "allow_tf32": False,
             "attention": "sdpa",
@@ -278,7 +288,7 @@ def _klein4b_adapter_policy(cfg, device_type, profile):
             "preview_linear_implementation": BF16_LINEAR_PREVIEW_IMPLEMENTATION_ID,
         }
     policy: TrainingComputePolicy = {
-        "id": DTK_KLEIN4B_ADAPTER_POLICY_IDS[key],
+        "id": policy_ids[key],
         "mixed_precision": "bf16",
         "allow_tf32": False,
         "attention": "sdpa",
@@ -300,6 +310,8 @@ def _klein4b_adapter_policy(cfg, device_type, profile):
             adapter_backward="fp32-contractions-grad-original-dtype",
             adapter_implementation=BF16_LORA_FP32_IMPLEMENTATION_ID,
         )
+    if cfg.model.flux2_variant == "klein-base-9b":
+        policy["frozen_text_implementation"] = KLEIN9B_TEXT_COMPUTE_ID
     if cfg.loop.distributed_strategy == "fsdp":
         policy.update(fsdp_param_dtype="bfloat16", fsdp_reduce_dtype="float32")
     return policy
@@ -439,7 +451,7 @@ def resolve_training_compute_config(
             "preview_linear_forward": "fp16-rounded-operands-fp32-contraction-fp16-output",
             "preview_linear_implementation": FP16_LINEAR_PREVIEW_IMPLEMENTATION_ID,
         }
-    klein_policy = _klein4b_adapter_policy(cfg, device_type, profile)
+    klein_policy = _klein_adapter_policy(cfg, device_type, profile)
     if klein_policy is not None:
         effective.memory.allow_tf32 = False
         effective.model.attention = "sdpa"

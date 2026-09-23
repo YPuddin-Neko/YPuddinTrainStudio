@@ -1,4 +1,4 @@
-"""Bounded Klein 4B DTK arithmetic contracts; CPU checks are not GPU acceptance."""
+"""Bounded Klein 4B/9B DTK arithmetic contracts; CPU checks are not GPU acceptance."""
 
 import copy
 from types import SimpleNamespace
@@ -14,6 +14,7 @@ from ypuddin.adapters.lora import LoRA
 from ypuddin.config import TrainConfig
 from ypuddin.config.compute_policy import (
     DTK_KLEIN4B_ADAPTER_POLICY_IDS,
+    DTK_KLEIN9B_ADAPTER_POLICY_IDS,
     resolve_training_compute_config,
     validate_resume_compute_policy,
 )
@@ -21,12 +22,12 @@ from ypuddin.train.preview_compute import preview_linear_compute
 from ypuddin.train.trainer import Trainer
 
 
-def config(algo="lora", strategy="ddp"):
+def config(algo="lora", strategy="ddp", variant="klein-base-4b"):
     return TrainConfig.model_validate(
         {
             "model": {
                 "family": "flux2",
-                "flux2_variant": "klein-base-4b",
+                "flux2_variant": variant,
                 "dtype": "bf16",
                 "attention": "sdpa",
             },
@@ -44,16 +45,20 @@ def config(algo="lora", strategy="ddp"):
     )
 
 
+@pytest.mark.parametrize(
+    "variant,policy_ids",
+    [("klein-base-4b", DTK_KLEIN4B_ADAPTER_POLICY_IDS), ("klein-base-9b", DTK_KLEIN9B_ADAPTER_POLICY_IDS)],
+)
 @pytest.mark.parametrize("algo,strategy", DTK_KLEIN4B_ADAPTER_POLICY_IDS)
-def test_versioned_klein_recipe_and_exact_resume_guard(algo, strategy):
-    cfg = config(algo, strategy)
+def test_versioned_klein_recipe_and_exact_resume_guard(algo, strategy, variant, policy_ids):
+    cfg = config(algo, strategy, variant)
     before = cfg.to_dict()
     effective, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
     assert cfg.to_dict() == before
-    assert policy["id"] == DTK_KLEIN4B_ADAPTER_POLICY_IDS[algo, strategy]
+    assert policy["id"] == policy_ids[algo, strategy]
     assert effective.loop.mixed_precision == "bf16" and effective.model.dtype == "bf16"
     assert policy["preview_operator_components"] == ["backbone"]
-    if algo == "lora" or strategy == "fsdp":
+    if algo == "lora" or strategy == "fsdp" or variant == "klein-base-9b":
         assert policy["operator_components"] == policy["trainable_components"] == ["backbone"]
     else:
         assert "operator_components" not in policy and "linear_backward_implementation" not in policy
@@ -75,7 +80,6 @@ def test_versioned_klein_recipe_and_exact_resume_guard(algo, strategy):
     "section,field,value",
     [
         ("model", "flux2_variant", "auto"),
-        ("model", "flux2_variant", "klein-base-9b"),
         ("model", "dtype", "fp32"),
         ("loop", "gpu_count", 1),
         ("loop", "gpu_count", 3),
@@ -92,22 +96,29 @@ def test_versioned_klein_recipe_and_exact_resume_guard(algo, strategy):
         ("memory", "blocks_to_swap", 1),
     ],
 )
-def test_unmeasured_scope_remains_native(section, field, value):
-    cfg = config()
+@pytest.mark.parametrize("variant", ["klein-base-4b", "klein-base-9b"])
+def test_unmeasured_scope_remains_native(section, field, value, variant):
+    cfg = config(variant=variant)
     setattr(getattr(cfg, section), field, value)
     effective, policy = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
     assert policy is None and effective.to_dict() == cfg.to_dict()
 
 
+@pytest.mark.parametrize(
+    "variant,policy_ids",
+    [("klein-base-4b", DTK_KLEIN4B_ADAPTER_POLICY_IDS), ("klein-base-9b", DTK_KLEIN9B_ADAPTER_POLICY_IDS)],
+)
 @pytest.mark.parametrize("algo,strategy", DTK_KLEIN4B_ADAPTER_POLICY_IDS)
-def test_actual_trainer_installs_backward_and_preview_contracts(monkeypatch, algo, strategy):
+def test_actual_trainer_installs_backward_and_preview_contracts(
+    monkeypatch, algo, strategy, variant, policy_ids
+):
     monkeypatch.setenv("YPUDDIN_ENV_PROFILE", "linux-dtk")
-    cfg = config(algo, strategy)
+    cfg = config(algo, strategy, variant)
     trainer = Trainer(cfg, device="cuda")
     adapter = (LoRA if algo == "lora" else LoKr)(8, 8, rank=2)
     model = nn.Sequential(AdaptedLinear(FrozenLinear.from_linear(nn.Linear(8, 8)), adapter, mode="bypass"))
     trainer.loaded = SimpleNamespace(backbone=model)
-    if algo == "lora" or strategy == "fsdp":
+    if algo == "lora" or strategy == "fsdp" or variant == "klein-base-9b":
         trainer._install_backbone_adapter_compute_operators()
     trainer._validate_training_compute_policy()
     with torch.autocast("cpu", dtype=torch.bfloat16):
@@ -154,3 +165,13 @@ def test_klein_lokr_preview_preserves_native_training_and_disables_hooks_afterwa
     assert set(traced.dtypes) == {torch.float32}
     assert set(restored.dtypes) == {torch.bfloat16}
     assert all(not m._forward_hooks and not m._forward_pre_hooks for m in model.modules())
+
+
+@pytest.mark.parametrize("variant", ["klein-base-4b", "klein-base-9b"])
+@pytest.mark.parametrize(
+    "profile,device", [("linux-cuda", "cuda"), ("windows-cuda", "cuda"), ("linux-dtk", "cpu")]
+)
+def test_klein_dtk_policy_does_not_change_other_devices(variant, profile, device):
+    cfg = config(variant=variant)
+    effective, policy = resolve_training_compute_config(cfg, device, profile)
+    assert policy is None and effective.to_dict() == cfg.to_dict()
