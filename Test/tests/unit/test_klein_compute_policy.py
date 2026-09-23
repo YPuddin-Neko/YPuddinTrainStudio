@@ -175,3 +175,21 @@ def test_klein_dtk_policy_does_not_change_other_devices(variant, profile, device
     cfg = config(variant=variant)
     effective, policy = resolve_training_compute_config(cfg, device, profile)
     assert policy is None and effective.to_dict() == cfg.to_dict()
+
+
+@pytest.mark.parametrize("variant", ["klein-base-4b", "klein-base-9b"])
+@pytest.mark.parametrize("algo,strategy", DTK_KLEIN4B_ADAPTER_POLICY_IDS)
+def test_explicit_flash_is_retained_and_cannot_resume_sdpa_state(variant, algo, strategy):
+    cfg = config(algo, strategy, variant)
+    _, native = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+    cfg.model.attention = "flash_attn"
+    effective, flash = resolve_training_compute_config(cfg, "cuda", "linux-dtk")
+    assert effective.model.attention == flash["attention"] == "flash_attn"
+    assert flash["id"] == native["id"] + "-flash-v1"
+    assert flash["attention_implementation"] == "klein-dtk-public-flash-v1"
+    assert resolve_training_compute_config(effective, "cuda", "linux-dtk")[1] == flash
+    assert {k: v for k, v in flash.items() if k not in {"id", "attention", "attention_implementation"}} == {
+        k: v for k, v in native.items() if k not in {"id", "attention"}
+    }
+    with pytest.raises(ValueError, match="计算"):
+        validate_resume_compute_policy(flash, native)

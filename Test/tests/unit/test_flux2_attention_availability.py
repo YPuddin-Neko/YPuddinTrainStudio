@@ -37,31 +37,29 @@ def model(monkeypatch):
         return Flux2Transformer2DModel(**TINY_CONFIG)
 
 
-def vendor_flash_without_diffusers_interface(monkeypatch):
+def vendor_flash_without_public_interface(monkeypatch):
     # Reproduce the actual vendor wheel's usable public function but absent
-    # wrapped functions. Diffusers disables its Flash backend after this import.
+    # public deterministic entrypoint required by the model-local DTK path.
     monkeypatch.setattr(torch.version, "hip", "6.3.26093")
     monkeypatch.setattr(attention_dispatch, "_CAN_USE_FLASH_ATTN", False)
-    monkeypatch.setitem(
-        sys.modules, "flash_attn.flash_attn_interface", SimpleNamespace(flash_attn_func=lambda: None)
-    )
+    monkeypatch.setitem(sys.modules, "flash_attn", SimpleNamespace(flash_attn_func=lambda: None))
 
 
 def test_dtk_flash_missing_interface_gives_sdpa_action_and_retains_cause(monkeypatch, model):
-    vendor_flash_without_diffusers_interface(monkeypatch)
-    with pytest.raises(RuntimeError, match="缺少 Diffusers 所需的 FlashAttention 接口") as caught:
+    vendor_flash_without_public_interface(monkeypatch)
+    with pytest.raises(RuntimeError, match="未满足接口或运行时要求") as caught:
         flux2._set_attention_backend(model, "flash_attn", "cuda:0")
     message = str(caught.value)
     assert "SDPA" in message and "厂商构建" in message and "Klein" in message
     assert "pip install" not in message
     assert isinstance(caught.value.__cause__, RuntimeError)
-    assert "Flash Attention backend" in str(caught.value.__cause__)
+    assert "deterministic backward" in str(caught.value.__cause__)
     assert all(parameter.is_meta for parameter in model.parameters())
 
 
 @pytest.mark.parametrize("attention", ["auto", "sdpa"])
 def test_dtk_native_selection_survives_incompatible_optional_flash(monkeypatch, model, attention):
-    vendor_flash_without_diffusers_interface(monkeypatch)
+    vendor_flash_without_public_interface(monkeypatch)
     flux2._set_attention_backend(model, attention, "cpu")
     active, _ = attention_dispatch._AttentionBackendRegistry.get_active_backend()
     assert active == attention_dispatch.AttentionBackendName.NATIVE
@@ -90,7 +88,7 @@ def test_native_runtime_error_is_preserved_without_relabeling():
 
 
 def test_load_rejects_incompatible_flash_before_cache_or_weight_materialization(monkeypatch, tmp_path):
-    vendor_flash_without_diffusers_interface(monkeypatch)
+    vendor_flash_without_public_interface(monkeypatch)
     family = flux2.Flux2Family()
     monkeypatch.setattr(family, "validate_config", lambda _: [])
     monkeypatch.setattr(family, "_paths", lambda _: (tmp_path,) * 5)
@@ -102,7 +100,7 @@ def test_load_rejects_incompatible_flash_before_cache_or_weight_materialization(
     load_weights = Mock()
     monkeypatch.setattr(flux2, "Flux2Latent", latent)
     monkeypatch.setattr(flux2, "load_transformer", load_weights)
-    with pytest.raises(RuntimeError, match="缺少 Diffusers 所需的 FlashAttention 接口"):
+    with pytest.raises(RuntimeError, match="未满足接口或运行时要求"):
         family.load(
             ModelConfig(family="flux2", dit_path=str(tmp_path), attention="flash_attn"),
             MemoryConfig(),

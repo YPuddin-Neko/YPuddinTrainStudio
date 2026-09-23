@@ -126,7 +126,7 @@ HIP PyTorch 沿用 `torch.cuda` Python 接口，所以代码里的 `cuda:0` 可�
 | Triton | `3.1.0+das.opt1.dtk2604.torch271` |
 | FlashAttention | wheel 版本 `2.8.3+das.opt1.dtk2604.torch271` |
 
-后三个 wheel 的元数据均明确要求 Torch 2.7.1。FlashAttention 的包内公开版本仍为 2.6.1，并缺少 Diffusers 使用的 `_wrapped_flash_attn_forward/backward` 接口；Krea2 Flash 通过不代表 Klein Flash 可用。界面只在系统发行版、架构、Python ABI 对应上述组合时显示这些具体下载链接，其他机器显示各类官方目录供匹配选取；驱动仍按厂商配套要求核对。
+后三个 wheel 的元数据均明确要求 Torch 2.7.1。FlashAttention 的包内公开版本仍为 2.6.1，并缺少 Diffusers 使用的 `_wrapped_flash_attn_forward/backward` 接口。Klein 通过模型专用处理器调用厂商公开接口；4B／9B 双卡 BF16 LoRA／LoKr 的已测范围见 [Klein 海光 FlashAttention](DTK_ATTENTION.md#klein-的海光-flashattention)，不能仅由 Krea2 或安装探针通过推断其他配置可用。界面只在系统发行版、架构、Python ABI 对应上述组合时显示这些具体下载链接，其他机器显示各类官方目录供匹配选取；驱动仍按厂商配套要求核对。
 
 手动准备用户态运行库时，可以保留现有 `/opt/dtk`，在另一份源码目录内进行：
 

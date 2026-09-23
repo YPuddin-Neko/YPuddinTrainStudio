@@ -9,7 +9,7 @@
 | DTK 26.04 / Torch 2.7.1 | SDPA | Krea2 正式权重单卡 / 双卡通过；四个模型族微型权重单卡矩阵 20/20 通过 |
 | DTK 26.04 / Torch 2.7.1 | FlashAttention 2.8.3 厂商包 | Krea2 正式权重单卡 / 双卡通过，实际调用所选扩展；干净默认环境的官方下载安装及修复核验通过 |
 | DTK 26.04 / Torch 2.7.1 | xFormers 0.0.33 厂商包 | Krea2 正式权重单卡 / 双卡通过，实际调用所选扩展；浏览器上传安装和实卡内核核验通过 |
-| DTK 26.04 / Torch 2.7.1 | Klein 显式 Flash | 当前厂商包缺少 Diffusers 所需接口；缓存及正式权重加载前明确报错，选择 SDPA |
+| DTK 26.04 / Torch 2.7.1 | Klein 显式 Flash | Base 4B／9B 的 LoRA／LoKr × 双卡 DDP／FSDP，8 种正式配方各两轮严格续训及导出回载通过；范围见下文 |
 | 旧 DTK 25.04.1 / Torch 2.4.1 | xFormers 0.0.33 厂商包 | 运行缺少 `_symmetric_memory`，不可用；此旧环境限制不等于新版也不可用 |
 
 FlashAttention / xFormers 在两张卡上另有 FP16 / BF16、head dimension 64 / 128 的 16 项运算检查全部通过。正式 Krea2 的训练和采样调用统计确认使用了所选扩展，没有退回 SDPA。六组恢复分别比较全部权重、预览图以及优化器、调度器、进度、采样顺序和随机状态，结果完全一致；不要求不同后端或卡数之间逐位相同，也不据此宣称某个后端更快。
@@ -34,13 +34,27 @@ xFormers 的 `dtk2604.torch251` 是厂商发布标签。这个 wheel 为 `py3-no
 
 DAS1.6 的 FlashAttention 2.6.1 包包含原生动态库，且源码记录的编译 Torch 为 2.4。其 `Requires-Dist: torch` 没有限制版本，不能代替二进制兼容检查；产品同时核对 DTK、Torch 与 Python ABI。其导入路径还需要 Triton，虽然 METADATA 未完整列出这一项，目录规则会额外检查厂商 Triton 版本。不同 DTK 或更高 Torch 环境不会沿用这个原生包。
 
-新的 DAS1.8 FlashAttention 包已完成完整下载散列与内部元数据核查，纳入同一套自动下载和上传安装校验。它的 METADATA 为 2.8.3，明确要求 Torch 2.7.1；公开 `__version__` 仍为 2.6.1，提供 `flash_attn_func`，但没有 Diffusers 所需的 wrapped 前后向接口。安装后的探测只建立常规 FlashAttention 内核可用性，不能据此宣称 Klein / Diffusers 的显式 Flash 后端可用。
+新的 DAS1.8 FlashAttention 包已完成完整下载散列与内部元数据核查，纳入同一套自动下载和上传安装校验。它的 METADATA 为 2.8.3，明确要求 Torch 2.7.1；公开 `__version__` 仍为 2.6.1，提供 `flash_attn_func`，但没有 Diffusers 原生 Flash 路径导入的 wrapped 前后向接口。安装探测建立常规内核可用性；Klein 还需要下面的模型级兼容处理。
 
 两个已核查的厂商 Flash 包还存在未声明的运行依赖：导入 `flash_attn` 时会经过 `flash_attn_triton_interface` 加载直接引用 `pytest` 的模块。因此，干净训练环境即使已安装 Torch、Triton，也可能提示 `No module named pytest`。扩展管理会在安装或修复计划中补上缺失的 `pytest` 及其普通 Python 依赖；xFormers 使用该厂商 Flash 时也采用同一规则。所有新增包先列入计划，再按固定下载地址和散列安装。依赖解析失败时停在计划阶段，已有 Torch、Triton 及其他包保持原版本；无需让用户另开终端安装开发环境。
 
 这次干净默认环境确实先遇到了该错误。修复后的实际操作 `env_ff3c6357e90d` 将 Pytest 9.1.1、Pluggy 1.6.0、Iniconfig 2.3.0 列入同一计划，完成 658,880,343 字节官方 Flash 包下载、repair 和内核检测；随后 xFormers 通过浏览器上传，操作 `env_b483cb21f39c` 安装并检测成功。Torch、TorchVision、Triton 的厂商版本均未改变。
 
 已排除旧 DAS1.3 的 xFormers `0.0.25+das.opt1.dtk24043`：文件名与 METADATA 的 DTK 标签不一致，内容中编译 Torch 为 2.1，并要求旧 NumPy 范围；不能用于当前 Torch 2.4 / DTK 25.04.1 环境。
+
+## Klein 的海光 FlashAttention
+
+Klein 在 HIP 环境显式选择 `model.attention = "flash_attn"` 时，使用专用注意力处理器直接调用厂商 `flash_attn_func`，前向与反向均由厂商实现。处理器保留 Diffusers 0.40 的投影、归一化、旋转位置编码、文本／图像合并及输出顺序，不修改第三方包、全局后端注册表或其他模型。普通 CUDA 环境继续使用 Diffusers 原生后端。
+
+启动前会检查公开函数及 `deterministic` 参数。运行时要求 HIP GPU 和一致的 FP16／BF16 Q、K、V；不支持注意力 mask 或上下文并行。DDP／FSDP 是训练状态的分布方式，不属于这里拒绝的上下文并行。接口不满足或内核失败会明确报错，不自动改用 SDPA。
+
+开启可复现训练、并满足 [Klein 双卡 BF16 策略](FSDP_ADAPTERS_2026-09-18.md) 时，显式 Flash 选择会被保留，主模型调用厂商的确定性反向。其他组件的 SDPA 调用继续使用数学实现；线性层与冻结文本编码器沿用各自的计算策略。完整状态记录 `klein-dtk-public-flash-v1`，对应训练策略增加 `-flash-v1` 后缀，不能与旧 SDPA 状态混作严格续训。前端显示服务器确认的实际后端。
+
+Diffusers 导入时仍可能输出缺少 `_wrapped_flash_attn_backward`、改用原生注意力的上游警告。它描述 Diffusers 自己的注册路径；本处理器随后使用公开接口，训练前还会检查处理器身份。实际后端以本次训练记录的计算策略为准，不能只凭包安装成功或这条导入警告判断。
+
+2026-09-23 已在 DTK 26.04／厂商 Torch 2.7.1／Diffusers 0.40.0 上完成正式 Klein Base 4B／9B、LoRA／LoKr、双卡 DDP／FSDP 的 8 种配方，各独立运行两轮。连续 8 步与第 4 步冷进程恢复至第 8 步的权重、完整训练状态及预览均精确一致；两轮独立缓存和产物也一致。8 份适配器通过导出审计，并在产品 XYZ 中独立回载，固定提示词和种子的强度 0／1 对照均有可测变化。
+
+该验收使用 BF16 底模、FP32 适配器、冻结文本编码器、256 像素训练预算与 256×256／4 步预览。两卡 FP16／BF16 的公开接口正反向内核探针另有 8 项通过；它不扩大正式训练的 BF16 配方范围。低步数图像用于验证执行、恢复与适配器生效，不代表长期学习质量或高分辨率画质已验收。
 
 ## 下载文件校验
 

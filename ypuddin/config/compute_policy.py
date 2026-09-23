@@ -63,6 +63,11 @@ DTK_KLEIN9B_ADAPTER_POLICY_IDS = {
     for algo in ("lora", "lokr")
     for strategy in ("ddp", "fsdp")
 }
+KLEIN_DTK_FLASH_IMPLEMENTATION_ID = "klein-dtk-public-flash-v1"
+DTK_KLEIN_FLASH_POLICY_IDS = {
+    value: f"{value}-flash-v1"
+    for value in (*DTK_KLEIN4B_ADAPTER_POLICY_IDS.values(), *DTK_KLEIN9B_ADAPTER_POLICY_IDS.values())
+}
 DTK_BACKBONE_ADAPTER_ALL_POLICY_IDS = (
     frozenset(DTK_BACKBONE_ADAPTER_POLICY_IDS.values())
     | frozenset(DTK_SDXL_LONG_TEXT_PREVIEW_POLICY_IDS.values())
@@ -74,17 +79,24 @@ DTK_BACKBONE_ADAPTER_ALL_POLICY_IDS = (
         if algo == "lora" or _strategy == "fsdp"
     )
 )
+DTK_BACKBONE_ADAPTER_ALL_POLICY_IDS |= frozenset(
+    flash
+    for native, flash in DTK_KLEIN_FLASH_POLICY_IDS.items()
+    if native in DTK_BACKBONE_ADAPTER_ALL_POLICY_IDS
+)
 
 
 class _RequiredTrainingComputePolicy(TypedDict):
     id: str
     mixed_precision: Literal["no", "bf16", "fp16"]
     allow_tf32: Literal[False]
-    attention: Literal["sdpa"]
+    attention: Literal["sdpa", "flash_attn"]
     sdpa_backend: Literal["math"]
 
 
 class TrainingComputePolicy(_RequiredTrainingComputePolicy, total=False):
+    attention_implementation: str
+    frozen_text_implementation: str
     linear_forward: Literal[
         "native-bf16",
         "bf16-rounded-operands-fp32-contraction-bf16-output",
@@ -454,7 +466,13 @@ def resolve_training_compute_config(
     klein_policy = _klein_adapter_policy(cfg, device_type, profile)
     if klein_policy is not None:
         effective.memory.allow_tf32 = False
-        effective.model.attention = "sdpa"
+        if cfg.model.attention == "flash_attn":
+            klein_policy.update(
+                id=DTK_KLEIN_FLASH_POLICY_IDS[klein_policy["id"]],
+                attention="flash_attn",
+                attention_implementation=KLEIN_DTK_FLASH_IMPLEMENTATION_ID,
+            )
+        effective.model.attention = klein_policy["attention"]
         return effective, klein_policy
     adapter_policy = _backbone_adapter_policy(cfg, device_type, profile)
     if adapter_policy is not None:

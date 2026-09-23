@@ -224,8 +224,8 @@ function confirmedTextLoraPolicy(policy: Record<string, unknown>, config: Record
 export function confirmedTrainingComputePolicy(candidate: unknown, config: Record<string, any>): TrainingComputePolicy | null {
   if (!candidate || typeof candidate !== 'object') return null;
   const policy = candidate as Record<string, unknown>;
-  if (policy.allow_tf32 !== false || policy.attention !== 'sdpa' || policy.sdpa_backend !== 'math') return null;
   if (extraAdapterPolicyIds.has(policy.id as string)) return confirmedExtraAdapterPolicy(policy, config);
+  if (policy.allow_tf32 !== false || policy.attention !== 'sdpa' || policy.sdpa_backend !== 'math') return null;
   if (config.loop?.deterministic !== true || !['anima', 'sdxl', 'krea2'].includes(config.model?.family)) return null;
   if (!previewPolicyIds.has(policy.id as string) && !textPreviewPolicyIds.has(policy.id as string) && Object.keys(previewPolicyFields).some(key => key in policy)) return null;
   if (backboneAdapterPolicyIds.has(policy.id as string)) return confirmedBackboneAdapterPolicy(policy, config);
@@ -319,7 +319,7 @@ export function trainingComputeManagedField(policy: TrainingComputePolicy | null
     reason,
   };
   if (path === 'memory.allow_tf32') return { value: policy.allow_tf32, label: english ? 'Disabled' : '关闭', reason };
-  if (path === 'model.attention') return { value: policy.attention, label: english ? 'PyTorch SDPA (math)' : 'PyTorch SDPA（数学实现）', reason };
+  if (path === 'model.attention') return { value: policy.attention, label: policy.attention === 'flash_attn' ? 'FlashAttention 2 (DTK)' : english ? 'PyTorch SDPA (math)' : 'PyTorch SDPA（数学实现）', reason };
   return null;
 }
 

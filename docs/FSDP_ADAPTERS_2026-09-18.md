@@ -58,6 +58,8 @@ Klein 策略要求明确选择“基础版 4B”（`model.flux2_variant = "klein
 
 9B 的冻结 Qwen3 策略为 `qwen3-bf16-linear-fp32-v1`，训练策略使用独立的 `dtk-klein9b-backbone-{lora|lokr}-{ddp|fsdp}-bf16-compute-preview-v4` 身份。文本缓存键和完整续训模型身份包含实际编码策略，旧原生编码缓存不能混用。FP32 临时矩阵运算可能增加显存和耗时，不代表整个文本编码器改为 FP32 存储，也不启用文本编码器训练。
 
+上述 Klein 4B／9B 双卡策略支持显式选择海光 FlashAttention：主模型使用厂商公开接口，其他组件的 SDPA 运算保持数学实现，线性层策略不变。对应状态身份增加 `-flash-v1` 后缀，并记录注意力实现；SDPA 与 Flash 状态不能混作严格续训。需要的接口及限制见 [海光注意力说明](DTK_ATTENTION.md#klein-的海光-flashattention)。
+
 SDXL 的预测方式必须匹配底模：普通 epsilon 模型使用 epsilon；v-pred 模型使用 v prediction，并按发布方说明设置 Zero SNR。切换选项不会将普通 epsilon 权重变成 v-pred 权重。
 
 显存估算按真实 dtype 计算冻结底模分片，仅给训练参数计入梯度与优化器状态。每卡还需容纳当前汇集的模块、激活、缓存和通信临时空间；总显存相加并不代表任何尺寸都能装下，也不保证两倍速度。

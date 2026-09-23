@@ -790,3 +790,10 @@ it.each(backendPolicies.filter(row=>row.config.loop.mixed_precision==='fp16'))('
   expect(screen.getByRole('combobox',{name:'注意力后端'})).toHaveTextContent('xFormers');
   expect(screen.getByRole('checkbox',{name:'允许 TF32'})).toBeChecked();
 });
+
+it.each(backendPolicies.filter(row => row.policy.attention === 'flash_attn'))('shows actual Flash attention for $name without changing the saved selection', ({config,policy}) => {
+  render(<SchemaForm schema={schema} value={config} onChange={() => {}} computePolicy={policy} compact showAdvanced groupFilter={['model','loop','memory']}/>);
+  expect(within(screen.getByTestId('field-model.attention')).getByRole('status')).toHaveTextContent('FlashAttention 2 (DTK)');
+  expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('FlashAttention 公共接口');
+  expect(confirmedTrainingComputePolicy(policy,{...config,model:{...config.model,attention:'sdpa'}})).toBeNull();
+});

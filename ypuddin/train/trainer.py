@@ -1098,6 +1098,10 @@ class Trainer:
 
     def _validate_training_compute_policy(self):
         policy = getattr(self, "compute_policy", None)
+        if (policy or {}).get("attention_implementation"):
+            from ypuddin.models.flux2.attention import validate_dtk_flash
+
+            validate_dtk_flash(self.loaded.backbone)
         if (policy or {}).get("id") == DTK_ANIMA_LORA_SINGLE_FP16_POLICY_ID:
             from .fp16_adapter_compute import validate_fp16_adapter_compute
 
@@ -1106,7 +1110,7 @@ class Trainer:
                 expected != policy
                 or self.compute_dtype != torch.float16
                 or self.cfg.memory.allow_tf32
-                or self.cfg.model.attention != "sdpa"
+                or self.cfg.model.attention != policy["attention"]
             ):
                 raise ValueError("FP16 LoRA 计算策略与当前训练设置不一致")
             validate_fp16_adapter_compute(
@@ -1124,7 +1128,7 @@ class Trainer:
                 expected != policy
                 or self.compute_dtype != torch.bfloat16
                 or self.cfg.memory.allow_tf32
-                or self.cfg.model.attention != "sdpa"
+                or self.cfg.model.attention != policy["attention"]
             ):
                 raise ValueError("文本 LoRA 计算策略与当前训练设置不一致")
             counts = getattr(self, "_text_adapter_operator_counts", None)

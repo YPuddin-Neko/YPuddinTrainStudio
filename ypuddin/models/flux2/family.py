@@ -5,7 +5,6 @@ stride 16). The transformer packs only the spatial axes and receives unit flow
 time. Editing/reference images and distilled Klein/KV models are not supported.
 """
 
-import sys
 from pathlib import Path
 
 import torch
@@ -47,27 +46,21 @@ def _set_attention_backend(model, attention, device):
     if external and torch.device(device).type != "cuda":
         raise ValueError(f"FLUX.2 Klein {label} requires a CUDA / HIP GPU. Select SDPA for this device.")
     try:
+        if attention == "flash_attn" and getattr(torch.version, "hip", None):
+            from .attention import install_dtk_flash
+
+            install_dtk_flash(model)
+            return
+        from .attention import restore_native_processors
+
+        restore_native_processors(model)
         model.set_attention_backend(backend)
     except (ImportError, OSError, RuntimeError) as error:
         if not external:
             raise
         if getattr(torch.version, "hip", None):
-            interface = sys.modules.get("flash_attn.flash_attn_interface")
-            missing_flash_interface = (
-                attention == "flash_attn"
-                and interface is not None
-                and any(
-                    not callable(getattr(interface, name, None))
-                    for name in ("_wrapped_flash_attn_forward", "_wrapped_flash_attn_backward")
-                )
-            )
-            reason = (
-                "缺少 Diffusers 所需的 FlashAttention 接口"
-                if missing_flash_interface
-                else "未满足 Diffusers 的接口或运行时要求"
-            )
             message = (
-                f"FLUX.2 Klein 无法启用当前 DTK / HIP {label} 扩展：{reason}。"
+                f"FLUX.2 Klein 无法启用当前 DTK / HIP {label} 扩展：未满足接口或运行时要求。"
                 "请将“注意力后端”改为“SDPA”；如需使用该扩展，请选择与 DTK、PyTorch 和 Diffusers "
                 "配套并经过验证的厂商构建。常规内核检测通过不代表 Klein 所需接口可用。"
             )
