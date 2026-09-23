@@ -51,8 +51,12 @@ Anima 的 LoRA／LoKr 预览分别使用 `dtk-anima-backbone-lora-fsdp-bf16-comp
 | Klein Base 4B 双卡 DDP／FSDP LoRA，BF16，冻结文本编码器 | 主模型线性层与 LoRA 保留 BF16 舍入和输出，矩阵运算使用 FP32 | 主模型线性层的 BF16 舍入、FP32 运算 |
 | Klein Base 4B 双卡 DDP LoKr，BF16，冻结文本编码器 | 保持原生 BF16 训练 | 主模型线性层的 BF16 舍入、FP32 运算 |
 | Klein Base 4B 双卡 FSDP LoKr，BF16，冻结文本编码器 | 主模型线性层的 BF16 舍入、FP32 运算；LoKr 因子运算保持原生实现 | 主模型线性层的 BF16 舍入、FP32 运算 |
+| Klein Base 9B 双卡 DDP／FSDP LoRA，BF16，冻结文本编码器 | 主模型线性层与 LoRA 保留 BF16 舍入和输出，矩阵运算使用 FP32；冻结 Qwen3 线性层采用相同精度边界 | 主模型线性层的 BF16 舍入、FP32 运算 |
+| Klein Base 9B 双卡 DDP／FSDP LoKr，BF16，冻结文本编码器 | 主模型及冻结 Qwen3 线性层保留 BF16 舍入和输出，矩阵运算使用 FP32；LoKr 因子运算保持原生实现 | 主模型线性层的 BF16 舍入、FP32 运算 |
 
-Klein 策略要求明确选择“基础版 4B”（`model.flux2_variant = "klein-base-4b"`）；自动识别不据此推断同一计算策略。这些配置不涵盖 Klein 9B、DoRA、混合适配器算法、编译、层换出或多卡 FP16。策略与运行环境写入完整状态；切换策略后不能将旧状态当成严格续训。普通适配器导出仍可用于新训练或推理。实际显存、速度和正式硬件通过范围以对应验收记录为准，短程状态一致不代表长期学习质量已验证。
+Klein 策略要求明确选择“基础版 4B”（`model.flux2_variant = "klein-base-4b"`）或“基础版 9B”（`klein-base-9b`）；自动识别不据此推断同一计算策略。这些配置不涵盖 DoRA、混合适配器算法、编译、层换出或多卡 FP16。策略与运行环境写入完整状态；切换策略后不能将旧状态当成严格续训。普通适配器导出仍可用于新训练或推理。实际显存、速度和正式硬件通过范围以对应验收记录为准，短程状态一致不代表长期学习质量已验证。
+
+9B 的冻结 Qwen3 策略为 `qwen3-bf16-linear-fp32-v1`，训练策略使用独立的 `dtk-klein9b-backbone-{lora|lokr}-{ddp|fsdp}-bf16-compute-preview-v4` 身份。文本缓存键和完整续训模型身份包含实际编码策略，旧原生编码缓存不能混用。FP32 临时矩阵运算可能增加显存和耗时，不代表整个文本编码器改为 FP32 存储，也不启用文本编码器训练。
 
 SDXL 的预测方式必须匹配底模：普通 epsilon 模型使用 epsilon；v-pred 模型使用 v prediction，并按发布方说明设置 Zero SNR。切换选项不会将普通 epsilon 权重变成 v-pred 权重。
 
