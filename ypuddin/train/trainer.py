@@ -115,6 +115,7 @@ class Trainer:
         )
         cfg = self.cfg
         self.compute_runtime: dict[str, Any] | None = None
+        self.metal_attention_runtime: dict[str, str] | None = None
         self.run_dir = Path(cfg.checkpoint.output_dir)
         self.run_dir.mkdir(parents=True, exist_ok=True)
         events_path = cfg.logging.events_path or (self.run_dir / "events.jsonl")
@@ -318,6 +319,8 @@ class Trainer:
                 if key not in {"_name_or_path", "_diffusers_version", "_use_default_values", "_commit_hash"}
             },
         }
+        if self.cfg.model.attention == "metal_flash":
+            payload["metal_attention_runtime"] = self.metal_attention_runtime
         return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
 
     def _prepare_training(self) -> None:
@@ -449,6 +452,8 @@ class Trainer:
         if self.compute_policy is not None:
             self.progress.extra["compute_policy"] = dict(self.compute_policy)
             self.progress.extra["compute_runtime"] = self.compute_runtime
+        if self.metal_attention_runtime is not None:
+            self.progress.extra["metal_attention_runtime"] = dict(self.metal_attention_runtime)
         if getattr(self, "_text_adapter_operator_counts", None) is not None:
             self.progress.extra["text_adapter_operator_counts"] = self._text_adapter_operator_counts
         if getattr(self, "_fp16_adapter_operator_counts", None) is not None:
@@ -599,6 +604,12 @@ class Trainer:
         caps = self.family.spec.capabilities
         cfg = self.cfg
         problems = []
+        if cfg.model.attention == "metal_flash" and cfg.model.attention not in self.family.spec.attention_backends:
+            problems.append("Metal FlashAttention is not supported by this model family")
+        if cfg.model.attention == "metal_flash" and self.device.type != "mps":
+            problems.append("Metal FlashAttention requires an Apple MPS device")
+        if cfg.model.attention == "metal_flash" and cfg.memory.compile:
+            problems.append("Metal FlashAttention does not support torch.compile")
         if cfg.loop.gpu_count > 1 and not hasattr(self, "distributed"):
             problems.append("loop.gpu_count > 1 requires torchrun; refusing single-device execution")
         if cfg.memory.blocks_to_swap > 0 and "block_swap" not in caps:
@@ -706,6 +717,11 @@ class Trainer:
         This is deliberately local/read-only. Distributed preparation serializes
         owners and broadcasts any error; adding a collective here would deadlock.
         """
+        from .metal_compute import resolve_metal_attention_runtime, validate_metal_attention_resume
+
+        self.metal_attention_runtime = resolve_metal_attention_runtime(
+            self.cfg.model.attention, self.device.type
+        )
         if not self.cfg.checkpoint.resume:
             return None
         path = Path(self.cfg.checkpoint.resume) / "state.json"
@@ -713,6 +729,7 @@ class Trainer:
         extra = metadata.get("progress", {}).get("extra", {})
         validate_resume_reproducibility(self.cfg.loop.deterministic, extra.get("deterministic"))
         validate_resume_compute_policy(self.compute_policy, extra.get("compute_policy"))
+        validate_metal_attention_resume(self.metal_attention_runtime, extra.get("metal_attention_runtime"))
         if metadata.get("strategy") != "fsdp2":
             self._resume_unsharded_scheduler_contract = read_resume_scheduler_contract(
                 path.parent,
@@ -754,6 +771,11 @@ class Trainer:
         validate_scheduler_recipe(captured_scheduler.contract, self.cfg, self.progress.total_steps)
         validate_scheduler_instance(captured_scheduler.contract, self.scheduler)
         ck = load_checkpoint(path)
+        from .metal_compute import validate_metal_attention_resume
+
+        validate_metal_attention_resume(
+            self.metal_attention_runtime, ck["progress"].extra.get("metal_attention_runtime")
+        )
         self._restore_grad_scaler(ck["progress"].extra)
         if bool(ck["scheduler"]) != (self.scheduler is not None):
             raise ValueError("保存的学习率调度器状态与原训练合同不一致，不能精确恢复")
@@ -1097,6 +1119,16 @@ class Trainer:
         return torch.autocast(device_type=self.device.type, dtype=self.compute_dtype, enabled=enabled)
 
     def _validate_training_compute_policy(self):
+        metal_runtime = getattr(self, "metal_attention_runtime", None)
+        if metal_runtime is not None:
+            if self.cfg.model.attention != "metal_flash":
+                raise ValueError("训练中的 Metal FlashAttention 设置发生变化，请保持原注意力后端")
+            if self.cfg.model.family in {"sdxl", "flux2"}:
+                from ypuddin.models.metal_attention import validate_metal_flash_processors
+
+                validate_metal_flash_processors(self.loaded.backbone)
+            elif getattr(self.loaded.backbone, "attn_mode", None) != "metal_flash":
+                raise ValueError("Metal FlashAttention 主模型后端发生变化")
         policy = getattr(self, "compute_policy", None)
         if (policy or {}).get("attention_implementation"):
             from ypuddin.models.flux2.attention import validate_dtk_flash

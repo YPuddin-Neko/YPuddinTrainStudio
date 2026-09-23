@@ -206,6 +206,7 @@ class AnimaLatent(LatentPipeline):
 class AnimaFamily(ModelFamily):
     spec = ModelSpec(
         name="anima",
+        attention_backends=("auto", "sdpa", "xformers", "flash_attn", "metal_flash"),
         latent=LatentSpec(channels=16, stride=8, patch=2, fingerprint=AnimaLatent.fingerprint),
         text=TextSpec(
             max_len=512, fingerprint=AnimaText.fingerprint, pad_floor=True, encoder_params=596_049_920
@@ -270,6 +271,10 @@ class AnimaFamily(ModelFamily):
         dtype: torch.dtype,
         backbone_device: torch.device | str | None = None,
     ) -> LoadedModel:
+        if cfg.attention == "metal_flash":
+            from ypuddin.models.metal_attention import require_metal_flash
+
+            require_metal_flash(device)
         problems = self.validate_config(cfg)
         if problems:
             raise FileNotFoundError("; ".join(problems))
@@ -301,13 +306,20 @@ class AnimaFamily(ModelFamily):
     @staticmethod
     def resolve_attention(requested: str, device: torch.device | str) -> str:
         """Map the config value onto the vendored backend names; ``auto`` never picks an optional package."""
+        if requested == "metal_flash":
+            from ypuddin.models.metal_attention import require_metal_flash
+
+            require_metal_flash(device)
+            return requested
         if requested in ("sage", "xformers", "flash_attn"):
             from .vendor.attention import backend_available
 
             if torch.device(device).type != "cuda":
                 raise ValueError(f"model.attention={requested!r} requires CUDA")
             if not backend_available(requested):
-                raise ValueError(f"model.attention={requested!r} requires a compatible installed attention package; check Environment settings")
+                raise ValueError(
+                    f"model.attention={requested!r} requires a compatible installed attention package; check Environment settings"
+                )
             return requested
         return "torch"
 

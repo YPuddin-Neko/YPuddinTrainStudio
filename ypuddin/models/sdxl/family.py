@@ -36,7 +36,7 @@ from .text import SDXLText, tokenizer_paths
 class SDXLFamily(ModelFamily):
     spec = ModelSpec(
         name="sdxl",
-        attention_backends=("auto", "sdpa", "xformers"),
+        attention_backends=("auto", "sdpa", "xformers", "metal_flash"),
         label="SDXL 2.6B",
         latent=LatentSpec(4, 8, 1, "sdxl-vae-f8c4-v1"),
         text=TextSpec(77, "sdxl-dual-clip-penultimate-pooled-v1", encoder_params=817_000_000),
@@ -67,8 +67,8 @@ class SDXLFamily(ModelFamily):
             value = getattr(cfg, field, None)
             if value and not Path(value).expanduser().exists():
                 problems.append(f"model.{field} does not exist: {value}")
-        if cfg.attention not in {"auto", "sdpa", "xformers"}:
-            problems.append("SDXL supports auto/SDPA or xFormers attention")
+        if cfg.attention not in {"auto", "sdpa", "xformers", "metal_flash"}:
+            problems.append("SDXL supports auto/SDPA, xFormers or Metal FlashAttention")
         if cfg.zero_terminal_snr and cfg.prediction_type != "v_prediction":
             problems.append("SDXL zero_terminal_snr requires v_prediction")
         if cfg.dit_path and Path(cfg.dit_path).expanduser().exists():
@@ -148,6 +148,10 @@ class SDXLFamily(ModelFamily):
     def load(
         self, cfg: ModelConfig, memory: MemoryConfig, *, device, dtype, backbone_device=None
     ) -> LoadedModel:
+        if cfg.attention == "metal_flash":
+            from ypuddin.models.metal_attention import require_metal_flash
+
+            require_metal_flash(device)
         problems = self.validate_config(cfg)
         if problems:
             raise ValueError("; ".join(problems))
@@ -166,6 +170,10 @@ class SDXLFamily(ModelFamily):
             if torch.device(device).type != "cuda":
                 raise ValueError("SDXL xFormers attention requires CUDA")
             unet.enable_xformers_memory_efficient_attention()
+        elif cfg.attention == "metal_flash":
+            from ypuddin.models.metal_attention import install_metal_flash_processors
+
+            install_metal_flash_processors(unet, "sdxl")
         text = SDXLText(
             component_path(path, "text_encoder", cfg.text_encoder_path),
             component_path(path, "text_encoder_2", cfg.text_encoder_2_path),

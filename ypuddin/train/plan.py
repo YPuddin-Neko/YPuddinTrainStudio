@@ -23,6 +23,8 @@ from ypuddin.models import get_family
 from ypuddin.models.base import LatentSpec
 from ypuddin.runtime_profiles import current_profile
 
+from .metal_compute import resolve_metal_attention_runtime, validate_metal_attention_resume
+
 DTYPE_BYTES = {"bf16": 2, "fp16": 2, "fp32": 4, "fp8_e4m3": 1, "fp8_e5m2": 1, "keep": 2, "auto": 2}
 
 
@@ -551,6 +553,12 @@ def plan(
         out["errors"].append({"loc": "device", "msg": "only cpu, mps and cuda execution are supported"})
     cfg, compute_policy = resolve_training_compute_config(cfg, device_type, current_profile())
     out["compute_policy"] = compute_policy
+    metal_runtime = None
+    if cfg.model.attention == "metal_flash" and device_type is not None:
+        try:
+            metal_runtime = resolve_metal_attention_runtime(cfg.model.attention, device_type)
+        except (ImportError, OSError, RuntimeError, ValueError) as error:
+            out["errors"].append({"loc": "model.attention", "msg": str(error)})
     # Offline plans do not know which runtime recipe will apply. The execution
     # plan and trainer perform this check once the device is known.
     if cfg.checkpoint.resume and device_type is not None:
@@ -564,10 +572,16 @@ def plan(
                 if not isinstance(extra, dict):
                     raise ValueError("训练状态的附加元数据格式无效")
                 validate_resume_compute_policy(compute_policy, extra.get("compute_policy"))
+                validate_metal_attention_resume(metal_runtime, extra.get("metal_attention_runtime"))
             except (OSError, UnicodeError, ValueError) as error:
                 out["errors"].append({"loc": "checkpoint.resume", "msg": str(error)})
     caps = family.spec.capabilities
     checks = [
+        (
+            cfg.model.attention == "metal_flash" and cfg.model.attention not in family.spec.attention_backends,
+            "model.attention",
+            "Metal FlashAttention is not supported by this model family",
+        ),
         (
             cfg.memory.blocks_to_swap > 0 and "block_swap" not in caps,
             "memory.blocks_to_swap",
@@ -599,6 +613,11 @@ def plan(
             cfg.memory.compile and cfg.memory.blocks_to_swap > 0,
             "memory.compile",
             "compile cannot be combined with block swap",
+        ),
+        (
+            cfg.model.attention == "metal_flash" and cfg.memory.compile,
+            "memory.compile",
+            "Metal FlashAttention does not support torch.compile",
         ),
         (
             device_type in ("cpu", "mps") and cfg.memory.base_precision.startswith("fp8"),

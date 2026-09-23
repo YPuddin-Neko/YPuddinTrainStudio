@@ -10,6 +10,8 @@
 #   * ``KREA2_CONFIG`` (the public ``single_mmdit_large_wide`` checkpoint) and ``infer_config`` (geometry from tensor
 #     shapes) were added so reduced test models and future variants load without hard-coded sizes.
 #   * Module and parameter names are unchanged: ``state_dict()`` keys match the official / ComfyUI checkpoints.
+#   * MPS RoPE constructs its float64 frequencies on CPU, then transfers the
+#     original FP32 result back to MPS; CUDA and CPU retain upstream arithmetic.
 """Krea 2 (K2) single-stream MMDiT.
 
 Ported from references/Krea2/mmdit.py, plus musubi training hooks (gradient checkpointing,
@@ -33,12 +35,17 @@ from ypuddin.models.anima.vendor.attention import AttentionParams, attention as 
 
 
 def rope(pos: Tensor, dim: int, theta: float = 1e4, ntk: float = 1.0) -> Tensor:
+    output_device = pos.device
+    if output_device.type == "mps":
+        # MPS cannot allocate float64. Preserve upstream frequency/trigonometric
+        # precision on CPU rather than silently lowering these calculations.
+        pos = pos.to(device="cpu")
     scale = torch.arange(0, dim, 2, dtype=torch.float64, device=pos.device) / dim
     omega = 1.0 / ((theta * ntk) ** scale)
     out = torch.einsum("...n,d->...nd", pos, omega)
     out = torch.stack([torch.cos(out), -torch.sin(out), torch.sin(out), torch.cos(out)], dim=-1)
     out = rearrange(out, "b n d (i j) -> b n d i j", i=2, j=2)
-    return out.float()
+    return out.float().to(output_device) if output_device.type == "mps" else out.float()
 
 
 def ropeapply(xq: Tensor, xk: Tensor, freqs: Tensor) -> tuple[Tensor, Tensor]:

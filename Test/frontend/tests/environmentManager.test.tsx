@@ -23,7 +23,7 @@ let create = vi.fn<(body: unknown) => void>();
 let apply = vi.fn<(id: unknown) => void>();
 
 function environment() {
-  const pkg = (name: string, backend: string | null, version: string | null) => ({ name, backend, version, supported: true, reason: 'supported', available: !!version, importable: !!version, kernel_tested: !!backend && !!version, wheel_required: false, error: null, docs_url: 'https://example.com/docs' });
+  const pkg = (name: string, backend: string | null, version: string | null) => ({ name, backend, version, supported: true, reason: 'supported', available: !!version, importable: !!version, kernel_tested: !!backend && !!version, wheel_required: false, error: null as string | null, docs_url: 'https://example.com/docs' });
   return {
     runtime: { python: '3.12.1', python_executable: 'C:\\Studio\\venv\\Scripts\\python.exe', platform: 'Windows', machine: 'AMD64', torch: '2.5.1+cu128', cuda_runtime: '12.8', cuda_available: true, mps_available: false, gpu_capability: [8, 9], gpus: [{ name: 'RTX test', telemetry_source: 'nvml' }], virtual_environment: true, cuda_device_count: 2, distributed_available: true, nccl_available: true, multi_gpu_training: false, training_device_policy: 'single_device' },
     packages: [
@@ -42,6 +42,12 @@ function environment() {
 }
 function operation(packageName = 'xformers', status = 'ready') {
   return { id: 'env_test', package: packageName, action: 'install', status, created_at: 1, dismissed_at: null as number | null, plan: [{ name: packageName, from_version: null, version: '1.2.3' }], logs: ['Resolved compatible wheel; Torch unchanged.'], error: null as string | null, restart_required: false };
+}
+function useMetalRuntime() {
+  Object.assign(runtime.runtime, { environment_profile: 'macos-mps', compute_backend: 'mps', platform: 'Darwin', machine: 'arm64', python: '3.12.1', torch: '2.13.0', cuda_runtime: null, cuda_available: false, mps_available: true, gpus: [] });
+  const metal = { name: 'mtlattn', backend: 'metal_flash', version: null as string | null, supported: true, reason: 'supported', available: false, importable: false, kernel_tested: false, wheel_required: false, error: null as string | null, docs_url: 'https://pypi.org/project/mtlattn/' };
+  runtime.packages.push(metal);
+  return metal;
 }
 beforeEach(async () => {
   await i18n.changeLanguage('zh-CN');
@@ -64,6 +70,99 @@ beforeEach(async () => {
     http.post('/api/environment/operations/:id/dismiss', ({ params }) => { const op = operations.find(item => item.id === params.id)!; op.dismissed_at = Date.now() / 1000; return HttpResponse.json(op); }),
     http.put('/api/environment/settings', async ({ request }) => { const body = await request.json() as { attention_default: string }; runtime.attention_default = body.attention_default; return HttpResponse.json(body); }),
   );
+});
+
+describe('optional Metal FlashAttention management', () => {
+  it('keeps native SDPA separate and reviews a pinned prebuilt Metal installation before applying it', async () => {
+    useMetalRuntime();
+    render(<EnvironmentManagerPanel focusPackage="flash-attn" />);
+    const row = await screen.findByTestId('environment-package-mtlattn');
+    expect(within(row).getByRole('button', { name: 'Metal FlashAttention' })).toBeInTheDocument();
+    expect(screen.getByTestId('environment-sdpa')).toHaveTextContent('使用 PyTorch 自带的 SDPA，无需额外安装');
+    expect(screen.queryByTestId('environment-package-xformers')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('environment-package-flash-attn')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '检查安装条件' })).not.toBeInTheDocument();
+    fireEvent.click(within(row).getByRole('button', { name: '安装' }));
+    expect(screen.getByText(/安装兼容的预编译加速包/)).toBeVisible();
+    expect(screen.queryByRole('button', { name: '上传 wheel' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('mtlattn 版本')).not.toBeInTheDocument();
+    expect(screen.queryByText('手动版本与 wheel')).not.toBeInTheDocument();
+    const requirements = screen.getByText(/mtlattn 0.4.1 · Apple Silicon/);
+    expect(requirements).not.toBeVisible();
+    fireEvent.click(screen.getByText('安装要求'));
+    expect(requirements).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '检查安装条件' }));
+    await waitFor(() => expect(create).toHaveBeenCalledWith({ package: 'mtlattn', action: 'install', version: '0.4.1' }));
+    const confirm = await screen.findByRole('button', { name: '确认安装' });
+    expect(screen.getByTestId('environment-operations')).toHaveTextContent('Metal FlashAttention');
+    expect(apply).not.toHaveBeenCalled();
+    fireEvent.click(confirm);
+    await waitFor(() => expect(apply).toHaveBeenCalledWith('env_test'));
+    expect(await screen.findByText(/重启前队列不会启动新任务/)).toBeInTheDocument();
+  });
+
+  it('explains the PyTorch 2.13 requirement without changing the active environment automatically', async () => {
+    const metal = useMetalRuntime();
+    runtime.runtime.torch = '2.14.0';
+    Object.assign(metal, { supported: false, reason: 'metal_requires_torch_2_13' });
+    const torchPlan = vi.fn();
+    server.use(http.post('/api/environment/torch/operations', () => { torchPlan(); return HttpResponse.json({}); }));
+    render(<EnvironmentManagerPanel focusPackage="mtlattn" />);
+    const row = await screen.findByTestId('environment-package-mtlattn');
+    expect(row).toHaveTextContent('需要 PyTorch 2.13.x');
+    expect(within(row).getByRole('button', { name: '安装' })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: '检查安装条件' })).toBeDisabled();
+    expect(screen.getByText(/先在上方“PyTorch 版本”中安装并切换到 2.13.x/)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '查看 PyTorch 版本' }));
+    expect(document.getElementById('environment-torch')).toHaveFocus();
+    expect(screen.getByRole('combobox', { name: '选择 PyTorch 版本' })).toBeInTheDocument();
+    expect(torchPlan).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(apply).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['metal_requires_apple_silicon', '需要 Apple Silicon Mac'],
+    ['metal_requires_macos_15', '需要 macOS 15 或更新版本'],
+    ['metal_requires_python_311_312', '需要 Python 3.11 或 3.12'],
+    ['metal_requires_mps', '当前 Apple GPU 不可用'],
+  ])('shows the actual Metal requirement %s and disables installation', async (reason, message) => {
+    const metal = useMetalRuntime();
+    Object.assign(metal, { supported: false, reason });
+    render(<EnvironmentManagerPanel focusPackage="mtlattn" />);
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '检查安装条件' })).toBeDisabled();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it.each(['macos-cpu', 'windows-cpu', 'linux-cpu', 'windows-cuda', 'linux-cuda', 'linux-dtk'])('hides Metal installation and its deep link in %s', async profile => {
+    useMetalRuntime();
+    Object.assign(runtime.runtime, { environment_profile: profile });
+    render(<EnvironmentManagerPanel focusPackage="mtlattn" />);
+    await screen.findByRole('heading', { name: '注意力加速' });
+    expect(screen.queryByTestId('environment-package-mtlattn')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '检查安装条件' })).not.toBeInTheDocument();
+    if (profile.endsWith('-cuda') || profile === 'linux-dtk') {
+      expect(screen.getByTestId('environment-package-xformers')).toBeInTheDocument();
+      expect(screen.getByTestId('environment-package-flash-attn')).toBeInTheDocument();
+    } else {
+      expect(screen.queryByTestId('environment-package-xformers')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('environment-package-flash-attn')).not.toBeInTheDocument();
+    }
+  });
+
+  it('reports Metal kernel validation without describing it as CUDA and preserves an active operation log', async () => {
+    const metal = useMetalRuntime();
+    Object.assign(metal, { version: '0.4.1', available: true, importable: true, kernel_tested: true });
+    operations = [operation('mtlattn', 'installing')];
+    render(<EnvironmentManagerPanel />);
+    const row = await screen.findByTestId('environment-package-mtlattn');
+    expect(row).toHaveTextContent('检测正常');
+    expect(row).not.toHaveTextContent(/CUDA|DTK/);
+    expect(within(row).getByRole('button', { name: '管理' })).toBeDisabled();
+    expect(await screen.findByLabelText('安装日志')).toHaveTextContent('Torch unchanged');
+    expect(screen.getByTestId('environment-operations')).toHaveTextContent('Metal FlashAttention');
+  });
 });
 
 describe('real environment management UI contracts', () => {
@@ -289,7 +388,7 @@ describe('real environment management UI contracts', () => {
     expect(screen.queryByTestId('environment-package-xformers')).not.toBeInTheDocument();
     expect(screen.queryByTestId('environment-package-flash-attn')).not.toBeInTheDocument();
   });
-  it('explains built-in Apple acceleration and keeps FP32 probe details collapsed until requested', async () => {
+  it('shows only useful Apple acceleration status without internal acceptance commentary', async () => {
     Object.assign(runtime.runtime, { environment_profile: 'macos-mps', compute_backend: 'mps', platform: 'Darwin', machine: 'arm64', torch: '2.11.0', cuda_runtime: null, cuda_available: false, mps_available: true, gpus: [] });
     Object.assign(runtime, { sdpa: { status: 'passed', reason: null, error: null, detail: 'FP32 output and query/key/value gradients are finite', device: 'mps', device_name: 'Apple M4 Max', checked_at: 1 } });
     render(<EnvironmentManagerPanel />);
@@ -297,14 +396,8 @@ describe('real environment management UI contracts', () => {
     expect(within(sdpa).getByText('Apple GPU 内置加速')).toBeVisible();
     expect(within(sdpa).getByText('检测正常')).toBeVisible();
     expect(within(sdpa).getByText('使用 PyTorch 自带的 SDPA，无需额外安装。')).toBeVisible();
-    const details = within(sdpa).getByText(/已在 Apple MPS 上完成 FP32/);
-    expect(details).not.toBeVisible();
-    const expand = within(sdpa).getByText('检测详情');
-    expect(expand).toBeVisible();
-    fireEvent.click(expand);
-    expect(details).toBeVisible();
-    expect(details).toHaveTextContent('FP32 注意力前向计算和梯度反向检查');
-    expect(sdpa).not.toHaveTextContent(/FP16|BF16/);
+    expect(within(sdpa).queryByText('检测详情')).not.toBeInTheDocument();
+    expect(sdpa).not.toHaveTextContent(/FP32|FP16|BF16|前向|反向|模型训练效果|速度测试/);
     expect(within(sdpa).queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByTestId('environment-package-flash-attn')).not.toBeInTheDocument();
   });

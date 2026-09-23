@@ -15,6 +15,8 @@
 #   * Optional xFormers / FlashAttention 2 dispatch is restored for compatible CUDA inputs;
 #     masks, unsupported shapes and dtypes retain SDPA. Sage is inference-only: gradient-
 #     carrying calls use SDPA so quantized kernels cannot silently detach training gradients.
+#   * Explicit Metal Flash dispatch is model-local and delegates unsupported
+#     semantics to SDPA before selecting a portable mtlattn kernel.
 """Minimal SDPA attention helper used by :mod:`ypuddin.models.anima.vendor.cosmos_dit`.
 
 Call pattern (identical to sd-scripts ``library.attention``)::
@@ -88,7 +90,7 @@ def _external_attention(name, q, k, v, dropout_p):
 
 
 def _is_torch_mode(attn_mode: Optional[str]) -> bool:
-    return attn_mode in _TORCH_MODES or attn_mode in _SAGE_MODES or attn_mode in _EXTERNAL_MODES
+    return attn_mode in _TORCH_MODES or attn_mode in _SAGE_MODES or attn_mode in _EXTERNAL_MODES or attn_mode == "metal_flash"
 
 
 def _sdpa(
@@ -105,6 +107,10 @@ def _sdpa(
         rep = q.shape[1] // k.shape[1]
         k = k.repeat_interleave(rep, dim=1)
         v = v.repeat_interleave(rep, dim=1)
+    if attn_mode == "metal_flash":
+        from ypuddin.models.metal_attention import metal_flash_sdpa
+
+        return metal_flash_sdpa(q, k, v, attn_mask=attn_mask, dropout_p=dropout_p)
     gradients = torch.is_grad_enabled() and any(t.requires_grad for t in (q, k, v))
     compatible = q.is_cuda and attn_mask is None and q.dtype in (torch.float16, torch.bfloat16) and q.dtype == k.dtype == v.dtype
     if attn_mode in _SAGE_MODES and compatible and dropout_p == 0.0 and not gradients and _SAMPLING.get():

@@ -89,6 +89,10 @@ and with sd-scripts / ComfyUI / diffusion-pipe LoRA key conventions.
    length (`k[i:i+1, :q_len]`). That is a no-op for self-attention but silently truncated the text context in
    cross-attention whenever there were fewer image tokens than text tokens. The vendored copy keeps each
    tensor's own full length in that case (masked/`seqlens` paths are unchanged).
+3. **Metal Flash dispatch (2026-09-23)**: the explicit `metal_flash` mode calls the project's
+   `metal_flash_sdpa` helper for compatible Apple MPS FP32 backbone attention. Unsupported
+   shapes, masks and dropout retain native SDPA; selected kernel errors propagate. This does
+   not replace the attention implementation in frozen text encoders or the VAE.
 
 ### `qwen_image_vae.py` (from `qwen_image_autoencoder_kl.py`)
 

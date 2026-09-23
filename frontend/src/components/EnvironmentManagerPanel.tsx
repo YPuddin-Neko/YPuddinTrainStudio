@@ -42,7 +42,9 @@ interface Wheel { wheel_id: string; package: string; filename: string; version: 
 const button = 'inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-600 dark:hover:bg-slate-800';
 const input = 'rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900';
 const busyStatus = (op: Operation) => ['planning', 'installing', 'verifying'].includes(op.status);
-const managedPackages = new Set(['xformers', 'flash-attn']);
+const cudaAttentionPackages = new Set(['xformers', 'flash-attn']);
+const managedPackages = new Set([...cudaAttentionPackages, 'mtlattn']);
+const metalFlashVersion = '0.4.1';
 
 function runtimeTarget(runtime: EnvironmentStatus['runtime']): 'cpu' | 'mps' | 'cuda' | 'hip' {
   const profile = runtime.environment_profile || 'legacy';
@@ -112,7 +114,8 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
   const cpuProfile = target === 'cpu';
   const hipBackend = target === 'hip';
   const showAttentionExtensions = target === 'cuda' || hipBackend;
-  const focusAvailable = showAttentionExtensions && !!focusPackage && managedPackages.has(focusPackage) && !!status?.packages.some(pkg => pkg.name === focusPackage);
+  const visiblePackages = status?.packages.filter(pkg => target === 'mps' ? pkg.name === 'mtlattn' : showAttentionExtensions && cudaAttentionPackages.has(pkg.name)) || [];
+  const focusAvailable = !!focusPackage && visiblePackages.some(pkg => pkg.name === focusPackage);
   React.useEffect(() => {
     if (!focusAvailable || !focusPackage) return;
     setSelected(focusPackage);
@@ -156,7 +159,7 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
   };
   const plan = async (name: string, action: string) => {
     await execute(async () => {
-      const op = await apiClient.post<Operation>('/environment/operations', { package: name, action, ...(action === 'install' && version.trim() ? { version: version.trim() } : {}), ...(action !== 'uninstall' && wheel ? { wheel_id: wheel.wheel_id } : {}), ...(action !== 'uninstall' && vendorWheel ? {vendor_wheel_id: vendorWheel.id} : {}) }, { silent: true });
+      const op = await apiClient.post<Operation>('/environment/operations', { package: name, action, ...(name === 'mtlattn' && action !== 'uninstall' ? { version: metalFlashVersion } : action === 'install' && version.trim() ? { version: version.trim() } : {}), ...(name !== 'mtlattn' && action !== 'uninstall' && wheel ? { wheel_id: wheel.wheel_id } : {}), ...(name !== 'mtlattn' && action !== 'uninstall' && vendorWheel ? {vendor_wheel_id: vendorWheel.id} : {}) }, { silent: true });
       setCreatedOperations(previous => new Set(previous).add(op.id)); setExpanded(op.id); setSelected(null); setVersion(''); setWheel(null); setVendorWheel(null);
     });
   };
@@ -171,12 +174,27 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     finally { setUploading(false); }
   };
   const statusLabel = (name: string) => ({ planning: copy('检查兼容性', 'Checking compatibility'), ready: copy('等待确认', 'Review required'), installing: copy('下载并安装', 'Downloading and applying'), verifying: copy('验证环境', 'Verifying environment'), completed: copy('已完成', 'Completed'), failed: copy('失败', 'Failed'), cancelled: copy('已取消', 'Cancelled') }[name] || name);
-  const packageLabel = (name: string) => ({ xformers: 'xFormers', 'flash-attn': 'FlashAttention 2' }[name] || name);
+  const packageLabel = (name: string) => ({ xformers: 'xFormers', 'flash-attn': 'FlashAttention 2', mtlattn: 'Metal FlashAttention' }[name] || name);
   const purpose = (name: string) => ({
     xformers: copy('训练与采样加速', 'Training and sampling acceleration'),
     'flash-attn': copy('FP16 / BF16 训练与采样加速', 'FP16 / BF16 training and sampling acceleration'),
+    mtlattn: copy('Apple GPU 训练与采样加速（可选）', 'Optional Apple GPU training and sampling acceleration'),
   }[name] || '');
   const reason = (pkg: PackageStatus) => {
+    if (pkg.name === 'mtlattn') {
+      const requirements: Record<string, [string, string]> = {
+        metal_requires_apple_silicon: ['需要 Apple Silicon Mac', 'Requires an Apple Silicon Mac'],
+        metal_requires_mps_profile: ['需要 macOS MPS 环境', 'Requires a macOS MPS environment'],
+        metal_requires_macos_15: ['需要 macOS 15 或更新版本', 'Requires macOS 15 or later'],
+        metal_requires_python_311_312: ['需要 Python 3.11 或 3.12', 'Requires Python 3.11 or 3.12'],
+        metal_requires_torch_2_13: ['需要 PyTorch 2.13.x', 'Requires PyTorch 2.13.x'],
+        metal_requires_mps: ['当前 Apple GPU 不可用', 'Apple GPU is currently unavailable'],
+      };
+      if (requirements[pkg.reason]) return copy(...requirements[pkg.reason]);
+      if (!pkg.version) return copy('未安装 · 可选', 'Not installed · optional');
+      if (status?.probe_deferred) return copy('任务运行中，检测已延后', 'Probe deferred while a job runs');
+      return pkg.available ? copy('检测正常', 'Check passed') : copy('检测失败，展开查看', 'Check failed; expand for details');
+    }
     if (hipBackend && ['requires_cuda', 'requires_dtk_wheel', 'vendor_wheel_required'].includes(pkg.reason)) return copy('需要匹配的 DTK 适配包', 'A compatible DTK build is required');
     if (pkg.reason === 'requires_cuda') return copy('需要可用的 NVIDIA CUDA', 'Requires working NVIDIA CUDA');
     if (pkg.reason === 'requires_ampere') return copy('需要 Ampere 或更新的显卡', 'Requires Ampere or newer GPU');
@@ -245,11 +263,11 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
       {(hipBackend || target === 'mps') && <div className="settings-sdpa-status" data-testid="environment-sdpa">
         <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">{target === 'mps' ? copy('Apple GPU 内置加速', 'Built-in Apple GPU acceleration') : 'PyTorch SDPA'}</strong><span className={`text-xs ${status.sdpa?.status === 'passed' ? 'text-emerald-700 dark:text-emerald-400' : status.sdpa?.status === 'failed' ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}`}>{status.sdpa?.status === 'passed' ? target === 'mps' ? copy('检测正常', 'Check passed') : copy('已通过前向与反向检测', 'Forward and backward checks passed') : status.sdpa?.status === 'failed' ? target === 'mps' ? copy('检测失败', 'Check failed') : copy('当前计算路径不可用', 'Current compute path unavailable') : status.probe_deferred ? copy('任务运行中，检测已延后', 'Probe deferred while a job runs') : copy('尚未检测', 'Not tested yet')}</span></div>
         {target === 'mps' && <p className="settings-note">{copy('使用 PyTorch 自带的 SDPA，无需额外安装。', 'Uses SDPA included with PyTorch. No extra installation is needed.')}</p>}
-        {status.sdpa?.status === 'passed' && (target === 'mps' ? <details className="settings-inline-details"><summary>{copy('检测详情', 'Check details')}</summary><p className="settings-note">{copy('已在 Apple MPS 上完成 FP32 注意力前向计算和梯度反向检查；这不是模型训练效果或速度测试。', 'Completed FP32 attention forward and gradient backward checks on Apple MPS. This is not a model quality or speed test.')}</p></details> : <p className="settings-note">{copy('已检查当前设备的 FP16 / BF16 小规模运算；具体模型仍以训练结果为准。', 'Checked small FP16 / BF16 operations on the current device; individual models still need training validation.')}{status.sdpa.device && ` · ${status.sdpa.device}${status.sdpa.device_name ? ` · ${status.sdpa.device_name}` : ''}`}</p>)}
+        {status.sdpa?.status === 'passed' && target !== 'mps' && <p className="settings-note">{copy('已检查当前设备的 FP16 / BF16 小规模运算；具体模型仍以训练结果为准。', 'Checked small FP16 / BF16 operations on the current device; individual models still need training validation.')}{status.sdpa.device && ` · ${status.sdpa.device}${status.sdpa.device_name ? ` · ${status.sdpa.device_name}` : ''}`}</p>}
         {hipBackend && status.sdpa?.reason === 'hip_sdpa_flash_library_missing' ? <div className="mt-2 space-y-2"><p className="settings-note">{copy('当前厂商 PyTorch 的这条 SDPA 路径需要 FlashAttention 动态库。请安装匹配当前 DTK / PyTorch 的官方 FlashAttention 包，重启后重新检测。', 'This vendor PyTorch SDPA path needs a FlashAttention library. Install the official build matching DTK / PyTorch, restart, and check again.')}</p><button type="button" className={button} disabled={locked} onClick={() => { setSelected('flash-attn'); setVersion(''); setWheel(null); setVendorWheel(null); document.getElementById('environment-package-flash-attn')?.scrollIntoView?.({ block: 'nearest' }); }}>{copy('查看匹配的 FlashAttention 包', 'View matching FlashAttention builds')}</button></div> : status.sdpa?.error && <p role="alert" className="settings-note whitespace-pre-wrap break-words">{status.sdpa.error}</p>}
         {hipBackend && status.sdpa?.error && status.sdpa.reason === 'hip_sdpa_flash_library_missing' && <details className="settings-inline-details"><summary>{copy('查看检测详情', 'Probe details')}</summary><pre className="whitespace-pre-wrap break-words text-xs">{status.sdpa.detail || status.sdpa.error}</pre></details>}
       </div>}
-      <div className="settings-dependencies">{status.packages.filter(pkg => showAttentionExtensions && managedPackages.has(pkg.name)).map(pkg => <div key={pkg.name} className="settings-dependency">
+      <div className="settings-dependencies">{visiblePackages.map(pkg => <div key={pkg.name} className="settings-dependency">
         <div id={`environment-package-${pkg.name}`} className="settings-dependency-row" data-testid={`environment-package-${pkg.name}`}>
           <div className="settings-dependency-info"><button type="button" disabled={uploading || busy} className="settings-dependency-name disabled:opacity-50" aria-expanded={selected === pkg.name} aria-controls={`environment-details-${pkg.name}`} onClick={() => { setSelected(selected === pkg.name ? null : pkg.name); setVersion(''); setWheel(null); setVendorWheel(null); }}>{selected === pkg.name ? <ChevronDown size={13} /> : <ChevronRight size={13} />}{packageLabel(pkg.name)}</button><p className="settings-dependency-purpose">{purpose(pkg.name)}</p></div>
           <span className="settings-dependency-version break-all font-mono text-xs">{pkg.version || copy('未安装', 'Not installed')}</span>
@@ -258,7 +276,15 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
         </div>
         {selected === pkg.name && <div id={`environment-details-${pkg.name}`} className="settings-dependency-detail space-y-3">
           {pkg.error && <p className="whitespace-pre-wrap break-words text-xs text-red-600 dark:text-red-300">{pkg.error}</p>}
-          <>
+          {pkg.name === 'mtlattn' ? <>
+            <p className="settings-note">{copy('安装兼容的预编译加速包，无需本机编译。检查后先查看安装内容，确认后才开始安装。', 'Install a compatible prebuilt accelerator package without local compilation. Review the plan before confirming installation.')}</p>
+            {pkg.reason === 'metal_requires_torch_2_13' && <div className="space-y-2"><p className="settings-note">{copy('先在上方“PyTorch 版本”中安装并切换到 2.13.x，再安装此扩展。', 'First install and switch to PyTorch 2.13.x using the version selector above, then install this extension.')}</p><button type="button" className={button} onClick={() => { const section = document.getElementById('environment-torch'); section?.focus(); section?.scrollIntoView?.({ block: 'start' }); }}>{copy('查看 PyTorch 版本', 'View PyTorch versions')}</button></div>}
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className={`${button} border-blue-600 bg-blue-600 text-white hover:bg-blue-700`} disabled={locked || !pkg.supported} onClick={() => void plan(pkg.name, 'install')}>{copy('检查安装条件', 'Check installation requirements')}</button>
+              {pkg.version && <><button type="button" className={button} disabled={locked || !pkg.supported} onClick={() => void plan(pkg.name, pkg.version === metalFlashVersion ? 'repair' : 'install')}>{copy('重新安装兼容版本', 'Reinstall the compatible version')}</button><button type="button" className={button} disabled={locked} onClick={() => void plan(pkg.name, 'uninstall')}>{copy('卸载', 'Uninstall')}</button></>}
+            </div>
+            <details className="settings-inline-details"><summary>{copy('安装要求', 'Installation requirements')}</summary><p className="settings-note">mtlattn {metalFlashVersion} · Apple Silicon · macOS 15+ · Python 3.11 / 3.12 · PyTorch 2.13.x</p><p className="settings-note">{copy('安装后重启并重新检测；通过检测后，可在训练参数中选择 Metal FlashAttention。', 'Restart and run the check after installation. Once it passes, choose Metal FlashAttention in training settings.')}</p></details>
+          </> : <>
             {hipBackend && <DtkWheelPicker packageName={pkg.name} selected={vendorWheel && 'dtk' in vendorWheel ? vendorWheel : null} disabled={locked} onSelect={next => {setVendorWheel(next); setWheel(null); setVersion('');}}/>}
             {!hipBackend && status.runtime.platform === 'Linux' && pkg.name === 'flash-attn' && <WindowsAttentionWheelPicker selected={vendorWheel && 'cuda' in vendorWheel ? vendorWheel : null} disabled={locked} onSelect={next => {setVendorWheel(next); setWheel(null); setVersion('');}}/>}
             {!hipBackend && status.runtime.platform === 'Windows' && pkg.name === 'flash-attn' && <WindowsAttentionWheelPicker selected={vendorWheel && 'cuda' in vendorWheel ? vendorWheel : null} disabled={locked} onSelect={next => {setVendorWheel(next); setWheel(null); setVersion('');}}/>}
@@ -277,7 +303,7 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
               </div></details>)}
             {pkg.wheel_required && !wheel && !vendorWheel && <p className="settings-note">{copy('先选择兼容构建或上传 wheel，即可检查安装条件。', 'Choose a compatible build or upload a wheel to review the install plan.')}</p>}
             {wheel && <p className="flex items-center gap-2 break-all text-xs text-emerald-700 dark:text-emerald-400"><Check size={13} />{wheel.filename}<button className="text-slate-500 dark:text-slate-400" aria-label={copy('清除 wheel', 'Clear wheel')} onClick={() => { setWheel(null); setVendorWheel(null); setVersion(''); }}><X size={13} /></button></p>}
-          </>
+          </>}
         </div>}
       </div>)}</div></section>
     </>}

@@ -40,6 +40,17 @@ from .text import Flux2Text
 
 
 def _set_attention_backend(model, attention, device):
+    from ypuddin.models.metal_attention import (
+        install_metal_flash_processors,
+        require_metal_flash,
+        restore_metal_flash_processors,
+    )
+
+    if attention == "metal_flash":
+        require_metal_flash(device)
+        install_metal_flash_processors(model, "flux2")
+        return
+    restore_metal_flash_processors(model)
     backend = {"auto": "native", "sdpa": "native", "flash_attn": "flash", "xformers": "xformers"}[attention]
     external = attention in {"flash_attn", "xformers"}
     label = "FlashAttention" if attention == "flash_attn" else "xFormers"
@@ -91,6 +102,7 @@ def text_ids(embeds):
 class Flux2Family(ModelFamily):
     spec = ModelSpec(
         name="flux2",
+        attention_backends=("auto", "sdpa", "xformers", "flash_attn", "metal_flash"),
         label="FLUX.2 Klein 4B / 9B",
         latent=LatentSpec(128, 16, 1, "flux2-vae-mode-fp32-patch2-bn-v1"),
         text=TextSpec(512, "flux2-variant-hidden-layers-v1", encoder_params=4_000_000_000),
@@ -139,8 +151,10 @@ class Flux2Family(ModelFamily):
         if not cfg.dit_path:
             return ["model.dit_path is required for FLUX.2"]
         problems = []
-        if cfg.attention not in {"auto", "sdpa", "flash_attn", "xformers"}:
-            problems.append("FLUX.2 supports SDPA, FlashAttention or xFormers; Sage training is unsupported")
+        if cfg.attention not in {"auto", "sdpa", "flash_attn", "xformers", "metal_flash"}:
+            problems.append(
+                "FLUX.2 supports SDPA, FlashAttention, xFormers or Metal FlashAttention; Sage training is unsupported"
+            )
         try:
             root = Path(cfg.dit_path).expanduser()
             dit = component(root, "transformer")
@@ -180,6 +194,10 @@ class Flux2Family(ModelFamily):
         return errors
 
     def load(self, cfg, memory, *, device, dtype, backbone_device=None):
+        if cfg.attention == "metal_flash":
+            from ypuddin.models.metal_attention import require_metal_flash
+
+            require_metal_flash(device)
         problems = self.validate_config(cfg)
         if problems:
             raise ValueError("; ".join(problems))

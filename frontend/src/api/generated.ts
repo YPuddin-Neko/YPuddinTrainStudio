@@ -3052,7 +3052,7 @@ export interface components {
              * Package
              * @enum {string}
              */
-            package: "xformers" | "flash-attn" | "sageattention" | "nvidia-ml-py" | "tensorboard" | "schedulefree";
+            package: "xformers" | "flash-attn" | "sageattention" | "mtlattn" | "nvidia-ml-py" | "tensorboard" | "schedulefree";
             /**
              * Action
              * @default install
@@ -3081,6 +3081,8 @@ export interface components {
             platform: string;
             /** Machine */
             machine: string;
+            /** Macos Version */
+            macos_version?: string | null;
             /** Distribution */
             distribution?: string | null;
             /** Distribution Id */
@@ -3184,7 +3186,7 @@ export interface components {
              * @default auto
              * @enum {string}
              */
-            attention_default: "auto" | "sdpa" | "xformers" | "flash_attn" | "sage";
+            attention_default: "auto" | "sdpa" | "xformers" | "flash_attn" | "sage" | "metal_flash";
         };
         /** EnvironmentSnapshot */
         EnvironmentSnapshot: {
@@ -4141,11 +4143,11 @@ export interface components {
             dtype: "bf16" | "fp16" | "fp32";
             /**
              * Attention
-             * @description 默认 auto 使用当前模型的自动选择。SDPA 是 PyTorch 内置注意力；xFormers/FlashAttention 需匹配的 CUDA 扩展，Sage 仅用于无梯度推理。通常先用 auto/SDPA，仅在环境检查确认支持后切换扩展。
+             * @description 默认 auto 使用 PyTorch 内置 SDPA。xFormers/FlashAttention 需匹配的 CUDA 或海光扩展；Metal FlashAttention 用于 Apple MPS，需在运行环境中安装匹配的 mtlattn。Metal 路径加速支持的 FP32 主模型注意力，mask、dropout 等其他调用保留内置 SDPA；文本编码器和 VAE 不变。Sage 仅用于无梯度推理。
              * @default auto
              * @enum {string}
              */
-            attention: "auto" | "sdpa" | "sage" | "xformers" | "flash_attn";
+            attention: "auto" | "sdpa" | "sage" | "xformers" | "flash_attn" | "metal_flash";
             /**
              * Prediction Type
              * @description 按 SDXL 模型的训练方式选择。常规 SDXL 使用 epsilon；只有明确标注 v-prediction 的模型才改成 v_prediction。选错会使训练和预览结果异常。

@@ -37,7 +37,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from ypuddin.package_sources import pypi_sources, run_sources, torch_sources
 from ypuddin.runtime_profiles import current_profile, profile_root
 
-from . import dtk_catalog, windows_attention_catalog
+from . import dtk_catalog, metal_attention_catalog, windows_attention_catalog
 from .db import Database, new_id, now
 from .errors import ApiError
 
@@ -54,11 +54,12 @@ CATALOG = {
         "https://github.com/Dao-AILab/flash-attention#installation-and-features",
     ),
     "sageattention": ("sageattention", "sage", "https://github.com/thu-ml/SageAttention#installation"),
+    "mtlattn": ("mtlattn", "metal_flash", metal_attention_catalog.DOCS_URL),
     "nvidia-ml-py": ("pynvml", None, "https://pypi.org/project/nvidia-ml-py/"),
     "tensorboard": ("tensorboard", None, "https://www.tensorflow.org/tensorboard/get_started"),
     "schedulefree": ("schedulefree", None, "https://github.com/facebookresearch/schedule_free"),
 }
-ATTENTION = ("auto", "sdpa", "xformers", "flash_attn", "sage")
+ATTENTION = ("auto", "sdpa", "xformers", "flash_attn", "sage", "metal_flash")
 MUTATING = ("installing", "verifying")
 BUSY = ("planning", *MUTATING)
 MAX_WHEEL_BYTES = 2 * 1024**3
@@ -75,6 +76,7 @@ class EnvironmentRequest(BaseModel):
         "xformers",
         "flash-attn",
         "sageattention",
+        "mtlattn",
         "nvidia-ml-py",
         "tensorboard",
         "schedulefree",
@@ -90,6 +92,10 @@ class EnvironmentRequest(BaseModel):
             raise ValueError("Choose either an uploaded wheel or a vendor wheel")
         if self.action == "uninstall" and (self.wheel_id or self.vendor_wheel_id):
             raise ValueError("Uninstall does not accept a wheel source")
+        if self.package == "mtlattn" and self.action != "uninstall":
+            if self.version not in (None, metal_attention_catalog.VERSION):
+                raise ValueError("Metal FlashAttention currently supports only mtlattn 0.4.1")
+            self.version = metal_attention_catalog.VERSION
         return self
 
     @field_validator("version")
@@ -105,7 +111,7 @@ class EnvironmentRequest(BaseModel):
 
 class EnvironmentSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    attention_default: Literal["auto", "sdpa", "xformers", "flash_attn", "sage"] = "auto"
+    attention_default: Literal["auto", "sdpa", "xformers", "flash_attn", "sage", "metal_flash"] = "auto"
 
 
 class EnvironmentRuntime(BaseModel):
@@ -114,6 +120,7 @@ class EnvironmentRuntime(BaseModel):
     python_executable: str
     platform: str
     machine: str
+    macos_version: str | None = None
     distribution: str | None = None
     distribution_id: str | None = None
     distribution_version: str | None = None
@@ -224,6 +231,17 @@ class EnvironmentOperation(BaseModel):
 
 def environment_attention_default(context) -> str:
     value = context.db.get_kv("environment.settings", {}).get("attention_default", "auto")
+    if value == "metal_flash":
+        # This is only the default for new configurations. Keep the user's saved
+        # preference and existing job/model settings intact when changing runtimes.
+        profile = current_profile()
+        if profile.endswith("-cpu") or metal_attention_catalog.incompatibility(runtime_info(), profile):
+            return "auto"
+        try:
+            if importlib.metadata.version("mtlattn") != metal_attention_catalog.VERSION:
+                return "auto"
+        except importlib.metadata.PackageNotFoundError:
+            return "auto"
     return value if value in ATTENTION else "auto"
 
 
@@ -284,6 +302,7 @@ def runtime_info() -> dict[str, Any]:
         "python_executable": sys.executable,
         "platform": platform.system(),
         "machine": platform.machine(),
+        "macos_version": platform.mac_ver()[0] or None if platform.system() == "Darwin" else None,
         **dtk_catalog.system_info(),
         "driver_version": dtk_catalog.driver_version() if hip else None,
         "torch": str(torch.__version__),
@@ -315,8 +334,10 @@ def runtime_info() -> dict[str, Any]:
 # tiny tensors; imports alone do not establish that a wheel works with the current GPU.
 PROBE = r"""
 import importlib, json, re, torch
+from ypuddin.runtime_profiles import current_profile
 names = {"xformers": "xformers.ops", "flash-attn": "flash_attn", "sageattention": "sageattention", "nvidia-ml-py": "pynvml", "tensorboard": "tensorboard", "schedulefree": "schedulefree"}
 out = {}
+accelerators_allowed = not current_profile().endswith("-cpu")
 from ypuddin.runtime_attention import probe_sdpa
 try:
     out["sdpa"] = probe_sdpa(torch)
@@ -328,7 +349,7 @@ for name, module in names.items():
         m = importlib.import_module(module)
         imported = True
         tested = False
-        if name in ("xformers", "flash-attn", "sageattention") and torch.cuda.is_available():
+        if name in ("xformers", "flash-attn", "sageattention") and accelerators_allowed and torch.cuda.is_available():
             q = torch.randn(1, 32, 2, 64, device="cuda", dtype=torch.float16, requires_grad=name != "sageattention")
             if name == "xformers": y = m.memory_efficient_attention(q, q, q)
             elif name == "flash-attn": y = m.flash_attn_func(q, q, q)
@@ -371,6 +392,8 @@ for name, module in names.items():
         out[name] = {"importable": imported, "kernel_tested": False, "error": error}
         if kernel_unavailable:
             out[name]["kernel_unavailable"] = True
+from ypuddin.server.metal_attention_catalog import probe_metal_attention
+out["mtlattn"] = probe_metal_attention(torch)
 print("YPUDDIN_ENV=" + json.dumps(out))
 """
 
@@ -643,6 +666,8 @@ class EnvironmentManager:
                 reason = "supported"
                 if name == "torch":
                     reason = "protected_runtime"
+                elif name == "mtlattn":
+                    reason = metal_attention_catalog.incompatibility(runtime, self.profile) or "supported"
                 elif self.profile == "linux-dtk" and name in ("sageattention", "nvidia-ml-py"):
                     reason = "requires_nvidia"
                 elif backend and not runtime["cuda_available"]:
@@ -671,6 +696,7 @@ class EnvironmentManager:
                         "error": probe.get("error") if name in versions else None,
                         "available": supported
                         and name in versions
+                        and (name != "mtlattn" or versions[name] == metal_attention_catalog.VERSION)
                         and bool(probe.get("importable"))
                         and (not backend or bool(probe.get("kernel_tested"))),
                         "wheel_required": bool(
@@ -699,7 +725,7 @@ class EnvironmentManager:
             ):
                 raise EnvironmentError(
                     422,
-                    "The selected attention backend must pass the CUDA kernel probe before becoming the default.",
+                    "The selected attention backend must pass its device's forward/backward kernel probe before becoming the default.",
                 )
         self.context.db.set_kv("environment.settings", settings.model_dump())
         return settings
@@ -767,7 +793,14 @@ class EnvironmentManager:
                     torch_requirement = True
         runtime = self.runtime()
         vendor = None
-        if self.profile == "linux-dtk" and CATALOG[name][1]:
+        if name == "mtlattn":
+            reason = metal_attention_catalog.incompatibility(runtime, self.profile)
+            if reason:
+                raise ValueError(metal_attention_catalog.MESSAGES[reason])
+            if str(version) != metal_attention_catalog.VERSION or not torch_requirement:
+                raise ValueError("Metal FlashAttention requires the reviewed mtlattn 0.4.1 Torch extension")
+            metal_attention_catalog.validate_release_file(path.name, self._hash(path), path.stat().st_size)
+        elif self.profile == "linux-dtk" and CATALOG[name][1]:
             vendor = dtk_catalog.wheel_for_file(path)
             reason = dtk_catalog.incompatibility(vendor, runtime, versions, self.profile)
             if reason:
@@ -876,6 +909,10 @@ class EnvironmentManager:
             if any(op.status in BUSY for op in self.list()):
                 raise EnvironmentError(409, "Another environment operation is in progress")
             runtime = self.runtime()
+            if request.package == "mtlattn" and request.action != "uninstall":
+                reason = metal_attention_catalog.incompatibility(runtime, self.profile)
+                if reason:
+                    raise EnvironmentError(422, metal_attention_catalog.MESSAGES[reason])
             if request.vendor_wheel_id:
                 try:
                     provider, vendor = self._wheel_provider(request.vendor_wheel_id)
@@ -905,6 +942,7 @@ class EnvironmentManager:
             if (
                 request.action != "uninstall"
                 and CATALOG[request.package][1]
+                and request.package != "mtlattn"
                 and not runtime["cuda_available"]
             ):
                 raise EnvironmentError(
@@ -1174,6 +1212,10 @@ class EnvironmentManager:
                 sha = info.get("archive_info", {}).get("hashes", {}).get("sha256")
                 if not sha or not re.fullmatch(r"[0-9a-fA-F]{64}", sha):
                     raise ValueError("Wheel plan is missing its SHA256 digest")
+                if name == "mtlattn":
+                    if selected != metal_attention_catalog.VERSION:
+                        raise ValueError("Metal FlashAttention only accepts mtlattn 0.4.1")
+                    metal_attention_catalog.validate_release_file(filename, sha)
                 # Same-version repair must still satisfy existing dependency requirements.
                 if request.action == "repair" or name in supplemental_names:
                     for raw in meta.get("requires_dist", []):
@@ -1313,7 +1355,9 @@ class EnvironmentManager:
             if op.action == "uninstall":
                 if op.package in after:
                     raise RuntimeError("Package remains installed after uninstall")
-                if CATALOG[op.package][1] == environment_attention_default(self.context):
+                if CATALOG[op.package][1] == self.context.db.get_kv("environment.settings", {}).get(
+                    "attention_default", "auto"
+                ):
                     self.context.db.set_kv("environment.settings", {"attention_default": "auto"})
                     log(
                         "Removed the selected default backend; new configurations now use PyTorch SDPA (auto)."
@@ -1330,7 +1374,7 @@ class EnvironmentManager:
                         raise RuntimeError(probe["error"])
                     raise RuntimeError(
                         "Package was installed but its runtime probe failed: "
-                        + str(probe.get("error") or "CUDA kernel unavailable")
+                        + str(probe.get("error") or "Selected device kernel unavailable")
                     )
             self._update(id_, status="completed", restart_required=True)
             log(

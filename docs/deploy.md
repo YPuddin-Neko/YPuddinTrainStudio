@@ -28,7 +28,7 @@ studio-cpu.bat               # Windows 仅 CPU，x86_64 / arm64
 
 首次部署会按平台创建独立的 `environment/<平台>/venv`，再安装对应 PyTorch、训练依赖并构建前端。CUDA、CPU、macOS MPS 的依赖环境不共用，各环境只能用上面对应的入口启动；共用阶段在 `scripts/launch.sh` / `scripts/launch.bat`，不是入口。下文用 `<启动入口>` 指代你所在环境的那一个。三个加速入口只在 x86_64 上验证过，在 arm64 上启动会直接拒绝并提示改用 CPU 入口；MPS 入口要求 Apple Silicon。安装标记记录架构，同一个环境目录不会被两种架构共用。直接运行共用阶段（不带 `--profile`）会落到根目录 `venv` 的旧部署，不搬移或重建。平台目录和 Torch 切换关系见 [环境说明](ENVIRONMENT_LIFECYCLE_2026-09-14.md)。
 
-CUDA 环境安装 `ypuddin[models,server,optim,logging,nvidia]`，CPU/MPS 不安装 NVIDIA 依赖，也不自动安装注意力扩展。初始地址为 `http://127.0.0.1:8123/`；保存过 host/port 设置后，下次启动使用保存值，命令行参数优先。后续运行只对选中环境增量补齐依赖，保留已有 Torch/CUDA/NumPy 原生栈。
+CUDA 环境安装 `ypuddin[models,server,optim,logging,nvidia]`，CPU/MPS 不安装 NVIDIA 依赖，也不自动安装注意力扩展。 Apple 可选的 Metal FlashAttention 预编译包、配套版本和使用范围见 [Apple 注意力加速](METAL_ATTENTION.md)。初始地址为 `http://127.0.0.1:8123/`；保存过 host/port 设置后，下次启动使用保存值，命令行参数优先。后续运行只对选中环境增量补齐依赖，保留已有 Torch/CUDA/NumPy 原生栈。
 
 安装完成后，启动器会校验 `venv` 内的独立安装信息，再自动删除根目录的 `ypuddin.egg-info` 构建副本。已有部署更新代码后正常启动即可清理旧残留，无需删除环境或数据。即使依赖安装被跳过，也会执行此清理；Windows 文件被占用时会提示并在下次启动重试。运行所需的 `venv` 内 `.dist-info` 保留，旧式安装先更新为现代 editable 安装再清理。
 

@@ -58,9 +58,9 @@ class ModelConfig(_Strict):
         help="CUDA 上加载模型时使用的精度，默认 bf16；应与显卡和权重兼容。CPU/MPS 实际按 fp32 加载。训练算子的混合精度另由训练设置控制，冻结权重存储精度另由显存设置控制。",
         ui_=ui("model", order=50, control="select", advanced=True),
     )
-    attention: Literal["auto", "sdpa", "sage", "xformers", "flash_attn"] = F(
+    attention: Literal["auto", "sdpa", "sage", "xformers", "flash_attn", "metal_flash"] = F(
         "auto",
-        help="默认 auto 使用当前模型的自动选择。SDPA 是 PyTorch 内置注意力；xFormers/FlashAttention 需匹配的 CUDA 扩展，Sage 仅用于无梯度推理。通常先用 auto/SDPA，仅在环境检查确认支持后切换扩展。",
+        help="默认 auto 使用 PyTorch 内置 SDPA。xFormers/FlashAttention 需匹配的 CUDA 或海光扩展；Metal FlashAttention 用于 Apple MPS，需在运行环境中安装匹配的 mtlattn。Metal 路径加速支持的 FP32 主模型注意力，mask、dropout 等其他调用保留内置 SDPA；文本编码器和 VAE 不变。Sage 仅用于无梯度推理。",
         ui_=ui("model", order=60, control="select", advanced=True),
     )
     prediction_type: Literal["epsilon", "v_prediction"] = F(

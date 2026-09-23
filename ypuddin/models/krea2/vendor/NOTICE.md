@@ -49,6 +49,10 @@ key conventions (`lora_unet_blocks_0_attn_wq` ...).
    (`model.diffusion_model.`, `diffusion_model.`, `net.`) and `infer_config(state_dict, patch=2)` which derives a
    `SingleMMDiTConfig` from tensor shapes (works with `safetensors` slices, so no weights are read for planning).
 5. Header comment with provenance + `# ruff: noqa`; `__all__`.
+6. **Apple MPS RoPE (2026-09-23)**: because MPS does not support float64 tensors, the
+   positional frequency and trigonometric calculation runs on CPU at the original
+   float64 precision, then returns its FP32 result to MPS. CPU and CUDA calculations
+   retain the original path.
 
 ## Not vendored
 

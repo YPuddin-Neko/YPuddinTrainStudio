@@ -181,7 +181,7 @@ export function configFieldHint(path: string, english = false, optimizerType?: s
     'memory.base_precision': ['实验选项，默认不转换。降低精度可能节省显存，也可能影响训练质量，不保证加速；不修改源文件，也不等同于发布方的量化模型。', 'Experimental; conversion is off by default. Lower precision may save VRAM but affect training quality, with no guaranteed speedup. Source files are unchanged; this is not equivalent to publisher-provided quantization.'],
     'memory.activation_checkpointing': ['通过重新计算节省显存，可能变慢；不会增大有效批量。', 'Recomputation saves memory and can be slower; effective batch size stays unchanged.'],
     'loop.grad_accum': ['累积多个小批次后再更新一次参数。', 'Accumulate multiple minibatches before one parameter update.'],
-    'model.attention': ['默认使用 PyTorch 内置 SDPA；其他后端需先在运行环境中安装。', 'Defaults to built-in PyTorch SDPA. Install optional backends in runtime settings first.'],
+    'model.attention': ['默认使用 PyTorch 内置 SDPA。Apple 可选 Metal FlashAttention，需先在运行环境中安装匹配版本。', 'Defaults to built-in PyTorch SDPA. Apple can use Metal FlashAttention after installing a compatible build in runtime settings.'],
     'adapter.mode': ['自动模式分别计算底模和适配器的输出，不降低权重精度。', 'Automatic computes the base model and adapter outputs separately without reducing weight precision.'],
 
     'optimizer.lr': ['基础更新步长；全量微调需单独设置，自适应优化器按自身规则管理。', 'Base update step size; set it separately for full fine-tuning. Adaptive optimizers manage it by their own rules.'],
@@ -226,7 +226,7 @@ export function configOptionLabel(path: string, option: string, english = false)
     'loop.distributed_strategy': {ddp:['数据并行','Data parallelism'],fsdp:['显存分片（大模型）','Memory sharding (large models)']},
     'training.mode': {adapter:['LoRA','LoRA'],full:['全量微调','Full fine-tuning']},
     'memory.base_precision': {auto:['不转换（沿用加载精度）','No conversion (keep loaded precision)'],fp32:['FP32 · 32 位','FP32 · 32-bit'],bf16:['BF16 · 16 位','BF16 · 16-bit'],fp16:['FP16 · 16 位','FP16 · 16-bit'],fp8_e4m3:['FP8 E4M3 · 启动时量化','FP8 E4M3 · quantize at startup'],fp8_e5m2:['FP8 E5M2 · 启动时量化','FP8 E5M2 · quantize at startup']},
-    'model.attention': {auto:['PyTorch SDPA（默认）','PyTorch SDPA (default)'],sdpa:['PyTorch SDPA','PyTorch SDPA'],xformers:['xFormers','xFormers'],flash_attn:['FlashAttention 2','FlashAttention 2'],sage:['SageAttention · 仅采样','SageAttention · sampling only']},
+    'model.attention': {auto:['PyTorch SDPA（默认）','PyTorch SDPA (default)'],sdpa:['PyTorch SDPA','PyTorch SDPA'],xformers:['xFormers','xFormers'],flash_attn:['FlashAttention 2','FlashAttention 2'],metal_flash:['Metal FlashAttention · Apple','Metal FlashAttention · Apple'],sage:['SageAttention · 仅采样','SageAttention · sampling only']},
     'adapter.mode': {auto:['自动 · 分开计算','Automatic · separate computation'],bypass:['分开计算适配器','Compute adapter separately'],weight:['合并权重后计算','Compute merged weights']},
     'memory.activation_checkpointing': {none:['关闭','Off'],block:['逐块重算 · 节省显存','Block recomputation · save memory'],unsloth:['重算并卸载中间输入','Recompute and offload block inputs']},
     'model.prediction_type': { epsilon: ['ε 预测（常规模型）', 'Epsilon (standard)'], v_prediction: ['v 预测', 'v-prediction'] },

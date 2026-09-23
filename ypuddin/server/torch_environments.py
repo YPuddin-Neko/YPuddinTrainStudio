@@ -27,7 +27,7 @@ from .db import new_id, now
 from .environment import EnvironmentError, Installer, protected
 
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
-OPTIONAL_EXTENSIONS = {"xformers", "flash-attn", "sageattention", "bitsandbytes"}
+OPTIONAL_EXTENSIONS = {"xformers", "flash-attn", "sageattention", "bitsandbytes", "mtlattn"}
 VERSIONS = {
     "2.13.0": ("0.28.0", ("cu126", "cu130", "cpu", "mps")),
     "2.11.0": ("0.26.0", ("cu126", "cu128", "cu130", "cpu", "mps")),

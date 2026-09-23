@@ -244,6 +244,7 @@ def load_dit(
 class Krea2Family(ModelFamily):
     spec = ModelSpec(
         name="krea2",
+        attention_backends=("auto", "sdpa", "xformers", "flash_attn", "metal_flash"),
         latent=LatentSpec(channels=16, stride=8, patch=2, fingerprint=AnimaLatent.fingerprint),
         text=TextSpec(
             max_len=512, fingerprint=Krea2Text.fingerprint, pad_floor=False, encoder_params=4_022_000_000
@@ -336,6 +337,10 @@ class Krea2Family(ModelFamily):
         from .variants import resolve_variant
         from .vendor.krea2_mmdit import SingleStreamDiT
 
+        if cfg.attention == "metal_flash":
+            from ypuddin.models.metal_attention import require_metal_flash
+
+            require_metal_flash(device)
         problems = self.validate_config(cfg)
         if problems:
             raise FileNotFoundError("; ".join(problems))
