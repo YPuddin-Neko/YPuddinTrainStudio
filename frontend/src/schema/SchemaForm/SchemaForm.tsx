@@ -587,9 +587,15 @@ function ResolutionInput({value, onChange, label}: {value: number[] | string; on
 }
 
 function NativePixelLimit({value, label, onChange}: {value: number | string; label: string; onChange: (next: number | string) => void}) {
+  const { i18n } = useTranslation();
+  const english = i18n.resolvedLanguage?.startsWith('en') || false;
   const side = typeof value === 'number' && value > 0 ? Number(Math.sqrt(value).toFixed(2)) : '';
-  return <input id="config-dataset.native_max_pixels" aria-label={label} type="number" min={32} max={8192} step="any" value={side}
-    onChange={event=>onChange(event.target.value === '' ? '' : Math.round(Number(event.target.value) ** 2))}/>;
+  const hintId = 'config-native-area-hint';
+  const pixels = typeof value === 'number' && value > 0 ? value : null;
+  return <div className="native-area-limit"><input id="config-dataset.native_max_pixels" aria-label={label} aria-describedby={pixels ? hintId : undefined} type="number" min={32} max={8192} step="any" value={side}
+    onChange={event=>onChange(event.target.value === '' ? '' : Math.round(Number(event.target.value) ** 2))}/>
+    {pixels && <p id={hintId} className="config-field-hint">{english ? `Up to ${(pixels / 1e6).toLocaleString('en', {maximumFractionDigits:2})} megapixels; keeps the image aspect ratio.` : `最多约 ${(pixels / 1e4).toLocaleString('zh-CN', {maximumFractionDigits:pixels < 1e4 ? 2 : 0})} 万像素，保持原图比例。`}</p>}
+  </div>;
 }
 
 /** Nullable values keep their type; an empty numeric draft becomes null on blur. */
@@ -1125,7 +1131,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
             {ui.unit && !percentage && ui.control !== 'slider' && <span className="ml-1 text-xs text-slate-500">({ui.unit})</span>}
           </label>
           <span className="config-field-reference">
-            <code className="config-field-key" title={fullPathKey}>{fullPathKey}</code>
+            <code className="config-field-key" tabIndex={0} title={fullPathKey}>{fullPathKey}</code>
             {compactField && help && !duplicateHelp && <ConfigHelp label={`${fieldLabel} ${english ? 'help' : '说明'}`}>{help}</ConfigHelp>}
           </span>
         </div>
@@ -1150,7 +1156,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       groups[groupName].fields.push(<div key="adapter.parameter_mode" id={fieldValue === 'full' ? 'field-adapter.rank' : 'field-adapter.parameter_mode'} data-testid="field-adapter.parameter_mode" data-field-path="adapter.parameter_mode" className={`config-field ${fieldValue === 'full' && errorItem ? 'config-field-invalid' : ''}`}>
         <div className="config-field-heading flex justify-between items-baseline">
           <label htmlFor={modeId} className="text-sm font-medium text-slate-700 dark:text-slate-300">{lokrModeLabel}</label>
-          <span className="config-field-reference"><code className="config-field-key" title={fullPathKey}>adapter.rank</code><ConfigHelp label={`${lokrModeLabel} ${english ? 'help' : '说明'}`}>{english ? 'Full retains the complete LoKr factor matrices; it does not fine-tune the whole model and does not use Alpha. Low rank decomposes the factors using Rank and Alpha.' : 'Full 保留 LoKr 完整因子矩阵，不是全量微调，也不使用 Alpha。低秩模式通过 Rank 和 Alpha 设置因子分解与缩放。'}</ConfigHelp></span>
+          <span className="config-field-reference"><code className="config-field-key" tabIndex={0} title={fullPathKey}>adapter.rank</code><ConfigHelp label={`${lokrModeLabel} ${english ? 'help' : '说明'}`}>{english ? 'Full retains the complete LoKr factor matrices; it does not fine-tune the whole model and does not use Alpha. Low rank decomposes the factors using Rank and Alpha.' : 'Full 保留 LoKr 完整因子矩阵，不是全量微调，也不使用 Alpha。低秩模式通过 Rank 和 Alpha 设置因子分解与缩放。'}</ConfigHelp></span>
         </div>
         <div className="mt-1"><StudioSelect id={modeId} aria-label={lokrModeLabel} disabled={readOnly} value={fieldValue === 'full' ? 'full' : 'low_rank'}
           aria-invalid={fieldValue === 'full' && !!errorItem}

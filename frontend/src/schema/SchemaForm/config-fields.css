@@ -65,8 +65,8 @@
   .config-field-heading { flex-wrap: wrap; }
   .config-field-heading > label { flex: 1 1 auto; }
   .config-field-reference { max-width: 100%; }
-  .config-field-key { display: none; }
 }
+.native-area-limit { display:grid; gap:6px; min-width:0; }
 .source-path-control { margin: 8px 0 12px; }
 .compact-schema .config-field .source-path-control > input { width: 0; flex: 1 1 0; }
 .source-settings-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); }
