@@ -153,6 +153,20 @@ class CaptionConfig(_Strict):
 
 
 class DatasetSourceConfig(_Strict):
+    excluded_files: list[str] = F(default_factory=list, help="暂不参与训练的相对文件路径")
+    excluded_dirs: list[str] = F(default_factory=list, help="由独立来源管理的相对子目录")
+
+    @field_validator("excluded_files", "excluded_dirs")
+    @classmethod
+    def _relative_exclusions(cls, paths: list[str]) -> list[str]:
+        result = []
+        for value in paths:
+            path = value.replace("\\", "/").rstrip("/")
+            if not path or path.startswith("/") or PureWindowsPath(path).drive or any(part in ("", ".", "..") for part in path.split("/")):
+                raise ValueError("excluded paths must stay relative to the source directory")
+            result.append(path)
+        return sorted(set(result))
+
     path: str = F(..., help="图片目录（递归）", ui_=ui(control="path"))
     repeats: int = F(
         1,
@@ -208,7 +222,7 @@ class DatasetConfig(_Strict):
         ge=32,
         le=8192,
         help="原生模式单边长度上限，包含对齐补边；超限后按下方策略等比缩小或报错。",
-        ui_=ui("dataset", order=12, show_when="dataset.resolution_mode == 'native'", advanced=True),
+        ui_=ui("dataset", order=12, show_when="dataset.resolution_mode == 'native'"),
     )
     native_overflow: Literal["downscale", "error"] = F(
         "downscale",

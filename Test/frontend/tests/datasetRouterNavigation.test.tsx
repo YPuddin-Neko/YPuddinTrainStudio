@@ -30,6 +30,7 @@ afterEach(() => { server.resetHandlers(); vi.restoreAllMocks(); vi.clearAllMocks
 function show() {
   const version = { id: 'v2', name: 'Version two', project_id: 'p_dataset', status: 'ready', archived: false, busy: false, number: 2, paths: { root: 'D:/project/v2' }, stats: { images: 1, datasets: 1, jobs: 0, artifacts: 0 } };
   server.use(
+    http.patch('/api/datasets/d_known',async({request})=>{const body=await request.json();return HttpResponse.json({source:{id:'d_known',project_id:'p_dataset',version_id:'v2',path:'D:/project/v2/traindata/photos',repeats:1},stats:{images:1},index_status:'ready',...body as object});}),
     http.get('/api/datasets/d_known', () => HttpResponse.json({ source: { id: 'd_known', project_id: 'p_dataset', version_id: 'v2', path: 'D:/project/v2/traindata/photos', repeats: 1, caption_ext: '.txt' }, index_status: 'ready', stats: { images: 1, captioned: 1, masks: 0 }, cache: {} })),
     http.get('/api/projects/p_dataset', () => HttpResponse.json({ id: 'p_dataset', name: 'Dataset owner', active_version_id: 'v2', layout_version: 2 })),
     http.get('/api/projects/p_dataset/versions', () => HttpResponse.json([version])),
@@ -85,7 +86,8 @@ describe('dataset drafts survive actual data-router history navigation', () => {
     fireEvent.click(screen.getByRole('button', {name:'撤销'})); expect(screen.queryByText('当前为全黑，这张图片不会贡献训练损失。')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', {name:'重做'}));
     fireEvent.click(screen.getByRole('button', {name:'保存并启用遮罩训练'}));
-    await waitFor(() => expect(router.state.location.pathname).toBe('/projects/p_dataset/v/v2/train'));
+    await waitFor(() => expect(maskApi.saveMask).toHaveBeenCalledOnce());
+    expect(router.state.location.pathname).toBe('/datasets/d_known');
     expect(maskApi.saveMask).toHaveBeenCalledOnce();
     expect(vi.mocked(maskApi.saveMask).mock.calls[0][4].every(value => value === 0)).toBe(true);
   });

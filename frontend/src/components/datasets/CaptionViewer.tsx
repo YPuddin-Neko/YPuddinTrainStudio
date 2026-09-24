@@ -25,7 +25,7 @@ export default function CaptionViewer({projectId,versionId,readOnly=false,editin
   const displayedPage=useRef('');
   const [datasetId,setDatasetId]=useState(initialDatasetId);
   const [navigation,setNavigation]=useState({scope:'',page:1,draftSearch:'',search:'',selected:''});
-  const datasets=useQuery({queryKey:['caption-datasets',projectId,versionId],queryFn:({signal})=>apiClient.get<DatasetInfo[]>(`/projects/${projectId}/datasets`,{params:{version_id:versionId},signal,silent:true})});
+  const datasets=useQuery({queryKey:['caption-datasets',projectId,versionId],queryFn:({signal})=>apiClient.get<DatasetInfo[]>(`/projects/${projectId}/datasets`,{params:{version_id:versionId,include_cache:false},signal,silent:true})});
   const source=datasets.data?.find(item=>item.source.id===datasetId) || datasets.data?.[0];
   // Derive reset state before querying: a reused viewer must never request the old page in a new source/version.
   const scope=JSON.stringify([projectId,versionId,source?.source.id]);

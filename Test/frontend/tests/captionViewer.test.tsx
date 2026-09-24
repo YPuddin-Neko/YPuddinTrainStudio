@@ -44,7 +44,7 @@ describe('existing caption viewer',()=>{
     show('v_2',true);
     const original=await screen.findByTestId('existing-caption');
     expect(original.textContent).toBe(caption);
-    expect(calls[0]).toEqual({url:'/projects/p_1/datasets',params:{version_id:'v_2'}});
+    expect(calls[0]).toEqual({url:'/projects/p_1/datasets',params:{version_id:'v_2',include_cache:false}});
     expect(screen.getByRole('img',{name:'大图: first.png'})).toHaveAttribute('src',apiUrl('/datasets/d_a/images/first/file'));
     expect(screen.getByRole('link',{name:'查看数据集详情'})).toHaveAttribute('href','/datasets/d_a?project=p_1&version=v_2');
     fireEvent.click(screen.getByRole('button',{name:'下一张'}));

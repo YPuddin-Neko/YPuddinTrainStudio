@@ -972,16 +972,24 @@ def _index_dataset(c: ServiceContext, did: str) -> None:
     c.bus.publish("dataset.changed", {"dataset_id": did})
 
 
-def _dataset_row(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
+def _dataset_row(c: ServiceContext, r: dict[str, Any], *, include_cache: bool = True) -> dict[str, Any]:
+    from .routes_dataset_management import can_rename, included, source_states
     from .source_roles import managed_source_role
-
+    states = source_states(c, r)
+    exact = next((state[3] for state in states if state[0] == Path(r["path"]).resolve()), None)
+    stats = json.loads(r["stats_json"] or "{}")
+    if r["index_status"] == "ready":
+        records = _records(c, r["id"])
+        stats["training_images"] = sum(included(record["path"], states) for record in records)
+        stats["held_out_images"] = len(records) - stats["training_images"]
     role = managed_source_role(c, r["project_id"], r.get("version_id"), r["path"])
     source = {
         "id": r["id"],
         "project_id": r["project_id"],
         "version_id": r.get("version_id"),
         "path": r["path"],
-        "repeats": r["repeats"],
+        "repeats": exact.get("repeats", r["repeats"]) if exact else r["repeats"],
+        "can_rename": can_rename(c, r),
         "caption_ext": r["caption_ext"],
         "is_reg": role[0] if role is not None else bool(r["is_reg"]),
         "prior_weight": r["prior_weight"],
@@ -990,9 +998,10 @@ def _dataset_row(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
     }
     return {
         "source": source,
-        "stats": json.loads(r["stats_json"] or "{}"),
+        "masked_loss": bool(get_project_config(r["project_id"], c, r.get("version_id")).get("dataset", {}).get("masked_loss", False)) if r.get("project_id") else False,
+        "stats": stats,
         "index_status": r["index_status"],
-        "cache": _cache_stats(c, r),
+        "cache": _cache_stats(c, r) if include_cache else {},
     }
 
 
@@ -1025,6 +1034,9 @@ def _cache_stats(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
             ImageRecord(**{k: v for k, v in rec.items() if k in ImageRecord.__dataclass_fields__})
             for rec in _records(c, r["id"])
         ]
+        from .routes_dataset_management import included, source_states
+        states = source_states(c, r)
+        recs = [record for record in recs if included(record.path, states)]
         if not recs:
             return {}
         ds = cfg.dataset
@@ -1073,11 +1085,11 @@ def _cache_stats(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
 
 @router.get("/projects/{pid}/datasets", response_model=list[m.DatasetInfo], response_model_exclude_unset=True)
 def list_datasets(
-    pid: str, c: ServiceContext = Depends(ctx), version_id: str | None = None
+    pid: str, c: ServiceContext = Depends(ctx), version_id: str | None = None, include_cache: bool = True
 ) -> list[dict[str, Any]]:
     version = c.resolve_version(pid, version_id)
     return [
-        _dataset_row(c, r)
+        _dataset_row(c, r, include_cache=include_cache)
         for r in c.db.fetchall(
             "SELECT * FROM datasets WHERE version_id=? ORDER BY created_at", (version["id"],)
         )
@@ -1166,8 +1178,8 @@ def _get_dataset(c: ServiceContext, did: str) -> dict[str, Any]:
 
 
 @router.get("/datasets/{did}", response_model=m.DatasetInfo, response_model_exclude_unset=True)
-def get_dataset(did: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    return _dataset_row(c, _get_dataset(c, did))
+def get_dataset(did: str, c: ServiceContext = Depends(ctx), include_cache: bool = True) -> dict[str, Any]:
+    return _dataset_row(c, _get_dataset(c, did), include_cache=include_cache)
 
 
 @router.post("/datasets/{did}/rescan", response_model=m.Ok, response_model_exclude_unset=True)
@@ -1263,6 +1275,8 @@ def _dataset_image_items(c: ServiceContext, row: dict) -> list[dict]:
     from ypuddin.data.caption_json import StructuredCaption, load_caption_structure, render, unique
     from ypuddin.data.captions import read_training_caption
 
+    from .routes_dataset_management import included, source_states
+    states = source_states(c, row)
     root = Path(row["path"])
     items = []
     directory_cache = {}
@@ -1313,6 +1327,7 @@ def _dataset_image_items(c: ServiceContext, row: dict) -> list[dict]:
                 "caption_status": status,
                 "_tokens": tokens,
                 "has_mask": bool(r["mask_path"]),
+                "training_enabled": included(r["path"], states),
             }
         )
     return items
@@ -1351,10 +1366,13 @@ def list_images(
     c: ServiceContext = Depends(ctx),
     tag: str | None = None,
     caption_status: Literal["captioned", "missing", "invalid"] | None = None,
+    membership: Literal["all", "training", "unused"] = "all",
 ) -> dict[str, Any]:
     items = []
     query, exact_tag = q.casefold(), tag.strip().casefold() if tag else ""
     for item in _dataset_image_items(c, _get_dataset(c, did)):
+        if membership != "all" and item["training_enabled"] != (membership == "training"):
+            continue
         if query and query not in item["caption"].casefold() and query not in item["rel_path"].casefold():
             continue
         if caption_status and item["caption_status"] != caption_status:
@@ -1474,6 +1492,7 @@ def put_caption(
 
 class TagBatch(BaseModel):
     hashes: list[str]
+    rel_paths: list[str] | None = None
     add: list[str] = Field(default_factory=list)
     remove: list[str] = Field(default_factory=list)
 
@@ -1513,7 +1532,7 @@ def tags_batch(did: str, body: TagBatch, c: ServiceContext = Depends(ctx)) -> di
         try:
             # Parse and serialize every selected caption before changing even the first file.
             for r in recs:
-                if r["content_hash"] not in wanted:
+                if r["content_hash"] not in wanted or (body.rel_paths is not None and Path(r["path"]).relative_to(row["path"]).as_posix() not in body.rel_paths):
                     continue
                 cap_path = (
                     Path(r["caption_path"])

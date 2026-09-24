@@ -121,7 +121,7 @@ describe('independent caption workspace', () => {
     show({ initialDatasetId }); await screen.findByRole('img', { name: '大图：folderA/one.png' });
     expect(requests.find(request => request.url.endsWith('/images'))?.url).toBe(`/datasets/${expected}/images`);
     expect(requests.some(request => request.url.includes('not-in-this-version'))).toBe(false);
-    expect(requests[0].params).toEqual({ version_id: 'v_caption' });
+    expect(requests[0].params).toEqual({ version_id: 'v_caption', include_cache: false });
   });
 
   it('saves JSON tags using the exact relative path without combining the natural-language field or rewriting metadata', async () => {

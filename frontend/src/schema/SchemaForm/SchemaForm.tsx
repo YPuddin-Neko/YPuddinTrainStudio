@@ -586,6 +586,12 @@ function ResolutionInput({value, onChange, label}: {value: number[] | string; on
   return <div className="resolution-editor"><input aria-label={label} inputMode="numeric" value={draft} onChange={event => update(event.target.value)} placeholder="1024, 1536"/></div>;
 }
 
+function NativePixelLimit({value, label, onChange}: {value: number | string; label: string; onChange: (next: number | string) => void}) {
+  const side = typeof value === 'number' && value > 0 ? Number(Math.sqrt(value).toFixed(2)) : '';
+  return <input id="config-dataset.native_max_pixels" aria-label={label} type="number" min={32} max={8192} step="any" value={side}
+    onChange={event=>onChange(event.target.value === '' ? '' : Math.round(Number(event.target.value) ** 2))}/>;
+}
+
 /** Nullable values keep their type; an empty numeric draft becomes null on blur. */
 const SchemaValueInput: React.FC<{
   schema: any; property: SchemaProperty; value: any; name: string; placeholder?: string; compact?: boolean; onChange: (value: any) => void;
@@ -832,6 +838,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     } else if (managedReason) {
       const display = computeManaged?.label ?? (prop.enum ? configOptionLabel(fullPathKey, String(fieldValue), english) : managedValueLabel(fieldValue, english));
       control = <div className="config-managed-value"><output id={fieldId} aria-label={fieldLabel} aria-describedby={`${fieldId}-managed-reason`}>{display}</output><span>{english ? 'Automatic' : '自动管理'}</span></div>;
+    } else if (fullPathKey === 'dataset.native_max_pixels') {
+      control = <NativePixelLimit value={fieldValue} label={fieldLabel} onChange={next => onChange(setNestedValue(value, path, next))}/>;
     } else if (compact && fullPathKey === 'dataset.resolutions') {
       control = <ResolutionInput label={fieldLabel} value={fieldValue} onChange={next => onChange(setNestedValue(value, path, next))} />;
     } else if (prop.type === 'object' && prop.properties) {

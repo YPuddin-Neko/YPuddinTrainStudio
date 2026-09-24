@@ -79,12 +79,12 @@ describe('compact configuration workbench contracts', () => {
     fireEvent.click(screen.getByRole('combobox',{name:'分辨率模式'}));
     fireEvent.click(screen.getByRole('option',{name:'原生 · 每图独立尺寸'}));
     for (const name of ['resolutions','aspect_ratio_limit','area_tolerance','bucket_step','bucket_no_upscale']) expect(screen.queryByTestId(`field-dataset.${name}`)).not.toBeInTheDocument();
-    expect(screen.getByRole('spinbutton',{name:'原生像素预算'})).toHaveValue(1048576);
-    expect(screen.getByRole('combobox',{name:'超出预算时'})).toHaveTextContent('等比缩小到预算内');
-    fireEvent.change(screen.getByRole('spinbutton',{name:'原生最长边'}),{target:{value:'2048'}});
+    expect(screen.getByRole('spinbutton',{name:'图像面积上限（等效边长 px）'})).toHaveValue(1024);
+    expect(screen.getByRole('combobox',{name:'超出尺寸上限时'})).toHaveTextContent('等比缩小到上限内');
+    fireEvent.change(screen.getByRole('spinbutton',{name:'最长边上限（px）'}),{target:{value:'2048'}});
     fireEvent.click(screen.getByRole('combobox',{name:'分辨率模式'}));
     fireEvent.click(screen.getByRole('option',{name:'分桶 · 统一基准面积'}));
-    expect(screen.queryByRole('spinbutton',{name:'原生像素预算'})).not.toBeInTheDocument();
+    expect(screen.queryByRole('spinbutton',{name:'图像面积上限（等效边长 px）'})).not.toBeInTheDocument();
     expect(screen.getByRole('spinbutton',{name:'最大长宽比'})).toHaveValue(2);
     expect(JSON.parse(screen.getByTestId('native-config').textContent!).dataset).toEqual({resolution_mode:'bucket',resolutions:[768],aspect_ratio_limit:2,native_max_side:2048});
   });

@@ -54,6 +54,7 @@ function fixture(archived = false) {
     http.put('/api/projects/p_archive/config', async ({ request }) => { const body = await request.json(); state.writes.push({ method: 'PUT', path: '/config', body }); state.config = body; return HttpResponse.json(body); }),
     http.get('/api/projects/p_archive/datasets', () => HttpResponse.json([dataset])),
     http.get('/api/datasets/d_archive', () => HttpResponse.json(dataset)),
+    http.patch('/api/datasets/d_archive', async ({ request }) => { const body = await request.json(); state.writes.push({ method: 'PATCH', path: '/datasets/d_archive', body }); return HttpResponse.json(dataset); }),
     http.get('/api/jobs', () => HttpResponse.json({ items: [], total: 0, page: 1, page_size: 50 })),
     http.get('/api/artifacts', () => HttpResponse.json([{ id: 'a_archive', kind: 'weights', name: 'archive.safetensors', project_id: 'p_archive', version_id: 'v1', job_id: 'j_old', path: 'D:/v1/output.safetensors', size: 100, created_at: 1, metadata: { test: 'kept' } }])),
     http.post('/api/jobs', async ({ request }) => { const body = await request.json(); state.writes.push({ method: 'POST', path: '/jobs', body }); return HttpResponse.json({ id: 'j_cache' }); }),
@@ -167,11 +168,11 @@ describe('archived versions remain readable without write actions', () => {
     const state = fixture(true); let release: () => void = () => {}; let requested = false;
     server.use(http.get('/api/projects/p_archive/versions/v1', async () => { requested = true; await new Promise<void>(resolve => { release = resolve; }); return HttpResponse.json(state.versions[0]); }));
     show('/datasets/d_archive'); await screen.findByText('正在确认版本状态，暂以只读方式查看。');
-    expect(screen.getByRole('button', { name: i18n.t('dataset.precache') })).toBeDisabled();
+    expect(screen.getByRole('switch', { name:'使用遮罩训练' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: /编辑遮罩/ })).not.toBeInTheDocument();
     await waitFor(() => expect(requested).toBe(true)); await act(async () => release());
     await screen.findByText('此版本已归档，图片、标签和遮罩只读。');
-    for (const name of [i18n.t('dataset.precache'), i18n.t('dataset.rescan'), i18n.t('dataset.remove'), '启用遮罩并前往训练']) {
+    for (const name of [i18n.t('dataset.rescan'), i18n.t('dataset.remove'), '保存目录设置']) {
       const button = screen.getByRole('button', { name }); expect(button).toBeDisabled(); fireEvent.click(button);
     }
     expect(screen.queryByTestId('batch-add-input')).not.toBeInTheDocument();
@@ -189,8 +190,8 @@ describe('archived versions remain readable without write actions', () => {
     vi.spyOn(window, 'alert').mockImplementation(() => {});
     fireEvent.click(screen.getByRole('button', { name: i18n.t('common.refresh') }));
     expect(await screen.findByRole('button', { name: '编辑遮罩 · 已有文件' })).toBeEnabled();
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('dataset.precache') }));
+    fireEvent.click(screen.getByRole('switch', { name: '使用遮罩训练' }));
     await waitFor(() => expect(state.writes).toHaveLength(1));
-    expect(state.writes[0]).toMatchObject({ method: 'POST', path: '/jobs', body: { type: 'cache', version_id: 'v1' } });
+    expect(state.writes[0]).toMatchObject({ method: 'PATCH', path: '/datasets/d_archive', body: { masked_loss: true } });
   });
 });

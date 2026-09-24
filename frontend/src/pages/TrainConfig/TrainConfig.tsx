@@ -351,7 +351,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     if (!projectId) return;
     let active = true;
     void apiClient.get<VersionedProject>(`/projects/${projectId}`, { silent: true }).then(value => { if (active) setProject(value); }).catch(() => {});
-    void apiClient.get<DatasetInfo[]>(`/projects/${projectId}/datasets`, { params: { version_id: versionId }, silent: true }).then(value => { if (active) setDatasets(value); }).catch(() => {});
+    void apiClient.get<DatasetInfo[]>(`/projects/${projectId}/datasets`, { params: { version_id: versionId, include_cache: false }, silent: true }).then(value => { if (active) setDatasets(value); }).catch(() => {});
     return () => { active = false; };
   }, [projectId, versionId]);
 
@@ -630,7 +630,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
           {!loaded ? <p className="p-6 text-sm text-slate-500">{t('common.loading')}</p> : <SchemaForm key={revealVersion} compact readOnly={!!inactiveReason} schema={orderedSchema} value={config} computePolicy={computePolicy} sourceRoles={sourceRoles} outputBinding={outputBinding} versionSources={!!projectId} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} search={search} onClearSearch={clearSearch} errors={issues.map(issue => ({loc:issue.path,msg:issue.message === OPAQUE_CONFIG_ISSUE ? '' : issue.message}))} family={familyByName(families, config?.model?.family)} families={families} />}
         </div>
       </div>
-      <aside id="training-plan-panel" className={`training-inspector ${inspectorOpen ? 'is-open' : ''}`} aria-label={text('训练计划', 'Training plan')}><button type="button" className="inspector-return" onClick={() => setInspectorOpen(false)}>{text('返回参数', 'Back to parameters')}</button><BucketInspector plan={plan} loading={validating} dataset={config.dataset} readOnly={!!inactiveReason} onSizingChange={changes => handleConfigChange({...config,dataset:{...config.dataset,...changes}})} error={planError} onRetry={()=>setAuxiliaryReload(value=>value+1)} hasSources={!!config.dataset?.sources?.length} indexed={indexedStats || undefined} onIssues={() => setIssuesOpen(true)} onData={() => {setActiveTab('data');setSearch('');setInspectorOpen(false);}}/>
+      <aside id="training-plan-panel" className={`training-inspector ${inspectorOpen ? 'is-open' : ''}`} aria-label={text('训练计划', 'Training plan')}><button type="button" className="inspector-return" onClick={() => setInspectorOpen(false)}>{text('返回参数', 'Back to parameters')}</button><BucketInspector plan={plan} loading={validating} dataset={config.dataset} error={planError} onRetry={()=>setAuxiliaryReload(value=>value+1)} hasSources={!!config.dataset?.sources?.length} indexed={indexedStats || undefined} onIssues={() => setIssuesOpen(true)} onData={() => {setActiveTab('data');setSearch('');setInspectorOpen(false);}}/>
         {!!plan?.warnings?.length && <details className="plan-notes"><summary><AlertCircle size={13}/>{text('配置提示', 'Configuration notes')} · {plan.warnings.length}</summary><ul>{plan.warnings.map((warning,index) => <li key={index}>{presentPlanWarning(warning.code,warning.msg,english)}</li>)}</ul></details>}
       </aside>
     </div>

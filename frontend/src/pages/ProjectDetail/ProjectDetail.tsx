@@ -46,7 +46,7 @@ function ProjectDetailContent({projectId: id, versionId}: {projectId: string; ve
   const datasetsQuery = useQuery({
     queryKey:['project-workspace-datasets',id,versionId],enabled:!!project && scopedReady,
     queryFn:async()=>{
-      const rows=await apiClient.get<Array<DatasetInfo|DatasetSource>>(`/projects/${id}/datasets`,{params:{version_id:versionId},silent:true});
+      const rows=await apiClient.get<Array<DatasetInfo|DatasetSource>>(`/projects/${id}/datasets`,{params:{version_id:versionId,include_cache:false},silent:true});
       return rows.map(item=>'source' in item?item as DatasetInfo:{source:item as DatasetSource}) as WorkspaceDataset[];
     },
     refetchInterval:query=>query.state.data?.some(item=>item.index_status==='indexing')?2000:false,

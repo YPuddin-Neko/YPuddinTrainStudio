@@ -2229,6 +2229,16 @@
               ],
               "title": "Version Id"
             }
+          },
+          {
+            "name": "include_cache",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Include Cache"
+            }
           }
         ],
         "responses": {
@@ -2518,6 +2528,16 @@
               "type": "string",
               "title": "Did"
             }
+          },
+          {
+            "name": "include_cache",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Include Cache"
+            }
           }
         ],
         "responses": {
@@ -2564,6 +2584,55 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Edit Dataset",
+        "operationId": "edit_dataset_api_datasets__did__patch",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Did"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetEdit"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Edit Dataset Api Datasets  Did  Patch"
                 }
               }
             }
@@ -2738,6 +2807,21 @@
                 }
               ],
               "title": "Caption Status"
+            }
+          },
+          {
+            "name": "membership",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "training",
+                "unused"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Membership"
             }
           }
         ],
@@ -4745,6 +4829,117 @@
             "description": "Source image in training orientation",
             "content": {
               "image/png": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/datasets/{did}/membership": {
+      "post": {
+        "summary": "Edit Membership",
+        "operationId": "edit_membership_api_datasets__did__membership_post",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Did"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MembershipEdit"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Edit Membership Api Datasets  Did  Membership Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{pid}/versions/{vid}/dataset-membership": {
+      "post": {
+        "summary": "Edit Version Membership",
+        "operationId": "edit_version_membership_api_projects__pid__versions__vid__dataset_membership_post",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionMembershipEdit"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Edit Version Membership Api Projects  Pid  Versions  Vid  Dataset Membership Post"
+                }
+              }
             }
           },
           "422": {
@@ -8021,7 +8216,6 @@
             "description": "原生模式单边长度上限，包含对齐补边；超限后按下方策略等比缩小或报错。",
             "default": 4096,
             "x-ui": {
-              "advanced": true,
               "group": "dataset",
               "order": 12,
               "show_when": "dataset.resolution_mode == 'native'"
@@ -8206,6 +8400,47 @@
         "type": "object",
         "title": "DatasetConfig"
       },
+      "DatasetEdit": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "repeats": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1000000.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repeats"
+          },
+          "masked_loss": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Masked Loss"
+          }
+        },
+        "type": "object",
+        "title": "DatasetEdit"
+      },
       "DatasetImage": {
         "properties": {
           "hash": {
@@ -8295,6 +8530,17 @@
           "has_mask": {
             "type": "boolean",
             "title": "Has Mask"
+          },
+          "training_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Training Enabled"
           }
         },
         "additionalProperties": true,
@@ -8419,6 +8665,17 @@
       },
       "DatasetInfo": {
         "properties": {
+          "masked_loss": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Masked Loss"
+          },
           "source": {
             "$ref": "#/components/schemas/DatasetSource"
           },
@@ -8553,6 +8810,17 @@
           "created_at": {
             "type": "number",
             "title": "Created At"
+          },
+          "can_rename": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Can Rename"
           }
         },
         "additionalProperties": true,
@@ -8572,6 +8840,22 @@
       },
       "DatasetSourceConfig": {
         "properties": {
+          "excluded_files": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Excluded Files",
+            "description": "暂不参与训练的相对文件路径"
+          },
+          "excluded_dirs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Excluded Dirs",
+            "description": "由独立来源管理的相对子目录"
+          },
           "path": {
             "type": "string",
             "title": "Path",
@@ -8655,6 +8939,28 @@
       },
       "DatasetStats": {
         "properties": {
+          "training_images": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Training Images"
+          },
+          "held_out_images": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Held Out Images"
+          },
           "images": {
             "type": "integer",
             "title": "Images",
@@ -8702,6 +9008,17 @@
       },
       "DatasetUploadInfo": {
         "properties": {
+          "masked_loss": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Masked Loss"
+          },
           "source": {
             "$ref": "#/components/schemas/DatasetSource"
           },
@@ -10751,6 +11068,24 @@
         ],
         "title": "ImagePage"
       },
+      "ImageReference": {
+        "properties": {
+          "dataset_id": {
+            "type": "string",
+            "title": "Dataset Id"
+          },
+          "rel_path": {
+            "type": "string",
+            "title": "Rel Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dataset_id",
+          "rel_path"
+        ],
+        "title": "ImageReference"
+      },
       "Job": {
         "properties": {
           "id": {
@@ -12024,6 +12359,29 @@
           "revision"
         ],
         "title": "MaskInfo"
+      },
+      "MembershipEdit": {
+        "properties": {
+          "paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20000,
+            "minItems": 1,
+            "title": "Paths"
+          },
+          "included": {
+            "type": "boolean",
+            "title": "Included"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paths",
+          "included"
+        ],
+        "title": "MembershipEdit"
       },
       "MemoryConfig": {
         "properties": {
@@ -17657,6 +18015,20 @@
             "type": "array",
             "title": "Hashes"
           },
+          "rel_paths": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rel Paths"
+          },
           "add": {
             "items": {
               "type": "string"
@@ -18388,6 +18760,29 @@
           "name"
         ],
         "title": "VersionBody"
+      },
+      "VersionMembershipEdit": {
+        "properties": {
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/ImageReference"
+            },
+            "type": "array",
+            "maxItems": 20000,
+            "minItems": 1,
+            "title": "Images"
+          },
+          "included": {
+            "type": "boolean",
+            "title": "Included"
+          }
+        },
+        "type": "object",
+        "required": [
+          "images",
+          "included"
+        ],
+        "title": "VersionMembershipEdit"
       },
       "VersionPatch": {
         "properties": {

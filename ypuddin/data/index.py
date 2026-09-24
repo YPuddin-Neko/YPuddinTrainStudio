@@ -196,7 +196,12 @@ def scan_sources(
     records: list[ImageRecord] = []
     paths: list[tuple[int, Path, DatasetSourceConfig]] = []
     for si, src in enumerate(sources):
-        paths.extend((si, p, src) for p in iter_images(src.path))
+        excluded = set(src.excluded_files)
+        prefixes = tuple(directory + "/" for directory in src.excluded_dirs)
+        for p in iter_images(src.path):
+            relative = p.relative_to(Path(src.path).expanduser()).as_posix()
+            if relative not in excluded and not relative.startswith(prefixes):
+                paths.append((si, p, src))
     total = len(paths)
     caption_directories: dict[Path, dict[str, dict[str, Path]]] = {}
     for i, (si, p, src) in enumerate(paths):
@@ -272,7 +277,8 @@ def dataset_fingerprint(
     Versioning intentionally invalidates old checkpoints whose fingerprints ignored sidecars.
     """
     h = hashlib.blake2b(digest_size=8)
-    semantic_sources = [s.model_dump(mode="json", exclude={"path"}) for s in sources]
+    # Selection is already represented by the records; keep names out of resume identity.
+    semantic_sources = [s.model_dump(mode="json", exclude={"path", "excluded_files", "excluded_dirs"}) for s in sources]
     payload = {
         "version": 2,
         "sources": semantic_sources,

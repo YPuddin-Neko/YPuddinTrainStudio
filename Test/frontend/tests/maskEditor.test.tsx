@@ -71,16 +71,16 @@ describe('mask editor interactions', () => {
   it('opens from Dataset and enables masked loss while preserving existing project settings', async () => {
     const config = { model: { family: 'anima', dit: 'D:/models/model.safetensors' }, dataset: { sources: [{ path: 'D:/photos', repeats: 4 }], masked_loss: false, cache_dir: 'D:/cache' }, loop: { epochs: 12 } };
     vi.spyOn(apiClient, 'get').mockImplementation(async (endpoint) => endpoint.endsWith('/config') ? config as any : { source: { id: 'data1', project_id: 'project1', path: 'D:/photos', repeats: 4 }, index_status: 'ready', stats: { images: 1, masks: 0 } } as any);
-    const put = vi.spyOn(apiClient, 'put').mockResolvedValue(config);
+    const patch = vi.spyOn(apiClient, 'patch').mockResolvedValue({source:{id:'data1',project_id:'project1',path:'D:/photos',repeats:4},masked_loss:true,stats:{images:1},index_status:'ready'} as any);
     render(<MemoryRouter initialEntries={['/datasets/data1']}><Routes><Route path="/datasets/:id" element={<Dataset />} /><Route path="/projects/:id/train" element={<p>Train configuration destination</p>} /></Routes></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: '编辑遮罩' }));
     await screen.findByRole('button', { name: '反转' });
     fireEvent.click(screen.getByRole('button', { name: '保存并启用遮罩训练' }));
-    await screen.findByText('Train configuration destination');
-    expect(put).toHaveBeenCalledWith('/projects/project1/config', { ...config, dataset: { ...config.dataset, masked_loss: true } });
+    await waitFor(()=>expect(patch).toHaveBeenCalledWith('/datasets/data1',{masked_loss:true}));
+    expect(screen.queryByText('Train configuration destination')).not.toBeInTheDocument();
     expect(maskApi.saveMask).toHaveBeenCalledOnce();
   });
-  it('keeps a managed Windows dataset title compact and opens distribution only when requested', async () => {
+  it('keeps a managed Windows dataset title compact without duplicate distribution controls', async () => {
     const path = 'D:\\Trainer\\data\\projects\\project1\\datasets\\d_012abc-人物素材\\';
     vi.spyOn(apiClient, 'get').mockResolvedValue({ source: { id: 'data1', project_id: 'project1', path, repeats: 2 }, index_status: 'ready', stats: { images: 1, masks: 0, captioned: 1, resolutions: [{ w: 512, h: 768, count: 1 }] } });
     render(<MemoryRouter initialEntries={['/datasets/data1']}><Routes><Route path="/datasets/:id" element={<Dataset />} /></Routes></MemoryRouter>);
@@ -88,10 +88,7 @@ describe('mask editor interactions', () => {
     expect(title).toHaveAttribute('title', path);
     expect(screen.getByText(path).closest('details')).not.toHaveAttribute('open');
     expect(screen.queryByText('512×768')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '分布与分桶' }));
-    expect(screen.getByText('512×768')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '分布与分桶' }));
-    expect(screen.queryByText('512×768')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', {name:'分布与分桶'})).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '编辑遮罩' })).toBeEnabled();
   });
 });

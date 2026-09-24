@@ -116,9 +116,9 @@ describe('dataset pipeline', () => {
     expect(screen.getByText(/1 个透明或半透明像素/)).toHaveTextContent('最低不透明度 99.6%');
     fireEvent.click(screen.getByRole('combobox',{name:'显示'}));
     fireEvent.click(screen.getByRole('option',{name:'含透明像素'}));
-    expect(screen.getByRole('button',{name:'排除 0 张选中图片'})).toBeDisabled();
+    expect(screen.getByRole('button',{name:'暂时移出训练（0）'})).toBeDisabled();
     fireEvent.click(screen.getByRole('button',{name:'选择当前筛选结果'}));
-    fireEvent.click(screen.getByRole('button',{name:'排除 1 张选中图片'}));
+    fireEvent.click(screen.getByRole('button',{name:'暂时移出训练（1）'}));
     await waitFor(() => expect(submitted[0].body.images).toEqual([{dataset_id:'d_1',rel_path:'subtle.png'}]));
   });
   it('persists the selected stage in URL and per-version memory with browser back support', async()=>{
@@ -149,8 +149,8 @@ describe('dataset pipeline', () => {
     fireEvent.click(screen.getByRole('button',{name:'选择重复副本（每组保留一张）'}));
     expect(screen.getByRole('checkbox',{name:'选择 a.png'})).not.toBeChecked();
     expect(screen.getByRole('checkbox',{name:'选择 b.png'})).toBeChecked();
-    fireEvent.click(screen.getByRole('button',{name:'排除 1 张选中图片'}));
-    await waitFor(() => expect(submitted[0]).toEqual({url:'/projects/p_1/versions/v_2/pipeline/operations',body:{action:'exclude',images:[{dataset_id:'d_1',rel_path:'b.png'}]}}));
+    fireEvent.click(screen.getByRole('button',{name:'暂时移出训练（1）'}));
+    await waitFor(() => expect(submitted[0]).toEqual({url:'/projects/p_1/versions/v_2/dataset-membership',body:{included:false,images:[{dataset_id:'d_1',rel_path:'b.png'}]}}));
   });
   it('opens paint and masks without a prior inspection or crop controls', async () => {
     state.inspection=null;
@@ -161,7 +161,7 @@ describe('dataset pipeline', () => {
     expect(screen.queryByTestId('existing-caption')).not.toBeInTheDocument();
     expect(screen.queryByText('暂无标签')).not.toBeInTheDocument();
     expect(submitted).toEqual([]);
-    expect(apiClient.get).toHaveBeenCalledWith('/projects/p_1/datasets',expect.objectContaining({params:{version_id:'v_2'}}));
+    expect(apiClient.get).toHaveBeenCalledWith('/projects/p_1/datasets',expect.objectContaining({params:{version_id:'v_2',include_cache:false}}));
   });
   it('opens the dedicated caption workspace without inspection and preserves operation recovery', async () => {
     state.inspection=null;
@@ -221,7 +221,7 @@ it('names failed painting and returns to its editor instead of posting an unsupp
   fireEvent.click(screen.getByRole('button',{name:'返回涂抹与遮罩'}));
   expect(screen.getByTestId('pipeline-location')).toHaveTextContent('data_step=paint');
   expect(await screen.findByRole('button',{name:'打开涂抹与遮罩编辑器'})).toBeEnabled();
-  expect(apiClient.get).toHaveBeenCalledWith('/projects/p_1/datasets',expect.objectContaining({params:{version_id:'v_2'}}));
+  expect(apiClient.get).toHaveBeenCalledWith('/projects/p_1/datasets',expect.objectContaining({params:{version_id:'v_2',include_cache:false}}));
   expect(submitted).toEqual([]);
 });
 

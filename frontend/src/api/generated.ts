@@ -718,7 +718,8 @@ export interface paths {
         delete: operations["delete_dataset_api_datasets__did__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Edit Dataset */
+        patch: operations["edit_dataset_api_datasets__did__patch"];
         trace?: never;
     };
     "/api/datasets/{did}/rescan": {
@@ -1319,6 +1320,40 @@ export interface paths {
         get: operations["mask_source_api_datasets__did__images__h__mask_source_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/datasets/{did}/membership": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Edit Membership */
+        post: operations["edit_membership_api_datasets__did__membership_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{pid}/versions/{vid}/dataset-membership": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Edit Version Membership */
+        post: operations["edit_version_membership_api_projects__pid__versions__vid__dataset_membership_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2627,6 +2662,15 @@ export interface components {
              */
             text_encoding: "auto" | "online" | "cached";
         };
+        /** DatasetEdit */
+        DatasetEdit: {
+            /** Name */
+            name?: string | null;
+            /** Repeats */
+            repeats?: number | null;
+            /** Masked Loss */
+            masked_loss?: boolean | null;
+        };
         /** DatasetImage */
         DatasetImage: {
             /** Hash */
@@ -2656,6 +2700,8 @@ export interface components {
             caption_status: "captioned" | "missing" | "invalid";
             /** Has Mask */
             has_mask: boolean;
+            /** Training Enabled */
+            training_enabled?: boolean | null;
         } & {
             [key: string]: unknown;
         };
@@ -2691,6 +2737,8 @@ export interface components {
         };
         /** DatasetInfo */
         DatasetInfo: {
+            /** Masked Loss */
+            masked_loss?: boolean | null;
             source: components["schemas"]["DatasetSource"];
             stats: components["schemas"]["DatasetStats"];
             /** Index Status */
@@ -2734,11 +2782,23 @@ export interface components {
             class_prompt: string | null;
             /** Created At */
             created_at: number;
+            /** Can Rename */
+            can_rename?: boolean | null;
         } & {
             [key: string]: unknown;
         };
         /** DatasetSourceConfig */
         DatasetSourceConfig: {
+            /**
+             * Excluded Files
+             * @description 暂不参与训练的相对文件路径
+             */
+            excluded_files?: string[];
+            /**
+             * Excluded Dirs
+             * @description 由独立来源管理的相对子目录
+             */
+            excluded_dirs?: string[];
             /**
              * Path
              * @description 图片目录（递归）
@@ -2783,6 +2843,10 @@ export interface components {
         };
         /** DatasetStats */
         DatasetStats: {
+            /** Training Images */
+            training_images?: number | null;
+            /** Held Out Images */
+            held_out_images?: number | null;
             /**
              * Images
              * @default 0
@@ -2809,6 +2873,8 @@ export interface components {
         };
         /** DatasetUploadInfo */
         DatasetUploadInfo: {
+            /** Masked Loss */
+            masked_loss?: boolean | null;
             source: components["schemas"]["DatasetSource"];
             stats: components["schemas"]["DatasetStats"];
             /** Index Status */
@@ -3588,6 +3654,13 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** ImageReference */
+        ImageReference: {
+            /** Dataset Id */
+            dataset_id: string;
+            /** Rel Path */
+            rel_path: string;
+        };
         /** Job */
         Job: {
             /** Id */
@@ -3969,6 +4042,13 @@ export interface components {
              * @default false
              */
             resized: boolean;
+        };
+        /** MembershipEdit */
+        MembershipEdit: {
+            /** Paths */
+            paths: string[];
+            /** Included */
+            included: boolean;
         };
         /** MemoryConfig */
         MemoryConfig: {
@@ -6226,6 +6306,8 @@ export interface components {
         TagBatch: {
             /** Hashes */
             hashes: string[];
+            /** Rel Paths */
+            rel_paths?: string[] | null;
             /** Add */
             add?: string[];
             /** Remove */
@@ -6515,6 +6597,13 @@ export interface components {
             copy_config: boolean;
             /** Family */
             family?: ("anima" | "krea2" | "sdxl" | "flux2" | "toy") | null;
+        };
+        /** VersionMembershipEdit */
+        VersionMembershipEdit: {
+            /** Images */
+            images: components["schemas"]["ImageReference"][];
+            /** Included */
+            included: boolean;
         };
         /** VersionPatch */
         VersionPatch: {
@@ -8512,6 +8601,7 @@ export interface operations {
         parameters: {
             query?: {
                 version_id?: string | null;
+                include_cache?: boolean;
             };
             header?: never;
             path: {
@@ -8663,7 +8753,9 @@ export interface operations {
     };
     get_dataset_api_datasets__did__get: {
         parameters: {
-            query?: never;
+            query?: {
+                include_cache?: boolean;
+            };
             header?: never;
             path: {
                 did: string;
@@ -8710,6 +8802,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Ok"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_dataset_api_datasets__did__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                did: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatasetEdit"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -8793,6 +8922,7 @@ export interface operations {
                 q?: string;
                 tag?: string | null;
                 caption_status?: ("captioned" | "missing" | "invalid") | null;
+                membership?: "all" | "training" | "unused";
             };
             header?: never;
             path: {
@@ -10107,6 +10237,81 @@ export interface operations {
                 };
                 content: {
                     "image/png": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_membership_api_datasets__did__membership_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                did: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MembershipEdit"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_version_membership_api_projects__pid__versions__vid__dataset_membership_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+                vid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VersionMembershipEdit"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

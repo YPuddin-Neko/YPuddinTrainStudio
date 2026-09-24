@@ -241,6 +241,19 @@ class DatasetPipeline:
             "can_cancel": row["status"] not in TERMINAL and row["phase"] != "applying",
         }
 
+    def _apply_membership(self, pid: str, vid: str, inspection: dict) -> dict:
+        from .routes_dataset_management import included, source_states
+        states = source_states(self.c, {"project_id": pid, "version_id": vid})
+        for image in inspection["images"]:
+            image["training_enabled"] = included(image["path"], states)
+        inspection["training_errors"] = sum(
+            issue["severity"] == "error"
+            for image in inspection["images"]
+            if image["training_enabled"] or "validation" in image["roles"]
+            for issue in image["issues"]
+        ) + sum(issue["severity"] == "error" for issue in inspection["source_issues"])
+        return inspection
+
     def snapshot(self, pid: str, vid: str) -> dict:
         version = self.c.resolve_version(pid, vid)
         operations = [
@@ -260,6 +273,8 @@ class DatasetPipeline:
             ),
             None,
         )
+        if inspection:
+            self._apply_membership(pid, vid, inspection)
         plan = next(
             (
                 op["result"]["plan"]
@@ -304,7 +319,7 @@ class DatasetPipeline:
             "busy": bool(version["busy"]),
             "archived": bool(version["archived"]),
             "ready_to_train": bool(
-                prepared and inspection and not inspection["errors"] and plan and plan["ok"]
+                prepared and inspection and not inspection["training_errors"] and plan and plan["ok"]
             ),
             "prepared_job_id": prepared["job_id"] if prepared else None,
             "datasets": [
@@ -984,7 +999,8 @@ class DatasetPipeline:
                 result["inspection"] = self._inspect(oid, pid, vid)
                 self._cancelled(oid)
             if request["action"] == "prepare":
-                if result["inspection"]["errors"]:
+                self._apply_membership(pid, vid, result["inspection"])
+                if result["inspection"]["training_errors"]:
                     raise ApiError(
                         "resolve the reported data errors before caching", code="pipeline.quality_errors"
                     )
@@ -993,7 +1009,8 @@ class DatasetPipeline:
                 self._progress(
                     oid, "planning", 0, 1, "Checking actual bucket layout and training requirements"
                 )
-                result["plan"] = plan(cfg, device=devices[0]["device"] if devices else "cpu")
+                result["plan"] = plan(cfg, device=devices[0]["device"] if devices else "cpu",
+                                      index_db_path=self.c.service_cache_dir("index") / "index.sqlite")
                 result["recipe_signature"] = self.signature(pid, vid, recipe=True)
                 if not result["plan"]["ok"]:
                     raise ApiError(

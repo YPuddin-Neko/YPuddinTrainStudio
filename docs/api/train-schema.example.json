@@ -727,7 +727,6 @@
           "title": "Native Max Side",
           "type": "integer",
           "x-ui": {
-            "advanced": true,
             "group": "dataset",
             "order": 12,
             "show_when": "dataset.resolution_mode == 'native'"
@@ -916,6 +915,22 @@
     "DatasetSourceConfig": {
       "additionalProperties": false,
       "properties": {
+        "excluded_files": {
+          "description": "暂不参与训练的相对文件路径",
+          "items": {
+            "type": "string"
+          },
+          "title": "Excluded Files",
+          "type": "array"
+        },
+        "excluded_dirs": {
+          "description": "由独立来源管理的相对子目录",
+          "items": {
+            "type": "string"
+          },
+          "title": "Excluded Dirs",
+          "type": "array"
+        },
         "path": {
           "description": "图片目录（递归）",
           "title": "Path",

@@ -38,7 +38,7 @@ def _registered(c, pid: str, vid: str) -> dict[Path, dict]:
     return {
         _resolved(row["path"]): row
         for row in c.db.fetchall(
-            "SELECT path,is_reg,index_status,stats_json FROM datasets WHERE project_id=? AND version_id=?",
+            "SELECT id,path,is_reg,index_status,stats_json FROM datasets WHERE project_id=? AND version_id=?",
             (pid, vid),
         )
     }
@@ -95,6 +95,12 @@ def describe_source_roles(c, pid: str, config: dict, version_id: str | None = No
                     images = json.loads(row["stats_json"]).get("images")
                 except (ValueError, TypeError):
                     pass
+                if item.get("excluded_files") or item.get("excluded_dirs"):
+                    from .routes_dataset_management import included
+                    from .routes_work import _records
+                    states = [(Path(path).expanduser().resolve(), set(item.get("excluded_files", [])),
+                               tuple(p + "/" for p in item.get("excluded_dirs", [])), item)]
+                    images = sum(included(record["path"], states) for record in _records(c, row["id"]))
             result.append(
                 {
                     "path": path,

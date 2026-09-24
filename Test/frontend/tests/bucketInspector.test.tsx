@@ -11,17 +11,12 @@ const balancePlan=(repeats=2)=>({ok:true,errors:[],warnings:[],source_balance:[
 
 beforeEach(async () => { await i18n.changeLanguage('zh-CN'); });
 
-it('exposes the effective native budget as editable controls without changing it on render',()=>{
-  const change=vi.fn();
-  const plan={ok:true,errors:[],warnings:[],buckets:[{base: 0,w:864,h:1200,items:133,batches:133}],native:{max_pixels:1048576,downscaled:152}} as unknown as Plan;
-  render(<BucketInspector plan={plan} loading={false} onData={()=>{}} dataset={{resolution_mode:'native',native_max_pixels:1048576,native_max_side:4096}} onSizingChange={change}/>);
+it('shows native training results without embedding parameter editors in the inspector',()=>{
+  const plan={ok:true,errors:[],warnings:[],buckets:[{base:0,w:864,h:1200,items:133,batches:133}],native:{max_pixels:1048576,downscaled:152}} as unknown as Plan;
+  render(<BucketInspector plan={plan} loading={false} onData={()=>{}} dataset={{resolution_mode:'native'}}/>);
   expect(screen.getByRole('heading',{name:'实际训练尺寸'})).toBeVisible();
-  expect(screen.getByText('1024² = 1,048,576 像素 · 152 张因上限缩小')).toBeVisible();
-  expect(change).not.toHaveBeenCalled();
-  fireEvent.change(screen.getByRole('spinbutton',{name:'像素上限'}),{target:{value:'16777216'}});
-  expect(change).toHaveBeenCalledWith({native_max_pixels:16777216});
-  fireEvent.change(screen.getByRole('spinbutton',{name:'单边上限（px）'}),{target:{value:'8192'}});
-  expect(change).toHaveBeenLastCalledWith({native_max_side:8192});
+  expect(screen.getByRole('button',{name:'864 × 1200, 133 样本'})).toBeVisible();
+  expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
 });
 
 it('shows real source proportions, repeat formulas and a separate regularization group',()=>{
@@ -85,22 +80,6 @@ it('explains each GPU batch and memory when a distributed plan is selected', () 
   expect(screen.getByText('有效批量上限').parentElement).toHaveTextContent('8');
   expect(screen.getByText('首轮末尾略过').parentElement).toHaveTextContent('1 张');
   expect(screen.getByText('每卡显存峰值估算')).toBeInTheDocument();
-});
-
-it('allows clearing a size limit while typing and never sends an incomplete or out-of-range value', () => {
-  const change=vi.fn();
-  render(<BucketInspector plan={null} loading={false} onData={()=>{}} dataset={{resolution_mode:'native',native_max_pixels:1048576,native_max_side:4096}} onSizingChange={change}/>);
-  const limit=screen.getByRole('spinbutton',{name:'像素上限'});
-  fireEvent.change(limit,{target:{value:''}});
-  expect(limit).toHaveValue(null);
-  expect(change).not.toHaveBeenCalled();
-  fireEvent.change(limit,{target:{value:'1'}});
-  expect(limit).toHaveAttribute('aria-invalid','true');
-  expect(change).not.toHaveBeenCalled();
-  fireEvent.blur(limit);
-  expect(limit).toHaveValue(1048576);
-  fireEvent.change(limit,{target:{value:'4194304'}});
-  expect(change).toHaveBeenCalledWith({native_max_pixels:4194304});
 });
 
 it('keeps equal bucket sizes from different base resolutions in separately labelled groups', () => {

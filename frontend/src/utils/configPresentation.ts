@@ -10,8 +10,8 @@ const labels: Record<string, string> = {
   'training.mode': '训练方式', 'training.train_backbone': '训练主模型（UNet / DiT）', 'training.train_text_encoder': '训练文本编码器', 'training.resume_weights': '全量模型起始权重',
   'model.vae_path': 'VAE', 'model.tokenizer_path': '分词器目录', 'model.dtype': '底模加载精度', 'model.attention': '注意力后端',
   'dataset.sources': '训练数据源', 'dataset.resolutions': '训练分辨率', 'dataset.aspect_ratio_limit': '最大长宽比',
-  'dataset.resolution_mode': '分辨率模式', 'dataset.image_fit': '图片适配方式', 'dataset.native_max_pixels': '原生像素预算',
-  'dataset.native_max_side': '原生最长边', 'dataset.native_overflow': '超出预算时',
+  'dataset.resolution_mode': '分辨率模式', 'dataset.image_fit': '图片适配方式', 'dataset.native_max_pixels': '图像面积上限（等效边长 px）',
+  'dataset.native_max_side': '最长边上限（px）', 'dataset.native_overflow': '超出尺寸上限时',
   'dataset.area_tolerance': '面积容差', 'dataset.bucket_step': '分桶步长', 'dataset.bucket_no_upscale': '不放大小图',
   'dataset.batch_size': '批大小', 'dataset.flip': '随机水平翻转', 'dataset.masked_loss': '遮罩加权训练',
   'dataset.num_workers': '数据加载线程', 'dataset.cache_dir': '缓存目录', 'dataset.cache_latents': '训练图像缓存',
@@ -77,6 +77,7 @@ const labels: Record<string, string> = {
 };
 
 export function configFieldLabel(path: string, fallback: string, english = false) {
+  if (english && path.startsWith('dataset.native_')) return ({'dataset.native_max_pixels':'Image area limit (equivalent side, px)','dataset.native_max_side':'Longest side limit (px)','dataset.native_overflow':'When a size limit is exceeded'} as Record<string,string>)[path] || fallback;
   if (english && path === 'model.sdxl_max_token_length') return 'SDXL caption length';
   if (path === 'loop.gpu_count') return english ? 'Training GPU count' : labels[path];
   if (path === 'loop.distributed_strategy') return english ? 'Multi-GPU training strategy' : labels[path];
@@ -149,6 +150,7 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
     ? 'β1 controls schedule-free weight averaging; β2 smooths the estimate of gradient size. Usually keep this optimizer’s defaults.'
     : 'β1 控制免调度训练中的权重平均，β2 平滑梯度大小的估计。通常保留当前优化器的默认值。';
   const help: Record<string, [string, string]> = {
+    'dataset.native_max_pixels': ['填写等效正方形边长，例如 2048 表示最多约 2048×2048（420 万）像素。仍保持原图比例；超过面积或最长边上限时按超限策略处理，不会放大小图。', 'Enter the side of an equivalent square. 2048 permits roughly 2048×2048 pixels (4.2 megapixels). Images keep their aspect ratio. Oversized images follow the overflow policy; small images are not enlarged.'],
     'dataset.resolutions': ['单个分辨率填 1024；多个用逗号或空格分隔，如 1024, 1536。填写正整数边长，不写 1024×1024。1024 表示每桶约 1024×1024 像素；每张图会在每个基准分辨率各训练一次，增加总样本和步数。', 'Enter one size as 1024, or separate multiple sizes with commas or spaces, e.g. 1024, 1536. Use positive integer side lengths, not 1024×1024. A base of 1024 gives roughly 1024×1024 pixels per bucket. Each image trains at every base resolution, increasing samples and steps.'],
     'adapter.resume_weights': ['可选。加载已有 LoRA / LoKr 权重作为本次训练起点；优化器和步数重新开始。接着上次任务训练请使用完整训练状态。', 'Optional. Start from existing LoRA / LoKr weights with a fresh optimizer and step count. Use a full training state to resume a previous run.'],
     'loop.deterministic': ['默认关闭。在相同配置、设备和软件环境下提高重复训练的一致性。开启后可能固定部分计算精度和注意力设置，增加显存与耗时；具体值会显示在对应字段。完整续训需保持原设置和环境。', 'Off by default. Improves repeatability with the same configuration, device and software environment. May manage precision and attention settings and increase memory use and runtime; effective values appear in the fields. Keep the same settings and environment when resuming.'],
@@ -242,7 +244,7 @@ export function configOptionLabel(path: string, option: string, english = false)
     'dataset.resolution_mode': { bucket: ['分桶 · 统一基准面积', 'Buckets · target area'], native: ['原生 · 每图独立尺寸', 'Native · individual image sizes'] },
     'dataset.text_encoding': {auto:['自动','Automatic'],online:['每步在线编码','Encode each step'],cached:['预编码缓存','Cached embeddings']},
     'dataset.image_fit': { pad: ['保留完整画面', 'Preserve the whole image'], crop: ['裁切填满（旧模式）', 'Crop to fill (legacy)'] },
-    'dataset.native_overflow': { downscale: ['等比缩小到预算内', 'Downscale to fit budget'], error: ['报错并停止', 'Stop with an error'] },
+    'dataset.native_overflow': { downscale: ['等比缩小到上限内', 'Downscale to fit limits'], error: ['报错并停止', 'Stop with an error'] },
   };
   return options[path]?.[option]?.[english ? 1 : 0] || option;
 }

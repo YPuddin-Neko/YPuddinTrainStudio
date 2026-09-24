@@ -46,7 +46,7 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
   const editor = React.useRef<HTMLDivElement>(null);
   const grid = React.useRef<HTMLDivElement>(null);
   const datasets = useQuery({ queryKey: ['caption-datasets', projectId, versionId], refetchOnWindowFocus: false, refetchOnReconnect: false,
-    queryFn: ({ signal }) => apiClient.get<DatasetInfo[]>(`/projects/${projectId}/datasets`, { params: { version_id: versionId }, signal, silent: true }) });
+    queryFn: ({ signal }) => apiClient.get<DatasetInfo[]>(`/projects/${projectId}/datasets`, { params: { version_id: versionId, include_cache: false }, signal, silent: true }) });
   const source = datasets.data?.find(item => item.source.id === datasetId) || datasets.data?.[0];
   const scope = JSON.stringify([projectId, versionId, source?.source.id]);
   const currentScope = React.useRef(scope);

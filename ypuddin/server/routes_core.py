@@ -440,7 +440,19 @@ def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str,
             path = Path(source["path"]).expanduser().resolve()
             if any(path.is_relative_to(root) for root in selected_roots):
                 return [source]
-            return [{**source, "path": str(root)} for root in selected_roots if root.is_relative_to(path)]
+            narrowed = []
+            for root in selected_roots:
+                if not root.is_relative_to(path):
+                    continue
+                prefix = root.relative_to(path).as_posix()
+                if any(prefix == directory or prefix.startswith(directory + "/") for directory in source.get("excluded_dirs", [])):
+                    continue
+                narrowed.append({
+                    **source, "path": str(root),
+                    **{key: [value[len(prefix) + 1:] for value in source.get(key, []) if value.startswith(prefix + "/")]
+                       for key in ("excluded_files", "excluded_dirs") if key in source},
+                })
+            return narrowed
 
         # A folder preview uses its configured repeats and overrides, without
         # counting other folders in the version's training or validation sources.
@@ -461,6 +473,7 @@ def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str,
     gpus = gpu_info()
     result = make_plan(
         cfg,
+        index_db_path=c.service_cache_dir("index") / "index.sqlite",
         gpu_total_mb=gpus[0]["mem_total_mb"] if gpus else None,
         device=gpus[0]["device"] if gpus else "cpu",
     )

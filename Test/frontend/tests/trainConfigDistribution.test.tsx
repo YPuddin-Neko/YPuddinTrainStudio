@@ -32,8 +32,8 @@ it('saves a changed native pixel limit and replaces the displayed training sizes
   await screen.findByTestId('field-loop.epochs');
   await waitFor(()=>expect(plans).toContain(1048576));
   await screen.findByRole('button',{name:'864 × 1200, 1 样本'});
-  const pixels=screen.getByRole('spinbutton',{name:'像素上限'});
-  fireEvent.change(pixels,{target:{value:'16777216'}});
+  const pixels=screen.getByRole('spinbutton',{name:'图像面积上限（等效边长 px）'});
+  fireEvent.change(pixels,{target:{value:'4096'}});
   expect(await screen.findByRole('button',{name:'1888 × 2656, 1 样本'})).toBeInTheDocument();
   expect(screen.queryByRole('button',{name:'864 × 1200, 1 样本'})).not.toBeInTheDocument();
   await waitFor(()=>expect(saved).toContain(16777216));

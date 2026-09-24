@@ -489,6 +489,7 @@ class DatasetSource(_Out):
     prior_weight: float
     class_prompt: str | None
     created_at: float
+    can_rename: bool | None = None
 
 
 class ResolutionCount(_Out):
@@ -503,6 +504,8 @@ class AspectCount(_Out):
 
 
 class DatasetStats(_Out):
+    training_images: int | None = None
+    held_out_images: int | None = None
     images: int = 0
     captioned: int = 0
     resolutions: list[ResolutionCount] = Field(default_factory=list)
@@ -512,6 +515,7 @@ class DatasetStats(_Out):
 
 
 class DatasetInfo(_Out):
+    masked_loss: bool | None = None
     source: DatasetSource
     stats: DatasetStats
     index_status: Literal["indexing", "ready", "failed", "stale"] | str
@@ -580,6 +584,7 @@ class DatasetImage(_Out):
     caption_error: str | None = None
     caption_status: Literal["captioned", "missing", "invalid"] = "missing"
     has_mask: bool
+    training_enabled: bool | None = None
 
 
 class ImagePage(_Out):

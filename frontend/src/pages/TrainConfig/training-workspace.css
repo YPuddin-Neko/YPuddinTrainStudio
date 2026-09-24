@@ -111,9 +111,3 @@
 
 .training-studio .model-context-card { min-height: 42px; padding: 7px 12px; margin-bottom: 14px; border-left-width: 1px; align-items: center; flex-direction: row; flex-wrap: wrap; }
 .training-studio .model-context-card > .studio-secondary { min-height: 32px; padding: 5px 8px; font-size: 12px; }
-
-.native-sizing-controls { display:grid; gap:6px; margin-bottom:12px; }
-.native-sizing-controls fieldset { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px; min-width:0; }
-.native-sizing-controls label { display:grid; gap:5px; font-size:12px; color:var(--studio-dim); min-width:0; }
-.native-sizing-controls input { width:100%; min-width:0; min-height:34px; padding:6px 8px; border:1px solid var(--studio-line); border-radius:5px; background:var(--studio-panel); color:var(--studio-text); font-size:12px; }
-.native-sizing-controls small { color:var(--studio-dim); font-size:11px; line-height:1.5; }

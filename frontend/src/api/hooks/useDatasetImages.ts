@@ -8,34 +8,39 @@ import { DatasetImage, DatasetImagesPage } from '../types';
  * - 支持追加加载（loadMore）与全量刷新（refresh）
  * - 本地更新某张图 caption（caption 编辑保存后）
  */
-export function useDatasetImages(datasetId: string | undefined, pageSize = 60) {
+export function useDatasetImages(datasetId: string | undefined, pageSize = 60, membership: 'all' | 'training' | 'unused' = 'all') {
   const [items, setItems] = React.useState<DatasetImage[]>([]);
   const [total, setTotal] = React.useState(0);
   const [page, setPage] = React.useState(1);
   const [q, setQ] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const request = React.useRef<AbortController | null>(null);
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
 
   const fetchPage = React.useCallback(
     async (p: number, query: string, append: boolean) => {
       if (!datasetId) return;
+      request.current?.abort();
+      const controller = new AbortController(); request.current = controller;
       setLoading(true);
       setError(null);
       try {
         const resp = await apiClient.get<DatasetImagesPage>(`/datasets/${datasetId}/images`, {
-          params: { page: p, page_size: pageSize, q: query || undefined },
+          signal: controller.signal,
+          params: { page: p, page_size: pageSize, q: query || undefined, membership },
         });
+        if (controller.signal.aborted) return;
         setTotal(resp.total);
         setPage(resp.page);
         setItems((prev) => (append ? [...prev, ...resp.items] : resp.items));
       } catch (e: any) {
-        setError(e?.message || 'failed to load images');
+        if (!controller.signal.aborted) setError(e?.message || 'failed to load images');
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     },
-    [datasetId, pageSize]
+    [datasetId, pageSize, membership]
   );
 
   // datasetId 或 q 变化：重置并加载第一页
@@ -44,8 +49,9 @@ export function useDatasetImages(datasetId: string | undefined, pageSize = 60) {
     setPage(1);
     setSelected(new Set());
     fetchPage(1, q, false);
+    return () => request.current?.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [datasetId, q]);
+  }, [datasetId, q, membership]);
 
   const loadMore = React.useCallback(() => {
     if (loading) return;
@@ -58,11 +64,11 @@ export function useDatasetImages(datasetId: string | undefined, pageSize = 60) {
     fetchPage(1, q, false);
   }, [fetchPage, q]);
 
-  const toggleSelect = React.useCallback((hash: string) => {
+  const toggleSelect = React.useCallback((relPath: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(hash)) next.delete(hash);
-      else next.add(hash);
+      if (next.has(relPath)) next.delete(relPath);
+      else next.add(relPath);
       return next;
     });
   }, []);
@@ -70,7 +76,7 @@ export function useDatasetImages(datasetId: string | undefined, pageSize = 60) {
   const clearSelection = React.useCallback(() => setSelected(new Set()), []);
 
   const selectAll = React.useCallback(() => {
-    setSelected(new Set(items.map((i) => i.hash)));
+    setSelected(new Set(items.map((i) => i.rel_path)));
   }, [items]);
 
   const updateCaption = React.useCallback((hash: string, caption: string, relPath: string) => {

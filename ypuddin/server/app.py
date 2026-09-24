@@ -17,6 +17,7 @@ from . import (
     errors,
     routes_core,
     routes_credentials,
+    routes_dataset_management,
     routes_dataset_masks,
     routes_dataset_overview,
     routes_dataset_paint,
@@ -111,6 +112,7 @@ def create_app(
     app.include_router(routes_model_downloads.router, prefix="/api")
     app.include_router(routes_model_recommendations.router, prefix="/api")
     app.include_router(routes_dataset_masks.router, prefix="/api")
+    app.include_router(routes_dataset_management.router, prefix="/api")
     app.include_router(routes_dataset_overview.router, prefix="/api")
     app.include_router(routes_dataset_paint.router, prefix="/api")
     app.include_router(routes_dataset_pipeline.router, prefix="/api")

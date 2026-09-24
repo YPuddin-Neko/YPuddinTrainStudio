@@ -1,9 +1,9 @@
-import { modelConfigUrl, projectUrl, versionConfigUrl, type ProjectVersion, type VersionedProject } from '../../utils/projectVersions';
+import { projectUrl, type ProjectVersion, type VersionedProject } from '../../utils/projectVersions';
 import React from 'react';
 import { Link, useParams, useNavigate, useLocation, UNSAFE_DataRouterContext } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { apiClient, apiUrl } from '../../api/client';
-import { DatasetInfo, Job, Plan } from '../../api/types';
+import { DatasetInfo } from '../../api/types';
 import { useDatasetImages } from '../../api/hooks/useDatasetImages';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
@@ -14,7 +14,7 @@ import StructuredCaptionEditor from '../../components/datasets/StructuredCaption
 import { getCaptionStructure, captionFieldChanges, type CaptionFieldDraft } from '../../utils/captionStructure';
 import { formatBytes, formatParams, formatPercent } from '../../utils/format';
 import './dataset-workspace.css';
-import { NextStepLink } from '../../components/ProjectWorkflow';
+import Switch from '../../components/Switch';
 import ProjectWorkspaceHeader from '../../components/projects/ProjectWorkspaceHeader';
 import DatasetNavigationGuard from '../../components/datasets/DatasetNavigationGuard';
 import { useWorkspaceHeight } from '../../components/projects/useWorkspaceHeight';
@@ -22,14 +22,12 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import {
   RefreshCcw,
   Trash2,
-  Layers,
   Image as ImageIcon,
   Search,
   SearchX,
   X,
   CheckSquare,
   Square,
-  Zap,
   Brush,
   ArrowLeft,
 } from 'lucide-react';
@@ -39,23 +37,6 @@ const CARD_W = 200;
 const CARD_H = 286;
 const GAP = 12;
 
-function Histogram({ data, label, barColor }: { data: Array<{ name: string; count: number }>; label: string; barColor: string }) {
-  const max = Math.max(1, ...data.map((d) => d.count));
-  return (
-    <div>
-      <div className="text-xs text-slate-400 mb-1.5">{label}</div>
-      <div className="flex items-end space-x-1 h-16">
-        {data.map((d, i) => (
-          <div key={i} className="flex-1 flex flex-col items-center justify-end min-w-0 h-full" title={`${d.name}: ${d.count}`}>
-            <div className={`w-full rounded-t flex-shrink-0 ${barColor}`} style={{ height: `${(d.count / max) * 48}px` }} />
-            <div className="text-[9px] text-slate-400 mt-0.5 truncate w-full text-center">{d.name}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export default function Dataset() {
   const { id } = useParams<{ id: string }>();
   return <DatasetContent key={id || ''} id={id}/>;
@@ -64,10 +45,8 @@ function DatasetContent({id}: {id?:string}) {
   const navigate = useNavigate();
   const location = useLocation();
   const hasDataRouter = !!React.useContext(UNSAFE_DataRouterContext);
-  const allowedDestination = React.useRef<string | null>(null);
   const { t } = useTranslation();
   const text = useWorkspaceText();
-  const english = text('zh', 'en') === 'en';
   const navigationRef = useWorkspaceHeight('--workspace-head-height');
   const contextProblem = text('无法确认此数据集所属的项目版本。','The dataset project/version could not be verified.');
 
@@ -95,11 +74,12 @@ function DatasetContent({id}: {id?:string}) {
   const captionSave = React.useRef<Promise<void>|null>(null);
   const [batchAdd, setBatchAdd] = React.useState('');
   const [batchRemove, setBatchRemove] = React.useState('');
-  const [buckets, setBuckets] = React.useState<Plan['buckets'] | null>(null);
-  const [showDistribution, setShowDistribution] = React.useState(false);
-  const [bucketError, setBucketError] = React.useState('');
-  const [bucketContext, setBucketContext] = React.useState('');
-  const bucketRequest = React.useRef<AbortController | null>(null);
+  const [membership, setMembership] = React.useState<'training' | 'unused' | 'all'>('training');
+  const [folderName, setFolderName] = React.useState('');
+  const [repeats, setRepeats] = React.useState('1');
+  const savedFolderName = (info?.source.path || '').replace(/\\/g,'/').replace(/\/+$/,'').split('/').pop() || '';
+  const savedRepeats = info?.source.repeats;
+  React.useEffect(() => {setFolderName(savedFolderName); if(savedRepeats !== undefined)setRepeats(String(savedRepeats));}, [savedFolderName, savedRepeats]);
   const [busyAction, setBusyAction] = React.useState<string | null>(null);
   const [versionAccess, setVersionAccess] = React.useState<{ key: string; editable: boolean; archived: boolean; error?: string } | null>(null);
   const versionRequest = React.useRef<AbortController | null>(null);
@@ -118,7 +98,7 @@ function DatasetContent({id}: {id?:string}) {
     return () => { versionRequest.current?.abort(); window.removeEventListener('focus', checkVersionAccess); };
   }, [checkVersionAccess]);
 
-  const images = useDatasetImages(id);
+  const images = useDatasetImages(id, 60, membership);
   const activeImg = activeImage ? images.items.find(i => i.hash === activeImage && i.rel_path === captionPath) : undefined;
   const activeStructure = getCaptionStructure(activeImg);
   const activeJson = activeImg?.caption_format?.toLowerCase().replace(/^\./, '') === 'json';
@@ -132,7 +112,7 @@ function DatasetContent({id}: {id?:string}) {
 
   const fetchInfo = React.useCallback(() => {
     if (!id) return;
-    apiClient.get<DatasetInfo>(`/datasets/${id}`, {silent:true}).then((data) => {
+    apiClient.get<DatasetInfo>(`/datasets/${id}`, {silent:true,params:{include_cache:false}}).then((data) => {
       setInfo(data); setInfoError('');
       if (data.index_status !== 'indexing') setIndexProgress(null);
     }).catch(error => {setInfoError(formatApiError(error));setProjectContext(null);});
@@ -196,15 +176,20 @@ function DatasetContent({id}: {id?:string}) {
   const endRow = Math.min(rows, Math.ceil((scrollTop + viewportH) / rowH) + 2);
   const visibleItems = images.items.slice(startRow * cols, endRow * cols);
 
-  const enableMaskedTraining = async () => {
-    if (!info || !canEdit) return;
-    const endpoint = versionConfigUrl(info.source.project_id || '', info.source.version_id);
-    const config = await apiClient.get<{ dataset?: Record<string, unknown>; [key: string]: unknown }>(endpoint);
-    await apiClient.put(endpoint, { ...config, dataset: { ...config.dataset, masked_loss: true } });
-    const destination = projectUrl(info.source.project_id || '', info.source.version_id, 'train');
-    // The editor invokes this only after its mask was saved successfully.
-    allowedDestination.current = destination;
-    navigate(destination);
+  const updateSettings = async (changes: {name?: string; repeats?: number; masked_loss?: boolean}) => {
+    if (!id || !canEdit) return;
+    setBusyAction('settings');setActionError('');
+    try {const updated=await apiClient.patch<DatasetInfo>(`/datasets/${id}`,changes);setInfo(updated);images.refresh();}
+    catch(error){setActionError(formatApiError(error));throw error;}
+    finally{setBusyAction(null);}
+  };
+  const enableMaskedTraining = () => updateSettings({masked_loss:true});
+  const setParticipation = async (included: boolean) => {
+    if (!id || !canEdit || !images.selected.size) return;
+    setBusyAction('membership');setActionError('');
+    try {await apiClient.post(`/datasets/${id}/membership`,{paths:[...images.selected],included});images.clearSelection();images.refresh();fetchInfo();}
+    catch(error){setActionError(formatApiError(error));}
+    finally{setBusyAction(null);}
   };
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -270,7 +255,7 @@ function DatasetContent({id}: {id?:string}) {
     if (add.length === 0 && remove.length === 0) return;
     setBusyAction('batch');
     apiClient
-      .post(`/datasets/${id}/tags/batch`, { hashes: Array.from(images.selected), add, remove })
+      .post(`/datasets/${id}/tags/batch`, { hashes: images.items.filter(image=>images.selected.has(image.rel_path)).map(image=>image.hash), rel_paths: [...images.selected], add, remove })
       .then(() => {
         images.refresh();
         images.clearSelection();
@@ -300,45 +285,6 @@ function DatasetContent({id}: {id?:string}) {
         .finally(() => setBusyAction(null));
     }
   };
-
-  const handlePrecache = () => {
-    if (!id || !info || !canEdit) return;
-    setBusyAction('precache');
-    apiClient.post<Job>(`/jobs`, {
-      type: 'cache',
-      name: `cache-${info.source.path.split('/').pop()}-${Date.now()}`,
-      project_id: info.source.project_id,
-      version_id: info.source.version_id,
-    })
-      .then(() => alert(t('dataset.precacheEnqueued')))
-      .catch(console.error)
-      .finally(() => setBusyAction(null));
-  };
-
-  const handleBucketPreview = React.useCallback(async () => {
-    if (!info?.source.project_id || !id) return;
-    bucketRequest.current?.abort();
-    const controller = new AbortController(); bucketRequest.current = controller;
-    setBusyAction('buckets'); setBucketError(''); setBuckets(null);
-    try {
-      const config = await apiClient.get<any>(versionConfigUrl(info.source.project_id, info.source.version_id), {signal:controller.signal,silent:true});
-      const plan = await apiClient.post<Plan>('/plan', {config,dataset_ids:[id],project_id:info.source.project_id,version_id:info.source.version_id}, {signal:controller.signal,silent:true});
-      if (controller.signal.aborted) return;
-      setBuckets(plan.buckets || []);
-      setBucketContext(config.dataset?.resolution_mode === 'native'
-        ? `${english ? 'Native · pixel limit ' : '原生 · 像素上限 '}${(plan.native?.max_pixels ?? config.dataset.native_max_pixels ?? 1048576).toLocaleString()}`
-        : `${english ? 'Buckets · base ' : '分桶 · 基准 '}${(config.dataset?.resolutions || [1024]).join(' / ')}`);
-      if (!plan.buckets?.length && plan.errors?.length) setBucketError(plan.errors.map(issue => issue.msg).join('；'));
-    } catch(error) { if (!controller.signal.aborted) setBucketError(formatApiError(error)); }
-    finally { if (!controller.signal.aborted) setBusyAction(null); }
-  }, [info, id, english]);
-  React.useEffect(() => {
-    if (!showDistribution) return;
-    void handleBucketPreview();
-    const refresh = () => { void handleBucketPreview(); };
-    window.addEventListener('focus', refresh);
-    return () => { bucketRequest.current?.abort(); window.removeEventListener('focus', refresh); };
-  }, [showDistribution, handleBucketPreview]);
 
   const statusLabel = (status?: string): string => {
     switch (status) {
@@ -370,8 +316,7 @@ function DatasetContent({id}: {id?:string}) {
 
   return (
     <div className="dataset-workspace space-y-3" data-testid="dataset-page">
-      {hasDataRouter && <DatasetNavigationGuard shouldBlock={destination => {
-        if(allowedDestination.current === `${destination.pathname}${destination.search}${destination.hash}`){allowedDestination.current=null;return false;}
+      {hasDataRouter && <DatasetNavigationGuard shouldBlock={() => {
         return leaveRef.current.dirty;
       }} beforeLeave={() => leaveRef.current.beforeNavigation()} onError={error => setActionError(formatApiError(error))}/>}
       <div className="dataset-workspace-navigation" ref={navigationRef}>
@@ -394,18 +339,14 @@ function DatasetContent({id}: {id?:string}) {
           </>}
           <details className="dataset-source-details"><summary>{text('数据与遮罩说明', 'Dataset & mask details')}</summary><div>
             <code>{info?.source.path}</code>
-            <p>{t('dataset.repeats')} ×{info?.source.repeats ?? '--'} · {t('dataset.caption')}: {info?.source.caption_ext || '--'}</p>
-            {info?.cache?.latents && <p>{t('dataset.latents')}: {info.cache.latents.cached}/{info.cache.latents.total} · {t('dataset.text')}: {info.cache.text?.cached ?? 0}/{info.cache.text?.total ?? 0}</p>}
+            <p>{t('dataset.caption')}: {info?.source.caption_ext || '--'}</p>
+
 
             <p>{text('白色参与训练，黑色忽略。没有独立遮罩时使用原图 Alpha；没有 Alpha 时全图参与。启用遮罩训练后生效。', 'White trains, black is ignored. Without a sidecar, image alpha is used; without alpha, the whole image participates. Enable masked training to apply these weights.')}</p>
           </div></details>
         </div>
         <div className="dataset-overview-actions">
           {canEdit && info?.source.project_id && <Link to={projectUrl(info.source.project_id, info.source.version_id, 'data')}>{text('添加数据', 'Add data')}</Link>}
-          <button disabled={!canEdit || busyAction === 'mask-enable'} onClick={() => { setBusyAction('mask-enable'); setActionError(''); void enableMaskedTraining().catch(error => setActionError(formatApiError(error))).finally(() => setBusyAction(null)); }} className="dataset-primary-action">{text('启用遮罩并前往训练', 'Enable masks and open training')}</button>
-          {info?.source.project_id && <NextStepLink to={modelConfigUrl(info.source.project_id, info.source.version_id)}>{text('选择训练模型', 'Choose training model')}</NextStepLink>}
-          <button type="button" aria-expanded={showDistribution} aria-controls="dataset-distribution" onClick={() => setShowDistribution(value => !value)}><Layers size={13}/>{text('分布与分桶', 'Distribution & buckets')}</button>
-          <button onClick={handlePrecache} disabled={!canEdit || busyAction === 'precache'} title={t('dataset.precache')} aria-label={busyAction === 'precache' ? t('dataset.enqueuing') : t('dataset.precache')}><Zap size={14}/></button>
           <button onClick={handleRescan} disabled={!canEdit || busyAction === 'rescan'} title={t('dataset.rescan')} aria-label={t('dataset.rescan')}><RefreshCcw size={14}/></button>
           <button onClick={handleDelete} disabled={!canEdit || busyAction === 'delete'} title={t('dataset.remove')} aria-label={t('dataset.remove')} className="dataset-remove-action"><Trash2 size={14}/></button>
         </div>
@@ -427,50 +368,15 @@ function DatasetContent({id}: {id?:string}) {
         </div>
       )}
 
-      {stats && showDistribution && <div id="dataset-distribution" className="dataset-distribution grid gap-3 rounded border border-slate-200 p-3 sm:grid-cols-3 dark:border-slate-700">
-          <div className="min-w-0">
-            <Histogram
-              label={t('dataset.resolutions')}
-              barColor="bg-blue-400"
-              data={(stats.resolutions || []).map((r) => ({ name: `${r.w}×${r.h}`, count: r.count }))}
-            />
-          </div>
-          <div className="min-w-0">
-            <Histogram
-              label={t('dataset.aspectRatio')}
-              barColor="bg-indigo-400"
-              data={(stats.ar_hist || []).map((r) => ({ name: r.ar, count: r.count }))}
-            />
-          </div>
-          <div className="max-h-40 min-w-0 overflow-auto">
-            <div className="mb-1.5 flex items-center justify-between gap-2 text-xs text-slate-500"><span>{text('本目录实际训练尺寸', 'Training sizes for this folder')}</span><button onClick={() => void handleBucketPreview()} disabled={busyAction === 'buckets'} className="text-blue-500 disabled:opacity-50">{busyAction === 'buckets' ? t('dataset.computing') : text('重新计算', 'Recalculate')}</button></div>
-            {info?.source.project_id && <Link className="mb-2 block text-xs text-blue-600" to={`${projectUrl(info.source.project_id,info.source.version_id,'train')}?tab=data&group=dataset`}>{text('调整分辨率与分桶', 'Configure resolution and buckets')} · {projectContext?.current?.name || info.source.version_id || text('项目参数', 'Project settings')}</Link>}
-            {!!bucketContext && <p className="mb-2 text-xs text-slate-500">{bucketContext}</p>}
-            {bucketError && <p role="alert" className="mb-2 text-xs text-red-600">{bucketError}</p>}
-            {buckets ? (
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-slate-400">
-                    <th className="text-left">W×H</th>
-                    <th className="text-right">{t('dataset.bucketItems', '条目')}</th>
-                    <th className="text-right">{t('dataset.bucketBatches', '批数')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {buckets.map((b, i) => (
-                    <tr key={i}>
-                      <td className="font-mono">{b.w}×{b.h}</td>
-                      <td className="text-right font-mono">{(b as any).items ?? (b as any).images}</td>
-                      <td className="text-right font-mono">{b.batches}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <div className="text-xs text-slate-400">{busyAction === 'buckets' ? t('dataset.computing') : text('暂无尺寸结果', 'No size results yet')}</div>
-            )}
-          </div>
+      {info && <div className="dataset-folder-settings">
+        <label>{text('文件夹名称','Folder name')}<input aria-label={text('文件夹名称','Folder name')} value={folderName} disabled={!canEdit || !!busyAction || !info.source.can_rename} onChange={event=>setFolderName(event.target.value)}/></label>
+        <label>{text('每轮重复次数','Repeats per epoch')}<input aria-label={text('每轮重复次数','Repeats per epoch')} type="number" min={1} max={1000000} value={repeats} disabled={!canEdit || !!busyAction} onChange={event=>setRepeats(event.target.value)}/></label>
+        <button type="button" disabled={!canEdit || !!busyAction || !folderName.trim() || !Number.isInteger(Number(repeats)) || Number(repeats)<1 || (folderName === savedFolderName && Number(repeats) === info.source.repeats) || Number(repeats)>1000000} onClick={()=>void beforeNavigation().then(()=>updateSettings({...((folderName!==savedFolderName)?{name:folderName.trim()}:{}),repeats:Number(repeats)})).catch(error=>setActionError(formatApiError(error)))}>{text('保存目录设置','Save folder settings')}</button>
+        <Switch checked={info.masked_loss === true} disabled={!canEdit || !!busyAction} onCheckedChange={value=>void updateSettings({masked_loss:value}).catch(()=>{})}>{text('使用遮罩训练','Use training masks')}</Switch>
       </div>}
+      <div className="dataset-membership-tabs" role="tablist" aria-label={text('图片参与状态','Training participation')}>
+        {(['training','unused','all'] as const).map(value=><button role="tab" type="button" aria-selected={membership===value} key={value} onClick={()=>setMembership(value)}>{value==='training'?text('参与训练','In training'):value==='unused'?text('暂不参与','Not in training'):text('全部图片','All images')} <span>{value==='training'?(stats?.training_images ?? stats?.images ?? 0):value==='unused'?(stats?.held_out_images ?? 0):(stats?.images ?? 0)}</span></button>)}
+      </div>
 
       <div className="dataset-browser-toolbar">
         <div className="dataset-browser-filter-row" role="search" aria-label={text('筛选当前目录图片', 'Filter images in this folder')}>
@@ -482,6 +388,10 @@ function DatasetContent({id}: {id?:string}) {
           <button disabled={!canEdit} onClick={images.selectAll}><CheckSquare size={17}/>{t('dataset.selectAll')}</button>
           <button disabled={!canEdit || !images.selected.size} onClick={images.clearSelection}><Square size={17}/>{t('dataset.selectNone')}</button>
         </div>
+        {canEdit && images.selected.size > 0 && <div className="dataset-membership-actions">
+          {membership !== 'unused' && <button disabled={!!busyAction} onClick={()=>void setParticipation(false)}>{text('暂时移出训练','Remove from training')}</button>}
+          {membership !== 'training' && <button disabled={!!busyAction} onClick={()=>void setParticipation(true)}>{text('加入训练','Add to training')}</button>}
+        </div>}
         {canEdit && images.selected.size > 0 && <fieldset className="dataset-browser-batch" disabled={busyAction === 'batch'}><legend>{text('批量修改已选图片的标签', 'Edit captions of selected images')}</legend>
           <label>{text('添加标签', 'Add tags')}<input type="text" value={batchAdd} onChange={event => setBatchAdd(event.target.value)} placeholder={t('dataset.addTagsPlaceholder')} data-testid="batch-add-input"/></label>
           <label>{text('移除标签', 'Remove tags')}<input type="text" value={batchRemove} onChange={event => setBatchRemove(event.target.value)} placeholder={t('dataset.removeTagsPlaceholder')}/></label>
@@ -511,7 +421,7 @@ function DatasetContent({id}: {id?:string}) {
             }}
           >
             {visibleItems.map((img) => {
-              const selected = images.selected.has(img.hash);
+              const selected = images.selected.has(img.rel_path);
               return (
                 <div
                   key={`${img.hash}:${img.rel_path}`}
@@ -527,13 +437,13 @@ function DatasetContent({id}: {id?:string}) {
                   <button
                     disabled={!canEdit}
                     aria-label={`${text('选择图片', 'Select image')}: ${img.rel_path}`}
-                    onClick={() => images.toggleSelect(img.hash)}
+                    onClick={() => images.toggleSelect(img.rel_path)}
                     aria-pressed={selected}
                     className={`dataset-image-select ${selected ? 'is-selected' : ''}`}
                   >
                     {selected ? <CheckSquare size={18}/> : <Square size={18}/>}
                   </button>
-                  <div className="dataset-image-caption"><strong title={img.rel_path}>{img.rel_path}</strong><span title={img.caption}>{img.width} × {img.height} · {img.caption || t('dataset.noCaption', '（无 caption）')}</span></div>
+                  {img.training_enabled === false && <span className="dataset-image-membership">{text('暂不训练','Held out')}</span>}<div className="dataset-image-caption"><strong title={img.rel_path}>{img.rel_path}</strong><span title={img.caption}>{img.width} × {img.height} · {img.caption || t('dataset.noCaption', '（无 caption）')}</span></div>
                   {canEdit && <button type="button" onClick={() => setMaskImage({ hash: img.hash, relPath: img.rel_path })} className="dataset-image-mask mx-1.5 flex min-h-9 w-[calc(100%-12px)] items-center justify-center gap-1 rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700"><Brush className="h-3.5 w-3.5" />{img.has_mask ? text('编辑遮罩 · 已有文件', 'Edit mask · saved') : text('编辑遮罩', 'Edit mask')}</button>}
                 </div>
               );
@@ -630,8 +540,8 @@ function DatasetContent({id}: {id?:string}) {
         ) : (
           <div className="p-10 text-center text-slate-400" data-testid="dataset-empty">
             <ImageIcon className="w-10 h-10 mx-auto mb-2 opacity-40" />
-            <div className="font-medium text-slate-500 dark:text-slate-300">{t('dataset.noImages')}</div>
-            <div className="text-xs mt-1">{t('dataset.noImagesHint', '可点击「重新扫描」刷新索引，或确认目录中包含图片文件。')}</div>
+            <div className="font-medium text-slate-500 dark:text-slate-300">{stats?.images ? membership === 'unused' ? text('没有暂不参与的图片','No images are held out') : text('当前没有参与训练的图片','No images are selected for training') : t('dataset.noImages')}</div>
+            <div className="text-xs mt-1">{stats?.images ? text('可在“全部图片”中调整参与状态。','Change participation from All images.') : t('dataset.noImagesHint', '可点击「重新扫描」刷新索引，或确认目录中包含图片文件。')}</div>
           </div>
         )
       )}

@@ -245,26 +245,16 @@ describe('explicit project version actions', () => {
     expect(submitted).toMatchObject({ project_id: 'p_versions', version_id: 'v2', type: 'train', config: { loop: { epochs: 30 } } });
   });
 
-  it('uses a dataset own version for navigation, cache creation and enabling masks even when another version is active', async () => {
-    const state = trainingFixture(); const submitted: any[] = [];
-    const configBefore = structuredClone(state.configs.v2);
-    server.use(
-      http.get('/api/datasets/d_v2', () => HttpResponse.json({ source: { id: 'd_v2', project_id: project.id, version_id: 'v2', path: 'D:/versions/v2/datasets/portraits', repeats: 3, caption_ext: '.txt' }, index_status: 'ready', stats: { images: 1, captioned: 1, masks: 1 } })),
-      http.post('/api/jobs', async ({ request }) => { submitted.push(await request.json()); return HttpResponse.json({ id: 'j_cache' }); }),
-    );
-    vi.spyOn(window, 'alert').mockImplementation(() => {});
-    render(wrap(<Routes><Route path="/datasets/:id" element={<Dataset/>}/><Route path="/projects/:id/v/:versionId/train" element={<p>Version training destination</p>}/></Routes>, '/datasets/d_v2'));
-    const workflow = await screen.findByRole('navigation', { name: '项目训练步骤' });
-    expect(within(workflow).getByRole('link', { name: /^2\s*训练参数$/ })).toHaveAttribute('href', '/projects/p_versions/v/v2/train');
-    expect(screen.getByRole('link', { name: '选择训练模型' })).toHaveAttribute('href', '/projects/p_versions/v/v2/train?tab=model');
-    expect(within(workflow).getByRole('link', { name: /^3\s*训练结果$/ })).toHaveAttribute('href', '/projects/p_versions/v/v2?step=results');
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('dataset.precache') }));
-    await waitFor(() => expect(submitted).toHaveLength(1));
-    expect(submitted[0]).toMatchObject({ type: 'cache', project_id: project.id, version_id: 'v2' });
-    fireEvent.click(screen.getByRole('button', { name: '启用遮罩并前往训练' }));
-    await screen.findByText('Version training destination');
-    expect(state.writes).toEqual([{ version: 'v2', config: { ...configBefore, dataset: { ...configBefore.dataset, masked_loss: true } } }]);
-    expect(state.configs.v1.dataset.masked_loss).toBe(false);
-    expect(screen.getByTestId('location')).toHaveTextContent('/projects/p_versions/v/v2/train');
+  it('updates this dataset in place without starting a cache job or navigating to another version', async () => {
+    trainingFixture();const submitted:any[]=[];let masked=false;
+    const info=()=>({source:{id:'d_v2',project_id:project.id,version_id:'v2',path:'D:/versions/v2/datasets/portraits',repeats:3,caption_ext:'.txt'},index_status:'ready',stats:{images:1,captioned:1,masks:1},masked_loss:masked});
+    server.use(http.get('/api/datasets/d_v2',()=>HttpResponse.json(info())),http.patch('/api/datasets/d_v2',async({request})=>{submitted.push(await request.json());masked=true;return HttpResponse.json(info());}));
+    render(wrap(<Routes><Route path="/datasets/:id" element={<Dataset/>}/></Routes>,'/datasets/d_v2'));
+    const toggle=await screen.findByRole('switch',{name:'使用遮罩训练'});
+    await waitFor(()=>expect(toggle).toBeEnabled());fireEvent.click(toggle);
+    await waitFor(()=>expect(submitted).toEqual([{masked_loss:true}]));
+    expect(toggle).toBeChecked();
+    expect(screen.getByTestId('location')).toHaveTextContent('/datasets/d_v2');
+    expect(screen.queryByRole('button',{name:i18n.t('dataset.precache')})).not.toBeInTheDocument();
   });
 });
