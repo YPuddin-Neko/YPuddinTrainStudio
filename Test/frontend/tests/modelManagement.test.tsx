@@ -165,7 +165,7 @@ describe('real model management UI contracts',()=>{
     await waitFor(()=>expect(catalogDownload).toHaveBeenCalledWith('anima-encoder',{provider:'modelscope',is_default:true}));
     expect(download).not.toHaveBeenCalled();
     const progress=await screen.findByRole('progressbar');
-    expect(progress).toHaveAttribute('value','500');expect(progress).toHaveAttribute('max','1000');
+    expect(progress).toHaveAttribute('aria-valuenow','50');expect(progress).toHaveAttribute('aria-valuemax','100');
     expect(screen.getByRole('button',{name:/取消下载 /})).toBeEnabled();expect(cancel).not.toHaveBeenCalled();expect(models.some(model=>model.kind==='text_encoder')).toBe(false);
   });
   it('keeps only the current catalog attempt through retry, transfer and completion with retained server history',async()=>{
@@ -192,7 +192,7 @@ describe('real model management UI contracts',()=>{
     expect(screen.queryByRole('region',{name:'下载状态'})).not.toBeInTheDocument();
     downloads=downloads.map(row=>row.id==='retry'?{...row,status:'downloading',downloaded_bytes:750}:row);
     fireEvent.click(screen.getByRole('button',{name:'刷新模型'}));
-    await waitFor(()=>expect(within(card).getByRole('progressbar')).toHaveAttribute('value','750'));
+    await waitFor(()=>expect(within(card).getByRole('progressbar')).toHaveAttribute('aria-valuenow','75'));
     expect(within(card).getByRole('button',{name:/取消下载 /})).toBeEnabled();
     downloads=downloads.map(row=>row.id==='retry'?{...row,status:'completed',downloaded_bytes:1000}:row);
     models.push({...models[0],id:'encoder-ready',kind:'text_encoder',path:'D:\\models\\encoder.safetensors',is_default:true});
@@ -246,7 +246,7 @@ describe('real model management UI contracts',()=>{
     const view=mount(<Models embedded/>);await openCustom();enterRepo();fireEvent.click(screen.getByTestId('model-download-start'));
     await screen.findByRole('progressbar');view.unmount();expect(cancel).not.toHaveBeenCalled();
     mount(<Models embedded/>,'/settings/environment?tab=models&family=anima');
-    expect(await screen.findByRole('progressbar')).toHaveAttribute('value','500');expect(cancel).not.toHaveBeenCalled();
+    expect(await screen.findByRole('progressbar')).toHaveAttribute('aria-valuenow','50');expect(cancel).not.toHaveBeenCalled();
   });
   it('registers local files through a dialog and keeps the selected family and actual path',async()=>{
     server.use(http.post('/api/models/inspect',()=>HttpResponse.json({path:'D:\\shared\\vae.safetensors',family:null,family_candidates:['anima','krea2'],kind:'vae',dtype:'fp32',dtypes:{F32:100},confidence:'partial',evidence:['Shared VAE'],warnings:[],files_inspected:1})));
