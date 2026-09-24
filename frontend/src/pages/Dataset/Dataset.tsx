@@ -3,7 +3,7 @@ import React from 'react';
 import { Link, useParams, useNavigate, useLocation, UNSAFE_DataRouterContext } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { apiClient, apiUrl } from '../../api/client';
-import { DatasetInfo } from '../../api/types';
+import { DatasetInfo, DatasetImage } from '../../api/types';
 import { useDatasetImages } from '../../api/hooks/useDatasetImages';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
@@ -12,42 +12,31 @@ import { formatApiError } from '../../utils/errors';
 import { TagChips } from '../../components/TagChips';
 import StructuredCaptionEditor from '../../components/datasets/StructuredCaptionEditor';
 import { getCaptionStructure, captionFieldChanges, type CaptionFieldDraft } from '../../utils/captionStructure';
-import { formatBytes, formatParams, formatPercent } from '../../utils/format';
+import { formatBytes, formatParams } from '../../utils/format';
 import './dataset-workspace.css';
-import Switch from '../../components/Switch';
+import DatasetImagePane from './DatasetImagePane';
 import ProjectWorkspaceHeader from '../../components/projects/ProjectWorkspaceHeader';
 import DatasetNavigationGuard from '../../components/datasets/DatasetNavigationGuard';
-import { useWorkspaceHeight } from '../../components/projects/useWorkspaceHeight';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import {
   RefreshCcw,
   Trash2,
-  Image as ImageIcon,
   Search,
-  SearchX,
   X,
-  CheckSquare,
-  Square,
   Brush,
   ArrowLeft,
 } from 'lucide-react';
 
-const THUMB_SIZE = 256;
-const CARD_W = 200;
-const CARD_H = 286;
-const GAP = 12;
-
 export default function Dataset() {
   const { id } = useParams<{ id: string }>();
-  return <DatasetContent key={id || ''} id={id}/>;
+  return <DatasetWorkspace key={id || ''} id={id}/>;
 }
-function DatasetContent({id}: {id?:string}) {
+export function DatasetWorkspace({id, curation = false, selector}: {id?:string; curation?:boolean; selector?:React.ReactNode}) {
   const navigate = useNavigate();
   const location = useLocation();
   const hasDataRouter = !!React.useContext(UNSAFE_DataRouterContext);
   const { t } = useTranslation();
   const text = useWorkspaceText();
-  const navigationRef = useWorkspaceHeight('--workspace-head-height');
   const contextProblem = text('无法确认此数据集所属的项目版本。','The dataset project/version could not be verified.');
 
   // locales 占位符为单花括号（{n}），i18next 默认插值（{{}}）不处理，需手工替换
@@ -63,6 +52,7 @@ function DatasetContent({id}: {id?:string}) {
   const [contextError, setContextError] = React.useState('');
   const contextRequest = React.useRef<AbortController|null>(null);
   const [indexProgress, setIndexProgress] = React.useState<{ done: number; total: number } | null>(null);
+  const [editorImage, setEditorImage] = React.useState<DatasetImage | null>(null);
   const [activeImage, setActiveImage] = React.useState<string | null>(null);
   const [maskImage, setMaskImage] = React.useState<{ hash: string; relPath: string } | null>(null);
   const [actionError, setActionError] = React.useState('');
@@ -74,7 +64,8 @@ function DatasetContent({id}: {id?:string}) {
   const captionSave = React.useRef<Promise<void>|null>(null);
   const [batchAdd, setBatchAdd] = React.useState('');
   const [batchRemove, setBatchRemove] = React.useState('');
-  const [membership, setMembership] = React.useState<'training' | 'unused' | 'all'>('training');
+  const [thumbnailWidth, setThumbnailWidth] = React.useState(140);
+  const [showBatch, setShowBatch] = React.useState(false);
   const [folderName, setFolderName] = React.useState('');
   const [repeats, setRepeats] = React.useState('1');
   const savedFolderName = (info?.source.path || '').replace(/\\/g,'/').replace(/\/+$/,'').split('/').pop() || '';
@@ -98,18 +89,26 @@ function DatasetContent({id}: {id?:string}) {
     return () => { versionRequest.current?.abort(); window.removeEventListener('focus', checkVersionAccess); };
   }, [checkVersionAccess]);
 
-  const images = useDatasetImages(id, 60, membership);
-  const activeImg = activeImage ? images.items.find(i => i.hash === activeImage && i.rel_path === captionPath) : undefined;
-  const activeStructure = getCaptionStructure(activeImg);
+  const trainingImages = useDatasetImages(id, 60, curation ? 'training' : 'all');
+  const unusedImages = useDatasetImages(curation ? id : undefined, 60, 'unused');
+  const images = {
+    items: curation ? [...trainingImages.items, ...unusedImages.items] : trainingImages.items,
+    selected: new Set([...trainingImages.selected, ...(curation ? unusedImages.selected : [])]),
+    q: trainingImages.q,
+    setQ: (query: string) => { trainingImages.setQ(query); unusedImages.setQ(query); },
+    refresh: () => { trainingImages.refresh(); unusedImages.refresh(); },
+    clearSelection: () => { trainingImages.clearSelection(); unusedImages.clearSelection(); },
+    updateCaption: (hash: string, caption: string, path: string) => {
+      const source = trainingImages.items.some(image => image.hash === hash && image.rel_path === path) ? trainingImages : unusedImages;
+      source.updateCaption(hash, caption, path);
+    },
+  };
+  const activeImg = activeImage ? editorImage : undefined;
+  const activeStructure = getCaptionStructure(activeImg ?? undefined);
   const activeJson = activeImg?.caption_format?.toLowerCase().replace(/^\./, '') === 'json';
   const changedFields = captionFieldChanges(activeStructure, captionFields);
   const captionDirty = editCaption !== captionBase || changedFields.length > 0;
   const captionLocked = !canEdit || savingCaption || !!activeImg?.caption_error || activeJson && !activeStructure?.editable;
-  const gridRef = React.useRef<HTMLDivElement>(null);
-  const [scrollTop, setScrollTop] = React.useState(0);
-  const [viewportH, setViewportH] = React.useState(600);
-  const [viewportW, setViewportW] = React.useState(1200);
-
   const fetchInfo = React.useCallback(() => {
     if (!id) return;
     apiClient.get<DatasetInfo>(`/datasets/${id}`, {silent:true,params:{include_cache:false}}).then((data) => {
@@ -154,28 +153,6 @@ function DatasetContent({id}: {id?:string}) {
     }
   });
 
-  // viewport 尺寸跟踪（虚拟滚动用）
-  React.useEffect(() => {
-    const el = gridRef.current;
-    if (!el) return;
-    const onResize = () => {setViewportH(el.clientHeight || 600);setViewportW(el.clientWidth || 1200);};
-    onResize();
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(onResize);
-    observer?.observe(el);
-    window.addEventListener('resize', onResize);
-    return () => { observer?.disconnect(); window.removeEventListener('resize', onResize); };
-  }, []);
-
-  // 虚拟滚动窗口计算
-  const containerWidth = Math.max(1, viewportW);
-  const cols = Math.max(1, Math.floor(containerWidth / (CARD_W + GAP)));
-  const cardWidth = Math.min(260, Math.max(1, (containerWidth - GAP - (cols - 1) * GAP) / cols));
-  const rows = Math.ceil(images.items.length / cols);
-  const rowH = CARD_H + GAP;
-  const startRow = Math.max(0, Math.floor(scrollTop / rowH) - 2);
-  const endRow = Math.min(rows, Math.ceil((scrollTop + viewportH) / rowH) + 2);
-  const visibleItems = images.items.slice(startRow * cols, endRow * cols);
-
   const updateSettings = async (changes: {name?: string; repeats?: number; masked_loss?: boolean}) => {
     if (!id || !canEdit) return;
     setBusyAction('settings');setActionError('');
@@ -185,26 +162,20 @@ function DatasetContent({id}: {id?:string}) {
   };
   const enableMaskedTraining = () => updateSettings({masked_loss:true});
   const setParticipation = async (included: boolean) => {
-    if (!id || !canEdit || !images.selected.size) return;
-    setBusyAction('membership');setActionError('');
-    try {await apiClient.post(`/datasets/${id}/membership`,{paths:[...images.selected],included});images.clearSelection();images.refresh();fetchInfo();}
-    catch(error){setActionError(formatApiError(error));}
-    finally{setBusyAction(null);}
-  };
-
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    setScrollTop(e.currentTarget.scrollTop);
-    // 接近底部时加载下一页
-    const el = e.currentTarget;
-    if (el.scrollTop + el.clientHeight >= el.scrollHeight - rowH * 3) {
-      images.loadMore();
-    }
+    const source = included ? unusedImages : trainingImages;
+    if (!id || !canEdit || !source.selected.size) return;
+    setBusyAction('membership'); setActionError('');
+    try {
+      await apiClient.post(`/datasets/${id}/membership`, { paths: [...source.selected], included });
+      source.clearSelection(); images.refresh(); fetchInfo();
+    } catch (error) { setActionError(formatApiError(error)); }
+    finally { setBusyAction(null); }
   };
 
   const openEditor = (hash: string, relPath: string) => {
     const img = images.items.find((i) => i.hash === hash && i.rel_path === relPath);
     if (!img) return;
-    setActiveImage(hash); setCaptionPath(relPath); setCaptionFields({});
+    setEditorImage(img); setActiveImage(hash); setCaptionPath(relPath); setCaptionFields({});
     setEditCaption(img.caption_tags ?? img.caption ?? '');
     setCaptionBase(img.caption_tags ?? img.caption ?? '');
   };
@@ -262,7 +233,7 @@ function DatasetContent({id}: {id?:string}) {
         setBatchAdd('');
         setBatchRemove('');
       })
-      .catch(console.error)
+      .catch(error => setActionError(formatApiError(error)))
       .finally(() => setBusyAction(null));
   };
 
@@ -271,7 +242,7 @@ function DatasetContent({id}: {id?:string}) {
     setBusyAction('rescan');
     apiClient.post(`/datasets/${id}/rescan`, {})
       .then(fetchInfo)
-      .catch(console.error)
+      .catch(error => setActionError(formatApiError(error)))
       .finally(() => setBusyAction(null));
   };
 
@@ -281,7 +252,7 @@ function DatasetContent({id}: {id?:string}) {
       setBusyAction('delete');
       apiClient.delete(`/datasets/${id}`)
         .then(() => navigate(returnUrl))
-        .catch(console.error)
+        .catch(error => setActionError(formatApiError(error)))
         .finally(() => setBusyAction(null));
     }
   };
@@ -302,7 +273,6 @@ function DatasetContent({id}: {id?:string}) {
   };
 
   const stats = info?.stats;
-  const coverage = stats?.images ? Math.round(((stats.captioned || 0) / stats.images) * 100) : 0;
   const activeSize = activeImg?.size;
   const datasetName = info?.source.path.replace(/[\\/]+$/, '').split(/[\\/]/).pop()?.replace(/^(?:d_[0-9a-f]+-)+/i, '') || id;
   const returnQuery = new URLSearchParams(location.search);
@@ -315,12 +285,12 @@ function DatasetContent({id}: {id?:string}) {
   const returnLink = <Link className="dataset-workspace-return" to={returnUrl}><ArrowLeft size={14}/>{returnProject ? text('返回本版本数据集', 'Back to version datasets') : text('返回项目', 'Back to projects')}</Link>;
 
   return (
-    <div className="dataset-workspace space-y-3" data-testid="dataset-page">
+    <div className={`dataset-workspace${curation ? ' dataset-curation-workspace' : ''}`} data-testid="dataset-page">
       {hasDataRouter && <DatasetNavigationGuard shouldBlock={() => {
         return leaveRef.current.dirty;
       }} beforeLeave={() => leaveRef.current.beforeNavigation()} onError={error => setActionError(formatApiError(error))}/>}
-      <div className="dataset-workspace-navigation" ref={navigationRef}>
-        {projectContext && !infoError ? <ProjectWorkspaceHeader project={projectContext.project} versionId={info?.source.version_id || undefined} versions={projectContext.versions} current={projectContext.current} active="data" title={datasetName} breadcrumbLeading={returnLink} refresh={refreshProjectContext} beforeAction={beforeNavigation}/> : <><nav className="workspace-breadcrumb">{returnLink}</nav><h1 className="text-base font-semibold" title={info?.source.path}>{info && !infoError ? datasetName : text('图片、标签与遮罩','Images, captions and masks')}</h1></>}
+      <div className="dataset-workspace-navigation">
+        {projectContext && !infoError ? <ProjectWorkspaceHeader project={projectContext.project} versionId={info?.source.version_id || undefined} versions={projectContext.versions} current={projectContext.current} active="data" title={curation ? text('训练集筛选','Training set curation') : datasetName} titleBadge={selector} breadcrumbLeading={returnLink} refresh={refreshProjectContext} beforeAction={beforeNavigation}/> : <><nav className="workspace-breadcrumb">{returnLink}</nav><h1 className="text-base font-semibold" title={info?.source.path}>{curation ? text('训练集筛选','Training set curation') : info && !infoError ? datasetName : text('图片、标签与遮罩','Images, captions and masks')}</h1></>}
       </div>
       {(infoError || contextError) && <div role="alert" className="workspace-message error">{infoError || contextError}<button onClick={()=>{fetchInfo();void refreshProjectContext();}}>{t('common.retry')}</button></div>}
       {versionKey && !canEdit && <div className="flex flex-wrap items-center gap-2 rounded border border-slate-300 bg-slate-50 px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-900" role={versionAccess?.key === versionKey && versionAccess.error ? 'alert' : 'status'}>
@@ -329,29 +299,29 @@ function DatasetContent({id}: {id?:string}) {
         <button type="button" className="text-blue-600" onClick={() => void checkVersionAccess()}>{t('common.refresh')}</button>
       </div>}
       {actionError && !activeImage && <div role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{actionError}</div>}
-      <div className="dataset-overview-toolbar" data-testid="dataset-overview">
-        <div className="dataset-overview-counts">
-          <span className={`dataset-index-state status-${info?.index_status || 'unknown'}`}>{statusLabel(info?.index_status)}</span>
-          {stats && <>
-            <span>{t('dataset.images')} <b>{formatParams(stats.images)}</b></span>
-            <span>{t('dataset.captioned')} <b>{formatParams(stats.captioned ?? 0)}</b> <small>{formatPercent(coverage)}</small></span>
-            <span>{t('dataset.masks')} <b>{formatParams(stats.masks ?? 0)}</b></span>
-          </>}
-          <details className="dataset-source-details"><summary>{text('数据与遮罩说明', 'Dataset & mask details')}</summary><div>
-            <code>{info?.source.path}</code>
-            <p>{t('dataset.caption')}: {info?.source.caption_ext || '--'}</p>
-
-
-            <p>{text('白色参与训练，黑色忽略。没有独立遮罩时使用原图 Alpha；没有 Alpha 时全图参与。启用遮罩训练后生效。', 'White trains, black is ignored. Without a sidecar, image alpha is used; without alpha, the whole image participates. Enable masked training to apply these weights.')}</p>
-          </div></details>
-        </div>
-        <div className="dataset-overview-actions">
-          {canEdit && info?.source.project_id && <Link to={projectUrl(info.source.project_id, info.source.version_id, 'data')}>{text('添加数据', 'Add data')}</Link>}
-          <button onClick={handleRescan} disabled={!canEdit || busyAction === 'rescan'} title={t('dataset.rescan')} aria-label={t('dataset.rescan')}><RefreshCcw size={14}/></button>
-          <button onClick={handleDelete} disabled={!canEdit || busyAction === 'delete'} title={t('dataset.remove')} aria-label={t('dataset.remove')} className="dataset-remove-action"><Trash2 size={14}/></button>
+      {!curation && <><div className="dataset-folder-bar" data-testid="dataset-overview">
+        {info && <form className="dataset-folder-settings" onSubmit={event => {
+          event.preventDefault();
+          void beforeNavigation().then(() => updateSettings({ ...(folderName !== savedFolderName ? { name: folderName.trim() } : {}), repeats: Number(repeats) })).catch(error => setActionError(formatApiError(error)));
+        }}>
+          <label>{text('文件夹名称','Folder name')}<input aria-label={text('文件夹名称','Folder name')} value={folderName} required disabled={!canEdit || !!busyAction || !info.source.can_rename} onChange={event => setFolderName(event.target.value)}/></label>
+          <label className="dataset-repeat-field">{text('每轮重复次数','Repeats per epoch')}<input aria-label={text('每轮重复次数','Repeats per epoch')} type="number" min={1} max={1000000} required value={repeats} disabled={!canEdit || !!busyAction} onChange={event => setRepeats(event.target.value)}/></label>
+          <button type="submit" aria-label={text('保存目录设置','Save folder settings')} disabled={!canEdit || !!busyAction || !folderName.trim() || !Number.isInteger(Number(repeats)) || Number(repeats)<1 || Number(repeats)>1000000 || (folderName === savedFolderName && Number(repeats) === info.source.repeats)}>{busyAction === 'settings' ? text('保存中…','Saving…') : text('保存','Save')}</button>
+        </form>}
+        <div className="dataset-folder-actions">
+          {info?.source.project_id && info.source.version_id && <Link to={`/projects/${info.source.project_id}/v/${info.source.version_id}/curate?dataset=${id}`}>{text('训练集筛选','Training set curation')}</Link>}
+          {canEdit && info?.source.project_id && <Link to={projectUrl(info.source.project_id, info.source.version_id, 'data')}>{text('添加图片', 'Add images')}</Link>}
+          <button onClick={handleRescan} disabled={!canEdit || !!busyAction} title={t('dataset.rescan')} aria-label={t('dataset.rescan')}><RefreshCcw size={16}/></button>
+          <button onClick={handleDelete} disabled={!canEdit || !!busyAction} title={t('dataset.remove')} aria-label={t('dataset.remove')} className="dataset-remove-action"><Trash2 size={16}/></button>
         </div>
       </div>
+      <div className="dataset-library-meta">
+        <span className={`dataset-index-state status-${info?.index_status || 'unknown'}`}>{statusLabel(info?.index_status)}</span>
+        {stats && <span>{text(`共 ${formatParams(stats.images)} 张 · 已有标签 ${formatParams(stats.captioned ?? 0)} 张 · 遮罩 ${formatParams(stats.masks ?? 0)} 张`, `${formatParams(stats.images)} images · ${formatParams(stats.captioned ?? 0)} captioned · ${formatParams(stats.masks ?? 0)} masks`)}</span>}
+        <details className="dataset-source-details"><summary>{text('目录详情', 'Folder details')}</summary><div><code>{info?.source.path}</code><span>{text('标签格式', 'Caption format')}: {info?.source.caption_ext || '—'}</span></div></details>
+      </div>
 
+      </>}
       {/* 索引进度条 */}
       {(info?.index_status === 'indexing' || indexProgress) && (
         <div className="p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl" data-testid="index-progress">
@@ -368,91 +338,19 @@ function DatasetContent({id}: {id?:string}) {
         </div>
       )}
 
-      {info && <div className="dataset-folder-settings">
-        <label>{text('文件夹名称','Folder name')}<input aria-label={text('文件夹名称','Folder name')} value={folderName} disabled={!canEdit || !!busyAction || !info.source.can_rename} onChange={event=>setFolderName(event.target.value)}/></label>
-        <label>{text('每轮重复次数','Repeats per epoch')}<input aria-label={text('每轮重复次数','Repeats per epoch')} type="number" min={1} max={1000000} value={repeats} disabled={!canEdit || !!busyAction} onChange={event=>setRepeats(event.target.value)}/></label>
-        <button type="button" disabled={!canEdit || !!busyAction || !folderName.trim() || !Number.isInteger(Number(repeats)) || Number(repeats)<1 || (folderName === savedFolderName && Number(repeats) === info.source.repeats) || Number(repeats)>1000000} onClick={()=>void beforeNavigation().then(()=>updateSettings({...((folderName!==savedFolderName)?{name:folderName.trim()}:{}),repeats:Number(repeats)})).catch(error=>setActionError(formatApiError(error)))}>{text('保存目录设置','Save folder settings')}</button>
-        <Switch checked={info.masked_loss === true} disabled={!canEdit || !!busyAction} onCheckedChange={value=>void updateSettings({masked_loss:value}).catch(()=>{})}>{text('使用遮罩训练','Use training masks')}</Switch>
-      </div>}
-      <div className="dataset-membership-tabs" role="tablist" aria-label={text('图片参与状态','Training participation')}>
-        {(['training','unused','all'] as const).map(value=><button role="tab" type="button" aria-selected={membership===value} key={value} onClick={()=>setMembership(value)}>{value==='training'?text('参与训练','In training'):value==='unused'?text('暂不参与','Not in training'):text('全部图片','All images')} <span>{value==='training'?(stats?.training_images ?? stats?.images ?? 0):value==='unused'?(stats?.held_out_images ?? 0):(stats?.images ?? 0)}</span></button>)}
+      <div className="dataset-library-tools">
+        <label className="dataset-library-search"><Search size={16}/><input type="search" aria-label={text('搜索文件名或标签','Search filenames or captions')} value={images.q} onChange={event => images.setQ(event.target.value)} placeholder={t('dataset.filterPlaceholder')} data-testid="dataset-search"/>{images.q && <button type="button" aria-label={text('清除图片筛选','Clear image filter')} onClick={() => images.setQ('')}><X size={16}/></button>}</label>
+        <label className="dataset-thumbnail-size">{text('缩略图','Thumbnails')}<input type="range" min={120} max={220} step={20} value={thumbnailWidth} onChange={event => setThumbnailWidth(Number(event.target.value))} aria-label={text('缩略图大小','Thumbnail size')}/></label>
+        {canEdit && !curation && <button type="button" aria-expanded={showBatch} onClick={() => setShowBatch(value => !value)} disabled={!images.selected.size}>{text('批量编辑标签','Edit selected captions')}{images.selected.size > 0 ? ` (${images.selected.size})` : ''}</button>}
       </div>
-
-      <div className="dataset-browser-toolbar">
-        <div className="dataset-browser-filter-row" role="search" aria-label={text('筛选当前目录图片', 'Filter images in this folder')}>
-          <label className="dataset-browser-search"><span>{text('图片筛选', 'Image filter')}</span><div><Search size={17}/><input type="text" aria-label={text('搜索文件名或标签', 'Search filenames or captions')} value={images.q} onChange={event => images.setQ(event.target.value)} placeholder={t('dataset.filterPlaceholder')} data-testid="dataset-search"/>{images.q && <button type="button" aria-label={text('清除图片筛选', 'Clear image filter')} onClick={() => images.setQ('')}><X size={16}/></button>}</div></label>
-          <span className="dataset-browser-result-count">{tt('dataset.imagesTotal', { n: images.total })}</span>
-        </div>
-        <div className="dataset-browser-selection" role="group" aria-label={text('图片选择', 'Image selection')}>
-          <span>{tt('dataset.selected', { n: images.selected.size })}</span>
-          <button disabled={!canEdit} onClick={images.selectAll}><CheckSquare size={17}/>{t('dataset.selectAll')}</button>
-          <button disabled={!canEdit || !images.selected.size} onClick={images.clearSelection}><Square size={17}/>{t('dataset.selectNone')}</button>
-        </div>
-        {canEdit && images.selected.size > 0 && <div className="dataset-membership-actions">
-          {membership !== 'unused' && <button disabled={!!busyAction} onClick={()=>void setParticipation(false)}>{text('暂时移出训练','Remove from training')}</button>}
-          {membership !== 'training' && <button disabled={!!busyAction} onClick={()=>void setParticipation(true)}>{text('加入训练','Add to training')}</button>}
-        </div>}
-        {canEdit && images.selected.size > 0 && <fieldset className="dataset-browser-batch" disabled={busyAction === 'batch'}><legend>{text('批量修改已选图片的标签', 'Edit captions of selected images')}</legend>
-          <label>{text('添加标签', 'Add tags')}<input type="text" value={batchAdd} onChange={event => setBatchAdd(event.target.value)} placeholder={t('dataset.addTagsPlaceholder')} data-testid="batch-add-input"/></label>
-          <label>{text('移除标签', 'Remove tags')}<input type="text" value={batchRemove} onChange={event => setBatchRemove(event.target.value)} placeholder={t('dataset.removeTagsPlaceholder')}/></label>
-          <button onClick={applyBatchTags} disabled={!batchAdd.trim() && !batchRemove.trim()} className="dataset-primary-action" data-testid="batch-apply-btn">{busyAction === 'batch' ? t('dataset.applying') : t('dataset.applyToSelection')}</button>
-        </fieldset>}
-      </div>
-
-      {/* 虚拟滚动图片网格 */}
-      <div
-        ref={gridRef}
-        onScroll={handleScroll}
-        className="dataset-browser-grid relative overflow-y-auto bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700"
-        data-testid="image-grid"
-      >
-        <div style={{ height: rows * rowH, position: 'relative' }}>
-          <div
-            style={{
-              position: 'absolute',
-              top: startRow * rowH,
-              left: 0,
-              right: 0,
-              display: 'grid',
-              gridTemplateColumns: `repeat(${cols}, ${cardWidth}px)`,
-              gap: GAP,
-              justifyContent: 'center',
-              padding: GAP / 2,
-            }}
-          >
-            {visibleItems.map((img) => {
-              const selected = images.selected.has(img.rel_path);
-              return (
-                <div
-                  key={`${img.hash}:${img.rel_path}`}
-                  className={`relative rounded-lg overflow-hidden border cursor-pointer group ${
-                    selected ? 'border-blue-500 ring-2 ring-blue-500/40' : 'border-slate-200 dark:border-slate-700'
-                  }`}
-                  style={{ width: cardWidth, height: CARD_H }}
-                  data-testid={`image-card-${img.hash}`}
-                >
-                  <button type="button" onClick={() => openEditor(img.hash, img.rel_path)} aria-label={`${canEdit ? text('编辑标签', 'Edit caption') : text('查看图片与标签', 'View image and caption')}: ${img.rel_path}`} className="block w-full">
-                    <img src={apiUrl(`/datasets/${id}/images/${img.hash}/thumb?size=${THUMB_SIZE}`)} alt={img.rel_path} loading="lazy" className="w-full h-[170px] object-contain bg-slate-100 dark:bg-slate-900" />
-                  </button>
-                  <button
-                    disabled={!canEdit}
-                    aria-label={`${text('选择图片', 'Select image')}: ${img.rel_path}`}
-                    onClick={() => images.toggleSelect(img.rel_path)}
-                    aria-pressed={selected}
-                    className={`dataset-image-select ${selected ? 'is-selected' : ''}`}
-                  >
-                    {selected ? <CheckSquare size={18}/> : <Square size={18}/>}
-                  </button>
-                  {img.training_enabled === false && <span className="dataset-image-membership">{text('暂不训练','Held out')}</span>}<div className="dataset-image-caption"><strong title={img.rel_path}>{img.rel_path}</strong><span title={img.caption}>{img.width} × {img.height} · {img.caption || t('dataset.noCaption', '（无 caption）')}</span></div>
-                  {canEdit && <button type="button" onClick={() => setMaskImage({ hash: img.hash, relPath: img.rel_path })} className="dataset-image-mask mx-1.5 flex min-h-9 w-[calc(100%-12px)] items-center justify-center gap-1 rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700"><Brush className="h-3.5 w-3.5" />{img.has_mask ? text('编辑遮罩 · 已有文件', 'Edit mask · saved') : text('编辑遮罩', 'Edit mask')}</button>}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-        {images.loading && (
-          <div className="sticky bottom-0 text-center text-xs text-slate-400 py-2 bg-white/80 dark:bg-slate-800/80">{t('common.loading')}</div>
-        )}
+      {showBatch && images.selected.size > 0 && <fieldset className="dataset-browser-batch" disabled={!!busyAction}><legend>{text('批量修改已选图片的标签','Edit captions of selected images')}</legend>
+        <label>{text('添加标签','Add tags')}<input value={batchAdd} onChange={event => setBatchAdd(event.target.value)} placeholder={t('dataset.addTagsPlaceholder')} data-testid="batch-add-input"/></label>
+        <label>{text('移除标签','Remove tags')}<input value={batchRemove} onChange={event => setBatchRemove(event.target.value)} placeholder={t('dataset.removeTagsPlaceholder')}/></label>
+        <button onClick={applyBatchTags} disabled={!batchAdd.trim() && !batchRemove.trim()} className="dataset-primary-action" data-testid="batch-apply-btn">{busyAction === 'batch' ? t('dataset.applying') : t('dataset.applyToSelection')}</button>
+      </fieldset>}
+      <div className={`dataset-curation-panes${curation ? '' : ' dataset-single-pane'}`}>
+        <DatasetImagePane datasetId={id} images={trainingImages} training all={!curation} previewOnly={curation} count={curation ? stats?.training_images ?? stats?.images ?? 0 : stats?.images ?? 0} canEdit={canEdit} busy={!!busyAction} minWidth={thumbnailWidth} onMove={() => void setParticipation(false)} onOpen={openEditor}/>
+        {curation && <DatasetImagePane datasetId={id} previewOnly images={unusedImages} training={false} count={stats?.held_out_images ?? 0} canEdit={canEdit} busy={!!busyAction} minWidth={thumbnailWidth} onMove={() => void setParticipation(true)} onOpen={openEditor}/>}
       </div>
 
       {canEdit && maskImage && id && <MaskEditor datasetId={id} imageId={maskImage.hash} relPath={maskImage.relPath} onClose={() => setMaskImage(null)} onSaved={() => { fetchInfo(); images.refresh(); }} onEnableTraining={enableMaskedTraining} />}
@@ -464,10 +362,10 @@ function DatasetContent({id}: {id?:string}) {
             className="bg-white dark:bg-slate-800 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-4 shadow-xl"
             onClick={(e) => e.stopPropagation()}
             data-testid="caption-editor"
-            role="dialog" aria-modal="true" aria-label={text('编辑图片标签','Edit image caption')}
+            role="dialog" aria-modal="true" aria-label={curation ? text('图片预览','Image preview') : text('编辑图片标签','Edit image caption')}
           >
             <div className="flex justify-between items-center">
-              <h3 className="font-semibold text-lg font-mono">{activeImg?.rel_path}</h3>
+              <h3 className="dataset-preview-title">{activeImg?.rel_path}</h3>
               <button onClick={closeCaption} disabled={savingCaption} className="text-slate-400 hover:text-slate-600" title={t('common.close')}>
                 <X className="w-5 h-5" />
               </button>
@@ -496,11 +394,11 @@ function DatasetContent({id}: {id?:string}) {
                 )}
               </div>
               <div className="space-y-3">
-                {canEdit && <button type="button" disabled={savingCaption} onClick={() => { if (activeImg) {void (captionDirty?saveCaption():Promise.resolve()).then(()=>{setMaskImage({ hash: activeImg.hash, relPath: activeImg.rel_path });setActiveImage(null);}).catch(()=>{});} }} className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600"><Brush className="h-4 w-4" />{text('编辑这张图片的训练遮罩', 'Edit this image’s training mask')}</button>}
-                <div className="text-xs text-slate-400">{t('dataset.captionEditorTitle')}{activeImg?.caption_format && ` · ${activeImg.caption_format.toUpperCase()}`}</div>
+                {canEdit && !curation && <button type="button" disabled={savingCaption} onClick={() => { if (activeImg) {void (captionDirty?saveCaption():Promise.resolve()).then(()=>{setMaskImage({ hash: activeImg.hash, relPath: activeImg.rel_path });setActiveImage(null);}).catch(()=>{});} }} className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600"><Brush className="h-4 w-4" />{text('编辑这张图片的训练遮罩', 'Edit this image’s training mask')}</button>}
+                <div className="text-xs text-slate-400">{curation ? text('图片标签','Caption') : t('dataset.captionEditorTitle')}{activeImg?.caption_format && ` · ${activeImg.caption_format.toUpperCase()}`}</div>
                 {activeImg?.caption_error && <p role="alert">{activeImg.caption_error}</p>}
                 {actionError && <p role="alert" className="text-sm text-red-600">{actionError}</p>}
-                {activeJson ? <StructuredCaptionEditor key={`${activeImage}/${captionPath}`} structure={activeStructure} draft={captionFields} onChange={setCaptionFields} disabled={captionLocked} readOnly={!canEdit}/> : canEdit ? <fieldset disabled={captionLocked}><TagChips caption={editCaption} onChange={setEditCaption} readOnly={savingCaption}/></fieldset> : <p className="whitespace-pre-wrap text-sm">{editCaption || t('dataset.noCaption', '（无 caption）')}</p>}
+                {curation ? <p className="whitespace-pre-wrap text-sm">{activeImg?.caption || text('暂无标签','No caption')}</p> : activeJson ? <StructuredCaptionEditor key={`${activeImage}/${captionPath}`} structure={activeStructure} draft={captionFields} onChange={setCaptionFields} disabled={captionLocked} readOnly={!canEdit}/> : canEdit ? <fieldset disabled={captionLocked}><TagChips caption={editCaption} onChange={setEditCaption} readOnly={savingCaption}/></fieldset> : <p className="whitespace-pre-wrap text-sm">{editCaption || t('dataset.noCaption', '（无 caption）')}</p>}
                 <div className="flex justify-end space-x-2 pt-2">
                   <button
                     onClick={closeCaption} disabled={savingCaption}
@@ -508,14 +406,14 @@ function DatasetContent({id}: {id?:string}) {
                   >
                     {t('common.cancel')}
                   </button>
-                  <button
+                  {!curation && <button
                     onClick={()=>void saveCaption().catch(()=>{})}
                     disabled={captionLocked}
                     className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
                     data-testid="caption-save-btn"
                   >
                     {savingCaption ? t('dataset.saving') : t('dataset.saveCaption')}
-                  </button>
+                  </button>}
                 </div>
               </div>
             </div>
@@ -523,28 +421,6 @@ function DatasetContent({id}: {id?:string}) {
         </div>
       )}
 
-      {images.error && (
-        <div className="p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded text-sm text-red-600 dark:text-red-400">
-          {images.error}
-        </div>
-      )}
-
-      {/* 空态：区分「筛选无结果」与「数据集真空」 */}
-      {images.items.length === 0 && !images.loading && (
-        images.q ? (
-          <div className="p-10 text-center text-slate-400" data-testid="dataset-filter-empty">
-            <SearchX className="w-10 h-10 mx-auto mb-2 opacity-40" />
-            <div className="font-medium text-slate-500 dark:text-slate-300">{t('dataset.noFilterResults', '筛选无结果')}</div>
-            <div className="text-xs mt-1">{t('dataset.noFilterResultsHint', '没有匹配当前过滤条件的图片，试试更换关键词。')}</div>
-          </div>
-        ) : (
-          <div className="p-10 text-center text-slate-400" data-testid="dataset-empty">
-            <ImageIcon className="w-10 h-10 mx-auto mb-2 opacity-40" />
-            <div className="font-medium text-slate-500 dark:text-slate-300">{stats?.images ? membership === 'unused' ? text('没有暂不参与的图片','No images are held out') : text('当前没有参与训练的图片','No images are selected for training') : t('dataset.noImages')}</div>
-            <div className="text-xs mt-1">{stats?.images ? text('可在“全部图片”中调整参与状态。','Change participation from All images.') : t('dataset.noImagesHint', '可点击「重新扫描」刷新索引，或确认目录中包含图片文件。')}</div>
-          </div>
-        )
-      )}
     </div>
   );
 }

@@ -80,3 +80,7 @@
 .pipeline-issues details { min-width:0;max-width:100%;font-size:11px;padding:4px 6px;border-radius:3px; }
 .pipeline-issues details summary { cursor:pointer;overflow-wrap:anywhere; }
 .pipeline-issues details p,.pipeline-issues details pre { margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere; }
+
+.dataset-pipeline .pipeline-stages .pipeline-curation-link { display:inline-flex; align-items:center; justify-content:center; flex:none; white-space:nowrap; min-height:32px; padding:6px 9px; font-size:12px; font-weight:500; border:1px solid transparent; border-radius:6px; color:var(--studio-text); }
+.dataset-pipeline .pipeline-stages .pipeline-curation-link:hover { background:var(--studio-muted); color:var(--studio-accent); }
+.dataset-pipeline .pipeline-stages .pipeline-curation-link:focus-visible { outline:2px solid var(--studio-accent); outline-offset:2px; }

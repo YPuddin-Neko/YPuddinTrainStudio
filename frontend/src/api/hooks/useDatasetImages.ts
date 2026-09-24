@@ -60,7 +60,6 @@ export function useDatasetImages(datasetId: string | undefined, pageSize = 60, m
   }, [loading, items.length, total, page, q, fetchPage]);
 
   const refresh = React.useCallback(() => {
-    setItems([]);
     fetchPage(1, q, false);
   }, [fetchPage, q]);
 
@@ -71,6 +70,10 @@ export function useDatasetImages(datasetId: string | undefined, pageSize = 60, m
       else next.add(relPath);
       return next;
     });
+  }, []);
+
+  const selectRange = React.useCallback((paths: string[]) => {
+    setSelected(previous => new Set([...previous, ...paths]));
   }, []);
 
   const clearSelection = React.useCallback(() => setSelected(new Set()), []);
@@ -94,6 +97,7 @@ export function useDatasetImages(datasetId: string | undefined, pageSize = 60, m
     error,
     selected,
     toggleSelect,
+    selectRange,
     clearSelection,
     selectAll,
     loadMore,
