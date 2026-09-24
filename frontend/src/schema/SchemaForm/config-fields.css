@@ -40,22 +40,23 @@
 @container config-form (min-width: 520px) { .compact-schema .config-field-section { --config-columns: 2; } }
 @container config-form (min-width: 840px) { .compact-schema .config-field-section { --config-columns: 3; } }
 
-/* A field is heading, control and footer on three row tracks shared with its row,
-   so controls line up even when a label wraps or a switch has no heading. */
-.compact-schema .config-field { grid-row: span 3; display: grid; grid-template-rows: subgrid; grid-template-columns: minmax(0, 1fr); min-width: 0; }
+/* Each hint follows its own control, independent of taller neighboring fields. */
+.compact-schema .config-field { display:flex; flex-direction:column; min-width:0; }
 .compact-schema .config-field-wide { grid-column: 1 / -1; }
-.compact-schema .config-field > .config-field-heading { grid-row: 1; display: flex; align-items: baseline; gap: 8px; min-width: 0; padding-bottom: 6px; }
+.compact-schema .config-field > .config-field-heading { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding-bottom: 6px; }
 /* The name keeps its width; the configuration key gives way and scrolls. */
 .compact-schema .config-field > .config-field-heading > label { flex: 0 0 auto; min-width: 0; max-width: calc(100% - 36px); font-size: 13px; line-height: 20px; color: var(--studio-text); font-weight: 500; }
 .compact-schema .config-field-label-note { font-size: 12px; font-weight: 400; color: var(--studio-dim); }
-.compact-schema .config-field > .config-field-control { grid-row: 2; min-width: 0; align-self: start; }
-.compact-schema .config-field > .config-field-footer { grid-row: 3; min-width: 0; padding-bottom: 16px; }
+.compact-schema .config-field > .config-field-control { min-width: 0; align-self: stretch; }
+.compact-schema .config-field > .config-field-footer { min-width: 0; padding-bottom: 16px; }
 .compact-schema .config-field-footer > p { margin: 6px 0 0; }
 .config-field-hint { margin: 0; font-size: 12px; line-height: 1.5; color: var(--studio-dim); }
 .compact-schema .config-field-error { font-size: 12px; line-height: 1.5; }
 .config-readonly-control { border: 0; margin: 0; padding: 0; min-width: 0; }
 
-/* A switch sits on the control track, level with the inputs beside it. */
+/* Standalone switches align with adjacent inputs without reserving a hint row. */
+.compact-schema .config-field-boolean { padding-top:26px; }
+.compact-schema [data-only-toggles="true"] > .config-field-boolean { padding-top:0; }
 .compact-schema .config-field-boolean > .config-field-control { display: flex; align-items: center; gap: 8px; min-height: 38px; }
 .compact-schema .config-field-boolean > .config-field-control > label { min-width: 0; font-size: 13px; line-height: 20px; color: var(--studio-text); font-weight: 500; cursor: pointer; }
 .compact-schema .config-field-boolean .config-readonly-control { display: flex; }
@@ -124,3 +125,18 @@
   .compact-schema .config-group-title { padding-inline: 14px; }
 }
 @container (max-width: 240px) { .config-value-mode { grid-template-columns: minmax(0, 1fr); } }
+
+/* Training components are one decision; they must not split across grid rows. */
+.compact-schema .config-training-targets > .config-field-heading > span { font-size:13px; line-height:20px; font-weight:500; }
+.compact-schema .config-training-target-controls { display:flex; flex-wrap:wrap; gap:4px 16px; }
+.compact-schema .config-training-target-controls > .config-field { display:flex; flex-direction:column; padding-top:0; }
+.compact-schema .config-training-target-controls .config-field-control { min-height:32px; }
+.compact-schema .config-training-target-controls .config-field-footer { padding-bottom:0; }
+.compact-schema .config-training-target-controls .config-field-footer:empty { display:none; }
+@container config-form (min-width:520px) and (max-width:839px) {
+  .compact-schema .config-model-setup[data-field-count="3"] .config-training-targets { grid-column:1 / -1; }
+}
+.compact-schema .config-model-files[data-field-count="1"] { --config-columns:1; }
+@container config-form (min-width:520px) {
+  .compact-schema .config-model-files:is([data-field-count="2"],[data-field-count="4"]) { --config-columns:2; }
+}

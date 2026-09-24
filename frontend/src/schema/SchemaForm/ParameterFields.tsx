@@ -6,9 +6,9 @@ const section = (key: string, names: string[], title?: [string, string], options
 /** Every group uses the same grid; these lists only decide grouping and order. */
 const layouts: Record<string, Section[]> = {
   model: [
-    section('setup', ['model.family', 'training.mode', 'model.prediction_type', 'model.sdxl_max_token_length', 'training.train_backbone', 'training.train_text_encoder', 'model.zero_terminal_snr']),
+    section('setup', ['model.family', 'training.mode', 'training.train_backbone', 'training.train_text_encoder']),
     // A variant describes the main model file, so it sits beside that file.
-    section('files', ['model.dit_path', 'model.flux2_variant', 'model.krea2_variant', 'model.text_encoder_path', 'model.text_encoder_2_path', 'model.vae_path', 'model.tokenizer_path', 'training.resume_weights', 'model.dtype'], ['模型文件', 'Model files']),
+    section('files', ['model.dit_path', 'model.prediction_type', 'model.zero_terminal_snr', 'model.flux2_variant', 'model.krea2_variant', 'model.text_encoder_path', 'model.text_encoder_2_path', 'model.vae_path', 'model.tokenizer_path', 'model.sdxl_max_token_length', 'training.resume_weights', 'model.dtype'], ['模型文件', 'Model files']),
   ],
   dataset: [
     section('sources', ['sources']),
@@ -81,7 +81,7 @@ export function FieldSection({ fields, title, className = '', togglesFirst = fal
   const toggles = fields.filter(isToggle);
   const plain = fields.filter(field => !isToggle(field) && !isWide(field));
   const wide = fields.filter(isWide);
-  return <div className={`config-field-section ${className}`}>
+  return <div className={`config-field-section ${className}`} data-field-count={fields.length} data-only-toggles={toggles.length === fields.length || undefined}>
     {title && <h3>{title}</h3>}
     {togglesFirst ? [...toggles, ...plain] : [...plain, ...toggles]}
     {wide}
@@ -95,7 +95,23 @@ export default function ParameterFields({ group, fields, english }: { group: str
   const fullPath = (name: string) => name.includes('.') ? name : `${group}.${name}`;
   const assigned = new Set(sections.flatMap(item => item.names.map(fullPath)));
   const remaining = fields.filter(field => !assigned.has(path(field)));
-  const visible = sections.map(item => ({ item, content: item.names.flatMap(name => fields.filter(field => path(field) === fullPath(name))) })).filter(entry => entry.content.length > 0);
+  const visible = sections.map(item => {
+    const content = item.names.flatMap(name => fields.filter(field => path(field) === fullPath(name)));
+    if (group === 'model' && item.key === 'setup') {
+      const targets = content.filter(field => ['training.train_backbone', 'training.train_text_encoder'].includes(path(field)));
+      if (targets.length) {
+        const other = content.filter(field => !targets.includes(field));
+        const label = english ? 'Training components' : '训练对象';
+        other.splice(Math.min(2, other.length), 0, <div key="training-components" className="config-field config-training-targets" role="group" aria-label={label}>
+          <div className="config-field-heading"><span>{label}</span></div>
+          <div className="config-field-control config-training-target-controls">{targets}</div>
+          <div className="config-field-footer"/>
+        </div>);
+        return { item, content: other };
+      }
+    }
+    return { item, content };
+  }).filter(entry => entry.content.length > 0);
   // A lone section needs no subtitle: the group heading already names it.
   const titled = visible.length + (remaining.length > 0 ? 1 : 0) > 1;
   return <>{visible.map(({ item, content }) => <FieldSection key={item.key} fields={content} title={titled ? item.title?.[english ? 1 : 0] : undefined}

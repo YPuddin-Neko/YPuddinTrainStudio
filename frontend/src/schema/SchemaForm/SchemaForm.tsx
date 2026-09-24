@@ -1173,6 +1173,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       || managedReason
       || (fullPathKey === 'loop.deterministic' ? trainingComputePolicyHint(activeComputePolicy, english) : undefined);
     const describedHint = booleanField ? undefined
+      : fullPathKey === 'training.mode' ? value.training?.mode === 'full'
+        ? (english ? 'Updates the selected model weights directly.' : '直接训练所选模型本身的权重。')
+        : (english ? 'Trains LoRA / LoKr weights while keeping the base model frozen.' : '只训练 LoRA／LoKr 权重，底模保持不变。')
       : fullPathKey === 'model.dtype' ? modelPrecisionHint
       : fullPathKey === 'dataset.native_max_pixels' ? nativePixelsHint(fieldValue, english) || configFieldHint(fullPathKey, english)
       : fullPathKey === 'dataset.text_encoding' && family && !(family.text_modes || []).includes('online') ? t('textMode.autoOnly')

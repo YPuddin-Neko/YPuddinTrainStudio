@@ -7,7 +7,7 @@ type Copy = [string, string];
 
 export const FIELD_HINTS: Record<string, Copy> = {
   'model.family': ['选择要训练的模型，B 表示十亿参数。', 'The model to train; B means billion parameters.'],
-  'training.mode': ['适配器只训练附加权重；全量微调直接更新模型。', 'Adapters train added weights; full fine-tuning updates the model.'],
+  'training.mode': ['LoRA／LoKr 训练附加权重；全量微调直接更新模型。', 'LoRA / LoKr trains added weights; full fine-tuning updates the model.'],
   'training.resume_weights': ['从导出的全量模型继续微调，留空从底模开始。', 'Continue from an exported full model; blank starts from the base.'],
   'model.tokenizer_path': ['留空自动使用模型目录或内置分词器。', 'Blank uses the model folder or built-in tokenizers.'],
   'model.prediction_type': ['须与模型一致，常规 SDXL 选 ε 预测。', 'Must match the model; standard SDXL uses epsilon.'],
@@ -52,7 +52,7 @@ export const FIELD_HINTS: Record<string, Copy> = {
   'loop.log_every': ['每隔多少步记录一次训练指标。', 'Record metrics every N steps.'],
 
   'adapter.algo': ['附加权重的结构，LoRA 最常用。', 'Structure of the added weights; LoRA is most common.'],
-  'adapter.preset': ['选择给哪些层添加适配器。', 'Which layers receive adapters.'],
+  'adapter.preset': ['选择 LoRA／LoKr 作用的模型层。', 'Which layers receive adapters.'],
   'adapter.parameter_mode': ['Full 保留完整因子矩阵；低秩参数更少。', 'Full keeps whole factors; low rank uses fewer weights.'],
   'adapter.factor': ['LoKr 的矩阵拆分方式，-1 自动选择。', 'How LoKr splits each matrix; -1 chooses automatically.'],
   'adapter.rank': ['适配器容量，越大学得越细，文件也越大。', 'Adapter capacity; larger learns more and is bigger.'],
