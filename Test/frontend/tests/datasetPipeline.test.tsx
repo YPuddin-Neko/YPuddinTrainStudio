@@ -81,9 +81,11 @@ describe('dataset pipeline', () => {
     show(); fireEvent.click(screen.getByRole('button',{name:/检查与筛选/}));
     await screen.findByRole('checkbox',{name:'选择 semi.png'});
     expect(screen.getByText('2 张含透明像素')).toBeInTheDocument();
-    expect(screen.getByText('3 张带透明通道')).toBeInTheDocument();
+    expect(screen.getByText('3 张带透明信息')).not.toBeVisible();
+    fireEvent.click(screen.getByText('通道与透明信息'));
+    expect(screen.getByText('3 张带透明信息')).toBeVisible();
     expect(screen.getAllByText('含透明或半透明像素')).toHaveLength(2);
-    expect(screen.getByText(/透明通道全部不透明/)).toBeInTheDocument();
+    expect(screen.queryByText(/透明通道全部不透明/)).not.toBeInTheDocument();
     expect(screen.getByText(/透明区域以白色合成/)).toBeInTheDocument();
     const filter = screen.getByRole('combobox',{name:'显示'});
     fireEvent.click(filter);
@@ -92,7 +94,7 @@ describe('dataset pipeline', () => {
     expect(screen.queryByRole('checkbox',{name:'选择 opaque.png'})).not.toBeInTheDocument();
     expect(screen.queryByRole('checkbox',{name:'选择 rgb.png'})).not.toBeInTheDocument();
     fireEvent.click(filter);
-    fireEvent.click(screen.getByRole('option',{name:'带透明通道（含全不透明）'}));
+    fireEvent.click(screen.getByRole('option',{name:'带透明信息（通道或标记）'}));
     expect(screen.getByRole('checkbox',{name:'选择 opaque.png'})).toBeInTheDocument();
     expect(screen.queryByRole('checkbox',{name:'选择 rgb.png'})).not.toBeInTheDocument();
     expect(submitted).toEqual([]);
@@ -248,4 +250,27 @@ it('does not invent a percentage before an operation knows its total',async()=>{
   state.operations=[{...operation,action:'inspect',status:'running',phase:'inspecting',done:0,total:0,can_undo:false}];
   show();
   expect(await screen.findByRole('progressbar')).not.toHaveAttribute('aria-valuenow');
+});
+
+it('keeps opaque alpha channels out of transparency problems and distinguishes color-key metadata', async () => {
+  state.inspection = {...state.inspection!,warnings:0,transparent_images:0,alpha_images:2,alpha_channel_images:1,transparency_metadata_images:1,images:[
+    {...image,rel_path:'opaque.png',image_mode:'RGBA',transparency_source:'alpha',has_alpha:true,has_alpha_channel:true,has_transparency:false,issues:[]},
+    {...image,rel_path:'keyed.png',image_mode:'RGB',transparency_source:'color_key',has_alpha:true,has_alpha_channel:false,has_transparency:false,issues:[]},
+    {...image,rel_path:'plain.png',image_mode:'RGB',transparency_source:null,has_alpha:false,has_alpha_channel:false,has_transparency:false,issues:[]},
+  ]};
+  show();fireEvent.click(screen.getByRole('button',{name:/检查与筛选/}));
+  await screen.findByRole('checkbox',{name:'选择 opaque.png'});
+  expect(screen.getByText('0 张含透明像素')).toBeVisible();
+  expect(screen.queryByText('含透明或半透明像素')).not.toBeInTheDocument();
+  expect(screen.getByText('Alpha 通道：1 张，其中 1 张全不透明。')).not.toBeVisible();
+  fireEvent.click(screen.getByText('通道与透明信息'));
+  expect(screen.getByText('Alpha 通道：1 张，其中 1 张全不透明。')).toBeVisible();
+  expect(screen.getByText('仅带透明标记：1 张。')).toBeVisible();
+  const filter=screen.getByRole('combobox',{name:'显示'});
+  fireEvent.click(filter);fireEvent.click(screen.getByRole('option',{name:'含 Alpha 通道（含全不透明）'}));
+  expect(screen.getByRole('checkbox',{name:'选择 opaque.png'})).toBeVisible();
+  expect(screen.queryByRole('checkbox',{name:'选择 keyed.png'})).not.toBeInTheDocument();
+  fireEvent.click(filter);fireEvent.click(screen.getByRole('option',{name:'含透明像素'}));
+  expect(screen.queryByRole('checkbox',{name:'选择 opaque.png'})).not.toBeInTheDocument();
+  expect(submitted).toEqual([]);
 });

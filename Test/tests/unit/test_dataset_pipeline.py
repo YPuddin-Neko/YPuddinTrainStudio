@@ -141,10 +141,18 @@ def test_inspection_distinguishes_alpha_metadata_from_actual_transparent_pixels(
         record = records[name]
         assert record["has_alpha"] is alpha
         assert record["has_transparency"] is transparent
+        assert record["has_alpha_channel"] is (name in {"semi.png", "opaque-alpha.png", "subtle-alpha.png"})
         notices = [issue for issue in record["issues"] if issue["code"] == "transparent_image"]
         assert len(notices) == int(transparent)
         assert all(issue["severity"] == "warning" for issue in notices)
     assert report["alpha_images"] == 8 and report["transparent_images"] == 6
+    assert report["alpha_channel_images"] == 3
+    assert report["transparency_metadata_images"] == 5
+    assert records["opaque-alpha.png"]["transparency_source"] == "alpha"
+    assert records["opaque-alpha.png"]["image_mode"] == "RGBA"
+    assert records["rgb-key.png"]["transparency_source"] == "color_key"
+    assert records["rgb-key.png"]["image_mode"] == "RGB"
+    assert records["palette-opaque.png"]["transparency_source"] == "palette"
     assert records["rgb-key.png"]["transparent_pixels"] == 256 * 256
     assert records["subtle-alpha.png"]["transparent_pixels"] == 1
     assert records["subtle-alpha.png"]["min_alpha"] == 254

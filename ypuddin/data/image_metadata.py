@@ -3,6 +3,19 @@
 from PIL import Image
 
 
+def transparency_source(image: Image.Image) -> str | None:
+    """Identify stored alpha separately from transparency declared in metadata."""
+    if any(band.upper() == "A" for band in image.getbands()):
+        return "alpha"
+    if "transparency" not in image.info:
+        return None
+    if image.mode == "P":
+        return "palette"
+    if has_color_key(image):
+        return "color_key"
+    return "metadata"
+
+
 def has_alpha(image: Image.Image) -> bool:
     # PNG color keys also apply to RGB and grayscale images, not only palettes.
     return any(band.upper() == "A" for band in image.getbands()) or "transparency" in image.info

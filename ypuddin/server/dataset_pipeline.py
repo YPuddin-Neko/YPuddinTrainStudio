@@ -18,7 +18,7 @@ from typing import Any
 from PIL import Image, ImageOps
 
 from ypuddin.config import TrainConfig
-from ypuddin.data.image_metadata import alpha_channel
+from ypuddin.data.image_metadata import alpha_channel, transparency_source
 from ypuddin.data.index import IMAGE_EXTS, content_hash, iter_images, mask_for
 
 from .db import new_id, now
@@ -153,7 +153,7 @@ class DatasetPipeline:
         # transforms, even when image/caption bytes have not changed.
         payload: list[Any] = [{
             "caption_inspection_version": 3,
-            "transparency_inspection_version": 3,
+            "transparency_inspection_version": 4,
             "model_family": config.get("model", {}).get("family"),
             "caption": config.get("dataset", {}).get("caption"),
         }]
@@ -555,6 +555,9 @@ class DatasetPipeline:
                 "caption": "",
                 "has_mask": bool(mask),
                 "has_alpha": None,
+                "has_alpha_channel": None,
+                "transparency_source": None,
+                "image_mode": None,
                 "has_transparency": None,
                 "issues": [],
                 "editable": bool(
@@ -571,6 +574,9 @@ class DatasetPipeline:
                     image.load()
                     record["width"], record["height"] = ImageOps.exif_transpose(image).size
                     alpha = alpha_channel(image)
+                    record["image_mode"] = image.mode
+                    record["transparency_source"] = transparency_source(image)
+                    record["has_alpha_channel"] = record["transparency_source"] == "alpha"
                     histogram = alpha.histogram() if alpha is not None else None
                     transparent_pixels = sum(histogram[:255]) if histogram else 0
                     record["has_alpha"] = alpha is not None
@@ -704,6 +710,10 @@ class DatasetPipeline:
             "captioned": sum(bool(record["caption"]) for record in records),
             "masks": sum(record["has_mask"] for record in records),
             "alpha_images": sum(record["has_alpha"] is True for record in records),
+            "alpha_channel_images": sum(record["has_alpha_channel"] is True for record in records),
+            "transparency_metadata_images": sum(
+                record["has_alpha"] is True and record["has_alpha_channel"] is False for record in records
+            ),
             "transparent_images": sum(record["has_transparency"] is True for record in records),
             "source_issues": global_issues,
         }
