@@ -1107,8 +1107,10 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       : fullPathKey === 'model.dtype' ? modelPrecisionHint : undefined;
     const hint = modelHint || (incompatibleFamilyLoss ? (english ? 'This loss option only supports SDXL. Turn it off or set it to zero before using this model.' : '此损失参数仅适用于 SDXL，请关闭或设为 0 后再使用当前模型。') : undefined) || (incompatiblePredictionLoss ? (english ? 'This option is incompatible with the selected prediction type. Turn it off or choose the matching prediction type.' : '此参数与当前预测方式不兼容，请关闭此项或选择对应的预测方式。') : undefined) || managedReason || (fullPathKey === 'loop.deterministic' ? trainingComputePolicyHint(activeComputePolicy, english) : undefined) || (fullPathKey === 'loop.deterministic' && family?.runtime_backend !== 'hip' ? undefined : configFieldHint(fullPathKey, english, value.optimizer?.type, scheduleFree));
     const duplicateHelp = !!help && !!hint && help.replace(/\s+/g, ' ').trim() === hint.replace(/\s+/g, ' ').trim();
+    const fieldControl = <div className="mt-1">{readOnly ? <fieldset disabled style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>{control}</fieldset> : control}</div>;
     const label = (
       <div key={fullPathKey} id={`field-${fullPathKey}`} data-testid={`field-${fullPathKey}`} data-field-path={fullPathKey} data-control-kind={booleanField ? 'toggle' : undefined} className={compactField ? `config-field ${booleanField ? 'config-field-boolean' : ''} ${wide ? 'config-field-wide' : ''} ${errorItem ? 'config-field-invalid' : ''}` : `flex flex-col space-y-1 p-2 rounded ${errorItem ? 'bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800' : ''}`}>
+        {booleanField && fieldControl}
         <div className="config-field-heading flex justify-between items-baseline">
           <label htmlFor={fieldId} className="text-sm font-medium text-slate-700 dark:text-slate-300">
             {fieldLabel}{weightMeta?.required === false && family?.name !== 'flux2' && <span className="ml-1 text-xs text-slate-500">{english ? '(optional)' : '（可选）'}</span>}
@@ -1125,7 +1127,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
             {weightMeta.hint}
           </p>
         )}
-        <div className="mt-1">{readOnly ? <fieldset disabled style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>{control}</fieldset> : control}</div>
+        {!booleanField && fieldControl}
         {hint && (fullPathKey === 'model.dtype' || compactField || managedReason && !duplicateHelp) && <p id={managedReason ? `${fieldId}-managed-reason` : undefined} className="config-field-hint">{hint}</p>}
         {/* A reason Studio cannot phrase for this field stays in the preflight panel; the border still marks it. */}
         {errorItem?.msg && <p className="config-field-error">{errorItem.msg}</p>}
@@ -1238,15 +1240,14 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
               {fields.filter(node => !grouped.includes(path(node)))}
             </>;
           })() : groupName === 'adapter' ? (() => {
-            const order = ['algo', 'preset', 'dora', 'rules', 'parameter_mode', 'factor', 'rank', 'alpha', 'decompose_both', 'rs_lora', 'init', 'resume_weights', 'dropout', 'rank_dropout', 'module_dropout', 'mode', 'param_dtype', 'lr_scale'];
+            const order = ['algo', 'preset', 'parameter_mode', 'factor', 'rank', 'alpha', 'rules', 'dora', 'decompose_both', 'rs_lora', 'init', 'resume_weights', 'dropout', 'rank_dropout', 'module_dropout', 'mode', 'param_dtype', 'lr_scale'];
             const fields = [...groupData.fields].sort((a, b) => {
               const rank = (node: React.ReactNode) => { const index = order.indexOf(String((node as React.ReactElement).key).split('.').pop() || ''); return index < 0 ? order.length : index; };
               return rank(a) - rank(b);
             });
             const fieldName = (node: React.ReactNode) => String((node as React.ReactElement).key).split('.').pop() || '';
             const sections = [
-              {key: 'structure', title: english ? 'Training structure' : '训练结构', names: ['algo', 'preset', 'dora', 'rules']},
-              {key: 'capacity', title: english ? 'Parameter size' : '参数规模', names: ['parameter_mode', 'factor', 'rank', 'alpha', 'decompose_both', 'rs_lora']},
+              {key: 'setup', names: ['algo', 'preset', 'parameter_mode', 'factor', 'rank', 'alpha', 'rules', 'dora', 'decompose_both', 'rs_lora']},
               {key: 'initialization', title: english ? 'Initialization and weight loading' : '初始化与继续训练', names: ['init', 'resume_weights']},
               {key: 'regularization', title: english ? 'Training regularization' : '训练正则', names: ['dropout', 'rank_dropout', 'module_dropout']},
               {key: 'execution', title: english ? 'Computation and learning rate' : '计算与学习率', names: ['mode', 'param_dtype', 'lr_scale']},

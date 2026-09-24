@@ -47,13 +47,13 @@ describe('LoKr parameter mode', () => {
     expect(numeric('alpha')).toHaveValue(16);
   });
 
-  it.each([true, false])('groups DoRA with structure and only shows relevant advanced sections in compact=%s', compact => {
+  it.each([true, false])('keeps adapter setup together and only shows relevant advanced sections in compact=%s', compact => {
     const {rerender} = render(<Editor rank={7} compact={compact}/>);
-    const structure = screen.getByRole('heading', {name: '训练结构'}).parentElement!;
-    const capacity = screen.getByRole('heading', {name: '参数规模'}).parentElement!;
+    const structure = screen.getByTestId('field-adapter.algo').closest('.config-field-section')!;
+    const capacity = screen.getByTestId('field-adapter.parameter_mode').closest('.config-field-section')!;
     for (const key of ['algo', 'preset', 'dora']) expect(structure).toContainElement(screen.getByTestId(`field-adapter.${key}`));
     for (const key of ['parameter_mode', 'factor', 'rank', 'alpha']) expect(capacity).toContainElement(screen.getByTestId(`field-adapter.${key}`));
-    expect(screen.getAllByRole('heading').map(node => node.textContent)).toEqual(['训练结构', '参数规模']);
+    expect(screen.queryAllByRole('heading').map(node => node.textContent)).toEqual([]);
     expect(numeric('rank')).toHaveValue(7);
     rerender(<Editor rank={7} compact={compact} advanced/>);
     expect(screen.getByRole('heading', {name: '初始化与继续训练'}).parentElement).toContainElement(screen.getByTestId('field-adapter.init'));
@@ -72,19 +72,19 @@ describe('LoKr parameter mode', () => {
     expect(screen.queryByTestId('field-adapter.factor')).not.toBeInTheDocument();
     expect(numeric('rank')).toHaveValue(7);
     expect(within(screen.getByTestId('field-adapter.rank')).queryByRole('switch')).not.toBeInTheDocument();
-    expect(screen.getAllByRole('heading').map(node => node.textContent)).toEqual(['训练结构', '参数规模']);
-    expect(screen.getByRole('heading', {name: '训练结构'}).parentElement).toContainElement(screen.getByTestId('field-adapter.dora'));
+    expect(screen.queryAllByRole('heading').map(node => node.textContent)).toEqual([]);
+    expect(screen.getByTestId('field-adapter.algo').closest('.config-field-section')).toContainElement(screen.getByTestId('field-adapter.dora'));
     fireEvent.change(numeric('alpha'), {target: {value: '4'}});
     expect(config().adapter).toMatchObject({algo: 'lora', rank: 7, alpha: 4, factor: 8});
   });
 
-  it('keeps Full mode and DoRA in separate meaningful sections without an empty tuning group', () => {
+  it('keeps Full mode and DoRA together without empty tuning columns', () => {
     render(<Editor/>);
-    const capacity = screen.getByRole('heading', {name: '参数规模'}).parentElement!;
+    const capacity = screen.getByTestId('field-adapter.parameter_mode').closest('.config-field-section')!;
     expect(capacity).toContainElement(screen.getByTestId('field-adapter.parameter_mode'));
     expect(capacity).toContainElement(screen.getByTestId('field-adapter.factor'));
-    expect(capacity).not.toContainElement(screen.getByTestId('field-adapter.dora'));
-    expect(screen.getAllByRole('heading').map(node => node.textContent)).toEqual(['训练结构', '参数规模']);
+    expect(capacity).toContainElement(screen.getByTestId('field-adapter.dora'));
+    expect(screen.queryAllByRole('heading').map(node => node.textContent)).toEqual([]);
   });
 
   it.each(['lora', 'loha'])('restores a valid remembered numeric rank when switching Full to %s', algo => {

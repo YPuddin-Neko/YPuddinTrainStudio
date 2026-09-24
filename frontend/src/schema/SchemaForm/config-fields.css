@@ -101,11 +101,6 @@
   .compact-schema .config-model-prediction,
   .compact-schema .config-model-assets-sdxl { grid-template-columns:minmax(0,1fr); }
 }
-.compact-schema .config-adapter-structure { grid-template-columns: minmax(130px, .65fr) minmax(0, 1.35fr); }
-.compact-schema .config-adapter-capacity [data-field-path="adapter.parameter_mode"] { grid-column: 1 / -1; }
-.compact-schema .config-adapter-capacity [data-field-path="adapter.parameter_mode"] .studio-select { height: auto; min-height: 38px; }
-.compact-schema .config-adapter-capacity [data-field-path="adapter.parameter_mode"] .studio-select > span { white-space: normal; line-height: 22px; text-align: left; }
-.config-adapter-fields .config-adapter-structure > .config-field-boolean { grid-column: 1 / -1; }
 .config-scope-hint { margin: 0; color: var(--studio-dim); font-size: 12px; line-height: 1.5; }
 @container adapter-fields (max-width:520px) {
   .config-adapter-fields > .config-field-section { grid-template-columns: minmax(0, 1fr); }
@@ -119,15 +114,14 @@
   .compact-schema .config-fields:not(.config-adapter-fields) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .compact-schema [data-group="model"] > .config-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .compact-schema [data-group="optimizer"] .config-field-section { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .compact-schema .config-adapter-structure,
-  .compact-schema .config-adapter-capacity { grid-column: auto; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 0; padding: 0; }
-  .compact-schema .config-adapter-structure > .config-field { grid-column: 1 / -1; }
-  .compact-schema .config-field-section.config-adapter-capacity { border-top: 0; border-left: 1px solid var(--studio-line); padding-top: 0; padding-left: 20px; }
+  .compact-schema .config-adapter-fields > .config-field-section { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .compact-schema .config-adapter-fields > .config-adapter-setup { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .compact-schema .config-adapter-fields > .config-adapter-setup:has([data-field-path="adapter.factor"]):has([data-field-path="adapter.rank"]) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .compact-schema .config-adapter-fields > .config-adapter-initialization { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @container config-form (max-width: 520px) {
   .compact-schema .config-fields { padding: 14px; gap: 16px; grid-template-columns: minmax(0, 1fr); }
-  .compact-schema .config-field-section,
-  .compact-schema .config-adapter-structure { grid-template-columns: minmax(0, 1fr); }
+  .compact-schema .config-field-section { grid-template-columns: minmax(0, 1fr); }
   .compact-schema [data-group="model"] > .config-fields { grid-template-columns: minmax(0, 1fr); }
   .compact-schema .config-field input:not([type="checkbox"]):not([type="range"]),
   .compact-schema .config-field select,
@@ -150,27 +144,30 @@
 .config-optional-object { display:grid; gap:12px; min-width:0; }
 .config-value-mode { display:grid; grid-template-columns:minmax(108px,.8fr) minmax(0,1.2fr); gap:8px; }
 .config-value-mode > .studio-select:only-child { grid-column:1 / -1; }
-.config-toggle-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); grid-column:1 / -1; gap:4px 24px; min-width:0; }
+.config-toggle-list { display:flex; flex-wrap:wrap; align-items:flex-start; grid-column:1 / -1; gap:8px 24px; min-width:0; }
 .compact-schema .config-field-boolean,
-.config-adapter-fields .config-field-boolean { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:4px 12px; min-height:40px; padding-block:4px; }
+.config-adapter-fields .config-field-boolean { display:flex; flex-direction:row; flex-wrap:wrap; align-items:center; gap:4px 8px; width:fit-content; max-width:100%; min-height:32px; padding:0; container-type:normal; }
 .compact-schema .config-field-boolean > .config-field-heading,
-.config-adapter-fields .config-field-boolean > .config-field-heading { grid-column:1; grid-row:1; align-items:center; min-height:0; }
+.config-adapter-fields .config-field-boolean > .config-field-heading { flex:0 1 auto; max-width:calc(100% - 42px); align-items:center; justify-content:flex-start; gap:4px; min-height:0; }
+.config-field-boolean .config-field-heading > label { flex:0 1 auto; max-width:none; }
+.compact-schema .config-field-boolean .config-field-heading > label { font-size:13px; line-height:20px; color:var(--studio-text); font-weight:500; }
+.config-field-boolean .config-field-reference { margin-left:0; flex:none; min-width:0; }
+.config-field-boolean .config-field-reference::after { display:none; }
 .config-field-boolean .config-field-key { display:none; }
 .compact-schema .config-field-boolean > .mt-1,
-.config-adapter-fields .config-field-boolean > .mt-1 { grid-column:2; grid-row:1; }
-.config-field-boolean > p { grid-column:1 / -1; }
-.config-field-boolean .config-toggle-control { width:auto; min-height:32px; justify-content:flex-end; }
+.config-adapter-fields .config-field-boolean > .mt-1 { flex:none; }
+.config-field-boolean > p { flex-basis:100%; }
+.config-field-boolean .config-toggle-control { width:auto; min-height:32px; justify-content:flex-start; }
 .config-field-boolean .studio-switch { flex:none; }
+.compact-schema .config-model-components { display:flex; flex-wrap:wrap; gap:8px 24px; }
+.compact-schema .config-fields:has(> .config-field-section:only-child > .config-toggle-list:only-child) { padding-block:8px; }
 .compact-schema .config-logging-options { grid-template-columns:repeat(2,minmax(0,1fr)); }
 .config-logging-options > .config-field-boolean { align-self:end; }
 @container config-form (min-width:840px) {
   .compact-schema .config-field-section:not([class*="config-adapter-"]):not(.config-logging-options) { grid-template-columns:repeat(3,minmax(0,1fr)); }
   .compact-schema [data-group] .config-field-section:is(.config-sampling-cadence,.config-validation-cadence,.config-loop-duration,.config-sampling-switches,.config-validation-switches) { grid-template-columns:repeat(2,minmax(0,1fr)); }
-  .config-adapter-structure .config-toggle-list,.config-adapter-capacity .config-toggle-list { grid-template-columns:minmax(0,1fr); }
-  .config-dataset-sizing > [data-field-path="dataset.resolutions"] { grid-column:span 2; }
 }
 @container config-form (max-width:520px) {
-  .config-toggle-list,
   .compact-schema .config-logging-options { grid-template-columns:minmax(0,1fr); }
 }
 @container (max-width:240px) { .config-value-mode { grid-template-columns:minmax(0,1fr); } }
