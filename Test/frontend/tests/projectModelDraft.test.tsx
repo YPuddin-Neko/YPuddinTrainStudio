@@ -66,7 +66,7 @@ describe('model choices share the training configuration workspace', () => {
     show('/projects/p_model/v/v2/train?tab=model&retained=1');
     const input = await screen.findByDisplayValue('/models/original.safetensors');
     fireEvent.change(input,{target:{value:'/models/chosen.safetensors'}});
-    fireEvent.click(screen.getByRole('button', { name: /设备与时长$/ }));
+    fireEvent.click(screen.getByRole('button', { name: /训练循环$/ }));
     expect(screen.getByTestId('route')).toHaveTextContent('tab=train&retained=1');
     await act(async () => fireEvent.click(screen.getByRole('button',{name:'Browser back'})));
     expect(screen.getByTestId('field-model.dit_path')).toBeInTheDocument();

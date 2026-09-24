@@ -56,12 +56,13 @@ it('keeps a long optimizer explanation in the question-mark popup rather than un
   expect(within(field).queryByText(/改用 FOCUS 更新方式/)).not.toBeInTheDocument();
   fireEvent.click(within(field).getByRole('button',{name:'FOCUS 更新方式 说明'}));
   expect(screen.getByRole('tooltip')).toHaveTextContent(/改用 FOCUS 更新方式/);
-  expect(within(field).getByText('optimizer.use_focus')).toBeInTheDocument();
+  // A switch names itself beside its toggle; the configuration key column belongs to input fields.
+  expect(within(field).queryByText('optimizer.use_focus')).not.toBeInTheDocument();
 });
 
 it('gives every optimizer field the same configuration-key column', () => {
   render(<NumericEditor initial={{optimizer:{type:'prodigy_plus_sf'}}}/>);
-  for (const path of ['optimizer.d_coef','optimizer.d0','optimizer.beta3','optimizer.prodigy_steps','optimizer.split_groups']) {
+  for (const path of ['optimizer.d_coef','optimizer.d0','optimizer.beta3','optimizer.prodigy_steps','optimizer.weight_decay']) {
     const field=within(screen.getByTestId(`field-${path}`));
     expect(field.getByText(path)).toBeInTheDocument();
     // A reserved help slot is what keeps the key aligned, so every row must own the trigger.

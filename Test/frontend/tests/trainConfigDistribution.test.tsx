@@ -1,5 +1,5 @@
 import {act,fireEvent,render,screen,waitFor,within} from '@testing-library/react';
-import {afterAll,afterEach,beforeAll,expect,it} from 'vitest';
+import {afterAll,afterEach,beforeAll,expect,it,vi} from 'vitest';
 import {http,HttpResponse} from 'msw';
 import {setupServer} from 'msw/node';
 import {MemoryRouter,Route,Routes} from 'react-router-dom';
@@ -7,6 +7,8 @@ import {QueryClient,QueryClientProvider} from '@tanstack/react-query';
 import {handlers} from '../mocks/handlers';
 import TrainConfig from '../../../frontend/src/pages/TrainConfig/TrainConfig';
 import '../../../frontend/src/i18n';
+// Each test mounts the whole training workspace (2–4 s in jsdom); 5 s leaves no headroom on a busy machine.
+vi.setConfig({ testTimeout: 15_000 });
 
 const server=setupServer(...handlers);
 beforeAll(()=>server.listen({onUnhandledRequest:'error'}));

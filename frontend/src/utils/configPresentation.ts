@@ -1,3 +1,5 @@
+import { FIELD_HELP, FIELD_HINTS } from './fieldCopy';
+
 
 const labels: Record<string, string> = {
   'memory': '显存估算',
@@ -64,7 +66,7 @@ const labels: Record<string, string> = {
   'loop.ema': '启用 EMA', 'loop.ema_decay': 'EMA 衰减', 'loop.nan_skip_limit': '无效梯度跳过上限', 'loop.log_every': '日志间隔',
   'checkpoint.output_dir': '训练权重保存位置', 'checkpoint.name': '权重文件名', 'checkpoint.save_every_steps': '每隔几步保存',
   'checkpoint.save_every_epochs': '每隔几轮保存', 'checkpoint.save_state_every_steps': '完整状态保存间隔',
-  'checkpoint.keep_last_n': '保留最近几个状态', 'checkpoint.save_dtype': '权重保存精度', 'checkpoint.save_on_finish': '结束时保存权重',
+  'checkpoint.keep_last_n': '保留最近几次权重', 'checkpoint.save_dtype': '权重保存精度', 'checkpoint.save_on_finish': '结束时保存权重',
   'checkpoint.resume': '恢复完整训练状态', 'sampling.enabled': '生成训练预览', 'sampling.every_steps': '每隔几步预览',
   'sampling.every_epochs': '每隔几轮预览', 'sampling.at_start': '开始前生成预览', 'sampling.prompts': '预览提示词',
   'sampling.prompts_file': '提示词文件', 'sampling.steps': '采样步数', 'sampling.cfg': 'CFG 引导强度',
@@ -172,24 +174,11 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
     'optimizer.args': ['仅用于当前优化器支持的额外参数。已有专用控件的参数请在对应位置设置；不确定名称和作用时留空。', 'Only for extra parameters supported by the selected optimizer. Use dedicated controls where available; leave empty unless you know the parameter and its effect.'],
     'optimizer.group_lr': ['分别覆盖不同参数组的学习率。通常留空，使用统一学习率；自动管理学习率时不可覆盖。', 'Overrides the learning rate of individual parameter groups. Usually leave empty to use the shared rate; unavailable when the rate is managed automatically.'],
   };
-  return help[path]?.[english ? 1 : 0] || (english && path.startsWith('optimizer.') ? optimizerEnglishHelp[path.slice(10)] : undefined) || fallback;
+  return help[path]?.[english ? 1 : 0] || (english && path.startsWith('optimizer.') ? optimizerEnglishHelp[path.slice(10)] : undefined) || FIELD_HELP[path]?.[english ? 1 : 0] || fallback;
 }
 
 export function configFieldHint(path: string, english = false, optimizerType?: string, scheduleFree = false) {
-  const hints: Record<string, [string, string]> = {
-    'model.family': ['B 表示十亿个主模型参数，不含文本编码器与 VAE。Klein 的实际规模由模型版本决定。', 'B denotes billion backbone parameters, excluding text encoders and the VAE. The Klein variant determines its actual size.'],
-    'loop.deterministic': ['DTK 会按模型与训练方式管理计算精度。实际设置在参数检查后显示，可能增加显存和耗时。', 'DTK manages compute precision for the model and training mode. Effective settings appear after configuration validation and may increase memory use and runtime.'],
-    'loop.gpu_count': ['1 为单卡；多卡可选择数据并行或显存分片。', '1 uses one GPU. Multiple GPUs can use data parallelism or memory sharding.'],
-    'loop.distributed_strategy': ['数据并行分配训练数据；显存分片将模型分摊到多卡。', 'Data parallelism splits training data; memory sharding distributes the model across GPUs.'],
-    'dataset.batch_size': ['每张显卡一次处理的图片数；有效批次还会乘以显卡数和梯度累积。', 'Images processed by each GPU per batch. Effective batch size also includes GPU count and gradient accumulation.'],
-    'training.mode': ['适配器生成附加权重；全量微调直接更新并保存所选模型组件。', 'Adapters save additional weights; full fine-tuning updates and saves the selected model components.'],
-    'memory.base_precision': ['降低底模存储精度可节省显存，但可能影响训练质量。默认不转换。', 'Lower precision saves memory but may affect training quality. Conversion is off by default.'],
-    'memory.activation_checkpointing': ['重新计算中间结果，节省显存但增加耗时。', 'Recomputes intermediate results to save memory at the cost of time.'],
-    'loop.grad_accum': ['累积多个小批次后再更新一次参数。', 'Accumulate multiple minibatches before one parameter update.'],
-    'adapter.mode': ['自动模式分别计算底模和适配器的输出，不降低权重精度。', 'Automatic computes the base model and adapter outputs separately without reducing weight precision.'],
-
-    'optimizer.lr': ['基础更新步长；全量微调需单独设置，自适应优化器按自身规则管理。', 'Base update step size; set it separately for full fine-tuning. Adaptive optimizers manage it by their own rules.'],
-    'optimizer.weight_decay': ['约束权重增长；通常保留默认值，0 关闭。', 'Constrains weight growth; usually keep the default. 0 disables it.'],
+  const dynamic: Record<string, [string, string]> = {
     'optimizer.betas': scheduleFree
       ? ['分别控制权重平均与梯度大小估计，通常保留默认值。', 'Controls weight averaging and gradient-size estimation; usually keep the defaults.']
       : ['数值越大，反应越平缓；通常保留默认值。', 'Higher values react more smoothly; usually keep the defaults.'],
@@ -201,12 +190,8 @@ export function configFieldHint(path: string, english = false, optimizerType?: s
     'optimizer.eps': optimizerType === 'prodigy_plus_sf'
       ? ['通常保留默认值；选择 Adam-atan2 才切换算法，需关闭 StableAdamW 和 FOCUS。', 'Usually keep the default. Selecting Adam-atan2 changes the algorithm; StableAdamW and FOCUS must be off.']
       : ['防止除以接近零的数；通常保留默认值。', 'Prevents division by values near zero; usually keep the default.'],
-    'optimizer.beta3': ['留空时使用 β2 的平方根；通常保留自动。', optimizerEnglishHelp.beta3],
-    'optimizer.growth_rate': ['每一步的最大增长倍率；留空时不设上限。', optimizerEnglishHelp.growth_rate],
-    'optimizer.kahan': ['补偿低精度更新中容易丢失的小数值。', 'Compensates for small values lost during low-precision updates.'],
-    'optimizer.group_lr': ['留空时统一使用上方学习率。', 'Leave empty to use the learning rate above for every group.'],
   };
-  return hints[path]?.[english ? 1 : 0];
+  return (dynamic[path] || FIELD_HINTS[path])?.[english ? 1 : 0];
 }
 
 export function configPresetLabel(name: string, description: string, defaultPreset?: string, english = false) {
@@ -225,14 +210,21 @@ export function configPresetLabel(name: string, description: string, defaultPres
 
 export function configOptionLabel(path: string, option: string, english = false) {
   const options: Record<string, Record<string, [string, string]>> = {
-    'objective.weighting': { min_snr: ['Min-SNR', 'Min-SNR'] },
+    'objective.weighting': { none: ['不加权', 'None'], sigma_sqrt: ['Sigma 平方根', 'Sigma square root'], cosmap: ['CosMap', 'CosMap'], snr_like: ['类 SNR', 'SNR-like'], cosmos: ['Cosmos', 'Cosmos'], min_snr: ['Min-SNR', 'Min-SNR'] },
+    'objective.timestep_sampling': { uniform: ['均匀采样', 'Uniform'], logit_normal: ['Logit-Normal', 'Logit-normal'], shift: ['偏移采样（shift）', 'Shifted (shift)'], resolution_shift: ['按分辨率偏移', 'Resolution shift'], mode: ['Mode 分布', 'Mode'], cosmap: ['CosMap', 'CosMap'] },
+    'objective.loss': { mse: ['MSE 平方误差', 'MSE'], huber: ['Huber', 'Huber'], pseudo_huber: ['Pseudo-Huber', 'Pseudo-Huber'] },
+    'adapter.algo': { lora: ['LoRA', 'LoRA'], lokr: ['LoKr', 'LoKr'], loha: ['LoHa', 'LoHa'], full: ['目标层完整权重', 'Full target-layer weights'] },
+    'adapter.param_dtype': { fp32: ['FP32', 'FP32'], bf16: ['BF16', 'BF16'] },
+    'checkpoint.save_dtype': { bf16: ['BF16', 'BF16'], fp16: ['FP16', 'FP16'], fp32: ['FP32', 'FP32'] },
+    'scheduler.type': { constant: ['恒定（constant）', 'Constant'], linear: ['线性衰减（linear）', 'Linear decay'], cosine: ['余弦衰减（cosine）', 'Cosine decay'], cosine_restarts: ['余弦重启（cosine_restarts）', 'Cosine with restarts'], polynomial: ['多项式衰减（polynomial）', 'Polynomial decay'], warmup_stable_decay: ['预热-稳定-衰减（WSD）', 'Warmup-stable-decay'], rex: ['REX', 'REX'] },
+    'logging.level': { debug: ['debug · 最详细', 'debug · most detail'], info: ['info · 默认', 'info · default'], warning: ['warning · 仅警告', 'warning · warnings only'] },
     'loop.mixed_precision': {bf16:['BF16 · 自动混合精度','BF16 · automatic mixed precision'],fp16:['FP16 · 自动混合精度','FP16 · automatic mixed precision'],no:['关闭自动混合精度','Automatic mixed precision off']},
     'loop.distributed_strategy': {ddp:['数据并行','Data parallelism'],fsdp:['显存分片（大模型）','Memory sharding (large models)']},
     'training.mode': {adapter:['LoRA','LoRA'],full:['全量微调','Full fine-tuning']},
     'memory.base_precision': {auto:['不转换（沿用加载精度）','No conversion (keep loaded precision)'],fp32:['FP32 · 32 位','FP32 · 32-bit'],bf16:['BF16 · 16 位','BF16 · 16-bit'],fp16:['FP16 · 16 位','FP16 · 16-bit'],fp8_e4m3:['FP8 E4M3 · 启动时量化','FP8 E4M3 · quantize at startup'],fp8_e5m2:['FP8 E5M2 · 启动时量化','FP8 E5M2 · quantize at startup']},
     'model.attention': {auto:['PyTorch SDPA（默认）','PyTorch SDPA (default)'],sdpa:['PyTorch SDPA','PyTorch SDPA'],xformers:['xFormers','xFormers'],flash_attn:['FlashAttention 2','FlashAttention 2'],metal_flash:['Metal FlashAttention · Apple','Metal FlashAttention · Apple'],sage:['SageAttention · 仅采样','SageAttention · sampling only']},
     'adapter.init': {default:['默认初始化','Default initialization'],scalar:['随机权重 + 零值缩放','Random weights + zero scale']},
-    'adapter.mode': {auto:['自动 · 分开计算','Automatic · separate computation'],bypass:['分开计算适配器','Compute adapter separately'],weight:['合并权重后计算','Compute merged weights']},
+    'adapter.mode': {auto:['自动','Automatic'],bypass:['分开计算','Compute separately'],merged:['合并权重后计算','Compute merged weights']},
     'memory.activation_checkpointing': {none:['关闭','Off'],block:['逐块重算 · 节省显存','Block recomputation · save memory'],unsloth:['重算并卸载中间输入','Recompute and offload block inputs']},
     'model.prediction_type': { epsilon: ['ε 预测（常规模型）', 'Epsilon (standard)'], v_prediction: ['v 预测', 'v-prediction'] },
     'model.sdxl_max_token_length': { '75': ['75 tokens · 默认', '75 tokens · default'], '150': ['150 tokens · 2 段', '150 tokens · 2 chunks'], '225': ['225 tokens · 3 段', '225 tokens · 3 chunks'] },
@@ -310,6 +302,6 @@ export function presentPlanWarning(code: string, fallback: string, english = fal
     'device.mps_fp32': 'Apple GPU 使用 FP32 训练，不启用混合精度。',
     'captions.missing': '部分图片没有标签，可到数据集补充标签或设置类别提示词。',
     'buckets.small': '部分分桶不足一个完整批次，最后一个批次会使用较少的图片。',
-    'native.execution': '不同尺寸按像素预算分组前向，按图片数累积梯度；像素上限并非整体显存保证。',
+    'native.execution': '图像面积上限只限制单次计算的图片面积，不等于显存上限。',
   } as Record<string, string>)[code] || fallback;
 }

@@ -1,11 +1,6 @@
 import { mergeConfig } from './config';
 
 const VERSION_FIELDS = [
-  ['model', 'dit_path'],
-  ['model', 'text_encoder_path'],
-  ['model', 'text_encoder_2_path'],
-  ['model', 'vae_path'],
-  ['model', 'tokenizer_path'],
   ['dataset', 'sources'],
   ['dataset', 'cache_dir'],
   ['validation', 'sources'],
@@ -17,17 +12,31 @@ const VERSION_FIELDS = [
   ['logging', 'events_path'],
 ] as const;
 
-/** Reusable hyperparameters must not redirect another version's data or output. */
+export const PRESET_MODEL_FIELDS = ['dit_path', 'text_encoder_path', 'text_encoder_2_path', 'vae_path', 'tokenizer_path'] as const;
+
+/**
+ * Reusable hyperparameters must not redirect another version's data or output.
+ * Chosen model files travel with the preset; empty ones are dropped so applying
+ * the preset keeps the configuration's own files.
+ */
 export function reusableTrainingPreset(config: Record<string, any>): Record<string, any> {
   const result = structuredClone(config);
   for (const [group, field] of VERSION_FIELDS) {
     if (result[group] && typeof result[group] === 'object') delete result[group][field];
   }
+  if (result.model && typeof result.model === 'object') {
+    for (const field of PRESET_MODEL_FIELDS) if (!result.model[field]) delete result.model[field];
+  }
   return result;
 }
 
 export function applyTrainingPreset(current: Record<string, any>, preset: Record<string, any>) {
-  const merged = mergeConfig(current, reusableTrainingPreset(preset));
+  const reusable = reusableTrainingPreset(preset);
+  // Model files only fit the family they were chosen for.
+  if (reusable.model && (!current.model?.family || reusable.model.family !== current.model.family)) {
+    for (const field of PRESET_MODEL_FIELDS) delete reusable.model[field];
+  }
+  const merged = mergeConfig(current, reusable);
   if (current.model?.family) merged.model = { ...merged.model, family: current.model.family };
   return merged;
 }

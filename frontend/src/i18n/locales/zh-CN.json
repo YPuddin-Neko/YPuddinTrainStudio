@@ -447,16 +447,16 @@
   },
   "groups": {
     "model": "基础模型",
-    "dataset": "数据集设置",
-    "adapter": "适配器 (LoRA/LoKr)",
-    "objective": "损失与时间步",
+    "dataset": "数据与分桶",
+    "adapter": "适配器",
+    "objective": "噪声与损失",
     "optimizer": "优化器",
     "scheduler": "学习率调度",
-    "memory": "显存优化",
+    "memory": "显存与计算",
     "loop": "训练循环",
-    "checkpoint": "检查点保存",
+    "checkpoint": "保存与恢复",
     "sampling": "采样预览",
-    "validation": "验证集评估",
+    "validation": "验证",
     "logging": "日志与监控",
     "fieldCount": "{count} 项",
     "caption": "标签处理"
@@ -470,7 +470,7 @@
     "auto": "自动",
     "cached": "训练前缓存文本特征",
     "online": "每步编码文本",
-    "autoOnly": "该模型会先把标签编码为文本特征并缓存，然后释放文本编码器占用的显存。"
+    "autoOnly": "该模型先缓存文本特征，再释放文本编码器显存。"
   },
   "sampling": {
     "shiftAuto": "自动（按分辨率）"

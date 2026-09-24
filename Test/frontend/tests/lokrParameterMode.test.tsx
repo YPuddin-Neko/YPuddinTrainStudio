@@ -90,7 +90,7 @@ describe('LoKr parameter mode', () => {
   it.each(['lora', 'loha'])('restores a valid remembered numeric rank when switching Full to %s', algo => {
     render(<Editor rank={7}/>);
     mode('Full · 完整因子矩阵');
-    choose('适配器算法', algo);
+    choose('适配器算法', algo === 'lora' ? 'LoRA' : 'LoHa');
     expect(config().adapter).toMatchObject({algo, rank: 7, alpha: 8, factor: 8, dora: true, preset: 'attn-mlp', rules: []});
     expect(numeric('rank')).toHaveValue(7);
     expect(screen.queryByTestId('field-adapter.factor')).not.toBeInTheDocument();
@@ -98,7 +98,7 @@ describe('LoKr parameter mode', () => {
 
   it('uses the default numeric rank when imported Full has no local rank history', () => {
     render(<Editor/>);
-    choose('适配器算法', 'lora');
+    choose('适配器算法', 'LoRA');
     expect(config().adapter).toMatchObject({algo: 'lora', rank: 16, alpha: 8});
   });
 

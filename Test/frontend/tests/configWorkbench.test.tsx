@@ -89,24 +89,26 @@ describe('compact configuration workbench contracts', () => {
     expect(JSON.parse(screen.getByTestId('native-config').textContent!).dataset).toEqual({resolution_mode:'bucket',resolutions:[768],aspect_ratio_limit:2,native_max_side:2048});
   });
 
-  it('distinguishes native forwards from logical batches in the plan', () => {
+  it('distinguishes native model runs from batches in the plan', () => {
     const plan = {ok:true,images:4,items:8,captioned:4,total_steps:4,steps_per_epoch:2,buckets:[{base: 512,w:512,h:768,items:8,batches:4}],native:{images:4,downscaled:1,sizes:1,logical_batches:2,max_pixels:1048576,alignment:32,batch_size:4,forward_groups:4}} as Plan;
     render(<BucketInspector plan={plan} loading={false} onData={()=>{}}/>);
     expect(screen.getByText('实际训练尺寸')).toBeInTheDocument();
-    expect(screen.getByText('逻辑批次 / 轮').nextElementSibling).toHaveTextContent('2');
-    expect(screen.getByText('分组前向 / 轮').nextElementSibling).toHaveTextContent('4');
+    expect(screen.getByText('批次 / 轮').nextElementSibling).toHaveTextContent('2');
+    expect(screen.getByText('计算次数 / 轮').nextElementSibling).toHaveTextContent('4');
     fireEvent.click(screen.getByRole('button',{name:'分桶明细表'}));
-    expect(screen.getByRole('columnheader',{name:'前向次数'})).toBeInTheDocument();
+    // The column explains itself behind its help button.
+    expect(screen.getByRole('columnheader',{name:/计算次数/})).toBeInTheDocument();
+    expect(screen.getByRole('button',{name:'计算次数说明'})).toBeInTheDocument();
     expect(screen.queryByRole('columnheader',{name:'批次'})).not.toBeInTheDocument();
   });
-  it('retains native geometry without inventing forward counts for an invalid seed', () => {
+  it('retains native geometry without inventing model runs for an invalid seed', () => {
     const plan = {ok:false,images:8,items:8,captioned:8,buckets:[{base: 1024,w:64,h:80,items:8,batches:null}],native:{images:8,downscaled:2,sizes:1,logical_batches:3,max_pixels:4096,alignment:16,batch_size:3,forward_groups:null}} as unknown as Plan;
     render(<BucketInspector plan={plan} loading={false} onData={()=>{}}/>);
     expect(screen.getByText('实际训练尺寸')).toBeInTheDocument();
-    expect(screen.getByText('分组前向 / 轮').nextElementSibling).toHaveTextContent('—');
+    expect(screen.getByText('计算次数 / 轮').nextElementSibling).toHaveTextContent('—');
     expect(screen.getByText('总训练步数').nextElementSibling).toHaveTextContent('—');
     fireEvent.click(screen.getByRole('button',{name:'64 × 80, 8 样本'}));
-    expect(screen.getByText('8 样本 · — 前向 / 轮')).toBeInTheDocument();
+    expect(screen.getByText('8 样本 · — 次计算 / 轮')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button',{name:'分桶明细表'}));
     expect(screen.getByRole('table')).toHaveTextContent('64 × 808—');
   });

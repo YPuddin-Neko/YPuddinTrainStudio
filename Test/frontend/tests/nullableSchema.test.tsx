@@ -28,7 +28,7 @@ describe('nullable schema editing', () => {
     expect(screen.queryByTestId('field-logging.wandb')).not.toBeInTheDocument();
     expect(screen.queryByRole('switch',{name:'logging.wandb.unset'})).not.toBeInTheDocument();
     expect(screen.queryByText('Weights & Biases')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('combobox',{name:'日志级别'}));fireEvent.click(screen.getByRole('option',{name:'debug'}));
+    fireEvent.click(screen.getByRole('combobox',{name:'日志级别'}));fireEvent.click(screen.getByRole('option',{name:'debug · 最详细'}));
     expect(JSON.parse(screen.getByTestId('legacy-value').textContent!).logging).toEqual({level:'debug',wandb:legacy});
   });
 

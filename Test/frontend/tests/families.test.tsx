@@ -117,12 +117,16 @@ describe('FE-M7: family-driven SchemaForm', () => {
     expect(input.placeholder).toContain('自动');
   });
 
-  it('5. krea2 的 weights hint 显示在路径字段下方', () => {
+  it('5. krea2 的模型文件下方显示简短说明，问号内保留文件要求', () => {
     render(
       <SchemaForm schema={trainSchema as any} value={baseConfig} onChange={() => {}} family={krea2Family} />
     );
-    expect(screen.getByTestId('weight-hint-dit_path').textContent).toContain('krea2_raw_bf16');
-    expect(screen.getByTestId('weight-hint-vae_path').textContent).toContain('qwen_image_vae');
+    const dit = screen.getByTestId('field-model.dit_path');
+    expect(dit.querySelector('.config-field-hint')).toHaveTextContent('Krea 2 Raw 主模型，BF16 或 FP8 文件。');
+    fireEvent.click(within(dit).getByRole('button', {name: /说明$/}));
+    expect(screen.getByRole('tooltip')).toHaveTextContent('krea2_raw_bf16');
+    fireEvent.click(within(screen.getByTestId('field-model.vae_path')).getByRole('button', {name: /说明$/}));
+    expect(screen.getByRole('tooltip')).toHaveTextContent('qwen_image_vae');
   });
 });
 
@@ -181,15 +185,17 @@ describe('FE-M7: TrainConfig 预设联动（MSW）', () => {
     expect(config().model).toEqual(original.model);
   });
 
-  it('同族预设先展示真实变化，取消不改草稿，应用并保存只更新参数且保留全部项目路径', async () => {
+  it('同族预设先展示真实变化，取消不改草稿，应用后带入模型文件并保留数据与输出路径', async () => {
     const {picker,config,original}=await showTrainingPresetPage();
     fireEvent.click(picker);fireEvent.click(await screen.findByRole('option',{name:'anima-own'}));
     let dialog=await screen.findByRole('dialog',{name:'加载预设前确认参数'});
     expect(dialog).toHaveTextContent('同族风格参数，调整学习率和轮数');
-    expect(dialog).toHaveTextContent('将修改 2 个参数');
+    // Model files chosen in a same-family preset apply; data, cache, output and resume paths never do.
+    expect(dialog).toHaveTextContent('将修改 6 个参数');
     expect(within(dialog).getByRole('table')).toHaveTextContent('optimizer.lr');
     expect(within(dialog).getByRole('table')).toHaveTextContent('loop.epochs');
-    expect(within(dialog).getByRole('table')).not.toHaveTextContent('/foreign');
+    expect(within(dialog).getByRole('table')).toHaveTextContent('/foreign/dit');
+    for (const path of ['/foreign/images', '/foreign/cache', '/foreign/validation', '/foreign/output', '/foreign/state', '/foreign/adapter', '/foreign/samples', '/foreign/prompts', '/foreign/events']) expect(within(dialog).getByRole('table')).not.toHaveTextContent(path);
     expect(screen.getByRole('spinbutton',{name:'学习率'})).toHaveValue(0.0001);
     fireEvent.click(within(dialog).getByRole('button',{name:'取消'}));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -203,6 +209,6 @@ describe('FE-M7: TrainConfig 预设联动（MSW）', () => {
     expect(screen.getByRole('spinbutton',{name:'loop.epochs'})).toHaveValue(7);
     fireEvent.click(screen.getByRole('button',{name:'保存草稿'}));
     await waitFor(()=>expect(config().optimizer.lr).toBe(0.0003));
-    expect(config()).toEqual({...original,optimizer:{...original.optimizer,lr:0.0003},loop:{...original.loop,epochs:7}});
+    expect(config()).toEqual({...original,model:{...original.model,dit_path:'/foreign/dit',text_encoder_path:'/foreign/text',vae_path:'/foreign/vae',tokenizer_path:'/foreign/tokenizer'},optimizer:{...original.optimizer,lr:0.0003},loop:{...original.loop,epochs:7}});
   });
 });

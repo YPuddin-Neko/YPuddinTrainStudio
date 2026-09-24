@@ -110,10 +110,10 @@ describe('project training workspace', () => {
     expect(uploadText).toContain('name="caption_ext"\r\n\r\nauto');
     expect(await screen.findByTestId('dataset-card-d_uploaded')).toHaveTextContent('1 张图片');
     fireEvent.click(screen.getByRole('link', { name: /^2\s*训练参数$/ }));
-    fireEvent.click(await screen.findByRole('button', { name: /模型选择$/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /基础模型$/ }));
     expect(await screen.findByRole('combobox', { name: 'model.family' })).toHaveTextContent(/anima/i);
     await waitFor(() => expect(screen.getByDisplayValue('D:/models/anima.safetensors')).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /设备与时长$/ }));
+    fireEvent.click(screen.getByRole('button', { name: /训练循环$/ }));
     await screen.findByTestId('field-loop.epochs');
     expect(screen.queryByRole('region', {name:'常用训练参数'})).not.toBeInTheDocument();
     fireEvent.change(screen.getByRole('spinbutton', { name: 'loop.epochs' }), { target: { value: '4' } });

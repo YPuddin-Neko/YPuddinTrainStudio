@@ -12,7 +12,7 @@ import { presentConfigIssues, type ConfigTab, type ConfigIssue } from '../../uti
 import { mergeConfig } from '../../utils/config';
 import { formatApiError } from '../../utils/errors';
 import { presetEditorSchema, presetPayload, presetSummary, presetFamily } from '../../utils/presetEditor';
-import { reusableTrainingPreset } from '../../utils/trainingPresets';
+import { PRESET_MODEL_FIELDS, reusableTrainingPreset } from '../../utils/trainingPresets';
 import { inactiveTrainingReason, trainingFamilyOptions } from '../../utils/trainingFamilies';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { useWorkspaceHeight } from '../../components/projects/useWorkspaceHeight';
@@ -80,6 +80,9 @@ export default function Presets() {
       }
       const existing = preset && !copy && !newDraft;
       const merged = mergeConfig(defaults, preset?.config || {});
+      // Model files come only from the preset itself, never from family defaults.
+      const presetModel = (preset?.config?.model || {}) as Record<string, unknown>;
+      merged.model = { ...merged.model, ...Object.fromEntries(PRESET_MODEL_FIELDS.map(field => [field, presetModel[field] || null])) };
       const next: Draft = { name, description: preset?.description || '', config: retired ? merged : reusableTrainingPreset(merged), originalName: existing ? preset.name : null, builtin: false };
       next.config.model = { ...next.config.model, family };
       startingConfig.current = JSON.stringify(next.config);
@@ -199,7 +202,7 @@ export default function Presets() {
       </fieldset>
       <div className="presets-context"><span>{!draft.originalName ? text('填写名称并编辑参数后保存。', 'Name and edit the preset, then save.') : presetSummary(draft.config, english)}</span><span className={dirty ? 'presets-dirty' : ''}>{dirty ? text('有未保存修改', 'Unsaved changes') : draft.originalName ? text('已保存', 'Saved') : text('尚未创建', 'Not created yet')}</span></div>
       {search && <p className="presets-search-context">{text('搜索所有分区，包含高级参数', 'Searching every section, including advanced parameters')}</p>}
-      {editorSchema && <div id="preset-parameters" className="presets-schema" role="region" aria-label={search ? text('预设参数搜索结果', 'Preset parameter search results') : text('预设参数内容', 'Preset parameter fields')}><SchemaForm key={revealVersion} readOnly={busy || !!inactiveReason} schema={editorSchema} value={draft.config} onChange={config=>{setDraft({...draft,config});setErrors([]);}} compact showAdvanced={advanced || !!search} search={search} onClearSearch={clearSearch} family={family} families={families.data} errors={errors}/></div>}
+      {editorSchema && <div id="preset-parameters" className="presets-schema" role="region" aria-label={search ? text('预设参数搜索结果', 'Preset parameter search results') : text('预设参数内容', 'Preset parameter fields')}><SchemaForm key={revealVersion} preset readOnly={busy || !!inactiveReason} schema={editorSchema} value={draft.config} onChange={config=>{setDraft({...draft,config});setErrors([]);}} compact showAdvanced={advanced || !!search} search={search} onClearSearch={clearSearch} family={family} families={families.data} errors={errors}/></div>}
       </div>
       </div>
     </div>}

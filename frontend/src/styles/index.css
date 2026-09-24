@@ -132,7 +132,6 @@ input::placeholder, textarea::placeholder { color:var(--studio-dim); opacity:1; 
 .tab-issue-dot { width:5px; height:5px; border-radius:50%; background:#d97706; }
 .compact-schema { display:flex; flex-direction:column; gap:12px; }
 .config-group { border:1px solid var(--studio-line); background:var(--studio-panel); border-radius:8px; min-width:0; }
-.config-group-wide { grid-column:1 / -1; }
 .config-group-title { display:flex; align-items:center; justify-content:space-between; width:100%; padding:10px 12px; font-size:12px; border-bottom:1px solid var(--studio-line); border-radius:8px 8px 0 0; background:var(--studio-muted); }
 .config-group-title[aria-expanded=false] { border-bottom:0; border-radius:8px; }
 .config-group-title svg { width:13px; height:13px; color:var(--studio-dim); }
@@ -202,6 +201,8 @@ input::placeholder, textarea::placeholder { color:var(--studio-dim); opacity:1; 
 .bucket-table th { color:var(--studio-dim); font-weight:500; text-align:right; padding:5px; position:sticky; top:0; background:var(--studio-panel); }
 .bucket-table td { text-align:right; border-top:1px solid var(--studio-line); padding:7px 5px; }
 .bucket-table th:first-child, .bucket-table td:first-child { text-align:left; }
+.bucket-column-help { display:inline-flex; align-items:center; justify-content:flex-end; gap:2px; }
+.bucket-column-help .config-help-trigger { width:20px; height:20px; min-width:20px; }
 .estimate-block { border-top:1px solid var(--studio-line); padding-top:12px; margin-top:13px; }
 .estimate-block dl { display:grid; gap:8px; margin-top:10px; }
 .estimate-block dl > div { display:flex; justify-content:space-between; gap:8px; font-size:11px; }
@@ -252,9 +253,6 @@ input::placeholder, textarea::placeholder { color:var(--studio-dim); opacity:1; 
 .resolution-editor button:hover { border-color:var(--studio-accent); color:var(--studio-accent); }
 .resolution-editor > span { color:var(--studio-dim); font-size:10px; }
 /* Adapter controls form explicit pairs without changing other schema groups. */
-.config-adapter-group { container:adapter-fields / inline-size; }
-.config-adapter-fields { grid-template-columns:repeat(2,minmax(0,1fr)); }
-@container adapter-fields (max-width:420px) { .config-adapter-fields { grid-template-columns:minmax(0,1fr); } }
 .training-toolbar { position:sticky; top:0; z-index:12; padding:6px 0; background:var(--studio-muted); }
 .config-tabs { position:sticky; top:46px; z-index:11; background:var(--studio-muted); }
 .training-inspector { top:52px; }

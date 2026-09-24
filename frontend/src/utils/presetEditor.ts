@@ -2,7 +2,8 @@ import { reusableTrainingPreset } from './trainingPresets';
 
 const HIDDEN_FIELDS: Record<string, string[]> = {
   training: ['resume_weights'],
-  model: ['family', 'dit_path', 'text_encoder_path', 'text_encoder_2_path', 'vae_path', 'tokenizer_path'],
+  // The family is chosen above the form; model files stay editable and optional.
+  model: ['family'],
   dataset: ['sources', 'cache_dir'],
   validation: ['sources'],
   checkpoint: ['output_dir', 'resume'],

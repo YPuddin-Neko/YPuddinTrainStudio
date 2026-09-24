@@ -113,7 +113,7 @@ describe('compact user preset management', () => {
     fireEvent.click(await screen.findByRole('button', {name: '定位 权重保存精度'}));
     await waitFor(() => expect(screen.getByTestId('field-checkpoint.save_dtype')).toBeInTheDocument());
     await waitFor(() => expect(within(screen.getByTestId('field-checkpoint.save_dtype')).getByRole('combobox')).toHaveFocus());
-    fireEvent.click(screen.getByRole('button', { name: /设备与时长$/ }));
+    fireEvent.click(screen.getByRole('button', { name: /训练循环$/ }));
     expect(screen.getByRole('spinbutton', {name: 'loop.epochs'})).toHaveValue(12);
   });
 
@@ -176,7 +176,7 @@ describe('compact user preset management', () => {
     expect(screen.getByRole('textbox', { name: '用途与说明' })).toHaveValue('更适合细节训练');
   });
 
-  it('duplicates a user preset into editable fields without changing its source or retaining project files', async () => {
+  it('duplicates a user preset into editable fields without changing its source or taking files from defaults', async () => {
     const state = show(); await ready();
     fireEvent.click(screen.getByRole('button', { name: '复制为新预设' }));
     const epochs = await ready('my-style-copy'); expect(epochs).toBeEnabled();
@@ -188,8 +188,11 @@ describe('compact user preset management', () => {
     expect(body.config.loop.epochs).toBe(7); expect(body.config.model.family).toBe('anima');
     for (const [group, key] of [['model', 'dit_path'], ['model', 'tokenizer_path'], ['dataset', 'sources'], ['dataset', 'cache_dir'], ['sampling', 'output_dir'], ['sampling', 'prompts_file'], ['adapter', 'resume_weights']]) expect(body.config[group]).not.toHaveProperty(key);
     expect(state.rows.find(row => row.name === 'my-style')?.config.loop).toEqual({ epochs: 4 });
-    fireEvent.click(screen.getByRole('button', { name: /模型与训练方式$/ }));
-    expect(screen.queryByTestId('field-model.dit_path')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /基础模型$/ }));
+    // Model files are optional preset choices; project data and resume paths stay out of presets.
+    const dit = screen.getByTestId('field-model.dit_path');
+    expect(within(dit).getByRole('textbox')).toHaveValue('');
+    expect(dit).toHaveTextContent('留空时沿用训练配置中的模型。');
     expect(screen.queryByTestId('field-checkpoint.resume')).not.toBeInTheDocument();
   });
 

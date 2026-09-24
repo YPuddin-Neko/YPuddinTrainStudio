@@ -58,7 +58,7 @@ it('makes external scheduling editable when PPSF weight averaging is turned off'
   fireEvent.click(screen.getByRole('switch', {name: '免调度权重平均'}));
   expect(screen.getByRole('spinbutton', {name: '方向平滑 β1'})).toBeInTheDocument();
   expect(screen.queryByRole('spinbutton', {name: '权重平均 β1'})).not.toBeInTheDocument();
-  select('学习率调度', 'cosine');
+  select('学习率调度', '余弦衰减（cosine）');
   expect(value().scheduler.type).toBe('cosine');
   expect(value().optimizer.lr).toBe(1);
 });

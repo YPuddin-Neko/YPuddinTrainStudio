@@ -10,7 +10,7 @@ it('shows current validation status without treating an unchecked model path as 
   root.innerHTML = '<section data-group="model"><button class="config-group-title">Model</button></section>';
   const props = {rootRef:{current:root}, tab:'model' as const, onTabChange:vi.fn(), onRevealAdvanced:vi.fn()};
   const view = render(<ParameterSections {...props}/>);
-  const model = screen.getByRole('button', {name:/模型选择$/});
+  const model = screen.getByRole('button', {name:/基础模型$/});
   const optimizer = screen.getByRole('button', {name:/优化器$/});
   expect(model).toHaveAccessibleDescription('待检查');
   expect(optimizer).toHaveAccessibleDescription('待检查');
@@ -43,7 +43,7 @@ it('keeps a short final section selected after a clamped jump, then follows user
   vi.spyOn(root.children[0], 'getBoundingClientRect').mockImplementation(() => ({ top: 200 - offset }) as DOMRect);
   vi.spyOn(root.children[1], 'getBoundingClientRect').mockImplementation(() => ({ top: 600 - offset }) as DOMRect);
   render(<ParameterSections rootRef={{current:root}} tab="advanced" onTabChange={() => {}} onRevealAdvanced={() => {}}/>);
-  const logging = screen.getByRole('button', { name: /训练记录$/ });
+  const logging = screen.getByRole('button', { name: /日志与监控$/ });
   fireEvent.click(logging);
   expect(offset).toBe(100);
   fireEvent.scroll(root);
@@ -65,7 +65,7 @@ it('maps old training links and component errors to the model section', () => {
   render(<ParameterSections rootRef={{current:root}} tab="train" group="training" hasTrainingMode
     onTabChange={vi.fn()} onRevealAdvanced={reveal} checked planChecked
     issues={presentConfigIssues([{loc:'training.train_text_encoder',msg:'Unsupported'}])}/>);
-  const model = screen.getByRole('button', {name:/模型选择$/});
+  const model = screen.getByRole('button', {name:/基础模型$/});
   expect(model).toHaveAttribute('aria-current', 'step');
   expect(model).toHaveAccessibleDescription('1 项待配置');
   expect(screen.queryByRole('button', {name:/训练方式$/})).not.toBeInTheDocument();

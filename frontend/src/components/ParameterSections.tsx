@@ -10,7 +10,7 @@ export default function ParameterSections({ rootRef, tab, group, onTabChange, is
   issues?: ConfigIssue[]; checked?: boolean; planChecked?: boolean; preset?: boolean; hasTrainingMode?: boolean; fullTraining?: boolean; onRevealAdvanced: () => void;
 }) {
   const text = useWorkspaceText();
-  const items = flow.filter(item => (item.group !== 'adapter' || !fullTraining)).map(item => item.group === 'model' && preset ? {...item, label:['模型与训练方式','Model and training mode'] as [string,string]} : item);
+  const items = flow.filter(item => item.group !== 'adapter' || !fullTraining);
   const issueGroup = (issue: ConfigIssue) => issue.path.startsWith('training.') ? 'model' : issue.path === 'model.attention' ? 'memory' : issue.path === 'dataset.batch_size' ? 'loop' : issue.path.startsWith('dataset.caption.') ? 'caption' : issue.path.split('.')[0];
   const hasGlobalIssue = issues.some(issue => !flow.some(item => item.group === issueGroup(issue)));
   const completed = (group: string) => checked && !hasGlobalIssue && !issues.some(issue => issueGroup(issue) === group)

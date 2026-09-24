@@ -162,7 +162,10 @@
 /* Keep the configuration key on one column: fields without a help button reserve the same slot. */
 .config-field-reference:not(:has(.config-help-trigger))::after { content: ''; flex: 0 0 28px; }
 @media (pointer: coarse) { .config-field-reference:not(:has(.config-help-trigger))::after { flex-basis: 36px; } }
-.config-field-key { display:block; min-width:0; overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; scrollbar-color:var(--studio-line) transparent; color:var(--studio-dim); font-size:10px; line-height:17px; font-weight:400; white-space:nowrap; text-align:left; user-select:text; }
+/* A long key scrolls sideways; its scrollbar appears on hover or keyboard focus. */
+.config-field-key { display:block; min-width:0; overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; scrollbar-color:transparent transparent; color:var(--studio-dim); font-size:10px; line-height:17px; font-weight:400; white-space:nowrap; text-align:left; user-select:text; }
 .config-field-key:focus-visible { outline:2px solid var(--studio-accent); outline-offset:2px; border-radius:2px; }
+.config-field-key:is(:hover,:focus-visible) { scrollbar-color:var(--studio-line) transparent; }
 .config-field-key::-webkit-scrollbar { height:4px; }
-.config-field-key::-webkit-scrollbar-thumb { background:var(--studio-line); border-radius:2px; }
+.config-field-key::-webkit-scrollbar-thumb { background:transparent; border-radius:2px; }
+.config-field-key:is(:hover,:focus-visible)::-webkit-scrollbar-thumb { background:var(--studio-line); }

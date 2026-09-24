@@ -177,23 +177,19 @@ describe('family-driven training fields', () => {
     expect(screen.queryByTestId('field-model.zero_terminal_snr')).not.toBeInTheDocument();
   });
 
-  it('keeps mode beside the model family, component switches together, and SDXL paths in distinct rows', () => {
+  it('keeps mode beside the model family, switches after the selects, and SDXL files in one section', () => {
     render(<Editor advanced />);
     const form = screen.getByTestId('schema-form');
-    const identity = form.querySelector('.config-model-identity')!;
-    expect(within(identity as HTMLElement).getByTestId('field-model.family')).toBeInTheDocument();
-    expect(within(identity as HTMLElement).getByTestId('field-training.mode')).toBeInTheDocument();
+    const setup = form.querySelector('.config-model-setup') as HTMLElement;
+    const fields = (section: HTMLElement) => Array.from(section.querySelectorAll('[data-field-path]')).map(node => node.getAttribute('data-field-path'));
+    // Selects come first so the switches fill the row beside them; every family shares this order.
+    expect(fields(setup)).toEqual(['model.family', 'training.mode', 'model.prediction_type', 'model.sdxl_max_token_length', 'training.train_backbone', 'training.train_text_encoder', 'model.zero_terminal_snr']);
+    expect(within(setup).getAllByRole('switch')).toHaveLength(3);
     expect(form.querySelector('[data-group="training"]')).toBeNull();
-    const components = form.querySelector('.config-model-components')!;
-    expect(within(components as HTMLElement).getAllByRole('switch')).toHaveLength(2);
-    const paths = form.querySelector('.config-model-assets-sdxl')!;
-    expect(Array.from(paths.children).map(node => node.getAttribute('data-field-path'))).toEqual([
-      'model.dit_path', 'model.text_encoder_path', 'model.text_encoder_2_path', 'model.vae_path',
-    ]);
-    const prediction = form.querySelector('.config-model-prediction')!;
-    expect(within(prediction as HTMLElement).getByTestId('field-model.prediction_type')).toBeInTheDocument();
-    expect(within(prediction as HTMLElement).getByTestId('field-model.zero_terminal_snr')).toBeInTheDocument();
-    expect(screen.getByText('CLIP-L / CLIP-G 双分词器自动读取，缺省使用内置资源。')).toBeInTheDocument();
+    const files = form.querySelector('.config-model-files') as HTMLElement;
+    expect(fields(files).slice(0, 5)).toEqual(['model.dit_path', 'model.text_encoder_path', 'model.text_encoder_2_path', 'model.vae_path', 'model.tokenizer_path']);
+    expect(within(screen.getByTestId('field-model.tokenizer_path')).getByText('可选，留空自动读取模型目录。')).toBeInTheDocument();
+    expect(within(screen.getByTestId('field-model.text_encoder_2_path')).getByText('留空使用模型内含的 CLIP-G。')).toBeInTheDocument();
   });
 
   it('finds training mode in its new model group and retains the preset editor mode control', () => {
@@ -207,7 +203,8 @@ describe('family-driven training fields', () => {
     expect(screen.getByTestId('field-training.mode').closest('[data-group]')).toHaveAttribute('data-group', 'model');
     expect(screen.getByRole('switch', { name: '训练文本编码器' })).toBeEnabled();
     expect(screen.queryByTestId('field-model.family')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('field-model.dit_path')).not.toBeInTheDocument();
+    // The preset editor lets a preset pin its own model file.
+    expect(screen.getByTestId('field-model.dit_path')).toBeInTheDocument();
   });
 
   it('stores numeric SDXL long-caption limits and only offers supported chunk lengths', () => {
@@ -225,7 +222,7 @@ describe('family-driven training fields', () => {
 
   it.each([
     ['sampling.sampler', ['Euler', 'Heun']], ['sampling.scheduler', ['Uniform']],
-    ['objective.timestep_sampling', ['uniform', 'logit_normal']], ['objective.weighting', ['none', 'Min-SNR']],
+    ['objective.timestep_sampling', ['均匀采样', 'Logit-Normal']], ['objective.weighting', ['不加权', 'Min-SNR']],
   ])('offers only SDXL-supported %s choices', async (path, expected) => {
     render(<Editor advanced groupFilter={['sampling', 'objective']} />);
     fireEvent.click(within(screen.getByTestId(`field-${path}`)).getByRole('combobox'));
@@ -243,13 +240,13 @@ describe('family-driven training fields', () => {
     const gamma = screen.getByRole('spinbutton', { name: 'Min-SNR Gamma' });
     fireEvent.change(gamma, { target: { value: '7' } });
     expect(JSON.parse(screen.getByTestId('changed-config').textContent!).objective).toMatchObject({ weighting: 'min_snr', snr_gamma: 7 });
-    choose('损失加权', 'none');
+    choose('损失加权', '不加权');
     expect(screen.queryByTestId('field-objective.snr_gamma')).not.toBeInTheDocument();
     unmount();
     render(<Editor advanced groupFilter={['objective']} family={flow} />);
     fireEvent.click(screen.getByRole('combobox', { name: '损失加权' }));
     expect(screen.queryByRole('option', { name: 'Min-SNR' })).not.toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'snr_like' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: '类 SNR' })).toBeInTheDocument();
     await act(async () => {});
   });
 
@@ -302,12 +299,15 @@ describe('SDXL configuration ownership', () => {
     expect(current.model.text_encoder_2_path).toBe('/old/clip-g');
   });
 
-  it('strips both encoder paths from presets and preserves the current project paths when applying one', () => {
+  it('keeps chosen encoder files in presets and applies them only within the same family', () => {
     const current = { model: { family: 'sdxl', text_encoder_path: '/keep/clip-l', text_encoder_2_path: '/keep/clip-g' } };
-    const preset = { model: { family: 'sdxl', text_encoder_path: '/other/clip-l', text_encoder_2_path: '/other/clip-g', prediction_type: 'v_prediction' } };
-    expect(reusableTrainingPreset(preset)).toEqual({ model: { family: 'sdxl', prediction_type: 'v_prediction' } });
-    expect(applyTrainingPreset(current, preset)).toEqual({ model: { ...current.model, prediction_type: 'v_prediction' } });
-    expect(presetEditorSchema(trainSchema).$defs.ModelConfig.properties.text_encoder_2_path).toBeUndefined();
+    const preset = { model: { family: 'sdxl', text_encoder_path: '/other/clip-l', text_encoder_2_path: '', prediction_type: 'v_prediction' } };
+    // An empty file field is not a choice: applying the preset keeps the configuration's file.
+    expect(reusableTrainingPreset(preset)).toEqual({ model: { family: 'sdxl', text_encoder_path: '/other/clip-l', prediction_type: 'v_prediction' } });
+    expect(applyTrainingPreset(current, preset)).toEqual({ model: { ...current.model, text_encoder_path: '/other/clip-l', prediction_type: 'v_prediction' } });
+    expect(applyTrainingPreset({ model: { family: 'anima', text_encoder_path: '/keep/qwen' } }, preset).model.text_encoder_path).toBe('/keep/qwen');
+    expect(presetEditorSchema(trainSchema).$defs.ModelConfig.properties.text_encoder_2_path).toBeDefined();
+    expect(presetEditorSchema(trainSchema).$defs.ModelConfig.properties.family).toBeUndefined();
   });
 
   it('derives selectable families and weight kinds from the registry without built-in unsupported entries', () => {

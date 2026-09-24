@@ -446,20 +446,20 @@
     "connectedService": "Connected service"
   },
   "groups": {
-    "model": "Base Model",
-    "dataset": "Dataset Config",
-    "adapter": "Adapter (LoRA/LoKr)",
-    "objective": "Objective & Timestep",
+    "model": "Base model",
+    "dataset": "Data and buckets",
+    "adapter": "Adapter",
+    "objective": "Noise and loss",
     "optimizer": "Optimizer",
-    "scheduler": "LR Scheduler",
-    "memory": "Memory Optimization",
-    "loop": "Training Loop",
-    "checkpoint": "Checkpoints",
-    "sampling": "Sampling Preview",
+    "scheduler": "LR schedule",
+    "memory": "Memory and compute",
+    "loop": "Training loop",
+    "checkpoint": "Save and resume",
+    "sampling": "Sample previews",
     "validation": "Validation",
-    "logging": "Logging & Monitoring",
+    "logging": "Logging and monitoring",
     "fieldCount": "{count} fields",
-    "caption": "Caption processing"
+    "caption": "Captions"
   },
   "family": {
     "anima": "Anima 2B",
@@ -470,7 +470,7 @@
     "auto": "Auto",
     "cached": "Cache captions before training",
     "online": "Process captions each step",
-    "autoOnly": "This model caches captions before training and releases the text encoder afterward."
+    "autoOnly": "Captions are cached first, then the text encoder is released."
   },
   "sampling": {
     "shiftAuto": "Auto (per resolution)"

@@ -12,6 +12,8 @@ import trainSchema from '../../../frontend/src/schema/train-schema.json';
 import { schemaDefaults } from '../../../frontend/src/utils/config';
 import { normalizeDatasetPath } from '../../../frontend/src/utils/workspaceConfig';
 import i18n from '../../../frontend/src/i18n';
+// Each test mounts the whole training workspace (2–4 s in jsdom); 5 s leaves no headroom on a busy machine.
+vi.setConfig({ testTimeout: 15_000 });
 
 const server = setupServer(...handlers);
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
@@ -226,7 +228,7 @@ describe('training dataset destinations and saved navigation', () => {
     fireEvent.change(epochs,{target:{value:'23'}});
     expect(screen.getByLabelText('配置保存状态')).toHaveTextContent('等待保存…');
     fireEvent.click(screen.getByRole('button', { name: /数据与分桶$/ }));
-    fireEvent.click(screen.getByRole('button', { name: /设备与时长$/ }));
+    fireEvent.click(screen.getByRole('button', { name: /训练循环$/ }));
     expect(screen.getByRole('spinbutton',{name:'loop.epochs'})).toHaveValue(23);
     fireEvent.click(screen.getByRole('button',{name:'保存草稿'}));
     await waitFor(()=>expect(complete).toBeDefined());

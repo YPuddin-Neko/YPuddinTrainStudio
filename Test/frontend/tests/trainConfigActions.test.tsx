@@ -9,6 +9,8 @@ import TrainConfig from '../../../frontend/src/pages/TrainConfig/TrainConfig';
 import trainSchema from '../../../frontend/src/schema/train-schema.json';
 import { schemaDefaults } from '../../../frontend/src/utils/config';
 import '../../../frontend/src/i18n';
+// Each test mounts the whole training workspace (2–4 s in jsdom); 5 s leaves no headroom on a busy machine.
+vi.setConfig({ testTimeout: 15_000 });
 
 const server = setupServer(...handlers);
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
@@ -113,7 +115,7 @@ describe('training configuration actions', () => {
     })));
     showConfig();
     await screen.findByTestId('field-loop.epochs');
-    const model = screen.getByRole('button', {name:/模型选择$/});
+    const model = screen.getByRole('button', {name:/基础模型$/});
     const optimizer = screen.getByRole('button', {name:/优化器$/});
     expect(model).toHaveAccessibleDescription('待检查');
     await waitFor(() => expect(replies).toHaveLength(1));

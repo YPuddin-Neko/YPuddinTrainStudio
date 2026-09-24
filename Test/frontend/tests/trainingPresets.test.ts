@@ -32,10 +32,11 @@ describe('version-safe training presets', () => {
     expect(config.dataset.sources).toHaveLength(1);
   });
 
-  it('preserves current family and every project-owned model, sampling and resume path', () => {
+  it('keeps another family\'s model files out while preserving project sampling and resume paths', () => {
     const current = {model:{family:'anima',dit_path:'current-dit',text_encoder_path:'current-text',vae_path:'current-vae',tokenizer_path:'current-tokenizer'},adapter:{resume_weights:'current-adapter'},sampling:{output_dir:'current-samples',prompts_file:'current-prompts',steps:25}};
     const old = {model:{family:'krea2',dit_path:'old-dit',text_encoder_path:'old-text',vae_path:'old-vae',tokenizer_path:'old-tokenizer'},adapter:{resume_weights:'old-adapter',rank:16},sampling:{output_dir:'old-samples',prompts_file:'old-prompts',steps:28}};
-    expect(reusableTrainingPreset(old)).toEqual({model:{family:'krea2'},adapter:{rank:16},sampling:{steps:28}});
+    // Presets keep their chosen model files, but they only apply to the same family.
+    expect(reusableTrainingPreset(old)).toEqual({model:{family:'krea2',dit_path:'old-dit',text_encoder_path:'old-text',vae_path:'old-vae',tokenizer_path:'old-tokenizer'},adapter:{rank:16},sampling:{steps:28}});
     expect(applyTrainingPreset(current,old)).toEqual({...current,adapter:{resume_weights:'current-adapter',rank:16},sampling:{...current.sampling,steps:28}});
     expect(old.model.dit_path).toBe('old-dit');
   });

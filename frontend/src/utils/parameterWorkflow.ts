@@ -1,8 +1,9 @@
+/** One name per group: the workflow rail and the section heading read the same label. */
 export const PARAMETER_FLOW: Array<{ group: string; label: [string, string] }> = [
-  { group: 'model', label: ['模型选择', 'Model'] },
+  { group: 'model', label: ['基础模型', 'Base model'] },
   { group: 'dataset', label: ['数据与分桶', 'Data and buckets'] },
   { group: 'caption', label: ['标签处理', 'Captions'] },
-  { group: 'loop', label: ['设备与时长', 'Devices and duration'] },
+  { group: 'loop', label: ['训练循环', 'Training loop'] },
   { group: 'adapter', label: ['适配器', 'Adapter'] },
   { group: 'optimizer', label: ['优化器', 'Optimizer'] },
   { group: 'scheduler', label: ['学习率调度', 'LR schedule'] },
@@ -11,8 +12,12 @@ export const PARAMETER_FLOW: Array<{ group: string; label: [string, string] }> =
   { group: 'sampling', label: ['采样预览', 'Sample previews'] },
   { group: 'validation', label: ['验证', 'Validation'] },
   { group: 'checkpoint', label: ['保存与恢复', 'Save and resume'] },
-  { group: 'logging', label: ['训练记录', 'Logging'] },
+  { group: 'logging', label: ['日志与监控', 'Logging and monitoring'] },
 ];
+
+export function parameterGroupLabel(group: string, english: boolean): string | undefined {
+  return PARAMETER_FLOW.find(item => item.group === group)?.label[english ? 1 : 0];
+}
 
 export const PARAMETER_GROUP_ORDER = PARAMETER_FLOW.map(item => item.group);
 
