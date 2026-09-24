@@ -160,14 +160,25 @@
 .config-field-boolean .config-toggle-control { width:auto; min-height:32px; justify-content:flex-start; }
 .config-field-boolean .studio-switch { flex:none; }
 .compact-schema .config-model-components { display:flex; flex-wrap:wrap; gap:8px 24px; }
-.compact-schema .config-fields:has(> .config-field-section:only-child > .config-toggle-list:only-child) { padding-block:8px; }
+.compact-schema .config-fields:has(> .config-field-section:only-child > :is(.config-toggle-list,.config-field-boolean):only-child) { padding-block:8px; }
 .compact-schema .config-logging-options { grid-template-columns:repeat(2,minmax(0,1fr)); }
 .config-logging-options > .config-field-boolean { align-self:end; }
+.compact-schema .config-model-summary { display:flex; flex-wrap:wrap; align-items:flex-start; gap:16px 24px; grid-column:1 / -1; }
+.config-model-summary > .config-field { flex:0 1 320px; width:320px; max-width:100%; }
+.config-model-targets { display:grid; gap:6px; padding:0; max-width:100%; }
+.config-model-targets > span { min-height:22px; font-size:13px; line-height:20px; font-weight:500; }
+.config-model-targets .config-model-components { min-height:38px; align-items:center; }
+.compact-schema .config-field-section.config-logging-options { display:flex; flex-wrap:wrap; align-items:flex-start; gap:16px 24px; }
+.config-logging-options > [data-field-path="logging.level"] { flex:0 1 240px; width:240px; max-width:100%; }
+.config-logging-options > [data-field-path="logging.tensorboard"] { align-self:flex-start; }
+.config-logging-options:has(> [data-field-path="logging.level"]) > [data-field-path="logging.tensorboard"] { margin-top:28px; min-height:38px; }
+.config-logging-options > .config-field-wide { flex-basis:100%; }
 @container config-form (min-width:840px) {
   .compact-schema .config-field-section:not([class*="config-adapter-"]):not(.config-logging-options) { grid-template-columns:repeat(3,minmax(0,1fr)); }
   .compact-schema [data-group] .config-field-section:is(.config-sampling-cadence,.config-validation-cadence,.config-loop-duration,.config-sampling-switches,.config-validation-switches) { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 @container config-form (max-width:520px) {
   .compact-schema .config-logging-options { grid-template-columns:minmax(0,1fr); }
+  .compact-schema .config-logging-options > [data-field-path="logging.tensorboard"] { margin-top:0; min-height:32px; }
 }
 @container (max-width:240px) { .config-value-mode { grid-template-columns:minmax(0,1fr); } }

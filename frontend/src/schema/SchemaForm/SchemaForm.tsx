@@ -1227,6 +1227,23 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
               return content.length > 0 && <div className={className}>{content}</div>;
             };
             const isSdxl = value.model?.family === 'sdxl';
+            const summaryOnly = pick([...assets, 'model.family']).length === 0;
+            if (summaryOnly) {
+              const selectors = ['training.mode', 'model.dtype'];
+              const assigned = [...selectors, ...components];
+              const summaryFields = pick(selectors);
+              const targets = pick(components);
+              return <>
+                {(summaryFields.length > 0 || targets.length > 0) && <div className="config-model-summary">
+                  {summaryFields}
+                  {targets.length > 0 && <div className="config-model-targets">
+                    <span>{english ? 'Train components' : '训练对象'}</span>
+                    <div className="config-model-components">{targets}</div>
+                  </div>}
+                </div>}
+                {fields.filter(node => !assigned.includes(path(node)))}
+              </>;
+            }
             const grouped = [...identities, ...components, ...assets, ...prediction];
             const tokenizerNotice = isSdxl && fields.some(node => path(node).startsWith('model.')) && (!search.trim() || /tokenizer|分词|clip/i.test(search));
             return <>
