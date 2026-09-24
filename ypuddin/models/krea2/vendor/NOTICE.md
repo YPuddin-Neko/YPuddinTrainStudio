@@ -60,4 +60,4 @@ key conventions (`lora_unet_blocks_0_attn_wq` ...).
 selection), `krea2_sampling.py` (resolution-aware `mu` schedule, Euler sampler), `lora_krea2.py` and the
 `krea2_train_network.py` / `krea2_cache_*` scripts were **not** copied. Their behaviour (prompt template, layer
 indices, `mu` interpolation endpoints, fp8_scaled handling, LoRA target defaults) was re-implemented natively in
-`ypuddin/models/krea2/family.py` and `ypuddin/models/krea2/text.py` and is covered by `Test/tests/unit/test_krea2_family.py`.
+`ypuddin/models/krea2/family.py` and `ypuddin/models/krea2/text.py`.

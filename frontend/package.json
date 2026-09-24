@@ -6,9 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "node ../Test/frontend/lint.mjs",
-    "test": "vitest run --config ../Test/frontend/vitest.config.ts",
-    "test:watch": "vitest --config ../Test/frontend/vitest.config.ts"
+    "lint": "eslint --max-warnings=0 src vite.config.ts buildFingerprint.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.28.4",
@@ -46,10 +44,5 @@
     "typescript-eslint": "^8.70.0",
     "vite": "^8.3.0",
     "vitest": "^5.0.0"
-  },
-  "msw": {
-    "workerDirectory": [
-      "../Test/frontend/public"
-    ]
   }
 }

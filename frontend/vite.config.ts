@@ -1,24 +1,14 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
-import { readFileSync } from 'node:fs';
 import packageJson from './package.json' with { type: 'json' };
 import { buildFingerprint } from './buildFingerprint.ts';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
-  plugins: [react(), buildFingerprint(), {
-    name: 'local-test-worker',
-    configureServer(server) {
-      server.middlewares.use('/mockServiceWorker.js', (_req, res) => {
-        res.setHeader('Content-Type', 'application/javascript');
-        res.end(readFileSync(new URL('../Test/frontend/public/mockServiceWorker.js', import.meta.url)));
-      });
-    },
-  }],
+  plugins: [react(), buildFingerprint()],
   resolve: { dedupe: [...Object.keys(packageJson.dependencies), ...Object.keys(packageJson.devDependencies)] },
   server: {
     port: 3000,
-    fs: { allow: ['..'] },
     proxy: {
       '/api': {
         target: loadEnv(mode, '.', '').VITE_BACKEND_URL || 'http://127.0.0.1:8123',

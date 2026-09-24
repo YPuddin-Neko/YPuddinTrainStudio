@@ -19,10 +19,6 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "types": [
-      "vitest/globals",
-      "@testing-library/jest-dom"
-    ],
     "baseUrl": ".",
     "paths": {
       "*": [
@@ -33,8 +29,6 @@
   },
   "include": [
     "src",
-    "../Test/frontend/tests",
-    "../Test/frontend/mocks",
     "vite.config.ts"
   ]
 }
