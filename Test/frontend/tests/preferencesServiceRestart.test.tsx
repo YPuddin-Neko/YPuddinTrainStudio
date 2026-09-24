@@ -12,7 +12,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 it('restarts at the saved port through one action without submitting later unsaved edits', async () => {
   let persisted: Settings = {
     paths: { bootstrap_env_dir: '', data_root: 'D:/studio', models_dir: 'D:/models', cache_dir: 'D:/cache', output_dir: 'D:/runs', output_mode: 'project' },
-    server: { host: '127.0.0.1', port: 8765 },
+    server: { open_browser: true, host: '127.0.0.1', port: 8765 },
     ui: { language: 'zh-CN', theme: 'light' },
   };
   vi.spyOn(apiClient, 'get').mockImplementation(async endpoint => {
@@ -45,7 +45,7 @@ it('restarts at the saved port through one action without submitting later unsav
   expect(put).not.toHaveBeenCalled();
   expect(post).not.toHaveBeenCalled();
   fireEvent.click(screen.getByTestId('settings-save-btn'));
-  await waitFor(() => expect(put).toHaveBeenCalledWith('/settings', expect.objectContaining({ server: { host: '127.0.0.1', port: 9000 } })));
+  await waitFor(() => expect(put).toHaveBeenCalledWith('/settings', expect.objectContaining({ server: { open_browser: true, host: '127.0.0.1', port: 9000 } })));
   await waitFor(() => expect(restart).toBeEnabled());
   fireEvent.change(port, { target: { value: '9001' } });
   expect(port).toHaveValue(9001);
@@ -58,4 +58,21 @@ it('restarts at the saved port through one action without submitting later unsav
   expect(put).toHaveBeenCalledOnce();
   expect(persisted.server.port).toBe(9000);
   expect(port).toHaveValue(9001);
+});
+
+it('persists browser startup without applying an address change or restarting now', async () => {
+  const persisted = {paths:{data_root:'/data',cache_dir:'/cache',models_dir:'/models',output_dir:'/runs'},server:{host:'127.0.0.1',port:8123,open_browser:true},ui:{language:'zh-CN',theme:'light'}};
+  vi.spyOn(apiClient, 'get').mockImplementation(async endpoint => (endpoint === '/settings' ? structuredClone(persisted) : endpoint === '/system/info' ? {ypuddin:'test'} : {can_restart:false}) as never);
+  const put = vi.spyOn(apiClient, 'put').mockImplementation(async (_url, body) => body as never);
+  const post = vi.spyOn(apiClient, 'post');
+  render(<MemoryRouter initialEntries={['/settings/preferences?section=interface']}><Preferences/></MemoryRouter>);
+  const browser = await screen.findByRole('switch', {name:'启动时打开浏览器'});
+  expect(browser).toBeChecked();
+  expect(screen.queryByText(/下次从启动脚本/)).not.toBeInTheDocument();
+  fireEvent.click(browser);
+  fireEvent.click(screen.getByTestId('settings-save-btn'));
+  await waitFor(() => expect(put).toHaveBeenCalledWith('/settings', expect.objectContaining({server:{host:'127.0.0.1',port:8123,open_browser:false}})));
+  expect(browser).not.toBeChecked();
+  expect(await screen.findByText('已保存，下次从启动脚本启动时生效。')).toBeVisible();
+  expect(post).not.toHaveBeenCalled();
 });

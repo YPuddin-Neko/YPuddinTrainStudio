@@ -12,6 +12,7 @@ import { formatApiError } from '../../utils/errors';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { modelAssetUnsupportedReason, modelFamilyWeights, trainingFamilyOptions } from '../../utils/trainingFamilies';
 import './models.css';
+import Switch from '../../components/Switch';
 
 type ModelDownload = BaseDownload & {bytes_per_second?: number; eta_seconds?: number | null; progress_at?: number | null};
 type Provider = 'huggingface' | 'modelscope';
@@ -213,7 +214,7 @@ export default function Models({ embedded = false }: { embedded?: boolean }) {
           {provider === 'huggingface' && <details><summary>{text('连接选项', 'Connection options')}</summary><StudioSelect aria-label={text('连接方式', 'Connection mode')} value={mirror} onValueChange={value => setMirror(value as 'official' | 'hf-mirror')} options={[{ value: 'official', label: text('官方（使用已保存令牌）', 'Official (saved token)') }, { value: 'hf-mirror', label: 'HF-Mirror · ' + text('仅匿名', 'anonymous only') }]}/></details>}
           <p className="model-help-text">{text('仅下载完整 safetensors 单文件；分片模型请登记完整本地目录。受限仓库使用设置里保存的访问密钥。', 'Only complete safetensors files are downloaded; register a full local directory for sharded models. Restricted repositories use the access keys saved in Settings.')}</p>
         </>
-        <label className="model-checkbox"><input type="checkbox" checked={variant==='turbo'?false:isDefault} disabled={variant==='turbo'} onChange={event => setIsDefault(event.target.checked)}/>{text('完成后设为本系列默认组件', 'Set as the default component when ready')}</label>
+        <Switch className="model-switch" checked={variant==='turbo'?false:isDefault} disabled={variant==='turbo'} onCheckedChange={setIsDefault}>{text('完成后设为本系列默认组件', 'Set as the default component when ready')}</Switch>
       </fieldset>
       {formError && <div role="alert" className="settings-alert">{formError}</div>}
       <footer><button type="button" className={secondary} disabled={busy} onClick={closeForm}>{text('取消', 'Cancel')}</button><button className={primary} data-testid="model-download-start" disabled={busy} type="submit">{busy && <Loader2 size={14} className="animate-spin"/>}{text('开始下载', 'Start download')}</button></footer>

@@ -9,7 +9,7 @@ import i18n from '../../../frontend/src/i18n';
 
 vi.mock('../../../frontend/src/components/EnvironmentManagerPanel', () => ({ EnvironmentManagerPanel: () => <div data-testid="runtime-panel">Runtime manager</div> }));
 vi.mock('../../../frontend/src/pages/Models/Models', () => ({ default: function EmbeddedModels({ embedded }: { embedded?: boolean }) { const [params] = useSearchParams(); return <div data-testid="embedded-models">{embedded ? 'Embedded' : 'Standalone'} model weights: {params.get('family')}</div>; } }));
-const config = { paths: { data_root: 'D:/studio', models_dir: 'D:/models', cache_dir: 'D:/cache', output_dir: 'D:/runs' }, server: { host: '127.0.0.1', port: 8765 }, ui: { language: 'zh-CN', theme: 'light' } };
+const config = { paths: { data_root: 'D:/studio', models_dir: 'D:/models', cache_dir: 'D:/cache', output_dir: 'D:/runs' }, server: { open_browser: true, host: '127.0.0.1', port: 8765 }, ui: { language: 'zh-CN', theme: 'light' } };
 beforeEach(async () => {
   await i18n.changeLanguage('zh-CN');
   vi.spyOn(apiClient, 'get').mockImplementation(async endpoint => {

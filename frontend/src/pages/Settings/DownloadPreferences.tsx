@@ -2,6 +2,7 @@ import React from 'react';
 import { apiClient } from '../../api/client';
 import StudioSelect from '../../components/StudioSelect';
 import { useWorkspaceText } from '../../utils/workspaceText';
+import Switch from '../../components/Switch';
 
 type Sources = { pypi: 'ustc' | 'tuna' | 'aliyun' | 'official'; pytorch: 'mirror' | 'aliyun' | 'sjtu' | 'official'; fallback: boolean };
 const urls = { ustc: 'https://mirrors.ustc.edu.cn/pypi/simple', tuna: 'https://pypi.tuna.tsinghua.edu.cn/simple', aliyun: 'https://mirrors.aliyun.com/pypi/simple', official: 'https://pypi.org/simple' };
@@ -24,6 +25,6 @@ export default function DownloadPreferences({ value, onChange }: { value: Source
     {!mac && <div className="settings-field"><label htmlFor="download-pytorch">PyTorch</label><div className="settings-field-control">
       <StudioSelect id="download-pytorch" value={value.pytorch} onValueChange={pytorch => onChange({ ...value, pytorch: pytorch as Sources['pytorch'] })} options={[{value:'mirror',label:text('国内镜像（阿里云 → 上海交大）','Mirrors (Aliyun → SJTU)')},{value:'aliyun',label:text('阿里云','Aliyun')},{value:'sjtu',label:text('上海交通大学','Shanghai Jiao Tong University')},{value:'official',label:text('PyTorch 官方','Official PyTorch')}]} />
     </div></div>}
-    <div className="settings-field"><span className="settings-field-label">{text('下载失败时', 'On download failure')}</span><div className="settings-field-control"><label className="flex items-center gap-2"><input type="checkbox" checked={value.fallback} onChange={event => onChange({ ...value, fallback: event.target.checked })}/>{text('自动尝试其他镜像和官方源', 'Try other mirrors and the official source')}</label></div></div>
+    <div className="settings-field"><span className="settings-field-label">{text('下载失败时', 'On download failure')}</span><div className="settings-field-control"><Switch checked={value.fallback} onCheckedChange={fallback => onChange({ ...value, fallback })}>{text('自动尝试其他镜像和官方源', 'Try other mirrors and the official source')}</Switch></div></div>
   </section>;
 }

@@ -183,7 +183,7 @@ class DatasetConfig(_Strict):
     )
     resolutions: list[int] = F(
         [1024],
-        help="分桶的基准面积：1024 表示每桶约 1024×1024 像素，并非把所有图片裁成正方形。填写多个值会让每张图在每个基准分辨率各训练一次；通常先用一个值。",
+        help="单个分辨率填 1024；多个用逗号或空格分隔，如 1024, 1536。填写正整数边长，不写 1024×1024。1024 表示每桶约 1024×1024 像素，并非都裁成正方形。每张图会在每个基准分辨率各训练一次，增加总样本和步数。",
         ui_=ui("dataset", order=10, control="tags", show_when="dataset.resolution_mode == 'bucket'"),
     )
     resolution_mode: Literal["bucket", "native"] = F(
@@ -658,7 +658,7 @@ class OptimizerConfig(_Strict):
     decouple: bool = F(
         True,
         help="将权重衰减与梯度更新分开，默认开启；关闭时衰减项会加入梯度。",
-        ui_=ui("optimizer", order=170, control="switch", show_when="optimizer.type == 'prodigy'"),
+        ui_=ui("optimizer", order=170, control="switch", show_when="optimizer.type == 'prodigy' && optimizer.weight_decay > 0"),
     )
 
     prodigy_steps: int = F(
@@ -671,14 +671,14 @@ class OptimizerConfig(_Strict):
     d_limiter: bool = F(
         True,
         help="限制步长估计突然增大，默认开启。启用 SPEED 时由 SPEED 自己的估计方式接管。",
-        ui_=ui("optimizer", order=190, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+        ui_=ui("optimizer", order=190, control="switch", show_when="optimizer.type == 'prodigy_plus_sf' && optimizer.use_speed == false"),
     )
 
     schedulefree_c: float = F(
         0.0,
         ge=0,
         help="控制 Schedule-Free 权重平均的速度。0 使用作者默认平均方式；通常保留 0，仅在需要改变平均轨迹时调整。",
-        ui_=ui("optimizer", order=200, show_when="optimizer.type == 'prodigy_plus_sf'"),
+        ui_=ui("optimizer", order=200, show_when="optimizer.type == 'prodigy_plus_sf' && optimizer.use_schedulefree == true"),
     )
 
     split_groups: bool = F(
@@ -690,7 +690,7 @@ class OptimizerConfig(_Strict):
     split_groups_mean: bool = F(
         False,
         help="将各参数组估计的步长取调和平均后使用，默认关闭；需启用分组估计。",
-        ui_=ui("optimizer", order=220, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+        ui_=ui("optimizer", order=220, control="switch", show_when="optimizer.type == 'prodigy_plus_sf' && optimizer.split_groups == true"),
     )
 
     factored: bool = F(
@@ -702,7 +702,7 @@ class OptimizerConfig(_Strict):
     factored_fp32: bool = F(
         True,
         help="使用 FP32 保存分解统计，默认开启以减少舍入误差；仅在分解统计开启时生效。",
-        ui_=ui("optimizer", order=240, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+        ui_=ui("optimizer", order=240, control="switch", show_when="optimizer.type == 'prodigy_plus_sf' && optimizer.factored == true"),
     )
 
     use_stableadamw: bool = F(
@@ -720,7 +720,7 @@ class OptimizerConfig(_Strict):
     weight_decay_by_lr: bool = F(
         True,
         help="将权重衰减随当前有效学习率一起缩放，默认开启；关闭会使用另一种衰减尺度。",
-        ui_=ui("optimizer", order=270, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+        ui_=ui("optimizer", order=270, control="switch", show_when="optimizer.type == 'prodigy_plus_sf' && optimizer.weight_decay > 0"),
     )
 
     use_schedulefree: bool = F(
@@ -943,7 +943,7 @@ class SchedulerConfig(_Strict):
         ge=0,
         le=1,
         help="衰减下限相对基础学习率的倍率，默认 0；0.1 表示最低为基础值的 10%。constant 不使用此下限，周期重启会重新提高学习率。",
-        ui_=ui("scheduler", order=20),
+        ui_=ui("scheduler", order=20, show_when="scheduler.type != 'constant'"),
     )
     num_cycles: int = F(
         1,

@@ -18,9 +18,9 @@ describe('prediction-specific loss controls',()=>{
   it('hides inactive DDPM modifiers for Flow but lets imported incompatible values be cleared',()=>{
     render(<Editor objective={{scale_v_pred_loss_like_noise_pred:true,v_pred_like_loss:0.2,debiased_estimation_loss:true}}/>);
     expect(screen.getAllByText('此损失参数仅适用于 SDXL，请关闭或设为 0 后再使用当前模型。')).toHaveLength(3);
-    fireEvent.click(screen.getByRole('checkbox',{name:'按 ε 预测尺度缩放 v 损失'}));
+    fireEvent.click(screen.getByRole('switch',{name:'按 ε 预测尺度缩放 v 损失'}));
     fireEvent.change(screen.getByRole('spinbutton',{name:'附加 v 预测损失系数'}),{target:{value:'0'}});
-    fireEvent.click(screen.getByRole('checkbox',{name:'去偏损失加权'}));
+    fireEvent.click(screen.getByRole('switch',{name:'去偏损失加权'}));
     expect(screen.queryByTestId('field-objective.scale_v_pred_loss_like_noise_pred')).not.toBeInTheDocument();
     expect(screen.queryByTestId('field-objective.v_pred_like_loss')).not.toBeInTheDocument();
     expect(screen.queryByTestId('field-objective.debiased_estimation_loss')).not.toBeInTheDocument();
@@ -29,7 +29,7 @@ describe('prediction-specific loss controls',()=>{
   it('keeps an incompatible v scaling switch editable in an epsilon draft',()=>{
     render(<Editor ddpm objective={{scale_v_pred_loss_like_noise_pred:true}}/>);
     expect(screen.getByText('此参数与当前预测方式不兼容，请关闭此项或选择对应的预测方式。')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('checkbox',{name:'按 ε 预测尺度缩放 v 损失'}));
+    fireEvent.click(screen.getByRole('switch',{name:'按 ε 预测尺度缩放 v 损失'}));
     expect(screen.queryByTestId('field-objective.scale_v_pred_loss_like_noise_pred')).not.toBeInTheDocument();
   });
   it('keeps an incompatible epsilon-only modifier editable in a v draft',()=>{

@@ -193,7 +193,7 @@
     "addPrompt": "添加采样提示词",
     "addProperty": "添加属性",
     "addRule": "添加规则",
-    "addSource": "添加数据集源",
+    "addSource": "添加数据源",
     "batches": "批次数",
     "bucketItems": "样本数",
     "bucketSize": "分辨率 (W×H)",

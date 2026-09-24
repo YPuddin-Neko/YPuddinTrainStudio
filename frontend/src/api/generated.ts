@@ -5007,6 +5007,11 @@ export interface components {
         };
         /** PlanBucket */
         PlanBucket: {
+            /**
+             * Base
+             * @default 0
+             */
+            base: number;
             /** W */
             w: number;
             /** H */
@@ -6129,6 +6134,11 @@ export interface components {
             host: string;
             /** Port */
             port: number;
+            /**
+             * Open Browser
+             * @default true
+             */
+            open_browser: boolean;
         } & {
             [key: string]: unknown;
         };

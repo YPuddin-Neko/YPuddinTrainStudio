@@ -6,6 +6,14 @@ import { formatBytesMB, formatParams } from '../../utils/format';
 import SourceBalance from './SourceBalance';
 
 type DatasetSizing = { resolution_mode?: string; native_max_pixels?: number; native_max_side?: number };
+type PlanBucket = NonNullable<Plan['buckets']>[number];
+const bucketKey = (bucket: PlanBucket) => `${bucket.base ?? 0}:${bucket.w}x${bucket.h}`;
+/** Buckets from different base resolutions share one grid only when there is a single base. */
+function groupByBase(buckets: PlanBucket[]) {
+  const groups = new Map<number, PlanBucket[]>();
+  for (const bucket of buckets) groups.set(bucket.base ?? 0, [...(groups.get(bucket.base ?? 0) || []), bucket]);
+  return [...groups].sort(([a], [b]) => a - b).map(([base, items]) => ({ base, buckets: items, items: items.reduce((sum, bucket) => sum + bucket.items, 0) }));
+}
 function SizingLimit({ label, value, min, max, step, onChange }: { label: string; value: number; min: number; max: number; step: number; onChange: (value: number) => void }) {
   const [draft, setDraft] = useState<{ source: number; text: string } | null>(null);
   const text = draft?.source === value ? draft.text : String(value);
@@ -27,7 +35,19 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
   const squareSide = Math.sqrt(pixelLimit);
   const awaitingPlan = hasSources && !buckets.length && !plan?.ok;
   const maxCount = Math.max(1, ...buckets.map(bucket => bucket.items));
-  const chosen = buckets.find(bucket => `${bucket.w}x${bucket.h}` === selected);
+  const chosen = buckets.find(bucket => bucketKey(bucket) === selected);
+  const groups = nativeMode ? [{ base: 0, buckets, items: 0 }] : groupByBase(buckets);
+  const grouped = groups.length > 1;
+  const baseLabel = (base: number) => text(`分辨率 ${base}`, `Resolution ${base}`);
+  const tile = (bucket: PlanBucket) => {
+    const key = bucketKey(bucket);
+    const longest = Math.max(bucket.w, bucket.h);
+    return <button type="button" key={key} className={`bucket-tile ${key === selected ? 'is-selected' : ''}`} aria-pressed={key === selected} aria-label={`${grouped ? `${baseLabel(bucket.base)} · ` : ''}${bucket.w} × ${bucket.h}, ${bucket.items} ${text('样本', 'samples')}`} onClick={() => setSelected(key === selected ? null : key)}>
+      <span className="bucket-shape-space"><span className="bucket-shape" style={{width: `${bucket.w / longest * 56}px`, height: `${bucket.h / longest * 56}px`}}><span>{bucket.items}</span></span></span>
+      <span className="bucket-size">{bucket.w} × {bucket.h}</span>
+      <span className="bucket-count-track"><span style={{width: `${bucket.items / maxCount * 100}%`}} /></span>
+    </button>;
+  };
   return <section className="bucket-inspector" aria-label={native ? text('原生尺寸与训练估算', 'Native sizes and training estimates') : text('数据分桶与训练估算', 'Buckets and training estimates')}>
     <div className="inspector-heading"><h3><BarChart3 size={15} />{text('数据分布', 'Dataset distribution')}</h3>{loading && <Loader2 size={14} className="animate-spin" aria-label={text('正在更新', 'Updating')} />}</div>
     <div className={`inspector-content ${loading ? 'opacity-60' : ''}`} aria-busy={loading}>
@@ -50,17 +70,14 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
         <small>{Number.isInteger(squareSide) ? `${squareSide}² = ` : ''}{pixelLimit.toLocaleString()} {text('像素', 'pixels')}{native && !loading && native.downscaled > 0 ? text(` · ${native.downscaled} 张因上限缩小`, ` · ${native.downscaled} images downscaled to fit`) : ''}</small>
       </div>}
       {buckets.length === 0 ? <div className="bucket-empty"><Database size={23} /><p>{loading ? text('正在计算实际分桶…', 'Computing buckets…') : awaitingPlan ? text('请完成待配置项后计算。', 'Complete the pending settings to calculate.') : text('尚无训练图片。', 'No training images yet.')}</p><button type="button" className="studio-link" onClick={awaitingPlan && onIssues ? onIssues : onData}>{awaitingPlan && onIssues ? text('检查待配置项', 'Review pending settings') : text('配置训练数据', 'Configure dataset')}</button></div> : <>
-        {view === 'shape' ? <div className="bucket-grid" data-testid="plan-buckets">{buckets.map(bucket => {
-          const key = `${bucket.w}x${bucket.h}`;
-          const longest = Math.max(bucket.w, bucket.h);
-          return <button type="button" key={key} className={`bucket-tile ${key === selected ? 'is-selected' : ''}`} aria-pressed={key === selected} aria-label={`${bucket.w} × ${bucket.h}, ${bucket.items} ${text('样本', 'samples')}`} onClick={() => setSelected(key === selected ? null : key)}>
-            <span className="bucket-shape-space"><span className="bucket-shape" style={{width: `${bucket.w / longest * 56}px`, height: `${bucket.h / longest * 56}px`}}><span>{bucket.items}</span></span></span>
-            <span className="bucket-size">{bucket.w} × {bucket.h}</span>
-            <span className="bucket-count-track"><span style={{width: `${bucket.items / maxCount * 100}%`}} /></span>
-          </button>;
-        })}</div> : <div className="bucket-table-wrap" data-testid="plan-buckets"><table className="bucket-table"><thead><tr><th>{text('尺寸', 'Size')}</th><th>{text('样本', 'Items')}</th><th>{native ? text('前向次数', 'Forwards') : text('批次', 'Batches')}</th></tr></thead><tbody>{buckets.map(bucket => <tr key={`${bucket.w}x${bucket.h}`}><td>{bucket.w} × {bucket.h}</td><td>{bucket.items}</td><td>{bucket.batches ?? '—'}</td></tr>)}</tbody></table></div>}
-        {chosen && <div className="bucket-selection"><strong>{chosen.w} × {chosen.h}</strong><span>{chosen.items} {text('样本', 'samples')} · {chosen.batches ?? '—'} {native ? text('前向 / 轮', 'forwards / epoch') : text('批次 / 轮', 'batches / epoch')}</span><span>{text('长宽比', 'Aspect ratio')} {(chosen.w / chosen.h).toFixed(2)}</span></div>}
-        {!nativeMode && <p className="inspector-note">{text('形状表示长宽比，横条表示样本数。', 'Shapes show aspect ratios; bars show sample counts.')}</p>}
+        {view === 'shape' ? <div className="bucket-groups" data-testid="plan-buckets">{groups.map(group => grouped
+          ? <section key={group.base} className="bucket-group" aria-label={baseLabel(group.base)}>
+            <h5 className="bucket-group-heading"><span>{baseLabel(group.base)}</span><small>{text(`${group.buckets.length} 个分桶 · ${group.items} 样本`, `${group.buckets.length} buckets · ${group.items} samples`)}</small></h5>
+            <div className="bucket-grid">{group.buckets.map(tile)}</div>
+          </section>
+          : <div key={group.base} className="bucket-grid">{group.buckets.map(tile)}</div>)}</div>
+          : <div className="bucket-table-wrap" data-testid="plan-buckets"><table className="bucket-table"><thead><tr>{grouped && <th>{text('分辨率', 'Resolution')}</th>}<th>{text('尺寸', 'Size')}</th><th>{text('样本', 'Items')}</th><th>{native ? text('前向次数', 'Forwards') : text('批次', 'Batches')}</th></tr></thead><tbody>{buckets.map(bucket => <tr key={bucketKey(bucket)}>{grouped && <td>{bucket.base}</td>}<td>{bucket.w} × {bucket.h}</td><td>{bucket.items}</td><td>{bucket.batches ?? '—'}</td></tr>)}</tbody></table></div>}
+        {chosen && <div className="bucket-selection"><strong>{grouped ? `${baseLabel(chosen.base)} · ` : ''}{chosen.w} × {chosen.h}</strong><span>{chosen.items} {text('样本', 'samples')} · {chosen.batches ?? '—'} {native ? text('前向 / 轮', 'forwards / epoch') : text('批次 / 轮', 'batches / epoch')}</span><span>{text('长宽比', 'Aspect ratio')} {(chosen.w / chosen.h).toFixed(2)}</span></div>}
       </>}
       {plan?.image_fit && <div className="image-fit-summary">
         <strong>{plan.image_fit.mode==='pad'?text('完整画面保留','Whole image preserved'):text('沿用裁切模式','Legacy crop mode')}</strong>

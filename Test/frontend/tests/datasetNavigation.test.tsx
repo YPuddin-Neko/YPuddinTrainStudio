@@ -63,7 +63,7 @@ describe('dataset project sidebar and navigation protection', () => {
         expect(new URL(request.url).searchParams.get('version_id')).toBe('v2');
         return HttpResponse.json({dataset:{resolution_mode:'native',native_max_pixels:16777216}});
       }),
-      http.post('/api/plan',async({request})=>{requested.push(await request.json());return HttpResponse.json({ok:true,errors:[],buckets:[{w:2992,h:2448,items:1,batches:1}],native:{max_pixels:16777216}});}),
+      http.post('/api/plan',async({request})=>{requested.push(await request.json());return HttpResponse.json({ok:true,errors:[],buckets:[{base: 0,w:2992,h:2448,items:1,batches:1}],native:{max_pixels:16777216}});}),
     );
     show();await screen.findByRole('combobox',{name:'项目版本'});
     fireEvent.click(screen.getByRole('button',{name:'分布与分桶'}));

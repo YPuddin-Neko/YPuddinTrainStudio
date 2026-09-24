@@ -15,6 +15,7 @@ import StudioSelect from '../StudioSelect';
 import { useWorkspaceHeight } from './useWorkspaceHeight';
 import { ProjectSidebarContext } from './ProjectSidebarContext';
 import '../../styles/project-sidebar.css';
+import Switch from '../Switch';
 
 interface Props {
   project: VersionedProject; versionId?: string; versions: ProjectVersion[]; current?: ProjectVersion;
@@ -140,7 +141,7 @@ export default function ProjectWorkspaceHeader({ project, versionId, versions, c
         <button type="button" onClick={() => void begin('paths')} disabled={!current || busy} title={text('查看本版本目录', 'View version folders')} aria-label={text('查看本版本目录', 'View version folders')}><FolderOpen size={14}/></button>
         <button type="button" onClick={() => void begin('edit')} disabled={!current || current.status === 'copying' || busy} title={text('版本设置', 'Version settings')} aria-label={text('版本设置', 'Version settings')}><Settings2 size={14}/></button>
       </div>
-      {versions.some(item => item.archived) && <label className="project-sidebar-archived"><input type="checkbox" checked={showArchived} onChange={event => setShowArchived(event.target.checked)}/>{text('显示已归档版本', 'Show archived versions')}</label>}
+      {versions.some(item => item.archived) && <Switch className="project-sidebar-archived studio-switch-small" checked={showArchived} onCheckedChange={setShowArchived}>{text('显示已归档版本', 'Show archived versions')}</Switch>}
     </>}
     <ProjectWorkflow projectId={project.id} versionId={selectedId} active={active} sidebar/>
   </section>;

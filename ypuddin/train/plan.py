@@ -281,8 +281,12 @@ def _append_data_plan(
                 }
             )
     counts: dict[tuple[int, int], int] = {}
+    # Batching groups items by shape; the preview also keeps the base resolution.
+    shapes: dict[tuple[int, int, int], int] = {}
     for it in items:
         counts[it.bucket.key] = counts.get(it.bucket.key, 0) + 1
+        shape = (it.bucket.base, *it.bucket.key)
+        shapes[shape] = shapes.get(shape, 0) + 1
     native = ds.resolution_mode == "native"
     batches = (
         math.ceil(len(items) / ds.batch_size)
@@ -296,8 +300,8 @@ def _append_data_plan(
             "captioned": sum(1 for r in records if r.caption_path),
             "validation_images": validation_images,
             "buckets": [
-                {"w": w, "h": h, "items": n, "batches": math.ceil(n / ds.batch_size)}
-                for (w, h), n in sorted(counts.items())
+                {"base": base, "w": w, "h": h, "items": n, "batches": math.ceil(n / ds.batch_size)}
+                for (base, w, h), n in sorted(shapes.items())
             ],
         }
     )

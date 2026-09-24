@@ -21,7 +21,7 @@ from .supervisor import JobSupervisor
 DEFAULT_SETTINGS: dict[str, Any] = {
     "downloads": {"pypi": "ustc", "pytorch": "mirror", "fallback": True},
     "paths": {"bootstrap_env_dir": "", "data_root": "", "cache_dir": "", "models_dir": "", "output_dir": ""},
-    "server": {"host": "127.0.0.1", "port": 8123},
+    "server": {"host": "127.0.0.1", "port": 8123, "open_browser": True},
     "ui": {"language": "zh-CN", "theme": "system"},
     "network": {
         "proxy_mode": "system",

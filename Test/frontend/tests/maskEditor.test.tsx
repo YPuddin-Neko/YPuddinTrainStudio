@@ -39,7 +39,7 @@ describe('mask editor interactions', () => {
     fireEvent.pointerDown(canvas, { button: 0, clientX: 35, clientY: 35, pointerId: 2 });
     fireEvent.pointerUp(canvas, { pointerId: 2 });
     fireEvent.change(screen.getByRole('slider', { name: '叠加透明度' }), { target: { value: '0.75' } });
-    fireEvent.click(screen.getByRole('checkbox', { name: '仅看黑白遮罩' }));
+    fireEvent.click(screen.getByRole('switch', { name: '仅看黑白遮罩' }));
     fireEvent.click(screen.getByRole('button', { name: '保存遮罩' }));
     await waitFor(() => expect(callbacks.onSaved).toHaveBeenCalledOnce());
     const pixels = vi.mocked(maskApi.saveMask).mock.calls[0][4];

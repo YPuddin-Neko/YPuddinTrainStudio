@@ -185,7 +185,7 @@ describe('family-driven training fields', () => {
     expect(within(identity as HTMLElement).getByTestId('field-training.mode')).toBeInTheDocument();
     expect(form.querySelector('[data-group="training"]')).toBeNull();
     const components = form.querySelector('.config-model-components')!;
-    expect(within(components as HTMLElement).getAllByRole('checkbox')).toHaveLength(2);
+    expect(within(components as HTMLElement).getAllByRole('switch')).toHaveLength(2);
     const paths = form.querySelector('.config-model-assets-sdxl')!;
     expect(Array.from(paths.children).map(node => node.getAttribute('data-field-path'))).toEqual([
       'model.dit_path', 'model.text_encoder_path', 'model.text_encoder_2_path', 'model.vae_path',
@@ -205,7 +205,7 @@ describe('family-driven training fields', () => {
     expect(screen.queryByText(/双分词器自动读取/)).not.toBeInTheDocument();
     view.rerender(<SchemaForm schema={presetEditorSchema(trainSchema)} value={value} onChange={() => {}} compact family={sdxl}/>);
     expect(screen.getByTestId('field-training.mode').closest('[data-group]')).toHaveAttribute('data-group', 'model');
-    expect(screen.getByRole('checkbox', { name: '训练文本编码器' })).toBeEnabled();
+    expect(screen.getByRole('switch', { name: '训练文本编码器' })).toBeEnabled();
     expect(screen.queryByTestId('field-model.family')).not.toBeInTheDocument();
     expect(screen.queryByTestId('field-model.dit_path')).not.toBeInTheDocument();
   });

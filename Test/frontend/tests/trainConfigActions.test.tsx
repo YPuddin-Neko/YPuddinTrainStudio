@@ -47,10 +47,10 @@ describe('training configuration actions', () => {
     await act(async () => replies[0](confirmed));
     expect(await screen.findByRole('status',{name:'混合精度'})).toHaveTextContent('FP32 计算');
     expect(screen.getByRole('status',{name:'注意力后端'})).toHaveTextContent('数学实现');
-    fireEvent.click(screen.getByRole('checkbox',{name:'可复现训练'}));
+    fireEvent.click(screen.getByRole('switch',{name:'可复现训练'}));
     expect(screen.getByRole('combobox',{name:'混合精度'})).toHaveTextContent('BF16');
     expect(screen.getByRole('combobox',{name:'注意力后端'})).toHaveTextContent('xFormers');
-    expect(screen.getByRole('checkbox',{name:'允许 TF32'})).toBeChecked();
+    expect(screen.getByRole('switch',{name:'允许 TF32'})).toBeChecked();
     await waitFor(() => expect(replies).toHaveLength(2));
     // Even a stale/malformed server policy cannot lock a draft whose switch is off.
     await act(async () => replies[1](confirmed));
@@ -138,13 +138,13 @@ describe('training configuration actions', () => {
     await screen.findByTestId('field-loop.epochs');
     fireEvent.click(screen.getByRole('button', {name:'高级'}));
     const field = await screen.findByTestId('field-adapter.rs_lora');
-    const toggle = within(field).getByRole('checkbox');
+    const toggle = within(field).getByRole('switch');
     fireEvent.click(toggle);
     const edited = (toggle as HTMLInputElement).checked;
     fireEvent.click(screen.getByRole('button', {name:'简单'}));
     expect(screen.queryByTestId('field-adapter.rs_lora')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', {name:'高级'}));
-    expect((within(screen.getByTestId('field-adapter.rs_lora')).getByRole('checkbox') as HTMLInputElement).checked).toBe(edited);
+    expect((within(screen.getByTestId('field-adapter.rs_lora')).getByRole('switch') as HTMLInputElement).checked).toBe(edited);
   });
   it('recovers from an empty search and exposes a plan disclosure without changing the draft', async () => {
     showConfig();
@@ -342,7 +342,7 @@ describe('training configuration actions', () => {
     server.use(
       http.get('/api/projects/p_test/config', () => HttpResponse.json(config)),
       http.post('/api/config/validate', () => HttpResponse.json({ok:false, errors:[issue], warnings:[]})),
-      http.post('/api/plan', () => HttpResponse.json({ok:false, errors:[issue], warnings:[], images:8,items:8,captioned:8,buckets:[{w:64,h:64,items:8,batches:4}],steps_per_epoch:4,total_steps:12})),
+      http.post('/api/plan', () => HttpResponse.json({ok:false, errors:[issue], warnings:[], images:8,items:8,captioned:8,buckets:[{base: 64,w:64,h:64,items:8,batches:4}],steps_per_epoch:4,total_steps:12})),
       http.post('/api/jobs', () => {createJob();return HttpResponse.json({id:'should-not-exist'});}),
     );
     showConfig();

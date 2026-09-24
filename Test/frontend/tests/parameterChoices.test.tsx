@@ -36,10 +36,8 @@ it('keeps prior weighting out of training sources and exposes it through externa
   render(<Editor initial={{dataset:{sources:[{path:'/dataset',repeats:1,caption_ext:'.txt',is_reg:false,prior_weight:.5}]}}} groups={['dataset']}/>);
   expect(screen.queryByRole('combobox',{name:'标签格式 1'})).not.toBeInTheDocument();
   expect(screen.queryByRole('spinbutton',{name:'正则损失权重 1'})).not.toBeInTheDocument();
-  expect(screen.queryByRole('checkbox',{name:'这是正则集'})).not.toBeInTheDocument();
-  fireEvent.click(screen.getByText('高级来源设置'));
-  fireEvent.click(screen.getByText('外部来源用途'));
-  fireEvent.click(screen.getByRole('checkbox',{name:'外部来源用于正则训练'}));
+  expect(screen.queryByRole('switch',{name:'这是正则集'})).not.toBeInTheDocument();
+  select('用途 1', '正则集');
   expect(screen.getByRole('spinbutton',{name:'正则损失权重 1'})).toHaveValue(.5);
   expect(value().dataset.sources[0]).toMatchObject({path:'/dataset',caption_ext:'.txt',is_reg:true,prior_weight:.5});
 });

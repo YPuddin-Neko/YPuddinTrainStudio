@@ -50,32 +50,16 @@
 .compact-schema .config-field-invalid textarea,
 .compact-schema .config-field-invalid .studio-select { border-color: var(--studio-danger-line); }
 .compact-schema .config-field textarea { font-size: 13px; line-height: 1.6; min-height: 72px; }
-.compact-schema .config-field input[type="checkbox"] { width: 17px; height: 17px; }
+.compact-schema .config-field input[type="checkbox"]:not([role="switch"]) { width: 17px; height: 17px; }
 .compact-schema .config-field input[type="range"] { min-height: 24px; }
-.compact-schema .config-field .config-union { gap: 8px; flex-wrap: nowrap; }
+.compact-schema .config-field .config-union { gap: 8px; flex-wrap: wrap; }
 .compact-schema .config-field .config-union > .studio-select { flex: 1 1 0; min-width: 0; width: 0; }
-.compact-schema .config-field .config-union > input { flex: 1 1 0; width: 0; }
-.compact-schema .config-field .config-union > span { font-size: 12px; }
+.compact-schema .config-field .config-union > input { flex: 1 1 100px; width: 0; min-width: 100px; }
+.compact-schema .config-field .config-union > .config-union-toggle { flex: none; order: 1; }
 .compact-schema .config-field-invalid > p { font-size: 12px; line-height: 1.5; }
-.config-toggle-control {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 38px;
-  width: 100%;
-  padding: 7px 10px;
-  border: 1px solid var(--studio-line);
-  border-radius: 6px;
-  background: var(--studio-panel);
-  color: var(--studio-text);
-  font-size: 13px;
-  line-height: 22px;
-  cursor: pointer;
-}
-.config-toggle-control > input { flex: 0 0 auto; margin: 0; accent-color: var(--studio-accent); }
-.config-toggle-control:has(input:disabled) { cursor: default; opacity: .65; }
-.config-toggle-control:has(input:focus-visible) { outline: 2px solid var(--studio-accent); outline-offset: 2px; }
-.config-toggle-control > span { min-width: 0; }
+/* Switches sit on the same 38px row as neighbouring inputs. */
+.config-toggle-control { display: flex; align-items: center; min-height: 38px; width: 100%; min-width: 0; font-size: 13px; }
+.config-toggle-control > .studio-switch { max-width: 100%; }
 .config-beta-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .config-beta-controls > label { display: grid; gap: 6px; min-width: 0; }
 .config-beta-controls > label > span { font-size: 12px; line-height: 18px; color: var(--studio-dim); }
@@ -161,3 +145,8 @@
 .config-beta-controls > label { position: relative; display: flex; align-items: center; }
 .config-beta-controls > label > span { position: absolute; left: 10px; font-size: 12px; line-height: 20px; pointer-events: none; }
 .compact-schema .config-field .config-beta-controls > label > input:not([type="checkbox"]):not([type="range"]) { padding-left: 31px; }
+
+.compact-schema [data-group="logging"] > .config-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@container config-form (max-width: 520px) {
+  .compact-schema [data-group="logging"] > .config-fields { grid-template-columns: minmax(0, 1fr); }
+}

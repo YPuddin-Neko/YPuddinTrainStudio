@@ -6,6 +6,7 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import { MaskDocument, imagePoint, paintSegment, type MaskOperation, type MaskPoint } from './maskDocument';
 import { loadMask, maskEndpoint, saveMask, type MaskInfo } from './maskApi';
 import ImageEditor from './ImageEditor';
+import Switch from '../Switch';
 
 interface Props { datasetId: string; imageId: string; relPath: string; onClose: () => void; onSaved: () => void; onEnableTraining: () => Promise<void>; allowPaint?: boolean }
 const control = 'inline-flex items-center justify-center gap-1.5 min-h-8 rounded-md border border-slate-300 dark:border-slate-600 px-2.5 py-1.5 text-xs hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40';
@@ -164,7 +165,7 @@ function TrainingMaskEditor({ datasetId, imageId, relPath, onClose, onSaved, onE
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-md bg-slate-50 p-2 dark:bg-slate-900">
             <label className="flex min-w-0 items-center gap-2 text-xs">{text('笔刷直径', 'Brush diameter')}<input aria-label={text('笔刷直径', 'Brush diameter')} type="range" min={1} max={Math.max(128, Math.min(2048, Math.max(info.width, info.height)))} value={diameter} onChange={(e) => setDiameter(Number(e.target.value))} className="w-24 sm:w-32" disabled={saving} /><span className="w-14 font-mono">{diameter}px</span></label>
             <label className="flex items-center gap-2 text-xs">{text('叠加透明度', 'Overlay opacity')}<input aria-label={text('叠加透明度', 'Overlay opacity')} type="range" min={0} max={1} step={0.05} value={opacity} onChange={(e) => setOpacity(Number(e.target.value))} className="w-24" /><span>{Math.round(opacity * 100)}%</span></label>
-            <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={maskOnly} onChange={(e) => setMaskOnly(e.target.checked)} />{text('仅看黑白遮罩', 'Mask only')}</label>
+            <Switch className="studio-switch-small" checked={maskOnly} onCheckedChange={setMaskOnly}>{text('仅看黑白遮罩', 'Mask only')}</Switch>
             <div className="flex items-center gap-1"><button className={control} onClick={() => setZoom((value) => Math.max(0.25, value / 1.5))} aria-label={text('缩小', 'Zoom out')}><ZoomOut className="h-4 w-4" /></button><button className={control} onClick={() => { setZoom(1); viewport.current?.scrollTo(0, 0); }}><Maximize className="h-4 w-4" />{text('适应', 'Fit')}</button><button className={control} onClick={() => setZoom((value) => Math.min(8, value * 1.5))} aria-label={text('放大', 'Zoom in')}><ZoomIn className="h-4 w-4" /></button><span className="ml-1 text-xs font-mono">{Math.round(scale * 100)}%</span></div>
           </div>
           <div className="flex flex-wrap justify-between gap-2 text-xs text-slate-500 dark:text-slate-400"><span>{text('来源：', 'Source: ')}{info.source === 'sidecar' ? info.filename : info.source === 'alpha' ? text('原图 Alpha 通道', 'Image alpha channel') : text('无遮罩或 Alpha，默认全图参与', 'No mask or alpha; the full image participates')}{info.resized && text('（已有遮罩尺寸已适配原图）', ' (existing mask fitted to image dimensions)')}</span><span>{text('参与比例', 'Participation')} {Math.round(coverage * 100)}% · {doc.current?.dirty ? text('有未保存修改', 'Unsaved changes') : text('已同步', 'Up to date')}</span></div>

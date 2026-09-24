@@ -112,7 +112,7 @@ it.each([
 ])('only changes nullable %s %s to automatic mode through its checkbox', async (type, name, initial, raw) => {
   render(<NumericEditor initial={{optimizer: {type, [name]: initial}}}/>);
   const input = screen.getByRole('spinbutton', {name: `optimizer.${name}`});
-  const automatic = screen.getByRole('checkbox', {name: `optimizer.${name}.unset`});
+  const automatic = screen.getByRole('switch', {name: `optimizer.${name}.unset`});
   await act(async () => { await userEvent.clear(input); });
   expect(input).toHaveValue(null);
   expect(automatic).not.toBeChecked();
@@ -148,18 +148,18 @@ it('uses one labelled boolean control across groups, including keyboard activati
   const value = {optimizer: {kahan: false}, sampling: {enabled: true}};
   const view = render(<SchemaForm schema={boolSchema} value={value} onChange={changed} compact/>);
   for (const name of ['低精度更新补偿', '生成训练预览']) {
-    const input = screen.getByRole('checkbox', {name});
-    expect(input.closest('label')).toHaveClass('config-toggle-control');
+    const input = screen.getByRole('switch', {name});
+    expect(input.closest('.config-toggle-control')).not.toBeNull();
     expect(input.closest('[data-field-path]')).toHaveClass('config-field-boolean');
     expect(input.closest('[data-field-path]')).not.toHaveClass('config-field-toggle');
   }
-  const input = screen.getByRole('checkbox', {name: '低精度更新补偿'});
+  const input = screen.getByRole('switch', {name: '低精度更新补偿'});
   input.focus();
   await userEvent.keyboard(' ');
   expect(changed).toHaveBeenLastCalledWith({...value, optimizer: {kahan: true}});
   changed.mockClear();
   view.rerender(<SchemaForm schema={boolSchema} value={value} onChange={changed} compact readOnly/>);
-  expect(screen.getByRole('checkbox', {name: '低精度更新补偿'})).toBeDisabled();
+  expect(screen.getByRole('switch', {name: '低精度更新补偿'})).toBeDisabled();
   await userEvent.click(screen.getByText('未开启'));
   expect(changed).not.toHaveBeenCalled();
 });
@@ -167,5 +167,5 @@ it('uses one labelled boolean control across groups, including keyboard activati
 it('never exposes schema-hidden unsupported controls even in advanced search', () => {
   const hiddenSchema = {type: 'object', properties: {unsupported: {type: 'boolean', description: 'Unsupported', 'x-ui': {hidden: true}}}};
   render(<SchemaForm schema={hiddenSchema} value={{unsupported: true}} onChange={vi.fn()} compact showAdvanced search="unsupported"/>);
-  expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  expect(screen.queryByRole('switch')).not.toBeInTheDocument();
 });

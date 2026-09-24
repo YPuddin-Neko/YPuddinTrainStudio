@@ -71,7 +71,7 @@ describe('LoKr parameter mode', () => {
     expect(screen.queryByRole('combobox', {name: 'LoKr 参数形式'})).not.toBeInTheDocument();
     expect(screen.queryByTestId('field-adapter.factor')).not.toBeInTheDocument();
     expect(numeric('rank')).toHaveValue(7);
-    expect(within(screen.getByTestId('field-adapter.rank')).queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(within(screen.getByTestId('field-adapter.rank')).queryByRole('switch')).not.toBeInTheDocument();
     expect(screen.getAllByRole('heading').map(node => node.textContent)).toEqual(['训练结构', '参数规模']);
     expect(screen.getByRole('heading', {name: '训练结构'}).parentElement).toContainElement(screen.getByTestId('field-adapter.dora'));
     fireEvent.change(numeric('alpha'), {target: {value: '4'}});

@@ -228,9 +228,9 @@ it.each(['single', 'ddp', 'fsdp'] as const)('describes frozen-encoder LoRA %s an
   expect(screen.getByRole('status', {name:'注意力后端'})).toHaveTextContent('PyTorch SDPA（数学实现）');
   expect(screen.getByRole('status', {name:'允许 TF32'})).toHaveTextContent('关闭');
   expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual(initial);
-  fireEvent.click(screen.getByRole('checkbox', {name:'可复现训练'}));
+  fireEvent.click(screen.getByRole('switch', {name:'可复现训练'}));
   expect(screen.getByRole('combobox', {name:'混合精度'})).toHaveTextContent('BF16');
-  expect(screen.getByRole('checkbox', {name:'允许 TF32'})).toBeChecked();
+  expect(screen.getByRole('switch', {name:'允许 TF32'})).toBeChecked();
   expect(screen.getByRole('combobox', {name:'注意力后端'})).toHaveTextContent('xFormers');
   expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual({...initial, loop:{...initial.loop, deterministic:false}});
 });
@@ -259,10 +259,10 @@ it('shows Anima FSDP effective precision and restores user choices on disable', 
   expect(hint).toHaveTextContent('续训须保持相同设置和环境');
   expect(screen.getByRole('status', {name:'混合精度'})).toHaveTextContent('BF16（FP32 线性层与 LoRA 运算）');
   expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual(initial);
-  fireEvent.click(screen.getByRole('checkbox', {name:'可复现训练'}));
+  fireEvent.click(screen.getByRole('switch', {name:'可复现训练'}));
   expect(hint).not.toHaveTextContent('已自动设置精度和注意力');
   expect(screen.getByRole('combobox', {name:'混合精度'})).toHaveTextContent('BF16');
-  expect(screen.getByRole('checkbox', {name:'允许 TF32'})).toBeChecked();
+  expect(screen.getByRole('switch', {name:'允许 TF32'})).toBeChecked();
   expect(screen.getByRole('combobox', {name:'注意力后端'})).toHaveTextContent('xFormers');
   expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual({...initial, loop:{...initial.loop, deterministic:false}});
 });
@@ -342,9 +342,9 @@ it('shows effective text-only precision and restores the original draft when rep
   expect(screen.getByRole('status', {name:'混合精度'})).toHaveTextContent('使用 FP32 运算提高可复现性');
   expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('已自动设置精度和注意力');
   expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual(initial);
-  fireEvent.click(screen.getByRole('checkbox', {name:'可复现训练'}));
+  fireEvent.click(screen.getByRole('switch', {name:'可复现训练'}));
   expect(screen.getByRole('combobox', {name:'混合精度'})).toHaveTextContent('BF16');
-  expect(screen.getByRole('checkbox', {name:'允许 TF32'})).toBeChecked();
+  expect(screen.getByRole('switch', {name:'允许 TF32'})).toBeChecked();
   expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual({...initial, loop:{...initial.loop, deterministic:false}});
 });
 
@@ -429,9 +429,9 @@ it.each(['ddp','fsdp'] as const)('renders Anima %s managed fields and restores t
   expect(hint).toHaveTextContent('已自动设置精度和注意力');
   expect(hint).toHaveTextContent('续训须保持相同设置和环境');
   expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual(initial);
-  fireEvent.click(screen.getByRole('checkbox',{name:'可复现训练'}));
+  fireEvent.click(screen.getByRole('switch',{name:'可复现训练'}));
   expect(screen.getByRole('combobox',{name:'混合精度'})).toHaveTextContent('BF16');
-  expect(screen.getByRole('checkbox',{name:'允许 TF32'})).toBeChecked();
+  expect(screen.getByRole('switch',{name:'允许 TF32'})).toBeChecked();
   expect(screen.getByRole('combobox',{name:'注意力后端'})).toHaveTextContent('xFormers');
   expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual({...initial,loop:{...initial.loop,deterministic:false}});
 });
@@ -518,9 +518,9 @@ it('shows Anima effective BF16 precision and short impact without changing the d
   expect(hint).toHaveTextContent('已自动设置精度和注意力');
   expect(hint).toHaveTextContent('可能增加显存与训练耗时');
   expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual(initial);
-  fireEvent.click(screen.getByRole('checkbox',{name:'可复现训练'}));
+  fireEvent.click(screen.getByRole('switch',{name:'可复现训练'}));
   expect(screen.getByRole('combobox',{name:'混合精度'})).toHaveTextContent('BF16');
-  expect(screen.getByRole('checkbox',{name:'允许 TF32'})).toBeChecked();
+  expect(screen.getByRole('switch',{name:'允许 TF32'})).toBeChecked();
   expect(screen.getByRole('combobox',{name:'注意力后端'})).toHaveTextContent('xFormers');
 });
 
@@ -575,9 +575,9 @@ it('renders actual BF16 forward and FP32 backward without changing the selected 
   expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('已自动设置精度和注意力');
   expect(screen.queryByText('FP32 计算（关闭混合精度）')).not.toBeInTheDocument();
   expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual(initial);
-  fireEvent.click(screen.getByRole('checkbox',{name:'可复现训练'}));
+  fireEvent.click(screen.getByRole('switch',{name:'可复现训练'}));
   expect(screen.getByRole('combobox',{name:'混合精度'})).toHaveTextContent('BF16');
-  expect(screen.getByRole('checkbox',{name:'允许 TF32'})).toBeChecked();
+  expect(screen.getByRole('switch',{name:'允许 TF32'})).toBeChecked();
 });
 
 it('shows the BF16 policy in English with no Chinese fallback', async () => {
@@ -685,9 +685,9 @@ it('displays actual managed values and restores original choices without changin
   expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('已自动设置精度和注意力');
   expect(screen.getByTestId('field-loop.deterministic')).toHaveTextContent('可能增加显存与训练耗时');
   expect(JSON.parse(screen.getByTestId('draft').textContent!)).toEqual(initial);
-  fireEvent.click(screen.getByRole('checkbox',{name:'可复现训练'}));
+  fireEvent.click(screen.getByRole('switch',{name:'可复现训练'}));
   expect(screen.getByRole('combobox',{name:'混合精度'})).toHaveTextContent('BF16');
-  expect(screen.getByRole('checkbox',{name:'允许 TF32'})).toBeChecked();
+  expect(screen.getByRole('switch',{name:'允许 TF32'})).toBeChecked();
   expect(screen.getByRole('combobox',{name:'注意力后端'})).toHaveTextContent('xFormers');
   const saved = JSON.parse(screen.getByTestId('draft').textContent!);
   expect(saved.loop.mixed_precision).toBe('bf16');
@@ -698,7 +698,7 @@ it('displays actual managed values and restores original choices without changin
 it('leaves original controls editable without a current runtime policy and does not label no as FP32', () => {
   render(<SchemaForm schema={schema} value={fullConfig()} onChange={() => {}} compact showAdvanced groupFilter={['loop','memory']}/>);
   expect(screen.getByRole('combobox',{name:'混合精度'})).toHaveTextContent('BF16');
-  expect(screen.getByRole('checkbox',{name:'允许 TF32'})).toBeChecked();
+  expect(screen.getByRole('switch',{name:'允许 TF32'})).toBeChecked();
   expect(screen.queryByText('FP32 计算（关闭混合精度）')).not.toBeInTheDocument();
   expect(configOptionLabel('loop.mixed_precision','no')).toBe('关闭自动混合精度');
   expect(configFieldHelp('loop.mixed_precision','')).toContain('不改变权重本身的精度');
@@ -756,10 +756,10 @@ it.each(backendPolicies.filter(row=>row.config.loop.mixed_precision==='fp16'))('
   render(<Editor/>);
   expect(screen.getByRole('status',{name:'混合精度'})).toHaveTextContent('FP16');
   expect(screen.getByRole('status',{name:'混合精度'})).not.toHaveTextContent('FP32 计算（关闭混合精度）');
-  fireEvent.click(screen.getByRole('checkbox',{name:'可复现训练'}));
+  fireEvent.click(screen.getByRole('switch',{name:'可复现训练'}));
   expect(screen.getByRole('combobox',{name:'混合精度'})).toHaveTextContent('FP16');
   expect(screen.getByRole('combobox',{name:'注意力后端'})).toHaveTextContent('xFormers');
-  expect(screen.getByRole('checkbox',{name:'允许 TF32'})).toBeChecked();
+  expect(screen.getByRole('switch',{name:'允许 TF32'})).toBeChecked();
 });
 
 it.each(backendPolicies.filter(row => row.policy.attention === 'flash_attn'))('shows actual Flash attention for $name without changing the saved selection', ({config,policy}) => {

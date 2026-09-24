@@ -8,7 +8,7 @@ import i18n from '../../../frontend/src/i18n';
 vi.mock('../../../frontend/src/components/ServiceControls', () => ({ default: () => null }));
 vi.mock('../../../frontend/src/pages/Settings/ServiceInfo', () => ({ ServiceInfo: () => null }));
 const network = { proxy_mode: 'custom', proxy_url: 'http://localhost:7890', proxy_username: 'account', proxy_password_configured: true };
-const settings = { paths: {}, server: { host: '127.0.0.1', port: 8765 }, ui: { language: 'zh-CN', theme: 'light' }, network };
+const settings = { paths: {}, server: { open_browser: true, host: '127.0.0.1', port: 8765 }, ui: { language: 'zh-CN', theme: 'light' }, network };
 beforeEach(async () => {
   await i18n.changeLanguage('zh-CN');
   vi.spyOn(apiClient, 'get').mockResolvedValue(structuredClone(settings));
@@ -60,5 +60,5 @@ it('keeps the restart requirement when the listening address changes', async () 
   const host = await screen.findByLabelText('监听地址');
   fireEvent.change(host, {target: {value: '0.0.0.0'}});
   fireEvent.click(screen.getByTestId('settings-save-btn'));
-  await screen.findByText('已保存，重启服务后生效');
+  await screen.findByText('已保存，重启服务后生效。');
 });

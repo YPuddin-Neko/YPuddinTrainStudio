@@ -39,7 +39,7 @@ let mockSettings: Settings = {
     output_dir: '/Volumes/Service/Dev/output',
     output_mode: 'project',
   },
-  server: { host: '127.0.0.1', port: 8765 },
+  server: { open_browser: true, host: '127.0.0.1', port: 8765 },
   ui: { language: 'zh-CN', theme: 'system' },
 };
 
@@ -665,7 +665,7 @@ export const handlers = [
       steps_per_epoch: 500,
       total_steps: 2000,
       epochs: 4,
-      buckets: [{ w: 1024, h: 1024, items: 100, batches: 50 }],
+      buckets: [{base: 1024, w: 1024, h: 1024, items: 100, batches: 50 }],
       params: { training_mode: 'adapter', trainable: 14500000, base: 2000000000, adapted_layers: 280, by_algo: { lokr: 280 } },
       memory: {
         weights_mb: 4200, swapped_mb: 0, text_encoder_mb: 0, adapter_mb: 64, optimizer_mb: 128, gradients_mb: 64, heuristic: true,

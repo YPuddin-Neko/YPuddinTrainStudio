@@ -26,8 +26,9 @@ it('shows automatic values for old PPSF drafts without saving or losing legacy D
   expect(screen.getByRole('spinbutton', {name: '自适应步长倍率（D Coef）'})).toHaveValue(2);
   expect(screen.queryByRole('combobox', {name: '学习率调度'})).not.toBeInTheDocument();
   expect(screen.getByRole('spinbutton', {name: '权重平均 β1'})).toHaveValue(.9);
-  expect(screen.getByRole('checkbox', {name: '免调度权重平均'})).toBeChecked();
+  expect(screen.getByRole('switch', {name: '免调度权重平均'})).toBeChecked();
   expect(changed).not.toHaveBeenCalled();
+  for (const path of ['optimizer.kahan','optimizer.group_lr','scheduler.warmup_steps','scheduler.min_lr_ratio']) expect(screen.queryByTestId(`field-${path}`)).not.toBeInTheDocument();
 });
 
 it('keeps all PPSF typed parameters visible without advanced mode', () => {
@@ -54,7 +55,7 @@ it('restores manual optimizer learning rates and scheduler when switching back',
 
 it('makes external scheduling editable when PPSF weight averaging is turned off', () => {
   render(<Editor initial={{optimizer: {type: 'prodigy_plus_sf', use_schedulefree: true}}}/>);
-  fireEvent.click(screen.getByRole('checkbox', {name: '免调度权重平均'}));
+  fireEvent.click(screen.getByRole('switch', {name: '免调度权重平均'}));
   expect(screen.getByRole('spinbutton', {name: '方向平滑 β1'})).toBeInTheDocument();
   expect(screen.queryByRole('spinbutton', {name: '权重平均 β1'})).not.toBeInTheDocument();
   select('学习率调度', 'cosine');
@@ -113,4 +114,17 @@ it('uses English labels and explanations throughout the optimizer section', asyn
   rerender(<SchemaForm schema={schema} value={{optimizer: {type: 'automagic'}}} onChange={vi.fn()} compact groupFilter={['optimizer']}/>);
   expect(container.querySelector('[data-group="optimizer"]')?.textContent).not.toMatch(/[\u3400-\u9fff]/);
   expect(screen.getByRole('spinbutton', {name: 'Learning-rate increment'})).toBeInTheDocument();
+});
+
+it('hides inactive dependent controls and restores their values when the parent is enabled', () => {
+  render(<Editor initial={{optimizer:{type:'prodigy_plus_sf',schedulefree_c:2,split_groups_mean:true,factored_fp32:false}}}/>);
+  for (const [toggle, path] of [['免调度权重平均','schedulefree_c'], ['各参数组独立估计步长','split_groups_mean'], ['分解统计以节省显存','factored_fp32']]) {
+    const field = screen.getByTestId(`field-optimizer.${path}`);
+    expect(field).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('switch', {name:toggle}));
+    expect(screen.queryByTestId(`field-optimizer.${path}`)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('switch', {name:toggle}));
+    expect(screen.getByTestId(`field-optimizer.${path}`)).toBeInTheDocument();
+  }
+  expect(value().optimizer).toMatchObject({schedulefree_c:2, split_groups_mean:true, factored_fp32:false});
 });

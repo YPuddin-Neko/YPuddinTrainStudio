@@ -22,7 +22,7 @@ vi.mock('../../../frontend/src/pages/Models/Models', () => ({ default: () => <p>
 beforeEach(async () => {
   await i18n.changeLanguage('zh-CN');
   vi.spyOn(apiClient, 'get').mockImplementation(async endpoint => {
-    if (endpoint === '/settings') return { paths: { data_root: 'D:/studio', cache_dir: 'D:/cache', output_dir: 'D:/runs', models_dir: 'D:/models' }, server: { host: '127.0.0.1', port: 8765 }, ui: { language: 'zh-CN', theme: 'light' } } as any;
+    if (endpoint === '/settings') return { paths: { data_root: 'D:/studio', cache_dir: 'D:/cache', output_dir: 'D:/runs', models_dir: 'D:/models' }, server: { open_browser: true, host: '127.0.0.1', port: 8765 }, ui: { language: 'zh-CN', theme: 'light' } } as any;
     throw new Error(`Unexpected GET ${endpoint}`);
   });
 });

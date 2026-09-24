@@ -43,7 +43,7 @@ function Editor({ initial, compact = true, selectedFamily = family }: {
 }
 const current = () => JSON.parse(screen.getByTestId('sampling-config').textContent!).sampling;
 const input = (key: string) => within(screen.getByTestId(`field-sampling.${key}`)).getByRole('spinbutton');
-const enable = () => within(screen.getByTestId('field-sampling.enabled')).getByRole('checkbox');
+const enable = () => within(screen.getByTestId('field-sampling.enabled')).getByRole('switch');
 
 beforeEach(async () => { await i18n.changeLanguage('zh-CN'); });
 
@@ -74,7 +74,7 @@ describe('sampling form state and service-owned paths', () => {
 
   it.each(['steps', 'every_steps', 'every_epochs'])('restores nullable %s to a valid positive integer, then preserves an explicit null', key => {
     render(<Editor selectedFamily={null} initial={{ sampling: { enabled: true, [key]: null } }} />);
-    const unset = screen.getByRole('checkbox', { name: `sampling.${key}.unset` });
+    const unset = screen.getByRole('switch', { name: `sampling.${key}.unset` });
     expect(unset).toBeChecked();
     fireEvent.click(unset);
     expect(current()[key]).toBe(1);
@@ -89,16 +89,16 @@ describe('sampling form state and service-owned paths', () => {
 
   it('restores nullable shift above its exclusive minimum', () => {
     render(<Editor selectedFamily={null} initial={{ sampling: { enabled: true, shift: null } }} />);
-    fireEvent.click(screen.getByRole('checkbox', { name: 'sampling.shift.unset' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'sampling.shift.unset' }));
     expect(current().shift).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole('checkbox', { name: 'sampling.shift.unset' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'sampling.shift.unset' }));
     expect(current().shift).toBeNull();
   });
 
   it('uses each displayed numeric family default when disabling inheritance', () => {
     render(<Editor initial={{ sampling: { enabled: true, steps: null, cfg: null, shift: null } }} />);
     for (const [key, expected] of Object.entries({ steps: 25, cfg: 4, shift: 3 })) {
-      fireEvent.click(screen.getByRole('checkbox', { name: `sampling.${key}.unset` }));
+      fireEvent.click(screen.getByRole('switch', { name: `sampling.${key}.unset` }));
       expect(current()[key]).toBe(expected);
       expect(input(key)).toHaveValue(expected);
     }
@@ -118,7 +118,7 @@ describe('sampling form state and service-owned paths', () => {
     fireEvent.change(input('cfg'), { target: { value: '0' } });
     expect(current().cfg).toBe(0);
     expect(input('cfg')).toHaveValue(0);
-    const inheritCfg = screen.getByRole('checkbox', { name: 'sampling.cfg.unset' });
+    const inheritCfg = screen.getByRole('switch', { name: 'sampling.cfg.unset' });
     expect(inheritCfg).not.toBeChecked();
     fireEvent.change(input('cfg'), { target: { value: '' } });
     expect(current().cfg).toBe('');

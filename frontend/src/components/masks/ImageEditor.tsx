@@ -1,3 +1,4 @@
+import Switch from '../Switch';
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { Brush, Eraser, Hand, Pipette, Redo2, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react';
@@ -202,7 +203,7 @@ export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,o
         {mode==='paint'?<button disabled={saving||loading} onClick={()=>{paint.current?.apply({kind:'clear'});setMessage('');redraw();}}>{text('清除本次涂抹','Clear session paint')}</button>:<><button disabled={saving||loading} onClick={()=>operation({kind:'fill',value:255})}>{text('全白','All white')}</button><button disabled={saving||loading} onClick={()=>operation({kind:'fill',value:0})}>{text('全黑','All black')}</button><button disabled={saving||loading} onClick={()=>operation({kind:'invert'})}>{text('反转','Invert')}</button></>}
       </div>
       <div className="image-editor-tools"><label>{text('笔刷直径','Brush diameter')}<input aria-label={text('笔刷直径','Brush diameter')} type="range" min={1} max={1024} value={diameter} disabled={saving} onChange={event=>setDiameter(Number(event.target.value))}/><input aria-label={text('笔刷像素','Brush pixels')} type="number" min={1} max={1024} value={diameter} disabled={saving} onChange={event=>setDiameter(Math.max(1,Math.min(1024,Number(event.target.value)||1)))}/>px</label>
-        {mode==='mask'&&<><label>{text('叠加透明度','Overlay opacity')}<input aria-label={text('叠加透明度','Overlay opacity')} type="range" min={0} max={1} step={.05} value={opacity} onChange={event=>setOpacity(Number(event.target.value))}/></label><label><input type="checkbox" checked={maskOnly} onChange={event=>setMaskOnly(event.target.checked)}/>{text('仅看遮罩','Mask only')}</label></>}
+        {mode==='mask'&&<><label>{text('叠加透明度','Overlay opacity')}<input aria-label={text('叠加透明度','Overlay opacity')} type="range" min={0} max={1} step={.05} value={opacity} onChange={event=>setOpacity(Number(event.target.value))}/></label><Switch checked={maskOnly} onCheckedChange={setMaskOnly}>{text('仅看遮罩','Mask only')}</Switch></>}
         <button aria-label={text('缩小','Zoom out')} onClick={()=>setZoom(value=>Math.max(.25,value/1.5))}><ZoomOut size={14}/></button><button onClick={()=>{setZoom(1);viewport.current?.scrollTo(0,0);}}>{text('适应','Fit')} {Math.round(scale*100)}%</button><button aria-label={text('放大','Zoom in')} onClick={()=>setZoom(value=>Math.min(8,value*1.5))}><ZoomIn size={14}/></button>
       </div>
       <p className="image-editor-hint">{mode==='paint'?text('Alt + 点击取色；擦回原图可恢复本次编辑前的像素。','Alt + click picks a color. Erase restores pixels from before this editing session.'):text('白色参与训练，黑色忽略；红色为忽略区域。无独立遮罩时使用图片透明度。','White trains, black is ignored; red marks ignored areas. Without a separate mask, image transparency is used.')}</p>

@@ -8,7 +8,7 @@ import i18n from '../../../frontend/src/i18n';
 
 const settings: Settings = {
   paths: { bootstrap_env_dir: '', data_root: 'D:/studio', models_dir: 'D:/models', cache_dir: 'D:/cache', output_dir: 'D:/runs', output_mode: 'project' },
-  server: { host: '127.0.0.1', port: 8765 },
+  server: { open_browser: true, host: '127.0.0.1', port: 8765 },
   ui: { language: 'zh-CN', theme: 'light' },
 };
 const systemInfo = vi.fn();

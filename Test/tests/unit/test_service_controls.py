@@ -306,3 +306,15 @@ def test_queue_rechecks_ownership_after_hardware_selection(api, image_dataset, m
     monkeypatch.setattr(ctx.supervisor, "_launch", launched)
     ctx.supervisor._tick()
     launched.assert_not_called()
+
+
+def test_browser_startup_preference_roundtrips_without_changing_service_address(api):
+    client, ctx = api
+    before = client.get('/api/settings').json()
+    assert before['server']['open_browser'] is True
+    response = client.put('/api/settings', json={'server': {'open_browser': False}})
+    assert response.status_code == 200
+    assert response.json()['server'] == {**before['server'], 'open_browser': False}
+    assert client.get('/api/settings').json()['server']['open_browser'] is False
+    assert json.loads(ctx.settings_path.read_text())['server']['open_browser'] is False
+    assert client.put('/api/settings', json={'ui': {'theme': 'dark'}}).json()['server']['open_browser'] is False

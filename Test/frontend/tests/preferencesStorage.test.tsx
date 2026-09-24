@@ -5,7 +5,7 @@ import Preferences from '../../../frontend/src/pages/Settings/Preferences';
 import { apiClient } from '../../../frontend/src/api/client';
 import i18n from '../../../frontend/src/i18n';
 
-const settings = {paths:{data_root:'D:/studio_data',cache_dir:'D:/cache',models_dir:'D:/models',output_dir:'E:/outputs',output_mode:'project'},server:{host:'127.0.0.1',port:8765},ui:{language:'zh-CN',theme:'light'}};
+const settings = {paths:{data_root:'D:/studio_data',cache_dir:'D:/cache',models_dir:'D:/models',output_dir:'E:/outputs',output_mode:'project'},server:{ open_browser: true,host:'127.0.0.1',port:8765},ui:{language:'zh-CN',theme:'light'}};
 beforeEach(async()=>{await i18n.changeLanguage('zh-CN');vi.spyOn(apiClient,'get').mockResolvedValue(structuredClone(settings));vi.spyOn(apiClient,'put').mockImplementation(async(_path,body)=>body as any);});
 afterEach(()=>vi.restoreAllMocks());
 function show(){render(<MemoryRouter initialEntries={['/settings/preferences?section=storage']}><Preferences/></MemoryRouter>);}
@@ -69,4 +69,31 @@ describe('project output settings',()=>{
     fireEvent.click(screen.getByTestId('settings-save-btn'));
     await waitFor(()=>expect(apiClient.put).toHaveBeenCalledWith('/settings',expect.objectContaining({ui:{theme:'dark',language:'zh-CN'},paths:expect.objectContaining({models_dir:'F:/weights'})})));
   });
+});
+
+it('explains directory purposes and only shows restart guidance after a relevant edit', async () => {
+  show();
+  const root = await screen.findByRole('textbox', {name:i18n.t('settings.dataRoot')});
+  expect(screen.getByText('保存项目、数据集、任务记录和服务设置。')).toBeVisible();
+  expect(screen.getByText(/保存下载的模型及其组件/)).toBeVisible();
+  expect(screen.queryByText(/重启服务.*生效/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/下次从启动脚本/)).not.toBeInTheDocument();
+  fireEvent.change(root, {target:{value:'E:/new-studio'}});
+  expect(screen.getByText('保存后需重启服务生效。')).toBeVisible();
+  fireEvent.click(screen.getByTestId('settings-save-btn'));
+  expect(await screen.findByText('已保存，重启服务后生效。')).toBeVisible();
+  fireEvent.change(screen.getByRole('textbox', {name:i18n.t('settings.modelsDir')}), {target:{value:'F:/new-models'}});
+  fireEvent.click(screen.getByTestId('settings-save-btn'));
+  await waitFor(() => expect(apiClient.put).toHaveBeenCalledTimes(2));
+  expect(screen.getByText('已保存，重启服务后生效。')).toBeVisible();
+});
+
+it('distinguishes an environment-directory launcher restart from a service restart', async () => {
+  show();
+  const env = await screen.findByRole('textbox', {name:'基础环境目录'});
+  fireEvent.change(env, {target:{value:'E:/python-envs'}});
+  expect(screen.getByText('保存后，下次从启动脚本启动时生效。')).toBeVisible();
+  expect(screen.getByText('新目录需安装依赖，旧环境保留。')).toBeVisible();
+  fireEvent.click(screen.getByTestId('settings-save-btn'));
+  expect(await screen.findByText('已保存，下次从启动脚本启动时生效。')).toBeVisible();
 });

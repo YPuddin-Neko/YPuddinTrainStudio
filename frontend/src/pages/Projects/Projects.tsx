@@ -11,6 +11,7 @@ import { categoryLabel, coverSource, type GalleryProject } from './projectGaller
 import ProjectCardMenu from './ProjectCardMenu';
 import '../../styles/project-workspace.css';
 import './projects.css';
+import Switch from '../../components/Switch';
 
 export default function Projects() {
   const { t, i18n } = useTranslation();
@@ -86,7 +87,7 @@ export default function Projects() {
         <StudioSelect className="projects-category-filter" aria-label={text('按分类筛选', 'Filter by category')} value={uncategorized ? 'uncategorized' : category ? `category:${category}` : ''}
           options={[{ value: '', label: text('所有分类', 'All categories') }, { value: 'uncategorized', label: `${text('未分类', 'Uncategorized')} · ${categoryCount(null)}` }, ...categoryOptions.map(value => ({ value: `category:${value}`, label: `${categoryLabel(value, english)} · ${categoryCount(value)}` }))]}
           onValueChange={value => changeFilter({ category: value.startsWith('category:') ? value.slice(9) : null, uncategorized: value === 'uncategorized' ? 'true' : null })}/>
-        <label className="projects-archive-filter"><input type="checkbox" checked={showArchived} onChange={event => changeFilter({ archived: event.target.checked ? '1' : null })} data-testid="show-archived-toggle"/><span>{t('projects.showArchived', '显示已归档')}</span></label>
+        <Switch className="projects-archive-filter" checked={showArchived} onCheckedChange={checked => changeFilter({ archived: checked ? '1' : null })} data-testid="show-archived-toggle">{t('projects.showArchived', '显示已归档')}</Switch>
         <StudioSelect className="projects-sort-filter" aria-label={text('项目排序', 'Sort projects')} value={sort} options={[{ value: 'updated', label: text('最近更新', 'Recently updated') }, { value: 'created', label: text('最近创建', 'Recently created') }, { value: 'name', label: text('名称排序', 'Name') }]} onValueChange={value => changeFilter({ sort: value === 'updated' ? null : value })}/>
         <div className="projects-view-toggle" role="group" aria-label={text('项目显示方式', 'Project view')}><button type="button" aria-label={text('卡片视图', 'Grid view')} aria-pressed={view === 'grid'} onClick={() => changeFilter({ view: null })}><LayoutGrid size={15}/></button><button type="button" aria-label={text('列表视图', 'List view')} aria-pressed={view === 'list'} onClick={() => changeFilter({ view: 'list' })}><List size={15}/></button></div>
         {pageCount > 1 && <nav className="projects-pagination" aria-label={text('项目分页', 'Project pagination')} title={text(`共 ${visibleProjects.length} 个项目 · 每页 24 个`, `${visibleProjects.length} projects · 24 per page`)}><button className="projects-page-button" aria-label={text('上一页', 'Previous')} disabled={loading || page <= 1} onClick={() => changeFilter({ page: String(page - 1) })}><ChevronLeft size={15}/></button><span aria-label={text('当前页', 'Current page')}>{page} / {pageCount}</span><button className="projects-page-button" aria-label={text('下一页', 'Next')} disabled={loading || page >= pageCount} onClick={() => changeFilter({ page: String(page + 1) })}><ChevronRight size={15}/></button></nav>}

@@ -7,6 +7,7 @@ import StudioSelect from '../../components/StudioSelect';
 import { formatApiError } from '../../utils/errors';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { availableTrainingFamilies, modelFamilyWeights } from '../../utils/trainingFamilies';
+import Switch from '../../components/Switch';
 
 export interface ModelInspection {
   path: string; family: string | null; family_candidates: string[]; kind: string | null;
@@ -71,7 +72,7 @@ export default function LocalModelRegistration({ initialFamily, families: servic
       {ready&&needsVariant&&<label>{text('Krea 2 版本 / 用途','Krea 2 variant / purpose')}<StudioSelect aria-label={text('Krea 2 版本 / 用途','Krea 2 variant / purpose')} value={variant} disabled={!!detected.variant} onValueChange={value=>{setVariant(value);if(value==='turbo')setIsDefault(false);}} placeholder={text('请按发布说明选择','Choose from the publisher description')} options={[{value:'raw',label:text('Raw · 训练与采样','Raw · training and sampling')},{value:'turbo',label:text('Turbo · 仅采样','Turbo · sampling only')}]}/></label>}
       {ready&&detected.warnings.map(message=><p className="model-help-text" key={message}>{message}</p>)}
       {ready&&<details><summary>{text('检测依据','Inspection evidence')}</summary><p>{detected.evidence.join(' · ')||text('没有匹配到已知结构。','No known structure matched.')}</p><p>{Object.entries(detected.dtypes).map(([type,count])=>`${type}: ${count.toLocaleString()}`).join(' · ')}</p></details>}
-      <label className="model-checkbox"><input type="checkbox" checked={inferenceOnly?false:isDefault} disabled={inferenceOnly} onChange={event=>setIsDefault(event.target.checked)}/>{text('设为本系列默认组件','Set as this family’s default component')}</label>
+      <Switch className="model-switch" checked={inferenceOnly?false:isDefault} disabled={inferenceOnly} onCheckedChange={setIsDefault}>{text('设为本系列默认组件','Set as this family’s default component')}</Switch>
     </fieldset>
     {error&&<div role="alert" className="settings-alert">{error}<button className="model-button" type="button" disabled={saving||detecting} onClick={()=>setReload(value=>value+1)}>{text('重新检测','Inspect again')}</button></div>}
     {ready && (!family || (detected.kind && !knownComponent)) && <p role="alert" className="settings-alert">{text('当前训练服务不支持检测到的模型系列或组件。','The training service does not support the detected model family or component.')}</p>}

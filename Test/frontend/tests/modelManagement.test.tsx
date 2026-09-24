@@ -39,7 +39,7 @@ beforeEach(async () => {
     {id:'k',family:'krea2',kind:'dit',path:'C:\\models\\krea2.safetensors',dtype:'bf16',exists:true,is_default:true,purpose:'training',variant:'raw',size:1024,created_at:1},
   ];
   downloads=[];
-  settings={paths:{bootstrap_env_dir:'',data_root:'C:\\studio',models_dir:'D:\\models',cache_dir:'D:\\cache',output_dir:'D:\\runs',output_mode:'project'},server:{host:'127.0.0.1',port:8765},ui:{language:'zh-CN',theme:'light'}};
+  settings={paths:{bootstrap_env_dir:'',data_root:'C:\\studio',models_dir:'D:\\models',cache_dir:'D:\\cache',output_dir:'D:\\runs',output_mode:'project'},server:{ open_browser: true,host:'127.0.0.1',port:8765},ui:{language:'zh-CN',theme:'light'}};
   patch=vi.fn();download=vi.fn();cancel=vi.fn();catalogDownload=vi.fn();useRecommendation=vi.fn();register=vi.fn();
   server.use(
     http.get('/api/families',()=>HttpResponse.json(['anima','krea2'].map(name=>({name,label:name==='anima'?'Anima':'Krea 2',weights:[{field:'dit_path'},{field:'text_encoder_path'},{field:'vae_path'}]})))),
@@ -87,10 +87,10 @@ describe('real model management UI contracts',()=>{
     mount(<Models/>,'/models?family=krea2');
     const dialog=await openCustom();
     choose('Krea 2 版本 / 用途','Turbo · 仅采样');
-    expect(within(dialog).getByRole('checkbox')).toBeDisabled();
+    expect(within(dialog).getByRole('switch')).toBeDisabled();
     choose('组件','VAE');
-    expect(within(dialog).getByRole('checkbox')).toBeEnabled();
-    fireEvent.click(within(dialog).getByRole('checkbox'));
+    expect(within(dialog).getByRole('switch')).toBeEnabled();
+    fireEvent.click(within(dialog).getByRole('switch'));
     enterRepo();
     fireEvent.click(screen.getByTestId('model-download-start'));
     await waitFor(()=>expect(download).toHaveBeenCalledWith(expect.objectContaining({family:'krea2',kind:'vae',is_default:true})));
@@ -118,7 +118,7 @@ describe('real model management UI contracts',()=>{
     await screen.findByRole('combobox',{name:'Krea 2 版本 / 用途'});
     expect(screen.getByTestId('add-model-submit')).toBeDisabled();
     choose('Krea 2 版本 / 用途','Turbo · 仅采样');
-    expect(within(dialog).getByRole('checkbox')).toBeDisabled();
+    expect(within(dialog).getByRole('switch')).toBeDisabled();
     fireEvent.click(screen.getByTestId('add-model-submit'));
     await waitFor(()=>expect(register).toHaveBeenCalledWith(expect.objectContaining({family:'krea2',kind:'dit',variant:'turbo',purpose:'inference',is_default:false})));
   });

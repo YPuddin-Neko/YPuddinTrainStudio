@@ -499,7 +499,7 @@ def test_metadata_cleanup_refuses_windows_reparse_points_and_same_named_files(mo
     assert all(path.read_bytes() == content for path, content in preserved.items())
 
 
-def test_blocked_cleanup_warns_without_reinstalling_and_retries_next_start(monkeypatch, tmp_path, capsys):
+def test_blocked_cleanup_stays_silent_without_reinstalling_and_retries_next_start(monkeypatch, tmp_path, capsys):
     existing_environment(monkeypatch, tmp_path)
     metadata = build_metadata()
     preserved = protected_files()
@@ -520,8 +520,9 @@ def test_blocked_cleanup_warns_without_reinstalling_and_retries_next_start(monke
         boot.ensure_venv("cpu", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE)
     assert (metadata / "PKG-INFO").exists()
     output = capsys.readouterr()
-    assert "ypuddin.egg-info" in output.out + output.err
-    assert "metadata is occupied" in output.out + output.err
+    # Leftover build metadata is housekeeping; startup output does not mention it.
+    assert "egg-info" not in output.out + output.err
+    assert "metadata is occupied" not in output.out + output.err
     assert boot.MARKER.read_bytes() == marker_before
     boot.ensure_venv("cpu", index_mode="official", reinstall=False, extras=boot.EXTRAS_BASE)
     assert not metadata.exists()
@@ -1739,3 +1740,24 @@ def test_model_native_probe_runs_nms_and_qwen3_without_loading_weights(monkeypat
     result = REAL_MODEL_RUNTIME()
     assert result["ok"], result
     assert result["stage"] == "qwen3"
+
+
+@pytest.mark.parametrize('command', ['run', 'dev'])
+@pytest.mark.parametrize('saved,disabled,expected', [(None, False, True), (False, False, False), (True, False, True), (True, True, False), (False, True, False)])
+def test_launcher_respects_saved_browser_preference(monkeypatch, tmp_path, command, saved, disabled, expected):
+    data = tmp_path / 'browser-settings'
+    data.mkdir()
+    if saved is not None:
+        (data / 'settings.json').write_text(json.dumps({'server': {'open_browser': saved}}))
+    monkeypatch.setattr(boot, 'platform_torch_tag', lambda *a: 'cpu')
+    monkeypatch.setattr(boot, 'select_environment', lambda *a, **k: None)
+    monkeypatch.setattr(boot, 'nvidia_gpus', lambda: [])
+    monkeypatch.setattr(boot, 'ensure_venv', lambda *a, **k: None)
+    calls = []
+    monkeypatch.setattr(boot, 'serve', lambda *a: calls.append(a) or 0)
+    monkeypatch.setattr(boot, 'dev', lambda *a: calls.append(a) or 0)
+    args = [command, '--no-frontend', '--data-root', str(data)]
+    if disabled:
+        args.append('--no-browser')
+    assert boot.main(args) == 0
+    assert calls[0][-1] is expected

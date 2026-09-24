@@ -105,6 +105,7 @@ class SettingsPaths(_Out):
 class SettingsServer(_Out):
     host: str = Field(min_length=1)
     port: int = Field(ge=1, le=65535)
+    open_browser: bool = True
 
 
 class SettingsUi(_Out):
@@ -167,6 +168,7 @@ class ValidateResult(_Out):
 
 
 class PlanBucket(_Out):
+    base: int = 0  # bucket-mode base resolution; 0 for native sizes
     w: int
     h: int
     items: int

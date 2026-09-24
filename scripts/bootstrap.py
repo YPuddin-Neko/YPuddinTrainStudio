@@ -95,8 +95,12 @@ def die(msg: str, code: int = 1) -> None:
 
 
 def run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
-    log("  执行: " + " ".join(str(c) for c in cmd))
-    return subprocess.run([str(c) for c in cmd], check=True, **kw)
+    try:
+        return subprocess.run([str(c) for c in cmd], check=True, **kw)
+    except subprocess.CalledProcessError:
+        # Callers may clean up partial environments before stopping.
+        log("  命令失败：" + " ".join(str(c) for c in cmd))
+        raise
 
 
 # --------------------------------------------------------------------------- environment probes
@@ -430,21 +434,19 @@ def cleanup_build_metadata() -> None:
         info = directory.lstat()
     except FileNotFoundError:
         return
-    except OSError as exc:
-        log(f"  未能检查 ypuddin.egg-info（{exc}），下次启动会重试。")
-        return
+    except OSError:
+        return  # retried on the next start
     try:
         # lstat also detects Windows junctions on supported Python versions.
         if not stat.S_ISDIR(info.st_mode) or getattr(info, "st_file_attributes", 0) & getattr(
             stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400
         ):
-            log("  未清理 ypuddin.egg-info：此路径不是普通目录，请检查链接或同名文件。")
-            return
+            return  # never follow links or remove a same-named file
         shutil.rmtree(directory)
-        log("  已清理根目录残留的 ypuddin.egg-info。")
-    except OSError as exc:
-        # An occupied Windows file must not trigger another dependency install.
-        log(f"  未能清理 ypuddin.egg-info（{exc}），下次启动会重试。")
+    except OSError:
+        # An occupied Windows file must not trigger another dependency install;
+        # the next start retries.
+        pass
 
 
 def dependency_issues(extras: str) -> list[str]:
@@ -895,9 +897,9 @@ def ensure_venv(
     if not venv_python().exists():
         VENV.parent.mkdir(parents=True, exist_ok=True)
         base = find_base_python()
-        log(f"[2/5] 创建虚拟环境 {VENV.name}/（基于 {base}，用 {'uv' if uv else 'python -m venv'}）")
+        log(f"[2/5] 创建虚拟环境（{base}）")
         if uv:
-            run([uv, "venv", "--python", base, str(VENV)])
+            run([uv, "venv", "--quiet", "--python", base, str(VENV)])
         elif PROFILE == "linux-dtk":
             create_dtk_venv(base, wheelhouse)
         else:
@@ -962,19 +964,17 @@ def ensure_venv(
         )
         log(f"[3/5] 保留现有 PyTorch {current['version']} / {backend}")
     pypi_chain, torch_sources = index_chains(index_mode, torch_tag)
-    log("普通依赖下载源顺序: " + " → ".join(pypi_chain))
-    if torch_sources:
-        log("PyTorch 专用下载源顺序: " + " → ".join(url for _, url in torch_sources))
 
     env = _env()
     if uv and needs_copy_link_mode(st_dev_of(uv_cache_dir(uv) or VENV), st_dev_of(ROOT)):
         # uv cache and project are on different filesystems: copy instead of hardlinking, no warning
         env["UV_LINK_MODE"] = "copy"
-        log("  uv 缓存与项目不在同一文件系统，用复制模式安装（UV_LINK_MODE=copy）")
 
     def attempt(cmd: list[str]) -> bool:
-        log("  执行: " + " ".join(cmd))
-        return subprocess.run(cmd, env=env).returncode == 0
+        if subprocess.run(cmd, env=env).returncode == 0:
+            return True
+        log("  命令失败：" + " ".join(cmd))
+        return False
 
     def pip_cmd(
         args: list[str], index_url: str | None, *, upgrade: bool = False, extra: list[str] | None = None
@@ -1036,7 +1036,7 @@ def ensure_venv(
         preserved = protected_versions(installed_versions())
     if "torch" not in preserved:
         die("无法确认已安装 PyTorch 的版本，停止安装。")
-    log(f"[4/5] 安装训练器 ypuddin 及其依赖 [{extras}]")
+    log("[4/5] 安装训练器依赖")
     # Exact constraints apply to the whole dependency resolution, not just the
     # explicitly requested torch package. Conflicting accelerators fail before
     # pip can silently swap the existing CUDA stack for a different build.
@@ -1146,9 +1146,8 @@ def build_frontend(force: bool = False) -> bool:
     if not node_supported(version):
         die(f"Node.js {version} 不支持当前前端；需要 20.19+ 或 22.12+")
     lock = FRONTEND / "package-lock.json"
-    log("[5/5] 构建前端：安装 npm 依赖 ...")
-    run([npm, "ci" if lock.exists() else "install", "--no-audit"], cwd=FRONTEND)
-    log("[5/5] 构建前端：编译打包（tsc + vite build）...")
+    log("[5/5] 构建前端界面")
+    run([npm, "ci" if lock.exists() else "install", "--no-audit", "--no-fund"], cwd=FRONTEND)
     run([npm, "run", "build"], cwd=FRONTEND)
     return True
 
@@ -1204,16 +1203,14 @@ def serve(host: str | None, port: int | None, data_root: str, open_browser: bool
     host, port = server_address(host, port, data_root)
     ypuddin = venv_bin("ypuddin")
     cmd = [str(ypuddin), "serve", "--host", host, "--port", str(port), "--data-root", data_root]
-    log(f"启动服务（数据目录 {data_root}）...")
-    log("  执行: " + " ".join(cmd))
+    log(f"启动服务（数据目录 {data_root}）")
     proc = subprocess.Popen(cmd, cwd=ROOT, env=_env())
     url = f"http://{'127.0.0.1' if host in ('0.0.0.0', '::') else host}:{port}/"
     if wait_for(url + "api/health"):
-        log(f"服务已就绪：{url}   （API 文档：{url}api/docs；按 Ctrl+C 停止）")
+        log(f"服务已就绪：{url}（按 Ctrl+C 停止）")
         if not (FRONTEND / "dist" / "index.html").exists():
-            log("提示：前端未构建，当前只提供 API")
+            log("前端未构建，当前只提供 API")
         if open_browser:
-            log("正在打开浏览器 ...")
             webbrowser.open(url)
     else:
         log("服务 60 秒内没有响应，请查看上面的输出")
@@ -1412,6 +1409,7 @@ def main(argv: list[str]) -> int:
         die("--env-root 不能为空")
     settings_file = Path(opts["data_root"]).expanduser() / "settings.json"
     saved_settings = json.loads(settings_file.read_text(encoding="utf-8")) if settings_file.exists() else {}
+    opts["browser"] = opts["browser"] and saved_settings.get("server", {}).get("open_browser", True)
     if not any(a == "--mirror" or a.startswith("--index=") for a in argv):
         DOWNLOAD_SETTINGS = saved_settings.get("downloads")
     configured_cache = saved_settings.get("paths", {}).get("cache_dir")
@@ -1447,7 +1445,7 @@ def main(argv: list[str]) -> int:
         gpu_desc = "、".join(n for n, _ in gpus) if gpus else "未检测到 NVIDIA 显卡"
     torch_label = "MPS" if PROFILE == "macos-mps" else torch_tag
     log(
-        f"[1/5] 环境检查：Python {platform.python_version()} · 显卡：{gpu_desc} · PyTorch 类型：{torch_label} · 安装工具：{'uv' if uv_path() else 'pip'}"
+        f"[1/5] 环境检查：Python {platform.python_version()} · 显卡：{gpu_desc} · PyTorch：{torch_label}"
     )
     ensure_venv(
         torch_tag,

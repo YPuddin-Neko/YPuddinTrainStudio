@@ -62,7 +62,7 @@ describe('compact configuration workbench contracts', () => {
   });
 
   it('renders actual bucket counts and supports shape selection and a detailed table even if weights are missing', () => {
-    const plan={ok:false,images:8,items:16,captioned:7,total_steps:12,steps_per_epoch:6,buckets:[{w:512,h:768,items:10,batches:4},{w:768,h:512,items:6,batches:2}]} as Plan;
+    const plan={ok:false,images:8,items:16,captioned:7,total_steps:12,steps_per_epoch:6,buckets:[{base: 512,w:512,h:768,items:10,batches:4},{base:512,w:768,h:512,items:6,batches:2}]} as Plan;
     render(<BucketInspector plan={plan} loading={false} onData={() => {}}/>);
     expect(screen.getByRole('button',{name:'512 × 768, 10 样本'})).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button',{name:'512 × 768, 10 样本'}));
@@ -90,7 +90,7 @@ describe('compact configuration workbench contracts', () => {
   });
 
   it('distinguishes native forwards from logical batches in the plan', () => {
-    const plan = {ok:true,images:4,items:8,captioned:4,total_steps:4,steps_per_epoch:2,buckets:[{w:512,h:768,items:8,batches:4}],native:{images:4,downscaled:1,sizes:1,logical_batches:2,max_pixels:1048576,alignment:32,batch_size:4,forward_groups:4}} as Plan;
+    const plan = {ok:true,images:4,items:8,captioned:4,total_steps:4,steps_per_epoch:2,buckets:[{base: 512,w:512,h:768,items:8,batches:4}],native:{images:4,downscaled:1,sizes:1,logical_batches:2,max_pixels:1048576,alignment:32,batch_size:4,forward_groups:4}} as Plan;
     render(<BucketInspector plan={plan} loading={false} onData={()=>{}}/>);
     expect(screen.getByText('实际训练尺寸')).toBeInTheDocument();
     expect(screen.getByText('逻辑批次 / 轮').nextElementSibling).toHaveTextContent('2');
@@ -100,7 +100,7 @@ describe('compact configuration workbench contracts', () => {
     expect(screen.queryByRole('columnheader',{name:'批次'})).not.toBeInTheDocument();
   });
   it('retains native geometry without inventing forward counts for an invalid seed', () => {
-    const plan = {ok:false,images:8,items:8,captioned:8,buckets:[{w:64,h:80,items:8,batches:null}],native:{images:8,downscaled:2,sizes:1,logical_batches:3,max_pixels:4096,alignment:16,batch_size:3,forward_groups:null}} as unknown as Plan;
+    const plan = {ok:false,images:8,items:8,captioned:8,buckets:[{base: 1024,w:64,h:80,items:8,batches:null}],native:{images:8,downscaled:2,sizes:1,logical_batches:3,max_pixels:4096,alignment:16,batch_size:3,forward_groups:null}} as unknown as Plan;
     render(<BucketInspector plan={plan} loading={false} onData={()=>{}}/>);
     expect(screen.getByText('实际训练尺寸')).toBeInTheDocument();
     expect(screen.getByText('分组前向 / 轮').nextElementSibling).toHaveTextContent('—');

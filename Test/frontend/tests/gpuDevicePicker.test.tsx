@@ -95,7 +95,7 @@ it('training multi-device choice enforces the independent count and explains inc
   expect(screen.getByRole('checkbox', {name:/GPU 2/})).toBeDisabled();
   expect(screen.getByRole('button', {name:'提交'})).toBeEnabled();
   expect(screen.getByTestId('request')).toHaveTextContent('{"count":2,"devices":["cuda:0","cuda:1"]}');
-  fireEvent.click(screen.getByRole('checkbox', {name:'自动选择 2 张空闲显卡'}));
+  fireEvent.click(screen.getByRole('switch', {name:'自动选择 2 张空闲显卡'}));
   expect(screen.getByTestId('request')).toHaveTextContent('{"count":2,"devices":[]}');
   expect(screen.queryByRole('combobox', {name:'自动选择数量'})).not.toBeInTheDocument();
   fireEvent.mouseDown(document.body);

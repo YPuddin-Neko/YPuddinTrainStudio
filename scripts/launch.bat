@@ -19,8 +19,6 @@ echo [studio] YPuddin Train Studio
 if defined YPUDDIN_BOOTSTRAP_VENV if exist "%YPUDDIN_BOOTSTRAP_VENV%\Scripts\python.exe" goto :run_profile
 if exist "venv\Scripts\python.exe" goto :run_venv
 
-echo [studio] First run: looking for Python 3.10 - 3.12 ...
-
 py -3.12 -c "import sys" >nul 2>&1
 if %errorlevel%==0 (set "PY=py -3.12" & goto :run_py)
 py -3.11 -c "import sys" >nul 2>&1
@@ -46,7 +44,6 @@ goto :done
 goto :done
 
 :run_py
-echo [studio] Using %PY%
 %PY% scripts\bootstrap.py %*
 goto :done
 

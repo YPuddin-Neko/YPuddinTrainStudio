@@ -113,3 +113,15 @@ def test_plan_mps_uses_fp32_and_does_not_subtract_unified_memory_swap(image_data
     assert mps["memory"]["swapped_mb"] == 0
     assert mps["memory"]["peak_mb_estimate"] > cuda["memory"]["peak_mb_estimate"]
     assert any(warning["code"] == "device.mps_fp32" for warning in mps["warnings"])
+
+
+def test_plan_preserves_base_resolution_groups(image_dataset, tmp_path):
+    cfg = config_for(image_dataset)
+    cfg.dataset.sources[0].resolutions = [64, 80]
+    bundle = build_data(cfg, get_family('toy').spec.latent, cache_root=tmp_path / 'cache')
+    result = plan(cfg, index_db_path=tmp_path / 'plan.sqlite')
+    assert result['ok'], result['errors']
+    assert {bucket['base'] for bucket in result['buckets']} == {64, 80}
+    for base in (64, 80):
+        assert sum(bucket['items'] for bucket in result['buckets'] if bucket['base'] == base) == sum(item.bucket.base == base for item in bundle.train.items)
+    assert result['steps_per_epoch'] == math.ceil(len(BucketBatchSampler(bundle.train.bucket_keys(), cfg.dataset.batch_size)) / cfg.loop.grad_accum)

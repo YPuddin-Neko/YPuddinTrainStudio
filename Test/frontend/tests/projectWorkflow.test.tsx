@@ -157,7 +157,7 @@ describe('project training workspace', () => {
     render(<MemoryRouter><ProjectDataImport projectId="p_work" versionId="v2" defaultIsReg onImported={imported}/></MemoryRouter>);
     expect(screen.getByRole('heading', { name: '添加已有正则图' })).toBeInTheDocument();
     fireEvent.click(screen.getByText('导入选项'));
-    expect(screen.queryByRole('checkbox', { name: /正则/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('switch', { name: /正则/ })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('选择训练文件'),{target:{files:[new File(['image'],'class.png'),new File(['a person'],'class.txt')]}});
     fireEvent.change(screen.getByRole('textbox',{name:'类别提示词'}),{target:{value:'a person'}});
     fireEvent.change(screen.getByRole('spinbutton',{name:'正则损失权重'}),{target:{value:'0.5'}});
@@ -172,7 +172,7 @@ describe('project training workspace', () => {
     render(<MemoryRouter><ProjectDataImport projectId="p_work" defaultIsReg onImported={backend.addSource}/></MemoryRouter>);
     expect(screen.getByRole('heading', { name: '添加已有正则图' })).toBeInTheDocument();
     fireEvent.click(screen.getByText('导入选项'));
-    expect(screen.queryByRole('checkbox', { name: /正则/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('switch', { name: /正则/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '从训练电脑导入' }));
     fireEvent.change(within(screen.getByRole('group', { name: '训练图片文件夹路径' })).getByRole('textbox'), { target: { value: 'D:\\photos\\regularization' } });
     fireEvent.change(screen.getByRole('textbox', { name: '类别提示词' }), { target: { value: 'a person' } });

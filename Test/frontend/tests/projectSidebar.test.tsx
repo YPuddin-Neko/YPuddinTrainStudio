@@ -84,7 +84,7 @@ describe('project navigation belongs to the global sidebar',()=>{
     await act(async()=>complete());
     await waitFor(()=>expect(screen.getByTestId('route')).toHaveTextContent('/projects/p_sidebar/v/v2'));
     expect(sidebar).toHaveClass('hidden');
-    fireEvent.click(screen.getByRole('checkbox',{name:'显示已归档版本'}));
+    fireEvent.click(screen.getByRole('switch',{name:'显示已归档版本'}));
     fireEvent.click(screen.getByRole('combobox',{name:'项目版本'}));
     expect(screen.getByRole('option',{name:'Old experiment · 已归档'})).toBeInTheDocument();
   });

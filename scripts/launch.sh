@@ -23,10 +23,8 @@ if [ -x venv/bin/python ]; then
   exec venv/bin/python scripts/bootstrap.py "$@"
 fi
 
-echo "[studio] 首次运行：正在查找 Python 3.10 - 3.12 ..."
 for cand in python3.12 python3.11 python3.10 python3 python; do
   if command -v "$cand" >/dev/null 2>&1 && "$cand" -c 'import sys; sys.exit(0 if (3,10) <= sys.version_info[:2] < (3,13) else 1)' 2>/dev/null; then
-    echo "[studio] 使用 $(command -v "$cand")（$("$cand" -c 'import platform;print(platform.python_version())')）"
     exec "$cand" scripts/bootstrap.py "$@"
   fi
 done

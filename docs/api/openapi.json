@@ -7959,7 +7959,7 @@
             },
             "type": "array",
             "title": "Resolutions",
-            "description": "分桶的基准面积：1024 表示每桶约 1024×1024 像素，并非把所有图片裁成正方形。填写多个值会让每张图在每个基准分辨率各训练一次；通常先用一个值。",
+            "description": "单个分辨率填 1024；多个用逗号或空格分隔，如 1024, 1536。填写正整数边长，不写 1024×1024。1024 表示每桶约 1024×1024 像素，并非都裁成正方形。每张图会在每个基准分辨率各训练一次，增加总样本和步数。",
             "default": [
               1024
             ],
@@ -13753,7 +13753,7 @@
               "control": "switch",
               "group": "optimizer",
               "order": 170,
-              "show_when": "optimizer.type == 'prodigy'"
+              "show_when": "optimizer.type == 'prodigy' && optimizer.weight_decay > 0"
             }
           },
           "prodigy_steps": {
@@ -13777,7 +13777,7 @@
               "control": "switch",
               "group": "optimizer",
               "order": 190,
-              "show_when": "optimizer.type == 'prodigy_plus_sf'"
+              "show_when": "optimizer.type == 'prodigy_plus_sf' && optimizer.use_speed == false"
             }
           },
           "schedulefree_c": {
@@ -13789,7 +13789,7 @@
             "x-ui": {
               "group": "optimizer",
               "order": 200,
-              "show_when": "optimizer.type == 'prodigy_plus_sf'"
+              "show_when": "optimizer.type == 'prodigy_plus_sf' && optimizer.use_schedulefree == true"
             }
           },
           "split_groups": {
@@ -13813,7 +13813,7 @@
               "control": "switch",
               "group": "optimizer",
               "order": 220,
-              "show_when": "optimizer.type == 'prodigy_plus_sf'"
+              "show_when": "optimizer.type == 'prodigy_plus_sf' && optimizer.split_groups == true"
             }
           },
           "factored": {
@@ -13837,7 +13837,7 @@
               "control": "switch",
               "group": "optimizer",
               "order": 240,
-              "show_when": "optimizer.type == 'prodigy_plus_sf'"
+              "show_when": "optimizer.type == 'prodigy_plus_sf' && optimizer.factored == true"
             }
           },
           "use_stableadamw": {
@@ -13873,7 +13873,7 @@
               "control": "switch",
               "group": "optimizer",
               "order": 270,
-              "show_when": "optimizer.type == 'prodigy_plus_sf'"
+              "show_when": "optimizer.type == 'prodigy_plus_sf' && optimizer.weight_decay > 0"
             }
           },
           "use_schedulefree": {
@@ -14673,6 +14673,11 @@
       },
       "PlanBucket": {
         "properties": {
+          "base": {
+            "type": "integer",
+            "title": "Base",
+            "default": 0
+          },
           "w": {
             "type": "integer",
             "title": "W"
@@ -16948,7 +16953,8 @@
             "default": 0.0,
             "x-ui": {
               "group": "scheduler",
-              "order": 20
+              "order": 20,
+              "show_when": "scheduler.type != 'constant'"
             }
           },
           "num_cycles": {
@@ -17424,6 +17430,11 @@
             "maximum": 65535.0,
             "minimum": 1.0,
             "title": "Port"
+          },
+          "open_browser": {
+            "type": "boolean",
+            "title": "Open Browser",
+            "default": true
           }
         },
         "additionalProperties": true,

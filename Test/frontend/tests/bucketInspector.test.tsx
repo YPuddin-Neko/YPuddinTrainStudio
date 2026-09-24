@@ -13,7 +13,7 @@ beforeEach(async () => { await i18n.changeLanguage('zh-CN'); });
 
 it('exposes the effective native budget as editable controls without changing it on render',()=>{
   const change=vi.fn();
-  const plan={ok:true,errors:[],warnings:[],buckets:[{w:864,h:1200,items:133,batches:133}],native:{max_pixels:1048576,downscaled:152}} as unknown as Plan;
+  const plan={ok:true,errors:[],warnings:[],buckets:[{base: 0,w:864,h:1200,items:133,batches:133}],native:{max_pixels:1048576,downscaled:152}} as unknown as Plan;
   render(<BucketInspector plan={plan} loading={false} onData={()=>{}} dataset={{resolution_mode:'native',native_max_pixels:1048576,native_max_side:4096}} onSizingChange={change}/>);
   expect(screen.getByRole('heading',{name:'实际训练尺寸'})).toBeVisible();
   expect(screen.getByText('1024² = 1,048,576 像素 · 152 张因上限缩小')).toBeVisible();
@@ -78,7 +78,7 @@ it('shows the dataset action for a workspace that has no configured sources', ()
 });
 
 it('explains each GPU batch and memory when a distributed plan is selected', () => {
-  const plan = {ok:true, errors:[], warnings:[], images:16, items:16, captioned:16, buckets:[{w:64,h:64,items:16,batches:8}], steps_per_epoch:2, total_steps:8, params:{base:1000,trainable:100,adapted_layers:1,training_mode:'adapter' as const}, memory:{weights_mb:0,swapped_mb:0,text_encoder_mb:0,adapter_mb:0,optimizer_mb:0,gradients_mb:0,estimate_scope:'per_device' as const,communication_mb_estimate:0,optimizer_workspace_mb_estimate:0,heuristic:true,peak_mb_estimate:4096}, distributed:{strategy:'ddp' as const,parameter_storage:'replicated' as const,gradient_storage:'replicated' as const,optimizer_storage:'replicated' as const,world_size:2,per_device_batch_size:2,effective_batch_size:8,batches_per_rank:4,dropped_samples:1,tail_policy:'drop_incomplete_rank_group'}};
+  const plan = {ok:true, errors:[], warnings:[], images:16, items:16, captioned:16, buckets:[{base: 64,w:64,h:64,items:16,batches:8}], steps_per_epoch:2, total_steps:8, params:{base:1000,trainable:100,adapted_layers:1,training_mode:'adapter' as const}, memory:{weights_mb:0,swapped_mb:0,text_encoder_mb:0,adapter_mb:0,optimizer_mb:0,gradients_mb:0,estimate_scope:'per_device' as const,communication_mb_estimate:0,optimizer_workspace_mb_estimate:0,heuristic:true,peak_mb_estimate:4096}, distributed:{strategy:'ddp' as const,parameter_storage:'replicated' as const,gradient_storage:'replicated' as const,optimizer_storage:'replicated' as const,world_size:2,per_device_batch_size:2,effective_batch_size:8,batches_per_rank:4,dropped_samples:1,tail_policy:'drop_incomplete_rank_group'}};
   render(<BucketInspector plan={plan} loading={false} onData={() => {}}/>);
   expect(screen.getByText('训练显卡').parentElement).toHaveTextContent('2');
   expect(screen.getByText('每卡批量').parentElement).toHaveTextContent('2');
@@ -101,4 +101,16 @@ it('allows clearing a size limit while typing and never sends an incomplete or o
   expect(limit).toHaveValue(1048576);
   fireEvent.change(limit,{target:{value:'4194304'}});
   expect(change).toHaveBeenCalledWith({native_max_pixels:4194304});
+});
+
+it('keeps equal bucket sizes from different base resolutions in separately labelled groups', () => {
+  const plan = {ok:true,errors:[],warnings:[],buckets:[{base:1024,w:1024,h:1024,items:2,batches:1},{base:1536,w:1024,h:1024,items:3,batches:2}]} as unknown as Plan;
+  render(<BucketInspector plan={plan} loading={false} onData={()=>{}}/>);
+  expect(screen.getByRole('region',{name:'分辨率 1024'})).toHaveTextContent('2 样本');
+  expect(screen.getByRole('region',{name:'分辨率 1536'})).toHaveTextContent('3 样本');
+  fireEvent.click(screen.getByRole('button',{name:'分辨率 1536 · 1024 × 1024, 3 样本'}));
+  expect(screen.getByText('分辨率 1536 · 1024 × 1024')).toBeVisible();
+  fireEvent.click(screen.getByRole('button',{name:'分桶明细表'}));
+  expect(screen.getByRole('columnheader',{name:'分辨率'})).toBeVisible();
+  expect(screen.getByRole('cell',{name:'1536'})).toBeVisible();
 });

@@ -13,6 +13,7 @@ import { familyParameterOptions, modelAssetUnsupportedReason, modelFamilyWeights
 import { managedValueLabel, normalizeOptimizerConfig, optimizerManagedReason, restoreOptimizerSelection, selectOptimizer } from '../../utils/optimizerCapabilities';
 import NumericControl from './NumericControl';
 import StudioSelect from '../../components/StudioSelect';
+import Switch from '../../components/Switch';
 import ConfigHelp from '../../components/ConfigHelp';
 import CaptionFormatSelect from '../../components/CaptionFormatSelect';
 import './config-fields.css';
@@ -347,16 +348,19 @@ const SourcesEditor: React.FC<{
     <div className="space-y-3" data-testid="sources-editor">
       {value.map((src, idx) => {
         const role = sourceRoles.find(item => item.path === src.path && item.section === section);
+        // Version-owned purposes come from the server; never guess them from folder names.
+        const pending = versionSources && !role;
         const isReg = role?.managed ? role.is_reg : src.is_reg === undefined ? !!role?.is_reg : !!src.is_reg;
         const folder = String(src.path || '').replace(/\\/g,'/').split('/').filter(Boolean).pop() || text('未选择文件夹','No folder selected');
+        const n = idx + 1;
         return (
-        <div key={idx} role="group" aria-label={t('train.sourceN', { n: idx + 1 })} className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
+        <div key={idx} role="group" aria-label={t('train.sourceN', { n })} className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
           <div className="flex flex-wrap justify-between items-center gap-2">
             <span className="min-w-0 flex-1 truncate font-semibold text-slate-700 dark:text-slate-300" title={src.path}>
               {folder}
             </span>
             <span className="flex items-center gap-2">
-              <span>{isReg ? text('正则集','Regularization') : text('训练集','Training')} · {role?.images == null ? text('图片数待索引','Count pending indexing') : text(`${role.images} 张图片`,`${role.images} images`)}</span>{isReg && <ConfigHelp label={text('数据用途说明','Dataset purpose help')}>{text('正则图默认不继承训练触发词。','Regularization images do not inherit the training trigger by default.')}</ConfigHelp>}
+              <span>{pending ? text('用途待确认','Purpose pending') : isReg ? text('正则集','Regularization') : text('训练集','Training')} · {role?.images == null ? text('图片数待索引','Count pending indexing') : text(`${role.images} 张图片`,`${role.images} images`)}</span>{isReg && <ConfigHelp label={text('数据用途说明','Dataset purpose help')}>{text('正则图默认不继承训练触发词。','Regularization images do not inherit the training trigger by default.')}</ConfigHelp>}
               <button type="button" onClick={() => removeSource(idx)} className="p-1 text-red-500 hover:text-red-700"
                 aria-label={text(`从本次配置移除来源 ${folder}（保留文件）`,`Remove source ${folder} from this configuration (keep files)`)}
                 title={text('从本次配置移除来源（保留文件）','Remove from this configuration (keep files)')}>
@@ -364,12 +368,10 @@ const SourcesEditor: React.FC<{
               </button>
             </span>
           </div>
-          <p>{role?.managed ? text(`当前版本 / ${role.is_reg ? 'reg' : 'traindata'}`,`Current version / ${role.is_reg ? 'reg' : 'traindata'}`) : versionSources && !role ? text('目录用途待核对','Directory ownership pending') : text('外部 / 旧版来源','External / legacy source')} · {text(`每图重复 ${src.repeats ?? 1} 次`,`Repeats ${src.repeats ?? 1}`)}{isReg ? text(` · 正则权重 ${src.prior_weight ?? 1}`,` · Prior weight ${src.prior_weight ?? 1}`) : ''}</p>
-          <details><summary>{text('高级来源设置','Advanced source settings')}</summary>
           <div className="source-path-control flex min-w-0 gap-2">
             <input
               type="text"
-              aria-label={text(`图片目录 ${idx+1}`, `Image folder ${idx+1}`)}
+              aria-label={text(`图片目录 ${n}`, `Image folder ${n}`)}
               placeholder="/path/to/dataset"
               value={src.path || ''}
               onChange={(e) => updateSource(idx, 'path', e.target.value)}
@@ -385,24 +387,22 @@ const SourcesEditor: React.FC<{
             </button>
           </div>
           <div className="source-settings-grid">
-            <label><span>{t('dataset.repeats')}<ConfigHelp label={text('重复次数说明','Repeats help')}>{text('每轮重复使用这组图片的次数。默认 1；20 张图重复 5 次计为 100 个样本。增加次数会增加训练占比和总步数，也可能过拟合。','Uses per image per epoch, default 1. Twenty images repeated five times count as 100 samples. More repeats increase their training share and total steps, with a risk of overfitting.')}</ConfigHelp></span><input aria-label={text(`重复次数 ${idx+1}`,`Repeats ${idx+1}`)} type="number" min="1" step="1" value={src.repeats ?? 1} onChange={event=>updateSource(idx,'repeats',event.target.value === '' ? '' : Number(event.target.value))}/></label>
-            {isReg && <label><span>{text('正则损失权重','Regularization loss weight')}<ConfigHelp label={text('正则损失权重说明','Regularization loss weight help')}>{text('正则图片的损失乘数。默认 1；0.5 减半，0 不贡献训练梯度。','Multiplier for regularization-image loss. Default 1; 0.5 halves it, while 0 contributes no training gradient.')}</ConfigHelp></span><input aria-label={text(`正则损失权重 ${idx+1}`,`Regularization loss weight ${idx+1}`)} type="number" min="0" step="0.1" value={src.prior_weight ?? 1} onChange={event=>updateSource(idx,'prior_weight',event.target.value === '' ? '' : Number(event.target.value))}/></label>}
+            <label><span>{t('dataset.repeats')}<ConfigHelp label={text('重复次数说明','Repeats help')}>{text('每轮重复使用这组图片的次数。默认 1；20 张图重复 5 次计为 100 个样本。增加次数会增加训练占比和总步数，也可能过拟合。','Uses per image per epoch, default 1. Twenty images repeated five times count as 100 samples. More repeats increase their training share and total steps, with a risk of overfitting.')}</ConfigHelp></span><input aria-label={text(`重复次数 ${n}`,`Repeats ${n}`)} type="number" min="1" step="1" value={src.repeats ?? 1} onChange={event=>updateSource(idx,'repeats',event.target.value === '' ? '' : Number(event.target.value))}/></label>
+            {!role?.managed && !pending && <div className="source-purpose"><span>{text('用途','Purpose')}</span><StudioSelect aria-label={text(`用途 ${n}`,`Purpose ${n}`)} value={isReg ? 'reg' : 'train'} onValueChange={next=>updateSource(idx,'is_reg',next === 'reg')} options={[{value:'train',label:text('训练集','Training')},{value:'reg',label:text('正则集','Regularization')}]}/></div>}
+            {isReg && <label><span>{text('正则损失权重','Regularization loss weight')}<ConfigHelp label={text('正则损失权重说明','Regularization loss weight help')}>{text('正则图片的损失乘数。默认 1；0.5 减半，0 不贡献训练梯度。','Multiplier for regularization-image loss. Default 1; 0.5 halves it, while 0 contributes no training gradient.')}</ConfigHelp></span><input aria-label={text(`正则损失权重 ${n}`,`Regularization loss weight ${n}`)} type="number" min="0" step="0.1" value={src.prior_weight ?? 1} onChange={event=>updateSource(idx,'prior_weight',event.target.value === '' ? '' : Number(event.target.value))}/></label>}
+            <label><span>{text('无标签时的描述','Text for uncaptioned images')}<ConfigHelp label={text('无标签时的描述说明','Uncaptioned text help')}>{text('图片没有标签文件时，用这段文字作为标签。留空则不补充；不会创建或修改标签文件。','Used as the caption for images without a caption file. Leave empty to add nothing; caption files are not created or changed.')}</ConfigHelp></span><input aria-label={text(`无标签时的描述 ${n}`,`Text for uncaptioned images ${n}`)} value={src.class_prompt ?? ''} onChange={event=>updateSource(idx,'class_prompt',event.target.value || null)} placeholder={text('例如：a person','For example: a person')}/></label>
           </div>
-          {!role?.managed && (versionSources && !role ? null : <details><summary>{text('外部来源用途','External source purpose')}</summary><label><input type="checkbox" checked={isReg} onChange={event=>updateSource(idx,'is_reg',event.target.checked)}/>{text('外部来源用于正则训练','Use external source for regularization')}</label></details>)}
-          <details className="source-fallback"><summary>{text('缺少标签时的默认描述（可选）','Fallback description when captions are missing (optional)')}</summary><input aria-label={text(`默认描述 ${idx+1}`,`Fallback description ${idx+1}`)} value={src.class_prompt ?? ''} onChange={event=>updateSource(idx,'class_prompt',event.target.value || null)} placeholder={text('例如：a person；不生成或修改标签文件','For example: a person; does not create or edit caption files')}/></details>
-          </details>
         </div>
       );})}
-      <details><summary>{text('高级：引用已有数据目录','Advanced: reference an existing dataset folder')}</summary><button
+      <button
         type="button"
         onClick={addSource}
         data-testid="add-source"
         className="flex items-center space-x-1 px-3 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded border border-slate-300 dark:border-slate-600"
       >
         <Plus className="w-3.5 h-3.5" />
-        <span>{t('train.addSource', '添加数据集源')}</span>
+        <span>{t('train.addSource', '添加数据源')}</span>
       </button>
-      </details>
 
       {modalIndex !== null && (
         <PathPickerModal
@@ -581,7 +581,7 @@ function ResolutionInput({value, onChange, label}: {value: number[] | string; on
     const tokens = raw.replace(/[\u005b\u005d]/g, '').split(/[,，\s]+/).filter(Boolean);
     onChange(tokens.length && tokens.every(token => /^\d+$/.test(token)) ? tokens.map(Number) : raw);
   };
-  return <div className="resolution-editor"><input aria-label={label} inputMode="numeric" value={draft} onChange={event => update(event.target.value)} placeholder="1024"/></div>;
+  return <div className="resolution-editor"><input aria-label={label} inputMode="numeric" value={draft} onChange={event => update(event.target.value)} placeholder="1024, 1536"/></div>;
 }
 
 /** Nullable unions retain their actual scalar/object type and explicit null value. */
@@ -627,7 +627,7 @@ const SchemaValueInput: React.FC<{
     input = <StudioSelect aria-label={name} value={value == null ? '' : String(value)} onValueChange={next => onChange(next === '' && nullable ? null : prop.enum!.find(item => String(item) === next))}
       options={[...(nullable ? [{value:'',label:t('train.unset')}] : []),...prop.enum.map(item=>({value:String(item),label:String(item)}))]}/>;
   } else if (prop.type === 'boolean') {
-    input = <input type="checkbox" aria-label={name} checked={!!value} onChange={(e) => onChange(e.target.checked)} />;
+    input = <Switch aria-label={name} checked={!!value} onCheckedChange={onChange}>{value ? (english ? 'Enabled' : '已开启') : (english ? 'Disabled' : '未开启')}</Switch>;
   } else if (prop.type === 'array') {
     input = <textarea className={cls} aria-label={name} value={typeof value === 'string' ? value : JSON.stringify(value ?? [])}
       onChange={(e) => { try { onChange(JSON.parse(e.target.value)); } catch { onChange(e.target.value); } }} />;
@@ -640,13 +640,11 @@ const SchemaValueInput: React.FC<{
       onChange={(e) => onChange(e.target.value === '' ? (nullable && !numeric ? null : '') : numeric ? Number(e.target.value) : e.target.value)} />;
   }
   return <div className={compact ? 'config-union' : 'space-y-2'}>
-    {nullable && <label className="flex items-center gap-2 text-xs text-[var(--studio-dim)]">
-      <input type="checkbox" aria-label={`${name}.unset`} checked={value == null}
-        onChange={(e) => onChange(e.target.checked ? null : initialValue())} /><span title={unsetLabel}>{unsetLabel}</span>
-    </label>}
+    {nullable && <Switch className="studio-switch-small config-union-toggle" aria-label={`${name}.unset`} checked={value == null}
+      onCheckedChange={checked => onChange(checked ? null : initialValue())}>{unsetLabel}</Switch>}
     {input}
-    {constant && <label className="flex items-center gap-2 text-xs"><input type="checkbox" aria-label={`${name}.${constant.const}`}
-      checked={value === constant.const} onChange={(e) => onChange(e.target.checked ? constant.const : property.default ?? 16)} />{String(constant.const)}</label>}
+    {constant && <Switch className="studio-switch-small config-union-toggle" aria-label={`${name}.${constant.const}`}
+      checked={value === constant.const} onCheckedChange={checked => onChange(checked ? constant.const : property.default ?? 16)}>{String(constant.const)}</Switch>}
   </div>;
 };
 
@@ -818,15 +816,15 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const numericMin = ui.min ?? prop.minimum ?? prop.exclusiveMinimum;
     const numericMax = ui.max ?? prop.maximum ?? prop.exclusiveMaximum;
     const managedReason = computeManaged?.reason || trainingManagedReason(value, fullPathKey, english) || optimizerManagedReason(schema, value, fullPathKey, english);
+    if (optimizerManagedReason(schema, value, fullPathKey, english) && ['optimizer.kahan', 'optimizer.group_lr', 'adapter.lr_scale', 'scheduler.warmup_steps'].includes(fullPathKey)) return null;
 
     let control = null;
 
     // 1. 递归对象渲染
     if (managedReason && ['training.train_backbone', 'training.train_text_encoder'].includes(fullPathKey)) {
-      control = <label className="config-toggle-control" data-state={fieldValue ? 'on' : 'off'}>
-        <input id={fieldId} type="checkbox" aria-label={fieldLabel} aria-describedby={`${fieldId}-managed-reason`} checked={!!fieldValue} disabled/>
-        <span>{fieldValue ? (english ? 'Enabled' : '已开启') : (english ? 'Disabled' : '未开启')}</span>
-      </label>;
+      control = <div className="config-toggle-control" data-state={fieldValue ? 'on' : 'off'}>
+        <Switch id={fieldId} aria-label={fieldLabel} aria-describedby={`${fieldId}-managed-reason`} checked={!!fieldValue} disabled>{fieldValue ? (english ? 'Enabled' : '已开启') : (english ? 'Disabled' : '未开启')}</Switch>
+      </div>;
     } else if (managedReason) {
       const display = computeManaged?.label ?? (prop.enum ? configOptionLabel(fullPathKey, String(fieldValue), english) : managedValueLabel(fieldValue, english));
       control = <div className="config-managed-value"><output id={fieldId} aria-label={fieldLabel} aria-describedby={`${fieldId}-managed-reason`}>{display}</output><span>{english ? 'Automatic' : '自动管理'}</span></div>;
@@ -1004,18 +1002,12 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       );
     } else if (prop.type === 'boolean' || ui.control === 'switch') {
       control = (
-        <label className="config-toggle-control" data-state={fieldValue ? 'on' : 'off'}>
-        <input
-          id={fieldId}
-          aria-label={fieldLabel}
-          aria-invalid={!!errorItem}
-          type="checkbox"
-          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-          checked={!!fieldValue}
-          onChange={(e) => onChange(setNestedValue(value, path, e.target.checked))}
-        />
-        <span>{fieldValue ? (english ? 'Enabled' : '已开启') : (english ? 'Disabled' : '未开启')}</span>
-        </label>
+        <div className="config-toggle-control" data-state={fieldValue ? 'on' : 'off'}>
+          <Switch id={fieldId} aria-label={fieldLabel} aria-invalid={!!errorItem} checked={!!fieldValue}
+            onCheckedChange={checked => onChange(setNestedValue(value, path, checked))}>
+            {fieldValue ? (english ? 'Enabled' : '已开启') : (english ? 'Disabled' : '未开启')}
+          </Switch>
+        </div>
       );
     } else if (prop.type === 'integer' || prop.type === 'number') {
       if ((percentage || ui.control === 'slider') && numericMin !== undefined && numericMax !== undefined) {
@@ -1088,8 +1080,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       control = <div className="config-scientific-input">{control}<output aria-label={`${fieldLabel} · ${english ? 'scientific notation' : '科学计数法'}`} title={`${scientific} · ${english ? 'The same value in scientific notation' : '同一数值的科学计数法'}`}>{scientific}</output></div>;
     }
     const scopeHelp = fullPathKey === 'adapter.preset' ? (english
-      ? 'Chooses trainable layers. A wider scope uses more parameters and memory.'
-      : '选择参与训练的层；扩大范围会增加参数和显存占用。') : null;
+      ? 'Selects which layers receive adapters. All linear layers widens this scope; LoKr Full controls how each adapter is parameterized. The two choices are independent and neither unfreezes the base model.'
+      : '选择哪些层添加适配器。“全部线性层”扩大作用范围；LoKr 的 Full 决定每个适配器使用完整因子矩阵，两者可同时选择，都不会解冻底模。') : null;
     const selectedPreset = fullPathKey === 'adapter.preset' ? family?.presets?.find(preset => preset.name === (fieldValue || family.default_preset)) : undefined;
     const modelPrecisionHint = family?.runtime_backend === 'mps'
       ? (english ? 'The current Apple GPU uses FP32 for model loading and computation.' : '当前 Apple GPU 使用 FP32 加载和计算。')
@@ -1284,6 +1276,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
             const order = ['loop.gpu_count', 'dataset.batch_size'];
             const rank = (node: React.ReactNode) => { const index = order.indexOf(String((node as React.ReactElement).key)); return index < 0 ? order.length : index; };
             return rank(a) - rank(b);
+          }) : compact && groupName === 'logging' ? [...groupData.fields].sort((a, b) => {
+            const names = ['logging.tensorboard', 'logging.level', 'logging.events_path'];
+            return names.indexOf(String((a as React.ReactElement).key)) - names.indexOf(String((b as React.ReactElement).key));
           }) : groupData.fields}
         </FieldGroup>
       ))}

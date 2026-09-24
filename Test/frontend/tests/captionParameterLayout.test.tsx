@@ -48,7 +48,7 @@ describe('compact data and caption parameter layout', () => {
     expect(screen.queryByTestId('field-dataset.text_encoding')).not.toBeInTheDocument();
     expect(current()).toEqual(initial);
     rerender(<Editor initial={initial} advanced />);
-    const cache = within(screen.getByTestId('field-dataset.cache_latents')).getByRole('checkbox');
+    const cache = within(screen.getByTestId('field-dataset.cache_latents')).getByRole('switch');
     expect(cache).not.toBeChecked();
     const mode = screen.getByTestId('text-encoding-select');
     expect(mode).toHaveTextContent('每步编码文本');
