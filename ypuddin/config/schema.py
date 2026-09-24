@@ -522,7 +522,7 @@ class OptimizerConfig(_Strict):
 
     type: str = F(
         "adamw",
-        help="默认 AdamW。8-bit 选项需要 CUDA 和 bitsandbytes，扩展优化器需要安装对应依赖。自定义优化器填写 module.Class，额外参数填在下方。",
+        help="默认 AdamW。8-bit 选项需要 CUDA 和 bitsandbytes，扩展优化器需要安装对应依赖。",
         ui_={
             "x-ui": {
                 **ui("optimizer", order=0, control="select")["x-ui"],
@@ -540,7 +540,6 @@ class OptimizerConfig(_Strict):
                     "adamw_sf",
                     "automagic",
                 ],
-                "allow_custom": True,
             }
         },
     )
@@ -568,7 +567,7 @@ class OptimizerConfig(_Strict):
     eps: float | None = F(
         1e-8,
         gt=0,
-        help="防止梯度大小估计过小时除法不稳定，通常保留优化器默认值。PPSF 勾选“Adam-atan2”会切换更新方式，此时不能同时启用 StableAdamW 或 FOCUS。",
+        help="防止梯度大小估计过小时除法不稳定，通常保留优化器默认值。PPSF 选择“Adam-atan2”会切换更新方式，此时不能同时启用 StableAdamW 或 FOCUS。",
         ui_=ui(
             "optimizer",
             order=40,
@@ -577,7 +576,7 @@ class OptimizerConfig(_Strict):
     )
     args: dict[str, Any] = F(
         default_factory=dict,
-        help="填写自定义优化器或尚无独立控件的参数；避免与已有控件或自动管理的参数重复。",
+        help="填写当前优化器尚无独立控件的参数；避免与已有控件或自动管理的参数重复。",
         ui_=ui("optimizer", order=50, advanced=True),
     )
     grad_clip_norm: float = F(
@@ -620,7 +619,7 @@ class OptimizerConfig(_Strict):
         None,
         ge=0,
         lt=1,
-        help="步长估计所用的历史平滑系数。勾选“自动”时取 β2 的平方根；通常保留自动值。",
+        help="步长估计所用的历史平滑系数。留空时取 β2 的平方根；通常保留自动值。",
         ui_=ui("optimizer", order=120, show_when="optimizer.type in ['prodigy','prodigy_plus_sf']"),
     )
 
@@ -644,7 +643,7 @@ class OptimizerConfig(_Strict):
     growth_rate: float | None = F(
         None,
         ge=1,
-        help="限制 D 估计每一步最多增长的倍率；勾选“不限”时不设上限。1.02 表示相对上一步最多增加约 2%，通常保留不限。",
+        help="限制 D 估计每一步最多增长的倍率；留空时不设上限。1.02 表示相对上一步最多增加约 2%，通常保留不限。",
         ui_=ui("optimizer", order=150, show_when="optimizer.type == 'prodigy'"),
     )
 
@@ -707,7 +706,7 @@ class OptimizerConfig(_Strict):
 
     use_stableadamw: bool = F(
         True,
-        help="使用 StableAdamW 的更新归一化，默认开启以约束异常更新；不能与 Adam-atan2（勾选 EPS 旁的选项）组合。",
+        help="使用 StableAdamW 的更新归一化，默认开启以约束异常更新；不能与 Adam-atan2（在 EPS 输入处选择）组合。",
         ui_=ui("optimizer", order=250, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
     )
 

@@ -106,25 +106,34 @@ it('allows clearing beta, rank, learning rate and slider numbers before replacem
 });
 
 it.each([
-  ['prodigy_plus_sf', 'eps', 1e-8, '1e-7'],
   ['prodigy_plus_sf', 'beta3', 0.9, '0.95'],
   ['prodigy', 'growth_rate', 1.02, '1.05'],
-])('only changes nullable %s %s to automatic mode through its checkbox', async (type, name, initial, raw) => {
+])('returns nullable %s %s to its default after clearing and leaving the field', async (type, name, initial, raw) => {
   render(<NumericEditor initial={{optimizer: {type, [name]: initial}}}/>);
   const input = screen.getByRole('spinbutton', {name: `optimizer.${name}`});
-  const automatic = screen.getByRole('switch', {name: `optimizer.${name}.unset`});
-  await act(async () => { await userEvent.clear(input); });
-  expect(input).toHaveValue(null);
-  expect(automatic).not.toBeChecked();
+  await userEvent.clear(input);
   expect(JSON.parse(screen.getByTestId('numeric-configuration').textContent || '{}').optimizer[name]).toBe('');
-  await act(async () => { await userEvent.type(input, String(raw)); });
+  await userEvent.type(input, String(raw));
   expect(input).toHaveValue(Number(raw));
-  await act(async () => { await userEvent.click(automatic); });
-  expect(automatic).toBeChecked();
+  await userEvent.clear(input);
+  fireEvent.blur(input);
   expect(JSON.parse(screen.getByTestId('numeric-configuration').textContent || '{}').optimizer[name]).toBe(null);
-  await act(async () => { await userEvent.click(automatic); });
-  expect(automatic).not.toBeChecked();
-  expect(input).not.toHaveValue(null);
+  expect(screen.queryByRole('switch', {name: `optimizer.${name}.unset`})).not.toBeInTheDocument();
+});
+
+it('requires an explicit mode change for Adam-atan2 and restores the edited EPS', () => {
+  render(<NumericEditor initial={{optimizer:{type:'prodigy_plus_sf',eps:1e-8}}}/>);
+  const input=screen.getByRole('spinbutton',{name:'optimizer.eps'});
+  fireEvent.change(input,{target:{value:''}});fireEvent.blur(input);
+  expect(JSON.parse(screen.getByTestId('numeric-configuration').textContent || '{}').optimizer.eps).toBe('');
+  fireEvent.change(input,{target:{value:'1e-7'}});
+  fireEvent.click(screen.getByRole('combobox',{name:'optimizer.eps.mode'}));
+  fireEvent.click(screen.getByRole('option',{name:'Adam-atan2'}));
+  expect(JSON.parse(screen.getByTestId('numeric-configuration').textContent || '{}').optimizer.eps).toBeNull();
+  expect(screen.queryByRole('spinbutton',{name:'optimizer.eps'})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('combobox',{name:'optimizer.eps.mode'}));
+  fireEvent.click(screen.getByRole('option',{name:'EPS'}));
+  expect(screen.getByRole('spinbutton',{name:'optimizer.eps'})).toHaveValue(1e-7);
 });
 
 it('gives each beta a separate readable name and only changes the chosen value', () => {
@@ -160,7 +169,7 @@ it('uses one labelled boolean control across groups, including keyboard activati
   changed.mockClear();
   view.rerender(<SchemaForm schema={boolSchema} value={value} onChange={changed} compact readOnly/>);
   expect(screen.getByRole('switch', {name: '低精度更新补偿'})).toBeDisabled();
-  await userEvent.click(screen.getByText('未开启'));
+  await userEvent.click(screen.getByRole('switch', {name:'低精度更新补偿'}));
   expect(changed).not.toHaveBeenCalled();
 });
 

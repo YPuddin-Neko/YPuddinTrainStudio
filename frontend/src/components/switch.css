@@ -8,10 +8,10 @@
 .studio-switch:has(> input:disabled) { cursor:default; opacity:.6; }
 .studio-switch:has(> input[aria-invalid="true"]) .studio-switch-track { box-shadow:0 0 0 1px var(--studio-danger-line, #dc2626); }
 .studio-switch-text { min-width:0; overflow-wrap:anywhere; }
+.studio-switch-track,.studio-switch-text { pointer-events:none; }
 .studio-switch[data-state="off"] > .studio-switch-text { color:var(--studio-dim); }
 .studio-switch-small .studio-switch-track { width:28px; height:16px; }
 .studio-switch-small .studio-switch-thumb { width:12px; height:12px; }
 .studio-switch-small > input:checked + .studio-switch-track > .studio-switch-thumb { transform:translateX(12px); }
 .studio-switch-small { gap:6px; font-size:12px; }
-.config-union-toggle .studio-switch-text { white-space:nowrap; }
 @media (prefers-reduced-motion: reduce) { .studio-switch-track, .studio-switch-thumb { transition:none; } }

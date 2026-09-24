@@ -17,6 +17,8 @@ import Switch from '../../components/Switch';
 import ConfigHelp from '../../components/ConfigHelp';
 import CaptionFormatSelect from '../../components/CaptionFormatSelect';
 import './config-fields.css';
+import { optionalValueLabel } from './optionalValues';
+import ParameterFields, { FieldSection } from './ParameterFields';
 
 interface SchemaProperty {
   type?: string;
@@ -584,25 +586,25 @@ function ResolutionInput({value, onChange, label}: {value: number[] | string; on
   return <div className="resolution-editor"><input aria-label={label} inputMode="numeric" value={draft} onChange={event => update(event.target.value)} placeholder="1024, 1536"/></div>;
 }
 
-/** Nullable unions retain their actual scalar/object type and explicit null value. */
+/** Nullable values keep their type; an empty numeric draft becomes null on blur. */
 const SchemaValueInput: React.FC<{
   schema: any; property: SchemaProperty; value: any; name: string; placeholder?: string; compact?: boolean; onChange: (value: any) => void;
 }> = ({ schema, property, value, name, placeholder, compact = false, onChange }) => {
   const { t, i18n } = useTranslation();
   const alternatives = property.anyOf || [property];
-  const nullable = alternatives.some((p) => p.type === 'null');
-  const constant = alternatives.find((p) => p.const !== undefined);
-  const branch = alternatives.find((p) => p.type !== 'null' && p.const === undefined) || alternatives[0];
+  const nullable = alternatives.some(p => p.type === 'null');
+  const constant = alternatives.find(p => p.const !== undefined);
+  const branch = alternatives.find(p => p.type !== 'null' && p.const === undefined) || alternatives[0];
   const resolved = branch.$ref ? { ...resolveRef(schema, branch.$ref), ...branch } : branch;
   const prop: SchemaProperty = { ...property, ...resolved };
   const english = i18n.resolvedLanguage?.startsWith('en') || false;
-  const unsetLabel = name === 'optimizer.beta3' ? (english ? 'Automatic' : '自动')
-    : name === 'optimizer.growth_rate' ? (english ? 'Unlimited' : '不限')
-    : name === 'optimizer.eps' ? 'Adam-atan2'
-    : compact ? (english ? 'Unset' : '不设置') : t('train.unset');
-  const cls = 'w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:bg-slate-900 dark:border-slate-600';
+  const emptyLabel = optionalValueLabel(name, english, placeholder);
+  const algorithmChoice = nullable && name === 'optimizer.eps';
+  const lastExplicit = React.useRef<any>();
+  if (value != null && value !== '' && value !== constant?.const) lastExplicit.current = value;
   const initialValue = () => {
-    if (prop.default != null) return prop.default;
+    if (lastExplicit.current !== undefined) return lastExplicit.current;
+    if (prop.default != null && prop.default !== constant?.const) return prop.default;
     if (prop.type === 'object') return {};
     if (prop.type === 'boolean') return false;
     if (prop.type === 'string') return '';
@@ -611,41 +613,43 @@ const SchemaValueInput: React.FC<{
     if (Number.isFinite(familyDefault)) return familyDefault;
     const minimum = prop.minimum ?? prop['x-ui']?.min ?? 0;
     return prop.exclusiveMinimum != null && minimum <= prop.exclusiveMinimum
-      ? prop.exclusiveMinimum + (prop['x-ui']?.step || 1)
-      : minimum;
+      ? prop.exclusiveMinimum + (prop['x-ui']?.step || 1) : minimum;
   };
-  let input: React.ReactNode;
-  if (prop.type === 'object' && prop.properties) {
-    input = value == null ? null : <div className="space-y-3 border-l pl-3 dark:border-slate-600">
-      {Object.entries(prop.properties).map(([key, child]) => <label key={key} className="block space-y-1 text-xs">
-        <span>{t(`fields.${key}`, child.title || key)}</span>
-        <SchemaValueInput schema={schema} property={child} value={value[key] === undefined ? child.default : value[key]}
-          name={`${name}.${key}`} compact={compact} onChange={(next) => onChange({ ...value, [key]: next })} />
-      </label>)}
-    </div>;
-  } else if (prop.enum) {
-    input = <StudioSelect aria-label={name} value={value == null ? '' : String(value)} onValueChange={next => onChange(next === '' && nullable ? null : prop.enum!.find(item => String(item) === next))}
-      options={[...(nullable ? [{value:'',label:t('train.unset')}] : []),...prop.enum.map(item=>({value:String(item),label:String(item)}))]}/>;
-  } else if (prop.type === 'boolean') {
-    input = <Switch aria-label={name} checked={!!value} onCheckedChange={onChange}>{value ? (english ? 'Enabled' : '已开启') : (english ? 'Disabled' : '未开启')}</Switch>;
-  } else if (prop.type === 'array') {
-    input = <textarea className={cls} aria-label={name} value={typeof value === 'string' ? value : JSON.stringify(value ?? [])}
-      onChange={(e) => { try { onChange(JSON.parse(e.target.value)); } catch { onChange(e.target.value); } }} />;
-  } else {
-    const numeric = prop.type === 'integer' || prop.type === 'number';
-    input = <input className={cls} aria-label={name} type={numeric ? 'number' : 'text'}
-      value={constant && value === constant.const ? '' : value ?? ''} disabled={!!constant && value === constant.const}
-      min={(prop as any).minimum ?? prop['x-ui']?.min} max={(prop as any).maximum ?? prop['x-ui']?.max}
-      step={prop['x-ui']?.step ?? (prop.type === 'integer' ? 1 : 'any')} placeholder={placeholder}
-      onChange={(e) => onChange(e.target.value === '' ? (nullable && !numeric ? null : '') : numeric ? Number(e.target.value) : e.target.value)} />;
-  }
-  return <div className={compact ? 'config-union' : 'space-y-2'}>
-    {nullable && <Switch className="studio-switch-small config-union-toggle" aria-label={`${name}.unset`} checked={value == null}
-      onCheckedChange={checked => onChange(checked ? null : initialValue())}>{unsetLabel}</Switch>}
-    {input}
-    {constant && <Switch className="studio-switch-small config-union-toggle" aria-label={`${name}.${constant.const}`}
-      checked={value === constant.const} onCheckedChange={checked => onChange(checked ? constant.const : property.default ?? 16)}>{String(constant.const)}</Switch>}
+  const cls = 'w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:bg-slate-900 dark:border-slate-600';
+  if (prop.type === 'object' && prop.properties) return <div className="config-optional-object">
+    {nullable && <StudioSelect aria-label={`${name}.mode`} value={value == null ? 'none' : 'custom'}
+      onValueChange={next => onChange(next === 'none' ? null : initialValue())}
+      options={[{value:'none',label:english ? 'Disabled' : '不使用'}, {value:'custom',label:english ? 'Configure' : '填写参数'}]}/>}
+    {value != null && Object.entries(prop.properties).map(([key, child]) => <div key={key} className="space-y-1 text-xs">
+      <span>{t(`fields.${key}`, child.title || key)}</span>
+      <SchemaValueInput schema={schema} property={child} value={value[key] === undefined ? child.default : value[key]}
+        name={`${name}.${key}`} compact={compact} onChange={next => onChange({ ...value, [key]: next })}/>
+    </div>)}
   </div>;
+  if (prop.enum) return <StudioSelect aria-label={name} value={value == null ? '' : String(value)}
+    onValueChange={next => onChange(next === '' && nullable ? null : prop.enum!.find(item => String(item) === next))}
+    options={[...(nullable ? [{value:'',label:emptyLabel}] : []), ...prop.enum.map(item => ({value:String(item),label:String(item)}))]}/>;
+  if (prop.type === 'boolean') return nullable
+    ? <StudioSelect aria-label={name} value={value == null ? '' : String(value)} onValueChange={next => onChange(next === '' ? null : next === 'true')}
+      options={[{value:'',label:emptyLabel},{value:'true',label:english ? 'Enabled' : '开启'},{value:'false',label:english ? 'Disabled' : '关闭'}]}/>
+    : <Switch aria-label={name} checked={!!value} onCheckedChange={onChange}/>;
+  if (prop.type === 'array') return <textarea className={cls} aria-label={name} value={typeof value === 'string' ? value : JSON.stringify(value ?? [])}
+    onChange={event => { try { onChange(JSON.parse(event.target.value)); } catch { onChange(event.target.value); } }}/>
+  const numeric = prop.type === 'integer' || prop.type === 'number';
+  const input = <input id={`config-${name}`} className={cls} aria-label={name} type={numeric ? 'number' : 'text'}
+    value={value ?? ''} min={prop.minimum ?? prop['x-ui']?.min} max={prop.maximum ?? prop['x-ui']?.max}
+    step={prop['x-ui']?.step ?? (prop.type === 'integer' ? 1 : 'any')}
+    placeholder={nullable && numeric && !algorithmChoice ? emptyLabel : placeholder}
+    title={nullable && numeric && !algorithmChoice ? `${english ? 'Leave blank: ' : '留空：'}${emptyLabel}` : undefined}
+    onBlur={event => { if (nullable && !algorithmChoice && value === '' && event.currentTarget.value === '' && !event.currentTarget.validity.badInput) onChange(null); }}
+    onChange={event => onChange(event.target.value === '' ? (nullable && !numeric ? null : '') : numeric ? Number(event.target.value) : event.target.value)}/>;
+  if (algorithmChoice || constant) return <div className="config-value-mode">
+    <StudioSelect aria-label={`${name}.mode`} value={algorithmChoice ? value == null ? 'automatic' : 'custom' : value === constant?.const ? 'automatic' : 'custom'}
+      onValueChange={next => onChange(next === 'automatic' ? algorithmChoice ? null : constant?.const : initialValue())}
+      options={[{value:'custom',label:algorithmChoice ? 'EPS' : english ? 'Custom value' : '指定数值'}, {value:'automatic',label:algorithmChoice ? 'Adam-atan2' : String(constant?.const)}]}/>
+    {(algorithmChoice ? value != null : value !== constant?.const) && input}
+  </div>;
+  return input;
 };
 
 // 分组组件（header 右侧显示该组当前可见字段数）
@@ -823,7 +827,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     // 1. 递归对象渲染
     if (managedReason && ['training.train_backbone', 'training.train_text_encoder'].includes(fullPathKey)) {
       control = <div className="config-toggle-control" data-state={fieldValue ? 'on' : 'off'}>
-        <Switch id={fieldId} aria-label={fieldLabel} aria-describedby={`${fieldId}-managed-reason`} checked={!!fieldValue} disabled>{fieldValue ? (english ? 'Enabled' : '已开启') : (english ? 'Disabled' : '未开启')}</Switch>
+        <Switch id={fieldId} aria-label={fieldLabel} aria-describedby={`${fieldId}-managed-reason`} checked={!!fieldValue} disabled></Switch>
       </div>;
     } else if (managedReason) {
       const display = computeManaged?.label ?? (prop.enum ? configOptionLabel(fullPathKey, String(fieldValue), english) : managedValueLabel(fieldValue, english));
@@ -978,7 +982,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         onValueChange={next => onChange(setNestedValue(value, path, next))}
         options={supportedOptions.map(option => ({ value: option, label: configOptionLabel(fullPathKey, option, english) }))}/>;
     } else if (ui.options?.length) {
-      control = <div className="space-y-2"><StudioSelect aria-label={fieldLabel} value={ui.options.includes(fieldValue) ? fieldValue : '__custom__'}
+      control = <div className="space-y-2"><StudioSelect aria-label={fieldLabel} value={ui.options.includes(fieldValue) || !ui.allow_custom ? fieldValue || '' : '__custom__'} fallbackLabel={String(fieldValue || '')}
         onValueChange={next => onChange(setNestedValue(value,path,next === '__custom__' ? '' : next))}
         options={[...ui.options.map(option=>({value:option,label:configOptionLabel(fullPathKey,option,english)})),...(ui.allow_custom ? [{value:'__custom__',label:english?'Custom Python class…':'自定义 Python 类…'}] : [])]}/>
         {ui.allow_custom && !ui.options.includes(fieldValue) && <input aria-label={`${fieldLabel} ${english?'custom class':'自定义类'}`} value={fieldValue || ''} placeholder="package.module.OptimizerClass" onChange={event=>onChange(setNestedValue(value,path,event.target.value))}/>}
@@ -1005,7 +1009,6 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         <div className="config-toggle-control" data-state={fieldValue ? 'on' : 'off'}>
           <Switch id={fieldId} aria-label={fieldLabel} aria-invalid={!!errorItem} checked={!!fieldValue}
             onCheckedChange={checked => onChange(setNestedValue(value, path, checked))}>
-            {fieldValue ? (english ? 'Enabled' : '已开启') : (english ? 'Disabled' : '未开启')}
           </Switch>
         </div>
       );
@@ -1070,7 +1073,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       );
     }
 
-    const wide = fullPathKey !== 'adapter.resume_weights' && (['sources', 'rules', 'prompts', 'resolutions', 'args', 'group_lr'].includes(key) || ui.control === 'path' || key.endsWith('_path') || key === 'output_dir' || fullPathKey === 'adapter.lr_scale');
+    const wide = fullPathKey !== 'adapter.resume_weights' && (['sources', 'rules', 'prompts', 'args', 'group_lr'].includes(key) || ui.control === 'path' || key.endsWith('_path') || key === 'output_dir' || fullPathKey === 'adapter.lr_scale');
     const booleanField = prop.type === 'boolean' || ui.control === 'switch';
     if (!booleanField && !managedReason && React.isValidElement(control) && (typeof control.type === 'string' || control.type === StudioSelect)) {
       control = React.cloneElement(control as React.ReactElement<any>, {id: fieldId, 'aria-label': (control.props as any)['aria-label'] || fieldLabel, 'aria-invalid': !!errorItem});
@@ -1250,7 +1253,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
             ];
             return <>{sections.map(section => {
               const content = fields.filter(node => section.names.includes(fieldName(node)));
-              return content.length > 0 && <div key={section.key} className={`config-field-section config-adapter-${section.key}`}><h3>{section.title}</h3>{content}</div>;
+              return content.length > 0 && <FieldSection key={section.key} className={`config-adapter-${section.key}`} title={section.title} fields={content}/>;
             })}</>;
           })() : compact && groupName === 'optimizer' ? (() => {
             const fieldName = (node: React.ReactNode) => String((node as React.ReactElement).key).split('.').pop() || '';
@@ -1265,21 +1268,10 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
             const assigned = new Set(sections.flatMap(section => section.names));
             const remaining = groupData.fields.filter(node => !assigned.has(fieldName(node)));
             return <>{sections.map(section => {
-              const fields = groupData.fields.filter(node => section.names.includes(fieldName(node)));
-              return fields.length > 0 && <div key={section.key} className={`config-field-section config-optimizer-${section.key}`}><h3>{section.title}</h3>{fields}</div>;
+              const fields = section.names.flatMap(name => groupData.fields.filter(node => fieldName(node) === name));
+              return fields.length > 0 && <FieldSection key={section.key} className={`config-optimizer-${section.key}`} title={section.title} fields={fields} switchesFirst={section.key === 'averaging'}/>;
             })}{remaining.length > 0 && <div className="config-field-section config-optimizer-options"><h3>{english ? 'Optimizer options' : '优化器选项'}</h3>{remaining}</div>}</>;
-          })() : compact && groupName === 'sampling' ? [...groupData.fields].sort((a, b) => {
-            const order = ['enabled', 'at_start', 'every_steps', 'every_epochs', 'prompts', 'width', 'height', 'steps', 'cfg', 'shift', 'seed', 'sampler', 'scheduler', 'er_sde_order', 'er_sde_s_noise', 'prompts_file'];
-            const rank = (node: React.ReactNode) => { const index = order.indexOf(String((node as React.ReactElement).key).split('.').pop() || ''); return index < 0 ? order.length : index; };
-            return rank(a) - rank(b);
-          }) : compact && groupName === 'loop' ? [...groupData.fields].sort((a, b) => {
-            const order = ['loop.gpu_count', 'dataset.batch_size'];
-            const rank = (node: React.ReactNode) => { const index = order.indexOf(String((node as React.ReactElement).key)); return index < 0 ? order.length : index; };
-            return rank(a) - rank(b);
-          }) : compact && groupName === 'logging' ? [...groupData.fields].sort((a, b) => {
-            const names = ['logging.tensorboard', 'logging.level', 'logging.events_path'];
-            return names.indexOf(String((a as React.ReactElement).key)) - names.indexOf(String((b as React.ReactElement).key));
-          }) : groupData.fields}
+          })() : compact ? <ParameterFields group={groupName} fields={groupData.fields} english={english}/> : groupData.fields}
         </FieldGroup>
       ))}
       {sortedGroups.length === 0 && <div className="config-search-empty" role="status"><strong>{english ? 'No matching parameters.' : '没有匹配的参数。'}</strong><p>{search.trim() ? (english ? 'Try a parameter name, keyword or configuration path.' : '试试参数名称、关键词或配置字段路径。') : (english ? 'This section has no available parameters for the current configuration.' : '当前配置在此分区没有可用参数。')}</p>{search.trim() && onClearSearch && <button type="button" className="studio-secondary" onClick={onClearSearch}>{english ? 'Return to parameter sections' : '返回参数分区'}</button>}</div>}

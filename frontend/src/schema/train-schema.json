@@ -1854,11 +1854,10 @@
       "properties": {
         "type": {
           "default": "adamw",
-          "description": "默认 AdamW。8-bit 选项需要 CUDA 和 bitsandbytes，扩展优化器需要安装对应依赖。自定义优化器填写 module.Class，额外参数填在下方。",
+          "description": "默认 AdamW。8-bit 选项需要 CUDA 和 bitsandbytes，扩展优化器需要安装对应依赖。",
           "title": "Type",
           "type": "string",
           "x-ui": {
-            "allow_custom": true,
             "control": "select",
             "group": "optimizer",
             "options": [
@@ -1935,7 +1934,7 @@
             }
           ],
           "default": 1e-08,
-          "description": "防止梯度大小估计过小时除法不稳定，通常保留优化器默认值。PPSF 勾选“Adam-atan2”会切换更新方式，此时不能同时启用 StableAdamW 或 FOCUS。",
+          "description": "防止梯度大小估计过小时除法不稳定，通常保留优化器默认值。PPSF 选择“Adam-atan2”会切换更新方式，此时不能同时启用 StableAdamW 或 FOCUS。",
           "title": "Eps",
           "x-ui": {
             "group": "optimizer",
@@ -1945,7 +1944,7 @@
         },
         "args": {
           "additionalProperties": true,
-          "description": "填写自定义优化器或尚无独立控件的参数；避免与已有控件或自动管理的参数重复。",
+          "description": "填写当前优化器尚无独立控件的参数；避免与已有控件或自动管理的参数重复。",
           "title": "Args",
           "type": "object",
           "x-ui": {
@@ -2037,7 +2036,7 @@
             }
           ],
           "default": null,
-          "description": "步长估计所用的历史平滑系数。勾选“自动”时取 β2 的平方根；通常保留自动值。",
+          "description": "步长估计所用的历史平滑系数。留空时取 β2 的平方根；通常保留自动值。",
           "title": "Beta3",
           "x-ui": {
             "group": "optimizer",
@@ -2080,7 +2079,7 @@
             }
           ],
           "default": null,
-          "description": "限制 D 估计每一步最多增长的倍率；勾选“不限”时不设上限。1.02 表示相对上一步最多增加约 2%，通常保留不限。",
+          "description": "限制 D 估计每一步最多增长的倍率；留空时不设上限。1.02 表示相对上一步最多增加约 2%，通常保留不限。",
           "title": "Growth Rate",
           "x-ui": {
             "group": "optimizer",
@@ -2198,7 +2197,7 @@
         },
         "use_stableadamw": {
           "default": true,
-          "description": "使用 StableAdamW 的更新归一化，默认开启以约束异常更新；不能与 Adam-atan2（勾选 EPS 旁的选项）组合。",
+          "description": "使用 StableAdamW 的更新归一化，默认开启以约束异常更新；不能与 Adam-atan2（在 EPS 输入处选择）组合。",
           "title": "Use Stableadamw",
           "type": "boolean",
           "x-ui": {

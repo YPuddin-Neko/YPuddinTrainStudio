@@ -117,7 +117,7 @@ const optimizerEnglishHelp: Record<string, string> = {
   split_groups_mean: 'Uses the harmonic mean of the per-group step estimates. Off by default; requires independent group estimation.',
   factored: 'Stores suitable gradient statistics in factored form to reduce optimizer-state memory. On by default; turning it off stores full statistics.',
   factored_fp32: 'Stores factored statistics in FP32 to reduce rounding errors. On by default; applies only when factored statistics are enabled.',
-  use_stableadamw: 'Normalizes updates inside the optimizer using StableAdamW. On by default; cannot be combined with the Adam-atan2 option beside EPS.',
+  use_stableadamw: 'Normalizes updates inside the optimizer using StableAdamW. On by default; cannot be combined with the Adam-atan2 option in the EPS field.',
   stochastic_rounding: 'Uses stochastic rounding when writing low-precision parameters. On by default; does not affect FP32 parameters.',
   weight_decay_by_lr: 'Scales weight decay with the current effective learning rate. On by default; turning it off changes the decay scale.',
   use_schedulefree: 'Uses Schedule-Free weight averaging without an external learning-rate curve. On by default; turning it off enables external scheduling.',
@@ -138,7 +138,7 @@ const optimizerEnglishHelp: Record<string, string> = {
 export function configFieldHelp(path: string, fallback: string | undefined, english = false, optimizerType?: string, scheduleFree = false) {
   if (path === 'optimizer.eps' && optimizerType === 'prodigy_plus_sf') return english
     ? 'Prevents division by very small estimates. Select Adam-atan2 to use that mode instead; StableAdamW and FOCUS must be disabled.'
-    : '防止梯度大小估计过小时除法不稳定。勾选 Adam-atan2 才会切换算法，此时需关闭 StableAdamW 和 FOCUS。';
+    : '防止梯度大小估计过小时除法不稳定。选择 Adam-atan2 才会切换算法，此时需关闭 StableAdamW 和 FOCUS。';
   if (path === 'optimizer.grad_clip_norm' && optimizerType === 'prodigy_plus_sf') return english
     ? 'Clips gradients before they reach the optimizer. PPSF defaults this external clipping to 0 (off). StableAdamW provides a different normalization inside the optimizer; these controls are not interchangeable.'
     : '在梯度进入优化器前做外部裁剪。PPSF 默认 0 关闭；StableAdamW 是优化器内部的更新归一化，两者并不是同一个保护功能。';
@@ -164,8 +164,8 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
     'optimizer.grad_clip_norm': ['限制异常大的梯度，降低数值失控的风险。通常保留 1；0 表示关闭梯度裁剪。', 'Limits unusually large gradients to reduce numerical instability. Usually keep 1; set to 0 to disable gradient clipping.'],
     'optimizer.kahan': ['使用 Kahan 补偿保留低精度更新中容易丢失的小数值，会增加状态内存。仅在支持的优化器与精度组合下使用；通常保持关闭。', 'Uses Kahan compensation to retain small values that low-precision updates can lose, adding state memory. Use only with supported optimizers and precision modes; usually leave off.'],
     'optimizer.eps': ['防止除以接近零的数，通常保留优化器默认值。', 'Prevents division by values near zero. Usually keep the optimizer default.'],
-    'optimizer.beta3': ['步长估计所用的历史平滑系数。勾选“自动”时使用 β2 的平方根；通常保留自动。', optimizerEnglishHelp.beta3],
-    'optimizer.growth_rate': ['限制 D 估计每一步最多增长的倍率。勾选“不限”时不设上限；1.02 表示最多增加约 2%，通常保留不限。', optimizerEnglishHelp.growth_rate],
+    'optimizer.beta3': ['步长估计所用的历史平滑系数。留空时使用 β2 的平方根；通常保留自动。', optimizerEnglishHelp.beta3],
+    'optimizer.growth_rate': ['限制 D 估计每一步最多增长的倍率。留空时不设上限；1.02 表示最多增加约 2%，通常保留不限。', optimizerEnglishHelp.growth_rate],
     'optimizer.args': ['仅用于当前优化器支持的额外参数。已有专用控件的参数请在对应位置设置；不确定名称和作用时留空。', 'Only for extra parameters supported by the selected optimizer. Use dedicated controls where available; leave empty unless you know the parameter and its effect.'],
     'optimizer.group_lr': ['分别覆盖不同参数组的学习率。通常留空，使用统一学习率；自动管理学习率时不可覆盖。', 'Overrides the learning rate of individual parameter groups. Usually leave empty to use the shared rate; unavailable when the rate is managed automatically.'],
   };
@@ -196,10 +196,10 @@ export function configFieldHint(path: string, english = false, optimizerType?: s
       ? ['外部梯度裁剪，默认 0 关闭；与优化器内部更新保护不同。', 'External gradient clipping defaults to 0 (off); it differs from internal update clipping.']
       : ['限制异常大梯度；通常保留 1，0 关闭。', 'Limits unusually large gradients; usually keep 1. 0 disables it.'],
     'optimizer.eps': optimizerType === 'prodigy_plus_sf'
-      ? ['通常保留默认值；勾选 Adam-atan2 才切换算法，需关闭 StableAdamW 和 FOCUS。', 'Usually keep the default. Selecting Adam-atan2 changes the algorithm; StableAdamW and FOCUS must be off.']
+      ? ['通常保留默认值；选择 Adam-atan2 才切换算法，需关闭 StableAdamW 和 FOCUS。', 'Usually keep the default. Selecting Adam-atan2 changes the algorithm; StableAdamW and FOCUS must be off.']
       : ['防止除以接近零的数；通常保留默认值。', 'Prevents division by values near zero; usually keep the default.'],
-    'optimizer.beta3': ['勾选“自动”时使用 β2 的平方根；通常保留自动。', optimizerEnglishHelp.beta3],
-    'optimizer.growth_rate': ['每一步的最大增长倍率；勾选“不限”时不设上限。', optimizerEnglishHelp.growth_rate],
+    'optimizer.beta3': ['留空时使用 β2 的平方根；通常保留自动。', optimizerEnglishHelp.beta3],
+    'optimizer.growth_rate': ['每一步的最大增长倍率；留空时不设上限。', optimizerEnglishHelp.growth_rate],
     'optimizer.kahan': ['补偿低精度更新中容易丢失的小数值。', 'Compensates for small values lost during low-precision updates.'],
     'optimizer.group_lr': ['留空时统一使用上方学习率。', 'Leave empty to use the learning rate above for every group.'],
   };

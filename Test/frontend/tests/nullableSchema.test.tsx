@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SchemaForm } from '../../../frontend/src/schema/SchemaForm/SchemaForm';
 import trainSchema from '../../../frontend/src/schema/train-schema.json';
 import '../../../frontend/src/i18n';
@@ -36,10 +36,12 @@ describe('nullable schema editing', () => {
     const schema={properties:{options:{anyOf:[{type:'object',properties:{name:{type:'string'}}},{type:'null'}],default:null}}};
     function OptionalEditor() {const [value,setValue]=React.useState<Record<string,any>>({options:null});return <><SchemaForm schema={schema} value={value} onChange={setValue}/><output data-testid="optional-value">{JSON.stringify(value)}</output></>;}
     render(<OptionalEditor/>);
-    fireEvent.click(screen.getByRole('switch',{name:'options.unset'}));
+    fireEvent.click(screen.getByRole('combobox',{name:'options.mode'}));
+    fireEvent.click(screen.getByRole('option',{name:'填写参数'}));
     fireEvent.change(screen.getByRole('textbox',{name:'options.name'}),{target:{value:'local-option'}});
     expect(JSON.parse(screen.getByTestId('optional-value').textContent!).options).toEqual({name:'local-option'});
-    fireEvent.click(screen.getByRole('switch',{name:'options.unset'}));
+    fireEvent.click(screen.getByRole('combobox',{name:'options.mode'}));
+    fireEvent.click(screen.getByRole('option',{name:'不使用'}));
     expect(JSON.parse(screen.getByTestId('optional-value').textContent!).options).toBeNull();
   });
 
@@ -61,7 +63,8 @@ describe('nullable schema editing', () => {
     expect(JSON.parse(screen.getByTestId('enum-value').textContent!).mode).toBe(2);
     fireEvent.click(screen.getByRole('combobox',{name:'optional'}));fireEvent.click(screen.getByRole('option',{name:'0'}));
     expect(JSON.parse(screen.getByTestId('enum-value').textContent!).optional).toBe(0);
-    fireEvent.click(screen.getByRole('switch',{name:'optional.unset'}));
+    fireEvent.click(screen.getByRole('combobox',{name:'optional'}));
+    fireEvent.click(screen.getByRole('option',{name:'自动'}));
     expect(JSON.parse(screen.getByTestId('enum-value').textContent!).optional).toBeNull();
   });
 
@@ -86,4 +89,13 @@ describe('nullable schema editing', () => {
     expect(field(1, 'steps')).toHaveValue(null);
     expect(value().width).toBe(64);
   });
+});
+
+it('does not write defaults just because an inherited numeric field received focus', () => {
+  const changed = vi.fn();
+  render(<SchemaForm schema={trainSchema} value={{dataset:{bucket_step:null}}} onChange={changed} showAdvanced compact groupFilter={['dataset']}/>);
+  const field = screen.getByRole('spinbutton',{name:'dataset.bucket_step'});
+  expect(field).toHaveAttribute('placeholder','自动对齐');
+  fireEvent.focus(field);fireEvent.blur(field);
+  expect(changed).not.toHaveBeenCalled();
 });

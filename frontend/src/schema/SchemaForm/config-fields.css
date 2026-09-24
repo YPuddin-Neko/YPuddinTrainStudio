@@ -52,10 +52,6 @@
 .compact-schema .config-field textarea { font-size: 13px; line-height: 1.6; min-height: 72px; }
 .compact-schema .config-field input[type="checkbox"]:not([role="switch"]) { width: 17px; height: 17px; }
 .compact-schema .config-field input[type="range"] { min-height: 24px; }
-.compact-schema .config-field .config-union { gap: 8px; flex-wrap: wrap; }
-.compact-schema .config-field .config-union > .studio-select { flex: 1 1 0; min-width: 0; width: 0; }
-.compact-schema .config-field .config-union > input { flex: 1 1 100px; width: 0; min-width: 100px; }
-.compact-schema .config-field .config-union > .config-union-toggle { flex: none; order: 1; }
 .compact-schema .config-field-invalid > p { font-size: 12px; line-height: 1.5; }
 /* Switches sit on the same 38px row as neighbouring inputs. */
 .config-toggle-control { display: flex; align-items: center; min-height: 38px; width: 100%; min-width: 0; font-size: 13px; }
@@ -150,3 +146,31 @@
 @container config-form (max-width: 520px) {
   .compact-schema [data-group="logging"] > .config-fields { grid-template-columns: minmax(0, 1fr); }
 }
+
+.config-optional-object { display:grid; gap:12px; min-width:0; }
+.config-value-mode { display:grid; grid-template-columns:minmax(108px,.8fr) minmax(0,1.2fr); gap:8px; }
+.config-value-mode > .studio-select:only-child { grid-column:1 / -1; }
+.config-toggle-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); grid-column:1 / -1; gap:4px 24px; min-width:0; }
+.compact-schema .config-field-boolean,
+.config-adapter-fields .config-field-boolean { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:4px 12px; min-height:40px; padding-block:4px; }
+.compact-schema .config-field-boolean > .config-field-heading,
+.config-adapter-fields .config-field-boolean > .config-field-heading { grid-column:1; grid-row:1; align-items:center; min-height:0; }
+.config-field-boolean .config-field-key { display:none; }
+.compact-schema .config-field-boolean > .mt-1,
+.config-adapter-fields .config-field-boolean > .mt-1 { grid-column:2; grid-row:1; }
+.config-field-boolean > p { grid-column:1 / -1; }
+.config-field-boolean .config-toggle-control { width:auto; min-height:32px; justify-content:flex-end; }
+.config-field-boolean .studio-switch { flex:none; }
+.compact-schema .config-logging-options { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.config-logging-options > .config-field-boolean { align-self:end; }
+@container config-form (min-width:840px) {
+  .compact-schema .config-field-section:not([class*="config-adapter-"]):not(.config-logging-options) { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .compact-schema [data-group] .config-field-section:is(.config-sampling-cadence,.config-validation-cadence,.config-loop-duration,.config-sampling-switches,.config-validation-switches) { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .config-adapter-structure .config-toggle-list,.config-adapter-capacity .config-toggle-list { grid-template-columns:minmax(0,1fr); }
+  .config-dataset-sizing > [data-field-path="dataset.resolutions"] { grid-column:span 2; }
+}
+@container config-form (max-width:520px) {
+  .config-toggle-list,
+  .compact-schema .config-logging-options { grid-template-columns:minmax(0,1fr); }
+}
+@container (max-width:240px) { .config-value-mode { grid-template-columns:minmax(0,1fr); } }

@@ -85,15 +85,15 @@ def test_sampling_advanced_options_only_visible_for_enabled_er_sde():
             )
 
 
-def test_optimizer_select_lists_actual_registry_and_preserves_custom_paths():
+def test_optimizer_select_lists_builtins_without_exposing_custom_classes():
     from ypuddin.config import OptimizerConfig
     from ypuddin.optim.factory import _BUILTIN
 
     properties = TrainConfig.json_schema()["$defs"]["OptimizerConfig"]["properties"]
     hints = properties["type"]["x-ui"]
     assert set(hints["options"]) == set(_BUILTIN)
-    assert hints["control"] == "select" and hints["allow_custom"]
-    assert "enum" not in properties["type"]  # Suggestions must not prohibit a valid custom class.
+    assert hints["control"] == "select" and not hints.get("allow_custom", False)
+    assert "enum" not in properties["type"]  # Existing recipes retain their saved optimizer class.
     assert OptimizerConfig(type="torch.optim.SGD").type == "torch.optim.SGD"
     assert not evaluate(properties["betas"]["x-ui"]["show_when"], {"optimizer": {"type": "sgd"}})
     assert evaluate(properties["betas"]["x-ui"]["show_when"], {"optimizer": {"type": "adamw"}})

@@ -156,7 +156,7 @@
 }
 /* The key is smaller than the label, so tops do not line up - baselines do. */
 .config-field-heading { gap: 8px; align-items: baseline; }
-.config-field-heading > label { min-width: 0; flex: 0 1 auto; }
+.config-field-heading > label { min-width: 0; flex: 0 0 auto; max-width:calc(100% - 36px); }
 .config-field-reference { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 28px; flex: 0 1 auto; margin-left: auto; }
 .config-field-reference > button { flex-shrink: 0; }
 /* Keep the configuration key on one column: fields without a help button reserve the same slot. */

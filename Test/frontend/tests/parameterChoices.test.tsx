@@ -13,14 +13,22 @@ function Editor({initial,groups}: {initial:Record<string,any>;groups:string[]}) 
 const value=()=>JSON.parse(screen.getByTestId('value').textContent!);
 function select(name:string,option:string) {fireEvent.click(screen.getByRole('combobox',{name}));fireEvent.click(screen.getByRole('option',{name:option}));}
 
-it('selects a supported optimizer and preserves the explicit custom-class escape hatch',()=>{
+it('lists supported optimizers without a custom Python class entry',()=>{
   render(<Editor initial={{optimizer:{type:'adamw',lr:.0002}}} groups={['optimizer']}/>);
-  expect(screen.queryByRole('textbox',{name:'优化器'})).not.toBeInTheDocument();
   select('优化器','Lion');expect(value().optimizer.type).toBe('lion');
-  select('优化器','自定义 Python 类…');
-  fireEvent.change(screen.getByRole('textbox',{name:'优化器 自定义类'}),{target:{value:'my_package.CustomOptimizer'}});
+  fireEvent.click(screen.getByRole('combobox',{name:'优化器'}));
+  expect(screen.queryByRole('option',{name:/自定义/})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('option',{name:'AdamW'}));
+  expect(value().optimizer.type).toBe('adamw');
+  expect(screen.queryByRole('textbox',{name:'优化器 自定义类'})).not.toBeInTheDocument();
+});
+
+it('preserves a saved custom optimizer until a listed optimizer is chosen',()=>{
+  render(<Editor initial={{optimizer:{type:'my_package.CustomOptimizer',lr:.0002}}} groups={['optimizer']}/>);
+  expect(screen.getByRole('combobox',{name:'优化器'})).toHaveTextContent('my_package.CustomOptimizer');
   expect(value().optimizer.type).toBe('my_package.CustomOptimizer');
-  select('优化器','AdamW');expect(screen.queryByRole('textbox',{name:'优化器 自定义类'})).not.toBeInTheDocument();
+  expect(screen.queryByRole('textbox',{name:'优化器 自定义类'})).not.toBeInTheDocument();
+  select('优化器','AdamW');expect(value().optimizer.type).toBe('adamw');
 });
 
 it('pairs independent inference choices and shows ER controls only for ER-SDE',()=>{

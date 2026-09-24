@@ -72,65 +72,46 @@ describe('sampling form state and service-owned paths', () => {
     expect(JSON.parse(screen.getByTestId('sampling-config').textContent!).checkpoint.output_dir).toBe('/weights');
   });
 
-  it.each(['steps', 'every_steps', 'every_epochs'])('restores nullable %s to a valid positive integer, then preserves an explicit null', key => {
-    render(<Editor selectedFamily={null} initial={{ sampling: { enabled: true, [key]: null } }} />);
-    const unset = screen.getByRole('switch', { name: `sampling.${key}.unset` });
-    expect(unset).toBeChecked();
-    fireEvent.click(unset);
-    expect(current()[key]).toBe(1);
-    expect(input(key)).toHaveValue(1);
-    expect(input(key)).toBeValid();
-    fireEvent.change(input(key), { target: { value: '9' } });
-    expect(current()[key]).toBe(9);
-    fireEvent.click(unset);
+  it.each(['steps', 'every_steps', 'every_epochs', 'shift'])('edits nullable %s without a separate switch and clears it on blur', key => {
+    render(<Editor selectedFamily={null} initial={{sampling:{enabled:true,[key]:null}}}/>);
     expect(current()[key]).toBeNull();
-    expect(input(key)).toHaveValue(null);
+    expect(screen.queryByRole('switch',{name:`sampling.${key}.unset`})).not.toBeInTheDocument();
+    fireEvent.change(input(key),{target:{value:'9'}});
+    expect(current()[key]).toBe(9);
+    expect(input(key)).toBeValid();
+    fireEvent.change(input(key),{target:{value:''}});
+    expect(current()[key]).toBe('');
+    fireEvent.blur(input(key));
+    expect(current()[key]).toBeNull();
   });
 
-  it('restores nullable shift above its exclusive minimum', () => {
-    render(<Editor selectedFamily={null} initial={{ sampling: { enabled: true, shift: null } }} />);
-    fireEvent.click(screen.getByRole('switch', { name: 'sampling.shift.unset' }));
-    expect(current().shift).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole('switch', { name: 'sampling.shift.unset' }));
-    expect(current().shift).toBeNull();
-  });
-
-  it('uses each displayed numeric family default when disabling inheritance', () => {
-    render(<Editor initial={{ sampling: { enabled: true, steps: null, cfg: null, shift: null } }} />);
-    for (const [key, expected] of Object.entries({ steps: 25, cfg: 4, shift: 3 })) {
-      fireEvent.click(screen.getByRole('switch', { name: `sampling.${key}.unset` }));
+  it('shows each model default without assigning it to the saved configuration', () => {
+    render(<Editor initial={{sampling:{enabled:true,steps:null,cfg:null,shift:null}}}/>);
+    for (const [key,expected] of Object.entries({steps:25,cfg:4,shift:3})) {
+      expect(input(key)).toHaveAttribute('placeholder',`沿用模型默认值 (${expected})`);
+      expect(current()[key]).toBeNull();
+      fireEvent.change(input(key),{target:{value:String(expected)}});
       expect(current()[key]).toBe(expected);
-      expect(input(key)).toHaveValue(expected);
+      fireEvent.change(input(key),{target:{value:''}});fireEvent.blur(input(key));
+      expect(current()[key]).toBeNull();
     }
   });
 
-  it('shows changing family defaults as placeholders without writing them to inherited values', () => {
-    const initial = { sampling: { enabled: true, steps: null, cfg: null, shift: null, prompts: [] } };
-    const { rerender } = render(<Editor initial={initial} />);
-    expect(input('steps')).toHaveAttribute('placeholder', '25');
-    expect(input('cfg')).toHaveAttribute('placeholder', '4');
-    expect(input('shift')).toHaveAttribute('placeholder', '3');
-    rerender(<Editor initial={initial} selectedFamily={{ ...family, name: 'krea2', sampling: { steps: 28, cfg: 5.5, shift: null, sampler: 'euler' } }} />);
-    expect(input('steps')).toHaveAttribute('placeholder', '28');
-    expect(input('cfg')).toHaveAttribute('placeholder', '5.5');
-    expect(input('shift')).toHaveAttribute('placeholder', expect.stringContaining('自动'));
+  it('updates inherited placeholders after changing model and preserves an explicit zero', () => {
+    const initial={sampling:{enabled:true,steps:null,cfg:null,shift:null,prompts:[]}};
+    const {rerender}=render(<Editor initial={initial}/>);
+    expect(input('steps')).toHaveAttribute('placeholder','沿用模型默认值 (25)');
+    rerender(<Editor initial={initial} selectedFamily={{...family,name:'krea2',sampling:{steps:28,cfg:5.5,shift:null,sampler:'euler'}}}/>);
+    expect(input('steps')).toHaveAttribute('placeholder','沿用模型默认值 (28)');
+    expect(input('cfg')).toHaveAttribute('placeholder','沿用模型默认值 (5.5)');
+    expect(input('shift')).toHaveAttribute('placeholder',expect.stringContaining('自动'));
     expect(current()).toEqual(initial.sampling);
-    fireEvent.change(input('cfg'), { target: { value: '0' } });
+    fireEvent.change(input('cfg'),{target:{value:'0'}});fireEvent.blur(input('cfg'));
     expect(current().cfg).toBe(0);
-    expect(input('cfg')).toHaveValue(0);
-    const inheritCfg = screen.getByRole('switch', { name: 'sampling.cfg.unset' });
-    expect(inheritCfg).not.toBeChecked();
-    fireEvent.change(input('cfg'), { target: { value: '' } });
+    fireEvent.change(input('cfg'),{target:{value:''}});
     expect(current().cfg).toBe('');
-    expect(input('cfg')).toHaveValue(null);
-    expect(inheritCfg).not.toBeChecked();
-    fireEvent.click(inheritCfg);
+    fireEvent.blur(input('cfg'));
     expect(current().cfg).toBeNull();
-    expect(inheritCfg).toBeChecked();
-    expect(input('cfg')).toHaveAttribute('placeholder', '5.5');
-    fireEvent.click(inheritCfg);
-    expect(inheritCfg).not.toBeChecked();
-    expect(current().cfg).toBe(5.5);
-    expect(input('cfg')).toHaveValue(5.5);
+    expect(input('cfg')).toHaveAttribute('placeholder','沿用模型默认值 (5.5)');
   });
 });

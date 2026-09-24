@@ -2520,7 +2520,7 @@ export interface components {
             sources?: components["schemas"]["DatasetSourceConfig"][];
             /**
              * Resolutions
-             * @description 分桶的基准面积：1024 表示每桶约 1024×1024 像素，并非把所有图片裁成正方形。填写多个值会让每张图在每个基准分辨率各训练一次；通常先用一个值。
+             * @description 单个分辨率填 1024；多个用逗号或空格分隔，如 1024, 1536。填写正整数边长，不写 1024×1024。1024 表示每桶约 1024×1024 像素，并非都裁成正方形。每张图会在每个基准分辨率各训练一次，增加总样本和步数。
              * @default [
              *       1024
              *     ]
@@ -4531,7 +4531,7 @@ export interface components {
         OptimizerConfig: {
             /**
              * Type
-             * @description 默认 AdamW。8-bit 选项需要 CUDA 和 bitsandbytes，扩展优化器需要安装对应依赖。自定义优化器填写 module.Class，额外参数填在下方。
+             * @description 默认 AdamW。8-bit 选项需要 CUDA 和 bitsandbytes，扩展优化器需要安装对应依赖。
              * @default adamw
              */
             type: string;
@@ -4561,13 +4561,13 @@ export interface components {
             ];
             /**
              * Eps
-             * @description 防止梯度大小估计过小时除法不稳定，通常保留优化器默认值。PPSF 勾选“Adam-atan2”会切换更新方式，此时不能同时启用 StableAdamW 或 FOCUS。
+             * @description 防止梯度大小估计过小时除法不稳定，通常保留优化器默认值。PPSF 选择“Adam-atan2”会切换更新方式，此时不能同时启用 StableAdamW 或 FOCUS。
              * @default 1e-8
              */
             eps: number | null;
             /**
              * Args
-             * @description 填写自定义优化器或尚无独立控件的参数；避免与已有控件或自动管理的参数重复。
+             * @description 填写当前优化器尚无独立控件的参数；避免与已有控件或自动管理的参数重复。
              */
             args?: {
                 [key: string]: unknown;
@@ -4611,7 +4611,7 @@ export interface components {
             d0: number;
             /**
              * Beta3
-             * @description 步长估计所用的历史平滑系数。勾选“自动”时取 β2 的平方根；通常保留自动值。
+             * @description 步长估计所用的历史平滑系数。留空时取 β2 的平方根；通常保留自动值。
              */
             beta3?: number | null;
             /**
@@ -4628,7 +4628,7 @@ export interface components {
             safeguard_warmup: boolean;
             /**
              * Growth Rate
-             * @description 限制 D 估计每一步最多增长的倍率；勾选“不限”时不设上限。1.02 表示相对上一步最多增加约 2%，通常保留不限。
+             * @description 限制 D 估计每一步最多增长的倍率；留空时不设上限。1.02 表示相对上一步最多增加约 2%，通常保留不限。
              */
             growth_rate?: number | null;
             /**
@@ -4687,7 +4687,7 @@ export interface components {
             factored_fp32: boolean;
             /**
              * Use Stableadamw
-             * @description 使用 StableAdamW 的更新归一化，默认开启以约束异常更新；不能与 Adam-atan2（勾选 EPS 旁的选项）组合。
+             * @description 使用 StableAdamW 的更新归一化，默认开启以约束异常更新；不能与 Adam-atan2（在 EPS 输入处选择）组合。
              * @default true
              */
             use_stableadamw: boolean;
