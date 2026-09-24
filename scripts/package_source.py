@@ -55,8 +55,11 @@ def excluded_reason(name: str | Path, *, built_ui: bool = False) -> str | None:
         return "local tests and test records"
     if parts[:2] == ("frontend", "screenshots"):
         return "generated browser acceptance screenshots"
-    if parts[:2] in {("docs", "validation"), ("docs", "screenshots")} or parts == ("handover.md",):
-        return "local acceptance evidence or handover"
+    if parts[:2] in {
+        ("docs", "validation"), ("docs", "screenshots"), ("docs", "internal"),
+        ("docs", "reports"), ("docs", "reference"),
+    } or parts in {("handover.md",), ("docs", "design", "03-status.md"), ("docs", "frontend-spec.md")}:
+        return "local development records"
     if (
         parts[0] == "docs"
         and filename.endswith(".md")
@@ -80,6 +83,8 @@ def excluded_reason(name: str | Path, *, built_ui: bool = False) -> str | None:
                     "anima_full_training_diagnostic_",
                     "ui_and_launcher_changes_",
                     "adapter_form_layout_",
+                    "mac_gpu_sensors_",
+                    "mac_gpu_telemetry_",
                 )
             )
             or re.fullmatch(r"ui_.*_\d{4}-\d{2}-\d{2}\.md", filename)
@@ -298,6 +303,11 @@ def package(output: Path) -> dict:
             "frontend/dist/index.html",
             "frontend/dist/.source-manifest.json",
             "frontend/dist/licenses/lucide-gpu.txt",
+            "docs/README.md",
+            "docs/INSTALLATION.md",
+            "docs/RUNTIME_DTK.md",
+            "docs/TRAINING.md",
+            "docs/DEVELOPMENT.md",
             "docs/api/openapi.json",
         )
     }

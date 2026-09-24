@@ -168,3 +168,12 @@ blob-report/
 /docs/**/UI_AND_LAUNCHER_CHANGES_*.md
 /docs/**/UI_*_????-??-??.md
 /docs/**/ADAPTER_FORM_LAYOUT_*.md
+
+# Internal research notes and generated model inventories.
+/docs/internal/
+/docs/reports/
+/docs/reference/
+/docs/design/03-status.md
+/docs/frontend-spec.md
+/docs/MAC_GPU_SENSORS_????-??-??.md
+/docs/MAC_GPU_TELEMETRY_????-??-??.md

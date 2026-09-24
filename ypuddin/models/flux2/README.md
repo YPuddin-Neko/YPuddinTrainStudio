@@ -1,81 +1,35 @@
-# FLUX.2 Klein backend boundary
+# FLUX.2 Klein 后端
 
-This backend trains only Klein base 4B and Klein base 9B. It uses the installed Diffusers `Flux2Transformer2DModel` and
-`AutoencoderKLFlux2`, and Transformers' Qwen3 implementation. It loads
-local safetensors assets only. No weight or tokenizer download is triggered.
+本模块使用 Diffusers 的 `Flux2Transformer2DModel`、`AutoencoderKLFlux2` 和 Transformers 的 Qwen3 实现，训练范围为 Klein Base 4B / 9B。
 
-| Branch | Text encoder | Selected hidden states | Sampling default |
-| --- | --- | --- | --- |
-| Klein base 4B | Qwen3-4B | 9, 18, 27 | 50 steps, CFG 4, no guidance embedding |
-| Klein base 9B | Qwen3-8B | 9, 18, 27 | 50 steps, CFG 4, no guidance embedding |
+## 权重与文本组件
 
-The original BFL Klein transformer and shared FLUX.2 VAE single-file formats and local Diffusers
-component directories are accepted. A single transformer requires explicit
-text-encoder and VAE paths. Qwen3-4B and Qwen3-8B accept BF16/FP16 single files or local HF directories; the exact Klein tokenizer and model geometry are bundled for offline single-file use. Quantized text or transformer checkpoints are rejected. Klein base
-and distilled weights have identical geometry: automatic selection requires an HF
-`model_index.json` declaring `is_distilled=false`, or the verified single-file download companion `.ypuddin.json`. Otherwise the user must select
-`model.flux2_variant`; a declaration of distilled weights is always rejected.
-Legacy dev settings and dev transformer checkpoints are explicitly rejected before
-any transformer payload or text encoder is loaded. They are never reinterpreted as
-Klein. Header-only dev identification remains available for historical inspection.
-Klein distilled/KV, reference-image editing, online text training, FP8 conversion,
-unsloth checkpointing and compile are outside this implementation.
+| 主模型 | 文本编码器 | 选取的隐藏层 |
+| --- | --- | --- |
+| Klein Base 4B | Qwen3-4B | 9、18、27 |
+| Klein Base 9B | Qwen3-8B | 9、18、27 |
 
-The autoencoder uses its posterior **mode**, packs 2×2 spatial cells into 128
-channels, then normalizes with the checkpoint's frozen batchnorm mean/variance.
-Decode exactly reverses that normalization and packing. Its cache identity includes
-the real weights and normalization configuration. Conditioners retain all 512
-tokens, including padding. Qwen3 uses the upstream user template with thinking disabled.
-Klein has no embedded guidance input; sampling guidance is classifier-free guidance (CFG).
-The transformer sees unit flow time; Diffusers applies its internal ×1000 scaling.
-Preview shift uses BFL's empirical function of both image-token count and step count.
+支持原始 BFL 单文件及本地 Diffusers 组件目录。单独的主模型文件需指定文本编码器和 VAE。单文件加载所需的分词器及模型配置随模块提供，加载过程不下载权重。
 
-`load()` builds a meta transformer and lazy encoders. `materialize_backbone()`
-unloads the text/VAE modules before reading transformer weights, and must run before
-adapter injection. This avoids keeping the large transformer and text encoder
-weights resident together during cache creation. It does not stream text-encoder
-layers: text caching still needs enough device memory for the whole text encoder
-and its activations. A 16 GB GPU is not a validated environment for full
-Klein 9B weights. Cache batch size 1 and Klein base 4B are the more practical starting
-point; actual GPU feasibility remains hardware dependent. The public text-encoder
-estimate defaults to approximately 4B parameters. Unconfigured meta planning uses
-Klein 4B geometry (5 double / 20 single blocks); an explicit Klein 9B selection
-uses 8 / 24 blocks. Loaded metadata also records the real local text-weight element
-count from safetensors headers, without materializing the encoder.
+Base 与蒸馏权重可能形状相同。自动识别依赖 `model_index.json` 或经校验的 `.ypuddin.json`；信息不足时由 `model.flux2_variant` 指定。蒸馏、KV、dev 和量化权重不进入当前训练路径。
 
-Block swap requires block checkpointing. Diffusers' checkpoint path passes tensors
-positionally to the actual double/single blocks, allowing the swapper's backward
-hooks to observe input gradients. CPU tests compare every adapter gradient and the
-latent-input gradient against the same real network without swapping, including
-LoKr Full. These tests do not measure CUDA streams, transfer peaks or full-model VRAM.
+## 编码与加载
 
-Default exports use `lora_transformer_` followed by the underscored Diffusers module
-name. Current ComfyUI's `Flux2(Flux)` dispatch and `flux_to_diffusers` mapping include
-all targets in this backend's two presets, including the fused single-stream QKV/MLP
-projection. An independent CPU oracle executed the real ComfyUI mapping and adapter
-weight routines for LoRA, factorized LoKr and LoKr Full on reduced Klein geometry: all 30
-targets matched, delta-weight error was zero, and the maximum network prediction
-error after converting patched BFL weights was 4.77e-7. This is not full-weight
-ComfyUI application or GPU validation. Diffusers 0.40's FLUX.2 Kohya parser expects BFL `double_blocks` and
-`single_blocks` names, so the default file is not advertised as directly loadable
-there. The separate PEFT oracle has also passed with PEFT 0.20.0, Diffusers 0.40.0,
-Transformers 5.17.0 and Torch 2.14.0: it explicitly converts LoRA to PEFT, folds
-alpha/rank into B, loads it into an independent real Diffusers transformer, and
-compares predictions at `rtol=2e-5, atol=2e-6`. This confirms the explicit conversion
-path, not direct loading of the default file. Diffusers PEFT does not provide an
-equivalent LoKr loader. The test skips when the optional `peft` package is absent;
-native training does not require PEFT.
+VAE 使用后验 mode，将 2×2 空间位置打包为 128 通道，并应用权重中的固定归一化参数。解码执行对应的逆变换，缓存身份包含 VAE 权重和归一化配置。
 
-On 2026-09-13, all 38 focused CPU tests passed. The suite covers Klein cache →
-training → preview → adapter save/reload,
-LoRA / LoKr / LoKr Full checkpoint-and-swap gradients, local shard loading, original
-BFL conversion, VAE batchnorm normalization, PEFT conversion, and dev rejection
-before weight loading. Expected PyTorch hook warnings exercise the no-input-gradient
-case; the swapper defers releasing those blocks until backward completes. These
-results use reduced real networks, not full downloaded checkpoints or CUDA kernels.
+文本条件保留 512 个 token，使用关闭 thinking 的 Qwen 模板。模型使用 CFG，不使用内嵌 guidance 输入。
 
-References (implementation delegates to these dependencies; no GPL trainer source
-is copied into this package):
+`load()` 建立主模型结构和延迟加载的编码器。`materialize_backbone()` 在编码器卸载后读取主模型权重，随后注入 LoRA / LoKr。文本编码仍需容纳完整文本编码器及其激活。
+
+分块换出要求逐块梯度检查点。Diffusers 检查点路径按位置参数传递张量，使换出器能跟踪反向传播所需的输入梯度。
+
+## 导出
+
+默认导出使用 `lora_transformer_` 前缀及下划线连接的 Diffusers 模块名。Diffusers 的 Kohya 解析路径采用另一套 BFL 模块名称，不能将两种命名格式混用。
+
+LoRA 可通过库内的 PEFT 转换路径处理缩放和模块名。LoKr 不使用该 PEFT 加载路径。导出格式与使用方法见主项目的权重转换接口。
+
+## 上游参考
 
 - [BFL model geometry](https://github.com/black-forest-labs/flux2/blob/main/src/flux2/model.py)
 - [BFL text conditioning](https://github.com/black-forest-labs/flux2/blob/main/src/flux2/text_encoder.py)

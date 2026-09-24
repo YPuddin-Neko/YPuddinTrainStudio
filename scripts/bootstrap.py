@@ -10,7 +10,7 @@
   dev     同时启动后端与 Vite 热更新前端
   build   只构建前端
   test    运行本机 Test/ 目录里的测试（测试不随仓库发布）
-  smoke   转发到 ``ypuddin smoke``（在本机用真实权重跑几步训练自检，见 docs/guide/install.md）
+  smoke   转发到 ``ypuddin smoke``（使用指定权重执行短程训练自检）
   doctor  打印本机情况：Python、torch/CUDA/显卡、可选依赖、Node、前端构建状态
   shell   打印如何激活 venv
 

@@ -22,22 +22,18 @@ Standalone components reuse the project's packaged OpenAI CLIP-L tokenizer
 A local pipeline's tokenizers or an explicit tokenizer_path override these.
 No model, tokenizer, config or Python code is downloaded by this family.
 
-Supported task: dev/schnell architecture text-to-image training and sampling.
-Fill, Control and explicitly identified Kontext pipelines are rejected. A bare
-Kontext transformer has the same tensor geometry as dev, so tensor shapes alone
-cannot establish its intended task; image-conditioned editing is not implemented.
-Block swapping, compilation, Unsloth and external attention processors are not
-advertised until verified against this native network's backward lifecycle.
+Historical geometry references cover dev/schnell text-to-image checkpoints.
+Runtime training and sampling are disabled for this family. Fill, Control and
+Kontext use different task contracts; shape recognition does not establish
+compatibility with them.
 
 Adapter export compatibility
 ----------------------------
 
 The main checkpoint uses the `lora_transformer_` prefix with flattened Diffusers
-module names, recognized by ComfyUI's FLUX key map. LoRA and LoKr attn-mlp
-mapping and delta weights were verified against the actual local ComfyUI loader
-and original BFL network in a reduced CPU oracle (not full-weight GPU inference).
+module names, following ComfyUI's FLUX key map.
 Diffusers 0.40 parses the attn-only LoRA export correctly. Its current mixture
 converter does not preserve FLUX MLP submodule paths, so attn-mlp exports are not
-claimed to load directly in that Diffusers release. The project can restore its
+directly loadable in that Diffusers release. The project can restore its
 own exported LoRA and LoKr tensors without conversion.
 https://github.com/Comfy-Org/ComfyUI/blob/master/comfy/lora.py
