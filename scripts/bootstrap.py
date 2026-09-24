@@ -9,8 +9,8 @@
   run     （默认）创建/更新 venv、按需构建前端、启动服务、打开浏览器
   dev     同时启动后端与 Vite 热更新前端
   build   只构建前端
-  test    跑 pytest（有 Node 时再跑 vitest）
-  smoke   转发到 ``ypuddin smoke``（在本机用真实权重跑几步训练自检，见 docs/deploy.md）
+  test    运行本机 Test/ 目录里的测试（测试不随仓库发布）
+  smoke   转发到 ``ypuddin smoke``（在本机用真实权重跑几步训练自检，见 docs/guide/install.md）
   doctor  打印本机情况：Python、torch/CUDA/显卡、可选依赖、Node、前端构建状态
   shell   打印如何激活 venv
 
@@ -1427,6 +1427,8 @@ def main(argv: list[str]) -> int:
         select_environment(opts["profile"], torch_tag)
     if command == "doctor":
         return doctor()
+    if command == "test" and not (ROOT / "Test").is_dir():
+        die("未找到本地测试目录 Test/；测试只保存在开发机上，不随仓库发布。")
     if opts["reinstall"] and Path(sys.prefix).resolve() == VENV.resolve():
         # In Windows the interpreter executing this file cannot delete itself.
         base = getattr(sys, "_base_executable", None)
@@ -1459,9 +1461,12 @@ def main(argv: list[str]) -> int:
         return 0 if build_frontend(force=True) else 1
     if command == "test":
         rc = subprocess.run([str(venv_bin("pytest")), "-q"], cwd=ROOT).returncode
-        npm = shutil.which("npm") or shutil.which("npm.cmd")
-        if npm and (FRONTEND / "node_modules").exists():
-            rc |= subprocess.run([npm, "run", "test"], cwd=FRONTEND).returncode
+        npx = shutil.which("npx") or shutil.which("npx.cmd")
+        if npx and (FRONTEND / "node_modules").exists():
+            config = ROOT / "Test/frontend/vitest.config.ts"
+            rc |= subprocess.run(
+                [npx, "--no-install", "vitest", "run", "--config", str(config)], cwd=FRONTEND
+            ).returncode
         return rc
     if command == "smoke":
         return subprocess.run(
