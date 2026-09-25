@@ -35,3 +35,16 @@ export function mergeJobEvent(job: Job, event: Record<string, any>): Job {
   return { ...job, progress, latest, ...(event.status ? { status: event.status } : {}),
     ...(event.error !== undefined ? { error: event.error } : {}) };
 }
+
+type Text = (zh: string, en: string) => string;
+
+export function jobTypeLabel(type: string, text: Text): string {
+  return type === 'xyz' ? text('模型测试', 'Model testing') : type === 'cache' ? text('缓存', 'Cache') : text('训练', 'Training');
+}
+
+/** Month, day and time; the year only when it is not the current one. */
+export function shortTime(ts: number | null | undefined): string {
+  if (ts == null) return '—';
+  const date = new Date(ts * 1000);
+  return date.toLocaleString(undefined, { ...(date.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}), month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+}

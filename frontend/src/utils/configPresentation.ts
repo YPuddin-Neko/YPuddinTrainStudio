@@ -247,7 +247,7 @@ export function configOptionLabel(path: string, option: string, english = false)
     'adapter.param_dtype': { fp32: ['FP32', 'FP32'], bf16: ['BF16', 'BF16'] },
     'checkpoint.save_dtype': { bf16: ['BF16', 'BF16'], fp16: ['FP16', 'FP16'], fp32: ['FP32', 'FP32'] },
     'scheduler.type': { constant: ['恒定', 'Constant'], linear: ['线性衰减', 'Linear'], cosine: ['余弦衰减', 'Cosine'], cosine_restarts: ['余弦重启', 'Cosine restarts'], polynomial: ['多项式衰减', 'Polynomial'], warmup_stable_decay: ['预热-稳定-衰减', 'WSD'], rex: ['REX', 'REX'] },
-    'logging.level': { debug: ['最详细', 'Debug'], info: ['默认', 'Info'], warning: ['仅警告', 'Warning'] },
+    'logging.level': { debug: ['记录调试信息', 'Debug'], info: ['常规进度', 'Info'], warning: ['仅警告和错误', 'Warning'] },
     'loop.mixed_precision': {bf16:['自动混合精度','BF16'],fp16:['自动混合精度','FP16'],no:['关闭自动混合精度','Off']},
     'loop.distributed_strategy': {ddp:['数据并行','DDP'],fsdp:['显存分片','FSDP']},
     'training.mode': {adapter:['LoRA','LoRA'],full:['全量微调','Full fine-tuning']},

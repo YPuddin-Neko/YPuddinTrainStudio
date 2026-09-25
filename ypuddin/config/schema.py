@@ -1386,7 +1386,9 @@ class LoggingConfig(_Strict):
         ui_={"x-ui": {"hidden": True}},
     )
     level: Literal["debug", "info", "warning"] = F(
-        "info", help="日志级别", ui_=ui("logging", order=30, control="select", advanced=True)
+        "debug",
+        help="训练日志记录的详细程度。调试级别额外记录设备与精度、各阶段耗时、数据分桶、优化器与调度器、恢复点保存和采样的细节，在任务日志中打开“调试日志”后显示；信息级别只记录常规进度；警告级别只记录警告和错误。",
+        ui_=ui("logging", order=5, control="select"),
     )
 
 

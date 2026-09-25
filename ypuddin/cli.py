@@ -10,7 +10,11 @@ import sys
 from pathlib import Path
 
 import ypuddin
+from ypuddin import worker_log
 from ypuddin.config import TrainConfig, dump_toml, load_config
+
+# Named explicitly: workers run this module as ``__main__``.
+log = logging.getLogger("ypuddin.cli")
 
 
 def _add_config_args(p: argparse.ArgumentParser) -> None:
@@ -25,30 +29,37 @@ def _load(args: argparse.Namespace) -> TrainConfig:
     return load_config(args.config, presets=args.preset, overrides=args.set)
 
 
+def _worker_config(args: argparse.Namespace) -> TrainConfig:
+    worker_log.configure("debug" if args.verbose else "info")
+    cfg = _load(args)
+    worker_log.configure("debug" if args.verbose else cfg.logging.level)
+    return cfg
+
+
 def cmd_train(args: argparse.Namespace) -> int:
     from ypuddin.runtime_attention import AttentionEnvironmentError
     from ypuddin.train import train
 
-    cfg = _load(args)
+    cfg = _worker_config(args)
     try:
         outcome = train(cfg, device=args.device)
     except AttentionEnvironmentError as exc:
         if args.verbose:
             raise
         if int(os.environ.get("RANK", "0")) == 0:
-            print(str(exc), file=sys.stderr)
+            log.error("%s", exc)
         return 1
     if int(os.environ.get("RANK", "0")) == 0:
-        print(f"training {outcome}")
+        log.info("training %s", outcome)
     return 0 if outcome in ("finished", "paused") else 1
 
 
 def cmd_cache(args: argparse.Namespace) -> int:
     from ypuddin.train import cache
 
-    cfg = _load(args)
+    cfg = _worker_config(args)
     outcome = cache(cfg, device=args.device)
-    print(f"caching {outcome}")
+    log.info("caching %s", outcome)
     return 0 if outcome == "finished" else 1
 
 
@@ -365,10 +376,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format=worker_log.FORMAT)
     return int(args.fn(args))
 
 

@@ -1,10 +1,10 @@
-import { mergeJobEvent } from '../../utils/jobs';
+import { jobTypeLabel, mergeJobEvent } from '../../utils/jobs';
 import React from 'react';
 import { Link, useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { EChart } from '../../components/EChart';
 import { apiClient, apiUrl } from '../../api/client';
-import { Job, JobMetrics, JobSample, JobCheckpoint, JobLogLine } from '../../api/types';
+import { Job, JobMetrics, JobSample, JobCheckpoint } from '../../api/types';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
 import {
@@ -17,21 +17,22 @@ import {
   CheckCircle2,
   Loader2,
   ChevronDown,
+  ArrowLeft,
 } from 'lucide-react';
-import { shapeValidationSeries, mergeValidationPoint, appendCapped, smoothLoss, appendMetricStep } from '../../utils/metrics';
+import { shapeValidationSeries, mergeValidationPoint, smoothLoss, appendMetricStep } from '../../utils/metrics';
 import { formatBytes, formatEta, formatTime } from '../../utils/format';
 import { formatApiError } from '../../utils/errors';
 import { projectUrl, type ProjectVersion } from '../../utils/projectVersions';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import StudioSelect from '../../components/StudioSelect';
-import { JobActions } from '../Queue/jobPresentation';
+import { JobActions, JobStatus } from '../Queue/jobPresentation';
 import SampleLoss from '../../components/SampleLoss';
 import ConfigHelp from '../../components/ConfigHelp';
 import { metricChartBase, metricLabels } from './metricPresentation';
 import '../Queue/queue.css';
 import './job-detail.css';
 import './job-metrics.css';
-import Switch from '../../components/Switch';
+import JobLogView from './JobLogView';
 import { SlidingIndicator } from '../../components/motion';
 import { useEnterAnimation } from '../../utils/motion';
 
@@ -40,7 +41,6 @@ type VersionedJob = Job & { version_id?: string | null; latest: Job['latest'] & 
 const LR_COLORS = ['#a78bfa', '#f59e0b', '#22d3ee', '#fb7185', '#84cc16', '#e879f9'];
 
 const PHASE_KEYS = ['preparing', 'caching', 'training', 'finalizing'];
-const LOG_LEVELS = ['all', 'info', 'warn', 'error', 'debug'];
 
 function mergeSamples(previous: JobSample[], incoming: JobSample[]): JobSample[] {
   // Step and epoch triggers may share step/seed while saving different image files.
@@ -64,21 +64,12 @@ function EmptyState({ icon: Icon, title, hint }: { icon: React.ComponentType<{ c
   );
 }
 
-/** 日志级别颜色：error 红 / warn 黄 / info 蓝 / debug 弱化 */
-function logLevelColor(level: string): string {
-  if (level === 'error') return 'text-red-400';
-  if (level === 'warn') return 'text-yellow-400';
-  if (level === 'debug') return 'text-slate-400';
-  return 'text-blue-400';
-}
-
 export default function JobDetail() {
   const { id } = useParams<{ id: string }>();
   const { t, i18n } = useTranslation();
   const text = useWorkspaceText();
   const navigate = useNavigate();
   const location = useLocation();
-  const queueReturnTo = typeof location.state?.queueReturnTo === 'string' && /^\/queue(?:\?|$)/.test(location.state.queueReturnTo) ? location.state.queueReturnTo : '/queue';
   const [params, setParams] = useSearchParams();
   const [dataError, setDataError] = React.useState('');
   const [actionError, setActionError] = React.useState('');
@@ -95,7 +86,6 @@ export default function JobDetail() {
   const [metrics, setMetrics] = React.useState<JobMetrics | null>(null);
   const [samples, setSamples] = React.useState<JobSample[]>([]);
   const [checkpoints, setCheckpoints] = React.useState<JobCheckpoint[]>([]);
-  const [logs, setLogs] = React.useState<JobLogLine[]>([]);
   const [configSnapshot, setConfigSnapshot] = React.useState<any>(null);
   const [sampleProgress, setSampleProgress] = React.useState<{ step: number; promptIndex: number; prompts: number; done: number; total: number } | null>(null);
 
@@ -103,45 +93,15 @@ export default function JobDetail() {
   const allowedTabs = job?.type === 'xyz' ? ['logs', 'config'] : ['metrics', 'samples', 'checkpoints', 'logs', 'config'];
   const activeTab = allowedTabs.includes(requestedTab) ? requestedTab : job?.type === 'xyz' ? 'logs' : 'metrics';
   const tabPanel = useEnterAnimation<HTMLDivElement>(activeTab, { skipFirst: true });
-  const setActiveTab = (tab: string) => { const next = new URLSearchParams(params); next.set('tab', tab); setParams(next, { state: location.state }); };
+  // Tabs replace the entry so Back leaves the job instead of stepping through tabs.
+  const setActiveTab = (tab: string) => { const next = new URLSearchParams(params); next.set('tab', tab); setParams(next, { replace: true, state: location.state }); };
   const [xAxisMode, setXAxisMode] = React.useState<'step' | 'epoch'>('step');
   const [emaAlpha, setEmaAlpha] = React.useState<number>(0.9);
   const [showDiagnostics, setShowDiagnostics] = React.useState(false);
   const chinese = (i18n.resolvedLanguage || i18n.language).startsWith('zh');
   const labels = React.useMemo(() => metricLabels(chinese), [chinese]);
-  const [logFilter, setLogFilter] = React.useState<string>('all');
-  const [autoScrollLog, setAutoScrollLog] = React.useState<boolean>(true);
-  const [logMode, setLogMode] = React.useState<'live' | 'history'>('live');
-  const [logOffsets, setLogOffsets] = React.useState([0]);
-  const [nextLogOffset, setNextLogOffset] = React.useState(0);
-  const [hasMoreLogs, setHasMoreLogs] = React.useState(false);
-  const [logLoading, setLogLoading] = React.useState(false);
-  const [logError, setLogError] = React.useState('');
-  const [logQuery, setLogQuery] = React.useState('');
   const [samplePage, setSamplePage] = React.useState(1);
   const [sampleStep, setSampleStep] = React.useState('');
-  const logRequest = React.useRef<AbortController | null>(null);
-  const logOffset = logOffsets[logOffsets.length - 1];
-  const fetchLogs = React.useCallback(async () => {
-    if (!id) return;
-    logRequest.current?.abort(); const controller = new AbortController(); logRequest.current = controller;
-    setLogLoading(true); setLogError('');
-    try {
-      const response = await apiClient.get<{ lines: JobLogLine[]; next_offset: number; has_more?: boolean }>(`/jobs/${id}/log`, { params: { offset: logOffset, limit: 500, tail: logMode === 'live' }, signal: controller.signal, silent: true });
-      if (!controller.signal.aborted) { setLogs(response.lines || []); setNextLogOffset(response.next_offset); setHasMoreLogs(response.has_more ?? response.lines.length >= 500); }
-    } catch (error) { if (!controller.signal.aborted) setLogError(formatApiError(error)); }
-    finally { if (!controller.signal.aborted) setLogLoading(false); if (logRequest.current === controller) logRequest.current = null; }
-  }, [id, logMode, logOffset]);
-  React.useEffect(() => { void fetchLogs(); return () => logRequest.current?.abort(); }, [fetchLogs]);
-  React.useEffect(() => {
-    if (activeTab !== 'logs' || logMode !== 'live') return;
-    void fetchLogs();
-    const timer = window.setInterval(() => { if (!logRequest.current) void fetchLogs(); }, 1500);
-    return () => window.clearInterval(timer);
-  }, [activeTab, logMode, fetchLogs]);
-
-
-  const logContainerRef = React.useRef<HTMLDivElement>(null);
   const samplesRequestRef = React.useRef<AbortController | null>(null);
   const refreshSamples = React.useCallback(async () => {
     if (!id) return;
@@ -159,7 +119,7 @@ export default function JobDetail() {
     const controller = new AbortController();
     const options = { signal: controller.signal };
     const ignoreAbort = (error: Error) => { if (!controller.signal.aborted) setDataError(formatApiError(error)); };
-    setDataError(''); setSamplePage(1); setSampleStep(''); setLogOffsets([0]); setLogMode('live'); setJob(null); setMetrics(null); setSamples([]); setCheckpoints([]); setLogs([]); setConfigSnapshot(null); setSampleProgress(null);
+    setDataError(''); setSamplePage(1); setSampleStep(''); setJob(null); setMetrics(null); setSamples([]); setCheckpoints([]); setConfigSnapshot(null); setSampleProgress(null);
     apiClient.get<VersionedJob>(`/jobs/${id}`, options).then(setJob).catch(ignoreAbort);
     apiClient.get<JobMetrics>(`/jobs/${id}/metrics`, options).then(setMetrics).catch(ignoreAbort);
     void refreshSamples();
@@ -182,13 +142,22 @@ export default function JobDetail() {
     return () => controller.abort();
   }, [job?.project_id, job?.version_id]);
   const versionName = resolvedVersion?.projectId === job?.project_id && resolvedVersion?.versionId === job?.version_id ? resolvedVersion?.name : '';
+  const resultsUrl = job?.project_id ? projectUrl(job.project_id, job.version_id, 'results') : '/queue';
+  const versionNumber = job?.version_number ? `v${job.version_number}` : '';
+  const versionTitle = (job?.version_name || versionName || '').trim();
+  const versionLabel = versionNumber && versionTitle && !new RegExp(`^${versionNumber}(?:$|[\\s·:：-])`, 'i').test(versionTitle) ? `${versionNumber} · ${versionTitle}` : versionTitle || versionNumber;
+  // Several pages open a job; return to the one the user came from, or its version results.
+  const goBack = () => {
+    // The router numbers its history entries; 0 is the page this app session opened on.
+    const index = (window.history.state as { idx?: number } | null)?.idx;
+    if (typeof index === 'number' ? index > 0 : location.key !== 'default') navigate(-1); else navigate(resultsUrl);
+  };
 
   // 2. SSE 增量监听
   useEventStream(EVENT_TYPES.JOB_STATE, (data: any) => {
     if (data.job_id === id) {
       setJob((prev) => prev ? mergeJobEvent(prev, data) : null);
       if (['completed', 'failed', 'cancelled', 'paused'].includes(data.status)) {
-        if (logMode === 'live') void fetchLogs();
         void refreshSamples();
         void apiClient.get<VersionedJob>(`/jobs/${id}`, {silent:true}).then(updated => setJob(previous => previous?.id === updated.id ? updated : previous)).catch(() => {});
       }
@@ -231,13 +200,6 @@ export default function JobDetail() {
     }
   });
 
-  useEventStream(EVENT_TYPES.JOB_LOG, (data: any) => {
-    if (data.job_id === id && data.lines && logMode === 'live') {
-      // History is read from disk; only the current live window receives events.
-      setLogs((prev) => appendCapped(prev, data.lines, 500));
-    }
-  });
-
   // validation 增量：按 step 去重合并
   useEventStream(EVENT_TYPES.JOB_VALIDATION, (data: any) => {
     if (data.job_id !== id) return;
@@ -253,13 +215,6 @@ export default function JobDetail() {
       };
     });
   });
-
-  // 日志自动触底
-  React.useEffect(() => {
-    if (autoScrollLog && logContainerRef.current) {
-      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
-    }
-  }, [logs, autoScrollLog, activeTab]);
 
   const stepLabel = t('job.step');
   const epochLabel = t('job.epoch');
@@ -322,7 +277,6 @@ export default function JobDetail() {
     };
   }, [metrics, metricSteps, xAxisName, memorySeriesLabel, labels]);
 
-  const filteredLogs = logs.filter(line => (logFilter === 'all' || (line.level === 'warning' ? 'warn' : line.level) === logFilter) && (!logQuery || line.msg.toLocaleLowerCase().includes(logQuery.toLocaleLowerCase())));
   const filteredSamples = [...samples].reverse().filter(sample => !sampleStep || String(sample.step) === sampleStep);
   const samplePages = Math.max(1, Math.ceil(filteredSamples.length / 24));
   const visibleSamples = filteredSamples.slice((samplePage - 1) * 24, samplePage * 24);
@@ -339,38 +293,8 @@ export default function JobDetail() {
   const rawPhase = ['starting', 'checking_communication', 'loading', 'indexing', 'injecting', 'prepared'].includes(phase) ? 'preparing' : phase.startsWith('caching_') ? 'caching' : phase;
   const currentPhaseIndex = job?.status === 'completed' ? PHASE_KEYS.length : PHASE_KEYS.findIndex((k) => k === rawPhase);
 
-  // 任务状态徽章（文案 + 颜色）
-  const statusLabels: Record<string, string> = {
-    queued: t('job.statusQueued', '排队中'),
-    scheduled: t('job.statusScheduled', '已排期'),
-    running: t('job.statusRunning', '运行中'),
-    pausing: t('job.statusPausing', '暂停中'),
-    cancelling: t('job.statusCancelling', '取消中'),
-    paused: t('job.statusPaused', '已暂停'),
-    completed: t('job.statusCompleted', '已完成'),
-    failed: t('job.statusFailed', '失败'),
-    cancelled: t('job.statusCancelled', '已取消'),
-  };
-  const statusText = job?.status ? statusLabels[job.status] || job.status : t('job.statusUnknown', '未知');
-  const statusBadgeClass =
-    job?.status === 'running'
-      ? 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300'
-      : job?.status === 'failed'
-        ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'
-        : job?.status === 'paused' || job?.status === 'pausing'
-          ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
-          : 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300';
-
   const checkpointKindLabel = (kind: string) =>
     kind === 'model' ? text('全量模型组件', 'Full-model components') : kind === 'weights' ? t('job.kindWeights', '仅权重') : kind === 'full' ? t('job.kindFull', '完整') : kind;
-
-  const logLevelLabels: Record<string, string> = {
-    all: t('job.levelAll'),
-    info: t('job.levelInfo', 'INFO'),
-    warn: t('job.levelWarn', 'WARN'),
-    error: t('job.levelError', 'ERROR'),
-    debug: t('job.levelDebug', 'DEBUG'),
-  };
 
   const tabs = [
     { key: 'metrics', icon: Activity, label: t('job.tabMetrics') },
@@ -406,17 +330,29 @@ export default function JobDetail() {
 
   return (
     <div className="job-monitor task-workspace" data-view={activeTab} data-testid="job-detail-page">
-      <div className="job-monitor-bar"><div className="job-monitor-links"><Link className="ui-link" to={queueReturnTo}>← {text('全局训练队列', 'Training queue')}</Link>
-      {job?.project_id && <Link to={projectUrl(job.project_id, job.version_id, 'results')} title={job.project_id} className="ui-link">← {job.project_name || text('所属项目', 'Project')} · {text('训练结果', 'Training results')}{job.version_id && <span className="break-words text-xs" title={job.version_id}> · {versionName ? `${text('版本', 'Version')} ${versionName}` : text('所属版本', 'Version')}</span>}</Link>}
-      </div><div className="job-monitor-identity"><div><h1>{job?.name || text('读取任务…', 'Loading job…')}</h1><small>{id} · {job?.type === 'xyz' ? text('模型测试', 'Model testing') : job?.type === 'cache' ? text('缓存任务', 'Cache job') : text('训练任务', 'Training job')}</small></div><span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${statusBadgeClass}`}>{statusText}</span>{job && <JobActions key={job.id} job={job} onUpdated={updated => { if (updated.id === job.id) setJob(updated); else navigate(`/jobs/${updated.id}`); }}/>}</div></div>
+      <header className="job-monitor-bar">
+        <div className="job-monitor-nav">
+          <button type="button" className="ui-btn ui-btn-sm" onClick={goBack}><ArrowLeft size={14}/>{text('返回', 'Back')}</button>
+          <nav className="job-monitor-breadcrumb" aria-label={text('当前位置', 'Current location')}>
+            <Link to="/queue">{text('任务队列', 'Job queue')}</Link>
+            {job?.project_id && <><span aria-hidden="true">/</span><Link to={resultsUrl} title={text('打开版本训练结果', 'Open version results')}>{job.project_name || job.project_id}{versionLabel && <span className="job-monitor-version"> · {versionLabel}</span>}</Link></>}
+          </nav>
+        </div>
+        <div className="job-monitor-identity">
+          <div className="job-monitor-title"><h1>{job?.name || text('读取任务…', 'Loading job…')}</h1>{job && <JobStatus status={job.status}/>}</div>
+          {job && <JobActions key={job.id} job={job} onUpdated={updated => { if (updated.id === job.id) setJob(updated); else navigate(`/jobs/${updated.id}`, { replace: true, state: location.state }); }}/>}
+        </div>
+      </header>
       <dl className="job-run-metadata" aria-label={text('运行信息','Run information')}>
+        <div><dt>{text('任务类型','Job type')}</dt><dd>{job ? jobTypeLabel(job.type, text) : '—'}</dd></div>
         <div><dt>{text('开始时间','Started')}</dt><dd>{formatTime(job?.started_at)}</dd></div>
         <div><dt>{job?.type === 'train' ? text('训练时长','Training elapsed') : text('运行时长','Elapsed')}</dt><dd>{formatEta(elapsed)}</dd></div>
         <div><dt>{job?.type === 'train' ? text('训练配置','Training configuration') : text('任务配置','Task configuration')}</dt><dd>{configurationName ? `${configurationName} · ${text('参数快照','snapshot')}` : '—'}</dd></div>
         <div><dt>{text('运行 ID','Run ID')}</dt><dd><code>{job?.id || id}</code></dd></div>
       </dl>
       {dataError && <div className="task-error" role="alert">{dataError}</div>}
-      {(actionError || job?.error) && <div role="alert" className="whitespace-pre-line break-words rounded bg-red-50 text-red-700 p-3 dark:bg-red-950 dark:text-red-300">{actionError || job?.error}</div>}
+      {actionError && <div role="alert" className="task-error">{actionError}</div>}
+      {job?.error && <div role="alert" className="job-failure"><div><strong>{job.type === 'train' ? text('训练失败', 'Training failed') : text('任务失败', 'Job failed')}</strong><p>{job.error}</p></div>{activeTab !== 'logs' && <button type="button" className="ui-btn ui-btn-sm" onClick={() => setActiveTab('logs')}><Terminal size={14}/>{text('查看日志', 'Open log')}</button>}</div>}
       {/* 1. 头部指标与阶段时间线 */}
       {job?.type !== 'xyz' && <div className="job-monitor-summary bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 space-y-3">
         <div className="job-stat-grid" aria-label={text('训练核心指标','Training metrics')}>
@@ -559,36 +495,7 @@ export default function JobDetail() {
         </article>)}
       </section>}
 
-      {activeTab === 'logs' && (
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3">
-          <div className="job-log-toolbar"><StudioSelect aria-label={text('日志模式', 'Log mode')} value={logMode} options={[{ value: 'live', label: text('实时末尾 · 500 行', 'Live tail · 500 lines') }, { value: 'history', label: text('完整历史 · 分页读取', 'Full history · paginated') }]} onValueChange={value => { setLogMode(value as 'live' | 'history'); setLogOffsets([0]); setLogs([]); }}/><StudioSelect aria-label={text('日志级别', 'Log level')} value={logFilter} options={LOG_LEVELS.map(value => ({ value, label: logLevelLabels[value] }))} onValueChange={setLogFilter}/><input aria-label={text('搜索当前页日志', 'Search this log page')} value={logQuery} onChange={event => setLogQuery(event.target.value)} placeholder={text('搜索当前页日志', 'Search this log page')}/>{logMode === 'history' || logError ? <button type="button" className="ui-btn" disabled={logLoading} onClick={() => void fetchLogs()}>{text('刷新日志', 'Refresh logs')}</button> : <span className="text-xs text-slate-500">{text('自动刷新', 'Auto refresh')}</span>}<Switch className="studio-switch-small" checked={autoScrollLog} onCheckedChange={setAutoScrollLog}>{t('job.followBottom')}</Switch></div>
-          {logError && <p role="alert" className="task-error">{logError}</p>}
-          {logMode === 'history' && <div className="task-pagination"><span>{text('按原始顺序读取，每页最多 500 行；筛选作用于当前页。', 'Original order, up to 500 lines per page; filters apply to this page.')}</span><div><button type="button" className="ui-btn" disabled={logLoading || logOffsets.length === 1} onClick={() => { setLogs([]); setLogOffsets(offsets => offsets.slice(0, -1)); }}>{text('上一页日志', 'Previous log page')}</button><span>{logOffsets.length}</span><button type="button" className="ui-btn" disabled={logLoading || !hasMoreLogs} onClick={() => { setLogs([]); setLogOffsets(offsets => [...offsets, nextLogOffset]); }}>{text('下一页日志', 'Next log page')}</button></div></div>}
-          <div
-            ref={logContainerRef}
-            className="h-80 overflow-y-auto bg-slate-900 text-slate-200 font-mono text-xs p-3 rounded-lg space-y-1"
-          >
-            {filteredLogs.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center">
-                <Terminal className="w-6 h-6 text-slate-600" />
-                <p className="mt-2 text-slate-400">{t('job.noLogs', '暂无日志')}</p>
-              </div>
-            ) : (
-              filteredLogs.map((l, idx) => (
-                <div key={idx} className="flex space-x-2">
-                  <span className="text-slate-400 shrink-0">
-                    [{l.ts == null ? '--' : typeof l.ts === 'number' ? new Date(l.ts * 1000).toLocaleTimeString() : l.ts}]
-                  </span>
-                  <span className={`uppercase font-bold ${logLevelColor(l.level)}`}>
-                    [{l.level}]
-                  </span>
-                  <span className="flex-1 break-all">{l.msg}</span>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
+      {activeTab === 'logs' && id && <JobLogView jobId={id} active live={!!job && ['running', 'pausing', 'cancelling'].includes(job.status)} recordedLevel={job?.type === 'xyz' ? null : configSnapshot?.logging?.level}/>}
 
       {activeTab === 'config' && (
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
@@ -599,7 +506,7 @@ export default function JobDetail() {
 
             />
           ) : (
-            <pre className="text-xs font-mono bg-slate-50 dark:bg-slate-900 p-4 rounded-lg overflow-x-auto">
+            <pre className="job-config-snapshot text-xs font-mono bg-slate-50 dark:bg-slate-900 p-4 rounded-lg overflow-x-auto">
               {JSON.stringify(configSnapshot, null, 2)}
             </pre>
           )}

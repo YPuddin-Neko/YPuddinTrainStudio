@@ -4083,7 +4083,7 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "default": 2000,
+              "default": 1000,
               "title": "Limit"
             }
           },
@@ -4096,6 +4096,22 @@
               "default": false,
               "title": "Tail"
             }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
           }
         ],
         "responses": {
@@ -4107,6 +4123,41 @@
                   "$ref": "#/components/schemas/JobLog"
                 }
               }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{jid}/log/raw": {
+      "get": {
+        "summary": "Job Log Raw",
+        "operationId": "job_log_raw_api_jobs__jid__log_raw_get",
+        "parameters": [
+          {
+            "name": "jid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Jid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The complete worker log",
+            "content": {
+              "text/plain": {}
             }
           },
           "422": {
@@ -12054,6 +12105,11 @@
             "type": "array",
             "title": "Lines"
           },
+          "start_offset": {
+            "type": "integer",
+            "title": "Start Offset",
+            "default": 0
+          },
           "next_offset": {
             "type": "integer",
             "title": "Next Offset"
@@ -12061,6 +12117,11 @@
           "has_more": {
             "type": "boolean",
             "title": "Has More",
+            "default": false
+          },
+          "has_earlier": {
+            "type": "boolean",
+            "title": "Has Earlier",
             "default": false
           }
         },
@@ -12539,6 +12600,21 @@
       },
       "LogLine": {
         "properties": {
+          "offset": {
+            "type": "integer",
+            "title": "Offset",
+            "default": 0
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "record",
+              "traceback",
+              "text"
+            ],
+            "title": "Kind",
+            "default": "text"
+          },
           "ts": {
             "anyOf": [
               {
@@ -12553,6 +12629,17 @@
           "level": {
             "type": "string",
             "title": "Level"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
           },
           "msg": {
             "type": "string",
@@ -12635,13 +12722,12 @@
               "warning"
             ],
             "title": "Level",
-            "description": "日志级别",
-            "default": "info",
+            "description": "训练日志记录的详细程度。调试级别额外记录设备与精度、各阶段耗时、数据分桶、优化器与调度器、恢复点保存和采样的细节，在任务日志中打开“调试日志”后显示；信息级别只记录常规进度；警告级别只记录警告和错误。",
+            "default": "debug",
             "x-ui": {
-              "advanced": true,
               "control": "select",
               "group": "logging",
-              "order": 30
+              "order": 5
             }
           }
         },

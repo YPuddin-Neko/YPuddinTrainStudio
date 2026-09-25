@@ -21,6 +21,7 @@ from .db import Database, new_id, now
 from .environment import maintenance_blocked
 from .gpu_selection import selection_error
 from .hardware import gpu_info
+from .job_logs import parse_log_lines
 from .job_paths import event_file, log_file, state_directory
 from .sample_events import sample_event_loss
 
@@ -674,7 +675,7 @@ class JobSupervisor:
         if log_path.exists():
             tail = log_path.read_bytes()[-4000:].decode("utf-8", errors="replace").strip().splitlines()
             if tail:
-                error += ": " + tail[-1][:500]
+                error += ": " + parse_log_lines(tail[-1:])[0]["msg"][:500]
         status = "cancelled" if job["status"] == "cancelling" else "failed"
         self._set_status(
             job_id, status, finished_at=now(), exit_code=code, error=error if status == "failed" else None

@@ -497,8 +497,11 @@ def generate(payload: dict, output: Path, emit, cancelled):
 
 
 def main():
+    from ypuddin import worker_log
+
     request_path = Path(sys.argv[1])
     payload = json.loads(request_path.read_text(encoding="utf-8"))
+    worker_log.configure(payload.get("logging", {}).get("level", "debug"))
     run_dir = request_path.parent
     from ypuddin.train.events import Emitter
 

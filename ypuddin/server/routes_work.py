@@ -33,7 +33,7 @@ from .errors import ApiError, NotFound
 from .gpu_selection import GpuSelection, selection_error
 from .hardware import gpu_info
 from .import_progress import ImportProgress
-from .job_logs import parse_log_lines
+from .job_logs import read_log
 from .job_paths import event_file, log_file, owned_job_directories
 from .project_covers import cover_path, cover_url, read_cover_upload, remove_cover, replace_cover, thumbnail
 from .sample_events import read_events, samples_with_loss
@@ -1941,7 +1941,16 @@ def _get_job(c: ServiceContext, jid: str) -> dict[str, Any]:
 
 @router.get("/jobs/{jid}", response_model=m.Job, response_model_exclude_unset=True)
 def get_job(jid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    return _job_row(_get_job(c, jid))
+    row = c.db.fetchone(
+        "SELECT j.*, p.name AS project_name, v.name AS version_name, v.number AS version_number"
+        " FROM jobs j LEFT JOIN projects p ON p.id=j.project_id"
+        " LEFT JOIN project_versions v ON v.id=j.version_id"
+        " WHERE j.id=?",
+        (jid,),
+    )
+    if not row:
+        raise NotFound(f"job {jid} not found", code="job.not_found")
+    return _job_row(row)
 
 
 @router.patch("/jobs/{jid}", response_model=m.Job, response_model_exclude_unset=True)
@@ -2115,35 +2124,30 @@ def job_file(jid: str, path: str, kind: str = "sample", c: ServiceContext = Depe
 
 @router.get("/jobs/{jid}/log", response_model=m.JobLog, response_model_exclude_unset=True)
 def job_log(
-    jid: str, offset: int = 0, limit: int = 2000, c: ServiceContext = Depends(ctx), tail: bool = False
+    jid: str,
+    offset: int = 0,
+    limit: int = 1000,
+    c: ServiceContext = Depends(ctx),
+    tail: bool = False,
+    before: int | None = None,
 ) -> dict[str, Any]:
     r = _get_job(c, jid)
-    p = log_file(r)
-    if not p.exists():
-        return {"lines": [], "next_offset": 0, "has_more": False}
-    limit = max(1, min(2000, limit))
-    with p.open("rb") as stream:
-        size = p.stat().st_size
-        if tail:
-            # Latest view is bounded even when a run has produced gigabytes of logs.
-            stream.seek(max(0, size - 512 * 1024))
-            if stream.tell():
-                stream.readline(512 * 1024)
-            lines = stream.read(512 * 1024).decode("utf-8", errors="replace").splitlines()[-limit:]
-        else:
-            stream.seek(min(size, max(0, offset)))
-            lines = []
-            start = stream.tell()
-            for _ in range(limit):
-                line = stream.readline(512 * 1024)
-                if not line:
-                    break
-                lines.append(line.decode("utf-8", errors="replace").rstrip("\r\n"))
-                if stream.tell() - start >= 512 * 1024:
-                    break
-        next_offset = stream.tell()
-        has_more = bool(stream.read(1))
-    return {"lines": parse_log_lines(lines), "next_offset": next_offset, "has_more": has_more}
+    # A live worker may be mid-line; a stopped one has written its final output.
+    live = c.supervisor.is_running(jid)
+    return read_log(log_file(r), offset=offset, limit=limit, tail=tail, before=before, complete_only=live)
+
+
+@router.get(
+    "/jobs/{jid}/log/raw",
+    response_class=FileResponse,
+    responses={200: {"content": {"text/plain": {}}, "description": "The complete worker log"}},
+)
+def job_log_raw(jid: str, c: ServiceContext = Depends(ctx)) -> Response:
+    r = _get_job(c, jid)
+    path = log_file(r)
+    if not path.is_file():
+        raise NotFound("log file not found", code="file.not_found")
+    return FileResponse(str(path), media_type="text/plain; charset=utf-8", filename=f"{jid}-run.log")
 
 
 # --------------------------------------------------------------------------- queue settings

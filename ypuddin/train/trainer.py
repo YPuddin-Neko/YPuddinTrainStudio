@@ -146,6 +146,7 @@ class Trainer:
         self._prepared = False
         self._preparing = False
         self._logs: TrainingLogs | None = None
+        self._debug_phase: tuple[str | None, float] = (None, 0.0)
 
     # ----------------------------------------------------------------- setup
     @staticmethod
@@ -177,6 +178,8 @@ class Trainer:
         if not self.is_primary:
             return
         self.emitter.emit(type_, **data)
+        if log.isEnabledFor(logging.DEBUG):
+            self._debug_event(type_, data)
         if self._logs is not None:
             try:
                 self._logs.emit(type_, data)
@@ -193,6 +196,19 @@ class Trainer:
                     "warning",
                     message="training state is not available during preparation; cached items are preserved",
                 )
+
+    def _debug_event(self, type_: str, data: dict[str, Any]) -> None:
+        """Trace lifecycle events; per-step metrics and per-item progress stay in events.jsonl."""
+        if type_ in _PER_STEP_EVENTS or (type_ == "cache.progress" and data.get("done") != data.get("total")):
+            return
+        if type_ == "phase.changed":
+            now = time.perf_counter()
+            previous, started = self._debug_phase
+            self._debug_phase = (data.get("phase"), now)
+            if previous is not None:
+                log.debug("phase %s -> %s after %.1fs", previous, data.get("phase"), now - started)
+                return
+        log.debug("%s: %s", type_, _describe(data))
 
     def prepare(self) -> None:
         try:
@@ -238,6 +254,18 @@ class Trainer:
             self.emit(
                 "warning", message="MPS training uses fp32 without autocast for numerical compatibility"
             )
+        log.debug(
+            "device %s: model dtype %s, compute dtype %s, mixed precision %s, attention %s, tf32 %s, "
+            "deterministic %s, compute policy %s",
+            self.device,
+            str(model_dtype).removeprefix("torch."),
+            str(self.compute_dtype).removeprefix("torch."),
+            cfg.loop.mixed_precision,
+            cfg.model.attention,
+            cfg.memory.allow_tf32 if self.device.type == "cuda" else "n/a",
+            cfg.loop.deterministic,
+            (self.compute_policy or {}).get("id", "none"),
+        )
 
         self.emit("phase.changed", phase="loading")
         from ypuddin.models.fingerprints import fingerprint_cache
@@ -437,6 +465,30 @@ class Trainer:
         )
         self._scheduler_contract = scheduler_recipe(cfg, self.progress.total_steps)
         validate_scheduler_instance(self._scheduler_contract, self.scheduler)
+        log.debug(
+            "optimizer %s: %d parameter groups, learning rates %s, weight decay %s",
+            type(self.optimizer).__name__,
+            len(self.optimizer.param_groups),
+            ", ".join(f"{group.get('lr', 0):.3g}" for group in self.optimizer.param_groups),
+            cfg.optimizer.weight_decay,
+        )
+        log.debug(
+            "scheduler %s: warmup %s, %d total steps",
+            "managed by optimizer" if self.scheduler is None else cfg.scheduler.type,
+            cfg.scheduler.warmup_steps,
+            self.progress.total_steps,
+        )
+        log.debug(
+            "data loader: %d batches per epoch, batch size %d, gradient accumulation %d, %d steps per epoch, "
+            "%d workers, pin memory %s, %s resolution",
+            batches,
+            cfg.dataset.batch_size,
+            cfg.loop.grad_accum,
+            self.progress.steps_per_epoch,
+            cfg.dataset.num_workers,
+            self.device.type == "cuda",
+            cfg.dataset.resolution_mode,
+        )
         if cfg.loop.ema:
             self.ema = {
                 k: v.detach().float().cpu().clone() for k, v in self.adapters.export_state()[0].items()
@@ -765,6 +817,7 @@ class Trainer:
             scaler.load_state_dict(saved)
 
     def _resume(self, path: str) -> None:
+        log.debug("resuming training state from %s", path)
         self._validate_training_compute_policy()
         validate_scheduler_recipe(self._scheduler_contract, self.cfg, self.progress.total_steps)
         captured_scheduler = read_resume_scheduler_contract(
@@ -905,6 +958,12 @@ class Trainer:
 
     @evaluation
     def save_weights(self, tag: str) -> Path:
+        started = time.perf_counter()
+        path = self._save_weights(tag)
+        log.debug("saved weights %s in %.1fs", tag, time.perf_counter() - started)
+        return path
+
+    def _save_weights(self, tag: str) -> Path:
         if isinstance(self.adapters, FullTrainingSet):
             path = save_model_artifact(
                 self.run_dir / f"{self.cfg.checkpoint.name}-{tag}.model", self.adapters, self.cfg, self.loaded
@@ -965,6 +1024,12 @@ class Trainer:
                     path.unlink(missing_ok=True)
 
     def save_state(self, tag: str | None = None) -> Path:
+        started = time.perf_counter()
+        path = self._save_state(tag)
+        log.debug("saved training state %s in %.1fs", path.name, time.perf_counter() - started)
+        return path
+
+    def _save_state(self, tag: str | None = None) -> Path:
         self._validate_training_compute_policy()
         validate_scheduler_recipe(self._scheduler_contract, self.cfg, self.progress.total_steps)
         validate_scheduler_instance(self._scheduler_contract, self.scheduler)
@@ -1317,8 +1382,11 @@ class Trainer:
             f = ctl / name
             if f.exists():
                 f.unlink()
+                log.debug("control request %s at step %d", name, self.progress.step)
                 return name
         req, self._stop = self._stop, None
+        if req:
+            log.debug("signal requested %s at step %d", req, self.progress.step)
         return req
 
     def _run_epoch(self) -> None:
@@ -1622,6 +1690,7 @@ class Trainer:
         ds = self.bundle.validation
         if ds is None:
             return {}
+        started = time.perf_counter()
         ds.set_epoch(0)
         ts = self.objective.sampler.icdf(vcfg.timesteps)
         per_t: dict[float, list[float]] = {q: [] for q in vcfg.timesteps}
@@ -1647,6 +1716,7 @@ class Trainer:
         result = {str(q): float(np.mean(v)) for q, v in per_t.items() if v}
         mean = float(np.mean(list(result.values()))) if result else float("nan")
         self.emit("validation", step=self.progress.step, per_t=result, mean=mean)
+        log.debug("validation on %d images took %.1fs", len(ds.items), time.perf_counter() - started)
         return result
 
     @torch.no_grad()
@@ -1687,6 +1757,7 @@ class Trainer:
             loss = None
         stride = self.family.spec.latent.stride
         patch = self.family.spec.latent.patch
+        started = time.perf_counter()
         for i, p in enumerate(prompts):
             w = (p.width or scfg.width) // self.family.spec.latent.align * self.family.spec.latent.align
             h = (p.height or scfg.height) // self.family.spec.latent.align * self.family.spec.latent.align
@@ -1766,7 +1837,20 @@ class Trainer:
                 er_sde_order=scfg.er_sde_order,
                 er_sde_s_noise=scfg.er_sde_s_noise,
             )
+        log.debug("sampled %d previews for %s in %.1fs", len(paths), tag, time.perf_counter() - started)
         return paths
+
+
+def _describe(data: dict[str, Any], width: int = 160) -> str:
+    parts = []
+    for key, value in data.items():
+        text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
+        parts.append(f"{key}={text if len(text) <= width else text[: width - 1] + '…'}")
+    return " ".join(parts) or "-"
+
+
+# Per-step metrics, per-image progress and epoch starts would bury the lifecycle trace.
+_PER_STEP_EVENTS = {"step", "sample.progress", "xyz.progress", "epoch.started"}
 
 
 def _load_prompts_file(path: str) -> list[Any]:

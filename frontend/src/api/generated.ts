@@ -1066,6 +1066,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/{jid}/log/raw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Job Log Raw */
+        get: operations["job_log_raw_api_jobs__jid__log_raw_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/queue/settings": {
         parameters: {
             query?: never;
@@ -3927,6 +3944,11 @@ export interface components {
         JobLog: {
             /** Lines */
             lines: components["schemas"]["LogLine"][];
+            /**
+             * Start Offset
+             * @default 0
+             */
+            start_offset: number;
             /** Next Offset */
             next_offset: number;
             /**
@@ -3934,6 +3956,11 @@ export interface components {
              * @default false
              */
             has_more: boolean;
+            /**
+             * Has Earlier
+             * @default false
+             */
+            has_earlier: boolean;
         } & {
             [key: string]: unknown;
         };
@@ -4055,10 +4082,23 @@ export interface components {
         };
         /** LogLine */
         LogLine: {
+            /**
+             * Offset
+             * @default 0
+             */
+            offset: number;
+            /**
+             * Kind
+             * @default text
+             * @enum {string}
+             */
+            kind: "record" | "traceback" | "text";
             /** Ts */
             ts: number | null;
             /** Level */
             level: string;
+            /** Source */
+            source?: string | null;
             /** Msg */
             msg: string;
         } & {
@@ -4086,8 +4126,8 @@ export interface components {
             events_path?: string | null;
             /**
              * Level
-             * @description 日志级别
-             * @default info
+             * @description 训练日志记录的详细程度。调试级别额外记录设备与精度、各阶段耗时、数据分桶、优化器与调度器、恢复点保存和采样的细节，在任务日志中打开“调试日志”后显示；信息级别只记录常规进度；警告级别只记录警告和错误。
+             * @default debug
              * @enum {string}
              */
             level: "debug" | "info" | "warning";
@@ -9836,6 +9876,7 @@ export interface operations {
                 offset?: number;
                 limit?: number;
                 tail?: boolean;
+                before?: number | null;
             };
             header?: never;
             path: {
@@ -9852,6 +9893,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobLog"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    job_log_raw_api_jobs__jid__log_raw_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The complete worker log */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": unknown;
                 };
             };
             /** @description Validation Error */

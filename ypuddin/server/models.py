@@ -772,15 +772,20 @@ class JobCheckpoint(_Out):
 
 
 class LogLine(_Out):
+    offset: int = 0
+    kind: Literal["record", "traceback", "text"] = "text"
     ts: float | None
     level: str
+    source: str | None = None
     msg: str
 
 
 class JobLog(_Out):
     lines: list[LogLine]
+    start_offset: int = 0
     next_offset: int
     has_more: bool = False
+    has_earlier: bool = False
 
 
 class QueueSettings(_Out):

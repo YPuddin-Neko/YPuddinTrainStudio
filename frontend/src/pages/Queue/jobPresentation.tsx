@@ -1,11 +1,46 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Pause, Play, Save, RotateCcw, XCircle, Loader2 } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import type { Job } from '../../api/types';
+import ProgressBar from '../../components/ProgressBar';
 import { formatApiError } from '../../utils/errors';
+import { formatEta } from '../../utils/format';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { projectUrl } from '../../utils/projectVersions';
+import { shortTime } from '../../utils/jobs';
+
+const DEVICE_WAIT = 'waiting for a free accelerator with enough memory';
+
+/** The line under a job's status: progress while it runs, the reason once it stops. */
+export function JobProgressSummary({ job }: { job: Job }) {
+  const text = useWorkspaceText();
+  const { t } = useTranslation();
+  const progress = job.progress || {};
+  const active = ['running', 'pausing', 'cancelling', 'paused'].includes(job.status);
+  if (job.type === 'xyz' && progress.total && active) {
+    return <div className="queue-progress"><ProgressBar label={text('测试进度', 'Testing progress')} value={progress.done ?? 0} max={progress.total}/><span>{progress.done ?? 0} / {progress.total} {text('张', 'images')}</span></div>;
+  }
+  if (active && progress.total_steps) {
+    const step = progress.step ?? 0;
+    const eta = job.status === 'running' && progress.eta_s != null ? ` · ${text('剩余', 'left')} ${formatEta(progress.eta_s)}` : '';
+    return <div className="queue-progress"><ProgressBar label={text('训练进度', 'Training progress')} value={step} max={progress.total_steps}/><span>{step} / {progress.total_steps} · {Math.floor(step / progress.total_steps * 100)}%{eta}</span></div>;
+  }
+  if (active || job.status === 'queued') {
+    const reason = progress.wait_reason && progress.wait_reason !== DEVICE_WAIT ? progress.wait_reason : progress.phase ? t(`phase.${progress.phase}`, t('job.phaseInProgress')) : '';
+    return reason ? <small className="queue-status-note">{reason}</small> : null;
+  }
+  if (job.status === 'scheduled' && job.scheduled_at != null) return <small className="queue-status-note">{text(`${shortTime(job.scheduled_at)} 开始`, `Starts ${shortTime(job.scheduled_at)}`)}</small>;
+  if (job.status === 'failed') {
+    const reason = (job.error || '').trim().split('\n')[0];
+    return reason ? <small className="queue-status-note queue-status-error" title={job.error || undefined}>{reason}</small> : null;
+  }
+  const elapsed = job.started_at != null && job.finished_at != null ? job.finished_at - job.started_at : null;
+  const reached = progress.step != null ? (job.type === 'xyz' ? '' : text(`${progress.step} 步`, `${progress.step} steps`)) : '';
+  const parts = [reached, elapsed != null ? text(`用时 ${formatEta(elapsed)}`, `took ${formatEta(elapsed)}`) : ''].filter(Boolean);
+  return parts.length ? <small className="queue-status-note">{parts.join(' · ')}</small> : null;
+}
 
 export type ContextJob = Job & { project_name?: string | null; version_name?: string | null; version_number?: number | null };
 export function JobContext({ job }: { job: ContextJob }) {
@@ -23,7 +58,7 @@ export function JobContext({ job }: { job: ContextJob }) {
 export function JobStatus({ status }: { status: string }) {
   const text = useWorkspaceText();
   const labels: Record<string, [string, string]> = { running: ['运行中', 'Running'], paused: ['已暂停', 'Paused'], pausing: ['暂停中', 'Pausing'], cancelling: ['取消中', 'Cancelling'], queued: ['排队中', 'Queued'], scheduled: ['已排期', 'Scheduled'], completed: ['已完成', 'Completed'], failed: ['失败', 'Failed'], cancelled: ['已取消', 'Cancelled'] };
-  return <span className="task-status" data-status={status}>{labels[status] ? text(...labels[status]) : status}</span>;
+  return <span className="task-status" data-status={status}><span className="task-status-dot" aria-hidden="true"/>{labels[status] ? text(...labels[status]) : status}</span>;
 }
 export function JobActions({ job, onUpdated }: { job: Job; onUpdated: (updated: Job) => void }) {
   const text = useWorkspaceText();
