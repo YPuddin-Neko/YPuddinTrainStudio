@@ -1122,8 +1122,14 @@ class CheckpointConfig(_Strict):
     save_state_every_steps: int | None = F(
         100,
         ge=1,
-        help="每多少步保存一个完整恢复点，默认 100；留空关闭定期保存。暂停会在参数更新结束后另存恢复点并释放显存。重启或意外退出后只能从最近一次成功保存的恢复点继续，未保存的步数需要重跑。恢复点包含训练参数、优化器、调度器、数据位置与随机状态，比导出的权重文件更大。",
-        ui_=ui("checkpoint", order=40, advanced=True),
+        help="每 N 个参数更新步保存完整恢复点，默认 100。界面也可切换为按 Epoch（轮）保存；留空关闭所选间隔。暂停时仍会另存恢复点。异常退出后只能恢复到最近一次成功保存的位置。",
+        ui_=ui("checkpoint", order=40),
+    )
+    save_state_every_epochs: int | None = F(
+        None,
+        ge=1,
+        help="每完成 N 轮保存完整恢复点，默认关闭。按步和按轮的触发器独立；轮中达到最大步数时，不算完成一轮。暂停时仍会另存恢复点。",
+        ui_=ui("checkpoint", order=45),
     )
     keep_last_n: int | None = F(
         None,

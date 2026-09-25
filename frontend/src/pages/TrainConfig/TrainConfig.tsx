@@ -554,7 +554,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const goToIssue = (issue: ConfigIssue) => {
     setActiveTab(issue.tab); setSearch(''); setShowAdvanced(true); setIssuesOpen(false); setRevealVersion(value => value + 1);
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      let path = issue.path;
+      let path = issue.path === 'checkpoint.save_state_every_epochs' ? 'checkpoint.save_state_every_steps' : issue.path;
       let target = document.getElementById(`field-${path}`);
       while (!target && path.includes('.')) { path = path.slice(0, path.lastIndexOf('.')); target = document.getElementById(`field-${path}`); }
       target?.scrollIntoView?.({ behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });

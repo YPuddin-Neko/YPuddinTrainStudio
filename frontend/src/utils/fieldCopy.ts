@@ -141,7 +141,7 @@ export const FIELD_HINTS: Record<string, Copy> = {
   'checkpoint.save_every_steps': ['每隔多少步导出一次权重。', 'Export weights every N steps.'],
   'checkpoint.save_every_epochs': ['每隔多少轮导出一次权重。', 'Export weights every N epochs.'],
   'checkpoint.keep_last_n': ['只保留最近几次按步导出的权重。', 'Keep only the latest step exports.'],
-  'checkpoint.save_state_every_steps': ['定期保存训练进度，意外中断后从最近一次继续。', 'Save a full resumable state every N steps.'],
+  'checkpoint.save_state_every_steps': ['按步或按轮保存恢复点；留空关闭，暂停仍会保存。', 'Save by step or epoch; blank disables periodic saves, not pause saves.'],
   'checkpoint.resume': ['从保存的完整状态继续训练。', 'Continue from a saved training state.'],
 
   'logging.level': ['控制台和日志文件的详细程度。', 'Detail level of the console and log files.'],

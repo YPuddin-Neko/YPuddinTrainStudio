@@ -1586,6 +1586,11 @@ class Trainer:
             self.sample_images(tag=f"epoch{finished_epochs}")
         if cfg.checkpoint.save_every_epochs and finished_epochs % cfg.checkpoint.save_every_epochs == 0:
             self.save_weights(f"epoch{finished_epochs:04d}")
+        if (
+            cfg.checkpoint.save_state_every_epochs
+            and finished_epochs % cfg.checkpoint.save_state_every_epochs == 0
+        ):
+            self.save_state(f"epoch{finished_epochs:04d}")
 
     def _finish(self, outcome: str) -> None:
         self.emit("phase.changed", phase="finalizing")

@@ -21,6 +21,7 @@ import CaptionFormatSelect from '../../components/CaptionFormatSelect';
 import './config-fields.css';
 import { optionalValueLabel } from './optionalValues';
 import ParameterFields from './ParameterFields';
+import RecoveryInterval from './RecoveryInterval';
 
 interface SchemaProperty {
   type?: string;
@@ -809,6 +810,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   const renderField = (key: string, prop: SchemaProperty, parentPath: string[] = []) => {
     const path = [...parentPath, key];
     const fullPathKey = path.join('.');
+    if (fullPathKey === 'checkpoint.save_state_every_epochs') return null;
     const lokrRank = fullPathKey === 'adapter.rank' && value.adapter?.algo === 'lokr';
     const weightMeta = parentPath[0] === 'model' ? weights.find(weight => weight.field === key) : undefined;
     const supportedOptions = familyParameterOptions(family, fullPathKey);
@@ -850,7 +852,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const fieldId = `config-${fullPathKey}`;
     const currentGroup = ui.group || parentPath[0] || 'default';
     if (groupFilter && !groupFilter.includes(currentGroup) && !(compact && parentPath[0] === 'training' && groupFilter.includes('training'))) return null;
-    if (search.trim() && !`${fieldLabel} ${fullPathKey} ${prop.description || ''} ${lokrRank ? lokrModeLabel : ''}`.toLowerCase().includes(search.trim().toLowerCase())) return null;
+    if (search.trim() && !`${fieldLabel} ${fullPathKey} ${fullPathKey === 'checkpoint.save_state_every_steps' ? 'checkpoint.save_state_every_epochs epoch 轮' : ''} ${prop.description || ''} ${lokrRank ? lokrModeLabel : ''}`.toLowerCase().includes(search.trim().toLowerCase())) return null;
 
     const captionOverride = fullPathKey.startsWith('dataset.caption.') && captionOverrideKeys.includes(key);
     const optionalAdvanced = ui.advanced && !(currentGroup === 'optimizer' && key !== 'args');
@@ -865,7 +867,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       }
     }
 
-    const errorItem = errors.find((e) => e.loc === fullPathKey || e.loc?.startsWith(`${fullPathKey}.`));
+    const errorItem = errors.find((e) => e.loc === fullPathKey || e.loc?.startsWith(`${fullPathKey}.`) || fullPathKey === 'checkpoint.save_state_every_steps' && e.loc === 'checkpoint.save_state_every_epochs');
     const computeManaged = trainingComputeManagedField(activeComputePolicy, fullPathKey, english);
     const fieldValue = computeManaged ? computeManaged.value : getNestedValue(value, path) !== undefined ? getNestedValue(value, path) : prop.default;
     const groupName = ui.group || (parentPath.length > 0 ? parentPath[0] : 'default');
@@ -888,6 +890,10 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     } else if (managedReason) {
       const display = computeManaged?.label ?? (prop.enum ? configOptionLabel(fullPathKey, String(fieldValue), english) : managedValueLabel(fieldValue, english));
       control = <div className="config-managed-value"><output id={fieldId} aria-label={fieldLabel} aria-describedby={`${fieldId}-managed-reason`}>{display}</output><span>{english ? 'Automatic' : '自动管理'}</span></div>;
+    } else if (fullPathKey === 'checkpoint.save_state_every_steps') {
+      control = <RecoveryInterval id={fieldId} label={fieldLabel} english={english} invalid={!!errorItem}
+        value={{save_state_every_steps:fieldValue ?? null,save_state_every_epochs:value.checkpoint?.save_state_every_epochs ?? null}}
+        onChange={interval=>onChange(setNestedValue(value,['checkpoint'],{...value.checkpoint,...interval}))}/>;
     } else if (fullPathKey === 'dataset.native_max_pixels') {
       control = <NativePixelLimit value={fieldValue} label={fieldLabel} describedBy={nativePixelsHint(fieldValue, english) ? `${fieldId}-hint` : undefined} onChange={next => onChange(setNestedValue(value, path, next))}/>;
     } else if (compact && fullPathKey === 'dataset.resolutions') {
@@ -1208,7 +1214,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
             {ui.unit && !percentage && ui.control !== 'slider' && <span className="config-field-label-note"> ({ui.unit})</span>}
           </label>
           <span className="config-field-reference">
-            <code className="config-field-key" tabIndex={0} title={fullPathKey}>{fullPathKey}</code>
+            <code className="config-field-key" tabIndex={0} title={fullPathKey === 'checkpoint.save_state_every_steps' && value.checkpoint?.save_state_every_epochs != null ? 'checkpoint.save_state_every_epochs' : fullPathKey}>{fullPathKey === 'checkpoint.save_state_every_steps' && value.checkpoint?.save_state_every_epochs != null ? 'checkpoint.save_state_every_epochs' : fullPathKey}</code>
             {helpButton}
           </span>
         </div>
