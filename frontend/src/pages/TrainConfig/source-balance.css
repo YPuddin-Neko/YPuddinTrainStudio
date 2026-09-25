@@ -6,19 +6,12 @@
 .source-balance-bar span { display:block;height:100%;min-width:0; }
 .source-balance-group h5 { margin:8px 0 4px; }
 .source-balance-group.is-regularization { border-top:1px dashed var(--studio-line);margin-top:8px;padding-top:3px; }
+.source-balance-list { list-style:none; margin:0; padding:0; }
 .source-balance-source { display:grid;width:100%;grid-template-columns:8px minmax(0,1fr) auto;gap:4px 6px;text-align:left;padding:6px 3px;border-radius:4px;min-width:0;font-size:11px; }
-.source-balance-source:hover,.source-balance-source.is-active { background:var(--studio-muted); }
-.source-balance-source:focus-visible { outline:2px solid var(--studio-accent);outline-offset:1px; }
 .source-balance-swatch { width:8px;height:8px;border-radius:2px;align-self:center; }
 .source-balance-name { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .source-balance-source strong { font-size:10px;font-variant-numeric:tabular-nums; }
 .source-balance-source small { grid-column:2 / 4;color:var(--studio-dim);font-size:10px;overflow-wrap:anywhere; }
-.source-balance-tooltip { border:1px solid var(--studio-line);border-radius:5px;background:var(--studio-muted);padding:7px;margin-top:6px;font-size:10px;overflow-wrap:anywhere; }
-.source-balance-tooltip strong,.source-balance-tooltip span { display:block; }
-.source-balance-tooltip span { margin-top:4px;color:var(--studio-dim); }
-.source-balance-tooltip header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px; }
-.source-balance-tooltip .ui-btn span { margin:0; color:inherit; }
-.source-balance-path { user-select:text; cursor:text; white-space:pre-wrap; }
 .inspector-calculation-status { margin:0 0 12px;font-size:11px;line-height:1.6;color:var(--studio-dim); }
 .inspector-calculation-error { margin-bottom:12px;padding:8px;border:1px solid var(--studio-line);border-radius:5px;font-size:11px;overflow-wrap:anywhere; }
 .inspector-calculation-error p { margin:4px 0;color:var(--studio-dim); }
