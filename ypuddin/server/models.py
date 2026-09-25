@@ -506,6 +506,7 @@ class DatasetSource(_Out):
     class_prompt: str | None
     created_at: float
     can_rename: bool | None = None
+    can_append: bool = False
 
 
 class ResolutionCount(_Out):

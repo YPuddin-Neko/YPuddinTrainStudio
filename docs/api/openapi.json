@@ -2553,6 +2553,87 @@
         }
       }
     },
+    "/api/datasets/{did}/upload": {
+      "post": {
+        "summary": "Append Dataset Images",
+        "operationId": "append_dataset_images_api_datasets__did__upload_post",
+        "parameters": [
+          {
+            "name": "did",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Did"
+            }
+          },
+          {
+            "name": "progress_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Progress Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "files"
+                ],
+                "properties": {
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    }
+                  },
+                  "caption_ext": {
+                    "type": "string",
+                    "default": "auto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/datasets/{did}": {
       "get": {
         "summary": "Get Dataset",
@@ -8989,6 +9070,11 @@
               }
             ],
             "title": "Can Rename"
+          },
+          "can_append": {
+            "type": "boolean",
+            "title": "Can Append",
+            "default": false
           }
         },
         "additionalProperties": true,

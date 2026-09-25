@@ -990,6 +990,7 @@ def _dataset_row(c: ServiceContext, r: dict[str, Any], *, include_cache: bool = 
         "path": r["path"],
         "repeats": exact.get("repeats", r["repeats"]) if exact else r["repeats"],
         "can_rename": can_rename(c, r),
+        "can_append": bool(role and Path(r["path"]).absolute() == Path(r["path"]).resolve()),
         "caption_ext": r["caption_ext"],
         "is_reg": role[0] if role is not None else bool(r["is_reg"]),
         "prior_weight": r["prior_weight"],
@@ -1175,6 +1176,54 @@ def _get_dataset(c: ServiceContext, did: str) -> dict[str, Any]:
     if not r:
         raise NotFound(f"dataset {did} not found", code="dataset.not_found")
     return r
+
+
+def _append_upload(c: ServiceContext, did: str, batch: UploadBatch, progress: ImportProgress | None) -> dict:
+    from .source_roles import managed_source_role
+
+    original = _get_dataset(c, did)
+    with c.versions.mutation(original["project_id"], original["version_id"]) as version:
+        row = _get_dataset(c, did)
+        root = Path(row["path"])
+        role = managed_source_role(c, row["project_id"], version["id"], str(root))
+        if not role or root.absolute() != root.resolve() or not root.is_dir():
+            raise ApiError("只能向当前版本内的数据集添加图片。", code="dataset.unmanaged", status=409)
+        batch.caption_ext = row["caption_ext"]
+        protected = tuple(
+            Path(item["path"]).resolve()
+            for item in c.db.fetchall(
+                "SELECT path FROM datasets WHERE version_id=? AND id<>?", (version["id"], did)
+            )
+            if Path(item["path"]).resolve().is_relative_to(root.resolve())
+        )
+        with staged_upload(
+            c.version_dir(row["project_id"], version["id"]), batch,
+            dataset_root=root, append=True, protected_roots=protected, progress=progress,
+        ):
+            with c.db.lock:
+                c.db.update("datasets", did, {"index_status": "indexing"})
+                c.db.update("projects", row["project_id"], {"updated_at": now()})
+        _index_dataset(c, did)
+        return _dataset_row(c, _get_dataset(c, did), include_cache=False)
+
+
+@router.post(
+    "/datasets/{did}/upload", response_model=m.DatasetInfo, response_model_exclude_unset=True,
+    openapi_extra={"requestBody": {"required": True, "content": {"multipart/form-data": {"schema": {
+        "type": "object", "required": ["files"], "properties": {
+            "files": {"type": "array", "items": {"type": "string", "format": "binary"}},
+            "caption_ext": {"type": "string", "default": "auto"},
+        },
+    }}}}},
+)
+async def append_dataset_images(
+    did: str, request: Request, c: ServiceContext = Depends(ctx), progress_id: str | None = None
+) -> dict[str, Any]:
+    row = _get_dataset(c, did)
+    with c.import_admission(), c.import_progress.track(row["project_id"], progress_id, "receiving") as progress:
+        await run_in_threadpool(assert_version_writable, c, row["project_id"], row["version_id"], data=True)
+        async with read_upload(request, progress) as batch:
+            return await run_in_threadpool(_append_upload, c, did, batch, progress)
 
 
 @router.get("/datasets/{did}", response_model=m.DatasetInfo, response_model_exclude_unset=True)

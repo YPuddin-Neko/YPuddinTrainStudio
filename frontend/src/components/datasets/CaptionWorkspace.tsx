@@ -14,6 +14,9 @@ import DatasetNavigationGuard from './DatasetNavigationGuard';
 import StructuredCaptionEditor from './StructuredCaptionEditor';
 import { getCaptionStructure, captionFieldChanges, type CaptionFieldDraft } from '../../utils/captionStructure';
 import './caption-workspace.css';
+import CaptionResizeHandle from './CaptionResizeHandle';
+import {useEventStream} from '../../events/useEventStream';
+import {EVENT_TYPES} from '../../events/eventTypes';
 import { SlidingIndicator } from '../motion';
 
 type CaptionStats = components['schemas']['DatasetCaptionStats'];
@@ -32,6 +35,11 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
   const location = useLocation();
   const dataRouter = !!React.useContext(UNSAFE_DataRouterContext);
   const [datasetId, setDatasetId] = React.useState(initialDatasetId);
+  const [pageSize,setPageSize] = React.useState(PAGE_SIZE);
+  const [galleryWidth,setGalleryWidth] = React.useState(220);
+  const [statsWidth,setStatsWidth] = React.useState(220);
+  const [previewHeight,setPreviewHeight] = React.useState<number|null>(null);
+  const content = React.useRef<HTMLDivElement>(null);
   const [navigation, setNavigation] = React.useState({ scope: '', page: 1, searchDraft: '', search: '', tag: '', status: '', selected: '' });
   const [draft, setDraft] = React.useState<Draft | null>(null);
   const [editorMode, setEditorMode] = React.useState<'tags' | 'text'>('tags');
@@ -46,7 +54,8 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
   const workspace = React.useRef<HTMLElement>(null);
   const editor = React.useRef<HTMLDivElement>(null);
   const grid = React.useRef<HTMLDivElement>(null);
-  const datasets = useQuery({ queryKey: ['caption-datasets', projectId, versionId], refetchOnWindowFocus: false, refetchOnReconnect: false,
+  const datasets = useQuery<DatasetInfo[]>({ queryKey: ['caption-datasets', projectId, versionId], refetchOnWindowFocus: false, refetchOnReconnect: false,
+    refetchInterval:query=>query.state.data?.some(item=>item.index_status==='indexing')?1500:false,
     queryFn: ({ signal }) => apiClient.get<DatasetInfo[]>(`/projects/${projectId}/datasets`, { params: { version_id: versionId, include_cache: false }, signal, silent: true }) });
   const source = datasets.data?.find(item => item.source.id === datasetId) || datasets.data?.[0];
   const scope = JSON.stringify([projectId, versionId, source?.source.id]);
@@ -56,17 +65,19 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
   const currentNavigation = navigation.scope === scope ? navigation : emptyNavigation;
   const { page, searchDraft, search, tag, status, selected } = currentNavigation;
   const updateNavigation = (patch: Partial<typeof navigation>) => setNavigation(previous => ({ ...(previous.scope === scope ? previous : emptyNavigation), ...patch }));
-  const images = useQuery<DatasetImagesPage>({ queryKey: ['caption-workspace-images', scope, page, search, tag, status], enabled: !!source, refetchOnWindowFocus: false, refetchOnReconnect: false,
+  const images = useQuery<DatasetImagesPage>({ queryKey: ['caption-workspace-images', scope, page, search, tag, status, pageSize], enabled: !!source, refetchOnWindowFocus: false, refetchOnReconnect: false,
     placeholderData: (previous, query) => query?.queryKey[1] === scope ? previous : undefined,
     queryFn: ({ signal }) => apiClient.get<DatasetImagesPage>(`/datasets/${source!.source.id}/images`, {
-      params: { page, page_size: PAGE_SIZE, q: search || undefined, tag: tag || undefined, caption_status: status || undefined }, signal, silent: true,
+      params: { page, page_size: pageSize, q: search || undefined, tag: tag || undefined, caption_status: status || undefined }, signal, silent: true,
     }) });
   const stats = useQuery({ queryKey: ['caption-stats', scope], enabled: !!source, refetchOnWindowFocus: false, refetchOnReconnect: false,
     queryFn: ({ signal }) => apiClient.get<CaptionStats>(`/datasets/${source!.source.id}/caption-stats`, { signal, silent: true }) });
   const items = images.data?.items || [];
-  const selectedIndex = Math.max(0, items.findIndex(item => imageKey(item) === selected));
+  const selectedIndex = selected === '__last__' ? Math.max(0,items.length-1) : Math.max(0, items.findIndex(item => imageKey(item) === selected));
   const image = items[selectedIndex];
-  const pages = Math.max(1, Math.ceil((images.data?.total || 0) / PAGE_SIZE));
+  const pages = Math.max(1, Math.ceil((images.data?.total || 0) / pageSize));
+  const displayedPageSize=images.data?.page_size || pageSize;
+  const hasImage = !!image;
   const key = image ? `${scope}/${imageKey(image)}` : '';
   const base: Draft = { key, caption: image?.caption_tags ?? image?.caption ?? '', description: image?.caption_description || '', baseCaption: image?.caption_tags ?? image?.caption ?? '', baseDescription: image?.caption_description || '', fields: {}, adding: '', editing: null };
   const activeDraft = draft?.key === key ? draft : base;
@@ -81,7 +92,7 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
   const statsTags = (stats.data?.tags || []).filter(item => item.tag.toLocaleLowerCase().includes(statsSearch.trim().toLocaleLowerCase()));
 
   React.useLayoutEffect(() => {
-    const root = workspace.current, panel = editor.current;
+    const root = workspace.current, panel = content.current;
     if (!root || !panel) return;
     let frame = 0;
     const update = () => {
@@ -89,7 +100,7 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
       let top = panel.getBoundingClientRect().top + window.scrollY;
       // Use the unscrolled position so scrolling cannot resize the editor in a loop.
       for (let ancestor = panel.parentElement; ancestor && ancestor !== document.body; ancestor = ancestor.parentElement) top += ancestor.scrollTop;
-      const height = `${Math.max(280, Math.floor(window.innerHeight - top - 16))}px`;
+      const height = `${Math.max(440, Math.floor(window.innerHeight - top - 16))}px`;
       if (root.style.getPropertyValue('--caption-editor-height') !== height) root.style.setProperty('--caption-editor-height', height);
     };
     const schedule = () => { if (!frame) frame = window.requestAnimationFrame(update); };
@@ -102,7 +113,7 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
       if (frame) window.cancelAnimationFrame(frame);
       root.style.removeProperty('--caption-editor-height');
     };
-  }, [key]);
+  }, [scope,hasImage]);
 
   React.useEffect(() => { mounted.current = true; return () => { mounted.current = false; leavePending.current?.resolve(false); leavePending.current = null; }; }, []);
   React.useEffect(() => {
@@ -186,10 +197,33 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
   };
   const addTags = () => { if (activeDraft.adding.trim()) updateDraft({ caption: serializeTags([...tags, ...parseTags(activeDraft.adding)]), adding: '' }); };
   const applyTagEdit = () => { if (activeDraft.editing) { const next = [...tags]; next[activeDraft.editing.index] = activeDraft.editing.value; updateDraft({ caption: serializeTags(next), editing: null }); } };
+  const pendingIndexRefresh=React.useRef(false);
+  const lastIndex=React.useRef({scope,status:source?.index_status});
+  useEventStream<{dataset_id?:string}>(EVENT_TYPES.DATASET_CHANGED,event=>{
+    if(event.dataset_id!==source?.source.id)return;
+    if(dirty || saving){pendingIndexRefresh.current=true;return;}
+    void datasets.refetch();void images.refetch();void stats.refetch();
+  });
+  const indexStatus=source?.index_status;
+  React.useEffect(()=>{
+    if(lastIndex.current.scope!==scope)pendingIndexRefresh.current=false;
+    else if(lastIndex.current.status==='indexing' && indexStatus==='ready')pendingIndexRefresh.current=true;
+    lastIndex.current={scope,status:indexStatus};
+    if(!pendingIndexRefresh.current || dirty || saving)return;
+    pendingIndexRefresh.current=false;
+    void queryClient.invalidateQueries({queryKey:['caption-workspace-images',scope]});
+    void queryClient.invalidateQueries({queryKey:['caption-stats',scope]});
+  },[indexStatus,scope,queryClient,dirty,saving]);
+  const moveImage=(delta:number)=>perform(()=>{
+    const next=selectedIndex+delta;
+    if(next>=0 && next<items.length)updateNavigation({selected:imageKey(items[next])});
+    else if(delta>0 && page<pages)updateNavigation({page:page+1,selected:''});
+    else if(delta<0 && page>1)updateNavigation({page:page-1,selected:'__last__'});
+  });
   const refresh = () => perform(() => { void datasets.refetch(); if (source) { void images.refetch(); void stats.refetch(); } });
   const setFilter = (patch: Partial<typeof navigation>) => perform(() => updateNavigation({ ...patch, page: 1, selected: '' }));
 
-  return <section ref={workspace} className="caption-workspace" aria-label={text('标签工作区', 'Caption workspace')}>
+  return <section ref={workspace} className="caption-workspace" style={{'--caption-gallery-width':`${galleryWidth}px`,'--caption-stats-width':`${statsWidth}px`,'--caption-preview-height':previewHeight == null ? '58%' : `${previewHeight}px`} as React.CSSProperties} aria-label={text('标签工作区', 'Caption workspace')}>
     {dataRouter && <DatasetNavigationGuard shouldBlock={() => dirty || saving} beforeLeave={beforeLeave} onError={failure => { if (failure instanceof Error && failure.message) setError(formatApiError(failure)); }}/>}
     <div className="caption-workspace-toolbar" role="group" aria-label={text('选择图片目录', 'Choose image folder')}>
       <label className="caption-workspace-source"><span><Folder size={17}/>{text('图片目录', 'Image folder')}</span><StudioSelect searchable aria-label={text('图片目录', 'Image folder')} value={source?.source.id || ''} disabled={saving || !source} options={(datasets.data || []).map(item => ({ value: item.source.id, label: nameOf(item.source.path) }))} onValueChange={value => perform(() => setDatasetId(value))}/></label>
@@ -207,16 +241,26 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
     {datasets.isPending || source && images.isPending ? <p className="caption-workspace-empty" role="status"><Loader2 size={16} className="animate-spin"/>{text('读取图片与标签…', 'Loading images and captions…')}</p>
       : !source ? <p className="caption-workspace-empty">{text('请先导入图片。', 'Import images first.')}</p>
         : <>
-          <div className="caption-workspace-pagination"><span className="caption-workspace-filter-count">{text(`符合条件 ${images.data?.total ?? 0} 张`, `${images.data?.total ?? 0} matching images`)}{images.isFetching && <span role="status" className="caption-workspace-refresh-status"><Loader2 size={12} className="animate-spin"/>{text('正在更新筛选结果…', 'Updating filtered images…')}</span>}</span><div><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('上一页', 'Previous page')} disabled={page <= 1 || images.isFetching || saving} onClick={() => perform(() => updateNavigation({ page: page - 1, selected: '' }))}><ChevronLeft size={14}/></button><span>{page} / {pages}</span><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('下一页', 'Next page')} disabled={page >= pages || images.isFetching || saving} onClick={() => perform(() => updateNavigation({ page: page + 1, selected: '' }))}><ChevronRight size={14}/></button></div></div>
-          <div className="caption-workspace-content">
+          <div ref={content} className="caption-workspace-content">
+            <section className="caption-workspace-library" aria-label={text('数据集图片','Dataset images')}>
+              <div className="caption-workspace-filter-summary"><span className="caption-workspace-filter-count">{text(`显示 ${items.length ? ((images.data?.page || page)-1)*displayedPageSize+1 : 0}–${((images.data?.page || page)-1)*displayedPageSize+items.length} / ${images.data?.total ?? 0} 张`, `Showing ${items.length ? ((images.data?.page || page)-1)*displayedPageSize+1 : 0}–${((images.data?.page || page)-1)*displayedPageSize+items.length} of ${images.data?.total ?? 0}`)}{images.isFetching && <span role="status" className="caption-workspace-refresh-status"><Loader2 size={12} className="animate-spin"/>{text('正在更新筛选结果…', 'Updating filtered images…')}</span>}</span></div>
+            <div className="caption-workspace-gallery" ref={grid} role="region" aria-busy={images.isFetching} aria-label={text('图片缩略图', 'Image thumbnails')} tabIndex={0}>{items.map(item => <button type="button" key={imageKey(item)} aria-label={text(`选择图片：${item.rel_path}`, `Select image: ${item.rel_path}`)} aria-pressed={item === image} disabled={saving || images.isFetching} onClick={() => perform(() => updateNavigation({ selected: imageKey(item) }))}><img src={apiUrl(`/datasets/${source.source.id}/images/${item.hash}/thumb?size=256`)} alt={item.rel_path} loading="lazy"/><span title={item.rel_path}>{item.rel_path}</span>{(item.caption_error || item.caption_status === 'invalid') ? <small className="caption-workspace-error">{text('标签错误', 'Invalid caption')}</small> : !item.caption && <small>{text('缺少标签', 'No caption')}</small>}</button>)}</div>
+              <footer role="navigation" className="caption-workspace-pagination" aria-label={text('图片列表翻页','Image list pagination')}>
+<div><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('上一页', 'Previous page')} disabled={page <= 1 || images.isFetching || saving} onClick={() => perform(() => updateNavigation({ page: page - 1, selected: '' }))}><ChevronLeft size={14}/></button><span>{text(`第 ${images.data?.page || page} / ${pages} 页`,`Page ${images.data?.page || page} / ${pages}`)}</span><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('下一页', 'Next page')} disabled={page >= pages || images.isFetching || saving} onClick={() => perform(() => updateNavigation({ page: page + 1, selected: '' }))}><ChevronRight size={14}/></button></div>
+              <label className="caption-workspace-page-size">{text('每页','Per page')}<StudioSelect aria-label={text('每页图片数','Images per page')} value={String(pageSize)} options={[30,60,120].map(value=>({value:String(value),label:String(value)}))} disabled={saving||images.isFetching} onValueChange={value=>perform(()=>{setPageSize(Number(value));updateNavigation({page:1,selected:''});})}/></label>
+              </footer>
+            </section>
+            <CaptionResizeHandle label={text('调整缩略图栏宽度','Resize thumbnail column')} value={galleryWidth} min={160} max={340} onChange={setGalleryWidth}/>
+
           {!items.length ? <p className="caption-workspace-empty">{source.index_status === 'indexing' ? text('图片正在建立索引，完成后刷新即可查看。', 'Images are being indexed. Refresh when indexing completes.') : text('没有符合条件的图片。', 'No images match these filters.')}</p> : <div className="caption-workspace-body">
             <div className="caption-workspace-visual">
               {image && <>
               <div className="caption-workspace-preview"><img src={apiUrl(`/datasets/${source.source.id}/images/${image.hash}/file`)} alt={text(`大图：${image.rel_path}`, `Full image: ${image.rel_path}`)}/></div>
-              <div className="caption-workspace-image-heading"><strong>{image.rel_path}</strong><span>{image.width} × {image.height}</span><span>{image.caption_format?.toUpperCase() || 'TXT'}</span><div><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('上一张', 'Previous image')} disabled={selectedIndex <= 0 || saving} onClick={() => perform(() => updateNavigation({ selected: imageKey(items[selectedIndex - 1]) }))}><ChevronLeft size={14}/></button><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('下一张', 'Next image')} disabled={selectedIndex >= items.length - 1 || saving} onClick={() => perform(() => updateNavigation({ selected: imageKey(items[selectedIndex + 1]) }))}><ChevronRight size={14}/></button></div></div>
+              <div className="caption-workspace-image-heading"><strong>{image.rel_path}</strong><span>{image.width} × {image.height}</span><span>{image.caption_format?.toUpperCase() || 'TXT'}</span><div><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('上一张', 'Previous image')} disabled={page===1 && selectedIndex<=0 || saving || images.isFetching} onClick={()=>moveImage(-1)}><ChevronLeft size={14}/></button><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('下一张', 'Next image')} disabled={page>=pages && selectedIndex>=items.length-1 || saving || images.isFetching} onClick={()=>moveImage(1)}><ChevronRight size={14}/></button></div></div>
               </>}
-            <div className="caption-workspace-gallery" ref={grid} role="region" aria-busy={images.isFetching} aria-label={text('图片缩略图', 'Image thumbnails')} tabIndex={0}>{items.map(item => <button type="button" key={imageKey(item)} aria-label={text(`选择图片：${item.rel_path}`, `Select image: ${item.rel_path}`)} aria-pressed={item === image} disabled={saving || images.isFetching} onClick={() => perform(() => updateNavigation({ selected: imageKey(item) }))}><img src={apiUrl(`/datasets/${source.source.id}/images/${item.hash}/thumb?size=256`)} alt={item.rel_path} loading="lazy"/><span title={item.rel_path}>{item.rel_path}</span>{(item.caption_error || item.caption_status === 'invalid') ? <small className="caption-workspace-error">{text('标签错误', 'Invalid caption')}</small> : !item.caption && <small>{text('缺少标签', 'No caption')}</small>}</button>)}</div>
+
             </div>
+            <CaptionResizeHandle horizontal label={text('调整图片预览高度','Resize image preview')} value={previewHeight ?? Math.round((content.current?.clientHeight || 660)*.58)} min={160} max={600} onChange={setPreviewHeight}/>
             {image && <div ref={editor} className="caption-workspace-editor" aria-label={text('当前图片标签编辑器', 'Current image caption editor')} role="region">
               <div className="caption-workspace-editor-fields">
               {invalid && <p role="alert" className="caption-workspace-error">{text('此标签文件无法解析，修复格式后刷新再编辑。', 'This caption file cannot be parsed. Fix its format, then refresh to edit.')}{image.caption_error && ` ${image.caption_error}`}</p>}
@@ -231,6 +275,7 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
               <div className="caption-workspace-save"><span role="status">{saving ? text('正在保存…', 'Saving…') : dirty ? text('有未保存的修改', 'Unsaved changes') : message || (readOnly ? text('只读', 'Read only') : '')}</span>{!readOnly && <><button type="button" className="ui-btn" disabled={!dirty || saving} onClick={() => perform(() => setDraft(null))}>{text('放弃修改', 'Discard changes')}</button><button type="button" className="ui-btn ui-btn-primary" disabled={!dirty || locked} onClick={() => { void save(); }}><Save size={14}/>{text('保存标签', 'Save caption')}</button></>}</div>
             </div>}
           </div>}
+          <CaptionResizeHandle label={text('调整标签统计栏宽度','Resize tag statistics column')} value={statsWidth} min={180} max={340} reverse onChange={setStatsWidth}/>
           <aside className="caption-workspace-statistics" aria-label={text('整个数据集的标签统计', 'Statistics for the whole dataset')}>
             <header><div><h3>{text('标签频次', 'Tag frequency')}</h3><span>{text(`整个目录 ${stats.data?.images ?? '—'} 张图片 · ${stats.data?.unique_tags ?? '—'} 个不同标签`, `All ${stats.data?.images ?? '—'} images in this folder · ${stats.data?.unique_tags ?? '—'} unique tags`)}</span></div><input aria-label={text('搜索标签统计', 'Search tag statistics')} placeholder={text('筛选标签', 'Filter tags')} value={statsSearch} onChange={event => { setStatsSearch(event.target.value); setStatsLimit(80); }}/></header>
             {stats.error ? <p role="alert" className="caption-workspace-error">{formatApiError(stats.error)}</p> : stats.isPending ? <p role="status">{text('统计标签…', 'Loading tag statistics…')}</p> : <><div className="caption-workspace-frequencies">{statsTags.slice(0, statsLimit).map(item => <button type="button" key={item.tag} aria-label={text(`筛选标签：${item.tag}，${item.count} 张图片`, `Filter tag: ${item.tag}, ${item.count} images`)} aria-pressed={tag === item.tag} disabled={saving} onClick={() => setFilter({ tag: tag === item.tag ? '' : item.tag })}><span>{item.tag}</span><strong>{item.count}</strong></button>)}{!statsTags.length && <p>{text('没有符合条件的标签。', 'No matching tags.')}</p>}</div>{statsTags.length > statsLimit && <button type="button" className="ui-btn ui-btn-quiet ui-btn-sm" onClick={() => setStatsLimit(limit => limit + 80)}>{text(`显示更多（共 ${statsTags.length} 个）`, `Show more (${statsTags.length} total)`)}</button>}</>}

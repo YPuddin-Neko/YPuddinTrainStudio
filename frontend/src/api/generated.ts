@@ -720,6 +720,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/datasets/{did}/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Append Dataset Images */
+        post: operations["append_dataset_images_api_datasets__did__upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/datasets/{did}": {
         parameters: {
             query?: never;
@@ -2847,6 +2864,11 @@ export interface components {
             created_at: number;
             /** Can Rename */
             can_rename?: boolean | null;
+            /**
+             * Can Append
+             * @default false
+             */
+            can_append: boolean;
         } & {
             [key: string]: unknown;
         };
@@ -8847,6 +8869,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DatasetUploadInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    append_dataset_images_api_datasets__did__upload_post: {
+        parameters: {
+            query?: {
+                progress_id?: string | null;
+            };
+            header?: never;
+            path: {
+                did: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    files: string[];
+                    /** @default auto */
+                    caption_ext?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetInfo"];
                 };
             };
             /** @description Validation Error */

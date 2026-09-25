@@ -16,7 +16,7 @@ import DatasetImportProgress from '../../components/datasets/DatasetImportProgre
 import './project-data-import.css';
 import { SlidingIndicator } from '../../components/motion';
 
-export default function ProjectDataImport({ projectId, versionId, onImported, defaultIsReg = false, captionFormats }: { projectId: string; versionId?: string; onImported: () => void; defaultIsReg?: boolean; captionFormats?: readonly string[] }) {
+export default function ProjectDataImport({ projectId, versionId, onImported, defaultIsReg = false, captionFormats, targetDataset, onBusyChange }: { projectId: string; versionId?: string; onImported: () => void; defaultIsReg?: boolean; captionFormats?: readonly string[]; targetDataset?: DatasetInfo; onBusyChange?: (busy:boolean)=>void }) {
   const text = useWorkspaceText();
   const repeatsId = React.useId();
   const [mode, setMode] = React.useState<'upload' | 'path'>('upload');
@@ -25,7 +25,7 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
   const [path, setPath] = React.useState('');
   const [repeats, setRepeats] = React.useState(1);
   const isReg = defaultIsReg;
-  const [captionExt, setCaptionExt] = React.useState('auto');
+  const [captionExt, setCaptionExt] = React.useState(targetDataset?.source.caption_ext || 'auto');
   const [priorWeight, setPriorWeight] = React.useState(1);
   const [classPrompt, setClassPrompt] = React.useState('');
   const [busy, setBusy] = React.useState(false);
@@ -64,6 +64,7 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
     } finally { if (generation === selectionGeneration.current) setReading(false); }
   };
   const locked = busy || reading;
+  React.useEffect(()=>{onBusyChange?.(locked);return()=>onBusyChange?.(false);},[locked,onBusyChange]);
   const folderName = mode === 'path' ? path.replace(/\\/g,'/').split('/').filter(Boolean).pop() : files[0]?.relativePath.split('/').slice(0,-1)[0];
   const autoName = files.length === 1 && files[0].relativePath.toLowerCase().endsWith('.zip') ? files[0].file.name.replace(/\.zip$/i, '') : folderName || '';
   const detectedRepeats = folderName?.match(/^([1-9]\d{0,5})[_-]/)?.[1];
@@ -79,10 +80,13 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
       if (mode === 'upload') {
         const form = new FormData();
         files.forEach(({file, relativePath}) => form.append('files', file, relativePath));
-        form.append('name', autoName); form.append('repeats', String(repeats));
-        form.append('is_reg', String(isReg)); form.append('prior_weight', String(priorWeight));
-        form.append('class_prompt', classPrompt.trim()); form.append('caption_ext', captionExt);
-        result = await apiClient.post<DatasetInfo>(`/projects/${projectId}/datasets/upload`, form, { params: { version_id: versionId, progress_id: progressId }, silent: true });
+        if (!targetDataset) {
+          form.append('name', autoName); form.append('repeats', String(repeats));
+          form.append('is_reg', String(isReg)); form.append('prior_weight', String(priorWeight));
+          form.append('class_prompt', classPrompt.trim());
+        }
+        form.append('caption_ext', captionExt);
+        result = await apiClient.post<DatasetInfo>(targetDataset ? `/datasets/${targetDataset.source.id}/upload` : `/projects/${projectId}/datasets/upload`, form, { params: { version_id: versionId, progress_id: progressId }, silent: true });
         if (!current()) return;
         setFiles([]);
         if (fileInput.current) fileInput.current.value = '';
@@ -117,18 +121,18 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
 
   return <form onSubmit={submit} className="project-data-import" data-testid="project-data-import" aria-busy={locked} data-completed={!showForm}>
     <header className="project-import-heading">
-      <h3>{defaultIsReg ? text('添加已有正则图', 'Add existing regularization images') : text('添加训练图片', 'Add training images')}</h3>
-      {showForm ? <div className="project-import-modes ui-segmented" role="group" aria-label={text('数据导入方式', 'Data import method')}>
+      <h3>{targetDataset ? text('添加到当前数据集', 'Add to this dataset') : defaultIsReg ? text('添加已有正则图', 'Add existing regularization images') : text('添加训练图片', 'Add training images')}</h3>
+      {showForm ? !targetDataset && <div className="project-import-modes ui-segmented" role="group" aria-label={text('数据导入方式', 'Data import method')}>
         {[['upload', text('上传文件或文件夹', 'Upload files or folders')], ['path', text('从训练电脑导入', 'Import from training computer')]].map(([key, label]) => <button key={key} type="button" disabled={locked} onClick={() => { setMode(key as typeof mode); setError(''); setCreated([]); resetProgress(); }} aria-pressed={mode === key}>{label}</button>)}<SlidingIndicator className="ui-segmented-thumb"/>
       </div> : <button type="button" className="ui-btn" onClick={() => setShowForm(true)}><Plus size={16}/>{text('继续添加', 'Add more')}</button>}
     </header>
     {operation && operation.state !== 'completed' && <DatasetImportProgress operation={operation}/>}
     {error && <div role="alert" className="project-import-message project-import-error">{error}</div>}
-    {created.length > 0 && <div role="status" className="project-import-message project-import-success"><CheckCircle2 size={20}/><div><strong>{text(`已导入当前版本，共 ${created.length} 组图片。`, `Imported ${created.length} image groups into this version.`)}</strong><div className="project-import-result-links">{created.map(dataset => <DatasetLink className="ui-link" key={dataset.source.id} to={`/datasets/${dataset.source.id}`}>{created.length === 1 ? text('查看图片与标签', 'Review images and captions') : dataset.source.path.replace(/\\/g, '/').split('/').pop()}</DatasetLink>)}</div></div>{operation && <span className="project-import-elapsed">{text('用时', 'Elapsed')} {operation.elapsed < 1 ? text('不足 1 秒', '<1s') : formatEta(operation.elapsed)}</span>}</div>}
+    {created.length > 0 && <div role="status" className="project-import-message project-import-success"><CheckCircle2 size={20}/><div><strong>{targetDataset ? text('图片已添加到当前数据集。', 'Images added to this dataset.') : text(`已导入当前版本，共 ${created.length} 组图片。`, `Imported ${created.length} image groups into this version.`)}</strong>{!targetDataset && <div className="project-import-result-links">{created.map(dataset => <DatasetLink className="ui-link" key={dataset.source.id} to={`/datasets/${dataset.source.id}`}>{created.length === 1 ? text('查看图片与标签', 'Review images and captions') : dataset.source.path.replace(/\\/g, '/').split('/').pop()}</DatasetLink>)}</div>}</div>{operation && <span className="project-import-elapsed">{text('用时', 'Elapsed')} {operation.elapsed < 1 ? text('不足 1 秒', '<1s') : formatEta(operation.elapsed)}</span>}</div>}
     {showForm && <>
     {mode === 'upload' ? <>
       <div className="project-import-dropzone" data-testid="dataset-dropzone" data-dragging={dragging} onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = locked ? 'none' : 'copy'; if (!locked) setDragging(true); }} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }} onDrop={event => { event.preventDefault(); event.stopPropagation(); setDragging(false); if (!locked) void dropFiles(event.dataTransfer); }}>
-        <div className="project-import-drop-copy">{reading ? <Loader2 size={20} className="animate-spin"/> : <Upload size={20}/>}<div><strong>{reading ? text('正在读取文件夹…', 'Reading folders…') : text('拖入文件夹、图片或 ZIP 压缩包', 'Drop folders, images or a ZIP archive')}</strong><p>{text('保留文件夹结构。', 'Keeps the folder structure.')}</p></div></div>
+        <div className="project-import-drop-copy">{reading ? <Loader2 size={20} className="animate-spin"/> : <Upload size={20}/>}<div><strong>{reading ? text('正在读取文件夹…', 'Reading folders…') : text('拖入文件夹、图片或 ZIP 压缩包', 'Drop folders, images or a ZIP archive')}</strong><p>{targetDataset ? text('同名且内容不同的文件不会覆盖，已有标签会保留。','Files with conflicting names are not overwritten; existing captions are preserved.') : text('保留文件夹结构。', 'Keeps the folder structure.')}</p></div></div>
         <div className="project-import-file-actions">
           <button type="button" disabled={locked} onClick={() => folderInput.current?.click()} className="ui-btn ui-btn-primary"><FolderOpen size={14}/>{text('选择文件夹', 'Choose folder')}</button>
           <button type="button" disabled={locked} onClick={() => fileInput.current?.click()} className="ui-btn">{text('选择文件 / ZIP', 'Choose files / ZIP')}</button>
@@ -146,15 +150,15 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
       <fieldset disabled={locked} role="group" aria-label={text('训练图片文件夹路径', 'Training image folder path')}><PathInput value={path} onChange={value => { setPath(value); resetProgress(); setCreated([]); }} placeholder={text('例如 D:\\训练素材\\角色图', 'For example D:\\training-data\\character')}/></fieldset>
     </div>}
     <div className="project-import-configuration">
-      <details className="project-import-options"><summary>{text('导入选项', 'Import options')}</summary>
+      {!targetDataset && <details className="project-import-options"><summary>{text('导入选项', 'Import options')}</summary>
         <div className="project-import-fields">
           <label className="project-import-field project-import-caption">{text('标签格式', 'Caption format')}<CaptionFormatSelect value={captionExt} onChange={setCaptionExt} disabled={busy} formats={captionFormats}/></label>
           <div className="project-import-field project-import-repeats"><div className="project-import-field-label"><label htmlFor={repeatsId}>{text('每张图片重复次数', 'Repeats per image')}</label><ConfigHelp label={text('重复次数说明','Repeats help')}>{text('每轮使用每张图片的次数，默认 1 次。次数越高，这组图片的训练占比越大；5_character 这样的目录名可自动识别为 5 次。','Times each image is used per epoch, default 1. More repeats increase this dataset’s share; a folder named 5_character suggests 5 repeats.')}</ConfigHelp></div><input id={repeatsId} className={inputClass} type="number" min="1" step="1" required value={repeats} onChange={event => setRepeats(Number(event.target.value))} disabled={busy}/></div>
         </div>
         {detectedRepeats && Number(detectedRepeats)!==repeats && <button type="button" className="ui-btn ui-btn-sm" disabled={busy} onClick={()=>setRepeats(Number(detectedRepeats))}>{text(`目录名检测到重复 ${detectedRepeats} 次，应用`, `Folder name suggests ${detectedRepeats} repeats — apply`)}</button>}
         {isReg && <div className="project-import-reg-options"><label className="project-import-field project-import-prompt">{text('类别提示词', 'Class prompt')}<input className={inputClass} disabled={busy} value={classPrompt} onChange={event => setClassPrompt(event.target.value)}/></label><label className="project-import-field project-import-prior">{text('正则损失权重', 'Regularization loss weight')}<input className={inputClass} type="number" min="0" step="0.1" disabled={busy} value={priorWeight} onChange={event => setPriorWeight(Number(event.target.value))}/></label></div>}
-      </details>
-      <button type="submit" disabled={locked || !Number.isInteger(repeats) || repeats < 1 || (mode === 'upload' ? files.length === 0 : !path.trim())} className="ui-btn ui-btn-primary project-import-submit">{busy && <Loader2 size={14} className="animate-spin"/>}{busy ? text('正在导入…', 'Importing…') : text('导入当前版本', 'Import into this version')}</button>
+      </details>}
+      <button type="submit" disabled={locked || !Number.isInteger(repeats) || repeats < 1 || (mode === 'upload' ? files.length === 0 : !path.trim())} className="ui-btn ui-btn-primary project-import-submit">{busy && <Loader2 size={14} className="animate-spin"/>}{busy ? text('正在导入…', 'Importing…') : targetDataset ? text('添加到此数据集', 'Add to this dataset') : text('导入当前版本', 'Import into this version')}</button>
       {created.length > 0 && <button type="button" className="ui-btn ui-btn-quiet" disabled={locked} onClick={() => setShowForm(false)}><ChevronUp size={14}/>{text('收起', 'Collapse')}</button>}
     </div>
     </>}

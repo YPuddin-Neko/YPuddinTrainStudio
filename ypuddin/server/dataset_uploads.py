@@ -351,6 +351,8 @@ def merge_dataset_files(
     paths: list[Path],
     *,
     loose_name: str = "",
+    group_loose: bool = True,
+    protected_roots: tuple[Path, ...] = (),
     progress: ImportProgress | None = None,
 ) -> Iterator[list[Path]]:
     """Merge a verified snapshot; the caller registers sources before this context commits."""
@@ -361,7 +363,7 @@ def merge_dataset_files(
         # Only loose images need a new container. Real directory names, including
         # those inside an archive, are kept exactly as supplied by the user.
         loose = [path for path in paths if path.parent == temporary]
-        if loose:
+        if loose and group_loose:
             base = re.sub(r"[^\w-]+", "-", loose_name, flags=re.UNICODE).strip("-_")[:60] or "images"
             occupied = {p.name.casefold() for p in [*root.iterdir(), *temporary.iterdir()]}
             name, number = base, 2
@@ -385,6 +387,10 @@ def merge_dataset_files(
         for source in paths:
             relative = source.relative_to(temporary)
             destination = _destination_path(root, relative, children)
+            if any(destination.is_relative_to(protected) for protected in protected_roots):
+                raise ApiError(
+                    "上传路径属于另一个数据集，请打开该数据集后添加。", code="upload.conflict", status=409
+                )
             if source.suffix.lower() in IMAGE_EXTS and not source.name.endswith(".mask.png"):
                 if destination.parent not in caption_stems:
                     siblings: dict[str, set[str]] = {}
@@ -463,6 +469,8 @@ def staged_upload(
     batch: UploadBatch,
     *,
     dataset_root: Path | None = None,
+    append: bool = False,
+    protected_roots: tuple[Path, ...] = (),
     progress: ImportProgress | None = None,
 ) -> Iterator[list[Path]]:
     """Merge validated folders without wrappers; roll back only newly published data."""
@@ -471,6 +479,7 @@ def staged_upload(
     if root.is_symlink() or not root.resolve().is_relative_to(project_dir.resolve()):
         raise ApiError("managed dataset directory must remain inside its project", code="upload.path")
     temporary = Path(tempfile.mkdtemp(prefix=".upload-", dir=root))
+    staging_root = temporary
     try:
         names = [relative_upload_path(item.filename or "") for item in batch.files]
         zip_inputs = [i for i, path in enumerate(names) if path.suffix.lower() == ".zip"]
@@ -561,9 +570,21 @@ def staged_upload(
                 upload.file.seek(0)
                 _copy_file(upload.file, target(path), limit, budget, progress)
         _validate_files(paths, batch.caption_ext, progress)
+        if append and paths:
+            # A folder/ZIP's single outer folder is the upload container, not a new dataset.
+            roots = {path.relative_to(temporary).parts[0] for path in paths}
+            if len(roots) == 1 and all(len(path.relative_to(temporary).parts) > 1 for path in paths):
+                container = temporary / next(iter(roots))
+                temporary = container
 
         with merge_dataset_files(
-            root, temporary, paths, loose_name=batch.name, progress=progress
+            root,
+            temporary,
+            paths,
+            loose_name=batch.name,
+            group_loose=not append,
+            protected_roots=protected_roots,
+            progress=progress,
         ) as directories:
             yield directories
     except ApiError:
@@ -571,4 +592,4 @@ def staged_upload(
     except (OSError, ValueError, zipfile.BadZipFile, RuntimeError) as exc:
         raise ApiError(f"could not import upload: {exc}", code="upload.invalid") from exc
     finally:
-        shutil.rmtree(temporary, ignore_errors=True)
+        shutil.rmtree(staging_root, ignore_errors=True)
