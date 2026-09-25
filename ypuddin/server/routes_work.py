@@ -1027,8 +1027,12 @@ def _cache_stats(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
             for rec in _records(c, r["id"])
         ]
         from .routes_dataset_management import included, source_states
-        states = source_states(c, r)
-        recs = [record for record in recs if included(record.path, states)]
+
+        # Exclusions belong to this dataset's configured source. A dataset outside the
+        # configured sources is measured whole, like the path fallback above.
+        states = [state for state in source_states(c, r) if state[0] == source_path]
+        if states:
+            recs = [record for record in recs if included(record.path, states)]
         if not recs:
             return {}
         ds = cfg.dataset

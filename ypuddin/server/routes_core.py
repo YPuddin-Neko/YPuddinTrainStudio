@@ -285,7 +285,7 @@ def put_settings(patch: dict[str, Any], c: ServiceContext = Depends(ctx)) -> dic
         raise ApiError(str(exc), code="settings.invalid") from exc
 
 
-@router.get("/settings/storage-defaults", response_model=dict[str, m.StoragePathPreview])
+@router.get("/settings/storage-defaults", response_model=m.StorageDefaults)
 def storage_defaults(
     output_mode: Literal["project", "custom"] | None = None,
     output_dir: str | None = None,
@@ -312,7 +312,7 @@ def storage_defaults(
     }
 
 
-@router.get("/fs/browse-root")
+@router.get("/fs/browse-root", response_model=m.BrowseRoot)
 def browse_root(
     field: str,
     project_id: str | None = None,

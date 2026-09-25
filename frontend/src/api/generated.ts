@@ -2243,6 +2243,13 @@ export interface components {
             /** File */
             file: string;
         };
+        /** BrowseRoot */
+        BrowseRoot: {
+            /** Path */
+            path: string;
+        } & {
+            [key: string]: unknown;
+        };
         /** Caption */
         Caption: {
             /** Caption */
@@ -4192,6 +4199,15 @@ export interface components {
             paths: string[];
             /** Included */
             included: boolean;
+        };
+        /** MembershipResult */
+        MembershipResult: {
+            /** Changed */
+            changed: number;
+            /** Included */
+            included: boolean;
+        } & {
+            [key: string]: unknown;
         };
         /** MemoryConfig */
         MemoryConfig: {
@@ -6426,6 +6442,16 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** StorageDefaults */
+        StorageDefaults: {
+            bootstrap_env_dir: components["schemas"]["StoragePathPreview"];
+            output_dir: components["schemas"]["StoragePathPreview"];
+            state_dir: components["schemas"]["StoragePathPreview"];
+            samples_dir: components["schemas"]["StoragePathPreview"];
+            logs_dir: components["schemas"]["StoragePathPreview"];
+        } & {
+            [key: string]: unknown;
+        };
         /** StoragePathPreview */
         StoragePathPreview: {
             /** Path */
@@ -7333,9 +7359,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: components["schemas"]["StoragePathPreview"];
-                    };
+                    "application/json": components["schemas"]["StorageDefaults"];
                 };
             };
             /** @description Validation Error */
@@ -7370,9 +7394,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["BrowseRoot"];
                 };
             };
             /** @description Validation Error */
@@ -9157,9 +9179,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["DatasetInfo"];
                 };
             };
             /** @description Validation Error */
@@ -10592,9 +10612,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["MembershipResult"];
                 };
             };
             /** @description Validation Error */
@@ -10630,9 +10648,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["MembershipResult"];
                 };
             };
             /** @description Validation Error */

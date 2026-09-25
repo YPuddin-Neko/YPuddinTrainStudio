@@ -240,11 +240,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/components/schemas/StoragePathPreview"
-                  },
-                  "title": "Response Storage Defaults Api Settings Storage Defaults Get"
+                  "$ref": "#/components/schemas/StorageDefaults"
                 }
               }
             }
@@ -347,11 +343,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Browse Root Api Fs Browse Root Get"
+                  "$ref": "#/components/schemas/BrowseRoot"
                 }
               }
             }
@@ -2952,9 +2944,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Edit Dataset Api Datasets  Did  Patch"
+                  "$ref": "#/components/schemas/DatasetInfo"
                 }
               }
             }
@@ -5197,9 +5187,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Edit Membership Api Datasets  Did  Membership Post"
+                  "$ref": "#/components/schemas/MembershipResult"
                 }
               }
             }
@@ -5257,9 +5245,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Edit Version Membership Api Projects  Pid  Versions  Vid  Dataset Membership Post"
+                  "$ref": "#/components/schemas/MembershipResult"
                 }
               }
             }
@@ -7511,6 +7497,20 @@
           "file"
         ],
         "title": "Body_wheel_api_environment_wheels_post"
+      },
+      "BrowseRoot": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "title": "BrowseRoot"
       },
       "Caption": {
         "properties": {
@@ -12893,6 +12893,25 @@
           "included"
         ],
         "title": "MembershipEdit"
+      },
+      "MembershipResult": {
+        "properties": {
+          "changed": {
+            "type": "integer",
+            "title": "Changed"
+          },
+          "included": {
+            "type": "boolean",
+            "title": "Included"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "changed",
+          "included"
+        ],
+        "title": "MembershipResult"
       },
       "MemoryConfig": {
         "properties": {
@@ -18452,6 +18471,35 @@
           "config"
         ],
         "title": "SourceRoleBody"
+      },
+      "StorageDefaults": {
+        "properties": {
+          "bootstrap_env_dir": {
+            "$ref": "#/components/schemas/StoragePathPreview"
+          },
+          "output_dir": {
+            "$ref": "#/components/schemas/StoragePathPreview"
+          },
+          "state_dir": {
+            "$ref": "#/components/schemas/StoragePathPreview"
+          },
+          "samples_dir": {
+            "$ref": "#/components/schemas/StoragePathPreview"
+          },
+          "logs_dir": {
+            "$ref": "#/components/schemas/StoragePathPreview"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "bootstrap_env_dir",
+          "output_dir",
+          "state_dir",
+          "samples_dir",
+          "logs_dir"
+        ],
+        "title": "StorageDefaults"
       },
       "StoragePathPreview": {
         "properties": {

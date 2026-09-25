@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
+from . import models as m
 from .context import ServiceContext
 from .dataset_uploads import relative_upload_path
 from .errors import ApiError
@@ -123,7 +124,7 @@ def _independent_source(config: dict, row: dict) -> dict:
     return source
 
 
-@router.post("/datasets/{did}/membership")
+@router.post("/datasets/{did}/membership", response_model=m.MembershipResult)
 def edit_membership(did: str, body: MembershipEdit, c: ServiceContext = Depends(context)) -> dict:
     from .routes_work import _get_dataset
 
@@ -139,7 +140,7 @@ def edit_membership(did: str, body: MembershipEdit, c: ServiceContext = Depends(
     )
 
 
-@router.post("/projects/{pid}/versions/{vid}/dataset-membership")
+@router.post("/projects/{pid}/versions/{vid}/dataset-membership", response_model=m.MembershipResult)
 def edit_version_membership(
     pid: str, vid: str, body: VersionMembershipEdit, c: ServiceContext = Depends(context)
 ) -> dict:
@@ -177,7 +178,7 @@ def edit_version_membership(
     return {"changed": sum(map(len, grouped.values())), "included": body.included}
 
 
-@router.patch("/datasets/{did}")
+@router.patch("/datasets/{did}", response_model=m.DatasetInfo, response_model_exclude_unset=True)
 def edit_dataset(did: str, body: DatasetEdit, c: ServiceContext = Depends(context)) -> dict:
     from .routes_work import (
         _dataset_row,

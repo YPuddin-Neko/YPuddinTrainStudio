@@ -153,6 +153,23 @@ class StoragePathPreview(_Out):
     browse_root: str
 
 
+class StorageDefaults(_Out):
+    bootstrap_env_dir: StoragePathPreview
+    output_dir: StoragePathPreview
+    state_dir: StoragePathPreview
+    samples_dir: StoragePathPreview
+    logs_dir: StoragePathPreview
+
+
+class BrowseRoot(_Out):
+    path: str
+
+
+class MembershipResult(_Out):
+    changed: int
+    included: bool
+
+
 class FsList(_Out):
     exists: bool = True
     path: str
