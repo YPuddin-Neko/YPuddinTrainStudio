@@ -1,7 +1,7 @@
 import React from 'react';
 
-type Section = { key: string; names: string[]; title?: [string, string]; togglesFirst?: boolean; inlineToggles?: boolean };
-const section = (key: string, names: string[], title?: [string, string], options: Pick<Section, 'togglesFirst'|'inlineToggles'> = {}): Section => ({ key, names, title, ...options });
+type Section = { key: string; names: string[]; title?: [string, string]; togglesFirst?: boolean; inlineToggles?: boolean; beside?: string };
+const section = (key: string, names: string[], title?: [string, string], options: Pick<Section, 'togglesFirst'|'inlineToggles'|'beside'> = {}): Section => ({ key, names, title, ...options });
 
 /** Every group uses the same grid; these lists only decide grouping and order. */
 const layouts: Record<string, Section[]> = {
@@ -19,7 +19,8 @@ const layouts: Record<string, Section[]> = {
   caption: [
     section('text', ['dataset.caption.trigger_word', 'dataset.caption.prefix', 'dataset.caption.suffix', 'dataset.caption.separator'], ['标签内容', 'Caption content']),
     section('ordering', ['dataset.caption.shuffle', 'dataset.caption.keep_tokens'], ['标签顺序', 'Caption ordering'], { togglesFirst: true }),
-    section('dropout', ['dataset.caption.tag_dropout', 'dataset.caption.caption_dropout'], ['标签丢弃', 'Caption dropout']),
+    // Two short sections share a row; their fields stack in each half.
+    section('dropout', ['dataset.caption.tag_dropout', 'dataset.caption.caption_dropout'], ['标签丢弃', 'Caption dropout'], { beside: 'ordering' }),
     section('variants', ['dataset.caption.cache_variants', 'dataset.caption.wildcard'], ['文本变化', 'Text variation']),
   ],
   loop: [
@@ -115,12 +116,20 @@ export default function ParameterFields({ group, fields, english, renderToggleSe
   }).filter(entry => entry.content.length > 0);
   // A lone section needs no subtitle: the group heading already names it.
   const titled = visible.length + (remaining.length > 0 ? 1 : 0) > 1;
-  return <>{visible.map(({ item, content }) => {
+  const render = ({ item, content }: typeof visible[number]) => {
     const togglePath=group==='loop' && item.key==='ema' ? 'loop.ema' : group==='caption' && item.key==='ordering' ? 'dataset.caption.shuffle' : undefined;
     return togglePath && renderToggleSection
       ? <div key={item.key} className={`config-field-section config-${group}-${item.key}`}>{renderToggleSection(togglePath,<FieldSection fields={content.filter(field=>path(field)!==togglePath)}/>)}</div>
       : <FieldSection key={item.key} fields={content} title={titled ? item.title?.[english ? 1 : 0] : undefined}
         className={`config-${group}-${item.key}`} togglesFirst={item.togglesFirst} inlineToggles={item.inlineToggles}/>;
-  })}
+  };
+  const rendered: React.ReactNode[] = [];
+  visible.forEach((entry, index) => {
+    const previous = visible[index - 1];
+    if (entry.item.beside && previous?.item.key === entry.item.beside) {
+      rendered[rendered.length - 1] = <div key={`${previous.item.key}+${entry.item.key}`} className="config-section-pair">{render(previous)}{render(entry)}</div>;
+    } else rendered.push(render(entry));
+  });
+  return <>{rendered}
     {remaining.length > 0 && <FieldSection fields={remaining}/>}</>;
 }

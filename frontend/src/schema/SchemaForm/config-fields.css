@@ -42,6 +42,19 @@
 @container config-form (min-width: 520px) { .compact-schema .config-field-section { --config-columns: 2; } }
 @container config-form (min-width: 840px) { .compact-schema .config-field-section { --config-columns: 3; } }
 
+/* Two short sections side by side, separated by a rule; each stacks its own fields. */
+.compact-schema .config-section-pair { display:grid; grid-template-columns:minmax(0, 1fr); min-width:0; }
+.compact-schema .config-field-section + .config-section-pair,
+.compact-schema .config-section-pair + .config-field-section { padding-top:14px; border-top:1px solid var(--studio-line); }
+.compact-schema .config-section-pair > .config-field-section { --config-columns:1; }
+/* Matches the switch heading beside it: a 32px title row above 10px of spacing. */
+.compact-schema .config-section-pair > .config-field-section > h3 { display:flex; align-items:center; min-height:42px; padding-bottom:10px; color:var(--studio-text); font-size:13px; font-weight:600; }
+@container config-form (min-width: 640px) {
+  .compact-schema .config-section-pair { grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); }
+  .compact-schema .config-section-pair > .config-field-section:first-child { padding-right:20px; }
+  .compact-schema .config-section-pair > .config-field-section + .config-field-section { padding:0 0 0 20px; border-top:0; border-left:1px solid var(--studio-line); }
+}
+
 /* Each hint follows its own control, independent of taller neighboring fields. */
 .compact-schema .config-field { display:flex; flex-direction:column; min-width:0; }
 .compact-schema .config-field-wide { grid-column: 1 / -1; }
