@@ -22,7 +22,7 @@ import './config-fields.css';
 import { optionalValueLabel } from './optionalValues';
 import ParameterFields from './ParameterFields';
 import RecoveryInterval from './RecoveryInterval';
-import ParameterToggleCard from './ParameterToggleCard';
+import ParameterToggleSection from './ParameterToggleSection';
 
 interface SchemaProperty {
   type?: string;
@@ -718,12 +718,14 @@ const FieldGroup: React.FC<{
 }> = ({ title, count, children, compact = false, groupKey }) => {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = React.useState(true);
+  const bodyId = React.useId();
   return (
     <section data-group={groupKey} className={compact ? 'config-group' : 'border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800'}>
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         aria-expanded={isOpen}
+        aria-controls={bodyId}
         className={compact ? 'config-group-title' : 'w-full flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors'}
       >
         <span className="font-medium text-slate-700 dark:text-slate-200">{title}</span>
@@ -736,7 +738,7 @@ const FieldGroup: React.FC<{
           {isOpen ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
         </span>
       </button>
-      {isOpen && <div className={compact ? 'config-fields' : 'p-4 space-y-4'}>{children}</div>}
+      <div id={bodyId} hidden={!isOpen} className={compact ? 'config-fields' : 'p-4 space-y-4'}>{children}</div>
     </section>
   );
 };
@@ -867,13 +869,11 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const incompatiblePredictionLoss = (fullPathKey === 'objective.scale_v_pred_loss_like_noise_pred' && value.objective?.scale_v_pred_loss_like_noise_pred && conditionValue.model.prediction_type !== 'v_prediction') || (fullPathKey === 'objective.v_pred_like_loss' && value.objective?.v_pred_like_loss > 0 && conditionValue.model.prediction_type !== 'epsilon');
     if (ui.show_when && !incompatiblePredictionLoss && !incompatibleFamilyLoss) {
       try {
-        const previewConditions = fullPathKey.startsWith('sampling.')
-          ? {...conditionValue,sampling:{...value.sampling,enabled:true}}
-          : fullPathKey.startsWith('validation.')
-            ? {...conditionValue,validation:{...value.validation,enabled:true}}
-            : fullPathKey === 'loop.ema_decay'
-              ? {...conditionValue,loop:{...value.loop,ema:true}}
-              : conditionValue;
+        const previewConditions = fullPathKey === 'loop.ema_decay'
+          ? {...conditionValue,loop:{...value.loop,ema:true}}
+          : fullPathKey === 'dataset.caption.keep_tokens'
+            ? {...conditionValue,dataset:{...conditionValue.dataset,caption:{...value.dataset?.caption,shuffle:true}}}
+            : conditionValue;
         if (!evaluateShowWhen(ui.show_when, previewConditions)) return null;
       } catch (err) {
         console.error(`[SchemaForm] Failed to evaluate show_when for ${fullPathKey}: "${ui.show_when}"`, err);
@@ -1309,32 +1309,27 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (indexB !== -1) return 1;
     return groupA.order - groupB.order;
   });
-  const renderToggleCard = (path: string, children: React.ReactNode, group?: string) => {
+  const renderToggleSection = (path: string, children: React.ReactNode) => {
     const features: Record<string, {title:string;description:string;switchLabel:string}> = {
-      'sampling.enabled': {title:english?'Training previews':'生成训练预览',description:english?'Generate images at set intervals to follow training progress.':'按设定间隔生成图片，便于观察训练效果。',switchLabel:english?'Generate training previews':'生成训练预览'},
-      'validation.enabled': {title:english?'Validation loss':'验证损失',description:english?'Measure loss on images kept out of training.':'使用未参与训练的数据计算损失。',switchLabel:english?'Enable validation':'启用验证集'},
       'loop.ema': {title:english?'Weight averaging (EMA)':'权重平均 (EMA)',description:english?'Keep a separate copy of averaged adapter weights for comparison.':'平滑适配器权重变化，额外保存平均权重用于对比。',switchLabel:english?'Enable EMA':'启用 EMA'},
+      'dataset.caption.shuffle': {title:english?'Shuffle caption tags':'打乱标签顺序',description:english?'Randomize variable tags while keeping fixed tags in place.':'随机调整可变标签的顺序，固定标签保持不变。',switchLabel:english?'Shuffle caption tags':'打乱标签顺序'},
     };
-    const [section,key]=path.split('.');
-    const property=schema.properties?.[section];
-    const fieldSchema=(property?.$ref ? resolveRef(schema,property.$ref) : property)?.properties?.[key];
+    const fieldPath=path.split('.');
+    let fieldSchema=schema;
+    for(const key of fieldPath)fieldSchema=(fieldSchema?.$ref ? resolveRef(schema,fieldSchema.$ref) : fieldSchema)?.properties?.[key];
     const help=configFieldHelp(path,fieldSchema?.description,english);
     const feature=features[path];
-    return <ParameterToggleCard key={`${path}:${search.trim()}`} id={`feature-${path}`} {...feature} group={group} fieldPath={path}
-      checked={!!(value[section]?.[key] ?? fieldSchema?.default)} disabled={readOnly} onCheckedChange={checked=>onChange(setNestedValue(value,[section,key],checked))}
+    return <ParameterToggleSection key={`${path}:${search.trim()}`} id={`feature-${path}`} {...feature} fieldPath={path}
+      parametersEnabled={path==='dataset.caption.shuffle' && value.dataset?.caption?.tag_dropout>0 ? true : undefined}
+      checked={!!(getNestedValue(value,fieldPath) ?? fieldSchema?.default)} disabled={readOnly} onCheckedChange={checked=>onChange(setNestedValue(value,fieldPath,checked))}
       help={help ? <ConfigHelp label={`${feature.title} ${english?'help':'说明'}`}>{help}</ConfigHelp> : undefined}
-      error={errors.find(error=>error.loc===path)?.msg}>{children}</ParameterToggleCard>;
+      error={errors.find(error=>error.loc===path)?.msg}>{children}</ParameterToggleSection>;
   };
 
   return (
     <div className={compact ? 'compact-schema' : 'space-y-6'} data-testid="schema-form">
       {search.trim() && sortedGroups.length > 0 && <p className="config-search-results" role="status">{english ? `${sortedGroups.reduce((count, [, group]) => count + group.fields.length, 0)} matching parameters · ${sortedGroups.length} sections` : `${sortedGroups.reduce((count, [, group]) => count + group.fields.length, 0)} 个匹配参数 · ${sortedGroups.length} 个分组`}</p>}
-      {sortedGroups.map(([groupName, groupData]) => {
-        if (groupName === 'sampling' || groupName === 'validation') {
-          return renderToggleCard(`${groupName}.enabled`, <ParameterFields group={groupName} english={english}
-            fields={groupData.fields.filter(field=>React.isValidElement(field) && field.key!==`${groupName}.enabled`)}/>,groupName);
-        }
-        return (
+      {sortedGroups.map(([groupName, groupData]) => (
         <FieldGroup key={`${groupName}:${search.trim()}`} title={parameterGroupLabel(groupName, english) || (groupName === 'training' ? (english ? 'Training mode' : '训练方式') : t(`groups.${groupName}`, groupName))} count={groupData.fields.length} compact={compact} groupKey={groupName}>
           {groupName === 'checkpoint' && versionSources && <div className="output-binding-summary">
             <div className="output-binding-heading"><strong>{english ? 'Training weights' : '训练权重'}</strong>{!showAdvanced && <button type="button" className="ui-btn ui-btn-sm" aria-expanded={editOutput} onClick={() => setEditOutput(previous => !previous)}>{editOutput ? (english ? 'Collapse file name' : '收起文件名设置') : (english ? 'Edit file name' : '修改文件名')}</button>}</div>
@@ -1352,9 +1347,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
             })}
           </div></div>}
           {groupName === 'caption' && hasCaptionOverrides && !showAdvanced && !editCaptionOverrides && <div className="caption-override-notice" role="status"><span>{english ? 'This configuration adds text to your existing captions.' : '当前配置会额外改写已有标签。'}</span><button type="button" className="ui-btn ui-btn-sm" onClick={() => setEditCaptionOverrides(true)}>{english ? 'Edit extra caption changes' : '编辑额外标签改写'}</button></div>}
-          <ParameterFields group={groupName} fields={groupData.fields} english={english} renderToggleCard={renderToggleCard}/>
+          <ParameterFields group={groupName} fields={groupData.fields} english={english} renderToggleSection={renderToggleSection}/>
         </FieldGroup>
-      );})}
+      ))}
       {sortedGroups.length === 0 && <div className="config-search-empty" role="status"><strong>{english ? 'No matching parameters.' : '没有匹配的参数。'}</strong><p>{search.trim() ? (english ? 'Try a parameter name, keyword or configuration path.' : '试试参数名称、关键词或配置字段路径。') : (english ? 'This section has no available parameters for the current configuration.' : '当前配置在此分区没有可用参数。')}</p>{search.trim() && onClearSearch && <button type="button" className="ui-btn" onClick={onClearSearch}>{english ? 'Return to parameter sections' : '返回参数分区'}</button>}</div>}
     </div>
   );

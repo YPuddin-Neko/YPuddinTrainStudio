@@ -152,6 +152,8 @@ export const FIELD_HINTS: Record<string, Copy> = {
 };
 
 export const FIELD_HELP: Record<string, Copy> = {
+  'dataset.caption.shuffle': ['TXT 只打乱未保留的标签；分类 JSON 只打乱可变分组内的标签，固定信息和自然语言不动。使用文本缓存时，从预生成的随机变体中选择。', 'Shuffles unprotected TXT tags or tags within variable JSON groups. Fixed information and natural language stay unchanged. Text caching selects from pre-generated random variants.'],
+  'dataset.caption.keep_tokens': ['仅用于 TXT：前 N 个标签不参与打乱或标签丢弃。即使关闭打乱，只要启用了标签丢弃，此设置仍然有效。分类 JSON 按字段分组处理，不使用此计数。', 'For TXT captions, protects the first N tags from shuffling and tag dropout. Still applies with shuffling off when tag dropout is enabled. Structured JSON uses its fixed fields instead of this count.'],
   'sampling.enabled': ['按设定间隔生成预览图，需要至少一条提示词或提示词文件。生成预览会占用时间，不参与梯度更新。', 'Generates previews at the chosen intervals. Requires at least one prompt or a prompt file. Preview generation takes time and does not update training gradients.'],
   'validation.enabled': ['使用固定验证图片和噪声计算损失，不对验证图片反向更新。需要设置验证划分比例或单独的验证数据来源。', 'Measures loss with fixed validation images and noise, without updating weights from validation images. Set a validation split or a separate validation data source.'],
   'loop.ema': ['在 CPU 维护适配器权重的指数移动平均，额外保存 EMA 权重用于对比，会增加内存和文件占用。训练预览仍使用普通权重。', 'Maintains an exponential moving average of adapter weights on the CPU and exports an additional set of EMA weights. Uses extra memory and storage. Training previews still use the regular weights.'],

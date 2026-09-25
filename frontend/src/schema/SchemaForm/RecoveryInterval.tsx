@@ -1,6 +1,6 @@
 import {useEffect, useRef, useState, type ReactNode} from 'react';
 import StudioSelect from '../../components/StudioSelect';
-import ParameterToggleCard from './ParameterToggleCard';
+import ParameterToggleSection from './ParameterToggleSection';
 
 type Interval = {save_state_every_steps:number|null;save_state_every_epochs:number|null};
 type Unit = 'steps'|'epochs';
@@ -49,7 +49,7 @@ export default function RecoveryInterval({id,label,value,onChange,english,invali
       remembered.current[unit]=next;
       emit(unit==='steps' ? {save_state_every_steps:next,save_state_every_epochs:mode==='both'?epochs:null} : {save_state_every_steps:mode==='both'?steps:null,save_state_every_epochs:next});
     }}/>;
-  return <ParameterToggleCard id={id} title={english?'Save recovery points periodically':'定期保存恢复点'}
+  return <ParameterToggleSection id={id} title={english?'Save recovery points periodically':'定期保存恢复点'}
     description={english?'Keep the complete training state so an interrupted run can resume.':'保存完整训练状态，供中断后继续。'}
     checked={enabled} help={help} onCheckedChange={checked=>emit(checked ? lastEnabled.current : {save_state_every_steps:null,save_state_every_epochs:null})}>
     <div className="recovery-settings">
@@ -68,5 +68,5 @@ export default function RecoveryInterval({id,label,value,onChange,english,invali
       <p id={`${id}-hint`} className="config-field-hint">{hint}</p>
       {error && <p className="config-field-error">{error}</p>}
     </div>
-  </ParameterToggleCard>;
+  </ParameterToggleSection>;
 }

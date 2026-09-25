@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import Switch from '../../components/Switch';
 
-export default function ParameterToggleCard({ id, title, description, checked, onCheckedChange, children, help, disabled = false, switchLabel, fieldPath, group, error }: {
+export default function ParameterToggleSection({ id, title, description, checked, onCheckedChange, children, help, disabled = false, parametersEnabled = checked, switchLabel, fieldPath, error }: {
   id: string;
   title: string;
   description: string;
@@ -10,12 +10,12 @@ export default function ParameterToggleCard({ id, title, description, checked, o
   children: ReactNode;
   help?: ReactNode;
   disabled?: boolean;
+  parametersEnabled?: boolean;
   switchLabel?: string;
   fieldPath?: string;
-  group?: string;
   error?: string;
 }) {
-  return <section className="parameter-toggle-card" data-enabled={checked} data-group={group} aria-labelledby={`${id}-title`}>
+  return <section className="parameter-toggle-layout" data-enabled={checked} aria-labelledby={`${id}-title`}>
     <header className="parameter-toggle-heading">
       <div className="parameter-toggle-copy">
         <div className="parameter-toggle-title"><h3 id={`${id}-title`}>{title}</h3>{help}</div>
@@ -27,7 +27,7 @@ export default function ParameterToggleCard({ id, title, description, checked, o
           checked={checked} disabled={disabled} onCheckedChange={onCheckedChange}/>
       </div>
     </header>
-    <fieldset id={`${id}-settings`} disabled={disabled || !checked} className="parameter-toggle-body">
+    <fieldset id={`${id}-settings`} disabled={disabled || !parametersEnabled} className="parameter-toggle-body">
       {children}
     </fieldset>
   </section>;

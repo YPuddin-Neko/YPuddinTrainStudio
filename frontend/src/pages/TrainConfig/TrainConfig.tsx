@@ -31,7 +31,7 @@ import ConfigInspection from './ConfigInspection';
 import ParameterSections from '../../components/ParameterSections';
 import { workflowSchema } from '../../utils/parameterWorkflow';
 import { CONFIG_TAB_GROUPS, ConfigTab, ConfigIssue, OPAQUE_CONFIG_ISSUE, presentConfigIssues, presentPlanWarning } from '../../utils/configPresentation';
-import { AlertCircle, Check, CheckCircle2, ChevronRight, ChevronDown, Search, Play, Settings2, Brush, Database, Box, Loader2, BarChart3, X, Save, ListChecks } from 'lucide-react';
+import { AlertCircle, Check, CheckCircle2, ChevronRight, ChevronDown, Search, Play, Settings2, Brush, Database, Loader2, BarChart3, X, Save, ListChecks } from 'lucide-react';
 
 const presetFamily = (preset: Preset): string | undefined => { const model = preset.config.model; return model && typeof model === 'object' && 'family' in model && typeof model.family === 'string' ? model.family : undefined; };
 
@@ -611,6 +611,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
         <button type="button" className="ui-btn" disabled={!loaded || savingNavigation} onClick={() => setInspectionOpen(true)}><ListChecks size={14}/>{text('参数检查','Check parameters')}</button>
         <details className="config-tools" data-popover><summary className="ui-btn"><Settings2 size={14}/>{text('配置工具', 'Config tools')}</summary><div className="config-tools-menu">
           <Link to="/presets">{text('管理参数预设','Manage parameter presets')}</Link>
+          <Link to={modelUrl}>{text('管理与下载模型','Manage & download models')}</Link>
           <button type="button" disabled={!loaded} onClick={() => {setImportError('');setImportOpen(true);}}>{t('train.importToml')}</button><button type="button" disabled={!loaded} onClick={handleExport}>{t('train.exportToml')}</button><button type="button" disabled={!loaded} onClick={() => { if (window.confirm(t('train.resetConfirm'))) setConfig(structuredClone(defaults)); }}>{t('train.resetDefaults')}</button>
         </div></details>
       </div>
@@ -632,7 +633,6 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
         <div id="training-parameters" role="region" aria-label={search ? text('训练参数搜索结果', 'Training parameter search results') : text('训练参数内容', 'Training parameter fields')}>
           {search && <p className="section-context">{text('搜索所有分区，包含高级参数', 'Searching every section, including advanced parameters')}</p>}
           {!search && activeTab === 'data' && <div className="config-context-card"><div><strong><Database size={14}/>{text('训练数据与遮罩', 'Dataset and masks')}</strong></div><div className="context-actions"><Link to={`${dataUrl}&data_step=datasets`} className="ui-btn ui-btn-sm">{text('添加数据', 'Add dataset')}</Link><Link to={`${dataUrl}&data_step=captions${sourceQuery}`} className="ui-btn ui-btn-sm">{text('标签编辑', 'Caption editor')}</Link><Link to={`${dataUrl}&data_step=paint${sourceQuery}`} className="ui-btn ui-btn-sm"><Brush size={13}/>{text('涂抹与遮罩', 'Paint & masks')}</Link></div>{config.dataset?.masked_loss && <p className="mask-context-note">{text('遮罩已启用：白色参与训练，黑色忽略。未制作遮罩且没有 alpha 通道的图片仍按整张图训练。', 'Masking enabled: white trains, black is ignored. Images without a mask or alpha still train the full image.')}</p>}</div>}
-          {!search && activeTab === 'model' && <div className="config-context-card model-context-card"><strong><Box size={14}/>{text('选择训练机上的模型', 'Models on the training machine')}</strong><Link to={modelUrl} className="ui-btn ui-btn-sm">{text('管理与下载模型', 'Manage & download models')}<ChevronRight size={13}/></Link></div>}
 
 
           {!loaded ? <p className="p-6 text-sm text-slate-500">{t('common.loading')}</p> : <SchemaForm projectId={projectId} versionId={versionId} key={revealVersion} compact readOnly={!!inactiveReason} schema={orderedSchema} value={config} computePolicy={computePolicy} sourceRoles={sourceRoles} outputBinding={outputBinding} versionSources={!!projectId} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} search={search} onClearSearch={clearSearch} errors={issues.map(issue => ({loc:issue.path,msg:issue.message === OPAQUE_CONFIG_ISSUE ? '' : issue.message}))} family={familyByName(families, config?.model?.family)} families={families} />}

@@ -22,11 +22,13 @@ export default function ParameterSections({ rootRef, tab, group, onTabChange, is
   };
   const [active, setActive] = React.useState('');
   const pending = React.useRef<string | null>(null);
+  const pendingFocus = React.useRef(false);
   const jumped = React.useRef<{ group: string; scrollTop: number } | null>(null);
   const revealed = React.useRef(false);
-  const jump = (group: string) => {
+  const jump = (group: string, moveFocus = false) => {
     const targetTab = (Object.keys(CONFIG_TAB_GROUPS) as ConfigTab[]).find(key => CONFIG_TAB_GROUPS[key].includes(group)) || 'train';
     pending.current = group;
+    pendingFocus.current = moveFocus;
     jumped.current = null;
     revealed.current = false;
     onTabChange(targetTab, group);
@@ -48,7 +50,8 @@ export default function ParameterSections({ rootRef, tab, group, onTabChange, is
     root.scrollTop += section.getBoundingClientRect().top - root.getBoundingClientRect().top - 16;
     jumped.current = { group: pending.current, scrollTop: root.scrollTop };
     setActive(pending.current);
-    heading?.focus({ preventScroll: true });
+    if (pendingFocus.current) heading?.focus({ preventScroll: true });
+    pendingFocus.current = false;
     pending.current = null;
   };
   const revealRef = React.useRef(reveal);
@@ -64,6 +67,7 @@ export default function ParameterSections({ rootRef, tab, group, onTabChange, is
     // that shared a legacy tab. External links and browser history locate it here.
     if (!pending.current) {
       pending.current = locationGroup;
+      pendingFocus.current = false;
       jumped.current = null;
       revealed.current = false;
     }
@@ -89,7 +93,7 @@ export default function ParameterSections({ rootRef, tab, group, onTabChange, is
     };
     root.addEventListener('scroll', update, { passive: true });
     const observer = new MutationObserver(update);
-    observer.observe(root, { childList: true, subtree: true });
+    observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'aria-expanded'] });
     update();
     return () => { observer.disconnect(); root.removeEventListener('scroll', update); };
   }, [rootRef, tab]);
@@ -100,7 +104,7 @@ export default function ParameterSections({ rootRef, tab, group, onTabChange, is
       const problems = issues.filter(issue => issueGroup(issue) === item.group);
       const passed = completed(item.group);
       const statusId = `${preset ? 'preset' : 'training'}-step-${item.group}-status`;
-      return <li key={item.group}><button type="button" aria-describedby={statusId} aria-controls={preset ? 'preset-parameters' : 'training-parameters'} aria-current={active === item.group ? 'step' : undefined} onClick={() => jump(item.group)}>
+      return <li key={item.group}><button type="button" aria-describedby={statusId} aria-controls={preset ? 'preset-parameters' : 'training-parameters'} aria-current={active === item.group ? 'step' : undefined} onClick={event => jump(item.group, event.detail === 0)}>
         <span className="parameter-step-number">{String(index + 1).padStart(2, '0')}</span><span>{text(...item.label)}</span>
         {problems.length ? <span className="parameter-step-issues" aria-hidden="true">{problems.length}</span> : passed ? <CheckCircle2 size={16} className="parameter-step-complete" aria-hidden="true"/> : active === item.group ? <ChevronRight size={14}/> : <Check size={13} className="parameter-step-placeholder"/>}
       </button><span className="sr-only" id={statusId}>{status(item.group)}</span></li>;
