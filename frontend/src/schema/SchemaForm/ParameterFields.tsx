@@ -1,7 +1,7 @@
 import React from 'react';
 
-type Section = { key: string; names: string[]; title?: [string, string]; togglesFirst?: boolean };
-const section = (key: string, names: string[], title?: [string, string], options: Pick<Section, 'togglesFirst'> = {}): Section => ({ key, names, title, ...options });
+type Section = { key: string; names: string[]; title?: [string, string]; togglesFirst?: boolean; inlineToggles?: boolean };
+const section = (key: string, names: string[], title?: [string, string], options: Pick<Section, 'togglesFirst'|'inlineToggles'> = {}): Section => ({ key, names, title, ...options });
 
 /** Every group uses the same grid; these lists only decide grouping and order. */
 const layouts: Record<string, Section[]> = {
@@ -37,7 +37,7 @@ const layouts: Record<string, Section[]> = {
   ],
   optimizer: [
     section('basic', ['type', 'lr', 'weight_decay'], ['优化器与学习率', 'Optimizer and learning rate']),
-    section('adaptive', ['d_coef', 'd0', 'beta3', 'prodigy_steps', 'growth_rate', 'slice_p', 'min_lr', 'max_lr', 'lr_bump', 'd_limiter', 'safeguard_warmup', 'use_speed', 'split_groups', 'split_groups_mean'], ['自动步长估计', 'Step-size estimation']),
+    section('adaptive', ['d_coef', 'd0', 'beta3', 'prodigy_steps', 'growth_rate', 'slice_p', 'min_lr', 'max_lr', 'lr_bump', 'use_speed', 'd_limiter', 'safeguard_warmup', 'split_groups', 'split_groups_mean'], ['自动步长估计', 'Step-size estimation']),
     section('averaging', ['use_schedulefree', 'schedulefree_c', 'weight_decay_by_lr', 'decouple'], ['权重平均与衰减', 'Weight averaging and decay'], { togglesFirst: true }),
     section('stability', ['betas', 'beta2', 'eps', 'grad_clip_norm', 'clip_threshold', 'use_bias_correction', 'use_stableadamw'], ['平滑与稳定性', 'Smoothing and stability']),
     section('precision', ['factored', 'factored_fp32', 'stochastic_rounding', 'kahan'], ['状态占用与精度', 'State memory and precision']),
@@ -59,7 +59,7 @@ const layouts: Record<string, Section[]> = {
   ],
   checkpoint: [
     section('files', ['name', 'save_dtype', 'output_dir'], ['权重文件', 'Weight files']),
-    section('cadence', ['save_every_steps', 'save_every_epochs', 'keep_last_n', 'save_on_finish'], ['权重保存', 'Weight saving']),
+    section('cadence', ['save_every_steps', 'save_every_epochs', 'keep_last_n', 'save_on_finish', 'save_training_metadata'], ['权重保存', 'Weight saving']),
     section('state', ['save_state_every_steps', 'resume'], ['断点恢复', 'Training state']),
   ],
   validation: [
@@ -68,22 +68,23 @@ const layouts: Record<string, Section[]> = {
     section('cadence', ['every_steps', 'every_epochs'], ['验证频率', 'Validation frequency']),
     section('evaluation', ['max_images', 'timesteps', 'seed'], ['评估设置', 'Evaluation settings']),
   ],
-  logging: [section('options', ['level', 'tensorboard', 'events_path'])],
+  logging: [section('options', ['level', 'tensorboard', 'events_path'], undefined, {inlineToggles:true})],
 };
 
 const isToggle = (node: React.ReactNode) => React.isValidElement(node) && (node.props as any)['data-control-kind'] === 'toggle';
 const isWide = (node: React.ReactNode) => React.isValidElement(node) && (node.props as any)['data-field-span'] === 'wide';
 
 /** Conditional controls stay below their switches, so enabling them does not move the trigger. */
-export function FieldSection({ fields, title, className = '', togglesFirst = false }: {
-  fields: React.ReactNode[]; title?: string; className?: string; togglesFirst?: boolean;
+export function FieldSection({ fields, title, className = '', togglesFirst = false, inlineToggles = false }: {
+  fields: React.ReactNode[]; title?: string; className?: string; togglesFirst?: boolean; inlineToggles?:boolean;
 }) {
   const toggles = fields.filter(isToggle);
   const plain = fields.filter(field => !isToggle(field) && !isWide(field));
   const wide = fields.filter(isWide);
+  const toggleRow = toggles.length>0 ? <div className="config-toggle-row">{toggles}</div> : null;
   return <div className={`config-field-section ${className}`} data-field-count={fields.length} data-only-toggles={toggles.length === fields.length || undefined}>
     {title && <h3>{title}</h3>}
-    {togglesFirst ? <>{toggles.length>0 && <div className="config-toggle-row">{toggles}</div>}{plain}</> : [...plain, ...toggles]}
+    {inlineToggles ? [...plain,...toggles] : togglesFirst ? <>{toggleRow}{plain}</> : <>{plain}{toggleRow}</>}
     {wide}
   </div>;
 }
@@ -115,6 +116,6 @@ export default function ParameterFields({ group, fields, english }: { group: str
   // A lone section needs no subtitle: the group heading already names it.
   const titled = visible.length + (remaining.length > 0 ? 1 : 0) > 1;
   return <>{visible.map(({ item, content }) => <FieldSection key={item.key} fields={content} title={titled ? item.title?.[english ? 1 : 0] : undefined}
-    className={`config-${group}-${item.key}`} togglesFirst={item.togglesFirst}/>)}
+    className={`config-${group}-${item.key}`} togglesFirst={item.togglesFirst} inlineToggles={item.inlineToggles}/>)}
     {remaining.length > 0 && <FieldSection fields={remaining}/>}</>;
 }

@@ -71,6 +71,7 @@ def build_metadata(
     epoch: int | None = None,
 ) -> dict[str, str]:
     """kohya ``ss_*`` + ModelSpec ``modelspec.*`` + our ``ypuddin.*`` keys (all values are strings)."""
+    adapter_cfg = {key: value for key, value in adapter_cfg.items() if key != "resume_weights"}
     rank = adapter_cfg.get("rank")
     meta: dict[str, str] = {
         "ss_network_module": "ypuddin.adapters",

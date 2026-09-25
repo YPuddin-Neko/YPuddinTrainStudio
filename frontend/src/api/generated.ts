@@ -2382,7 +2382,7 @@ export interface components {
             save_every_epochs: number | null;
             /**
              * Save State Every Steps
-             * @description 每 N 个参数更新步保存完整恢复点，默认 100。界面也可切换为按 Epoch（轮）保存；留空关闭所选间隔。暂停时仍会另存恢复点。异常退出后只能恢复到最近一次成功保存的位置。
+             * @description 每 N 个参数更新步保存完整恢复点，默认 100。界面可切换为按 Epoch（轮）保存，或关闭定期保存开关。暂停时仍会另存恢复点。异常退出后只能恢复到最近一次成功保存的位置。
              * @default 100
              */
             save_state_every_steps: number | null;
@@ -2403,6 +2403,12 @@ export interface components {
              * @enum {string}
              */
             save_dtype: "bf16" | "fp16" | "fp32";
+            /**
+             * Save Training Metadata
+             * @description 将学习率、优化器、分辨率等训练参数写入导出的 LoRA/LoKr 文件，供元数据查看器读取；不包含本机目录、图片标签、提示词或访问密钥。
+             * @default false
+             */
+            save_training_metadata: boolean;
             /**
              * Save On Finish
              * @description 结束时保存最终权重

@@ -883,6 +883,13 @@ class Trainer:
             steps=self.progress.step,
             epoch=self.progress.epoch,
         )
+        if self.cfg.checkpoint.save_training_metadata:
+            from ypuddin.adapters.recipe import training_recipe_metadata
+
+            metadata.update(training_recipe_metadata(
+                self.cfg, self.bundle, self.progress,
+                world_size=getattr(getattr(self, "distributed", None), "world_size", 1),
+            ))
         if isinstance(self.adapters, ComponentAdapterSet):
             metadata["ypuddin.components"] = json.dumps(sorted(self.adapters.components))
             metadata["ypuddin.component_prefixes"] = json.dumps(

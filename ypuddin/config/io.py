@@ -109,11 +109,13 @@ def load_config(
 
 def config_hash(config: TrainConfig | Mapping[str, Any]) -> str:
     data = config.to_dict() if isinstance(config, TrainConfig) else dict(config)
-    # A disabled epoch trigger preserves fingerprints from before it was introduced.
+    # Disabled optional export/save settings preserve pre-existing checkpoint hashes.
     checkpoint = data.get("checkpoint")
-    if isinstance(checkpoint, Mapping) and checkpoint.get("save_state_every_epochs") is None:
+    if isinstance(checkpoint, Mapping):
         data["checkpoint"] = {
-            key: value for key, value in checkpoint.items() if key != "save_state_every_epochs"
+            key: value for key, value in checkpoint.items()
+            if not (key == "save_state_every_epochs" and value is None)
+            and not (key == "save_training_metadata" and value is False)
         }
     # The default retains SDXL's original single CLIP context and cache behavior.
     # Authenticate old checkpoint configs without inventing a new semantic change.

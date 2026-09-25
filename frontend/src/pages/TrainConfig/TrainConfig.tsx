@@ -291,6 +291,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     if (versionId && (versionStatus !== 'ready' || archived)) return;
     let active = true;
     setLoaded(false);
+    setOutputBinding(null);
     setError('');
     setSavedAt(null);
     saveStatusRevision.current += 1;
@@ -422,7 +423,6 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     const controller = new AbortController();
     setValidating(true);
     setPlanError('');
-    setOutputBinding(null);
     const supporting = <T,>(key: string, request: Promise<T>, fallback: T): Promise<T> => request.then(result => {
       if (!controller.signal.aborted) setAuxiliaryErrors(previous => {const next={...previous};delete next[key];return next;});
       return result;

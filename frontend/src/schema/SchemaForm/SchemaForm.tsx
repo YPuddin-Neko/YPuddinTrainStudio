@@ -804,7 +804,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   };
   const lokrModeLabel = english ? 'LoKr parameter mode' : 'LoKr 参数形式';
   const groups: Record<string, { order: number; fields: React.ReactNode[] }> = {};
-  const conditionValue = { ...value, model: { prediction_type: 'epsilon', ...value.model }, dataset: { resolution_mode: 'bucket', ...value.dataset } };
+  const conditionValue = { ...value, training: {mode:'adapter', ...value.training}, model: { prediction_type: 'epsilon', ...value.model }, dataset: { resolution_mode: 'bucket', ...value.dataset } };
   const weights = modelFamilyWeights(family);
 
   const renderField = (key: string, prop: SchemaProperty, parentPath: string[] = []) => {
@@ -1178,7 +1178,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       || (incompatiblePredictionLoss ? (english ? 'This option is incompatible with the selected prediction type. Turn it off or choose the matching prediction type.' : '此参数与当前预测方式不兼容，请关闭此项或选择对应的预测方式。') : undefined)
       || managedReason
       || (fullPathKey === 'loop.deterministic' ? trainingComputePolicyHint(activeComputePolicy, english) : undefined);
-    const describedHint = booleanField ? undefined
+    const recoveryField = fullPathKey === 'checkpoint.save_state_every_steps';
+    const recoveryEnabled = fieldValue != null || value.checkpoint?.save_state_every_epochs != null;
+    const describedHint = booleanField || recoveryField && !recoveryEnabled ? undefined
       : fullPathKey === 'training.mode' ? value.training?.mode === 'full'
         ? (english ? 'Updates the selected model weights directly.' : '直接训练所选模型本身的权重。')
         : (english ? 'Trains LoRA weights while keeping the base model frozen.' : '只训练 LoRA 权重，底模保持不变。')
@@ -1186,10 +1188,11 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       : fullPathKey === 'dataset.native_max_pixels' ? nativePixelsHint(fieldValue, english) || configFieldHint(fullPathKey, english)
       : fullPathKey === 'dataset.text_encoding' && family && !(family.text_modes || []).includes('online') ? t('textMode.autoOnly')
       : parentPath[0] === 'model' && key in MODEL_PATH_FIELDS ? modelPathHint(family?.name, key, english, preset)
-      : configFieldHint(fullPathKey, english, value.optimizer?.type, scheduleFree);
+      : configFieldHint(fullPathKey, english, value.optimizer?.type, scheduleFree, value.dataset);
     const hint = statusHint || describedHint;
     const duplicateHelp = !!help && !!hint && help.replace(/\s+/g, ' ').trim() === hint.replace(/\s+/g, ' ').trim();
     const helpButton = help && !duplicateHelp ? <ConfigHelp label={`${fieldLabel} ${english ? 'help' : '说明'}`}>{help}</ConfigHelp> : null;
+    if (recoveryField && React.isValidElement(control)) control = React.cloneElement(control as React.ReactElement<any>, {help:helpButton});
     const body = readOnly ? <fieldset disabled className="config-readonly-control">{control}</fieldset> : control;
     const footer = <div className="config-field-footer">
       {hint && <p id={managedReason ? `${fieldId}-managed-reason` : `${fieldId}-hint`} className="config-field-hint">{hint}</p>}
@@ -1197,7 +1200,11 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       {errorItem?.msg && <p className="config-field-error">{errorItem.msg}</p>}
     </div>;
     const fieldProps = {id: `field-${fullPathKey}`, 'data-testid': `field-${fullPathKey}`, 'data-field-path': fullPathKey};
-    const label = booleanField ? (
+    const label = recoveryField ? (
+      <div key={fullPathKey} {...fieldProps} className={`config-field config-field-recovery${errorItem ? ' config-field-invalid' : ''}`}>
+        {body}{footer}
+      </div>
+    ) : booleanField ? (
       <div key={fullPathKey} {...fieldProps} data-control-kind="toggle" className={`config-field config-field-boolean${errorItem ? ' config-field-invalid' : ''}`}>
         <div className="config-field-control">
           {body}
@@ -1288,7 +1295,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       {sortedGroups.map(([groupName, groupData]) => (
         <FieldGroup key={`${groupName}:${search.trim()}`} title={parameterGroupLabel(groupName, english) || (groupName === 'training' ? (english ? 'Training mode' : '训练方式') : t(`groups.${groupName}`, groupName))} count={groupData.fields.length} compact={compact} groupKey={groupName}>
           {groupName === 'checkpoint' && versionSources && <div className="output-binding-summary">
-            <div className="output-binding-heading"><strong>{english ? 'Training weights' : '训练权重'}</strong><button type="button" className="ui-link" onClick={() => setEditOutput(previous => !previous)}>{editOutput ? (english ? 'Collapse custom settings' : '收起自定义设置') : (english ? 'Customize save location or name' : '自定义保存位置或名称')}</button></div>
+            <div className="output-binding-heading"><strong>{english ? 'Training weights' : '训练权重'}</strong>{!showAdvanced && <button type="button" className="ui-btn ui-btn-sm" aria-expanded={editOutput} onClick={() => setEditOutput(previous => !previous)}>{editOutput ? (english ? 'Collapse save settings' : '收起保存设置') : (english ? 'Edit save settings' : '修改保存设置')}</button>}</div>
             {outputBinding ? <><div><span>{english ? 'File name' : '文件名'}</span><code>{outputBinding.name}-final{value.training?.mode === 'full' ? '.model/' : '.safetensors'}</code></div><div><span>{english ? 'Save location' : '保存位置'}</span><code>{outputBinding.directory_template.replace('{job_id}', english ? '<run ID>' : '<运行 ID>')}</code></div></> : <p>{english ? 'Resolving the save location…' : '正在读取保存位置…'}</p>}
           </div>}
           {groupName === 'caption' && showCaptionFormats && <div className="config-field-section config-caption-formats"><h3>{english ? 'Caption format' : '标签格式'}</h3><div className="caption-source-formats">

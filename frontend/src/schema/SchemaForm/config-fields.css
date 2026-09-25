@@ -5,6 +5,7 @@
   min-width: 0;
   font-size: 14px;
   container: config-form / inline-size;
+  --config-heading-height: 30px;
 }
 .compact-schema .config-group { border-radius: 10px; overflow: clip; }
 .compact-schema .config-group-title {
@@ -43,9 +44,12 @@
 /* Each hint follows its own control, independent of taller neighboring fields. */
 .compact-schema .config-field { display:flex; flex-direction:column; min-width:0; }
 .compact-schema .config-field-wide { grid-column: 1 / -1; }
-.compact-schema .config-field > .config-field-heading { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding-bottom: 6px; }
+.compact-schema .config-field > .config-field-heading { display: flex; align-items: center; gap: 8px; min-width: 0; height:var(--config-heading-height); min-height:var(--config-heading-height); flex:none; padding-bottom: 6px; }
 /* The name keeps its width; the configuration key gives way and scrolls. */
-.compact-schema .config-field > .config-field-heading > label { flex: 0 0 auto; min-width: 0; max-width: calc(100% - 36px); font-size: 13px; line-height: 20px; color: var(--studio-text); font-weight: 500; }
+.compact-schema .config-field > .config-field-heading > label { flex: 0 0 auto; min-width: 0; max-width: calc(100% - 38px); font-size: 13px; line-height: 20px; color: var(--studio-text); font-weight: 500; white-space:nowrap; overflow-x:auto; scrollbar-width:none; }
+.compact-schema .config-field-heading > label::-webkit-scrollbar { display:none; }
+.compact-schema .config-field-reference { min-width:30px; }
+.compact-schema .config-field-reference > .config-help-trigger { margin-left:0; }
 .compact-schema .config-field-label-note { font-size: 12px; font-weight: 400; color: var(--studio-dim); }
 .compact-schema .config-field > .config-field-control { min-width: 0; align-self: stretch; }
 .compact-schema .config-field > .config-field-footer { min-width: 0; padding-bottom: 16px; }
@@ -55,15 +59,17 @@
 .config-readonly-control { border: 0; margin: 0; padding: 0; min-width: 0; }
 
 /* Standalone switches align with adjacent inputs without reserving a hint row. */
-.compact-schema .config-field-boolean { padding-top:26px; }
+.compact-schema .config-field-boolean { padding-top:var(--config-heading-height); }
 .compact-schema .config-toggle-row { grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:flex-start; gap:0 24px; min-width:0; }
 .compact-schema .config-toggle-row > .config-field-boolean { padding-top:0; }
+.compact-schema .config-toggle-row > .config-field { max-width:100%; }
+.compact-schema .config-field-boolean .config-help-trigger { margin-left:0; }
 .compact-schema [data-only-toggles="true"] > .config-field-boolean { padding-top:0; }
 .compact-schema .config-field-boolean > .config-field-control { display: flex; align-items: center; gap: 8px; min-height: 38px; }
 .compact-schema .config-field-boolean > .config-field-control > label { min-width: 0; font-size: 13px; line-height: 20px; color: var(--studio-text); font-weight: 500; cursor: pointer; }
 .compact-schema .config-field-boolean .config-readonly-control { display: flex; }
 .compact-schema .config-field-boolean .studio-switch { flex: none; }
-.config-toggle-control { display: flex; align-items: center; min-width: 0; font-size: 13px; }
+.config-toggle-control { display: flex; align-items: center; gap:8px; min-width: 0; font-size: 13px; }
 
 .compact-schema .config-field input:not([type="checkbox"]):not([type="range"]),
 .compact-schema .config-field select,
@@ -113,6 +119,14 @@
 .recovery-interval-both { grid-template-columns:minmax(0,1fr); }
 .recovery-interval-values { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
 .recovery-interval-values > label { display:grid; gap:4px; color:var(--studio-dim); font-size:12px; }
+.recovery-switch-row { display:flex; align-items:center; gap:8px; min-height:32px; }
+.compact-schema .recovery-switch-row > .studio-switch { min-height:38px; font-size:13px; line-height:20px; font-weight:500; }
+.compact-schema .recovery-switch-row > .studio-switch > .studio-switch-text { font-size:13px; line-height:20px; color:var(--studio-text); }
+.recovery-switch-row > .config-help-trigger { margin-left:0; }
+.recovery-settings { width:min(100%,340px); margin-top:8px; }
+.recovery-settings > label { display:block; font-size:13px; line-height:20px; padding-bottom:6px; }
+.config-field-recovery { grid-column:1 / -1; }
+.config-field-recovery .config-field-hint { max-width:420px; }
 .config-value-mode { display: grid; grid-template-columns: minmax(108px, .8fr) minmax(0, 1.2fr); gap: 8px; }
 .config-value-mode > .studio-select:only-child { grid-column: 1 / -1; }
 
@@ -131,6 +145,11 @@
   .compact-schema .config-group-title { padding-inline: 14px; }
 }
 @container (max-width: 240px) { .config-value-mode { grid-template-columns: minmax(0, 1fr); } }
+@media (pointer:coarse) {
+  .compact-schema { --config-heading-height:38px; }
+  .compact-schema .config-field-reference { min-width:38px; }
+  .compact-schema .config-field > .config-field-heading > label { max-width:calc(100% - 46px); }
+}
 
 /* Training components are one decision; they must not split across grid rows. */
 .compact-schema .config-training-targets > .config-field-heading > span { font-size:13px; line-height:20px; font-weight:500; }

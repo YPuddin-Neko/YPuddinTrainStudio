@@ -59,7 +59,7 @@ export const FIELD_HINTS: Record<string, Copy> = {
   'adapter.alpha': ['更新的缩放系数，常与 Rank 相同。', 'Scales the updates; often equal to rank.'],
   'adapter.rules': ['按层名单独设置算法、Rank 或学习率。', 'Per-layer algorithm, rank or learning rate.'],
   'adapter.init': ['默认一侧从零开始，训练前输出不变。', 'Default starts one side at zero, so output is unchanged.'],
-  'adapter.resume_weights': ['从已有的 LoRA / LoKr 权重开始训练。', 'Start from existing LoRA / LoKr weights.'],
+  'adapter.resume_weights': ['加载上次训练结果，再设置这次要追加的轮数或步数。', 'Load previous weights and set the additional epochs or steps for this run.'],
   'adapter.dropout': ['随机屏蔽部分输出，减轻过拟合。', 'Randomly drops outputs to reduce overfitting.'],
   'adapter.rank_dropout': ['随机屏蔽部分秩通道。', 'Randomly drops rank channels.'],
   'adapter.module_dropout': ['训练时随机跳过整个适配器模块。', 'Randomly skips whole adapter modules.'],
@@ -141,7 +141,7 @@ export const FIELD_HINTS: Record<string, Copy> = {
   'checkpoint.save_every_steps': ['每隔多少步导出一次权重。', 'Export weights every N steps.'],
   'checkpoint.save_every_epochs': ['每隔多少轮导出一次权重。', 'Export weights every N epochs.'],
   'checkpoint.keep_last_n': ['只保留最近几次按步导出的权重。', 'Keep only the latest step exports.'],
-  'checkpoint.save_state_every_steps': ['按步或按轮保存恢复点；留空关闭，暂停仍会保存。', 'Save by step or epoch; blank disables periodic saves, not pause saves.'],
+  'checkpoint.save_state_every_steps': ['按步或按轮保存训练进度，供中断后继续。', 'Save training progress by step or epoch to resume after an interruption.'],
   'checkpoint.resume': ['从保存的完整状态继续训练。', 'Continue from a saved training state.'],
 
   'logging.level': ['控制台和日志文件的详细程度。', 'Detail level of the console and log files.'],

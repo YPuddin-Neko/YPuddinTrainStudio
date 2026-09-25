@@ -28,7 +28,7 @@ const labels: Record<string, string> = {
   'adapter.init': '初始化方式', 'adapter.dropout': '输出丢弃率', 'adapter.rank_dropout': '秩丢弃率',
   'adapter.module_dropout': '模块丢弃率', 'adapter.preset': '训练层范围', 'adapter.rules': '逐层覆盖规则',
   'adapter.mode': '权重计算方式', 'adapter.param_dtype': '可训练参数精度', 'adapter.lr_scale': '学习率缩放',
-  'adapter.resume_weights': '已有 LoRA／LoKr 权重', 'objective.timestep_sampling': '时间步采样',
+  'adapter.resume_weights': '继续训练的权重', 'objective.timestep_sampling': '时间步采样',
   'objective.logit_mean': 'Logit 均值', 'objective.logit_std': 'Logit 标准差', 'objective.res_shift_tokens': '分辨率偏移基准',
   'objective.res_shift_mu': '分辨率偏移系数', 'objective.shift': '时间步偏移', 'objective.mode_scale': 'Mode 系数',
   'objective.stratified': '分层时间步采样', 'objective.t_min': '时间步下限', 'objective.t_max': '时间步上限',
@@ -67,7 +67,7 @@ const labels: Record<string, string> = {
   'checkpoint.output_dir': '训练权重保存位置', 'checkpoint.name': '权重文件名', 'checkpoint.save_every_steps': '每隔几步保存',
   'checkpoint.save_every_epochs': '每隔几轮保存', 'checkpoint.save_state_every_steps': '恢复点保存间隔', 'checkpoint.save_state_every_epochs': '每隔几轮保存恢复点',
   'checkpoint.keep_last_n': '保留最近几次权重', 'checkpoint.save_dtype': '权重保存精度', 'checkpoint.save_on_finish': '结束时保存权重',
-  'checkpoint.resume': '恢复完整训练状态', 'sampling.enabled': '生成训练预览', 'sampling.every_steps': '每隔几步预览',
+  'checkpoint.save_training_metadata': '将训练参数写入 LoRA', 'checkpoint.resume': '恢复完整训练状态', 'sampling.enabled': '生成训练预览', 'sampling.every_steps': '每隔几步预览',
   'sampling.every_epochs': '每隔几轮预览', 'sampling.at_start': '开始前生成预览', 'sampling.prompts': '预览提示词',
   'sampling.prompts_file': '提示词文件', 'sampling.steps': '采样步数', 'sampling.cfg': 'CFG 引导强度',
   'sampling.shift': '采样时间步偏移', 'sampling.width': '预览宽度', 'sampling.height': '预览高度',
@@ -79,6 +79,8 @@ const labels: Record<string, string> = {
 };
 
 export function configFieldLabel(path: string, fallback: string, english = false) {
+  if (english && path === 'adapter.resume_weights') return 'Weights to continue training';
+  if (english && path === 'checkpoint.save_training_metadata') return 'Embed training parameters in LoRA';
   if (english && path === 'checkpoint.save_state_every_steps') return 'Recovery save interval';
   if (english && path === 'checkpoint.save_state_every_epochs') return 'Recovery save interval (epochs)';
   if (english && path.startsWith('dataset.native_')) return ({'dataset.native_max_pixels':'Image area limit (equivalent side, px)','dataset.native_max_side':'Longest side limit (px)','dataset.native_overflow':'When a size limit is exceeded'} as Record<string,string>)[path] || fallback;
@@ -156,7 +158,9 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
   const help: Record<string, [string, string]> = {
     'dataset.native_max_pixels': ['填单个边长，例如 1024 或 2048。\n1024：总面积最多 1024×1024，约 105 万像素。\n2048：总面积最多 2048×2048，约 419 万像素。\n例如填 1024 时，1024×1024、2048×512 都在面积范围内；2048×2048 则需要缩小。\n图片保留原有比例，小图不放大。最长边上限同时生效，模型对齐补边也计入面积。该值还限制一次计算的图像总面积，调大通常需要更多显存。', 'Enter one side length, such as 1024 or 2048.\n1024 allows up to 1024×1024 pixels, about 1.05 megapixels.\n2048 allows up to 2048×2048 pixels, about 4.19 megapixels.\nAt 1024, both 1024×1024 and 2048×512 fit the area limit; 2048×2048 needs downscaling.\nImages keep their aspect ratio; small images are not enlarged. The longest-side limit also applies, and alignment padding counts toward the area. This also limits the total image area processed in one forward pass; larger values generally need more GPU memory.'],
     'dataset.native_max_side': ['填宽或高允许达到的最大长度，单位为像素。例如 4096 表示宽、高都不得超过 4096。\n面积上限和最长边上限必须同时满足，以先触及的限制为准。面积填 1024、最长边填 4096 时，2048×2048 的图片仍会因面积超限而缩小。\n想保留原图尺寸，两个上限都需要容纳原图及模型对齐补边。', 'Enter the maximum allowed width or height in pixels. 4096 means neither dimension may exceed 4096.\nBoth the area and longest-side limits must be satisfied; the tighter limit determines the size. An area setting of 1024 still downscales a 2048×2048 image even if the longest-side limit is 4096.\nTo retain the original size, both limits must accommodate the image and any model-alignment padding.'],
-    'checkpoint.save_state_every_steps': ['选择 Step 按参数更新次数保存，选择 Epoch 按完整训练轮数保存。例如 100 Step 为每 100 步保存，2 Epoch 为每完成 2 轮保存。默认 100 Step；留空关闭定期保存。轮中达到最大步数不算完成一轮。暂停时仍会保存当前恢复点；意外退出只能从最近一次成功保存的位置继续。', 'Choose Step for optimizer updates or Epoch for completed dataset passes. For example, 100 Step saves every 100 updates; 2 Epoch saves after every two complete epochs. Defaults to 100 Step; blank disables periodic saves. Reaching the step limit partway through an epoch does not complete it. Pausing still saves a recovery point; crashes can only recover the last successful save.'],
+    'checkpoint.save_state_every_steps': ['选择 Step 按参数更新次数保存，选择 Epoch 按完整训练轮数保存。例如 100 Step 为每 100 步保存，2 Epoch 为每完成 2 轮保存。默认每 100 Step 保存；关闭开关可停用定期保存。轮中达到最大步数不算完成一轮。暂停时仍会保存当前恢复点；意外退出只能从最近一次成功保存的位置继续。', 'Choose Step for optimizer updates or Epoch for completed dataset passes. For example, 100 Step saves every 100 updates; 2 Epoch saves after every two complete epochs. Defaults to 100 Step; turn off the switch to disable periodic saving. Reaching the step limit partway through an epoch does not complete it. Pausing still saves a recovery point; crashes can only recover the last successful save.'],
+    'dataset.resolution_mode': ['Bucket 将图片按长宽比分组，使用下方训练分辨率设定目标面积。Native 按原图尺寸训练，并对齐模型要求的尺寸倍数；超出面积或单边上限时，按所选方式等比缩小或报错。', 'Bucket groups images by aspect ratio at the target areas set below. Native uses original dimensions aligned to the model’s required multiples; images exceeding the area or side limit are scaled down or rejected according to the overflow setting.'],
+    'checkpoint.save_training_metadata': ['默认关闭。开启后，在导出的 LoRA 文件中记录学习率、优化器、分辨率、训练步数等参数，便于他人查看配方；适用于 LoRA 和 LoKr，也包含 EMA 权重。不会写入本机目录、图片标签、提示词或访问密钥。权重配方不包含优化器状态，不能代替完整恢复点。', 'Off by default. Embeds learning rate, optimizer, resolution, training steps and other recipe parameters in exported LoRA and LoKr files, including EMA weights. Local directories, image captions, prompts and access tokens are excluded. The recipe does not contain optimizer state and cannot replace a full recovery point.'],
     'dataset.resolutions': ['单个分辨率填 1024；多个用逗号或空格分隔，如 1024, 1536。填写正整数边长，不写 1024×1024。1024 表示每桶约 1024×1024 像素；每张图会在每个基准分辨率各训练一次，增加总样本和步数。', 'Enter one size as 1024, or separate multiple sizes with commas or spaces, e.g. 1024, 1536. Use positive integer side lengths, not 1024×1024. A base of 1024 gives roughly 1024×1024 pixels per bucket. Each image trains at every base resolution, increasing samples and steps.'],
     'adapter.resume_weights': ['训练结束后仍想继续优化时，可加载上次导出的 LoRA / LoKr 权重，再设置本次新增的训练轮数或步数，也可调整学习率和数据。底模、算法和权重结构需匹配。优化器和步数重新开始；中断后原样继续请使用完整恢复点。', 'To keep improving a finished run, load its exported LoRA / LoKr weights and set the additional epochs or steps for this new run. Learning rate and data may be changed. The base model, algorithm and weight structure must match. Optimizer state and counters restart; use a full recovery point for an interrupted run.'],
     'loop.deterministic': ['默认关闭。在相同配置、设备和软件环境下提高重复训练的一致性。开启后可能固定部分计算精度和注意力设置，增加显存与耗时；具体值会显示在对应字段。完整续训需保持原设置和环境。', 'Off by default. Improves repeatability with the same configuration, device and software environment. May manage precision and attention settings and increase memory use and runtime; effective values appear in the fields. Keep the same settings and environment when resuming.'],
@@ -180,8 +184,13 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
   return help[path]?.[english ? 1 : 0] || (english && path.startsWith('optimizer.') ? optimizerEnglishHelp[path.slice(10)] : undefined) || FIELD_HELP[path]?.[english ? 1 : 0] || fallback;
 }
 
-export function configFieldHint(path: string, english = false, optimizerType?: string, scheduleFree = false) {
+export function configFieldHint(path: string, english = false, optimizerType?: string, scheduleFree = false, dataset?: {resolution_mode?:string;native_overflow?:string}) {
   const dynamic: Record<string, [string, string]> = {
+    'dataset.resolution_mode': dataset?.resolution_mode === 'native'
+      ? dataset.native_overflow === 'error'
+        ? ['使用原图尺寸；超过下方上限时停止并报错。', 'Uses original image sizes; stops with an error if a limit below is exceeded.']
+        : ['使用原图尺寸；超过下方上限时等比缩小。', 'Uses original image sizes; scales down proportionally if a limit below is exceeded.']
+      : ['按训练分辨率设定目标尺寸，图片按长宽比分组。', 'Groups images by aspect ratio at the configured training resolutions.'],
     'optimizer.betas': scheduleFree
       ? ['分别控制权重平均与梯度大小估计，通常保留默认值。', 'Controls weight averaging and gradient-size estimation; usually keep the defaults.']
       : ['数值越大，反应越平缓；通常保留默认值。', 'Higher values react more smoothly; usually keep the defaults.'],
@@ -238,7 +247,7 @@ export function configOptionLabel(path: string, option: string, english = false)
     'sampling.sampler': { euler:['欧拉', 'Euler'], heun:['二阶修正', 'Heun'], er_sde:['随机微分方程', 'ER-SDE'] },
     'sampling.scheduler': { uniform:['均匀', 'Uniform'], simple:['简单', 'Simple'], sgm_uniform:['SGM 均匀', 'SGM Uniform'], normal:['常规', 'Normal'] },
     'optimizer.type': {adamw:['AdamW','AdamW'],adam:['Adam','Adam'],sgd:['SGD','SGD'],adamw8bit:['AdamW 8-bit','AdamW 8-bit'],lion:['Lion','Lion'],lion8bit:['Lion 8-bit','Lion 8-bit'],prodigy:['Prodigy','Prodigy'],prodigy_plus_sf:['Prodigy Plus Schedule-Free','Prodigy Plus Schedule-Free'],automagic:['Automagic','Automagic'],adafactor:['Adafactor','Adafactor'],came:['CAME','CAME'],adamw_sf:['AdamW Schedule-Free','AdamW Schedule-Free']},
-    'dataset.resolution_mode': { bucket: ['统一基准面积', 'Bucket'], native: ['每图独立尺寸', 'Native'] },
+    'dataset.resolution_mode': { bucket: ['按设定分辨率训练', 'Bucket'], native: ['按原图尺寸训练', 'Native'] },
     'dataset.text_encoding': {auto:['自动','Auto'],online:['每步编码文本','Online'],cached:['训练前缓存文本特征','Cached']},
     'dataset.image_fit': { pad: ['保留完整画面', 'Pad'], crop: ['裁切填满', 'Crop'] },
     'dataset.native_overflow': { downscale: ['等比缩小到上限内', 'Downscale to fit limits'], error: ['报错并停止', 'Stop with an error'] },
