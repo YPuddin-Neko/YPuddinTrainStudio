@@ -167,6 +167,19 @@ class ValidateResult(_Out):
     config: dict[str, Any] | None = None
 
 
+class ConfigInspectionField(_Out):
+    loc: str
+    path: list[str | int]
+    value: Any
+    kind: Literal["unknown", "inactive"]
+    condition: str | None = None
+
+
+class ConfigInspection(_Out):
+    fields: list[ConfigInspectionField]
+    errors: list[ConfigError]
+
+
 class PlanBucket(_Out):
     base: int = 0  # bucket-mode base resolution; 0 for native sizes
     w: int

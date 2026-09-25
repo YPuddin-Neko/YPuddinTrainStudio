@@ -209,6 +209,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/config/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Config Inspect */
+        post: operations["config_inspect_api_config_inspect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/plan": {
         parameters: {
             query?: never;
@@ -2365,9 +2382,10 @@ export interface components {
             save_every_epochs: number | null;
             /**
              * Save State Every Steps
-             * @description 每多少次优化更新保存完整恢复状态，默认留空。状态含原始训练参数、优化器、数据位置与随机状态，体积通常大于导出权重；需要中断续训保障时设置。
+             * @description 每多少步保存一个完整恢复点，默认 100；留空关闭定期保存。暂停会在参数更新结束后另存恢复点并释放显存。重启或意外退出后只能从最近一次成功保存的恢复点继续，未保存的步数需要重跑。恢复点包含训练参数、优化器、调度器、数据位置与随机状态，比导出的权重文件更大。
+             * @default 100
              */
-            save_state_every_steps?: number | null;
+            save_state_every_steps: number | null;
             /**
              * Keep Last N
              * @description 仅保留最近 N 组按步保存的权重（普通/EMA 成组；轮次与最终产物保留）
@@ -2437,6 +2455,33 @@ export interface components {
              * @enum {string}
              */
             format: "toml" | "json";
+        };
+        /** ConfigInspection */
+        ConfigInspection: {
+            /** Fields */
+            fields: components["schemas"]["ConfigInspectionField"][];
+            /** Errors */
+            errors: components["schemas"]["ConfigError"][];
+        } & {
+            [key: string]: unknown;
+        };
+        /** ConfigInspectionField */
+        ConfigInspectionField: {
+            /** Loc */
+            loc: string;
+            /** Path */
+            path: (string | number)[];
+            /** Value */
+            value: unknown;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "unknown" | "inactive";
+            /** Condition */
+            condition?: string | null;
+        } & {
+            [key: string]: unknown;
         };
         /** ConfigText */
         ConfigText: {
@@ -7310,6 +7355,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ValidateResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    config_inspect_api_config_inspect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigInspection"];
                 };
             };
             /** @description Validation Error */

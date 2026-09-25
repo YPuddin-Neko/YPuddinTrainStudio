@@ -74,7 +74,7 @@ const layouts: Record<string, Section[]> = {
 const isToggle = (node: React.ReactNode) => React.isValidElement(node) && (node.props as any)['data-control-kind'] === 'toggle';
 const isWide = (node: React.ReactNode) => React.isValidElement(node) && (node.props as any)['data-field-span'] === 'wide';
 
-/** Fields, then switches, then full-row editors — so a switch fills a gap beside a field. */
+/** Conditional controls stay below their switches, so enabling them does not move the trigger. */
 export function FieldSection({ fields, title, className = '', togglesFirst = false }: {
   fields: React.ReactNode[]; title?: string; className?: string; togglesFirst?: boolean;
 }) {
@@ -83,7 +83,7 @@ export function FieldSection({ fields, title, className = '', togglesFirst = fal
   const wide = fields.filter(isWide);
   return <div className={`config-field-section ${className}`} data-field-count={fields.length} data-only-toggles={toggles.length === fields.length || undefined}>
     {title && <h3>{title}</h3>}
-    {togglesFirst ? [...toggles, ...plain] : [...plain, ...toggles]}
+    {togglesFirst ? <>{toggles.length>0 && <div className="config-toggle-row">{toggles}</div>}{plain}</> : [...plain, ...toggles]}
     {wide}
   </div>;
 }

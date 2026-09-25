@@ -1120,9 +1120,9 @@ class CheckpointConfig(_Strict):
         ui_=ui("checkpoint", order=30),
     )
     save_state_every_steps: int | None = F(
-        None,
+        100,
         ge=1,
-        help="每多少次优化更新保存完整恢复状态，默认留空。状态含原始训练参数、优化器、数据位置与随机状态，体积通常大于导出权重；需要中断续训保障时设置。",
+        help="每多少步保存一个完整恢复点，默认 100；留空关闭定期保存。暂停会在参数更新结束后另存恢复点并释放显存。重启或意外退出后只能从最近一次成功保存的恢复点继续，未保存的步数需要重跑。恢复点包含训练参数、优化器、调度器、数据位置与随机状态，比导出的权重文件更大。",
         ui_=ui("checkpoint", order=40, advanced=True),
     )
     keep_last_n: int | None = F(

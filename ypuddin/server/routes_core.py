@@ -412,6 +412,13 @@ def config_validate(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[
     return {"ok": cfg is not None, "errors": errors, "warnings": []}
 
 
+@router.post("/config/inspect", response_model=m.ConfigInspection)
+def config_inspect(body: ConfigBody) -> dict[str, Any]:
+    from ypuddin.config.inspection import inspect_config
+
+    return inspect_config(body.config)
+
+
 @router.post("/plan", response_model=m.Plan, response_model_exclude_unset=True)
 def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     # plan keeps full validation errors while previewing independently valid data fields.

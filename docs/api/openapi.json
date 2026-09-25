@@ -403,6 +403,44 @@
         }
       }
     },
+    "/api/config/inspect": {
+      "post": {
+        "summary": "Config Inspect",
+        "operationId": "config_inspect_api_config_inspect_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigInspection"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/plan": {
       "post": {
         "summary": "Config Plan",
@@ -7691,7 +7729,8 @@
               }
             ],
             "title": "Save State Every Steps",
-            "description": "每多少次优化更新保存完整恢复状态，默认留空。状态含原始训练参数、优化器、数据位置与随机状态，体积通常大于导出权重；需要中断续训保障时设置。",
+            "description": "每多少步保存一个完整恢复点，默认 100；留空关闭定期保存。暂停会在参数更新结束后另存恢复点并释放显存。重启或意外退出后只能从最近一次成功保存的恢复点继续，未保存的步数需要重跑。恢复点包含训练参数、优化器、调度器、数据位置与随机状态，比导出的权重文件更大。",
+            "default": 100,
             "x-ui": {
               "advanced": true,
               "group": "checkpoint",
@@ -7880,6 +7919,84 @@
           "text"
         ],
         "title": "ConfigImportBody"
+      },
+      "ConfigInspection": {
+        "properties": {
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigInspectionField"
+            },
+            "type": "array",
+            "title": "Fields"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigError"
+            },
+            "type": "array",
+            "title": "Errors"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "fields",
+          "errors"
+        ],
+        "title": "ConfigInspection"
+      },
+      "ConfigInspectionField": {
+        "properties": {
+          "loc": {
+            "type": "string",
+            "title": "Loc"
+          },
+          "path": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Path"
+          },
+          "value": {
+            "title": "Value"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "inactive"
+            ],
+            "title": "Kind"
+          },
+          "condition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Condition"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "loc",
+          "path",
+          "value",
+          "kind"
+        ],
+        "title": "ConfigInspectionField"
       },
       "ConfigText": {
         "properties": {

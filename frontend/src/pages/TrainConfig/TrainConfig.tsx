@@ -27,10 +27,11 @@ import './training-workspace.css';
 import '../../styles/parameter-workspace.css';
 import ParameterModeToggle from '../../components/ParameterModeToggle';
 import Dialog from '../../components/Dialog';
+import ConfigInspection from './ConfigInspection';
 import ParameterSections from '../../components/ParameterSections';
 import { workflowSchema } from '../../utils/parameterWorkflow';
 import { CONFIG_TAB_GROUPS, ConfigTab, ConfigIssue, OPAQUE_CONFIG_ISSUE, presentConfigIssues, presentPlanWarning } from '../../utils/configPresentation';
-import { AlertCircle, Check, CheckCircle2, ChevronRight, ChevronDown, Search, Play, Settings2, Brush, Database, Box, Loader2, BarChart3, X } from 'lucide-react';
+import { AlertCircle, Check, CheckCircle2, ChevronRight, ChevronDown, Search, Play, Settings2, Brush, Database, Box, Loader2, BarChart3, X, Save, ListChecks } from 'lucide-react';
 
 const presetFamily = (preset: Preset): string | undefined => { const model = preset.config.model; return model && typeof model === 'object' && 'family' in model && typeof model.family === 'string' ? model.family : undefined; };
 
@@ -164,6 +165,9 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const [pendingPreset, setPendingPreset] = React.useState<Preset | null>(null);
   const [presetName, setPresetName] = React.useState('');
   const [savingPreset, setSavingPreset] = React.useState(false);
+  const [presetDialog, setPresetDialog] = React.useState(false);
+  const [presetError, setPresetError] = React.useState('');
+  const [inspectionOpen, setInspectionOpen] = React.useState(false);
   const [importText, setImportText] = React.useState('');
   const [importOpen, setImportOpen] = React.useState(false);
   const [importing, setImporting] = React.useState(false);
@@ -480,15 +484,13 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   };
 
   const handleSavePreset = async () => {
-    if (inactiveTrainingReason(config)) return;
-    if (!presetName.trim()) return;
-    setSavingPreset(true);
-    setError('');
+    if (inactiveTrainingReason(config) || !presetName.trim() || savingPreset) return;
+    setSavingPreset(true); setPresetError('');
     try {
-      await apiClient.post('/presets', { name: presetName.trim(), config: reusableTrainingPreset(config) }, { silent: true });
-      setPresets((await apiClient.get<Preset[]>('/presets')).filter(item=>!item.builtin));
-      setPresetName('');
-    } catch (err: unknown) { setError(formatApiError(err)); }
+      const created = await apiClient.post<Preset>('/presets', { name: presetName.trim(), config: reusableTrainingPreset(config) }, { silent: true });
+      setPresets(previous => [...previous.filter(item=>item.name!==created.name), created]);
+      setPresetName(''); setPresetDialog(false);
+    } catch (err: unknown) { setPresetError(formatApiError(err)); }
     finally { setSavingPreset(false); }
   };
 
@@ -572,7 +574,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const familyLabel = inactiveReason ? `${config.model?.family === 'flux' ? 'FLUX.1' : 'FLUX.2 dev'} · ${text('已停用', 'Retired')}` : familyByName(families, config.model?.family)?.label || config.model?.family;
   const familyBadge = familyLabel ? <span className="family-chip" data-testid="training-family-badge" title={familyLabel}>{familyLabel}</span> : null;
   const savingDraft = savingNavigation || draftSaveState === 'saving';
-  const draftStatus = loaded && (savingDraft || dirty || savedAt) ? <span className="draft-indicator" role="status" aria-label={text('配置保存状态', 'Configuration save status')} data-testid={savedAt && !dirty && !savingDraft && draftSaveState !== 'failed' ? 'draft-saved' : undefined}>{savingDraft ? <><Loader2 size={12} className="animate-spin"/>{text('保存中…', 'Saving…')}</> : dirty && draftSaveState === 'failed' ? text('保存失败，请重试', 'Save failed; retry') : dirty ? text('等待保存…', 'Waiting to save…') : savedAt ? <><Check size={12} aria-hidden="true"/>{text(`已保存 ${savedAt}`, `Saved ${savedAt}`)}</> : null}</span> : null;
+  const draftStatus = loaded && (savingDraft || dirty || savedAt) ? <span className="draft-indicator" role="status" aria-label={text('配置保存状态', 'Configuration save status')} data-testid={savedAt && !dirty && !savingDraft && draftSaveState !== 'failed' ? 'draft-saved' : undefined}>{savingDraft ? <><Loader2 size={12} className="animate-spin"/>{text('保存中…', 'Saving…')}</> : dirty && draftSaveState === 'failed' ? <>{text('自动保存失败', 'Autosave failed')}<button type="button" className="ui-link" onClick={() => void saveDraftNow()}>{text('重试保存', 'Retry save')}</button></> : dirty ? text('等待保存…', 'Waiting to save…') : savedAt ? <><Check size={12} aria-hidden="true"/>{text(`已保存 ${savedAt}`, `Saved ${savedAt}`)}</> : null}</span> : null;
   if (versionId && (versions.current?.status !== 'ready' || archived)) return <div className="training-studio project-workspace">
     {project && <ProjectWorkspaceHeader project={project} versionId={versionId} versions={versions.versions} current={versions.current} active="train" refresh={versions.refresh} titleBadge={familyBadge} error={versions.error}/>}
     {archived && <Link className="workspace-message" to={projectUrl(projectId || '', versionId, 'results')}>{text('查看此版本的训练结果', 'View this version’s training results')}</Link>}
@@ -605,14 +607,20 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       </div>
       <div className="toolbar-actions">
         <StudioSelect aria-label={t('train.loadPreset')} disabled={!loaded || savingNavigation || !!inactiveReason} value="" onValueChange={name => {const preset=presets.find(item=>item.name===name);if(preset)setPendingPreset(preset);}} placeholder={t('train.loadPreset')} options={presets.map(preset=>({value:preset.name,label:`${preset.name}${inactiveTrainingReason(preset.config) ? ` · ${text('已停用','Retired')}` : presetFamily(preset) && presetFamily(preset)!==config.model?.family ? ` · ${text('适用于','For')} ${presetFamily(preset)}` : ''}`,disabled:!!inactiveTrainingReason(preset.config) || !!presetFamily(preset) && presetFamily(preset)!==config.model?.family}))}/>
-        <button type="button" className="ui-btn save-draft" disabled={!loaded || !dirty || savingNavigation} onClick={() => void saveDraftNow()}>{savingNavigation ? text('保存中…','Saving…') : text('保存草稿','Save draft')}</button>
+        <button type="button" className="ui-btn" disabled={!loaded || savingNavigation || !!inactiveReason} onClick={() => {setPresetName('');setPresetError('');setPresetDialog(true);}}><Save size={14}/>{text('另存为新预设','Save as new preset')}</button>
+        <button type="button" className="ui-btn" disabled={!loaded || savingNavigation} onClick={() => setInspectionOpen(true)}><ListChecks size={14}/>{text('参数检查','Check parameters')}</button>
         <details className="config-tools" data-popover><summary className="ui-btn"><Settings2 size={14}/>{text('配置工具', 'Config tools')}</summary><div className="config-tools-menu">
           <Link to="/presets">{text('管理参数预设','Manage parameter presets')}</Link>
-          <div className="preset-save"><input aria-label={t('train.presetName')} placeholder={t('train.presetName')} value={presetName} onChange={event => setPresetName(event.target.value)} /><button type="button" className="ui-btn ui-btn-sm" disabled={!loaded || savingPreset || !presetName.trim() || !!inactiveReason} onClick={handleSavePreset}>{t('train.savePreset')}</button></div>
           <button type="button" disabled={!loaded} onClick={() => {setImportError('');setImportOpen(true);}}>{t('train.importToml')}</button><button type="button" disabled={!loaded} onClick={handleExport}>{t('train.exportToml')}</button><button type="button" disabled={!loaded} onClick={() => { if (window.confirm(t('train.resetConfirm'))) setConfig(structuredClone(defaults)); }}>{t('train.resetDefaults')}</button>
         </div></details>
       </div>
     </div>
+    {presetDialog && <Dialog title={text('另存为新预设','Save as new preset')} closeDisabled={savingPreset} onClose={()=>setPresetDialog(false)}><form className="preset-create-dialog" onSubmit={event=>{event.preventDefault();void handleSavePreset();}}>
+      <label>{text('预设名称','Preset name')}<input autoFocus aria-label={t('train.presetName')} value={presetName} disabled={savingPreset} required onChange={event=>setPresetName(event.target.value)}/></label>
+      {presetError && <p role="alert" className="config-field-error">{presetError}</p>}
+      <footer><button type="button" className="ui-btn" disabled={savingPreset} onClick={()=>setPresetDialog(false)}>{text('取消','Cancel')}</button><button type="submit" className="ui-btn ui-btn-primary" disabled={savingPreset || !presetName.trim()}>{savingPreset?text('保存中…','Saving…'):text('保存新预设','Save new preset')}</button></footer>
+    </form></Dialog>}
+    {inspectionOpen && <ConfigInspection config={config} onApply={next=>{setConfig(next);setInspectionOpen(false);}} onClose={()=>setInspectionOpen(false)}/>}
     {pendingPreset && <PresetPreview preset={pendingPreset} current={config} onClose={()=>setPendingPreset(null)} onApply={()=>handleApplyPreset(pendingPreset)}/>}
     {importOpen && <Dialog title={t('train.importToml')} closeDisabled={importing} onClose={() => setImportOpen(false)}><section className="config-import">{importError && <p role="alert" className="studio-error">{importError}</p>}<input disabled={importing} type="file" accept=".toml,text/plain" aria-label={t('train.importFile')} onChange={event => { const file = event.target.files?.[0]; if (file) file.text().then(setImportText).catch(err => setImportError(formatApiError(err))); }}/><textarea disabled={importing} aria-label={t('train.importContent')} value={importText} onChange={event => setImportText(event.target.value)} /><button type="button" className="ui-btn ui-btn-primary" disabled={importing || !importText.trim()} onClick={handleImport}>{t('train.applyImport')}</button></section></Dialog>}
 

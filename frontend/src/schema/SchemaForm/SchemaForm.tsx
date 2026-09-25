@@ -668,7 +668,7 @@ const SchemaValueInput: React.FC<{
   if (prop.type === 'object' && prop.properties) return <div className="config-optional-object">
     {nullable && <StudioSelect aria-label={`${name}.mode`} value={value == null ? 'none' : 'custom'}
       onValueChange={next => onChange(next === 'none' ? null : initialValue())}
-      options={[{value:'none',label:english ? 'Disabled' : '不使用'}, {value:'custom',label:english ? 'Configure' : '填写参数'}]}/>}
+      options={[{value:'none',label:english ? 'Disabled' : 'Disabled (不使用)'}, {value:'custom',label:english ? 'Configure' : 'Configure (填写参数)'}]}/>}
     {value != null && Object.entries(prop.properties).map(([key, child]) => <div key={key} className="space-y-1 text-xs">
       <span>{t(`fields.${key}`, child.title || key)}</span>
       <SchemaValueInput schema={schema} property={child} value={value[key] === undefined ? child.default : value[key]}
@@ -680,7 +680,7 @@ const SchemaValueInput: React.FC<{
     options={[...(nullable ? [{value:'',label:emptyLabel}] : []), ...prop.enum.map(item => ({value:String(item),label:String(item)}))]}/>;
   if (prop.type === 'boolean') return nullable
     ? <StudioSelect aria-label={name} value={value == null ? '' : String(value)} onValueChange={next => onChange(next === '' ? null : next === 'true')}
-      options={[{value:'',label:emptyLabel},{value:'true',label:english ? 'Enabled' : '开启'},{value:'false',label:english ? 'Disabled' : '关闭'}]}/>
+      options={[{value:'',label:emptyLabel},{value:'true',label:english ? 'Enabled' : 'Enabled (开启)'},{value:'false',label:english ? 'Disabled' : 'Disabled (关闭)'}]}/>
     : <Switch aria-label={name} checked={!!value} onCheckedChange={onChange}/>;
   if (prop.type === 'array') return <textarea className={cls} aria-label={name} value={typeof value === 'string' ? value : JSON.stringify(value ?? [])}
     onChange={event => { try { onChange(JSON.parse(event.target.value)); } catch { onChange(event.target.value); } }}/>
@@ -695,7 +695,7 @@ const SchemaValueInput: React.FC<{
   if (algorithmChoice || constant) return <div className="config-value-mode">
     <StudioSelect aria-label={`${name}.mode`} value={algorithmChoice ? value == null ? 'automatic' : 'custom' : value === constant?.const ? 'automatic' : 'custom'}
       onValueChange={next => onChange(next === 'automatic' ? algorithmChoice ? null : constant?.const : initialValue())}
-      options={[{value:'custom',label:algorithmChoice ? 'EPS' : english ? 'Custom value' : '指定数值'}, {value:'automatic',label:algorithmChoice ? 'Adam-atan2' : String(constant?.const)}]}/>
+      options={[{value:'custom',label:algorithmChoice ? 'EPS' : english ? 'Custom value' : 'Custom (指定数值)'}, {value:'automatic',label:algorithmChoice ? 'Adam-atan2' : String(constant?.const)}]}/>
     {(algorithmChoice ? value != null : value !== constant?.const) && input}
   </div>;
   return input;
@@ -1003,7 +1003,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       const options = ['auto', 'klein-base-4b', 'klein-base-9b'];
       control = <StudioSelect aria-label={fieldLabel} value={fieldValue || 'auto'}
         onValueChange={next => onChange(setNestedValue(value, path, next))}
-        options={[...(fieldValue === 'dev' ? [{ value: 'dev', label: english ? 'FLUX.2 dev (retired)' : 'FLUX.2 dev（已停用）', disabled: true }] : []),
+        options={[...(fieldValue === 'dev' ? [{ value: 'dev', label: configOptionLabel(fullPathKey, 'dev', english), disabled: true }] : []),
           ...options.map(option => ({ value: option, label: configOptionLabel(fullPathKey, option, english) }))]}/>;
     } else if (fullPathKey === 'model.family' && families) {
       control = <StudioSelect aria-label="model.family" value={fieldValue || families[0]?.name || ''} disabled={!families.length}
@@ -1017,7 +1017,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     } else if (fullPathKey === 'dataset.text_encoding' && family) {
       // 文本编码选项受族 text_modes 约束（krea2 无 online）
       control = <StudioSelect aria-label={fieldLabel} value={fieldValue || 'auto'} data-testid="text-encoding-select"
-        onValueChange={next => onChange(setNestedValue(value,path,next))} options={(family.text_modes || []).map(mode=>({value:mode,label:t(`textMode.${mode}`,mode)}))}/>;
+        onValueChange={next => onChange(setNestedValue(value,path,next))} options={(family.text_modes || []).map(mode=>({value:mode,label:configOptionLabel(fullPathKey,mode,english)}))}/>;
     } else if (fullPathKey === 'model.krea2_variant') {
       control = <StudioSelect aria-label={fieldLabel} value={fieldValue === 'auto' ? '' : fieldValue || ''}
         placeholder={english ? 'Confirm local model type' : '确认本地模型类型'}
@@ -1175,7 +1175,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const describedHint = booleanField ? undefined
       : fullPathKey === 'training.mode' ? value.training?.mode === 'full'
         ? (english ? 'Updates the selected model weights directly.' : '直接训练所选模型本身的权重。')
-        : (english ? 'Trains LoRA / LoKr weights while keeping the base model frozen.' : '只训练 LoRA／LoKr 权重，底模保持不变。')
+        : (english ? 'Trains LoRA weights while keeping the base model frozen.' : '只训练 LoRA 权重，底模保持不变。')
       : fullPathKey === 'model.dtype' ? modelPrecisionHint
       : fullPathKey === 'dataset.native_max_pixels' ? nativePixelsHint(fieldValue, english) || configFieldHint(fullPathKey, english)
       : fullPathKey === 'dataset.text_encoding' && family && !(family.text_modes || []).includes('online') ? t('textMode.autoOnly')
@@ -1235,8 +1235,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
             const defaultRank = typeof prop.default === 'number' && Number.isInteger(prop.default) && prop.default > 0 ? prop.default : 16;
             onChange(setNestedValue(value, path, next === 'full' ? 'full' : lastLowRank.current ?? defaultRank));
           }} options={[
-            {value: 'full', label: english ? 'Full · full factor matrices' : 'Full · 完整因子矩阵'},
-            {value: 'low_rank', label: english ? 'Low rank · factor decomposition' : '低秩 · 分解因子矩阵'},
+            {value: 'full', label: english ? 'Full' : 'Full (完整因子矩阵)'},
+            {value: 'low_rank', label: english ? 'Low rank' : 'Low rank (分解因子矩阵)'},
           ]}/></div>
         <div className="config-field-footer">
           {modeHint && <p className="config-field-hint">{modeHint}</p>}

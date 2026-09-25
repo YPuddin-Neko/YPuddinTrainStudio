@@ -103,3 +103,15 @@
 .preset-preview-actions{display:flex;justify-content:flex-end;align-items:center;gap:8px;flex-shrink:0;padding-top:14px;border-top:1px solid var(--studio-border,#d9e2ef)}
 
 .training-studio .model-context-card { min-height: 42px; padding: 7px 12px; margin-bottom: 14px; border-left-width: 1px; align-items: center; flex-direction: row; flex-wrap: wrap; }
+.config-inspection { display:grid; gap:14px; min-width:0; font-size:13px; }
+.config-inspection-list { display:grid; gap:8px; max-height:48dvh; overflow:auto; }
+.config-inspection-field { display:flex; align-items:flex-start; gap:10px; padding:10px; border:1px solid var(--studio-line); border-radius:6px; }
+.config-inspection-field > input { flex:none; margin-top:3px; }
+.config-inspection-field > span { display:grid; gap:4px; min-width:0; }
+.config-inspection-field :is(code,pre) { font-size:12px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.config-inspection-field small { color:var(--studio-dim); }
+.config-inspection-errors { display:grid; gap:8px; color:var(--studio-danger); overflow-wrap:anywhere; }
+.config-inspection footer, .preset-create-dialog footer { display:flex; justify-content:flex-end; gap:8px; }
+.preset-create-dialog { display:grid; gap:14px; min-width:0; }
+.preset-create-dialog label { display:grid; gap:6px; font-size:13px; }
+.preset-create-dialog input { border:1px solid var(--studio-line); border-radius:6px; min-height:38px; padding:7px 10px; background:var(--studio-panel); }

@@ -65,7 +65,7 @@ const labels: Record<string, string> = {
   'loop.deterministic': '可复现训练',
   'loop.ema': '启用 EMA', 'loop.ema_decay': 'EMA 衰减', 'loop.nan_skip_limit': '无效梯度跳过上限', 'loop.log_every': '日志间隔',
   'checkpoint.output_dir': '训练权重保存位置', 'checkpoint.name': '权重文件名', 'checkpoint.save_every_steps': '每隔几步保存',
-  'checkpoint.save_every_epochs': '每隔几轮保存', 'checkpoint.save_state_every_steps': '完整状态保存间隔',
+  'checkpoint.save_every_epochs': '每隔几轮保存', 'checkpoint.save_state_every_steps': '恢复点保存间隔（步）',
   'checkpoint.keep_last_n': '保留最近几次权重', 'checkpoint.save_dtype': '权重保存精度', 'checkpoint.save_on_finish': '结束时保存权重',
   'checkpoint.resume': '恢复完整训练状态', 'sampling.enabled': '生成训练预览', 'sampling.every_steps': '每隔几步预览',
   'sampling.every_epochs': '每隔几轮预览', 'sampling.at_start': '开始前生成预览', 'sampling.prompts': '预览提示词',
@@ -154,6 +154,7 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
   const help: Record<string, [string, string]> = {
     'dataset.native_max_pixels': ['填单个边长，例如 1024 或 2048。\n1024：总面积最多 1024×1024，约 105 万像素。\n2048：总面积最多 2048×2048，约 419 万像素。\n例如填 1024 时，1024×1024、2048×512 都在面积范围内；2048×2048 则需要缩小。\n图片保留原有比例，小图不放大。最长边上限同时生效，模型对齐补边也计入面积。该值还限制一次计算的图像总面积，调大通常需要更多显存。', 'Enter one side length, such as 1024 or 2048.\n1024 allows up to 1024×1024 pixels, about 1.05 megapixels.\n2048 allows up to 2048×2048 pixels, about 4.19 megapixels.\nAt 1024, both 1024×1024 and 2048×512 fit the area limit; 2048×2048 needs downscaling.\nImages keep their aspect ratio; small images are not enlarged. The longest-side limit also applies, and alignment padding counts toward the area. This also limits the total image area processed in one forward pass; larger values generally need more GPU memory.'],
     'dataset.native_max_side': ['填宽或高允许达到的最大长度，单位为像素。例如 4096 表示宽、高都不得超过 4096。\n面积上限和最长边上限必须同时满足，以先触及的限制为准。面积填 1024、最长边填 4096 时，2048×2048 的图片仍会因面积超限而缩小。\n想保留原图尺寸，两个上限都需要容纳原图及模型对齐补边。', 'Enter the maximum allowed width or height in pixels. 4096 means neither dimension may exceed 4096.\nBoth the area and longest-side limits must be satisfied; the tighter limit determines the size. An area setting of 1024 still downscales a 2048×2048 image even if the longest-side limit is 4096.\nTo retain the original size, both limits must accommodate the image and any model-alignment padding.'],
+    'checkpoint.save_state_every_steps': ['默认每 100 步保存完整恢复点，留空关闭定期保存。暂停会在参数更新结束后另存恢复点并释放显存。重启或意外退出后只能从最近一次成功保存的恢复点继续，未保存的步数需要重跑。恢复点包含优化器、调度器、数据位置和随机状态，文件比导出权重更大。', 'Saves a full recovery point every 100 steps by default; blank disables periodic saves. Pausing saves at an update boundary and releases GPU memory. After restarting or a crash, resume from the last successful save; unsaved steps must be repeated. Recovery points include optimizer, scheduler, data position and random state, and are larger than exported weights.'],
     'dataset.resolutions': ['单个分辨率填 1024；多个用逗号或空格分隔，如 1024, 1536。填写正整数边长，不写 1024×1024。1024 表示每桶约 1024×1024 像素；每张图会在每个基准分辨率各训练一次，增加总样本和步数。', 'Enter one size as 1024, or separate multiple sizes with commas or spaces, e.g. 1024, 1536. Use positive integer side lengths, not 1024×1024. A base of 1024 gives roughly 1024×1024 pixels per bucket. Each image trains at every base resolution, increasing samples and steps.'],
     'adapter.resume_weights': ['可选。加载已有 LoRA / LoKr 权重作为本次训练起点；优化器和步数重新开始。接着上次任务训练请使用完整训练状态。', 'Optional. Start from existing LoRA / LoKr weights with a fresh optimizer and step count. Use a full training state to resume a previous run.'],
     'loop.deterministic': ['默认关闭。在相同配置、设备和软件环境下提高重复训练的一致性。开启后可能固定部分计算精度和注意力设置，增加显存与耗时；具体值会显示在对应字段。完整续训需保持原设置和环境。', 'Off by default. Improves repeatability with the same configuration, device and software environment. May manage precision and attention settings and increase memory use and runtime; effective values appear in the fields. Keep the same settings and environment when resuming.'],
@@ -204,42 +205,46 @@ export function configPresetLabel(name: string, description: string, defaultPres
     'attn-mlp-text': ['常规范围＋文字融合层', 'Standard scope + text fusion'],
     'adapter-only': ['仅文字适配层', 'Text adapter only'],
   };
-  const label = names[name]?.[english ? 1 : 0] || description || name;
+  const pair = names[name];
+  const label = pair ? (english ? pair[1] : `${pair[1]} (${pair[0]})`) : description || name;
   return name === defaultPreset ? `${label}${english ? ' (default)' : '（默认）'}` : label;
 }
 
 export function configOptionLabel(path: string, option: string, english = false) {
   const options: Record<string, Record<string, [string, string]>> = {
-    'objective.weighting': { none: ['不加权', 'None'], sigma_sqrt: ['Sigma 平方根', 'Sigma square root'], cosmap: ['CosMap', 'CosMap'], snr_like: ['类 SNR', 'SNR-like'], cosmos: ['Cosmos', 'Cosmos'], min_snr: ['Min-SNR', 'Min-SNR'] },
-    'objective.timestep_sampling': { uniform: ['均匀采样', 'Uniform'], logit_normal: ['Logit-Normal', 'Logit-normal'], shift: ['偏移采样（shift）', 'Shifted (shift)'], resolution_shift: ['按分辨率偏移', 'Resolution shift'], mode: ['Mode 分布', 'Mode'], cosmap: ['CosMap', 'CosMap'] },
-    'objective.loss': { mse: ['MSE 平方误差', 'MSE'], huber: ['Huber', 'Huber'], pseudo_huber: ['Pseudo-Huber', 'Pseudo-Huber'] },
-    'adapter.algo': { lora: ['LoRA', 'LoRA'], lokr: ['LoKr', 'LoKr'], loha: ['LoHa', 'LoHa'], full: ['目标层完整权重', 'Full target-layer weights'] },
+    'objective.weighting': { none: ['不加权', 'None'], sigma_sqrt: ['噪声尺度平方根', 'Sigma square root'], cosmap: ['余弦映射', 'CosMap'], snr_like: ['类信噪比加权', 'SNR-like'], cosmos: ['Cosmos', 'Cosmos'], min_snr: ['最小信噪比加权', 'Min-SNR'] },
+    'objective.timestep_sampling': { uniform: ['均匀采样', 'Uniform'], logit_normal: ['逻辑正态分布', 'Logit-Normal'], shift: ['偏移采样', 'Shift'], resolution_shift: ['按分辨率偏移', 'Resolution shift'], mode: ['模式分布', 'Mode'], cosmap: ['余弦映射', 'CosMap'] },
+    'objective.loss': { mse: ['均方误差', 'MSE'], huber: ['平滑绝对误差', 'Huber'], pseudo_huber: ['伪 Huber 损失', 'Pseudo-Huber'] },
+    'adapter.algo': { lora: ['LoRA', 'LoRA'], lokr: ['LoKr', 'LoKr'], loha: ['LoHa', 'LoHa'], full: ['目标层完整权重', 'Full'] },
     'adapter.param_dtype': { fp32: ['FP32', 'FP32'], bf16: ['BF16', 'BF16'] },
     'checkpoint.save_dtype': { bf16: ['BF16', 'BF16'], fp16: ['FP16', 'FP16'], fp32: ['FP32', 'FP32'] },
-    'scheduler.type': { constant: ['恒定（constant）', 'Constant'], linear: ['线性衰减（linear）', 'Linear decay'], cosine: ['余弦衰减（cosine）', 'Cosine decay'], cosine_restarts: ['余弦重启（cosine_restarts）', 'Cosine with restarts'], polynomial: ['多项式衰减（polynomial）', 'Polynomial decay'], warmup_stable_decay: ['预热-稳定-衰减（WSD）', 'Warmup-stable-decay'], rex: ['REX', 'REX'] },
-    'logging.level': { debug: ['debug · 最详细', 'debug · most detail'], info: ['info · 默认', 'info · default'], warning: ['warning · 仅警告', 'warning · warnings only'] },
-    'loop.mixed_precision': {bf16:['BF16 · 自动混合精度','BF16 · automatic mixed precision'],fp16:['FP16 · 自动混合精度','FP16 · automatic mixed precision'],no:['关闭自动混合精度','Automatic mixed precision off']},
-    'loop.distributed_strategy': {ddp:['数据并行','Data parallelism'],fsdp:['显存分片（大模型）','Memory sharding (large models)']},
-    'training.mode': {adapter:['LoRA / LoKr','LoRA / LoKr'],full:['全量微调','Full fine-tuning']},
-    'memory.base_precision': {auto:['不转换（沿用加载精度）','No conversion (keep loaded precision)'],fp32:['FP32 · 32 位','FP32 · 32-bit'],bf16:['BF16 · 16 位','BF16 · 16-bit'],fp16:['FP16 · 16 位','FP16 · 16-bit'],fp8_e4m3:['FP8 E4M3 · 启动时量化','FP8 E4M3 · quantize at startup'],fp8_e5m2:['FP8 E5M2 · 启动时量化','FP8 E5M2 · quantize at startup']},
-    'model.attention': {auto:['PyTorch SDPA（默认）','PyTorch SDPA (default)'],sdpa:['PyTorch SDPA','PyTorch SDPA'],xformers:['xFormers','xFormers'],flash_attn:['FlashAttention 2','FlashAttention 2'],metal_flash:['Metal FlashAttention · Apple','Metal FlashAttention · Apple'],sage:['SageAttention · 仅采样','SageAttention · sampling only']},
-    'adapter.init': {default:['默认初始化','Default initialization'],scalar:['随机权重 + 零值缩放','Random weights + zero scale']},
-    'adapter.mode': {auto:['自动','Automatic'],bypass:['分开计算','Compute separately'],merged:['合并权重后计算','Compute merged weights']},
-    'memory.activation_checkpointing': {none:['关闭','Off'],block:['逐块重算 · 节省显存','Block recomputation · save memory'],unsloth:['重算并卸载中间输入','Recompute and offload block inputs']},
-    'model.prediction_type': { epsilon: ['ε 预测（常规模型）', 'Epsilon (standard)'], v_prediction: ['v 预测', 'v-prediction'] },
-    'model.sdxl_max_token_length': { '75': ['75 tokens · 默认', '75 tokens · default'], '150': ['150 tokens · 2 段', '150 tokens · 2 chunks'], '225': ['225 tokens · 3 段', '225 tokens · 3 chunks'] },
+    'scheduler.type': { constant: ['恒定', 'Constant'], linear: ['线性衰减', 'Linear'], cosine: ['余弦衰减', 'Cosine'], cosine_restarts: ['余弦重启', 'Cosine restarts'], polynomial: ['多项式衰减', 'Polynomial'], warmup_stable_decay: ['预热-稳定-衰减', 'WSD'], rex: ['REX', 'REX'] },
+    'logging.level': { debug: ['最详细', 'Debug'], info: ['默认', 'Info'], warning: ['仅警告', 'Warning'] },
+    'loop.mixed_precision': {bf16:['自动混合精度','BF16'],fp16:['自动混合精度','FP16'],no:['关闭自动混合精度','Off']},
+    'loop.distributed_strategy': {ddp:['数据并行','DDP'],fsdp:['显存分片','FSDP']},
+    'training.mode': {adapter:['LoRA','LoRA'],full:['全量微调','Full fine-tuning']},
+    'memory.base_precision': {auto:['沿用加载精度','Auto'],fp32:['32 位','FP32'],bf16:['16 位','BF16'],fp16:['16 位','FP16'],fp8_e4m3:['启动时量化','FP8 E4M3'],fp8_e5m2:['启动时量化','FP8 E5M2']},
+    'model.attention': {auto:['默认','PyTorch SDPA'],sdpa:['PyTorch SDPA','PyTorch SDPA'],xformers:['xFormers','xFormers'],flash_attn:['FlashAttention 2','FlashAttention 2'],metal_flash:['Metal FlashAttention · Apple','Metal FlashAttention · Apple'],sage:['仅采样','SageAttention']},
+    'adapter.init': {default:['默认初始化','Default'],scalar:['随机权重，零值缩放','Scalar']},
+    'adapter.mode': {auto:['自动','Automatic'],bypass:['分开计算','Bypass'],merged:['合并权重后计算','Merged']},
+    'memory.activation_checkpointing': {none:['关闭','Off'],block:['逐块重算，节省显存','Block'],unsloth:['重算并卸载中间输入','Unsloth']},
+    'model.prediction_type': { epsilon: ['噪声预测', 'Epsilon'], v_prediction: ['速度预测', 'v-prediction'] },
+    'model.sdxl_max_token_length': { '75': ['默认', '75 tokens'], '150': ['2 段', '150 tokens'], '225': ['3 段', '225 tokens'] },
     'model.dtype': {auto:['跟随模型','Follow model'],bf16:['BF16','BF16'],fp16:['FP16','FP16'],fp32:['FP32','FP32']},
-    'model.krea2_variant': {auto:['读取模型记录','Read model record'],raw:['Raw · 训练模型','Raw · training model'],turbo:['Turbo · 仅采样','Turbo · sampling only']},
-    'model.flux2_variant': { auto: ['自动读取模型配置', 'Read model configuration'], dev: ['FLUX.2 dev（已停用）', 'FLUX.2 dev (retired)'], 'klein-base-4b': ['Klein 基础版 4B', 'Klein base 4B'], 'klein-base-9b': ['Klein 基础版 9B', 'Klein base 9B'] },
-    'sampling.sampler': { euler:['Euler', 'Euler'], heun:['Heun', 'Heun'], er_sde:['ER-SDE', 'ER-SDE'] },
-    'sampling.scheduler': { uniform:['Uniform', 'Uniform'], simple:['Simple', 'Simple'], sgm_uniform:['SGM Uniform', 'SGM Uniform'], normal:['Normal', 'Normal'] },
+    'model.krea2_variant': {auto:['读取模型记录','Read model record'],raw:['训练模型','Raw'],turbo:['仅采样','Turbo']},
+    'model.flux2_variant': { auto: ['自动读取模型配置', 'Read model configuration'], dev: ['已停用', 'FLUX.2 dev'], 'klein-base-4b': ['Klein 基础版 4B', 'Klein base 4B'], 'klein-base-9b': ['Klein 基础版 9B', 'Klein base 9B'] },
+    'sampling.sampler': { euler:['欧拉', 'Euler'], heun:['二阶修正', 'Heun'], er_sde:['随机微分方程', 'ER-SDE'] },
+    'sampling.scheduler': { uniform:['均匀', 'Uniform'], simple:['简单', 'Simple'], sgm_uniform:['SGM 均匀', 'SGM Uniform'], normal:['常规', 'Normal'] },
     'optimizer.type': {adamw:['AdamW','AdamW'],adam:['Adam','Adam'],sgd:['SGD','SGD'],adamw8bit:['AdamW 8-bit','AdamW 8-bit'],lion:['Lion','Lion'],lion8bit:['Lion 8-bit','Lion 8-bit'],prodigy:['Prodigy','Prodigy'],prodigy_plus_sf:['Prodigy Plus Schedule-Free','Prodigy Plus Schedule-Free'],automagic:['Automagic','Automagic'],adafactor:['Adafactor','Adafactor'],came:['CAME','CAME'],adamw_sf:['AdamW Schedule-Free','AdamW Schedule-Free']},
-    'dataset.resolution_mode': { bucket: ['分桶 · 统一基准面积', 'Buckets · target area'], native: ['原生 · 每图独立尺寸', 'Native · individual image sizes'] },
-    'dataset.text_encoding': {auto:['自动','Automatic'],online:['每步在线编码','Encode each step'],cached:['预编码缓存','Cached embeddings']},
-    'dataset.image_fit': { pad: ['保留完整画面', 'Preserve the whole image'], crop: ['裁切填满（旧模式）', 'Crop to fill (legacy)'] },
+    'dataset.resolution_mode': { bucket: ['统一基准面积', 'Bucket'], native: ['每图独立尺寸', 'Native'] },
+    'dataset.text_encoding': {auto:['自动','Auto'],online:['每步编码文本','Online'],cached:['训练前缓存文本特征','Cached']},
+    'dataset.image_fit': { pad: ['保留完整画面', 'Pad'], crop: ['裁切填满', 'Crop'] },
     'dataset.native_overflow': { downscale: ['等比缩小到上限内', 'Downscale to fit limits'], error: ['报错并停止', 'Stop with an error'] },
   };
-  return options[path]?.[option]?.[english ? 1 : 0] || option;
+  const label = options[path]?.[option];
+  if (!label) return option;
+  if (english || label[0] === label[1]) return label[1];
+  return `${label[1]} (${label[0]})`;
 }
 
 export type ConfigTab = 'train' | 'data' | 'model' | 'advanced';
