@@ -20,16 +20,22 @@ import Switch from '../Switch';
 interface Props {
   project: VersionedProject; versionId?: string; versions: ProjectVersion[]; current?: ProjectVersion;
   active: WorkspaceStep; refresh: () => Promise<unknown>; beforeAction?: () => Promise<void>;
+  sidebarOnly?: boolean; workflowActive?: boolean;
   status?: React.ReactNode; error?: unknown; title?: string; titleBadge?: React.ReactNode; breadcrumbTrail?: React.ReactNode;
 }
-export default function ProjectWorkspaceHeader({ project, versionId, versions, current, active, refresh, beforeAction, status, error: loadError, title: customTitle, titleBadge, breadcrumbTrail }: Props) {
+export default function ProjectWorkspaceHeader({ project, versionId, versions, current, active, refresh, beforeAction, status, error: loadError, title: customTitle, titleBadge, breadcrumbTrail, sidebarOnly = false, workflowActive = true }: Props) {
   const text = useWorkspaceText();
   const { data: families = [], isError: familiesError } = useFamilies();
-  const navigationRef = useWorkspaceHeight('--workspace-head-height');
+  const navigationRef = useWorkspaceHeight('--workspace-head-height', !sidebarOnly);
   const sidebar = React.useContext(ProjectSidebarContext);
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
+  const registerSidebar = sidebar?.register;
+  React.useLayoutEffect(()=>{
+    if(sidebarOnly || !registerSidebar)return;
+    return registerSidebar({project,versionId,versions,current,active,routeKey:location.key,pathname:location.pathname},beforeAction);
+  },[sidebarOnly,registerSidebar,project,versionId,versions,current,active,location.key,location.pathname,beforeAction]);
   const [dialog, setDialog] = React.useState<'create' | 'edit' | 'compare' | 'paths' | null>(null);
   const [name, setName] = React.useState('');
   const [note, setNote] = React.useState('');
@@ -45,11 +51,11 @@ export default function ProjectWorkspaceHeader({ project, versionId, versions, c
   const supported = !!project.active_version_id || !!versionId;
   const selectedId = versionId || project.active_version_id || undefined;
   React.useEffect(() => {
-    if (busy || !versionId || archivedActivations.current.has(versionId) || current?.status !== 'ready' || current.archived || current.busy || project.active_version_id === versionId) return;
+    if (sidebarOnly || busy || !versionId || archivedActivations.current.has(versionId) || current?.status !== 'ready' || current.archived || current.busy || project.active_version_id === versionId) return;
     let active = true;
     void activateProjectVersion(project.id,versionId).then(updated => {if(active && updated)queryClient.setQueryData(['project',project.id],updated);}).catch(error => {if(active)setError(formatApiError(error));});
     return () => { active = false; };
-  }, [busy,versionId,current?.status,current?.archived,current?.busy,project.id,project.active_version_id,queryClient]);
+  }, [sidebarOnly,busy,versionId,current?.status,current?.archived,current?.busy,project.id,project.active_version_id,queryClient]);
   const readyVersions = versions.filter(item => item.status === 'ready');
   const sourceFamily = versions.find(item => item.id === source)?.family;
   const familyLabel = (value?: string) => value === 'flux' ? `FLUX.1 · ${text('已停用', 'Retired')}` : families.find(item => item.name === value)?.label || value || text('沿用配置', 'From configuration');
@@ -61,7 +67,7 @@ export default function ProjectWorkspaceHeader({ project, versionId, versions, c
     setBusy(true); setError('');
     try {
       if (!current?.archived) await beforeAction?.();
-      const tab = active === 'train' ? new URLSearchParams(location.search).get('tab') : null;
+      const tab = active === 'train' && workflowActive ? new URLSearchParams(location.search).get('tab') : null;
       navigate(`${projectUrl(project.id, nextId, active)}${tab ? `?tab=${encodeURIComponent(tab)}` : ''}`);
       sidebar?.closeNavigation();
     } catch (error) { setError(formatApiError(error)); }
@@ -143,15 +149,15 @@ export default function ProjectWorkspaceHeader({ project, versionId, versions, c
       </div>
       {versions.some(item => item.archived) && <Switch className="project-sidebar-archived studio-switch-small" checked={showArchived} onCheckedChange={setShowArchived}>{text('显示已归档版本', 'Show archived versions')}</Switch>}
     </>}
-    <ProjectWorkflow projectId={project.id} versionId={selectedId} active={active} sidebar/>
+    <ProjectWorkflow projectId={project.id} versionId={selectedId} active={workflowActive ? active : undefined} sidebar/>
   </section>;
   return <>
-    {sidebar ? sidebar.target && createPortal(projectControls, sidebar.target) : <div className="project-sidebar-fallback">{projectControls}</div>}
-    <header className="workspace-navigation workspace-page-heading" ref={navigationRef}><div className="workspace-heading-main"><nav className="workspace-breadcrumb" aria-label={text('当前位置', 'Current location')}><Link to="/projects">{text('项目', 'Projects')}</Link><span aria-hidden="true">/</span><Link to={projectUrl(project.id, selectedId, 'overview')}>{project.name}</Link>{current && <><span aria-hidden="true">/</span><span>{current.name}</span></>}{breadcrumbTrail && <><span aria-hidden="true">/</span>{breadcrumbTrail}</>}</nav><div className="workspace-heading-title"><h1 title={title}>{title}</h1>{titleBadge}</div></div>{status && <div className="project-heading-status">{status}</div>}</header>
+    {sidebarOnly ? projectControls : sidebar?.register ? null : sidebar ? sidebar.target && createPortal(projectControls, sidebar.target) : <div className="project-sidebar-fallback">{projectControls}</div>}
+    {!sidebarOnly && <header className="workspace-navigation workspace-page-heading" ref={navigationRef}><div className="workspace-heading-main"><nav className="workspace-breadcrumb" aria-label={text('当前位置', 'Current location')}><Link to="/projects">{text('项目', 'Projects')}</Link><span aria-hidden="true">/</span><Link to={projectUrl(project.id, selectedId, 'overview')}>{project.name}</Link>{current && <><span aria-hidden="true">/</span><span>{current.name}</span></>}{breadcrumbTrail && <><span aria-hidden="true">/</span>{breadcrumbTrail}</>}</nav><div className="workspace-heading-title"><h1 title={title}>{title}</h1>{titleBadge}</div></div>{status && <div className="project-heading-status">{status}</div>}</header>}
     {problem && !dialog && <div role="alert" className="workspace-message error">{problem}<button type="button" className="ui-btn ui-btn-sm" onClick={() => {setError(''); void refresh();}}>{text('重试', 'Retry')}</button></div>}
-    {current?.archived && <div className="workspace-message" role="status"><AlertCircle size={16}/><div><strong>{text('此版本已归档 · 只读', 'This version is archived · Read only')}</strong><p>{text('恢复版本后可继续编辑与训练。', 'Restore the version to edit or train.')}</p></div><button type="button" className="ui-btn ui-btn-sm" disabled={busy} onClick={() => void archive()}>{busy ? text('正在恢复…', 'Restoring…') : text('恢复版本', 'Restore version')}</button></div>}
-    {current?.status === 'copying' && <div className="workspace-message" role="status"><Loader2 size={16} className="animate-spin"/><div><strong>{text('正在建立独立版本', 'Creating an independent version')}</strong><p>{text('复制图片、标签与遮罩，完成后即可编辑；原版本保持不变。', 'Copying images, captions and masks. The original version is preserved.')}</p><progress max={Math.max(1,current.progress?.files_total || 0)} value={current.progress?.files_done || 0}/><span>{current.progress?.files_done || 0} / {current.progress?.files_total || '…'} {text('个文件', 'files')}</span></div></div>}
-    {current?.status === 'failed' && <div className="workspace-message error" role="alert"><AlertCircle size={16}/><div><strong>{text('版本准备失败', 'Version preparation failed')}</strong><p>{current.error}</p><p>{text('原版本数据仍然保留。修正原因后，可从原版本重新创建。', 'Original data is preserved. Resolve the issue and create again from the source version.')}</p></div></div>}
+    {!sidebarOnly && current?.archived && <div className="workspace-message" role="status"><AlertCircle size={16}/><div><strong>{text('此版本已归档 · 只读', 'This version is archived · Read only')}</strong><p>{text('恢复版本后可继续编辑与训练。', 'Restore the version to edit or train.')}</p></div><button type="button" className="ui-btn ui-btn-sm" disabled={busy} onClick={() => void archive()}>{busy ? text('正在恢复…', 'Restoring…') : text('恢复版本', 'Restore version')}</button></div>}
+    {!sidebarOnly && current?.status === 'copying' && <div className="workspace-message" role="status"><Loader2 size={16} className="animate-spin"/><div><strong>{text('正在建立独立版本', 'Creating an independent version')}</strong><p>{text('复制图片、标签与遮罩，完成后即可编辑；原版本保持不变。', 'Copying images, captions and masks. The original version is preserved.')}</p><progress max={Math.max(1,current.progress?.files_total || 0)} value={current.progress?.files_done || 0}/><span>{current.progress?.files_done || 0} / {current.progress?.files_total || '…'} {text('个文件', 'files')}</span></div></div>}
+    {!sidebarOnly && current?.status === 'failed' && <div className="workspace-message error" role="alert"><AlertCircle size={16}/><div><strong>{text('版本准备失败', 'Version preparation failed')}</strong><p>{current.error}</p><p>{text('原版本数据仍然保留。修正原因后，可从原版本重新创建。', 'Original data is preserved. Resolve the issue and create again from the source version.')}</p></div></div>}
     {dialog && <Dialog title={dialog === 'create' ? text('新建实验版本', 'New experiment version') : dialog === 'edit' ? text('版本设置', 'Version settings') : dialog === 'compare' ? text('比较版本', 'Compare versions') : text('本版本的文件位置', 'Files in this version')} onClose={() => { if (!busy) {setDialog(null);setError('');} }} closeDisabled={busy} wide={dialog === 'compare' || dialog === 'paths'}>
       {error && <div role="alert" className="workspace-message error">{error}</div>}
       {(dialog === 'create' || dialog === 'edit') && <form onSubmit={save} className="version-form"><label>{text('版本名称', 'Version name')}<input value={name} onChange={event => setName(event.target.value)} maxLength={120} required disabled={busy || dialog === 'edit' && !!current?.archived}/></label><label>{text('实验说明', 'Experiment notes')}<textarea value={note} onChange={event => setNote(event.target.value)} placeholder={text('例如：仅训练服装区域，学习率调整为 0.0002', 'For example: train clothing only, learning rate 0.0002')} disabled={busy || dialog === 'edit' && !!current?.archived}/></label>

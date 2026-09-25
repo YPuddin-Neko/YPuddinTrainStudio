@@ -1,4 +1,5 @@
 import React from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { FolderPlus, GitBranch, Archive, Search, FolderOpen, SearchX, Database, Activity, Box, ChevronLeft, ChevronRight, RefreshCw, LayoutGrid, List, ArrowUpRight } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -16,6 +17,7 @@ import { SlidingIndicator } from '../../components/motion';
 
 export default function Projects() {
   const { t, i18n } = useTranslation();
+  const queryClient = useQueryClient();
   const english = i18n.resolvedLanguage?.startsWith('en') || false;
   const text = useWorkspaceText();
   const navigate = useNavigate();
@@ -45,12 +47,15 @@ export default function Projects() {
       .catch(failure => setError(formatApiError(failure))).finally(() => setLoading(false));
   }, []);
   React.useEffect(() => { void fetchProjects(); }, [fetchProjects]);
-  const updateProject = (project: GalleryProject) => setProjects(rows => rows.some(row => row.id === project.id)
-    ? rows.map(row => row.id === project.id ? project : row) : [project, ...rows]);
+  const updateProject = (project: GalleryProject) => {
+    queryClient.setQueryData(['project',project.id],project);
+    setProjects(rows => rows.some(row => row.id === project.id)
+      ? rows.map(row => row.id === project.id ? project : row) : [project, ...rows]);
+  };
   const mutate = async (id: string, operation: () => Promise<unknown>) => {
     if (pendingRef.current) return;
     pendingRef.current = id; setPending(id); setError('');
-    try { await operation(); await fetchProjects(); }
+    try { await operation(); await Promise.all([fetchProjects(),queryClient.invalidateQueries({queryKey:['project',id]})]); }
     catch (failure) { setError(formatApiError(failure)); }
     finally { pendingRef.current = null; setPending(null); }
   };

@@ -11,7 +11,8 @@ import { EVENT_TYPES } from '../events/eventTypes';
 import { formatApiError } from '../utils/errors';
 import { useWorkspaceText } from '../utils/workspaceText';
 import SystemTelemetry from './SystemTelemetry';
-import { ProjectSidebarContext } from './projects/ProjectSidebarContext';
+import PersistentProjectSidebar from './projects/PersistentProjectSidebar';
+import { ProjectSidebarContext, type ProjectSidebarSelection } from './projects/ProjectSidebarContext';
 import '../styles/project-sidebar.css';
 import '../styles/motion.css';
 import BrandMark from './BrandMark';
@@ -51,7 +52,16 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
   const toggleSidebar=()=>setCollapsed(previous=>{const next=!previous;try{localStorage.setItem('studio.sidebar.collapsed',String(next));}catch{/* Optional browser preference. */}return next;});
   const [projectSidebarTarget, setProjectSidebarTarget] = React.useState<HTMLDivElement | null>(null);
   const closeNavigation = React.useCallback(() => setMenuOpen(false), []);
-  const projectSidebar = React.useMemo(() => ({ target: projectSidebarTarget, closeNavigation }), [projectSidebarTarget, closeNavigation]);
+  const [projectSelection,setProjectSelection] = React.useState<ProjectSidebarSelection | null>(null);
+  const projectAction = React.useRef<{owner:symbol;beforeAction?:()=>Promise<void>} | null>(null);
+  const registerProject = React.useCallback((selection:ProjectSidebarSelection,beforeAction?:()=>Promise<void>)=>{
+    const owner=Symbol('project-page');
+    projectAction.current={owner,beforeAction};
+    setProjectSelection(previous=>JSON.stringify(previous)===JSON.stringify(selection) ? previous : selection);
+    return ()=>{if(projectAction.current?.owner===owner)projectAction.current=null;};
+  },[]);
+  const beforeProjectAction = React.useCallback(async()=>{await projectAction.current?.beforeAction?.();},[]);
+  const projectSidebar = React.useMemo(() => ({ target: projectSidebarTarget, closeNavigation, register:registerProject }), [projectSidebarTarget, closeNavigation,registerProject]);
   const contentRef = React.useRef<HTMLDivElement>(null);
   // A new page or project step fades in; query changes inside a page (tabs, filters) do not.
   const pageFrame = useEnterAnimation<HTMLDivElement>(`${location.pathname}|${new URLSearchParams(location.search).get('step') || ''}`, { distance: 0, duration: 160 });
@@ -175,7 +185,7 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
               label={item.label}
               active={location.pathname === item.to || (item.to !== '/' && location.pathname.startsWith(item.to))}
             />
-            {item.to === '/projects' && <div ref={setProjectSidebarTarget} className="project-sidebar-slot" data-testid="project-sidebar-slot"/>}
+            {item.to === '/projects' && <div ref={setProjectSidebarTarget} className="project-sidebar-slot" data-testid="project-sidebar-slot">{projectSelection && <PersistentProjectSidebar key={projectSelection.project.id} selection={projectSelection} beforeAction={beforeProjectAction}/>}</div>}
             </React.Fragment>
           ))}
         </nav>

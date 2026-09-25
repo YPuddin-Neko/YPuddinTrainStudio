@@ -6,7 +6,7 @@ import '../styles/project-workspace.css';
 
 export type WorkspaceStep = 'overview' | 'data' | 'train' | 'results';
 
-export function ProjectWorkflow({ projectId, versionId, active, sidebar = false }: { projectId: string; versionId?: string | null; active: WorkspaceStep; sidebar?: boolean }) {
+export function ProjectWorkflow({ projectId, versionId, active, sidebar = false }: { projectId: string; versionId?: string | null; active?: WorkspaceStep; sidebar?: boolean }) {
   const text = useWorkspaceText();
   const steps = [
     { key: 'data', label: text('训练数据', 'Training data'), detail: text('上传图片与标签', 'Images and captions'), icon: Database, url: projectUrl(projectId, versionId, 'data') },
