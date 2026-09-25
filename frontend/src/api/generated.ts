@@ -3582,6 +3582,10 @@ export interface components {
             util_pct?: number | null;
             /** Mem Used Mb */
             mem_used_mb?: number | null;
+            /** Mem Free Mb */
+            mem_free_mb?: number | null;
+            /** Mem Reserved Mb */
+            mem_reserved_mb?: number | null;
             /** Mem Total Mb */
             mem_total_mb?: number | null;
             /** Temp C */
@@ -5568,6 +5572,10 @@ export interface components {
             device: string;
             /** Name */
             name: string;
+            /** Mem Used Mb */
+            mem_used_mb?: number | null;
+            /** Mem Reserved Mb */
+            mem_reserved_mb?: number | null;
             /** Mem Free Mb */
             mem_free_mb?: number | null;
             /** Mem Total Mb */

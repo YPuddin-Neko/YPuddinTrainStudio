@@ -8,6 +8,7 @@ import { useWorkspaceText } from '../utils/workspaceText';
 import StudioSelect from './StudioSelect';
 import '../styles/gpu-device-picker.css';
 import Switch from './Switch';
+import { gpuMemorySummary, gpuMemoryDetails } from '../utils/gpuMemory';
 
 interface GpuDevicePickerProps {
   value: string[];
@@ -99,7 +100,7 @@ function DevicePicker({ value, onChange, count = 1, disabled = false, compact = 
   const statusLabel = (device: QueueDevice) => device.job_id
     ? text(`占用中 · ${device.job_name || device.job_id}`, `Busy · ${device.job_name || device.job_id}`)
     : device.status === 'unavailable' ? text('不可用', 'Unavailable') : text('空闲', 'Free');
-  const describe = (device: QueueDevice) => `${gpuDeviceLabel(device.device)} · ${device.name} · ${statusLabel(device)}`;
+  const describe = (device: QueueDevice) => `${gpuDeviceLabel(device.device)} · ${device.name} · ${statusLabel(device)}${gpuMemorySummary(device,text) ? ` · ${gpuMemorySummary(device,text)}` : ''}`;
   const body = <div className="gpu-picker-body">
     <div className="gpu-picker-heading"><strong>{text('运行显卡', 'Run on GPU')}</strong><button type="button" className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon" disabled={disabled || loading} onClick={refresh} aria-label={text('刷新显卡状态', 'Refresh GPU status')}><RefreshCw size={13} className={loading ? 'animate-spin' : ''}/></button></div>
     {training ? <>
@@ -108,7 +109,7 @@ function DevicePicker({ value, onChange, count = 1, disabled = false, compact = 
       <div className="gpu-picker-cards" role="group" aria-label={text('选择训练显卡', 'Choose training GPUs')}>{devices.map(device => <label key={device.device}>
         <input type={count === 1 ? 'radio' : 'checkbox'} name={`${menuId}-device`} disabled={disabled || !value.includes(device.device) && (device.status === 'unavailable' || count > 1 && value.length >= count)} checked={value.includes(device.device)}
           onChange={event => onChange(event.target.checked ? count === 1 ? [device.device] : [...value, device.device] : value.filter(selected => selected !== device.device))}/>
-        <span><strong>{gpuDeviceLabel(device.device)} · {device.name}</strong><small>{statusLabel(device)}{device.mem_free_mb != null && ` · ${text('可用', 'Free')} ${(device.mem_free_mb / 1024).toFixed(1)} GiB`}</small></span>
+        <span><strong>{gpuDeviceLabel(device.device)} · {device.name}</strong><small>{statusLabel(device)}</small>{gpuMemorySummary(device,text) && <small title={gpuMemoryDetails(device,text)}>{gpuMemorySummary(device,text)}</small>}</span>
       </label>)}{value.filter(selected => !devices.some(device => device.device === selected)).map(selected => <label key={selected}>
         <input type="checkbox" checked disabled={disabled} onChange={() => onChange(value.filter(id => id !== selected))}/><span>{gpuDeviceLabel(selected)} · {text('已不可用', 'Unavailable')}</span>
       </label>)}</div>
@@ -118,7 +119,7 @@ function DevicePicker({ value, onChange, count = 1, disabled = false, compact = 
       ...value.filter(id => !devices.some(device => device.device === id)).map(id => ({ value: id, label: `${gpuDeviceLabel(id)} · ${text('暂不可用', 'Unavailable')}`, disabled: true })),
     ]}/> : <>
       <Switch className="gpu-picker-auto" checked={value.length === 0} disabled={disabled} onCheckedChange={checked => onChange(checked ? [] : devices.filter(device => device.status !== 'unavailable').slice(0, count).map(device => device.device))}>{text(`自动选择 ${count} 张空闲显卡`, `Automatically choose ${count} free GPUs`)}</Switch>
-      <div className="gpu-picker-cards" role="group" aria-label={text('选择训练显卡', 'Choose training GPUs')}>{devices.map(device => <label key={device.device}><input type="checkbox" disabled={disabled || device.status === 'unavailable' || !value.includes(device.device) && value.length >= count} checked={value.includes(device.device)} onChange={event => onChange(event.target.checked ? [...value, device.device] : value.filter(id => id !== device.device))}/><span><strong>{gpuDeviceLabel(device.device)} · {device.name}</strong><small>{statusLabel(device)}{device.mem_free_mb != null && ` · ${text('可用', 'Free')} ${(device.mem_free_mb / 1024).toFixed(1)} GiB`}</small></span></label>)}</div>
+      <div className="gpu-picker-cards" role="group" aria-label={text('选择训练显卡', 'Choose training GPUs')}>{devices.map(device => <label key={device.device}><input type="checkbox" disabled={disabled || device.status === 'unavailable' || !value.includes(device.device) && value.length >= count} checked={value.includes(device.device)} onChange={event => onChange(event.target.checked ? [...value, device.device] : value.filter(id => id !== device.device))}/><span><strong>{gpuDeviceLabel(device.device)} · {device.name}</strong><small>{statusLabel(device)}</small>{gpuMemorySummary(device,text) && <small title={gpuMemoryDetails(device,text)}>{gpuMemorySummary(device,text)}</small>}</span></label>)}</div>
     </>}
     {loading && !snapshot && <p>{text('读取显卡状态…', 'Reading GPU status…')}</p>}
     {error && <p role="status">{text('显卡状态暂时无法读取；自动选择仍由队列处理。', 'GPU status is unavailable; automatic selection is handled by the queue.')} <span className="gpu-picker-error-detail">{error}</span></p>}

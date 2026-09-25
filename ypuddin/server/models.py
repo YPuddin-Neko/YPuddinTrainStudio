@@ -48,6 +48,8 @@ class GpuStats(_Out):
     name: str
     util_pct: float | None = None
     mem_used_mb: int | None = None
+    mem_free_mb: int | None = None
+    mem_reserved_mb: int | None = None
     mem_total_mb: int | None = None
     temp_c: float | None = None
     power_w: float | None = None
@@ -764,6 +766,8 @@ class QueueSettings(_Out):
 class QueueDevice(_Out):
     device: str
     name: str
+    mem_used_mb: float | None = None
+    mem_reserved_mb: float | None = None
     mem_free_mb: float | None = None
     mem_total_mb: float | None = None
     job_id: str | None = None

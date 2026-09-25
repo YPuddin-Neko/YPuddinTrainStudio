@@ -1,3 +1,4 @@
+import { formatGpuMemory } from '../utils/gpuMemory';
 import TorchEnvironmentPanel from './TorchEnvironmentPanel';
 import InstallationOperation, { InstallationLog, InstallationProgress } from './InstallationOperation';
 import DtkWheelPicker, { type DtkWheel } from './DtkWheelPicker';
@@ -221,7 +222,7 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     ...(!showAttentionExtensions ? [] : [[hipBackend ? copy('HIP 运行时', 'HIP runtime') : copy('CUDA 版本', 'CUDA version'), (hipBackend ? status.runtime.hip_runtime : status.runtime.cuda_runtime) || copy('未检测到', 'Not detected')], [hipBackend ? copy('海光显卡计算', 'Hygon GPU compute') : copy('NVIDIA 显卡计算', 'NVIDIA GPU compute'), status.runtime.cuda_available ? copy('可用', 'Available') : copy('未启用', 'Not enabled')]]),
     [copy('计算后端', 'Compute backend'), computeBackend],
   ];
-  const detectedDevices = status && status.runtime.gpus.length > 0 && <ul className="space-y-1" aria-label={copy('已检测设备', 'Detected devices')}>{status.runtime.gpus.map((gpu, index) => <li key={`${gpu.device || index}:${gpu.name}`}><strong>{gpu.name}</strong><span className="settings-note"> · {gpu.device || `GPU ${index + 1}`}{gpu.mem_total_mb != null ? ` · ${(gpu.mem_total_mb / 1024).toFixed(1)} GiB ${gpu.memory_scope === 'unified_system' ? copy('统一内存', 'unified memory') : copy('设备内存', 'device memory')}` : ''}{gpu.cuda_available === false ? textUnavailable() : ''}</span></li>)}</ul>;
+  const detectedDevices = status && status.runtime.gpus.length > 0 && <ul className="space-y-1" aria-label={copy('已检测设备', 'Detected devices')}>{status.runtime.gpus.map((gpu, index) => <li key={`${gpu.device || index}:${gpu.name}`}><strong>{gpu.name}</strong><span className="settings-note"> · {gpu.device || `GPU ${index + 1}`}{gpu.mem_total_mb != null ? ` · ${formatGpuMemory(gpu.mem_total_mb)} ${gpu.memory_scope === 'unified_system' ? copy('统一内存', 'unified memory') : copy('设备内存', 'device memory')}` : ''}{gpu.cuda_available === false ? textUnavailable() : ''}</span></li>)}</ul>;
 
   return <div data-testid="environment-manager"><SettingsSections sections={[
     { id: 'environment-runtime', label: copy('当前环境', 'Current runtime') },

@@ -10813,6 +10813,28 @@
             ],
             "title": "Mem Used Mb"
           },
+          "mem_free_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mem Free Mb"
+          },
+          "mem_reserved_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mem Reserved Mb"
+          },
           "mem_total_mb": {
             "anyOf": [
               {
@@ -16124,6 +16146,28 @@
           "name": {
             "type": "string",
             "title": "Name"
+          },
+          "mem_used_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mem Used Mb"
+          },
+          "mem_reserved_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mem Reserved Mb"
           },
           "mem_free_mb": {
             "anyOf": [

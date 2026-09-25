@@ -3,12 +3,14 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import type { GpuStats } from '../api/types';
 import { formatGpuPower, formatGpuTemperature, gpuPowerDescription, gpuTemperatureDescription } from '../utils/gpuTelemetry';
-import { formatBytesMB } from '../utils/format';
+import { gpuMemoryUsage, gpuMemoryDetails, formatGpuMemory } from '../utils/gpuMemory';
+import { useWorkspaceText } from '../utils/workspaceText';
 
 const known = (value: number | null | undefined): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
 export function GpuCard({ gpu }: { gpu: GpuStats }) {
   const { t } = useTranslation();
+  const text = useWorkspaceText();
   const apple = gpu.kind === 'mps';
   const missingReadings = [!known(gpu.util_pct) && t('hardware.gpuUtilizationMissing'), !known(gpu.power_w) && t('hardware.gpuPowerMissing'), !known(gpu.temp_c) && t('hardware.gpuTemperatureMissing')].filter(Boolean).join(' ');
   const showNote = gpu.telemetry_note && !(apple && gpu.telemetry_note === 'mps_power_unavailable');
@@ -29,7 +31,8 @@ export function GpuCard({ gpu }: { gpu: GpuStats }) {
         <div><div className="text-xs text-slate-500">{t(apple ? 'hardware.systemGpuUtilization' : 'hardware.utilization')}</div><div className="mt-1 text-2xl font-semibold tabular-nums">{known(gpu.util_pct) ? `${Math.round(gpu.util_pct)}%` : '—'}</div></div>
         <div title={gpuTemperatureDescription(gpu,t)}><div className="text-xs text-slate-500">{t(apple ? 'hardware.meanGpuTemperature' : 'hardware.temperature')}</div><div className="mt-1 text-2xl font-semibold tabular-nums">{known(gpu.temp_c) ? `${formatGpuTemperature(gpu)}${apple ? ' °C' : '°'}` : '—'}</div></div>
       </div>
-      <div className="mt-4 flex justify-between gap-2 text-xs text-slate-500" title={apple ? t('hardware.unifiedMemoryScope') : undefined}><span>{t(apple ? 'dashboard.unifiedMemory' : 'dashboard.vram')}</span><span className="font-mono">{formatBytesMB(gpu.mem_used_mb)} / {formatBytesMB(gpu.mem_total_mb)}</span></div>
+      <div className="mt-4 flex justify-between gap-2 text-xs text-slate-500" title={apple ? t('hardware.unifiedMemoryScope') : gpuMemoryDetails(gpu,text)}><span>{t(apple ? 'dashboard.unifiedMemory' : 'dashboard.vram')}</span><span className="font-mono">{gpuMemoryUsage(gpu)}</span></div>
+      {known(gpu.mem_free_mb) && <div className="mt-1 text-xs text-slate-500">{text(apple ? '可用统一内存' : '可用显存', apple ? 'Free unified memory' : 'Free VRAM')} {formatGpuMemory(gpu.mem_free_mb)}</div>}
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-blue-500 transition-[width]" style={{ width: `${usedPercent}%` }} /></div>
       {apple && <p className="mt-3 text-xs leading-relaxed text-slate-500">{t('hardware.systemGpuScope')}{gpu.telemetry_source === 'ioreg' && <> {t('hardware.appleGpuDriverSource')}</>}</p>}
       {apple && missingReadings && <p className="mt-1 text-xs leading-relaxed text-slate-500">{missingReadings}</p>}

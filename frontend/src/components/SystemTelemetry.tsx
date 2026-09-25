@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import type { GpuStats, SystemStats } from '../api/types';
 import { formatGpuPower, formatGpuTemperature, gpuPowerDescription, gpuTemperatureDescription } from '../utils/gpuTelemetry';
 import { useWorkspaceText } from '../utils/workspaceText';
+import { gpuMemoryUsage, gpuMemoryAvailability } from '../utils/gpuMemory';
 
 // Official Lucide GPU geometry, backported for the installed 0.359 package.
 // https://github.com/lucide-icons/lucide/blob/main/icons/gpu.svg
@@ -26,7 +27,6 @@ const capacity = (used: number | null | undefined, total: number | null | undefi
   const unit = known(total) && total / divisor >= 1024 ? 'TiB' : 'GiB';
   const scale = divisor * (unit === 'TiB' ? 1024 : 1);
   const format = (value: number | null | undefined) => known(value) ? (value / scale).toFixed(1) : '—';
-  if (divisor === 1024 && known(used) && used < 1024) return `${Math.floor(used)} MiB / ${format(total)} ${unit}`;
   return `${format(used)} / ${format(total)} ${unit}`;
 };
 
@@ -52,6 +52,8 @@ export default function SystemTelemetry({ stats }: { stats: SystemStats | null }
     temp_c: average(gpus.map(item => item.temp_c)),
     mem_used_mb: total(gpus.map(item => item.mem_used_mb)),
     mem_total_mb: total(gpus.map(item => item.mem_total_mb)),
+    mem_free_mb: total(gpus.map(item => item.mem_free_mb)),
+    mem_reserved_mb: total(gpus.map(item => item.mem_reserved_mb)),
   } : selected || gpus[0];
   const unified = gpu?.kind === 'mps';
   const deviceKind: Record<string, string> = { mps: 'MPS', cuda: 'CUDA', dtk: 'DTK', rocm: 'ROCm' };
@@ -71,10 +73,11 @@ export default function SystemTelemetry({ stats }: { stats: SystemStats | null }
   const powerDescription = aggregate ? averageDescription(gpus.map(item => item.power_w), text('功率', 'power'), text('平均每张显卡的功率。', 'Average power per GPU.')) : gpuPowerDescription(gpu, t);
   const temperatureDescription = aggregate ? averageDescription(gpus.map(item => item.temp_c), text('温度', 'temperature'), text('每张显卡当前温度的平均值。', 'Average current temperature of the GPUs.')) : gpuTemperatureDescription(gpu, t);
   const gpuDescription = aggregate ? undefined : [gpu?.name || text('未检测到显卡', 'No GPU detected'), gpuNote, utilizationDescription, powerDescription, temperatureDescription, unified ? t('hardware.unifiedMemoryScope') : ''].filter(Boolean).join(' · ');
-  const gpuMemory = capacity(gpu?.mem_used_mb, gpu?.mem_total_mb, 1024);
+  const gpuMemory = gpuMemoryUsage(gpu);
   const memoryRatios = gpus.map(item => ratio(item.mem_used_mb, item.mem_total_mb));
   const memoryUsage = aggregate ? average(memoryRatios) : ratio(gpu?.mem_used_mb, gpu?.mem_total_mb);
-  const memoryDescription = aggregate ? `${averageDescription(memoryRatios, text('显存占用率', 'VRAM utilization'), text('先计算每张显卡已用显存的百分比，再取平均值。', 'Average of each GPU’s used-memory percentage.'))}\n${text('各卡已用显存 / 总容量合计', 'Combined memory used / total capacity')}：${gpuMemory}` : `${memoryLabel} · ${gpuMemory}`;
+  const memoryAvailability = gpuMemoryAvailability(gpu,text);
+  const memoryDescription = (aggregate ? `${averageDescription(memoryRatios, text('显存占用率', 'VRAM utilization'), text('先计算每张显卡已用显存的百分比，再取平均值。', 'Average of each GPU’s used-memory percentage.'))}\n${text('各卡已用显存 / 总容量合计', 'Combined memory used / total capacity')}：${gpuMemory}` : `${memoryLabel} · ${gpuMemory}`) + (memoryAvailability ? `\n${memoryAvailability}` : '');
   const deviceDescription = `${deviceKind[gpu?.kind ?? ''] ?? ''}${aggregate ? ` · ${text(`${gpus.length} 卡`, `${gpus.length} GPUs`)}` : ''}`;
   const deviceHelp = aggregate ? text(`当前显示 ${gpus.length} 张显卡的平均状态。\n点击可切换到单张显卡。`, `Showing averages across ${gpus.length} GPUs.\nClick to view an individual GPU.`) : undefined;
 
