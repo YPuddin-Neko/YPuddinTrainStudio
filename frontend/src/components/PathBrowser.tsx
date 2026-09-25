@@ -89,7 +89,7 @@ export const PathPickerModal: React.FC<{
         onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center gap-3 border-b pb-2 dark:border-slate-700">
           <h3 id={titleId} className="font-semibold text-lg">{t('pathBrowser.title')}</h3>
-          <button type="button" onClick={onClose} aria-label={t('common.close')} className="p-1 text-[var(--studio-dim)] hover:text-[var(--studio-text)]"><X className="h-5 w-5" /></button>
+          <button type="button" onClick={onClose} aria-label={t('common.close')} className="ui-btn ui-btn-quiet ui-btn-icon"><X className="h-5 w-5" /></button>
         </div>
         <div className="space-y-2">
           <label htmlFor={`${titleId}-address`} className="text-xs text-[var(--studio-dim)]">{t('pathBrowser.address')}</label>
@@ -97,12 +97,12 @@ export const PathPickerModal: React.FC<{
             <input ref={addressRef} id={`${titleId}-address`} value={address} onChange={(e) => { request.current?.abort(); setAddress(e.target.value); setData(null); setLoading(false); setError(''); }}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (address.trim()) void loadDirectory(address); } }}
               className="min-w-0 flex-1 rounded border border-slate-300 px-3 py-2 text-sm font-mono dark:bg-slate-900 dark:border-slate-600" />
-            <button type="button" disabled={!address.trim()} onClick={() => void loadDirectory(address)} className="shrink-0 rounded bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-50">{t('pathBrowser.openDirectory')}</button>
+            <button type="button" disabled={!address.trim()} onClick={() => void loadDirectory(address)} className="ui-btn ui-btn-primary">{t('pathBrowser.openDirectory')}</button>
           </div>
           <p className="text-xs text-[var(--studio-dim)]">{t('pathBrowser.serverHint')}</p>
         </div>
         {loading && <div role="status" className="flex items-center gap-2 py-5 text-sm text-[var(--studio-dim)]"><Loader2 className="h-4 w-4 animate-spin" />{t('pathBrowser.loading')}</div>}
-        {error && <div role="alert" className="space-y-2 rounded bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"><p className="whitespace-pre-line break-words">{error}</p><button type="button" onClick={() => void loadDirectory(address)} className="underline">{t('common.retry')}</button></div>}
+        {error && <div role="alert" className="space-y-2 rounded bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"><p className="whitespace-pre-line break-words">{error}</p><button type="button" onClick={() => void loadDirectory(address)} className="ui-link">{t('common.retry')}</button></div>}
         {!loading && !error && !canSelect && <p className="text-sm text-[var(--studio-dim)]">{t('pathBrowser.openToBrowse')}</p>}
         {canSelect && data && <div className="max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700" aria-label={t('pathBrowser.entries')}>
           {data.parent && <button type="button" onClick={() => void loadDirectory(data.parent!)} className="flex w-full items-center gap-2 p-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-700 font-medium text-[var(--studio-accent)]"><ArrowUp className="h-4 w-4" />{t('pathBrowser.parentDir')}</button>}
@@ -117,8 +117,8 @@ export const PathPickerModal: React.FC<{
           {data.entries.length === 0 && <p className="p-4 text-center text-sm text-[var(--studio-dim)]">{t('pathBrowser.empty')}</p>}
         </div>}
         <div className="flex justify-end gap-2 pt-3 border-t dark:border-slate-700">
-          <button type="button" onClick={onClose} className="px-3 py-2 text-sm rounded bg-slate-200 dark:bg-slate-700">{t('common.cancel')}</button>
-          <button type="button" disabled={!canSelect} onClick={() => { if (canSelect && data) { onSelect(data.path); onClose(); } }} className="px-3 py-2 text-sm rounded bg-blue-600 text-white disabled:opacity-50">{t('pathBrowser.selectCurrent')}</button>
+          <button type="button" onClick={onClose} className="ui-btn">{t('common.cancel')}</button>
+          <button type="button" disabled={!canSelect} onClick={() => { if (canSelect && data) { onSelect(data.path); onClose(); } }} className="ui-btn ui-btn-primary">{t('pathBrowser.selectCurrent')}</button>
         </div>
       </div>
     </div>
@@ -138,7 +138,7 @@ export const PathInput: React.FC<{
     <div className="path-input-control flex min-w-0 gap-2">
       <input type="text" aria-label={ariaLabel || t('pathBrowser.pathLabel')} value={value || ''} placeholder={placeholder} onChange={(e) => onChange(e.target.value)}
         className="min-w-0 flex-1 px-3 py-2 border rounded-md text-sm dark:bg-slate-900 dark:border-slate-600 font-mono" />
-      <button type="button" onClick={() => setModalOpen(true)} className="path-input-browse studio-secondary shrink-0">
+      <button type="button" onClick={() => setModalOpen(true)} className="ui-btn path-input-browse">
         <FolderOpen className="w-4 h-4" /><span>{t('common.browse')}</span>
       </button>
       <PathPickerModal isOpen={modalOpen} initialPath={value || defaultPath || '/'} onSelect={onChange} onClose={() => setModalOpen(false)} />

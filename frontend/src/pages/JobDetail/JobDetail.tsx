@@ -32,6 +32,8 @@ import '../Queue/queue.css';
 import './job-detail.css';
 import './job-metrics.css';
 import Switch from '../../components/Switch';
+import { SlidingIndicator } from '../../components/motion';
+import { useEnterAnimation } from '../../utils/motion';
 
 type VersionedJob = Job & { version_id?: string | null; latest: Job['latest'] & {loss_mean?:number|null; loss_count?:number|null; loss_mean_scope?:string|null} };
 
@@ -100,6 +102,7 @@ export default function JobDetail() {
   const requestedTab = params.get('tab') || '';
   const allowedTabs = job?.type === 'xyz' ? ['logs', 'config'] : ['metrics', 'samples', 'checkpoints', 'logs', 'config'];
   const activeTab = allowedTabs.includes(requestedTab) ? requestedTab : job?.type === 'xyz' ? 'logs' : 'metrics';
+  const tabPanel = useEnterAnimation<HTMLDivElement>(activeTab, { skipFirst: true });
   const setActiveTab = (tab: string) => { const next = new URLSearchParams(params); next.set('tab', tab); setParams(next, { state: location.state }); };
   const [xAxisMode, setXAxisMode] = React.useState<'step' | 'epoch'>('step');
   const [emaAlpha, setEmaAlpha] = React.useState<number>(0.9);
@@ -403,8 +406,8 @@ export default function JobDetail() {
 
   return (
     <div className="job-monitor task-workspace" data-view={activeTab} data-testid="job-detail-page">
-      <div className="job-monitor-bar"><div className="job-monitor-links"><Link to={queueReturnTo}>← {text('全局训练队列', 'Training queue')}</Link>
-      {job?.project_id && <Link to={projectUrl(job.project_id, job.version_id, 'results')} title={job.project_id} className="inline-flex flex-wrap gap-1 text-sm hover:underline">← {job.project_name || text('所属项目', 'Project')} · {text('训练结果', 'Training results')}{job.version_id && <span className="break-words text-xs" title={job.version_id}> · {versionName ? `${text('版本', 'Version')} ${versionName}` : text('所属版本', 'Version')}</span>}</Link>}
+      <div className="job-monitor-bar"><div className="job-monitor-links"><Link className="ui-link" to={queueReturnTo}>← {text('全局训练队列', 'Training queue')}</Link>
+      {job?.project_id && <Link to={projectUrl(job.project_id, job.version_id, 'results')} title={job.project_id} className="ui-link">← {job.project_name || text('所属项目', 'Project')} · {text('训练结果', 'Training results')}{job.version_id && <span className="break-words text-xs" title={job.version_id}> · {versionName ? `${text('版本', 'Version')} ${versionName}` : text('所属版本', 'Version')}</span>}</Link>}
       </div><div className="job-monitor-identity"><div><h1>{job?.name || text('读取任务…', 'Loading job…')}</h1><small>{id} · {job?.type === 'xyz' ? text('模型测试', 'Model testing') : job?.type === 'cache' ? text('缓存任务', 'Cache job') : text('训练任务', 'Training job')}</small></div><span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${statusBadgeClass}`}>{statusText}</span>{job && <JobActions key={job.id} job={job} onUpdated={updated => { if (updated.id === job.id) setJob(updated); else navigate(`/jobs/${updated.id}`); }}/>}</div></div>
       <dl className="job-run-metadata" aria-label={text('运行信息','Run information')}>
         <div><dt>{text('开始时间','Started')}</dt><dd>{formatTime(job?.started_at)}</dd></div>
@@ -479,31 +482,29 @@ export default function JobDetail() {
       </div>}
 
       {/* 2. Tabs 切换导航 */}
-      <div className="border-b border-slate-200 dark:border-slate-700">
-        <nav className="job-monitor-tabs task-tabs" role="tablist" aria-label={text('任务详情分区', 'Job details tabs')}>
+      <nav className="job-monitor-tabs ui-tabs" role="tablist" aria-label={text('任务详情分区', 'Job details tabs')}>
           {tabs.map((tab, index) => (
             <button
               key={tab.key}
               role="tab" id={`job-tab-${tab.key}`} aria-controls={`job-panel-${tab.key}`} tabIndex={activeTab === tab.key ? 0 : -1} aria-selected={activeTab === tab.key}
               onKeyDown={event => { const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1; if (next >= 0) { event.preventDefault(); setActiveTab(tabs[next].key); document.getElementById(`job-tab-${tabs[next].key}`)?.focus(); } }}
               onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center space-x-2 py-3 border-b-2 ${activeTab === tab.key ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
             >
               <tab.icon className="w-4 h-4" />
               <span>{tab.label}</span>
             </button>
           ))}
+          <SlidingIndicator className="ui-tabs-indicator"/>
         </nav>
-      </div>
 
       {/* 3. 详细内容区域 */}
-      <div role="tabpanel" id={`job-panel-${activeTab}`} aria-labelledby={`job-tab-${activeTab}`}>
+      <div ref={tabPanel} role="tabpanel" id={`job-panel-${activeTab}`} aria-labelledby={`job-tab-${activeTab}`}>
       {activeTab === 'metrics' && (
         <div className="job-metrics">
           <div className="job-metrics-toolbar">
-            <div className="job-metrics-axis" aria-label={text('横轴单位','Horizontal axis')}>
-              <button aria-pressed={xAxisMode === 'step'} onClick={() => setXAxisMode('step')}>{stepLabel}</button>
-              <button aria-pressed={xAxisMode === 'epoch'} onClick={() => setXAxisMode('epoch')} disabled={!stepsPerEpoch} title={!stepsPerEpoch ? t('job.epochUnavailable') : undefined}>{epochLabel}</button>
+            <div className="job-metrics-axis ui-segmented ui-segmented-sm" role="group" aria-label={text('横轴单位','Horizontal axis')}>
+              <button type="button" aria-pressed={xAxisMode === 'step'} onClick={() => setXAxisMode('step')}>{stepLabel}</button>
+              <button type="button" aria-pressed={xAxisMode === 'epoch'} onClick={() => setXAxisMode('epoch')} disabled={!stepsPerEpoch} title={!stepsPerEpoch ? t('job.epochUnavailable') : undefined}>{epochLabel}</button><SlidingIndicator className="ui-segmented-thumb"/>
             </div>
             <label className="job-metrics-smoothing">{text('显示 EMA 系数','Display EMA coefficient')}<input aria-label={text('显示 EMA 系数','Display EMA coefficient')} type="range" min="0" max="0.99" step="0.01" value={emaAlpha} onChange={event => setEmaAlpha(Number(event.target.value))}/><output>{emaAlpha.toFixed(2)}</output></label>
           </div>
@@ -514,7 +515,7 @@ export default function JobDetail() {
               <EChart option={lossChartOption} style={{ height: 320 }}/>
             </section>
             <section className="job-metrics-diagnostics">
-              <button className="job-metrics-diagnostics-toggle" aria-expanded={showDiagnostics} aria-controls="job-metrics-diagnostic-charts" onClick={() => setShowDiagnostics(value => !value)}>{text('学习率、梯度与性能诊断','Learning rate, gradients and performance')}<ChevronDown size={15}/></button>
+              <button type="button" className="job-metrics-diagnostics-toggle" aria-expanded={showDiagnostics} aria-controls="job-metrics-diagnostic-charts" onClick={() => setShowDiagnostics(value => !value)}>{text('学习率、梯度与性能诊断','Learning rate, gradients and performance')}<ChevronDown size={15}/></button>
               {showDiagnostics && <div id="job-metrics-diagnostic-charts">
                 <section className="job-metrics-chart" aria-label={labels.lr}><h2>{labels.lr}</h2><p>{text('每条线代表一个参数组；LoKr 的 w1 / w2 可设置不同学习率。','Each line represents a parameter group; LoKr w1 / w2 can use different learning rates.')}</p><EChart option={learningRateChartOption} style={{height:300}}/></section>
                 <section className="job-metrics-chart" aria-label={labels.gradient}><h2>{labels.gradient}</h2><p>{text('每步梯度的大小，用于观察更新是否稳定。','Gradient magnitude per step, to inspect update stability.')}</p><EChart option={gradientChartOption} style={{height:280}}/></section>
@@ -527,7 +528,7 @@ export default function JobDetail() {
       )}
 
       {activeTab === 'samples' && (
-        <section><div className="job-sample-controls"><StudioSelect aria-label={text('采样步数', 'Sample step')} value={sampleStep} options={[{ value: '', label: text('全部步数', 'All steps') }, ...[...new Set(samples.map(sample => sample.step))].sort((a,b) => b-a).map(step => ({ value: String(step), label: `${text('步数', 'Step')} ${step}` }))]} onValueChange={value => { setSampleStep(value); setSamplePage(1); }}/><span>{text(`共 ${filteredSamples.length} 张 · 每页 24 张`, `${filteredSamples.length} samples · 24 per page`)}</span>{samplePages > 1 && <div className="task-actions"><button className="task-button" disabled={samplePage <= 1} onClick={() => setSamplePage(page => page - 1)}>{text('上一页', 'Previous')}</button><span>{samplePage} / {samplePages}</span><button className="task-button" disabled={samplePage >= samplePages} onClick={() => setSamplePage(page => page + 1)}>{text('下一页', 'Next')}</button></div>}</div><div className="job-sample-gallery" data-testid="samples-gallery">
+        <section><div className="job-sample-controls"><StudioSelect aria-label={text('采样步数', 'Sample step')} value={sampleStep} options={[{ value: '', label: text('全部步数', 'All steps') }, ...[...new Set(samples.map(sample => sample.step))].sort((a,b) => b-a).map(step => ({ value: String(step), label: `${text('步数', 'Step')} ${step}` }))]} onValueChange={value => { setSampleStep(value); setSamplePage(1); }}/><span>{text(`共 ${filteredSamples.length} 张 · 每页 24 张`, `${filteredSamples.length} samples · 24 per page`)}</span>{samplePages > 1 && <div className="task-actions"><button type="button" className="ui-btn" disabled={samplePage <= 1} onClick={() => setSamplePage(page => page - 1)}>{text('上一页', 'Previous')}</button><span>{samplePage} / {samplePages}</span><button type="button" className="ui-btn" disabled={samplePage >= samplePages} onClick={() => setSamplePage(page => page + 1)}>{text('下一页', 'Next')}</button></div>}</div><div className="job-sample-gallery" data-testid="samples-gallery">
           {samples.length === 0 && (
             <EmptyState
               icon={ImageIcon}
@@ -553,16 +554,16 @@ export default function JobDetail() {
       {activeTab === 'checkpoints' && <section className="job-checkpoints" aria-label={text('训练权重与恢复状态','Weights and training states')}>
         {checkpoints.length === 0 ? <EmptyState icon={Layers} title={t('job.noCheckpoints')}/> : checkpoints.map((cp,index) => <article key={`${cp.path}-${index}`} className="job-checkpoint">
           <div className="job-checkpoint-file"><strong>{cp.path.replace(/\\/g,'/').split('/').pop()}</strong><div><span>{checkpointKindLabel(cp.kind)}{cp.ema ? ' · EMA' : ''}</span><span>{text('步','Step')} {cp.step}</span>{stepsPerEpoch && <span>{text('轮','Epoch')} {(cp.step/stepsPerEpoch).toFixed(2).replace(/\.00$/,'')}</span>}<span>{formatBytes(cp.size)}</span></div></div>
-          <div className="job-checkpoint-actions">{cp.kind === 'full' ? <button disabled={resuming || !configSnapshot} onClick={() => resumeCheckpoint(cp)} className="task-button">{t('job.continueTraining')}</button> : cp.artifact_id ? <a href={apiUrl(`/artifacts/${cp.artifact_id}/download`)} className="task-button"><Download size={14}/>{t('job.download')}</a> : <span>{t('job.downloadUnavailable')}</span>}</div>
+          <div className="job-checkpoint-actions">{cp.kind === 'full' ? <button type="button" disabled={resuming || !configSnapshot} onClick={() => resumeCheckpoint(cp)} className="ui-btn ui-btn-sm">{t('job.continueTraining')}</button> : cp.artifact_id ? <a href={apiUrl(`/artifacts/${cp.artifact_id}/download`)} className="ui-btn ui-btn-sm"><Download size={14}/>{t('job.download')}</a> : <span>{t('job.downloadUnavailable')}</span>}</div>
           <details className="job-checkpoint-details"><summary>{text('文件详情','File details')}</summary><dl><div><dt>{text('保存时间','Saved')}</dt><dd>{formatTime(cp.created_at)}</dd></div><div><dt>{text('本机位置','Local location')}</dt><dd><code>{cp.path}</code></dd></div></dl></details>
         </article>)}
       </section>}
 
       {activeTab === 'logs' && (
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3">
-          <div className="job-log-toolbar"><StudioSelect aria-label={text('日志模式', 'Log mode')} value={logMode} options={[{ value: 'live', label: text('实时末尾 · 500 行', 'Live tail · 500 lines') }, { value: 'history', label: text('完整历史 · 分页读取', 'Full history · paginated') }]} onValueChange={value => { setLogMode(value as 'live' | 'history'); setLogOffsets([0]); setLogs([]); }}/><StudioSelect aria-label={text('日志级别', 'Log level')} value={logFilter} options={LOG_LEVELS.map(value => ({ value, label: logLevelLabels[value] }))} onValueChange={setLogFilter}/><input aria-label={text('搜索当前页日志', 'Search this log page')} value={logQuery} onChange={event => setLogQuery(event.target.value)} placeholder={text('搜索当前页日志', 'Search this log page')}/>{logMode === 'history' || logError ? <button className="task-button" disabled={logLoading} onClick={() => void fetchLogs()}>{text('刷新日志', 'Refresh logs')}</button> : <span className="text-xs text-slate-500">{text('自动刷新', 'Auto refresh')}</span>}<Switch className="studio-switch-small" checked={autoScrollLog} onCheckedChange={setAutoScrollLog}>{t('job.followBottom')}</Switch></div>
+          <div className="job-log-toolbar"><StudioSelect aria-label={text('日志模式', 'Log mode')} value={logMode} options={[{ value: 'live', label: text('实时末尾 · 500 行', 'Live tail · 500 lines') }, { value: 'history', label: text('完整历史 · 分页读取', 'Full history · paginated') }]} onValueChange={value => { setLogMode(value as 'live' | 'history'); setLogOffsets([0]); setLogs([]); }}/><StudioSelect aria-label={text('日志级别', 'Log level')} value={logFilter} options={LOG_LEVELS.map(value => ({ value, label: logLevelLabels[value] }))} onValueChange={setLogFilter}/><input aria-label={text('搜索当前页日志', 'Search this log page')} value={logQuery} onChange={event => setLogQuery(event.target.value)} placeholder={text('搜索当前页日志', 'Search this log page')}/>{logMode === 'history' || logError ? <button type="button" className="ui-btn" disabled={logLoading} onClick={() => void fetchLogs()}>{text('刷新日志', 'Refresh logs')}</button> : <span className="text-xs text-slate-500">{text('自动刷新', 'Auto refresh')}</span>}<Switch className="studio-switch-small" checked={autoScrollLog} onCheckedChange={setAutoScrollLog}>{t('job.followBottom')}</Switch></div>
           {logError && <p role="alert" className="task-error">{logError}</p>}
-          {logMode === 'history' && <div className="task-pagination"><span>{text('按原始顺序读取，每页最多 500 行；筛选作用于当前页。', 'Original order, up to 500 lines per page; filters apply to this page.')}</span><div><button className="task-button" disabled={logLoading || logOffsets.length === 1} onClick={() => { setLogs([]); setLogOffsets(offsets => offsets.slice(0, -1)); }}>{text('上一页日志', 'Previous log page')}</button><span>{logOffsets.length}</span><button className="task-button" disabled={logLoading || !hasMoreLogs} onClick={() => { setLogs([]); setLogOffsets(offsets => [...offsets, nextLogOffset]); }}>{text('下一页日志', 'Next log page')}</button></div></div>}
+          {logMode === 'history' && <div className="task-pagination"><span>{text('按原始顺序读取，每页最多 500 行；筛选作用于当前页。', 'Original order, up to 500 lines per page; filters apply to this page.')}</span><div><button type="button" className="ui-btn" disabled={logLoading || logOffsets.length === 1} onClick={() => { setLogs([]); setLogOffsets(offsets => offsets.slice(0, -1)); }}>{text('上一页日志', 'Previous log page')}</button><span>{logOffsets.length}</span><button type="button" className="ui-btn" disabled={logLoading || !hasMoreLogs} onClick={() => { setLogs([]); setLogOffsets(offsets => [...offsets, nextLogOffset]); }}>{text('下一页日志', 'Next log page')}</button></div></div>}
           <div
             ref={logContainerRef}
             className="h-80 overflow-y-auto bg-slate-900 text-slate-200 font-mono text-xs p-3 rounded-lg space-y-1"

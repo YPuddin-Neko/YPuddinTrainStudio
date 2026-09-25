@@ -25,7 +25,7 @@ export default function AnimaCaptionAdvice({ images, onEdit }: { images: AdviceI
     <p>{text('建议普通标签用小写和空格，score_* 保留下划线，画师名加 @。', 'Use lowercase and spaces for ordinary tags, keep underscores in score_* tags, and prefix artists with @.')}</p>
     <p>{text('自然语言保留正常大小写。TXT 含完整句子时，请核对标签打乱和丢弃设置；JSON 自然语言字段不打乱。', 'Keep normal capitalization in prose. For TXT captions containing sentences, check shuffle and dropout settings. JSON prose fields are not shuffled.')}</p>
     <p>{text('以下为 JSON 标签格式预览，不会自动修改文件。', 'Preview of JSON tag formatting; files are not changed automatically.')}</p>
-    <a href="https://huggingface.co/circlestone-labs/Anima#prompting" target="_blank" rel="noreferrer">{text('查看模型作者的标签指南', 'Read the model author’s prompting guide')}</a>
+    <a className="ui-link" href="https://huggingface.co/circlestone-labs/Anima#prompting" target="_blank" rel="noreferrer">{text('查看模型作者的标签指南', 'Read the model author’s prompting guide')}</a>
     {proposed.length > 0 && <>
       <div className="anima-caption-previews">
         {proposed.slice(0, limit).map(image => <details className="anima-caption-file" key={image.path}>
@@ -36,8 +36,8 @@ export default function AnimaCaptionAdvice({ images, onEdit }: { images: AdviceI
           </section>)}
         </details>)}
       </div>
-      {proposed.length > limit && <button type="button" onClick={() => setLimit(limit + 20)}>{text('显示更多格式预览', 'Show more format previews')}</button>}
-      <button type="button" onClick={onEdit}>{text('打开标签编辑', 'Open caption editor')}</button>
+      {proposed.length > limit && <button type="button" className="ui-btn ui-btn-sm" onClick={() => setLimit(limit + 20)}>{text('显示更多格式预览', 'Show more format previews')}</button>}
+      <button type="button" className="ui-btn ui-btn-sm" onClick={onEdit}>{text('打开标签编辑', 'Open caption editor')}</button>
     </>}
   </details>;
 }

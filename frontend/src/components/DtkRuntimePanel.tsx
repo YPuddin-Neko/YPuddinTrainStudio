@@ -7,7 +7,7 @@ import type { DtkCatalog } from './DtkWheelPicker';
 
 const toolkitSource = 'https://download.sourcefind.cn:65024/1/main';
 const driverSource = 'https://download.sourcefind.cn:65024/6/main';
-const linkButton = 'settings-input inline-flex items-center justify-center gap-1.5';
+const linkButton = 'ui-btn ui-btn-sm';
 
 export default function DtkRuntimePanel() {
   const text = useWorkspaceText();

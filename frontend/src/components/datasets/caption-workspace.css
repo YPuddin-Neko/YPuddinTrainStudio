@@ -1,11 +1,7 @@
 .caption-workspace { min-width:0; display:grid; gap:12px; color:var(--studio-text); container-type:inline-size; font-size:13px; }
-.caption-workspace button { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-width:0; min-height:34px; padding:6px 10px; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-panel); color:var(--studio-text); font-size:13px; line-height:20px; transition:background 140ms ease,border-color 140ms ease; }
-.caption-workspace button:hover:not(:disabled) { background:var(--studio-muted); border-color:var(--studio-accent); }
-.caption-workspace button:disabled { opacity:.5; cursor:default; }
-.caption-workspace button[aria-pressed=true] { color:var(--studio-accent); border-color:var(--studio-accent); background:color-mix(in srgb,var(--studio-accent) 7%,var(--studio-panel)); }
 .caption-workspace input,.caption-workspace textarea { min-width:0; max-width:100%; padding:7px 10px; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-panel); color:var(--studio-text); font-size:13px; line-height:20px; }
 .caption-workspace textarea { width:100%; resize:vertical; min-height:80px; }
-.caption-workspace :is(input,textarea,button):focus-visible { outline:2px solid var(--studio-accent); outline-offset:2px; }
+.caption-workspace :is(input,textarea,.caption-workspace-gallery > button,.caption-workspace-chip button,.caption-workspace-frequencies button):focus-visible { outline:2px solid var(--studio-accent); outline-offset:2px; }
 .caption-workspace-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:10px; padding:12px 14px; border:1px solid var(--studio-line); border-radius:8px; background:var(--studio-panel); }
 .caption-workspace-source { display:flex; align-items:center; flex:1 1 260px; max-width:540px; min-width:0; gap:10px; }
 .caption-workspace-source > span { display:inline-flex; align-items:center; gap:6px; flex:none; }
@@ -21,12 +17,11 @@
 .caption-workspace-search input { width:0; flex:1; border:0; padding-inline:0; background:transparent; }
 .caption-workspace-search:focus-within { outline:2px solid var(--studio-accent); outline-offset:2px; }
 .caption-workspace-search input:focus-visible { outline:none; }
-.caption-workspace-filters { display:flex; flex-wrap:wrap; gap:6px; }
+.caption-workspace-filters { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
 .caption-workspace-filters strong { font-weight:500; font-variant-numeric:tabular-nums; }
 .caption-workspace-filters .caption-workspace-clear { max-width:100%; overflow-wrap:anywhere; }
 .caption-workspace-pagination { display:flex; align-items:center; justify-content:space-between; gap:8px; color:var(--studio-dim); font-size:12px; }
 .caption-workspace-pagination > div { display:flex; align-items:center; gap:8px; }
-.caption-workspace-pagination button { min-width:34px; padding:6px; }
 .caption-workspace-filter-count { display:flex; align-items:center; flex-wrap:wrap; gap:4px 12px; }
 .caption-workspace-refresh-status { display:inline-flex; align-items:center; gap:5px; }
 .caption-workspace-content { min-width:0; display:grid; grid-template-columns:minmax(0,1fr); align-items:start; gap:16px; }
@@ -38,43 +33,47 @@
 .caption-workspace-image-heading strong { min-width:0; flex:1 1 100%; overflow-wrap:anywhere; font-weight:500; }
 .caption-workspace-image-heading > span { color:var(--studio-dim); }
 .caption-workspace-image-heading > div { margin-left:auto; display:flex; gap:4px; }
-.caption-workspace-image-heading button { min-width:34px; padding:6px; }
 .caption-workspace-gallery { min-width:0; display:grid; grid-template-columns:repeat(auto-fill,minmax(76px,1fr)); grid-auto-rows:max-content; align-content:start; gap:6px; max-height:190px; min-height:0; overflow:auto; overscroll-behavior:contain; padding:2px; scrollbar-gutter:stable; }
-.caption-workspace .caption-workspace-gallery > button { display:flex; align-items:stretch; flex-direction:column; padding:0; gap:0; text-align:left; overflow:hidden; }
+.caption-workspace-gallery > button { display:flex; align-items:stretch; flex-direction:column; min-width:0; padding:0; text-align:left; overflow:hidden; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-panel); color:var(--studio-text); }
+.caption-workspace-gallery > button:hover:not(:disabled) { border-color:var(--control-hover-line); }
+.caption-workspace-gallery > button[aria-pressed=true] { border-color:var(--studio-accent); box-shadow:0 0 0 1px var(--studio-accent); }
+.caption-workspace-gallery > button:disabled { opacity:.5; }
 .caption-workspace-gallery img { width:100%; height:84px; flex:none; object-fit:contain; background:var(--studio-muted); }
 .caption-workspace-gallery span { padding:4px 6px; font-size:11px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .caption-workspace-gallery small { padding:0 6px 5px; color:var(--studio-dim); font-size:11px; }
 .caption-workspace-editor { min-width:0; display:flex; flex-direction:column; gap:12px; padding:14px; border:1px solid var(--studio-line); border-radius:8px; background:var(--studio-panel); container-type:inline-size; }
 .caption-workspace-editor-fields { min-width:0; min-height:0; overflow:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
-.caption-workspace-editor-tabs { display:flex; align-items:center; gap:5px; }
+.caption-workspace-editor-tabs { align-self:flex-start; }
 .caption-workspace-editor fieldset { min-width:0; display:grid; gap:12px; padding:0; border:0; }
 .caption-workspace-field { display:grid; gap:5px; min-width:0; }
 .caption-workspace-tags { min-width:0; display:grid; gap:10px; }
 .caption-workspace-tags > div:first-child { display:flex; flex-wrap:wrap; gap:6px; min-width:0; }
 .caption-workspace-chip { display:inline-flex; align-items:center; min-width:0; max-width:100%; border:1px solid var(--studio-line); border-radius:5px; background:var(--studio-muted); overflow:hidden; }
-.caption-workspace .caption-workspace-chip button { border:0; border-radius:0; background:transparent; padding:4px 6px; text-align:left; overflow-wrap:anywhere; }
-.caption-workspace-chip button:last-child { flex:none; }
+.caption-workspace-chip button { display:inline-flex; align-items:center; min-width:0; border:0; border-radius:0; background:transparent; color:var(--studio-text); padding:4px 6px; font-size:13px; line-height:20px; text-align:left; overflow-wrap:anywhere; }
+.caption-workspace-chip button:hover { background:var(--studio-panel); }
+.caption-workspace-chip button:last-child { flex:none; color:var(--studio-dim); }
+.caption-workspace-chip button:last-child:hover { color:var(--studio-danger); }
 .caption-workspace-chip input { width:150px; max-width:100%; padding:4px 6px; }
 .caption-workspace-tag-add { display:flex; min-width:0; gap:6px; }
 .caption-workspace-tag-add input { width:0; flex:1; }
 .caption-workspace-save { flex:none; display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:7px; border-top:1px solid var(--studio-line); padding-top:12px; }
 .caption-workspace-save > span { margin-right:auto; font-size:12px; color:var(--studio-dim); }
-.caption-workspace .caption-workspace-primary,.caption-workspace-leave .caption-workspace-primary { border-color:var(--studio-action); background:var(--studio-action); color:var(--studio-on-action); }
-.caption-workspace .caption-workspace-primary:hover:not(:disabled),.caption-workspace-leave .caption-workspace-primary:hover:not(:disabled) { border-color:var(--studio-action-hover); background:var(--studio-action-hover); }
 .caption-workspace-statistics { display:grid; gap:10px; min-width:0; border-top:1px solid var(--studio-line); padding-top:12px; }
 .caption-workspace-statistics header { display:grid; gap:8px; min-width:0; }
 .caption-workspace-statistics h3 { font-size:13px; font-weight:600; margin-bottom:4px; }
 .caption-workspace-statistics header span { font-size:12px; color:var(--studio-dim); }
 .caption-workspace-statistics header input { width:100%; }
 .caption-workspace-frequencies { display:flex; align-content:start; flex-wrap:wrap; gap:6px; max-height:200px; overflow:auto; min-width:0; }
-.caption-workspace-frequencies button { max-width:100%; justify-content:space-between; }
+.caption-workspace-frequencies button { display:inline-flex; align-items:center; justify-content:space-between; gap:6px; max-width:100%; min-height:32px; padding:5px 10px; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-panel); color:var(--studio-text); font-size:13px; line-height:20px; text-align:left; }
+.caption-workspace-frequencies button:hover:not(:disabled) { background:var(--studio-muted); border-color:var(--control-hover-line); }
+.caption-workspace-frequencies button[aria-pressed=true] { color:var(--studio-accent); border-color:var(--studio-accent); background:var(--control-accent-soft); }
+.caption-workspace-frequencies button:disabled { opacity:.5; }
 .caption-workspace-frequencies button span { min-width:0; overflow-wrap:anywhere; }
 .caption-workspace-frequencies button strong { flex:none; padding-left:7px; color:var(--studio-dim); font-variant-numeric:tabular-nums; font-weight:500; }
 .caption-workspace-error { color:var(--studio-danger); font-size:13px; line-height:1.6; overflow-wrap:anywhere; }
 .caption-workspace-empty { display:flex; align-items:center; justify-content:center; gap:8px; padding:24px 12px; color:var(--studio-dim); }
 .caption-workspace-leave { display:grid; gap:16px; font-size:13px; }
 .caption-workspace-leave > div { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; }
-.caption-workspace-leave button { padding:7px 10px; border:1px solid var(--studio-line); border-radius:6px; }
 @container (min-width:1050px) {
   .caption-workspace-content { grid-template-columns:minmax(0,1fr) 190px; }
   .caption-workspace-statistics { border-top:0; border-left:1px solid var(--studio-line); padding:0 0 0 16px; }
@@ -91,8 +90,8 @@
 @container (max-width:520px) {
   .caption-workspace-source { flex-basis:100%; max-width:none; }
   .caption-workspace-filter-panel form > span { display:none; }
-  .caption-workspace-filters button { flex:1 1 auto; }
+  .caption-workspace-filters .ui-segmented { flex:1 1 100%; }
+  .caption-workspace-filters .ui-segmented > button { flex:1 1 auto; }
   .caption-workspace-save > span { flex-basis:100%; }
 }
-@media (pointer:coarse) { .caption-workspace button { min-height:40px; } }
-@media (prefers-reduced-motion:reduce) { .caption-workspace button { transition:none; } }
+@media (pointer:coarse) { .caption-workspace-frequencies button { min-height:40px; } }

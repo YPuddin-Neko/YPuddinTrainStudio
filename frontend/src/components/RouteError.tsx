@@ -12,7 +12,7 @@ export default function RouteError() {
       <AlertCircle size={24} className="mb-4 text-amber-500"/>
       <h1 className="text-lg font-semibold">{resourceError ? text('页面资源未能加载', 'Page resources could not be loaded') : text('页面暂时无法显示', 'This page could not be displayed')}</h1>
       <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-slate-400">{resourceError ? text('请重新载入页面。', 'Reload the page.') : text('请重试，或查看错误详情。', 'Try again or view the error details.')}</p>
-      <button type="button" onClick={() => window.location.reload()} className="mt-5 inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm text-white"><RefreshCw size={15}/>{text('重新载入', 'Reload page')}</button>
+      <button type="button" onClick={() => window.location.reload()} className="ui-btn ui-btn-primary mt-5"><RefreshCw size={15}/>{text('重新载入', 'Reload page')}</button>
       {message && <details className="mt-5 text-xs text-slate-500"><summary className="cursor-pointer">{text('错误详情', 'Error details')}</summary><p className="mt-2 break-all whitespace-pre-wrap">{message}</p></details>}
     </section>
   </main>;

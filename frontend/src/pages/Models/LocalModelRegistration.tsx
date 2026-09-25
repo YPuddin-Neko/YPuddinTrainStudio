@@ -74,8 +74,8 @@ export default function LocalModelRegistration({ initialFamily, families: servic
       {ready&&<details><summary>{text('检测依据','Inspection evidence')}</summary><p>{detected.evidence.join(' · ')||text('没有匹配到已知结构。','No known structure matched.')}</p><p>{Object.entries(detected.dtypes).map(([type,count])=>`${type}: ${count.toLocaleString()}`).join(' · ')}</p></details>}
       <Switch className="model-switch" checked={inferenceOnly?false:isDefault} disabled={inferenceOnly} onCheckedChange={setIsDefault}>{text('设为本系列默认组件','Set as this family’s default component')}</Switch>
     </fieldset>
-    {error&&<div role="alert" className="settings-alert">{error}<button className="model-button" type="button" disabled={saving||detecting} onClick={()=>setReload(value=>value+1)}>{text('重新检测','Inspect again')}</button></div>}
+    {error&&<div role="alert" className="settings-alert">{error}<button className="ui-btn" type="button" disabled={saving||detecting} onClick={()=>setReload(value=>value+1)}>{text('重新检测','Inspect again')}</button></div>}
     {ready && (!family || (detected.kind && !knownComponent)) && <p role="alert" className="settings-alert">{text('当前训练服务不支持检测到的模型系列或组件。','The training service does not support the detected model family or component.')}</p>}
-    <footer><button className="model-button" type="button" disabled={saving} onClick={onClose}>{text('取消','Cancel')}</button><button className="model-button model-button-primary" type="submit" data-testid="add-model-submit" disabled={saving||detecting||!ready||!family||!knownComponent||(needsVariant&&!variant)}>{saving&&<Loader2 size={14} className="animate-spin"/>}{text('添加模型','Add model')}</button></footer>
+    <footer><button className="ui-btn" type="button" disabled={saving} onClick={onClose}>{text('取消','Cancel')}</button><button className="ui-btn ui-btn-primary" type="submit" data-testid="add-model-submit" disabled={saving||detecting||!ready||!family||!knownComponent||(needsVariant&&!variant)}>{saving&&<Loader2 size={14} className="animate-spin"/>}{text('添加模型','Add model')}</button></footer>
   </form>;
 }

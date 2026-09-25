@@ -50,8 +50,8 @@ export default function WindowsAttentionWheelPicker({ selected, onSelect, disabl
     <div className="flex flex-wrap items-center justify-between gap-2">
       <strong className="text-sm">{text('社区预编译版本', 'Community builds')}</strong>
       <div className="flex flex-wrap items-center gap-2">
-        <a className="studio-link inline-flex items-center gap-1 text-xs" href={catalog?.source_url || source} target="_blank" rel="noreferrer">{text('维护者发布页', 'Publisher release')}<ExternalLink size={12}/></a>
-        <button type="button" className="settings-input inline-flex items-center gap-1.5" disabled={disabled || loading} onClick={() => { onSelect(null); setRevision(value => value + 1); }}><RefreshCw size={13}/>{text('刷新版本', 'Refresh builds')}</button>
+        <a className="ui-link" href={catalog?.source_url || source} target="_blank" rel="noreferrer">{text('维护者发布页', 'Publisher release')}<ExternalLink size={12}/></a>
+        <button type="button" className="ui-btn ui-btn-sm" disabled={disabled || loading} onClick={() => { onSelect(null); setRevision(value => value + 1); }}><RefreshCw size={13}/>{text('刷新版本', 'Refresh builds')}</button>
       </div>
     </div>
     <p className="settings-note">{text('安装包由社区维护者 mjun0812 提供。', 'Packages provided by community maintainer mjun0812.')}</p>

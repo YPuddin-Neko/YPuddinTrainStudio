@@ -22,7 +22,7 @@ export function EnvironmentStatus() {
   React.useEffect(() => { void refresh(); }, [refresh]);
   const apple = !!stats?.gpus.some(gpu => gpu.kind === 'mps');
   return <section id="environment" className="p-6 space-y-4 rounded-xl bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700">
-    <div className="flex items-center justify-between"><h3 className="flex gap-2 items-center font-semibold"><Cpu className="w-4 h-4 text-slate-400" />{text('训练环境与显卡采集', 'Training runtime and GPU telemetry')}</h3><button type="button" disabled={loading} onClick={() => void refresh()} className="inline-flex gap-1.5 items-center text-sm text-blue-600 disabled:opacity-50"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />{t('common.refresh', '刷新')}</button></div>
+    <div className="flex items-center justify-between"><h3 className="flex gap-2 items-center font-semibold"><Cpu className="w-4 h-4 text-slate-400" />{text('训练环境与显卡采集', 'Training runtime and GPU telemetry')}</h3><button type="button" disabled={loading} onClick={() => void refresh()} className="ui-btn ui-btn-sm"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />{t('common.refresh', '刷新')}</button></div>
     {error && <p role="alert" className="text-red-600 text-sm">{error}</p>}
     {info && <dl className="grid grid-cols-2 gap-3 text-sm">{[
       ['Studio', info.ypuddin || '—'], ['PyTorch', info.packages?.torch || '—'],

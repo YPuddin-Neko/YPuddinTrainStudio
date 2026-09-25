@@ -2,7 +2,7 @@
 .gpu-picker-body { display:grid; gap:10px; min-width:0; }
 .gpu-picker-heading { display:flex; justify-content:space-between; align-items:center; gap:8px; }
 .gpu-picker-heading strong { font-weight:600; }
-.gpu-picker-heading button { padding:4px; flex:none; }
+.gpu-picker-heading .ui-btn { flex:none; }
 .gpu-picker p { margin:0; color:var(--studio-dim); font-size:11px; line-height:1.6; }
 .gpu-picker .gpu-picker-warning { color:var(--studio-warning,#b45309); }
 .gpu-picker-error-detail { display:block; overflow-wrap:anywhere; }
@@ -14,14 +14,14 @@
 .gpu-picker-cards strong,.gpu-picker-cards small { display:block; overflow-wrap:anywhere; }
 .gpu-picker-cards strong { font-weight:500; }.gpu-picker-cards small { margin-top:3px; color:var(--studio-dim); }
 .gpu-picker-compact { position:relative; flex:0 0 auto; }
-.gpu-picker-compact > summary { display:flex; align-items:center; justify-content:center; gap:6px; list-style:none; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-panel); padding:8px 10px; cursor:pointer; white-space:nowrap; }
+.gpu-picker-compact > summary { list-style:none; }
 .gpu-picker-compact > summary::-webkit-details-marker { display:none; }
 .gpu-picker-compact > .gpu-picker-body { position:absolute; top:calc(100% + 7px); right:0; z-index:50; width:min(340px,calc(100vw - 40px)); background:var(--studio-panel); border:1px solid var(--studio-line); box-shadow:0 12px 32px #0002; border-radius:8px; padding:14px; }
 .training-studio.parameter-workspace .training-launch-bar .gpu-picker-body :is(button,input) { height:auto; min-height:0; }
 .training-studio.parameter-workspace .training-launch-bar .gpu-picker-body input[type=checkbox] { width:14px; height:14px; }
 @media(max-width:650px) { .gpu-picker-compact > .gpu-picker-body { right:auto; left:0; }.training-header-actions .gpu-picker-compact { order:1; } }
 
-.gpu-picker-trigger { display:flex; align-items:center; gap:8px; width:100%; min-height:38px; padding:7px 10px; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-panel); color:var(--studio-text); text-align:left; font-size:13px; }
+.gpu-picker-trigger { display:flex; align-items:center; gap:8px; width:100%; min-height:var(--control-h,34px); padding:0 10px; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-panel); color:var(--studio-text); text-align:left; font-size:13px; }
 .gpu-picker-trigger > span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .gpu-picker-trigger > svg { flex:none; }
 .gpu-picker-trigger[aria-expanded=true] { border-color:var(--studio-accent); }

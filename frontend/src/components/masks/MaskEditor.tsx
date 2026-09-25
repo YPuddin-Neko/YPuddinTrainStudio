@@ -7,9 +7,10 @@ import { MaskDocument, imagePoint, paintSegment, type MaskOperation, type MaskPo
 import { loadMask, maskEndpoint, saveMask, type MaskInfo } from './maskApi';
 import ImageEditor from './ImageEditor';
 import Switch from '../Switch';
+import { SlidingIndicator } from '../motion';
 
 interface Props { datasetId: string; imageId: string; relPath: string; onClose: () => void; onSaved: () => void; onEnableTraining: () => Promise<void>; allowPaint?: boolean }
-const control = 'inline-flex items-center justify-center gap-1.5 min-h-8 rounded-md border border-slate-300 dark:border-slate-600 px-2.5 py-1.5 text-xs hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40';
+const control = 'ui-btn ui-btn-sm';
 
 export function MaskEditor(props: Props) {
   return props.allowPaint ? <ImageEditor {...props} onReloadList={props.onSaved} /> : <TrainingMaskEditor {...props} />;
@@ -147,26 +148,26 @@ function TrainingMaskEditor({ datasetId, imageId, relPath, onClose, onSaved, onE
     <section ref={dialog} role="dialog" aria-modal="true" aria-labelledby={titleId} onKeyDown={keyDown} onClick={(event) => event.stopPropagation()} className="flex max-h-[95vh] w-full max-w-7xl min-w-0 flex-col overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-800">
       <header className="flex items-start justify-between gap-3 border-b border-slate-200 p-3 dark:border-slate-700">
         <div className="min-w-0"><h2 id={titleId} className="text-base font-semibold">{text('编辑训练遮罩', 'Edit training mask')}</h2><p className="break-all text-xs text-slate-500 dark:text-slate-400">{relPath}{info && ` · ${info.width}×${info.height}`}</p></div>
-        <button ref={closeButton} type="button" aria-label={text('关闭遮罩编辑器', 'Close mask editor')} className={control} disabled={saving} onClick={close}><X className="h-4 w-4" /></button>
+        <button ref={closeButton} type="button" aria-label={text('关闭遮罩编辑器', 'Close mask editor')} className="ui-btn ui-btn-quiet ui-btn-icon" disabled={saving} onClick={close}><X className="h-4 w-4" /></button>
       </header>
       <div className="space-y-2.5 p-3">
         <p className="text-xs text-slate-600 dark:text-slate-300">{text('白色参与训练，黑色忽略。叠加预览中，红色表示被忽略的区域。', 'White participates in training; black is ignored. The red overlay marks ignored areas.')}</p>
         {loading && <p role="status" className="flex items-center gap-2 py-8"><Loader2 className="h-5 w-5 animate-spin" />{text('正在读取原图尺寸与已有遮罩…', 'Loading image dimensions and existing mask…')}</p>}
-        {error && <div role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"><p className="whitespace-pre-line break-words">{error}</p><button className="mt-2 underline" disabled={saving} onClick={() => { if (!doc.current?.dirty || window.confirm(text('重新读取会放弃未保存的修改，继续？', 'Reload and discard unsaved changes?'))) setReload((value) => value + 1); }}>{text('重新读取遮罩', 'Reload mask')}</button></div>}
+        {error && <div role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"><p className="whitespace-pre-line break-words">{error}</p><button type="button" className="ui-link mt-2" disabled={saving} onClick={() => { if (!doc.current?.dirty || window.confirm(text('重新读取会放弃未保存的修改，继续？', 'Reload and discard unsaved changes?'))) setReload((value) => value + 1); }}>{text('重新读取遮罩', 'Reload mask')}</button></div>}
         {info && !loading && <>
           <div className="flex flex-wrap items-center gap-2">
-            {([{ key: 'brush', Icon: Brush, label: text('笔刷 · 参与', 'Brush · include') }, { key: 'erase', Icon: Eraser, label: text('擦除 · 忽略', 'Erase · ignore') }, { key: 'pan', Icon: Hand, label: text('移动画布', 'Pan canvas') }] as const).map(({ key, Icon, label }) => <button key={key} className={`${control} ${tool === key ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' : ''}`} aria-pressed={tool === key} disabled={saving} onClick={() => setTool(key)}><Icon className="h-4 w-4" />{label}</button>)}
-            <button className={control} disabled={saving || !doc.current?.canUndo} onClick={undo}><Undo2 className="h-4 w-4" />{text('撤销', 'Undo')}</button>
-            <button className={control} disabled={saving || !doc.current?.canRedo} onClick={redo}><Redo2 className="h-4 w-4" />{text('重做', 'Redo')}</button>
-            <button className={control} disabled={saving} onClick={() => perform({ kind: 'fill', value: 255 })}>{text('全选 · 全白', 'Select all · white')}</button>
-            <button className={control} disabled={saving} onClick={() => perform({ kind: 'fill', value: 0 })}>{text('清空 · 全黑', 'Clear · black')}</button>
-            <button className={control} disabled={saving} onClick={() => perform({ kind: 'invert' })}>{text('反转', 'Invert')}</button>
+            <div className="ui-segmented" role="group" aria-label={text('绘制工具', 'Drawing tools')}>{([{ key: 'brush', Icon: Brush, label: text('笔刷 · 参与', 'Brush · include') }, { key: 'erase', Icon: Eraser, label: text('擦除 · 忽略', 'Erase · ignore') }, { key: 'pan', Icon: Hand, label: text('移动画布', 'Pan canvas') }] as const).map(({ key, Icon, label }) => <button key={key} type="button" aria-pressed={tool === key} disabled={saving} onClick={() => setTool(key)}><Icon className="h-4 w-4" />{label}</button>)}<SlidingIndicator className="ui-segmented-thumb"/></div>
+            <button type="button" className={control} disabled={saving || !doc.current?.canUndo} onClick={undo}><Undo2 className="h-4 w-4" />{text('撤销', 'Undo')}</button>
+            <button type="button" className={control} disabled={saving || !doc.current?.canRedo} onClick={redo}><Redo2 className="h-4 w-4" />{text('重做', 'Redo')}</button>
+            <button type="button" className={control} disabled={saving} onClick={() => perform({ kind: 'fill', value: 255 })}>{text('全选 · 全白', 'Select all · white')}</button>
+            <button type="button" className={control} disabled={saving} onClick={() => perform({ kind: 'fill', value: 0 })}>{text('清空 · 全黑', 'Clear · black')}</button>
+            <button type="button" className={control} disabled={saving} onClick={() => perform({ kind: 'invert' })}>{text('反转', 'Invert')}</button>
           </div>
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-md bg-slate-50 p-2 dark:bg-slate-900">
             <label className="flex min-w-0 items-center gap-2 text-xs">{text('笔刷直径', 'Brush diameter')}<input aria-label={text('笔刷直径', 'Brush diameter')} type="range" min={1} max={Math.max(128, Math.min(2048, Math.max(info.width, info.height)))} value={diameter} onChange={(e) => setDiameter(Number(e.target.value))} className="w-24 sm:w-32" disabled={saving} /><span className="w-14 font-mono">{diameter}px</span></label>
             <label className="flex items-center gap-2 text-xs">{text('叠加透明度', 'Overlay opacity')}<input aria-label={text('叠加透明度', 'Overlay opacity')} type="range" min={0} max={1} step={0.05} value={opacity} onChange={(e) => setOpacity(Number(e.target.value))} className="w-24" /><span>{Math.round(opacity * 100)}%</span></label>
             <Switch className="studio-switch-small" checked={maskOnly} onCheckedChange={setMaskOnly}>{text('仅看黑白遮罩', 'Mask only')}</Switch>
-            <div className="flex items-center gap-1"><button className={control} onClick={() => setZoom((value) => Math.max(0.25, value / 1.5))} aria-label={text('缩小', 'Zoom out')}><ZoomOut className="h-4 w-4" /></button><button className={control} onClick={() => { setZoom(1); viewport.current?.scrollTo(0, 0); }}><Maximize className="h-4 w-4" />{text('适应', 'Fit')}</button><button className={control} onClick={() => setZoom((value) => Math.min(8, value * 1.5))} aria-label={text('放大', 'Zoom in')}><ZoomIn className="h-4 w-4" /></button><span className="ml-1 text-xs font-mono">{Math.round(scale * 100)}%</span></div>
+            <div className="flex items-center gap-1"><button type="button" className={`${control} ui-btn-icon`} onClick={() => setZoom((value) => Math.max(0.25, value / 1.5))} aria-label={text('缩小', 'Zoom out')}><ZoomOut className="h-4 w-4" /></button><button type="button" className={control} onClick={() => { setZoom(1); viewport.current?.scrollTo(0, 0); }}><Maximize className="h-4 w-4" />{text('适应', 'Fit')}</button><button type="button" className={`${control} ui-btn-icon`} onClick={() => setZoom((value) => Math.min(8, value * 1.5))} aria-label={text('放大', 'Zoom in')}><ZoomIn className="h-4 w-4" /></button><span className="ml-1 text-xs font-mono">{Math.round(scale * 100)}%</span></div>
           </div>
           <div className="flex flex-wrap justify-between gap-2 text-xs text-slate-500 dark:text-slate-400"><span>{text('来源：', 'Source: ')}{info.source === 'sidecar' ? info.filename : info.source === 'alpha' ? text('原图 Alpha 通道', 'Image alpha channel') : text('无遮罩或 Alpha，默认全图参与', 'No mask or alpha; the full image participates')}{info.resized && text('（已有遮罩尺寸已适配原图）', ' (existing mask fitted to image dimensions)')}</span><span>{text('参与比例', 'Participation')} {Math.round(coverage * 100)}% · {doc.current?.dirty ? text('有未保存修改', 'Unsaved changes') : text('已同步', 'Up to date')}</span></div>
           <div ref={viewport} className="relative h-[52vh] min-h-52 max-h-[580px] overflow-auto rounded-lg bg-slate-950 p-3" data-testid="mask-viewport">
@@ -182,7 +183,7 @@ function TrainingMaskEditor({ datasetId, imageId, relPath, onClose, onSaved, onE
       </div>
       <footer className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
         <span className="text-xs text-slate-500 dark:text-slate-400">{text('保存为同目录 .mask.png；Ctrl/Cmd+Z 撤销，Ctrl/Cmd+S 保存。', 'Saved beside the image as .mask.png. Ctrl/Cmd+Z to undo; Ctrl/Cmd+S to save.')}</span>
-        <div className="flex flex-wrap gap-2"><button className={control} disabled={saving} onClick={close}>{text('返回数据集', 'Back to dataset')}</button><button className={control} disabled={saving || loading || !info} onClick={() => void save(false)}><Save className="h-4 w-4" />{saving ? text('保存中…', 'Saving…') : text('保存遮罩', 'Save mask')}</button><button className="min-h-8 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40" disabled={saving || loading || !info} onClick={() => void save(true)}>{text('保存并启用遮罩训练', 'Save and enable masked training')}</button></div>
+        <div className="flex flex-wrap gap-2"><button type="button" className={control} disabled={saving} onClick={close}>{text('返回数据集', 'Back to dataset')}</button><button type="button" className={control} disabled={saving || loading || !info} onClick={() => void save(false)}><Save className="h-4 w-4" />{saving ? text('保存中…', 'Saving…') : text('保存遮罩', 'Save mask')}</button><button type="button" className="ui-btn ui-btn-sm ui-btn-primary" disabled={saving || loading || !info} onClick={() => void save(true)}>{text('保存并启用遮罩训练', 'Save and enable masked training')}</button></div>
       </footer>
     </section>
   </div>;

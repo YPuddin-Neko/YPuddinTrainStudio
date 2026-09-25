@@ -26,14 +26,9 @@
 .parameter-step-issues { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: color-mix(in srgb,#d97706 10%,var(--studio-panel)); color: #b45309; font-size: 11px; }
 .dark .parameter-step-issues { color: #fbbf24; }
 .parameter-sections-mobile { display: none; }
-.parameter-mode-toggle { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 3px; padding: 3px; border: 1px solid var(--studio-line); border-radius: 999px; background: var(--studio-muted); }
-.parameter-mode-toggle button { min-height: 32px; padding: 5px 14px; border-radius: 999px; font-size: 12px; white-space: nowrap; }
-.parameter-mode-toggle button[aria-pressed=true] { background: var(--studio-panel); color: var(--studio-accent); box-shadow: 0 1px 3px #00000012; font-weight: 650; }
 .training-studio.parameter-workspace .training-launch-bar { position: relative; flex: 0 0 auto; bottom: auto; padding: 12px 20px; margin: 0; border-top: 1px solid var(--studio-line); background: var(--studio-panel); box-shadow: none; gap: 10px; }
-.training-studio.parameter-workspace .training-launch-bar :is(button,input,summary) { min-height: 40px; height: 40px; border-radius: 6px; font-size: 13px; line-height: 20px; }
-.training-studio.parameter-workspace .training-launch-bar .launch-name { width: 180px; padding: 9px 12px; border: 1px solid var(--studio-line); background: var(--studio-panel); }
-.parameter-workspace .launch-schedule > summary { display: flex; align-items: center; padding: 9px 12px; border: 1px solid var(--studio-line); }
-.training-studio.parameter-workspace .training-launch-bar .start-training { padding: 9px 16px; }
+.training-studio.parameter-workspace .training-launch-bar :is(input, .gpu-picker-trigger) { min-height: var(--control-h); height: var(--control-h); border-radius: var(--control-radius); font-size: 13px; line-height: 20px; }
+.training-studio.parameter-workspace .training-launch-bar .launch-name { width: 180px; padding: 0 10px; border: 1px solid var(--studio-line); background: var(--studio-panel); }
 .parameter-workspace .readiness-toggle { padding: 9px 0; }
 .parameter-workspace .config-group { background: var(--studio-panel); }
 @container training-workspace (min-width: 1320px) { .parameter-workspace-body { grid-template-columns: 184px minmax(0,1fr) 300px; } }
@@ -86,8 +81,7 @@
 
 .training-studio.parameter-workspace { gap: 0; }
 .app-shell .parameter-workspace .workspace-navigation.workspace-page-heading { min-height: 76px; padding: 0 0 16px; margin: 0; }
-.parameter-workspace .launch-plan-toggle { display: flex; align-items: center; justify-content: center; flex: 0 0 auto; gap: 6px; padding: 8px 10px; border: 1px solid var(--studio-line); color: var(--studio-text); background: var(--studio-panel); font-variant-numeric: tabular-nums; }
-.parameter-workspace .launch-plan-toggle[aria-expanded=true] { color: var(--studio-accent); border-color: var(--studio-accent); }
+.parameter-workspace .launch-plan-toggle { font-variant-numeric: tabular-nums; }
 .parameter-workspace .readiness-item > button { height: auto; min-height: 40px; }
 @media(max-width:520px) {
   .training-studio.parameter-workspace .training-launch-bar .launch-status { grid-column: 1; }
@@ -109,7 +103,7 @@
 }
 @container training-workspace (max-width:1319px) {
   .parameter-workspace-body:has(> .training-inspector.is-open) > .training-editor { visibility: hidden; }
-  .parameter-workspace .inspector-return { display: flex; align-items: center; min-height: 40px; padding: 8px 14px; color: var(--studio-accent); border-bottom: 1px solid var(--studio-line); width: 100%; }
+  .parameter-workspace .inspector-return { display: flex; justify-content: flex-start; width: 100%; border-radius: 0; border-bottom-color: var(--studio-line); color: var(--studio-accent); }
 }
 @media(max-width:900px) {
   .parameter-workspace-body { grid-template-rows: auto minmax(0,1fr); }
@@ -139,8 +133,6 @@
 .dark .parameter-step-complete { color: #4ade80; }
 .parameter-sections li { position: relative; }
 .parameter-sections button:focus-visible { outline: 2px solid var(--studio-accent); outline-offset: -2px; }
-.parameter-mode-toggle { height: 40px; }
-.parameter-mode-toggle button { height: 32px; line-height: 20px; }
 @container training-workspace (max-width: 1100px) {
   .training-studio.parameter-workspace .training-header-actions { flex-basis: 100%; justify-content: flex-start; }
   .training-header-actions .launch-status { margin-right: auto; }

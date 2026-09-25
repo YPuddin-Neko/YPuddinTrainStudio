@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { X } from 'lucide-react';
 
 export function ApiErrorNotice() {
   const [message, setMessage] = useState('');
@@ -10,7 +11,7 @@ export function ApiErrorNotice() {
     return () => window.removeEventListener('api.error', handler);
   }, []);
   if (!message) return null;
-  return <div role="alert" className="flex items-start justify-between gap-3 bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300 border-b border-red-200 px-6 py-3 text-sm">
-    <span className="whitespace-pre-line break-words">{message}</span><button onClick={() => setMessage('')} aria-label={t('common.close')}>✕</button>
+  return <div role="alert" className="api-error-notice">
+    <span className="whitespace-pre-line break-words">{message}</span><button type="button" className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon" onClick={() => setMessage('')} aria-label={t('common.close')}><X size={15}/></button>
   </div>;
 }

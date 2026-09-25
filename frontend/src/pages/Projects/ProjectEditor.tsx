@@ -119,10 +119,10 @@ export default function ProjectEditor({ project, categories, onClose, onSaved, o
           <strong>{text('项目封面', 'Project cover')}</strong>
           <input ref={uploadInput} className="project-cover-file" type="file" tabIndex={-1} accept="image/jpeg,image/png,image/webp" aria-label={text('上传项目封面', 'Upload project cover')}
             onChange={event => { chooseFile(event.target.files?.[0]); event.target.value = ''; }}/>
-          <div className="project-cover-buttons"><button type="button" className="projects-page-button" onClick={() => uploadInput.current?.click()}><ImagePlus size={14}/>{activeCover ? text('更换封面', 'Replace cover') : text('上传封面', 'Upload cover')}</button>
-            {activeCover && <button type="button" className="projects-page-button" onClick={() => void adjustCover()}><Crop size={14}/>{text('调整裁切', 'Adjust crop')}</button>}
-            {(file || (!removeCover && savedProject?.cover_url)) && <button type="button" className="projects-page-button" onClick={() => { setFile(null); setCrop(undefined); setRemoveCover(true); setError(''); }}><X size={14}/>{text('移除封面', 'Remove cover')}</button>}
-            {removeCover && savedProject?.cover_url && <button type="button" className="projects-page-button" onClick={() => setRemoveCover(false)}>{text('保留原封面', 'Keep current cover')}</button>}</div>
+          <div className="project-cover-buttons"><button type="button" className="ui-btn" onClick={() => uploadInput.current?.click()}><ImagePlus size={14}/>{activeCover ? text('更换封面', 'Replace cover') : text('上传封面', 'Upload cover')}</button>
+            {activeCover && <button type="button" className="ui-btn" onClick={() => void adjustCover()}><Crop size={14}/>{text('调整裁切', 'Adjust crop')}</button>}
+            {(file || (!removeCover && savedProject?.cover_url)) && <button type="button" className="ui-btn" onClick={() => { setFile(null); setCrop(undefined); setRemoveCover(true); setError(''); }}><X size={14}/>{text('移除封面', 'Remove cover')}</button>}
+            {removeCover && savedProject?.cover_url && <button type="button" className="ui-btn" onClick={() => setRemoveCover(false)}>{text('保留原封面', 'Keep current cover')}</button>}</div>
           <small title={text('文件上限 8,388,608 字节（8 MiB）', 'File limit: 8,388,608 bytes (8 MiB)')}>JPEG / PNG / WebP · ≤ 8 MB</small>{file && <span className="project-cover-filename" title={file.name}>{file.name}</span>}
         </div></div>
         <label className="project-editor-field"><span>{text('项目名称', 'Project name')}</span><input required type="text" value={name} onChange={event => setName(event.target.value)} data-testid="project-name-input" placeholder={text('支持中文及其他语言', 'Any language supported')}/></label>
@@ -135,10 +135,10 @@ export default function ProjectEditor({ project, categories, onClose, onSaved, o
           onValueChange={value => { setCustomCategory(value === 'custom'); setCategory(value.startsWith('category:') ? value.slice(9) : ''); }}/>
           {customCategory && <input aria-label={text('自定义分类名称', 'Custom category name')} maxLength={64} required value={category} onChange={event => setCategory(event.target.value)} placeholder={text('例如：产品 LoRA', 'For example: Product LoRA')}/>}</div>
           {!project && <div className="project-editor-field"><label htmlFor="project-family">{text('初始模型类型', 'Initial model family')}</label><StudioSelect id="project-family" disabled={busy || !!savedProject} aria-label={text('初始模型类型', 'Initial model family')} value={family}
-            options={familyOptions} onValueChange={setFamily}/>{familiesError && <p role="alert" className="project-editor-error">{text('无法读取可用模型类型。', 'Could not load model families.')}<button type="button" onClick={() => void reloadFamilies()}>{text('重试', 'Retry')}</button></p>}</div>}</div>
+            options={familyOptions} onValueChange={setFamily}/>{familiesError && <p role="alert" className="project-editor-error">{text('无法读取可用模型类型。', 'Could not load model families.')}<button type="button" className="ui-link" onClick={() => void reloadFamilies()}>{text('重试', 'Retry')}</button></p>}</div>}</div>
         <label className="project-editor-field"><span>{text('备注（可选）', 'Notes (optional)')}</span><textarea rows={2} value={note} onChange={event => setNote(event.target.value)}/></label>
       </fieldset>
-      <div className="project-editor-footer"><button type="button" className="projects-page-button" disabled={busy} onClick={onClose}>{partial ? text('关闭', 'Close') : text('取消', 'Cancel')}</button><button type="submit" className="projects-create-button" disabled={busy || !name.trim() || (!project && (!!idError || !familyAvailable)) || (customCategory && !category.trim()) || category.trim().length > 64}>{busy && <Loader2 size={14} className="animate-spin"/>}{busy ? text('保存中…', 'Saving…') : project || partial ? text('保存', 'Save') : text('创建', 'Create')}</button></div>
+      <div className="project-editor-footer"><button type="button" className="ui-btn" disabled={busy} onClick={onClose}>{partial ? text('关闭', 'Close') : text('取消', 'Cancel')}</button><button type="submit" className="ui-btn ui-btn-primary" disabled={busy || !name.trim() || (!project && (!!idError || !familyAvailable)) || (customCategory && !category.trim()) || category.trim().length > 64}>{busy && <Loader2 size={14} className="animate-spin"/>}{busy ? text('保存中…', 'Saving…') : project || partial ? text('保存', 'Save') : text('创建', 'Create')}</button></div>
     </form>
   </Dialog>;
 }

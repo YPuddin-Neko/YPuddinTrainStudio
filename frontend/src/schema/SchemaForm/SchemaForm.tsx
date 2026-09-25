@@ -216,13 +216,13 @@ const RulesEditor: React.FC<{
             className="w-20 px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
           />
           <div className="flex items-center space-x-1">
-            <button type="button" onClick={() => moveRule(idx, 'up')} disabled={idx === 0} className="p-1 text-slate-400 hover:text-slate-600 disabled:opacity-30">
+            <button type="button" onClick={() => moveRule(idx, 'up')} disabled={idx === 0} className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon">
               <ArrowUp className="w-3.5 h-3.5" />
             </button>
-            <button type="button" onClick={() => moveRule(idx, 'down')} disabled={idx === value.length - 1} className="p-1 text-slate-400 hover:text-slate-600 disabled:opacity-30">
+            <button type="button" onClick={() => moveRule(idx, 'down')} disabled={idx === value.length - 1} className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon">
               <ArrowDown className="w-3.5 h-3.5" />
             </button>
-            <button type="button" onClick={() => removeRule(idx)} className="p-1 text-red-500 hover:text-red-700">
+            <button type="button" onClick={() => removeRule(idx)} className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon ui-btn-danger">
               <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -233,7 +233,7 @@ const RulesEditor: React.FC<{
         type="button"
         onClick={addRule}
         data-testid="add-rule"
-        className="flex items-center space-x-1 px-3 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded border border-slate-300 dark:border-slate-600"
+        className="ui-btn ui-btn-sm"
       >
         <Plus className="w-3.5 h-3.5" />
         <span>{t('train.addRule', '添加规则')}</span>
@@ -303,7 +303,7 @@ const KeyValueEditor: React.FC<{
             className="flex-1 px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600 font-mono"
             placeholder={t('train.valuePlaceholder', '值')}
           />
-          <button type="button" aria-label={`${t('common.remove', '移除')} ${k}`} onClick={() => removeEntry(k)} className="text-red-500 hover:text-red-700 p-1">
+          <button type="button" aria-label={`${t('common.remove', '移除')} ${k}`} onClick={() => removeEntry(k)} className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon ui-btn-danger">
             <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -313,7 +313,7 @@ const KeyValueEditor: React.FC<{
         type="button"
         onClick={addEntry}
         data-testid="add-property"
-        className="flex items-center space-x-1 px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded border border-slate-300 dark:border-slate-600"
+        className="ui-btn ui-btn-sm"
       >
         <Plus className="w-3.5 h-3.5" />
         <span>{addLabel || t('train.addProperty', '添加属性')}</span>
@@ -368,7 +368,7 @@ const SourcesEditor: React.FC<{
             </span>
             <span className="flex items-center gap-2">
               <span>{pending ? text('用途待确认','Purpose pending') : isReg ? text('正则集','Regularization') : text('训练集','Training')} · {role?.images == null ? text('图片数待索引','Count pending indexing') : text(`${role.images} 张图片`,`${role.images} images`)}</span>{isReg && <ConfigHelp label={text('数据用途说明','Dataset purpose help')}>{text('正则图默认不继承训练触发词。','Regularization images do not inherit the training trigger by default.')}</ConfigHelp>}
-              <button type="button" onClick={() => removeSource(idx)} className="p-1 text-red-500 hover:text-red-700"
+              <button type="button" onClick={() => removeSource(idx)} className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon ui-btn-danger"
                 aria-label={text(`从本次配置移除来源 ${folder}（保留文件）`,`Remove source ${folder} from this configuration (keep files)`)}
                 title={text('从本次配置移除来源（保留文件）','Remove from this configuration (keep files)')}>
                 <Trash2 className="w-3.5 h-3.5" />
@@ -387,7 +387,7 @@ const SourcesEditor: React.FC<{
             <button
               type="button"
               onClick={() => setModalIndex(idx)}
-              className="studio-secondary shrink-0 px-2 py-1 flex items-center gap-1"
+              className="ui-btn ui-btn-sm"
             >
               <FolderOpen className="w-3.5 h-3.5" />
               <span>{t('common.browse')}</span>
@@ -405,7 +405,7 @@ const SourcesEditor: React.FC<{
         type="button"
         onClick={addSource}
         data-testid="add-source"
-        className="flex items-center space-x-1 px-3 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded border border-slate-300 dark:border-slate-600"
+        className="ui-btn ui-btn-sm"
       >
         <Plus className="w-3.5 h-3.5" />
         <span>{t('train.addSource', '添加数据源')}</span>
@@ -452,7 +452,7 @@ const PromptsEditor: React.FC<{
             <span className="font-semibold text-slate-700 dark:text-slate-300">
               {t('train.promptN', { n: idx + 1, defaultValue: '提示词 #{n}' })}
             </span>
-            <button type="button" aria-label={`${t('common.delete')} ${t('train.promptN', { n: idx + 1 })}`} onClick={() => removePrompt(idx)} className="text-red-500 hover:text-red-700">
+            <button type="button" aria-label={`${t('common.delete')} ${t('train.promptN', { n: idx + 1 })}`} onClick={() => removePrompt(idx)} className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon ui-btn-danger">
               <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -498,7 +498,7 @@ const PromptsEditor: React.FC<{
         type="button"
         onClick={addPrompt}
         data-testid="add-prompt"
-        className="flex items-center space-x-1 px-3 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded border border-slate-300 dark:border-slate-600"
+        className="ui-btn ui-btn-sm"
       >
         <Plus className="w-3.5 h-3.5" />
         <span>{t('train.addPrompt', '添加采样提示词')}</span>
@@ -1282,7 +1282,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       {sortedGroups.map(([groupName, groupData]) => (
         <FieldGroup key={`${groupName}:${search.trim()}`} title={parameterGroupLabel(groupName, english) || (groupName === 'training' ? (english ? 'Training mode' : '训练方式') : t(`groups.${groupName}`, groupName))} count={groupData.fields.length} compact={compact} groupKey={groupName}>
           {groupName === 'checkpoint' && versionSources && <div className="output-binding-summary">
-            <div className="output-binding-heading"><strong>{english ? 'Training weights' : '训练权重'}</strong><button type="button" onClick={() => setEditOutput(previous => !previous)}>{editOutput ? (english ? 'Collapse custom settings' : '收起自定义设置') : (english ? 'Customize save location or name' : '自定义保存位置或名称')}</button></div>
+            <div className="output-binding-heading"><strong>{english ? 'Training weights' : '训练权重'}</strong><button type="button" className="ui-link" onClick={() => setEditOutput(previous => !previous)}>{editOutput ? (english ? 'Collapse custom settings' : '收起自定义设置') : (english ? 'Customize save location or name' : '自定义保存位置或名称')}</button></div>
             {outputBinding ? <><div><span>{english ? 'File name' : '文件名'}</span><code>{outputBinding.name}-final{value.training?.mode === 'full' ? '.model/' : '.safetensors'}</code></div><div><span>{english ? 'Save location' : '保存位置'}</span><code>{outputBinding.directory_template.replace('{job_id}', english ? '<run ID>' : '<运行 ID>')}</code></div></> : <p>{english ? 'Resolving the save location…' : '正在读取保存位置…'}</p>}
           </div>}
           {groupName === 'caption' && showCaptionFormats && <div className="config-field-section config-caption-formats"><h3>{english ? 'Caption format' : '标签格式'}</h3><div className="caption-source-formats">
@@ -1296,11 +1296,11 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
               </div>;
             })}
           </div></div>}
-          {groupName === 'caption' && hasCaptionOverrides && !showAdvanced && !editCaptionOverrides && <div className="caption-override-notice" role="status"><span>{english ? 'This configuration adds text to your existing captions.' : '当前配置会额外改写已有标签。'}</span><button type="button" onClick={() => setEditCaptionOverrides(true)}>{english ? 'Edit extra caption changes' : '编辑额外标签改写'}</button></div>}
+          {groupName === 'caption' && hasCaptionOverrides && !showAdvanced && !editCaptionOverrides && <div className="caption-override-notice" role="status"><span>{english ? 'This configuration adds text to your existing captions.' : '当前配置会额外改写已有标签。'}</span><button type="button" className="ui-btn ui-btn-sm" onClick={() => setEditCaptionOverrides(true)}>{english ? 'Edit extra caption changes' : '编辑额外标签改写'}</button></div>}
           <ParameterFields group={groupName} fields={groupData.fields} english={english}/>
         </FieldGroup>
       ))}
-      {sortedGroups.length === 0 && <div className="config-search-empty" role="status"><strong>{english ? 'No matching parameters.' : '没有匹配的参数。'}</strong><p>{search.trim() ? (english ? 'Try a parameter name, keyword or configuration path.' : '试试参数名称、关键词或配置字段路径。') : (english ? 'This section has no available parameters for the current configuration.' : '当前配置在此分区没有可用参数。')}</p>{search.trim() && onClearSearch && <button type="button" className="studio-secondary" onClick={onClearSearch}>{english ? 'Return to parameter sections' : '返回参数分区'}</button>}</div>}
+      {sortedGroups.length === 0 && <div className="config-search-empty" role="status"><strong>{english ? 'No matching parameters.' : '没有匹配的参数。'}</strong><p>{search.trim() ? (english ? 'Try a parameter name, keyword or configuration path.' : '试试参数名称、关键词或配置字段路径。') : (english ? 'This section has no available parameters for the current configuration.' : '当前配置在此分区没有可用参数。')}</p>{search.trim() && onClearSearch && <button type="button" className="ui-btn" onClick={onClearSearch}>{english ? 'Return to parameter sections' : '返回参数分区'}</button>}</div>}
     </div>
   );
 };

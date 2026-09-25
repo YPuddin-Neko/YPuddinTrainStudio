@@ -7,7 +7,6 @@
 .app-shell .task-workspace { width:100%; max-width:1320px; margin-inline:auto; gap:20px; }
 .app-shell .task-page-heading h1 { font-size:24px; letter-spacing:-.5px; }
 .app-shell .task-page-heading p { font-size:13px; }
-.app-shell .task-button { min-height:38px; padding:7px 12px; border-radius:7px; font-size:13px; }
 .app-shell .task-empty { font-size:13px; line-height:1.7; }
 .app-shell .task-empty strong { color:var(--studio-text); font-size:15px; font-weight:600; }
 .app-shell .task-status { font-size:12px; border-radius:5px; }
@@ -26,7 +25,6 @@
 .app-shell .project-sidebar-identity small { display:none; }
 .app-shell .project-sidebar-version-heading,.app-shell .project-sidebar-model { font-size:12px; line-height:1.5; }
 .app-shell .project-sidebar > .studio-select { min-height:36px; font-size:13px; }
-.app-shell .project-sidebar-actions > button { height:34px; }
 .app-shell .project-sidebar .sidebar-project-stages .project-workflow a { min-height:39px; font-size:13px; padding:8px; }
 .app-shell .sidebar-collapse-control { height:40px; }
 .app-shell .studio-select-menu { font-size:13px; }
@@ -45,6 +43,5 @@
   .workspace-heading-title h1,.app-shell .task-page-heading h1 { font-size:21px; }
   .workspace-breadcrumb a,.workspace-breadcrumb span:last-child { max-width:130px; }
   .app-shell .workspace-page-heading .project-heading-status { align-self:flex-end; max-width:45%; }
-  .app-shell .task-button { min-height:40px; }
 }
 @media(prefers-reduced-motion:reduce) { .app-shell { scroll-behavior:auto; } }

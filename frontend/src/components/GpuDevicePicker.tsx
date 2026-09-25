@@ -101,7 +101,7 @@ function DevicePicker({ value, onChange, count = 1, disabled = false, compact = 
     : device.status === 'unavailable' ? text('不可用', 'Unavailable') : text('空闲', 'Free');
   const describe = (device: QueueDevice) => `${gpuDeviceLabel(device.device)} · ${device.name} · ${statusLabel(device)}`;
   const body = <div className="gpu-picker-body">
-    <div className="gpu-picker-heading"><strong>{text('运行显卡', 'Run on GPU')}</strong><button type="button" disabled={disabled || loading} onClick={refresh} aria-label={text('刷新显卡状态', 'Refresh GPU status')}><RefreshCw size={13} className={loading ? 'animate-spin' : ''}/></button></div>
+    <div className="gpu-picker-heading"><strong>{text('运行显卡', 'Run on GPU')}</strong><button type="button" className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon" disabled={disabled || loading} onClick={refresh} aria-label={text('刷新显卡状态', 'Refresh GPU status')}><RefreshCw size={13} className={loading ? 'animate-spin' : ''}/></button></div>
     {training ? <>
       {count === 1 ? <label className="gpu-picker-auto"><input type="radio" name={`${menuId}-device`} checked={value.length === 0} disabled={disabled} onChange={() => onChange([])}/>{text('自动选择 1 张空闲显卡', 'Automatically choose 1 free GPU')}</label>
         : <Switch className="gpu-picker-auto" checked={value.length === 0} disabled={disabled} onCheckedChange={checked => onChange(checked ? [] : devices.filter(device => device.status !== 'unavailable').slice(0, count).map(device => device.device))}>{text(`自动选择 ${count} 张空闲显卡`, `Automatically choose ${count} free GPUs`)}</Switch>}
@@ -139,5 +139,5 @@ function DevicePicker({ value, onChange, count = 1, disabled = false, compact = 
     {visible && createPortal(<div id={menuId} ref={menu} role="dialog" aria-label={text('训练显卡选择', 'Training GPU selection')} className="gpu-picker gpu-picker-menu" style={position}>{body}</div>, document.body)}
   </div>;
   if (!compact) return <section className="gpu-picker" aria-label={text('显卡选择', 'GPU selection')}>{body}</section>;
-  return <details className="gpu-picker gpu-picker-compact" ref={popover}><summary aria-label={text('选择运行显卡', 'Choose run GPUs')}><Cpu size={14}/><span>{value.length ? value.map(gpuDeviceLabel).join(', ') : text('自动选卡', 'Auto GPU')}{wrongCount ? ' !' : ''}</span><ChevronDown size={12}/></summary>{body}</details>;
+  return <details className="gpu-picker gpu-picker-compact" data-popover ref={popover}><summary className="ui-btn" aria-label={text('选择运行显卡', 'Choose run GPUs')}><Cpu size={14}/><span>{value.length ? value.map(gpuDeviceLabel).join(', ') : text('自动选卡', 'Auto GPU')}{wrongCount ? ' !' : ''}</span><ChevronDown size={12}/></summary>{body}</details>;
 }

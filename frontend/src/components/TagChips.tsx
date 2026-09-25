@@ -122,7 +122,7 @@ export const TagChips: React.FC<TagChipsProps> = ({ caption, onChange, readOnly 
           <button
             type="button"
             onClick={handleAdd}
-            className="px-2.5 py-1.5 text-xs bg-slate-200 dark:bg-slate-700 rounded hover:bg-slate-300 dark:hover:bg-slate-600"
+            className="ui-btn ui-btn-sm"
           >
             {t('dataset.addTag')}
           </button>

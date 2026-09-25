@@ -1,0 +1,118 @@
+/* Shared action buttons, text links, segmented controls and tabs. */
+:root {
+  --control-h: 34px;
+  --control-h-sm: 28px;
+  --control-h-lg: 38px;
+  --control-radius: 6px;
+  --control-hover-line: color-mix(in srgb, var(--studio-dim) 45%, var(--studio-line));
+  --control-danger-soft: color-mix(in srgb, var(--studio-danger-line) 9%, var(--studio-panel));
+  --control-accent-soft: color-mix(in srgb, var(--studio-accent) 10%, var(--studio-panel));
+}
+
+/* Buttons */
+.ui-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  flex-shrink: 0; min-height: var(--control-h); padding: 0 12px;
+  border: 1px solid var(--studio-line); border-radius: var(--control-radius);
+  background: var(--studio-panel); color: var(--studio-text);
+  font-size: 13px; font-weight: 500; line-height: 18px; white-space: nowrap; text-decoration: none;
+  transition-property: background-color, border-color, color, box-shadow, opacity, transform;
+  transition-duration: var(--motion-quick, 140ms); transition-timing-function: var(--motion-ease, ease-out);
+}
+.ui-btn > svg { flex-shrink: 0; }
+.ui-btn:hover:not(:disabled):not([aria-disabled=true]) { background: var(--studio-muted); border-color: var(--control-hover-line); }
+.ui-btn:active:not(:disabled):not([aria-disabled=true]) { transform: scale(.97); }
+.ui-btn:focus-visible { outline: 2px solid var(--studio-accent); outline-offset: 2px; }
+.ui-btn:disabled, .ui-btn[aria-disabled=true] { opacity: .45; cursor: not-allowed; }
+.ui-btn[aria-pressed=true], .ui-btn[aria-expanded=true]:not(.ui-btn-primary) { border-color: color-mix(in srgb, var(--studio-accent) 55%, var(--studio-line)); background: var(--control-accent-soft); color: var(--studio-accent); }
+
+.ui-btn-primary { border-color: var(--studio-action); background: var(--studio-action); color: var(--studio-on-action); }
+.ui-btn-primary:hover:not(:disabled):not([aria-disabled=true]) { border-color: var(--studio-action-hover); background: var(--studio-action-hover); color: var(--studio-on-action); }
+
+.ui-btn-danger { color: var(--studio-danger); }
+.ui-btn-danger:hover:not(:disabled):not([aria-disabled=true]) { border-color: var(--studio-danger-line); background: var(--control-danger-soft); color: var(--studio-danger); }
+
+/* Confirming a destructive step: filled red, same weight as a primary action. */
+.ui-btn-primary.ui-btn-danger { border-color: #dc2626; background: #dc2626; color: #fff; }
+.ui-btn-primary.ui-btn-danger:hover:not(:disabled):not([aria-disabled=true]) { border-color: #b91c1c; background: #b91c1c; color: #fff; }
+
+.ui-btn-quiet { border-color: transparent; background: transparent; color: var(--studio-dim); }
+.ui-btn-quiet:hover:not(:disabled):not([aria-disabled=true]) { border-color: transparent; background: var(--studio-muted); color: var(--studio-text); }
+.ui-btn-quiet.ui-btn-danger { color: var(--studio-danger); }
+.ui-btn-quiet.ui-btn-danger:hover:not(:disabled):not([aria-disabled=true]) { background: var(--control-danger-soft); color: var(--studio-danger); }
+
+.ui-btn-sm { min-height: var(--control-h-sm); padding: 0 9px; gap: 5px; font-size: 12px; }
+.ui-btn-lg { min-height: var(--control-h-lg); padding: 0 16px; gap: 7px; }
+.ui-btn-icon { width: var(--control-h); padding: 0; }
+.ui-btn-icon.ui-btn-sm { width: var(--control-h-sm); }
+.ui-btn-icon.ui-btn-lg { width: var(--control-h-lg); }
+.ui-btn-block { display: flex; width: 100%; }
+
+/* Text actions inside prose, headings and table rows. */
+.ui-link {
+  display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none;
+  color: var(--studio-accent); font-size: inherit; font-weight: 500; line-height: inherit; white-space: nowrap;
+  text-decoration: none; text-underline-offset: 3px;
+}
+.ui-link:hover:not(:disabled) { text-decoration: underline; }
+.ui-link:focus-visible { outline: 2px solid var(--studio-accent); outline-offset: 2px; border-radius: 3px; }
+.ui-link:disabled { opacity: .45; cursor: not-allowed; }
+.ui-link > svg { flex-shrink: 0; transition: transform var(--motion-quick, 140ms) var(--motion-ease, ease-out); }
+.ui-link:hover:not(:disabled) > svg:last-child:not(:first-child) { transform: translateX(2px); }
+.ui-link-danger { color: var(--studio-danger); }
+
+/* Segmented toggles: one choice out of a few, with a thumb that slides to the choice. */
+.ui-segmented {
+  position: relative; isolation: isolate; display: inline-flex; align-items: stretch; flex-shrink: 0; gap: 2px;
+  min-height: var(--control-h); padding: 2px; border: 1px solid var(--studio-line); border-radius: 8px; background: var(--studio-muted);
+}
+.ui-segmented > button, .ui-segmented > a {
+  position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: calc(var(--control-h) - 6px); padding: 0 11px; border: 0; border-radius: 6px; background: transparent;
+  color: var(--studio-dim); font-size: 12px; font-weight: 500; line-height: 18px; white-space: nowrap;
+}
+.ui-segmented > :is(button, a):hover:not(:disabled):not([aria-pressed=true]):not([aria-selected=true]):not([aria-current]) { color: var(--studio-text); }
+.ui-segmented > :is(button, a):focus-visible { outline: 2px solid var(--studio-accent); outline-offset: 0; }
+.ui-segmented > :is(button, a):disabled { opacity: .45; cursor: not-allowed; }
+.ui-segmented > :is([aria-pressed=true], [aria-selected=true], [aria-current]) { color: var(--studio-text); }
+.ui-segmented-thumb {
+  position: absolute; z-index: 0; top: 2px; bottom: 2px; left: 0; width: 0; border-radius: 6px; pointer-events: none;
+  background: var(--studio-panel); box-shadow: 0 1px 2px rgb(15 23 42 / .12), 0 0 0 1px var(--studio-line);
+  opacity: 0; transition: transform var(--motion-base, 200ms) var(--motion-ease, ease-out), width var(--motion-base, 200ms) var(--motion-ease, ease-out), opacity var(--motion-quick, 140ms);
+}
+.ui-segmented-thumb[data-ready] { opacity: 1; }
+/* Before the thumb measures (and without script) the chosen option still reads as chosen. */
+.ui-segmented:not(:has(> .ui-segmented-thumb[data-ready])) > :is([aria-pressed=true], [aria-selected=true], [aria-current]) { background: var(--studio-panel); box-shadow: 0 1px 2px rgb(15 23 42 / .12); }
+.ui-segmented-sm { min-height: var(--control-h-sm); }
+.ui-segmented-sm > :is(button, a) { min-height: calc(var(--control-h-sm) - 6px); padding: 0 8px; }
+
+/* Underlined tab rows with a sliding indicator. */
+.ui-tabs {
+  position: relative; display: flex; align-items: stretch; gap: 2px; min-width: 0;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none; border-bottom: 1px solid var(--studio-line);
+}
+.ui-tabs::-webkit-scrollbar { display: none; }
+.ui-tabs > :is(button, a) {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none;
+  min-height: 38px; padding: 0 12px; border: 0; border-radius: 6px 6px 0 0; background: transparent;
+  color: var(--studio-dim); font-size: 13px; font-weight: 500; line-height: 18px; white-space: nowrap;
+}
+.ui-tabs > :is(button, a):hover:not(:disabled) { background: color-mix(in srgb, var(--studio-muted) 70%, transparent); }
+.ui-tabs > :is(button, a):hover:not(:disabled):not([aria-selected=true]):not([aria-current]) { color: var(--studio-text); }
+.ui-tabs > :is(button, a):focus-visible { outline: 2px solid var(--studio-accent); outline-offset: -2px; }
+.ui-tabs > :is([aria-selected=true], [aria-current]) { color: var(--studio-accent); }
+.ui-tabs-indicator {
+  position: absolute; left: 0; bottom: 0; width: 0; height: 2px; border-radius: 2px 2px 0 0; pointer-events: none;
+  background: var(--studio-accent); opacity: 0;
+  transition: transform var(--motion-base, 200ms) var(--motion-ease, ease-out), width var(--motion-base, 200ms) var(--motion-ease, ease-out), opacity var(--motion-quick, 140ms);
+}
+.ui-tabs-indicator[data-ready] { opacity: 1; }
+.ui-tabs:not(:has(> .ui-tabs-indicator[data-ready])) > :is([aria-selected=true], [aria-current]) { box-shadow: inset 0 -2px var(--studio-accent); }
+
+@media (pointer: coarse) {
+  .ui-btn { min-height: 40px; }
+  .ui-btn-sm { min-height: 36px; }
+  .ui-btn-icon { width: 40px; }
+  .ui-btn-icon.ui-btn-sm { width: 36px; }
+  .ui-segmented > :is(button, a) { min-height: 36px; }
+}

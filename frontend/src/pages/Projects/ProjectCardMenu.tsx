@@ -20,7 +20,7 @@ export default function ProjectCardMenu({ name, archived, busy, onEdit, onArchiv
   }, [open]);
   const run = (action: () => void) => { setOpen(false); trigger.current?.focus(); action(); };
   return <div ref={root} className="project-card-menu" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
-    <button ref={trigger} type="button" className="project-more-button" aria-label={text(`更多操作：${name}`, `More actions: ${name}`)}
+    <button ref={trigger} type="button" className="ui-btn ui-btn-sm ui-btn-icon project-more-button" aria-label={text(`更多操作：${name}`, `More actions: ${name}`)}
       aria-haspopup="menu" aria-expanded={open && !busy} aria-controls={open && !busy ? id : undefined} disabled={busy}
       onClick={() => setOpen(value => !value)} onKeyDown={event => { if (event.key === 'ArrowDown') { event.preventDefault(); setOpen(true); } }}><MoreHorizontal size={17}/></button>
     {open && !busy && <div ref={menu} id={id} role="menu" aria-label={text(`项目操作：${name}`, `Project actions: ${name}`)} className="project-action-menu" onKeyDown={event => {

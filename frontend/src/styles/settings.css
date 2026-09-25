@@ -2,11 +2,8 @@
 .dark .settings-workspace{--settings-line:#334155;--settings-surface:#111827;--settings-subtle:#182230;--settings-muted:#94a3b8;color:#e2e8f0}
 .settings-heading{flex:none;padding:20px 28px 0;border-bottom:1px solid var(--settings-line);background:var(--settings-surface)}
 .settings-heading h1{font-size:24px;font-weight:650;line-height:1.3;margin:0 0 18px}
-.settings-tabs{display:flex;gap:8px;overflow-x:auto;scrollbar-width:thin}
-.settings-tabs>button{display:flex;align-items:center;gap:7px;flex:none;padding:10px 13px;border-bottom:2px solid transparent;color:var(--settings-muted);white-space:nowrap;font-size:13px}
-.settings-tabs>button[aria-selected=true]{color:#2563eb;border-color:#2563eb;font-weight:600}
-.dark .settings-tabs>button[aria-selected=true]{color:#60a5fa;border-color:#60a5fa}
-.settings-tabs>button:focus-visible,.settings-index button:focus-visible{outline:2px solid #3b82f6;outline-offset:-2px;border-radius:3px}
+.settings-tabs{gap:4px;border-bottom:0}
+.settings-index button:focus-visible{outline:2px solid #3b82f6;outline-offset:-2px;border-radius:3px}
 .settings-scroll{min-height:0;flex:1;overflow-y:auto;overscroll-behavior:contain;padding:20px 24px 120px;scroll-padding-top:20px}
 .settings-columns{display:grid;grid-template-columns:minmax(0,1fr) 154px;align-items:start;gap:24px;min-width:0}
 .settings-main{min-width:0;display:flex;flex-direction:column;gap:18px}
@@ -27,11 +24,8 @@
 .settings-field-control>input,.settings-field-control>select{width:100%;max-width:420px}
 .settings-field-control .settings-note{margin-top:5px}
 .settings-workspace input:not([type=checkbox]):not([type=radio]):not([type=file]),.settings-workspace select{font-size:13px;line-height:1.4;border-radius:5px;min-height:34px}
-.settings-workspace button{font-size:13px}
 .settings-input{padding:7px 10px;border:1px solid var(--settings-line);background:var(--settings-surface);color:inherit;border-radius:5px}
 .settings-save{display:flex;align-items:center;justify-content:flex-end;gap:12px;position:sticky;bottom:0;padding:13px 0;border-top:1px solid var(--settings-line);background:var(--settings-surface);z-index:1}
-.settings-action{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:7px 12px;border-radius:5px;background:#2563eb;color:white;font-size:13px;font-weight:500}
-.settings-action:disabled{opacity:.5}
 .settings-alert{white-space:pre-wrap;overflow-wrap:anywhere;border-left:3px solid #ef4444;background:#fef2f2;color:#b91c1c;padding:10px 12px;font-size:13px}
 .dark .settings-alert{background:#3b171e;color:#fca5a5}
 .settings-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 24px}
@@ -75,14 +69,10 @@
 @container(min-width:320px) and (max-width:560px) { .settings-facts { grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; } }
 
 .service-controls { display:grid; gap:10px; margin:16px 0; }
-.installation-operation .settings-input,.installation-operation .settings-action { width:auto; padding:6px 10px; border-radius:6px; font-size:12px; line-height:16px; }
-.installation-operation .settings-action { border:1px solid transparent; }
 
 .settings-service-refresh { flex:0 0 auto; }
-.service-refresh { display:inline-flex; align-items:center; justify-content:center; gap:6px; white-space:nowrap; }
 .settings-save > .service-controls-secondary { flex:1; margin:0; min-width:0; }
-.service-controls-secondary .settings-input { width:auto; display:inline-flex; align-items:center; justify-content:center; gap:6px; }
 .settings-save:has(.service-controls-secondary) { align-items:flex-start; flex-wrap:wrap; }
-.settings-save > .settings-action { margin-left:auto; flex-shrink:0; }
+.settings-save > .ui-btn-primary { margin-left:auto; }
 
 .settings-sdpa-status { padding: 12px 0; }

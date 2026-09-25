@@ -63,8 +63,8 @@ export default function DtkWheelPicker({ packageName, selected, onSelect, disabl
     <div className="flex flex-wrap items-center justify-between gap-2">
       <strong className="text-sm">{text('DTK 官方安装包', 'Official DTK packages')}</strong>
       <div className="flex items-center gap-2">
-        {catalog?.source_url && <a className="studio-link inline-flex items-center gap-1 text-xs" href={catalog.source_url} target="_blank" rel="noreferrer">{text('官方目录', 'Official catalog')}<ExternalLink size={12}/></a>}
-        <button type="button" className="settings-input inline-flex items-center gap-1.5" disabled={disabled || loading} onClick={() => { onSelect(null); setRevision(value => value + 1); }}><RefreshCw size={13}/>{text('重新检查兼容版本', 'Check compatible versions again')}</button>
+        {catalog?.source_url && <a className="ui-link" href={catalog.source_url} target="_blank" rel="noreferrer">{text('官方目录', 'Official catalog')}<ExternalLink size={12}/></a>}
+        <button type="button" className="ui-btn ui-btn-sm" disabled={disabled || loading} onClick={() => { onSelect(null); setRevision(value => value + 1); }}><RefreshCw size={13}/>{text('重新检查兼容版本', 'Check compatible versions again')}</button>
       </div>
     </div>
     {catalog && <p className="settings-note">DTK {catalog.runtime.dtk || '—'} · PyTorch {catalog.runtime.torch} · Python {catalog.runtime.python} · {catalog.runtime.machine}</p>}

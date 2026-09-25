@@ -13,8 +13,10 @@ import { TagChips } from '../../components/TagChips';
 import StructuredCaptionEditor from '../../components/datasets/StructuredCaptionEditor';
 import { getCaptionStructure, captionFieldChanges, type CaptionFieldDraft } from '../../utils/captionStructure';
 import { formatBytes, formatParams } from '../../utils/format';
+import '../../styles/project-workspace.css';
 import './dataset-workspace.css';
-import DatasetImagePane from './DatasetImagePane';
+import DatasetImagePane from '../../components/datasets/DatasetImagePane';
+import ProgressBar from '../../components/ProgressBar';
 import ProjectWorkspaceHeader from '../../components/projects/ProjectWorkspaceHeader';
 import DatasetNavigationGuard from '../../components/datasets/DatasetNavigationGuard';
 import { useWorkspaceText } from '../../utils/workspaceText';
@@ -24,14 +26,13 @@ import {
   Search,
   X,
   Brush,
-  ArrowLeft,
 } from 'lucide-react';
 
 export default function Dataset() {
   const { id } = useParams<{ id: string }>();
   return <DatasetWorkspace key={id || ''} id={id}/>;
 }
-export function DatasetWorkspace({id, curation = false, selector}: {id?:string; curation?:boolean; selector?:React.ReactNode}) {
+export function DatasetWorkspace({id}: {id?:string}) {
   const navigate = useNavigate();
   const location = useLocation();
   const hasDataRouter = !!React.useContext(UNSAFE_DataRouterContext);
@@ -89,20 +90,7 @@ export function DatasetWorkspace({id, curation = false, selector}: {id?:string; 
     return () => { versionRequest.current?.abort(); window.removeEventListener('focus', checkVersionAccess); };
   }, [checkVersionAccess]);
 
-  const trainingImages = useDatasetImages(id, 60, curation ? 'training' : 'all');
-  const unusedImages = useDatasetImages(curation ? id : undefined, 60, 'unused');
-  const images = {
-    items: curation ? [...trainingImages.items, ...unusedImages.items] : trainingImages.items,
-    selected: new Set([...trainingImages.selected, ...(curation ? unusedImages.selected : [])]),
-    q: trainingImages.q,
-    setQ: (query: string) => { trainingImages.setQ(query); unusedImages.setQ(query); },
-    refresh: () => { trainingImages.refresh(); unusedImages.refresh(); },
-    clearSelection: () => { trainingImages.clearSelection(); unusedImages.clearSelection(); },
-    updateCaption: (hash: string, caption: string, path: string) => {
-      const source = trainingImages.items.some(image => image.hash === hash && image.rel_path === path) ? trainingImages : unusedImages;
-      source.updateCaption(hash, caption, path);
-    },
-  };
+  const images = useDatasetImages(id, 60, 'all');
   const activeImg = activeImage ? editorImage : undefined;
   const activeStructure = getCaptionStructure(activeImg ?? undefined);
   const activeJson = activeImg?.caption_format?.toLowerCase().replace(/^\./, '') === 'json';
@@ -161,16 +149,6 @@ export function DatasetWorkspace({id, curation = false, selector}: {id?:string; 
     finally{setBusyAction(null);}
   };
   const enableMaskedTraining = () => updateSettings({masked_loss:true});
-  const setParticipation = async (included: boolean) => {
-    const source = included ? unusedImages : trainingImages;
-    if (!id || !canEdit || !source.selected.size) return;
-    setBusyAction('membership'); setActionError('');
-    try {
-      await apiClient.post(`/datasets/${id}/membership`, { paths: [...source.selected], included });
-      source.clearSelection(); images.refresh(); fetchInfo();
-    } catch (error) { setActionError(formatApiError(error)); }
-    finally { setBusyAction(null); }
-  };
 
   const openEditor = (hash: string, relPath: string) => {
     const img = images.items.find((i) => i.hash === hash && i.rel_path === relPath);
@@ -280,147 +258,103 @@ export function DatasetWorkspace({id, curation = false, selector}: {id?:string; 
   // keeps the return link usable while the dataset request is still loading.
   const returnProject = info?.source.project_id || returnQuery.get('project');
   const returnVersion = info?.source.project_id ? info.source.version_id : returnQuery.get('version');
-  const returnUrl = returnProject ? `${projectUrl(returnProject, returnVersion, 'data')}&data_step=import#version-datasets` : '/projects';
-
-  const returnLink = <Link className="dataset-workspace-return" to={returnUrl}><ArrowLeft size={14}/>{returnProject ? text('返回本版本数据集', 'Back to version datasets') : text('返回项目', 'Back to projects')}</Link>;
+  const returnUrl = returnProject ? `${projectUrl(returnProject, returnVersion, 'data')}&data_step=datasets#version-datasets` : '/projects';
+  const curationUrl = info?.source.project_id && info.source.version_id ? `${projectUrl(info.source.project_id, info.source.version_id, 'data')}&data_step=curate&dataset=${encodeURIComponent(id || '')}` : '';
 
   return (
-    <div className={`dataset-workspace${curation ? ' dataset-curation-workspace' : ''}`} data-testid="dataset-page">
+    <div className="dataset-workspace" data-testid="dataset-page">
       {hasDataRouter && <DatasetNavigationGuard shouldBlock={() => {
         return leaveRef.current.dirty;
       }} beforeLeave={() => leaveRef.current.beforeNavigation()} onError={error => setActionError(formatApiError(error))}/>}
       <div className="dataset-workspace-navigation">
-        {projectContext && !infoError ? <ProjectWorkspaceHeader project={projectContext.project} versionId={info?.source.version_id || undefined} versions={projectContext.versions} current={projectContext.current} active="data" title={curation ? text('训练集筛选','Training set curation') : datasetName} titleBadge={selector} breadcrumbLeading={returnLink} refresh={refreshProjectContext} beforeAction={beforeNavigation}/> : <><nav className="workspace-breadcrumb">{returnLink}</nav><h1 className="text-base font-semibold" title={info?.source.path}>{curation ? text('训练集筛选','Training set curation') : info && !infoError ? datasetName : text('图片、标签与遮罩','Images, captions and masks')}</h1></>}
+        {projectContext && !infoError ? <ProjectWorkspaceHeader project={projectContext.project} versionId={info?.source.version_id || undefined} versions={projectContext.versions} current={projectContext.current} active="data" title={datasetName} breadcrumbTrail={<Link to={returnUrl}>{text('训练数据', 'Training data')}</Link>} refresh={refreshProjectContext} beforeAction={beforeNavigation}/> : <header className="workspace-navigation workspace-page-heading"><div className="workspace-heading-main"><nav className="workspace-breadcrumb" aria-label={text('当前位置', 'Current location')}><Link to="/projects">{text('项目', 'Projects')}</Link>{returnProject && <><span aria-hidden="true">/</span><Link to={returnUrl}>{text('训练数据', 'Training data')}</Link></>}</nav><div className="workspace-heading-title"><h1 title={info?.source.path}>{info && !infoError ? datasetName : text('图片、标签与遮罩','Images, captions and masks')}</h1></div></div></header>}
       </div>
-      {(infoError || contextError) && <div role="alert" className="workspace-message error">{infoError || contextError}<button onClick={()=>{fetchInfo();void refreshProjectContext();}}>{t('common.retry')}</button></div>}
-      {versionKey && !canEdit && <div className="flex flex-wrap items-center gap-2 rounded border border-slate-300 bg-slate-50 px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-900" role={versionAccess?.key === versionKey && versionAccess.error ? 'alert' : 'status'}>
+      {(infoError || contextError) && <div role="alert" className="workspace-message error">{infoError || contextError}<button type="button" className="ui-btn ui-btn-sm" onClick={()=>{fetchInfo();void refreshProjectContext();}}>{t('common.retry')}</button></div>}
+      {versionKey && !canEdit && <div className="workspace-message dataset-readonly-notice" role={versionAccess?.key === versionKey && versionAccess.error ? 'alert' : 'status'}>
         <span>{versionAccess?.key !== versionKey ? text('正在确认版本状态，暂以只读方式查看。', 'Checking version status. Viewing in read-only mode.') : versionAccess.error ? `${text('无法确认版本状态，编辑已暂停：', 'Cannot verify version status; editing is paused: ')}${versionAccess.error}` : versionAccess.archived ? text('此版本已归档，图片、标签和遮罩只读。', 'This version is archived. Images, captions and masks are read only.') : text('此版本暂不可编辑，当前为只读查看。', 'This version is not editable yet. Viewing in read-only mode.')}</span>
-        <Link className="text-blue-600" to={projectUrl(info!.source.project_id || '', info!.source.version_id, 'data')}>{text('返回版本工作区', 'Return to version workspace')}</Link>
-        <button type="button" className="text-blue-600" onClick={() => void checkVersionAccess()}>{t('common.refresh')}</button>
+        <Link className="ui-link" to={projectUrl(info!.source.project_id || '', info!.source.version_id, 'data')}>{text('返回版本工作区', 'Return to version workspace')}</Link>
+        <button type="button" className="ui-link" onClick={() => void checkVersionAccess()}>{t('common.refresh')}</button>
       </div>}
-      {actionError && !activeImage && <div role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{actionError}</div>}
-      {!curation && <><div className="dataset-folder-bar" data-testid="dataset-overview">
+      {actionError && !activeImage && <div role="alert" className="workspace-message error">{actionError}</div>}
+      <div className="dataset-folder-bar" data-testid="dataset-overview">
         {info && <form className="dataset-folder-settings" onSubmit={event => {
           event.preventDefault();
           void beforeNavigation().then(() => updateSettings({ ...(folderName !== savedFolderName ? { name: folderName.trim() } : {}), repeats: Number(repeats) })).catch(error => setActionError(formatApiError(error)));
         }}>
           <label>{text('文件夹名称','Folder name')}<input aria-label={text('文件夹名称','Folder name')} value={folderName} required disabled={!canEdit || !!busyAction || !info.source.can_rename} onChange={event => setFolderName(event.target.value)}/></label>
           <label className="dataset-repeat-field">{text('每轮重复次数','Repeats per epoch')}<input aria-label={text('每轮重复次数','Repeats per epoch')} type="number" min={1} max={1000000} required value={repeats} disabled={!canEdit || !!busyAction} onChange={event => setRepeats(event.target.value)}/></label>
-          <button type="submit" aria-label={text('保存目录设置','Save folder settings')} disabled={!canEdit || !!busyAction || !folderName.trim() || !Number.isInteger(Number(repeats)) || Number(repeats)<1 || Number(repeats)>1000000 || (folderName === savedFolderName && Number(repeats) === info.source.repeats)}>{busyAction === 'settings' ? text('保存中…','Saving…') : text('保存','Save')}</button>
+          <button type="submit" className="ui-btn ui-btn-primary" aria-label={text('保存目录设置','Save folder settings')} disabled={!canEdit || !!busyAction || !folderName.trim() || !Number.isInteger(Number(repeats)) || Number(repeats)<1 || Number(repeats)>1000000 || (folderName === savedFolderName && Number(repeats) === info.source.repeats)}>{busyAction === 'settings' ? text('保存中…','Saving…') : text('保存','Save')}</button>
         </form>}
         <div className="dataset-folder-actions">
-          {info?.source.project_id && info.source.version_id && <Link to={`/projects/${info.source.project_id}/v/${info.source.version_id}/curate?dataset=${id}`}>{text('训练集筛选','Training set curation')}</Link>}
-          {canEdit && info?.source.project_id && <Link to={projectUrl(info.source.project_id, info.source.version_id, 'data')}>{text('添加图片', 'Add images')}</Link>}
-          <button onClick={handleRescan} disabled={!canEdit || !!busyAction} title={t('dataset.rescan')} aria-label={t('dataset.rescan')}><RefreshCcw size={16}/></button>
-          <button onClick={handleDelete} disabled={!canEdit || !!busyAction} title={t('dataset.remove')} aria-label={t('dataset.remove')} className="dataset-remove-action"><Trash2 size={16}/></button>
+          {curationUrl && <Link className="ui-btn" to={curationUrl}>{text('训练集筛选','Training set curation')}</Link>}
+          {canEdit && info?.source.project_id && <Link className="ui-btn" to={`${projectUrl(info.source.project_id, info.source.version_id, 'data')}&data_step=datasets`}>{text('添加图片', 'Add images')}</Link>}
+          <button type="button" className="ui-btn ui-btn-icon" onClick={handleRescan} disabled={!canEdit || !!busyAction} title={t('dataset.rescan')} aria-label={t('dataset.rescan')}><RefreshCcw size={15}/></button>
+          <button type="button" className="ui-btn ui-btn-icon ui-btn-danger" onClick={handleDelete} disabled={!canEdit || !!busyAction} title={t('dataset.remove')} aria-label={t('dataset.remove')}><Trash2 size={15}/></button>
         </div>
       </div>
       <div className="dataset-library-meta">
         <span className={`dataset-index-state status-${info?.index_status || 'unknown'}`}>{statusLabel(info?.index_status)}</span>
         {stats && <span>{text(`共 ${formatParams(stats.images)} 张 · 已有标签 ${formatParams(stats.captioned ?? 0)} 张 · 遮罩 ${formatParams(stats.masks ?? 0)} 张`, `${formatParams(stats.images)} images · ${formatParams(stats.captioned ?? 0)} captioned · ${formatParams(stats.masks ?? 0)} masks`)}</span>}
-        <details className="dataset-source-details"><summary>{text('目录详情', 'Folder details')}</summary><div><code>{info?.source.path}</code><span>{text('标签格式', 'Caption format')}: {info?.source.caption_ext || '—'}</span></div></details>
+        <details className="dataset-source-details" data-popover><summary>{text('目录详情', 'Folder details')}</summary><div><code>{info?.source.path}</code><span>{text('标签格式', 'Caption format')}: {info?.source.caption_ext || '—'}</span></div></details>
       </div>
-
-      </>}
       {/* 索引进度条 */}
       {(info?.index_status === 'indexing' || indexProgress) && (
-        <div className="p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl" data-testid="index-progress">
-          <div className="flex justify-between text-xs text-blue-700 dark:text-blue-300 mb-1.5">
-            <span>{t('dataset.indexing')}</span>
-            <span className="font-mono">{indexProgress ? `${indexProgress.done} / ${indexProgress.total}` : '…'}</span>
-          </div>
-          <div className="w-full bg-blue-200 dark:bg-blue-900 rounded-full h-2">
-            <div
-              className="bg-blue-600 h-2 rounded-full transition-all"
-              style={{ width: `${indexProgress && indexProgress.total > 0 ? (indexProgress.done / indexProgress.total) * 100 : 20}%` }}
-            />
-          </div>
+        <div className="dataset-index-progress" data-testid="index-progress">
+          <div><span>{t('dataset.indexing')}</span><span className="tabular-nums">{indexProgress ? `${indexProgress.done} / ${indexProgress.total}` : '…'}</span></div>
+          <ProgressBar label={t('dataset.indexing')} value={indexProgress && indexProgress.total > 0 ? indexProgress.done : undefined} max={indexProgress?.total || 100}/>
         </div>
       )}
 
       <div className="dataset-library-tools">
-        <label className="dataset-library-search"><Search size={16}/><input type="search" aria-label={text('搜索文件名或标签','Search filenames or captions')} value={images.q} onChange={event => images.setQ(event.target.value)} placeholder={t('dataset.filterPlaceholder')} data-testid="dataset-search"/>{images.q && <button type="button" aria-label={text('清除图片筛选','Clear image filter')} onClick={() => images.setQ('')}><X size={16}/></button>}</label>
+        <label className="dataset-library-search"><Search size={16}/><input type="search" aria-label={text('搜索文件名或标签','Search filenames or captions')} value={images.q} onChange={event => images.setQ(event.target.value)} placeholder={t('dataset.filterPlaceholder')} data-testid="dataset-search"/>{images.q && <button type="button" className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon" aria-label={text('清除图片筛选','Clear image filter')} onClick={() => images.setQ('')}><X size={15}/></button>}</label>
         <label className="dataset-thumbnail-size">{text('缩略图','Thumbnails')}<input type="range" min={120} max={220} step={20} value={thumbnailWidth} onChange={event => setThumbnailWidth(Number(event.target.value))} aria-label={text('缩略图大小','Thumbnail size')}/></label>
-        {canEdit && !curation && <button type="button" aria-expanded={showBatch} onClick={() => setShowBatch(value => !value)} disabled={!images.selected.size}>{text('批量编辑标签','Edit selected captions')}{images.selected.size > 0 ? ` (${images.selected.size})` : ''}</button>}
+        {canEdit && <button type="button" className="ui-btn" aria-expanded={showBatch} onClick={() => setShowBatch(value => !value)} disabled={!images.selected.size}>{text('批量编辑标签','Edit selected captions')}{images.selected.size > 0 ? ` (${images.selected.size})` : ''}</button>}
       </div>
       {showBatch && images.selected.size > 0 && <fieldset className="dataset-browser-batch" disabled={!!busyAction}><legend>{text('批量修改已选图片的标签','Edit captions of selected images')}</legend>
         <label>{text('添加标签','Add tags')}<input value={batchAdd} onChange={event => setBatchAdd(event.target.value)} placeholder={t('dataset.addTagsPlaceholder')} data-testid="batch-add-input"/></label>
         <label>{text('移除标签','Remove tags')}<input value={batchRemove} onChange={event => setBatchRemove(event.target.value)} placeholder={t('dataset.removeTagsPlaceholder')}/></label>
-        <button onClick={applyBatchTags} disabled={!batchAdd.trim() && !batchRemove.trim()} className="dataset-primary-action" data-testid="batch-apply-btn">{busyAction === 'batch' ? t('dataset.applying') : t('dataset.applyToSelection')}</button>
+        <button type="button" onClick={applyBatchTags} disabled={!batchAdd.trim() && !batchRemove.trim()} className="ui-btn ui-btn-primary" data-testid="batch-apply-btn">{busyAction === 'batch' ? t('dataset.applying') : t('dataset.applyToSelection')}</button>
       </fieldset>}
-      <div className={`dataset-curation-panes${curation ? '' : ' dataset-single-pane'}`}>
-        <DatasetImagePane datasetId={id} images={trainingImages} training all={!curation} previewOnly={curation} count={curation ? stats?.training_images ?? stats?.images ?? 0 : stats?.images ?? 0} canEdit={canEdit} busy={!!busyAction} minWidth={thumbnailWidth} onMove={() => void setParticipation(false)} onOpen={openEditor}/>
-        {curation && <DatasetImagePane datasetId={id} previewOnly images={unusedImages} training={false} count={stats?.held_out_images ?? 0} canEdit={canEdit} busy={!!busyAction} minWidth={thumbnailWidth} onMove={() => void setParticipation(true)} onOpen={openEditor}/>}
+      <div className="dataset-library-pane">
+        <DatasetImagePane datasetId={id} images={images} training all count={stats?.images ?? 0} canEdit={canEdit} busy={!!busyAction} minWidth={thumbnailWidth} onMove={() => {}} onOpen={openEditor}/>
       </div>
 
       {canEdit && maskImage && id && <MaskEditor datasetId={id} imageId={maskImage.hash} relPath={maskImage.relPath} onClose={() => setMaskImage(null)} onSaved={() => { fetchInfo(); images.refresh(); }} onEnableTraining={enableMaskedTraining} />}
 
-      {/* 大图 + caption 编辑抽屉 */}
+      {/* 大图 + caption 编辑 */}
       {activeImage && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-6" onClick={closeCaption}>
-          <div
-            className="bg-white dark:bg-slate-800 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-4 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-            data-testid="caption-editor"
-            role="dialog" aria-modal="true" aria-label={curation ? text('图片预览','Image preview') : text('编辑图片标签','Edit image caption')}
-          >
-            <div className="flex justify-between items-center">
+        <div className="caption-dialog-backdrop" onClick={closeCaption}>
+          <div className="caption-dialog" onClick={(e) => e.stopPropagation()} data-testid="caption-editor" role="dialog" aria-modal="true" aria-label={text('编辑图片标签','Edit image caption')}>
+            <header>
               <h3 className="dataset-preview-title">{activeImg?.rel_path}</h3>
-              <button onClick={closeCaption} disabled={savingCaption} className="text-slate-400 hover:text-slate-600" title={t('common.close')}>
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <button type="button" onClick={closeCaption} disabled={savingCaption} className="ui-btn ui-btn-quiet ui-btn-icon" title={t('common.close')} aria-label={t('common.close')}><X size={18}/></button>
+            </header>
+            <div className="caption-dialog-body">
               <div>
-                <img
-                  src={apiUrl(`/datasets/${id}/images/${activeImage}/file`)}
-                  alt={activeImg?.rel_path || ''}
-                  className="w-full max-h-[50vh] object-contain rounded-lg bg-slate-100 dark:bg-slate-900"
-                />
+                <img src={apiUrl(`/datasets/${id}/images/${activeImage}/file`)} alt={activeImg?.rel_path || ''} className="caption-dialog-image"/>
                 {activeImg && (
-                  <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400" data-testid="caption-meta">
-                    <span>
-                      {t('dataset.resolution', '分辨率')}: <span className="font-mono">{activeImg.width}×{activeImg.height}</span>
-                    </span>
-                    {typeof activeSize === 'number' && (
-                      <span>
-                        {t('dataset.fileSize', '文件大小')}: <span className="font-mono">{formatBytes(activeSize)}</span>
-                      </span>
-                    )}
-                    <span>
-                      {t('dataset.masks')}: {activeImg.has_mask ? t('dataset.maskYes', '有') : t('dataset.maskNo', '无')}
-                    </span>
+                  <div className="caption-dialog-meta" data-testid="caption-meta">
+                    <span>{t('dataset.resolution', '分辨率')}: <span className="tabular-nums">{activeImg.width}×{activeImg.height}</span></span>
+                    {typeof activeSize === 'number' && <span>{t('dataset.fileSize', '文件大小')}: <span className="tabular-nums">{formatBytes(activeSize)}</span></span>}
+                    <span>{t('dataset.masks')}: {activeImg.has_mask ? t('dataset.maskYes', '有') : t('dataset.maskNo', '无')}</span>
                   </div>
                 )}
               </div>
-              <div className="space-y-3">
-                {canEdit && !curation && <button type="button" disabled={savingCaption} onClick={() => { if (activeImg) {void (captionDirty?saveCaption():Promise.resolve()).then(()=>{setMaskImage({ hash: activeImg.hash, relPath: activeImg.rel_path });setActiveImage(null);}).catch(()=>{});} }} className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600"><Brush className="h-4 w-4" />{text('编辑这张图片的训练遮罩', 'Edit this image’s training mask')}</button>}
-                <div className="text-xs text-slate-400">{curation ? text('图片标签','Caption') : t('dataset.captionEditorTitle')}{activeImg?.caption_format && ` · ${activeImg.caption_format.toUpperCase()}`}</div>
-                {activeImg?.caption_error && <p role="alert">{activeImg.caption_error}</p>}
-                {actionError && <p role="alert" className="text-sm text-red-600">{actionError}</p>}
-                {curation ? <p className="whitespace-pre-wrap text-sm">{activeImg?.caption || text('暂无标签','No caption')}</p> : activeJson ? <StructuredCaptionEditor key={`${activeImage}/${captionPath}`} structure={activeStructure} draft={captionFields} onChange={setCaptionFields} disabled={captionLocked} readOnly={!canEdit}/> : canEdit ? <fieldset disabled={captionLocked}><TagChips caption={editCaption} onChange={setEditCaption} readOnly={savingCaption}/></fieldset> : <p className="whitespace-pre-wrap text-sm">{editCaption || t('dataset.noCaption', '（无 caption）')}</p>}
-                <div className="flex justify-end space-x-2 pt-2">
-                  <button
-                    onClick={closeCaption} disabled={savingCaption}
-                    className="px-4 py-2 text-sm rounded bg-slate-200 dark:bg-slate-700"
-                  >
-                    {t('common.cancel')}
-                  </button>
-                  {!curation && <button
-                    onClick={()=>void saveCaption().catch(()=>{})}
-                    disabled={captionLocked}
-                    className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-                    data-testid="caption-save-btn"
-                  >
-                    {savingCaption ? t('dataset.saving') : t('dataset.saveCaption')}
-                  </button>}
-                </div>
+              <div className="caption-dialog-editor">
+                {canEdit && <button type="button" disabled={savingCaption} onClick={() => { if (activeImg) {void (captionDirty?saveCaption():Promise.resolve()).then(()=>{setMaskImage({ hash: activeImg.hash, relPath: activeImg.rel_path });setActiveImage(null);}).catch(()=>{});} }} className="ui-btn"><Brush size={15}/>{text('编辑这张图片的训练遮罩', 'Edit this image’s training mask')}</button>}
+                <div className="caption-dialog-label">{t('dataset.captionEditorTitle')}{activeImg?.caption_format && ` · ${activeImg.caption_format.toUpperCase()}`}</div>
+                {activeImg?.caption_error && <p role="alert" className="caption-dialog-error">{activeImg.caption_error}</p>}
+                {actionError && <p role="alert" className="caption-dialog-error">{actionError}</p>}
+                {activeJson ? <StructuredCaptionEditor key={`${activeImage}/${captionPath}`} structure={activeStructure} draft={captionFields} onChange={setCaptionFields} disabled={captionLocked} readOnly={!canEdit}/> : canEdit ? <fieldset disabled={captionLocked}><TagChips caption={editCaption} onChange={setEditCaption} readOnly={savingCaption}/></fieldset> : <p className="caption-dialog-text">{editCaption || t('dataset.noCaption', '（无 caption）')}</p>}
+                <footer>
+                  <button type="button" onClick={closeCaption} disabled={savingCaption} className="ui-btn">{t('common.cancel')}</button>
+                  <button type="button" onClick={()=>void saveCaption().catch(()=>{})} disabled={captionLocked} className="ui-btn ui-btn-primary" data-testid="caption-save-btn">{savingCaption ? t('dataset.saving') : t('dataset.saveCaption')}</button>
+                </footer>
               </div>
             </div>
           </div>
         </div>
       )}
-
     </div>
   );
 }

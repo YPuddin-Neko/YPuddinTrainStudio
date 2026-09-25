@@ -23,6 +23,6 @@ export default function PresetPreview({preset,current,onClose,onApply}: {preset:
       <p>{text('数据源和输出位置保持不变。','Data sources and output locations stay unchanged.')}</p>
       <p>{text(`将修改 ${changes.length} 个参数`,`${changes.length} parameters will change`)}</p>
       {changes.length>0 ? <div className="preset-preview-table"><table><thead><tr><th>{text('参数','Parameter')}</th><th>{text('当前','Current')}</th><th>{text('预设','Preset')}</th></tr></thead><tbody>{changes.map(change=><tr key={change.path}><th>{configFieldLabel(change.path,change.path,i18n.language.startsWith('en'))}<small>{change.path}</small></th><td>{display(change.before)}</td><td>{display(change.after)}</td></tr>)}</tbody></table></div> : <p>{text('当前参数已与此预设一致。','Current parameters already match this preset.')}</p>}
-    </div><footer className="preset-preview-actions"><button type="button" onClick={onClose}>{text('取消','Cancel')}</button><button type="button" className="studio-primary" disabled={!changes.length} onClick={onApply}>{text('应用到当前版本','Apply to this version')}</button></footer>
+    </div><footer className="preset-preview-actions"><button type="button" className="ui-btn" onClick={onClose}>{text('取消','Cancel')}</button><button type="button" className="ui-btn ui-btn-primary" disabled={!changes.length} onClick={onApply}>{text('应用到当前版本','Apply to this version')}</button></footer>
   </Dialog>;
 }

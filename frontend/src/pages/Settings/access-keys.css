@@ -7,7 +7,7 @@
 .access-keys .settings-field{grid-template-columns:var(--access-key-label-width) minmax(0,1fr);gap:var(--access-key-field-gap);align-items:center;padding:4px 0}
 .access-keys .settings-field>label{padding-top:0;white-space:nowrap}
 .access-key-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-left:calc(var(--access-key-label-width) + var(--access-key-field-gap));padding:4px 0}
-.access-key-actions button{padding:5px 10px;min-height:30px}
+
 .access-key-feedback{margin:4px 0 0 calc(var(--access-key-label-width) + var(--access-key-field-gap));font-size:12px;line-height:1.5;overflow-wrap:anywhere}
 .access-key-notice{color:#047857}
 .dark .access-key-notice{color:#6ee7b7}

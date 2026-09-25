@@ -27,7 +27,7 @@ function DatasetCard({ dataset, projectId, versionId }: Omit<Props, 'datasets' |
   const query = new URLSearchParams({ project: source.project_id || projectId });
   const ownerVersion = source.version_id || versionId;
   if (ownerVersion) query.set('version', ownerVersion);
-  return <li><Link className="project-dataset-card" data-testid={`dataset-card-${source.id}`} aria-label={text(`打开数据集：${name}`, `Open dataset: ${name}`)} to={`/datasets/${encodeURIComponent(source.id)}?${query}`}>
+  return <li><Link className="project-dataset-card ui-card-interactive" data-testid={`dataset-card-${source.id}`} aria-label={text(`打开数据集：${name}`, `Open dataset: ${name}`)} to={`/datasets/${encodeURIComponent(source.id)}?${query}`}>
     <div className="project-dataset-preview">
       {cover ? <div className="project-dataset-preview-image" key={`${cover.hash}/${cover.rel_path}`}><Images size={22} aria-hidden="true"/><img src={apiUrl(`/datasets/${encodeURIComponent(source.id)}/images/${encodeURIComponent(cover.hash)}/thumb?size=512`)} alt={cover.rel_path} width={512} height={512} loading="lazy" decoding="async" onError={event => { event.currentTarget.hidden = true; }}/></div> : <div className="project-dataset-preview-empty">{status === 'indexing' || preview.isFetching ? <Loader2 size={24} className="animate-spin" aria-hidden="true"/> : status === 'failed' || preview.isError ? <AlertCircle size={24} aria-hidden="true"/> : <Images size={24} aria-hidden="true"/>}<span>{placeholder}</span></div>}
     </div>
@@ -46,7 +46,7 @@ export default function ProjectDatasetCards({ datasets, projectId, versionId, on
   });
   const refresh = () => { onRefresh(); for (const dataset of datasets) void client.invalidateQueries({ queryKey: ['dataset-card-preview', dataset.source.id] }); };
   return <section className="project-dataset-library" id="version-datasets" aria-label={text('本版本的数据集', 'Version datasets')}>
-    <div className="project-dataset-library-heading"><div><h2>{text('本版本的数据集', 'Version datasets')}</h2><span>{text(`${datasets.length} 个目录`, `${datasets.length} folders`)}</span></div><button type="button" onClick={refresh} aria-label={text('刷新索引状态', 'Refresh index status')}><RefreshCw size={16}/>{text('刷新', 'Refresh')}</button></div>
+    <div className="project-dataset-library-heading"><div><h2>{text('本版本的数据集', 'Version datasets')}</h2><span>{text(`${datasets.length} 个目录`, `${datasets.length} folders`)}</span></div><button type="button" className="ui-btn" onClick={refresh} aria-label={text('刷新索引状态', 'Refresh index status')}><RefreshCw size={16}/>{text('刷新', 'Refresh')}</button></div>
     {!datasets.length ? <div className="project-dataset-library-empty" data-testid="datasets-empty"><Folder size={28} aria-hidden="true"/><strong>{text('还没有训练图片', 'No training images yet')}</strong></div> : <ul className="project-dataset-card-grid">{datasets.map(dataset => <DatasetCard key={dataset.source.id} dataset={dataset} projectId={projectId} versionId={versionId}/>)}</ul>}
   </section>;
 }

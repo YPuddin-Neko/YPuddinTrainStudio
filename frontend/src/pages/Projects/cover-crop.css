@@ -10,6 +10,6 @@
 .cover-crop-toolbar label { display:flex; align-items:center; gap:10px; min-width:0; flex:1; font-size:13px; }
 .cover-crop-toolbar input { flex:1; min-width:0; width:100%; accent-color:var(--studio-accent); height:34px; }
 .cover-crop-toolbar output { min-width:42px; font-variant-numeric:tabular-nums; color:var(--studio-dim); font-size:12px; }
-.cover-crop-toolbar button { flex:none; min-height:36px; }
+.cover-crop-toolbar .ui-btn { flex:none; }
 .cover-crop-editor > small { display:flex; align-items:center; gap:5px; color:var(--studio-dim); font-size:11px; }
-@media(max-width:420px) { .cover-crop-toolbar { gap:8px; }.cover-crop-toolbar label { gap:6px; }.cover-crop-editor .project-editor-footer button { min-height:44px; } }
+@media(max-width:420px) { .cover-crop-toolbar { gap:8px; }.cover-crop-toolbar label { gap:6px; } }

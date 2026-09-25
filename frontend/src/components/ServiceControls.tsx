@@ -90,16 +90,16 @@ export default function ServiceControls({environmentId, onRestarted, refreshTarg
       setError(text('暂未重新连接。请查看启动窗口；恢复后可点击刷新状态。','Reconnection timed out. Check the launcher window, then refresh status.'));
     }catch(e){if(!cancelled.current){setNotice('');setError(formatApiError(e));}}finally{if(!cancelled.current)setBusy(false);}
   };
-  const refreshButton = <button type="button" className="settings-input service-refresh" disabled={busy || disabled} onClick={()=>void refresh().then(current=>{setError('');if(environmentId&&current.selected_environment===environmentId){setNotice(text('当前正在使用此环境。','This environment is currently active.'));onRestarted?.();}}).catch(e=>setError(formatApiError(e)))}><RefreshCw size={14}/>{text('刷新状态','Refresh status')}</button>;
+  const refreshButton = <button type="button" className="ui-btn service-refresh" disabled={busy || disabled} onClick={()=>void refresh().then(current=>{setError('');if(environmentId&&current.selected_environment===environmentId){setNotice(text('当前正在使用此环境。','This environment is currently active.'));onRestarted?.();}}).catch(e=>setError(formatApiError(e)))}><RefreshCw size={14}/>{text('刷新状态','Refresh status')}</button>;
   return <div className={`service-controls${secondary ? ' service-controls-secondary' : ''}`}>
     <div className="flex flex-wrap items-center gap-2">
-      <button type="button" className={secondary ? "settings-input" : "settings-action"} disabled={busy||disabled||!runtime?.can_restart} onClick={()=>void restart(environmentId?{environment_id:environmentId}:applySavedAddress?{apply_saved_address:true}:{})}>{busy?<Loader2 size={14} className="animate-spin"/>:<RefreshCw size={14}/>} {environmentId?text('重启并切换到此环境','Restart in this environment'):text('重启服务','Restart service')}</button>
-      {!environmentId && runtime?.can_restore_original && <button type="button" className="settings-input" disabled={busy||disabled||!runtime.can_restart} onClick={()=>void restart({restore_original_environment:true})}>{text('恢复原环境并重启','Restore original environment')}</button>}
+      <button type="button" className={secondary ? "ui-btn" : "ui-btn ui-btn-primary"} disabled={busy||disabled||!runtime?.can_restart} onClick={()=>void restart(environmentId?{environment_id:environmentId}:applySavedAddress?{apply_saved_address:true}:{})}>{busy?<Loader2 size={14} className="animate-spin"/>:<RefreshCw size={14}/>} {environmentId?text('重启并切换到此环境','Restart in this environment'):text('重启服务','Restart service')}</button>
+      {!environmentId && runtime?.can_restore_original && <button type="button" className="ui-btn" disabled={busy||disabled||!runtime.can_restart} onClick={()=>void restart({restore_original_environment:true})}>{text('恢复原环境并重启','Restore original environment')}</button>}
       {refreshTarget ? createPortal(refreshButton, refreshTarget) : refreshButton}
     </div>
     {runtime?.reason&&<p className="settings-note">{reasons[runtime.reason]?text(...reasons[runtime.reason]):text('当前有操作占用服务，请稍后重试。','The service is busy. Try again later.')}</p>}
     {notice&&<p role="status" className="settings-note">{notice}</p>}
-    {nextAddress&&<a className="text-[var(--studio-accent)]" href={nextAddress}>{text('打开新的服务地址','Open the new service address')}</a>}
+    {nextAddress&&<a className="ui-link" href={nextAddress}>{text('打开新的服务地址','Open the new service address')}</a>}
     {error&&<p role="alert" className="settings-alert">{error==='Service request timed out'?text('服务暂未响应，请刷新状态。','The service did not respond. Refresh status to retry.'):error}</p>}
   </div>;
 }

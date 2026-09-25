@@ -13,7 +13,7 @@
 @media(max-width:650px) { .sampling-source-filters,.sampling-source-choice { flex-wrap:wrap; }.sampling-source-filters > label:first-child { flex:1 1 100%; }.sampling-source-choice > label { flex-basis:100%; } }
 
 .sampling-source-error { display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:12px; color:var(--studio-warning,#b45309); }.sampling-source-error span { overflow-wrap:anywhere; }
-.sampling-version-filter { display:flex; align-items:center; gap:6px; justify-self:start; border:1px solid var(--studio-line); border-radius:5px; padding:4px 6px; font-size:11px; color:var(--studio-dim); }.sampling-version-filter button { padding:2px; color:var(--studio-accent); }
+.sampling-version-filter { display:flex; align-items:center; gap:6px; justify-self:start; border:1px solid var(--studio-line); border-radius:5px; padding:4px 6px; font-size:11px; color:var(--studio-dim); }
 @media(min-width:1100px) {
   .app-shell .sampling-page { height:calc(100dvh - 48px - 2 * var(--page-inset,24px)); }
   .sampling-page > :not(.xyz-workspace) { flex-shrink:0; }

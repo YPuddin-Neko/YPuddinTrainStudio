@@ -37,7 +37,7 @@ export default function StructuredCaptionEditor({ structure, draft, onChange, di
               {!readOnly && <button type="button" aria-label={text(`删除${name}标签 ${index + 1}`, `Remove ${name} tag ${index + 1}`)} disabled={locked} onClick={() => update(value.filter((_, i) => i !== index))}><X size={14}/></button>}
             </div>)}
             {!value.length && <span className="structured-caption-empty">{text('暂无标签', 'No tags')}</span>}
-          </div>{!readOnly && <button className="structured-caption-add" type="button" disabled={locked} onClick={() => update([...value, ''])}><Plus size={14}/>{text(`添加${name}标签`, `Add ${name} tag`)}</button>}</>
+          </div>{!readOnly && <button className="ui-btn ui-btn-sm structured-caption-add" type="button" disabled={locked} onClick={() => update([...value, ''])}><Plus size={14}/>{text(`添加${name}标签`, `Add ${name} tag`)}</button>}</>
             : field.role === 'nl'
               ? <textarea aria-label={name} value={value} rows={4} disabled={locked} onChange={event => update(event.target.value)}/>
               : <input type="text" aria-label={name} value={value} disabled={locked} onChange={event => update(event.target.value)}/>}

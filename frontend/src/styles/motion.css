@@ -1,18 +1,77 @@
-:root{--motion-quick:140ms;--motion-surface:260ms;--motion-ease:cubic-bezier(.2,.75,.25,1)}
-@keyframes studio-fade-in{from{opacity:0}to{opacity:1}}
-@keyframes studio-fade-out{to{opacity:0}}
-@keyframes studio-drawer-in{from{opacity:.7;transform:translateX(32px)}to{opacity:1;transform:none}}
-@keyframes studio-drawer-out{to{opacity:0;transform:translateX(20px)}}
-@keyframes studio-dialog-in{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
-@keyframes studio-dialog-out{to{opacity:0;transform:translateY(5px) scale(.99)}}
-@keyframes studio-menu-in{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
-.settings-drawer-backdrop,.workspace-dialog-backdrop{animation:studio-fade-in 180ms ease-out}
-.settings-drawer{animation:studio-drawer-in var(--motion-surface) var(--motion-ease)}
-.workspace-dialog{animation:studio-dialog-in 220ms var(--motion-ease)}
-.settings-drawer-backdrop.is-closing,.workspace-dialog-backdrop.is-closing{animation:studio-fade-out 180ms ease-in forwards;pointer-events:none}
-.settings-drawer-backdrop.is-closing .settings-drawer{animation:studio-drawer-out 180ms ease-in forwards}
-.workspace-dialog-backdrop.is-closing .workspace-dialog{animation:studio-dialog-out 180ms ease-in forwards}
-.studio-select-menu,.config-help-popover,.config-tools[open] .config-tools-menu{animation:studio-menu-in var(--motion-quick) var(--motion-ease)}
-.app-sidebar{transition:width var(--motion-surface) var(--motion-ease)}
-button,a,input,textarea,.studio-select{transition-property:background-color,border-color,color,box-shadow,opacity;transition-duration:var(--motion-quick);transition-timing-function:var(--motion-ease)}
-@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+/* Motion is short and only explains a change: something appeared, moved or was chosen.
+   Enter uses an ease-out curve without overshoot; exits are faster than entrances. */
+:root {
+  --motion-quick: 140ms;
+  --motion-base: 200ms;
+  --motion-surface: 260ms;
+  --motion-ease: cubic-bezier(.2,.75,.25,1);
+  --motion-ease-in: cubic-bezier(.4,0,1,1);
+}
+
+@keyframes studio-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes studio-fade-out { to { opacity: 0; } }
+@keyframes studio-drawer-in { from { opacity: .7; transform: translateX(32px); } to { opacity: 1; transform: none; } }
+@keyframes studio-drawer-out { to { opacity: 0; transform: translateX(20px); } }
+@keyframes studio-dialog-in { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes studio-dialog-out { to { opacity: 0; transform: translateY(5px) scale(.99); } }
+@keyframes studio-menu-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@keyframes studio-rise-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes studio-drop-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@keyframes studio-arrive {
+  from { opacity: 0; transform: scale(.94); box-shadow: 0 0 0 2px var(--studio-accent); }
+  45% { opacity: 1; transform: none; box-shadow: 0 0 0 2px var(--studio-accent); }
+  to { box-shadow: 0 0 0 2px transparent; }
+}
+@keyframes studio-shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+
+/* Surfaces */
+.settings-drawer-backdrop, .workspace-dialog-backdrop, .image-editor-backdrop, .caption-dialog-backdrop { animation: studio-fade-in 180ms ease-out; }
+.settings-drawer { animation: studio-drawer-in var(--motion-surface) var(--motion-ease); }
+.workspace-dialog, .image-editor, .caption-dialog { animation: studio-dialog-in 220ms var(--motion-ease); }
+.settings-drawer-backdrop.is-closing, .workspace-dialog-backdrop.is-closing { animation: studio-fade-out 180ms var(--motion-ease-in) forwards; pointer-events: none; }
+.settings-drawer-backdrop.is-closing .settings-drawer { animation: studio-drawer-out 180ms var(--motion-ease-in) forwards; }
+.workspace-dialog-backdrop.is-closing .workspace-dialog { animation: studio-dialog-out 180ms var(--motion-ease-in) forwards; }
+.studio-select-menu, .config-help-popover, .config-tools[open] .config-tools-menu, .launch-schedule[open] > div, .project-action-menu, .gpu-picker[open] > :not(summary) { animation: studio-menu-in var(--motion-quick) var(--motion-ease); }
+.app-sidebar { transition: width var(--motion-surface) var(--motion-ease); }
+
+/* Messages and inline content that appears after an action */
+.workspace-message, .studio-error, .api-error-notice, .pipeline-note, .version-run-status { animation: studio-drop-in var(--motion-base) var(--motion-ease); }
+.config-group > .config-fields, .dataset-browser-batch, .pipeline-selection { animation: studio-rise-in var(--motion-base) var(--motion-ease); }
+
+/* Inline disclosures open and close by height where the browser can animate it. */
+@supports (interpolate-size: allow-keywords) {
+  details:not([data-popover]) { interpolate-size: allow-keywords; }
+  details:not([data-popover])::details-content {
+    height: 0; overflow: clip;
+    transition: height var(--motion-base) var(--motion-ease), content-visibility var(--motion-base) allow-discrete;
+  }
+  details:not([data-popover])[open]::details-content { height: auto; }
+}
+details > summary > .disclosure-chevron { transition: transform var(--motion-quick) var(--motion-ease); }
+details[open] > summary > .disclosure-chevron { transform: rotate(90deg); }
+
+/* Items moved between lists land with a short highlight. */
+.is-arriving { animation: studio-arrive 900ms var(--motion-ease); }
+
+/* Loading placeholders keep the final layout while data is on the way. */
+.ui-skeleton {
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--studio-muted) 30%, color-mix(in srgb, var(--studio-line) 70%, var(--studio-muted)) 50%, var(--studio-muted) 70%);
+  background-size: 200% 100%;
+  animation: studio-shimmer 1.4s linear infinite;
+}
+
+/* Clickable cards lift slightly under the pointer. */
+.ui-card-interactive { transition: transform var(--motion-base) var(--motion-ease), box-shadow var(--motion-base) var(--motion-ease), border-color var(--motion-quick) var(--motion-ease); }
+@media (hover: hover) {
+  .ui-card-interactive:hover { transform: translateY(-2px); box-shadow: 0 8px 22px rgb(15 23 42 / .08); border-color: var(--control-hover-line, var(--studio-line)); }
+  .dark .ui-card-interactive:hover { box-shadow: 0 8px 22px rgb(0 0 0 / .35); }
+}
+
+button, a, input, textarea, .studio-select { transition-property: background-color, border-color, color, box-shadow, opacity; transition-duration: var(--motion-quick); transition-timing-function: var(--motion-ease); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  .ui-skeleton { background: var(--studio-muted); }
+  .is-arriving { box-shadow: 0 0 0 2px var(--studio-accent); }
+}

@@ -1,17 +1,13 @@
 .version-results { min-width:0; color:var(--studio-text); }
 .results-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:4px 10px; margin-bottom:8px; border-bottom:1px solid var(--studio-line); }
-.results-tabs { display:flex; min-width:0; gap:3px; margin-right:auto; }
-.results-tabs button { display:flex; align-items:center; gap:6px; min-height:34px; padding:6px 9px; white-space:nowrap; font-size:12px; border-bottom:2px solid transparent; margin-bottom:-1px; }
-.results-tabs button[aria-selected=true] { color:var(--studio-accent); border-color:var(--studio-accent); font-weight:600; }
-.results-refresh, .results-row-actions { display:flex; align-items:center; gap:7px; font-size:11px; }
-.results-refresh { padding:6px; }
-.version-results button:disabled { opacity:.45; }
+.results-tabs { margin-right:auto; border-bottom:0; }
+.results-row-actions { display:flex; align-items:center; gap:10px; font-size:12px; }
 .results-table-wrap { overflow:auto; border:1px solid var(--studio-line); border-radius:7px; background:var(--studio-panel); }
 .results-job-table { width:100%; text-align:left; font-size:12px; }
 .results-job-table th { background:var(--studio-muted); font-size:10px; color:var(--studio-dim); font-weight:500; padding:9px 11px; white-space:nowrap; }
 .results-job-table td { padding:10px 11px; border-top:1px solid var(--studio-line); vertical-align:middle; }
 .results-job-table td:first-child { min-width:140px; max-width:340px; overflow-wrap:anywhere; }
-.results-job-table a, .results-row-actions button, .results-sample-toolbar a { color:var(--studio-accent); }
+.results-job-table a { color:var(--studio-accent); }
 .results-job-table small { display:block; color:var(--studio-dim); margin-top:3px; font-size:10px; }
 .results-job-table time, .results-progress { white-space:nowrap; font-variant-numeric:tabular-nums; font-size:11px; }
 .results-row-actions { white-space:nowrap; }
@@ -22,17 +18,15 @@
 .results-job-error { display:block; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:10px; color:#dc2626; }
 .results-pagination { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:10px; color:var(--studio-dim); font-size:11px; font-variant-numeric:tabular-nums; }
 .results-pagination > div { display:flex; align-items:center; gap:10px; }
-.results-pagination button { display:flex; align-items:center; justify-content:center; width:28px; height:28px; border:1px solid var(--studio-line); border-radius:4px; background:var(--studio-panel); }
 .results-empty { display:flex; align-items:center; justify-content:center; flex-direction:column; gap:9px; padding:32px 16px; min-height:120px; color:var(--studio-dim); font-size:12px; text-align:center; }
 .results-empty a { color:var(--studio-accent); }
 .results-empty > span { font-size:11px; }
 .results-error { display:flex; align-items:start; justify-content:space-between; gap:12px; padding:10px 12px; margin-bottom:10px; border:1px solid #fca5a5; border-radius:6px; color:#b91c1c; font-size:12px; white-space:pre-wrap; overflow-wrap:anywhere; }
-.results-error button { flex-shrink:0; text-decoration:underline; }
+.results-error > .ui-btn { flex-shrink:0; }
 .dark .results-error { color:#fca5a5; border-color:#7f1d1d; }
 .results-sample-toolbar { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
 .results-sample-toolbar label { display:flex; align-items:center; gap:8px; font-size:11px; min-width:0; }
 .results-sample-toolbar select { max-width:450px; min-width:0; padding:6px 8px; border:1px solid var(--studio-line); border-radius:5px; background:var(--studio-panel); font-size:11px; }
-.results-sample-toolbar a { display:flex; align-items:center; gap:5px; font-size:11px; }
 .results-sample-context { margin:8px 0 12px; font-size:10px; color:var(--studio-dim); overflow-wrap:anywhere; }
 .results-sample-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:12px; }
 .results-sample-card { overflow:hidden; border:1px solid var(--studio-line); border-radius:7px; background:var(--studio-panel); }
@@ -51,9 +45,8 @@
 .results-lightbox-content footer { display:flex; flex-wrap:wrap; gap:8px 16px; padding:12px 14px; font-size:11px; }
 .results-lightbox-content footer p { width:100%; overflow-wrap:anywhere; }
 .results-lightbox-content footer span { flex:1; color:var(--studio-dim); }
-.results-lightbox-content footer a { display:flex; gap:6px; align-items:center; color:var(--studio-accent); }
 .version-results [data-testid=artifacts-page] table th, .version-results [data-testid=artifacts-page] table td { padding:8px 10px; }
-@media(max-width:600px) { .results-tabs button { padding:6px; font-size:11px; gap:4px; } .results-sample-toolbar label { width:100%; gap:5px; } .results-sample-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; } .results-sample-preview { height:150px; } .results-pagination { font-size:10px; } }
+@media(max-width:600px) { .results-tabs > button { padding:0 8px; font-size:12px; gap:4px; } .results-sample-toolbar label { width:100%; gap:5px; } .results-sample-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; } .results-sample-preview { height:150px; } .results-pagination { font-size:10px; } }
 .results-overview { display:flex; align-items:center; gap:12px; font-size:11px; color:var(--studio-dim); }
 .results-overview > span { white-space:nowrap; font-variant-numeric:tabular-nums; }
 .results-overview > a { display:flex; align-items:center; gap:4px; color:var(--studio-accent); white-space:nowrap; }
@@ -70,5 +63,3 @@
 .results-pagination > div { margin-left:auto; }
 @media(max-width:1200px) { .results-job-table { table-layout:fixed; }.results-job-table th:nth-child(4),.results-job-table td:nth-child(4) { display:none; }.results-job-table td:first-child { min-width:0; }.results-job-table td { overflow-wrap:anywhere; }.results-row-actions { white-space:normal; } }
 @media(max-width:600px) { .results-overview { margin-left:auto; padding-bottom:4px; }.results-toolbar { column-gap:8px; }.results-output-selector .studio-select { max-width:none; } }
-
-.results-tabs { flex-wrap:wrap; }

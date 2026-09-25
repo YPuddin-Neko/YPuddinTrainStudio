@@ -63,9 +63,9 @@ export default function ProjectCoverCropper({ file, initialCrop, onCancel, onApp
       {!crop && <span role={failed ? 'alert' : 'status'}>{failed ? text('无法读取这张图片，请换一张 JPEG、PNG 或 WebP 图片。', 'Could not read this image. Choose another JPEG, PNG or WebP image.') : text('读取图片…', 'Loading image…')}</span>}
     </div>
     <div className="cover-crop-toolbar"><label><span>{text('缩放', 'Zoom')}</span><input type="range" min={1} max={maxZoom} step={.01} value={view.zoom} disabled={!crop || maxZoom === 1} onChange={event => changeView({ ...view, zoom: Number(event.target.value) })}/><output>{view.zoom.toFixed(2)}×</output></label>
-      <button type="button" className="projects-page-button" disabled={!crop} onClick={() => setView(INITIAL_CROP_VIEW)}><RotateCcw size={14}/>{text('重置', 'Reset')}</button></div>
+      <button type="button" className="ui-btn" disabled={!crop} onClick={() => setView(INITIAL_CROP_VIEW)}><RotateCcw size={14}/>{text('重置', 'Reset')}</button></div>
     <small id="cover-crop-keyboard"><Move size={13} aria-hidden="true"/>{text('也可用方向键移动图片 · 封面比例 16:10', 'Arrow keys also move the image · Cover ratio 16:10')}</small>
     {tooSmall && <p role="alert" className="project-editor-error">{text('图片尺寸太小，请选择更大的图片。', 'This image is too small. Choose a larger image.')}</p>}
-    <div className="project-editor-footer"><button type="button" className="projects-page-button" onClick={onCancel}>{text('取消裁切', 'Cancel crop')}</button><button type="button" className="projects-create-button" disabled={!crop || failed || tooSmall} onClick={() => crop && !tooSmall && onApply(crop)}>{text('使用此裁切', 'Use this crop')}</button></div>
+    <div className="project-editor-footer"><button type="button" className="ui-btn" onClick={onCancel}>{text('取消裁切', 'Cancel crop')}</button><button type="button" className="ui-btn ui-btn-primary" disabled={!crop || failed || tooSmall} onClick={() => crop && !tooSmall && onApply(crop)}>{text('使用此裁切', 'Use this crop')}</button></div>
   </div>;
 }

@@ -90,7 +90,7 @@ export default function Preferences() {
   if (!settings) {
     return (
       <div className="flex items-center space-x-2 text-slate-500" data-testid="settings-loading">
-        {error ? <div role="alert" className="text-red-600">{error}<button onClick={() => void load()} className="ml-3 underline">{t('common.retry', '重试')}</button></div> : <><Loader2 className="w-4 h-4 animate-spin" /><span>{t('common.loading')}</span></>}
+        {error ? <div role="alert" className="text-red-600">{error}<button type="button" onClick={() => void load()} className="ui-link ml-3">{t('common.retry', '重试')}</button></div> : <><Loader2 className="w-4 h-4 animate-spin" /><span>{t('common.loading')}</span></>}
       </div>
     );
   }
@@ -159,6 +159,6 @@ export default function Preferences() {
       const active = initialSettings.current, saved = loadedSettings.current;
       if (active && saved) initialSettings.current = {...active, paths:{...active.paths,data_root:saved.paths.data_root},server:{...active.server,host:saved.server.host,port:saved.server.port}};
       setServiceRefreshKey(value => value + 1);
-    }}/>}<span role="status" className="settings-note">{saved && text('已保存', 'Saved')}</span><button onClick={handleSave} disabled={saving} className="settings-action" data-testid="settings-save-btn">{saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}<span>{saving ? t('settings.saving') : t('settings.save')}</span></button></div>
+    }}/>}<span role="status" className="settings-note">{saved && text('已保存', 'Saved')}</span><button type="button" onClick={handleSave} disabled={saving} className="ui-btn ui-btn-primary" data-testid="settings-save-btn">{saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}<span>{saving ? t('settings.saving') : t('settings.save')}</span></button></div>
   </SettingsSections></div>;
 }

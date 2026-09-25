@@ -15,6 +15,7 @@ import { ProjectSidebarContext } from './projects/ProjectSidebarContext';
 import '../styles/project-sidebar.css';
 import '../styles/motion.css';
 import BrandMark from './BrandMark';
+import { useEnterAnimation } from '../utils/motion';
 
 const NavItem = ({ to, icon: Icon, label, active, state }: any) => (
   <Link
@@ -52,6 +53,8 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
   const closeNavigation = React.useCallback(() => setMenuOpen(false), []);
   const projectSidebar = React.useMemo(() => ({ target: projectSidebarTarget, closeNavigation }), [projectSidebarTarget, closeNavigation]);
   const contentRef = React.useRef<HTMLDivElement>(null);
+  // A new page or project step fades in; query changes inside a page (tabs, filters) do not.
+  const pageFrame = useEnterAnimation<HTMLDivElement>(`${location.pathname}|${new URLSearchParams(location.search).get('step') || ''}`, { distance: 6, duration: 200 });
   const isDark = theme === 'dark' || (theme === 'system' && systemDark);
   const connectionStatus = useEventStreamStatus();
   const [stats, setStats] = React.useState<SystemStats | null>(null);
@@ -160,9 +163,9 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
             <BrandMark/>
             <span className="sidebar-brand-text"><strong>YPuddin</strong><span>Train Studio</span></span>
           </Link>
-          <button type="button" onClick={dismissMenu} className="sidebar-menu-close md:hidden" aria-label={t('hardware.closeMenu')}><X className="w-4 h-4" /></button>
+          <button type="button" onClick={dismissMenu} className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon sidebar-menu-close md:hidden" aria-label={t('hardware.closeMenu')}><X className="w-4 h-4" /></button>
         </div>
-        <div className="sidebar-start px-3 pt-3"><Link to="/projects" aria-label={t('hardware.startTraining')} title={t('hardware.startTraining')} onClick={() => setMenuOpen(false)} className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 px-3 py-2.5 text-sm font-medium text-white"><Plus className="w-4 h-4" /><span>{t('hardware.startTraining')}</span></Link></div>
+        <div className="sidebar-start px-3 pt-3"><Link to="/projects" aria-label={t('hardware.startTraining')} title={t('hardware.startTraining')} onClick={() => setMenuOpen(false)} className="ui-btn ui-btn-primary ui-btn-lg ui-btn-block"><Plus className="w-4 h-4" /><span>{t('hardware.startTraining')}</span></Link></div>
         <nav aria-label={text('主导航', 'Main navigation')} className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1" onClick={event => { if (event.target instanceof Element && event.target.closest('a[href]')) setMenuOpen(false); }}>
           {navItems.map((item) => (
             <React.Fragment key={item.to}>
@@ -193,7 +196,7 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
       <main className="app-main flex-1 min-w-0 flex flex-col overflow-hidden relative">
         {/* Topbar：实时系统状态 + 训练中胶囊 */}
         <header className="app-topbar bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800" data-testid="app-topbar">
-          <button ref={menuTrigger} type="button" className="topbar-menu p-1.5" aria-label={t('hardware.openMenu')} aria-expanded={menuOpen} aria-controls="app-sidebar" onClick={() => setMenuOpen(true)}><Menu className="w-5 h-5" /></button>
+          <button ref={menuTrigger} type="button" className="ui-btn ui-btn-quiet ui-btn-icon topbar-menu" aria-label={t('hardware.openMenu')} aria-expanded={menuOpen} aria-controls="app-sidebar" onClick={() => setMenuOpen(true)}><Menu className="w-5 h-5" /></button>
           {runningJob && <div className="topbar-job-slot">
               <Link
                 to={`/jobs/${runningJob.id}`}
@@ -210,14 +213,14 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
               </Link>
           </div>}
           {(telemetryError || connectionStatus !== 'connected') && <div className="topbar-feedback-slot">
-            {telemetryError ? <button className="text-amber-600" onClick={() => void refreshTelemetry()} title={telemetryError} aria-label={text('硬件状态读取失败，点击重试', 'Hardware status failed; retry')}><RefreshCw size={15}/><span className="sr-only" role="alert">{telemetryError}</span></button> : connectionStatus !== 'connected' && <span role="status" data-testid="event-connection" title={t(`connection.${connectionStatus}`)} className="text-amber-600">{connectionStatus === 'disconnected' ? <WifiOff size={15}/> : <Loader2 size={15} className="animate-spin"/>}<span className="sr-only">{t(`connection.${connectionStatus}`)}</span></span>}
+            {telemetryError ? <button type="button" className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon topbar-warning" onClick={() => void refreshTelemetry()} title={telemetryError} aria-label={text('硬件状态读取失败，点击重试', 'Hardware status failed; retry')}><RefreshCw size={15}/><span className="sr-only" role="alert">{telemetryError}</span></button> : connectionStatus !== 'connected' && <span role="status" data-testid="event-connection" title={t(`connection.${connectionStatus}`)} className="topbar-warning">{connectionStatus === 'disconnected' ? <WifiOff size={15}/> : <Loader2 size={15} className="animate-spin"/>}<span className="sr-only">{t(`connection.${connectionStatus}`)}</span></span>}
           </div>}
           <SystemTelemetry stats={stats} />
         </header>
         <ApiErrorNotice />
 
         <div ref={contentRef} className="app-page-viewport" data-testid="app-page-viewport">
-          <div className="app-page-frame" data-testid="app-page-frame"><React.Suspense fallback={<div className="space-y-4" role="status" data-testid="app-page-loading"><span className="sr-only">{t('common.loading')}</span><div className="h-6 w-48 rounded bg-slate-200 dark:bg-slate-800"/><div className="h-40 rounded-lg bg-slate-100 dark:bg-slate-900"/></div>}><Outlet /></React.Suspense></div>
+          <div ref={pageFrame} className="app-page-frame" data-testid="app-page-frame"><React.Suspense fallback={<div className="space-y-4" role="status" data-testid="app-page-loading"><span className="sr-only">{t('common.loading')}</span><div className="h-6 w-48 rounded bg-slate-200 dark:bg-slate-800"/><div className="h-40 rounded-lg bg-slate-100 dark:bg-slate-900"/></div>}><Outlet /></React.Suspense></div>
         </div>
       </main>
     </div></ProjectSidebarContext.Provider>

@@ -20,12 +20,11 @@
 .reg-actions > span { font-size:11px; color:var(--studio-dim); }
 .reg-error { color:#b91c1c; font-size:12px; line-height:1.7; white-space:pre-wrap; overflow-wrap:anywhere; margin:8px 0; }
 .dark .reg-error,.dark .reg-failed { color:#fca5a5; }
-.reg-error button { display:inline-flex; gap:4px; align-items:center; margin-left:8px; text-decoration:underline; }
+.reg-error .ui-btn { margin-left:8px; }
 .reg-task { border-top:1px solid var(--studio-line); margin-top:16px; padding-top:12px; font-size:12px; }
 .reg-task-heading { display:flex; align-items:center; flex-wrap:wrap; gap:6px 10px; }
 .reg-task-heading code { color:var(--studio-dim); font-size:10px; }
 .reg-task-heading > span { margin-left:auto; font-size:11px; }
-.reg-task-heading > button { display:flex; align-items:center; gap:4px; font-size:11px; }
 .reg-task progress { height:5px; width:100%; accent-color:var(--studio-accent); margin-top:10px; }
 .reg-task details { margin-top:8px; }
 .reg-task pre { margin-top:8px; padding:10px; max-height:180px; overflow:auto; background:var(--studio-muted); border-radius:6px; font-size:10px; white-space:pre-wrap; overflow-wrap:anywhere; }
