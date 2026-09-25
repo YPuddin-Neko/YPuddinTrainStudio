@@ -292,7 +292,7 @@ def _nvidia_smi() -> list[dict[str, Any]]:
                 result = subprocess.run(
                     [
                         executable,
-                        "--query-gpu=index,uuid,name,memory.total,memory.used,utilization.gpu,temperature.gpu,power.draw,power.limit",
+                        "--query-gpu=index,uuid,name,memory.total,memory.used,memory.free,utilization.gpu,temperature.gpu,power.draw,power.limit",
                         "--format=csv,noheader,nounits",
                     ],
                     capture_output=True,
@@ -304,9 +304,14 @@ def _nvidia_smi() -> list[dict[str, Any]]:
                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                 )
                 for row in csv.reader(io.StringIO(result.stdout)):
-                    if len(row) != 9 or not row[0].strip().isdigit():
+                    if len(row) != 10 or not row[0].strip().isdigit():
                         continue
-                    total, used, util, temp, power, limit = [_number(x) for x in row[3:]]
+                    total, used, free, util, temp, power, limit = [_number(x) for x in row[3:]]
+                    if total is not None and total <= 0:
+                        total = None
+                    if total is not None:
+                        used = used if used is None or used <= total else None
+                        free = free if free is None or free <= total else None
                     rows.append(
                         {
                             "index": int(row[0]),
@@ -314,9 +319,7 @@ def _nvidia_smi() -> list[dict[str, Any]]:
                             "name": row[2].strip(),
                             "mem_total_mb": int(total) if total is not None else None,
                             "mem_used_mb": int(used) if used is not None else None,
-                            "mem_free_mb": int(max(0, total - used))
-                            if total is not None and used is not None
-                            else None,
+                            "mem_free_mb": int(free) if free is not None else None,
                             "util_pct": util,
                             "temp_c": temp,
                             "power_w": power,
@@ -327,6 +330,28 @@ def _nvidia_smi() -> list[dict[str, Any]]:
                 pass
         _smi_cache = (time.monotonic(), rows)
         return rows
+
+
+def _nvml_memory(pynvml: Any, handle: Any) -> dict[str, int]:
+    """Keep driver reservations separate from application usage, as in nvidia-smi."""
+    try:
+        memory = pynvml.nvmlDeviceGetMemoryInfo(handle, version=pynvml.nvmlMemory_v2)
+        fields = ("total", "free", "used", "reserved")
+    except Exception:  # noqa: BLE001
+        memory = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        # V1 merges reservations into used. Retain capacity/free, and let SMI
+        # provide used rather than displaying driver reservations as workload.
+        fields = ("total", "free")
+    total = memory.total
+    if not isinstance(total, (int, float)) or not math.isfinite(total) or total <= 0:
+        return {}
+    return {
+        f"mem_{key}_mb": int(value / 2**20)
+        for key in fields
+        if isinstance(value := getattr(memory, key, None), (int, float))
+        and math.isfinite(value)
+        and 0 <= value <= total
+    }
 
 
 def _nvml_metrics(entries: list[dict[str, Any]]) -> None:
@@ -354,13 +379,9 @@ def _nvml_metrics(entries: list[dict[str, Any]]) -> None:
                 except Exception:  # noqa: BLE001
                     continue
                 try:
-                    memory = pynvml.nvmlDeviceGetMemoryInfo(handle)
-                    entry.update(
-                        mem_total_mb=round(memory.total / 2**20),
-                        mem_used_mb=round(memory.used / 2**20),
-                        mem_free_mb=round(memory.free / 2**20),
-                        telemetry_source="nvml",
-                    )
+                    memory = _nvml_memory(pynvml, handle)
+                    if memory:
+                        entry.update(memory, telemetry_source="nvml")
                 except Exception:  # noqa: BLE001
                     pass
                 readers = {
@@ -507,6 +528,7 @@ def gpu_info(*, include_unavailable: bool = False, system_memory: Any | None = N
             if not matches and not entry.get("uuid"):
                 matches = [g for g in fallback if g["name"] == entry["name"]]
             if len(matches) == 1:
+                needs_memory = entry.get("mem_used_mb") is None or entry.get("mem_free_mb") is None
                 for key in (
                     "util_pct",
                     "temp_c",
@@ -516,7 +538,8 @@ def gpu_info(*, include_unavailable: bool = False, system_memory: Any | None = N
                     "mem_used_mb",
                     "mem_free_mb",
                 ):
-                    if (entry.get(key) is None or key == "mem_total_mb") and matches[0].get(key) is not None:
+                    replace_memory = needs_memory and key.startswith("mem_")
+                    if (entry.get(key) is None or replace_memory) and matches[0].get(key) is not None:
                         entry[key] = matches[0][key]
                         entry["telemetry_source"] = (
                             "nvml+nvidia-smi"

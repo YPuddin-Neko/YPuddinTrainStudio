@@ -26,6 +26,7 @@ const capacity = (used: number | null | undefined, total: number | null | undefi
   const unit = known(total) && total / divisor >= 1024 ? 'TiB' : 'GiB';
   const scale = divisor * (unit === 'TiB' ? 1024 : 1);
   const format = (value: number | null | undefined) => known(value) ? (value / scale).toFixed(1) : '—';
+  if (divisor === 1024 && known(used) && used < 1024) return `${Math.floor(used)} MiB / ${format(total)} ${unit}`;
   return `${format(used)} / ${format(total)} ${unit}`;
 };
 
