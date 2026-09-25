@@ -54,7 +54,7 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
   const projectSidebar = React.useMemo(() => ({ target: projectSidebarTarget, closeNavigation }), [projectSidebarTarget, closeNavigation]);
   const contentRef = React.useRef<HTMLDivElement>(null);
   // A new page or project step fades in; query changes inside a page (tabs, filters) do not.
-  const pageFrame = useEnterAnimation<HTMLDivElement>(`${location.pathname}|${new URLSearchParams(location.search).get('step') || ''}`, { distance: 6, duration: 200 });
+  const pageFrame = useEnterAnimation<HTMLDivElement>(`${location.pathname}|${new URLSearchParams(location.search).get('step') || ''}`, { distance: 0, duration: 160 });
   const isDark = theme === 'dark' || (theme === 'system' && systemDark);
   const connectionStatus = useEventStreamStatus();
   const [stats, setStats] = React.useState<SystemStats | null>(null);

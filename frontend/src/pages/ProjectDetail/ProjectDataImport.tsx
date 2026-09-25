@@ -1,5 +1,5 @@
+import DatasetLink from '../../components/datasets/DatasetLink';
 import React from 'react';
-import { Link } from 'react-router-dom';
 import { Upload, FolderOpen, X, Loader2, CheckCircle2, Plus, ChevronUp } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import type { DatasetInfo } from '../../api/types';
@@ -124,7 +124,7 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
     </header>
     {operation && operation.state !== 'completed' && <DatasetImportProgress operation={operation}/>}
     {error && <div role="alert" className="project-import-message project-import-error">{error}</div>}
-    {created.length > 0 && <div role="status" className="project-import-message project-import-success"><CheckCircle2 size={20}/><div><strong>{text(`已导入当前版本，共 ${created.length} 组图片。`, `Imported ${created.length} image groups into this version.`)}</strong><div className="project-import-result-links">{created.map(dataset => <Link className="ui-link" key={dataset.source.id} to={`/datasets/${dataset.source.id}`}>{created.length === 1 ? text('查看图片与标签', 'Review images and captions') : dataset.source.path.replace(/\\/g, '/').split('/').pop()}</Link>)}</div></div>{operation && <span className="project-import-elapsed">{text('用时', 'Elapsed')} {operation.elapsed < 1 ? text('不足 1 秒', '<1s') : formatEta(operation.elapsed)}</span>}</div>}
+    {created.length > 0 && <div role="status" className="project-import-message project-import-success"><CheckCircle2 size={20}/><div><strong>{text(`已导入当前版本，共 ${created.length} 组图片。`, `Imported ${created.length} image groups into this version.`)}</strong><div className="project-import-result-links">{created.map(dataset => <DatasetLink className="ui-link" key={dataset.source.id} to={`/datasets/${dataset.source.id}`}>{created.length === 1 ? text('查看图片与标签', 'Review images and captions') : dataset.source.path.replace(/\\/g, '/').split('/').pop()}</DatasetLink>)}</div></div>{operation && <span className="project-import-elapsed">{text('用时', 'Elapsed')} {operation.elapsed < 1 ? text('不足 1 秒', '<1s') : formatEta(operation.elapsed)}</span>}</div>}
     {showForm && <>
     {mode === 'upload' ? <>
       <div className="project-import-dropzone" data-testid="dataset-dropzone" data-dragging={dragging} onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = locked ? 'none' : 'copy'; if (!locked) setDragging(true); }} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }} onDrop={event => { event.preventDefault(); event.stopPropagation(); setDragging(false); if (!locked) void dropFiles(event.dataTransfer); }}>

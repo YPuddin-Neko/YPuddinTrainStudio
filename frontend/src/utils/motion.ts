@@ -15,7 +15,8 @@ export function useEnterAnimation<T extends HTMLElement>(key: unknown, { distanc
     const initial = first.current;
     first.current = false;
     if ((initial && skipFirst) || !element || typeof element.animate !== 'function' || prefersReducedMotion()) return;
-    const animation = element.animate([{ opacity: 0, transform: `translateY(${distance}px)` }, { opacity: 1, transform: 'none' }], { duration, easing: EASE_OUT });
+    const frames = distance ? [{ opacity: 0, transform: `translateY(${distance}px)` }, { opacity: 1, transform: 'none' }] : [{ opacity: 0 }, { opacity: 1 }];
+    const animation = element.animate(frames, { duration, easing: EASE_OUT });
     return () => animation.cancel();
   }, [key, distance, duration, skipFirst]);
   return ref;

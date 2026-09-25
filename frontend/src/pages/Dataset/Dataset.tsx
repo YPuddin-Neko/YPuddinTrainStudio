@@ -1,5 +1,6 @@
 import { projectUrl, type ProjectVersion, type VersionedProject } from '../../utils/projectVersions';
 import React from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, useParams, useNavigate, useLocation, UNSAFE_DataRouterContext } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { apiClient, apiUrl } from '../../api/client';
@@ -20,12 +21,14 @@ import ProgressBar from '../../components/ProgressBar';
 import ProjectWorkspaceHeader from '../../components/projects/ProjectWorkspaceHeader';
 import DatasetNavigationGuard from '../../components/datasets/DatasetNavigationGuard';
 import { useWorkspaceText } from '../../utils/workspaceText';
+import { datasetReturnTarget } from '../../utils/datasetReturn';
 import {
   RefreshCcw,
   Trash2,
   Search,
   X,
   Brush,
+  ArrowLeft,
 } from 'lucide-react';
 
 export default function Dataset() {
@@ -38,6 +41,7 @@ export function DatasetWorkspace({id}: {id?:string}) {
   const hasDataRouter = !!React.useContext(UNSAFE_DataRouterContext);
   const { t } = useTranslation();
   const text = useWorkspaceText();
+  const queryClient = useQueryClient();
   const contextProblem = text('无法确认此数据集所属的项目版本。','The dataset project/version could not be verified.');
 
   // locales 占位符为单花括号（{n}），i18next 默认插值（{{}}）不处理，需手工替换
@@ -47,9 +51,16 @@ export function DatasetWorkspace({id}: {id?:string}) {
     [t]
   );
 
-  const [info, setInfo] = React.useState<DatasetInfo | null>(null);
+  const [info, setInfo] = React.useState<DatasetInfo | null>(() => queryClient.getQueriesData<DatasetInfo[]>({ queryKey: ['project-workspace-datasets'] }).flatMap(([, rows]) => rows || []).find(row => row.source.id === id && row.stats && row.index_status) || null);
   const [infoError, setInfoError] = React.useState('');
-  const [projectContext, setProjectContext] = React.useState<{project:VersionedProject;versions:ProjectVersion[];current?:ProjectVersion}|null>(null);
+  const [projectContext, setProjectContext] = React.useState<{project:VersionedProject;versions:ProjectVersion[];current?:ProjectVersion}|null>(() => {
+    const source = info?.source;
+    if (!source?.project_id) return null;
+    const project = queryClient.getQueryData<VersionedProject>(['project', source.project_id]);
+    const versions = queryClient.getQueryData<ProjectVersion[]>(['project-versions', source.project_id]) || [];
+    const current = versions.find(version => version.id === source.version_id && version.project_id === source.project_id);
+    return project?.id === source.project_id && (!source.version_id || current) ? { project, versions, current } : null;
+  });
   const [contextError, setContextError] = React.useState('');
   const contextRequest = React.useRef<AbortController|null>(null);
   const [indexProgress, setIndexProgress] = React.useState<{ done: number; total: number } | null>(null);
@@ -258,7 +269,9 @@ export function DatasetWorkspace({id}: {id?:string}) {
   // keeps the return link usable while the dataset request is still loading.
   const returnProject = info?.source.project_id || returnQuery.get('project');
   const returnVersion = info?.source.project_id ? info.source.version_id : returnQuery.get('version');
-  const returnUrl = returnProject ? `${projectUrl(returnProject, returnVersion, 'data')}&data_step=datasets#version-datasets` : '/projects';
+  const libraryUrl = returnProject ? `${projectUrl(returnProject, returnVersion, 'data')}&data_step=datasets#version-datasets` : '/projects';
+  const returnUrl = datasetReturnTarget(location.state?.datasetReturnTo, returnProject, returnVersion) || libraryUrl;
+  const loadingWorkspace = !infoError && (!info || !!info.source.project_id && !projectContext && !contextError);
   const curationUrl = info?.source.project_id && info.source.version_id ? `${projectUrl(info.source.project_id, info.source.version_id, 'data')}&data_step=curate&dataset=${encodeURIComponent(id || '')}` : '';
 
   return (
@@ -267,11 +280,13 @@ export function DatasetWorkspace({id}: {id?:string}) {
         return leaveRef.current.dirty;
       }} beforeLeave={() => leaveRef.current.beforeNavigation()} onError={error => setActionError(formatApiError(error))}/>}
       <div className="dataset-workspace-navigation">
-        {projectContext && !infoError ? <ProjectWorkspaceHeader project={projectContext.project} versionId={info?.source.version_id || undefined} versions={projectContext.versions} current={projectContext.current} active="data" title={datasetName} breadcrumbTrail={<Link to={returnUrl}>{text('训练数据', 'Training data')}</Link>} refresh={refreshProjectContext} beforeAction={beforeNavigation}/> : <header className="workspace-navigation workspace-page-heading"><div className="workspace-heading-main"><nav className="workspace-breadcrumb" aria-label={text('当前位置', 'Current location')}><Link to="/projects">{text('项目', 'Projects')}</Link>{returnProject && <><span aria-hidden="true">/</span><Link to={returnUrl}>{text('训练数据', 'Training data')}</Link></>}</nav><div className="workspace-heading-title"><h1 title={info?.source.path}>{info && !infoError ? datasetName : text('图片、标签与遮罩','Images, captions and masks')}</h1></div></div></header>}
+        <Link className="ui-btn dataset-back" to={returnUrl}><ArrowLeft size={16}/>{text('返回', 'Back')}</Link>
+        {projectContext && !infoError ? <ProjectWorkspaceHeader project={projectContext.project} versionId={info?.source.version_id || undefined} versions={projectContext.versions} current={projectContext.current} active="data" title={datasetName} breadcrumbTrail={<Link to={libraryUrl}>{text('训练数据', 'Training data')}</Link>} refresh={refreshProjectContext} beforeAction={beforeNavigation}/> : <header className="workspace-navigation workspace-page-heading"><div className="workspace-heading-main"><nav className="workspace-breadcrumb" aria-label={text('当前位置', 'Current location')}><Link to="/projects">{text('项目', 'Projects')}</Link>{returnProject && <><span aria-hidden="true">/</span><Link to={libraryUrl}>{text('训练数据', 'Training data')}</Link></>}</nav><div className="workspace-heading-title"><h1 title={info?.source.path}>{info && !infoError ? datasetName : text('图片、标签与遮罩','Images, captions and masks')}</h1></div></div></header>}
       </div>
+      {loadingWorkspace ? <div className="dataset-loading" role="status"><span className="sr-only">{text('正在读取数据集…', 'Loading dataset…')}</span><div className="ui-skeleton"/><div className="ui-skeleton"/></div> : <>
       {(infoError || contextError) && <div role="alert" className="workspace-message error">{infoError || contextError}<button type="button" className="ui-btn ui-btn-sm" onClick={()=>{fetchInfo();void refreshProjectContext();}}>{t('common.retry')}</button></div>}
-      {versionKey && !canEdit && <div className="workspace-message dataset-readonly-notice" role={versionAccess?.key === versionKey && versionAccess.error ? 'alert' : 'status'}>
-        <span>{versionAccess?.key !== versionKey ? text('正在确认版本状态，暂以只读方式查看。', 'Checking version status. Viewing in read-only mode.') : versionAccess.error ? `${text('无法确认版本状态，编辑已暂停：', 'Cannot verify version status; editing is paused: ')}${versionAccess.error}` : versionAccess.archived ? text('此版本已归档，图片、标签和遮罩只读。', 'This version is archived. Images, captions and masks are read only.') : text('此版本暂不可编辑，当前为只读查看。', 'This version is not editable yet. Viewing in read-only mode.')}</span>
+      {versionKey && versionAccess?.key === versionKey && !canEdit && <div className="workspace-message dataset-readonly-notice" role={versionAccess.error ? 'alert' : 'status'}>
+        <span>{versionAccess.error ? `${text('无法确认版本状态，编辑已暂停：', 'Cannot verify version status; editing is paused: ')}${versionAccess.error}` : versionAccess.archived ? text('此版本已归档，图片、标签和遮罩只读。', 'This version is archived. Images, captions and masks are read only.') : text('此版本暂不可编辑，当前为只读查看。', 'This version is not editable yet. Viewing in read-only mode.')}</span>
         <Link className="ui-link" to={projectUrl(info!.source.project_id || '', info!.source.version_id, 'data')}>{text('返回版本工作区', 'Return to version workspace')}</Link>
         <button type="button" className="ui-link" onClick={() => void checkVersionAccess()}>{t('common.refresh')}</button>
       </div>}
@@ -355,6 +370,7 @@ export function DatasetWorkspace({id}: {id?:string}) {
           </div>
         </div>
       )}
+      </>}
     </div>
   );
 }

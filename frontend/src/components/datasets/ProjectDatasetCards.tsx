@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import DatasetLink from './DatasetLink';
 import { AlertCircle, ArrowUpRight, Folder, Images, Loader2, RefreshCw } from 'lucide-react';
 import { apiClient, apiUrl } from '../../api/client';
 import type { DatasetInfo, DatasetImagesPage, DatasetSource } from '../../api/types';
@@ -27,7 +27,7 @@ function DatasetCard({ dataset, projectId, versionId }: Omit<Props, 'datasets' |
   const query = new URLSearchParams({ project: source.project_id || projectId });
   const ownerVersion = source.version_id || versionId;
   if (ownerVersion) query.set('version', ownerVersion);
-  return <li><Link className="project-dataset-card ui-card-interactive" data-testid={`dataset-card-${source.id}`} aria-label={text(`打开数据集：${name}`, `Open dataset: ${name}`)} to={`/datasets/${encodeURIComponent(source.id)}?${query}`}>
+  return <li><DatasetLink className="project-dataset-card ui-card-interactive" data-testid={`dataset-card-${source.id}`} aria-label={text(`打开数据集：${name}`, `Open dataset: ${name}`)} to={`/datasets/${encodeURIComponent(source.id)}?${query}`}>
     <div className="project-dataset-preview">
       {cover ? <div className="project-dataset-preview-image" key={`${cover.hash}/${cover.rel_path}`}><Images size={22} aria-hidden="true"/><img src={apiUrl(`/datasets/${encodeURIComponent(source.id)}/images/${encodeURIComponent(cover.hash)}/thumb?size=512`)} alt={cover.rel_path} width={512} height={512} loading="lazy" decoding="async" onError={event => { event.currentTarget.hidden = true; }}/></div> : <div className="project-dataset-preview-empty">{status === 'indexing' || preview.isFetching ? <Loader2 size={24} className="animate-spin" aria-hidden="true"/> : status === 'failed' || preview.isError ? <AlertCircle size={24} aria-hidden="true"/> : <Images size={24} aria-hidden="true"/>}<span>{placeholder}</span></div>}
     </div>
@@ -35,7 +35,7 @@ function DatasetCard({ dataset, projectId, versionId }: Omit<Props, 'datasets' |
       <span><strong>{stats?.images ?? '—'}</strong> {text('张图片', 'images')}</span><span><strong>{stats?.captioned ?? '—'}</strong> {text('份标签', 'captions')}</span><span><strong>{stats?.masks ?? '—'}</strong> {text('张遮罩', 'masks')}</span>
     </div>{stats?.error && <p className="project-dataset-card-error" title={stats.error}>{stats.error}</p>}</div>
     <div className="project-dataset-card-footer"><span className={`project-dataset-status status-${status || 'unknown'}`}>{status === 'indexing' && <Loader2 size={13} className="animate-spin" aria-hidden="true"/>}{status === 'failed' && <AlertCircle size={13} aria-hidden="true"/>}{statusText}</span>{source.repeats > 1 && <small>×{source.repeats} {text('重复', 'repeats')}</small>}<ArrowUpRight size={17} aria-hidden="true"/></div>
-  </Link></li>;
+  </DatasetLink></li>;
 }
 
 export default function ProjectDatasetCards({ datasets, projectId, versionId, onRefresh }: Props) {

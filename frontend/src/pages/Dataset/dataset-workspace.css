@@ -1,6 +1,9 @@
 .dataset-workspace { min-width:0; display:flex; flex-direction:column; gap:12px; color:var(--studio-text); }
 .app-shell .dataset-workspace { height:calc(100dvh - 48px - 2 * var(--page-inset,24px)); min-height:620px; }
-.dataset-workspace-navigation { flex:none; min-width:0; }
+.dataset-workspace-navigation { display:flex; align-items:center; gap:12px; flex:none; min-width:0; }
+.dataset-workspace-navigation > .workspace-page-heading { flex:1; min-width:0; }
+.dataset-back { flex:none; }
+.dataset-loading { flex:1; display:grid; grid-template-rows:100px minmax(240px,1fr); gap:12px; min-height:360px; }
 .dataset-workspace .workspace-page-heading { position:static; }
 .app-shell .dataset-workspace .workspace-page-heading { min-height:60px; padding-bottom:4px; }
 .dataset-workspace .workspace-page-heading::before { display:none; }
