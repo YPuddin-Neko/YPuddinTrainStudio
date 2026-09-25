@@ -22,6 +22,7 @@ import './config-fields.css';
 import { optionalValueLabel } from './optionalValues';
 import ParameterFields from './ParameterFields';
 import RecoveryInterval from './RecoveryInterval';
+import ParameterToggleCard from './ParameterToggleCard';
 
 interface SchemaProperty {
   type?: string;
@@ -866,7 +867,14 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const incompatiblePredictionLoss = (fullPathKey === 'objective.scale_v_pred_loss_like_noise_pred' && value.objective?.scale_v_pred_loss_like_noise_pred && conditionValue.model.prediction_type !== 'v_prediction') || (fullPathKey === 'objective.v_pred_like_loss' && value.objective?.v_pred_like_loss > 0 && conditionValue.model.prediction_type !== 'epsilon');
     if (ui.show_when && !incompatiblePredictionLoss && !incompatibleFamilyLoss) {
       try {
-        if (!evaluateShowWhen(ui.show_when, conditionValue)) return null;
+        const previewConditions = fullPathKey.startsWith('sampling.')
+          ? {...conditionValue,sampling:{...value.sampling,enabled:true}}
+          : fullPathKey.startsWith('validation.')
+            ? {...conditionValue,validation:{...value.validation,enabled:true}}
+            : fullPathKey === 'loop.ema_decay'
+              ? {...conditionValue,loop:{...value.loop,ema:true}}
+              : conditionValue;
+        if (!evaluateShowWhen(ui.show_when, previewConditions)) return null;
       } catch (err) {
         console.error(`[SchemaForm] Failed to evaluate show_when for ${fullPathKey}: "${ui.show_when}"`, err);
         // On evaluation error, default to showing the field
@@ -1193,8 +1201,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       || managedReason
       || (fullPathKey === 'loop.deterministic' ? trainingComputePolicyHint(activeComputePolicy, english) : undefined);
     const recoveryField = fullPathKey === 'checkpoint.save_state_every_steps';
-    const recoveryEnabled = fieldValue != null || value.checkpoint?.save_state_every_epochs != null;
-    const describedHint = booleanField || recoveryField && !recoveryEnabled ? undefined
+    const describedHint = booleanField || recoveryField ? undefined
       : fullPathKey === 'training.mode' ? value.training?.mode === 'full'
         ? (english ? 'Updates the selected model weights directly.' : '直接训练所选模型本身的权重。')
         : (english ? 'Trains LoRA weights while keeping the base model frozen.' : '只训练 LoRA 权重，底模保持不变。')
@@ -1206,7 +1213,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const hint = statusHint || describedHint;
     const duplicateHelp = !!help && !!hint && help.replace(/\s+/g, ' ').trim() === hint.replace(/\s+/g, ' ').trim();
     const helpButton = help && !duplicateHelp ? <ConfigHelp label={`${fieldLabel} ${english ? 'help' : '说明'}`}>{help}</ConfigHelp> : null;
-    if (recoveryField && React.isValidElement(control)) control = React.cloneElement(control as React.ReactElement<any>, {help:helpButton});
+    if (recoveryField && React.isValidElement(control)) control = React.cloneElement(control as React.ReactElement<any>, {help:helpButton,error:errorItem?.msg});
     const body = readOnly ? <fieldset disabled className="config-readonly-control">{control}</fieldset> : control;
     const footer = <div className="config-field-footer">
       {hint && <p id={managedReason ? `${fieldId}-managed-reason` : `${fieldId}-hint`} className="config-field-hint">{hint}</p>}
@@ -1216,7 +1223,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const fieldProps = {id: `field-${fullPathKey}`, 'data-testid': `field-${fullPathKey}`, 'data-field-path': fullPathKey};
     const label = recoveryField ? (
       <div key={fullPathKey} {...fieldProps} className={`config-field config-field-recovery${errorItem ? ' config-field-invalid' : ''}`}>
-        {body}{footer}
+        {body}
       </div>
     ) : booleanField ? (
       <div key={fullPathKey} {...fieldProps} data-control-kind="toggle" className={`config-field config-field-boolean${errorItem ? ' config-field-invalid' : ''}`}>
@@ -1302,11 +1309,32 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (indexB !== -1) return 1;
     return groupA.order - groupB.order;
   });
+  const renderToggleCard = (path: string, children: React.ReactNode, group?: string) => {
+    const features: Record<string, {title:string;description:string;switchLabel:string}> = {
+      'sampling.enabled': {title:english?'Training previews':'生成训练预览',description:english?'Generate images at set intervals to follow training progress.':'按设定间隔生成图片，便于观察训练效果。',switchLabel:english?'Generate training previews':'生成训练预览'},
+      'validation.enabled': {title:english?'Validation loss':'验证损失',description:english?'Measure loss on images kept out of training.':'使用未参与训练的数据计算损失。',switchLabel:english?'Enable validation':'启用验证集'},
+      'loop.ema': {title:english?'Weight averaging (EMA)':'权重平均 (EMA)',description:english?'Keep a separate copy of averaged adapter weights for comparison.':'平滑适配器权重变化，额外保存平均权重用于对比。',switchLabel:english?'Enable EMA':'启用 EMA'},
+    };
+    const [section,key]=path.split('.');
+    const property=schema.properties?.[section];
+    const fieldSchema=(property?.$ref ? resolveRef(schema,property.$ref) : property)?.properties?.[key];
+    const help=configFieldHelp(path,fieldSchema?.description,english);
+    const feature=features[path];
+    return <ParameterToggleCard key={`${path}:${search.trim()}`} id={`feature-${path}`} {...feature} group={group} fieldPath={path}
+      checked={!!(value[section]?.[key] ?? fieldSchema?.default)} disabled={readOnly} onCheckedChange={checked=>onChange(setNestedValue(value,[section,key],checked))}
+      help={help ? <ConfigHelp label={`${feature.title} ${english?'help':'说明'}`}>{help}</ConfigHelp> : undefined}
+      error={errors.find(error=>error.loc===path)?.msg}>{children}</ParameterToggleCard>;
+  };
 
   return (
     <div className={compact ? 'compact-schema' : 'space-y-6'} data-testid="schema-form">
       {search.trim() && sortedGroups.length > 0 && <p className="config-search-results" role="status">{english ? `${sortedGroups.reduce((count, [, group]) => count + group.fields.length, 0)} matching parameters · ${sortedGroups.length} sections` : `${sortedGroups.reduce((count, [, group]) => count + group.fields.length, 0)} 个匹配参数 · ${sortedGroups.length} 个分组`}</p>}
-      {sortedGroups.map(([groupName, groupData]) => (
+      {sortedGroups.map(([groupName, groupData]) => {
+        if (groupName === 'sampling' || groupName === 'validation') {
+          return renderToggleCard(`${groupName}.enabled`, <ParameterFields group={groupName} english={english}
+            fields={groupData.fields.filter(field=>React.isValidElement(field) && field.key!==`${groupName}.enabled`)}/>,groupName);
+        }
+        return (
         <FieldGroup key={`${groupName}:${search.trim()}`} title={parameterGroupLabel(groupName, english) || (groupName === 'training' ? (english ? 'Training mode' : '训练方式') : t(`groups.${groupName}`, groupName))} count={groupData.fields.length} compact={compact} groupKey={groupName}>
           {groupName === 'checkpoint' && versionSources && <div className="output-binding-summary">
             <div className="output-binding-heading"><strong>{english ? 'Training weights' : '训练权重'}</strong>{!showAdvanced && <button type="button" className="ui-btn ui-btn-sm" aria-expanded={editOutput} onClick={() => setEditOutput(previous => !previous)}>{editOutput ? (english ? 'Collapse file name' : '收起文件名设置') : (english ? 'Edit file name' : '修改文件名')}</button>}</div>
@@ -1324,9 +1352,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
             })}
           </div></div>}
           {groupName === 'caption' && hasCaptionOverrides && !showAdvanced && !editCaptionOverrides && <div className="caption-override-notice" role="status"><span>{english ? 'This configuration adds text to your existing captions.' : '当前配置会额外改写已有标签。'}</span><button type="button" className="ui-btn ui-btn-sm" onClick={() => setEditCaptionOverrides(true)}>{english ? 'Edit extra caption changes' : '编辑额外标签改写'}</button></div>}
-          <ParameterFields group={groupName} fields={groupData.fields} english={english}/>
+          <ParameterFields group={groupName} fields={groupData.fields} english={english} renderToggleCard={renderToggleCard}/>
         </FieldGroup>
-      ))}
+      );})}
       {sortedGroups.length === 0 && <div className="config-search-empty" role="status"><strong>{english ? 'No matching parameters.' : '没有匹配的参数。'}</strong><p>{search.trim() ? (english ? 'Try a parameter name, keyword or configuration path.' : '试试参数名称、关键词或配置字段路径。') : (english ? 'This section has no available parameters for the current configuration.' : '当前配置在此分区没有可用参数。')}</p>{search.trim() && onClearSearch && <button type="button" className="ui-btn" onClick={onClearSearch}>{english ? 'Return to parameter sections' : '返回参数分区'}</button>}</div>}
     </div>
   );

@@ -152,6 +152,9 @@ export const FIELD_HINTS: Record<string, Copy> = {
 };
 
 export const FIELD_HELP: Record<string, Copy> = {
+  'sampling.enabled': ['按设定间隔生成预览图，需要至少一条提示词或提示词文件。生成预览会占用时间，不参与梯度更新。', 'Generates previews at the chosen intervals. Requires at least one prompt or a prompt file. Preview generation takes time and does not update training gradients.'],
+  'validation.enabled': ['使用固定验证图片和噪声计算损失，不对验证图片反向更新。需要设置验证划分比例或单独的验证数据来源。', 'Measures loss with fixed validation images and noise, without updating weights from validation images. Set a validation split or a separate validation data source.'],
+  'loop.ema': ['在 CPU 维护适配器权重的指数移动平均，额外保存 EMA 权重用于对比，会增加内存和文件占用。训练预览仍使用普通权重。', 'Maintains an exponential moving average of adapter weights on the CPU and exports an additional set of EMA weights. Uses extra memory and storage. Training previews still use the regular weights.'],
   'model.family': ['决定可用的模型文件、训练方式和默认参数。名称中的 B 表示十亿个主模型参数，不含文本编码器与 VAE；Klein 的实际规模由模型版本决定。', 'Determines the model files, training modes and defaults. B denotes billion backbone parameters, excluding text encoders and the VAE; the Klein variant determines its actual size.'],
   'dataset.sources': ['参与训练的图片目录。重复次数表示每轮使用这组图片的遍数，数值越大，这组图片在训练中的占比越高。图片没有标签文件时，可以填写“无标签时的描述”作为标签。', 'Image folders used for training. Repeats set how many times a folder is used per epoch; higher values give it a larger share. Text for uncaptioned images is used when an image has no caption file.'],
   'dataset.flip': ['训练时随机左右翻转图片，让模型看到更多变化。开启后会多缓存一份翻转后的图像编码。画面含文字或左右不对称的特征时不建议开启。', 'Randomly mirrors images during training for more variety. Caches an extra flipped encoding. Avoid it when images contain text or asymmetric features.'],

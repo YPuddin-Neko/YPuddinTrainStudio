@@ -1,6 +1,6 @@
 import {useEffect, useRef, useState, type ReactNode} from 'react';
 import StudioSelect from '../../components/StudioSelect';
-import Switch from '../../components/Switch';
+import ParameterToggleCard from './ParameterToggleCard';
 
 type Interval = {save_state_every_steps:number|null;save_state_every_epochs:number|null};
 type Unit = 'steps'|'epochs';
@@ -15,8 +15,8 @@ function IntervalInput({value,onChange,...props}: {value:number;onChange:(value:
     }} onBlur={()=>setDraft(String(value))}/>;
 }
 
-export default function RecoveryInterval({id,label,value,onChange,english,invalid,help}: {
-  id:string;label:string;value:Interval;onChange:(value:Interval)=>void;english:boolean;invalid?:boolean;help?:ReactNode;
+export default function RecoveryInterval({id,label,value,onChange,english,invalid,help,error}: {
+  id:string;label:string;value:Interval;onChange:(value:Interval)=>void;english:boolean;invalid?:boolean;help?:ReactNode;error?:string;
 }) {
   const steps=value.save_state_every_steps;
   const epochs=value.save_state_every_epochs;
@@ -32,22 +32,28 @@ export default function RecoveryInterval({id,label,value,onChange,english,invali
     else if(!ownEdit)lastEnabled.current={save_state_every_steps:100,save_state_every_epochs:null};
   },[steps,epochs]);
   const emit=(next:Interval)=>{lastEdit.current=next;onChange(next);};
-  const mode=steps!=null && epochs!=null ? 'both' : epochs!=null ? 'epochs' : 'steps';
+  const displayed=enabled ? value : lastEnabled.current;
+  const displaySteps=displayed.save_state_every_steps;
+  const displayEpochs=displayed.save_state_every_epochs;
+  const mode=displaySteps!=null && displayEpochs!=null ? 'both' : displayEpochs!=null ? 'epochs' : 'steps';
+  const hint=mode==='both'
+    ? (english ? `Save recovery points every ${displaySteps} steps and every ${displayEpochs} epochs.` : `每 ${displaySteps} 步和每 ${displayEpochs} 轮分别保存恢复点。`)
+    : mode==='epochs'
+      ? (english ? `Save training state every ${displayEpochs} epochs.` : `每 ${displayEpochs} 轮保存一次完整训练状态。`)
+      : (english ? `Save training state every ${displaySteps} steps.` : `每 ${displaySteps} 步保存一次完整训练状态。`);
   const input=(unit:Unit) => <IntervalInput id={unit===mode || mode==='both' && unit==='steps' ? id : undefined}
     aria-label={mode==='both' ? `${label} · ${unit==='steps'?'Step':'Epoch'}` : label}
     aria-invalid={invalid || undefined} aria-describedby={`${id}-hint`}
-    value={(unit==='steps'?steps:epochs) ?? remembered.current[unit]}
+    value={(unit==='steps'?displaySteps:displayEpochs) ?? remembered.current[unit]}
     onChange={next=>{
       remembered.current[unit]=next;
       emit(unit==='steps' ? {save_state_every_steps:next,save_state_every_epochs:mode==='both'?epochs:null} : {save_state_every_steps:mode==='both'?steps:null,save_state_every_epochs:next});
     }}/>;
-  return <>
-    <div className="recovery-switch-row">
-      <Switch checked={enabled} aria-controls={`${id}-settings`} onCheckedChange={checked=>emit(checked ? lastEnabled.current : {save_state_every_steps:null,save_state_every_epochs:null})}>
-        {english?'Save recovery points periodically':'定期保存恢复点'}
-      </Switch>{help}
-    </div>
-    {enabled && <div id={`${id}-settings`} className="recovery-settings">
+  return <ParameterToggleCard id={id} title={english?'Save recovery points periodically':'定期保存恢复点'}
+    description={english?'Keep the complete training state so an interrupted run can resume.':'保存完整训练状态，供中断后继续。'}
+    checked={enabled} help={help} onCheckedChange={checked=>emit(checked ? lastEnabled.current : {save_state_every_steps:null,save_state_every_epochs:null})}>
+    <div className="recovery-settings">
+      <label htmlFor={id}>{label}</label>
       <div className={`recovery-interval${mode==='both'?' recovery-interval-both':''}`}>
         {mode==='both' ? <div className="recovery-interval-values"><label>Step{input('steps')}</label><label>Epoch{input('epochs')}</label></div> : input(mode)}
         <StudioSelect aria-label={english?'Recovery save unit':'恢复点保存单位'} value={mode}
@@ -59,6 +65,8 @@ export default function RecoveryInterval({id,label,value,onChange,english,invali
             emit(unit==='steps'?{save_state_every_steps:remembered.current.steps,save_state_every_epochs:null}:{save_state_every_steps:null,save_state_every_epochs:remembered.current.epochs});
           }}/>
       </div>
-    </div>}
-  </>;
+      <p id={`${id}-hint`} className="config-field-hint">{hint}</p>
+      {error && <p className="config-field-error">{error}</p>}
+    </div>
+  </ParameterToggleCard>;
 }

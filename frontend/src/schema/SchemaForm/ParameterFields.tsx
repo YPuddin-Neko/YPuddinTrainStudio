@@ -89,7 +89,7 @@ export function FieldSection({ fields, title, className = '', togglesFirst = fal
   </div>;
 }
 
-export default function ParameterFields({ group, fields, english }: { group: string; fields: React.ReactNode[]; english: boolean }) {
+export default function ParameterFields({ group, fields, english, renderToggleCard }: { group: string; fields: React.ReactNode[]; english: boolean; renderToggleCard?:(path:string,children:React.ReactNode)=>React.ReactNode }) {
   const sections = layouts[group];
   if (!sections) return <FieldSection fields={fields}/>;
   const path = (node: React.ReactNode) => String((node as React.ReactElement).key);
@@ -115,7 +115,9 @@ export default function ParameterFields({ group, fields, english }: { group: str
   }).filter(entry => entry.content.length > 0);
   // A lone section needs no subtitle: the group heading already names it.
   const titled = visible.length + (remaining.length > 0 ? 1 : 0) > 1;
-  return <>{visible.map(({ item, content }) => <FieldSection key={item.key} fields={content} title={titled ? item.title?.[english ? 1 : 0] : undefined}
-    className={`config-${group}-${item.key}`} togglesFirst={item.togglesFirst} inlineToggles={item.inlineToggles}/>)}
+  return <>{visible.map(({ item, content }) => group==='loop' && item.key==='ema' && renderToggleCard
+    ? <div key={item.key} className="config-field-section config-loop-ema">{renderToggleCard('loop.ema',<FieldSection fields={content.filter(field=>path(field)!=='loop.ema')}/>)}</div>
+    : <FieldSection key={item.key} fields={content} title={titled ? item.title?.[english ? 1 : 0] : undefined}
+      className={`config-${group}-${item.key}`} togglesFirst={item.togglesFirst} inlineToggles={item.inlineToggles}/>)}
     {remaining.length > 0 && <FieldSection fields={remaining}/>}</>;
 }
