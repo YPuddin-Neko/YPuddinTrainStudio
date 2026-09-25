@@ -1,7 +1,7 @@
 import { Link, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Activity, ArrowRight, Loader2 } from 'lucide-react';
+import { ArrowRight, Loader2 } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import type { DatasetInfo, DatasetSource, FamilyInfo, JobListResponse } from '../../api/types';
 import { useEventStream } from '../../events/useEventStream';
@@ -12,6 +12,8 @@ import VersionResults from '../../components/projects/VersionResults';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatApiError } from '../../utils/errors';
 import { modelConfigUrl, projectUrl, versionConfigUrl, type VersionedProject } from '../../utils/projectVersions';
+import ProgressBar from '../../components/ProgressBar';
+import { JobStatus } from '../Queue/jobPresentation';
 import ProjectDataImport from './ProjectDataImport';
 import ProjectOverview from './ProjectOverview';
 import DatasetPipelinePanel from '../../components/datasets/DatasetPipelinePanel';
@@ -77,10 +79,10 @@ function ProjectDetailContent({projectId: id, versionId}: {projectId: string; ve
   const indexing = datasets.some(dataset => dataset.index_status === 'indexing');
   const unavailable = versions.enabled && !versions.loading && !versions.current;
   return <div className="project-workspace" data-testid="project-detail-page">
-    <ProjectWorkspaceHeader project={project} versionId={versionId} versions={versions.versions} current={versions.current} active={step} refresh={versions.refresh} error={versions.error} status={step === 'data' && datasetsQuery.isSuccess ? <div className="project-data-summary" aria-label={text('本版本数据统计','Version data summary')}>{[{label:text('图片','Images'),value:imageCount},{label:text('标签','Captions'),value:captionCount},{label:text('遮罩','Masks'),value:maskCount}].map(item=><span key={item.label}>{item.label} <strong>{item.value}</strong></span>)}{indexing && <Loader2 size={12} className="animate-spin" aria-label={text('索引中','Indexing')}/>}</div> : undefined}/>
+    <ProjectWorkspaceHeader project={project} versionId={versionId} versions={versions.versions} current={versions.current} active={step} refresh={versions.refresh} error={versions.error} title={step === 'overview' ? project.name : undefined} titleBadge={step === 'overview' && project.archived ? <span className="workspace-title-badge">{text('已归档','Archived')}</span> : undefined} status={step === 'data' && datasetsQuery.isSuccess ? <div className="project-data-summary" aria-label={text('本版本数据统计','Version data summary')}>{[{label:text('图片','Images'),value:imageCount},{label:text('标签','Captions'),value:captionCount},{label:text('遮罩','Masks'),value:maskCount}].map(item=><span key={item.label}>{item.label} <strong>{item.value}</strong></span>)}{indexing && <Loader2 size={12} className="animate-spin" aria-label={text('索引中','Indexing')}/>}</div> : undefined}/>
     {unavailable && <div role="alert" className="workspace-message error">{text('该版本不存在或不属于当前项目。','This version does not belong to this project.')}<Link className="ui-link" to={projectUrl(id)}>{text('返回当前版本','Return to current version')}</Link></div>}
     {scopedReady && [{key:'config',query:configQuery,label:text('版本配置读取失败','Version configuration could not be loaded')},{key:'datasets',query:datasetsQuery,label:text('数据集列表读取失败','Dataset list could not be loaded')},{key:'jobs',query:jobsQuery,label:text('活动任务读取失败','Active jobs could not be loaded')}].map(item=>item.query.error && <div key={item.key} role="alert" className="workspace-message error">{item.label}: {formatApiError(item.query.error)}<button type="button" className="ui-btn ui-btn-sm" aria-label={`${text('重试','Retry')} · ${item.label}`} onClick={()=>void item.query.refetch()}>{t('common.retry')}</button></div>)}
-    {activeJob && <Link to={`/jobs/${activeJob.id}`} className="version-run-status"><Activity size={16}/><strong>{activeJob.name}</strong><span>{t(`queue.status.${activeJob.status}`,activeJob.status)}</span><span className="tabular-nums">{activeJob.progress?.step ?? 0} / {activeJob.progress?.total_steps ?? '—'}</span><span className="run-status-action">{text('查看训练监控','View training monitor')}<ArrowRight size={14}/></span></Link>}
+    {activeJob && step !== 'overview' && <Link to={`/jobs/${activeJob.id}`} className="version-run-status"><JobStatus status={activeJob.status}/><strong>{activeJob.name}</strong>{activeJob.progress?.total_steps ? <><ProgressBar className="version-run-progress" label={text('训练进度','Training progress')} value={activeJob.progress.step ?? 0} max={activeJob.progress.total_steps}/><span className="tabular-nums">{activeJob.progress.step ?? 0} / {activeJob.progress.total_steps}</span></> : null}<span className="run-status-action">{text('查看训练监控','View training monitor')}<ArrowRight size={14}/></span></Link>}
     {scopedReady && !unavailable && <>
       {step === 'results' ? <VersionResults projectId={id} versionId={versionId} readOnly={archived}/> : configQuery.isPending || datasetsQuery.isPending ? <div className="workspace-loading" role="status"><Loader2 size={16} className="animate-spin"/>{text('正在读取版本数据…','Loading version data…')}</div> : configQuery.isError || !config || datasetsQuery.isError ? null : step === 'overview' ? <ProjectOverview project={project} version={versions.current} versionId={versionId} config={config} datasets={datasets}/> : <section className="version-data-section">
 

@@ -38,6 +38,16 @@ export function mergeJobEvent(job: Job, event: Record<string, any>): Job {
 
 type Text = (zh: string, en: string) => string;
 
+/** The run a project page should describe: the one holding a device, then paused, then waiting, then the newest. */
+export function focusJob<T extends Pick<Job, 'status'>>(jobs: T[]): T | undefined {
+  return jobs.find(job => ['running', 'pausing', 'cancelling'].includes(job.status)) || jobs.find(job => job.status === 'paused')
+    || jobs.find(job => ['queued', 'scheduled'].includes(job.status)) || jobs[0];
+}
+
+export function artifactKindLabel(kind: string, text: Text): string {
+  return kind === 'model' ? text('完整模型', 'Full model') : kind === 'adapter' || kind === 'lora' ? text('适配器权重', 'Adapter weights') : kind === 'checkpoint' ? text('检查点', 'Checkpoint') : kind;
+}
+
 export function jobTypeLabel(type: string, text: Text): string {
   return type === 'xyz' ? text('模型测试', 'Model testing') : type === 'cache' ? text('缓存', 'Cache') : text('训练', 'Training');
 }

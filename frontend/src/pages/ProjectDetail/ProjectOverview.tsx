@@ -1,18 +1,28 @@
 import OverviewDataPanel from './OverviewDataPanel';
-import { useQuery } from '@tanstack/react-query';
+import React from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { Activity, ArrowRight, CheckCircle2, Circle, Database, Download, Image, Layers, Loader2, Tag, TriangleAlert } from 'lucide-react';
+import { ArrowRight, Download, FolderPlus, Images, Loader2, Pencil } from 'lucide-react';
 import { apiClient, apiUrl } from '../../api/client';
 import type { Artifact, DatasetInfo, DatasetSource, JobListResponse } from '../../api/types';
+import { useFamilies } from '../../api/hooks/useFamilies';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
-import { formatBytes, formatEta } from '../../utils/format';
+import { formatBytes } from '../../utils/format';
 import { formatApiError } from '../../utils/errors';
 import { mergeConfig } from '../../utils/config';
+import { configOptionLabel } from '../../utils/configPresentation';
+import { artifactKindLabel, focusJob, mergeJobEvent, shortTime } from '../../utils/jobs';
 import { modelConfigUrl, projectUrl, type ProjectVersion, type VersionedProject } from '../../utils/projectVersions';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { inactiveTrainingReason } from '../../utils/trainingFamilies';
+import { JobProgressSummary, JobStatus } from '../Queue/jobPresentation';
+import { ProjectArtwork } from '../Projects/ProjectCardParts';
+import ProjectEditor from '../Projects/ProjectEditor';
+import { categoryLabel, type GalleryProject } from '../Projects/projectGallery';
+import OverviewBanner, { type ReadinessCheck } from './OverviewBanner';
+import '../Queue/queue.css';
 import './project-overview.css';
 
 export interface OverviewDataset {
@@ -29,37 +39,46 @@ export interface ProjectOverviewProps {
   datasets: OverviewDataset[];
 }
 
+const LIVE = ['queued', 'scheduled', 'running', 'pausing', 'cancelling'];
 const number = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 const fileName = (value: unknown) => typeof value === 'string' ? value.trim().replace(/\\/g, '/').split('/').filter(Boolean).pop() || '' : '';
-const familyName = (family: string) => ({ anima: 'Anima', krea2: 'Krea 2', sdxl: 'SDXL', flux: 'FLUX.1', flux2: 'FLUX.2 Klein', toy: 'Toy' }[family] || family);
+const FAMILY_NAMES: Record<string, string> = { anima: 'Anima', krea2: 'Krea 2', sdxl: 'SDXL', flux: 'FLUX.1', flux2: 'FLUX.2 Klein', toy: 'Toy' };
+const learningRate = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? (value !== 0 && Math.abs(value) < 0.001 ? value.toExponential() : String(value)) : '—';
 
 /** Missing, failed and in-progress indexes must never look like an empty dataset. */
 function overviewDatasetStats(datasets: OverviewDataset[]) {
   const ready = datasets.every(row => row.stats && !row.stats.error && row.index_status === 'ready'
     && ['images', 'captioned', 'masks'].every(key => number(row.stats?.[key]) !== null));
   const total = (key: 'images' | 'captioned' | 'masks', rows = datasets) => ready ? rows.reduce((sum, row) => sum + (number(row.stats?.[key]) ?? 0), 0) : null;
-  return { ready, images: total('images'), captions: total('captioned'), masks: total('masks'), training: total('images', datasets.filter(row => !row.source.is_reg)), regularization: total('images', datasets.filter(row => row.source.is_reg)) };
+  const training = datasets.filter(row => !row.source.is_reg);
+  return { ready, images: total('images'), captions: total('captioned', training), masks: total('masks', training), training: total('images', training), regularization: total('images', datasets.filter(row => row.source.is_reg)) };
 }
 
 export default function ProjectOverview({ project, version, versionId, config: savedConfig, datasets: providedDatasets }: ProjectOverviewProps) {
   const text = useWorkspaceText();
-  const { t, i18n } = useTranslation();
+  const { i18n } = useTranslation();
+  const queryClient = useQueryClient();
+  const english = i18n.resolvedLanguage?.startsWith('en') || false;
+  const [editing, setEditing] = React.useState(false);
   const scopedVersionId = versionId || version?.id;
   const belongsToVersion = (item: { project_id?: string | null; version_id?: string | null }) => (item.project_id === undefined || item.project_id === project.id) && (item.version_id === undefined || item.version_id === (scopedVersionId || null));
   const datasets = providedDatasets.filter(row => belongsToVersion(row.source));
+  const families = useFamilies();
   const defaultsQuery = useQuery({
     queryKey: ['config-defaults'],
     queryFn: () => apiClient.get<Record<string, any>>('/config/defaults', { silent: true }),
     staleTime: 5 * 60 * 1000,
   });
   const config = mergeConfig(defaultsQuery.data || {}, savedConfig);
+  const jobsKey = ['project-overview-jobs', project.id, scopedVersionId];
+  const activeKey = ['project-overview-active', project.id, scopedVersionId];
   const jobsQuery = useQuery({
-    queryKey: ['project-overview-jobs', project.id, scopedVersionId],
-    queryFn: () => apiClient.get<JobListResponse>('/jobs', { params: { project_id: project.id, version_id: scopedVersionId, type: 'train', page: 1, page_size: 3 }, silent: true }),
-    refetchInterval: query => query.state.data?.items.some(job => ['queued', 'scheduled', 'running', 'pausing', 'cancelling'].includes(job.status)) ? 5000 : false,
+    queryKey: jobsKey,
+    queryFn: () => apiClient.get<JobListResponse>('/jobs', { params: { project_id: project.id, version_id: scopedVersionId, type: 'train', page: 1, page_size: 4 }, silent: true }),
+    refetchInterval: query => query.state.data?.items.some(job => LIVE.includes(job.status)) ? 5000 : false,
   });
   const activeQuery = useQuery({
-    queryKey: ['project-overview-active', project.id, scopedVersionId],
+    queryKey: activeKey,
     queryFn: () => apiClient.get<JobListResponse>('/jobs', { params: { project_id: project.id, version_id: scopedVersionId, type: 'train', group: 'active', page: 1, page_size: 20 }, silent: true }),
     refetchInterval: query => query.state.data?.items.some(job => job.status !== 'paused') ? 5000 : false,
   });
@@ -67,30 +86,34 @@ export default function ProjectOverview({ project, version, versionId, config: s
     queryKey: ['project-overview-artifacts', project.id, scopedVersionId],
     queryFn: () => apiClient.get<Artifact[]>('/artifacts', { params: { project_id: project.id, version_id: scopedVersionId }, silent: true }),
   });
-  useEventStream(EVENT_TYPES.JOB_STATE, event => { if (event.project_id && event.project_id !== project.id) return; void jobsQuery.refetch(); void activeQuery.refetch(); });
+  const refreshJobs = () => { void jobsQuery.refetch(); void activeQuery.refetch(); };
+  // Step events keep the banner live between the slower list refreshes.
+  const applyEvent = (event: Record<string, any>) => {
+    if (typeof event.job_id !== 'string') return;
+    for (const key of [jobsKey, activeKey]) queryClient.setQueryData<JobListResponse>(key, data => data && { ...data, items: data.items.map(job => mergeJobEvent(job, event)) });
+  };
+  useEventStream(EVENT_TYPES.JOB_STEP, applyEvent);
+  useEventStream(EVENT_TYPES.JOB_PHASE, applyEvent);
+  useEventStream(EVENT_TYPES.JOB_STATE, event => { if (event.project_id && event.project_id !== project.id) return; applyEvent(event); refreshJobs(); });
   useEventStream(EVENT_TYPES.ARTIFACT_CREATED, event => { if (!event.project_id || event.project_id === project.id) void artifactsQuery.refetch(); });
+
   const stats = overviewDatasetStats(datasets);
-  const jobs = [...new Map([...(activeQuery.data?.items || []), ...(jobsQuery.data?.items || [])].filter(belongsToVersion).map(job => [job.id, job])).values()];
+  const jobs = [...new Map([...(activeQuery.data?.items || []), ...(jobsQuery.data?.items || [])].filter(belongsToVersion).map(job => [job.id, job])).values()]
+    .sort((left, right) => right.created_at - left.created_at);
+  const focus = focusJob(jobs);
+  const history = jobs.slice(0, 4);
+  const runTotal = Math.max(jobsQuery.data?.total ?? 0, jobs.length);
   const artifacts = (artifactsQuery.data || []).filter(belongsToVersion).sort((a, b) => b.created_at - a.created_at);
-  const trainingFocus = jobs.find(job => ['running', 'pausing', 'paused', 'cancelling'].includes(job.status)) || jobs[0];
-  const progress = trainingFocus?.progress;
-  const jobMetrics = trainingFocus ? [
-    [text('训练进度', 'Training progress'), `${progress?.step ?? '—'} / ${progress?.total_steps ?? '—'}`],
-    [text('当前轮数', 'Current epoch'), progress?.epoch ?? '—'],
-    [text('当前损失', 'Current loss'), number(trainingFocus.latest?.loss) === null ? '—' : Number(trainingFocus.latest?.loss).toFixed(4)],
-    [trainingFocus.latest?.loss_mean_scope === 'since_resume' ? text('恢复后平均损失', 'Mean loss since resume') : text('平均损失', 'Mean loss'), number(trainingFocus.latest?.loss_mean) === null ? '—' : Number(trainingFocus.latest?.loss_mean).toFixed(4)],
-    [text('训练速度', 'Training speed'), number(progress?.it_s) === null ? '—' : `${Number(progress?.it_s).toFixed(2)} ${text('步/秒', 'steps/s')}`],
-    [text('预计剩余', 'Estimated remaining'), progress?.eta_s == null || !['running', 'pausing'].includes(trainingFocus.status) ? '—' : formatEta(progress.eta_s)],
-  ] : [];
-  const latest = jobs[0];
+  const focusArtifact = focus && artifacts.filter(item => item.job_id === focus.id).sort((a, b) => (b.step ?? -1) - (a.step ?? -1) || b.created_at - a.created_at)[0];
+
   const family = config.model?.family || version?.family || project.active_family || '';
-  const inactiveReason = inactiveTrainingReason(config, i18n.language.startsWith('en'));
-  const modelLabel = inactiveReason ? `${family === 'flux' ? 'FLUX.1' : 'FLUX.2 dev'} · ${text('已停用', 'Retired')}` : familyName(family);
+  const familyLabel = families.data?.find(item => item.name === family)?.label || FAMILY_NAMES[family] || family;
+  const inactiveReason = inactiveTrainingReason(config, english);
   const baseModel = fileName(config.model?.dit_path);
   const hasTrainingImages = stats.training !== null && stats.training > 0;
   const indexing = datasets.some(row => row.index_status === 'indexing');
   const failedIndex = datasets.some(row => row.index_status === 'failed' || row.stats?.error);
-  const missingCaptions = stats.images !== null && stats.captions !== null ? Math.max(0, stats.images - stats.captions) : null;
+  const missingCaptions = stats.training !== null && stats.captions !== null ? Math.max(0, stats.training - stats.captions) : null;
   const dataWorkspaceUrl = projectUrl(project.id, scopedVersionId, 'data');
   const dataUrl = `${dataWorkspaceUrl}&data_step=datasets#version-datasets`;
   const captionsUrl = `${dataWorkspaceUrl}&data_step=captions`;
@@ -98,68 +121,122 @@ export default function ProjectOverview({ project, version, versionId, config: s
   const trainUrl = projectUrl(project.id, scopedVersionId, 'train');
   const resultsUrl = projectUrl(project.id, scopedVersionId, 'results');
   const modelsUrl = modelConfigUrl(project.id, scopedVersionId);
-  const archived = project.archived || version?.archived;
-  const nextUrl = !hasTrainingImages || failedIndex ? dataUrl : !baseModel ? modelsUrl : trainUrl;
-  const nextLabel = !hasTrainingImages || failedIndex ? text('整理训练数据', 'Prepare training data') : !baseModel ? text('配置训练模型', 'Configure models') : text('检查训练参数', 'Review parameters');
-  const date = (value: unknown) => number(value) && Number(value) > 0 ? new Date(Number(value) * 1000).toLocaleDateString(i18n.resolvedLanguage || 'zh-CN', { month: 'short', day: 'numeric' }) : '—';
-  const checks = [
-    { label: text('训练图片', 'Training images'), detail: !stats.ready ? text('等待索引完成', 'Waiting for indexing') : hasTrainingImages ? text(`${stats.training} 张训练图片`, `${stats.training} training images`) : text('尚未导入训练图片', 'No training images imported'), done: hasTrainingImages, href: dataUrl },
-    { label: text('训练底模', 'Base model'), detail: baseModel ? text('已配置', 'Configured') : text('尚未选择底模', 'No base model selected'), done: !!baseModel, href: modelsUrl },
-    { label: text('标签覆盖', 'Caption coverage'), detail: missingCaptions === null ? text('等待索引完成', 'Waiting for indexing') : missingCaptions > 0 ? text(`${missingCaptions} 张图片没有标签文件`, `${missingCaptions} images have no caption file`) : hasTrainingImages ? text('所有图片都有标签文件', 'Every image has a caption file') : text('导入后可检查标签', 'Check captions after import'), done: hasTrainingImages && missingCaptions === 0, href: captionsUrl },
+  const archived = !!(project.archived || version?.archived);
+  const versionName = version?.name || text('当前版本', 'Current version');
+
+  const checks: ReadinessCheck[] = [
+    { key: 'images', label: text('训练图片', 'Training images'), href: dataUrl,
+      state: hasTrainingImages && !failedIndex ? 'done' : 'todo',
+      detail: failedIndex ? text('数据集索引失败，需要检查', 'A dataset failed to index') : indexing || (!stats.ready && datasets.length) ? text('正在索引…', 'Indexing…') : hasTrainingImages ? text(`${stats.training} 张`, `${stats.training} images`) : text('尚未导入', 'None imported') },
+    { key: 'model', label: text('训练底模', 'Base model'), href: modelsUrl,
+      state: baseModel && !inactiveReason ? 'done' : 'todo',
+      detail: inactiveReason ? text('模型类型已停用', 'Model type retired') : baseModel || text('尚未选择', 'Not selected') },
+    { key: 'captions', label: text('标签', 'Captions'), href: captionsUrl,
+      state: missingCaptions === null || !hasTrainingImages ? 'todo' : missingCaptions > 0 ? 'warn' : 'done',
+      detail: missingCaptions === null ? text('等待索引', 'Waiting for index') : !hasTrainingImages ? text('导入图片后检查', 'Check after import') : missingCaptions > 0 ? text(`${missingCaptions} 张没有标签`, `${missingCaptions} without captions`) : text('全部已标注', 'All captioned') },
+    ...(config.dataset?.masked_loss ? [{ key: 'masks', label: text('遮罩', 'Masks'), href: masksUrl,
+      state: (stats.masks ?? 0) > 0 ? 'done' as const : 'warn' as const,
+      detail: (stats.masks ?? 0) > 0 ? text(`${stats.masks} 个遮罩`, `${stats.masks} masks`) : text('已启用遮罩训练，但没有遮罩', 'Masked training on, no masks') }] : []),
   ];
-  const parameters = [
-    [text('算法', 'Algorithm'), config.training?.mode === 'full' ? text('全量微调', 'Full fine-tuning') : config.adapter?.algo ? ({ lora: 'LoRA', lokr: 'LoKr', loha: 'LoHa', full: text('完整权重', 'Full weights') }[String(config.adapter.algo)] || String(config.adapter.algo)) : '—'],
-    [config.training?.mode === 'full' ? text('训练组件','Trained components') : 'Rank', config.training?.mode === 'full' ? [config.training.train_backbone && 'UNet / DiT', config.training.train_text_encoder && text('文本编码器','Text encoder')].filter(Boolean).join(' + ') : config.adapter?.rank ?? '—'],
-    [text('批量大小', 'Batch size'), config.dataset?.batch_size ?? '—'],
-    [text('学习率', 'Learning rate'), config.optimizer?.lr ?? '—'],
-    [text('训练轮数', 'Epochs'), config.loop?.epochs ?? (config.loop?.epochs === null || defaultsQuery.isSuccess ? text('未设置', 'Not set') : '—')],
-    [text('最大步数', 'Step limit'), config.loop?.max_steps ?? (config.loop?.max_steps === null || defaultsQuery.isSuccess ? text('未设置', 'Not set') : '—')],
+  const ready = checks.every(check => check.state !== 'todo');
+  const next = !hasTrainingImages || failedIndex ? { href: dataUrl, label: text('整理训练数据', 'Prepare training data') }
+    : !baseModel || inactiveReason ? { href: modelsUrl, label: text('配置训练模型', 'Configure models') }
+      : !stats.ready ? { href: dataUrl, label: text('查看数据集状态', 'View dataset status') }
+        : { href: trainUrl, label: text('检查参数并开始训练', 'Review and start training') };
+
+  const full = config.training?.mode === 'full';
+  const epochs = number(config.loop?.epochs);
+  const maxSteps = number(config.loop?.max_steps);
+  const resolutions = Array.isArray(config.dataset?.resolutions) ? config.dataset.resolutions.filter((value: unknown) => typeof value === 'number') : [];
+  const parameters: [string, React.ReactNode][] = [
+    [text('算法', 'Algorithm'), full ? text('全量微调', 'Full fine-tuning') : config.adapter?.algo ? configOptionLabel('adapter.algo', String(config.adapter.algo), english) : '—'],
+    full ? [text('训练组件', 'Trained parts'), [config.training?.train_backbone && 'UNet / DiT', config.training?.train_text_encoder && text('文本编码器', 'Text encoder')].filter(Boolean).join(' + ') || '—']
+      : ['Rank / Alpha', config.adapter?.rank != null ? `${config.adapter.rank} / ${config.adapter.alpha ?? '—'}` : '—'],
+    [text('学习率', 'Learning rate'), learningRate(config.optimizer?.lr)],
+    [text('优化器', 'Optimizer'), config.optimizer?.type ? configOptionLabel('optimizer.type', String(config.optimizer.type), true) : '—'],
+    [text('批量大小', 'Batch size'), config.dataset?.batch_size != null ? `${config.dataset.batch_size}${number(config.loop?.grad_accum) && config.loop.grad_accum > 1 ? ` × ${config.loop.grad_accum}` : ''}` : '—'],
+    [text('训练长度', 'Length'), [epochs !== null && text(`${epochs} 轮`, `${epochs} epochs`), maxSteps !== null && text(`最多 ${maxSteps} 步`, `≤ ${maxSteps} steps`)].filter(Boolean).join(' · ') || (defaultsQuery.isSuccess ? text('未设置', 'Not set') : '—')],
+    [text('分辨率', 'Resolution'), resolutions.length ? resolutions.join(' / ') : '—'],
+    [text('混合精度', 'Precision'), config.loop?.mixed_precision ? configOptionLabel('loop.mixed_precision', String(config.loop.mixed_precision), true) : '—'],
   ];
+  const counts = !stats.ready ? text('正在读取数据统计…', 'Reading dataset statistics…')
+      : [text(`${stats.training} 张训练图片`, `${stats.training} training images`), text(`${stats.regularization} 张正则图片`, `${stats.regularization} regularization images`),
+        text(`${stats.captions} / ${stats.training} 已标注`, `${stats.captions} / ${stats.training} captioned`), text(`${stats.masks} 个遮罩`, `${stats.masks} masks`),
+        text(`${datasets.length} 个数据集`, `${datasets.length} datasets`)].join(' · ');
+  const date = (value: unknown) => number(value) ? new Date(Number(value) * 1000).toLocaleDateString(i18n.resolvedLanguage || 'zh-CN', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+  const loading = jobsQuery.isPending || activeQuery.isPending;
+  const jobError = jobsQuery.error || activeQuery.error;
+
+  const runs = <section className="overview-panel overview-runs" aria-labelledby="overview-runs-title">
+    <header className="overview-panel-heading"><div className="overview-panel-title"><h3 id="overview-runs-title">{text('训练记录', 'Training runs')}</h3>{runTotal > 0 && <span className="overview-count">{runTotal}</span>}</div>{runTotal > 0 && <Link className="ui-link" to={`${resultsUrl}&result_tab=jobs`}>{text('全部记录', 'All runs')}<ArrowRight size={13}/></Link>}</header>
+    {loading ? <p role="status" className="overview-muted"><Loader2 size={14} className="animate-spin"/>{text('正在读取训练记录…', 'Loading training runs…')}</p>
+      : jobError ? <div role="alert" className="overview-inline-error"><span>{formatApiError(jobError)}</span><button type="button" className="ui-btn ui-btn-sm" onClick={refreshJobs}>{text('重试', 'Retry')}</button></div>
+        : history.length ? <ul className="overview-run-list">{history.map(job => <li key={job.id}><Link to={`/jobs/${encodeURIComponent(job.id)}`}>
+          <span className="overview-run-top"><JobStatus status={job.status}/><time>{shortTime(job.created_at)}</time></span>
+          <strong title={job.name}>{job.name}</strong>
+          <JobProgressSummary job={job}/>
+        </Link></li>)}</ul>
+          : <p className="overview-muted">{text('还没有训练记录。开始训练后，这里会显示每次训练的进度和保存的模型权重。', 'No runs yet. Training progress and saved weights will appear here.')}</p>}
+  </section>;
+  const outputs = <section className="overview-panel overview-outputs" aria-labelledby="overview-outputs-title">
+    <header className="overview-panel-heading"><div className="overview-panel-title"><h3 id="overview-outputs-title">{text('训练产物', 'Outputs')}</h3>{artifacts.length > 0 && <span className="overview-count">{artifacts.length}</span>}</div>{artifacts.length > 0 && <Link className="ui-link" to={`${resultsUrl}&result_tab=artifacts`}>{text('全部产物', 'All outputs')}<ArrowRight size={13}/></Link>}</header>
+    {artifactsQuery.isPending ? <p role="status" className="overview-muted"><Loader2 size={14} className="animate-spin"/>{text('正在读取训练产物…', 'Loading outputs…')}</p>
+      : artifactsQuery.error ? <div role="alert" className="overview-inline-error"><span>{formatApiError(artifactsQuery.error)}</span><button type="button" className="ui-btn ui-btn-sm" onClick={() => void artifactsQuery.refetch()}>{text('重新读取产物', 'Reload outputs')}</button></div>
+        : artifacts.length ? <ul className="overview-output-list">{artifacts.slice(0, 3).map(artifact => <li key={artifact.id}>
+          <span><strong title={artifact.name}>{artifact.name}</strong><small>{[artifactKindLabel(artifact.kind, text), formatBytes(artifact.size), artifact.step != null ? `${artifact.step} ${text('步', 'steps')}` : '', shortTime(artifact.created_at)].filter(Boolean).join(' · ')}</small></span>
+          <a className="ui-btn ui-btn-sm ui-btn-icon ui-btn-quiet" href={apiUrl(`/artifacts/${encodeURIComponent(artifact.id)}/download`)} download aria-label={text(`下载 ${artifact.name}`, `Download ${artifact.name}`)} title={text('下载', 'Download')}><Download size={14}/></a>
+        </li>)}</ul>
+          : <p className="overview-muted">{text('训练保存的模型权重会显示在这里。', 'Saved model weights appear here.')}</p>}
+  </section>;
 
   return <section className="project-overview" data-testid="project-overview">
-    <header className="overview-heading">
-      <div><span className="overview-eyebrow">{text('版本概览', 'VERSION OVERVIEW')}</span><h2>{version?.name || text('当前版本', 'Current version')}{archived && <span className="overview-badge">{text('已归档', 'Archived')}</span>}</h2>{(version?.note?.trim() || project.note?.trim()) && <p>{version?.note?.trim() || project.note?.trim()}</p>}</div>
-      <div className="overview-version-meta"><span>{text('最后更新', 'Updated')} {date(version?.updated_at || project.updated_at)}</span>{number(project.version_count) !== null && <span>{project.version_count} {text('个版本', 'versions')}</span>}</div>
-    </header>
-
-    <div className="overview-metrics" aria-label={text('当前版本数据统计', 'Current version data statistics')}>
-      {[
-        { label: text('图片总数', 'Images'), value: stats.images, icon: <Image size={17}/>, href: `${dataWorkspaceUrl}&data_step=inspect` },
-        { label: text('标签文件', 'Captions'), value: stats.captions, icon: <Tag size={17}/>, href: captionsUrl },
-        { label: text('遮罩文件', 'Masks'), value: stats.masks, icon: <Layers size={17}/>, href: masksUrl },
-        { label: text('数据来源', 'Sources'), value: datasets.length, icon: <Database size={17}/>, href: dataUrl },
-      ].map(metric => <Link key={metric.label} to={metric.href} className="overview-metric"><span>{metric.icon}{metric.label}</span><strong>{metric.value ?? '—'}</strong><small>{metric.value === null && text('待索引', 'Awaiting index')}<ArrowRight size={12}/></small></Link>)}
-    </div>
-
-    <OverviewDataPanel key={`${project.id}/${scopedVersionId || "legacy"}`} datasets={datasets} workspaceUrl={dataWorkspaceUrl} projectId={project.id} versionId={scopedVersionId}/>
-    <div className="overview-main-grid">
-      <section className="overview-panel overview-readiness">
-        <div className="overview-panel-heading"><h3>{text('数据准备', 'Data preparation')}</h3><span className={`overview-badge${indexing || failedIndex ? ' attention' : ''}`}>{!datasets.length ? text('尚未导入', 'Not imported') : indexing ? text('正在索引', 'Indexing') : failedIndex ? text('需要检查', 'Needs attention') : !stats.ready ? text('等待统计', 'Awaiting statistics') : text('索引已更新', 'Index up to date')}</span></div>
-        <div className="overview-data-balance"><div><strong>{stats.training ?? '—'}</strong><span>{text('训练图片', 'Training images')}</span></div><div><strong>{stats.regularization ?? '—'}</strong><span>{text('正则图片', 'Regularization images')}</span></div></div>
-        <ul className="overview-checks">{checks.map(check => <li key={check.label}><Link to={check.href}>{check.done ? <CheckCircle2 size={16} className="overview-check-done"/> : <Circle size={16}/>}<span><strong>{check.label}</strong><small>{check.detail}</small></span><ArrowRight size={14}/></Link></li>)}</ul>
-        {config.dataset?.masked_loss && stats.masks === 0 && hasTrainingImages && <p className="overview-inline-note"><TriangleAlert size={15}/>{text('已启用遮罩训练 · 未索引到遮罩文件', 'Masked training enabled · No mask files indexed')}</p>}
-        <footer className="overview-panel-footer"><Link to={archived ? dataUrl : nextUrl} className="ui-btn ui-btn-primary overview-primary-link">{archived ? text('查看版本数据', 'View version data') : nextLabel}<ArrowRight size={14}/></Link></footer>
+    <OverviewBanner versionName={versionName} job={focus} artifact={focusArtifact} checks={checks} ready={ready} next={next} archived={archived}
+      projectId={project.id} versionId={scopedVersionId} trainUrl={trainUrl} resultsUrl={resultsUrl} loading={loading} onJobUpdated={refreshJobs}/>
+    <div className="overview-layout">
+      <section className="overview-main" aria-labelledby="overview-data-title">
+        <header className="overview-section-heading">
+          <div><h2 id="overview-data-title">{text('训练数据', 'Training data')}</h2>{datasets.length > 0 && <p>{counts}</p>}</div>
+          {datasets.length > 0 && <Link className="ui-btn ui-btn-sm" to={dataUrl}>{archived ? text('查看训练数据', 'View training data') : text('管理训练数据', 'Manage data')}<ArrowRight size={13}/></Link>}
+        </header>
+        {datasets.length ? <OverviewDataPanel key={`${project.id}/${scopedVersionId || 'legacy'}`} datasets={datasets} workspaceUrl={dataWorkspaceUrl} projectId={project.id} versionId={scopedVersionId}/>
+          : <div className="overview-data-empty" data-testid="overview-data-empty">
+            <span className="overview-data-empty-icon" aria-hidden="true"><Images size={22}/></span>
+            <strong>{text('这个版本还没有训练数据', 'This version has no training data')}</strong>
+            <p>{text('导入图片文件夹后，这里会显示图片预览、标签分布和尺寸分布。', 'Import an image folder to see previews, tag frequency and size distribution here.')}</p>
+            {!archived && <Link className="ui-btn ui-btn-primary" to={`${dataWorkspaceUrl}&data_step=datasets`}><FolderPlus size={15}/>{text('导入训练数据', 'Import training data')}</Link>}
+          </div>}
       </section>
-
-      <section className="overview-panel overview-configuration">
-        <div className="overview-panel-heading"><h3>{text('模型与训练配置', 'Model and training configuration')}</h3><Link className="ui-link" to={trainUrl}>{text('查看参数', 'View parameters')}<ArrowRight size={13}/></Link></div>
-        <Link to={modelsUrl} className="overview-model"><div className="overview-model-icon"><Layers size={22}/></div><div><span>{family ? modelLabel : text('未选择模型族', 'No model family selected')}</span><strong>{baseModel || text('尚未配置训练底模', 'Base model not configured')}</strong>{inactiveReason && <small>{inactiveReason}</small>}</div><ArrowRight size={16}/></Link>
-        <dl className="overview-parameters">{parameters.map(([label, value]) => <div key={String(label)}><dt>{label}</dt><dd>{String(value)}</dd></div>)}</dl>
-        {defaultsQuery.error && <div role="alert" className="overview-job-error"><span>{text('默认参数读取失败', 'Could not load default parameters')}</span><button type="button" className="ui-btn ui-btn-sm" onClick={() => void defaultsQuery.refetch()}>{text('重新读取默认参数', 'Reload default parameters')}</button></div>}
-      </section>
+      <aside className="overview-aside" aria-label={text('版本信息', 'Version details')}>
+        <section className="overview-panel overview-configuration" aria-labelledby="overview-config-title">
+          <header className="overview-panel-heading"><h3 id="overview-config-title">{text('模型与参数', 'Model & parameters')}</h3><Link className="ui-link" to={trainUrl}>{text('训练参数', 'Parameters')}<ArrowRight size={13}/></Link></header>
+          <Link to={modelsUrl} className="overview-model" data-missing={!baseModel || !!inactiveReason || undefined}>
+            <span>{family ? `${familyLabel}${inactiveReason ? ` · ${text('已停用', 'Retired')}` : ''}` : text('未选择模型类型', 'No model type')}</span>
+            <strong title={baseModel || undefined}>{baseModel || text('尚未配置训练底模', 'Base model not configured')}</strong>
+            {inactiveReason && <small>{inactiveReason}</small>}
+          </Link>
+          <dl className="overview-parameters">{parameters.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+          {defaultsQuery.error && <div role="alert" className="overview-inline-error"><span>{text('默认参数读取失败', 'Could not load default parameters')}</span><button type="button" className="ui-btn ui-btn-sm" onClick={() => void defaultsQuery.refetch()}>{text('重新读取默认参数', 'Reload default parameters')}</button></div>}
+        </section>
+        {runs}
+        {(runTotal > 0 || artifacts.length > 0 || artifactsQuery.isPending || !!artifactsQuery.error) && outputs}
+        <section className="overview-panel overview-about" aria-labelledby="overview-about-title">
+          <header className="overview-panel-heading"><h3 id="overview-about-title">{text('关于项目', 'About')}</h3>{!project.archived && <button type="button" className="ui-btn ui-btn-sm ui-btn-quiet" onClick={() => setEditing(true)}><Pencil size={13}/>{text('编辑', 'Edit')}</button>}</header>
+          <div className="overview-about-body">
+            <div className="overview-about-art"><ProjectArtwork name={project.name} coverUrl={(project as GalleryProject).cover_url}/></div>
+            <p data-empty={!project.note?.trim() || undefined}>{project.note?.trim() || text('没有项目备注', 'No project note')}</p>
+          </div>
+          <dl className="overview-facts">
+            <div><dt>{text('分类', 'Category')}</dt><dd>{project.category ? categoryLabel(project.category, english) : text('未分类', 'Uncategorized')}</dd></div>
+            <div><dt>{text('版本', 'Versions')}</dt><dd>{text(`${project.version_count ?? 1} 个`, `${project.version_count ?? 1}`)}</dd></div>
+            {version?.note?.trim() && <div className="overview-fact-wide"><dt>{text('版本说明', 'Version note')}</dt><dd>{version.note.trim()}</dd></div>}
+            <div><dt>{text('创建于', 'Created')}</dt><dd>{date(project.created_at)}</dd></div>
+            <div><dt>{text('最后更新', 'Updated')}</dt><dd>{date(version?.updated_at || project.updated_at)}</dd></div>
+          </dl>
+        </section>
+      </aside>
     </div>
-
-    <section className="overview-panel overview-training">
-      <div className="overview-panel-heading"><h3>{text('训练动态', 'Training activity')}</h3><Link className="ui-link" to={resultsUrl}>{text('查看版本结果', 'View version results')}<ArrowRight size={13}/></Link></div>
-      {trainingFocus && <div className="overview-training-focus"><div className="overview-focus-heading"><Link to={`/jobs/${encodeURIComponent(trainingFocus.id)}`}>{trainingFocus.name}<ArrowRight size={14}/></Link><span className="overview-job-status" data-status={trainingFocus.status}>{t(`queue.status.${trainingFocus.status}`, trainingFocus.status)}</span></div><dl className="overview-training-metrics">{jobMetrics.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>{progress?.total_steps != null && progress.total_steps > 0 && <progress max={progress.total_steps} value={progress.step ?? 0} aria-label={text('训练进度', 'Training progress')}/>}</div>}
-      {activeQuery.error && <div className="overview-job-error" role="alert"><span>{text('进行中的任务读取失败', 'Could not load active jobs')}</span><button type="button" className="ui-btn ui-btn-sm" onClick={() => void activeQuery.refetch()}>{text('重读进行中任务', 'Reload active jobs')}</button></div>}
-      {jobsQuery.isPending || activeQuery.isPending ? <div role="status" className="overview-job-empty"><Loader2 size={17} className="animate-spin"/>{text('正在读取训练记录…', 'Loading training history…')}</div>
-        : jobsQuery.error ? <div role="alert" className="overview-job-error"><span>{formatApiError(jobsQuery.error)}</span><button type="button" className="ui-btn ui-btn-sm" onClick={() => void jobsQuery.refetch()}>{text('重试', 'Retry')}</button></div>
-          : activeQuery.error && !latest ? null : !latest ? <div className="overview-job-empty"><Activity size={23}/><div><strong>{text('这个版本还没有训练记录', 'No training runs for this version')}</strong></div><Link className="ui-link" to={trainUrl}>{text('查看训练参数', 'View training parameters')}<ArrowRight size={14}/></Link></div>
-            : <div className="overview-jobs">{jobs.map(job => <Link key={job.id} to={`/jobs/${encodeURIComponent(job.id)}`} className="overview-job-row"><Activity size={16}/><div><strong>{job.name}</strong><small>{date(job.created_at)}{job.progress?.step != null ? ` · ${job.progress.step} / ${job.progress.total_steps ?? '—'} ${text('步', 'steps')}` : ''}</small></div><span className="overview-job-status" data-status={job.status}>{t(`queue.status.${job.status}`, job.status)}</span><span className="overview-job-action">{job.status === 'failed' ? text('查看原因', 'View error') : text('查看任务', 'View job')}<ArrowRight size={14}/></span></Link>)}</div>}
-    </section>
-    <section className="overview-panel overview-artifacts"><div className="overview-panel-heading"><h3>{text('训练产物', 'Training outputs')}{artifacts.length > 0 && <span className="overview-count">{artifacts.length}</span>}</h3><Link className="ui-link" to={resultsUrl}>{text('查看全部产物', 'View all outputs')}<ArrowRight size={13}/></Link></div>
-      {artifactsQuery.isPending ? <p role="status" className="overview-section-detail">{text('正在读取训练产物…', 'Loading outputs…')}</p> : artifactsQuery.error ? <div role="alert" className="overview-job-error"><span>{formatApiError(artifactsQuery.error)}</span><button type="button" className="ui-btn ui-btn-sm" onClick={() => void artifactsQuery.refetch()}>{text('重新读取产物', 'Reload outputs')}</button></div> : artifacts.length === 0 ? <p className="overview-section-detail">{text('当前版本还没有保存的训练产物。', 'This version has no saved training outputs.')}</p> : <ul className="overview-artifact-list">{artifacts.slice(0, 5).map(artifact => <li key={artifact.id}><div><strong>{artifact.name}</strong><small>{artifact.kind === 'model' ? text('完整模型 · ZIP', 'Full model · ZIP') : artifact.kind === 'adapter' || artifact.kind === 'lora' ? text('适配器权重', 'Adapter weights') : artifact.kind} · {formatBytes(artifact.size)}{artifact.step != null ? ` · ${artifact.step} ${text('步', 'steps')}` : ''} · {date(artifact.created_at)}</small></div><a className="ui-btn ui-btn-sm" href={apiUrl(`/artifacts/${encodeURIComponent(artifact.id)}/download`)} download aria-label={text(`下载 ${artifact.name}`, `Download ${artifact.name}`)}><Download size={15}/>{text('下载', 'Download')}</a></li>)}</ul>}
-    </section>
+    {editing && <ProjectEditor project={project as GalleryProject} categories={[]} onClose={() => setEditing(false)}
+      onPartial={updated => queryClient.setQueryData(['project', project.id], updated)}
+      onSaved={updated => { queryClient.setQueryData(['project', project.id], updated); setEditing(false); }}/>}
   </section>;
 }

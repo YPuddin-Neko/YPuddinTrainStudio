@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { categoryLabel, coverSource, PROJECT_CATEGORIES, type GalleryProject } from './projectGallery';
 import ProjectCoverCropper from './ProjectCoverCropper';
 import { COVER_MAX_BYTES, cropImageStyle, type CoverCrop } from './coverCrop';
+import './projects.css';
 
 export function ProjectCover({ source, name, crop }: { source?: string | null; name: string; crop?: CoverCrop }) {
   const text = useWorkspaceText();
