@@ -148,6 +148,11 @@ class FsEntry(_Out):
     mtime: float
 
 
+class StoragePathPreview(_Out):
+    path: str
+    browse_root: str
+
+
 class FsList(_Out):
     exists: bool = True
     path: str

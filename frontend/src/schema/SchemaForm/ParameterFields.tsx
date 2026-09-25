@@ -54,13 +54,13 @@ const layouts: Record<string, Section[]> = {
     section('switches', ['enabled', 'at_start']),
     section('cadence', ['every_steps', 'every_epochs'], ['生成频率', 'Preview frequency']),
     section('prompts', ['prompts', 'prompts_file']),
-    section('image', ['width', 'height', 'seed', 'output_dir'], ['预览图像', 'Preview images']),
+    section('image', ['width', 'height', 'seed'], ['预览图像', 'Preview images']),
     section('sampling', ['sampler', 'scheduler', 'steps', 'cfg', 'shift', 'guidance', 'er_sde_order', 'er_sde_s_noise'], ['采样设置', 'Sampling settings']),
   ],
   checkpoint: [
-    section('files', ['name', 'save_dtype', 'output_dir'], ['权重文件', 'Weight files']),
+    section('files', ['name', 'save_dtype'], ['权重文件', 'Weight files']),
     section('cadence', ['save_every_steps', 'save_every_epochs', 'keep_last_n', 'save_on_finish', 'save_training_metadata'], ['权重保存', 'Weight saving']),
-    section('state', ['save_state_every_steps', 'state_dir', 'resume'], ['断点恢复', 'Training state']),
+    section('state', ['save_state_every_steps', 'resume'], ['断点恢复', 'Training state']),
   ],
   validation: [
     section('switches', ['enabled']),
@@ -68,7 +68,7 @@ const layouts: Record<string, Section[]> = {
     section('cadence', ['every_steps', 'every_epochs'], ['验证频率', 'Validation frequency']),
     section('evaluation', ['max_images', 'timesteps', 'seed'], ['评估设置', 'Evaluation settings']),
   ],
-  logging: [section('options', ['level', 'tensorboard', 'output_dir', 'events_path'], undefined, {inlineToggles:true})],
+  logging: [section('options', ['level', 'tensorboard'], undefined, {inlineToggles:true})],
 };
 
 const isToggle = (node: React.ReactNode) => React.isValidElement(node) && (node.props as any)['data-control-kind'] === 'toggle';

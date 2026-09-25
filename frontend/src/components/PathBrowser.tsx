@@ -137,10 +137,12 @@ export const PathInput: React.FC<{
   placeholder?: string;
   ariaLabel?: string;
   defaultPath?: string;
+  browsePath?: string;
+  readOnly?: boolean;
   directoryOnly?: boolean;
   allowMissingDirectory?: boolean;
   resolveDefaultPath?: () => Promise<string>;
-}> = ({ value = '', onChange, placeholder, ariaLabel, defaultPath, directoryOnly = false, allowMissingDirectory = false, resolveDefaultPath }) => {
+}> = ({ value = '', onChange, placeholder, ariaLabel, defaultPath, browsePath, readOnly = false, directoryOnly = false, allowMissingDirectory = false, resolveDefaultPath }) => {
   const { t } = useTranslation();
   const [modalOpen, setModalOpen] = React.useState(false);
   const [resolvedPath,setResolvedPath] = React.useState('');
@@ -149,7 +151,8 @@ export const PathInput: React.FC<{
   const openBrowser=async()=>{
     if(resolving)return;
     setBrowseError('');
-    if(value.trim() || defaultPath || !resolveDefaultPath){setResolvedPath(value.trim() || defaultPath || '/');setModalOpen(true);return;}
+    const initialPath = browsePath ?? value.trim();
+    if(initialPath || defaultPath || !resolveDefaultPath){setResolvedPath(initialPath || defaultPath || '/');setModalOpen(true);return;}
     setResolving(true);
     try{setResolvedPath(await resolveDefaultPath());setModalOpen(true);}
     catch(error){setBrowseError(formatApiError(error));}
@@ -157,7 +160,7 @@ export const PathInput: React.FC<{
   };
   return (
     <div className="path-input-control flex min-w-0 flex-wrap gap-2">
-      <input type="text" aria-label={ariaLabel || t('pathBrowser.pathLabel')} value={value || ''} placeholder={placeholder} onChange={(e) => onChange(e.target.value)}
+      <input type="text" readOnly={readOnly} aria-label={ariaLabel || t('pathBrowser.pathLabel')} value={value || ''} placeholder={placeholder} onChange={(e) => onChange(e.target.value)}
         className="min-w-0 flex-1 px-3 py-2 border rounded-md text-sm dark:bg-slate-900 dark:border-slate-600 font-mono" />
       <button type="button" disabled={resolving} onClick={()=>void openBrowser()} className="ui-btn path-input-browse">
         {resolving ? <Loader2 className="w-4 h-4 animate-spin"/> : <FolderOpen className="w-4 h-4"/>}<span>{t('common.browse')}</span>

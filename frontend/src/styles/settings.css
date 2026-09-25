@@ -21,6 +21,8 @@
 .settings-field{display:grid;grid-template-columns:160px minmax(0,1fr);gap:20px;align-items:start;padding:10px 0}
 .settings-field>label,.settings-field>.settings-field-label{padding-top:6px;font-size:13px;color:var(--settings-muted)}
 .settings-field-control{min-width:0}
+.storage-directory-control{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px}
+.settings-note.storage-path-preview{overflow-x:auto;white-space:nowrap;overflow-wrap:normal;font-family:var(--font-mono,monospace)}
 .settings-field-control>input,.settings-field-control>select{width:100%;max-width:420px}
 .settings-field-control .settings-note{margin-top:5px}
 .settings-workspace input:not([type=checkbox]):not([type=radio]):not([type=file]),.settings-workspace select{font-size:13px;line-height:1.4;border-radius:5px;min-height:34px}

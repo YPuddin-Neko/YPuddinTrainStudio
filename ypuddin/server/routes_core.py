@@ -285,6 +285,33 @@ def put_settings(patch: dict[str, Any], c: ServiceContext = Depends(ctx)) -> dic
         raise ApiError(str(exc), code="settings.invalid") from exc
 
 
+@router.get("/settings/storage-defaults", response_model=dict[str, m.StoragePathPreview])
+def storage_defaults(
+    output_mode: Literal["project", "custom"] | None = None,
+    output_dir: str | None = None,
+    data_root: str | None = None,
+    c: ServiceContext = Depends(ctx),
+) -> dict[str, dict[str, str]]:
+    settings = c.settings()["paths"]
+    root = Path(data_root).expanduser().resolve() if data_root else c.data_root
+    projects = root / "project"
+    version = projects / "{project_id}" / "v{version}"
+    if (output_mode or settings["output_mode"]) == "custom":
+        outputs = Path(output_dir or settings["output_dir"]).expanduser().resolve()
+        output = outputs / "{project_id}" / "v{version}" / "{job_id}"
+    else:
+        outputs = projects
+        output = version / "output" / "{job_id}"
+    environment = Path(__file__).resolve().parents[2] / "environment"
+    return {
+        "bootstrap_env_dir": {"path": str(environment), "browse_root": str(environment)},
+        "output_dir": {"path": str(output), "browse_root": str(outputs)},
+        "state_dir": {"path": str(output), "browse_root": str(outputs)},
+        "samples_dir": {"path": str(version / "samples" / "{job_id}"), "browse_root": str(projects)},
+        "logs_dir": {"path": str(output), "browse_root": str(outputs)},
+    }
+
+
 @router.get("/fs/browse-root")
 def browse_root(
     field: str,

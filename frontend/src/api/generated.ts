@@ -107,6 +107,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/storage-defaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Storage Defaults */
+        get: operations["storage_defaults_api_settings_storage_defaults_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/fs/browse-root": {
         parameters: {
             query?: never;
@@ -6409,6 +6426,15 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** StoragePathPreview */
+        StoragePathPreview: {
+            /** Path */
+            path: string;
+            /** Browse Root */
+            browse_root: string;
+        } & {
+            [key: string]: unknown;
+        };
         /** SystemInfo */
         SystemInfo: {
             /** Python */
@@ -7275,6 +7301,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Settings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    storage_defaults_api_settings_storage_defaults_get: {
+        parameters: {
+            query?: {
+                output_mode?: ("project" | "custom") | null;
+                output_dir?: string | null;
+                data_root?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["StoragePathPreview"];
+                    };
                 };
             };
             /** @description Validation Error */

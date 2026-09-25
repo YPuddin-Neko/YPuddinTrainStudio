@@ -176,6 +176,92 @@
         }
       }
     },
+    "/api/settings/storage-defaults": {
+      "get": {
+        "summary": "Storage Defaults",
+        "operationId": "storage_defaults_api_settings_storage_defaults_get",
+        "parameters": [
+          {
+            "name": "output_mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "project",
+                    "custom"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Output Mode"
+            }
+          },
+          {
+            "name": "output_dir",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Output Dir"
+            }
+          },
+          {
+            "name": "data_root",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Data Root"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/components/schemas/StoragePathPreview"
+                  },
+                  "title": "Response Storage Defaults Api Settings Storage Defaults Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/fs/browse-root": {
       "get": {
         "summary": "Browse Root",
@@ -7862,9 +7948,7 @@
             "description": "输出目录",
             "default": "outputs/run",
             "x-ui": {
-              "control": "path",
-              "group": "checkpoint",
-              "order": 0
+              "hidden": true
             }
           },
           "name": {
@@ -7928,10 +8012,7 @@
             "title": "State Dir",
             "description": "完整恢复点的保存目录，留空使用训练器默认位置；独立 CLI 留空时随训练产物保存。",
             "x-ui": {
-              "advanced": true,
-              "control": "path",
-              "group": "checkpoint",
-              "order": 46
+              "hidden": true
             }
           },
           "save_state_every_steps": {
@@ -8744,10 +8825,7 @@
             "title": "Cache Dir",
             "description": "缓存目录（默认 <output_dir>/cache）",
             "x-ui": {
-              "advanced": true,
-              "control": "path",
-              "group": "dataset",
-              "order": 100
+              "hidden": true
             }
           },
           "cache_latents": {
@@ -12504,10 +12582,7 @@
             "title": "Output Dir",
             "description": "日志与 TensorBoard 保存目录，留空使用训练器默认位置。",
             "x-ui": {
-              "advanced": true,
-              "control": "path",
-              "group": "logging",
-              "order": 15
+              "hidden": true
             }
           },
           "tensorboard": {
@@ -12549,10 +12624,7 @@
             "title": "Events Path",
             "description": "训练事件 JSONL 文件，留空使用日志目录中的 events.jsonl。",
             "x-ui": {
-              "advanced": true,
-              "control": "path",
-              "group": "logging",
-              "order": 20
+              "hidden": true
             }
           },
           "level": {
@@ -17450,10 +17522,7 @@
             "title": "Output Dir",
             "description": "训练预览图的保存目录，留空使用训练器默认位置。",
             "x-ui": {
-              "advanced": true,
-              "control": "path",
-              "group": "sampling",
-              "order": 170
+              "hidden": true
             }
           },
           "enabled": {
@@ -18383,6 +18452,25 @@
           "config"
         ],
         "title": "SourceRoleBody"
+      },
+      "StoragePathPreview": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "browse_root": {
+            "type": "string",
+            "title": "Browse Root"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "path",
+          "browse_root"
+        ],
+        "title": "StoragePathPreview"
       },
       "SystemInfo": {
         "properties": {

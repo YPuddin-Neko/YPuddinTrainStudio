@@ -287,7 +287,7 @@ class DatasetConfig(_Strict):
     cache_dir: str | None = F(
         None,
         help="缓存目录（默认 <output_dir>/cache）",
-        ui_=ui("dataset", order=100, control="path", advanced=True),
+        ui_={"x-ui": {"hidden": True}},
     )
     cache_latents: bool = F(
         True,
@@ -1105,7 +1105,7 @@ class LoopConfig(_Strict):
 
 # --------------------------------------------------------------------------- checkpoint
 class CheckpointConfig(_Strict):
-    output_dir: str = F("outputs/run", help="输出目录", ui_=ui("checkpoint", order=0, control="path"))
+    output_dir: str = F("outputs/run", help="输出目录", ui_={"x-ui": {"hidden": True}})
     name: str = F(
         "lora",
         min_length=1,
@@ -1129,7 +1129,7 @@ class CheckpointConfig(_Strict):
     state_dir: str | None = F(
         None,
         help="完整恢复点的保存目录，留空使用训练器默认位置；独立 CLI 留空时随训练产物保存。",
-        ui_=ui("checkpoint", order=46, control="path", advanced=True),
+        ui_={"x-ui": {"hidden": True}},
     )
     save_state_every_steps: int | None = F(
         100,
@@ -1203,7 +1203,7 @@ class SamplingConfig(_Strict):
     output_dir: str | None = F(
         None,
         help="训练预览图的保存目录，留空使用训练器默认位置。",
-        ui_=ui("sampling", order=170, control="path", advanced=True),
+        ui_={"x-ui": {"hidden": True}},
     )
     enabled: bool = F(
         False,
@@ -1372,7 +1372,7 @@ class LoggingConfig(_Strict):
     output_dir: str | None = F(
         None,
         help="日志与 TensorBoard 保存目录，留空使用训练器默认位置。",
-        ui_=ui("logging", order=15, control="path", advanced=True),
+        ui_={"x-ui": {"hidden": True}},
     )
     tensorboard: bool = F(
         False,
@@ -1383,7 +1383,7 @@ class LoggingConfig(_Strict):
     events_path: str | None = F(
         None,
         help="训练事件 JSONL 文件，留空使用日志目录中的 events.jsonl。",
-        ui_=ui("logging", order=20, control="path", advanced=True),
+        ui_={"x-ui": {"hidden": True}},
     )
     level: Literal["debug", "info", "warning"] = F(
         "info", help="日志级别", ui_=ui("logging", order=30, control="select", advanced=True)

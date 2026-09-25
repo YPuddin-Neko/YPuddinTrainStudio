@@ -16,6 +16,7 @@ import { ServiceInfo } from './ServiceInfo';
 import StudioSelect from '../../components/StudioSelect';
 import Switch from '../../components/Switch';
 import { useWorkspaceText } from '../../utils/workspaceText';
+import StorageDirectoryInput, { type StoragePathPreview } from './StorageDirectoryInput';
 
 const defaultNetworkSettings: NetworkSettings = { proxy_mode: 'system', proxy_url: '', proxy_username: '', proxy_password_configured: false };
 
@@ -35,6 +36,27 @@ export default function Preferences() {
   const [serviceRefreshTarget, setServiceRefreshTarget] = React.useState<HTMLSpanElement | null>(null);
   const [serviceRefreshKey, setServiceRefreshKey] = React.useState(0);
   const [error, setError] = React.useState('');
+  const [storagePreview, setStoragePreview] = React.useState<{query:string; paths:Record<string,StoragePathPreview>} | null>(null);
+  const [storageError, setStorageError] = React.useState('');
+  const [storageReload, setStorageReload] = React.useState(0);
+  const storageQuery = JSON.stringify({output_mode:settings?.paths.output_mode || 'project',output_dir:settings?.paths.output_dir,data_root:settings?.paths.data_root});
+  const storageDefaults = storagePreview?.query === storageQuery ? storagePreview.paths : undefined;
+  const settingsLoaded = settings !== null;
+
+  React.useEffect(() => {
+    if (!settingsLoaded || downloads || appearance) return;
+    const controller = new AbortController();
+    setStorageError('');
+    void apiClient.get<Record<string,StoragePathPreview>>('/settings/storage-defaults',{params:JSON.parse(storageQuery),signal:controller.signal,silent:true})
+      .then(paths => { if (!controller.signal.aborted) setStoragePreview({query:storageQuery,paths}); })
+      .catch(error => { if (!controller.signal.aborted) setStorageError(formatApiError(error)); });
+    return () => controller.abort();
+  }, [settingsLoaded, downloads, appearance, storageQuery, storageReload]);
+
+  const defaultBrowsePath = async (key: string) => {
+    const paths = await apiClient.get<Record<string,StoragePathPreview>>('/settings/storage-defaults',{params:JSON.parse(storageQuery),silent:true});
+    return paths[key].browse_root;
+  };
 
   const load = React.useCallback(async () => {
     setError('');
@@ -113,6 +135,7 @@ export default function Preferences() {
     <fieldset disabled={saving} aria-busy={saving} className="contents">
     {downloads ? <DownloadPreferences value={settings.downloads ?? { pypi: 'ustc', pytorch: 'mirror', fallback: true }} onChange={value => update(s => ({ ...s, downloads: value }))} /> : !appearance ? <section id="preferences-storage" data-settings-section tabIndex={-1} className="settings-section">
       <div className="settings-section-heading"><div><h2>{t('settings.paths')}</h2><p className="settings-note">{text('更改路径不会移动已有文件。', 'Changing paths does not move existing files.')}</p></div></div>
+      {storageError && <div role="alert" className="settings-alert">{storageError}<button type="button" className="ui-btn" onClick={()=>setStorageReload(value=>value+1)}>{t('common.retry')}</button></div>}
       {([['data_root', t('settings.dataRoot')], ['cache_dir', t('settings.cacheDir')], ['models_dir', t('settings.modelsDir')]] as const).map(([key, label]) => <div className="settings-field" key={key}>
         <label htmlFor={`preferences-${key}`}>{label}</label><div className="settings-field-control">
           <PathInput directoryOnly allowMissingDirectory ariaLabel={label} value={settings.paths[key]} onChange={value => update(s => ({ ...s, paths: { ...s.paths, [key]: value } }))} />
@@ -122,7 +145,7 @@ export default function Preferences() {
         </div>
       </div>)}
       <div className="settings-field"><label>{text('基础环境目录', 'Base environment directory')}</label><div className="settings-field-control">
-        <PathInput directoryOnly allowMissingDirectory ariaLabel={text('基础环境目录', 'Base environment directory')} value={settings.paths.bootstrap_env_dir ?? ''} placeholder={text('留空使用源码目录下的默认位置', 'Leave blank for the default source directory location')} onChange={value => update(s => ({...s, paths: {...s.paths, bootstrap_env_dir: value}}))}/>
+        <StorageDirectoryInput label={text('基础环境目录', 'Base environment directory')} value={settings.paths.bootstrap_env_dir ?? ''} preview={storageDefaults?.bootstrap_env_dir} resolveDefaultPath={()=>defaultBrowsePath('bootstrap_env_dir')} onChange={value => update(s => ({...s, paths: {...s.paths, bootstrap_env_dir: value}}))}/>
         <p className="settings-note">{text('存放启动脚本管理的 Python 环境和依赖。', 'Stores Python environments and dependencies managed by the launcher.')}</p>
         {changeNotice('paths', 'bootstrap_env_dir', true)}
         {changed('paths', 'bootstrap_env_dir').edited && <p className="settings-note">{text('新目录需安装依赖，旧环境保留。', 'The new directory needs dependencies; the old environment is retained.')}</p>}
@@ -132,17 +155,17 @@ export default function Preferences() {
           options={[{value:'project',label:text('项目版本目录（默认）','Project version directory (default)')},{value:'custom',label:text('自定义输出根目录','Custom output root')}]}
           onValueChange={value => update(s => ({...s,paths:{...s.paths,output_mode:value === 'custom' ? 'custom' : 'project'}}))}/>
         {settings.paths.output_mode === 'custom' ? <><div className="mt-2"><PathInput directoryOnly allowMissingDirectory ariaLabel={t('settings.outputDir')} value={settings.paths.output_dir} onChange={value => update(s => ({...s,paths:{...s.paths,output_dir:value}}))}/></div><p className="settings-note">{text('按项目、版本和训练任务分别保存。','Outputs are organized by project, version and training run.')}</p></>
-          : <p className="settings-note font-mono">project/{'<project_id>'}/v1/output/{'<job_id>'}/</p>}
+          : storageDefaults?.output_dir && <p className="settings-note storage-path-preview" tabIndex={0}>{storageDefaults.output_dir.path.replace('{project_id}',text('{项目}','{project}')).replace('{version}',text('{版本}','{version}')).replace('{job_id}',text('{任务}','{job}'))}</p>}
       </div></div>
 
       {([
-        ['state_dir',text('恢复点目录','Recovery point directory'),text('保存完整训练状态，留空随训练产物保存。','Stores complete training state; blank keeps it with training outputs.')],
-        ['samples_dir',text('采样图目录','Sample image directory'),text('保存训练预览图，留空使用各项目版本的 samples 目录。','Stores training previews; blank uses each project version’s samples folder.')],
-        ['logs_dir',text('日志目录','Log directory'),text('保存控制台日志、事件记录和 TensorBoard，留空随训练产物保存。','Stores console logs, events and TensorBoard data; blank keeps them with training outputs.')],
+        ['state_dir',text('恢复点目录','Recovery point directory'),text('保存续训所需的完整训练状态。','Stores the complete state needed to resume training.')],
+        ['samples_dir',text('采样图目录','Sample image directory'),text('保存训练预览图。','Stores training preview images.')],
+        ['logs_dir',text('日志目录','Log directory'),text('保存控制台日志、训练事件和 TensorBoard 数据。','Stores console logs, training events and TensorBoard data.')],
       ] as const).map(([key,label,purpose])=><div className="settings-field" key={key}>
         <label>{label}</label><div className="settings-field-control">
-          <PathInput directoryOnly allowMissingDirectory ariaLabel={label} value={settings.paths[key] || ''} placeholder={text('使用默认目录','Use default directory')}
-            resolveDefaultPath={async()=> (await apiClient.get<{path:string}>('/fs/browse-root',{params:{field:`settings.${key}`},silent:true})).path}
+          <StorageDirectoryInput label={label} value={settings.paths[key] || ''} preview={storageDefaults?.[key]}
+            resolveDefaultPath={()=>defaultBrowsePath(key)}
             onChange={value=>update(s=>({...s,paths:{...s.paths,[key]:value}}))}/>
           <p className="settings-note">{purpose}</p>
           {(changed('paths',key).edited || changed('paths',key).unsaved) && <p className="settings-note" role="status">{changed('paths',key).unsaved

@@ -817,6 +817,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const path = [...parentPath, key];
     const fullPathKey = path.join('.');
     if (fullPathKey === 'checkpoint.save_state_every_epochs') return null;
+    if (['checkpoint.output_dir', 'checkpoint.state_dir', 'sampling.output_dir', 'logging.output_dir', 'logging.events_path', 'dataset.cache_dir'].includes(fullPathKey)) return null;
     const lokrRank = fullPathKey === 'adapter.rank' && value.adapter?.algo === 'lokr';
     const weightMeta = parentPath[0] === 'model' ? weights.find(weight => weight.field === key) : undefined;
     const supportedOptions = familyParameterOptions(family, fullPathKey);
@@ -833,10 +834,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (family?.name === 'sdxl' && weightMeta?.required === false && !showAdvanced) return null;
     if (fullPathKey === 'model.zero_terminal_snr' && value.model?.prediction_type !== 'v_prediction' && !value.model?.zero_terminal_snr) return null;
     // Keep legacy cloud-log data in the draft, but do not expose controls that enable it.
-    if (fullPathKey === 'logging.events_path' && !value.logging?.events_path) return null;
     if (fullPathKey === 'logging.wandb' || fullPathKey.startsWith('logging.wandb.')) return null;
 
-    if (versionSources && ['checkpoint.output_dir', 'checkpoint.name'].includes(fullPathKey) && !showAdvanced && !editOutput) return null;
+    if (versionSources && fullPathKey === 'checkpoint.name' && !showAdvanced && !editOutput) return null;
     // Settings the selected adapter form ignores: full LoKr factors fix the scale, and
     // full target-layer weights take no rank, scale, initialization or dropout.
     if (value.adapter?.algo === 'lokr' && value.adapter?.rank === 'full' && ['adapter.alpha', 'adapter.decompose_both', 'adapter.rs_lora'].includes(fullPathKey)) return null;
@@ -862,7 +862,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
 
     const captionOverride = fullPathKey.startsWith('dataset.caption.') && captionOverrideKeys.includes(key);
     const optionalAdvanced = ui.advanced && !(currentGroup === 'optimizer' && key !== 'args');
-    if ((optionalAdvanced || captionOverride) && !showAdvanced && !(captionOverride && editCaptionOverrides) && !(editOutput && ['checkpoint.output_dir', 'checkpoint.name'].includes(fullPathKey))) return null;
+    if ((optionalAdvanced || captionOverride) && !showAdvanced && !(captionOverride && editCaptionOverrides) && !(editOutput && fullPathKey === 'checkpoint.name')) return null;
     const incompatiblePredictionLoss = (fullPathKey === 'objective.scale_v_pred_loss_like_noise_pred' && value.objective?.scale_v_pred_loss_like_noise_pred && conditionValue.model.prediction_type !== 'v_prediction') || (fullPathKey === 'objective.v_pred_like_loss' && value.objective?.v_pred_like_loss > 0 && conditionValue.model.prediction_type !== 'epsilon');
     if (ui.show_when && !incompatiblePredictionLoss && !incompatibleFamilyLoss) {
       try {
@@ -989,13 +989,12 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       control = (
         <ModelPathInput
           value={fieldValue || ''}
-          allowMissingDirectory={['checkpoint.output_dir','checkpoint.state_dir','sampling.output_dir','logging.output_dir','dataset.cache_dir'].includes(fullPathKey)}
-          directoryOnly={['checkpoint.output_dir','checkpoint.state_dir','sampling.output_dir','logging.output_dir','dataset.cache_dir','checkpoint.resume'].includes(fullPathKey)}
+          directoryOnly={fullPathKey === 'checkpoint.resume'}
           kind={modelKind}
           label={fieldLabel}
           familyName={value.model?.family}
           models={modelAssets}
-          resolveDefaultPath={['checkpoint.output_dir','checkpoint.state_dir','checkpoint.resume','sampling.output_dir','logging.events_path','logging.output_dir','dataset.cache_dir','adapter.resume_weights','training.resume_weights'].includes(fullPathKey)
+          resolveDefaultPath={['checkpoint.resume','adapter.resume_weights','training.resume_weights'].includes(fullPathKey)
             ? async()=> (await apiClient.get<{path:string}>('/fs/browse-root',{params:{field:fullPathKey,project_id:projectId,version_id:versionId,output_dir:value.checkpoint?.output_dir,custom_dir:fullPathKey==='checkpoint.resume'?value.checkpoint?.state_dir:undefined},silent:true})).path : undefined}
           onChange={(val) => {
             let next = setNestedValue(value, path, val === '' && prop.anyOf?.some((p) => p.type === 'null') ? null : val);
@@ -1310,7 +1309,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       {sortedGroups.map(([groupName, groupData]) => (
         <FieldGroup key={`${groupName}:${search.trim()}`} title={parameterGroupLabel(groupName, english) || (groupName === 'training' ? (english ? 'Training mode' : '训练方式') : t(`groups.${groupName}`, groupName))} count={groupData.fields.length} compact={compact} groupKey={groupName}>
           {groupName === 'checkpoint' && versionSources && <div className="output-binding-summary">
-            <div className="output-binding-heading"><strong>{english ? 'Training weights' : '训练权重'}</strong>{!showAdvanced && <button type="button" className="ui-btn ui-btn-sm" aria-expanded={editOutput} onClick={() => setEditOutput(previous => !previous)}>{editOutput ? (english ? 'Collapse save settings' : '收起保存设置') : (english ? 'Edit save settings' : '修改保存设置')}</button>}</div>
+            <div className="output-binding-heading"><strong>{english ? 'Training weights' : '训练权重'}</strong>{!showAdvanced && <button type="button" className="ui-btn ui-btn-sm" aria-expanded={editOutput} onClick={() => setEditOutput(previous => !previous)}>{editOutput ? (english ? 'Collapse file name' : '收起文件名设置') : (english ? 'Edit file name' : '修改文件名')}</button>}</div>
             {outputBinding ? <><div><span>{english ? 'File name' : '文件名'}</span><code>{outputBinding.name}-final{value.training?.mode === 'full' ? '.model/' : '.safetensors'}</code></div><div><span>{english ? 'Save location' : '保存位置'}</span><code>{outputBinding.directory_template.replace('{job_id}', english ? '<run ID>' : '<运行 ID>')}</code></div></> : <p>{english ? 'Resolving the save location…' : '正在读取保存位置…'}</p>}
           </div>}
           {groupName === 'caption' && showCaptionFormats && <div className="config-field-section config-caption-formats"><h3>{english ? 'Caption format' : '标签格式'}</h3><div className="caption-source-formats">
