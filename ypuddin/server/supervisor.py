@@ -21,6 +21,7 @@ from .db import Database, new_id, now
 from .environment import maintenance_blocked
 from .gpu_selection import selection_error
 from .hardware import gpu_info
+from .job_paths import event_file, log_file, state_directory
 from .sample_events import sample_event_loss
 
 log = logging.getLogger(__name__)
@@ -377,7 +378,7 @@ class JobSupervisor:
                 cfg = cfg.model_copy(
                     update={"checkpoint": cfg.checkpoint.model_copy(update={"resume": job["resume_from"]})}
                 )
-            cfg.logging.events_path = str(run_dir / "events.jsonl")
+            cfg.logging.events_path = str(event_file(job))
             cfg_path = run_dir / "job-config.toml"
             write_config(cfg, cfg_path)
             sub = {"train": "train", "cache": "cache"}[job["type"]]
@@ -417,14 +418,15 @@ class JobSupervisor:
                         legacy_binding = {"checkpoint": checkpoint, "device_index": int(index)}
             if legacy_binding is not None:
                 env["YPUDDIN_LEGACY_CUDA_RNG_INDEX"] = str(legacy_binding["device_index"])
-        events_path = run_dir / "events.jsonl"
+        events_path = event_file(job)
+        events_path.parent.mkdir(parents=True, exist_ok=True)
         self._offsets[job_id] = events_path.stat().st_size if events_path.exists() else 0
         kwargs: dict[str, Any] = {}
         if os.name == "nt":  # pragma: no cover
             kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
         else:
             kwargs["start_new_session"] = True
-        with open(run_dir / "run.log", "ab") as log_fp:
+        with open(log_file(job), "ab") as log_fp:
             proc = subprocess.Popen(
                 cmd, stdout=log_fp, stderr=subprocess.STDOUT, cwd=str(run_dir), env=env, **kwargs
             )
@@ -463,10 +465,10 @@ class JobSupervisor:
         One transaction per batch avoids a durable write per progress event, and
         a bounded batch gives HTTP requests and other jobs a turn between polls.
         """
-        job = self.db.fetchone("SELECT run_dir, status FROM jobs WHERE id=?", (job_id,))
+        job = self.db.fetchone("SELECT * FROM jobs WHERE id=?", (job_id,))
         if not job:
             return True
-        path = Path(job["run_dir"]) / "events.jsonl"
+        path = event_file(job)
         if not path.exists():
             return True
         offset = self._offsets.get(job_id, 0)
@@ -574,8 +576,8 @@ class JobSupervisor:
         elif t == "validation":
             self._publish("job.validation", data)
         elif t == "sample.saved":
-            row = self.db.fetchone("SELECT run_dir FROM jobs WHERE id=?", (job_id,))
-            events_path = Path(row["run_dir"]) / "events.jsonl" if row and row["run_dir"] else None
+            row = self.db.fetchone("SELECT * FROM jobs WHERE id=?", (job_id,))
+            events_path = event_file(row) if row and row["run_dir"] else None
             self._publish(
                 "job.sample",
                 {
@@ -643,9 +645,8 @@ class JobSupervisor:
             )
         self._outcome_seen.add(job_id)
         if status == "paused":
-            job = self.db.fetchone("SELECT run_dir, resume_from FROM jobs WHERE id=?", (job_id,))
-            run_dir = Path(job["run_dir"])
-            state = run_dir / "state-paused"
+            job = self.db.fetchone("SELECT * FROM jobs WHERE id=?", (job_id,))
+            state = state_directory(job) / "state-paused"
             fields["resume_from"] = (
                 job["resume_from"]
                 if event.get("preparing")
@@ -655,7 +656,7 @@ class JobSupervisor:
         self._set_status(job_id, status, **fields)
 
     def _on_exit(self, job_id: str, code: int | None) -> None:
-        job = self.db.fetchone("SELECT status, run_dir FROM jobs WHERE id=?", (job_id,))
+        job = self.db.fetchone("SELECT * FROM jobs WHERE id=?", (job_id,))
         if not job:
             return
         failed_after_completion = job["status"] == "completed" and code is not None and code != 0
@@ -669,7 +670,7 @@ class JobSupervisor:
             if failed_after_completion
             else f"process exited with code {code}"
         )
-        log_path = Path(job["run_dir"]) / "run.log"
+        log_path = log_file(job)
         if log_path.exists():
             tail = log_path.read_bytes()[-4000:].decode("utf-8", errors="replace").strip().splitlines()
             if tail:
@@ -721,7 +722,7 @@ class JobSupervisor:
             progress = json.loads(job.get("progress_json") or "{}")
             resume_from = job.get("resume_from")
             if not progress.get("preparing"):
-                resume_from = resume_from or self._latest_state(Path(job["run_dir"]))
+                resume_from = resume_from or self._latest_state(state_directory(job))
             if status != "paused" and job["type"] != "cache" and not resume_from:
                 raise ValueError("no checkpoint to resume from")
             self._set_status(job_id, "queued", resume_from=resume_from, error=None, finished_at=None)
@@ -815,7 +816,15 @@ class JobSupervisor:
         cfg = json.loads(job["config_json"])
         cfg.setdefault("checkpoint", {})["output_dir"] = str(run_dir)
         cfg["checkpoint"]["resume"] = None
-        cfg.setdefault("logging", {})["events_path"] = str(run_dir / "events.jsonl")
+        cfg["checkpoint"]["state_dir"] = (
+            str(state_directory(job).parent / new) if state_directory(job).name == job["id"] else str(run_dir)
+        )
+        cfg.setdefault("logging", {})["events_path"] = (
+            str(event_file(job).parent.parent / new / event_file(job).name)
+            if event_file(job).parent.name == job["id"]
+            else str(run_dir / "events.jsonl")
+        )
+        cfg["logging"]["output_dir"] = str(Path(cfg["logging"]["events_path"]).parent)
         cfg.setdefault("sampling", {})["output_dir"] = str(samples_dir)
         self.db.insert(
             "jobs",

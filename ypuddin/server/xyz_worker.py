@@ -502,7 +502,7 @@ def main():
     run_dir = request_path.parent
     from ypuddin.train.events import Emitter
 
-    emitter = Emitter(path=run_dir / "events.jsonl")
+    emitter = Emitter(path=Path(payload.get("logging", {}).get("events_path") or run_dir / "events.jsonl"))
     if payload.get("parent_pid"):
         import threading
         import time
@@ -523,7 +523,7 @@ def main():
     try:
         generate(
             payload,
-            run_dir / "samples",
+            Path(payload.get("sampling", {}).get("output_dir") or run_dir / "samples"),
             emitter.emit,
             lambda: any((run_dir / "control" / name).exists() for name in ("stop", "pause")),
         )

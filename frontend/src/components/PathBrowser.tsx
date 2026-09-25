@@ -5,12 +5,14 @@ import { FsListResponse } from '../api/types';
 import { ArrowUp, File, Folder, FolderOpen, Loader2, X } from 'lucide-react';
 import { formatBytes } from '../utils/format';
 import { formatApiError } from '../utils/errors';
+import { useWorkspaceText } from '../utils/workspaceText';
 
 // Paths belong to the server, so avoid the browser host's platform/path rules.
-function browseDirectory(value: string): string {
+function browseDirectory(value: string, directoryOnly = false): string {
   const path = value.trim() || '/';
   if (/^[a-z]:$/i.test(path)) return `${path}\\`;
-  if (!/\.(safetensors|ckpt|pt|pth|bin|gguf|onnx|csv|json|toml|yaml|yml|txt|png|jpe?g|webp|bmp|tiff?|zip)$/i.test(path)) return path;
+  if (directoryOnly) return path;
+  if (!/\.(safetensors|ckpt|pt|pth|bin|gguf|onnx|csv|jsonl|json|toml|yaml|yml|txt|png|jpe?g|webp|bmp|tiff?|zip)$/i.test(path)) return path;
   const separator = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
   if (separator < 0) return '.';
   if (separator === 0) return path[0];
@@ -26,11 +28,14 @@ function childPath(parent: string, name: string): string {
 export const PathPickerModal: React.FC<{
   isOpen: boolean;
   initialPath?: string;
+  directoryOnly?: boolean;
+  allowMissingDirectory?: boolean;
   onSelect: (path: string) => void;
   onClose: () => void;
-}> = ({ isOpen, initialPath = '/', onSelect, onClose }) => {
+}> = ({ isOpen, initialPath = '/', directoryOnly = false, allowMissingDirectory = false, onSelect, onClose }) => {
   const { t } = useTranslation();
-  const [address, setAddress] = React.useState(() => browseDirectory(initialPath));
+  const text = useWorkspaceText();
+  const [address, setAddress] = React.useState(() => browseDirectory(initialPath, directoryOnly));
   const [data, setData] = React.useState<FsListResponse | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState('');
@@ -43,11 +48,11 @@ export const PathPickerModal: React.FC<{
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
-    const path = browseDirectory(value);
+    const path = browseDirectory(value, directoryOnly);
     setAddress(path); setData(null); setError(''); setLoading(true);
     addressRef.current?.focus();
     try {
-      const result = await apiClient.get<FsListResponse>('/fs/list', { params: { path }, signal: controller.signal, silent: true });
+      const result = await apiClient.get<FsListResponse>('/fs/list', { params: { path, ...(allowMissingDirectory ? {allow_missing:true} : {}) }, signal: controller.signal, silent: true });
       if (controller.signal.aborted) return;
       setData(result); setAddress(result.path);
     } catch (error) {
@@ -55,7 +60,7 @@ export const PathPickerModal: React.FC<{
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, []);
+  }, [allowMissingDirectory, directoryOnly]);
 
   React.useEffect(() => {
     if (!isOpen) return;
@@ -106,7 +111,7 @@ export const PathPickerModal: React.FC<{
         {!loading && !error && !canSelect && <p className="text-sm text-[var(--studio-dim)]">{t('pathBrowser.openToBrowse')}</p>}
         {canSelect && data && <div className="max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700" aria-label={t('pathBrowser.entries')}>
           {data.parent && <button type="button" onClick={() => void loadDirectory(data.parent!)} className="flex w-full items-center gap-2 p-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-700 font-medium text-[var(--studio-accent)]"><ArrowUp className="h-4 w-4" />{t('pathBrowser.parentDir')}</button>}
-          {data.entries.map((entry) => <button type="button" key={entry.name} onClick={() => {
+          {data.entries.filter(entry=>!directoryOnly || entry.is_dir).map((entry) => <button type="button" key={entry.name} onClick={() => {
             const path = childPath(data.path, entry.name);
             if (entry.is_dir) void loadDirectory(path);
             else { onSelect(path); onClose(); }
@@ -114,7 +119,8 @@ export const PathPickerModal: React.FC<{
             <span className="flex min-w-0 items-center gap-2">{entry.is_dir ? <Folder className="h-4 w-4 shrink-0 text-[var(--studio-accent)]" /> : <File className="h-4 w-4 shrink-0 text-[var(--studio-dim)]" />}<span className="break-all">{entry.name}</span></span>
             <span className="shrink-0 text-xs text-[var(--studio-dim)]">{entry.is_dir ? t('pathBrowser.dir') : formatBytes(entry.size)}</span>
           </button>)}
-          {data.entries.length === 0 && <p className="p-4 text-center text-sm text-[var(--studio-dim)]">{t('pathBrowser.empty')}</p>}
+          {data.exists === false && <p className="p-4 text-sm text-[var(--studio-dim)]">{text('目录尚未创建，开始写入时会自动创建。','This directory will be created when files are first written.')}</p>}
+          {data.exists !== false && data.entries.filter(entry=>!directoryOnly || entry.is_dir).length === 0 && <p className="p-4 text-center text-sm text-[var(--studio-dim)]">{t('pathBrowser.empty')}</p>}
         </div>}
         <div className="flex justify-end gap-2 pt-3 border-t dark:border-slate-700">
           <button type="button" onClick={onClose} className="ui-btn">{t('common.cancel')}</button>
@@ -131,17 +137,33 @@ export const PathInput: React.FC<{
   placeholder?: string;
   ariaLabel?: string;
   defaultPath?: string;
-}> = ({ value = '', onChange, placeholder, ariaLabel, defaultPath }) => {
+  directoryOnly?: boolean;
+  allowMissingDirectory?: boolean;
+  resolveDefaultPath?: () => Promise<string>;
+}> = ({ value = '', onChange, placeholder, ariaLabel, defaultPath, directoryOnly = false, allowMissingDirectory = false, resolveDefaultPath }) => {
   const { t } = useTranslation();
   const [modalOpen, setModalOpen] = React.useState(false);
+  const [resolvedPath,setResolvedPath] = React.useState('');
+  const [resolving,setResolving] = React.useState(false);
+  const [browseError,setBrowseError] = React.useState('');
+  const openBrowser=async()=>{
+    if(resolving)return;
+    setBrowseError('');
+    if(value.trim() || defaultPath || !resolveDefaultPath){setResolvedPath(value.trim() || defaultPath || '/');setModalOpen(true);return;}
+    setResolving(true);
+    try{setResolvedPath(await resolveDefaultPath());setModalOpen(true);}
+    catch(error){setBrowseError(formatApiError(error));}
+    finally{setResolving(false);}
+  };
   return (
-    <div className="path-input-control flex min-w-0 gap-2">
+    <div className="path-input-control flex min-w-0 flex-wrap gap-2">
       <input type="text" aria-label={ariaLabel || t('pathBrowser.pathLabel')} value={value || ''} placeholder={placeholder} onChange={(e) => onChange(e.target.value)}
         className="min-w-0 flex-1 px-3 py-2 border rounded-md text-sm dark:bg-slate-900 dark:border-slate-600 font-mono" />
-      <button type="button" onClick={() => setModalOpen(true)} className="ui-btn path-input-browse">
-        <FolderOpen className="w-4 h-4" /><span>{t('common.browse')}</span>
+      <button type="button" disabled={resolving} onClick={()=>void openBrowser()} className="ui-btn path-input-browse">
+        {resolving ? <Loader2 className="w-4 h-4 animate-spin"/> : <FolderOpen className="w-4 h-4"/>}<span>{t('common.browse')}</span>
       </button>
-      <PathPickerModal isOpen={modalOpen} initialPath={value || defaultPath || '/'} onSelect={onChange} onClose={() => setModalOpen(false)} />
+      {browseError && <span role="alert" className="basis-full break-words text-xs text-red-600">{browseError}</span>}
+      <PathPickerModal isOpen={modalOpen} directoryOnly={directoryOnly} allowMissingDirectory={allowMissingDirectory} initialPath={resolvedPath || value || defaultPath || '/'} onSelect={onChange} onClose={() => setModalOpen(false)} />
     </div>
   );
 };

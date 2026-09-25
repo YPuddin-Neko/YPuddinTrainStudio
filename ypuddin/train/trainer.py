@@ -118,7 +118,9 @@ class Trainer:
         self.metal_attention_runtime: dict[str, str] | None = None
         self.run_dir = Path(cfg.checkpoint.output_dir)
         self.run_dir.mkdir(parents=True, exist_ok=True)
-        events_path = cfg.logging.events_path or (self.run_dir / "events.jsonl")
+        events_path = cfg.logging.events_path or (
+            (Path(cfg.logging.output_dir) if cfg.logging.output_dir else self.run_dir) / "events.jsonl"
+        )
         self.emitter = emitter or Emitter(path=events_path)
         self.config_hash = config_hash(cfg)
         self.model_identity = ""
@@ -987,7 +989,8 @@ class Trainer:
             "position": self.progress.batch_in_epoch,
         }
         path = save_checkpoint(
-            self.run_dir / f"state-{tag or self.progress.step}",
+            (Path(self.cfg.checkpoint.state_dir) if self.cfg.checkpoint.state_dir else self.run_dir)
+            / f"state-{tag or self.progress.step}",
             adapter_tensors=tensors,
             training_tensors=training_tensors,
             adapter_metadata=self._adapter_metadata(),
@@ -1790,7 +1793,8 @@ def cache(cfg: TrainConfig, *, device: str | None = None, emitter: Emitter | Non
     """A cache-only job: same lifecycle events as ``train`` so the supervisor treats it uniformly."""
     Path(cfg.checkpoint.output_dir).mkdir(parents=True, exist_ok=True)
     em = emitter or Emitter(
-        path=cfg.logging.events_path or (Path(cfg.checkpoint.output_dir) / "events.jsonl")
+        path=cfg.logging.events_path
+        or (Path(cfg.logging.output_dir or cfg.checkpoint.output_dir) / "events.jsonl")
     )
     trainer = Trainer(cfg, device=device, emitter=em)
     failed = False
@@ -1832,7 +1836,8 @@ def train(
         raise ValueError("loop.gpu_count > 1 requires torchrun; refusing to silently train on one device")
     Path(cfg.checkpoint.output_dir).mkdir(parents=True, exist_ok=True)
     em = emitter or Emitter(
-        path=cfg.logging.events_path or (Path(cfg.checkpoint.output_dir) / "events.jsonl"),
+        path=cfg.logging.events_path
+        or (Path(cfg.logging.output_dir or cfg.checkpoint.output_dir) / "events.jsonl"),
         fd=int(os.environ["YPUDDIN_EVENTS_FD"]) if os.environ.get("YPUDDIN_EVENTS_FD") else None,
     )
     for fn in listeners or []:

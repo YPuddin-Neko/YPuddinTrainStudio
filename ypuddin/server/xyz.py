@@ -435,6 +435,14 @@ def start(context, source_id: str, request: XyzRequest):
         raise ApiError("Selected family does not support block swapping", code="xyz.memory", status=422)
     jid = new_id("j")
     run_dir = context.job_output_dir(source["project_id"], source.get("version_id"), jid)
+    samples_dir = (
+        context.job_storage_dir(source["project_id"], source.get("version_id"), jid, "samples_dir", run_dir)
+        if context.settings()["paths"].get("samples_dir")
+        else run_dir / "samples"
+    )
+    logs_dir = context.job_storage_dir(
+        source["project_id"], source.get("version_id"), jid, "logs_dir", run_dir
+    )
     payload = {
         "model": model.model_dump(mode="json"),
         "memory": memory.model_dump(mode="json"),
@@ -445,6 +453,8 @@ def start(context, source_id: str, request: XyzRequest):
             "checkpoints": resolved,
         },
         "checkpoint": {"output_dir": str(run_dir)},
+        "sampling": {"output_dir": str(samples_dir)},
+        "logging": {"events_path": str(logs_dir / "events.jsonl"), "output_dir": str(logs_dir)},
     }
     with context.db.lock:
         # Header validation happens outside the queue lock. A deletion may have
@@ -483,7 +493,7 @@ def start(context, source_id: str, request: XyzRequest):
                 "gpu_devices_json": json.dumps(request.gpu_devices),
                 "created_at": now(),
                 "run_dir": str(run_dir),
-                "samples_dir": str(run_dir / "samples"),
+                "samples_dir": str(samples_dir),
                 "config_json": json.dumps(payload),
                 "progress_json": json.dumps({"done": 0, "total": len(cells)}),
                 "latest_json": "{}",
@@ -501,10 +511,18 @@ def _row(context, jid):
 
 
 def result_root(context, row):
-    root = Path(row["run_dir"]).expanduser()
-    if root.is_symlink() or (root / "samples").is_symlink() or not context.is_allowed(root.resolve()):
+    root = (
+        Path(row["samples_dir"]).expanduser()
+        if row.get("samples_dir")
+        else Path(row["run_dir"]).expanduser() / "samples"
+    )
+    if (
+        root.is_symlink()
+        or any(parent.is_symlink() for parent in root.parents)
+        or not context.is_allowed(root.resolve())
+    ):
         raise ApiError("模型测试结果目录不在允许访问的范围内。", code="xyz.path", status=403)
-    return root.resolve() / "samples"
+    return root.resolve()
 
 
 def task(context, jid):

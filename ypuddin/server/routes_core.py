@@ -285,9 +285,49 @@ def put_settings(patch: dict[str, Any], c: ServiceContext = Depends(ctx)) -> dic
         raise ApiError(str(exc), code="settings.invalid") from exc
 
 
+@router.get("/fs/browse-root")
+def browse_root(
+    field: str,
+    project_id: str | None = None,
+    version_id: str | None = None,
+    output_dir: str | None = None,
+    custom_dir: str | None = None,
+    c: ServiceContext = Depends(ctx),
+) -> dict[str, str]:
+    paths = c.settings()["paths"]
+    output = c.job_output_dir(project_id, version_id, "{job_id}", output_dir).parent
+    if field == "checkpoint.resume" and custom_dir:
+        root = Path(custom_dir).expanduser().resolve()
+    elif field in {"checkpoint.state_dir", "checkpoint.resume", "settings.state_dir"}:
+        root = Path(paths["state_dir"]) if paths.get("state_dir") else output
+    elif field in {"sampling.output_dir", "settings.samples_dir"}:
+        root = (
+            Path(paths["samples_dir"])
+            if paths.get("samples_dir")
+            else c.samples_dir(project_id, version_id)
+            if project_id
+            else output / "samples"
+        )
+    elif field in {"logging.events_path", "logging.output_dir", "settings.logs_dir"}:
+        root = Path(paths["logs_dir"]) if paths.get("logs_dir") else output
+    elif field == "dataset.cache_dir":
+        root = c.cache_dir(project_id, version_id)
+    elif field in {"checkpoint.output_dir", "adapter.resume_weights", "training.resume_weights"}:
+        root = output
+    else:
+        raise ApiError("unknown path setting", code="fs.field", status=422)
+    return {"path": str(root)}
+
+
 @router.get("/fs/list", response_model=m.FsList, response_model_exclude_unset=True)
-def fs_list(path: str = "", c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+def fs_list(path: str = "", c: ServiceContext = Depends(ctx), allow_missing: bool = False) -> dict[str, Any]:
     p = Path(path).expanduser() if path else c.data_root
+    if not p.exists() and allow_missing:
+        ancestor = p.parent
+        while not ancestor.exists() and ancestor != ancestor.parent:
+            ancestor = ancestor.parent
+        if ancestor.is_dir():
+            return {"path": str(p), "parent": str(ancestor), "entries": [], "exists": False}
     if not p.exists() or not p.is_dir():
         raise NotFound(f"directory not found: {p}", code="fs.not_found")
     entries = []

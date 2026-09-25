@@ -113,10 +113,15 @@ def config_hash(config: TrainConfig | Mapping[str, Any]) -> str:
     checkpoint = data.get("checkpoint")
     if isinstance(checkpoint, Mapping):
         data["checkpoint"] = {
-            key: value for key, value in checkpoint.items()
+            key: value
+            for key, value in checkpoint.items()
             if not (key == "save_state_every_epochs" and value is None)
             and not (key == "save_training_metadata" and value is False)
+            and not (key == "state_dir" and value is None)
         }
+    logging = data.get("logging")
+    if isinstance(logging, Mapping) and logging.get("output_dir") is None:
+        data["logging"] = {key: value for key, value in logging.items() if key != "output_dir"}
     # Center preserves the pixel geometry and config hashes of older checkpoints.
     dataset = data.get("dataset")
     if isinstance(dataset, Mapping) and dataset.get("crop_anchor") == "center":
@@ -161,10 +166,12 @@ def absolute_paths(config: TrainConfig) -> TrainConfig:
         (cfg.adapter, "resume_weights"),
         (cfg.training, "resume_weights"),
         (cfg.checkpoint, "output_dir"),
+        (cfg.checkpoint, "state_dir"),
         (cfg.checkpoint, "resume"),
         (cfg.sampling, "prompts_file"),
         (cfg.sampling, "output_dir"),
         (cfg.logging, "events_path"),
+        (cfg.logging, "output_dir"),
         *((src, "path") for src in cfg.dataset.sources),
         *((src, "path") for src in cfg.validation.sources),
     ]

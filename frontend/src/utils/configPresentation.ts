@@ -67,7 +67,7 @@ const labels: Record<string, string> = {
   'checkpoint.output_dir': '训练权重保存位置', 'checkpoint.name': '权重文件名', 'checkpoint.save_every_steps': '每隔几步保存',
   'checkpoint.save_every_epochs': '每隔几轮保存', 'checkpoint.save_state_every_steps': '恢复点保存间隔', 'checkpoint.save_state_every_epochs': '每隔几轮保存恢复点',
   'checkpoint.keep_last_n': '保留最近几次权重', 'checkpoint.save_dtype': '权重保存精度', 'checkpoint.save_on_finish': '结束时保存权重',
-  'checkpoint.save_training_metadata': '将训练参数写入 LoRA', 'checkpoint.resume': '恢复完整训练状态', 'sampling.enabled': '生成训练预览', 'sampling.every_steps': '每隔几步预览',
+  'checkpoint.save_training_metadata': '将训练参数写入 LoRA', 'checkpoint.state_dir': '恢复点保存目录', 'checkpoint.resume': '恢复完整训练状态', 'sampling.output_dir': '采样图保存目录', 'sampling.enabled': '生成训练预览', 'sampling.every_steps': '每隔几步预览',
   'sampling.every_epochs': '每隔几轮预览', 'sampling.at_start': '开始前生成预览', 'sampling.prompts': '预览提示词',
   'sampling.prompts_file': '提示词文件', 'sampling.steps': '采样步数', 'sampling.cfg': 'CFG 引导强度',
   'sampling.shift': '采样时间步偏移', 'sampling.width': '预览宽度', 'sampling.height': '预览高度',
@@ -75,10 +75,13 @@ const labels: Record<string, string> = {
   'validation.split_ratio': '验证集划分比例', 'validation.sources': '独立验证数据源', 'validation.every_steps': '每隔几步验证',
   'validation.every_epochs': '每隔几轮验证', 'validation.timesteps': '验证时间步', 'validation.max_images': '验证图片上限',
   'validation.seed': '验证种子', 'logging.tensorboard': 'TensorBoard 日志', 'logging.wandb': 'Weights & Biases',
-  'logging.events_path': '训练事件文件', 'logging.level': '日志级别',
+  'logging.events_path': '训练事件文件', 'logging.output_dir': '日志保存目录', 'logging.level': '日志级别',
 };
 
 export function configFieldLabel(path: string, fallback: string, english = false) {
+  if (english && path === 'logging.output_dir') return 'Log directory';
+  if (english && path === 'checkpoint.state_dir') return 'Recovery point directory';
+  if (english && path === 'sampling.output_dir') return 'Sample image directory';
   if (english && path === 'dataset.crop_anchor') return 'Crop anchor';
   if (english && path === 'adapter.resume_weights') return 'Weights to continue training';
   if (english && path === 'checkpoint.save_training_metadata') return 'Embed training parameters in LoRA';

@@ -107,6 +107,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/fs/browse-root": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Browse Root */
+        get: operations["browse_root_api_fs_browse_root_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/fs/list": {
         parameters: {
             query?: never;
@@ -2398,6 +2415,11 @@ export interface components {
              */
             save_every_epochs: number | null;
             /**
+             * State Dir
+             * @description 完整恢复点的保存目录，留空使用训练器默认位置；独立 CLI 留空时随训练产物保存。
+             */
+            state_dir?: string | null;
+            /**
              * Save State Every Steps
              * @description 每 N 个参数更新步保存完整恢复点，默认 100。界面可切换为按 Epoch（轮）保存，或关闭定期保存开关。暂停时仍会另存恢复点。异常退出后只能恢复到最近一次成功保存的位置。
              * @default 100
@@ -3550,6 +3572,11 @@ export interface components {
         };
         /** FsList */
         FsList: {
+            /**
+             * Exists
+             * @default true
+             */
+            exists: boolean;
             /** Path */
             path: string;
             /** Parent */
@@ -4016,6 +4043,11 @@ export interface components {
         /** LoggingConfig */
         LoggingConfig: {
             /**
+             * Output Dir
+             * @description 日志与 TensorBoard 保存目录，留空使用训练器默认位置。
+             */
+            output_dir?: string | null;
+            /**
              * Tensorboard
              * @description 额外写入本地 TensorBoard 格式的训练指标与样图，默认关闭；前端任务日志和曲线不依赖此开关。需要用 TensorBoard 查看时启用。
              * @default false
@@ -4025,7 +4057,7 @@ export interface components {
             wandb?: components["schemas"]["WandbConfig"] | null;
             /**
              * Events Path
-             * @description 事件 JSONL 文件（默认 <output_dir>/events.jsonl）
+             * @description 训练事件 JSONL 文件，留空使用日志目录中的 events.jsonl。
              */
             events_path?: string | null;
             /**
@@ -6004,7 +6036,10 @@ export interface components {
              * @description FLUX 模型内部的预览引导强度；留空使用对应模型默认值。这项不参与训练步的加噪或损失。
              */
             guidance?: number | null;
-            /** Output Dir */
+            /**
+             * Output Dir
+             * @description 训练预览图的保存目录，留空使用训练器默认位置。
+             */
             output_dir?: string | null;
             /**
              * Enabled
@@ -6284,6 +6319,21 @@ export interface components {
         };
         /** SettingsPaths */
         SettingsPaths: {
+            /**
+             * State Dir
+             * @default
+             */
+            state_dir: string;
+            /**
+             * Samples Dir
+             * @default
+             */
+            samples_dir: string;
+            /**
+             * Logs Dir
+             * @default
+             */
+            logs_dir: string;
             /**
              * Bootstrap Env Dir
              * @default
@@ -7238,10 +7288,48 @@ export interface operations {
             };
         };
     };
+    browse_root_api_fs_browse_root_get: {
+        parameters: {
+            query: {
+                field: string;
+                project_id?: string | null;
+                version_id?: string | null;
+                output_dir?: string | null;
+                custom_dir?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     fs_list_api_fs_list_get: {
         parameters: {
             query?: {
                 path?: string;
+                allow_missing?: boolean;
             };
             header?: never;
             path?: never;

@@ -142,10 +142,13 @@ export const FIELD_HINTS: Record<string, Copy> = {
   'checkpoint.save_every_epochs': ['每隔多少轮导出一次权重。', 'Export weights every N epochs.'],
   'checkpoint.keep_last_n': ['只保留最近几次按步导出的权重。', 'Keep only the latest step exports.'],
   'checkpoint.save_state_every_steps': ['按步或按轮保存训练进度，供中断后继续。', 'Save training progress by step or epoch to resume after an interruption.'],
+  'checkpoint.state_dir': ['保存完整训练进度，留空跟随默认目录。', 'Stores recovery points; blank uses the default directory.'],
+  'sampling.output_dir': ['保存训练预览图，留空跟随默认目录。', 'Stores training previews; blank uses the default directory.'],
   'checkpoint.resume': ['从保存的完整状态继续训练。', 'Continue from a saved training state.'],
 
+  'logging.output_dir': ['保存任务日志和 TensorBoard，留空跟随默认目录。', 'Stores logs and TensorBoard data; blank uses the default directory.'],
   'logging.level': ['控制台和日志文件的详细程度。', 'Detail level of the console and log files.'],
-  'logging.events_path': ['训练事件记录文件，留空保存在输出目录。', 'Training event file; blank saves it in the output folder.'],
+  'logging.events_path': ['记录训练进度与损失，留空使用默认日志位置。', 'Records training progress and loss; blank uses the default log location.'],
 };
 
 export const FIELD_HELP: Record<string, Copy> = {
@@ -154,7 +157,7 @@ export const FIELD_HELP: Record<string, Copy> = {
   'dataset.flip': ['训练时随机左右翻转图片，让模型看到更多变化。开启后会多缓存一份翻转后的图像编码。画面含文字或左右不对称的特征时不建议开启。', 'Randomly mirrors images during training for more variety. Caches an extra flipped encoding. Avoid it when images contain text or asymmetric features.'],
   'dataset.masked_loss': ['使用同名的 .mask.png 遮罩或图片自身的透明通道控制每个区域参与训练的程度：白色或不透明区域正常训练，黑色或完全透明的区域不参与。没有遮罩和透明像素的图片按整张训练。', 'Uses a matching .mask.png or the image alpha channel to weight each region: white or opaque areas train normally, black or fully transparent areas are ignored. Images without masks or transparent pixels train as a whole.'],
   'dataset.num_workers': ['后台读取和处理图片的进程数。0 表示在训练进程内读取，最稳定，Windows 建议保持 0。图像已缓存时读取负担较小，通常不需要增加。', 'Background processes that load images. 0 loads inside the training process and is the most stable choice on Windows. With cached images the loading work is small, so more workers rarely help.'],
-  'dataset.cache_dir': ['保存图像编码和文本特征缓存的目录，后续训练可复用。留空时使用输出目录下的 cache 文件夹；更换目录后会重新生成缓存。', 'Folder for image and text caches, reused by later runs. Blank uses the cache folder in the output directory; a new folder rebuilds the caches.'],
+  'dataset.cache_dir': ['保存可复用的图像编码和文本特征。留空使用“设置 → 存储路径”中的缓存目录；指定其他目录后会在新位置生成缓存。', 'Stores reusable image and text features. Blank uses the cache directory in Settings → Storage paths; choosing another directory creates caches there.'],
   'dataset.caption.trigger_word': ['放在标签开头的触发词，不参与打乱和丢弃；标签中已有的同名词会移到开头。训练后在提示词中写这个词即可调用学到的内容。', 'A trigger placed at the start of every caption and never shuffled or dropped; an identical existing tag moves to the front. Use it in prompts to invoke what was learned.'],
   'dataset.caption.prefix': ['加在每条标签最前面的固定文字，位于触发词之前，不参与打乱和丢弃。', 'Fixed text placed before every caption, ahead of the trigger word. It is never shuffled or dropped.'],
   'dataset.caption.suffix': ['加在每条标签末尾的固定文字，不参与打乱和丢弃。', 'Fixed text placed after every caption. It is never shuffled or dropped.'],
@@ -172,7 +175,9 @@ export const FIELD_HELP: Record<string, Copy> = {
   'adapter.mode': ['分开计算：底模和适配器各自计算后相加，不改变底模权重精度。合并计算：先把适配器合并进权重再计算，DoRA 需要这种方式。自动：能分开计算时分开计算，否则合并。', 'Separate computes the base model and the adapter independently and adds them, keeping base precision. Merged folds the adapter into the weight first, which DoRA requires. Automatic uses separate computation when possible.'],
   'adapter.param_dtype': ['适配器可训练参数的存储精度。默认 FP32 最稳定；BF16 节省显存，但较小的更新可能被舍入。', 'Storage precision of trainable adapter parameters. FP32 is the stable default; BF16 saves memory but small updates may be rounded away.'],
   'adapter.lr_scale': ['按参数类别设置学习率倍率。例如 LoRA+ 常把 up 设为 16，LoKr 可单独调整 w1。不熟悉时留空。', 'Learning-rate multipliers by parameter type. LoRA+ commonly sets up to 16, and LoKr can adjust w1 separately. Leave empty if unsure.'],
-  'checkpoint.output_dir': ['训练权重和完整状态的保存目录。项目训练会按项目和版本自动分配。', 'Folder for trained weights and full states. Project training assigns it per project and version.'],
+  'checkpoint.output_dir': ['导出权重的保存根目录，任务按项目、版本和任务 ID 分开保存。未单独指定的恢复点和日志也保存在这里。', 'Root for exported weights, organized by project, version and job ID. Recovery points and logs also go here unless configured separately.'],
+  'checkpoint.state_dir': ['保存续训所需的权重、优化器、步数与随机状态。留空使用“设置 → 存储路径”中的恢复点目录；该项也未设置时随训练产物保存。自定义目录下按项目、版本和任务分开存放。', 'Stores weights, optimizer, step and random state for resuming. Blank uses the recovery directory in Settings → Storage paths, or the training output if unset. Custom roots are organized by project, version and job.'],
+  'sampling.output_dir': ['保存训练预览图。留空使用“设置 → 存储路径”中的采样图目录；该项也未设置时保存在项目版本的 samples 目录。自定义目录下按项目、版本和任务分开存放。', 'Stores training previews. Blank uses the sample directory in Settings → Storage paths, or the project version’s samples folder if unset. Custom roots are organized by project, version and job.'],
   'checkpoint.save_on_finish': ['训练结束时导出最终权重。关闭后只保留按步或按轮导出的文件。', 'Exports the final weights when training ends. When off, only step or epoch exports are kept.'],
   'checkpoint.keep_last_n': ['只保留最近 N 组按步导出的权重，更早的自动删除；按轮导出和最终权重不受影响。留空保留全部。', 'Keeps only the latest N step exports and deletes older ones; epoch exports and final weights are unaffected. Blank keeps all.'],
   'validation.sources': ['只用于验证、不参与训练的图片目录。设置后可以不从训练图中划分验证集。', 'Image folders used only for validation, never for training. With these set, no training images need to be held out.'],
@@ -180,7 +185,8 @@ export const FIELD_HELP: Record<string, Copy> = {
   'validation.every_epochs': ['每隔多少轮计算一次验证损失。留空不按轮验证。', 'Computes validation loss every N epochs. Blank disables epoch-based validation.'],
   'validation.seed': ['验证加噪使用的随机种子。保持不变，不同时间点的验证损失才能直接比较。', 'Random seed for validation noise. Keep it fixed so validation losses stay comparable over time.'],
   'logging.level': ['控制台和日志文件记录的详细程度。debug 最详细，适合排查问题；info 为默认；warning 只记录警告和错误。', 'Detail level of the console and log files. debug is the most detailed and helps troubleshooting; info is the default; warning records only warnings and errors.'],
-  'logging.events_path': ['记录训练进度、损失等事件的文件。留空时保存为输出目录中的 events.jsonl。', 'File recording training progress, losses and other events. Blank saves events.jsonl in the output folder.'],
+  'logging.output_dir': ['保存控制台日志、训练事件与 TensorBoard 数据。留空使用“设置 → 存储路径”中的日志目录；该项也未设置时随训练产物保存。自定义目录下按项目、版本和任务分开存放。', 'Stores console logs, training events and TensorBoard data. Blank uses the log directory in Settings → Storage paths, or the training output if unset. Custom roots are organized by project, version and job.'],
+  'logging.events_path': ['记录训练进度、损失等事件的文件，默认名为 events.jsonl。设置了日志保存目录时使用该目录；否则使用此文件的父目录作为日志根目录。', 'Records training progress, losses and other events, named events.jsonl by default. Uses the configured log directory, or this file’s parent as the log root.'],
 };
 
 const MODEL_PATH_HINTS: Record<string, Record<string, Copy>> = {

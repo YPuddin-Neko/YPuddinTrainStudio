@@ -99,6 +99,8 @@ interface SchemaFormProps {
   computePolicy?: unknown;
   /** Preset drafts: model files are optional and keep the training configuration's files when empty. */
   preset?: boolean;
+  projectId?: string;
+  versionId?: string;
 }
 
 const resolveRef = (rootSchema: any, refPath: string) => {
@@ -556,7 +558,10 @@ const ModelPathInput: React.FC<{
   label?: string;
   familyName?: string;
   models: ModelAsset[];
-}> = ({ value, kind, onChange, label, familyName, models }) => {
+  directoryOnly?:boolean;
+  allowMissingDirectory?:boolean;
+  resolveDefaultPath?:()=>Promise<string>;
+}> = ({ value, kind, onChange, label, familyName, models, resolveDefaultPath, directoryOnly, allowMissingDirectory }) => {
   const { t } = useTranslation();
   const [defaultPath, setDefaultPath] = React.useState('');
   React.useEffect(() => {
@@ -570,7 +575,7 @@ const ModelPathInput: React.FC<{
 
   return (
     <div className={`model-path-control ${matched.length > 0 ? 'has-registry' : ''}`}>
-      <PathInput ariaLabel={label} value={value} defaultPath={defaultPath} onChange={onChange} />
+      <PathInput ariaLabel={label} value={value} defaultPath={defaultPath} resolveDefaultPath={resolveDefaultPath} directoryOnly={directoryOnly} allowMissingDirectory={allowMissingDirectory} onChange={onChange} />
       {matched.length > 0 && (
         <StudioSelect aria-label={`${label || kind} · ${t('models.fromRegistry')}`} value={matched.some(model => model.path === value) ? value : ''} onValueChange={onChange} data-testid="model-registry-select"
           placeholder={t('models.fromRegistry')} options={matched.map(model=>({value:model.path,label:model.path.split(/[\\/]/).pop() || model.path}))}/>
@@ -753,6 +758,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   versionSources = false,
   computePolicy,
   preset = false,
+  projectId, versionId,
 }) => {
   const { t, i18n } = useTranslation();
   const english = i18n.resolvedLanguage?.startsWith('en') || false;
@@ -827,9 +833,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (family?.name === 'sdxl' && weightMeta?.required === false && !showAdvanced) return null;
     if (fullPathKey === 'model.zero_terminal_snr' && value.model?.prediction_type !== 'v_prediction' && !value.model?.zero_terminal_snr) return null;
     // Keep legacy cloud-log data in the draft, but do not expose controls that enable it.
+    if (fullPathKey === 'logging.events_path' && !value.logging?.events_path) return null;
     if (fullPathKey === 'logging.wandb' || fullPathKey.startsWith('logging.wandb.')) return null;
-    // The service assigns a separate samples/<job_id> destination when starting a task.
-    if (fullPathKey === 'sampling.output_dir') return null;
+
     if (versionSources && ['checkpoint.output_dir', 'checkpoint.name'].includes(fullPathKey) && !showAdvanced && !editOutput) return null;
     // Settings the selected adapter form ignores: full LoKr factors fix the scale, and
     // full target-layer weights take no rank, scale, initialization or dropout.
@@ -983,10 +989,14 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       control = (
         <ModelPathInput
           value={fieldValue || ''}
+          allowMissingDirectory={['checkpoint.output_dir','checkpoint.state_dir','sampling.output_dir','logging.output_dir','dataset.cache_dir'].includes(fullPathKey)}
+          directoryOnly={['checkpoint.output_dir','checkpoint.state_dir','sampling.output_dir','logging.output_dir','dataset.cache_dir','checkpoint.resume'].includes(fullPathKey)}
           kind={modelKind}
           label={fieldLabel}
           familyName={value.model?.family}
           models={modelAssets}
+          resolveDefaultPath={['checkpoint.output_dir','checkpoint.state_dir','checkpoint.resume','sampling.output_dir','logging.events_path','logging.output_dir','dataset.cache_dir','adapter.resume_weights','training.resume_weights'].includes(fullPathKey)
+            ? async()=> (await apiClient.get<{path:string}>('/fs/browse-root',{params:{field:fullPathKey,project_id:projectId,version_id:versionId,output_dir:value.checkpoint?.output_dir,custom_dir:fullPathKey==='checkpoint.resume'?value.checkpoint?.state_dir:undefined},silent:true})).path : undefined}
           onChange={(val) => {
             let next = setNestedValue(value, path, val === '' && prop.anyOf?.some((p) => p.type === 'null') ? null : val);
             if (fullPathKey === 'model.dit_path' && value.model?.family === 'krea2') {

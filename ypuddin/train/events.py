@@ -21,6 +21,8 @@ class Emitter:
         fd: int | None = None,
         listeners: list[Listener] | None = None,
     ):
+        if path:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
         self._file = open(path, "a", encoding="utf-8", buffering=1) if path else None  # noqa: SIM115
         self._fd = fd
         self._listeners: list[Listener] = list(listeners or [])

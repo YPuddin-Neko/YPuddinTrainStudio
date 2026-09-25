@@ -424,7 +424,8 @@ def distributed_train(cfg, *, device=None, emitter=None, listeners=None):
         if context.rank == 0:
             Path(cfg.checkpoint.output_dir).mkdir(parents=True, exist_ok=True)
             emitter = emitter or Emitter(
-                path=cfg.logging.events_path or Path(cfg.checkpoint.output_dir) / "events.jsonl",
+                path=cfg.logging.events_path
+                or Path(cfg.logging.output_dir or cfg.checkpoint.output_dir) / "events.jsonl",
                 fd=int(os.environ["YPUDDIN_EVENTS_FD"]) if os.environ.get("YPUDDIN_EVENTS_FD") else None,
             )
             for listener in listeners or []:

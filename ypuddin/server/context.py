@@ -20,7 +20,16 @@ from .supervisor import JobSupervisor
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "downloads": {"pypi": "ustc", "pytorch": "mirror", "fallback": True},
-    "paths": {"bootstrap_env_dir": "", "data_root": "", "cache_dir": "", "models_dir": "", "output_dir": ""},
+    "paths": {
+        "bootstrap_env_dir": "",
+        "data_root": "",
+        "cache_dir": "",
+        "models_dir": "",
+        "output_dir": "",
+        "state_dir": "",
+        "samples_dir": "",
+        "logs_dir": "",
+    },
     "server": {"host": "127.0.0.1", "port": 8123, "open_browser": True},
     "ui": {"language": "zh-CN", "theme": "system"},
     "network": {
@@ -111,6 +120,9 @@ class ServiceContext:
         base["paths"]["data_root"] = str(self.data_root)
         for key in ("cache_dir", "models_dir", "output_dir"):
             base["paths"][key] = str(Path(base["paths"][key]).expanduser().resolve())
+        for key in ("state_dir", "samples_dir", "logs_dir"):
+            value = base["paths"].get(key, "")
+            base["paths"][key] = str(Path(value).expanduser().resolve()) if value else ""
         base["network"].pop("proxy_password", None)
         revision = base.pop(PASSWORD_REVISION, "")
         base["network"]["proxy_password_configured"] = bool(
@@ -183,6 +195,11 @@ class ServiceContext:
             if not value or not str(value).strip():
                 raise ValueError(f"paths.{key} must not be empty")
             cur["paths"][key] = str(Path(value).expanduser().resolve())
+        for key in ("state_dir", "samples_dir", "logs_dir"):
+            value = cur["paths"].get(key, "")
+            if not isinstance(value, str):
+                raise ValueError(f"paths.{key} must be a path string")
+            cur["paths"][key] = str(Path(value.strip()).expanduser().resolve()) if value.strip() else ""
         env_root = cur["paths"].get("bootstrap_env_dir", "").strip()
         cur["paths"]["bootstrap_env_dir"] = str(Path(env_root).expanduser().absolute()) if env_root else ""
         cur["network"] = validate_proxy_settings(cur["network"])
@@ -316,6 +333,55 @@ class ServiceContext:
         if project_id:
             root = root / project_id / self.version_label(project_id, version_id)
         return root / job_id
+
+    def job_storage_dir(
+        self,
+        project_id: str | None,
+        version_id: str | None,
+        job_id: str,
+        kind: str,
+        run_dir: Path,
+        requested: str | None = None,
+    ) -> Path:
+        configured = requested or self.settings()["paths"].get(kind, "")
+        if not configured:
+            if kind == "samples_dir":
+                return (
+                    self.samples_dir(project_id, version_id) / job_id if project_id else run_dir / "samples"
+                )
+            return run_dir
+        root = Path(configured).expanduser().resolve()
+        previous = self.db.fetchone(
+            "SELECT * FROM jobs WHERE id=? AND project_id IS ? AND version_id IS ?",
+            (root.name, project_id, version_id),
+        )
+        if previous:
+            from .job_paths import event_file, state_directory
+
+            if kind == "state_dir":
+                old_path = state_directory(previous)
+            elif kind == "logs_dir":
+                old_path = event_file(previous).parent
+            else:
+                old_path = Path(previous["samples_dir"]) if previous.get("samples_dir") else None
+            if root == old_path:
+                return root.parent / job_id
+        if project_id:
+            root = root / project_id / self.version_label(project_id, version_id)
+        return root / job_id
+
+    def training_cache_dir(
+        self,
+        project_id: str | None,
+        version_id: str | None,
+        requested: str | None,
+    ) -> Path:
+        defaults = [self.cache_dir(project_id, version_id)]
+        if project_id:
+            defaults.append(self.version_dir(project_id, version_id) / "cache")
+        if requested and Path(requested).expanduser().resolve() not in [path.resolve() for path in defaults]:
+            return Path(requested).expanduser().resolve()
+        return self.cache_dir(project_id, version_id)
 
     def config_path(self, project_id: str, version_id: str | None = None) -> Path:
         version = self.resolve_version(project_id, version_id)

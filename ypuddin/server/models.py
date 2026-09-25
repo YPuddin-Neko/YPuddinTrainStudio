@@ -96,6 +96,9 @@ class SystemInfo(_Out):
 
 
 class SettingsPaths(_Out):
+    state_dir: str = ""
+    samples_dir: str = ""
+    logs_dir: str = ""
     bootstrap_env_dir: str = ""
     data_root: str
     cache_dir: str
@@ -146,6 +149,7 @@ class FsEntry(_Out):
 
 
 class FsList(_Out):
+    exists: bool = True
     path: str
     parent: str | None
     entries: list[FsEntry]

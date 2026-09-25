@@ -1126,6 +1126,11 @@ class CheckpointConfig(_Strict):
         help="每多少轮导出权重，默认 1 每轮保存；留空关闭此触发器。与按步保存分别生效，可能在同一步产生不同标签的文件。",
         ui_=ui("checkpoint", order=30),
     )
+    state_dir: str | None = F(
+        None,
+        help="完整恢复点的保存目录，留空使用训练器默认位置；独立 CLI 留空时随训练产物保存。",
+        ui_=ui("checkpoint", order=46, control="path", advanced=True),
+    )
     save_state_every_steps: int | None = F(
         100,
         ge=1,
@@ -1195,8 +1200,11 @@ class SamplingConfig(_Strict):
         help="FLUX 模型内部的预览引导强度；留空使用对应模型默认值。这项不参与训练步的加噪或损失。",
         ui_=ui("sampling", order=95, show_when="sampling.enabled == true && model.family == 'flux'"),
     )
-    # Service-owned destination. Omitted for CLI compatibility (<run_dir>/samples).
-    output_dir: str | None = None
+    output_dir: str | None = F(
+        None,
+        help="训练预览图的保存目录，留空使用训练器默认位置。",
+        ui_=ui("sampling", order=170, control="path", advanced=True),
+    )
     enabled: bool = F(
         False,
         help="按下面的时机生成训练预览图，默认关闭；开启后至少填写一条提示词或提示词文件。预览会占用生成时间，不参与梯度更新。",
@@ -1361,6 +1369,11 @@ class WandbConfig(_Strict):
 
 
 class LoggingConfig(_Strict):
+    output_dir: str | None = F(
+        None,
+        help="日志与 TensorBoard 保存目录，留空使用训练器默认位置。",
+        ui_=ui("logging", order=15, control="path", advanced=True),
+    )
     tensorboard: bool = F(
         False,
         help="额外写入本地 TensorBoard 格式的训练指标与样图，默认关闭；前端任务日志和曲线不依赖此开关。需要用 TensorBoard 查看时启用。",
@@ -1369,7 +1382,7 @@ class LoggingConfig(_Strict):
     wandb: WandbConfig | None = F(None, help="Weights & Biases", ui_=ui("logging", order=10, advanced=True))
     events_path: str | None = F(
         None,
-        help="事件 JSONL 文件（默认 <output_dir>/events.jsonl）",
+        help="训练事件 JSONL 文件，留空使用日志目录中的 events.jsonl。",
         ui_=ui("logging", order=20, control="path", advanced=True),
     )
     level: Literal["debug", "info", "warning"] = F(

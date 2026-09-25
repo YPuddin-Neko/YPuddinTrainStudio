@@ -10,6 +10,7 @@ from __future__ import annotations
 import inspect
 import math
 from contextlib import contextmanager, nullcontext
+from pathlib import Path
 
 import torch
 import torch.distributed as dist
@@ -308,7 +309,8 @@ class ShardedTrainer(DistributedTrainer):
         scheduler_config = _collective_check(validate_save_contract)
         self.progress.extra["loss_ema"] = self._loss_ema
         path = save_sharded_checkpoint(
-            self.run_dir / f"state-{tag or self.progress.step}",
+            (Path(self.cfg.checkpoint.state_dir) if self.cfg.checkpoint.state_dir else self.run_dir)
+            / f"state-{tag or self.progress.step}",
             modules=self._checkpoint_modules(),
             optimizer=self.optimizer,
             scheduler=self.scheduler,

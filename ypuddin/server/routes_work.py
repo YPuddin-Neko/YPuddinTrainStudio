@@ -34,6 +34,7 @@ from .gpu_selection import GpuSelection, selection_error
 from .hardware import gpu_info
 from .import_progress import ImportProgress
 from .job_logs import parse_log_lines
+from .job_paths import event_file, log_file, owned_job_directories
 from .project_covers import cover_path, cover_url, read_cover_upload, remove_cover, replace_cover, thumbnail
 from .sample_events import read_events, samples_with_loss
 from .versions import ACTIVE_JOBS, assert_version_writable, version_row
@@ -233,7 +234,7 @@ def create_project(body: ProjectBody, c: ServiceContext = Depends(ctx)) -> dict[
                 initial,
                 {
                     "checkpoint": {"output_dir": str(c.default_runs_dir(pid, vid))},
-                    "dataset": {"cache_dir": str(c.cache_dir(pid, vid))},
+                    "dataset": {"cache_dir": str(c.version_dir(pid, vid) / "cache")},
                 },
             )
             _write_project_config(c, pid, initial, vid)
@@ -378,20 +379,10 @@ def delete_project(pid: str, delete_files: bool = False, c: ServiceContext = Dep
             )
         if delete_files:
             try:
-                for job in c.db.fetchall(
-                    "SELECT id, run_dir, samples_dir FROM jobs WHERE project_id=?", (pid,)
-                ):
-                    run = Path(job["run_dir"])
-                    if run.name == job["id"] and run.is_dir() and not run.is_symlink():
-                        shutil.rmtree(run)
-                    samples = Path(job["samples_dir"]) if job["samples_dir"] else None
-                    if (
-                        samples
-                        and samples.name == job["id"]
-                        and samples.is_dir()
-                        and not samples.is_symlink()
-                    ):
-                        shutil.rmtree(samples)
+                for job in c.db.fetchall("SELECT * FROM jobs WHERE project_id=?", (pid,)):
+                    for directory in owned_job_directories(job):
+                        if directory.is_dir():
+                            shutil.rmtree(directory)
                 if project_root.exists():
                     shutil.rmtree(project_root)
             except OSError as exc:
@@ -426,7 +417,7 @@ def get_project_config(
         cfg.to_dict(),
         {
             "checkpoint": {"output_dir": str(c.default_runs_dir(pid, version_id))},
-            "dataset": {"cache_dir": str(c.cache_dir(pid, version_id))},
+            "dataset": {"cache_dir": str(c.version_dir(pid, version_id) / "cache")},
         },
     )
 
@@ -1784,14 +1775,51 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
 
         config = normalize_source_roles(c, body.project_id, config, vid)
         config = bind_output_name(c, body.project_id, config, vid)
+    for section, key in (
+        ("checkpoint", "state_dir"),
+        ("checkpoint", "output_dir"),
+        ("sampling", "output_dir"),
+        ("logging", "output_dir"),
+        ("logging", "events_path"),
+        ("dataset", "cache_dir"),
+    ):
+        group = config.get(section, {})
+        if not isinstance(group, dict) or group.get(key) is not None and not isinstance(group[key], str):
+            raise ApiError(
+                "保存路径必须是字符串。",
+                code="config.invalid",
+                status=422,
+                details={"errors": [{"loc": f"{section}.{key}", "msg": "path must be a string"}]},
+            )
     jid = new_id("j")
     run_dir = c.job_output_dir(body.project_id, vid, jid, config.get("checkpoint", {}).get("output_dir"))
-    samples_dir = c.samples_dir(body.project_id, vid) / jid if body.project_id else run_dir / "samples"
+    samples_dir = c.job_storage_dir(
+        body.project_id, vid, jid, "samples_dir", run_dir, config.get("sampling", {}).get("output_dir")
+    )
+    state_dir = c.job_storage_dir(
+        body.project_id, vid, jid, "state_dir", run_dir, config.get("checkpoint", {}).get("state_dir")
+    )
+    requested_events = config.get("logging", {}).get("events_path")
+    logs_dir = c.job_storage_dir(
+        body.project_id,
+        vid,
+        jid,
+        "logs_dir",
+        run_dir,
+        config.get("logging", {}).get("output_dir")
+        or (str(Path(requested_events).parent) if requested_events else None),
+    )
+    events_name = Path(requested_events).name if requested_events else "events.jsonl"
+    if events_name.casefold() == "run.log":
+        raise ApiError(
+            "事件日志文件不能命名为 run.log，该文件用于控制台日志。", code="config.invalid", status=422
+        )
+
     config = deep_merge(
         config,
         {
-            "checkpoint": {"output_dir": str(run_dir)},
-            "logging": {"events_path": str(run_dir / "events.jsonl")},
+            "checkpoint": {"output_dir": str(run_dir), "state_dir": str(state_dir)},
+            "logging": {"events_path": str(logs_dir / events_name), "output_dir": str(logs_dir)},
             "sampling": {"output_dir": str(samples_dir)},
         },
     )
@@ -1799,9 +1827,16 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
         # Cache preparation has its own single-device worker, even when the
         # project's following training run is configured for several GPUs.
         config = deep_merge(config, {"loop": {"gpu_count": 1, "distributed_strategy": "ddp"}})
-    if body.project_id or not (config.get("dataset") or {}).get("cache_dir"):
-        # a pre-cache job and the training jobs after it must hit the same cache
-        config = deep_merge(config, {"dataset": {"cache_dir": str(c.cache_dir(body.project_id, vid))}})
+    config = deep_merge(
+        config,
+        {
+            "dataset": {
+                "cache_dir": str(
+                    c.training_cache_dir(body.project_id, vid, (config.get("dataset") or {}).get("cache_dir"))
+                )
+            }
+        },
+    )
     from pydantic import ValidationError
 
     try:
@@ -1943,12 +1978,10 @@ def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends
                 status=409,
             )
         c.db.delete("jobs", jid)
-        if delete_files and r["run_dir"] and Path(r["run_dir"]).exists():
-            shutil.rmtree(r["run_dir"])
-        if delete_files and r.get("samples_dir"):
-            samples = Path(r["samples_dir"])
-            if samples.name == jid and samples.is_dir() and not samples.is_symlink():
-                shutil.rmtree(samples)
+        if delete_files:
+            for directory in owned_job_directories(r):
+                if directory.is_dir():
+                    shutil.rmtree(directory)
         c.bus.publish("queue.changed", {})
         return {"ok": True}
 
@@ -1972,7 +2005,7 @@ def job_config(jid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
 
 def _events_file(c: ServiceContext, jid: str) -> list[dict[str, Any]]:
     r = _get_job(c, jid)
-    return read_events(Path(r["run_dir"]) / "events.jsonl")
+    return read_events(event_file(r))
 
 
 @router.get("/jobs/{jid}/metrics", response_model=m.JobMetrics, response_model_exclude_unset=True)
@@ -2081,7 +2114,7 @@ def job_log(
     jid: str, offset: int = 0, limit: int = 2000, c: ServiceContext = Depends(ctx), tail: bool = False
 ) -> dict[str, Any]:
     r = _get_job(c, jid)
-    p = Path(r["run_dir"]) / "run.log"
+    p = log_file(r)
     if not p.exists():
         return {"lines": [], "next_offset": 0, "has_more": False}
     limit = max(1, min(2000, limit))

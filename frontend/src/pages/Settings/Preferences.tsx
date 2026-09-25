@@ -115,14 +115,14 @@ export default function Preferences() {
       <div className="settings-section-heading"><div><h2>{t('settings.paths')}</h2><p className="settings-note">{text('更改路径不会移动已有文件。', 'Changing paths does not move existing files.')}</p></div></div>
       {([['data_root', t('settings.dataRoot')], ['cache_dir', t('settings.cacheDir')], ['models_dir', t('settings.modelsDir')]] as const).map(([key, label]) => <div className="settings-field" key={key}>
         <label htmlFor={`preferences-${key}`}>{label}</label><div className="settings-field-control">
-          <PathInput ariaLabel={label} value={settings.paths[key]} onChange={value => update(s => ({ ...s, paths: { ...s.paths, [key]: value } }))} />
+          <PathInput directoryOnly allowMissingDirectory ariaLabel={label} value={settings.paths[key]} onChange={value => update(s => ({ ...s, paths: { ...s.paths, [key]: value } }))} />
           {key === 'data_root' && <><p className="settings-note">{text('保存项目、数据集、任务记录和服务设置。', 'Stores projects, datasets, job history and service settings.')}</p>{changeNotice('paths', key)}</>}
           {key === 'cache_dir' && <p className="settings-note">{text('用于训练、缩略图和安装包缓存。', 'Stores training, thumbnail and package caches.')}</p>}
           {key === 'models_dir' && <p className="settings-note">{text('保存下载的模型及其组件；本地模型也可从其他目录登记。', 'Stores downloaded models and their components. Local models can also be registered from other folders.')}</p>}
         </div>
       </div>)}
       <div className="settings-field"><label>{text('基础环境目录', 'Base environment directory')}</label><div className="settings-field-control">
-        <PathInput ariaLabel={text('基础环境目录', 'Base environment directory')} value={settings.paths.bootstrap_env_dir ?? ''} placeholder={text('留空使用源码目录下的默认位置', 'Leave blank for the default source directory location')} onChange={value => update(s => ({...s, paths: {...s.paths, bootstrap_env_dir: value}}))}/>
+        <PathInput directoryOnly allowMissingDirectory ariaLabel={text('基础环境目录', 'Base environment directory')} value={settings.paths.bootstrap_env_dir ?? ''} placeholder={text('留空使用源码目录下的默认位置', 'Leave blank for the default source directory location')} onChange={value => update(s => ({...s, paths: {...s.paths, bootstrap_env_dir: value}}))}/>
         <p className="settings-note">{text('存放启动脚本管理的 Python 环境和依赖。', 'Stores Python environments and dependencies managed by the launcher.')}</p>
         {changeNotice('paths', 'bootstrap_env_dir', true)}
         {changed('paths', 'bootstrap_env_dir').edited && <p className="settings-note">{text('新目录需安装依赖，旧环境保留。', 'The new directory needs dependencies; the old environment is retained.')}</p>}
@@ -131,9 +131,25 @@ export default function Preferences() {
         <StudioSelect disabled={saving} id="preferences-output-mode" aria-label={text('训练产物位置', 'Training output location')} value={settings.paths.output_mode === 'custom' ? 'custom' : 'project'}
           options={[{value:'project',label:text('项目版本目录（默认）','Project version directory (default)')},{value:'custom',label:text('自定义输出根目录','Custom output root')}]}
           onValueChange={value => update(s => ({...s,paths:{...s.paths,output_mode:value === 'custom' ? 'custom' : 'project'}}))}/>
-        {settings.paths.output_mode === 'custom' ? <><div className="mt-2"><PathInput ariaLabel={t('settings.outputDir')} value={settings.paths.output_dir} onChange={value => update(s => ({...s,paths:{...s.paths,output_dir:value}}))}/></div><p className="settings-note">{text('按项目、版本和训练任务分别保存。','Outputs are organized by project, version and training run.')}</p></>
+        {settings.paths.output_mode === 'custom' ? <><div className="mt-2"><PathInput directoryOnly allowMissingDirectory ariaLabel={t('settings.outputDir')} value={settings.paths.output_dir} onChange={value => update(s => ({...s,paths:{...s.paths,output_dir:value}}))}/></div><p className="settings-note">{text('按项目、版本和训练任务分别保存。','Outputs are organized by project, version and training run.')}</p></>
           : <p className="settings-note font-mono">project/{'<project_id>'}/v1/output/{'<job_id>'}/</p>}
       </div></div>
+
+      {([
+        ['state_dir',text('恢复点目录','Recovery point directory'),text('保存完整训练状态，留空随训练产物保存。','Stores complete training state; blank keeps it with training outputs.')],
+        ['samples_dir',text('采样图目录','Sample image directory'),text('保存训练预览图，留空使用各项目版本的 samples 目录。','Stores training previews; blank uses each project version’s samples folder.')],
+        ['logs_dir',text('日志目录','Log directory'),text('保存控制台日志、事件记录和 TensorBoard，留空随训练产物保存。','Stores console logs, events and TensorBoard data; blank keeps them with training outputs.')],
+      ] as const).map(([key,label,purpose])=><div className="settings-field" key={key}>
+        <label>{label}</label><div className="settings-field-control">
+          <PathInput directoryOnly allowMissingDirectory ariaLabel={label} value={settings.paths[key] || ''} placeholder={text('使用默认目录','Use default directory')}
+            resolveDefaultPath={async()=> (await apiClient.get<{path:string}>('/fs/browse-root',{params:{field:`settings.${key}`},silent:true})).path}
+            onChange={value=>update(s=>({...s,paths:{...s.paths,[key]:value}}))}/>
+          <p className="settings-note">{purpose}</p>
+          {(changed('paths',key).edited || changed('paths',key).unsaved) && <p className="settings-note" role="status">{changed('paths',key).unsaved
+            ? text('保存后对新建任务生效；已有文件保留原位置。','Save to apply to new jobs; existing files stay in place.')
+            : text('已保存，新建任务使用此目录。','Saved. New jobs use this directory.')}</p>}
+        </div>
+      </div>)}
 
     </section> : <>
       <section id="preferences-appearance" data-settings-section tabIndex={-1} className="settings-section">

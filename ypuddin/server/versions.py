@@ -367,10 +367,12 @@ class VersionManager:
             if c.inherits_output_dir(pid, source_id, checkpoint.get("output_dir")):
                 checkpoint["output_dir"] = str(c.default_runs_dir(pid, vid))
             checkpoint["resume"] = None
-            config.setdefault("sampling", {})["output_dir"] = None
             config.setdefault("adapter", {})["resume_weights"] = None
-            config.setdefault("dataset", {})["cache_dir"] = str(c.cache_dir(pid, vid))
-            config.setdefault("logging", {})["events_path"] = None
+            requested_cache = config.setdefault("dataset", {}).get("cache_dir")
+            if not requested_cache or c.training_cache_dir(pid, source_id, requested_cache) == c.cache_dir(
+                pid, source_id
+            ):
+                config["dataset"]["cache_dir"] = str(c.version_dir(pid, vid) / "cache")
             for directory in (
                 c.dataset_dir(pid, vid),
                 c.reg_dir(pid, vid),

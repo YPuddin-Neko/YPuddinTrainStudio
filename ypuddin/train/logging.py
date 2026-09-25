@@ -13,6 +13,13 @@ log = logging.getLogger(__name__)
 
 class TrainingLogs:
     def __init__(self, cfg: TrainConfig, run_dir: Path):
+        log_dir = (
+            Path(cfg.logging.output_dir)
+            if cfg.logging.output_dir
+            else Path(cfg.logging.events_path).parent
+            if cfg.logging.events_path
+            else run_dir
+        )
         self.tensorboard: Any = None
         self.wandb: Any = None
         self.wandb_module: Any = None
@@ -22,7 +29,7 @@ class TrainingLogs:
                     from torch.utils.tensorboard import SummaryWriter
                 except ImportError as e:
                     raise ImportError("TensorBoard logging requires the tensorboard package") from e
-                self.tensorboard = SummaryWriter(log_dir=str(run_dir / "tensorboard"))
+                self.tensorboard = SummaryWriter(log_dir=str(log_dir / "tensorboard"))
             if cfg.logging.wandb is not None:
                 try:
                     import wandb
@@ -35,7 +42,7 @@ class TrainingLogs:
                     entity=wc.entity,
                     name=wc.run_name or run_dir.name,
                     config=cfg.to_dict(),
-                    dir=str(run_dir),
+                    dir=str(log_dir),
                 )
         except Exception:
             self.close(failed=True)
