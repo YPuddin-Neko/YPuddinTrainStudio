@@ -260,6 +260,7 @@ class ImageFitGeometry(_Out):
 
 class ImageFitPlan(_Out):
     mode: Literal["crop", "pad"]
+    crop_anchor: str = "center"
     padded_images: int
     cropped_images: int
     padding_pixels: int

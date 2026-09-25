@@ -7,7 +7,7 @@ import torch
 from PIL import Image, ImageOps
 from torch import Tensor
 
-from .buckets import fit_crop, fit_pad
+from .buckets import crop_offset, fit_crop, fit_pad
 from .image_metadata import alpha_channel
 
 
@@ -32,9 +32,15 @@ def load_alpha(path: str) -> Image.Image | None:
 
 
 def to_bucket(
-    im: Image.Image, width: int, height: int, *, flip: bool = False, resample=Image.LANCZOS
+    im: Image.Image,
+    width: int,
+    height: int,
+    *,
+    flip: bool = False,
+    resample=Image.LANCZOS,
+    crop_anchor: str = "center",
 ) -> Image.Image:
-    rw, rh, left, top, right, bottom = fit_crop(im.width, im.height, width, height)
+    rw, rh, left, top, right, bottom = fit_crop(im.width, im.height, width, height, anchor=crop_anchor)
     out = im.resize((rw, rh), resample=resample).crop((left, top, right, bottom))
     if flip:
         out = ImageOps.mirror(out)
@@ -42,7 +48,14 @@ def to_bucket(
 
 
 def to_native(
-    im: Image.Image, width: int, height: int, *, scale: float, flip: bool = False, resample=Image.LANCZOS
+    im: Image.Image,
+    width: int,
+    height: int,
+    *,
+    scale: float,
+    flip: bool = False,
+    resample=Image.LANCZOS,
+    crop_anchor: str = "center",
 ) -> Image.Image:
     """Alignment-only crop at scale 1, or proportional downscale then crop.
 
@@ -51,7 +64,7 @@ def to_native(
     """
     resized = (max(width, round(im.width * scale)), max(height, round(im.height * scale)))
     image = im if resized == im.size else im.resize(resized, resample=resample)
-    left, top = (image.width - width) // 2, (image.height - height) // 2
+    left, top = crop_offset(image.width, image.height, width, height, crop_anchor)
     image = image.crop((left, top, left + width, top + height))
     return ImageOps.mirror(image) if flip else image
 
@@ -106,6 +119,7 @@ def load_mask(
     image_fit: str = "crop",
     max_scale: float | None = None,
     source_size: tuple[int, int] | None = None,
+    crop_anchor: str = "center",
 ) -> Tensor | None:
     """Loss mask ``(H, W)`` in ``[0, 1]`` from a sidecar (grayscale) or the alpha channel."""
     src: Image.Image | None = None
@@ -122,8 +136,16 @@ def load_mask(
         m = to_padded(src, width, height, max_scale=max_scale, flip=flip, resample=Image.BILINEAR, mask=True)
         return torch.from_numpy(np.asarray(m, dtype=np.float32) / 255.0)
     m = (
-        to_bucket(src, width, height, flip=flip, resample=Image.BILINEAR)
+        to_bucket(src, width, height, flip=flip, resample=Image.BILINEAR, crop_anchor=crop_anchor)
         if native_scale is None
-        else to_native(src, width, height, scale=native_scale, flip=flip, resample=Image.BILINEAR)
+        else to_native(
+            src,
+            width,
+            height,
+            scale=native_scale,
+            flip=flip,
+            resample=Image.BILINEAR,
+            crop_anchor=crop_anchor,
+        )
     )
     return torch.from_numpy(np.asarray(m, dtype=np.float32) / 255.0)

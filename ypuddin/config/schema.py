@@ -207,8 +207,15 @@ class DatasetConfig(_Strict):
     )
     image_fit: Literal["crop", "pad"] = F(
         "crop",
-        help="保留完整画面：等比缩放后补边，补边区域不计入直接损失，但仍作为模型输入。裁切填满尺寸：等比缩放至填满后中心裁剪。新项目默认保留完整画面；旧配置沿用原来的裁切设置。",
+        help="保留完整画面：等比缩放后补边，补边区域不计入直接损失，但仍作为模型输入。裁切填满尺寸：等比缩放至填满后，按裁切保留位置裁剪。新项目默认保留完整画面；旧配置沿用原来的裁切设置。",
         ui_=ui("dataset", order=6, control="select"),
+    )
+    crop_anchor: Literal[
+        "top_left", "top", "top_right", "left", "center", "right", "bottom_left", "bottom", "bottom_right"
+    ] = F(
+        "center",
+        help="选择裁切时保留的位置。上中贴住原图顶部，从下方裁掉多余部分，适合保留头部；左右位置同理。原生尺寸与分桶裁切均生效，图片与遮罩使用相同位置。默认居中。",
+        ui_=ui("dataset", order=7, control="select", show_when="dataset.image_fit == 'crop'"),
     )
     native_max_pixels: int = F(
         1_048_576,

@@ -117,6 +117,10 @@ def config_hash(config: TrainConfig | Mapping[str, Any]) -> str:
             if not (key == "save_state_every_epochs" and value is None)
             and not (key == "save_training_metadata" and value is False)
         }
+    # Center preserves the pixel geometry and config hashes of older checkpoints.
+    dataset = data.get("dataset")
+    if isinstance(dataset, Mapping) and dataset.get("crop_anchor") == "center":
+        data["dataset"] = {key: value for key, value in dataset.items() if key != "crop_anchor"}
     # The default retains SDXL's original single CLIP context and cache behavior.
     # Authenticate old checkpoint configs without inventing a new semantic change.
     model = data.get("model")

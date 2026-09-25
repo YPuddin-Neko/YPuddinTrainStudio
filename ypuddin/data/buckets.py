@@ -138,12 +138,36 @@ class BucketManager:
         ]
 
 
-def fit_crop(src_w: int, src_h: int, dst_w: int, dst_h: int) -> tuple[int, int, int, int, int, int]:
-    """Resize-to-cover then center-crop. Returns ``(resize_w, resize_h, left, top, right, bottom)``."""
+def crop_offset(
+    width: int, height: int, target_width: int, target_height: int, anchor: str = "center"
+) -> tuple[int, int]:
+    """Locate the retained rectangle on the resized image, before augmentation flips."""
+    anchors = {
+        "top_left": (0, 0),
+        "top": (1, 0),
+        "top_right": (2, 0),
+        "left": (0, 1),
+        "center": (1, 1),
+        "right": (2, 1),
+        "bottom_left": (0, 2),
+        "bottom": (1, 2),
+        "bottom_right": (2, 2),
+    }
+    if anchor not in anchors:
+        raise ValueError(f"unknown crop anchor: {anchor}")
+    if min(width, height, target_width, target_height) <= 0 or width < target_width or height < target_height:
+        raise ValueError("crop rectangle must fit within the image")
+    x, y = anchors[anchor]
+    return (width - target_width) * x // 2, (height - target_height) * y // 2
+
+
+def fit_crop(
+    src_w: int, src_h: int, dst_w: int, dst_h: int, *, anchor: str = "center"
+) -> tuple[int, int, int, int, int, int]:
+    """Resize to cover and crop at the anchor; return resized size and crop rectangle."""
     scale = max(dst_w / src_w, dst_h / src_h)
     rw, rh = max(dst_w, int(round(src_w * scale))), max(dst_h, int(round(src_h * scale)))
-    left = (rw - dst_w) // 2
-    top = (rh - dst_h) // 2
+    left, top = crop_offset(rw, rh, dst_w, dst_h, anchor)
     return rw, rh, left, top, left + dst_w, top + dst_h
 
 

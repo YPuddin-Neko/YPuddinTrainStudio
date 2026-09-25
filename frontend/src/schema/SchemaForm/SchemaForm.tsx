@@ -804,7 +804,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   };
   const lokrModeLabel = english ? 'LoKr parameter mode' : 'LoKr 参数形式';
   const groups: Record<string, { order: number; fields: React.ReactNode[] }> = {};
-  const conditionValue = { ...value, training: {mode:'adapter', ...value.training}, model: { prediction_type: 'epsilon', ...value.model }, dataset: { resolution_mode: 'bucket', ...value.dataset } };
+  const conditionValue = { ...value, training: {mode:'adapter', ...value.training}, model: { prediction_type: 'epsilon', ...value.model }, dataset: { resolution_mode: 'bucket', image_fit: 'crop', ...value.dataset } };
   const weights = modelFamilyWeights(family);
 
   const renderField = (key: string, prop: SchemaProperty, parentPath: string[] = []) => {
@@ -894,6 +894,11 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       control = <RecoveryInterval id={fieldId} label={fieldLabel} english={english} invalid={!!errorItem}
         value={{save_state_every_steps:fieldValue ?? null,save_state_every_epochs:value.checkpoint?.save_state_every_epochs ?? null}}
         onChange={interval=>onChange(setNestedValue(value,['checkpoint'],{...value.checkpoint,...interval}))}/>;
+    } else if (fullPathKey === 'dataset.crop_anchor') {
+      control = <StudioSelect id={fieldId} aria-label={fieldLabel} aria-describedby={`${fieldId}-hint`} aria-invalid={!!errorItem}
+        value={fieldValue ?? 'center'} optionColumns={3}
+        options={(prop.enum || []).map((option:string)=>({value:option,label:configOptionLabel(fullPathKey,option,english)}))}
+        onValueChange={next=>onChange(setNestedValue(value,path,next))}/>;
     } else if (fullPathKey === 'dataset.native_max_pixels') {
       control = <NativePixelLimit value={fieldValue} label={fieldLabel} describedBy={nativePixelsHint(fieldValue, english) ? `${fieldId}-hint` : undefined} onChange={next => onChange(setNestedValue(value, path, next))}/>;
     } else if (compact && fullPathKey === 'dataset.resolutions') {

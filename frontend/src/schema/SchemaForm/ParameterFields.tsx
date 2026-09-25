@@ -12,7 +12,7 @@ const layouts: Record<string, Section[]> = {
   ],
   dataset: [
     section('sources', ['sources']),
-    section('sizing', ['resolution_mode', 'resolutions', 'native_max_pixels', 'native_max_side', 'image_fit', 'aspect_ratio_limit', 'native_overflow', 'area_tolerance', 'bucket_step', 'bucket_no_upscale'], ['尺寸与分桶', 'Sizing and buckets']),
+    section('sizing', ['resolution_mode', 'resolutions', 'native_max_pixels', 'native_max_side', 'image_fit', 'crop_anchor', 'aspect_ratio_limit', 'native_overflow', 'area_tolerance', 'bucket_step', 'bucket_no_upscale'], ['尺寸与分桶', 'Sizing and buckets']),
     section('images', ['flip', 'masked_loss'], ['增强与遮罩', 'Augmentation and masks']),
     section('loading', ['text_encoding', 'num_workers', 'cache_latents', 'cache_dir'], ['数据读取与缓存', 'Data loading and caching']),
   ],

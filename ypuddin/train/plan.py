@@ -358,6 +358,7 @@ def _append_data_plan(
             cropped_images.add(item.record.path)
     out["image_fit"] = {
         "mode": ds.image_fit,
+        "crop_anchor": ds.crop_anchor,
         "padded_images": len(padded_images),
         "cropped_images": len(cropped_images),
         "padding_pixels": padding_pixels,

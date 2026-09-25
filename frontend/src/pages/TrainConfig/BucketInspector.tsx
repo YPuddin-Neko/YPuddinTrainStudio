@@ -4,6 +4,7 @@ import type { Plan } from '../../api/types';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatBytesMB, formatParams } from '../../utils/format';
 import SourceBalance from './SourceBalance';
+import {configOptionLabel} from '../../utils/configPresentation';
 import ConfigHelp from '../../components/ConfigHelp';
 import { SlidingIndicator } from '../../components/motion';
 
@@ -63,9 +64,9 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
         {chosen && <div className="bucket-selection"><strong>{grouped ? `${baseLabel(chosen.base)} · ` : ''}{chosen.w} × {chosen.h}</strong><span>{chosen.items} {text('样本', 'samples')} · {chosen.batches ?? '—'} {native ? text('次计算 / 轮', 'model runs / epoch') : text('批次 / 轮', 'batches / epoch')}</span><span>{text('长宽比', 'Aspect ratio')} {(chosen.w / chosen.h).toFixed(2)}</span></div>}
       </>}
       {plan?.image_fit && <div className="image-fit-summary">
-        <strong>{plan.image_fit.mode==='pad'?text('完整画面保留','Whole image preserved'):text('沿用裁切模式','Legacy crop mode')}</strong>
+        <strong>{plan.image_fit.mode==='pad'?text('完整画面保留','Whole image preserved'):text('裁切保留位置','Crop anchor') + ' · ' + configOptionLabel('dataset.crop_anchor',plan.image_fit.crop_anchor || 'center',text('zh','en') === 'en')}</strong>
         <dl><div><dt>{text('裁切图片','Cropped images')}</dt><dd>{plan.image_fit.cropped_images}</dd></div><div><dt>{text('填充占比','Padding share')}</dt><dd>{(plan.image_fit.padding_fraction*100).toFixed(2)}%</dd></div></dl>
-        {!!plan.image_fit.items.length && <details><summary>{text('查看尺寸适配明细','Inspect image sizing')}</summary><div className="image-fit-details">{plan.image_fit.items.map((item,index)=><div key={`${item.path}/${item.width}/${item.height}/${index}`}><strong title={item.path}>{item.path.replace(/\\/g,'/').split('/').pop()}</strong><span>{item.source_width} × {item.source_height} → {item.resized_width} × {item.resized_height}</span><small>{text('训练画布','Training canvas')} {item.width} × {item.height} · {item.cropped_pixels ? text(`裁切 ${item.cropped_pixels} 像素`,`Crops ${item.cropped_pixels} pixels`) : text('无裁切','No cropping')}</small></div>)}{plan.image_fit.truncated && <p>{text('显示前 100 种图片与尺寸组合。','Showing the first 100 image-size pairs.')}</p>}</div></details>}
+        {!!plan.image_fit.items.length && <details><summary>{text('查看尺寸适配明细','Inspect image sizing')}</summary><div className="image-fit-details">{plan.image_fit.items.map((item,index)=><div key={`${item.path}/${item.width}/${item.height}/${index}`}><strong title={item.path}>{item.path.replace(/\\/g,'/').split('/').pop()}</strong><span>{item.source_width} × {item.source_height} → {item.resized_width} × {item.resized_height}</span>{plan.image_fit?.mode==='crop' && item.cropped_pixels>0 && <small>{text(`裁去：上 ${item.top} · 下 ${item.resized_height-item.bottom} · 左 ${item.left} · 右 ${item.resized_width-item.right} px`,`Trim: top ${item.top} · bottom ${item.resized_height-item.bottom} · left ${item.left} · right ${item.resized_width-item.right} px`)}</small>}<small>{text('训练画布','Training canvas')} {item.width} × {item.height} · {item.cropped_pixels ? text(`裁切 ${item.cropped_pixels} 像素`,`Crops ${item.cropped_pixels} pixels`) : text('无裁切','No cropping')}</small></div>)}{plan.image_fit.truncated && <p>{text('显示前 100 种图片与尺寸组合。','Showing the first 100 image-size pairs.')}</p>}</div></details>}
       </div>}
       <div className="estimate-block"><h4>{text('执行估算', 'Execution estimate')}</h4><dl>
         {plan?.distributed && plan.distributed.world_size > 1 && <>

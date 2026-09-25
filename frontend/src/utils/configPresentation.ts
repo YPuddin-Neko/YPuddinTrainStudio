@@ -12,7 +12,7 @@ const labels: Record<string, string> = {
   'training.mode': '训练方式', 'training.train_backbone': '训练主模型（UNet / DiT）', 'training.train_text_encoder': '训练文本编码器', 'training.resume_weights': '全量模型起始权重',
   'model.vae_path': 'VAE', 'model.tokenizer_path': '分词器目录', 'model.dtype': '底模加载精度', 'model.attention': '注意力后端',
   'dataset.sources': '训练数据源', 'dataset.resolutions': '训练分辨率', 'dataset.aspect_ratio_limit': '最大长宽比',
-  'dataset.resolution_mode': '分辨率模式', 'dataset.image_fit': '图片适配方式', 'dataset.native_max_pixels': '图像面积上限（等效边长 px）',
+  'dataset.resolution_mode': '分辨率模式', 'dataset.image_fit': '图片适配方式', 'dataset.crop_anchor': '裁切保留位置', 'dataset.native_max_pixels': '图像面积上限（等效边长 px）',
   'dataset.native_max_side': '最长边上限（px）', 'dataset.native_overflow': '超出尺寸上限时',
   'dataset.area_tolerance': '面积容差', 'dataset.bucket_step': '分桶步长', 'dataset.bucket_no_upscale': '不放大小图',
   'dataset.batch_size': '批大小', 'dataset.flip': '随机水平翻转', 'dataset.masked_loss': '遮罩加权训练',
@@ -79,6 +79,7 @@ const labels: Record<string, string> = {
 };
 
 export function configFieldLabel(path: string, fallback: string, english = false) {
+  if (english && path === 'dataset.crop_anchor') return 'Crop anchor';
   if (english && path === 'adapter.resume_weights') return 'Weights to continue training';
   if (english && path === 'checkpoint.save_training_metadata') return 'Embed training parameters in LoRA';
   if (english && path === 'checkpoint.save_state_every_steps') return 'Recovery save interval';
@@ -159,6 +160,7 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
     'dataset.native_max_pixels': ['填单个边长，例如 1024 或 2048。\n1024：总面积最多 1024×1024，约 105 万像素。\n2048：总面积最多 2048×2048，约 419 万像素。\n例如填 1024 时，1024×1024、2048×512 都在面积范围内；2048×2048 则需要缩小。\n图片保留原有比例，小图不放大。最长边上限同时生效，模型对齐补边也计入面积。该值还限制一次计算的图像总面积，调大通常需要更多显存。', 'Enter one side length, such as 1024 or 2048.\n1024 allows up to 1024×1024 pixels, about 1.05 megapixels.\n2048 allows up to 2048×2048 pixels, about 4.19 megapixels.\nAt 1024, both 1024×1024 and 2048×512 fit the area limit; 2048×2048 needs downscaling.\nImages keep their aspect ratio; small images are not enlarged. The longest-side limit also applies, and alignment padding counts toward the area. This also limits the total image area processed in one forward pass; larger values generally need more GPU memory.'],
     'dataset.native_max_side': ['填宽或高允许达到的最大长度，单位为像素。例如 4096 表示宽、高都不得超过 4096。\n面积上限和最长边上限必须同时满足，以先触及的限制为准。面积填 1024、最长边填 4096 时，2048×2048 的图片仍会因面积超限而缩小。\n想保留原图尺寸，两个上限都需要容纳原图及模型对齐补边。', 'Enter the maximum allowed width or height in pixels. 4096 means neither dimension may exceed 4096.\nBoth the area and longest-side limits must be satisfied; the tighter limit determines the size. An area setting of 1024 still downscales a 2048×2048 image even if the longest-side limit is 4096.\nTo retain the original size, both limits must accommodate the image and any model-alignment padding.'],
     'checkpoint.save_state_every_steps': ['选择 Step 按参数更新次数保存，选择 Epoch 按完整训练轮数保存。例如 100 Step 为每 100 步保存，2 Epoch 为每完成 2 轮保存。默认每 100 Step 保存；关闭开关可停用定期保存。轮中达到最大步数不算完成一轮。暂停时仍会保存当前恢复点；意外退出只能从最近一次成功保存的位置继续。', 'Choose Step for optimizer updates or Epoch for completed dataset passes. For example, 100 Step saves every 100 updates; 2 Epoch saves after every two complete epochs. Defaults to 100 Step; turn off the switch to disable periodic saving. Reaching the step limit partway through an epoch does not complete it. Pausing still saves a recovery point; crashes can only recover the last successful save.'],
+    'dataset.crop_anchor': ['选择裁切后要保留的位置。上中贴住顶部，多余部分从下方裁掉，可避免居中裁切削去头部；左右位置同理。仅裁掉超出训练尺寸的部分，图片与遮罩保持对齐。分桶和原生尺寸模式均适用，保留完整画面时不使用此设置。', 'Choose the part of the image to retain. Top center keeps the top edge and removes excess from the bottom, helping retain heads; left and right work similarly. Only the area outside the training dimensions is removed, and masks stay aligned. Applies to bucket and native cropping; unused when preserving the whole image.'],
     'dataset.resolution_mode': ['Bucket 将图片按长宽比分组，使用下方训练分辨率设定目标面积。Native 按原图尺寸训练，并对齐模型要求的尺寸倍数；超出面积或单边上限时，按所选方式等比缩小或报错。', 'Bucket groups images by aspect ratio at the target areas set below. Native uses original dimensions aligned to the model’s required multiples; images exceeding the area or side limit are scaled down or rejected according to the overflow setting.'],
     'checkpoint.save_training_metadata': ['默认关闭。开启后，在导出的 LoRA 文件中记录学习率、优化器、分辨率、训练步数等参数，便于他人查看配方；适用于 LoRA 和 LoKr，也包含 EMA 权重。不会写入本机目录、图片标签、提示词或访问密钥。权重配方不包含优化器状态，不能代替完整恢复点。', 'Off by default. Embeds learning rate, optimizer, resolution, training steps and other recipe parameters in exported LoRA and LoKr files, including EMA weights. Local directories, image captions, prompts and access tokens are excluded. The recipe does not contain optimizer state and cannot replace a full recovery point.'],
     'dataset.resolutions': ['单个分辨率填 1024；多个用逗号或空格分隔，如 1024, 1536。填写正整数边长，不写 1024×1024。1024 表示每桶约 1024×1024 像素；每张图会在每个基准分辨率各训练一次，增加总样本和步数。', 'Enter one size as 1024, or separate multiple sizes with commas or spaces, e.g. 1024, 1536. Use positive integer side lengths, not 1024×1024. A base of 1024 gives roughly 1024×1024 pixels per bucket. Each image trains at every base resolution, increasing samples and steps.'],
@@ -184,8 +186,20 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
   return help[path]?.[english ? 1 : 0] || (english && path.startsWith('optimizer.') ? optimizerEnglishHelp[path.slice(10)] : undefined) || FIELD_HELP[path]?.[english ? 1 : 0] || fallback;
 }
 
-export function configFieldHint(path: string, english = false, optimizerType?: string, scheduleFree = false, dataset?: {resolution_mode?:string;native_overflow?:string}) {
+export function configFieldHint(path: string, english = false, optimizerType?: string, scheduleFree = false, dataset?: {resolution_mode?:string;native_overflow?:string;crop_anchor?:string}) {
+  const cropHints: Record<string,[string,string]> = {
+    top_left:['保留左上方，从右侧和下方裁掉多余部分。','Keep the top left; trim excess from the right and bottom.'],
+    top:['保留顶部，从下方裁掉多余部分。','Keep the top; trim excess from the bottom.'],
+    top_right:['保留右上方，从左侧和下方裁掉多余部分。','Keep the top right; trim excess from the left and bottom.'],
+    left:['保留左侧，从右侧裁掉多余部分。','Keep the left edge; trim excess from the right.'],
+    center:['从四周均匀裁切，保留画面中央。','Trim evenly around the edges, keeping the center.'],
+    right:['保留右侧，从左侧裁掉多余部分。','Keep the right edge; trim excess from the left.'],
+    bottom_left:['保留左下方，从右侧和上方裁掉多余部分。','Keep the bottom left; trim excess from the right and top.'],
+    bottom:['保留底部，从上方裁掉多余部分。','Keep the bottom; trim excess from the top.'],
+    bottom_right:['保留右下方，从左侧和上方裁掉多余部分。','Keep the bottom right; trim excess from the left and top.'],
+  };
   const dynamic: Record<string, [string, string]> = {
+    'dataset.crop_anchor': cropHints[dataset?.crop_anchor || 'center'],
     'dataset.resolution_mode': dataset?.resolution_mode === 'native'
       ? dataset.native_overflow === 'error'
         ? ['使用原图尺寸；超过下方上限时停止并报错。', 'Uses original image sizes; stops with an error if a limit below is exceeded.']
@@ -249,6 +263,7 @@ export function configOptionLabel(path: string, option: string, english = false)
     'optimizer.type': {adamw:['AdamW','AdamW'],adam:['Adam','Adam'],sgd:['SGD','SGD'],adamw8bit:['AdamW 8-bit','AdamW 8-bit'],lion:['Lion','Lion'],lion8bit:['Lion 8-bit','Lion 8-bit'],prodigy:['Prodigy','Prodigy'],prodigy_plus_sf:['Prodigy Plus Schedule-Free','Prodigy Plus Schedule-Free'],automagic:['Automagic','Automagic'],adafactor:['Adafactor','Adafactor'],came:['CAME','CAME'],adamw_sf:['AdamW Schedule-Free','AdamW Schedule-Free']},
     'dataset.resolution_mode': { bucket: ['按设定分辨率训练', 'Bucket'], native: ['按原图尺寸训练', 'Native'] },
     'dataset.text_encoding': {auto:['自动','Auto'],online:['每步编码文本','Online'],cached:['训练前缓存文本特征','Cached']},
+    'dataset.crop_anchor': {top_left:['左上','Top left'],top:['上中','Top center'],top_right:['右上','Top right'],left:['左中','Middle left'],center:['居中','Center'],right:['右中','Middle right'],bottom_left:['左下','Bottom left'],bottom:['下中','Bottom center'],bottom_right:['右下','Bottom right']},
     'dataset.image_fit': { pad: ['保留完整画面', 'Pad'], crop: ['裁切填满', 'Crop'] },
     'dataset.native_overflow': { downscale: ['等比缩小到上限内', 'Downscale to fit limits'], error: ['报错并停止', 'Stop with an error'] },
   };

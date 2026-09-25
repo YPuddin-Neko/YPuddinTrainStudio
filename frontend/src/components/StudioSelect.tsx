@@ -18,6 +18,7 @@ interface Props {
   /** Trigger-only guidance. Keep real empty-value states (for example All or Off) in options. */
   placeholder?: string;
   searchable?: boolean;
+  optionColumns?: 1 | 3;
   'aria-invalid'?: React.AriaAttributes['aria-invalid'];
   'aria-label'?: string;
   'aria-labelledby'?: string;
@@ -26,8 +27,9 @@ interface Props {
 }
 
 /** A select-only combobox; focus stays on the trigger while its list is open. */
-export default function StudioSelect({ id, value, options, onValueChange, disabled, className = '', icon, triggerDescription, fallbackLabel, placeholder, searchable = false, ...aria }: Props) {
+export default function StudioSelect({ id, value, options, onValueChange, disabled, className = '', icon, triggerDescription, fallbackLabel, placeholder, searchable = false, optionColumns = 1, ...aria }: Props) {
   const text = useWorkspaceText();
+  const columns = searchable ? 1 : optionColumns;
   const generatedId = React.useId();
   const triggerId = id || `studio-select-${generatedId}`;
   const listId = `${triggerId}-options`;
@@ -65,10 +67,10 @@ export default function StudioSelect({ id, value, options, onValueChange, disabl
     const place = () => {
       const rect = trigger.current?.getBoundingClientRect();
       if (!rect) return;
-      const width = Math.min(Math.max(rect.width, 160), window.innerWidth - 16);
+      const width = Math.min(Math.max(rect.width, columns === 3 ? 360 : 160), window.innerWidth - 16);
       const below = window.innerHeight - rect.bottom - 12;
       const above = rect.top - 12;
-      const upwards = below < Math.min(options.length * 34 + 10, 240) && above > below;
+      const upwards = below < Math.min(Math.ceil(options.length / columns) * (columns === 3 ? 64 : 34) + 10, 240) && above > below;
       setPosition({ position: 'fixed', width, left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
         ...(upwards ? { bottom: window.innerHeight - rect.top + 5 } : { top: rect.bottom + 5 }),
         maxHeight: Math.max(40, Math.min(280, upwards ? above : below)) });
@@ -85,7 +87,7 @@ export default function StudioSelect({ id, value, options, onValueChange, disabl
       window.removeEventListener('scroll', place, true);
       document.removeEventListener('pointerdown', outside);
     };
-  }, [visible, options.length]);
+  }, [visible, options.length, columns]);
   React.useEffect(() => {
     if (visible) document.getElementById(`${listId}-${active}`)?.scrollIntoView?.({ block: 'nearest' });
   }, [active, visible, listId]);
@@ -99,10 +101,10 @@ export default function StudioSelect({ id, value, options, onValueChange, disabl
       if (visible) choose(active); else openList();
       return;
     }
-    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+    if (['ArrowDown', 'ArrowUp', 'Home', 'End', ...(columns > 1 ? ['ArrowLeft', 'ArrowRight'] : [])].includes(event.key)) {
       event.preventDefault();
       if (!visible) { openList(event.key === 'ArrowUp' || event.key === 'End', event.key === 'Home' || event.key === 'End'); return; }
-      const direction = event.key === 'ArrowUp' || event.key === 'End' ? -1 : 1;
+      const direction = event.key === 'ArrowUp' ? -columns : event.key === 'ArrowDown' ? columns : event.key === 'ArrowLeft' || event.key === 'End' ? -1 : 1;
       let index = event.key === 'Home' ? -1 : event.key === 'End' ? options.length : active;
       for (let count = 0; count < options.length; count += 1) {
         index = (index + direction + options.length) % options.length;
@@ -152,7 +154,7 @@ export default function StudioSelect({ id, value, options, onValueChange, disabl
       onClick={() => visible ? setOpen(false) : openList()} onKeyDown={keyDown} onBlur={event => { if (!list.current?.contains(event.relatedTarget)) setOpen(false); }}>
       {icon}<span className="studio-select-value">{triggerDescription ? <><span className="studio-select-title">{triggerLabel}</span><span className="studio-select-description">{triggerDescription}</span></> : triggerLabel}</span><ChevronDown size={13} className="studio-select-chevron" aria-hidden="true"/>
     </button>
-    {visible && createPortal(<div ref={list} id={searchable ? undefined : listId} role={searchable ? undefined : 'listbox'} className={`studio-select-menu${searchable ? ' studio-select-menu-searchable' : ''}`} style={position}
+    {visible && createPortal(<div ref={list} id={searchable ? undefined : listId} role={searchable ? undefined : 'listbox'} className={`studio-select-menu${searchable ? ' studio-select-menu-searchable' : ''}${columns === 3 ? ' studio-select-menu-grid' : ''}`} style={position}
       aria-label={searchable ? undefined : aria['aria-label']} aria-labelledby={searchable ? undefined : aria['aria-labelledby'] || (!aria['aria-label'] ? triggerId : undefined)}
       onBlur={event => {if (!event.currentTarget.contains(event.relatedTarget) && event.relatedTarget !== trigger.current) setOpen(false);}}
       onPointerDown={event => {if (!(event.target instanceof HTMLInputElement)) event.preventDefault();}}>

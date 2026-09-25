@@ -2626,11 +2626,18 @@ export interface components {
             resolution_mode: "bucket" | "native";
             /**
              * Image Fit
-             * @description 保留完整画面：等比缩放后补边，补边区域不计入直接损失，但仍作为模型输入。裁切填满尺寸：等比缩放至填满后中心裁剪。新项目默认保留完整画面；旧配置沿用原来的裁切设置。
+             * @description 保留完整画面：等比缩放后补边，补边区域不计入直接损失，但仍作为模型输入。裁切填满尺寸：等比缩放至填满后，按裁切保留位置裁剪。新项目默认保留完整画面；旧配置沿用原来的裁切设置。
              * @default crop
              * @enum {string}
              */
             image_fit: "crop" | "pad";
+            /**
+             * Crop Anchor
+             * @description 选择裁切时保留的位置。上中贴住原图顶部，从下方裁掉多余部分，适合保留头部；左右位置同理。原生尺寸与分桶裁切均生效，图片与遮罩使用相同位置。默认居中。
+             * @default center
+             * @enum {string}
+             */
+            crop_anchor: "top_left" | "top" | "top_right" | "left" | "center" | "right" | "bottom_left" | "bottom" | "bottom_right";
             /**
              * Native Max Pixels
              * @description 原生模式单图及一次计算的像素上限，1048576 = 1024²。不同尺寸分组计算后，按图片数累积梯度；显存占用还受模型和批量大小影响。
@@ -3678,6 +3685,11 @@ export interface components {
              * @enum {string}
              */
             mode: "crop" | "pad";
+            /**
+             * Crop Anchor
+             * @default center
+             */
+            crop_anchor: string;
             /** Padded Images */
             padded_images: number;
             /** Cropped Images */

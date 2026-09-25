@@ -17,7 +17,7 @@ from ypuddin.config import CaptionConfig, DatasetConfig, DatasetSourceConfig, Tr
 from ypuddin.config.schema import MAX_SIDE
 from ypuddin.models import LatentSpec
 
-from .buckets import BUCKET_POLICY, Bucket, BucketManager, fit_crop, fit_pad
+from .buckets import BUCKET_POLICY, Bucket, BucketManager, crop_offset, fit_crop, fit_pad
 from .cache import LatentCache, build_latent_cache
 from .caption_formats import effective_caption_extension, family_caption_formats, require_caption_format
 from .caption_json import StructuredCaption
@@ -62,6 +62,7 @@ class Item:
     native_scale: float | None = None
     image_fit: str = "crop"
     no_upscale: bool = False
+    crop_anchor: str = "center"
 
     @property
     def max_scale(self) -> float | None:
@@ -86,6 +87,8 @@ def item_latent_key(item: Item, fingerprint: str, flip: bool) -> str:
         rw = round(item.record.width * item.native_scale)
         rh = round(item.record.height * item.native_scale)
         fingerprint += f"|native-crop-v1:{rw}x{rh}"
+    if item.image_fit == "crop" and item.crop_anchor != "center":
+        fingerprint += f"|crop-anchor-v1:{item.crop_anchor}"
     return LatentCache.key(item.record.content_hash, item.bucket.width, item.bucket.height, fingerprint, flip)
 
 
@@ -99,11 +102,11 @@ def item_geometry(item: Item) -> dict[str, Any]:
         padding = w * h - rw * rh
     elif item.native_scale is not None:
         rw, rh = max(w, round(sw * item.native_scale)), max(h, round(sh * item.native_scale))
-        left, top = (rw - w) // 2, (rh - h) // 2
+        left, top = crop_offset(rw, rh, w, h, item.crop_anchor)
         right, bottom = left + w, top + h
         cropped = rw * rh - w * h
     else:
-        rw, rh, left, top, right, bottom = fit_crop(sw, sh, w, h)
+        rw, rh, left, top, right, bottom = fit_crop(sw, sh, w, h, anchor=item.crop_anchor)
         cropped = rw * rh - w * h
     return {
         "path": item.record.path,
@@ -224,6 +227,7 @@ def expand_items(
                         size.scale if size else None,
                         ds.image_fit,
                         ds.bucket_no_upscale,
+                        ds.crop_anchor,
                     )
                 )
     return items
@@ -320,9 +324,12 @@ class TrainDataset(Dataset):
             fitted = to_padded(im, item.bucket.width, item.bucket.height, max_scale=item.max_scale, flip=flip)
         else:
             fitted = (
-                to_bucket(im, item.bucket.width, item.bucket.height, flip=flip)
+                to_bucket(im, item.bucket.width, item.bucket.height, flip=flip, crop_anchor=item.crop_anchor)
                 if item.native_scale is None
-                else to_native(im, item.bucket.width, item.bucket.height, scale=item.native_scale, flip=flip)
+                else to_native(
+                    im, item.bucket.width, item.bucket.height,
+                    scale=item.native_scale, flip=flip, crop_anchor=item.crop_anchor,
+                )
             )
         px = pil_to_tensor(fitted)
         mask = None
@@ -343,6 +350,7 @@ class TrainDataset(Dataset):
                 image_fit=item.image_fit,
                 max_scale=item.max_scale,
                 source_size=(item.record.width, item.record.height),
+                crop_anchor=item.crop_anchor,
             )
         if item.image_fit == "pad":
             valid = valid_image_mask(
@@ -614,6 +622,7 @@ def build_data(
                     mode="json",
                     exclude={"sources", "cache_dir", "num_workers"}
                     | ({"image_fit"} if ds.image_fit == "crop" else set())
+                    | ({"crop_anchor"} if ds.crop_anchor == "center" or ds.image_fit == "pad" else set())
                     | (
                         {"resolution_mode", "native_max_pixels", "native_max_side", "native_overflow"}
                         if ds.resolution_mode == "bucket"
