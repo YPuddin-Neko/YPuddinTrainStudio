@@ -16165,6 +16165,28 @@
             ],
             "title": "Active Version Id"
           },
+          "active_version_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Version Name"
+          },
+          "active_version_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Version Number"
+          },
           "version_count": {
             "type": "integer",
             "title": "Version Count",
@@ -16177,6 +16199,27 @@
           },
           "stats": {
             "$ref": "#/components/schemas/ProjectStats"
+          },
+          "image_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Count"
+          },
+          "latest_job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectActivity"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "category": {
             "anyOf": [
@@ -16225,6 +16268,79 @@
           "stats"
         ],
         "title": "Project"
+      },
+      "ProjectActivity": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          },
+          "total_steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Steps"
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "status",
+          "created_at"
+        ],
+        "title": "ProjectActivity"
       },
       "ProjectBody": {
         "properties": {

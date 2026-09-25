@@ -438,6 +438,17 @@ class ProjectStats(_Out):
     artifacts: int
 
 
+class ProjectActivity(_Out):
+    id: str
+    name: str
+    status: str
+    step: int | None = None
+    total_steps: int | None = None
+    created_at: float
+    finished_at: float | None = None
+    error: str | None = None
+
+
 class Project(_Out):
     id: str
     name: str
@@ -447,9 +458,13 @@ class Project(_Out):
     updated_at: float
     dataset_ids: list[str]
     active_version_id: str | None = None
+    active_version_name: str | None = None
+    active_version_number: int | None = None
     version_count: int = 1
     layout_version: int = 1
     stats: ProjectStats
+    image_count: int | None = None
+    latest_job: ProjectActivity | None = None
     category: str | None = None
     cover_url: str | None = None
     active_family: str | None = None

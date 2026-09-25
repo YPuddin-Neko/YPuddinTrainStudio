@@ -5556,6 +5556,10 @@ export interface components {
             dataset_ids: string[];
             /** Active Version Id */
             active_version_id?: string | null;
+            /** Active Version Name */
+            active_version_name?: string | null;
+            /** Active Version Number */
+            active_version_number?: number | null;
             /**
              * Version Count
              * @default 1
@@ -5567,12 +5571,36 @@ export interface components {
              */
             layout_version: number;
             stats: components["schemas"]["ProjectStats"];
+            /** Image Count */
+            image_count?: number | null;
+            latest_job?: components["schemas"]["ProjectActivity"] | null;
             /** Category */
             category?: string | null;
             /** Cover Url */
             cover_url?: string | null;
             /** Active Family */
             active_family?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ProjectActivity */
+        ProjectActivity: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Status */
+            status: string;
+            /** Step */
+            step?: number | null;
+            /** Total Steps */
+            total_steps?: number | null;
+            /** Created At */
+            created_at: number;
+            /** Finished At */
+            finished_at?: number | null;
+            /** Error */
+            error?: string | null;
         } & {
             [key: string]: unknown;
         };

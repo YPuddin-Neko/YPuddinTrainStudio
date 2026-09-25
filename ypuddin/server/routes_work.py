@@ -99,23 +99,71 @@ def _category(value: Any) -> Any:
     return value or None
 
 
+def _training_images(datasets: list[dict[str, Any]]) -> int | None:
+    """Training images of the active version, or None while any source is not indexed."""
+    total = 0
+    for row in datasets:
+        if row["is_reg"]:
+            continue
+        stats = json.loads(row["stats_json"] or "{}")
+        if row["index_status"] != "ready" or not isinstance(stats.get("images"), int):
+            return None
+        total += stats["images"]
+    return total
+
+
+def _latest_training(c: ServiceContext, project_id: str) -> dict[str, Any] | None:
+    """The run a project card reports: an active one first, then waiting, then the newest."""
+    job = c.db.fetchone(
+        "SELECT id,name,status,progress_json,created_at,finished_at,error FROM jobs"
+        " WHERE project_id=? AND type='train' ORDER BY CASE"
+        " WHEN status IN ('running','pausing','cancelling') THEN 0 WHEN status='paused' THEN 1"
+        " WHEN status IN ('queued','scheduled') THEN 2 ELSE 3 END, created_at DESC, id DESC LIMIT 1",
+        (project_id,),
+    )
+    if not job:
+        return None
+    progress = json.loads(job["progress_json"] or "{}")
+    return {
+        "id": job["id"],
+        "name": job["name"],
+        "status": job["status"],
+        "step": progress.get("step"),
+        "total_steps": progress.get("total_steps"),
+        "created_at": job["created_at"],
+        "finished_at": job["finished_at"],
+        "error": job["error"],
+    }
+
+
 def _project_row(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
     from .family_config import version_family
 
-    ds = c.db.fetchall("SELECT id FROM datasets WHERE version_id=?", (r["active_version_id"],))
+    ds = c.db.fetchall(
+        "SELECT id,is_reg,stats_json,index_status FROM datasets WHERE version_id=?", (r["active_version_id"],)
+    )
     jobs = c.db.fetchone("SELECT COUNT(*) AS n FROM jobs WHERE project_id=?", (r["id"],))["n"]
     arts = c.db.fetchone("SELECT COUNT(*) AS n FROM artifacts WHERE project_id=?", (r["id"],))["n"]
+    version = (
+        c.db.fetchone("SELECT name,number FROM project_versions WHERE id=?", (r["active_version_id"],))
+        if r["active_version_id"]
+        else None
+    )
     return {
         **{key: value for key, value in r.items() if key != "cover_key"},
         "category": r.get("category"),
         "cover_url": cover_url(c, r),
         "active_family": version_family(c, c.resolve_version(r["id"], r["active_version_id"])),
+        "active_version_name": version["name"] if version else None,
+        "active_version_number": version["number"] if version else None,
         "archived": bool(r["archived"]),
         "dataset_ids": [d["id"] for d in ds],
+        "image_count": _training_images(ds),
         "version_count": c.db.fetchone(
             "SELECT count(*) n FROM project_versions WHERE project_id=?", (r["id"],)
         )["n"],
         "stats": {"jobs": jobs, "artifacts": arts},
+        "latest_job": _latest_training(c, r["id"]),
     }
 
 
