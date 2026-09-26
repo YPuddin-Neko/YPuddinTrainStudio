@@ -14,6 +14,8 @@ import { MODEL_PATH_FIELDS } from '../../utils/workspaceConfig';
 import { familyParameterOptions, modelAssetUnsupportedReason, modelFamilyWeights, trainingFamilyOptions } from '../../utils/trainingFamilies';
 import { managedValueLabel, normalizeOptimizerConfig, optimizerManagedReason, restoreOptimizerSelection, selectOptimizer } from '../../utils/optimizerCapabilities';
 import NumericControl from './NumericControl';
+import DecimalNumberInput from './DecimalNumberInput';
+import { scientificText } from '../../utils/numberText';
 import StudioSelect from '../../components/StudioSelect';
 import Switch from '../../components/Switch';
 import ConfigHelp from '../../components/ConfigHelp';
@@ -1122,8 +1124,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
             family.sampling?.shift != null ? String(family.sampling.shift) : t('sampling.shiftAuto');
         }
         control = (
-          <input
-            type="number"
+          <DecimalNumberInput
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:bg-slate-900 dark:border-slate-600"
             value={fieldValue ?? ''}
             min={numericMin}
@@ -1173,13 +1174,11 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const modelFile = (parentPath[0] === 'model' && key in MODEL_PATH_FIELDS) || ['training.resume_weights', 'adapter.resume_weights'].includes(fullPathKey);
     const wide = !modelFile && (['sources', 'rules', 'prompts', 'args', 'group_lr'].includes(key) || ui.control === 'path' || key.endsWith('_path') || key === 'output_dir' || fullPathKey === 'adapter.lr_scale');
     const booleanField = prop.type === 'boolean' || ui.control === 'switch';
-    if (!booleanField && !managedReason && React.isValidElement(control) && (typeof control.type === 'string' || control.type === StudioSelect)) {
+    if (!booleanField && !managedReason && React.isValidElement(control) && (typeof control.type === 'string' || control.type === StudioSelect || control.type === DecimalNumberInput)) {
       control = React.cloneElement(control as React.ReactElement<any>, {id: fieldId, 'aria-label': (control.props as any)['aria-label'] || fieldLabel, 'aria-invalid': !!errorItem});
     }
-    if (!managedReason && ['optimizer.lr', 'optimizer.min_lr', 'optimizer.max_lr', 'optimizer.d0'].includes(fullPathKey)) {
-      const scientific = typeof fieldValue === 'number' && Number.isFinite(fieldValue) ? fieldValue.toExponential().replace('e+', 'e') : '—';
-      control = <div className="config-scientific-input">{control}<output aria-label={`${fieldLabel} · ${english ? 'scientific notation' : '科学计数法'}`} title={`${scientific} · ${english ? 'The same value in scientific notation' : '同一数值的科学计数法'}`}>{scientific}</output></div>;
-    }
+    // Small values also read in scientific form beside the label, e.g. 0.0001 = 1e-4.
+    const scientific = !managedReason && (prop.type === 'number' || prop.anyOf?.some((variant: SchemaProperty) => variant.type === 'number')) && ui.control !== 'slider' && !percentage ? scientificText(fieldValue) : '';
     const scopeHelp = fullPathKey === 'adapter.preset' ? (english
       ? 'Selects which layers receive adapters. All linear layers widens this scope; LoKr Full controls how each adapter is parameterized. The two choices are independent and neither unfreezes the base model.'
       : '选择哪些层添加适配器。“全部线性层”扩大作用范围；LoKr 的 Full 决定每个适配器使用完整因子矩阵，两者可同时选择，都不会解冻底模。') : null;
@@ -1254,6 +1253,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           <label htmlFor={fieldId}>
             {fieldLabel}{weightMeta?.required === false && family?.name !== 'flux2' && <span className="config-field-label-note">{english ? ' (optional)' : '（可选）'}</span>}
             {ui.unit && !percentage && ui.control !== 'slider' && <span className="config-field-label-note"> ({ui.unit})</span>}
+            {scientific && <span className="config-field-badge" title={english ? 'The same value in scientific notation' : '同一数值的科学计数法'}><span className="sr-only">{english ? ', scientific notation ' : '，科学计数法 '}</span>{scientific}</span>}
           </label>
           <span className="config-field-reference">
             <code className="config-field-key" tabIndex={0} title={fullPathKey === 'checkpoint.save_state_every_steps' && value.checkpoint?.save_state_every_epochs != null ? 'checkpoint.save_state_every_epochs' : fullPathKey}>{fullPathKey === 'checkpoint.save_state_every_steps' && value.checkpoint?.save_state_every_epochs != null ? 'checkpoint.save_state_every_epochs' : fullPathKey}</code>

@@ -125,9 +125,7 @@
 .source-path-control { margin: 8px 0 12px; }
 .compact-schema .config-field .source-path-control > input { width: 0; flex: 1 1 0; }
 .source-settings-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); }
-.config-scientific-input { position: relative; min-width: 0; }
-.config-scientific-input > input { padding-right: 104px !important; }
-.config-scientific-input > output { position: absolute; right: 28px; top: 50%; transform: translateY(-50%); max-width: 72px; overflow: hidden; text-overflow: ellipsis; color: var(--studio-dim); font: 12px/20px ui-monospace, monospace; white-space: nowrap; }
+.config-field-badge { display: inline-flex; align-items: center; height: 18px; margin-left: 6px; padding: 0 7px; border: 1px solid color-mix(in srgb, var(--studio-accent) 30%, var(--studio-line)); border-radius: 999px; background: color-mix(in srgb, var(--studio-accent) 9%, var(--studio-panel)); color: var(--studio-accent); font: 500 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; vertical-align: 1px; white-space: nowrap; }
 .config-managed-value { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; min-height: 38px; padding: 7px 10px; border: 1px solid var(--studio-line); border-radius: 6px; background: var(--studio-muted); color: var(--studio-text); font-size: 13px; line-height: 22px; }
 .config-managed-value > output { min-width: 0; overflow-wrap: anywhere; }
 .config-managed-value > span { flex-shrink: 0; color: var(--studio-dim); font-size: 12px; }
