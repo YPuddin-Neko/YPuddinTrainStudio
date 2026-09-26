@@ -9,12 +9,12 @@ import type { JobMetrics, Settings } from '../../api/types';
 import { chartTitle, DEFAULT_METRIC_CHARTS, METRICS, type MetricChartSetting, type MetricKey } from '../../utils/metricCharts';
 import { shapeValidationSeries, smoothLoss } from '../../utils/metrics';
 import { useWorkspaceText } from '../../utils/workspaceText';
-import { metricChartBase, metricLabels } from './metricPresentation';
+import { axisTickLabels, layoutValueAxes, metricChartBase, metricLabels } from './metricPresentation';
 import './job-metrics.css';
 
 const EXTRA_COLORS = ['#f59e0b', '#22d3ee', '#fb7185', '#84cc16', '#e879f9', '#a78bfa'];
 const GROUP_NAMES: Record<string, string> = { dora: 'DoRA' };
-const AXIS_OFFSET = 56;
+const MIN_PLOT_WIDTH = 240;
 
 type Line = { unit: string; name: string; color: string; data: Array<[number, number | null]>; width?: number; symbols?: boolean };
 type Chart = { key: string; title: string; note?: string; option?: Record<string, unknown>; empty?: React.ReactNode };
@@ -126,20 +126,33 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
       }
       const units = [...new Set(lines.map(line => line.unit))];
       const base = metricChartBase(xAxisName, axisNames[units[0]] || units[0]);
-      // Units alternate left and right; further axes move outward.
+      // Units alternate left and right; further axes move outward past the labels of the axis inside them.
+      const placed = layoutValueAxes(units.map(unit => {
+        let low = Infinity, high = -Infinity;
+        for (const line of lines) {
+          if (line.unit !== unit) continue;
+          for (const [, value] of line.data) if (typeof value === 'number' && Number.isFinite(value)) { low = Math.min(low, value); high = Math.max(high, value); }
+        }
+        return { name: axisNames[unit] || unit, labels: axisTickLabels(low, high, unit === 'LR' && logRates) };
+      }));
       const axes = units.map((unit, index) => ({
-        ...base.yAxis, name: axisNames[unit] || unit, position: index % 2 ? 'right' as const : 'left' as const, offset: Math.floor(index / 2) * AXIS_OFFSET,
+        ...base.yAxis, name: axisNames[unit] || unit, position: index % 2 ? 'right' as const : 'left' as const, offset: placed.offsets[index],
         splitLine: { show: index === 0 }, ...(unit === 'LR' && logRates ? { type: 'log' as const, logBase: 10, scale: undefined } : {}),
       }));
-      const leftExtra = Math.ceil(units.length / 2) - 1, rightExtra = Math.max(0, Math.floor(units.length / 2) - 1);
       const option = {
         ...base,
-        grid: { ...base.grid, left: base.grid.left + leftExtra * AXIS_OFFSET, right: base.grid.right + rightExtra * AXIS_OFFSET },
+        grid: { ...base.grid, left: base.grid.left + placed.left, right: base.grid.right + placed.right },
         yAxis: axes.length === 1 ? axes[0] : axes,
         series: lines.map(line => ({
           name: line.name, type: 'line', showSymbol: !!line.symbols, sampling: 'lttb', data: line.data, yAxisIndex: units.indexOf(line.unit),
           lineStyle: { width: line.width ?? 1.5, color: line.color }, itemStyle: { color: line.color },
         })),
+        // A chart too narrow for every axis keeps one per side; the other lines keep their own scales and
+        // show their values in the tooltip.
+        ...(axes.length > 2 ? { media: [{
+          query: { maxWidth: Math.round(base.grid.left + base.grid.right + placed.width + MIN_PLOT_WIDTH) },
+          option: { grid: { left: base.grid.left, right: base.grid.right }, yAxis: axes.map((_, index) => index < 2 ? {} : { show: false }) },
+        }] } : {}),
       };
       const only = keys.length === 1 ? keys[0] : null;
       const driverless = keys.filter(key => key === 'gpu_power' || key === 'gpu_temp' || key === 'gpu_util').every(key => !plain[key]?.values?.some(value => typeof value === 'number'));
