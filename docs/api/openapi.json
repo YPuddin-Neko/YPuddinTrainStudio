@@ -8311,6 +8311,13 @@
             },
             "type": "array",
             "title": "Errors"
+          },
+          "advice": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigWarning"
+            },
+            "type": "array",
+            "title": "Advice"
           }
         },
         "additionalProperties": true,
@@ -8396,6 +8403,59 @@
           "msg": {
             "type": "string",
             "title": "Msg"
+          },
+          "loc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loc"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          },
+          "values": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Values"
+          },
+          "suggestion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggestion"
           }
         },
         "additionalProperties": true,

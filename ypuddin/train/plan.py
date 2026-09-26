@@ -23,6 +23,7 @@ from ypuddin.models import get_family
 from ypuddin.models.base import LatentSpec
 from ypuddin.runtime_profiles import current_profile
 
+from .advice import value_advice
 from .metal_compute import resolve_metal_attention_runtime, validate_metal_attention_resume
 
 DTYPE_BYTES = {"bf16": 2, "fp16": 2, "fp32": 4, "fp8_e4m3": 1, "fp8_e5m2": 1, "keep": 2, "auto": 2}
@@ -577,6 +578,7 @@ def plan(
         return {"ok": False, "errors": [{"loc": "device", "msg": str(e)}], "warnings": []}
     if device_type not in (None, "cpu", "mps", "cuda"):
         out["errors"].append({"loc": "device", "msg": "only cpu, mps and cuda execution are supported"})
+    out["warnings"].extend(value_advice(cfg, family.spec.latent.align))
     cfg, compute_policy = resolve_training_compute_config(cfg, device_type, current_profile())
     out["compute_policy"] = compute_policy
     metal_runtime = None

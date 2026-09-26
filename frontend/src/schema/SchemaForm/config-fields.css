@@ -72,6 +72,9 @@
 .compact-schema .config-field-error { font-size: 12px; line-height: 1.5; }
 .config-group-alert { display: flex; align-items: flex-start; gap: 8px; padding: 9px 11px; border: 1px solid var(--studio-danger-line); border-radius: 7px; background: color-mix(in srgb, var(--studio-danger) 6%, var(--studio-panel)); color: var(--studio-danger); font-size: 12px; line-height: 1.6; }
 .config-group-alert svg { flex: none; margin-top: 3px; }
+.config-field-notice { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin-top: 4px; color: #b45309; font-size: 12px; line-height: 1.5; }
+.dark .config-field-notice { color: #fbbf24; }
+.config-field-notice .ui-link { font-size: 12px; }
 .config-readonly-control { border: 0; margin: 0; padding: 0; min-width: 0; }
 
 /* Standalone switches align with adjacent inputs without reserving a hint row. */

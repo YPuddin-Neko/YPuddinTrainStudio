@@ -2,14 +2,23 @@ import {useEffect, useState} from 'react';
 import {apiClient} from '../../api/client';
 import type {components} from '../../api/generated';
 import Dialog from '../../components/Dialog';
-import {configFieldLabel} from '../../utils/configPresentation';
+import {configFieldLabel, presentValueAdvice} from '../../utils/configPresentation';
 import {formatApiError} from '../../utils/errors';
 import {useWorkspaceText} from '../../utils/workspaceText';
 
 type Result = components['schemas']['ConfigInspection'];
 const fieldKey = (field:Result['fields'][number]) => JSON.stringify(field.path);
+/** Replace one value at a dotted path such as sampling.prompts.0.width. */
+function withValue(config:Record<string,any>, loc:string, value:unknown) {
+  const next = structuredClone(config);
+  const keys = loc.split('.');
+  let node:any = next;
+  for (const key of keys.slice(0,-1)) node = node[/^\d+$/.test(key) ? Number(key) : key] ??= {};
+  node[keys[keys.length-1]] = value;
+  return next;
+}
 
-export default function ConfigInspection({config,onApply,onClose}: {config:Record<string,any>;onApply:(config:Record<string,any>)=>void;onClose:()=>void}) {
+export default function ConfigInspection({config,onApply,onChange,onClose}: {config:Record<string,any>;onApply:(config:Record<string,any>)=>void;onChange?:(config:Record<string,any>)=>void;onClose:()=>void}) {
   const text = useWorkspaceText();
   const encoded = JSON.stringify(config);
   const [result,setResult] = useState<{encoded:string;data:Result}|null>(null);
@@ -45,6 +54,13 @@ export default function ConfigInspection({config,onApply,onClose}: {config:Recor
             <input type="checkbox" checked={selected.has(fieldKey(field))} aria-label={text(`移除 ${field.loc}`,`Remove ${field.loc}`)} onChange={event=>setSelected(previous=>{const next=new Set(previous);if(event.target.checked)next.add(fieldKey(field));else next.delete(fieldKey(field));return next;})}/>
             <span>{label!==field.loc && <strong>{label}</strong>}<code>{field.loc}</code><small>{field.kind==='unknown'?text('当前版本不识别','Not recognized by this version'):text('当前条件下不使用','Inactive in this configuration')}</small><pre>{JSON.stringify(field.value,null,2)}</pre></span>
           </label>;})}</div></> : <p role="status">{text('没有可移除的参数。','No removable parameters.')}</p>}
+        {!!current.advice?.length && <div className="config-inspection-advice">
+          <strong>{text('以下取值会被取整','These values are rounded')}</strong>
+          {current.advice.map(item=>{const advice=presentValueAdvice(item,text('zh','en')==='en');return advice && <div className="config-inspection-advice-item" key={advice.loc}>
+            <p><code>{advice.loc}</code>{advice.msg}</p>
+            {advice.fix && <button type="button" className="ui-btn ui-btn-sm" onClick={()=>(onChange ?? onApply)(withValue(config,advice.loc,advice.fix!.value))}>{advice.fix.label}</button>}
+          </div>;})}
+        </div>}
         {!!current.errors.length && <div className="config-inspection-errors" role="alert"><strong>{text('以下参数需要修改取值','These parameter values need correction')}</strong>{current.errors.map((issue,index)=><p key={index}><code>{issue.loc}</code> {issue.msg}</p>)}</div>}
       </>}
       <footer><button type="button" className="ui-btn" onClick={onClose}>{text('关闭','Close')}</button><button type="button" className="ui-btn ui-btn-primary" disabled={!current || !selected.size} onClick={apply}>{text(`移除所选参数${selected.size?` (${selected.size})`:''}`,`Remove selected fields${selected.size?` (${selected.size})`:''}`)}</button></footer>

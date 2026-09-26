@@ -63,6 +63,13 @@ export interface ValidationError {
   msg: string;
 }
 
+/** A value the trainer accepts but rounds; `fix` replaces it with one that is used as written. */
+export interface FieldNotice {
+  loc: string;
+  msg: string;
+  fix?: { label: string; value: unknown };
+}
+
 export interface SourceRoleInfo {
   path: string;
   section: string;
@@ -86,6 +93,7 @@ interface SchemaFormProps {
   onChange: (newValue: Record<string, any>) => void;
   showAdvanced?: boolean;
   errors?: ValidationError[];
+  notices?: FieldNotice[];
   /** 当前模型族信息（GET /api/families），驱动 preset 下拉 / text_modes / weights 提示 / sampling 默认值 */
   family?: FamilyInfo;
   families?: FamilyInfo[];
@@ -750,6 +758,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   onChange: onValueChange,
   showAdvanced = false,
   errors = [],
+  notices = [],
   family,
   families,
   compact = false,
@@ -1220,6 +1229,10 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       {hint && <p id={managedReason ? `${fieldId}-managed-reason` : `${fieldId}-hint`} className="config-field-hint">{hint}</p>}
       {/* A reason Studio cannot phrase for this field stays in the preflight panel; the border still marks it. */}
       {errorItem?.msg && <p className="config-field-error">{errorItem.msg}</p>}
+      {!errorItem && notices.filter(notice => notice.loc === fullPathKey).map(notice => <p key={notice.msg} className="config-field-notice">
+        <span>{notice.msg}</span>
+        {notice.fix && !readOnly && <button type="button" className="ui-link" onClick={() => onChange(setNestedValue(value, path, notice.fix!.value))}>{notice.fix.label}</button>}
+      </p>)}
     </div>;
     const fieldProps = {id: `field-${fullPathKey}`, 'data-testid': `field-${fullPathKey}`, 'data-field-path': fullPathKey};
     const label = recoveryField ? (

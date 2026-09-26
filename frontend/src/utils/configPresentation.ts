@@ -314,6 +314,7 @@ export function presentConfigIssues(errors: Array<{loc?: unknown; msg?: unknown}
       else if (/greater than or equal to/i.test(detail)) message = `输入值应大于或等于 ${detail.split(/greater than or equal to/i)[1].trim()}`;
       else if (/greater than/i.test(detail)) message = `输入值应大于 ${detail.split(/greater than/i)[1].trim()}`;
       else if (/less than or equal to/i.test(detail)) message = `输入值应小于或等于 ${detail.split(/less than or equal to/i)[1].trim()}`;
+      else if (/bucket step (\d+) must be a multiple of align (\d+)/.test(detail)) { const [, step, align] = detail.match(/bucket step (\d+) must be a multiple of align (\d+)/)!; message = `分桶步长 ${step} 不是 ${align} 的倍数；当前模型要求 ${align} 的倍数，如 ${Math.max(Number(align), Math.round(Number(step) / Number(align)) * Number(align))}`; }
       else if (/requires? CUDA/i.test(detail)) message = '此选项需要 CUDA，请选择当前设备支持的配置';
       else if (/Extra inputs are not permitted/i.test(detail)) message = '当前版本不支持此参数，请检查导入的配置';
       else if (/valid (integer|number)/i.test(detail)) message = '请输入有效数字';
@@ -326,7 +327,45 @@ export function presentConfigIssues(errors: Array<{loc?: unknown; msg?: unknown}
   return issues.filter((issue, index) => issues.findIndex(item => item.path === issue.path && item.detail === issue.detail) === index);
 }
 
-export function presentPlanWarning(code: string, fallback: string, english = false) {
+type ValueAdvice = { code: string; msg: string; loc?: string | null; step?: number | null; values?: number[] | null; suggestion?: number | number[] | null };
+const ADVICE_FIELDS: Record<string, [string, string]> = {
+  'dataset.resolutions': ['训练分辨率', 'Training resolution'],
+  'dataset.native_max_side': ['最长边上限', 'Longest side limit'],
+  'sampling.width': ['预览宽度', 'Preview width'],
+  'sampling.height': ['预览高度', 'Preview height'],
+};
+
+/** A size the trainer rounds to the model's grid: `msg` names the field, `inline` sits under it; `fix` is the replacement. */
+export function presentValueAdvice(warning: ValueAdvice, english = false): { loc: string; msg: string; inline: string; fix?: { label: string; value: number | number[] } } | null {
+  if (!warning.loc || warning.step == null || !warning.values?.length || warning.suggestion == null) return null;
+  const loc = warning.loc;
+  const values = warning.values.join(', ');
+  const suggestion = Array.isArray(warning.suggestion) ? warning.suggestion.join(', ') : String(warning.suggestion);
+  const prompt = loc.match(/^sampling\.prompts\.(\d+)\.(width|height)$/);
+  const source = loc.match(/^dataset\.sources\.(\d+)\.resolutions$/);
+  const field = ADVICE_FIELDS[loc]?.[english ? 1 : 0]
+    ?? (prompt ? (english ? `Prompt ${Number(prompt[1]) + 1} ${prompt[2]}` : `第 ${Number(prompt[1]) + 1} 条提示词的${prompt[2] === 'width' ? '宽度' : '高度'}`)
+      : source ? (english ? `Source ${Number(source[1]) + 1} resolution` : `第 ${Number(source[1]) + 1} 个数据源的分辨率`) : loc);
+  const effect = warning.code === 'dataset.resolution_step'
+    ? (english ? `bucket sides snap to multiples of ${warning.step}, so training sizes differ from the value entered.` : `分桶边长会取整到 ${warning.step} 的倍数，实际训练尺寸与填写值不同。`)
+    : warning.code === 'dataset.native_side_step'
+      ? (english ? `sides actually stay within ${suggestion} px.` : `实际最长边不超过 ${suggestion} px。`)
+      : warning.code === 'sampling.size_step'
+        ? (english ? `previews are generated at ${suggestion} px.` : `预览会按 ${suggestion} px 生成。`)
+        : null;
+  if (!effect) return null;
+  const offGrid = english ? `${values} is not a multiple of ${warning.step}; ` : `${values} 不是 ${warning.step} 的倍数，`;
+  return {
+    loc,
+    msg: english ? `${field} ${offGrid}${effect}` : `${field} ${offGrid}${effect}`,
+    inline: english ? `${offGrid.charAt(0).toUpperCase()}${offGrid.slice(1)}${effect}` : `${offGrid}${effect}`,
+    fix: { label: english ? `Use ${suggestion}` : `改为 ${suggestion}`, value: warning.suggestion },
+  };
+}
+
+export function presentPlanWarning(code: string, fallback: string, english = false, warning?: ValueAdvice) {
+  const advice = warning && presentValueAdvice(warning, english);
+  if (advice) return advice.msg;
   if (english) return fallback;
   if (code === 'images.padding') {
     const count = fallback.match(/^(\d+) images/)?.[1];

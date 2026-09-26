@@ -2553,6 +2553,8 @@ export interface components {
             fields: components["schemas"]["ConfigInspectionField"][];
             /** Errors */
             errors: components["schemas"]["ConfigError"][];
+            /** Advice */
+            advice?: components["schemas"]["ConfigWarning"][];
         } & {
             [key: string]: unknown;
         };
@@ -2585,6 +2587,14 @@ export interface components {
             code: string;
             /** Msg */
             msg: string;
+            /** Loc */
+            loc?: string | null;
+            /** Step */
+            step?: number | null;
+            /** Values */
+            values?: number[] | null;
+            /** Suggestion */
+            suggestion?: number | number[] | null;
         } & {
             [key: string]: unknown;
         };

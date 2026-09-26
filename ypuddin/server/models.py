@@ -188,6 +188,12 @@ class ConfigError(_Out):
 class ConfigWarning(_Out):
     code: str
     msg: str
+    # Field-level advice: the field, the grid its value is rounded to, the values off
+    # that grid, and a replacement used exactly as written.
+    loc: str | None = None
+    step: int | None = None
+    values: list[int] | None = None
+    suggestion: int | list[int] | None = None
 
 
 class ValidateResult(_Out):
@@ -208,6 +214,7 @@ class ConfigInspectionField(_Out):
 class ConfigInspection(_Out):
     fields: list[ConfigInspectionField]
     errors: list[ConfigError]
+    advice: list[ConfigWarning] = Field(default_factory=list)
 
 
 class PlanBucketSource(_Out):

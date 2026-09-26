@@ -89,11 +89,19 @@ def inspect_config(raw: dict[str, Any]) -> dict[str, Any]:
                 walk(item, node["items"], [*path, index], clean[index])
 
     walk(raw, schema, [], cleaned)
-    errors = []
+    errors, advice = [], []
     try:
-        TrainConfig.model_validate(cleaned)
+        validated = TrainConfig.model_validate(cleaned)
     except ValidationError as exc:
         errors = [{"loc": ".".join(map(str, item["loc"])), "msg": item["msg"]} for item in exc.errors()]
+    else:
+        from ypuddin.models import get_family
+        from ypuddin.train.advice import value_advice
+
+        try:
+            advice = value_advice(validated, get_family(validated.model.family).spec.latent.align)
+        except KeyError:
+            advice = []  # Unknown families are reported by the plan.
     # Invalid values need correction, not deletion disguised as cleanup.
     fields = [
         field
@@ -104,4 +112,4 @@ def inspect_config(raw: dict[str, Any]) -> dict[str, Any]:
             for error in errors
         )
     ]
-    return {"fields": fields, "errors": errors}
+    return {"fields": fields, "errors": errors, "advice": advice}
