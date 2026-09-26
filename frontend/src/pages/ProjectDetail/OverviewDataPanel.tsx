@@ -24,6 +24,7 @@ type DatasetOverview = {
 };
 type Preview = DatasetImage & { source: string };
 const basename = (path: string) => path.split(/[\\/]/).filter(Boolean).pop()?.replace(/^(?:d_[0-9a-f]+-)+/i, '') || path;
+const TAG_LIMIT = 30;
 const ready = (row: OverviewDataset) => row.index_status === 'ready' && !!row.stats && !row.stats.error;
 
 export default function OverviewDataPanel({ datasets, workspaceUrl, projectId, versionId }: {
@@ -74,7 +75,7 @@ export default function OverviewDataPanel({ datasets, workspaceUrl, projectId, v
     }
     for (const item of entry.stats.ar_hist || []) ratios.set(item.ar, (ratios.get(item.ar) || 0) + item.count);
   }
-  const topTags = [...tags.values()].sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag)).slice(0, 10);
+  const topTags = [...tags.values()].sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag)).slice(0, TAG_LIMIT);
   const total = data.reduce((sum, entry) => sum + entry.stats.images, 0);
   const matching = data.reduce((sum, entry) => sum + entry.images.total, 0);
   // Round-robin sampling keeps a large first source from hiding the other sources.
@@ -120,8 +121,8 @@ export default function OverviewDataPanel({ datasets, workspaceUrl, projectId, v
           </section>
           <section className="overview-panel overview-tags"><div className="overview-panel-heading"><h3>{text('标签分布', 'Tag distribution')}</h3><Link className="ui-link" to={`${workspaceUrl}&data_step=captions${selection !== 'all' ? `&dataset=${encodeURIComponent(selection)}` : ''}`}>{text('编辑标签', 'Edit tags')}<ArrowRight size={13}/></Link></div>
             <p className="overview-tag-coverage">{captionCount} / {total} {text('张已标注', 'images captioned')} · {tags.size} {text('种标签', 'unique tags')}{invalidCount > 0 && ` · ${invalidCount} ${text('份标签读取失败', 'unreadable captions')}`}</p>
-            {topTags.length ? <ul className="overview-bars">{topTags.map(item => <li key={item.tag}><div><span title={item.tag}>{item.tag}</span><strong>{item.count}</strong></div><meter min={0} max={Math.max(1, ...topTags.map(tag => tag.count))} value={item.count} aria-label={item.tag}/></li>)}</ul> : <p className="overview-section-detail">{text('暂无可统计的标签词。自然语言描述可在标签页面查看。', 'No tag tokens to count. View natural-language captions on the caption page.')}</p>}
-            {tags.size > 10 && <p className="overview-section-detail">{text('显示频次最高的 10 个标签', 'Showing the 10 most frequent tags')}</p>}
+            {topTags.length ? <div className="overview-tag-scroll"><ul className="overview-bars">{topTags.map(item => <li key={item.tag}><div><span title={item.tag}>{item.tag}</span><strong>{item.count}</strong></div><meter min={0} max={Math.max(1, ...topTags.map(tag => tag.count))} value={item.count} aria-label={item.tag}/></li>)}</ul></div> : <p className="overview-section-detail">{text('暂无可统计的标签词。自然语言描述可在标签页面查看。', 'No tag tokens to count. View natural-language captions on the caption page.')}</p>}
+            {tags.size > TAG_LIMIT && <p className="overview-section-detail">{text(`显示频次最高的 ${TAG_LIMIT} 个标签`, `Showing the ${TAG_LIMIT} most frequent tags`)}</p>}
           </section>
         </div>
         <div className="overview-distribution-grid">{charts.map(chart => <section className="overview-panel" key={chart.title}><div className="overview-panel-heading"><h3>{chart.title}</h3>{chart.truncated && <span className="overview-section-detail">{text('最常见的 8 种尺寸', '8 most common sizes')}</span>}</div><ul className="overview-bars">{chart.items.map(([label, count]) => <li key={label}><div><span>{label}</span><strong>{count}</strong></div><meter min={0} max={Math.max(1, ...chart.items.map(item => item[1]))} value={count} aria-label={`${chart.title} ${label}`}/></li>)}</ul>{!chart.items.length && <p className="overview-section-detail">{text('暂无尺寸统计', 'No dimension statistics')}</p>}</section>)}</div>
