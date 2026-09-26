@@ -4344,6 +4344,31 @@ export interface components {
              */
             allow_tf32: boolean;
         };
+        /**
+         * MetricChartSetting
+         * @description One chart on the job page and the metrics it draws together.
+         */
+        MetricChartSetting: {
+            /** Id */
+            id: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /** Series */
+            series: components["schemas"]["MetricSeriesSetting"][];
+        };
+        /** MetricSeriesSetting */
+        MetricSeriesSetting: {
+            /**
+             * Metric
+             * @enum {string}
+             */
+            metric: "loss" | "loss_ema" | "lr" | "grad_norm" | "it_s" | "vram" | "gpu_power" | "gpu_temp" | "gpu_util" | "validation";
+            /** Color */
+            color: string;
+        };
         /** ModelAsset */
         ModelAsset: {
             /** Compatible Families */
@@ -6593,6 +6618,8 @@ export interface components {
              * @default 2.5
              */
             telemetry_interval: number;
+            /** Metric Charts */
+            metric_charts?: components["schemas"]["MetricChartSetting"][] | null;
         } & {
             [key: string]: unknown;
         };

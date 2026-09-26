@@ -113,11 +113,33 @@ class SettingsServer(_Out):
     open_browser: bool = True
 
 
+MetricKey = Literal[
+    "loss", "loss_ema", "lr", "grad_norm", "it_s", "vram", "gpu_power", "gpu_temp", "gpu_util", "validation"
+]
+
+
+class MetricSeriesSetting(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    metric: MetricKey
+    color: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
+
+
+class MetricChartSetting(BaseModel):
+    """One chart on the job page and the metrics it draws together."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
+    title: str = Field("", max_length=40)
+    series: list[MetricSeriesSetting] = Field(min_length=1, max_length=6)
+
+
 class SettingsUi(_Out):
     language: Literal["zh-CN", "en"]
     theme: Literal["light", "dark", "system"]
     # Seconds between hardware readings in the top bar and the queue.
     telemetry_interval: float = Field(2.5, ge=1, le=60)
+    # Job page charts in order; unset uses the built-in layout.
+    metric_charts: list[MetricChartSetting] | None = Field(None, max_length=16)
 
 
 class SettingsNetwork(BaseModel):

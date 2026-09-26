@@ -18,6 +18,7 @@ const JobDetail = React.lazy(() => import('./pages/JobDetail/JobDetail'));
 const Settings = React.lazy(() => import('./pages/Settings/Settings'));
 const EnvironmentSettings = React.lazy(() => import('./pages/Settings/EnvironmentSettings'));
 const Preferences = React.lazy(() => import('./pages/Settings/Preferences'));
+const PageSettings = React.lazy(() => import('./pages/Settings/PageSettings'));
 
 function LegacyOutputsRedirect() {
   const location = useLocation(); const params = new URLSearchParams(location.search);
@@ -30,7 +31,7 @@ function EnvironmentRoute() {
   return new URLSearchParams(location.search).get('tab') === 'artifacts' ? <LegacyOutputsRedirect/> : <EnvironmentSettings/>;
 }
 function settingsRoutes() {
-  return <Route path="settings" element={<Settings/>}><Route index element={<SettingsRedirect/>}/><Route path="environment" element={<EnvironmentRoute/>}/><Route path="preferences" element={<Preferences/>}/></Route>;
+  return <Route path="settings" element={<Settings/>}><Route index element={<SettingsRedirect/>}/><Route path="environment" element={<EnvironmentRoute/>}/><Route path="preferences" element={<Preferences/>}/><Route path="page" element={<PageSettings/>}/><Route path="charts" element={<PageSettings focus="charts"/>}/></Route>;
 }
 export default function AppRoutes() {
   const location = useLocation(); const navigate = useNavigate();

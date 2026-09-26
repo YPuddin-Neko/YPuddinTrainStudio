@@ -1,16 +1,23 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Activity, Thermometer } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import { Activity, Settings2, Thermometer } from 'lucide-react';
+import { apiClient } from '../../api/client';
 import { EChart } from '../../components/EChart';
 import { SlidingIndicator } from '../../components/motion';
-import type { JobMetrics } from '../../api/types';
+import type { JobMetrics, Settings } from '../../api/types';
+import { chartTitle, DEFAULT_METRIC_CHARTS, METRICS, type MetricChartSetting, type MetricKey } from '../../utils/metricCharts';
 import { shapeValidationSeries, smoothLoss } from '../../utils/metrics';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { metricChartBase, metricLabels } from './metricPresentation';
 import './job-metrics.css';
 
-const LR_COLORS = ['#a78bfa', '#f59e0b', '#22d3ee', '#fb7185', '#84cc16', '#e879f9'];
+const EXTRA_COLORS = ['#f59e0b', '#22d3ee', '#fb7185', '#84cc16', '#e879f9', '#a78bfa'];
 const GROUP_NAMES: Record<string, string> = { dora: 'DoRA' };
+const AXIS_OFFSET = 56;
+
+type Line = { unit: string; name: string; color: string; data: Array<[number, number | null]>; width?: number; symbols?: boolean };
+type Chart = { key: string; title: string; note?: string; option?: Record<string, unknown>; empty?: React.ReactNode };
 
 /**
  * The largest ratio between parameter groups at one step. Groups 100× apart (a DoRA or w2 group beside w1)
@@ -30,20 +37,33 @@ function groupSpread(groups: Array<Array<number | null>>): number {
   return spread;
 }
 
-type Chart = { key: string; title: string; note?: string; option?: Record<string, unknown>; empty?: React.ReactNode };
-
-function line(name: string, data: Array<[number, number | null]>, color: string, extra: Record<string, unknown> = {}) {
-  return { name, type: 'line', showSymbol: false, sampling: 'lttb', data, lineStyle: { width: 1.5, color }, itemStyle: { color }, ...extra };
+/** The job page's saved chart layout; the built-in one until settings answer or when none is saved. */
+function useChartLayout(): MetricChartSetting[] {
+  const [layout, setLayout] = React.useState<MetricChartSetting[]>(DEFAULT_METRIC_CHARTS);
+  React.useEffect(() => {
+    const controller = new AbortController();
+    const apply = (settings: Settings | undefined) => { const saved = settings?.ui?.metric_charts; setLayout(saved?.length ? saved : DEFAULT_METRIC_CHARTS); };
+    void apiClient.get<Settings>('/settings', { signal: controller.signal, silent: true })
+      .then(settings => { if (!controller.signal.aborted) apply(settings); })
+      .catch(() => { /* The built-in layout stays. */ });
+    // A layout saved while this page stays open (the settings dialog) applies at once.
+    const changed = (event: Event) => apply((event as CustomEvent<Settings>).detail);
+    window.addEventListener('studio.settings.changed', changed);
+    return () => { controller.abort(); window.removeEventListener('studio.settings.changed', changed); };
+  }, []);
+  return layout;
 }
 
-/** Training curves and GPU readings, two charts per row. */
+/** Training curves and GPU readings in the configured charts, two per row. */
 export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric }: {
   metrics: JobMetrics | null; stepsPerEpoch?: number | null; vramMetric?: string | null;
 }) {
   const { t, i18n } = useTranslation();
   const text = useWorkspaceText();
+  const location = useLocation();
   const chinese = (i18n.resolvedLanguage || i18n.language || '').startsWith('zh');
   const labels = React.useMemo(() => metricLabels(chinese), [chinese]);
+  const layout = useChartLayout();
   const [xAxisMode, setXAxisMode] = React.useState<'step' | 'epoch'>('step');
   const [emaAlpha, setEmaAlpha] = React.useState(0.9);
   const useEpoch = xAxisMode === 'epoch' && !!stepsPerEpoch;
@@ -57,75 +77,85 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric }: 
       const value = values?.[index];
       return [x, typeof value === 'number' ? value / scale : null];
     });
-    const chart = (yName: string, series: unknown[]) => ({ ...metricChartBase(xAxisName, yName), series });
-    const list: Chart[] = [
-      {
-        key: 'loss', title: labels.loss,
-        note: text('每步 Loss 是每个优化步的训练损失；平滑曲线按上方 EMA 系数计算，只影响显示，不改变训练。', 'Loss per step is the training loss of each optimizer step; the smoothed curve uses the EMA coefficient above and only changes the chart.'),
-        option: chart(labels.loss, [
-          line(labels.raw, points(metrics.loss), '#93c5fd', { lineStyle: { width: 1.2, color: '#93c5fd' } }),
-          line(labels.ema, smoothLoss(metrics.loss || [], emaAlpha).map((loss, index): [number, number | null] => [xs[index], loss]), '#2563eb', { lineStyle: { width: 2, color: '#2563eb' } }),
-        ]),
-      },
-      (() => {
-        const groups = Object.entries(metrics.lr || {});
-        const logScale = groupSpread(groups.map(([, values]) => values)) >= 100;
-        const option = chart(labels.lr, groups.map(([group, values], index) => line(`${labels.lr} · ${GROUP_NAMES[group] || group}`,
-          // A log axis has no zero: warmup's first steps are left out of the line.
-          points(logScale ? values.map(value => typeof value === 'number' && value > 0 ? value : null) : values), LR_COLORS[index % LR_COLORS.length])));
-        const base = metricChartBase(xAxisName, labels.lr);
-        return {
-          key: 'lr', title: labels.lr,
-          note: logScale
-            ? text('每条线代表一个参数组。各组学习率相差 100 倍以上，纵轴用对数刻度，DoRA 这类很小的值也能看清。', 'Each line is one parameter group. The groups differ by 100× or more, so the axis is logarithmic and small rates such as DoRA stay visible.')
-            : text('每条线代表一个参数组；LoKr 的 w1 / w2 可设置不同学习率。', 'Each line is one parameter group; LoKr w1 / w2 can use different learning rates.'),
-          option: logScale ? { ...option, yAxis: { type: 'log', logBase: 10, name: base.yAxis.name, axisLabel: base.yAxis.axisLabel } } : option,
-        };
-      })(),
-      {
-        key: 'gradient', title: labels.gradient,
-        note: text('每步梯度的大小，用于观察更新是否稳定。', 'Gradient magnitude per step, to inspect update stability.'),
-        option: chart(labels.gradient, [line(labels.gradient, points(metrics.grad_norm), '#d97706')]),
-      },
-    ];
-    if (metrics.validation?.length) {
-      const { series } = shapeValidationSeries(metrics.validation);
-      list.push({
-        key: 'validation', title: t('job.validationTitle'),
-        option: chart(labels.validation, series.map((item, index) => {
-          const color = item.name === 'mean' ? '#f43f5e' : LR_COLORS[index % LR_COLORS.length];
-          return {
-            name: item.name === 'mean' ? labels.mean : `${labels.timestep} ${item.name}`, type: 'line', showSymbol: true,
-            data: item.data.map(([step, loss]) => [useEpoch && stepsPerEpoch ? step / stepsPerEpoch : step, loss]),
-            lineStyle: { width: item.name === 'mean' ? 2.5 : 1.2, color }, itemStyle: { color },
-          };
-        })),
-      });
-    }
     const memoryName = chartVramMetric === 'current_allocated' ? `${t('job.currentTrainingAllocated')} (GB)` : chartVramMetric === 'peak_allocated' ? `${t('job.vramPeak')} (GB)` : labels.memory;
-    list.push(
-      { key: 'speed', title: labels.speed, note: text('每秒完成的优化步数。', 'Optimizer steps completed per second.'), option: chart('it/s', [line(labels.speed, points(metrics.it_s), '#10b981')]) },
-      {
-        key: 'memory', title: memoryName,
-        note: chartVramMetric === 'current_allocated' ? text('训练进程当前占用的显存。', 'Memory currently allocated by the training process.') : text('训练进程到这一步为止的显存峰值。', 'Peak memory allocated by the training process so far.'),
-        option: chart('GB', [line(memoryName, points(metrics.vram_mb, 1024), '#ec4899')]),
-      },
-    );
-    const gpu = [
-      { key: 'power', title: labels.power, values: metrics.gpu_power_w, unit: 'W', color: '#8b5cf6', note: text('显卡驱动报告的整卡功耗。', 'Board power reported by the GPU driver.') },
-      { key: 'temperature', title: labels.temperature, values: metrics.gpu_temp_c, unit: '°C', color: '#ef4444', note: text('显卡核心温度。', 'GPU core temperature.') },
-      { key: 'utilization', title: labels.utilization, values: metrics.gpu_util_pct, unit: '%', color: '#0ea5e9', note: text('显卡计算单元的忙碌比例；持续偏低通常说明在等待数据或内存交换。', 'Share of time the GPU was busy; staying low usually means it waits for data or memory transfers.') },
-    ].filter(item => item.values?.length);
-    if (gpu.length) {
-      for (const item of gpu) list.push({ key: item.key, title: item.title, note: item.note, option: chart(item.unit, [line(item.title, points(item.values), item.color)]) });
-    } else {
-      list.push({
-        key: 'gpu', title: text('GPU 功率与温度', 'GPU power and temperature'),
-        empty: text('此任务没有记录显卡驱动读数。NVIDIA 显卡训练时会记录功率、温度和利用率；更早的任务没有这些数据。', 'This job has no GPU driver readings. Training on an NVIDIA GPU records power, temperature and utilization; earlier jobs have none.'),
-      });
+    const plain: Partial<Record<MetricKey, { name: string; values: Array<number | null | undefined> | undefined; scale?: number }>> = {
+      loss: { name: labels.raw, values: metrics.loss },
+      loss_ema: { name: labels.ema, values: smoothLoss(metrics.loss || [], emaAlpha) },
+      grad_norm: { name: labels.gradient, values: metrics.grad_norm },
+      it_s: { name: labels.speed, values: metrics.it_s },
+      vram: { name: memoryName, values: metrics.vram_mb, scale: 1024 },
+      gpu_power: { name: labels.power, values: metrics.gpu_power_w },
+      gpu_temp: { name: labels.temperature, values: metrics.gpu_temp_c },
+      gpu_util: { name: labels.utilization, values: metrics.gpu_util_pct },
+    };
+    const axisNames: Record<string, string> = { Loss: labels.loss, LR: labels.lr, Norm: labels.gradient };
+    const list: Chart[] = [];
+    for (const chart of layout) {
+      const lines: Line[] = [];
+      let logRates = false;
+      for (const item of chart.series) {
+        if (item.metric === 'lr') {
+          const groups = Object.entries(metrics.lr || {});
+          logRates = groupSpread(groups.map(([, values]) => values)) >= 100;
+          groups.forEach(([group, values], index) => lines.push({
+            unit: 'LR', name: `${labels.lr} · ${GROUP_NAMES[group] || group}`, color: index ? EXTRA_COLORS[(index - 1) % EXTRA_COLORS.length] : item.color,
+            // A log axis has no zero: warmup's first steps are left out of the line.
+            data: points(logRates ? values.map(value => typeof value === 'number' && value > 0 ? value : null) : values),
+          }));
+        } else if (item.metric === 'validation') {
+          if (!metrics.validation?.length) continue;
+          shapeValidationSeries(metrics.validation).series.forEach((line, index) => lines.push({
+            unit: 'Loss', name: line.name === 'mean' ? labels.mean : `${labels.timestep} ${line.name}`,
+            color: line.name === 'mean' ? item.color : EXTRA_COLORS[index % EXTRA_COLORS.length], width: line.name === 'mean' ? 2.5 : 1.2, symbols: true,
+            data: line.data.map(([step, loss]): [number, number | null] => [useEpoch && stepsPerEpoch ? step / stepsPerEpoch : step, loss]),
+          }));
+        } else {
+          const source = plain[item.metric];
+          if (!source?.values?.some(value => typeof value === 'number')) continue;
+          lines.push({ unit: METRICS[item.metric].unit, name: source.name, color: item.color, data: points(source.values, source.scale), width: item.metric === 'loss' ? 1.2 : item.metric === 'loss_ema' ? 2 : undefined });
+        }
+      }
+      const title = chartTitle(chart, !chinese);
+      const keys = chart.series.map(item => item.metric);
+      if (!lines.length) {
+        // Without driver readings a GPU chart explains why; other empty charts are left out.
+        if (keys.some(key => METRICS[key].gpu)) list.push({ key: chart.id, title, empty: text('此任务没有记录这些显卡读数。NVIDIA 显卡训练时会记录功率、温度和利用率；更早的任务没有这些数据。', 'This job has none of these GPU readings. Training on an NVIDIA GPU records power, temperature and utilization; earlier jobs have none.') });
+        continue;
+      }
+      const units = [...new Set(lines.map(line => line.unit))];
+      const base = metricChartBase(xAxisName, axisNames[units[0]] || units[0]);
+      // Units alternate left and right; further axes move outward.
+      const axes = units.map((unit, index) => ({
+        ...base.yAxis, name: axisNames[unit] || unit, position: index % 2 ? 'right' as const : 'left' as const, offset: Math.floor(index / 2) * AXIS_OFFSET,
+        splitLine: { show: index === 0 }, ...(unit === 'LR' && logRates ? { type: 'log' as const, logBase: 10, scale: undefined } : {}),
+      }));
+      const leftExtra = Math.ceil(units.length / 2) - 1, rightExtra = Math.max(0, Math.floor(units.length / 2) - 1);
+      const option = {
+        ...base,
+        grid: { ...base.grid, left: base.grid.left + leftExtra * AXIS_OFFSET, right: base.grid.right + rightExtra * AXIS_OFFSET },
+        yAxis: axes.length === 1 ? axes[0] : axes,
+        series: lines.map(line => ({
+          name: line.name, type: 'line', showSymbol: !!line.symbols, sampling: 'lttb', data: line.data, yAxisIndex: units.indexOf(line.unit),
+          lineStyle: { width: line.width ?? 1.5, color: line.color }, itemStyle: { color: line.color },
+        })),
+      };
+      const only = keys.length === 1 ? keys[0] : null;
+      const driverless = keys.filter(key => key === 'gpu_power' || key === 'gpu_temp' || key === 'gpu_util').every(key => !plain[key]?.values?.some(value => typeof value === 'number'));
+      const missingDriver = driverless && keys.some(key => key === 'gpu_power' || key === 'gpu_temp' || key === 'gpu_util');
+      const note = missingDriver ? text('这个任务没有显卡功率、温度和利用率读数，只有 NVIDIA 显卡训练时会记录。', 'This job has no GPU power, temperature or load readings; only NVIDIA GPUs record them.')
+        : keys.every(key => key === 'loss' || key === 'loss_ema')
+        ? text('每步 Loss 是每个优化步的训练损失；平滑曲线按上方 EMA 系数计算，只影响显示，不改变训练。', 'Loss per step is the training loss of each optimizer step; the smoothed curve uses the EMA coefficient above and only changes the chart.')
+        : only === 'lr' ? (logRates
+          ? text('每条线代表一个参数组。各组学习率相差 100 倍以上，纵轴用对数刻度，DoRA 这类很小的值也能看清。', 'Each line is one parameter group. The groups differ by 100× or more, so the axis is logarithmic and small rates such as DoRA stay visible.')
+          : text('每条线代表一个参数组；LoKr 的 w1 / w2 可设置不同学习率。', 'Each line is one parameter group; LoKr w1 / w2 can use different learning rates.'))
+          : only === 'grad_norm' ? text('每步梯度的大小，用于观察更新是否稳定。', 'Gradient magnitude per step, to inspect update stability.')
+            : only === 'it_s' ? text('每秒完成的优化步数。', 'Optimizer steps completed per second.')
+              : only === 'vram' ? (chartVramMetric === 'current_allocated' ? text('训练进程当前占用的显存。', 'Memory currently allocated by the training process.') : text('训练进程到这一步为止的显存峰值。', 'Peak memory allocated by the training process so far.'))
+                : units.length > 1 ? text('单位不同的指标各用一条纵轴，颜色与图例一致。', 'Metrics with different units each use their own axis, in the legend’s colors.') : undefined;
+      list.push({ key: chart.id, title, note, option });
     }
     return list;
-  }, [metrics, xs, xAxisName, labels, emaAlpha, chartVramMetric, useEpoch, stepsPerEpoch, t, text]);
+  }, [metrics, xs, xAxisName, labels, emaAlpha, chartVramMetric, useEpoch, stepsPerEpoch, layout, chinese, t, text]);
 
   return <div className="job-metrics">
     <div className="job-metrics-toolbar">
@@ -133,7 +163,10 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric }: 
         <button type="button" aria-pressed={xAxisMode === 'step'} onClick={() => setXAxisMode('step')}>{t('job.step')}</button>
         <button type="button" aria-pressed={xAxisMode === 'epoch'} onClick={() => setXAxisMode('epoch')} disabled={!stepsPerEpoch} title={!stepsPerEpoch ? t('job.epochUnavailable') : undefined}>{t('job.epoch')}</button><SlidingIndicator className="ui-segmented-thumb"/>
       </div>
-      <label className="job-metrics-smoothing">{text('平滑 EMA 系数', 'Smoothing EMA coefficient')}<input aria-label={text('平滑 EMA 系数', 'Smoothing EMA coefficient')} type="range" min="0" max="0.99" step="0.01" value={emaAlpha} onChange={event => setEmaAlpha(Number(event.target.value))}/><output>{emaAlpha.toFixed(2)}</output></label>
+      <div className="job-metrics-tools">
+        <label className="job-metrics-smoothing">{text('平滑 EMA 系数', 'Smoothing EMA coefficient')}<input aria-label={text('平滑 EMA 系数', 'Smoothing EMA coefficient')} type="range" min="0" max="0.99" step="0.01" value={emaAlpha} onChange={event => setEmaAlpha(Number(event.target.value))}/><output>{emaAlpha.toFixed(2)}</output></label>
+        <Link className="ui-btn ui-btn-sm ui-btn-quiet" to="/settings/charts" state={{ backgroundLocation: location }}><Settings2 size={14}/>{text('自定义图表', 'Customize charts')}</Link>
+      </div>
     </div>
     {!charts.length ? <div className="job-metrics-empty"><Activity size={30} aria-hidden="true"/><p>{t('job.noMetrics', '暂无训练指标')}</p><span>{text('等待训练步数记录。', 'Waiting for recorded training steps.')}</span></div>
       : <div className="job-metrics-grid">{charts.map((chart, index) => <section key={chart.key} className={`job-metrics-chart${index === charts.length - 1 && charts.length % 2 ? ' is-wide' : ''}`} aria-label={chart.title}>

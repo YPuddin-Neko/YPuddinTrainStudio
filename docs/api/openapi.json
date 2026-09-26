@@ -13421,6 +13421,72 @@
         "type": "object",
         "title": "MemoryConfig"
       },
+      "MetricChartSetting": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 40,
+            "title": "Title",
+            "default": ""
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/MetricSeriesSetting"
+            },
+            "type": "array",
+            "maxItems": 6,
+            "minItems": 1,
+            "title": "Series"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "series"
+        ],
+        "title": "MetricChartSetting",
+        "description": "One chart on the job page and the metrics it draws together."
+      },
+      "MetricSeriesSetting": {
+        "properties": {
+          "metric": {
+            "type": "string",
+            "enum": [
+              "loss",
+              "loss_ema",
+              "lr",
+              "grad_norm",
+              "it_s",
+              "vram",
+              "gpu_power",
+              "gpu_temp",
+              "gpu_util",
+              "validation"
+            ],
+            "title": "Metric"
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "title": "Color"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "metric",
+          "color"
+        ],
+        "title": "MetricSeriesSetting"
+      },
       "ModelAsset": {
         "properties": {
           "compatible_families": {
@@ -19082,6 +19148,21 @@
             "minimum": 1.0,
             "title": "Telemetry Interval",
             "default": 2.5
+          },
+          "metric_charts": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MetricChartSetting"
+                },
+                "type": "array",
+                "maxItems": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Charts"
           }
         },
         "additionalProperties": true,

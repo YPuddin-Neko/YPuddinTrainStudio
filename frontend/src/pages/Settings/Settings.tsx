@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Cpu, HardDrive, FolderCog, Palette, KeyRound, Download } from 'lucide-react';
+import { Cpu, HardDrive, FolderCog, Palette, KeyRound, Download, Settings as SettingsIcon } from 'lucide-react';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { SlidingIndicator } from '../../components/motion';
 import { useEnterAnimation } from '../../utils/motion';
@@ -11,7 +11,7 @@ export default function Settings() {
   const location = useLocation();
   const navigate = useNavigate();
   const params = new URLSearchParams(location.search);
-  const selected = location.pathname.endsWith('/preferences') ? params.get('section') === 'downloads' ? 'downloads' : params.get('section') === 'interface' ? 'interface' : 'storage' : params.get('tab') === 'credentials' ? 'credentials' : params.get('tab') === 'models' ? 'models' : 'runtime';
+  const selected = location.pathname.endsWith('/page') || location.pathname.endsWith('/charts') ? 'page' : location.pathname.endsWith('/preferences') ? params.get('section') === 'downloads' ? 'downloads' : params.get('section') === 'interface' ? 'interface' : 'storage' : params.get('tab') === 'credentials' ? 'credentials' : params.get('tab') === 'models' ? 'models' : 'runtime';
   const scroll = React.useRef<HTMLDivElement>(null);
   const panel = useEnterAnimation<HTMLDivElement>(selected, { skipFirst: true });
   React.useEffect(() => { if (scroll.current) scroll.current.scrollTop = 0; }, [selected]);
@@ -21,9 +21,11 @@ export default function Settings() {
     { id: 'credentials', label: text('访问密钥', 'Access keys'), Icon: KeyRound },
     { id: 'downloads', label: text('软件下载源', 'Package sources'), Icon: Download },
     { id: 'storage', label: text('存储路径', 'Storage'), Icon: FolderCog },
-    { id: 'interface', label: text('界面与服务', 'Appearance & service'), Icon: Palette },
+    { id: 'page', label: text('页面设置', 'Pages'), Icon: Palette },
+    { id: 'interface', label: text('系统设置', 'System'), Icon: SettingsIcon },
   ];
   const select = (id: string) => {
+    if (id === 'page') { navigate('/settings/page', { state: location.state, replace: true }); return; }
     const next = new URLSearchParams(location.search);
     const preferences = id === 'storage' || id === 'interface' || id === 'downloads';
     next.delete(preferences ? 'tab' : 'section');

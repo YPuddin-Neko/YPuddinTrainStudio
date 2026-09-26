@@ -21,11 +21,11 @@ import StorageDirectoryInput, { type StoragePathPreview } from './StorageDirecto
 const defaultNetworkSettings: NetworkSettings = { proxy_mode: 'system', proxy_url: '', proxy_username: '', proxy_password_configured: false };
 
 export default function Preferences() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const text = useWorkspaceText();
   const [params] = useSearchParams();
   const downloads = params.get('section') === 'downloads';
-  const appearance = params.get('section') === 'interface';
+  const system = params.get('section') === 'interface';
   const [settings, setSettings] = React.useState<SettingsType | null>(null);
   const [saving, setSaving] = React.useState(false);
   const savingRef = React.useRef(false);
@@ -44,14 +44,14 @@ export default function Preferences() {
   const settingsLoaded = settings !== null;
 
   React.useEffect(() => {
-    if (!settingsLoaded || downloads || appearance) return;
+    if (!settingsLoaded || downloads || system) return;
     const controller = new AbortController();
     setStorageError('');
     void apiClient.get<Record<string,StoragePathPreview>>('/settings/storage-defaults',{params:JSON.parse(storageQuery),signal:controller.signal,silent:true})
       .then(paths => { if (!controller.signal.aborted) setStoragePreview({query:storageQuery,paths}); })
       .catch(error => { if (!controller.signal.aborted) setStorageError(formatApiError(error)); });
     return () => controller.abort();
-  }, [settingsLoaded, downloads, appearance, storageQuery, storageReload]);
+  }, [settingsLoaded, downloads, system, storageQuery, storageReload]);
 
   const defaultBrowsePath = async (key: string) => {
     const paths = await apiClient.get<Record<string,StoragePathPreview>>('/settings/storage-defaults',{params:JSON.parse(storageQuery),silent:true});
@@ -93,13 +93,6 @@ export default function Preferences() {
         loadedSettings.current = res;
         setSettings(res);
         setProxyPassword(undefined);
-        // 即时生效：语言
-        if (res.ui?.language && res.ui.language !== i18n.language) {
-          i18n.changeLanguage(res.ui.language);
-          localStorage.setItem('i18nextLng', res.ui.language);
-        }
-        // 即时生效：主题
-        document.documentElement.classList.toggle('dark', res.ui.theme === 'dark' || res.ui.theme === 'system' && (window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false));
         window.dispatchEvent(new CustomEvent('studio.settings.changed', { detail: res }));
         setSaved(true);
         setServiceRefreshKey(value=>value+1);
@@ -130,10 +123,10 @@ export default function Preferences() {
   };
   const restartPending = changed('paths', 'data_root').edited || changed('server', 'host').edited || changed('server', 'port').edited;
 
-  return <div data-testid="settings-page"><SettingsSections sections={downloads ? [{ id: 'preferences-downloads', label: text('软件下载源', 'Package sources') }] : appearance ? [{ id: 'preferences-appearance', label: t('settings.ui') }, { id: 'preferences-service', label: t('settings.server') }, { id: 'preferences-network', label: text('网络代理', 'Network proxy') }] : [{ id: 'preferences-storage', label: t('settings.paths') }]}>
+  return <div data-testid="settings-page"><SettingsSections sections={downloads ? [{ id: 'preferences-downloads', label: text('软件下载源', 'Package sources') }] : system ? [{ id: 'preferences-general', label: text('常规', 'General') }, { id: 'preferences-service', label: t('settings.server') }, { id: 'preferences-network', label: text('网络代理', 'Network proxy') }] : [{ id: 'preferences-storage', label: t('settings.paths') }]}>
     {error && <div role="alert" className="settings-alert">{error}</div>}
     <fieldset disabled={saving} aria-busy={saving} className="contents">
-    {downloads ? <DownloadPreferences value={settings.downloads ?? { pypi: 'ustc', pytorch: 'mirror', fallback: true }} onChange={value => update(s => ({ ...s, downloads: value }))} /> : !appearance ? <section id="preferences-storage" data-settings-section tabIndex={-1} className="settings-section">
+    {downloads ? <DownloadPreferences value={settings.downloads ?? { pypi: 'ustc', pytorch: 'mirror', fallback: true }} onChange={value => update(s => ({ ...s, downloads: value }))} /> : !system ? <section id="preferences-storage" data-settings-section tabIndex={-1} className="settings-section">
       <div className="settings-section-heading"><div><h2>{t('settings.paths')}</h2><p className="settings-note">{text('更改路径不会移动已有文件。', 'Changing paths does not move existing files.')}</p></div></div>
       {storageError && <div role="alert" className="settings-alert">{storageError}<button type="button" className="ui-btn" onClick={()=>setStorageReload(value=>value+1)}>{t('common.retry')}</button></div>}
       {([['data_root', t('settings.dataRoot')], ['cache_dir', t('settings.cacheDir')], ['models_dir', t('settings.modelsDir')]] as const).map(([key, label]) => <div className="settings-field" key={key}>
@@ -175,10 +168,8 @@ export default function Preferences() {
       </div>)}
 
     </section> : <>
-      <section id="preferences-appearance" data-settings-section tabIndex={-1} className="settings-section">
-        <div className="settings-section-heading"><div><h2>{t('settings.ui')}</h2><p className="settings-note">{t('settings.uiDesc', '语言与主题在保存后立即生效。')}</p></div></div>
-        <div className="settings-field"><label htmlFor="preferences-language">{t('settings.language')}</label><div className="settings-field-control"><StudioSelect disabled={saving} id="preferences-language" aria-label={t('settings.language')} value={settings.ui.language} onValueChange={value => update(s => ({...s,ui:{...s.ui,language:value as SettingsType['ui']['language']}}))} options={[{value:'zh-CN',label:'中文'},{value:'en',label:'English'}]} data-testid="settings-language"/></div></div>
-        <div className="settings-field"><label htmlFor="preferences-theme">{t('settings.theme')}</label><div className="settings-field-control"><StudioSelect disabled={saving} id="preferences-theme" aria-label={t('settings.theme')} value={settings.ui.theme} onValueChange={value => update(s => ({...s,ui:{...s.ui,theme:value as SettingsType['ui']['theme']}}))} options={[{value:'system',label:t('settings.themeSystem')},{value:'light',label:t('settings.themeLight')},{value:'dark',label:t('settings.themeDark')}]} data-testid="settings-theme"/></div></div>
+      <section id="preferences-general" data-settings-section tabIndex={-1} className="settings-section">
+        <div className="settings-section-heading"><div><h2>{text('常规', 'General')}</h2><p className="settings-note">{text('语言与主题在“页面设置”中修改。', 'Language and theme are in Pages.')}</p></div></div>
         <div className="settings-field"><label htmlFor="preferences-telemetry">{text('性能监控刷新间隔', 'Hardware refresh interval')}</label><div className="settings-field-control">
           <StudioSelect disabled={saving} id="preferences-telemetry" aria-label={text('性能监控刷新间隔', 'Hardware refresh interval')} value={String(settings.ui.telemetry_interval ?? 2.5)} onValueChange={value => update(s => ({...s, ui: {...s.ui, telemetry_interval: Number(value)}}))}
             options={[...new Set([1, 2.5, 5, 10, 30, settings.ui.telemetry_interval ?? 2.5])].sort((a, b) => a - b).map(seconds => ({ value: String(seconds), label: `${text(`${seconds} 秒`, `${seconds} s`)}${seconds === 2.5 ? text('（默认）', ' (default)') : ''}` }))} data-testid="settings-telemetry-interval"/>
@@ -199,7 +190,7 @@ export default function Preferences() {
       <NetworkPreferences value={settings.network ?? defaultNetworkSettings} password={proxyPassword} disabled={saving} onChange={network => update(s => ({ ...s, network }))} onPasswordChange={value => { if (!savingRef.current) { setProxyPassword(value); setSaved(false); } }}/>
     </>}
     </fieldset>
-    <div className="settings-save">{(appearance || !downloads && restartPending) && <ServiceControls secondary applySavedAddress disabled={saving} refreshTarget={serviceRefreshTarget} refreshKey={serviceRefreshKey} onRestarted={() => {
+    <div className="settings-save">{(system || !downloads && restartPending) && <ServiceControls secondary applySavedAddress disabled={saving} refreshTarget={serviceRefreshTarget} refreshKey={serviceRefreshKey} onRestarted={() => {
       const active = initialSettings.current, saved = loadedSettings.current;
       if (active && saved) initialSettings.current = {...active, paths:{...active.paths,data_root:saved.paths.data_root},server:{...active.server,host:saved.server.host,port:saved.server.port}};
       setServiceRefreshKey(value => value + 1);

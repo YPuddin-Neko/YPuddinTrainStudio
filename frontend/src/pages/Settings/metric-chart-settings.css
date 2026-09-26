@@ -1,0 +1,14 @@
+.metric-chart-list { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:12px; margin:0; padding:0; list-style:none; }
+.metric-chart-card { display:grid; align-content:start; gap:10px; min-width:0; padding:12px; border:1px solid var(--studio-line); border-radius:8px; background:var(--studio-panel); }
+.metric-chart-card-head { display:flex; align-items:center; gap:8px; min-width:0; }
+.metric-chart-order { display:grid; place-items:center; flex:none; width:22px; height:22px; border-radius:6px; background:var(--studio-muted); font-size:11px; font-weight:600; color:var(--studio-dim); }
+.metric-chart-title { flex:1; min-width:0; }
+.metric-chart-title input { width:100%; height:var(--control-h-sm, 28px); padding:0 8px; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-panel); color:var(--studio-text); font-size:13px; font-weight:600; }
+.metric-chart-title input::placeholder { font-weight:400; color:var(--studio-dim); }
+.metric-chart-card-actions { display:flex; flex:none; gap:2px; }
+.metric-series-list { display:grid; gap:6px; margin:0; padding:0; list-style:none; }
+.metric-series-row { display:grid; grid-template-columns:30px minmax(0, 1fr) auto; align-items:center; gap:6px; }
+.metric-series-row input[type=color] { width:30px; height:28px; padding:2px; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-panel); cursor:pointer; }
+.metric-series-add { justify-self:start; }
+.metric-chart-footer { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.settings-main-loading { display:grid; place-items:center; min-height:160px; color:var(--studio-dim); }
