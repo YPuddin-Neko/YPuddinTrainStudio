@@ -42,10 +42,10 @@ input::placeholder, textarea::placeholder { color:var(--studio-dim); opacity:1; 
 .training-studio { width:100%; color:var(--studio-text); }
 .app-topbar { display:flex; align-items:center; gap:12px; height:48px; min-height:48px; padding:0 16px; flex-shrink:0; z-index:10; }
 .topbar-menu.ui-btn { display:none; }
-.system-telemetry { margin-left:auto; flex:0 1 auto; min-width:0; max-width:100%; overflow-x:auto; overflow-y:hidden; }
-/* The location keeps its own width (up to half the bar); the status group gives way first and the telemetry strip scrolls. */
+.system-telemetry { display:flex; justify-content:flex-end; flex:1 1 0; min-width:0; overflow:hidden; }
+/* The location keeps its own width (up to half the bar); the status group takes the rest and the telemetry drops its least important groups to fit. */
 .topbar-location { display:flex; align-items:center; flex:0 0 auto; min-width:0; max-width:50%; overflow:hidden; }
-.topbar-status { display:flex; align-items:center; gap:12px; flex:0 1 auto; min-width:0; margin-left:auto; }
+.topbar-status { display:flex; align-items:center; justify-content:flex-end; gap:12px; flex:1 1 0; min-width:0; }
 .topbar-location > nav { min-width:0; font-size:13px; line-height:20px; }
 .topbar-location .workspace-breadcrumb a,.topbar-location .workspace-breadcrumb span:last-child { max-width:240px; }
 .topbar-location .workspace-breadcrumb > span:last-child:not([aria-hidden]) { color:var(--studio-text); }
@@ -68,7 +68,7 @@ input::placeholder, textarea::placeholder { color:var(--studio-dim); opacity:1; 
 .telemetry-gpu-readings { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:9px; flex:1; min-width:0; }
 .telemetry-gpu-readings > div:nth-child(3) { border-left:1px solid var(--studio-line); padding-left:7px; margin-left:-7px; }
 .topbar-job-slot, .topbar-feedback-slot { display:flex; align-items:center; justify-content:center; min-width:0; }
-.topbar-job-slot { flex:0 1 180px; max-width:180px; }
+.topbar-job-slot { flex:0 1 auto; max-width:220px; }
 .topbar-feedback-slot { flex-shrink:0; }
 .topbar-warning { display:inline-flex; align-items:center; justify-content:center; color:#d97706; }
 .dark .topbar-warning { color:#fbbf24; }
@@ -76,16 +76,16 @@ input::placeholder, textarea::placeholder { color:var(--studio-dim); opacity:1; 
 .api-error-notice > span { padding-top:4px; white-space:pre-line; overflow-wrap:anywhere; }
 .api-error-notice .ui-btn-quiet { color:inherit; }
 .dark .api-error-notice { border-color:#7f1d1d; background:#450a0a; color:#fca5a5; }
-.topbar-running-job { display:flex; align-items:center; justify-content:center; min-width:0; width:100%; height:30px; padding:0 7px; gap:5px; border-radius:6px; font-size:10px; }
+.topbar-running-job { display:flex; align-items:center; justify-content:flex-start; min-width:0; max-width:100%; height:30px; padding:0 8px; gap:6px; border-radius:6px; font-size:11px; }
 .topbar-running-job > svg { flex-shrink:0; }
 .topbar-job-name, .topbar-job-progress { display:none; }
 @media(min-width:1200px) { .topbar-job-name { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .topbar-job-progress { display:block; flex-shrink:0; font-variant-numeric:tabular-nums; } }
-@media(max-width:1199px) { .topbar-job-slot { flex:0 0 30px; } }
+@media(max-width:1199px) { .topbar-job-slot { flex:0 0 30px; } .topbar-running-job { justify-content:center; width:30px; padding:0; } }
 @media(max-width:767px) { .app-topbar { padding-inline:12px; gap:8px; } .topbar-location { display:none; } .topbar-menu.ui-btn { display:inline-flex; flex-shrink:0; } .app-page-viewport { --page-inset:12px; } }
 @supports not (scrollbar-gutter:stable) { .app-page-viewport { overflow-y:scroll; } }
 .sidebar-brand-row { display:flex; align-items:center; flex-shrink:0; gap:6px; height:48px; padding:0 12px; border-bottom:1px solid var(--studio-line); }
 .sidebar-brand { display:flex; align-items:center; gap:9px; min-width:0; border-radius:5px; }
-.sidebar-brand-mark { color:#2563eb; flex-shrink:0; }
+.sidebar-brand-mark { flex-shrink:0; border-radius:7px; }
 .sidebar-brand-text { display:flex; flex-direction:column; min-width:0; }
 .sidebar-brand-text strong { color:var(--studio-text); font-size:14px; line-height:18px; font-weight:700; letter-spacing:-.2px; }
 .sidebar-brand-text > span { color:var(--studio-dim); font-size:10px; line-height:13px; letter-spacing:.3px; }

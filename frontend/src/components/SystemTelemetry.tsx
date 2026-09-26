@@ -19,6 +19,15 @@ const Gpu = createLucideIcon('Gpu', [
   ['circle', { cx: '8', cy: '11', r: '2', key: 'fan-left' }],
 ]);
 
+// Groups give way in this order when the bar is narrow; each level's width is the strip it needs.
+const LEVELS: Array<{ hide: string[]; width: number }> = [
+  { hide: [], width: 612 },
+  { hide: ['disk'], width: 536 },
+  { hide: ['disk', 'cpu'], width: 452 },
+  { hide: ['disk', 'cpu', 'memory'], width: 356 },
+  { hide: ['disk', 'cpu', 'memory', 'device'], width: 280 },
+];
+
 const known = (value: number | null | undefined): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 const ratio = (used: number | null | undefined, total: number | null | undefined) => known(used) && known(total) && total > 0 ? used / total * 100 : null;
 const average = (values: Array<number | null | undefined>) => values.length && values.every(known) ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
@@ -42,6 +51,25 @@ export default function SystemTelemetry({ stats }: { stats: SystemStats | null }
   const text = useWorkspaceText();
   const { t } = useTranslation();
   const [selectedGpu, setSelectedGpu] = React.useState('all');
+  const frame = React.useRef<HTMLDivElement>(null);
+  const [level, setLevel] = React.useState(0);
+  // Fit the strip to the room the bar leaves instead of scrolling it; before layout everything shows.
+  React.useLayoutEffect(() => {
+    const node = frame.current;
+    if (!node || typeof ResizeObserver === 'undefined') return;
+    const measure = () => {
+      const width = node.clientWidth;
+      if (!width) return;
+      const index = LEVELS.findIndex(item => item.width <= width);
+      setLevel(index < 0 ? LEVELS.length - 1 : index);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    measure();
+    return () => observer.disconnect();
+  }, []);
+  const hidden = new Set(LEVELS[level].hide);
+  const columns = [!hidden.has('cpu') && '84px', !hidden.has('memory') && '96px', hidden.has('device') ? '280px' : '356px', !hidden.has('disk') && '76px'].filter(Boolean).join(' ');
   const gpus = stats?.gpus || [];
   const selected = gpus.find(item => String(item.index) === selectedGpu);
   const aggregate = gpus.length > 1 && !selected;
@@ -81,17 +109,17 @@ export default function SystemTelemetry({ stats }: { stats: SystemStats | null }
   const deviceDescription = `${deviceKind[gpu?.kind ?? ''] ?? ''}${aggregate ? ` · ${text(`${gpus.length} 卡`, `${gpus.length} GPUs`)}` : ''}`;
   const deviceHelp = aggregate ? text(`当前显示 ${gpus.length} 张显卡的平均状态。\n点击可切换到单张显卡。`, `Showing averages across ${gpus.length} GPUs.\nClick to view an individual GPU.`) : undefined;
 
-  return <div className="system-telemetry" role="group" aria-label={text('系统硬件状态，可横向滚动', 'System hardware status, horizontally scrollable')} tabIndex={0}>
-    <div className="telemetry-strip">
-      <div className="telemetry-group telemetry-cpu" role="group" aria-label="CPU" data-testid="telemetry-cpu">
+  return <div ref={frame} className="system-telemetry" role="group" aria-label={text('系统硬件状态', 'System hardware status')}>
+    <div className="telemetry-strip" style={{ gridTemplateColumns: columns }}>
+      {!hidden.has('cpu') && <div className="telemetry-group telemetry-cpu" role="group" aria-label="CPU" data-testid="telemetry-cpu">
         <Cpu size={16} aria-hidden="true" /><div className="telemetry-value"><span className="telemetry-label">CPU</span><Reading value={stats?.cpu_pct} label={text('CPU 占用率', 'CPU utilization')}/></div>
-      </div>
-      <div className="telemetry-group telemetry-memory" role="group" aria-label={text('内存', 'Memory')} title={`${text('系统内存使用量 / 总容量', 'System memory used / total')} · ${capacity(ram?.used_mb, ram?.total_mb, 1024)}`} data-testid="telemetry-memory">
+      </div>}
+      {!hidden.has('memory') && <div className="telemetry-group telemetry-memory" role="group" aria-label={text('内存', 'Memory')} title={`${text('系统内存使用量 / 总容量', 'System memory used / total')} · ${capacity(ram?.used_mb, ram?.total_mb, 1024)}`} data-testid="telemetry-memory">
         <MemoryStick size={16} aria-hidden="true" /><div className="telemetry-value"><span className="telemetry-label">{text('内存', 'Memory')}</span><Reading value={ratio(ram?.used_mb, ram?.total_mb)} label={text('内存占用率', 'Memory utilization')}/></div>
-      </div>
+      </div>}
       <div className="telemetry-group telemetry-gpu" role="group" aria-label="GPU" title={gpuDescription} data-testid="telemetry-gpu">
         <Gpu size={18} aria-hidden="true" />
-        <div className="telemetry-device" title={deviceHelp}>{gpus.length > 1 ? <StudioSelect className="telemetry-gpu-select" aria-label={text('选择监控显卡', 'Choose monitored GPU')} value={aggregate ? 'all' : String(gpu?.index)} onValueChange={setSelectedGpu} triggerDescription={deviceDescription} options={[{value:'all', label:text(`多卡平均 · ${gpus.length} 张显卡`, `GPU average · ${gpus.length} GPUs`), displayLabel:text('多卡平均', 'GPU average')}, ...gpus.map(item => ({value:String(item.index), label:`GPU ${item.index} · ${item.name}`, displayLabel:`GPU ${item.index}`}))]}/> : <><span className="telemetry-label">{gpu ? `GPU ${gpu.index}` : 'GPU —'}</span><span className="telemetry-device-kind">{deviceDescription}</span></>}</div>
+        {!hidden.has('device') && <div className="telemetry-device" title={deviceHelp}>{gpus.length > 1 ? <StudioSelect className="telemetry-gpu-select" aria-label={text('选择监控显卡', 'Choose monitored GPU')} value={aggregate ? 'all' : String(gpu?.index)} onValueChange={setSelectedGpu} triggerDescription={deviceDescription} options={[{value:'all', label:text(`多卡平均 · ${gpus.length} 张显卡`, `GPU average · ${gpus.length} GPUs`), displayLabel:text('多卡平均', 'GPU average')}, ...gpus.map(item => ({value:String(item.index), label:`GPU ${item.index} · ${item.name}`, displayLabel:`GPU ${item.index}`}))]}/> : <><span className="telemetry-label">{gpu ? `GPU ${gpu.index}` : 'GPU —'}</span><span className="telemetry-device-kind">{deviceDescription}</span></>}</div>}
         <div className="telemetry-gpu-readings">
           <div title={utilizationDescription || undefined}><span className="telemetry-label">{text('占用', 'Load')}</span><Reading value={gpu?.util_pct} label={unified ? t('hardware.systemGpuUtilization') : text('GPU 占用率', 'GPU utilization')} testId="topbar-gpu-util"/></div>
           <div title={memoryDescription}><span className="telemetry-label">{memoryLabel}</span><Reading value={memoryUsage} label={unified ? text('系统统一内存占用率', 'System unified memory utilization') : text('显存占用率', 'VRAM utilization')} testId="topbar-gpu-memory"/></div>
@@ -99,9 +127,9 @@ export default function SystemTelemetry({ stats }: { stats: SystemStats | null }
           <div title={temperatureDescription}><span className="telemetry-label">{unified ? t('hardware.meanTemperatureShort') : text('温度', 'Temp')}</span><Reading value={gpu?.temp_c} display={formatGpuTemperature(gpu)} unit="°C" label={unified ? t('hardware.meanGpuTemperature') : text('GPU 温度', 'GPU temperature')} testId="topbar-gpu-temperature"/></div>
         </div>
       </div>
-      <div className="telemetry-group telemetry-disk" role="group" aria-label={text('硬盘', 'Disk')} title={disk ? `${text('项目数据所在磁盘', 'Project data disk')} · ${disk.path} · ${capacity(disk.used_gb, disk.total_gb)}` : text('磁盘信息不可用', 'Disk information unavailable')} data-testid="telemetry-disk">
+      {!hidden.has('disk') && <div className="telemetry-group telemetry-disk" role="group" aria-label={text('硬盘', 'Disk')} title={disk ? `${text('项目数据所在磁盘', 'Project data disk')} · ${disk.path} · ${capacity(disk.used_gb, disk.total_gb)}` : text('磁盘信息不可用', 'Disk information unavailable')} data-testid="telemetry-disk">
         <HardDrive size={16} aria-hidden="true" /><div className="telemetry-value"><span className="telemetry-label">{text('硬盘', 'Disk')}</span><Reading value={ratio(disk?.used_gb, disk?.total_gb)} label={text('硬盘占用率', 'Disk utilization')}/></div>
-      </div>
+      </div>}
     </div>
   </div>;
 }
