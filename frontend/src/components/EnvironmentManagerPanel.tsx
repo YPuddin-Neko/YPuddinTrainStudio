@@ -74,7 +74,7 @@ function DownloadProgress({ operation, copy }: {operation: Operation; copy: (zh:
 }
 
 export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: string } = {}) {
-  const { i18n, t } = useTranslation();
+  const { i18n } = useTranslation();
   const en = i18n.resolvedLanguage?.startsWith('en');
   const copy = (zh: string, english: string) => en ? english : zh;
   const [status, setStatus] = React.useState<EnvironmentStatus | null>(null);
@@ -221,6 +221,8 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     ['PyTorch', status.runtime.torch],
     ...(!showAttentionExtensions ? [] : [[hipBackend ? copy('HIP 运行时', 'HIP runtime') : copy('CUDA 版本', 'CUDA version'), (hipBackend ? status.runtime.hip_runtime : status.runtime.cuda_runtime) || copy('未检测到', 'Not detected')], [hipBackend ? copy('海光显卡计算', 'Hygon GPU compute') : copy('NVIDIA 显卡计算', 'NVIDIA GPU compute'), status.runtime.cuda_available ? copy('可用', 'Available') : copy('未启用', 'Not enabled')]]),
     [copy('计算后端', 'Compute backend'), computeBackend],
+    ...(showAttentionExtensions && (status.runtime.cuda_device_count ?? 0) > 1 ? [[copy('多卡通信', 'Multi-GPU communication'),
+      status.runtime.multi_gpu_backend === 'gloo' ? copy('Gloo · 启动任务时检测', 'Gloo · checked at job start') : status.runtime.platform === 'Linux' && status.runtime.nccl_available ? 'NCCL' : copy('不可用', 'Unavailable')]] : []),
   ];
   const detectedDevices = status && status.runtime.gpus.length > 0 && <ul className="space-y-1" aria-label={copy('已检测设备', 'Detected devices')}>{status.runtime.gpus.map((gpu, index) => <li key={`${gpu.device || index}:${gpu.name}`}><strong>{gpu.name}</strong><span className="settings-note"> · {gpu.device || `GPU ${index + 1}`}{gpu.mem_total_mb != null ? ` · ${formatGpuMemory(gpu.mem_total_mb)} ${gpu.memory_scope === 'unified_system' ? copy('统一内存', 'unified memory') : copy('设备内存', 'device memory')}` : ''}{gpu.cuda_available === false ? textUnavailable() : ''}</span></li>)}</ul>;
 
@@ -239,14 +241,6 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     {loading && !status && <p role="status" className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400"><Loader2 size={16} className="animate-spin" />{copy('检测当前环境与已安装扩展…', 'Checking runtime and installed extensions…')}</p>}
     {status && <>
       <dl className="settings-facts">{facts?.map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-xs text-slate-500 dark:text-slate-400">{label}</dt><dd className="mt-1 break-words text-sm font-medium">{value}</dd></div>)}<div className="min-w-0"><dt className="text-xs text-slate-500 dark:text-slate-400">{copy('设备', 'Device')}</dt><dd className="mt-1 break-words text-sm font-medium">{cpuProfile ? 'CPU' : detectedDevices || (status.runtime.mps_available ? 'Apple GPU' : 'CPU')}</dd></div></dl>
-      <details className="settings-inline-details"><summary>{copy('解释器与显卡诊断', 'Interpreter & GPU diagnostics')}</summary><p className="font-mono break-all">{status.runtime.python_executable}</p><p>{status.runtime.platform} · {status.runtime.machine}</p>
-        {cpuProfile && detectedDevices}
-        {showAttentionExtensions && <dl className="settings-facts text-xs" data-testid="environment-training-devices">
-          <div><dt>{copy('可用显卡', 'Available GPUs')}</dt><dd>{status.runtime.cuda_device_count ?? 0}</dd></div>
-          {(status.runtime.cuda_device_count ?? 0) > 1 && <div><dt>{copy('多卡通信', 'Multi-GPU communication')}</dt><dd>{status.runtime.multi_gpu_backend === 'gloo' ? copy('Gloo · 启动任务时检测', 'Gloo · checked at job start') : status.runtime.platform === 'Linux' && status.runtime.nccl_available ? 'NCCL' : copy('不可用', 'Unavailable')}</dd></div>}
-        </dl>}
-        {status.runtime.gpus.some(g => g.telemetry_source) && <p>{status.runtime.gpus.map(g => `${g.name}: ${g.telemetry_source || '—'}${g.telemetry_note ? ` (${t(`hardware.${g.telemetry_note}`)})` : ''}`).join(' / ')}</p>}
-      </details>
       {target === 'mps' && !status.runtime.mps_available && <p className="settings-note">{copy('当前 PyTorch 无法使用 Apple MPS，请检查 macOS 与 PyTorch 环境。', 'Apple MPS is unavailable in the current PyTorch environment. Check macOS and PyTorch compatibility.')}</p>}
       {showAttentionExtensions && !status.runtime.cuda_available && <p className="settings-note">{hipBackend ? copy('当前 DTK / HIP 无法访问显卡，请检查厂商运行时、驱动及库路径后重启。', 'DTK / HIP cannot access the GPUs. Check the vendor runtime, driver and library paths, then restart.') : status.runtime.cuda_runtime ? copy(`当前 PyTorch 含 CUDA ${status.runtime.cuda_runtime}，但无法使用 CUDA。请检查显卡驱动后重启。`, `PyTorch includes CUDA ${status.runtime.cuda_runtime}, but CUDA is unavailable. Check the GPU driver and restart.`) : copy('当前 PyTorch 未提供 CUDA 运行时，请检查此 CUDA 环境的 PyTorch 安装。', 'This PyTorch build has no CUDA runtime. Check the PyTorch installation in this CUDA environment.')}</p>}
       {(status.running_jobs || status.restart_required) && <p role="status" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">{status.running_jobs ? copy('任务运行中，完成或停止后可修改环境。', 'Finish or stop running tasks before changing the environment.') : copy('重启服务后生效，队列将在重启后继续。', 'Restart the service to apply changes and resume the queue.')}</p>}
