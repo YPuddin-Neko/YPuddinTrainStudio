@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Download, Layers, Package } from 'lucide-react';
+import { Download, Layers, Package, Trash2 } from 'lucide-react';
 import { apiUrl } from '../../api/client';
 import type { JobCheckpoint } from '../../api/types';
 import CopyButton from '../../components/CopyButton';
@@ -24,19 +24,19 @@ function SkeletonGrid() {
 }
 
 /** Saved weights and training states as cards, newest first, each with the preview of its step. */
-export default function ArtifactGrid({ checkpoints, stepsPerEpoch, loaded, resuming, canResume, onResume, onOpenSample }: {
-  checkpoints: JobCheckpoint[]; stepsPerEpoch?: number | null; loaded: boolean; resuming: boolean; canResume: boolean;
-  onResume: (checkpoint: JobCheckpoint) => void; onOpenSample: (url: string) => void;
+export default function ArtifactGrid({ checkpoints, stepsPerEpoch, loaded, onOpenSample, onDelete }: {
+  checkpoints: JobCheckpoint[]; stepsPerEpoch?: number | null; loaded: boolean;
+  onOpenSample: (url: string) => void; onDelete: (checkpoint: JobCheckpoint) => void;
 }) {
   const { t } = useTranslation();
   const text = useWorkspaceText();
   const [query, setQuery] = React.useState('');
   const ranges = React.useMemo(() => parseEpochQuery(query), [query]);
   const shown = React.useMemo(() => [...checkpoints].reverse().filter(item => inEpochs(epochAt(item, stepsPerEpoch), ranges)), [checkpoints, stepsPerEpoch, ranges]);
-  const kindLabel = (kind: string) => kind === 'full' ? text('训练状态 · 可续训', 'Training state') : kind === 'model' ? text('全量模型组件', 'Full-model components') : kind === 'weights' ? text('权重', 'Weights') : kind;
+  const kindLabel = (kind: string) => kind === 'model' ? text('全量模型组件', 'Full-model components') : kind === 'weights' ? text('权重', 'Weights') : kind;
 
   if (!loaded) return <section className="artifact-browser" aria-label={text('产物', 'Outputs')}><SkeletonGrid/></section>;
-  if (!checkpoints.length) return <div className="sample-empty"><Layers size={30} aria-hidden="true"/><p>{text('暂无产物', 'No outputs yet')}</p><span>{text('训练到保存步数或轮次后，权重和训练状态会出现在这里。', 'Weights and training states appear here once training reaches a save step or epoch.')}</span></div>;
+  if (!checkpoints.length) return <div className="sample-empty"><Layers size={30} aria-hidden="true"/><p>{text('暂无产物', 'No outputs yet')}</p><span>{text('训练到保存步数或轮次后，导出的权重会出现在这里；恢复点在右侧“恢复点”页。', 'Exported weights appear here once training reaches a save step or epoch; resume points have their own tab.')}</span></div>;
 
   return <section className="artifact-browser" aria-label={text('产物', 'Outputs')}>
     <div className="sample-toolbar">
@@ -65,10 +65,10 @@ export default function ArtifactGrid({ checkpoints, stepsPerEpoch, loaded, resum
               <div className="is-wide"><dt>{text('保存时间', 'Saved')}</dt><dd>{formatTime(item.created_at)}</dd></div>
             </dl>
             <div className="artifact-actions">
-              {item.kind === 'full' ? <button type="button" className="ui-btn ui-btn-sm" disabled={resuming || !canResume} onClick={() => onResume(item)}>{t('job.continueTraining')}</button>
-                : item.artifact_id ? <a className="ui-btn ui-btn-sm" href={apiUrl(`/artifacts/${item.artifact_id}/download`)}><Download size={14}/>{t('job.download')}</a>
-                  : <span>{t('job.downloadUnavailable')}</span>}
+              {item.artifact_id ? <a className="ui-btn ui-btn-sm" href={apiUrl(`/artifacts/${item.artifact_id}/download`)}><Download size={14}/>{t('job.download')}</a>
+                : <span>{t('job.downloadUnavailable')}</span>}
               <CopyButton value={item.path} label={text('复制本机路径', 'Copy local path')}/>
+              <button type="button" className="ui-btn ui-btn-icon ui-btn-sm ui-btn-quiet ui-btn-danger" onClick={() => onDelete(item)} aria-label={text(`删除 ${name}`, `Delete ${name}`)} title={text('删除', 'Delete')}><Trash2 size={14}/></button>
             </div>
           </div>
         </article>;

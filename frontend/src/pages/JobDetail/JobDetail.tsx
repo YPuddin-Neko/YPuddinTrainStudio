@@ -6,7 +6,7 @@ import { apiClient } from '../../api/client';
 import { Job, JobMetrics, JobSample, JobCheckpoint } from '../../api/types';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
-import { Activity, Layers, Image as ImageIcon, Terminal, Code, ArrowLeft } from 'lucide-react';
+import { Activity, Layers, History, Image as ImageIcon, Terminal, Code, ArrowLeft } from 'lucide-react';
 import { mergeValidationPoint, appendMetricStep } from '../../utils/metrics';
 import { formatEta, formatTime } from '../../utils/format';
 import { formatApiError } from '../../utils/errors';
@@ -20,6 +20,8 @@ import JobLogView from './JobLogView';
 import JobMetricsPanel from './JobMetricsPanel';
 import SampleViewer from './SampleViewer';
 import ArtifactGrid from './ArtifactGrid';
+import ResumePointList from './ResumePointList';
+import Dialog from '../../components/Dialog';
 import JobStepper from './JobStepper';
 import { SlidingIndicator } from '../../components/motion';
 import { useEnterAnimation } from '../../utils/motion';
@@ -74,11 +76,14 @@ export default function JobDetail() {
   const [selectedSample, setSelectedSample] = React.useState<string | null>(null);
   const [checkpoints, setCheckpoints] = React.useState<JobCheckpoint[]>([]);
   const [checkpointsLoaded, setCheckpointsLoaded] = React.useState(false);
+  const [deleting, setDeleting] = React.useState<JobCheckpoint | null>(null);
+  const [deleteBusy, setDeleteBusy] = React.useState(false);
+  const [deleteError, setDeleteError] = React.useState('');
   const [configSnapshot, setConfigSnapshot] = React.useState<any>(null);
   const [sampleProgress, setSampleProgress] = React.useState<{ step: number; promptIndex: number; prompts: number; done: number; total: number } | null>(null);
 
   const requestedTab = params.get('tab') || '';
-  const allowedTabs = job?.type === 'xyz' ? ['logs', 'config'] : ['metrics', 'samples', 'checkpoints', 'logs', 'config'];
+  const allowedTabs = job?.type === 'xyz' ? ['logs', 'config'] : ['metrics', 'samples', 'checkpoints', 'states', 'logs', 'config'];
   const activeTab = allowedTabs.includes(requestedTab) ? requestedTab : job?.type === 'xyz' ? 'logs' : 'metrics';
   const tabPanel = useEnterAnimation<HTMLDivElement>(activeTab, { skipFirst: true });
   // Tabs replace the entry so Back leaves the job instead of stepping through tabs.
@@ -139,7 +144,8 @@ export default function JobDetail() {
   useEventStream(EVENT_TYPES.JOB_STATE, (data: any) => {
     if (data.job_id === id) {
       setJob((prev) => prev ? mergeJobEvent(prev, data) : null);
-      if (['completed', 'failed', 'cancelled', 'paused'].includes(data.status)) {
+      // A resumed run also brings its pause history.
+      if (['completed', 'failed', 'cancelled', 'paused', 'running'].includes(data.status)) {
         void refreshSamples();
         void apiClient.get<VersionedJob>(`/jobs/${id}`, {silent:true}).then(updated => setJob(previous => previous?.id === updated.id ? updated : previous)).catch(() => {});
       }
@@ -200,10 +206,25 @@ export default function JobDetail() {
 
   const stepsPerEpoch = job?.progress?.steps_per_epoch;
 
+  // Exported weights are outputs; full training states are resume points with their own tab.
+  const outputs = checkpoints.filter(item => item.kind !== 'full');
+  const resumePoints = checkpoints.filter(item => item.kind === 'full');
+  const removeCheckpoint = async () => {
+    if (!deleting || !id) return;
+    setDeleteBusy(true); setDeleteError('');
+    try {
+      await apiClient.delete(`/jobs/${encodeURIComponent(id)}/checkpoints`, { params: { path: deleting.path }, silent: true });
+      setCheckpoints(previous => previous.filter(item => item.path !== deleting.path));
+      setDeleting(null);
+    } catch (failure) { setDeleteError(formatApiError(failure)); }
+    finally { setDeleteBusy(false); }
+  };
+
   const tabs = [
     { key: 'metrics', icon: Activity, label: t('job.tabMetrics') },
     { key: 'samples', icon: ImageIcon, label: `${t('job.tabSamples')} (${samples.length})` },
-    { key: 'checkpoints', icon: Layers, label: `${t('job.tabCheckpoints')} (${checkpoints.length})` },
+    { key: 'checkpoints', icon: Layers, label: `${t('job.tabCheckpoints')} (${outputs.length})` },
+    { key: 'states', icon: History, label: `${text('恢复点', 'Resume points')} (${resumePoints.length})` },
     { key: 'logs', icon: Terminal, label: t('job.tabLogs') },
     { key: 'config', icon: Code, label: t('job.tabConfig') },
   ].filter(tab => allowedTabs.includes(tab.key));
@@ -268,7 +289,7 @@ export default function JobDetail() {
           <StatCard label={t('job.eta')} value={job?.status === 'completed' ? '0s' : formatEta(job?.progress?.eta_s)}/>
         </div>
 
-        {job && <JobStepper status={job.status} phase={job.progress?.phase || ''}/>}
+        {job && <JobStepper status={job.status} phase={job.progress?.phase || ''} progress={job.progress}/>}
 
         {/* 采样预览进度（job.sample_progress SSE） */}
         {sampleProgress && (
@@ -313,8 +334,22 @@ export default function JobDetail() {
 
       {activeTab === 'samples' && <SampleViewer samples={samples} stepsPerEpoch={stepsPerEpoch} loaded={samplesLoaded} selected={selectedSample} onSelect={setSelectedSample}/>}
 
-      {activeTab === 'checkpoints' && <ArtifactGrid checkpoints={checkpoints} stepsPerEpoch={stepsPerEpoch} loaded={checkpointsLoaded} resuming={resuming} canResume={!!configSnapshot}
-        onResume={checkpoint => void resumeCheckpoint(checkpoint)} onOpenSample={url => { setSelectedSample(url); setActiveTab('samples'); }}/>}
+      {activeTab === 'checkpoints' && <ArtifactGrid checkpoints={outputs} stepsPerEpoch={stepsPerEpoch} loaded={checkpointsLoaded}
+        onOpenSample={url => { setSelectedSample(url); setActiveTab('samples'); }} onDelete={item => { setDeleteError(''); setDeleting(item); }}/>}
+
+      {activeTab === 'states' && <ResumePointList points={resumePoints} stepsPerEpoch={stepsPerEpoch} loaded={checkpointsLoaded} resumeFrom={job?.resume_from ?? null} jobStatus={job?.status}
+        resuming={resuming} canResume={!!configSnapshot} onResume={point => void resumeCheckpoint(point)} onDelete={item => { setDeleteError(''); setDeleting(item); }}/>}
+
+      {deleting && <Dialog title={deleting.kind === 'full' ? text('删除恢复点', 'Delete resume point') : text('删除产物', 'Delete output')} onClose={() => setDeleting(null)} closeDisabled={deleteBusy}>
+        <div className="checkpoint-delete">
+          <p>{deleting.kind === 'full'
+            ? text(`将从磁盘删除恢复点“${deleting.path.replace(/\\/g, '/').split('/').pop()}”（第 ${deleting.step} 步）。删除后无法再从这一步继续训练。`, `The resume point at step ${deleting.step} will be removed from disk; training can no longer continue from it.`)
+            : text(`将从磁盘删除“${deleting.path.replace(/\\/g, '/').split('/').pop()}”（第 ${deleting.step} 步），无法恢复。`, `The file saved at step ${deleting.step} will be removed from disk and cannot be restored.`)}</p>
+          {deleteError && <p role="alert" className="studio-error">{deleteError}</p>}
+          <div className="checkpoint-delete-actions"><button type="button" className="ui-btn" disabled={deleteBusy} onClick={() => setDeleting(null)}>{text('取消', 'Cancel')}</button>
+            <button type="button" className="ui-btn ui-btn-primary ui-btn-danger" disabled={deleteBusy} onClick={() => void removeCheckpoint()}>{text('确认删除', 'Delete')}</button></div>
+        </div>
+      </Dialog>}
 
       {activeTab === 'logs' && id && <JobLogView jobId={id} active live={!!job && ['running', 'pausing', 'cancelling'].includes(job.status)} recordedLevel={job?.type === 'xyz' ? null : configSnapshot?.logging?.level}/>}
 
