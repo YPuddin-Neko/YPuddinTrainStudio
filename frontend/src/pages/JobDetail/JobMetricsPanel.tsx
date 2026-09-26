@@ -37,15 +37,18 @@ function groupSpread(groups: Array<Array<number | null>>): number {
   return spread;
 }
 
-/** The job page's saved chart layout; the built-in one until settings answer or when none is saved. */
-function useChartLayout(): MetricChartSetting[] {
-  const [layout, setLayout] = React.useState<MetricChartSetting[]>(DEFAULT_METRIC_CHARTS);
+/**
+ * The job page's saved chart layout: none until settings answer, so the built-in layout is never drawn first;
+ * the built-in one when none is saved or settings cannot be read.
+ */
+function useChartLayout(): MetricChartSetting[] | null {
+  const [layout, setLayout] = React.useState<MetricChartSetting[] | null>(null);
   React.useEffect(() => {
     const controller = new AbortController();
     const apply = (settings: Settings | undefined) => { const saved = settings?.ui?.metric_charts; setLayout(saved?.length ? saved : DEFAULT_METRIC_CHARTS); };
     void apiClient.get<Settings>('/settings', { signal: controller.signal, silent: true })
       .then(settings => { if (!controller.signal.aborted) apply(settings); })
-      .catch(() => { /* The built-in layout stays. */ });
+      .catch(() => { if (!controller.signal.aborted) setLayout(current => current ?? DEFAULT_METRIC_CHARTS); });
     // A layout saved while this page stays open (the settings dialog) applies at once.
     const changed = (event: Event) => apply((event as CustomEvent<Settings>).detail);
     window.addEventListener('studio.settings.changed', changed);
@@ -73,7 +76,7 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
   const apple = device === 'mps';
 
   const charts = React.useMemo<Chart[]>(() => {
-    if (!metrics?.steps.length) return [];
+    if (!metrics?.steps.length || !layout) return [];
     const points = (values: Array<number | null | undefined> | undefined, scale = 1) => xs.map((x, index): [number, number | null] => {
       const value = values?.[index];
       return [x, typeof value === 'number' ? value / scale : null];
@@ -135,8 +138,9 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
         }
         return { name: axisNames[unit] || unit, labels: axisTickLabels(low, high, unit === 'LR' && logRates) };
       }));
+      // Stable ids let each update change series and axes in place; the chart removes the ones that are gone.
       const axes = units.map((unit, index) => ({
-        ...base.yAxis, name: axisNames[unit] || unit, position: index % 2 ? 'right' as const : 'left' as const, offset: placed.offsets[index],
+        ...base.yAxis, id: unit, name: axisNames[unit] || unit, position: index % 2 ? 'right' as const : 'left' as const, offset: placed.offsets[index],
         splitLine: { show: index === 0 }, ...(unit === 'LR' && logRates ? { type: 'log' as const, logBase: 10, scale: undefined } : {}),
       }));
       const option = {
@@ -144,7 +148,7 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
         grid: { ...base.grid, left: base.grid.left + placed.left, right: base.grid.right + placed.right },
         yAxis: axes.length === 1 ? axes[0] : axes,
         series: lines.map(line => ({
-          name: line.name, type: 'line', showSymbol: !!line.symbols, sampling: 'lttb', data: line.data, yAxisIndex: units.indexOf(line.unit),
+          id: line.name, name: line.name, type: 'line', showSymbol: !!line.symbols, sampling: 'lttb', data: line.data, yAxisIndex: units.indexOf(line.unit),
           lineStyle: { width: line.width ?? 1.5, color: line.color }, itemStyle: { color: line.color },
         })),
         // A chart too narrow for every axis keeps one per side; the other lines keep their own scales and
@@ -186,7 +190,8 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
         <Link className="ui-btn ui-btn-sm ui-btn-quiet" to="/settings/charts" state={{ backgroundLocation: location }}><Settings2 size={14}/>{text('自定义图表', 'Customize charts')}</Link>
       </div>
     </div>
-    {!charts.length ? <div className="job-metrics-empty"><Activity size={30} aria-hidden="true"/><p>{t('job.noMetrics', '暂无训练指标')}</p><span>{text('等待训练步数记录。', 'Waiting for recorded training steps.')}</span></div>
+    {!layout && !!metrics?.steps.length ? <div className="job-metrics-grid" aria-busy="true" aria-label={text('读取图表布局', 'Loading the chart layout')}>{Array.from({ length: 4 }, (_, index) => <div key={index} className="job-metrics-chart" aria-hidden="true"><span className="ui-skeleton job-metrics-skeleton-title"/><span className="ui-skeleton job-metrics-skeleton-plot"/></div>)}</div>
+      : !charts.length ? <div className="job-metrics-empty"><Activity size={30} aria-hidden="true"/><p>{t('job.noMetrics', '暂无训练指标')}</p><span>{text('等待训练步数记录。', 'Waiting for recorded training steps.')}</span></div>
       : <div className="job-metrics-grid">{charts.map((chart, index) => <section key={chart.key} className={`job-metrics-chart${index === charts.length - 1 && charts.length % 2 ? ' is-wide' : ''}`} aria-label={chart.title}>
         <h2>{chart.title}</h2>{chart.note && <p>{chart.note}</p>}
         {chart.option ? <EChart option={chart.option} style={{ height: 280 }}/> : <div className="job-metrics-chart-empty"><Thermometer size={22} aria-hidden="true"/><span>{chart.empty}</span></div>}

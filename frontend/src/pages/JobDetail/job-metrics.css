@@ -9,6 +9,8 @@
 .job-metrics-chart.is-wide { grid-column:1 / -1; }
 .job-metrics-chart h2 { font-size:13px; font-weight:600; }
 .job-metrics-chart > p { margin-top:4px; margin-bottom:6px; font-size:11px; line-height:1.6; color:var(--studio-dim); }
+.job-metrics-skeleton-title { display:block; width:30%; height:14px; border-radius:5px; }
+.job-metrics-skeleton-plot { display:block; height:280px; margin-top:12px; border-radius:6px; }
 .job-metrics-chart-empty { flex:1; min-height:200px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:16px; text-align:center; font-size:12px; line-height:1.7; color:var(--studio-dim); }
 .job-metrics-chart-empty svg { color:color-mix(in srgb, var(--studio-dim) 60%, transparent); }
 .job-metrics-chart-empty span { max-width:40ch; }
