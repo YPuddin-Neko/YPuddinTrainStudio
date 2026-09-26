@@ -2192,6 +2192,51 @@ def job_checkpoints(jid: str, c: ServiceContext = Depends(ctx)) -> list[dict[str
     return out
 
 
+@router.delete("/jobs/{jid}/checkpoints", response_model=m.Ok, response_model_exclude_unset=True)
+def delete_job_checkpoint(jid: str, path: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+    """Delete a saved output or resume point of this job from disk."""
+    job = _get_job(c, jid)
+    saved = next(
+        (
+            ev
+            for ev in _events_file(c, jid)
+            if ev.get("type") == "checkpoint.saved" and str(Path(ev["path"])) == str(Path(path))
+        ),
+        None,
+    )
+    target = Path(path)
+    if saved is None or not target.exists():
+        raise NotFound("checkpoint not found", code="checkpoint.not_found")
+    if saved.get("kind") != "full":
+        artifact = c.db.fetchone("SELECT id FROM artifacts WHERE job_id=? AND path=?", (jid, str(target)))
+        if artifact:
+            return delete_artifact(artifact["id"], delete_file=True, c=c)
+        if job["project_id"]:
+            assert_version_writable(c, job["project_id"], job.get("version_id"))
+        if target.is_file():
+            target.unlink()
+        return {"ok": True}
+    if job["project_id"]:
+        assert_version_writable(c, job["project_id"], job.get("version_id"))
+    # A queued, running or paused job may still resume from this state.
+    waiting = c.db.fetchall(
+        f"SELECT id FROM jobs WHERE status IN {ACTIVE_JOBS[:-1]},'paused') "
+        "AND (resume_from=? OR json_extract(config_json,'$.checkpoint.resume')=?)",
+        (str(target), str(target)),
+    )
+    if waiting:
+        raise ApiError(
+            "这个恢复点正被排队、运行或暂停中的训练使用，任务结束或取消后才能删除。",
+            code="checkpoint.in_use",
+            status=409,
+        )
+    if target.is_symlink() or not target.is_dir() or not (target / "state.json").is_file():
+        raise ApiError("not a resume point directory", code="checkpoint.invalid", status=409)
+    shutil.rmtree(target)
+    c.bus.publish("job.checkpoint", {"job_id": jid, "deleted": str(target)})
+    return {"ok": True}
+
+
 @router.get("/jobs/{jid}/files")
 def job_file(jid: str, path: str, kind: str = "sample", c: ServiceContext = Depends(ctx)) -> Response:
     r = _get_job(c, jid)

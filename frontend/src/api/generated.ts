@@ -1026,7 +1026,11 @@ export interface paths {
         get: operations["job_checkpoints_api_jobs__jid__checkpoints_get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Job Checkpoint
+         * @description Delete a saved output or resume point of this job from disk.
+         */
+        delete: operations["delete_job_checkpoint_api_jobs__jid__checkpoints_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -9957,6 +9961,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobCheckpoint"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_job_checkpoint_api_jobs__jid__checkpoints_delete: {
+        parameters: {
+            query: {
+                path: string;
+            };
+            header?: never;
+            path: {
+                jid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ok"];
                 };
             };
             /** @description Validation Error */
