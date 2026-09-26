@@ -5760,6 +5760,16 @@ export interface components {
             mem_free_mb?: number | null;
             /** Mem Total Mb */
             mem_total_mb?: number | null;
+            /** Util Pct */
+            util_pct?: number | null;
+            /** Temp C */
+            temp_c?: number | null;
+            /** Power W */
+            power_w?: number | null;
+            /** Power Limit W */
+            power_limit_w?: number | null;
+            /** Memory Scope */
+            memory_scope?: string | null;
             /** Job Id */
             job_id?: string | null;
             /** Job Name */
@@ -6508,6 +6518,11 @@ export interface components {
              * @enum {string}
              */
             theme: "light" | "dark" | "system";
+            /**
+             * Telemetry Interval
+             * @default 2.5
+             */
+            telemetry_interval: number;
         } & {
             [key: string]: unknown;
         };

@@ -8,6 +8,7 @@ import StudioSelect from '../../components/StudioSelect';
 import ConfigHelp from '../../components/ConfigHelp';
 import ProgressBar from '../../components/ProgressBar';
 import { useQueueDevices } from '../../api/hooks/useQueueDevices';
+import { useTelemetryInterval } from '../../api/hooks/useTelemetryInterval';
 import { gpuDeviceLabel } from '../../utils/gpuDevices';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
@@ -33,7 +34,7 @@ function DeviceCell({ job }: { job: Job }) {
 
 export default function Queue() {
   const text = useWorkspaceText();
-  const gpuStatus = useQueueDevices();
+  const gpuStatus = useQueueDevices(useTelemetryInterval());
   const [params, setParams] = useSearchParams();
   const group = groups.includes(params.get('view') as Group) ? params.get('view') as Group : 'active';
   const page = Math.max(1, Math.floor(Number(params.get('page')) || 1));
@@ -131,12 +132,22 @@ export default function Queue() {
     </header>
     {settings.held && <p className="task-notice" role="status">{text('调度已暂停：正在运行的任务会继续；等待中的任务不会启动。', 'Scheduling is held. Running jobs continue; waiting jobs will not start.')}</p>}
     {gpuStatus.error && <p className="task-notice" role="status">{text('显卡占用暂时无法读取', 'GPU assignments are temporarily unavailable')}: {gpuStatus.error}</p>}
-    {devices.length > 0 && <section className="queue-devices" aria-label={text('显卡占用', 'GPU assignments')}>{devices.map(device => {
+    {devices.length > 0 && <section className="queue-devices" aria-label={text('显卡状态', 'GPU status')}>{devices.map(device => {
       const used = device.mem_used_mb, totalMemory = device.mem_total_mb;
-      return <article key={device.device} className="queue-device" data-busy={!!device.job_id || undefined} data-unavailable={device.status === 'unavailable' || undefined}>
-        <div className="queue-device-name"><strong>{gpuDeviceLabel(device.device)}</strong><span title={device.name}>{device.name}</span></div>
-        <div className="queue-device-state"><span className="queue-dot" aria-hidden="true"/>{device.job_id ? <Link to={`/jobs/${encodeURIComponent(device.job_id)}`} title={device.job_name || device.job_id}>{device.job_name || device.job_id}</Link> : <span>{device.status === 'unavailable' ? text('不可用', 'Unavailable') : text('空闲', 'Free')}</span>}</div>
-        <div className="queue-device-memory" title={gpuMemoryDetails(device, text)}><ProgressBar label={`${gpuDeviceLabel(device.device)} ${text('显存占用', 'memory in use')}`} value={used ?? 0} max={totalMemory ?? 0}/><span>{formatGpuMemory(used)} / {formatGpuMemory(totalMemory)}</span></div>
+      const unavailable = device.status === 'unavailable';
+      return <article key={device.device} className="queue-device" data-busy={!!device.job_id || undefined} data-unavailable={unavailable || undefined}>
+        <header className="queue-device-head">
+          <div className="queue-device-name"><strong>{gpuDeviceLabel(device.device)}</strong><span title={device.name}>{device.name}</span></div>
+          <div className="queue-device-state">{unavailable ? <span className="queue-device-free" data-state="unavailable">{text('不可用', 'Unavailable')}</span>
+            : device.job_id ? <><JobStatus status={device.status || 'running'}/><Link to={`/jobs/${encodeURIComponent(device.job_id)}`} title={device.job_name || device.job_id}>{device.job_name || device.job_id}</Link></>
+              : <span className="queue-device-free"><span className="queue-dot" aria-hidden="true"/>{text('空闲', 'Free')}</span>}</div>
+        </header>
+        <dl className="queue-device-metrics">
+          <div><dt>{text('使用率', 'Load')}</dt><dd>{device.util_pct == null ? '—' : `${Math.round(device.util_pct)}%`}</dd></div>
+          <div><dt>{text('功率', 'Power')}</dt><dd>{device.power_w == null ? '—' : `${device.power_w < 10 ? device.power_w.toFixed(1) : Math.round(device.power_w)} W`}{device.power_limit_w ? <small> / {Math.round(device.power_limit_w)} W</small> : null}</dd></div>
+          <div><dt>{text('温度', 'Temperature')}</dt><dd>{device.temp_c == null ? '—' : `${Math.round(device.temp_c)} °C`}</dd></div>
+          <div className="queue-device-memory" title={gpuMemoryDetails(device, text)}><dt>{device.memory_scope === 'unified_system' ? text('统一内存', 'Unified memory') : text('显存', 'Memory')}</dt><dd><ProgressBar label={`${gpuDeviceLabel(device.device)} ${text('显存占用', 'memory in use')}`} value={used ?? 0} max={totalMemory ?? 0}/><span>{formatGpuMemory(used)} / {formatGpuMemory(totalMemory)}</span></dd></div>
+        </dl>
       </article>;
     })}</section>}
     <div className="queue-board">

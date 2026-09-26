@@ -1,6 +1,6 @@
 import type { QueueDevices } from '../api/types';
 
-export function gpuDeviceLabel(device: string) { return device.startsWith('cuda:') ? `GPU ${device.slice(5)}` : device; }
+export function gpuDeviceLabel(device: string) { return device.startsWith('cuda:') ? `GPU ${device.slice(5)}` : device.toUpperCase(); }
 
 /** Explicit device requests must retain their identity, even when a device disappears. */
 export function gpuSelectionValid(devices: string[], count: number, snapshot: QueueDevices | null) {

@@ -116,6 +116,8 @@ class SettingsServer(_Out):
 class SettingsUi(_Out):
     language: Literal["zh-CN", "en"]
     theme: Literal["light", "dark", "system"]
+    # Seconds between hardware readings in the top bar and the queue.
+    telemetry_interval: float = Field(2.5, ge=1, le=60)
 
 
 class SettingsNetwork(BaseModel):
@@ -829,6 +831,11 @@ class QueueDevice(_Out):
     mem_reserved_mb: float | None = None
     mem_free_mb: float | None = None
     mem_total_mb: float | None = None
+    util_pct: float | None = None
+    temp_c: float | None = None
+    power_w: float | None = None
+    power_limit_w: float | None = None
+    memory_scope: str | None = None  # "unified_system" when the GPU shares system memory
     job_id: str | None = None
     job_name: str | None = None
     status: str | None = None

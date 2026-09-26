@@ -16775,6 +16775,61 @@
             ],
             "title": "Mem Total Mb"
           },
+          "util_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Util Pct"
+          },
+          "temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temp C"
+          },
+          "power_w": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Power W"
+          },
+          "power_limit_w": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Power Limit W"
+          },
+          "memory_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Scope"
+          },
           "job_id": {
             "anyOf": [
               {
@@ -18640,6 +18695,13 @@
               "system"
             ],
             "title": "Theme"
+          },
+          "telemetry_interval": {
+            "type": "number",
+            "maximum": 60.0,
+            "minimum": 1.0,
+            "title": "Telemetry Interval",
+            "default": 2.5
           }
         },
         "additionalProperties": true,

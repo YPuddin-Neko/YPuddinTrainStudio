@@ -1137,13 +1137,26 @@ async def events(
     )
 
 
-async def stats_publisher(c: ServiceContext, interval: float = 2.5) -> None:
+def telemetry_interval(c: ServiceContext) -> float:
+    try:
+        value = float(c.settings()["ui"].get("telemetry_interval", 2.5))
+    except (KeyError, TypeError, ValueError):
+        value = 2.5
+    return min(60.0, max(1.0, value))
+
+
+async def stats_publisher(c: ServiceContext, interval: float | None = None) -> None:
+    loop = asyncio.get_running_loop()
     while True:
+        started = loop.time()
         try:
             c.bus.publish("system.stats", await asyncio.to_thread(system_stats, c.data_root))
         except Exception:  # noqa: BLE001
             pass
-        await asyncio.sleep(interval)
+        # The interval runs from the start of each reading; re-reading the setting while
+        # waiting lets a shorter interval apply without a restart.
+        while (remaining := (interval or telemetry_interval(c)) - (loop.time() - started)) > 0:
+            await asyncio.sleep(min(0.5, remaining))
 
 
 _ = time

@@ -31,7 +31,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "logs_dir": "",
     },
     "server": {"host": "127.0.0.1", "port": 8123, "open_browser": True},
-    "ui": {"language": "zh-CN", "theme": "system"},
+    "ui": {"language": "zh-CN", "theme": "system", "telemetry_interval": 2.5},
     "network": {
         "proxy_mode": "system",
         "proxy_url": "",
