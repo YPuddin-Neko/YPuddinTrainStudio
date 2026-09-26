@@ -11,7 +11,7 @@
 .app-shell .task-empty strong { color:var(--studio-text); font-size:15px; font-weight:600; }
 .app-shell .task-status { font-size:12px; border-radius:5px; }
 .app-shell .task-error,.app-shell .task-notice { font-size:13px; line-height:1.65; }
-.app-shell .workspace-navigation.workspace-page-heading { align-items:center; gap:16px; min-height:76px; padding:0 0 16px; }
+.app-shell .workspace-navigation.workspace-page-heading { align-items:center; gap:16px; min-height:44px; padding:0 0 16px; }
 .workspace-heading-main { display:grid; gap:9px; min-width:0; }
 .workspace-heading-title { display:flex; align-items:center; flex-wrap:wrap; gap:10px; min-width:0; }
 .workspace-heading-title h1 { margin:0; min-width:0; font-size:23px; font-weight:650; line-height:1.25; letter-spacing:-.4px; overflow-wrap:anywhere; }

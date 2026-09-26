@@ -13,6 +13,7 @@ import { useWorkspaceText } from '../utils/workspaceText';
 import SystemTelemetry from './SystemTelemetry';
 import PersistentProjectSidebar from './projects/PersistentProjectSidebar';
 import { ProjectSidebarContext, type ProjectSidebarSelection } from './projects/ProjectSidebarContext';
+import { TopbarContext } from './topbarContext';
 import '../styles/project-sidebar.css';
 import '../styles/motion.css';
 import BrandMark from './BrandMark';
@@ -44,6 +45,7 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
   const [theme, setTheme] = React.useState<Settings['ui']['theme']>('system');
   const [systemDark, setSystemDark] = React.useState(window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false);
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const [locationSlot, setLocationSlot] = React.useState<HTMLDivElement | null>(null);
   const menuTrigger = React.useRef<HTMLButtonElement>(null);
   const dismissMenu = () => {
     setMenuOpen(false);
@@ -165,7 +167,7 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
   const runningJob = runningJobs[0];
 
   return (
-    <ProjectSidebarContext.Provider value={projectSidebar}><div className={`app-shell flex overflow-hidden${collapsed ? ' sidebar-collapsed' : ''}`}>
+    <ProjectSidebarContext.Provider value={projectSidebar}><TopbarContext.Provider value={locationSlot}><div className={`app-shell flex overflow-hidden${collapsed ? ' sidebar-collapsed' : ''}`}>
       {/* Sidebar */}
       {menuOpen && <button className="app-sidebar-backdrop fixed inset-0 bg-black/40 md:hidden" aria-label={t('hardware.closeMenu')} onClick={dismissMenu} />}
       <aside id="app-sidebar" className={`app-sidebar w-[184px] flex-shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex-col fixed inset-y-0 left-0 md:static ${menuOpen ? 'flex' : 'hidden md:flex'}`}>
@@ -205,28 +207,31 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
 
       {/* Main Content */}
       <main className="app-main flex-1 min-w-0 flex flex-col overflow-hidden relative">
-        {/* Topbar：实时系统状态 + 训练中胶囊 */}
+        {/* Top bar: the page's location, then running work and system status. */}
         <header className="app-topbar bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800" data-testid="app-topbar">
           <button ref={menuTrigger} type="button" className="ui-btn ui-btn-quiet ui-btn-icon topbar-menu" aria-label={t('hardware.openMenu')} aria-expanded={menuOpen} aria-controls="app-sidebar" onClick={() => setMenuOpen(true)}><Menu className="w-5 h-5" /></button>
-          {runningJob && <div className="topbar-job-slot">
-              <Link
-                to={`/jobs/${runningJob.id}`}
-                title={runningJob.name}
-                className="topbar-running-job bg-green-50 dark:bg-green-950/40 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-300"
-                data-testid="topbar-running-job"
-              >
-                <PlayCircle className="w-3.5 h-3.5 animate-pulse" />
-                <span className="topbar-job-name">{runningJob.name}</span><span className="sr-only">{runningJob.type === 'xyz' ? text('模型测试', 'Model testing') : runningJob.type === 'cache' ? text('缓存', 'Cache') : text('训练', 'Training')}</span>
-                {runningJob.type === 'xyz' && runningJob.progress?.total != null && <span className="topbar-job-progress">{runningJob.progress.done ?? 0}/{runningJob.progress.total}</span>}
-                {runningJob.type !== 'xyz' && runningJob.progress?.step != null && runningJob.progress?.total_steps != null && (
-                  <span className="topbar-job-progress">{runningJob.progress.step}/{runningJob.progress.total_steps}</span>
-                )}
-              </Link>
-          </div>}
-          {(telemetryError || connectionStatus !== 'connected') && <div className="topbar-feedback-slot">
-            {telemetryError ? <button type="button" className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon topbar-warning" onClick={() => void refreshTelemetry()} title={telemetryError} aria-label={text('硬件状态读取失败，点击重试', 'Hardware status failed; retry')}><RefreshCw size={15}/><span className="sr-only" role="alert">{telemetryError}</span></button> : connectionStatus !== 'connected' && <span role="status" data-testid="event-connection" title={t(`connection.${connectionStatus}`)} className="topbar-warning">{connectionStatus === 'disconnected' ? <WifiOff size={15}/> : <Loader2 size={15} className="animate-spin"/>}<span className="sr-only">{t(`connection.${connectionStatus}`)}</span></span>}
-          </div>}
-          <SystemTelemetry stats={stats} />
+          <div ref={setLocationSlot} className="topbar-location" data-testid="topbar-location"/>
+          <div className="topbar-status">
+            {runningJob && <div className="topbar-job-slot">
+                <Link
+                  to={`/jobs/${runningJob.id}`}
+                  title={runningJob.name}
+                  className="topbar-running-job bg-green-50 dark:bg-green-950/40 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-300"
+                  data-testid="topbar-running-job"
+                >
+                  <PlayCircle className="w-3.5 h-3.5 animate-pulse" />
+                  <span className="topbar-job-name">{runningJob.name}</span><span className="sr-only">{runningJob.type === 'xyz' ? text('模型测试', 'Model testing') : runningJob.type === 'cache' ? text('缓存', 'Cache') : text('训练', 'Training')}</span>
+                  {runningJob.type === 'xyz' && runningJob.progress?.total != null && <span className="topbar-job-progress">{runningJob.progress.done ?? 0}/{runningJob.progress.total}</span>}
+                  {runningJob.type !== 'xyz' && runningJob.progress?.step != null && runningJob.progress?.total_steps != null && (
+                    <span className="topbar-job-progress">{runningJob.progress.step}/{runningJob.progress.total_steps}</span>
+                  )}
+                </Link>
+            </div>}
+            {(telemetryError || connectionStatus !== 'connected') && <div className="topbar-feedback-slot">
+              {telemetryError ? <button type="button" className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon topbar-warning" onClick={() => void refreshTelemetry()} title={telemetryError} aria-label={text('硬件状态读取失败，点击重试', 'Hardware status failed; retry')}><RefreshCw size={15}/><span className="sr-only" role="alert">{telemetryError}</span></button> : connectionStatus !== 'connected' && <span role="status" data-testid="event-connection" title={t(`connection.${connectionStatus}`)} className="topbar-warning">{connectionStatus === 'disconnected' ? <WifiOff size={15}/> : <Loader2 size={15} className="animate-spin"/>}<span className="sr-only">{t(`connection.${connectionStatus}`)}</span></span>}
+            </div>}
+            <SystemTelemetry stats={stats} />
+          </div>
         </header>
         <ApiErrorNotice />
 
@@ -234,6 +239,6 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
           <div ref={pageFrame} className="app-page-frame" data-testid="app-page-frame"><React.Suspense fallback={<div data-testid="app-page-loading"><LoadingNote block label={t('common.loading')}/></div>}><Outlet /></React.Suspense></div>
         </div>
       </main>
-    </div></ProjectSidebarContext.Provider>
+    </div></TopbarContext.Provider></ProjectSidebarContext.Provider>
   );
 }

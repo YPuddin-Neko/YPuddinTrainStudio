@@ -23,6 +23,7 @@ import ProjectWorkspaceHeader from '../../components/projects/ProjectWorkspaceHe
 import DatasetNavigationGuard from '../../components/datasets/DatasetNavigationGuard';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { datasetReturnTarget } from '../../utils/datasetReturn';
+import TopbarBreadcrumb from '../../components/TopbarBreadcrumb';
 import {
   RefreshCcw,
   Trash2,
@@ -285,7 +286,7 @@ export function DatasetWorkspace({id}: {id?:string}) {
       }} beforeLeave={() => leaveRef.current.beforeNavigation()} onError={error => setActionError(formatApiError(error))}/>}
       <div className="dataset-workspace-navigation">
         <Link className="ui-btn dataset-back" to={returnUrl}><ArrowLeft size={16}/>{text('返回', 'Back')}</Link>
-        {projectContext && !infoError ? <ProjectWorkspaceHeader project={projectContext.project} versionId={info?.source.version_id || undefined} versions={projectContext.versions} current={projectContext.current} active="data" title={datasetName} breadcrumbTrail={<Link to={libraryUrl}>{text('训练数据', 'Training data')}</Link>} refresh={refreshProjectContext} beforeAction={beforeNavigation}/> : <header className="workspace-navigation workspace-page-heading"><div className="workspace-heading-main"><nav className="workspace-breadcrumb" aria-label={text('当前位置', 'Current location')}><Link to="/projects">{text('项目', 'Projects')}</Link>{returnProject && <><span aria-hidden="true">/</span><Link to={libraryUrl}>{text('训练数据', 'Training data')}</Link></>}</nav><div className="workspace-heading-title"><h1 title={info?.source.path}>{info && !infoError ? datasetName : text('图片、标签与遮罩','Images, captions and masks')}</h1></div></div></header>}
+        {projectContext && !infoError ? <ProjectWorkspaceHeader project={projectContext.project} versionId={info?.source.version_id || undefined} versions={projectContext.versions} current={projectContext.current} active="data" title={datasetName} breadcrumbTrail={<Link to={libraryUrl}>{text('训练数据', 'Training data')}</Link>} refresh={refreshProjectContext} beforeAction={beforeNavigation}/> : <header className="workspace-navigation workspace-page-heading"><div className="workspace-heading-main"><TopbarBreadcrumb><nav className="workspace-breadcrumb" aria-label={text('当前位置', 'Current location')}><Link to="/projects">{text('项目', 'Projects')}</Link>{returnProject && <><span aria-hidden="true">/</span><Link to={libraryUrl}>{text('训练数据', 'Training data')}</Link></>}</nav></TopbarBreadcrumb><div className="workspace-heading-title"><h1 title={info?.source.path}>{info && !infoError ? datasetName : text('图片、标签与遮罩','Images, captions and masks')}</h1></div></div></header>}
       </div>
       {loadingWorkspace ? <div className="dataset-loading" role="status"><span className="sr-only">{text('正在读取数据集…', 'Loading dataset…')}</span><div className="ui-skeleton"/><div className="ui-skeleton"/></div> : <>
       {(infoError || contextError) && <div role="alert" className="workspace-message error">{infoError || contextError}<button type="button" className="ui-btn ui-btn-sm" onClick={()=>{fetchInfo();void refreshProjectContext();}}>{t('common.retry')}</button></div>}

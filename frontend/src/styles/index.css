@@ -43,6 +43,12 @@ input::placeholder, textarea::placeholder { color:var(--studio-dim); opacity:1; 
 .app-topbar { display:flex; align-items:center; gap:12px; height:48px; min-height:48px; padding:0 16px; flex-shrink:0; z-index:10; }
 .topbar-menu.ui-btn { display:none; }
 .system-telemetry { margin-left:auto; flex:0 1 auto; min-width:0; max-width:100%; overflow-x:auto; overflow-y:hidden; }
+/* The location keeps its own width (up to half the bar); the status group gives way first and the telemetry strip scrolls. */
+.topbar-location { display:flex; align-items:center; flex:0 0 auto; min-width:0; max-width:50%; overflow:hidden; }
+.topbar-status { display:flex; align-items:center; gap:12px; flex:0 1 auto; min-width:0; margin-left:auto; }
+.topbar-location > nav { min-width:0; font-size:13px; line-height:20px; }
+.topbar-location .workspace-breadcrumb a,.topbar-location .workspace-breadcrumb span:last-child { max-width:240px; }
+.topbar-location .workspace-breadcrumb > span:last-child:not([aria-hidden]) { color:var(--studio-text); }
 .telemetry-strip { display:grid; grid-template-columns:84px 96px 356px 76px; width:max-content; height:44px; align-items:center; }
 .telemetry-group { display:flex; align-items:center; gap:7px; min-width:0; height:30px; padding:0 10px; border-right:1px solid var(--studio-line); }
 .telemetry-group:first-child { padding-left:0; }
@@ -75,7 +81,7 @@ input::placeholder, textarea::placeholder { color:var(--studio-dim); opacity:1; 
 .topbar-job-name, .topbar-job-progress { display:none; }
 @media(min-width:1200px) { .topbar-job-name { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .topbar-job-progress { display:block; flex-shrink:0; font-variant-numeric:tabular-nums; } }
 @media(max-width:1199px) { .topbar-job-slot { flex:0 0 30px; } }
-@media(max-width:767px) { .app-topbar { padding-inline:12px; gap:8px; } .topbar-menu.ui-btn { display:inline-flex; flex-shrink:0; } .app-page-viewport { --page-inset:12px; } }
+@media(max-width:767px) { .app-topbar { padding-inline:12px; gap:8px; } .topbar-location { display:none; } .topbar-menu.ui-btn { display:inline-flex; flex-shrink:0; } .app-page-viewport { --page-inset:12px; } }
 @supports not (scrollbar-gutter:stable) { .app-page-viewport { overflow-y:scroll; } }
 .sidebar-brand-row { display:flex; align-items:center; flex-shrink:0; gap:6px; height:48px; padding:0 12px; border-bottom:1px solid var(--studio-line); }
 .sidebar-brand { display:flex; align-items:center; gap:9px; min-width:0; border-radius:5px; }

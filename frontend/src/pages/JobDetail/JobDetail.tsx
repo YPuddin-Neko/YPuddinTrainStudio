@@ -36,6 +36,7 @@ import JobLogView from './JobLogView';
 import { SlidingIndicator } from '../../components/motion';
 import { useEnterAnimation } from '../../utils/motion';
 import { LazyImage } from '../../components/Loading';
+import TopbarBreadcrumb from '../../components/TopbarBreadcrumb';
 
 type VersionedJob = Job & { version_id?: string | null; latest: Job['latest'] & {loss_mean?:number|null; loss_count?:number|null; loss_mean_scope?:string|null} };
 
@@ -332,15 +333,14 @@ export default function JobDetail() {
   return (
     <div className="job-monitor task-workspace" data-view={activeTab} data-testid="job-detail-page">
       <header className="job-monitor-bar">
-        <div className="job-monitor-nav">
-          <button type="button" className="ui-btn ui-btn-sm" onClick={goBack}><ArrowLeft size={14}/>{text('返回', 'Back')}</button>
+        <TopbarBreadcrumb>
           <nav className="job-monitor-breadcrumb" aria-label={text('当前位置', 'Current location')}>
             <Link to="/queue">{text('任务队列', 'Job queue')}</Link>
             {job?.project_id && <><span aria-hidden="true">/</span><Link to={resultsUrl} title={text('打开版本训练结果', 'Open version results')}>{job.project_name || job.project_id}{versionLabel && <span className="job-monitor-version"> · {versionLabel}</span>}</Link></>}
           </nav>
-        </div>
+        </TopbarBreadcrumb>
         <div className="job-monitor-identity">
-          <div className="job-monitor-title"><h1>{job?.name || text('读取任务…', 'Loading job…')}</h1>{job && <JobStatus status={job.status}/>}</div>
+          <div className="job-monitor-title"><button type="button" className="ui-btn ui-btn-sm job-monitor-back" onClick={goBack}><ArrowLeft size={14}/>{text('返回', 'Back')}</button><h1>{job?.name || text('读取任务…', 'Loading job…')}</h1>{job && <JobStatus status={job.status}/>}</div>
           {job && <JobActions key={job.id} job={job} onUpdated={updated => { if (updated.id === job.id) setJob(updated); else navigate(`/jobs/${updated.id}`, { replace: true, state: location.state }); }}/>}
         </div>
       </header>

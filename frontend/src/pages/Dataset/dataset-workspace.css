@@ -5,7 +5,8 @@
 .dataset-back { flex:none; }
 .dataset-loading { flex:1; display:grid; grid-template-rows:100px minmax(240px,1fr); gap:12px; min-height:360px; }
 .dataset-workspace .workspace-page-heading { position:static; }
-.app-shell .dataset-workspace .workspace-page-heading { min-height:60px; padding-bottom:4px; }
+.app-shell .dataset-workspace .workspace-page-heading { min-height:44px; padding-bottom:4px; }
+@media (max-width:767px) { .app-shell .dataset-workspace .workspace-page-heading { min-height:60px; } }
 .dataset-workspace .workspace-page-heading::before { display:none; }
 .dataset-workspace-navigation .workspace-breadcrumb { flex-wrap:wrap; row-gap:4px; }
 .dataset-workspace .workspace-page-heading h1 { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
