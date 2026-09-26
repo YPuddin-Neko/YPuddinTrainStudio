@@ -40,12 +40,15 @@ function StatCard({ label, value, hint, detail }: { label: string; value: React.
   return <div className="job-stat"><div className="job-stat-label">{label}{hint && <ConfigHelp label={`${label} · 说明`} anchor=".job-stat">{hint}</ConfigHelp>}</div><div className="job-stat-value">{value}</div>{detail}</div>;
 }
 
+const tinyChange = new Intl.NumberFormat('en-US', { maximumSignificantDigits: 2, maximumFractionDigits: 20, useGrouping: false });
+
 /** How a live value moved since the previous reading: down in green, up in red. */
 function StepChange({ delta, text }: { delta: number | null; text: (zh: string, en: string) => string }) {
   if (delta == null || !Number.isFinite(delta)) return null;
   const direction = delta < 0 ? 'down' : delta > 0 ? 'up' : 'flat';
   const size = Math.abs(delta);
-  const amount = size !== 0 && size < 1e-4 ? size.toExponential(1) : size.toFixed(4);
+  // Plain decimals throughout; a change below 0.0001 keeps two significant digits (0.0000025).
+  const amount = size !== 0 && size < 1e-4 ? tinyChange.format(size) : size.toFixed(4);
   const Icon = direction === 'down' ? ArrowDown : direction === 'up' ? ArrowUp : Minus;
   const said = direction === 'down' ? text(`比上一次下降 ${amount}`, `Down ${amount} from the previous reading`)
     : direction === 'up' ? text(`比上一次上升 ${amount}`, `Up ${amount} from the previous reading`) : text('与上一次持平', 'Same as the previous reading');
