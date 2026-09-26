@@ -3,7 +3,7 @@ import { confirmedTrainingComputePolicy, trainingComputeManagedField, trainingCo
 import React from 'react';
 import { evaluateShowWhen } from '../showWhen';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, ChevronRight, Plus, Trash2, ArrowUp, ArrowDown, FolderOpen } from 'lucide-react';
+import { AlertCircle, ChevronDown, ChevronRight, Plus, Trash2, ArrowUp, ArrowDown, FolderOpen } from 'lucide-react';
 import { PathInput, PathPickerModal } from '../../components/PathBrowser';
 import { apiClient } from '../../api/client';
 import { FamilyInfo, ModelAsset } from '../../api/types';
@@ -1332,6 +1332,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       {search.trim() && sortedGroups.length > 0 && <p className="config-search-results" role="status">{english ? `${sortedGroups.reduce((count, [, group]) => count + group.fields.length, 0)} matching parameters · ${sortedGroups.length} sections` : `${sortedGroups.reduce((count, [, group]) => count + group.fields.length, 0)} 个匹配参数 · ${sortedGroups.length} 个分组`}</p>}
       {sortedGroups.map(([groupName, groupData]) => (
         <FieldGroup key={`${groupName}:${search.trim()}`} title={parameterGroupLabel(groupName, english) || (groupName === 'training' ? (english ? 'Training mode' : '训练方式') : t(`groups.${groupName}`, groupName))} count={groupData.fields.length} compact={compact} groupKey={groupName}>
+          {/* A problem with the whole group, such as a memory estimate too large for the GPU, has no field to sit under. */}
+          {errors.filter(error => error.loc === groupName && error.msg).map(error => <p key={error.msg} className="config-group-alert"><AlertCircle size={14} aria-hidden="true"/><span>{error.msg}</span></p>)}
           {groupName === 'checkpoint' && versionSources && <div className="output-binding-summary">
             <div className="output-binding-heading"><strong>{english ? 'Training weights' : '训练权重'}</strong>{!showAdvanced && <button type="button" className="ui-btn ui-btn-sm" aria-expanded={editOutput} onClick={() => setEditOutput(previous => !previous)}>{editOutput ? (english ? 'Collapse file name' : '收起文件名设置') : (english ? 'Edit file name' : '修改文件名')}</button>}</div>
             {outputBinding ? <><div><span>{english ? 'File name' : '文件名'}</span><code>{outputBinding.name}-final{value.training?.mode === 'full' ? '.model/' : '.safetensors'}</code></div><div><span>{english ? 'Save location' : '保存位置'}</span><code>{outputBinding.directory_template.replace('{job_id}', english ? '<run ID>' : '<运行 ID>')}</code></div></> : <p><LoadingNote label={english ? 'Resolving the save location…' : '正在读取保存位置…'}/></p>}

@@ -23,6 +23,7 @@ from .gpu_selection import selection_error
 from .hardware import gpu_info
 from .job_logs import parse_log_lines
 from .job_paths import event_file, log_file, state_directory
+from .memory_fit import capacity_shortfall, device_label, fits_now, gb, shortfall_reason
 from .sample_events import sample_event_loss
 
 log = logging.getLogger(__name__)
@@ -263,32 +264,67 @@ class JobSupervisor:
             return None
         if not inventory:
             return "cpu"
-        used = {device for allocation in self._devices.values() for device in self._allocation(allocation)}
+        owners = {
+            device: job_id
+            for job_id, allocation in self._devices.items()
+            for device in self._allocation(allocation)
+        }
         estimate = json.loads(job.get("progress_json") or "{}").get("estimated_peak_mb") or 0
-        selected = []
-        for gpu in sorted(inventory, key=lambda g: g.get("mem_free_mb") or 0, reverse=True):
+        candidates = [
+            gpu
+            for gpu in inventory
+            if (not requested or gpu["device"] in requested)
+            and (count == 1 or gpu["device"].startswith("cuda:"))
+        ]
+        if check_memory and (shortfall := capacity_shortfall(estimate, candidates, count)):
+            # Waiting cannot help: even an idle device is too small for this run.
+            self._publish_admission(job, error=shortfall_reason(shortfall))
+            return None
+        selected, busy, short = [], [], []
+        for gpu in sorted(candidates, key=lambda g: g.get("mem_free_mb") or 0, reverse=True):
             device = gpu["device"]
-            if requested and device not in requested:
-                continue
-            if count > 1 and not device.startswith("cuda:"):
-                continue
-            if device in used:
+            if device in owners:
+                busy.append(device)
                 continue  # exclusive accelerator ownership; max_concurrent is an upper bound
-            available = gpu.get("mem_free_mb")
-            if check_memory and estimate and available is not None and estimate > available * 0.95:
+            if check_memory and not fits_now(estimate, gpu):
+                short.append(device)
                 continue
             selected.append(device)
             if len(selected) == count:
                 allocation = requested or selected
                 return allocation[0] if count == 1 else tuple(allocation)
-        patch = {
-            "phase": "waiting_for_device",
-            "wait_reason": f"等待所选显卡 {', '.join(requested)} 空闲且显存充足"
-            if requested
-            else f"等待 {count} 张空闲且显存充足的显卡",
-        }
-        self._publish_admission(job, progress=patch)
+        self._publish_admission(
+            job,
+            progress={
+                "phase": "waiting_for_device",
+                "wait_reason": self._wait_reason(requested, count, busy, short, owners, estimate),
+            },
+        )
         return None
+
+    def _wait_reason(
+        self,
+        requested: list[str],
+        count: int,
+        busy: list[str],
+        short: list[str],
+        owners: dict[str, str],
+        estimate: float,
+    ) -> str:
+        """Name what the run is waiting for: a device held by another job, or memory used elsewhere."""
+        if short and not busy:
+            devices = "、".join(device_label(device) for device in short)
+            return f"等待显存：预计峰值 {gb(estimate)}，{devices} 当前可用显存不足"
+        if busy:
+            row = self.db.fetchone("SELECT name FROM jobs WHERE id=?", (owners[busy[0]],))
+            holder = f"「{row['name']}」" if row else "其他任务"
+            devices = device_label(busy[0]) + (f" 等 {len(busy)} 张显卡" if len(busy) > 1 else "")
+            return f"等待显卡：{devices} 正在运行{holder}"
+        return (
+            f"等待所选显卡 {', '.join(requested)} 空闲且显存充足"
+            if requested
+            else f"等待 {count} 张空闲且显存充足的显卡"
+        )
 
     def _publish_admission(
         self, job: dict[str, Any], *, error: str | None = None, progress: dict[str, Any] | None = None

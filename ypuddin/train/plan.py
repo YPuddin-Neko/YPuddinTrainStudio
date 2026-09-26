@@ -343,6 +343,8 @@ def _append_data_plan(
                     {"loc": "loop.gpu_count", "msg": "训练批次数少于卡数，请增加图片或降低每卡批量"}
                 )
     geometry = {}
+    # How each training size is reached: the source size and its resize, before the crop or padding.
+    routes: dict[tuple[int, int, int], dict[tuple[int, int, int, int], set[str]]] = {}
     padded_images, cropped_images = set(), set()
     padding_pixels = total_pixels = 0
     for item in items:
@@ -350,6 +352,15 @@ def _append_data_plan(
         if key not in geometry:
             geometry[key] = item_geometry(item)
         entry = geometry[key]
+        route = (
+            entry["source_width"],
+            entry["source_height"],
+            entry["resized_width"],
+            entry["resized_height"],
+        )
+        routes.setdefault((item.bucket.base, *item.bucket.key), {}).setdefault(route, set()).add(
+            item.record.path
+        )
         total_pixels += item.bucket.area
         padding_pixels += entry["padding_pixels"]
         if entry["padding_pixels"]:
@@ -368,6 +379,16 @@ def _append_data_plan(
         "truncated": len(geometry) > 100,
         "items": list(geometry.values())[:100],
     }
+    for bucket in out["buckets"]:
+        found = sorted(
+            routes.get((bucket["base"], bucket["w"], bucket["h"]), {}).items(),
+            key=lambda pair: (-len(pair[1]), pair[0]),
+        )
+        bucket["sources"] = [
+            {"width": sw, "height": sh, "resized_width": rw, "resized_height": rh, "images": len(paths)}
+            for (sw, sh, rw, rh), paths in found[:4]
+        ]
+        bucket["source_variants"] = len(found)
     if padding_pixels:
         out["warnings"].append(
             {

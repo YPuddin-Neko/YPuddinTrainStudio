@@ -545,17 +545,27 @@ def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str,
             },
         }
     gpus = gpu_info()
+    largest = max(gpus, key=lambda gpu: gpu.get("mem_total_mb") or 0) if gpus else None
     result = make_plan(
         cfg,
         index_db_path=c.service_cache_dir("index") / "index.sqlite",
-        gpu_total_mb=gpus[0]["mem_total_mb"] if gpus else None,
-        device=gpus[0]["device"] if gpus else "cpu",
+        gpu_total_mb=largest["mem_total_mb"] if largest else None,
+        device=largest["device"] if largest else "cpu",
     )
+    from .memory_fit import capacity_shortfall, shortfall_error
     from .supervisor import training_device_error
 
     count = (result.get("distributed") or {}).get("world_size", 1)
     if error := training_device_error(count, gpus):
         result["errors"].append({"loc": "loop.gpu_count", "msg": error})
+        result["ok"] = False
+    # Starting would only wait forever, so the plan names the shortfall while it can still be fixed.
+    if c.db.get_kv("queue.settings", {}).get("memory_admission", True) and (
+        shortfall := capacity_shortfall((result.get("memory") or {}).get("peak_mb_estimate"), gpus, count)
+    ):
+        result["errors"].append(shortfall_error(shortfall))
+        # The error supersedes the note that memory may be tight.
+        result["warnings"] = [item for item in result["warnings"] if item.get("code") != "vram.tight"]
         result["ok"] = False
     return result
 

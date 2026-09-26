@@ -15673,6 +15673,18 @@
               }
             ],
             "title": "Batches"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/PlanBucketSource"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "source_variants": {
+            "type": "integer",
+            "title": "Source Variants",
+            "default": 0
           }
         },
         "additionalProperties": true,
@@ -15684,6 +15696,41 @@
           "batches"
         ],
         "title": "PlanBucket"
+      },
+      "PlanBucketSource": {
+        "properties": {
+          "width": {
+            "type": "integer",
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height"
+          },
+          "resized_width": {
+            "type": "integer",
+            "title": "Resized Width"
+          },
+          "resized_height": {
+            "type": "integer",
+            "title": "Resized Height"
+          },
+          "images": {
+            "type": "integer",
+            "title": "Images"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "width",
+          "height",
+          "resized_width",
+          "resized_height",
+          "images"
+        ],
+        "title": "PlanBucketSource",
+        "description": "One way images reach a training size: their source size and the resize before crop or padding."
       },
       "PlanDistributed": {
         "properties": {

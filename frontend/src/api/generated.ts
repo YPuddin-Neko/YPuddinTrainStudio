@@ -5299,6 +5299,31 @@ export interface components {
             items: number;
             /** Batches */
             batches: number | null;
+            /** Sources */
+            sources?: components["schemas"]["PlanBucketSource"][];
+            /**
+             * Source Variants
+             * @default 0
+             */
+            source_variants: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * PlanBucketSource
+         * @description One way images reach a training size: their source size and the resize before crop or padding.
+         */
+        PlanBucketSource: {
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+            /** Resized Width */
+            resized_width: number;
+            /** Resized Height */
+            resized_height: number;
+            /** Images */
+            images: number;
         } & {
             [key: string]: unknown;
         };

@@ -1924,18 +1924,6 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
         else max((g["mem_total_mb"] for g in devices), default=None),
         device=(selected or devices)[0]["device"] if devices else "cpu",
     )
-    if not preflight["ok"]:
-        raise ApiError(
-            "training preflight failed", code="config.invalid", details={"errors": preflight["errors"]}
-        )
-    if cfg.checkpoint.resume:
-        state = Path(cfg.checkpoint.resume).expanduser()
-        if not (state / "state.json").is_file():
-            raise ApiError(
-                "resume must point to a complete state directory",
-                code="config.invalid",
-                details={"errors": [{"loc": "checkpoint.resume", "msg": "complete checkpoint not found"}]},
-            )
     memory = preflight.get("memory") or {}
     estimated_peak_mb = memory.get("peak_mb_estimate")
     if body.type == "cache":
@@ -1950,6 +1938,25 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
             and all(type(value) in (int, float) and math.isfinite(value) and value >= 0 for value in values)
             else None
         )
+    from .memory_fit import capacity_shortfall, shortfall_error
+
+    if c.db.get_kv("queue.settings", {}).get("memory_admission", True) and (
+        shortfall := capacity_shortfall(estimated_peak_mb, selected or devices, cfg.loop.gpu_count)
+    ):
+        preflight["errors"].append(shortfall_error(shortfall))
+        preflight["ok"] = False
+    if not preflight["ok"]:
+        raise ApiError(
+            "training preflight failed", code="config.invalid", details={"errors": preflight["errors"]}
+        )
+    if cfg.checkpoint.resume:
+        state = Path(cfg.checkpoint.resume).expanduser()
+        if not (state / "state.json").is_file():
+            raise ApiError(
+                "resume must point to a complete state directory",
+                code="config.invalid",
+                details={"errors": [{"loc": "checkpoint.resume", "msg": "complete checkpoint not found"}]},
+            )
     with c.db.lock:
         if version:
             assert_version_writable(c, body.project_id, vid)

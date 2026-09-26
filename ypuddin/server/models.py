@@ -208,12 +208,24 @@ class ConfigInspection(_Out):
     errors: list[ConfigError]
 
 
+class PlanBucketSource(_Out):
+    """One way images reach a training size: their source size and the resize before crop or padding."""
+
+    width: int
+    height: int
+    resized_width: int
+    resized_height: int
+    images: int
+
+
 class PlanBucket(_Out):
     base: int = 0  # bucket-mode base resolution; 0 for native sizes
     w: int
     h: int
     items: int
     batches: int | None
+    sources: list[PlanBucketSource] = Field(default_factory=list)  # most common first, at most four
+    source_variants: int = 0
 
 
 class PlanParams(_Out):

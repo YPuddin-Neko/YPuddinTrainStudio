@@ -89,6 +89,7 @@ export function configFieldLabel(path: string, fallback: string, english = false
   if (english && path === 'checkpoint.save_state_every_epochs') return 'Recovery save interval (epochs)';
   if (english && path.startsWith('dataset.native_')) return ({'dataset.native_max_pixels':'Image area limit (equivalent side, px)','dataset.native_max_side':'Longest side limit (px)','dataset.native_overflow':'When a size limit is exceeded'} as Record<string,string>)[path] || fallback;
   if (english && path === 'model.sdxl_max_token_length') return 'SDXL caption length';
+  if (english && path === 'memory') return 'Memory estimate';
   if (path === 'loop.gpu_count') return english ? 'Training GPU count' : labels[path];
   if (path === 'loop.distributed_strategy') return english ? 'Multi-GPU training strategy' : labels[path];
   if (path === 'loop.deterministic') return english ? 'Reproducible training' : labels[path];
@@ -296,12 +297,16 @@ export const OPAQUE_CONFIG_ISSUE = '此配置未通过检查，展开详情查�
 export function presentConfigIssues(errors: Array<{loc?: unknown; msg?: unknown}>, english = false): ConfigIssue[] {
   const issues = errors.map(error => {
     const detail = String(error.msg || '').replace(/^Value error, /, '');
+    const memory = detail.match(/^estimated peak memory ([\d.]+ GB) exceeds (.+) capacity ([\d.]+ GB)$/);
     const location = (Array.isArray(error.loc) ? error.loc.map(String).join('.') : String(error.loc || '')).replace(/^body\./, '').replace(/^config\./, '');
     const embedded = detail.match(/\b(model\.[a-z_]+)\b/)?.[1];
     const path = embedded && (!location || location === 'model') ? embedded : location;
     const label = configFieldLabel(path, path || (english ? 'Configuration' : '配置'), english);
     let message = detail;
-    if (!english) {
+    if (memory) message = english
+      ? `Estimated peak memory ${memory[1]} exceeds ${memory[2]} (${memory[3]}), so training cannot start. Turn on activation checkpointing, reduce the batch size or lower the training size.`
+      : `预计显存峰值 ${memory[1]}，超过 ${memory[2]} 的 ${memory[3]} 容量，无法开始训练。可开启重算中间结果、减小批量大小或降低训练尺寸。`;
+    else if (!english) {
       if (/is required for|field required/i.test(detail)) message = `请填写或选择${label}`;
       else if (/at least one training dataset source is required/i.test(detail)) message = '请先添加训练图片或导入已有数据集';
       else if (/not found|does not exist|file is missing/i.test(detail)) message = '找不到指定文件，请检查训练机上的路径';
