@@ -126,6 +126,7 @@ class Trainer:
     is_primary = True
     # Log pacing and GPU identity; class defaults also serve trainers built without __init__ in tests.
     _gpu_identity: tuple[str | None, str] | None = None
+    _gpu_sampler: Any = None
     _last_step_log = 0.0
     # The control request that is ending the run, and where the current epoch began.
     _stopping: str | None = None
@@ -1506,6 +1507,8 @@ class Trainer:
             raise
         finally:
             self._preparing = False
+            if self._gpu_sampler is not None:
+                self._gpu_sampler.close()
             self._close_logs(failed=outcome == "failed")
             self.emitter.close()
 
@@ -1568,6 +1571,13 @@ class Trainer:
 
     def _gpu_reading(self) -> dict[str, float]:
         """This run's GPU power, temperature and load from the driver; empty elsewhere."""
+        if self.device.type == "mps":
+            # Apple's sensors are slow to read; a background thread keeps the latest reading for each step.
+            if self._gpu_sampler is None:
+                from ypuddin.server.hardware import BackgroundReading, apple_gpu_reading
+
+                self._gpu_sampler = BackgroundReading(apple_gpu_reading)
+            return {f"gpu_{key}": value for key, value in self._gpu_sampler.latest().items()}
         if self.device.type != "cuda":
             return {}
         try:

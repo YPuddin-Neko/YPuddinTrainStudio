@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -256,6 +257,62 @@ def _apple_gpu_utilization() -> float | None:
             pass
         _apple_gpu_cache = (time.monotonic(), utilization)
         return utilization
+
+
+def apple_gpu_reading() -> dict[str, float]:
+    """The Apple GPU's estimated power, mean temperature and driver load, where each is readable."""
+    sensors = _apple_gpu_sensors()
+    reading = {
+        "power_w": sensors["power_w"],
+        "temp_c": sensors["temp_c"],
+        "util_pct": _apple_gpu_utilization(),
+    }
+    return {key: float(value) for key, value in reading.items() if value is not None}
+
+
+class BackgroundReading:
+    """The latest result of a slow reading, refreshed on its own thread.
+
+    Apple's sensors take about a third of a second to read, so a training step takes the last
+    reading instead of waiting. The thread ends on close(), or when nobody asked for a minute.
+    """
+
+    def __init__(
+        self, read: Callable[[], dict[str, float]], interval: float = 3.0, idle: float = 60.0
+    ) -> None:
+        self._read, self._interval, self._idle = read, interval, idle
+        self._lock = threading.Lock()
+        self._closed = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._value: dict[str, float] = {}
+        self._read_at = 0.0
+        self._asked_at = 0.0
+
+    def latest(self) -> dict[str, float]:
+        """The last reading while it is recent; empty until the first one arrives."""
+        now = time.monotonic()
+        with self._lock:
+            self._asked_at = now
+            if not self._closed.is_set() and (self._thread is None or not self._thread.is_alive()):
+                self._thread = threading.Thread(target=self._run, name="gpu-reading", daemon=True)
+                self._thread.start()
+            recent = now - self._read_at <= max(10.0, 3 * self._interval)
+            return dict(self._value) if recent else {}
+
+    def _run(self) -> None:
+        while not self._closed.is_set():
+            try:
+                value = self._read()
+            except Exception:  # noqa: BLE001 - a failed reading is no reading
+                value = {}
+            with self._lock:
+                self._value, self._read_at = dict(value), time.monotonic()
+                unused = self._read_at - self._asked_at > self._idle
+            if unused or self._closed.wait(self._interval):
+                return
+
+    def close(self) -> None:
+        self._closed.set()
 
 
 def _number(value: str) -> float | None:

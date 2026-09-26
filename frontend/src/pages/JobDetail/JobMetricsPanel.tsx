@@ -55,8 +55,8 @@ function useChartLayout(): MetricChartSetting[] {
 }
 
 /** Training curves and GPU readings in the configured charts, two per row. */
-export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric }: {
-  metrics: JobMetrics | null; stepsPerEpoch?: number | null; vramMetric?: string | null;
+export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, device }: {
+  metrics: JobMetrics | null; stepsPerEpoch?: number | null; vramMetric?: string | null; device?: string | null;
 }) {
   const { t, i18n } = useTranslation();
   const text = useWorkspaceText();
@@ -70,6 +70,7 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric }: 
   const xAxisName = useEpoch ? t('job.epoch') : t('job.step');
   const xs = React.useMemo(() => useEpoch && stepsPerEpoch ? metrics?.steps.map(step => step / stepsPerEpoch) || [] : metrics?.steps || [], [metrics, useEpoch, stepsPerEpoch]);
   const chartVramMetric = metrics?.vram_metric ?? vramMetric;
+  const apple = device === 'mps';
 
   const charts = React.useMemo<Chart[]>(() => {
     if (!metrics?.steps.length) return [];
@@ -84,7 +85,8 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric }: 
       grad_norm: { name: labels.gradient, values: metrics.grad_norm },
       it_s: { name: labels.speed, values: metrics.it_s },
       vram: { name: memoryName, values: metrics.vram_mb, scale: 1024 },
-      gpu_power: { name: labels.power, values: metrics.gpu_power_w },
+      // Apple chips report power from the system's energy model, as the top bar's 估算功率 does.
+      gpu_power: { name: apple ? text('GPU 功率（估算，W）', 'GPU power (estimated, W)') : labels.power, values: metrics.gpu_power_w },
       gpu_temp: { name: labels.temperature, values: metrics.gpu_temp_c },
       gpu_util: { name: labels.utilization, values: metrics.gpu_util_pct },
     };
@@ -119,7 +121,7 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric }: 
       const keys = chart.series.map(item => item.metric);
       if (!lines.length) {
         // Without driver readings a GPU chart explains why; other empty charts are left out.
-        if (keys.some(key => METRICS[key].gpu)) list.push({ key: chart.id, title, empty: text('此任务没有记录这些显卡读数。NVIDIA 显卡训练时会记录功率、温度和利用率；更早的任务没有这些数据。', 'This job has none of these GPU readings. Training on an NVIDIA GPU records power, temperature and utilization; earlier jobs have none.') });
+        if (keys.some(key => METRICS[key].gpu)) list.push({ key: chart.id, title, empty: text('此任务没有记录这些显卡读数。在 NVIDIA 显卡或 Apple 芯片（Mac）上训练时会记录功率、温度和利用率；更早的任务没有这些数据。', 'This job has none of these GPU readings. Training on an NVIDIA GPU or an Apple chip (Mac) records power, temperature and utilization; earlier jobs have none.') });
         continue;
       }
       const units = [...new Set(lines.map(line => line.unit))];
@@ -142,7 +144,9 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric }: 
       const only = keys.length === 1 ? keys[0] : null;
       const driverless = keys.filter(key => key === 'gpu_power' || key === 'gpu_temp' || key === 'gpu_util').every(key => !plain[key]?.values?.some(value => typeof value === 'number'));
       const missingDriver = driverless && keys.some(key => key === 'gpu_power' || key === 'gpu_temp' || key === 'gpu_util');
-      const note = missingDriver ? text('这个任务没有显卡功率、温度和利用率读数，只有 NVIDIA 显卡训练时会记录。', 'This job has no GPU power, temperature or load readings; only NVIDIA GPUs record them.')
+      const readings = keys.some(key => key === 'gpu_power' || key === 'gpu_temp' || key === 'gpu_util') && !driverless;
+      const appleNote = apple && readings ? text('Apple 芯片的功率是系统能耗估算值，温度是 GPU 各温区的平均值，利用率是整块 GPU 的占用。', 'On Apple chips, power is the system’s energy estimate, temperature the mean of the GPU’s thermal zones and utilization the whole GPU’s load.') : '';
+      const chartNote = missingDriver ? text('这个任务没有显卡功率、温度和利用率读数；在 NVIDIA 显卡或 Apple 芯片（Mac）上训练时才会记录，更早的任务没有。', 'This job has no GPU power, temperature or load readings; training on an NVIDIA GPU or an Apple chip (Mac) records them, earlier jobs do not.')
         : keys.every(key => key === 'loss' || key === 'loss_ema')
         ? text('每步 Loss 是每个优化步的训练损失；平滑曲线按上方 EMA 系数计算，只影响显示，不改变训练。', 'Loss per step is the training loss of each optimizer step; the smoothed curve uses the EMA coefficient above and only changes the chart.')
         : only === 'lr' ? (logRates
@@ -152,10 +156,11 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric }: 
             : only === 'it_s' ? text('每秒完成的优化步数。', 'Optimizer steps completed per second.')
               : only === 'vram' ? (chartVramMetric === 'current_allocated' ? text('训练进程当前占用的显存。', 'Memory currently allocated by the training process.') : text('训练进程到这一步为止的显存峰值。', 'Peak memory allocated by the training process so far.'))
                 : units.length > 1 ? text('单位不同的指标各用一条纵轴，颜色与图例一致。', 'Metrics with different units each use their own axis, in the legend’s colors.') : undefined;
+      const note = [chartNote, appleNote].filter(Boolean).join(' ') || undefined;
       list.push({ key: chart.id, title, note, option });
     }
     return list;
-  }, [metrics, xs, xAxisName, labels, emaAlpha, chartVramMetric, useEpoch, stepsPerEpoch, layout, chinese, t, text]);
+  }, [metrics, xs, xAxisName, labels, emaAlpha, chartVramMetric, apple, useEpoch, stepsPerEpoch, layout, chinese, t, text]);
 
   return <div className="job-metrics">
     <div className="job-metrics-toolbar">
