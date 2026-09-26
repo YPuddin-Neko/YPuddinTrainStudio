@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowDown, Check, Copy, Download, Search, Terminal } from 'lucide-react';
+import { ArrowDown, Check, Copy, Download, Loader2, Search, Terminal } from 'lucide-react';
 import { apiClient, apiUrl } from '../../api/client';
 import type { JobLogLine, JobLogResponse } from '../../api/types';
 import StudioSelect from '../../components/StudioSelect';
@@ -230,7 +230,7 @@ export default function JobLogView({ jobId, live, active, recordedLevel }: {
     {debugMissing && <p className="job-log-note" role="status">{text(`此任务按“${levelNames[recordedLevel!] || recordedLevel}”级别记录，没有调试日志。`, `This job was recorded at the ${levelNames[recordedLevel!] || recordedLevel} level and has no debug lines.`)}</p>}
     <div className="job-log-frame">
       <div ref={body} className="job-log-body" onScroll={onScroll} tabIndex={0} aria-label={text('日志内容', 'Log lines')} aria-busy={!loaded}>
-        {hasEarlier && <div className="job-log-earlier"><button type="button" className="ui-btn ui-btn-sm ui-btn-quiet" disabled={loadingEarlier} onClick={() => void loadEarlier()}>{loadingEarlier ? text('读取中…', 'Loading…') : text('加载更早的日志', 'Load earlier lines')}</button></div>}
+        {hasEarlier && <div className="job-log-earlier"><button type="button" className="ui-btn ui-btn-sm ui-btn-quiet" disabled={loadingEarlier} onClick={() => void loadEarlier()}>{loadingEarlier ? <><Loader2 size={13} className="animate-spin" aria-hidden="true"/>{text('读取中…', 'Loading…')}</> : text('加载更早的日志', 'Load earlier lines')}</button></div>}
         {visible.length ? visible.map(entry => <LogRow key={entry.id} entry={entry} query={query}/>)
           : <div className="job-log-empty"><Terminal size={22} aria-hidden="true"/><span>{empty}</span>{filtered && lines.length > 0 && <button type="button" className="ui-link" onClick={() => { setFilter('all'); setQuery(''); }}>{text('清除筛选', 'Clear filters')}</button>}{onlyDebug && <button type="button" className="ui-link" onClick={() => toggleDebug(true)}>{text('显示调试日志', 'Show debug lines')}</button>}</div>}
       </div>

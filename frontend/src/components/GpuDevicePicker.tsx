@@ -9,6 +9,7 @@ import StudioSelect from './StudioSelect';
 import '../styles/gpu-device-picker.css';
 import Switch from './Switch';
 import { gpuMemorySummary, gpuMemoryDetails } from '../utils/gpuMemory';
+import { LoadingNote } from './Loading';
 
 interface GpuDevicePickerProps {
   value: string[];
@@ -121,7 +122,7 @@ function DevicePicker({ value, onChange, count = 1, disabled = false, compact = 
       <Switch className="gpu-picker-auto" checked={value.length === 0} disabled={disabled} onCheckedChange={checked => onChange(checked ? [] : devices.filter(device => device.status !== 'unavailable').slice(0, count).map(device => device.device))}>{text(`自动选择 ${count} 张空闲显卡`, `Automatically choose ${count} free GPUs`)}</Switch>
       <div className="gpu-picker-cards" role="group" aria-label={text('选择训练显卡', 'Choose training GPUs')}>{devices.map(device => <label key={device.device}><input type="checkbox" disabled={disabled || device.status === 'unavailable' || !value.includes(device.device) && value.length >= count} checked={value.includes(device.device)} onChange={event => onChange(event.target.checked ? [...value, device.device] : value.filter(id => id !== device.device))}/><span><strong>{gpuDeviceLabel(device.device)} · {device.name}</strong><small>{statusLabel(device)}</small>{gpuMemorySummary(device,text) && <small title={gpuMemoryDetails(device,text)}>{gpuMemorySummary(device,text)}</small>}</span></label>)}</div>
     </>}
-    {loading && !snapshot && <p>{text('读取显卡状态…', 'Reading GPU status…')}</p>}
+    {loading && !snapshot && <p><LoadingNote label={text('读取显卡状态…', 'Reading GPU status…')}/></p>}
     {error && <p role="status">{text('显卡状态暂时无法读取；自动选择仍由队列处理。', 'GPU status is unavailable; automatic selection is handled by the queue.')} <span className="gpu-picker-error-detail">{error}</span></p>}
     {snapshot && !devices.length && <p>{text('未检测到可调度显卡，将使用当前环境的默认设备。', 'No schedulable GPU was detected; the current environment will use its default device.')}</p>}
     {!training && !valid && <p role="alert" className="gpu-picker-warning">{invalidMessage}</p>}

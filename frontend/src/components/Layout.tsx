@@ -17,6 +17,7 @@ import '../styles/project-sidebar.css';
 import '../styles/motion.css';
 import BrandMark from './BrandMark';
 import { useEnterAnimation } from '../utils/motion';
+import { LoadingNote } from './Loading';
 
 const NavItem = ({ to, icon: Icon, label, active, state }: any) => (
   <Link
@@ -230,7 +231,7 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
         <ApiErrorNotice />
 
         <div ref={contentRef} className="app-page-viewport" data-testid="app-page-viewport">
-          <div ref={pageFrame} className="app-page-frame" data-testid="app-page-frame"><React.Suspense fallback={<div className="space-y-4" role="status" data-testid="app-page-loading"><span className="sr-only">{t('common.loading')}</span><div className="h-6 w-48 rounded bg-slate-200 dark:bg-slate-800"/><div className="h-40 rounded-lg bg-slate-100 dark:bg-slate-900"/></div>}><Outlet /></React.Suspense></div>
+          <div ref={pageFrame} className="app-page-frame" data-testid="app-page-frame"><React.Suspense fallback={<div data-testid="app-page-loading"><LoadingNote block label={t('common.loading')}/></div>}><Outlet /></React.Suspense></div>
         </div>
       </main>
     </div></ProjectSidebarContext.Provider>

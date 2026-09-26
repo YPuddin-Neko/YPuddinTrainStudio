@@ -16,6 +16,7 @@ import { configOptionLabel } from '../../utils/configPresentation';
 import { artifactKindLabel, focusJob, mergeJobEvent, shortTime } from '../../utils/jobs';
 import { modelConfigUrl, projectUrl, type ProjectVersion, type VersionedProject } from '../../utils/projectVersions';
 import { useWorkspaceText } from '../../utils/workspaceText';
+import { LoadingNote } from '../../components/Loading';
 import { inactiveTrainingReason } from '../../utils/trainingFamilies';
 import { JobProgressSummary, JobStatus } from '../Queue/jobPresentation';
 import { ProjectArtwork } from '../Projects/ProjectCardParts';
@@ -159,7 +160,7 @@ export default function ProjectOverview({ project, version, versionId, config: s
     [text('分辨率', 'Resolution'), resolutions.length ? resolutions.join(' / ') : '—'],
     [text('混合精度', 'Precision'), config.loop?.mixed_precision ? configOptionLabel('loop.mixed_precision', String(config.loop.mixed_precision), true) : '—'],
   ];
-  const counts = !stats.ready ? text('正在读取数据统计…', 'Reading dataset statistics…')
+  const counts = !stats.ready ? <LoadingNote label={text('正在读取数据统计…', 'Reading dataset statistics…')}/>
       : [text(`${stats.training} 张训练图片`, `${stats.training} training images`), text(`${stats.regularization} 张正则图片`, `${stats.regularization} regularization images`),
         text(`${stats.captions} / ${stats.training} 已标注`, `${stats.captions} / ${stats.training} captioned`), text(`${stats.masks} 个遮罩`, `${stats.masks} masks`),
         text(`${datasets.length} 个数据集`, `${datasets.length} datasets`)].join(' · ');

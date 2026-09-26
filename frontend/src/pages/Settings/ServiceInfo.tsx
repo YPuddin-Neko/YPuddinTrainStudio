@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../api/client';
 import type { SystemInfo } from '../../api/types';
 import { formatApiError } from '../../utils/errors';
+import { LoadingNote } from '../../components/Loading';
 
 export function ServiceInfo() {
   const { t } = useTranslation();
@@ -23,7 +24,7 @@ export function ServiceInfo() {
     <div className="settings-field-control py-1.5">
       {error ? <div role="alert" className="text-red-600 dark:text-red-400 break-words">{error}<button type="button" className="ui-link ml-3" onClick={() => { setError(''); setAttempt(value => value + 1); }}>{t('common.retry')}</button></div>
         : info ? <span className="font-mono break-all">{info.ypuddin || t('hardware.unavailable')}</span>
-          : <span role="status" className="settings-note">{t('common.loading')}</span>}
+          : <LoadingNote className="settings-note" label={t('common.loading')}/>}
     </div>
   </div>;
 }

@@ -23,6 +23,7 @@ import { optionalValueLabel } from './optionalValues';
 import ParameterFields from './ParameterFields';
 import RecoveryInterval from './RecoveryInterval';
 import ParameterToggleSection from './ParameterToggleSection';
+import { LoadingNote } from '../../components/Loading';
 
 interface SchemaProperty {
   type?: string;
@@ -1333,7 +1334,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         <FieldGroup key={`${groupName}:${search.trim()}`} title={parameterGroupLabel(groupName, english) || (groupName === 'training' ? (english ? 'Training mode' : '训练方式') : t(`groups.${groupName}`, groupName))} count={groupData.fields.length} compact={compact} groupKey={groupName}>
           {groupName === 'checkpoint' && versionSources && <div className="output-binding-summary">
             <div className="output-binding-heading"><strong>{english ? 'Training weights' : '训练权重'}</strong>{!showAdvanced && <button type="button" className="ui-btn ui-btn-sm" aria-expanded={editOutput} onClick={() => setEditOutput(previous => !previous)}>{editOutput ? (english ? 'Collapse file name' : '收起文件名设置') : (english ? 'Edit file name' : '修改文件名')}</button>}</div>
-            {outputBinding ? <><div><span>{english ? 'File name' : '文件名'}</span><code>{outputBinding.name}-final{value.training?.mode === 'full' ? '.model/' : '.safetensors'}</code></div><div><span>{english ? 'Save location' : '保存位置'}</span><code>{outputBinding.directory_template.replace('{job_id}', english ? '<run ID>' : '<运行 ID>')}</code></div></> : <p>{english ? 'Resolving the save location…' : '正在读取保存位置…'}</p>}
+            {outputBinding ? <><div><span>{english ? 'File name' : '文件名'}</span><code>{outputBinding.name}-final{value.training?.mode === 'full' ? '.model/' : '.safetensors'}</code></div><div><span>{english ? 'Save location' : '保存位置'}</span><code>{outputBinding.directory_template.replace('{job_id}', english ? '<run ID>' : '<运行 ID>')}</code></div></> : <p><LoadingNote label={english ? 'Resolving the save location…' : '正在读取保存位置…'}/></p>}
           </div>}
           {groupName === 'caption' && showCaptionFormats && <div className="config-field-section config-caption-formats"><h3>{english ? 'Caption format' : '标签格式'}</h3><div className="caption-source-formats">
             {captionSources.map((source: any, index: number) => {

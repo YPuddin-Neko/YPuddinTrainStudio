@@ -47,3 +47,4 @@
 .reg-plan-preview li { min-width:0; overflow-wrap:anywhere; }
 .reg-plan-preview li strong { color:var(--studio-dim); font-weight:400; }
 @media(max-width:540px) { .reg-training-plan .reg-form-grid { grid-template-columns:minmax(0,1fr); } .reg-plan-preview dl { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+.reg-note-spinner { display:inline-block; margin-right:6px; vertical-align:-2px; color:var(--studio-accent); }

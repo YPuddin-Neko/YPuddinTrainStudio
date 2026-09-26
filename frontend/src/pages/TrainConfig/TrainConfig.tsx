@@ -32,6 +32,7 @@ import ParameterSections from '../../components/ParameterSections';
 import { workflowSchema } from '../../utils/parameterWorkflow';
 import { CONFIG_TAB_GROUPS, ConfigTab, ConfigIssue, OPAQUE_CONFIG_ISSUE, presentConfigIssues, presentPlanWarning } from '../../utils/configPresentation';
 import { AlertCircle, Check, CheckCircle2, ChevronRight, ChevronDown, Search, Play, Settings2, Brush, Database, Loader2, BarChart3, X, Save, ListChecks } from 'lucide-react';
+import { LoadingNote } from '../../components/Loading';
 
 const presetFamily = (preset: Preset): string | undefined => { const model = preset.config.model; return model && typeof model === 'object' && 'family' in model && typeof model.family === 'string' ? model.family : undefined; };
 
@@ -578,7 +579,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   if (versionId && (versions.current?.status !== 'ready' || archived)) return <div className="training-studio project-workspace">
     {project && <ProjectWorkspaceHeader project={project} versionId={versionId} versions={versions.versions} current={versions.current} active="train" refresh={versions.refresh} titleBadge={familyBadge} error={versions.error}/>}
     {archived && <Link className="workspace-message" to={projectUrl(projectId || '', versionId, 'results')}>{text('查看此版本的训练结果', 'View this version’s training results')}</Link>}
-    {!versions.current && <p className="workspace-message">{versions.loading ? t('common.loading') : text('此版本不存在或不可访问。', 'This version does not exist or is unavailable.')}</p>}
+    {!versions.current && (versions.loading ? <LoadingNote block label={text('正在读取版本…', 'Loading version…')}/> : <p className="workspace-message">{text('此版本不存在或不可访问。', 'This version does not exist or is unavailable.')}</p>)}
   </div>;
   return <div className="training-studio project-workspace parameter-workspace" aria-busy={savingNavigation}>
     <div className="parameter-workspace-header">
@@ -635,7 +636,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
           {!search && activeTab === 'data' && <div className="config-context-card"><div><strong><Database size={14}/>{text('训练数据与遮罩', 'Dataset and masks')}</strong></div><div className="context-actions"><Link to={`${dataUrl}&data_step=datasets`} className="ui-btn ui-btn-sm">{text('添加数据', 'Add dataset')}</Link><Link to={`${dataUrl}&data_step=captions${sourceQuery}`} className="ui-btn ui-btn-sm">{text('标签编辑', 'Caption editor')}</Link><Link to={`${dataUrl}&data_step=paint${sourceQuery}`} className="ui-btn ui-btn-sm"><Brush size={13}/>{text('涂抹与遮罩', 'Paint & masks')}</Link></div>{config.dataset?.masked_loss && <p className="mask-context-note">{text('遮罩已启用：白色参与训练，黑色忽略。未制作遮罩且没有 alpha 通道的图片仍按整张图训练。', 'Masking enabled: white trains, black is ignored. Images without a mask or alpha still train the full image.')}</p>}</div>}
 
 
-          {!loaded ? <p className="p-6 text-sm text-slate-500">{t('common.loading')}</p> : <SchemaForm projectId={projectId} versionId={versionId} key={revealVersion} compact readOnly={!!inactiveReason} schema={orderedSchema} value={config} computePolicy={computePolicy} sourceRoles={sourceRoles} outputBinding={outputBinding} versionSources={!!projectId} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} search={search} onClearSearch={clearSearch} errors={issues.map(issue => ({loc:issue.path,msg:issue.message === OPAQUE_CONFIG_ISSUE ? '' : issue.message}))} family={familyByName(families, config?.model?.family)} families={families} />}
+          {!loaded ? <LoadingNote block label={text('正在读取训练参数…', 'Loading training parameters…')}/> : <SchemaForm projectId={projectId} versionId={versionId} key={revealVersion} compact readOnly={!!inactiveReason} schema={orderedSchema} value={config} computePolicy={computePolicy} sourceRoles={sourceRoles} outputBinding={outputBinding} versionSources={!!projectId} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} search={search} onClearSearch={clearSearch} errors={issues.map(issue => ({loc:issue.path,msg:issue.message === OPAQUE_CONFIG_ISSUE ? '' : issue.message}))} family={familyByName(families, config?.model?.family)} families={families} />}
         </div>
       </div>
       <aside id="training-plan-panel" className={`training-inspector ${inspectorOpen ? 'is-open' : ''}`} aria-label={text('训练计划', 'Training plan')}><button type="button" className="ui-btn ui-btn-quiet inspector-return" onClick={() => setInspectorOpen(false)}>{text('返回参数', 'Back to parameters')}</button><BucketInspector plan={plan} loading={validating} dataset={config.dataset} error={planError} onRetry={()=>setAuxiliaryReload(value=>value+1)} hasSources={!!config.dataset?.sources?.length} indexed={indexedStats || undefined} onIssues={() => setIssuesOpen(true)} onData={() => {setActiveTab('data');setSearch('');setInspectorOpen(false);}}/>

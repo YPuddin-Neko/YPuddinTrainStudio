@@ -18,6 +18,7 @@ import Artifacts from '../../pages/Artifacts/Artifacts';
 import { samplingUrl } from '../../utils/samplingRoutes';
 import '../../styles/project-results.css';
 import { SlidingIndicator } from '../motion';
+import { LazyImage } from '../Loading';
 
 interface VersionResultsProps { projectId: string; versionId?: string; readOnly?: boolean }
 type VersionedJob = Job & { version_id?: string | null };
@@ -172,7 +173,7 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
       </div>
       {samplesError && <div className="results-error" role="alert">{samplesError}<button type="button" className="ui-btn ui-btn-sm" onClick={() => void fetchSamples()}>{t('common.retry')}</button></div>}
       {samplesLoading && samples.length === 0 ? <p className="results-empty" role="status"><Loader2 size={16} className="animate-spin"/>{text('读取此任务的采样图…', 'Loading samples for this job…')}</p> : !samplesError && samples.length === 0 ? <div className="results-empty"><ImageIcon size={22}/><p>{text('此任务暂无采样图', 'This job has no samples yet')}</p></div> : <div className="results-sample-grid">{samples.slice((samplePage - 1) * 24, samplePage * 24).map(sample => <article className="results-sample-card" key={`${sample.url}-${sample.step}-${sample.prompt_index}-${sample.seed}`}>
-        <button className="results-sample-preview" type="button" onClick={event => { lightboxOpener.current = event.currentTarget; setLightbox(sample); }} aria-label={text(`查看采样图：第 ${sample.step} 步，提示词 ${sample.prompt_index + 1}`, `View sample: step ${sample.step}, prompt ${sample.prompt_index + 1}`)}>{failedImages.has(sample.url) ? <span><ImageIcon size={22}/>{text('图片文件不可用', 'Image file unavailable')}</span> : <img src={fileUrl(sample.url)} alt={sample.prompt} loading="lazy" width={sample.width} height={sample.height} onError={() => setFailedImages(previous => new Set(previous).add(sample.url))}/>}</button>
+        <button className="results-sample-preview" type="button" onClick={event => { lightboxOpener.current = event.currentTarget; setLightbox(sample); }} aria-label={text(`查看采样图：第 ${sample.step} 步，提示词 ${sample.prompt_index + 1}`, `View sample: step ${sample.step}, prompt ${sample.prompt_index + 1}`)}>{failedImages.has(sample.url) ? <span><ImageIcon size={22}/>{text('图片文件不可用', 'Image file unavailable')}</span> : <LazyImage src={fileUrl(sample.url)} alt={sample.prompt} loading="lazy" width={sample.width} height={sample.height} onError={() => setFailedImages(previous => new Set(previous).add(sample.url))}/>}</button>
         <div className="results-sample-description"><div><strong>{text('步数', 'Step')} {sample.step}</strong><span>Seed {sample.seed}</span></div><SampleLoss sample={sample}/><p title={sample.prompt}>{sample.prompt}</p><div><time>{formatTime(sample.created_at)}</time><a className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon" href={fileUrl(sample.url)} download aria-label={text(`下载第 ${sample.step} 步采样图`, `Download step ${sample.step} sample`)}><Download size={13}/></a></div></div>
       </article>)}</div>}
     </div>}

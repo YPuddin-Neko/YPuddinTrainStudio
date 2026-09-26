@@ -21,6 +21,7 @@ import '../../styles/parameter-workspace.css';
 import ParameterModeToggle from '../../components/ParameterModeToggle';
 import ParameterSections from '../../components/ParameterSections';
 import { workflowSchema } from '../../utils/parameterWorkflow';
+import { LoadingNote } from '../../components/Loading';
 
 interface Draft { name: string; description: string; config: Record<string, any>; originalName: string | null; builtin: boolean; }
 const KEY = ['standalone-presets'];
@@ -181,7 +182,7 @@ export default function Presets() {
     {notice && <p role="status" className="presets-notice">{notice}</p>}
     {inactiveReason && <p role="alert" className="studio-error" data-testid="retired-preset">{inactiveReason}</p>}
     {[list, schema, families].some(query => query.isError) && <div role="alert" className="studio-error"><span>{[list, schema, families].filter(query => query.error).map(query => formatApiError(query.error)).join('\n')}</span><button type="button" className="ui-btn ui-btn-sm" onClick={() => { for (const query of [list, schema, families]) if (query.isError) void query.refetch(); }}>{text('重新加载', 'Reload')}</button></div>}
-    {!draft && !error && <p role="status" className="presets-loading">{text('正在读取参数…', 'Loading parameters…')}</p>}
+    {!draft && !error && <LoadingNote block className="presets-loading" label={text('正在读取参数…', 'Loading parameters…')}/>}
     </div>
     {draft && <div className="presets-editor">
       <div className="presets-form-toolbar">

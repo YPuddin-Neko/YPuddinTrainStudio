@@ -30,7 +30,7 @@
 .results-sample-context { margin:8px 0 12px; font-size:10px; color:var(--studio-dim); overflow-wrap:anywhere; }
 .results-sample-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:12px; }
 .results-sample-card { overflow:hidden; border:1px solid var(--studio-line); border-radius:7px; background:var(--studio-panel); }
-.results-sample-preview { display:flex; align-items:center; justify-content:center; width:100%; height:190px; background:var(--studio-muted); }
+.results-sample-preview { position:relative; display:flex; align-items:center; justify-content:center; width:100%; height:190px; background:var(--studio-muted); }
 .results-sample-preview img { width:100%; height:100%; object-fit:contain; }
 .results-sample-preview > span { display:flex; flex-direction:column; align-items:center; gap:8px; color:var(--studio-dim); font-size:11px; }
 .results-sample-description { padding:9px 10px; font-size:10px; }

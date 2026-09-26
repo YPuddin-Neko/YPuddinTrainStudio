@@ -35,6 +35,7 @@ import './job-metrics.css';
 import JobLogView from './JobLogView';
 import { SlidingIndicator } from '../../components/motion';
 import { useEnterAnimation } from '../../utils/motion';
+import { LazyImage } from '../../components/Loading';
 
 type VersionedJob = Job & { version_id?: string | null; latest: Job['latest'] & {loss_mean?:number|null; loss_count?:number|null; loss_mean_scope?:string|null} };
 
@@ -474,7 +475,7 @@ export default function JobDetail() {
           )}
           {visibleSamples.map((s, idx) => (
             <div key={idx} className="bg-white dark:bg-slate-800 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700">
-              <a href={s.url.startsWith('/api/') ? apiUrl(s.url.slice(4)) : s.url} target="_blank" rel="noreferrer" aria-label={`${text('打开完整采样图', 'Open full sample')}: ${s.prompt}`}><img loading="lazy" src={s.url.startsWith('/api/') ? apiUrl(s.url.slice(4)) : s.url} alt={s.prompt} className="w-full h-56 object-contain bg-slate-100 dark:bg-slate-900" /></a>
+              <a className="job-sample-image" href={s.url.startsWith('/api/') ? apiUrl(s.url.slice(4)) : s.url} target="_blank" rel="noreferrer" aria-label={`${text('打开完整采样图', 'Open full sample')}: ${s.prompt}`}><LazyImage loading="lazy" src={s.url.startsWith('/api/') ? apiUrl(s.url.slice(4)) : s.url} alt={s.prompt} className="w-full h-56 object-contain bg-slate-100 dark:bg-slate-900"/></a>
               <div className="p-3 space-y-1 text-xs">
                 <div className="flex justify-between font-semibold">
                   <span className="font-mono">{t('job.step')} {s.step}</span>

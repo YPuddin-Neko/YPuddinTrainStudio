@@ -18,6 +18,7 @@ import CaptionResizeHandle from './CaptionResizeHandle';
 import {useEventStream} from '../../events/useEventStream';
 import {EVENT_TYPES} from '../../events/eventTypes';
 import { SlidingIndicator } from '../motion';
+import { LoadingNote } from '../Loading';
 
 type CaptionStats = components['schemas']['DatasetCaptionStats'];
 interface Draft {
@@ -278,7 +279,7 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
           <CaptionResizeHandle label={text('调整标签统计栏宽度','Resize tag statistics column')} value={statsWidth} min={180} max={340} reverse onChange={setStatsWidth}/>
           <aside className="caption-workspace-statistics" aria-label={text('整个数据集的标签统计', 'Statistics for the whole dataset')}>
             <header><div><h3>{text('标签频次', 'Tag frequency')}</h3><span>{text(`整个目录 ${stats.data?.images ?? '—'} 张图片 · ${stats.data?.unique_tags ?? '—'} 个不同标签`, `All ${stats.data?.images ?? '—'} images in this folder · ${stats.data?.unique_tags ?? '—'} unique tags`)}</span></div><input aria-label={text('搜索标签统计', 'Search tag statistics')} placeholder={text('筛选标签', 'Filter tags')} value={statsSearch} onChange={event => { setStatsSearch(event.target.value); setStatsLimit(80); }}/></header>
-            {stats.error ? <p role="alert" className="caption-workspace-error">{formatApiError(stats.error)}</p> : stats.isPending ? <p role="status">{text('统计标签…', 'Loading tag statistics…')}</p> : <><div className="caption-workspace-frequencies">{statsTags.slice(0, statsLimit).map(item => <button type="button" key={item.tag} aria-label={text(`筛选标签：${item.tag}，${item.count} 张图片`, `Filter tag: ${item.tag}, ${item.count} images`)} aria-pressed={tag === item.tag} disabled={saving} onClick={() => setFilter({ tag: tag === item.tag ? '' : item.tag })}><span>{item.tag}</span><strong>{item.count}</strong></button>)}{!statsTags.length && <p>{text('没有符合条件的标签。', 'No matching tags.')}</p>}</div>{statsTags.length > statsLimit && <button type="button" className="ui-btn ui-btn-quiet ui-btn-sm" onClick={() => setStatsLimit(limit => limit + 80)}>{text(`显示更多（共 ${statsTags.length} 个）`, `Show more (${statsTags.length} total)`)}</button>}</>}
+            {stats.error ? <p role="alert" className="caption-workspace-error">{formatApiError(stats.error)}</p> : stats.isPending ? <p><LoadingNote label={text('统计标签…', 'Loading tag statistics…')}/></p> : <><div className="caption-workspace-frequencies">{statsTags.slice(0, statsLimit).map(item => <button type="button" key={item.tag} aria-label={text(`筛选标签：${item.tag}，${item.count} 张图片`, `Filter tag: ${item.tag}, ${item.count} images`)} aria-pressed={tag === item.tag} disabled={saving} onClick={() => setFilter({ tag: tag === item.tag ? '' : item.tag })}><span>{item.tag}</span><strong>{item.count}</strong></button>)}{!statsTags.length && <p>{text('没有符合条件的标签。', 'No matching tags.')}</p>}</div>{statsTags.length > statsLimit && <button type="button" className="ui-btn ui-btn-quiet ui-btn-sm" onClick={() => setStatsLimit(limit => limit + 80)}>{text(`显示更多（共 ${statsTags.length} 个）`, `Show more (${statsTags.length} total)`)}</button>}</>}
           </aside>
           </div>
         </>}

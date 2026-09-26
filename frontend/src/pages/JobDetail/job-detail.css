@@ -35,6 +35,7 @@
 
 .job-sample-controls { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:12px; font-size:12px; color:var(--studio-dim); }
 .job-sample-controls .task-actions { margin-left:auto; }
+.job-sample-image { position:relative; display:block; }
 .job-sample-gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:12px; }
 .job-config-snapshot { max-height:65vh; overflow:auto; }
 

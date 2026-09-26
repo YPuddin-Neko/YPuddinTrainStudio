@@ -5,6 +5,7 @@ import { useDatasetImages } from '../../api/hooks/useDatasetImages';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { AnimatedCount } from '../motion';
 import './dataset-image-pane.css';
+import { LazyImage, LoadingNote } from '../Loading';
 
 type Images = ReturnType<typeof useDatasetImages>;
 interface Props {
@@ -95,7 +96,7 @@ export default function DatasetImagePane({ datasetId, images, training, all = fa
             const selected = images.selected.has(img.rel_path);
             return <article key={`${img.hash}:${img.rel_path}`} className={`dataset-image-card${previewOnly ? ' is-compact' : ''}${selected ? ' is-selected' : ''}${arriving?.has(img.rel_path) ? ' is-arriving' : ''}`} style={{ height: rowHeight - GAP }} data-testid={`image-card-${img.hash}`}>
               <button type="button" className="dataset-image-pick" aria-label={`${canEdit && !previewOnly ? text('编辑标签', 'Edit caption') : text('查看图片与标签', 'View image and caption')}: ${img.rel_path}`} onClick={() => onOpen(img.hash, img.rel_path)}>
-                <img src={apiUrl(`/datasets/${datasetId}/images/${img.hash}/thumb?size=256`)} alt={img.rel_path} loading="lazy" decoding="async" draggable={false}/>
+                <LazyImage src={apiUrl(`/datasets/${datasetId}/images/${img.hash}/thumb?size=256`)} alt={img.rel_path} loading="lazy" decoding="async" draggable={false}/>
               </button>
               {canEdit && <button type="button" className="dataset-image-check" aria-label={`${text('选择图片','Select image')}: ${img.rel_path}`} aria-pressed={selected} disabled={busy} onClick={event => select(img.rel_path,event)}>{selected ? <CheckSquare size={18}/> : <Square size={18}/>}</button>}
               <div className="dataset-image-caption">
@@ -112,7 +113,7 @@ export default function DatasetImagePane({ datasetId, images, training, all = fa
         <strong>{images.q ? text('没有匹配的图片', 'No matching images') : all ? text('这个目录还没有图片', 'This folder has no images yet') : training ? text('还没有参与训练的图片', 'No images in training') : text('没有暂不训练的图片', 'No held-out images')}</strong>
         {!images.q && !all && <p>{training ? text('从左侧选择图片，再加入训练。', 'Select images on the left and add them to training.') : text('移出训练的图片会保留在这里。', 'Images removed from training stay here.')}</p>}
       </div>}
-      {images.loading && !firstLoad && <div className="dataset-pane-loading" role="status">{text('正在加载图片…', 'Loading images…')}</div>}
+      {images.loading && !firstLoad && <LoadingNote className="dataset-pane-loading" label={text('正在加载图片…', 'Loading images…')}/>}
     </div>
     {images.hasMore && <footer className="dataset-pane-footer"><span>{text(`已加载 ${images.items.length} / ${images.total}`, `${images.items.length} / ${images.total} loaded`)}</span><button type="button" className="ui-btn ui-btn-quiet ui-btn-sm" disabled={images.loading} onClick={images.loadMore}>{text('加载更多', 'Load more')}</button></footer>}
   </section>;

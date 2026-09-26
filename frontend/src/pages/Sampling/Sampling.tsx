@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowRight, Grid2X2, RefreshCw, Search, X } from 'lucide-react';
+import { ArrowRight, Grid2X2, Loader2, RefreshCw, Search, X } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import type { Job, JobListResponse, Project } from '../../api/types';
 import StudioSelect from '../../components/StudioSelect';
@@ -89,6 +89,6 @@ export default function Sampling() {
     </div>
     {(error || sourceError) && <div className="task-error" role="alert">{error || sourceError}<button type="button" className="ui-btn ui-btn-sm" onClick={() => { setRevision(value => value + 1); if (sourceId) change({ source_job_id: null, task_id: null }); }}>{text('重新选择', 'Choose again')}</button></div>}
     {sourceJob && scopeState !== 'ready' && <div className="task-notice" role="status">{scopeState === 'archived' ? text('来源项目或版本已归档；可以查看对比记录，恢复归档后才能生成。', 'The source project or version is archived. Existing comparisons remain viewable; restore it to generate.') : scopeState === 'busy' ? text('来源版本正在处理，暂时无法生成对比图；已有对比记录仍可查看。', 'The source version is being processed. Existing comparisons remain viewable, but generation is temporarily unavailable.') : scopeState === 'not-ready' ? text('来源版本尚未就绪，暂时无法生成对比图。', 'The source version is not ready for generation.') : scopeState === 'unavailable' ? <>{text('无法确认来源版本状态', 'Could not check source version status')}: {scopeError} <button type="button" className="ui-link" onClick={() => setSourceRevision(value => value + 1)}>{text('重新检查来源', 'Recheck source')}</button></> : text('正在检查来源版本状态…', 'Checking source version status…')}</div>}
-    {sourceJob ? <XyzSampling readOnly={scopeState !== 'ready'} key={sourceJob.id} sourceJobId={sourceJob.id} initialTaskId={params.get('task_id') || undefined}/> : !sourceError && <div className="task-empty sampling-page-empty"><Grid2X2 size={32}/><strong>{sourceId ? text('正在读取来源任务…', 'Reading source run…') : text('选择要比较的训练任务', 'Choose a training run to compare')}</strong>{!loading && !jobs.length && <Link className="ui-link" to="/projects">{text('打开项目并配置训练', 'Open a project and configure training')}</Link>}</div>}
+    {sourceJob ? <XyzSampling readOnly={scopeState !== 'ready'} key={sourceJob.id} sourceJobId={sourceJob.id} initialTaskId={params.get('task_id') || undefined}/> : !sourceError && <div className="task-empty sampling-page-empty" role={sourceId ? 'status' : undefined}>{sourceId ? <Loader2 size={28} className="animate-spin sampling-page-spinner" aria-hidden="true"/> : <Grid2X2 size={32}/>}<strong>{sourceId ? text('正在读取来源任务…', 'Reading source run…') : text('选择要比较的训练任务', 'Choose a training run to compare')}</strong>{!loading && !jobs.length && <Link className="ui-link" to="/projects">{text('打开项目并配置训练', 'Open a project and configure training')}</Link>}</div>}
   </section>;
 }

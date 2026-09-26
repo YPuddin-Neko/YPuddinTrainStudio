@@ -7,6 +7,7 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
 import './project-dataset-cards.css';
+import { LazyImage } from '../Loading';
 
 export type WorkspaceDataset = { source: DatasetSource; stats?: DatasetInfo['stats']; index_status?: string };
 interface Props { datasets: WorkspaceDataset[]; projectId: string; versionId?: string; onRefresh: () => void }
@@ -29,7 +30,7 @@ function DatasetCard({ dataset, projectId, versionId }: Omit<Props, 'datasets' |
   if (ownerVersion) query.set('version', ownerVersion);
   return <li><DatasetLink className="project-dataset-card ui-card-interactive" data-testid={`dataset-card-${source.id}`} aria-label={text(`打开数据集：${name}`, `Open dataset: ${name}`)} to={`/datasets/${encodeURIComponent(source.id)}?${query}`}>
     <div className="project-dataset-preview">
-      {cover ? <div className="project-dataset-preview-image" key={`${cover.hash}/${cover.rel_path}`}><Images size={22} aria-hidden="true"/><img src={apiUrl(`/datasets/${encodeURIComponent(source.id)}/images/${encodeURIComponent(cover.hash)}/thumb?size=512`)} alt={cover.rel_path} width={512} height={512} loading="lazy" decoding="async" onError={event => { event.currentTarget.hidden = true; }}/></div> : <div className="project-dataset-preview-empty">{status === 'indexing' || preview.isFetching ? <Loader2 size={24} className="animate-spin" aria-hidden="true"/> : status === 'failed' || preview.isError ? <AlertCircle size={24} aria-hidden="true"/> : <Images size={24} aria-hidden="true"/>}<span>{placeholder}</span></div>}
+      {cover ? <div className="project-dataset-preview-image" key={`${cover.hash}/${cover.rel_path}`}><LazyImage src={apiUrl(`/datasets/${encodeURIComponent(source.id)}/images/${encodeURIComponent(cover.hash)}/thumb?size=512`)} alt={cover.rel_path} width={512} height={512} loading="lazy" decoding="async" fallback={<Images size={22} aria-hidden="true"/>}/></div> : <div className="project-dataset-preview-empty">{status === 'indexing' || preview.isFetching ? <Loader2 size={24} className="animate-spin" aria-hidden="true"/> : status === 'failed' || preview.isError ? <AlertCircle size={24} aria-hidden="true"/> : <Images size={24} aria-hidden="true"/>}<span>{placeholder}</span></div>}
     </div>
     <div className="project-dataset-card-body"><div className="project-dataset-card-heading"><span className="project-dataset-kind">{source.is_reg ? text('正则图', 'Regularization') : text('训练集', 'Training')}</span><h3 title={name}>{name}</h3></div><div className="project-dataset-card-counts">
       <span><strong>{stats?.images ?? '—'}</strong> {text('张图片', 'images')}</span><span><strong>{stats?.captioned ?? '—'}</strong> {text('份标签', 'captions')}</span><span><strong>{stats?.masks ?? '—'}</strong> {text('张遮罩', 'masks')}</span>

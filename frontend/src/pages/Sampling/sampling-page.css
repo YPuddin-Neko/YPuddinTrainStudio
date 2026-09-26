@@ -20,3 +20,4 @@
   .sampling-page > .xyz-workspace { flex:1; min-height:320px; }
   .sampling-page .xyz-layout { height:100%; }
 }
+.sampling-page-spinner { color:var(--studio-accent); }
