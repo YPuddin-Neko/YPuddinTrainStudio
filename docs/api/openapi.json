@@ -6812,6 +6812,122 @@
         }
       }
     },
+    "/api/projects/{pid}/versions/{vid}/regularization/estimate": {
+      "post": {
+        "summary": "Estimate",
+        "operationId": "estimate_api_projects__pid__versions__vid__regularization_estimate_post",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegularizationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegularizationEstimate"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{pid}/versions/{vid}/regularization/match": {
+      "post": {
+        "summary": "Match",
+        "operationId": "match_api_projects__pid__versions__vid__regularization_match_post",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegularizationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegularizationMatchPlan"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/regularization/{oid}": {
       "get": {
         "summary": "Operation",
@@ -17709,6 +17825,164 @@
         ],
         "title": "RecommendedSource"
       },
+      "RegularizationEstimate": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count"
+          },
+          "terms": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Terms"
+          },
+          "local_exclusions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Local Exclusions"
+          },
+          "tag_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag Limit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "count",
+          "terms",
+          "local_exclusions",
+          "tag_limit"
+        ],
+        "title": "RegularizationEstimate"
+      },
+      "RegularizationMatchPlan": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/RegularizationPlanSource"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "source_images": {
+            "type": "integer",
+            "title": "Source Images"
+          },
+          "captioned_images": {
+            "type": "integer",
+            "title": "Captioned Images"
+          },
+          "missing_captions": {
+            "type": "integer",
+            "title": "Missing Captions"
+          },
+          "invalid_captions": {
+            "type": "integer",
+            "title": "Invalid Captions"
+          },
+          "top_tags": {
+            "items": {
+              "$ref": "#/components/schemas/RegularizationTagCount"
+            },
+            "type": "array",
+            "title": "Top Tags"
+          },
+          "search_tags": {
+            "items": {
+              "$ref": "#/components/schemas/RegularizationShareTag"
+            },
+            "type": "array",
+            "title": "Search Tags"
+          },
+          "searchable_tags": {
+            "type": "integer",
+            "title": "Searchable Tags"
+          },
+          "unsearchable_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unsearchable Tags"
+          },
+          "aspect": {
+            "$ref": "#/components/schemas/RegularizationRange"
+          },
+          "size": {
+            "$ref": "#/components/schemas/RegularizationSize"
+          },
+          "existing_images": {
+            "type": "integer",
+            "title": "Existing Images"
+          },
+          "suggested_count": {
+            "type": "integer",
+            "title": "Suggested Count"
+          },
+          "tag_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag Limit"
+          },
+          "tag_limit_known": {
+            "type": "boolean",
+            "title": "Tag Limit Known"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "sources",
+          "source_images",
+          "captioned_images",
+          "missing_captions",
+          "invalid_captions",
+          "top_tags",
+          "search_tags",
+          "searchable_tags",
+          "unsearchable_tags",
+          "aspect",
+          "size",
+          "existing_images",
+          "suggested_count",
+          "tag_limit",
+          "tag_limit_known"
+        ],
+        "title": "RegularizationMatchPlan"
+      },
       "RegularizationPlan": {
         "properties": {
           "signature": {
@@ -17836,6 +18110,29 @@
           "name"
         ],
         "title": "RegularizationPlanSource"
+      },
+      "RegularizationRange": {
+        "properties": {
+          "low": {
+            "type": "number",
+            "title": "Low"
+          },
+          "median": {
+            "type": "number",
+            "title": "Median"
+          },
+          "high": {
+            "type": "number",
+            "title": "High"
+          }
+        },
+        "type": "object",
+        "required": [
+          "low",
+          "median",
+          "high"
+        ],
+        "title": "RegularizationRange"
       },
       "RegularizationRequest": {
         "properties": {
@@ -17988,6 +18285,42 @@
         "additionalProperties": false,
         "type": "object",
         "title": "RegularizationRequest"
+      },
+      "RegularizationShareTag": {
+        "properties": {
+          "tag": {
+            "type": "string",
+            "title": "Tag"
+          },
+          "share": {
+            "type": "number",
+            "title": "Share"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tag",
+          "share"
+        ],
+        "title": "RegularizationShareTag"
+      },
+      "RegularizationSize": {
+        "properties": {
+          "width": {
+            "type": "integer",
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height"
+          }
+        },
+        "type": "object",
+        "required": [
+          "width",
+          "height"
+        ],
+        "title": "RegularizationSize"
       },
       "RegularizationStatus": {
         "properties": {

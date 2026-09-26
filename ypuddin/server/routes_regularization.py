@@ -122,6 +122,54 @@ class RegularizationPlan(BaseModel):
     examples: list[RegularizationPlanExample]
 
 
+class RegularizationEstimate(BaseModel):
+    source: str
+    # Matching safe posts on the site; None when the site did not say.
+    count: int | None
+    # What is sent: search tags, as many exclusions as the account's tag limit allows, and the rating.
+    terms: list[str]
+    # Exclusions beyond the tag limit, checked on each post instead.
+    local_exclusions: list[str]
+    tag_limit: int | None
+
+
+class RegularizationShareTag(BaseModel):
+    tag: str
+    share: float
+
+
+class RegularizationRange(BaseModel):
+    low: float
+    median: float
+    high: float
+
+
+class RegularizationSize(BaseModel):
+    width: int
+    height: int
+
+
+class RegularizationMatchPlan(BaseModel):
+    source: str
+    sources: list[RegularizationPlanSource]
+    source_images: int
+    captioned_images: int
+    missing_captions: int
+    invalid_captions: int
+    top_tags: list[RegularizationTagCount]
+    # The tags searched first, with the share of captioned training images that show them.
+    search_tags: list[RegularizationShareTag]
+    searchable_tags: int
+    # Caption words no site searches for, such as quality words and @artist names.
+    unsearchable_tags: list[str]
+    aspect: RegularizationRange
+    size: RegularizationSize
+    existing_images: int
+    suggested_count: int
+    tag_limit: int | None
+    tag_limit_known: bool
+
+
 def manager(request: Request):
     return request.app.state.regularization
 
@@ -134,6 +182,16 @@ def status(pid: str, vid: str, service=Depends(manager)):
 @router.post("/projects/{pid}/versions/{vid}/regularization/plan", response_model=RegularizationPlan)
 def plan(pid: str, vid: str, body: RegularizationRequest, service=Depends(manager)):
     return service.plan(pid, vid, body)
+
+
+@router.post("/projects/{pid}/versions/{vid}/regularization/estimate", response_model=RegularizationEstimate)
+def estimate(pid: str, vid: str, body: RegularizationRequest, service=Depends(manager)):
+    return service.estimate(pid, vid, body)
+
+
+@router.post("/projects/{pid}/versions/{vid}/regularization/match", response_model=RegularizationMatchPlan)
+def match(pid: str, vid: str, body: RegularizationRequest, service=Depends(manager)):
+    return service.match_plan(pid, vid, body)
 
 
 @router.post(

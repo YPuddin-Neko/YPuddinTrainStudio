@@ -1981,6 +1981,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{pid}/versions/{vid}/regularization/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Estimate */
+        post: operations["estimate_api_projects__pid__versions__vid__regularization_estimate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{pid}/versions/{vid}/regularization/match": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Match */
+        post: operations["match_api_projects__pid__versions__vid__regularization_match_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/regularization/{oid}": {
         parameters: {
             query?: never;
@@ -6040,6 +6074,52 @@ export interface components {
             /** Url */
             url: string;
         };
+        /** RegularizationEstimate */
+        RegularizationEstimate: {
+            /** Source */
+            source: string;
+            /** Count */
+            count: number | null;
+            /** Terms */
+            terms: string[];
+            /** Local Exclusions */
+            local_exclusions: string[];
+            /** Tag Limit */
+            tag_limit: number | null;
+        };
+        /** RegularizationMatchPlan */
+        RegularizationMatchPlan: {
+            /** Source */
+            source: string;
+            /** Sources */
+            sources: components["schemas"]["RegularizationPlanSource"][];
+            /** Source Images */
+            source_images: number;
+            /** Captioned Images */
+            captioned_images: number;
+            /** Missing Captions */
+            missing_captions: number;
+            /** Invalid Captions */
+            invalid_captions: number;
+            /** Top Tags */
+            top_tags: components["schemas"]["RegularizationTagCount"][];
+            /** Search Tags */
+            search_tags: components["schemas"]["RegularizationShareTag"][];
+            /** Searchable Tags */
+            searchable_tags: number;
+            /** Unsearchable Tags */
+            unsearchable_tags: string[];
+            aspect: components["schemas"]["RegularizationRange"];
+            size: components["schemas"]["RegularizationSize"];
+            /** Existing Images */
+            existing_images: number;
+            /** Suggested Count */
+            suggested_count: number;
+            /** Tag Limit */
+            tag_limit: number | null;
+            /** Tag Limit Known */
+            tag_limit_known: boolean;
+        };
         /** RegularizationPlan */
         RegularizationPlan: {
             /** Signature */
@@ -6086,6 +6166,15 @@ export interface components {
             path: string;
             /** Name */
             name: string;
+        };
+        /** RegularizationRange */
+        RegularizationRange: {
+            /** Low */
+            low: number;
+            /** Median */
+            median: number;
+            /** High */
+            high: number;
         };
         /** RegularizationRequest */
         RegularizationRequest: {
@@ -6179,6 +6268,20 @@ export interface components {
              * @default
              */
             api_key: string;
+        };
+        /** RegularizationShareTag */
+        RegularizationShareTag: {
+            /** Tag */
+            tag: string;
+            /** Share */
+            share: number;
+        };
+        /** RegularizationSize */
+        RegularizationSize: {
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
         };
         /** RegularizationStatus */
         RegularizationStatus: {
@@ -12009,6 +12112,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RegularizationPlan"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    estimate_api_projects__pid__versions__vid__regularization_estimate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+                vid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegularizationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegularizationEstimate"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    match_api_projects__pid__versions__vid__regularization_match_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+                vid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegularizationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegularizationMatchPlan"];
                 };
             };
             /** @description Validation Error */

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import io
 import json
@@ -12,8 +11,6 @@ import shutil
 import subprocess
 import threading
 import time
-import urllib.error
-import urllib.parse
 import urllib.request
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -24,6 +21,16 @@ from PIL import Image, ImageOps
 from ypuddin.config import CaptionConfig, ModelConfig
 from ypuddin.data.index import iter_images
 
+from .booru import (
+    MEDIA_EXTS,
+    BooruClient,
+    Cancelled,
+    Post,
+    Redirect,
+    TooLarge,
+    normalize,
+    user_agent,
+)
 from .db import new_id, now
 from .environment import maintenance_blocked
 from .errors import ApiError, NotFound
@@ -38,38 +45,9 @@ MAX_PIXELS = 16_777_216
 OWNER_FILE = ".regularization-owner"
 
 
-class Cancelled(Exception):
-    pass
-
-
-def _allowed_media(url: str, source: str) -> bool:
-    parsed = urllib.parse.urlsplit(url)
-    try:
-        port = parsed.port
-    except ValueError:
-        return False
-    host = (parsed.hostname or "").lower()
-    suffix = ".donmai.us" if source == "danbooru" else ".gelbooru.com"
-    return (
-        parsed.scheme == "https"
-        and not parsed.username
-        and not parsed.password
-        and port in (None, 443)
-        and host.endswith(suffix)
-    )
-
-
-class _Redirect(urllib.request.HTTPRedirectHandler):
-    def __init__(self, source: str, media: bool):
-        self.source, self.media = source, media
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        if not self.media or not _allowed_media(newurl, self.source):
-            raise ApiError(
-                "The provider redirected outside its allowed media hosts", code="regularization.redirect"
-            )
-        # Media requests never carry API credentials, cookies or referrers.
-        return urllib.request.Request(newurl, headers={"User-Agent": "YPuddinTrainStudio/regularization"})
+# Media downloads that fail in a row before the batch gives up on the site.
+FAILURE_RUN = 8
+DOWNLOAD_THREADS = 4
 
 
 def image_identity(image: Image.Image) -> str:
@@ -91,6 +69,135 @@ def decoded_image(data: bytes | Path) -> Image.Image:
         return Image.alpha_composite(background, oriented).convert("RGB")
 
 
+class _Batch:
+    """Posts downloaded in parallel into one batch, keeping only new, safe, distinct images."""
+
+    def __init__(self, manager, oid, client, output, count, excluded, taken, cancelled):
+        self.manager, self.oid, self.client, self.output = manager, oid, client, output
+        self.count, self.excluded, self.taken, self.cancelled = count, set(excluded), taken, cancelled
+        self.source = client.site.name
+        self.lock = threading.Lock()
+        self.bytes = 0
+        self.done = 0
+        self.seen: set[str] = set()
+        self.identities: set[str] = set()
+        self.manifest: list[dict] = []
+        self.skipped = 0
+        self.failures = 0
+
+    @property
+    def full(self):
+        return self.done >= self.count
+
+    def wanted(self, post: Post) -> bool:
+        return (
+            post.safe
+            and post.ext in MEDIA_EXTS
+            and bool(post.tags)
+            and post.id not in self.seen
+            and (self.source, post.id) not in self.taken
+            and (None, post.id) not in self.taken
+            and not self.excluded & post.all_tags
+        )
+
+    def _account(self, size):
+        with self.lock:
+            self.bytes += size
+            if self.bytes > MAX_BATCH_BYTES:
+                raise ApiError(
+                    "Regularization download exceeded its byte limit", code="regularization.too_large"
+                )
+
+    def _fetch(self, post):
+        try:
+            return post, decoded_image(self.client.download(post, progress=self._account))
+        except TooLarge:
+            return post, None
+        except ApiError as error:
+            if error.code == "regularization.too_large":
+                raise  # The whole batch is over its limit.
+            return post, error
+        except Cancelled:
+            raise
+        except Exception:
+            return post, None  # Not an image this batch can use.
+
+    def take(self, posts, *, query, limit=None):
+        """Download the wanted posts in parallel until the batch is full, or `limit` more are saved.
+        Returns the posts saved."""
+        wanted = [post for post in posts if self.wanted(post)]
+        goal = self.count if limit is None else min(self.count, self.done + limit)
+        saved, index = [], 0
+        with ThreadPoolExecutor(
+            max_workers=DOWNLOAD_THREADS, thread_name_prefix="regularization-media"
+        ) as pool:
+            while index < len(wanted) and self.done < goal:
+                # One spare download covers a file that turns out unusable, without overshooting much.
+                size = min(DOWNLOAD_THREADS, goal - self.done + 1)
+                chunk, index = wanted[index : index + size], index + size
+                for post, result in pool.map(self._fetch, chunk):
+                    self.manager._check(self.cancelled)
+                    self.seen.add(post.id)
+                    if isinstance(result, ApiError):
+                        self.failures += 1
+                        if self.failures >= FAILURE_RUN:
+                            raise result
+                        continue
+                    self.failures = 0
+                    if result is None:
+                        self.skipped += 1
+                    elif self.done < goal and self.save(post, result, query):
+                        saved.append(post)
+        return saved
+
+    def save(self, post, image, query):
+        digest = image_identity(image)
+        if digest in self.identities:
+            self.manager._update(self.oid, duplicates=self.manager._row(self.oid)["duplicates"] + 1)
+            return False
+        self.identities.add(digest)
+        name = f"{self.source}_{post.id}.png"
+        image.save(self.output / name)
+        (self.output / name).with_suffix(".txt").write_text(
+            ", ".join(tag.replace("_", " ") for tag in post.tags), encoding="utf-8"
+        )
+        self.manifest.append(
+            {
+                "file": name,
+                "provider": self.source,
+                "post_id": post.id,
+                "page": post.page,
+                "source": post.source,
+                "query": query,
+                "width": image.width,
+                "height": image.height,
+                "pixel_sha256": digest,
+            }
+        )
+        self.done += 1
+        self.manager._update(self.oid, phase="collecting", done=self.done)
+        return True
+
+    def finish(self):
+        if self.skipped:
+            self.manager._update(
+                self.oid, message=f"Skipped {self.skipped} files that were not usable images"
+            )
+        if not self.done:
+            raise ApiError(
+                "No new matching safe images were found. Change the search tags or excluded tags; no batch was added.",
+                code="regularization.insufficient",
+            )
+        if self.done < self.count:
+            # What was found is kept: asking again would only download the same pictures.
+            self.manager._update(
+                self.oid, message=f"Found {self.done} of {self.count} matching images; adding them"
+            )
+        (self.output / "manifest.json").write_text(
+            json.dumps(self.manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+
 class RegularizationManager:
     def __init__(self, context, *, opener=None, credentials=None):
         self.c = context
@@ -98,6 +205,8 @@ class RegularizationManager:
         self.opener = opener  # Test seam; production always uses the provider-restricted opener.
         self.pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="regularization")
         self.cancel_events: dict[str, threading.Event] = {}
+        self.preview_clients: dict[tuple[str, str, str], BooruClient] = {}
+        self.preview_lock = threading.Lock()
         self.processes: dict[str, subprocess.Popen] = {}
         self.closed = False
         self.c.db.execute("""CREATE TABLE IF NOT EXISTS regularization_operations (
@@ -225,6 +334,70 @@ class RegularizationManager:
             raise ApiError("请先选择按训练标签生成", status=422, code="regularization.source")
         return training_plan(self.c, pid, vid, request, get_project_config(pid, self.c, vid))[0]
 
+    @staticmethod
+    def _search_tags(request):
+        tags = request.prompt.split()
+        if not tags or len(tags) > 12 or any(not re.fullmatch(r"[\w()\-]+", tag) for tag in tags):
+            raise ApiError(
+                "Use up to 12 plain search tags; ratings and other query operators are fixed by Studio",
+                status=422,
+                code="regularization.query",
+            )
+        if any(not re.fullmatch(r"[\w()\- ]{1,100}", tag) for tag in request.excluded_tags):
+            raise ApiError("Excluded search tags must be plain tags", status=422, code="regularization.query")
+        return tags
+
+    def _site_client(self, source):
+        """A long-lived client per site and account for previews, so their requests share one pace."""
+        credentials = self.credentials.site(source)
+        key = (source, *credentials)
+        with self.preview_lock:
+            client = self.preview_clients.get(key)
+            if client is None:
+                self.preview_clients = {
+                    other: value for other, value in self.preview_clients.items() if other[0] != source
+                }
+                client = self.preview_clients[key] = self.client(source, credentials)
+        return client
+
+    def estimate(self, pid, vid, request):
+        """How many safe posts a manual search finds, and how it is sent within the account's limit."""
+        self.c.resolve_version(pid, vid)
+        if request.source == "ai":
+            raise ApiError("Only site searches can be estimated", status=422, code="regularization.source")
+        tags = self._search_tags(request)
+        client = self._site_client(request.source)
+        excluded = list(dict.fromkeys(tag for tag in map(normalize, request.excluded_tags) if tag))
+        terms, local = client.query(tags, excluded)
+        return {
+            "source": request.source,
+            "count": client.count(terms),
+            "terms": terms,
+            "local_exclusions": local,
+            "tag_limit": client.tag_limit(),
+        }
+
+    def match_plan(self, pid, vid, request):
+        """What a batch that follows the training set would search for, from the captions alone;
+        only the Danbooru account level is read from the site."""
+        from .regularization_match import build_profile, plan
+        from .routes_work import get_project_config
+
+        if request.source == "ai":
+            raise ApiError(
+                "Only site collection follows the training tags", status=422, code="regularization.source"
+            )
+        profile = build_profile(
+            self.c, pid, vid, get_project_config(pid, self.c, vid), request.source_ids, request.excluded_tags
+        )
+        limit, known = None, True
+        if request.source == "danbooru":
+            try:
+                limit = self._site_client(request.source).tag_limit()
+            except ApiError:
+                limit, known = 2, False
+        return plan(profile, tag_limit=limit, tag_limit_known=known, source=request.source)
+
     def start(self, pid, vid, request):
         from .routes_work import get_project_config
 
@@ -239,21 +412,14 @@ class RegularizationManager:
             for line in prompts
         ]
         prompts = [line for line in prompts if line]
-        if request.prompt_source == "training_tags" and request.source != "ai":
-            raise ApiError("训练标签逐图生成仅适用于本地底模", status=422, code="regularization.source")
         if not prompts and request.prompt_source == "manual":
             raise ApiError(
                 "Enter a non-empty class prompt or search query", status=422, code="regularization.prompt"
             )
         credentials = ("", "")
         if request.source != "ai":
-            tags = request.prompt.split()
-            if not tags or len(tags) > 12 or any(not re.fullmatch(r"[\w()\-]+", tag) for tag in tags):
-                raise ApiError(
-                    "Use up to 12 plain search tags; ratings and other query operators are fixed by Studio",
-                    status=422,
-                    code="regularization.query",
-                )
+            if request.prompt_source == "manual":
+                self._search_tags(request)
             # Legacy API clients may still supply one-use credentials. Never mix a
             # partial override with an account/key taken from the central store.
             if request.user_id or request.username or request.api_key.get_secret_value():
@@ -305,7 +471,7 @@ class RegularizationManager:
                     "prompts": prompts,
                     "ownership_token": uuid.uuid4().hex,
                 }
-                if request.prompt_source == "training_tags":
+                if request.prompt_source == "training_tags" and request.source == "ai":
                     from .regularization_plan import training_plan
 
                     plan, entries = training_plan(self.c, pid, version["id"], request, config)
@@ -646,152 +812,106 @@ class RegularizationManager:
                         proc.wait(timeout=3)
                 self.processes.pop(oid, None)
 
-    def _open(self, url, source, *, media=False, headers=None):
+    def _open_request(self, request, source, media):
         from .network import ProxyPolicy
 
-        request = urllib.request.Request(
-            url, headers={"User-Agent": "YPuddinTrainStudio/regularization", **(headers or {})}
-        )
-        opener = self.opener or ProxyPolicy.from_context(self.c).opener(_Redirect(source, media))
+        # The policy is read per request, so saved proxy settings apply to the next one.
+        opener = self.opener or ProxyPolicy.from_context(self.c).opener(Redirect(source, media))
         return opener.open(request, timeout=15)
+
+    def _open(self, url, source, *, media=False, headers=None):
+        request = urllib.request.Request(url, headers={"User-Agent": user_agent(), **(headers or {})})
+        return self._open_request(request, source, media)
+
+    def client(self, source, credentials, *, cancelled=None, notify=None):
+        return BooruClient(
+            source,
+            *credentials,
+            opener=lambda request, media: self._open_request(request, source, media),
+            cancelled=cancelled,
+            notify=notify,
+            max_file_bytes=MAX_FILE_BYTES,
+        )
+
+    def collected_posts(self, pid, vid):
+        """Site posts earlier batches of this version took, including images deleted since then,
+        so a new batch neither repeats them nor brings back what was removed."""
+        root = self.c.reg_dir(pid, vid).resolve()
+        seen = set()
+        for row in self.c.db.fetchall(
+            "SELECT path FROM regularization_operations WHERE project_id=? AND version_id=? AND status='completed' AND source!='ai'",
+            (pid, vid),
+        ):
+            batch = Path(row["path"] or "").resolve()
+            manifest = batch / "manifest.json"
+            try:
+                if not batch.is_relative_to(root) or manifest.stat().st_size > 16 * 1024 * 1024:
+                    continue
+                entries = json.loads(manifest.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            for entry in entries if isinstance(entries, list) else []:
+                if isinstance(entry, dict) and isinstance(entry.get("post_id"), str):
+                    seen.add((entry.get("provider"), entry["post_id"]))
+        return seen
 
     def _collect(self, oid, payload, credentials, output, cancelled):
         source = payload["source"]
-        tokens = payload["prompt"].split()
-        excluded = payload["excluded_tags"]
-        if any(not re.fullmatch(r"[\w()\- ]{1,100}", tag) for tag in excluded):
+        manual = payload.get("prompt_source") != "training_tags"
+        if manual and any(not re.fullmatch(r"[\w()\- ]{1,100}", tag) for tag in payload["excluded_tags"]):
             raise ApiError("Excluded search tags must be plain tags", code="regularization.query")
-        query = " ".join([*tokens, *(f"-{tag.replace(' ', '_')}" for tag in excluded), "rating:general"])
-        done = 0
-        used_bytes = 0
-        identities = set()
-        posts_seen = set()
-        manifest = []
+        row = self._row(oid)
+        client = self.client(
+            source,
+            credentials,
+            cancelled=cancelled,
+            notify=lambda message: self._update(oid, message=message),
+        )
+        excluded = list(dict.fromkeys(tag for tag in map(normalize, payload["excluded_tags"]) if tag))
+        taken = self.collected_posts(row["project_id"], row["version_id"])
+        if not manual:
+            from .regularization_match import build_profile, collect
+            from .routes_work import get_project_config
+
+            self._update(oid, phase="preparing", message="Reading the training captions and image sizes")
+            profile = build_profile(
+                self.c,
+                row["project_id"],
+                row["version_id"],
+                get_project_config(row["project_id"], self.c, row["version_id"]),
+                payload["source_ids"],
+                payload["excluded_tags"],
+            )
+            if not profile.weights:
+                raise ApiError(
+                    "The training captions have no searchable tags left; check the captions and excluded tags",
+                    code="regularization.empty_plan",
+                )
+            batch = _Batch(
+                self, oid, client, output, payload["count"], excluded, taken | profile.post_ids, cancelled
+            )
+            collect(
+                profile, client, batch, payload["count"], lambda message: self._update(oid, message=message)
+            )
+            batch.finish()
+            return
+        batch = _Batch(self, oid, client, output, payload["count"], excluded, taken, cancelled)
+        tags = payload["prompt"].split()
+        terms, local = client.query(tags, excluded)
+        if local:
+            self._update(
+                oid, message=f"Checking {len(local)} excluded tags locally beyond the site's tag limit"
+            )
         for page in range(1, 21):
             self._check(cancelled)
-            self._update(oid, phase="searching", done=done, message=f"Searching {source}, page {page}")
-            headers = {"Accept": "application/json"}
-            if source == "danbooru":
-                params = {"tags": query, "limit": min(100, payload["count"] * 2), "page": page}
-                url = "https://danbooru.donmai.us/posts.json?" + urllib.parse.urlencode(params)
-                if credentials[0] and credentials[1]:
-                    headers["Authorization"] = (
-                        "Basic " + base64.b64encode(f"{credentials[0]}:{credentials[1]}".encode()).decode()
-                    )
-            else:
-                params = {
-                    "page": "dapi",
-                    "s": "post",
-                    "q": "index",
-                    "json": "1",
-                    "tags": query,
-                    "pid": page - 1,
-                    "limit": min(100, payload["count"] * 2),
-                    "user_id": credentials[0],
-                    "api_key": credentials[1],
-                }
-                url = "https://gelbooru.com/index.php?" + urllib.parse.urlencode(params)
-            try:
-                with self._open(url, source, headers=headers) as response:
-                    raw = response.read(8 * 1024 * 1024 + 1)
-                if len(raw) > 8 * 1024 * 1024:
-                    raise ValueError("Provider response too large")
-                posts = json.loads(raw)
-                if source == "gelbooru":
-                    posts = posts.get("post", []) if isinstance(posts, dict) else []
-                    if isinstance(posts, dict):
-                        posts = [posts]
-                if not isinstance(posts, list):
-                    raise ValueError("Provider response is not a post list")
-            except urllib.error.HTTPError as exc:
-                raise ApiError(
-                    f"{source} returned HTTP {exc.code}; check site credentials or retry later",
-                    code="regularization.provider",
-                ) from None
-            except ApiError:
-                raise
-            except Exception:
-                raise ApiError(
-                    f"Could not read {source}; check connectivity or retry later",
-                    code="regularization.provider",
-                ) from None
+            self._update(oid, phase="searching", done=batch.done, message=f"Searching {source}, page {page}")
+            posts = client.search(terms, page, min(client.site.page_size, max(20, payload["count"] * 2)))
             if not posts:
                 break
-            for post in posts:
-                self._check(cancelled)
-                if not isinstance(post, dict) or post.get("rating") not in {"g", "general", "safe"}:
-                    continue
-                pid, media = str(post.get("id", "")), post.get("file_url")
-                if (
-                    not pid.isdigit()
-                    or pid in posts_seen
-                    or not isinstance(media, str)
-                    or not _allowed_media(media, source)
-                ):
-                    continue
-                posts_seen.add(pid)
-                tags = post.get("tag_string" if source == "danbooru" else "tags", "")
-                if not isinstance(tags, str) or not tags.strip():
-                    continue
-                if str(post.get("file_ext", "")).lower() in {"webm", "mp4", "zip", "swf"}:
-                    continue
-                try:
-                    with self._open(media, source, media=True) as response:
-                        chunks = []
-                        size = 0
-                        while chunk := response.read(256 * 1024):
-                            self._check(cancelled)
-                            size += len(chunk)
-                            used_bytes += len(chunk)
-                            if size > MAX_FILE_BYTES or used_bytes > MAX_BATCH_BYTES:
-                                raise ApiError(
-                                    "Regularization download exceeded its byte limit",
-                                    code="regularization.too_large",
-                                )
-                            chunks.append(chunk)
-                    image = decoded_image(b"".join(chunks))
-                except (Cancelled, ApiError):
-                    raise
-                except Exception:
-                    continue
-                digest = image_identity(image)
-                if digest in identities:
-                    self._update(oid, duplicates=self._row(oid)["duplicates"] + 1)
-                    continue
-                identities.add(digest)
-                name = f"{source}_{pid}.png"
-                image.save(output / name)
-                (output / name).with_suffix(".txt").write_text(
-                    ", ".join(tag.replace("_", " ") for tag in tags.split()), encoding="utf-8"
-                )
-                manifest.append(
-                    {
-                        "file": name,
-                        "provider": source,
-                        "post_id": pid,
-                        "page": f"https://danbooru.donmai.us/posts/{pid}"
-                        if source == "danbooru"
-                        else f"https://gelbooru.com/index.php?page=post&s=view&id={pid}",
-                        "source": post.get("source", ""),
-                        "pixel_sha256": digest,
-                    }
-                )
-                done += 1
-                self._update(oid, phase="collecting", done=done)
-                if done >= payload["count"]:
-                    break
-            if done >= payload["count"]:
+            batch.take(posts, query=" ".join(tags))
+            if batch.full:
                 break
-            if cancelled.wait(1):
-                raise Cancelled()
-        if done < payload["count"]:
-            raise ApiError(
-                f"Only {done}/{payload['count']} matching safe images were found. Reduce the target or change search tags; no batch was added.",
-                code="regularization.insufficient",
-            )
-        (output / "manifest.json").write_text(
-            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        batch.finish()
 
     def _deduplicate(self, oid, output, cancelled):
         from .routes_work import get_project_config

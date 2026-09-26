@@ -48,3 +48,7 @@
 .reg-plan-preview li strong { color:var(--studio-dim); font-weight:400; }
 @media(max-width:540px) { .reg-training-plan .reg-form-grid { grid-template-columns:minmax(0,1fr); } .reg-plan-preview dl { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 .reg-note-spinner { display:inline-block; margin-right:6px; vertical-align:-2px; color:var(--studio-accent); }
+.reg-plan-suggestion { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; }
+.reg-plan-suggestion .ui-link { font-size:12px; }
+.reg-estimate { margin-top:-4px; }
+.reg-estimate .reg-error { margin:0; }

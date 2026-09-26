@@ -20,7 +20,8 @@ def normalize_tag(tag: str) -> str:
     return " ".join(tag.replace("_", " ").casefold().split())
 
 
-def training_plan(context, pid: str, vid: str, request, config: dict) -> tuple[dict, list[dict]]:
+def training_sources(context, pid: str, vid: str, config: dict, source_ids=()) -> list[dict]:
+    """The version's training folders, not its regularization ones, with their caption settings."""
     context.resolve_version(pid, vid)
     registry = {
         str(Path(row["path"]).expanduser().resolve()): row["id"]
@@ -43,11 +44,18 @@ def training_plan(context, pid: str, vid: str, request, config: dict) -> tuple[d
                 "path": str(root),
                 "name": root.name,
                 "caption_ext": source.get("caption_ext", "auto"),
+                "trigger_word": (source.get("caption") or {}).get("trigger_word"),
             }
         )
-    chosen = set(request.source_ids)
-    if chosen - {source["id"] for source in sources}:
+    if set(source_ids) - {source["id"] for source in sources}:
         raise ApiError("所选训练目录已变化，请重新选择范围", status=409, code="regularization.sources")
+    return sources
+
+
+def training_plan(context, pid: str, vid: str, request, config: dict) -> tuple[dict, list[dict]]:
+    sources = training_sources(context, pid, vid, config, request.source_ids)
+    chosen = set(request.source_ids)
+    reg_root = context.reg_dir(pid, vid).resolve()
 
     existing = set()
     for row in context.db.fetchall(
