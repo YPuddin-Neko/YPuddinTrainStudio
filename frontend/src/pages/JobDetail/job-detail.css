@@ -1,5 +1,8 @@
 .job-monitor { container-type:inline-size; gap:16px; }
-.job-monitor-bar { position:sticky; top:0; z-index:15; display:grid; gap:10px; padding:14px 20px 16px; background:var(--studio-panel); border:1px solid var(--studio-line); border-radius:10px; }
+.job-monitor-bar { position:sticky; top:0; z-index:15; display:grid; gap:10px; padding:14px 20px 16px; background:var(--studio-panel); border:1px solid var(--studio-line); border-radius:10px;
+  /* Stuck below the page's top inset, the bar also paints that strip and the area behind its rounded top corners,
+     so content scrolling underneath does not show above it; while not stuck the strip is page background anyway. */
+  box-shadow:0 calc(-1 * var(--page-inset, 24px)) 0 10px var(--studio-canvas); }
 .job-monitor-bar::before { content:""; position:absolute; inset:calc(-1 * var(--page-inset,16px)) -1px auto; height:var(--page-inset,16px); background:var(--studio-canvas); pointer-events:none; }
 .job-monitor-breadcrumb { display:flex; align-items:center; gap:8px; min-width:0; color:var(--studio-dim); font-size:13px; }
 .job-monitor-breadcrumb a { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--studio-dim); }
