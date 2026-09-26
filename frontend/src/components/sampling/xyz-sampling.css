@@ -6,7 +6,9 @@
 .xyz-form header > span { margin-left:auto; color:var(--studio-dim); font-size:10px; }
 .xyz-form-body { padding:16px; display:grid; gap:18px; }
 .xyz-section,.xyz-fields { display:grid; gap:12px; min-width:0; }
-.xyz-section > label,.xyz-fields > label { display:grid; gap:6px; min-width:0; font-size:12px; }
+.xyz-section > label,.xyz-fields > label,.xyz-weights { display:grid; gap:6px; min-width:0; font-size:12px; }
+.xyz-weights > small { font-size:11px; line-height:1.6; color:var(--studio-dim); }
+.xyz-axis-note { margin-top:8px; font-size:11px; line-height:1.6; color:var(--studio-dim); }
 .xyz-workspace input:not([type=checkbox]),.xyz-workspace textarea { width:100%; min-width:0; border:1px solid var(--studio-line); border-radius:6px; padding:8px 10px; background:var(--studio-canvas); color:var(--studio-text); font-size:12px; }
 .xyz-workspace textarea { resize:vertical; line-height:1.65; }
 .xyz-workspace input:disabled { opacity:.5; cursor:default; }
@@ -18,9 +20,6 @@
 .xyz-axis legend svg { display:inline-block; vertical-align:middle; margin-right:4px; }
 .xyz-axis-values { display:grid; gap:6px; margin-top:8px; }
 .xyz-axis-values > span { font-size:10px; color:var(--studio-dim); }
-.xyz-axis-choices { display:flex; flex-direction:column; gap:6px; max-height:150px; overflow:auto; padding-top:8px; scrollbar-gutter:stable; }
-.xyz-axis-choices label { display:flex; align-items:center; gap:7px; font-size:11px; min-height:25px; cursor:pointer; }
-.xyz-axis-choices span { min-width:0; overflow-wrap:anywhere; }
 .xyz-settings { border-top:1px solid var(--studio-line); padding-top:12px; }
 .xyz-settings summary { font-size:12px; cursor:pointer; }
 .xyz-settings summary span { display:block; font-size:10px; color:var(--studio-dim); margin:5px 0 0 14px; }

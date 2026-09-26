@@ -1,18 +1,26 @@
 import React from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowRight, Grid2X2, Loader2, RefreshCw, Search, X } from 'lucide-react';
+import { ArrowRight, Grid2X2, Loader2, RefreshCw, Search } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import type { Job, JobListResponse, Project } from '../../api/types';
 import StudioSelect from '../../components/StudioSelect';
 import XyzSampling from '../../components/sampling/XyzSampling';
 import { formatApiError } from '../../utils/errors';
 import { useWorkspaceText } from '../../utils/workspaceText';
-import { projectUrl } from '../../utils/projectVersions';
+import { projectUrl, type ProjectVersion } from '../../utils/projectVersions';
 import '../Queue/queue.css';
 import './sampling-page.css';
 
-type SourceJob = Job & { project_name?: string | null; version_name?: string | null };
+type SourceJob = Job & { project_name?: string | null; version_name?: string | null; version_number?: number | null };
 const PAGE_SIZE = 50;
+
+/** "v3 · 服装遮罩实验", without repeating a name that already starts with its number. */
+function versionText(number: number | null | undefined, name: string | null | undefined): string {
+  const tag = number ? `v${number}` : '';
+  const title = (name || '').trim();
+  if (!tag) return title;
+  return !title || new RegExp(`^${tag}(?:$|[\\s·:：-])`, 'i').test(title) ? title || tag : `${tag} · ${title}`;
+}
 
 export default function Sampling() {
   const text = useWorkspaceText();
@@ -25,6 +33,7 @@ export default function Sampling() {
   const [projects, setProjects] = React.useState<Project[]>([]);
   const [projectsError, setProjectsError] = React.useState('');
   const [projectsRevision, setProjectsRevision] = React.useState(0);
+  const [versions, setVersions] = React.useState<ProjectVersion[]>([]);
   const [jobs, setJobs] = React.useState<SourceJob[]>([]);
   const [sourceJob, setSourceJob] = React.useState<SourceJob | null>(null);
   const [total, setTotal] = React.useState(0);
@@ -47,6 +56,16 @@ export default function Sampling() {
     }).catch(failure => { if (!controller.signal.aborted) setProjectsError(formatApiError(failure)); });
     return () => controller.abort();
   }, [projectsRevision]);
+  // Versions narrow the run list; a project with many versions is otherwise hard to search.
+  React.useEffect(() => {
+    setVersions([]);
+    if (!projectId) return;
+    const controller = new AbortController();
+    void apiClient.get<ProjectVersion[]>(`/projects/${encodeURIComponent(projectId)}/versions`, { params: { include_archived: true }, signal: controller.signal, silent: true })
+      .then(rows => { if (!controller.signal.aborted) setVersions(Array.isArray(rows) ? rows : []); })
+      .catch(() => { /* The run list still works without the version choice. */ });
+    return () => controller.abort();
+  }, [projectId, projectsRevision]);
   React.useEffect(() => {
     const controller = new AbortController(); setLoading(true); setError('');
     void apiClient.get<JobListResponse | SourceJob[]>('/jobs', { params: { type: 'train', project_id: projectId || undefined, version_id: versionId || undefined, q: query || undefined, page, page_size: PAGE_SIZE }, signal: controller.signal, silent: true }).then(data => {
@@ -76,15 +95,20 @@ export default function Sampling() {
     }).catch(failure => { if (!controller.signal.aborted) setSourceError(formatApiError(failure)); });
     return () => controller.abort();
   }, [sourceId, invalidSourceMessage, sourceRevision]);
-  const sources = sourceJob && !jobs.some(job => job.id === sourceJob.id) ? [sourceJob, ...jobs] : jobs;
+  const listed = sourceJob && !jobs.some(job => job.id === sourceJob.id) ? [sourceJob, ...jobs] : jobs;
+  // Runs of the same version stay together, newest version first; the server's order holds within one.
+  const sources = listed.map((job, index) => ({ job, index })).sort((a, b) => (b.job.version_number ?? -1) - (a.job.version_number ?? -1) || a.index - b.index).map(({ job }) => job);
+  const sourceLabel = (job: SourceJob) => [versionText(job.version_number, job.version_name), job.name, !projectId && job.project_name].filter(Boolean).join(' · ');
+  const versionOptions = [{ value: '', label: text('所有版本', 'All versions') },
+    ...[...versions].sort((a, b) => (b.number ?? 0) - (a.number ?? 0)).map(version => ({ value: version.id, label: `${versionText(version.number, version.name)}${version.archived ? text('（已归档）', ' (archived)') : ''}` })),
+    ...(versionId && !versions.some(version => version.id === versionId) ? [{ value: versionId, label: versionText(sourceJob?.version_number, sourceJob?.version_name) || versionId }] : [])];
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   return <section className="sampling-page task-workspace" data-testid="sampling-page">
     <header className="task-page-heading"><div><h1>{text('模型测试', 'Model testing')}</h1></div><Link className="ui-btn" to="/queue">{text('任务队列', 'Task queue')}<ArrowRight size={14}/></Link></header>
     <div className="sampling-source-panel">
-      <div className="sampling-source-filters"><label><span>{text('项目', 'Project')}</span><StudioSelect aria-label={text('对比来源项目', 'Comparison project')} value={projectId} onValueChange={value => change({ project_id: value, version_id: null, source_job_id: null, task_id: null, page: null })} options={[{ value: '', label: text('所有项目', 'All projects') }, ...projects.map(project => ({ value: project.id, label: project.name })), ...(projectId && !projects.some(project => project.id === projectId) ? [{ value: projectId, label: projectId }] : [])]}/></label><label className="sampling-source-search"><Search size={14}/><input aria-label={text('搜索来源训练任务', 'Search source training runs')} placeholder={text('搜索任务名称…', 'Search run names…')} value={query} onChange={event => change({ q: event.target.value, page: null })}/></label><button type="button" className="ui-btn" disabled={loading} onClick={() => { setRevision(value => value + 1); setSourceRevision(value => value + 1); }} aria-label={text('刷新来源任务', 'Refresh source runs')}><RefreshCw size={14} className={loading ? 'animate-spin' : ''}/></button></div>
+      <div className="sampling-source-filters"><label><span>{text('项目', 'Project')}</span><StudioSelect aria-label={text('对比来源项目', 'Comparison project')} value={projectId} onValueChange={value => change({ project_id: value, version_id: null, source_job_id: null, task_id: null, page: null })} options={[{ value: '', label: text('所有项目', 'All projects') }, ...projects.map(project => ({ value: project.id, label: project.name })), ...(projectId && !projects.some(project => project.id === projectId) ? [{ value: projectId, label: projectId }] : [])]}/></label>{projectId && <label className="sampling-source-version"><span>{text('版本', 'Version')}</span><StudioSelect searchable={versionOptions.length > 8} aria-label={text('对比来源版本', 'Comparison version')} value={versionId} onValueChange={value => change({ version_id: value || null, page: null, ...(value && sourceJob && sourceJob.version_id !== value ? { source_job_id: null, task_id: null } : {}) })} options={versionOptions}/></label>}<label className="sampling-source-search"><Search size={14}/><input aria-label={text('搜索来源训练任务', 'Search source training runs')} placeholder={text('搜索任务名称…', 'Search run names…')} value={query} onChange={event => change({ q: event.target.value, page: null })}/></label><button type="button" className="ui-btn" disabled={loading} onClick={() => { setRevision(value => value + 1); setSourceRevision(value => value + 1); }} aria-label={text('刷新来源任务', 'Refresh source runs')}><RefreshCw size={14} className={loading ? 'animate-spin' : ''}/></button></div>
       {projectsError && <div className="sampling-source-error" role="alert"><span>{text('项目列表读取失败', 'Could not load projects')}: {projectsError}</span><button type="button" className="ui-link" onClick={() => setProjectsRevision(value => value + 1)}>{text('重试项目列表', 'Retry projects')}</button></div>}
-      {versionId && <div className="sampling-version-filter"><span>{text('当前版本', 'Current version')}: {sourceJob?.version_name || versionId}</span><button type="button" className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon" onClick={() => change({ version_id: null, page: null })} aria-label={text('清除版本筛选', 'Clear version filter')}><X size={12}/></button></div>}
-      <div className="sampling-source-choice"><label><span>{text('来源训练任务', 'Source training run')}</span><StudioSelect searchable disabled={loading} aria-label={text('来源训练任务', 'Source training run')} value={sourceId} placeholder={text('选择训练任务', 'Choose a training run')} options={sources.map(job => ({ value: job.id, label: [job.name, job.project_name, job.version_name].filter(Boolean).join(' · ') }))} onValueChange={value => change({ source_job_id: value, task_id: null })}/></label>{pages > 1 && <nav className="task-actions" aria-label={text('来源任务分页', 'Source run pages')}><button type="button" className="ui-btn" disabled={loading || page <= 1} onClick={() => change({ page: String(page - 1) })}>{text('上一页', 'Previous')}</button><span>{page} / {pages}</span><button type="button" className="ui-btn" disabled={loading || page >= pages} onClick={() => change({ page: String(page + 1) })}>{text('下一页', 'Next')}</button></nav>}</div>
+      <div className="sampling-source-choice"><label><span>{text('来源训练任务', 'Source training run')}</span><StudioSelect searchable disabled={loading} aria-label={text('来源训练任务', 'Source training run')} value={sourceId} placeholder={text('选择训练任务', 'Choose a training run')} options={sources.map(job => ({ value: job.id, label: sourceLabel(job) }))} onValueChange={value => change({ source_job_id: value, task_id: null })}/></label>{pages > 1 && <nav className="task-actions" aria-label={text('来源任务分页', 'Source run pages')}><button type="button" className="ui-btn" disabled={loading || page <= 1} onClick={() => change({ page: String(page - 1) })}>{text('上一页', 'Previous')}</button><span>{page} / {pages}</span><button type="button" className="ui-btn" disabled={loading || page >= pages} onClick={() => change({ page: String(page + 1) })}>{text('下一页', 'Next')}</button></nav>}</div>
       {sourceJob && <div className="sampling-source-context"><span>{sourceJob.name}</span><Link className="ui-link" to={`/jobs/${encodeURIComponent(sourceJob.id)}?tab=metrics`}>{text('查看训练任务', 'View training run')}</Link>{sourceJob.project_id && <Link className="ui-link" to={projectUrl(sourceJob.project_id, sourceJob.version_id, 'results')}>{text('返回版本训练结果', 'Back to version results')}</Link>}</div>}
     </div>
     {(error || sourceError) && <div className="task-error" role="alert">{error || sourceError}<button type="button" className="ui-btn ui-btn-sm" onClick={() => { setRevision(value => value + 1); if (sourceId) change({ source_job_id: null, task_id: null }); }}>{text('重新选择', 'Choose again')}</button></div>}

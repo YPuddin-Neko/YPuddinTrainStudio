@@ -3,6 +3,7 @@
 .sampling-source-filters,.sampling-source-choice { display:flex; align-items:end; gap:12px; }
 .sampling-source-panel label:not(.sampling-source-search) { display:grid; gap:6px; font-size:12px; min-width:0; }
 .sampling-source-filters > label:first-child { flex:0 1 220px; }
+.sampling-source-filters > .sampling-source-version { flex:0 1 220px; }
 .sampling-source-search { display:flex; align-items:center; gap:8px; min-width:0; flex:1; height:38px; padding:0 10px; border:1px solid var(--studio-line); border-radius:6px; color:var(--studio-dim); }
 .sampling-source-search input { background:transparent; width:100%; min-width:0; color:var(--studio-text); font-size:12px; }
 .sampling-source-choice > label { flex:1; }
@@ -10,10 +11,9 @@
 .sampling-source-context { display:flex; flex-wrap:wrap; gap:8px 16px; font-size:11px; color:var(--studio-dim); }
 .sampling-source-context a { color:var(--studio-accent); }.sampling-source-context span { margin-right:auto; }
 .sampling-page-empty { border:1px dashed var(--studio-line); border-radius:8px; min-height:260px; text-align:center; }.sampling-page-empty p { max-width:480px; line-height:1.8; }
-@media(max-width:650px) { .sampling-source-filters,.sampling-source-choice { flex-wrap:wrap; }.sampling-source-filters > label:first-child { flex:1 1 100%; }.sampling-source-choice > label { flex-basis:100%; } }
+@media(max-width:650px) { .sampling-source-filters,.sampling-source-choice { flex-wrap:wrap; }.sampling-source-filters > label:first-child,.sampling-source-filters > .sampling-source-version { flex:1 1 100%; }.sampling-source-choice > label { flex-basis:100%; } }
 
 .sampling-source-error { display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:12px; color:var(--studio-warning,#b45309); }.sampling-source-error span { overflow-wrap:anywhere; }
-.sampling-version-filter { display:flex; align-items:center; gap:6px; justify-self:start; border:1px solid var(--studio-line); border-radius:5px; padding:4px 6px; font-size:11px; color:var(--studio-dim); }
 @media(min-width:1100px) {
   .app-shell .sampling-page { height:calc(100dvh - 48px - 2 * var(--page-inset,24px)); }
   .sampling-page > :not(.xyz-workspace) { flex-shrink:0; }
