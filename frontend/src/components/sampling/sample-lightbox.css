@@ -1,0 +1,39 @@
+/* One preview over the page: what it is, the image, then the toolbar centred below the image and never over it.
+   The viewer is dark in both themes so the image reads the same; its controls use the matching dark colors. */
+.sample-lightbox { --lightbox-panel:#0f172a; --lightbox-hover:#1e293b; --lightbox-line:#334155; --lightbox-text:#e2e8f0; --lightbox-dim:#94a3b8;
+  position:fixed; inset:0; z-index:90; display:flex; flex-direction:column; padding:env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  background:#020617; color:var(--lightbox-text); outline:none; overscroll-behavior:contain; }
+.sample-lightbox:focus-visible { box-shadow:none; }
+.sample-lightbox button, .sample-lightbox a { --tw-ring-offset-color:var(--lightbox-panel); }
+.sample-lightbox-head { flex:none; display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:10px 10px 8px 18px; }
+.sample-lightbox-title { display:grid; gap:3px; min-width:0; padding-top:6px; }
+.sample-lightbox-title > p:first-child { display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 14px; font-size:12px; color:var(--lightbox-dim); font-variant-numeric:tabular-nums; }
+.sample-lightbox-title strong { font-size:14px; font-weight:600; color:#f1f5f9; }
+.sample-lightbox-prompt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; color:#cbd5e1; }
+.sample-lightbox-close.ui-btn { flex:none; border-color:transparent; background:transparent; color:var(--lightbox-text); }
+.sample-lightbox-close.ui-btn:hover { background:var(--lightbox-hover); color:#fff; }
+
+.sample-zoom { position:relative; flex:1; min-height:0; display:flex; align-items:center; justify-content:center; margin:0 16px; overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none; }
+.sample-zoom-image { max-width:100%; max-height:100%; object-fit:contain; transform-origin:center; will-change:transform; cursor:zoom-in; transition:opacity 180ms ease-out; }
+.sample-zoom-image.is-pending { opacity:0; }
+.sample-zoom[data-zoomed], .sample-zoom[data-zoomed] .sample-zoom-image { cursor:grab; }
+.sample-zoom[data-zoomed]:active, .sample-zoom[data-zoomed]:active .sample-zoom-image { cursor:grabbing; }
+.sample-lightbox-skeleton { position:absolute; inset:12% 18%; border-radius:8px; opacity:.16; }
+.sample-lightbox-failed { display:flex; flex-direction:column; align-items:center; gap:8px; font-size:13px; color:var(--lightbox-dim); }
+
+.sample-lightbox-toolbar { flex:none; display:flex; justify-content:center; padding:12px 16px 16px; }
+.sample-lightbox-tools { display:flex; align-items:center; gap:2px; max-width:100%; padding:3px; border:1px solid var(--lightbox-line); border-radius:10px; background:var(--lightbox-panel); color:var(--lightbox-text); box-shadow:0 8px 24px #0008; }
+.sample-lightbox-tools button, .sample-lightbox-tools a { display:grid; place-items:center; flex:none; min-width:32px; height:32px; padding:0 6px; border-radius:7px; color:var(--lightbox-text); font-size:12px; font-weight:600; font-variant-numeric:tabular-nums; }
+.sample-lightbox-tools button:hover:not(:disabled), .sample-lightbox-tools a:hover { background:var(--lightbox-hover); color:#fff; }
+.sample-lightbox-tools button:disabled { opacity:.35; cursor:default; }
+.sample-lightbox-position, .sample-lightbox-scale { flex:none; min-width:6ch; padding:0 2px; text-align:center; font-size:12px; font-variant-numeric:tabular-nums; color:var(--lightbox-dim); }
+.sample-lightbox-divider { flex:none; width:1px; height:18px; margin:0 3px; background:var(--lightbox-line); }
+
+@media (max-width:520px) {
+  .sample-lightbox-head { padding-left:14px; }
+  .sample-zoom { margin:0 8px; }
+  .sample-lightbox-toolbar { padding:10px 8px 12px; }
+  /* Phones keep paging, zoom, fit and download; the percentage and 1:1 need the room. */
+  .sample-lightbox-tools .sample-lightbox-scale, .sample-lightbox-tools .sample-lightbox-actual { display:none; }
+}
+@media (pointer:coarse) { .sample-lightbox-tools button, .sample-lightbox-tools a { min-width:40px; height:40px; } }

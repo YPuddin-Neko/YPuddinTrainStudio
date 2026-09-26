@@ -1,11 +1,12 @@
 import React from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Activity, Box, ChevronLeft, ChevronRight, Download, ExternalLink, Image as ImageIcon, Loader2, RefreshCw, Search, X } from 'lucide-react';
+import { Activity, Box, ChevronLeft, ChevronRight, Download, ExternalLink, Image as ImageIcon, Loader2, RefreshCw, Search } from 'lucide-react';
 import { apiClient, apiUrl } from '../../api/client';
 import type { Job, JobSample, JobListResponse } from '../../api/types';
 import { ApiError } from '../../api/types';
 import SampleLoss from '../SampleLoss';
+import SampleLightbox from '../sampling/SampleLightbox';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
 import { mergeJobEvent } from '../../utils/jobs';
@@ -64,8 +65,6 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
   const samplesRequest = React.useRef<AbortController | null>(null);
   const eventsDuringRequest = React.useRef<Record<string, any>[] | null>(null);
   const refreshTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const closeLightbox = React.useRef<HTMLButtonElement>(null);
-  const lightboxOpener = React.useRef<HTMLButtonElement | null>(null);
   const selectedJob = jobs.find(job => job.id === selectedJobId);
   const sampleJobs = jobs.filter(job => job.type !== 'cache');
   const sampleJobIds = sampleJobs.map(job => job.id).join(',');
@@ -154,11 +153,10 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
   const needle = sampleQuery.trim().toLowerCase();
   const shownSamples = needle ? samples.filter(sample => `${sample.job_id} ${jobName(sample.job_id)} ${sample.prompt} ${sample.seed} ${sample.step}`.toLowerCase().includes(needle)) : samples;
   const samplePages = Math.max(1, Math.ceil(shownSamples.length / 24));
-  React.useEffect(() => {
-    if (!lightbox) return;
-    const previous = lightboxOpener.current || document.activeElement as HTMLElement | null; closeLightbox.current?.focus();
-    return () => previous?.focus();
-  }, [lightbox]);
+  const sampleKey = (sample: ResultSample) => `${sample.job_id}-${sample.url}-${sample.step}-${sample.prompt_index}-${sample.seed}`;
+  const lightboxIndex = lightbox ? shownSamples.findIndex(sample => sampleKey(sample) === sampleKey(lightbox)) : -1;
+  // Paging in the viewer walks every matching sample and keeps the grid on the page of the one shown.
+  const showSample = (index: number) => { const sample = shownSamples[index]; if (sample) { setLightbox(sample); setSamplePage(Math.floor(index / 24) + 1); } };
 
   const tabs: { id: ResultTab; label: string; icon: typeof Activity }[] = [
     { id: 'artifacts', label: text('模型产物', 'Model outputs'), icon: Box },
@@ -194,8 +192,8 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
         <button type="button" className="ui-btn ui-btn-sm results-refresh" disabled={samplesLoading} onClick={() => void fetchSamples()}><RefreshCw size={13} className={samplesLoading ? 'animate-spin' : ''}/>{t('common.refresh')}</button></div>
       </div>
       {samplesError && <div className="results-error" role="alert">{samplesError}<button type="button" className="ui-btn ui-btn-sm" onClick={() => void fetchSamples()}>{t('common.retry')}</button></div>}
-      {samplesLoading && samples.length === 0 ? <p className="results-empty" role="status"><Loader2 size={16} className="animate-spin"/>{text('读取采样图…', 'Loading samples…')}</p> : !samplesError && shownSamples.length === 0 ? <div className="results-empty"><ImageIcon size={22}/><p>{needle ? text('没有匹配的采样图', 'No matching samples') : selectedJobId ? text('此任务暂无采样图', 'This job has no samples yet') : text('此版本暂无采样图', 'This version has no samples yet')}</p>{needle && <button type="button" className="ui-link" onClick={() => setSampleQuery('')}>{text('清除搜索', 'Clear search')}</button>}</div> : <div className="results-sample-grid">{shownSamples.slice((samplePage - 1) * 24, samplePage * 24).map(sample => <article className="results-sample-card" key={`${sample.job_id}-${sample.url}-${sample.step}-${sample.prompt_index}-${sample.seed}`}>
-        <button className="results-sample-preview" type="button" onClick={event => { lightboxOpener.current = event.currentTarget; setLightbox(sample); }} aria-label={text(`查看采样图：第 ${sample.step} 步，提示词 ${sample.prompt_index + 1}`, `View sample: step ${sample.step}, prompt ${sample.prompt_index + 1}`)}>{failedImages.has(sample.url) ? <span><ImageIcon size={22}/>{text('图片文件不可用', 'Image file unavailable')}</span> : <LazyImage src={fileUrl(sample.url)} alt={sample.prompt} loading="lazy" width={sample.width} height={sample.height} onError={() => setFailedImages(previous => new Set(previous).add(sample.url))}/>}</button>
+      {samplesLoading && samples.length === 0 ? <p className="results-empty" role="status"><Loader2 size={16} className="animate-spin"/>{text('读取采样图…', 'Loading samples…')}</p> : !samplesError && shownSamples.length === 0 ? <div className="results-empty"><ImageIcon size={22}/><p>{needle ? text('没有匹配的采样图', 'No matching samples') : selectedJobId ? text('此任务暂无采样图', 'This job has no samples yet') : text('此版本暂无采样图', 'This version has no samples yet')}</p>{needle && <button type="button" className="ui-link" onClick={() => setSampleQuery('')}>{text('清除搜索', 'Clear search')}</button>}</div> : <div className="results-sample-grid">{shownSamples.slice((samplePage - 1) * 24, samplePage * 24).map(sample => <article className="results-sample-card" key={sampleKey(sample)}>
+        <button className="results-sample-preview" type="button" onClick={event => { event.currentTarget.focus(); setLightbox(sample); }} aria-label={text(`查看采样图：第 ${sample.step} 步，提示词 ${sample.prompt_index + 1}`, `View sample: step ${sample.step}, prompt ${sample.prompt_index + 1}`)}>{failedImages.has(sample.url) ? <span><ImageIcon size={22}/>{text('图片文件不可用', 'Image file unavailable')}</span> : <LazyImage src={fileUrl(sample.url)} alt={sample.prompt} loading="lazy" width={sample.width} height={sample.height} onError={() => setFailedImages(previous => new Set(previous).add(sample.url))}/>}</button>
         <div className="results-sample-description"><div><strong>{text('步数', 'Step')} {sample.step}</strong><span>Seed {sample.seed}</span></div><SampleLoss sample={sample}/><p title={sample.prompt}>{sample.prompt}</p>
           {!selectedJobId && <Link className="results-sample-job" to={`/jobs/${encodeURIComponent(sample.job_id)}`} title={`${jobName(sample.job_id)} · ${sample.job_id}`}>{jobName(sample.job_id)} · {sample.job_id}</Link>}
           <div><time>{formatTime(sample.created_at)}</time><a className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon" href={fileUrl(sample.url)} download aria-label={text(`下载第 ${sample.step} 步采样图`, `Download step ${sample.step} sample`)}><Download size={13}/></a></div></div>
@@ -205,6 +203,7 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
 
     {tab === 'artifacts' && <div role="tabpanel" id="results-panel-artifacts" aria-labelledby="results-tab-artifacts"><div className="results-sample-toolbar results-output-selector"><label><span>{text('训练任务', 'Training job')}</span><StudioSelect aria-label={text('产物所属任务', 'Output source job')} value={artifactJobId} onValueChange={chooseArtifactJob} options={[{ value: '', label: text('此版本全部训练', 'All training runs in this version') }, ...artifactJobs.map(job => ({ value: job.id, label: job.name }))]}/></label>{artifactJobId && <Link className="ui-link" to={`/jobs/${artifactJobId}?tab=checkpoints`}>{text('查看此任务检查点', 'View job checkpoints')}</Link>}{pagination}</div><Artifacts embedded projectId={projectId} versionId={versionId} jobId={artifactJobId || undefined} readOnly={readOnly}/></div>}
 
-    {lightbox && <div className="results-lightbox" onClick={() => setLightbox(null)}><div role="dialog" aria-modal="true" aria-label={text('采样图预览', 'Sample preview')} className="results-lightbox-content" onClick={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Escape') setLightbox(null); }}><header><strong>{selectedJob?.name} · {text('步数', 'Step')} {lightbox.step}</strong><button ref={closeLightbox} type="button" className="ui-btn ui-btn-quiet ui-btn-icon" onClick={() => setLightbox(null)} aria-label={t('common.close')}><X size={18}/></button></header><img src={fileUrl(lightbox.url)} alt={lightbox.prompt}/><footer><p>{lightbox.prompt}</p><SampleLoss sample={lightbox}/><span>{lightbox.width} × {lightbox.height} · Seed {lightbox.seed} · {formatTime(lightbox.created_at)}</span><a className="ui-btn ui-btn-sm" href={fileUrl(lightbox.url)} download><Download size={14}/>{t('common.download')}</a></footer></div></div>}
+    {lightbox && lightboxIndex >= 0 && <SampleLightbox sample={lightbox} position={lightboxIndex + 1} total={shownSamples.length} details={[jobName(lightbox.job_id)]} onClose={() => setLightbox(null)}
+      onPrevious={lightboxIndex > 0 ? () => showSample(lightboxIndex - 1) : undefined} onNext={lightboxIndex < shownSamples.length - 1 ? () => showSample(lightboxIndex + 1) : undefined}/>}
   </section>;
 }

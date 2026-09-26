@@ -32,19 +32,12 @@
 .results-sample-card { overflow:hidden; border:1px solid var(--studio-line); border-radius:7px; background:var(--studio-panel); }
 .results-sample-preview { position:relative; display:flex; align-items:center; justify-content:center; width:100%; height:190px; background:var(--studio-muted); }
 .results-sample-preview img { width:100%; height:100%; object-fit:contain; }
+.results-sample-card .results-sample-preview { cursor:zoom-in; }
 .results-sample-preview > span { display:flex; flex-direction:column; align-items:center; gap:8px; color:var(--studio-dim); font-size:11px; }
 .results-sample-description { padding:9px 10px; font-size:10px; }
 .results-sample-description > div { display:flex; align-items:center; justify-content:space-between; gap:8px; font-variant-numeric:tabular-nums; }
 .results-sample-description p { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; margin:6px 0; color:var(--studio-dim); line-height:1.6; }
 .results-sample-description a { display:flex; color:var(--studio-accent); padding:3px; }
-.results-lightbox { position:fixed; inset:0; z-index:60; background:#000b; display:flex; align-items:center; justify-content:center; padding:20px; }
-.results-lightbox-content { width:min(1100px,100%); max-height:calc(100dvh - 40px); overflow:auto; background:var(--studio-panel); border:1px solid var(--studio-line); border-radius:9px; }
-.results-lightbox-content header { display:flex; justify-content:space-between; align-items:center; padding:10px 14px; gap:12px; font-size:12px; }
-.results-lightbox-content header strong { min-width:0; overflow-wrap:anywhere; }
-.results-lightbox-content > img { width:100%; height:min(65vh,800px); object-fit:contain; background:#000; }
-.results-lightbox-content footer { display:flex; flex-wrap:wrap; gap:8px 16px; padding:12px 14px; font-size:11px; }
-.results-lightbox-content footer p { width:100%; overflow-wrap:anywhere; }
-.results-lightbox-content footer span { flex:1; color:var(--studio-dim); }
 .version-results [data-testid=artifacts-page] table th, .version-results [data-testid=artifacts-page] table td { padding:8px 10px; }
 @media(max-width:600px) { .results-tabs > button { padding:0 8px; font-size:12px; gap:4px; } .results-sample-toolbar label { width:100%; gap:5px; } .results-sample-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; } .results-sample-preview { height:150px; } .results-pagination { font-size:10px; } }
 .results-overview { display:flex; align-items:center; gap:12px; font-size:11px; color:var(--studio-dim); }
