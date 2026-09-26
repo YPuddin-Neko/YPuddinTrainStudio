@@ -1,7 +1,7 @@
 import React from 'react';
-import { Link, Navigate, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Activity, Box, Grid2X2, ChevronLeft, ChevronRight, Download, ExternalLink, Image as ImageIcon, Loader2, RefreshCw, X } from 'lucide-react';
+import { Activity, Box, ChevronLeft, ChevronRight, Download, ExternalLink, Image as ImageIcon, Loader2, RefreshCw, Search, X } from 'lucide-react';
 import { apiClient, apiUrl } from '../../api/client';
 import type { Job, JobSample, JobListResponse } from '../../api/types';
 import { ApiError } from '../../api/types';
@@ -15,14 +15,14 @@ import { projectUrl } from '../../utils/projectVersions';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import StudioSelect from '../StudioSelect';
 import Artifacts from '../../pages/Artifacts/Artifacts';
-import { samplingUrl } from '../../utils/samplingRoutes';
 import '../../styles/project-results.css';
 import { SlidingIndicator } from '../motion';
 import { LazyImage } from '../Loading';
 
 interface VersionResultsProps { projectId: string; versionId?: string; readOnly?: boolean }
 type VersionedJob = Job & { version_id?: string | null };
-type ResultTab = 'jobs' | 'samples' | 'artifacts' | 'xyz';
+type ResultTab = 'jobs' | 'samples' | 'artifacts';
+type ResultSample = JobSample & { job_id: string };
 const PAGE_SIZE = 50;
 const fileUrl = (url: string) => url.startsWith('/api/') ? apiUrl(url.slice(4)) : url;
 
@@ -31,11 +31,16 @@ export default function VersionResults(props: VersionResultsProps) {
   return <VersionResultsWorkspace key={`${props.projectId}:${props.versionId || ''}`} {...props}/>;
 }
 
+/** Newest first; one run's previews by step, with prompts in order. */
+function sortSamples(rows: ResultSample[], acrossRuns: boolean): ResultSample[] {
+  return [...rows].sort((a, b) => (acrossRuns ? b.created_at - a.created_at : 0) || b.step - a.step || a.prompt_index - b.prompt_index || b.created_at - a.created_at);
+}
+
 function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: VersionResultsProps) {
   const { t } = useTranslation();
   const text = useWorkspaceText();
   const [params, setParams] = useSearchParams();
-  const tab: ResultTab = ['jobs', 'samples', 'artifacts', 'xyz'].includes(params.get('result_tab') || '') ? params.get('result_tab') as ResultTab : 'artifacts';
+  const tab: ResultTab = ['jobs', 'samples', 'artifacts'].includes(params.get('result_tab') || '') ? params.get('result_tab') as ResultTab : 'artifacts';
   const setTab = (value: ResultTab) => { const next = new URLSearchParams(params); next.set('result_tab', value); setParams(next); };
   // Keep only the chosen job, so paging the task list does not erase its label or filter.
   const [artifactJob, setArtifactJob] = React.useState<Pick<VersionedJob, 'id' | 'name'> | null>(null);
@@ -47,11 +52,13 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
   const [total, setTotal] = React.useState(0);
   const [jobsLoading, setJobsLoading] = React.useState(true);
   const [jobsError, setJobsError] = React.useState('');
+  // '' shows the samples of every training run in this version, as the outputs tab does.
   const [selectedJobId, setSelectedJobId] = React.useState('');
-  const [samples, setSamples] = React.useState<JobSample[]>([]);
+  const [sampleQuery, setSampleQuery] = React.useState('');
+  const [samples, setSamples] = React.useState<ResultSample[]>([]);
   const [samplesLoading, setSamplesLoading] = React.useState(false);
   const [samplesError, setSamplesError] = React.useState('');
-  const [lightbox, setLightbox] = React.useState<JobSample | null>(null);
+  const [lightbox, setLightbox] = React.useState<ResultSample | null>(null);
   const [failedImages, setFailedImages] = React.useState<Set<string>>(new Set());
   const jobsRequest = React.useRef<AbortController | null>(null);
   const samplesRequest = React.useRef<AbortController | null>(null);
@@ -61,6 +68,7 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
   const lightboxOpener = React.useRef<HTMLButtonElement | null>(null);
   const selectedJob = jobs.find(job => job.id === selectedJobId);
   const sampleJobs = jobs.filter(job => job.type !== 'cache');
+  const sampleJobIds = sampleJobs.map(job => job.id).join(',');
   const artifactJobs = artifactJob && !sampleJobs.some(job => job.id === artifactJob.id) ? [artifactJob, ...sampleJobs] : sampleJobs;
   const chooseArtifactJob = (id: string) => setArtifactJob(artifactJobs.find(job => job.id === id) || null);
 
@@ -75,7 +83,7 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
       const ownRows = rows.filter(job => job.project_id === projectId && (!versionId || job.version_id === versionId)).map(job => pendingEvents.reduce<VersionedJob>((current, event) => mergeJobEvent(current, event), job));
       const count = Array.isArray(response) ? ownRows.length : response.total;
       setJobs(ownRows); setTotal(count);
-      setSelectedJobId(previous => ownRows.some(job => job.id === previous && job.type !== 'cache') ? previous : ownRows.find(job => job.type !== 'cache')?.id || '');
+      setSelectedJobId(previous => ownRows.some(job => job.id === previous && job.type !== 'cache') ? previous : '');
       if (page > Math.max(1, Math.ceil(count / PAGE_SIZE))) setPage(Math.max(1, Math.ceil(count / PAGE_SIZE)));
     } catch (error) { if (!controller.signal.aborted) setJobsError(formatApiError(error)); }
     finally { if (!controller.signal.aborted) setJobsLoading(false); if (eventsDuringRequest.current === pendingEvents) eventsDuringRequest.current = null; }
@@ -118,22 +126,34 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
   useEventStream(EVENT_TYPES.QUEUE_CHANGED, scheduleJobsRefresh);
 
   const fetchSamples = React.useCallback(async () => {
-    if (tab !== 'samples' || !selectedJobId) return;
+    const targets = selectedJobId ? [selectedJobId] : sampleJobIds.split(',').filter(Boolean);
+    if (tab !== 'samples' || !targets.length) return;
     samplesRequest.current?.abort(); const controller = new AbortController(); samplesRequest.current = controller;
     setSamplesLoading(true); setSamplesError('');
     try {
-      const rows = await apiClient.get<JobSample[]>(`/jobs/${encodeURIComponent(selectedJobId)}/samples`, { signal: controller.signal, silent: true });
-      if (!controller.signal.aborted) setSamples([...rows].sort((a, b) => b.step - a.step || a.prompt_index - b.prompt_index || b.created_at - a.created_at));
+      const lists = await Promise.all(targets.map(id => apiClient.get<JobSample[]>(`/jobs/${encodeURIComponent(id)}/samples`, { signal: controller.signal, silent: true })
+        .then(rows => rows.map(row => ({ ...row, job_id: id })))));
+      if (!controller.signal.aborted) setSamples(sortSamples(lists.flat(), !selectedJobId));
     } catch (error) { if (!controller.signal.aborted) setSamplesError(formatApiError(error)); }
     finally { if (!controller.signal.aborted) setSamplesLoading(false); }
-  }, [tab, selectedJobId]);
+  }, [tab, selectedJobId, sampleJobIds]);
   React.useEffect(() => {
     setSamples([]); setSamplePage(1); setSamplesError(''); setFailedImages(new Set()); setLightbox(null);
     void fetchSamples(); return () => samplesRequest.current?.abort();
   }, [fetchSamples]);
-  useEventStream(EVENT_TYPES.JOB_SAMPLE, (event: { job_id?: string }) => {
-    if (event.job_id === selectedJobId) void fetchSamples();
+  React.useEffect(() => { setSamplePage(1); }, [sampleQuery]);
+  // A new preview of a shown run joins the list; runs that are not shown are ignored.
+  useEventStream(EVENT_TYPES.JOB_SAMPLE, (event: Partial<JobSample> & { job_id?: string; ts?: number }) => {
+    const id = event.job_id;
+    if (tab !== 'samples' || !id || (selectedJobId ? id !== selectedJobId : !sampleJobs.some(job => job.id === id))) return;
+    if (typeof event.url !== 'string') { void fetchSamples(); return; }
+    const sample = { ...event, job_id: id, created_at: event.created_at ?? event.ts ?? Date.now() / 1000 } as ResultSample;
+    setSamples(previous => previous.some(item => item.url === sample.url) ? previous : sortSamples([...previous, sample], !selectedJobId));
   });
+  const jobName = (id: string) => jobs.find(job => job.id === id)?.name || id;
+  const needle = sampleQuery.trim().toLowerCase();
+  const shownSamples = needle ? samples.filter(sample => `${sample.job_id} ${jobName(sample.job_id)} ${sample.prompt} ${sample.seed} ${sample.step}`.toLowerCase().includes(needle)) : samples;
+  const samplePages = Math.max(1, Math.ceil(shownSamples.length / 24));
   React.useEffect(() => {
     if (!lightbox) return;
     const previous = lightboxOpener.current || document.activeElement as HTMLElement | null; closeLightbox.current?.focus();
@@ -141,9 +161,8 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
   }, [lightbox]);
 
   const tabs: { id: ResultTab; label: string; icon: typeof Activity }[] = [
-    { id: 'artifacts', label: text('模型权重', 'Model weights'), icon: Box },
+    { id: 'artifacts', label: text('模型产物', 'Model outputs'), icon: Box },
     { id: 'samples', label: text('采样图', 'Samples'), icon: ImageIcon },
-    { id: 'xyz', label: text('模型测试', 'Model testing'), icon: Grid2X2 },
     { id: 'jobs', label: text('训练记录', 'Training records'), icon: Activity },
   ];
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -154,7 +173,7 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
     <div className="results-toolbar"><div className="results-tabs ui-tabs" role="tablist" aria-label={text('版本训练结果', 'Version training results')}>{tabs.map((item, index) => <button type="button" key={item.id} role="tab" id={`results-tab-${item.id}`} aria-controls={`results-panel-${item.id}`} aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} onClick={() => setTab(item.id)} onKeyDown={event => {
       const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1;
       if (next >= 0) { event.preventDefault(); setTab(tabs[next].id); document.getElementById(`results-tab-${tabs[next].id}`)?.focus(); }
-    }}><item.icon size={14}/>{item.label}</button>)}<SlidingIndicator className="ui-tabs-indicator"/></div><div className="results-overview"><span>{text(`共 ${total} 次训练`, `${total} training runs`)}</span><Link className="ui-link" to={`/queue?project_id=${encodeURIComponent(projectId)}`} title={text('在全局队列管理调度', 'Manage scheduling in the queue')}>{text('全局队列', 'Queue')}<ExternalLink size={12}/></Link></div>{tab !== 'artifacts' && tab !== 'xyz' && <button type="button" className="ui-btn results-refresh" disabled={tab === 'jobs' ? jobsLoading : samplesLoading} onClick={() => void (tab === 'samples' ? fetchSamples() : fetchJobs())}><RefreshCw size={13} className={(tab === 'jobs' ? jobsLoading : samplesLoading) ? 'animate-spin' : ''}/>{t('common.refresh')}</button>}</div>
+    }}><item.icon size={14}/>{item.label}</button>)}<SlidingIndicator className="ui-tabs-indicator"/></div><div className="results-overview"><span>{text(`共 ${total} 次训练`, `${total} training runs`)}</span><Link className="ui-link" to={`/queue?project_id=${encodeURIComponent(projectId)}`} title={text('在全局队列管理调度', 'Manage scheduling in the queue')}>{text('全局队列', 'Queue')}<ExternalLink size={12}/></Link></div>{tab === 'jobs' && <button type="button" className="ui-btn results-refresh" disabled={jobsLoading} onClick={() => void fetchJobs()}><RefreshCw size={13} className={jobsLoading ? 'animate-spin' : ''}/>{t('common.refresh')}</button>}</div>
     {jobsError && <div className="results-error" role="alert">{jobsError}<button type="button" className="ui-btn ui-btn-sm" onClick={() => void fetchJobs()}>{t('common.retry')}</button></div>}
 
     {tab === 'jobs' && <div role="tabpanel" id="results-panel-jobs" aria-labelledby="results-tab-jobs">{pagination}
@@ -163,24 +182,28 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
         <td><span className="results-job-status" data-status={job.status}>{status(job)}</span>{job.error && <span className="results-job-error" title={job.error}>{job.error}</span>}</td>
         <td className="results-progress">{job.progress?.step ?? '—'} / {job.progress?.total_steps ?? '—'}{job.latest?.loss != null && <small>Loss {Number(job.latest.loss).toFixed(4)}</small>}</td>
         <td><time>{formatTime(job.created_at)}</time></td>
-        <td><div className="results-row-actions"><Link className="ui-link" to={`/jobs/${encodeURIComponent(job.id)}`}>{text('监控与日志', 'Monitor & logs')}</Link><button type="button" className="ui-link" onClick={() => { setArtifactJob({ id: job.id, name: job.name }); setTab('artifacts'); }}>{text('查看权重', 'View weights')}</button>{job.type !== 'cache' && <button type="button" className="ui-link" onClick={() => { setSelectedJobId(job.id); setTab('samples'); }}>{text('查看采样图', 'View samples')}</button>}</div></td>
+        <td><div className="results-row-actions"><Link className="ui-link" to={`/jobs/${encodeURIComponent(job.id)}`}>{text('监控与日志', 'Monitor & logs')}</Link><button type="button" className="ui-link" onClick={() => { setArtifactJob({ id: job.id, name: job.name }); setTab('artifacts'); }}>{text('查看产物', 'View outputs')}</button>{job.type !== 'cache' && <button type="button" className="ui-link" onClick={() => { setSelectedJobId(job.id); setTab('samples'); }}>{text('查看采样图', 'View samples')}</button>}</div></td>
       </tr>)}</tbody></table></div>}
     </div>}
 
     {tab === 'samples' && <div role="tabpanel" id="results-panel-samples" aria-labelledby="results-tab-samples">
-      <div className="results-selection-controls"><div className="results-sample-toolbar"><label><span>{text('训练任务', 'Training job')}</span><StudioSelect aria-label={text('采样所属任务', 'Sample source job')} value={selectedJobId} disabled={jobsLoading || sampleJobs.length === 0} onValueChange={setSelectedJobId} placeholder={text('本页没有训练任务', 'No training jobs on this page')} options={sampleJobs.map(job => ({ value: job.id, label: `${job.name} · ${status(job)} · ${formatTime(job.created_at)}` }))}/></label>{selectedJob && <Link className="ui-link" to={`/jobs/${encodeURIComponent(selectedJob.id)}`}>{text('打开任务详情', 'Open job details')}<ExternalLink size={12}/></Link>}{pagination}</div>
-      {samples.length > 24 && <div className="results-pagination"><span>{text(`此任务共 ${samples.length} 张采样图`, `${samples.length} samples in this job`)}</span><div><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('上一页采样图', 'Previous samples page')} disabled={samplePage <= 1} onClick={() => setSamplePage(value => value - 1)}><ChevronLeft size={14}/></button><span>{samplePage} / {Math.ceil(samples.length / 24)}</span><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('下一页采样图', 'Next samples page')} disabled={samplePage >= Math.ceil(samples.length / 24)} onClick={() => setSamplePage(value => value + 1)}><ChevronRight size={14}/></button></div></div>}
+      <div className="results-selection-controls"><div className="results-sample-toolbar results-output-selector"><label><span>{text('训练任务', 'Training job')}</span><StudioSelect aria-label={text('采样所属任务', 'Sample source job')} value={selectedJobId} disabled={jobsLoading && !sampleJobs.length} onValueChange={setSelectedJobId} options={[{ value: '', label: text('此版本全部训练', 'All training runs in this version') }, ...sampleJobs.map(job => ({ value: job.id, label: `${job.name} · ${status(job)} · ${formatTime(job.created_at)}` }))]}/></label>{selectedJob && <Link className="ui-link" to={`/jobs/${encodeURIComponent(selectedJob.id)}`}>{text('打开任务详情', 'Open job details')}<ExternalLink size={12}/></Link>}{pagination}</div>
+      <div className="artifact-controls results-sample-controls"><label className="artifact-search"><Search size={15}/><input aria-label={text('搜索采样图', 'Search samples')} value={sampleQuery} onChange={event => setSampleQuery(event.target.value)} placeholder={text('搜索任务 ID、任务名、提示词或种子', 'Search job ID, job name, prompt or seed')}/></label>
+        <span className="results-sample-count">{needle ? text(`找到 ${shownSamples.length} 张，共 ${samples.length} 张`, `${shownSamples.length} of ${samples.length} samples`) : text(`共 ${samples.length} 张采样图`, `${samples.length} samples`)}</span>
+        {samplePages > 1 && <div className="results-pagination"><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('上一页采样图', 'Previous samples page')} disabled={samplePage <= 1} onClick={() => setSamplePage(value => value - 1)}><ChevronLeft size={14}/></button><span>{samplePage} / {samplePages}</span><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('下一页采样图', 'Next samples page')} disabled={samplePage >= samplePages} onClick={() => setSamplePage(value => value + 1)}><ChevronRight size={14}/></button></div>}
+        <button type="button" className="ui-btn ui-btn-sm results-refresh" disabled={samplesLoading} onClick={() => void fetchSamples()}><RefreshCw size={13} className={samplesLoading ? 'animate-spin' : ''}/>{t('common.refresh')}</button></div>
       </div>
       {samplesError && <div className="results-error" role="alert">{samplesError}<button type="button" className="ui-btn ui-btn-sm" onClick={() => void fetchSamples()}>{t('common.retry')}</button></div>}
-      {samplesLoading && samples.length === 0 ? <p className="results-empty" role="status"><Loader2 size={16} className="animate-spin"/>{text('读取此任务的采样图…', 'Loading samples for this job…')}</p> : !samplesError && samples.length === 0 ? <div className="results-empty"><ImageIcon size={22}/><p>{text('此任务暂无采样图', 'This job has no samples yet')}</p></div> : <div className="results-sample-grid">{samples.slice((samplePage - 1) * 24, samplePage * 24).map(sample => <article className="results-sample-card" key={`${sample.url}-${sample.step}-${sample.prompt_index}-${sample.seed}`}>
+      {samplesLoading && samples.length === 0 ? <p className="results-empty" role="status"><Loader2 size={16} className="animate-spin"/>{text('读取采样图…', 'Loading samples…')}</p> : !samplesError && shownSamples.length === 0 ? <div className="results-empty"><ImageIcon size={22}/><p>{needle ? text('没有匹配的采样图', 'No matching samples') : selectedJobId ? text('此任务暂无采样图', 'This job has no samples yet') : text('此版本暂无采样图', 'This version has no samples yet')}</p>{needle && <button type="button" className="ui-link" onClick={() => setSampleQuery('')}>{text('清除搜索', 'Clear search')}</button>}</div> : <div className="results-sample-grid">{shownSamples.slice((samplePage - 1) * 24, samplePage * 24).map(sample => <article className="results-sample-card" key={`${sample.job_id}-${sample.url}-${sample.step}-${sample.prompt_index}-${sample.seed}`}>
         <button className="results-sample-preview" type="button" onClick={event => { lightboxOpener.current = event.currentTarget; setLightbox(sample); }} aria-label={text(`查看采样图：第 ${sample.step} 步，提示词 ${sample.prompt_index + 1}`, `View sample: step ${sample.step}, prompt ${sample.prompt_index + 1}`)}>{failedImages.has(sample.url) ? <span><ImageIcon size={22}/>{text('图片文件不可用', 'Image file unavailable')}</span> : <LazyImage src={fileUrl(sample.url)} alt={sample.prompt} loading="lazy" width={sample.width} height={sample.height} onError={() => setFailedImages(previous => new Set(previous).add(sample.url))}/>}</button>
-        <div className="results-sample-description"><div><strong>{text('步数', 'Step')} {sample.step}</strong><span>Seed {sample.seed}</span></div><SampleLoss sample={sample}/><p title={sample.prompt}>{sample.prompt}</p><div><time>{formatTime(sample.created_at)}</time><a className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon" href={fileUrl(sample.url)} download aria-label={text(`下载第 ${sample.step} 步采样图`, `Download step ${sample.step} sample`)}><Download size={13}/></a></div></div>
+        <div className="results-sample-description"><div><strong>{text('步数', 'Step')} {sample.step}</strong><span>Seed {sample.seed}</span></div><SampleLoss sample={sample}/><p title={sample.prompt}>{sample.prompt}</p>
+          {!selectedJobId && <Link className="results-sample-job" to={`/jobs/${encodeURIComponent(sample.job_id)}`} title={`${jobName(sample.job_id)} · ${sample.job_id}`}>{jobName(sample.job_id)} · {sample.job_id}</Link>}
+          <div><time>{formatTime(sample.created_at)}</time><a className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon" href={fileUrl(sample.url)} download aria-label={text(`下载第 ${sample.step} 步采样图`, `Download step ${sample.step} sample`)}><Download size={13}/></a></div></div>
       </article>)}</div>}
     </div>}
 
-    {tab === 'xyz' && <Navigate replace to={samplingUrl(selectedJobId || null, null, projectId, versionId)}/>}
 
-    {tab === 'artifacts' && <div role="tabpanel" id="results-panel-artifacts" aria-labelledby="results-tab-artifacts"><div className="results-sample-toolbar results-output-selector"><label><span>{text('训练任务', 'Training job')}</span><StudioSelect aria-label={text('权重所属任务', 'Weight source job')} value={artifactJobId} onValueChange={chooseArtifactJob} options={[{ value: '', label: text('此版本全部训练', 'All training runs in this version') }, ...artifactJobs.map(job => ({ value: job.id, label: job.name }))]}/></label>{artifactJobId && <Link className="ui-link" to={`/jobs/${artifactJobId}?tab=checkpoints`}>{text('查看此任务检查点', 'View job checkpoints')}</Link>}{pagination}</div><Artifacts embedded projectId={projectId} versionId={versionId} jobId={artifactJobId || undefined} readOnly={readOnly}/></div>}
+    {tab === 'artifacts' && <div role="tabpanel" id="results-panel-artifacts" aria-labelledby="results-tab-artifacts"><div className="results-sample-toolbar results-output-selector"><label><span>{text('训练任务', 'Training job')}</span><StudioSelect aria-label={text('产物所属任务', 'Output source job')} value={artifactJobId} onValueChange={chooseArtifactJob} options={[{ value: '', label: text('此版本全部训练', 'All training runs in this version') }, ...artifactJobs.map(job => ({ value: job.id, label: job.name }))]}/></label>{artifactJobId && <Link className="ui-link" to={`/jobs/${artifactJobId}?tab=checkpoints`}>{text('查看此任务检查点', 'View job checkpoints')}</Link>}{pagination}</div><Artifacts embedded projectId={projectId} versionId={versionId} jobId={artifactJobId || undefined} readOnly={readOnly}/></div>}
 
     {lightbox && <div className="results-lightbox" onClick={() => setLightbox(null)}><div role="dialog" aria-modal="true" aria-label={text('采样图预览', 'Sample preview')} className="results-lightbox-content" onClick={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Escape') setLightbox(null); }}><header><strong>{selectedJob?.name} · {text('步数', 'Step')} {lightbox.step}</strong><button ref={closeLightbox} type="button" className="ui-btn ui-btn-quiet ui-btn-icon" onClick={() => setLightbox(null)} aria-label={t('common.close')}><X size={18}/></button></header><img src={fileUrl(lightbox.url)} alt={lightbox.prompt}/><footer><p>{lightbox.prompt}</p><SampleLoss sample={lightbox}/><span>{lightbox.width} × {lightbox.height} · Seed {lightbox.seed} · {formatTime(lightbox.created_at)}</span><a className="ui-btn ui-btn-sm" href={fileUrl(lightbox.url)} download><Download size={14}/>{t('common.download')}</a></footer></div></div>}
   </section>;

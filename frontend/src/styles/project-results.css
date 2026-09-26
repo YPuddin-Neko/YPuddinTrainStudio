@@ -63,3 +63,7 @@
 .results-pagination > div { margin-left:auto; }
 @media(max-width:1200px) { .results-job-table { table-layout:fixed; }.results-job-table th:nth-child(4),.results-job-table td:nth-child(4) { display:none; }.results-job-table td:first-child { min-width:0; }.results-job-table td { overflow-wrap:anywhere; }.results-row-actions { white-space:normal; } }
 @media(max-width:600px) { .results-overview { margin-left:auto; padding-bottom:4px; }.results-toolbar { column-gap:8px; }.results-output-selector .studio-select { max-width:none; } }
+.results-sample-controls { position:static; margin-top:10px; }
+.results-sample-controls .results-pagination { margin:0; }
+.results-sample-count { font-size:11px; color:var(--studio-dim); white-space:nowrap; }
+.results-sample-job { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:10.5px; color:var(--studio-accent); }
