@@ -25,8 +25,14 @@ def log_file(job: dict) -> Path:
     return event_file(job).parent / "run.log"
 
 
+def output_directory(job: dict) -> Path:
+    """The folder the job's products go to; the same as its records for jobs saved before jobs/."""
+    return Path(job_config(job).get("checkpoint", {}).get("output_dir") or job["run_dir"])
+
+
 def owned_job_directories(job: dict) -> list[Path]:
-    candidates = [Path(job["run_dir"]), state_directory(job), log_file(job).parent]
+    """Folders that belong to this job alone: each is named after it (resume/ lives inside jobs/<job>)."""
+    candidates = [output_directory(job), Path(job["run_dir"]), state_directory(job), log_file(job).parent]
     if job.get("samples_dir"):
         candidates.append(Path(job["samples_dir"]))
     return list(

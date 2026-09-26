@@ -11,15 +11,18 @@ from ypuddin.config import TrainConfig
 log = logging.getLogger(__name__)
 
 
+def log_directory(cfg: TrainConfig, run_dir: Path) -> Path:
+    """Where a run keeps its logs and records: the log folder, else the events file's, else the run's."""
+    if cfg.logging.output_dir:
+        return Path(cfg.logging.output_dir)
+    if cfg.logging.events_path:
+        return Path(cfg.logging.events_path).parent
+    return run_dir
+
+
 class TrainingLogs:
     def __init__(self, cfg: TrainConfig, run_dir: Path):
-        log_dir = (
-            Path(cfg.logging.output_dir)
-            if cfg.logging.output_dir
-            else Path(cfg.logging.events_path).parent
-            if cfg.logging.events_path
-            else run_dir
-        )
+        log_dir = log_directory(cfg, run_dir)
         self.tensorboard: Any = None
         self.wandb: Any = None
         self.wandb_module: Any = None

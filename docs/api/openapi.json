@@ -20255,6 +20255,17 @@
           "output": {
             "type": "string",
             "title": "Output"
+          },
+          "jobs": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jobs"
           }
         },
         "additionalProperties": true,

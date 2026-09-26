@@ -67,7 +67,7 @@ from ypuddin.optim import (
 from ypuddin.runtime_profiles import current_profile
 
 from .events import Emitter, NullEmitter
-from .logging import TrainingLogs
+from .logging import TrainingLogs, log_directory
 from .reproducibility import (
     capture_compute_runtime,
     configure_reproducibility,
@@ -332,7 +332,7 @@ class Trainer:
         if self.is_primary:
             self._logs = TrainingLogs(cfg, self.run_dir)
             if not cfg.checkpoint.resume:
-                write_config(cfg, self.run_dir / "config.toml")
+                write_config(cfg, self._record_dir() / "config.toml")
         self.emit(
             "run.started", config_hash=self.config_hash, device=str(self.device), run_dir=str(self.run_dir)
         )
@@ -615,7 +615,7 @@ class Trainer:
             if self.is_primary:
                 # A rejected same-directory legacy resume must preserve the
                 # original config that authenticates its scheduler closure.
-                write_config(cfg, self.run_dir / "config.toml")
+                write_config(cfg, self._record_dir() / "config.toml")
         if cfg.loop.distributed_strategy != "fsdp" or not hasattr(self, "distributed"):
             # DDP saves on rank zero but every rank must retain identical progress.
             self.progress.extra["scheduler_contract"] = deepcopy(self._scheduler_contract)
@@ -1596,8 +1596,13 @@ class Trainer:
             self._logs.close(failed=failed)
             self._logs = None
 
+    def _record_dir(self) -> Path:
+        """The run's log folder, which keeps its records; the output folder holds only products."""
+        return log_directory(self.cfg, self.run_dir)
+
     def _control_request(self) -> str | None:
-        ctl = self.run_dir / "control"
+        # The service asks for pause / stop / save through files in the job's record folder.
+        ctl = Path(os.environ.get("YPUDDIN_CONTROL_DIR") or self.run_dir / "control")
         for name in ("stop", "pause", "save"):
             f = ctl / name
             if f.exists():

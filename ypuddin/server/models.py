@@ -560,6 +560,7 @@ class VersionPaths(_Out):
     reg: str
     samples: str
     output: str
+    jobs: str | None = None
 
 
 class VersionStats(_Out):

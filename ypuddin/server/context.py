@@ -299,7 +299,14 @@ class ServiceContext:
         return f"v{version['number']}" if self.project_layout(project_id) >= 2 else version["id"]
 
     def samples_dir(self, project_id: str, version_id: str | None = None) -> Path:
-        return self.version_dir(project_id, version_id) / "samples"
+        from .job_layout import SAMPLES
+
+        return self.version_dir(project_id, version_id) / SAMPLES
+
+    def records_root(self, project_id: str, version_id: str | None = None) -> Path:
+        from .job_layout import RECORDS
+
+        return self.version_dir(project_id, version_id) / RECORDS
 
     def default_runs_dir(self, project_id: str, version_id: str | None = None) -> Path:
         return self.version_dir(project_id, version_id) / (
@@ -320,19 +327,47 @@ class ServiceContext:
     def job_output_dir(
         self, project_id: str | None, version_id: str | None, job_id: str, requested: str | None = None
     ) -> Path:
+        """Where the job's products go: output/<job> in its version unless settings or the job say otherwise."""
         if self.inherits_output_dir(project_id, version_id, requested):
             return self.runs_dir(project_id, version_id) / job_id
         root = Path(requested).expanduser().resolve()
-        # Reusing a saved job config creates a sibling, not a child directory
-        # that would be removed when deleting the original job's files.
-        if self.db.fetchone(
-            "SELECT id FROM jobs WHERE run_dir=? AND project_id IS ? AND version_id IS ?",
-            (str(root), project_id, version_id),
-        ):
-            return root.parent / job_id
+        if (sibling := self._reused_job_path(root, project_id, version_id, job_id, "output_dir")) is not None:
+            return sibling
         if project_id:
             root = root / project_id / self.version_label(project_id, version_id)
         return root / job_id
+
+    def job_records_dir(self, project_id: str, version_id: str | None, job_id: str) -> Path:
+        """The job's own folder: its config, logs, events and resume points, apart from its products."""
+        from .job_layout import records_dir
+
+        return records_dir(self.version_dir(project_id, version_id), job_id)
+
+    def _reused_job_path(
+        self, root: Path, project_id: str | None, version_id: str | None, job_id: str, kind: str
+    ) -> Path | None:
+        """A path copied from an earlier job's saved config gets this job's sibling, never a folder
+        inside the earlier job's, which would be removed with that job's files."""
+        from .job_layout import renamed_for_job
+        from .job_paths import event_file, job_config, state_directory
+
+        for part in reversed(root.parts):
+            previous = self.db.fetchone(
+                "SELECT * FROM jobs WHERE id=? AND project_id IS ? AND version_id IS ?",
+                (part, project_id, version_id),
+            )
+            if not previous:
+                continue
+            products = job_config(previous).get("checkpoint", {}).get("output_dir") or previous["run_dir"]
+            owned = {
+                "output_dir": [Path(products), Path(previous["run_dir"])],
+                "state_dir": [state_directory(previous)],
+                "logs_dir": [event_file(previous).parent],
+                "samples_dir": [Path(previous["samples_dir"])] if previous.get("samples_dir") else [],
+            }[kind]
+            if root in owned:
+                return renamed_for_job(root, part, job_id)
+        return None
 
     def job_storage_dir(
         self,
@@ -343,29 +378,19 @@ class ServiceContext:
         run_dir: Path,
         requested: str | None = None,
     ) -> Path:
+        """Where the job keeps previews, resume points or logs; `run_dir` is its records folder."""
         configured = requested or self.settings()["paths"].get(kind, "")
         if not configured:
-            if kind == "samples_dir":
-                return (
-                    self.samples_dir(project_id, version_id) / job_id if project_id else run_dir / "samples"
-                )
-            return run_dir
-        root = Path(configured).expanduser().resolve()
-        previous = self.db.fetchone(
-            "SELECT * FROM jobs WHERE id=? AND project_id IS ? AND version_id IS ?",
-            (root.name, project_id, version_id),
-        )
-        if previous:
-            from .job_paths import event_file, state_directory
+            if not project_id:
+                return run_dir / "samples" if kind == "samples_dir" else run_dir
+            from .job_layout import RESUME, samples_dir
 
-            if kind == "state_dir":
-                old_path = state_directory(previous)
-            elif kind == "logs_dir":
-                old_path = event_file(previous).parent
-            else:
-                old_path = Path(previous["samples_dir"]) if previous.get("samples_dir") else None
-            if root == old_path:
-                return root.parent / job_id
+            if kind == "samples_dir":
+                return samples_dir(self.version_dir(project_id, version_id), job_id)
+            return run_dir / RESUME if kind == "state_dir" else run_dir
+        root = Path(configured).expanduser().resolve()
+        if (sibling := self._reused_job_path(root, project_id, version_id, job_id, kind)) is not None:
+            return sibling
         if project_id:
             root = root / project_id / self.version_label(project_id, version_id)
         return root / job_id

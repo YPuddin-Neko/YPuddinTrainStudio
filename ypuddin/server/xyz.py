@@ -435,7 +435,12 @@ def start(context, source_id: str, request: XyzRequest):
     if memory.blocks_to_swap and "block_swap" not in family.spec.capabilities:
         raise ApiError("Selected family does not support block swapping", code="xyz.memory", status=422)
     jid = new_id("j")
-    run_dir = context.job_output_dir(source["project_id"], source.get("version_id"), jid)
+    # A model test makes no products, so all of its files stay in its records folder.
+    run_dir = (
+        context.job_records_dir(source["project_id"], source.get("version_id"), jid)
+        if source["project_id"]
+        else context.job_output_dir(None, None, jid)
+    )
     samples_dir = (
         context.job_storage_dir(source["project_id"], source.get("version_id"), jid, "samples_dir", run_dir)
         if context.settings()["paths"].get("samples_dir")

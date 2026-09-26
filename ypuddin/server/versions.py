@@ -76,6 +76,7 @@ def version_row(c: Any, row: dict) -> dict:
             "reg": str(c.reg_dir(pid, vid)),
             "samples": str(c.samples_dir(pid, vid)),
             "output": str(c.runs_dir(pid, vid)),
+            "jobs": str(c.records_root(pid, vid)),
         },
     }
 

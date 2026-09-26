@@ -34,6 +34,7 @@ from .context import ServiceContext
 from .dataset_pipeline import DatasetPipeline
 from .db import Database
 from .environment import EnvironmentManager
+from .job_layout import migrate_job_files
 from .lifecycle import ServiceLifecycle
 from .model_downloads import ModelDownloads
 from .regularization import RegularizationManager
@@ -66,6 +67,8 @@ def create_app(
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
         bus.attach_loop(asyncio.get_running_loop())
+        # Move files of jobs saved before the jobs/ folder existed, before any of them can run.
+        await asyncio.to_thread(migrate_job_files, context)
         await supervisor.start()
         stats_task = asyncio.create_task(routes_core.stats_publisher(context))
         try:

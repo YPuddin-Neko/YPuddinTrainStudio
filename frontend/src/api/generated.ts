@@ -7039,6 +7039,8 @@ export interface components {
             samples: string;
             /** Output */
             output: string;
+            /** Jobs */
+            jobs?: string | null;
         } & {
             [key: string]: unknown;
         };

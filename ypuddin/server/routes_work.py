@@ -273,7 +273,7 @@ def create_project(body: ProjectBody, c: ServiceContext = Depends(ctx)) -> dict[
             target.mkdir(parents=True, exist_ok=False)
             created = True
             root = c.version_dir(pid, vid)
-            for name in ("traindata", "reg", "samples", "output", "cache"):
+            for name in ("traindata", "reg", "samples", "output", "jobs", "cache"):
                 (root / name).mkdir(parents=True, exist_ok=True)
             from .family_config import initial_family_config
 
@@ -1844,7 +1844,13 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
                 details={"errors": [{"loc": f"{section}.{key}", "msg": "path must be a string"}]},
             )
     jid = new_id("j")
-    run_dir = c.job_output_dir(body.project_id, vid, jid, config.get("checkpoint", {}).get("output_dir"))
+    from .job_layout import makes_products
+
+    # Products go to output/<job>; the job's own records, logs and resume points to jobs/<job>.
+    # A job outside any project keeps everything in one folder.
+    products = c.job_output_dir(body.project_id, vid, jid, config.get("checkpoint", {}).get("output_dir"))
+    run_dir = c.job_records_dir(body.project_id, vid, jid) if body.project_id else products
+    output_dir = products if makes_products(body.type) else run_dir
     samples_dir = c.job_storage_dir(
         body.project_id, vid, jid, "samples_dir", run_dir, config.get("sampling", {}).get("output_dir")
     )
@@ -1870,7 +1876,7 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
     config = deep_merge(
         config,
         {
-            "checkpoint": {"output_dir": str(run_dir), "state_dir": str(state_dir)},
+            "checkpoint": {"output_dir": str(output_dir), "state_dir": str(state_dir)},
             "logging": {"events_path": str(logs_dir / events_name), "output_dir": str(logs_dir)},
             "sampling": {"output_dir": str(samples_dir)},
         },

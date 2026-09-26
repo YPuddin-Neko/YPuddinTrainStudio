@@ -10,7 +10,7 @@ export interface ProjectVersion {
   progress?: { phase: string; files_done: number; files_total: number; bytes_done: number; bytes_total: number };
   error?: string | null;
   stats: { datasets: number; images: number; jobs: number; artifacts: number };
-  paths: { root: string; config: string; datasets: string; runs: string; cache: string; traindata?: string; reg?: string; samples?: string; output?: string };
+  paths: { root: string; config: string; datasets: string; runs: string; cache: string; traindata?: string; reg?: string; samples?: string; output?: string; jobs?: string | null };
 }
 export function projectUrl(projectId: string, versionId?: string | null, step?: string) {
   const base = `/projects/${encodeURIComponent(projectId)}${versionId ? `/v/${encodeURIComponent(versionId)}` : ''}`;

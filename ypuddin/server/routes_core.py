@@ -293,6 +293,8 @@ def storage_defaults(
     data_root: str | None = None,
     c: ServiceContext = Depends(ctx),
 ) -> dict[str, dict[str, str]]:
+    from .job_layout import records_dir, resume_dir, samples_dir
+
     settings = c.settings()["paths"]
     root = Path(data_root).expanduser().resolve() if data_root else c.data_root
     projects = root / "project"
@@ -304,12 +306,13 @@ def storage_defaults(
         outputs = projects
         output = version / "output" / "{job_id}"
     environment = Path(__file__).resolve().parents[2] / "environment"
+    # The same layout jobs are created with: products in output/, everything else in jobs/<job>/.
     return {
         "bootstrap_env_dir": {"path": str(environment), "browse_root": str(environment)},
         "output_dir": {"path": str(output), "browse_root": str(outputs)},
-        "state_dir": {"path": str(output), "browse_root": str(outputs)},
-        "samples_dir": {"path": str(version / "samples" / "{job_id}"), "browse_root": str(projects)},
-        "logs_dir": {"path": str(output), "browse_root": str(outputs)},
+        "state_dir": {"path": str(resume_dir(version, "{job_id}")), "browse_root": str(projects)},
+        "samples_dir": {"path": str(samples_dir(version, "{job_id}")), "browse_root": str(projects)},
+        "logs_dir": {"path": str(records_dir(version, "{job_id}")), "browse_root": str(projects)},
     }
 
 
@@ -324,10 +327,12 @@ def browse_root(
 ) -> dict[str, str]:
     paths = c.settings()["paths"]
     output = c.job_output_dir(project_id, version_id, "{job_id}", output_dir).parent
+    # Resume points and logs live in each job's folder under jobs/, apart from the products.
+    records = c.records_root(project_id, version_id) if project_id else output
     if field == "checkpoint.resume" and custom_dir:
         root = Path(custom_dir).expanduser().resolve()
     elif field in {"checkpoint.state_dir", "checkpoint.resume", "settings.state_dir"}:
-        root = Path(paths["state_dir"]) if paths.get("state_dir") else output
+        root = Path(paths["state_dir"]) if paths.get("state_dir") else records
     elif field in {"sampling.output_dir", "settings.samples_dir"}:
         root = (
             Path(paths["samples_dir"])
@@ -337,7 +342,7 @@ def browse_root(
             else output / "samples"
         )
     elif field in {"logging.events_path", "logging.output_dir", "settings.logs_dir"}:
-        root = Path(paths["logs_dir"]) if paths.get("logs_dir") else output
+        root = Path(paths["logs_dir"]) if paths.get("logs_dir") else records
     elif field == "dataset.cache_dir":
         root = c.cache_dir(project_id, version_id)
     elif field in {"checkpoint.output_dir", "adapter.resume_weights", "training.resume_weights"}:

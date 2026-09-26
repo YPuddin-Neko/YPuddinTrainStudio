@@ -147,7 +147,7 @@ export default function Preferences() {
         <StudioSelect disabled={saving} id="preferences-output-mode" aria-label={text('训练产物位置', 'Training output location')} value={settings.paths.output_mode === 'custom' ? 'custom' : 'project'}
           options={[{value:'project',label:text('项目版本目录（默认）','Project version directory (default)')},{value:'custom',label:text('自定义输出根目录','Custom output root')}]}
           onValueChange={value => update(s => ({...s,paths:{...s.paths,output_mode:value === 'custom' ? 'custom' : 'project'}}))}/>
-        {settings.paths.output_mode === 'custom' ? <><div className="mt-2"><PathInput directoryOnly allowMissingDirectory ariaLabel={t('settings.outputDir')} value={settings.paths.output_dir} onChange={value => update(s => ({...s,paths:{...s.paths,output_dir:value}}))}/></div><p className="settings-note">{text('按项目、版本和训练任务分别保存。','Outputs are organized by project, version and training run.')}</p></>
+        {settings.paths.output_mode === 'custom' ? <><div className="mt-2"><PathInput directoryOnly allowMissingDirectory ariaLabel={t('settings.outputDir')} value={settings.paths.output_dir} onChange={value => update(s => ({...s,paths:{...s.paths,output_dir:value}}))}/></div><p className="settings-note">{text('只放训练产物，按项目、版本和任务分开保存。','Holds training outputs only, organized by project, version and job.')}</p></>
           : storageDefaults?.output_dir && <p className="settings-note storage-path-preview" tabIndex={0}>{storageDefaults.output_dir.path.replace('{project_id}',text('{项目}','{project}')).replace('{version}',text('{版本}','{version}')).replace('{job_id}',text('{任务}','{job}'))}</p>}
       </div></div>
 

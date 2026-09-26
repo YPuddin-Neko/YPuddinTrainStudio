@@ -88,7 +88,17 @@ def read_resume_scheduler_contract(
         contract = copy.deepcopy(extra["scheduler_contract"])
     else:
         try:
-            original = load_config(path.parent / "config.toml")
+            # Older runs kept config.toml beside their resume points; now it is one folder up, with
+            # the job's records. The saved hash authenticates whichever copy is found.
+            source = next(
+                (
+                    folder / "config.toml"
+                    for folder in (path.parent, path.parent.parent)
+                    if (folder / "config.toml").is_file()
+                ),
+                path.parent / "config.toml",
+            )
+            original = load_config(source)
             if not metadata.get("config_hash") or config_hash(original) != metadata["config_hash"]:
                 raise ValueError("原训练配置已修改或无法确认来源")
             contract = scheduler_recipe(original, progress["total_steps"])

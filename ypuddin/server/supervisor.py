@@ -380,6 +380,8 @@ class JobSupervisor:
         run_dir.mkdir(parents=True, exist_ok=True)
         for command in ("pause", "stop", "save"):
             (run_dir / "control" / command).unlink(missing_ok=True)
+        # Control requests live with the job's records, apart from the products the trainer writes.
+        env["YPUDDIN_CONTROL_DIR"] = str(run_dir / "control")
         resume_from = None
         if job["type"] == "xyz":
             import psutil
@@ -861,25 +863,29 @@ class JobSupervisor:
                         pass
 
     def clone(self, job: dict[str, Any]) -> dict[str, Any]:
+        from .job_layout import makes_products, renamed_for_job
+
         self._check_job_version(job)
         new = new_id("j")
-        run_dir = Path(job["run_dir"]).parent / new
+
+        def sibling(path: Path, fallback: Path) -> Path:
+            # The new job's files go where the original's did, in folders named after the new job.
+            return renamed_for_job(path, job["id"], new) or fallback
+
+        run_dir = sibling(Path(job["run_dir"]), Path(job["run_dir"]).parent / new)
         samples_dir = (
-            Path(job["samples_dir"]).parent / new
-            if job.get("samples_dir") and Path(job["samples_dir"]).name == job["id"]
+            sibling(Path(job["samples_dir"]), run_dir / "samples")
+            if job.get("samples_dir")
             else run_dir / "samples"
         )
         cfg = json.loads(job["config_json"])
-        cfg.setdefault("checkpoint", {})["output_dir"] = str(run_dir)
-        cfg["checkpoint"]["resume"] = None
-        cfg["checkpoint"]["state_dir"] = (
-            str(state_directory(job).parent / new) if state_directory(job).name == job["id"] else str(run_dir)
-        )
-        cfg.setdefault("logging", {})["events_path"] = (
-            str(event_file(job).parent.parent / new / event_file(job).name)
-            if event_file(job).parent.name == job["id"]
-            else str(run_dir / "events.jsonl")
-        )
+        checkpoint = cfg.setdefault("checkpoint", {})
+        products = Path(checkpoint.get("output_dir") or job["run_dir"])
+        checkpoint["output_dir"] = str(sibling(products, run_dir) if makes_products(job["type"]) else run_dir)
+        checkpoint["resume"] = None
+        checkpoint["state_dir"] = str(sibling(state_directory(job), run_dir))
+        events = event_file(job)
+        cfg.setdefault("logging", {})["events_path"] = str(sibling(events, run_dir / "events.jsonl"))
         cfg["logging"]["output_dir"] = str(Path(cfg["logging"]["events_path"]).parent)
         cfg.setdefault("sampling", {})["output_dir"] = str(samples_dir)
         self.db.insert(
