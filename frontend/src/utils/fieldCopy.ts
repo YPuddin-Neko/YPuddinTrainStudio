@@ -26,7 +26,7 @@ export const FIELD_HINTS: Record<string, Copy> = {
   'dataset.aspect_ratio_limit': ['分桶最宽的比例，2 表示最宽 2:1。', 'Widest bucket shape; 2 means up to 2:1.'],
   'dataset.area_tolerance': ['分桶面积可偏离基准面积的比例。', 'How far a bucket area may differ from the base.'],
   'dataset.bucket_step': ['分桶宽高的间隔，留空通常为 64。', 'Spacing between bucket sizes; blank is usually 64.'],
-  'dataset.batch_size': ['每张显卡一次处理的图片数。', 'Images each GPU processes at once.'],
+  'dataset.batch_size': ['每张显卡每批的图片数。', 'Images in each batch on every GPU.'],
   'dataset.text_encoding': ['标签的编码方式，缓存可节省显存。', 'How captions are encoded; caching saves memory.'],
   'dataset.num_workers': ['后台读取图片的进程数，Windows 建议 0。', 'Background loaders; use 0 on Windows.'],
   'dataset.cache_dir': ['图像与文本缓存的位置，留空放在输出目录。', 'Where caches are kept; blank uses the output folder.'],
@@ -152,6 +152,7 @@ export const FIELD_HINTS: Record<string, Copy> = {
 };
 
 export const FIELD_HELP: Record<string, Copy> = {
+  'dataset.batch_size': ['每批参与一次梯度计算的图片数，等效批次 = 批大小 × 梯度累积 × 显卡数。分桶模式只把相同尺寸的图片组成一批；原生分辨率下，同一批里尺寸不同的图片会分开计算，整批算完后才合并梯度更新参数，所以等效批次不变。不足一批的尾部不会复制图片补齐。', 'Images in one gradient computation; effective batch = batch size × gradient accumulation × GPUs. Bucket mode batches only same-size images. In native resolution, differently sized images in a batch are computed separately and their gradients are combined before the update, so the effective batch is unchanged. A short final batch is not padded with repeated images.'],
   'dataset.caption.shuffle': ['TXT 只打乱未保留的标签；分类 JSON 只打乱可变分组内的标签，固定信息和自然语言不动。使用文本缓存时，从预生成的随机变体中选择。', 'Shuffles unprotected TXT tags or tags within variable JSON groups. Fixed information and natural language stay unchanged. Text caching selects from pre-generated random variants.'],
   'dataset.caption.keep_tokens': ['仅用于 TXT：前 N 个标签不参与打乱或标签丢弃。即使关闭打乱，只要启用了标签丢弃，此设置仍然有效。分类 JSON 按字段分组处理，不使用此计数。', 'For TXT captions, protects the first N tags from shuffling and tag dropout. Still applies with shuffling off when tag dropout is enabled. Structured JSON uses its fixed fields instead of this count.'],
   'sampling.enabled': ['按设定间隔生成预览图，需要至少一条提示词或提示词文件。生成预览会占用时间，不参与梯度更新。', 'Generates previews at the chosen intervals. Requires at least one prompt or a prompt file. Preview generation takes time and does not update training gradients.'],

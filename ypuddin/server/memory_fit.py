@@ -61,7 +61,7 @@ def shortfall_reason(shortfall: dict[str, Any]) -> str:
     return (
         f"预计显存峰值 {gb(shortfall['estimate_mb'])}，超过 {device_label(shortfall['device'])} 的 "
         f"{gb(shortfall['capacity_mb'])} 容量，显卡空闲时也无法启动。"
-        "可开启重算中间结果、减小批量大小或降低训练尺寸后重新训练。"
+        "开启梯度检查点、减小批大小或降低训练尺寸后可重新训练。"
     )
 
 

@@ -173,7 +173,7 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
     'loop.mixed_precision': ['控制训练运算的自动混合精度。关闭只停用自动混合精度，不改变权重本身的精度。底模存储和导出文件的精度分别设置；可复现训练可能调整实际计算精度。', 'Controls automatic mixed precision during training. Disabling it does not change weight precision. Base-weight storage and export precision are configured separately; reproducible training may adjust compute precision.'],
     'memory.base_precision': ['适配器训练时转换其覆盖的未量化冻结线性层，降低存储精度可节省显存，但可能影响训练质量；原模型文件和适配器精度不变。FP8 需要受支持的 CUDA 或海光环境。全量微调使用沿用精度或 FP32。', 'Converts unquantized frozen linear layers covered by adapters. Lower storage precision saves memory but may affect training quality; source files and adapter precision are unchanged. FP8 requires supported CUDA or DTK hardware. Full fine-tuning uses the loaded precision or FP32.'],
     'memory.activation_checkpointing': ['少保存中间结果，在反向传播时重新计算，以额外耗时换取更少显存。可与梯度累积同时使用。', 'Saves fewer intermediate results and recomputes them during backward to reduce memory at the cost of time. Can be combined with gradient accumulation.'],
-    'loop.grad_accum': ['累计指定数量的小批次后更新一次参数。有效批大小 = 每卡批大小 × 梯度累积 × 显卡数量。', 'Updates parameters after the specified number of minibatches. Effective batch size = per-GPU batch size × accumulation steps × GPU count.'],
+    'loop.grad_accum': ['累计指定数量的批次后再更新一次参数。等效批次 = 批大小 × 梯度累积 × 显卡数。', 'Updates parameters after the specified number of minibatches. Effective batch size = per-GPU batch size × accumulation steps × GPU count.'],
     'loop.gpu_count': ['1 为单卡；多卡任务会等待所需显卡全部空闲后启动。批大小按每张卡计算；可用训练方式取决于当前平台。', '1 uses one GPU. Multi-GPU jobs wait for all required devices to be free. Batch size is per GPU; available strategies depend on the platform.'],
     'loop.distributed_strategy': ['数据并行：每卡保留完整模型并分配训练数据。显存分片：模型参数、梯度和优化器状态分摊到多卡，适合单卡放不下的模型。分片要求冻结文本编码器，支持主模型全量微调或 LoRA／LoKr，优化器限 AdamW、Adafactor、SGD。FSDP 需要 Linux CUDA/DTK；适配器分片不支持 FP8 底模或整层丢弃。', 'Data parallelism keeps a full model per GPU and splits training data. Memory sharding distributes model parameters, gradients and optimizer states across GPUs. Sharding requires frozen text encoders and supports full backbone training or LoRA/LoKr with AdamW, Adafactor or SGD. FSDP requires Linux CUDA/DTK; adapter sharding does not support FP8 base weights or module dropout.'],
     'optimizer.lr': ['控制参数更新的基础步长。过大容易不稳定，过小学习较慢；全量微调需单独设置，自适应优化器会调整实际步长。', 'Sets the base parameter-update step size. Too large can be unstable; too small slows learning. Set it separately for full fine-tuning; adaptive optimizers adjust the effective step size.'],
@@ -304,8 +304,8 @@ export function presentConfigIssues(errors: Array<{loc?: unknown; msg?: unknown}
     const label = configFieldLabel(path, path || (english ? 'Configuration' : '配置'), english);
     let message = detail;
     if (memory) message = english
-      ? `Estimated peak memory ${memory[1]} exceeds ${memory[2]} (${memory[3]}), so training cannot start. Turn on activation checkpointing, reduce the batch size or lower the training size.`
-      : `预计显存峰值 ${memory[1]}，超过 ${memory[2]} 的 ${memory[3]} 容量，无法开始训练。可开启重算中间结果、减小批量大小或降低训练尺寸。`;
+      ? `Estimated peak memory ${memory[1]} exceeds ${memory[2]} (${memory[3]}), so training cannot start. Turn on gradient checkpointing, reduce the batch size or lower the training size.`
+      : `预计显存峰值 ${memory[1]}，超过 ${memory[2]} 的 ${memory[3]} 容量，无法开始训练。开启梯度检查点、减小批大小或降低训练尺寸都能减少显存占用。`;
     else if (!english) {
       if (/is required for|field required/i.test(detail)) message = `请填写或选择${label}`;
       else if (/at least one training dataset source is required/i.test(detail)) message = '请先添加训练图片或导入已有数据集';
