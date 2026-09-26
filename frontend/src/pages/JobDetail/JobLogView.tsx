@@ -1,11 +1,13 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { ArrowDown, Check, Copy, Download, Loader2, Search, Terminal } from 'lucide-react';
 import { apiClient, apiUrl } from '../../api/client';
 import type { JobLogLine, JobLogResponse } from '../../api/types';
 import StudioSelect from '../../components/StudioSelect';
 import Switch from '../../components/Switch';
+import { copyText } from '../../utils/clipboard';
 import { formatApiError } from '../../utils/errors';
-import { groupLogLines, logEntryText, logSource, logTime, visibleLogEntries, type LogEntry, type LogFilter } from '../../utils/jobLogs';
+import { groupLogLines, logEntryText, logLevelTag, logSource, logTime, translateLogEntries, visibleLogEntries, type LogEntry, type LogFilter } from '../../utils/jobLogs';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import './job-log.css';
 
@@ -13,18 +15,14 @@ const PAGE = 1000;
 const MAX_LINES = 5000;
 const POLL_MS = 1000;
 const DEBUG_KEY = 'ypuddin.jobLog.debug';
+const ORIGINAL_KEY = 'ypuddin.jobLog.original';
 
-function storedDebug(): boolean {
-  try { return window.localStorage.getItem(DEBUG_KEY) === '1'; } catch { return false; }
+function storedFlag(key: string): boolean {
+  try { return window.localStorage.getItem(key) === '1'; } catch { return false; }
 }
 
-async function copyText(value: string): Promise<void> {
-  if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(value); return; }
-  // Plain-HTTP LAN addresses have no Clipboard API.
-  const area = document.createElement('textarea');
-  area.value = value; area.setAttribute('readonly', ''); area.style.position = 'fixed'; area.style.opacity = '0';
-  document.body.appendChild(area); area.select();
-  try { if (!document.execCommand('copy')) throw new Error('copy failed'); } finally { area.remove(); }
+function storeFlag(key: string, value: boolean): void {
+  try { window.localStorage.setItem(key, value ? '1' : '0'); } catch { /* Preference only. */ }
 }
 
 function Highlight({ text, query }: { text: string; query: string }) {
@@ -43,12 +41,12 @@ function Highlight({ text, query }: { text: string; query: string }) {
 }
 
 function LogRow({ entry, query }: { entry: LogEntry; query: string }) {
-  const leveled = entry.kind !== 'text' || entry.level !== 'info';
+  const time = logTime(entry.ts);
   return <div className="job-log-entry" data-level={entry.level} data-kind={entry.kind}>
-    <time className="job-log-time" dateTime={entry.ts == null ? undefined : new Date(entry.ts * 1000).toISOString()} title={entry.ts == null ? undefined : new Date(entry.ts * 1000).toLocaleString()}>{logTime(entry.ts)}</time>
-    <span className="job-log-level">{leveled ? entry.level.toUpperCase() : ''}</span>
+    <time className="job-log-time" dateTime={entry.ts == null ? undefined : new Date(entry.ts * 1000).toISOString()} title={entry.ts == null ? undefined : new Date(entry.ts * 1000).toLocaleString()}>{time && `[${time}]`}</time>
+    <span className="job-log-level">{logLevelTag(entry)}</span>
     <span className="job-log-source" title={entry.source || undefined}>{logSource(entry.source)}</span>
-    <div className="job-log-message"><Highlight text={entry.msg} query={query}/>{entry.detail.length > 0 && <pre><Highlight text={entry.detail.join('\n')} query={query}/></pre>}</div>
+    <div className="job-log-message" title={entry.translated ? entry.msg : undefined}><Highlight text={entry.translated ?? entry.msg} query={query}/>{entry.detail.length > 0 && <pre><Highlight text={entry.detail.join('\n')} query={query}/></pre>}</div>
   </div>;
 }
 
@@ -60,13 +58,16 @@ export default function JobLogView({ jobId, live, active, recordedLevel }: {
   jobId: string; live: boolean; active: boolean; recordedLevel?: string | null;
 }) {
   const text = useWorkspaceText();
+  const { i18n } = useTranslation();
+  const chinese = (i18n.resolvedLanguage || i18n.language || '').startsWith('zh');
+  const [original, setOriginal] = React.useState(() => storedFlag(ORIGINAL_KEY));
   const [lines, setLines] = React.useState<JobLogLine[]>([]);
   const [loaded, setLoaded] = React.useState(false);
   const [error, setError] = React.useState('');
   const [hasEarlier, setHasEarlier] = React.useState(false);
   const [loadingEarlier, setLoadingEarlier] = React.useState(false);
   const [filter, setFilter] = React.useState<LogFilter>('all');
-  const [debug, setDebug] = React.useState(storedDebug);
+  const [debug, setDebug] = React.useState(() => storedFlag(DEBUG_KEY));
   const [query, setQuery] = React.useState('');
   const [following, setFollowing] = React.useState(true);
   const [copied, setCopied] = React.useState<'done' | 'failed' | ''>('');
@@ -163,7 +164,9 @@ export default function JobLogView({ jobId, live, active, recordedLevel }: {
     }
   };
 
-  const entries = React.useMemo(() => groupLogLines(lines), [lines]);
+  const grouped = React.useMemo(() => groupLogLines(lines), [lines]);
+  // Fixed trainer lines read in Chinese; the original shows on hover and in downloads.
+  const entries = React.useMemo(() => chinese && !original ? translateLogEntries(grouped) : grouped, [grouped, chinese, original]);
   const visible = React.useMemo(() => visibleLogEntries(entries, { filter, debug, query }), [entries, filter, debug, query]);
   lastVisibleId.current = visible.length ? visible[visible.length - 1].id : -1;
   const unseen = following ? 0 : visible.filter(entry => entry.id > seenId.current).length;
@@ -179,7 +182,7 @@ export default function JobLogView({ jobId, live, active, recordedLevel }: {
       element.scrollTop = element.scrollHeight;
       seenId.current = lastVisibleId.current;
     }
-  }, [lines, filter, debug, query, active]);
+  }, [lines, filter, debug, query, active, original]);
 
   const onScroll = () => {
     const element = body.current;
@@ -192,10 +195,8 @@ export default function JobLogView({ jobId, live, active, recordedLevel }: {
     if (element) element.scrollTop = element.scrollHeight;
     setFollow(true);
   };
-  const toggleDebug = (checked: boolean) => {
-    setDebug(checked);
-    try { window.localStorage.setItem(DEBUG_KEY, checked ? '1' : '0'); } catch { /* Preference only. */ }
-  };
+  const toggleDebug = (checked: boolean) => { setDebug(checked); storeFlag(DEBUG_KEY, checked); };
+  const toggleOriginal = (checked: boolean) => { setOriginal(checked); storeFlag(ORIGINAL_KEY, checked); };
   const copyVisible = async () => {
     try { await copyText(visible.map(logEntryText).join('\n')); setCopied('done'); }
     catch { setCopied('failed'); }
@@ -221,6 +222,7 @@ export default function JobLogView({ jobId, live, active, recordedLevel }: {
       ]}/>
       <label className="job-log-search"><Search size={14} aria-hidden="true"/><input type="search" aria-label={text('搜索日志', 'Search log')} placeholder={text('搜索日志内容或来源', 'Search messages or sources')} value={query} onChange={event => setQuery(event.target.value)}/></label>
       <Switch className="job-log-debug" checked={debug} disabled={filter !== 'all'} onCheckedChange={toggleDebug}>{text('调试日志', 'Debug')}</Switch>
+      {chinese && <Switch className="job-log-debug" checked={original} onCheckedChange={toggleOriginal}>显示原文</Switch>}
       <div className="job-log-actions">
         <button type="button" className="ui-btn ui-btn-icon ui-btn-quiet" disabled={!visible.length} onClick={() => void copyVisible()} aria-label={text('复制显示的日志', 'Copy shown lines')} title={copied === 'done' ? text('已复制', 'Copied') : copied === 'failed' ? text('复制失败', 'Copy failed') : text('复制显示的日志', 'Copy shown lines')}>{copied === 'done' ? <Check size={15}/> : <Copy size={15}/>}</button>
         <a className="ui-btn ui-btn-icon ui-btn-quiet" href={apiUrl(`/jobs/${encodeURIComponent(jobId)}/log/raw`)} download aria-label={text('下载完整日志', 'Download full log')} title={text('下载完整日志', 'Download full log')} aria-disabled={!lines.length || undefined} onClick={event => { if (!lines.length) event.preventDefault(); }}><Download size={15}/></a>

@@ -1,4 +1,5 @@
 import type { JobLogLine } from '../api/types';
+import { translateLogMessage } from './logTranslations';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 export type LogFilter = 'all' | 'warn' | 'error';
@@ -12,6 +13,8 @@ export interface LogEntry {
   level: LogLevel;
   source: string | null;
   msg: string;
+  /** Chinese reading of a fixed trainer message; the original stays in ``msg``. */
+  translated?: string;
   detail: string[];
 }
 
@@ -48,11 +51,19 @@ export function groupLogLines(lines: JobLogLine[]): LogEntry[] {
   return entries;
 }
 
+export function translateLogEntries(entries: LogEntry[]): LogEntry[] {
+  return entries.map(entry => {
+    const translated = translateLogMessage(entry.msg);
+    return translated ? { ...entry, translated } : entry;
+  });
+}
+
 export function visibleLogEntries(entries: LogEntry[], { filter, debug, query }: { filter: LogFilter; debug: boolean; query: string }): LogEntry[] {
   const minimum = filter === 'error' ? RANK.error : filter === 'warn' ? RANK.warn : debug ? RANK.debug : RANK.info;
   const needle = query.trim().toLocaleLowerCase();
   return entries.filter(entry => RANK[entry.level] >= minimum && (!needle
     || entry.msg.toLocaleLowerCase().includes(needle)
+    || (entry.translated || '').toLocaleLowerCase().includes(needle)
     || (entry.source || '').toLocaleLowerCase().includes(needle)
     || entry.detail.some(line => line.toLocaleLowerCase().includes(needle))));
 }
@@ -68,7 +79,13 @@ export function logTime(ts: number | null): string {
   return [date.getHours(), date.getMinutes(), date.getSeconds()].map(part => String(part).padStart(2, '0')).join(':');
 }
 
+/** ``[INFO]`` for records; plain output without a declared level has none. */
+export function logLevelTag(entry: LogEntry): string {
+  return entry.kind === 'text' && entry.level === 'info' ? '' : `[${entry.level.toUpperCase()}]`;
+}
+
 export function logEntryText(entry: LogEntry): string {
-  const head = [logTime(entry.ts), entry.kind === 'text' && entry.level === 'info' ? '' : entry.level.toUpperCase(), entry.source ? `${entry.source}:` : '', entry.msg].filter(Boolean).join(' ');
+  const time = logTime(entry.ts);
+  const head = [time && `[${time}]`, logLevelTag(entry), entry.source ? `${entry.source}:` : '', entry.translated ?? entry.msg].filter(Boolean).join(' ');
   return [head, ...entry.detail].join('\n');
 }

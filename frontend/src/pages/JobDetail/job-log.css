@@ -19,11 +19,11 @@
 }
 .dark .job-log-body { --log-bg:#020617; box-shadow:inset 0 0 0 1px var(--studio-line); }
 .job-log-body:focus-visible { outline:2px solid var(--studio-accent); outline-offset:2px; }
-.job-log-entry { display:grid; grid-template-columns:8ch 5ch minmax(0, 20ch) minmax(0, 1fr); column-gap:1.5ch; padding:1px 14px; }
+.job-log-entry { display:grid; grid-template-columns:10ch 7ch minmax(0, 18ch) minmax(0, 1fr); column-gap:1ch; padding:1px 14px; }
 .job-log-entry:hover { background:#ffffff0a; }
 .job-log-time,.job-log-source { color:var(--log-dim); white-space:nowrap; }
 .job-log-source { overflow:hidden; text-overflow:ellipsis; }
-.job-log-level { font-weight:650; letter-spacing:.02em; color:#60a5fa; }
+.job-log-level { font-weight:650; white-space:nowrap; color:#60a5fa; }
 .job-log-message { min-width:0; white-space:pre-wrap; overflow-wrap:anywhere; }
 .job-log-message pre { margin:0; font:inherit; white-space:pre-wrap; overflow-wrap:anywhere; color:var(--log-soft); }
 .job-log-message mark { border-radius:2px; background:#facc1566; color:inherit; }
