@@ -28,13 +28,14 @@ AXES = {
     "adapter_scale": "Adapter strength",
     "checkpoint": "Checkpoint",
 }
-MAX_CELLS = 64
+# Cells are separate images; the bound only catches runaway grids such as a mistyped range.
+MAX_CELLS = 1000
 
 
 class XyzAxis(BaseModel):
     model_config = ConfigDict(extra="forbid")
     key: Literal["steps", "cfg", "seed", "sampler", "scheduler", "shift", "adapter_scale", "checkpoint"]
-    values: list[Any] = Field(min_length=1, max_length=12)
+    values: list[Any] = Field(min_length=1)
 
     @model_validator(mode="after")
     def typed_values(self):
@@ -87,8 +88,8 @@ class XyzRequest(GpuSelection):
         if len({axis.key for axis in axes}) != len(axes):
             raise ValueError("X, Y and Z must use different parameters")
         count = math.prod(len(axis.values) for axis in axes)
-        if count > MAX_CELLS or count * self.width * self.height > 64 * 1024 * 1024:
-            raise ValueError("模型测试超出图片数量或总像素上限，请减少参数值或降低图片尺寸（最多 64 张）。")
+        if count > MAX_CELLS:
+            raise ValueError(f"模型测试一次最多 {MAX_CELLS} 张，请减少参数值。")
         if any(axis.key == "adapter_scale" for axis in axes) and not (
             self.checkpoint_id or any(axis.key == "checkpoint" for axis in axes)
         ):
@@ -272,7 +273,7 @@ def options(context, source_id):
         "axes": axes,
         "checkpoints": [{k: v for k, v in row.items() if k != "path"} for row in checkpoints],
         "sampling_models": [] if full else models,
-        "limits": {"max_cells": MAX_CELLS, "max_axis_values": 12, "max_pixels": 64 * 1024 * 1024},
+        "limits": {"max_cells": MAX_CELLS},
     }
 
 

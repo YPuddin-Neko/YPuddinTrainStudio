@@ -20589,7 +20589,6 @@
           "values": {
             "items": {},
             "type": "array",
-            "maxItems": 12,
             "minItems": 1,
             "title": "Values"
           }

@@ -12,7 +12,7 @@ export interface XyzOptions {
   axes: { key: AxisKey; label: string; values?: AxisValue[] }[];
   checkpoints: { id: string; name: string; step: number }[];
   sampling_models: { id: string; name: string; variant?: string }[];
-  limits: { max_cells: number; max_axis_values: number; max_pixels?: number };
+  limits: { max_cells: number; max_axis_values?: number; max_pixels?: number };
 }
 export interface XyzCell {
   index: number; x: number; y: number; z: number; x_value: AxisValue; y_value: AxisValue | null; z_value: AxisValue | null;

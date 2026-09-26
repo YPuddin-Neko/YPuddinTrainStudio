@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gc
 import json
+import math
 import os
 import sys
 from contextlib import nullcontext
@@ -12,6 +13,8 @@ from pathlib import Path
 from ypuddin.models.precision import model_load_precision
 
 from .xyz import AXES, XyzRequest, checkpoint_signature, expand_cells, full_checkpoint_model
+
+GRID_PIXELS = 64 * 1024 * 1024  # largest downloadable page grid
 
 
 def _atomic_json(path: Path, value):
@@ -138,12 +141,15 @@ def write_grids(output, request, manifest):
     axes = manifest["axes"]
     font = _font()
     grids = []
+    # A page of many cells is drawn smaller so the downloadable grid stays openable; each cell keeps its original.
+    scale = min(1.0, math.sqrt(GRID_PIXELS / (nx * ny * request.width * request.height)))
+    width, height = max(1, round(request.width * scale)), max(1, round(request.height * scale))
     for zi in range(len(request.z.values) if request.z else 1):
         cells = [cell for cell in manifest["cells"] if cell["z"] == zi]
         if not cells:
             continue
         margin, title = 144, 124
-        grid = Image.new("RGB", (margin + nx * request.width, title + ny * (request.height + 24)), "#20242c")
+        grid = Image.new("RGB", (margin + nx * width, title + ny * (height + 24)), "#20242c")
         draw = ImageDraw.Draw(grid)
 
         def label(value, x, y, width, lines=2, canvas=draw):
@@ -159,16 +165,16 @@ def write_grids(output, request, manifest):
         if request.z:
             label(axes["z"]["labels"][zi], 8, 48, grid.width - 16, 1)
         for xi, value in enumerate(axes["x"]["labels"]):
-            label(value, margin + xi * request.width + 4, title - 48, request.width - 8)
+            label(value, margin + xi * width + 4, title - 48, width - 8)
         for yi in range(ny):
             if request.y:
-                label(axes["y"]["labels"][yi], 4, title + yi * (request.height + 24) + 4, margin - 8)
+                label(axes["y"]["labels"][yi], 4, title + yi * (height + 24) + 4, margin - 8)
         for cell in cells:
             with Image.open(output / cell["file"]) as image:
-                grid.paste(
-                    image.convert("RGB"),
-                    (margin + cell["x"] * request.width, title + cell["y"] * (request.height + 24)),
-                )
+                picture = image.convert("RGB")
+                if picture.size != (width, height):
+                    picture = picture.resize((width, height), Image.Resampling.LANCZOS)
+                grid.paste(picture, (margin + cell["x"] * width, title + cell["y"] * (height + 24)))
         name = f"grid_z{zi:02d}.png"
         temporary = output / (name + ".tmp")
         grid.save(temporary, format="PNG")

@@ -17,8 +17,10 @@ import { SlidingIndicator } from '../motion';
 const activeStatuses = new Set(['queued', 'scheduled', 'running', 'preparing', 'caching', 'cancelling']);
 const imageUrl = (url: string) => url.startsWith('/api/') ? apiUrl(url.slice(4)) : url;
 type AxisDraft = { key: AxisKey; raw: string };
+const INITIAL_WEIGHTS = 12;
 const initialAxis = (options: XyzOptions): AxisDraft => options.checkpoints.length > 1
-  ? { key: 'checkpoint', raw: options.checkpoints.slice(0, options.limits.max_axis_values).map(cp => cp.id).join(', ') }
+  // The first dozen are ticked to start with; any number can be compared.
+  ? { key: 'checkpoint', raw: options.checkpoints.slice(0, options.limits.max_axis_values ?? INITIAL_WEIGHTS).map(cp => cp.id).join(', ') }
   : { key: 'steps', raw: [Math.max(1, options.defaults.steps - 5), options.defaults.steps, options.defaults.steps + 5].join(', ') };
 
 function compatibleValues(values: SamplingValues, options: XyzOptions): SamplingValues {
@@ -151,10 +153,10 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
     return next;
   });
   const count = axisCount(axes);
-  const axisInvalid = !axes[0] || axes.some(axis => axis && (!options?.axes.some(option => option.key === axis.key) || !axis.values.length || axis.values.length > (options?.limits.max_axis_values || 12) || axis.values.some(value => typeof value === 'number' && !Number.isFinite(value))));
+  const axisInvalid = !axes[0] || axes.some(axis => axis && (!options?.axes.some(option => option.key === axis.key) || !axis.values.length || (options?.limits.max_axis_values != null && axis.values.length > options.limits.max_axis_values) || axis.values.some(value => typeof value === 'number' && !Number.isFinite(value))));
   const checkpointMissing = fullModel && !options?.checkpoints.some(cp => cp.id === values?.checkpoint_id);
   const overLimit = count > (options?.limits.max_cells || 64);
-  const tooManyPixels = !!values && count * values.width * values.height > (options?.limits.max_pixels || 64 * 1024 * 1024);
+  const tooManyPixels = !!values && options?.limits.max_pixels != null && count * values.width * values.height > options.limits.max_pixels;
   const update = <K extends keyof SamplingValues>(key: K, value: SamplingValues[K]) => setValues(previous => previous && { ...previous, [key]: value });
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
