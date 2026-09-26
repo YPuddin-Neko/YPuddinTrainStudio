@@ -50,7 +50,7 @@ function StepChange({ delta, text }: { delta: number | null; text: (zh: string, 
   const said = direction === 'down' ? text(`比上一次下降 ${amount}`, `Down ${amount} from the previous reading`)
     : direction === 'up' ? text(`比上一次上升 ${amount}`, `Up ${amount} from the previous reading`) : text('与上一次持平', 'Same as the previous reading');
   return <div className="job-stat-change" data-direction={direction} title={said}>
-    <Icon size={12} aria-hidden="true"/><span aria-hidden="true">{direction === 'flat' ? '0' : amount}</span><small aria-hidden="true">{text('较上次', 'vs last')}</small><span className="sr-only">{said}</span>
+    <Icon size={12} aria-hidden="true"/><span aria-hidden="true">{direction === 'flat' ? '0' : amount}</span><span className="sr-only">{said}</span>
   </div>;
 }
 
