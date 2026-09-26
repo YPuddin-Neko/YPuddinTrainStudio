@@ -12672,6 +12672,61 @@
               }
             ],
             "title": "Wait Reason"
+          },
+          "pause_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pause Count"
+          },
+          "paused_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused At"
+          },
+          "paused_step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused Step"
+          },
+          "resumed_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resumed At"
+          },
+          "resumed_step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resumed Step"
           }
         },
         "additionalProperties": true,

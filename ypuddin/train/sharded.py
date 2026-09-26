@@ -310,7 +310,8 @@ class ShardedTrainer(DistributedTrainer):
         self.progress.extra["loss_ema"] = self._loss_ema
         path = save_sharded_checkpoint(
             (Path(self.cfg.checkpoint.state_dir) if self.cfg.checkpoint.state_dir else self.run_dir)
-            / f"state-{tag or self.progress.step}",
+            # Every rank writes to the name rank zero picks.
+            / self._primary_call(self._state_name, tag),
             modules=self._checkpoint_modules(),
             optimizer=self.optimizer,
             scheduler=self.scheduler,

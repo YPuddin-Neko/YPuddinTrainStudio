@@ -4075,6 +4075,16 @@ export interface components {
             estimated_peak_mb?: number | null;
             /** Wait Reason */
             wait_reason?: string | null;
+            /** Pause Count */
+            pause_count?: number | null;
+            /** Paused At */
+            paused_at?: number | null;
+            /** Paused Step */
+            paused_step?: number | null;
+            /** Resumed At */
+            resumed_at?: number | null;
+            /** Resumed Step */
+            resumed_step?: number | null;
         } & {
             [key: string]: unknown;
         };

@@ -127,6 +127,10 @@ class Trainer:
     # Log pacing and GPU identity; class defaults also serve trainers built without __init__ in tests.
     _gpu_identity: tuple[str | None, str] | None = None
     _last_step_log = 0.0
+    # The control request that is ending the run, and where the current epoch began.
+    _stopping: str | None = None
+    _stop_state: Path | None = None
+    _epoch_mark: tuple[float, float, int, bool] | None = None
 
     def __init__(
         self, cfg: TrainConfig, *, device: str | torch.device | None = None, emitter: Emitter | None = None
@@ -206,15 +210,17 @@ class Trainer:
         if type_ == "checkpoint.saved":
             # Artifacts list the epoch and the loss of the step they were saved at.
             data.setdefault("epoch", self._epoch_now())
-            last = self.progress.extra.get("train_loss")
-            if isinstance(last, dict) and last.get("step") == self.progress.step:
-                data.setdefault("loss", last.get("loss"))
-            kind = {"weights": "weights", "full": "training state", "model": "model"}.get(
-                data.get("kind"), "file"
+            data.setdefault("loss", self._step_loss())
+            self._log_saved(data)
+        elif type_ == "epoch.started":
+            self._epoch_mark = (
+                time.monotonic(),
+                float(self.progress.extra.get("loss_sum", 0.0)),
+                int(self.progress.extra.get("loss_count", 0)),
+                bool(data.get("position")),
             )
-            log.info(
-                "saved %s%s: %s", kind, " (EMA)" if data.get("ema") else "", Path(str(data.get("path"))).name
-            )
+        elif type_ == "epoch.finished":
+            self._log_epoch(int(data.get("epoch", self.progress.epoch - 1)))
         self.emitter.emit(type_, **data)
         if log.isEnabledFor(logging.DEBUG):
             self._debug_event(type_, data)
@@ -234,6 +240,52 @@ class Trainer:
                     "warning",
                     message="training state is not available during preparation; cached items are preserved",
                 )
+
+    def _step_loss(self) -> float | None:
+        """Training loss of the current step, when this step recorded a usable one (resume points may not)."""
+        last = self.progress.extra.get("train_loss")
+        if self.progress.step <= 0 or not isinstance(last, dict) or last.get("step") != self.progress.step:
+            return None
+        return _finite(last.get("loss"))
+
+    def _point(self, step: int | None = None, epoch: float | None = None, loss: float | None = None) -> str:
+        """Where training stands: step, epoch and loss, as logged for saves, pauses and resumes."""
+        step = self.progress.step if step is None else step
+        shown = _epoch_text(self._epoch_now() if epoch is None else epoch)
+        value = _finite(loss)
+        return f"step {step}/{self.progress.total_steps} | epoch {shown} | loss {'-' if value is None else f'{value:.4f}'}"
+
+    def _log_saved(self, data: dict[str, Any]) -> None:
+        path = Path(str(data.get("path")))
+        point = self._point(data.get("step"), data.get("epoch"), data.get("loss"))
+        if data.get("kind") == "full":
+            saved_at = time.strftime("%Y-%m-%d %H:%M:%S")
+            if self._stopping:
+                outcome = "paused" if self._stopping == "pause" else "stopped"
+                log.info("training %s; resume point saved %s | %s | %s", outcome, saved_at, point, path)
+            else:
+                log.info("saved resume point %s | %s | %s", saved_at, point, path)
+            return
+        kind = {"weights": "weights", "model": "model"}.get(data.get("kind"), "file")
+        log.info("saved %s%s: %s | %s", kind, " (EMA)" if data.get("ema") else "", path.name, point)
+
+    def _log_epoch(self, epoch: int) -> None:
+        mark = self._epoch_mark
+        if mark is None:
+            log.info("epoch %d finished at step %d", epoch + 1, self.progress.step)
+            return
+        started, loss_sum, loss_count, resumed = mark
+        count = int(self.progress.extra.get("loss_count", 0)) - loss_count
+        mean = (float(self.progress.extra.get("loss_sum", 0.0)) - loss_sum) / count if count > 0 else None
+        # The loss is the mean over this epoch's steps; after a mid-epoch resume, over those since resuming.
+        log.info(
+            "epoch %d finished at step %d | loss %s | %s%s",
+            epoch + 1,
+            self.progress.step,
+            f"{mean:.4f}" if mean is not None and math.isfinite(mean) else "-",
+            _duration(time.monotonic() - started, precise=True),
+            " since resume" if resumed else "",
+        )
 
     def _debug_event(self, type_: str, data: dict[str, Any]) -> None:
         """Trace lifecycle events; per-step metrics and per-item progress stay in events.jsonl."""
@@ -313,6 +365,8 @@ class Trainer:
         from ypuddin.models.fingerprints import fingerprint_cache
 
         load_started = time.perf_counter()
+        if cfg.checkpoint.resume:
+            log.info("resume requested: restoring the run from %s", cfg.checkpoint.resume)
         log.info("loading %s model components", self.family.spec.name)
 
         cache_root = Path(cfg.dataset.cache_dir) if cfg.dataset.cache_dir else self.run_dir / "cache"
@@ -937,7 +991,7 @@ class Trainer:
             validate_compute_runtime(
                 capture_compute_runtime(self.device), ck["progress"].extra.get("compute_runtime")
             )
-        if ck["config_hash"] and ck["config_hash"] != self.config_hash:
+        if ck["config_hash"] and ck["config_hash"] not in self._resume_config_hashes():
             log.warning("config changed since the checkpoint was written; resuming anyway")
         if "training" in ck:
             self.adapters.load_training_state(ck["training"])
@@ -970,6 +1024,13 @@ class Trainer:
             epoch=self.progress.epoch,
             batch_in_epoch=self.progress.batch_in_epoch,
         )
+
+    def _resume_config_hashes(self) -> set[str]:
+        """The run's config hash with and without the resume path it was started with."""
+        # A paused run is resumed from its own state: only checkpoint.resume differs.
+        neutral = self.cfg.model_copy(deep=True)
+        neutral.checkpoint.resume = None
+        return {self.config_hash, config_hash(neutral)}
 
     def _adapter_metadata(self) -> dict[str, str]:
         if self.cfg.training.mode == "full":
@@ -1126,7 +1187,7 @@ class Trainer:
         }
         path = save_checkpoint(
             (Path(self.cfg.checkpoint.state_dir) if self.cfg.checkpoint.state_dir else self.run_dir)
-            / f"state-{tag or self.progress.step}",
+            / self._state_name(tag),
             adapter_tensors=tensors,
             training_tensors=training_tensors,
             adapter_metadata=self._adapter_metadata(),
@@ -1143,6 +1204,11 @@ class Trainer:
         )
         self.emit("checkpoint.saved", kind="full", step=self.progress.step, path=str(path))
         return path
+
+    def _state_name(self, tag: str | None = None) -> str:
+        """Resume points are named by save time and step, so every save keeps its own folder."""
+        name = f"state-{time.strftime('%Y%m%d-%H%M%S')}-step{self.progress.step:06d}"
+        return f"{name}-{tag}" if tag else name
 
     def _capture_checkpoint_rng(self) -> dict[str, Any]:
         return self._capture_local_checkpoint_rng()
@@ -1453,7 +1519,12 @@ class Trainer:
         world = distributed.world_size if distributed is not None else 1
         effective = cfg.dataset.batch_size * cfg.loop.grad_accum * world
         if self.progress.step:
-            log.info("resuming at step %d/%d", self.progress.step, self.progress.total_steps)
+            log.info(
+                "resumed training %s | %s | from %s",
+                time.strftime("%Y-%m-%d %H:%M:%S"),
+                self._point(loss=self._step_loss()),
+                cfg.checkpoint.resume or "-",
+            )
         else:
             log.info(
                 "training %d steps: %d per epoch, effective batch %d (%d x %d accumulation x %d GPU)",
@@ -1465,12 +1536,15 @@ class Trainer:
                 world,
             )
         if cfg.sampling.enabled:
-            if not cfg.sampling.seed and not self._stored_preview_seed():
+            kept = self._stored_preview_seed() is not None
+            if not cfg.sampling.seed and not kept:
                 # Every rank keeps identical progress, so the first one picks the seed for all.
                 self.progress.extra["preview_seed"] = self._primary_call(_random_preview_seed)
             seed = self._preview_seed()
             if cfg.sampling.seed:
                 log.info("preview seed %d", seed)
+            elif kept:
+                log.info("preview seed %d (kept from the resume point)", seed)
             else:
                 log.info("preview seed %d (random for this run)", seed)
 
@@ -1581,7 +1655,6 @@ class Trainer:
         self.progress.epoch += 1
         self.progress.batch_in_epoch = 0
         self.emit("epoch.finished", epoch=epoch, step=self.progress.step)
-        log.info("epoch %d finished at step %d", epoch + 1, self.progress.step)
         self._epoch_hooks(epoch + 1)
 
     def _run_native_epoch(self) -> None:
@@ -1662,7 +1735,6 @@ class Trainer:
         self.progress.epoch += 1
         self.progress.batch_in_epoch = 0
         self.emit("epoch.finished", epoch=epoch, step=self.progress.step)
-        log.info("epoch %d finished at step %d", epoch + 1, self.progress.step)
         self._epoch_hooks(epoch + 1)
 
     def _optimizer_step(self, group_loss: float, elapsed: float) -> None:
@@ -1798,9 +1870,17 @@ class Trainer:
             self.save_state()
         req = self._control_request()
         if req == "save":
-            self.save_state()
+            self.save_state("manual")
         elif req in ("pause", "stop"):
-            self.save_state("paused" if req == "pause" else "stopped")
+            log.info(
+                "%s requested at step %d/%d (epoch %s); saving a resume point",
+                req,
+                step,
+                self.progress.total_steps,
+                _epoch_text(self._epoch_now()),
+            )
+            self._stopping = req
+            self._stop_state = self.save_state("paused" if req == "pause" else "stopped")
             raise StopRequested(req)
 
     def _epoch_hooks(self, finished_epochs: int) -> None:
@@ -1842,6 +1922,8 @@ class Trainer:
             epoch=self.progress.epoch,
             samples_seen=self.progress.samples_seen,
             preparing=not self._prepared,
+            # The service resumes a paused job from the point it saved.
+            **({"state_path": str(self._stop_state)} if self._stop_state and outcome != "finished" else {}),
         )
 
     # ----------------------------------------------------------------- validation & previews
@@ -1900,23 +1982,7 @@ class Trainer:
         )
         out_dir.mkdir(parents=True, exist_ok=True)
         paths: list[Path] = []
-        last_loss = self.progress.extra.get("train_loss")
-        loss = last_loss.get("loss") if isinstance(last_loss, dict) else None
-        if (
-            self.progress.step <= 0
-            or not isinstance(last_loss, dict)
-            or last_loss.get("step") != self.progress.step
-            or isinstance(loss, bool)
-            or not isinstance(loss, (int, float))
-        ):
-            loss = None
-        if loss is not None:
-            try:
-                loss = float(loss)
-            except OverflowError:
-                loss = None
-        if loss is not None and not math.isfinite(loss):
-            loss = None
+        loss = self._step_loss()
         stride = self.family.spec.latent.stride
         patch = self.family.spec.latent.patch
         started = time.perf_counter()
@@ -2019,12 +2085,31 @@ class Trainer:
         return paths
 
 
+def _epoch_text(epoch: float | None) -> str:
+    if epoch is None:
+        return "-"
+    return str(round(epoch)) if abs(epoch - round(epoch)) < 0.005 else f"{epoch:.2f}"
+
+
 def _random_preview_seed() -> int:
     return random.SystemRandom().randrange(1, 2**31 - 1)
 
 
-def _duration(seconds: float) -> str:
-    """Compact duration for log lines: 70h28m, 5m31s, 12s."""
+def _finite(value: object) -> float | None:
+    """A recorded number as a finite float; None when missing, boolean, non-finite or too large for a float."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        number = float(value)
+    except OverflowError:
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _duration(seconds: float, precise: bool = False) -> str:
+    """Compact duration for log lines: 70h28m, 5m31s, 12s; ``precise`` keeps tenths below ten seconds (3.4s)."""
+    if precise and seconds < 10:
+        return f"{max(seconds, 0.01):.2g}s"
     seconds = max(0, int(seconds))
     hours, rest = divmod(seconds, 3600)
     minutes, secs = divmod(rest, 60)

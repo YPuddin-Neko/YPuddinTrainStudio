@@ -734,6 +734,12 @@ class JobProgress(_Out):
     gpu_count: int | None = None
     estimated_peak_mb: float | None = None
     wait_reason: str | None = None
+    # Pauses of this job: how many, when and at which step the last one happened, and its resume.
+    pause_count: int | None = None
+    paused_at: float | None = None
+    paused_step: int | None = None
+    resumed_at: float | None = None
+    resumed_step: int | None = None
 
 
 class JobLatest(_Out):

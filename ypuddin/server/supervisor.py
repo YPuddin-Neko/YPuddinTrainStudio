@@ -596,6 +596,10 @@ class JobSupervisor:
                 "job.phase",
                 {"job_id": job_id, "phase": "prepared", **{k: v for k, v in data.items() if k != "job_id"}},
             )
+        elif t == "run.resumed":
+            resumed = {"resumed_at": now(), "resumed_step": ev.get("step")}
+            self._merge_progress(job_id, resumed)
+            self._publish("job.phase", {"job_id": job_id, "progress": resumed})
         elif t == "phase.changed":
             self._merge_progress(job_id, {"phase": ev.get("phase")})
             self._publish("job.phase", data)
@@ -683,13 +687,28 @@ class JobSupervisor:
         self._outcome_seen.add(job_id)
         if status == "paused":
             job = self.db.fetchone("SELECT * FROM jobs WHERE id=?", (job_id,))
-            state = state_directory(job) / "state-paused"
+            # Newer trainers name the pause point by its save time; older ones reuse state-paused.
+            reported = event.get("state_path")
+            state = (
+                Path(reported)
+                if isinstance(reported, str) and reported
+                else state_directory(job) / "state-paused"
+            )
             fields["resume_from"] = (
                 job["resume_from"]
                 if event.get("preparing")
                 else (str(state) if (state / "state.json").exists() else None)
             )
-            self._merge_progress(job_id, {"preparing": bool(event.get("preparing"))})
+            previous = json.loads(job["progress_json"] or "{}") if job else {}
+            # The job page shows that a run was paused and where, once it resumes.
+            pause = {"preparing": bool(event.get("preparing"))}
+            if not event.get("preparing"):
+                pause.update(
+                    pause_count=int(previous.get("pause_count") or 0) + 1,
+                    paused_at=now(),
+                    paused_step=event.get("step"),
+                )
+            self._merge_progress(job_id, pause)
         self._set_status(job_id, status, **fields)
 
     def _on_exit(self, job_id: str, code: int | None) -> None:
