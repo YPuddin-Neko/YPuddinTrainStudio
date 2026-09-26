@@ -10,7 +10,7 @@ import CheckboxSelect from '../CheckboxSelect';
 import GpuDevicePicker from '../GpuDevicePicker';
 import { gpuDeviceLabel } from '../../utils/gpuDevices';
 import Dialog from '../Dialog';
-import { axisCount, axisNames, parseAxis, type AxisKey, type XyzAxis, type XyzCell, type XyzOptions, type XyzRequest, type XyzTask, type SamplingValues } from './xyzTypes';
+import { axisCount, axisNames, checkpointLabel, parseAxis, type AxisKey, type XyzAxis, type XyzCell, type XyzOptions, type XyzRequest, type XyzTask, type SamplingValues } from './xyzTypes';
 import './xyz-sampling.css';
 import { SlidingIndicator } from '../motion';
 
@@ -18,16 +18,19 @@ const activeStatuses = new Set(['queued', 'scheduled', 'running', 'preparing', '
 const imageUrl = (url: string) => url.startsWith('/api/') ? apiUrl(url.slice(4)) : url;
 type AxisDraft = { key: AxisKey; raw: string };
 const INITIAL_WEIGHTS = 12;
-const initialAxis = (options: XyzOptions): AxisDraft => options.checkpoints.length > 1
+const sourceRun = (options: XyzOptions) => options.source_job_id ?? options.checkpoints[0]?.job_id;
+/** The source run's own products; the other runs of its version are one level down in the picker. */
+const ownCheckpoints = (options: XyzOptions) => options.checkpoints.filter(cp => !cp.job_id || cp.job_id === sourceRun(options));
+const initialAxis = (options: XyzOptions): AxisDraft => ownCheckpoints(options).length > 1
   // The first dozen are ticked to start with; any number can be compared.
-  ? { key: 'checkpoint', raw: options.checkpoints.slice(0, options.limits.max_axis_values ?? INITIAL_WEIGHTS).map(cp => cp.id).join(', ') }
+  ? { key: 'checkpoint', raw: ownCheckpoints(options).slice(0, options.limits.max_axis_values ?? INITIAL_WEIGHTS).map(cp => cp.id).join(', ') }
   : { key: 'steps', raw: [Math.max(1, options.defaults.steps - 5), options.defaults.steps, options.defaults.steps + 5].join(', ') };
 
 function compatibleValues(values: SamplingValues, options: XyzOptions): SamplingValues {
   if (options.training_mode !== 'full') return values;
   return { ...values, sampling_model_id: null, adapter_scale: 1,
     checkpoint_id: options.checkpoints.some(cp => cp.id === values.checkpoint_id)
-      ? values.checkpoint_id : options.checkpoints[0]?.id || null };
+      ? values.checkpoint_id : ownCheckpoints(options)[0]?.id || null };
 }
 function compatibleDrafts(drafts: (AxisDraft | null)[], options: XyzOptions) {
   const result = drafts.map(draft => {
@@ -49,7 +52,7 @@ function AxisEditor({ position, draft, onChange, options, used, disabled, weight
   const title = position === 'X' ? text('X · 横向比较', 'X · Columns') : position === 'Y' ? text('Y · 纵向比较', 'Y · Rows') : text('Z · 分页比较', 'Z · Pages');
   const icon = position === 'X' ? <ArrowRight size={14}/> : position === 'Y' ? <ArrowDown size={14}/> : <Layers size={14}/>;
   const current = options.axes.find(axis => axis.key === draft?.key);
-  const choices = draft?.key === 'checkpoint' ? options.checkpoints.map(cp => ({ value: cp.id, label: cp.name })) : current?.values?.map(value => ({ value: String(value), label: String(value) }));
+  const choices = draft?.key === 'checkpoint' ? options.checkpoints.map(cp => ({ value: cp.id, label: checkpointLabel(options, cp) })) : current?.values?.map(value => ({ value: String(value), label: String(value) }));
   const values = draft ? parseAxis(draft.key, draft.raw).values.map(String) : [];
   return <fieldset className="xyz-axis" disabled={disabled}>
     <legend>{icon}{title}</legend>
@@ -57,7 +60,7 @@ function AxisEditor({ position, draft, onChange, options, used, disabled, weight
       if (!value) { onChange(null); return; }
       const key = value as AxisKey;
       const axis = options.axes.find(item => item.key === key);
-      const defaults = key === 'checkpoint' ? (weights.length > 1 ? weights : options.checkpoints.slice(0, 3).map(cp => cp.id)) : axis?.values?.slice(0, 3) || (key === 'steps' ? [8, 16, 24] : key === 'adapter_scale' ? [0.6, 0.8, 1] : key === 'cfg' ? [1, 3, 5] : key === 'seed' ? [42, 43, 44] : [1, 3]);
+      const defaults = key === 'checkpoint' ? (weights.length > 1 ? weights : ownCheckpoints(options).slice(0, 3).map(cp => cp.id)) : axis?.values?.slice(0, 3) || (key === 'steps' ? [8, 16, 24] : key === 'adapter_scale' ? [0.6, 0.8, 1] : key === 'cfg' ? [1, 3, 5] : key === 'seed' ? [42, 43, 44] : [1, 3]);
       onChange({ key, raw: defaults.join(', ') });
     }} options={[...(position !== 'X' ? [{ value: '', label: text('不使用', 'Off') }] : []), ...options.axes.map(axis => ({ value: axis.key, label: name(axis.key),
       // Weights move to this axis from another one; they are chosen once, in the setup above.
@@ -95,7 +98,13 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
   const fullModel = options?.training_mode === 'full';
   const name = (key: AxisKey) => key === 'checkpoint' && fullModel ? text('模型检查点', 'Model checkpoint') : text(...axisNames[key]);
   const source = `/jobs/${encodeURIComponent(sourceJobId)}/xyz`;
-  const displayValue = (axis: XyzAxis | null | undefined, value: string | number | null) => axis?.key === 'checkpoint' ? options?.checkpoints.find(cp => cp.id === value)?.name || String(value ?? '') : String(value ?? '');
+  const displayValue = (axis: XyzAxis | null | undefined, value: string | number | null) => {
+    const checkpoint = axis?.key === 'checkpoint' ? options?.checkpoints.find(cp => cp.id === value) : undefined;
+    return checkpoint && options ? checkpointLabel(options, checkpoint) : String(value ?? '');
+  };
+  // Products from every run of the version are picked run first, then product.
+  const runs = options ? [...new Map(options.checkpoints.map(cp => [cp.job_id || '', cp.job_name || ''])).entries()].map(([value, label]) => ({ value, label: value === sourceRun(options) ? text(`${label}（来源任务）`, `${label} (source run)`) : label })) : [];
+  const weightOptions = options ? options.checkpoints.map(cp => ({ value: cp.id, label: cp.name, displayLabel: runs.length > 1 ? checkpointLabel(options, cp) : undefined, group: cp.job_id || '' })) : [];
 
   React.useEffect(() => {
     const controller = new AbortController(); setLoading(true); setError('');
@@ -129,6 +138,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
   const axes = drafts.map(draft => draft ? parseAxis(draft.key, draft.raw) : null);
   const weightAxis = drafts.findIndex(draft => draft?.key === 'checkpoint');
   const weights = weightAxis >= 0 ? (axes[weightAxis]?.values || []).map(String) : values?.checkpoint_id ? [values.checkpoint_id] : [];
+  const selectedRuns = new Set(weights.map(id => options?.checkpoints.find(cp => cp.id === id)?.job_id)).size;
   const positionName = (index: number) => [text('X · 横向', 'X · columns'), text('Y · 纵向', 'Y · rows'), text('Z · 分页', 'Z · pages')][index];
   /** None is the base model alone, one is fixed, several are compared along an axis (Y, then Z, unless one already holds them). */
   const chooseWeights = (ids: string[]) => {
@@ -210,10 +220,14 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
             <div className="xyz-weights"><span id="xyz-weights-label">{fullModel ? text('全量模型检查点', 'Full model checkpoint') : text('训练权重', 'Trained checkpoint')}</span>
               <CheckboxSelect aria-label={text('对比使用的训练权重', 'Checkpoints for comparison')} aria-describedby="xyz-weights-note" searchable disabled={locked || !options.checkpoints.length} max={options.limits.max_axis_values}
                 placeholder={fullModel ? text('请选择检查点', 'Choose a checkpoint') : text('不加载训练权重（只看底模）', 'No trained weights (base model only)')}
-                values={weights} options={options.checkpoints.map(cp => ({ value: cp.id, label: cp.name }))} onValuesChange={chooseWeights}/>
-              <small id="xyz-weights-note">{weights.length > 1 ? text(`${weights.length} 个权重放在 ${positionName(weightAxis)} 逐个对比；可在下方把“${name('checkpoint')}”换到其他轴。`, `${weights.length} weights are compared along ${positionName(weightAxis)}; move “${name('checkpoint')}” to another axis below.`)
+                values={weights} options={weightOptions} groups={runs} onValuesChange={chooseWeights}/>
+              <small id="xyz-weights-note">{weights.length > 1 ? (selectedRuns > 1
+                ? text(`${weights.length} 个权重（来自 ${selectedRuns} 个训练任务）放在 ${positionName(weightAxis)} 逐个对比；可在下方把“${name('checkpoint')}”换到其他轴。`, `${weights.length} weights from ${selectedRuns} runs are compared along ${positionName(weightAxis)}; move “${name('checkpoint')}” to another axis below.`)
+                : text(`${weights.length} 个权重放在 ${positionName(weightAxis)} 逐个对比；可在下方把“${name('checkpoint')}”换到其他轴。`, `${weights.length} weights are compared along ${positionName(weightAxis)}; move “${name('checkpoint')}” to another axis below.`))
                 : weights.length === 1 ? text('勾选多个权重即可逐个对比。', 'Tick several weights to compare them.')
-                  : fullModel ? text('全量训练需要选择一个检查点。', 'Full training needs a checkpoint.') : text('未勾选时只用底模生成，便于和训练前对比。', 'With none ticked, only the base model is used — useful to compare with before training.')}</small>
+                  : fullModel ? text('全量训练需要选择一个检查点。', 'Full training needs a checkpoint.') : text('未勾选时只用底模生成，便于和训练前对比。', 'With none ticked, only the base model is used — useful to compare with before training.')}
+                {runs.length > 1 && text(` 本版本 ${runs.length} 个训练任务的产物都可以选。`, ` Products of all ${runs.length} runs in this version can be picked.`)}
+                {!!options.excluded_jobs?.length && text(` ${options.excluded_jobs.map(job => `“${job.name}”`).join('、')}的底模或训练方式不同，没有列出。`, ` ${options.excluded_jobs.map(job => `“${job.name}”`).join(', ')} use another base model or training mode and are not listed.`)}</small>
             </div>
             <label><span>{text('提示词', 'Prompt')}</span><textarea aria-label={text('模型测试提示词', 'Model testing prompt')} required rows={3} value={values.prompt} onChange={event => update('prompt', event.target.value)}/></label>
           </fieldset>
@@ -224,7 +238,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
             <label className="xyz-span"><span>{text('负面提示词', 'Negative prompt')}</span><textarea rows={2} value={values.negative} onChange={event => update('negative', event.target.value)}/></label>
           </fieldset></details>
         </div>
-        <footer><p className={axisInvalid || checkpointMissing || overLimit || tooManyPixels ? 'xyz-invalid' : ''} aria-live="polite">{checkpointMissing ? text('当前训练尚未保存模型检查点，保存后才能生成对比图', 'Save a model checkpoint before generating a comparison') : axisInvalid ? text('请填写有效的轴取值', 'Enter valid axis values') : overLimit ? text(`一次最多 ${options.limits.max_cells} 张，请减少取值`, `Maximum ${options.limits.max_cells} cells per comparison`) : tooManyPixels ? text('网格总像素过多，请减少取值或降低尺寸', 'Too many pixels; reduce values or image dimensions') : text(`${axes[0]?.values.length || 0} 列 × ${axes[1]?.values.length || 1} 行 × ${axes[2]?.values.length || 1} 页，共 ${count} 张`, `${count} images · ${axes[0]?.values.length || 0} columns × ${axes[1]?.values.length || 1} rows × ${axes[2]?.values.length || 1} pages`)}</p><button className="ui-btn ui-btn-primary ui-btn-block" type="submit" disabled={locked || axisInvalid || checkpointMissing || overLimit || tooManyPixels || !gpuValid || !values.prompt.trim()}>{submitting ? <Loader2 size={15} className="animate-spin"/> : <Play size={15}/>} {running ? text('加入测试队列', 'Add to test queue') : text('生成对比图', 'Generate comparison')}</button></footer>
+        <footer><p className={axisInvalid || checkpointMissing || overLimit || tooManyPixels ? 'xyz-invalid' : ''} aria-live="polite">{checkpointMissing ? (options.checkpoints.length ? text('请选择要测试的模型检查点', 'Choose a model checkpoint to test') : text('当前训练尚未保存模型检查点，保存后才能生成对比图', 'Save a model checkpoint before generating a comparison')) : axisInvalid ? text('请填写有效的轴取值', 'Enter valid axis values') : overLimit ? text(`一次最多 ${options.limits.max_cells} 张，请减少取值`, `Maximum ${options.limits.max_cells} cells per comparison`) : tooManyPixels ? text('网格总像素过多，请减少取值或降低尺寸', 'Too many pixels; reduce values or image dimensions') : text(`${axes[0]?.values.length || 0} 列 × ${axes[1]?.values.length || 1} 行 × ${axes[2]?.values.length || 1} 页，共 ${count} 张`, `${count} images · ${axes[0]?.values.length || 0} columns × ${axes[1]?.values.length || 1} rows × ${axes[2]?.values.length || 1} pages`)}</p><button className="ui-btn ui-btn-primary ui-btn-block" type="submit" disabled={locked || axisInvalid || checkpointMissing || overLimit || tooManyPixels || !gpuValid || !values.prompt.trim()}>{submitting ? <Loader2 size={15} className="animate-spin"/> : <Play size={15}/>} {running ? text('加入测试队列', 'Add to test queue') : text('生成对比图', 'Generate comparison')}</button></footer>
       </form>
       <div className="xyz-results">
         <header className="xyz-result-header"><label><span>{text('对比记录', 'Comparisons')}</span><StudioSelect searchable aria-label={text('对比记录', 'Comparisons')} value={selected} placeholder={text('尚未生成', 'No comparisons yet')} options={history.map(item => ({ value: item.id, label: `${formatTime(item.created_at)} · ${item.total} ${text('张', 'images')} · ${stateLabel(item.status)}` }))} onValueChange={value => { setSelected(value); setPage(0); }}/></label><button type="button" className="ui-btn ui-btn-quiet ui-btn-icon" disabled={loading} onClick={() => setRevision(value => value + 1)} aria-label={text('刷新对比记录', 'Refresh comparisons')} title={text('刷新对比记录', 'Refresh comparisons')}><RefreshCw size={15}/></button></header>

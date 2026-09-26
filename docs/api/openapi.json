@@ -20774,6 +20774,17 @@
       },
       "XyzOptions": {
         "properties": {
+          "source_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Job Id"
+          },
           "family": {
             "type": "string",
             "title": "Family"
@@ -20807,6 +20818,14 @@
             },
             "type": "array",
             "title": "Checkpoints"
+          },
+          "excluded_jobs": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Excluded Jobs"
           },
           "sampling_models": {
             "items": {

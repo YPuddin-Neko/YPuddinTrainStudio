@@ -20,3 +20,14 @@
 .checkbox-select-box { display:grid; place-items:center; flex:none; width:15px; height:15px; border:1px solid color-mix(in srgb, var(--studio-dim) 70%, transparent); border-radius:3px; background:var(--studio-panel); color:var(--studio-on-action, #fff); }
 .checkbox-select-option[aria-selected=true] .checkbox-select-box { border-color:var(--studio-accent); background:var(--studio-accent); }
 .checkbox-select .studio-select-value { white-space:nowrap; }
+
+/* Grouped lists open on their groups; a group shows its options one level down. */
+.checkbox-select-back { display:flex; align-items:center; gap:6px; flex-shrink:0; min-width:0; padding:5px 6px; border-radius:4px; font-size:12px; color:var(--studio-dim); text-align:left; }
+.checkbox-select-back:hover { background:var(--studio-muted); color:var(--studio-text); }
+.checkbox-select-back > svg { flex:none; }
+.checkbox-select-back > strong { min-width:0; margin-left:auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; color:var(--studio-text); }
+.studio-select-option.checkbox-select-group { justify-content:flex-start; gap:8px; }
+.checkbox-select-group-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.checkbox-select-group-count { flex:none; font-size:11px; color:var(--studio-dim); font-variant-numeric:tabular-nums; }
+.checkbox-select-group > svg { flex:none; color:var(--studio-dim); }
+.checkbox-select-option-group { margin-left:auto; padding-left:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; color:var(--studio-dim); }

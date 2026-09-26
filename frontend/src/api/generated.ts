@@ -7292,6 +7292,8 @@ export interface components {
         };
         /** XyzOptions */
         XyzOptions: {
+            /** Source Job Id */
+            source_job_id?: string | null;
             /** Family */
             family: string;
             /**
@@ -7310,6 +7312,10 @@ export interface components {
             }[];
             /** Checkpoints */
             checkpoints: {
+                [key: string]: unknown;
+            }[];
+            /** Excluded Jobs */
+            excluded_jobs?: {
                 [key: string]: unknown;
             }[];
             /** Sampling Models */

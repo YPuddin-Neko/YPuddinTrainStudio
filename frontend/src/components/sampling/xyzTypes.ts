@@ -8,9 +8,12 @@ export interface SamplingValues {
 }
 export interface XyzRequest extends SamplingValues { gpu_devices?: string[]; name?: string; x: XyzAxis; y?: XyzAxis | null; z?: XyzAxis | null }
 export interface XyzOptions {
-  family: string; training_mode?: 'adapter' | 'full'; defaults: SamplingValues;
+  source_job_id?: string | null; family: string; training_mode?: 'adapter' | 'full'; defaults: SamplingValues;
   axes: { key: AxisKey; label: string; values?: AxisValue[] }[];
-  checkpoints: { id: string; name: string; step: number }[];
+  /** Products of every training run in the version that samples on the same base model, the source's first. */
+  checkpoints: { id: string; name: string; step: number; job_id?: string; job_name?: string }[];
+  /** Runs of that version left out, and why. */
+  excluded_jobs?: { id: string; name: string; reason: string }[];
   sampling_models: { id: string; name: string; variant?: string }[];
   limits: { max_cells: number; max_axis_values?: number; max_pixels?: number };
 }
@@ -38,4 +41,10 @@ export function parseAxis(key: AxisKey, raw: string): XyzAxis {
 }
 export function axisCount(axes: (XyzAxis | null | undefined)[]) {
   return axes.reduce((total, axis) => total * (axis ? axis.values.length : 1), 1);
+}
+
+/** Runs of one version name their products alike, so a choice spanning several runs names the run too. */
+export function checkpointLabel(options: Pick<XyzOptions, 'checkpoints'>, checkpoint: XyzOptions['checkpoints'][number]) {
+  const runs = new Set(options.checkpoints.map(cp => cp.job_id));
+  return runs.size > 1 && checkpoint.job_name ? `${checkpoint.job_name} · ${checkpoint.name}` : checkpoint.name;
 }

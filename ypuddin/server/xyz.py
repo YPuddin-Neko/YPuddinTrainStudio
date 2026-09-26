@@ -124,11 +124,16 @@ class XyzTask(BaseModel):
 
 
 class XyzOptions(BaseModel):
+    source_job_id: str | None = None
     family: str
     training_mode: Literal["adapter", "full"] = "adapter"
     defaults: dict[str, Any]
     axes: list[dict[str, Any]]
+    # Products of every training run in the source's version that samples on the same base model,
+    # the source's own first; each names its run so products of different runs can be compared.
     checkpoints: list[dict[str, Any]]
+    # Runs of that version left out, with the reason.
+    excluded_jobs: list[dict[str, Any]] = Field(default_factory=list)
     sampling_models: list[dict[str, Any]]
     limits: dict[str, int]
 
@@ -192,28 +197,73 @@ def _source(context, source_id):
     return row
 
 
+# The model a run's products are sampled with; adapters only mean the same thing on the same base.
+BASE_MODEL_FIELDS = ("dit_path", "text_encoder_path", "text_encoder_2_path", "vae_path", "tokenizer_path")
+
+
+def _base_model(config: dict[str, Any], full: bool) -> tuple:
+    model = config.get("model") or {}
+    if full:
+        # A full-model product carries its own trained components.
+        return (model.get("family"),)
+    return (model.get("family"), *(model.get(field) for field in BASE_MODEL_FIELDS))
+
+
+def _version_runs(context, source_id, *, full=False):
+    """The source and the other training runs of its version, each with why it cannot be compared."""
+    source = context.db.fetchone("SELECT * FROM jobs WHERE id=?", (source_id,))
+    if not source:
+        return []
+    others = (
+        context.db.fetchall(
+            "SELECT * FROM jobs WHERE type='train' AND project_id=? AND version_id IS ? AND id!=?"
+            " AND archived_at IS NULL ORDER BY created_at DESC, id DESC",
+            (source["project_id"], source.get("version_id"), source_id),
+        )
+        if source.get("project_id")
+        else []
+    )
+    config = json.loads(source["config_json"] or "{}")
+    base = _base_model(config, full)
+    runs = [(source, None)]
+    for job in others:
+        other = json.loads(job["config_json"] or "{}")
+        if (other.get("training", {}).get("mode") == "full") != full:
+            runs.append((job, "training_mode"))
+        elif _base_model(other, full) != base:
+            runs.append((job, "base_model"))
+        else:
+            runs.append((job, None))
+    return runs
+
+
 def _checkpoints(context, source_id, *, full=False):
     records = []
-    for row in context.db.fetchall(
-        "SELECT * FROM artifacts WHERE job_id=? AND kind=? ORDER BY step DESC, created_at DESC",
-        (source_id, "model" if full else "weights"),
-    ):
-        path = Path(row["path"]).expanduser().resolve()
-        exists = (
-            path.is_dir() and (path / "manifest.json").is_file()
-            if full
-            else (path.is_file() and path.suffix.lower() == ".safetensors")
-        )
-        if exists and context.is_allowed(path):
-            records.append(
-                {
-                    "id": row["id"],
-                    "name": row["name"],
-                    "step": row["step"],
-                    "kind": "model" if full else "weights",
-                    "path": str(path),
-                }
+    for job, excluded in _version_runs(context, source_id, full=full):
+        if excluded:
+            continue
+        for row in context.db.fetchall(
+            "SELECT * FROM artifacts WHERE job_id=? AND kind=? ORDER BY step DESC, created_at DESC",
+            (job["id"], "model" if full else "weights"),
+        ):
+            path = Path(row["path"]).expanduser().resolve()
+            exists = (
+                path.is_dir() and (path / "manifest.json").is_file()
+                if full
+                else (path.is_file() and path.suffix.lower() == ".safetensors")
             )
+            if exists and context.is_allowed(path):
+                records.append(
+                    {
+                        "id": row["id"],
+                        "name": row["name"],
+                        "step": row["step"],
+                        "kind": "model" if full else "weights",
+                        "path": str(path),
+                        "job_id": job["id"],
+                        "job_name": job["name"],
+                    }
+                )
     return records
 
 
@@ -226,6 +276,7 @@ def options(context, source_id):
     prompt = sampling.prompts[0] if sampling.prompts else None
     full = config.get("training", {}).get("mode") == "full"
     checkpoints = _checkpoints(context, source_id, full=full)
+    own = [row for row in checkpoints if row["job_id"] == source_id]
     defaults = {
         key: getattr(sampling, key)
         for key in ("width", "height", "steps", "cfg", "sampler", "scheduler", "shift", "guidance")
@@ -235,7 +286,8 @@ def options(context, source_id):
         negative=prompt.negative if prompt else "",
         seed=prompt.seed if prompt and prompt.seed is not None else 1,
         adapter_scale=1,
-        checkpoint_id=checkpoints[0]["id"] if checkpoints else None,
+        # Products of other runs are offered, but the source's own latest one is the starting point.
+        checkpoint_id=own[0]["id"] if own else None,
         sampling_model_id=None,
     )
     if prompt:
@@ -267,11 +319,17 @@ def options(context, source_id):
         if axis["key"] in {"sampler", "scheduler"}:
             axis["values"] = list(getattr(family.spec, "sampling_" + axis["key"] + "s"))
     return {
+        "source_job_id": source_id,
         "family": model.family,
         "training_mode": "full" if full else "adapter",
         "defaults": defaults,
         "axes": axes,
         "checkpoints": [{k: v for k, v in row.items() if k != "path"} for row in checkpoints],
+        "excluded_jobs": [
+            {"id": job["id"], "name": job["name"], "reason": reason}
+            for job, reason in _version_runs(context, source_id, full=full)
+            if reason
+        ],
         "sampling_models": [] if full else models,
         "limits": {"max_cells": MAX_CELLS},
     }
@@ -389,7 +447,7 @@ def start(context, source_id: str, request: XyzRequest):
         if checkpoint and checkpoint not in resolved:
             if checkpoint not in checkpoints:
                 raise ApiError(
-                    "Checkpoint is missing or belongs to a different training job",
+                    "Checkpoint is missing, or belongs to another version or to a run on another base model",
                     code="xyz.checkpoint",
                     status=422,
                 )
@@ -426,6 +484,10 @@ def start(context, source_id: str, request: XyzRequest):
                 raise
             except Exception as exc:
                 raise ApiError(f"Cannot read checkpoint: {exc}", code="xyz.checkpoint", status=422) from exc
+    if len({checkpoint["job_id"] for checkpoint in resolved.values()}) > 1:
+        # Runs of one version name their products alike; the grid labels say which run each is from.
+        for checkpoint in resolved.values():
+            checkpoint["name"] = f"{checkpoint['job_name']} · {checkpoint['name']}"
     memory = MemoryConfig.model_validate(config.get("memory", {}))
     # Klein's loader requires block checkpointing when swap is enabled. Keeping
     # that configuration satisfies its memory contract; eval/inference_mode below
