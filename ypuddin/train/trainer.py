@@ -103,8 +103,30 @@ def evaluation(method):
     return wrapped
 
 
+class _ProgressLog:
+    """Log a long loop when it starts, at most every 15 seconds while it runs, and when it ends."""
+
+    def __init__(self, label: str) -> None:
+        self.label = label
+        self.started = time.monotonic()
+        self.last = 0.0
+
+    def __call__(self, done: int, total: int) -> None:
+        now = time.monotonic()
+        if done == 0 or (done < total and now - self.last >= 15):
+            self.last = now
+            log.info("%s: %d/%d", self.label, done, total)
+
+    @property
+    def elapsed(self) -> float:
+        return time.monotonic() - self.started
+
+
 class Trainer:
     is_primary = True
+    # Log pacing and GPU identity; class defaults also serve trainers built without __init__ in tests.
+    _gpu_identity: tuple[str | None, str] | None = None
+    _last_step_log = 0.0
 
     def __init__(
         self, cfg: TrainConfig, *, device: str | torch.device | None = None, emitter: Emitter | None = None
@@ -147,6 +169,7 @@ class Trainer:
         self._preparing = False
         self._logs: TrainingLogs | None = None
         self._debug_phase: tuple[str | None, float] = (None, 0.0)
+        self._run_started = time.monotonic()
 
     # ----------------------------------------------------------------- setup
     @staticmethod
@@ -177,6 +200,21 @@ class Trainer:
     def emit(self, type_: str, **data: Any) -> None:
         if not self.is_primary:
             return
+        if type_ == "warning" and data.get("message"):
+            # Warnings belong in the job log as well as in the event stream.
+            log.warning("%s", data["message"])
+        if type_ == "checkpoint.saved":
+            # Artifacts list the epoch and the loss of the step they were saved at.
+            data.setdefault("epoch", self._epoch_now())
+            last = self.progress.extra.get("train_loss")
+            if isinstance(last, dict) and last.get("step") == self.progress.step:
+                data.setdefault("loss", last.get("loss"))
+            kind = {"weights": "weights", "full": "training state", "model": "model"}.get(
+                data.get("kind"), "file"
+            )
+            log.info(
+                "saved %s%s: %s", kind, " (EMA)" if data.get("ema") else "", Path(str(data.get("path"))).name
+            )
         self.emitter.emit(type_, **data)
         if log.isEnabledFor(logging.DEBUG):
             self._debug_event(type_, data)
@@ -199,7 +237,11 @@ class Trainer:
 
     def _debug_event(self, type_: str, data: dict[str, Any]) -> None:
         """Trace lifecycle events; per-step metrics and per-item progress stay in events.jsonl."""
-        if type_ in _PER_STEP_EVENTS or (type_ == "cache.progress" and data.get("done") != data.get("total")):
+        if (
+            type_ in _PER_STEP_EVENTS
+            or (type_ == "cache.progress" and data.get("done") != data.get("total"))
+            or (type_ == "warning" and data.get("message"))
+        ):
             return
         if type_ == "phase.changed":
             now = time.perf_counter()
@@ -270,6 +312,9 @@ class Trainer:
         self.emit("phase.changed", phase="loading")
         from ypuddin.models.fingerprints import fingerprint_cache
 
+        load_started = time.perf_counter()
+        log.info("loading %s model components", self.family.spec.name)
+
         cache_root = Path(cfg.dataset.cache_dir) if cfg.dataset.cache_dir else self.run_dir / "cache"
         with fingerprint_cache(cache_root / "fingerprints"):
             self.loaded = self.family.load(
@@ -278,6 +323,7 @@ class Trainer:
             if (self.compute_policy or {}).get("frozen_text_implementation"):
                 self.loaded.text.configure_compute(self.compute_policy["frozen_text_implementation"])
             self.model_identity = self._model_identity()
+        log.info("model components loaded in %.1fs", time.perf_counter() - load_started)
         self.objective = self.family.build_objective(self.loaded, cfg.objective)
         self.loaded.text.to(self.device)
         self.loaded.latent.to(self.device)
@@ -290,18 +336,34 @@ class Trainer:
             progress=lambda k, d, t: self.emit("cache.progress", kind=k, done=d, total=t),
         )
         self.emit("data.plan", **self.bundle.plan.to_dict())
+        data_plan = self.bundle.plan
+        log.info(
+            "dataset: %d images (%d captioned), %d training items in %d buckets%s",
+            data_plan.images,
+            data_plan.captioned,
+            data_plan.items,
+            len(data_plan.buckets),
+            f", {data_plan.validation_images} validation images" if data_plan.validation_images else "",
+        )
 
         if cfg.dataset.cache_latents:
             self.emit("phase.changed", phase="caching_latents")
+            latent_log = _ProgressLog("VAE encoding")
             n = cache_latents(
                 self.bundle,
                 self.loaded.latent.encode,
                 device=self.device,
                 batch_size=1 if cfg.dataset.resolution_mode == "native" else max(1, cfg.dataset.batch_size),
                 dtype=model_dtype,
-                progress=lambda d, t: self.emit("cache.progress", kind="latents", done=d, total=t),
+                progress=lambda d, t: (
+                    self.emit("cache.progress", kind="latents", done=d, total=t),
+                    latent_log(d, t),
+                ),
             )
-            log.info("cached %d latents", n)
+            if n:
+                log.info("cached %d latents in %.1fs", n, latent_log.elapsed)
+            else:
+                log.info("all latents were already cached")
             self.loaded.latent.unload()
 
         self.text_mode = self._resolve_text_mode()
@@ -465,14 +527,14 @@ class Trainer:
         )
         self._scheduler_contract = scheduler_recipe(cfg, self.progress.total_steps)
         validate_scheduler_instance(self._scheduler_contract, self.scheduler)
-        log.debug(
+        log.info(
             "optimizer %s: %d parameter groups, learning rates %s, weight decay %s",
             type(self.optimizer).__name__,
             len(self.optimizer.param_groups),
             ", ".join(f"{group.get('lr', 0):.3g}" for group in self.optimizer.param_groups),
             cfg.optimizer.weight_decay,
         )
-        log.debug(
+        log.info(
             "scheduler %s: warmup %s, %d total steps",
             "managed by optimizer" if self.scheduler is None else cfg.scheduler.type,
             cfg.scheduler.warmup_steps,
@@ -743,15 +805,24 @@ class Trainer:
             for p in prompts:
                 captions.update((p.prompt, p.negative))
         ordered = sorted(captions)
+        text_log = _ProgressLog("text encoding")
         n = build_text_cache(
             ordered,
             self.text_cache,
             self.loaded.text.encode_for_cache,
             self.loaded.text.fingerprint,
-            progress=lambda d, t: self.emit("cache.progress", kind="text", done=d, total=t),
+            progress=lambda d, t: (
+                self.emit("cache.progress", kind="text", done=d, total=t),
+                text_log(d, t),
+            ),
             total=len(ordered),
         )
-        log.info("cached %d text encodings (%d distinct captions)", n, len(ordered))
+        if n:
+            log.info(
+                "cached %d text encodings (%d distinct captions) in %.1fs", n, len(ordered), text_log.elapsed
+            )
+        else:
+            log.info("all text encodings were already cached")
         self.loaded.text.unload()
 
     def _install_signal_handlers(self) -> None:
@@ -1344,6 +1415,7 @@ class Trainer:
                 cfg = self.cfg
                 self.adapters.train(True)
                 self.loaded.backbone.train()
+                self._log_start()
                 if (
                     cfg.sampling.enabled
                     and cfg.sampling.at_start
@@ -1370,6 +1442,70 @@ class Trainer:
             self._preparing = False
             self._close_logs(failed=outcome == "failed")
             self.emitter.close()
+
+    def _primary_call(self, function, *args, **kwargs):
+        """Run on the process that decides for all; one process decides for itself."""
+        return function(*args, **kwargs)
+
+    def _log_start(self) -> None:
+        cfg = self.cfg
+        distributed = getattr(self, "distributed", None)
+        world = distributed.world_size if distributed is not None else 1
+        effective = cfg.dataset.batch_size * cfg.loop.grad_accum * world
+        if self.progress.step:
+            log.info("resuming at step %d/%d", self.progress.step, self.progress.total_steps)
+        else:
+            log.info(
+                "training %d steps: %d per epoch, effective batch %d (%d x %d accumulation x %d GPU)",
+                self.progress.total_steps,
+                self.progress.steps_per_epoch,
+                effective,
+                cfg.dataset.batch_size,
+                cfg.loop.grad_accum,
+                world,
+            )
+        if cfg.sampling.enabled:
+            if not cfg.sampling.seed and not self._stored_preview_seed():
+                # Every rank keeps identical progress, so the first one picks the seed for all.
+                self.progress.extra["preview_seed"] = self._primary_call(_random_preview_seed)
+            seed = self._preview_seed()
+            if cfg.sampling.seed:
+                log.info("preview seed %d", seed)
+            else:
+                log.info("preview seed %d (random for this run)", seed)
+
+    def _stored_preview_seed(self) -> int | None:
+        stored = self.progress.extra.get("preview_seed")
+        return stored if isinstance(stored, int) and not isinstance(stored, bool) and stored > 0 else None
+
+    def _preview_seed(self) -> int:
+        """sampling.seed 0 picks one random seed per run; resuming keeps it."""
+        if self.cfg.sampling.seed:
+            return self.cfg.sampling.seed
+        seed = self._stored_preview_seed()
+        if seed is None:
+            seed = self.progress.extra["preview_seed"] = _random_preview_seed()
+        return seed
+
+    def _epoch_now(self) -> float | None:
+        """Epochs completed at this step, fractional mid-epoch."""
+        per_epoch = self.progress.steps_per_epoch
+        return round(self.progress.step / per_epoch, 3) if per_epoch else None
+
+    def _gpu_reading(self) -> dict[str, float]:
+        """This run's GPU power, temperature and load from the driver; empty elsewhere."""
+        if self.device.type != "cuda":
+            return {}
+        try:
+            if self._gpu_identity is None:
+                props = torch.cuda.get_device_properties(self.device)
+                self._gpu_identity = (str(props.uuid) if getattr(props, "uuid", None) else None, props.name)
+            from ypuddin.server.hardware import nvml_device_reading
+
+            reading = nvml_device_reading(*self._gpu_identity)
+        except Exception:  # noqa: BLE001
+            return {}
+        return {f"gpu_{key}": value for key, value in reading.items()}
 
     def _close_logs(self, *, failed: bool = False) -> None:
         if self._logs is not None:
@@ -1445,6 +1581,7 @@ class Trainer:
         self.progress.epoch += 1
         self.progress.batch_in_epoch = 0
         self.emit("epoch.finished", epoch=epoch, step=self.progress.step)
+        log.info("epoch %d finished at step %d", epoch + 1, self.progress.step)
         self._epoch_hooks(epoch + 1)
 
     def _run_native_epoch(self) -> None:
@@ -1525,6 +1662,7 @@ class Trainer:
         self.progress.epoch += 1
         self.progress.batch_in_epoch = 0
         self.emit("epoch.finished", epoch=epoch, step=self.progress.step)
+        log.info("epoch %d finished at step %d", epoch + 1, self.progress.step)
         self._epoch_hooks(epoch + 1)
 
     def _optimizer_step(self, group_loss: float, elapsed: float) -> None:
@@ -1611,7 +1749,24 @@ class Trainer:
                 vram_metric="peak_allocated"
                 if self.device.type == "cuda"
                 else ("current_allocated" if self.device.type == "mps" else None),
+                **self._gpu_reading(),
             )
+            now = time.monotonic()
+            if step == 1 or step == self.progress.total_steps or now - self._last_step_log >= 30:
+                self._last_step_log = now
+                rates = sorted({f"{value:.3g}" for value in (lrs or {}).values()})
+                log.info(
+                    "step %d/%d | epoch %s | loss %.4f | avg loss %.4f | lr %s | grad norm %.3g | %s it/s | eta %s",
+                    step,
+                    self.progress.total_steps,
+                    f"{self._epoch_now():.2f}" if self._epoch_now() is not None else "-",
+                    group_loss,
+                    loss_mean,
+                    "/".join(rates) or "-",
+                    grad_norm,
+                    f"{it_s:.3g}" if it_s else "-",
+                    _duration(remaining * elapsed) if it_s else "-",
+                )
         self._step_hooks(step)
 
     def _gradient_norm_and_clip(self) -> float:
@@ -1674,6 +1829,13 @@ class Trainer:
         self.emit("phase.changed", phase="finalizing")
         if outcome == "finished" and self._prepared and self.cfg.checkpoint.save_on_finish:
             self.save_weights("final")
+        log.info(
+            "training %s at step %d/%d after %s",
+            outcome,
+            self.progress.step,
+            self.progress.total_steps,
+            _duration(time.monotonic() - getattr(self, "_run_started", time.monotonic())),
+        )
         self.emit(
             f"run.{outcome}",
             step=self.progress.step,
@@ -1758,7 +1920,10 @@ class Trainer:
         stride = self.family.spec.latent.stride
         patch = self.family.spec.latent.patch
         started = time.perf_counter()
+        base_seed = self._preview_seed()
+        log.info("sampling %d previews at step %d (seed %d)", len(prompts), self.progress.step, base_seed)
         for i, p in enumerate(prompts):
+            image_started = time.perf_counter()
             w = (p.width or scfg.width) // self.family.spec.latent.align * self.family.spec.latent.align
             h = (p.height or scfg.height) // self.family.spec.latent.align * self.family.spec.latent.align
             steps = p.steps or scfg.steps or defaults.steps
@@ -1767,7 +1932,8 @@ class Trainer:
             shift = scfg.shift or self.family.sampling_shift_for_model(
                 self.loaded, (h // stride // patch) * (w // stride // patch), self.cfg.objective, steps=steps
             )
-            seed = p.seed if p.seed is not None else scfg.seed + i
+            # A prompt without its own seed (or with 0) follows the run's preview seed.
+            seed = p.seed if p.seed else base_seed + i
             cond = self._text_cond([p.prompt])
             uncond = self._text_cond([p.negative])
             shape = (1, self.family.spec.latent.channels, h // stride, w // stride)
@@ -1828,6 +1994,8 @@ class Trainer:
                 width=w,
                 height=h,
                 loss=loss,
+                epoch=self._epoch_now(),
+                negative=p.negative,
                 sampler=scfg.sampler,
                 scheduler=scfg.scheduler,
                 steps=steps,
@@ -1837,8 +2005,30 @@ class Trainer:
                 er_sde_order=scfg.er_sde_order,
                 er_sde_s_noise=scfg.er_sde_s_noise,
             )
-        log.debug("sampled %d previews for %s in %.1fs", len(paths), tag, time.perf_counter() - started)
+            log.info(
+                "preview %d/%d saved: %s (%dx%d, seed %d, %.1fs)",
+                i + 1,
+                len(prompts),
+                path.name,
+                w,
+                h,
+                seed,
+                time.perf_counter() - image_started,
+            )
+        log.info("previews finished in %.1fs", time.perf_counter() - started)
         return paths
+
+
+def _random_preview_seed() -> int:
+    return random.SystemRandom().randrange(1, 2**31 - 1)
+
+
+def _duration(seconds: float) -> str:
+    """Compact duration for log lines: 70h28m, 5m31s, 12s."""
+    seconds = max(0, int(seconds))
+    hours, rest = divmod(seconds, 3600)
+    minutes, secs = divmod(rest, 60)
+    return f"{hours}h{minutes:02d}m" if hours else f"{minutes}m{secs:02d}s" if minutes else f"{secs}s"
 
 
 def _describe(data: dict[str, Any], width: int = 160) -> str:

@@ -3928,6 +3928,12 @@ export interface components {
              * @default false
              */
             ema: boolean;
+            /** Epoch */
+            epoch?: number | null;
+            /** Loss */
+            loss?: number | null;
+            /** Sample Url */
+            sample_url?: string | null;
         } & {
             [key: string]: unknown;
         };
@@ -3996,6 +4002,12 @@ export interface components {
             it_s: (number | null)[];
             /** Validation */
             validation: components["schemas"]["ValidationPoint"][];
+            /** Gpu Power W */
+            gpu_power_w?: (number | null)[];
+            /** Gpu Temp C */
+            gpu_temp_c?: (number | null)[];
+            /** Gpu Util Pct */
+            gpu_util_pct?: (number | null)[];
         } & {
             [key: string]: unknown;
         };
@@ -4087,6 +4099,22 @@ export interface components {
              * @description Actual training loss at this exact step; null when unavailable.
              */
             loss: number | null;
+            /** Epoch */
+            epoch?: number | null;
+            /** Negative */
+            negative?: string | null;
+            /** Sampler */
+            sampler?: string | null;
+            /** Scheduler */
+            scheduler?: string | null;
+            /** Steps */
+            steps?: number | null;
+            /** Cfg */
+            cfg?: number | null;
+            /** Shift */
+            shift?: number | null;
+            /** Guidance */
+            guidance?: number | null;
         } & {
             [key: string]: unknown;
         };
@@ -6265,7 +6293,7 @@ export interface components {
             height: number;
             /**
              * Seed
-             * @description 预览初始噪声种子，默认 0；未单独设种子的第 i 条提示词使用基础种子+i（从 0 计）。固定种子便于比较权重变化，与训练随机种子独立。
+             * @description 预览初始噪声种子，默认 0：每次训练开始时随机生成一个种子，本次训练的所有预览都使用它并写入训练日志，续训沿用同一个。填其他值则固定使用该值。未单独设种子的第 i 条提示词使用该种子 + i（从 0 计）。与训练随机种子独立。
              * @default 0
              */
             seed: number;

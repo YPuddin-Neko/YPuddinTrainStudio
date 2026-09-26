@@ -792,6 +792,10 @@ class JobMetrics(_Out):
     vram_metric: str | None = None
     it_s: list[float | None]
     validation: list[ValidationPoint]
+    # Driver readings of the training GPU at each logged step; empty on devices without them.
+    gpu_power_w: list[float | None] = Field(default_factory=list)
+    gpu_temp_c: list[float | None] = Field(default_factory=list)
+    gpu_util_pct: list[float | None] = Field(default_factory=list)
 
 
 class JobSample(_Out):
@@ -804,6 +808,14 @@ class JobSample(_Out):
     height: int
     created_at: float
     loss: float | None = Field(description="Actual training loss at this exact step; null when unavailable.")
+    epoch: float | None = None  # epochs completed at this step
+    negative: str | None = None
+    sampler: str | None = None
+    scheduler: str | None = None
+    steps: int | None = None
+    cfg: float | None = None
+    shift: float | None = None
+    guidance: float | None = None
 
 
 class JobCheckpoint(_Out):
@@ -814,6 +826,9 @@ class JobCheckpoint(_Out):
     created_at: float
     artifact_id: str | None = None
     ema: bool = False
+    epoch: float | None = None  # epochs completed when saved
+    loss: float | None = None  # training loss of the step it was saved at
+    sample_url: str | None = None  # first preview generated at the same step
 
 
 class LogLine(_Out):

@@ -12,6 +12,7 @@ Conventions verified against sd-scripts / diffusion-pipe / AnimaLoraStudio:
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -157,6 +158,7 @@ class AnimaLatent(LatentPipeline):
         self.dtype = dtype
         self.use_2d = use_2d
         self.vae: nn.Module | None = None
+        self._loaded_once = False
         from ypuddin.models.fingerprints import content_fingerprint
 
         self.fingerprint = content_fingerprint(
@@ -169,15 +171,29 @@ class AnimaLatent(LatentPipeline):
                 from .vendor.qwen_image_vae_2d import load_vae
             else:
                 from .vendor.qwen_image_vae import load_vae
-            # Loading frozen VAE weights initializes temporary CPU parameters.
-            # A cold resume can reach this lazy load after restoring training
-            # RNG; model construction must not advance that saved stream.
-            with torch.random.fork_rng(devices=[]):
-                vae = load_vae(str(self.path), device="cpu")
+            started = time.perf_counter()
+            # The loader describes the file the first time. Training releases the VAE after
+            # caching and loads it again to decode each round of previews; repeating those
+            # lines every round only buries the sampling log.
+            vendor_log = logging.getLogger(__name__.rpartition(".")[0] + ".vendor")
+            level = vendor_log.level
+            if self._loaded_once:
+                vendor_log.setLevel(logging.WARNING)
+            try:
+                # Loading frozen VAE weights initializes temporary CPU parameters.
+                # A cold resume can reach this lazy load after restoring training
+                # RNG; model construction must not advance that saved stream.
+                with torch.random.fork_rng(devices=[]):
+                    vae = load_vae(str(self.path), device="cpu")
+            finally:
+                vendor_log.setLevel(level)
             vae = vae.to(device=self.device, dtype=self.dtype)
             vae.requires_grad_(False)
             vae.eval()
             self.vae = vae
+            if self._loaded_once:
+                log.debug("reloaded the VAE in %.1fs", time.perf_counter() - started)
+            self._loaded_once = True
         return self.vae
 
     def to(self, device: torch.device | str) -> None:

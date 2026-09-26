@@ -1274,7 +1274,7 @@ class SamplingConfig(_Strict):
     )
     seed: int = F(
         0,
-        help="预览初始噪声种子，默认 0；未单独设种子的第 i 条提示词使用基础种子+i（从 0 计）。固定种子便于比较权重变化，与训练随机种子独立。",
+        help="预览初始噪声种子，默认 0：每次训练开始时随机生成一个种子，本次训练的所有预览都使用它并写入训练日志，续训沿用同一个。填其他值则固定使用该值。未单独设种子的第 i 条提示词使用该种子 + i（从 0 计）。与训练随机种子独立。",
         ui_=ui("sampling", order=110, show_when="sampling.enabled == true"),
     )
     sampler: Literal["euler", "heun", "er_sde"] = F(

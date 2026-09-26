@@ -12063,6 +12063,39 @@
             "type": "boolean",
             "title": "Ema",
             "default": false
+          },
+          "epoch": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epoch"
+          },
+          "loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loss"
+          },
+          "sample_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Url"
           }
         },
         "additionalProperties": true,
@@ -12299,6 +12332,48 @@
             },
             "type": "array",
             "title": "Validation"
+          },
+          "gpu_power_w": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Gpu Power W"
+          },
+          "gpu_temp_c": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Gpu Temp C"
+          },
+          "gpu_util_pct": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Gpu Util Pct"
           }
         },
         "additionalProperties": true,
@@ -12641,6 +12716,94 @@
             ],
             "title": "Loss",
             "description": "Actual training loss at this exact step; null when unavailable."
+          },
+          "epoch": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epoch"
+          },
+          "negative": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Negative"
+          },
+          "sampler": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sampler"
+          },
+          "scheduler": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduler"
+          },
+          "steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steps"
+          },
+          "cfg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cfg"
+          },
+          "shift": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shift"
+          },
+          "guidance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guidance"
           }
         },
         "additionalProperties": true,
@@ -18132,7 +18295,7 @@
           "seed": {
             "type": "integer",
             "title": "Seed",
-            "description": "预览初始噪声种子，默认 0；未单独设种子的第 i 条提示词使用基础种子+i（从 0 计）。固定种子便于比较权重变化，与训练随机种子独立。",
+            "description": "预览初始噪声种子，默认 0：每次训练开始时随机生成一个种子，本次训练的所有预览都使用它并写入训练日志，续训沿用同一个。填其他值则固定使用该值。未单独设种子的第 i 条提示词使用该种子 + i（从 0 计）。与训练随机种子独立。",
             "default": 0,
             "x-ui": {
               "group": "sampling",

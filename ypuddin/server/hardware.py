@@ -408,6 +408,13 @@ def _nvml_metrics(entries: list[dict[str, Any]]) -> None:
         pass
 
 
+def nvml_device_reading(uuid: str | None, name: str) -> dict[str, float]:
+    """Power, temperature and load of one GPU from the driver, without a CUDA context."""
+    entry: dict[str, Any] = {"uuid": uuid, "name": name}
+    _nvml_metrics([entry])
+    return {key: entry[key] for key in ("power_w", "temp_c", "util_pct") if key in entry}
+
+
 @lru_cache(maxsize=1)
 def _cuda_inventory() -> list[dict[str, Any]]:
     """Discover CUDA/HIP ordinals in a short-lived process, leaving the server GPU-free.

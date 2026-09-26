@@ -262,5 +262,11 @@ def inject(
     aset = AdapterSet(
         model, layers, targets, cfg, prefix=prefix, _originals=originals if keep_originals else None
     )
-    log.info("injected adapters: %s", aset.summary())
+    summary = aset.summary()
+    log.info(
+        "injected adapters into %d layers (%s): %s trainable parameters",
+        summary["layers"],
+        ", ".join(f"{kind} {count}" for kind, count in summary["by_algo"].items()),
+        f"{summary['trainable_params']:,}",
+    )
     return aset

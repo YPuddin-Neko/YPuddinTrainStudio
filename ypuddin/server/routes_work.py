@@ -2082,6 +2082,7 @@ def _events_file(c: ServiceContext, jid: str) -> list[dict[str, Any]]:
 @router.get("/jobs/{jid}/metrics", response_model=m.JobMetrics, response_model_exclude_unset=True)
 def job_metrics(jid: str, since_step: int = 0, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     steps, loss, loss_ema, grad, vram, its = [], [], [], [], [], []
+    power, temperature, load = [], [], []
     lr: dict[str, list[float]] = {}
     validation = []
     vram_metric = None
@@ -2094,6 +2095,9 @@ def job_metrics(jid: str, since_step: int = 0, c: ServiceContext = Depends(ctx))
             grad.append(ev.get("grad_norm"))
             vram.append(ev.get("vram_mb"))
             its.append(ev.get("it_s"))
+            power.append(ev.get("gpu_power_w"))
+            temperature.append(ev.get("gpu_temp_c"))
+            load.append(ev.get("gpu_util_pct"))
             for g, v in (ev.get("lr") or {}).items():
                 lr.setdefault(g, []).append(v)
         elif ev.get("type") == "validation":
@@ -2108,7 +2112,15 @@ def job_metrics(jid: str, since_step: int = 0, c: ServiceContext = Depends(ctx))
         "vram_metric": vram_metric,
         "it_s": its,
         "validation": validation,
+        # Older runs recorded no driver readings.
+        "gpu_power_w": power if any(value is not None for value in power) else [],
+        "gpu_temp_c": temperature if any(value is not None for value in temperature) else [],
+        "gpu_util_pct": load if any(value is not None for value in load) else [],
     }
+
+
+# Recorded with each preview since sampling details are shown beside it.
+SAMPLE_DETAILS = ("epoch", "negative", "sampler", "scheduler", "steps", "cfg", "shift", "guidance")
 
 
 @router.get("/jobs/{jid}/samples", response_model=list[m.JobSample], response_model_exclude_unset=True)
@@ -2127,6 +2139,7 @@ def job_samples(jid: str, c: ServiceContext = Depends(ctx)) -> list[dict[str, An
                 "height": ev["height"],
                 "created_at": ev["ts"],
                 "loss": loss,
+                **{key: ev[key] for key in SAMPLE_DETAILS if ev.get(key) is not None},
             }
         )
     return out
@@ -2140,7 +2153,17 @@ def job_checkpoints(jid: str, c: ServiceContext = Depends(ctx)) -> list[dict[str
     arts = {
         a["path"]: a["id"] for a in c.db.fetchall("SELECT id, path FROM artifacts WHERE job_id=?", (jid,))
     }
-    for ev in _events_file(c, jid):
+    events = list(_events_file(c, jid))
+    # Each artifact shows the first preview of its step and, for older runs, that step's logged loss.
+    previews: dict[int, str] = {}
+    for ev, _loss in samples_with_loss(events):
+        previews.setdefault(ev["step"], f"/api/jobs/{jid}/files?path={Path(ev['path']).name}&kind=sample")
+    step_losses = {
+        ev["step"]: ev.get("loss")
+        for ev in events
+        if ev.get("type") == "step" and isinstance(ev.get("step"), int)
+    }
+    for ev in events:
         if ev.get("type") == "checkpoint.saved":
             p = Path(ev["path"])
             if not p.exists():
@@ -2161,6 +2184,9 @@ def job_checkpoints(jid: str, c: ServiceContext = Depends(ctx)) -> list[dict[str
                     "created_at": ev["ts"],
                     "artifact_id": arts.get(str(p)),
                     "ema": bool(ev.get("ema")),
+                    "epoch": ev.get("epoch"),
+                    "loss": ev["loss"] if ev.get("loss") is not None else step_losses.get(ev["step"]),
+                    "sample_url": previews.get(ev["step"]),
                 }
             )
     return out
