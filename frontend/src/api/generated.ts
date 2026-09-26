@@ -947,6 +947,26 @@ export interface paths {
         patch: operations["patch_job_api_jobs__jid__patch"];
         trace?: never;
     };
+    "/api/jobs/{jid}/storage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Job Storage
+         * @description The folders deleting this job removes, with their sizes, so the archive can say so first.
+         */
+        get: operations["job_storage_api_jobs__jid__storage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/{jid}/{command}": {
         parameters: {
             query?: never;
@@ -3875,6 +3895,8 @@ export interface components {
             run_dir: string | null;
             /** Samples Dir */
             samples_dir?: string | null;
+            /** Archived At */
+            archived_at?: number | null;
             progress: components["schemas"]["JobProgress"];
             latest: components["schemas"]["JobLatest"];
             /** Error */
@@ -4038,6 +4060,8 @@ export interface components {
             priority?: number | null;
             /** Name */
             name?: string | null;
+            /** Archived */
+            archived?: boolean | null;
         };
         /** JobProgress */
         JobProgress: {
@@ -4131,6 +4155,35 @@ export interface components {
             shift?: number | null;
             /** Guidance */
             guidance?: number | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * JobStorage
+         * @description Everything deleting the job removes from disk.
+         */
+        JobStorage: {
+            /** Folders */
+            folders: components["schemas"]["JobStorageFolder"][];
+            /** Total Bytes */
+            total_bytes: number;
+            /** Artifacts */
+            artifacts: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** JobStorageFolder */
+        JobStorageFolder: {
+            /** Path */
+            path: string;
+            /** Kinds */
+            kinds: string[];
+            /** Exists */
+            exists: boolean;
+            /** Bytes */
+            bytes: number;
+            /** Files */
+            files: number;
         } & {
             [key: string]: unknown;
         };
@@ -9681,7 +9734,7 @@ export interface operations {
                 version_id?: string | null;
                 page?: number;
                 page_size?: number;
-                group?: ("active" | "waiting" | "history") | null;
+                group?: ("active" | "waiting" | "history" | "archive") | null;
                 type?: ("train" | "cache" | "xyz") | null;
                 q?: string | null;
             };
@@ -9830,6 +9883,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Job"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    job_storage_api_jobs__jid__storage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobStorage"];
                 };
             };
             /** @description Validation Error */

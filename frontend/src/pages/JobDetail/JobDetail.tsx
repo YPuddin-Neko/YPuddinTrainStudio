@@ -6,7 +6,7 @@ import { apiClient } from '../../api/client';
 import { Job, JobMetrics, JobSample, JobCheckpoint } from '../../api/types';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
-import { Activity, Layers, History, Image as ImageIcon, Terminal, Code, ArrowLeft, ArrowDown, ArrowUp, Minus } from 'lucide-react';
+import { Activity, Archive, ArchiveRestore, Layers, History, Image as ImageIcon, Terminal, Code, ArrowLeft, ArrowDown, ArrowUp, Minus } from 'lucide-react';
 import { mergeValidationPoint, appendMetricStep } from '../../utils/metrics';
 import { formatEta, formatTime } from '../../utils/format';
 import { formatApiError } from '../../utils/errors';
@@ -92,6 +92,14 @@ export default function JobDetail() {
   const [resuming, setResuming] = React.useState(false);
 
   const [job, setJob] = React.useState<VersionedJob | null>(null);
+  const [restoring, setRestoring] = React.useState(false);
+  const restore = async () => {
+    if (!job) return;
+    setRestoring(true); setActionError('');
+    try { await apiClient.patch(`/jobs/${encodeURIComponent(job.id)}`, { archived: false }, { silent: true }); setJob(current => current && { ...current, archived_at: null }); }
+    catch (failure) { setActionError(formatApiError(failure)); }
+    finally { setRestoring(false); }
+  };
   const [clock, setClock] = React.useState(() => Date.now() / 1000);
   React.useEffect(() => {
     if (!job?.started_at || !['running','pausing','cancelling'].includes(job.status)) return;
@@ -314,6 +322,8 @@ export default function JobDetail() {
       </dl>
       {dataError && <div className="task-error" role="alert">{dataError}</div>}
       {actionError && <div role="alert" className="task-error">{actionError}</div>}
+      {job?.archived_at != null && <div className="job-archived" role="status"><Archive size={15} aria-hidden="true"/><span>{text('这个任务已归档：不在队列和项目结果里显示，文件都还在。', 'This job is archived: it is hidden from the queue and project results, and its files are kept.')}</span>
+        <button type="button" className="ui-btn ui-btn-sm" disabled={restoring} onClick={() => void restore()}><ArchiveRestore size={14}/>{text('恢复到训练历史', 'Restore to History')}</button></div>}
       {job?.error && <div role="alert" className="job-failure"><div><strong>{job.type === 'train' ? text('训练失败', 'Training failed') : text('任务失败', 'Job failed')}</strong><p>{job.error}</p></div>{activeTab !== 'logs' && <button type="button" className="ui-btn ui-btn-sm" onClick={() => setActiveTab('logs')}><Terminal size={14}/>{text('查看日志', 'Open log')}</button>}</div>}
       {/* 1. 头部指标与阶段时间线 */}
       {job?.type !== 'xyz' && <div className="job-monitor-summary bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 space-y-3">

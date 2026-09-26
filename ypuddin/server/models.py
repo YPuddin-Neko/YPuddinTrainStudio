@@ -792,12 +792,31 @@ class Job(_Out):
     finished_at: float | None
     run_dir: str | None
     samples_dir: str | None = None
+    # Set when the job was moved to the archive; its files stay until it is deleted there.
+    archived_at: float | None = None
     progress: JobProgress
     latest: JobLatest
     error: str | None
     resume_from: str | None
     pid: int | None
     exit_code: int | None
+
+
+class JobStorageFolder(_Out):
+    path: str
+    # What the folder holds: products, records, resume, logs or samples.
+    kinds: list[str]
+    exists: bool
+    bytes: int
+    files: int
+
+
+class JobStorage(_Out):
+    """Everything deleting the job removes from disk."""
+
+    folders: list[JobStorageFolder]
+    total_bytes: int
+    artifacts: int
 
 
 class JobPage(_Out):

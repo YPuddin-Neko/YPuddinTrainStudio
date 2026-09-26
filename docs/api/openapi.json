@@ -3531,7 +3531,8 @@
                   "enum": [
                     "active",
                     "waiting",
-                    "history"
+                    "history",
+                    "archive"
                   ],
                   "type": "string"
                 },
@@ -3756,6 +3757,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{jid}/storage": {
+      "get": {
+        "summary": "Job Storage",
+        "description": "The folders deleting this job removes, with their sizes, so the archive can say so first.",
+        "operationId": "job_storage_api_jobs__jid__storage_get",
+        "parameters": [
+          {
+            "name": "jid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Jid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStorage"
                 }
               }
             }
@@ -11911,6 +11952,17 @@
             ],
             "title": "Samples Dir"
           },
+          "archived_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          },
           "progress": {
             "$ref": "#/components/schemas/JobProgress"
           },
@@ -12508,6 +12560,17 @@
               }
             ],
             "title": "Name"
+          },
+          "archived": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived"
           }
         },
         "type": "object",
@@ -12929,6 +12992,71 @@
           "loss"
         ],
         "title": "JobSample"
+      },
+      "JobStorage": {
+        "properties": {
+          "folders": {
+            "items": {
+              "$ref": "#/components/schemas/JobStorageFolder"
+            },
+            "type": "array",
+            "title": "Folders"
+          },
+          "total_bytes": {
+            "type": "integer",
+            "title": "Total Bytes"
+          },
+          "artifacts": {
+            "type": "integer",
+            "title": "Artifacts"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "folders",
+          "total_bytes",
+          "artifacts"
+        ],
+        "title": "JobStorage",
+        "description": "Everything deleting the job removes from disk."
+      },
+      "JobStorageFolder": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "kinds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Kinds"
+          },
+          "exists": {
+            "type": "boolean",
+            "title": "Exists"
+          },
+          "bytes": {
+            "type": "integer",
+            "title": "Bytes"
+          },
+          "files": {
+            "type": "integer",
+            "title": "Files"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "path",
+          "kinds",
+          "exists",
+          "bytes",
+          "files"
+        ],
+        "title": "JobStorageFolder"
       },
       "LogLine": {
         "properties": {

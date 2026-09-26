@@ -6,6 +6,7 @@ import asyncio
 import io
 import json
 import math
+import os
 import re
 import shutil
 import tempfile
@@ -1734,6 +1735,11 @@ class JobBody(GpuSelection):
 class JobPatch(GpuSelection):
     priority: int | None = None
     name: str | None = None
+    # True moves a finished job to the archive and keeps its files; False brings it back.
+    archived: bool | None = None
+
+
+FINISHED = ("completed", "failed", "cancelled")
 
 
 def _job_row(r: dict[str, Any]) -> dict[str, Any]:
@@ -1755,7 +1761,7 @@ def list_jobs(
     page: int = 1,
     page_size: int = 50,
     c: ServiceContext = Depends(ctx),
-    group: Literal["active", "waiting", "history"] | None = None,
+    group: Literal["active", "waiting", "history", "archive"] | None = None,
     type: Literal["train", "cache", "xyz"] | None = None,
     q: str | None = None,
 ) -> dict[str, Any]:
@@ -1765,11 +1771,13 @@ def list_jobs(
     if status:
         conds.append("j.status IN ({})".format(",".join("?" for _ in status.split(","))))
         params += status.split(",")
-    if group:
+    # Archived jobs are listed only in the archive, as if deleted everywhere else.
+    conds.append("j.archived_at IS NOT NULL" if group == "archive" else "j.archived_at IS NULL")
+    if group and group != "archive":
         groups = {
             "active": ("running", "pausing", "cancelling", "paused"),
             "waiting": ("queued", "scheduled"),
-            "history": ("completed", "failed", "cancelled"),
+            "history": FINISHED,
         }
         conds.append("j.status IN ({})".format(",".join("?" for _ in groups[group])))
         params += groups[group]
@@ -1793,7 +1801,9 @@ def list_jobs(
     page, page_size = max(1, page), max(1, min(200, page_size))
     total = c.db.fetchone("SELECT count(*) AS n" + sql, tuple(params))["n"]
     order = (
-        "j.created_at DESC, j.id DESC"
+        "j.archived_at DESC, j.id DESC"
+        if group == "archive"
+        else "j.created_at DESC, j.id DESC"
         if group == "history"
         else "CASE j.status WHEN 'running' THEN 0 WHEN 'pausing' THEN 0 WHEN 'cancelling' THEN 0 WHEN 'queued' THEN 1 WHEN 'scheduled' THEN 2 ELSE 3 END, j.priority DESC, CASE WHEN j.status IN ('queued','scheduled') THEN j.created_at END ASC, j.created_at DESC, j.id ASC"
     )
@@ -2034,9 +2044,83 @@ def patch_job(jid: str, body: JobPatch, c: ServiceContext = Depends(ctx)) -> dic
             if error := selection_error(body.gpu_devices, c.supervisor._gpu_count(job), gpu_info()):
                 raise ApiError(error, code="job.gpu_selection", status=422)
             patch["gpu_devices_json"] = json.dumps(patch.pop("gpu_devices"))
+        if "archived" in patch:
+            archived = patch.pop("archived")
+            if archived and (job["status"] not in FINISHED or c.supervisor.is_running(jid)):
+                raise ApiError(
+                    "只能归档已结束的任务，请先取消或等待任务结束。", code="job.not_finished", status=409
+                )
+            patch["archived_at"] = (job.get("archived_at") or now()) if archived else None
         c.db.update("jobs", jid, patch)
     c.bus.publish("queue.changed", {})
     return _job_row(_get_job(c, jid))
+
+
+def _jobs_using(c: ServiceContext, jid: str, folders: list[Path]) -> list[dict[str, Any]]:
+    """Unfinished jobs whose saved paths point into these folders, such as a resume from them."""
+    roots = [str(folder) for folder in folders]
+
+    def uses(value: Any) -> bool:
+        if isinstance(value, str):
+            return any(value == root or value.startswith(root + os.sep) for root in roots)
+        if isinstance(value, dict):
+            return any(uses(item) for item in value.values())
+        return isinstance(value, list) and any(uses(item) for item in value)
+
+    rows = c.db.fetchall(
+        "SELECT id, name, config_json, resume_from FROM jobs"
+        f" WHERE id!=? AND status IN {ACTIVE_JOBS[:-1]},'paused')",
+        (jid,),
+    )
+    return [row for row in rows if uses(row["resume_from"]) or uses(json.loads(row["config_json"] or "{}"))]
+
+
+def _folder_size(folder: Path) -> tuple[int, int]:
+    total = files = 0
+    pending = [folder]
+    while pending:
+        try:
+            entries = list(os.scandir(pending.pop()))
+        except OSError:
+            continue
+        for entry in entries:
+            try:
+                if entry.is_dir(follow_symlinks=False):
+                    pending.append(Path(entry.path))
+                elif entry.is_file(follow_symlinks=False):
+                    total += entry.stat(follow_symlinks=False).st_size
+                    files += 1
+            except OSError:
+                continue
+    return total, files
+
+
+@router.get("/jobs/{jid}/storage", response_model=m.JobStorage, response_model_exclude_unset=True)
+def job_storage(jid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+    """The folders deleting this job removes, with their sizes, so the archive can say so first."""
+    from .job_paths import output_directory, state_directory
+
+    r = _get_job(c, jid)
+    roles = [
+        ("products", output_directory(r)),
+        ("records", Path(r["run_dir"])),
+        ("resume", state_directory(r)),
+        ("logs", log_file(r).parent),
+        ("samples", Path(r["samples_dir"]) if r.get("samples_dir") else None),
+    ]
+    folders = []
+    for folder in owned_job_directories(r):
+        kinds = [role for role, path in roles if path is not None and path == folder]
+        # Resume points and logs saved inside the records folder go with it.
+        kinds += [
+            role for role, path in roles if path is not None and role not in kinds and folder in path.parents
+        ]
+        size, count = _folder_size(folder) if folder.is_dir() else (0, 0)
+        folders.append(
+            {"path": str(folder), "kinds": kinds, "exists": folder.is_dir(), "bytes": size, "files": count}
+        )
+    artifacts = c.db.fetchone("SELECT count(*) n FROM artifacts WHERE job_id=?", (jid,))["n"]
+    return {"folders": folders, "total_bytes": sum(f["bytes"] for f in folders), "artifacts": artifacts}
 
 
 @router.delete("/jobs/{jid}", response_model=m.Ok, response_model_exclude_unset=True)
@@ -2045,6 +2129,10 @@ def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends
         r = _get_job(c, jid)
         if r["status"] in ("running", "pausing", "cancelling") or c.supervisor.is_running(jid):
             raise ApiError("cancel the job first", code="job.running", status=409)
+        if not r.get("archived_at"):
+            raise ApiError(
+                "archive the job before permanently deleting it", code="job.archive_required", status=409
+            )
         if c.db.fetchone(
             "SELECT id FROM jobs WHERE type='xyz' AND json_extract(config_json,'$.xyz.source_job_id')=?",
             (jid,),
@@ -2054,11 +2142,28 @@ def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends
                 code="job.xyz_dependencies",
                 status=409,
             )
-        c.db.delete("jobs", jid)
         if delete_files:
-            for directory in owned_job_directories(r):
-                if directory.is_dir():
-                    shutil.rmtree(directory)
+            folders = owned_job_directories(r)
+            if users := _jobs_using(c, jid, folders):
+                raise ApiError(
+                    f"任务“{users[0]['name']}”还要用到这个任务的文件，请等它结束或取消后再删除。",
+                    code="job.files_in_use",
+                    status=409,
+                    details={"jobs": [row["id"] for row in users]},
+                )
+            try:
+                for directory in folders:
+                    if directory.is_dir():
+                        shutil.rmtree(directory)
+            except OSError as exc:
+                raise ApiError(
+                    "could not remove all of the job's files; the archived job is kept so you can retry",
+                    code="job.delete_files_failed",
+                    status=500,
+                ) from exc
+            # Its products are gone with its folders.
+            c.db.execute("DELETE FROM artifacts WHERE job_id=?", (jid,))
+        c.db.delete("jobs", jid)
         c.bus.publish("queue.changed", {})
         return {"ok": True}
 

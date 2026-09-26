@@ -61,7 +61,9 @@ def version_row(c: Any, row: dict) -> dict:
         "stats": {
             "datasets": len(datasets),
             "images": sum(json.loads(r["stats_json"] or "{}").get("images", 0) for r in datasets),
-            "jobs": c.db.fetchone("SELECT count(*) n FROM jobs WHERE version_id=?", (vid,))["n"],
+            "jobs": c.db.fetchone(
+                "SELECT count(*) n FROM jobs WHERE version_id=? AND archived_at IS NULL", (vid,)
+            )["n"],
             "artifacts": c.db.fetchone("SELECT count(*) n FROM artifacts WHERE version_id=?", (vid,))["n"],
         },
         "paths": {
