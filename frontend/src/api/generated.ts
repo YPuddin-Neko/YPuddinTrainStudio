@@ -5259,6 +5259,7 @@ export interface components {
              * @default 0
              */
             captioned: number;
+            masks?: components["schemas"]["PlanMasks"] | null;
             /** Buckets */
             buckets?: components["schemas"]["PlanBucket"][];
             /**
@@ -5375,6 +5376,17 @@ export interface components {
             dropped_samples: number;
             /** Tail Policy */
             tail_policy: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** PlanMasks */
+        PlanMasks: {
+            /** Enabled */
+            enabled: boolean;
+            /** Files */
+            files: number;
+            /** Alpha */
+            alpha: number;
         } & {
             [key: string]: unknown;
         };

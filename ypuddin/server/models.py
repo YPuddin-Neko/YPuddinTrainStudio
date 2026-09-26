@@ -346,6 +346,12 @@ class PlanSourceBalance(_Out):
     items: int
 
 
+class PlanMasks(_Out):
+    enabled: bool  # dataset.masked_loss
+    files: int  # images with a .mask.png sidecar
+    alpha: int  # images without a sidecar whose alpha channel is the mask
+
+
 class Plan(_Out):
     ok: bool
     errors: list[ConfigError]
@@ -355,6 +361,7 @@ class Plan(_Out):
     images: int = 0
     items: int = 0
     captioned: int = 0
+    masks: PlanMasks | None = None
     buckets: list[PlanBucket] = Field(default_factory=list)
     steps_per_epoch: int = 0
     total_steps: int = 0

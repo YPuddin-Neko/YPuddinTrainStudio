@@ -109,6 +109,14 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
       : text(`宽高不是 ${native.alignment} 的倍数时，再裁去少量边缘对齐`, `sizes that are not multiples of ${native.alignment} are then trimmed slightly at the edges`);
     return text(`${scaled}；${aligned}。`, `${scaled}; ${aligned}.`);
   })();
+  // Loss masks: sidecar files first, then the alpha channel; both only count with masked loss on.
+  const masks = awaitingPlan ? null : plan?.masks;
+  const masked = masks ? masks.files + masks.alpha : 0;
+  const maskSources = masks ? [masks.files && text(`${masks.files} 张遮罩文件`, `${masks.files} mask files`), masks.alpha && text(`${masks.alpha} 张透明通道`, `${masks.alpha} alpha channels`)].filter(Boolean).join(text('、', ', ')) : '';
+  const maskLine = !masks || (!masked && !masks.enabled) ? ''
+    : !masks.enabled ? text(`找到 ${maskSources}；遮罩加权训练未开启，训练时不会使用。`, `Found ${maskSources}; masked loss is off, so they are not used.`)
+      : !masked ? text('遮罩加权训练已开启，但没有找到遮罩文件或透明通道，所有图片按整图计算。', 'Masked loss is on, but no mask files or alpha channels were found; every image counts in full.')
+        : text(`按遮罩计算损失：${maskSources}；其余 ${Math.max(0, (plan?.images ?? masked) - masked)} 张按整图计算。`, `Loss follows ${maskSources}; the other ${Math.max(0, (plan?.images ?? masked) - masked)} images count in full.`);
   const distributed = plan?.distributed;
   const gpus = distributed?.world_size ?? 1;
   const perBatch = distributed?.per_device_batch_size ?? null;
@@ -153,6 +161,7 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
         <div><dt>{text('已配标签', 'Captioned')}</dt><dd>{awaitingPlan ? indexed?.captioned ?? '—' : plan?.captioned ?? '—'}</dd></div>
         <div><dt>{native ? text('独立尺寸', 'Distinct sizes') : text('分桶数量', 'Buckets')}</dt><dd>{awaitingPlan ? '—' : plan ? buckets.length : '—'}</dd></div>
       </dl>
+      {maskLine && <p className="dataset-masks"><strong>{text('遮罩', 'Masks')}</strong><span>{maskLine}</span>{masks && !masks.enabled && onField && <button type="button" className="ui-link" onClick={() => onField('dataset.masked_loss')}>{text('开启遮罩加权训练', 'Turn on masked loss')}</button>}</p>}
       <SourceBalance sources={plan?.source_balance} loading={loading} hasSources={hasSources}/>
       {!!native?.synchronization_groups && <p className="inspector-note">{text(`多卡每轮额外 ${native.synchronization_groups} 次补齐计算，不计入损失，也不增加训练样本。`, `Multi-GPU training adds ${native.synchronization_groups} padding runs per epoch; they carry no loss and add no samples.`)}</p>}
       <div className="bucket-heading"><h4>{nativeMode ? text('实际训练尺寸', 'Training sizes') : text('分桶布局', 'Bucket layout')}</h4><div className="ui-segmented ui-segmented-sm" role="group" aria-label={text('分桶显示方式', 'Bucket view')}><button type="button" aria-label={text('分桶图形视图', 'Bucket shape view')} aria-pressed={view === 'shape'} onClick={() => setView('shape')}><Grid2X2 size={13} /></button><button type="button" aria-label={text('分桶明细表', 'Bucket table')} aria-pressed={view === 'table'} onClick={() => setView('table')}><BarChart3 size={13} /></button><SlidingIndicator className="ui-segmented-thumb"/></div></div>

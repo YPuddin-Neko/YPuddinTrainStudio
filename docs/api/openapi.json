@@ -15595,6 +15595,16 @@
             "title": "Captioned",
             "default": 0
           },
+          "masks": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanMasks"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "buckets": {
             "items": {
               "$ref": "#/components/schemas/PlanBucket"
@@ -15867,6 +15877,30 @@
           "tail_policy"
         ],
         "title": "PlanDistributed"
+      },
+      "PlanMasks": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "files": {
+            "type": "integer",
+            "title": "Files"
+          },
+          "alpha": {
+            "type": "integer",
+            "title": "Alpha"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "enabled",
+          "files",
+          "alpha"
+        ],
+        "title": "PlanMasks"
       },
       "PlanMemory": {
         "properties": {

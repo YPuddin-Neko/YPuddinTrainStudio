@@ -181,6 +181,9 @@ input::placeholder, textarea::placeholder { color:var(--studio-dim); opacity:1; 
 .dataset-metrics > div { display:flex; flex-direction:column; justify-content:space-between; gap:2px; min-width:0; }
 .dataset-metrics dt { color:var(--studio-dim); font-size:10px; line-height:14px; }
 .dataset-metrics dd { font-size:16px; line-height:22px; font-weight:600; font-variant-numeric:tabular-nums; }
+.dataset-masks { display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 8px; margin:-4px 0 12px; color:var(--studio-dim); font-size:11px; line-height:1.6; }
+.dataset-masks strong { color:var(--studio-text); font-weight:600; }
+.dataset-masks .ui-link { font-size:11px; }
 .bucket-heading { display:flex; justify-content:space-between; align-items:center; margin-bottom:9px; }
 .bucket-heading h4, .estimate-block h4 { font-size:11px; font-weight:600; }
 .bucket-groups { max-height:340px; overflow-y:auto; padding:1px; }

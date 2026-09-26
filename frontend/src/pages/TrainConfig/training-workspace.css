@@ -27,6 +27,7 @@
 .training-studio .estimate-stats dd { font-size: 16px; }
 .training-studio .estimate-list > div, .training-studio .estimate-memory { font-size: 12px; }
 .training-studio .inspector-note, .training-studio .bucket-empty, .training-studio .plan-notes { font-size: 12px; line-height: 1.6; }
+.training-studio .dataset-masks, .training-studio .dataset-masks .ui-link { font-size: 12px; }
 .training-studio .bucket-size { font-size: 11px; }
 .training-studio .bucket-group-heading { font-size: 12px; }
 .training-studio .bucket-group-heading small { font-size: 11px; }
