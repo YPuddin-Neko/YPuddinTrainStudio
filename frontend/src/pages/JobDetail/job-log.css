@@ -30,6 +30,8 @@
 .job-log-entry[data-level=debug] .job-log-level { color:var(--log-soft); }
 .job-log-entry[data-level=debug] .job-log-message { color:var(--log-soft); }
 .job-log-entry[data-level=warn] .job-log-level,.job-log-entry[data-level=warn] .job-log-message { color:#fbbf24; }
+.job-log-entry[data-tone=pause] .job-log-message { color:#fbbf24; }
+.job-log-entry[data-tone=resume] .job-log-message { color:#4ade80; }
 .job-log-entry[data-level=error] { background:#f871710f; box-shadow:inset 2px 0 0 #f87171; }
 .job-log-entry[data-level=error] .job-log-level,.job-log-entry[data-level=error] .job-log-message { color:#fca5a5; }
 .job-log-entry[data-level=error] .job-log-message pre { color:#fecaca; }

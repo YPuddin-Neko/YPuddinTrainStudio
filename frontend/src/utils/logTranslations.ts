@@ -63,16 +63,24 @@ const RULES: Rule[] = [
   [/^scheduler (\S+): warmup (\S+), (\d+) total steps$/, m => `学习率调度 ${m[1]}：预热 ${m[2]}，共 ${m[3]} 步`],
   [/^training (\d+) steps: (\d+) per epoch, effective batch (\d+) \((\d+) x (\d+) accumulation x (\d+) GPU\)$/, m => `开始训练：共 ${m[1]} 步，每轮 ${m[2]} 步，等效批次 ${m[3]}（批次 ${m[4]} × 梯度累积 ${m[5]} × ${m[6]} 张 GPU）`],
   [/^resuming at step (\d+)\/(\d+)$/, m => `从第 ${m[1]} 步继续训练（共 ${m[2]} 步）`],
+  [/^resume requested: restoring the run from (.+)$/, m => `收到继续训练信号：正在从恢复点恢复（${m[1]}）`],
+  [/^resumed training (\S+ \S+) \| step (\d+)\/(\d+) \| epoch (\S+) \| loss (\S+) \| from (.+)$/, m => `开始继续训练：${m[1]} | 第 ${m[2]}/${m[3]} 步 | 第 ${m[4]} 轮 | Loss ${m[5]} | 恢复点 ${m[6]}`],
+  [/^preview seed (\d+) \(kept from the resume point\)$/, m => `预览图种子 ${m[1]}（沿用恢复点中的种子）`],
   [/^preview seed (\d+) \(random for this run\)$/, m => `预览图种子 ${m[1]}（本次训练随机生成，所有预览图共用）`],
   [/^preview seed (\d+)$/, m => `预览图种子 ${m[1]}`],
 
   // Progress
   [/^step (\d+)\/(\d+) \| epoch (\S+) \| loss (\S+) \| avg loss (\S+) \| lr (.+?) \| grad norm (\S+) \| (\S+) it\/s \| eta (\S+)$/, m => `步数 ${m[1]}/${m[2]} | 轮次 ${m[3]} | Loss ${m[4]} | 平均 Loss ${m[5]} | 学习率 ${m[6]} | 梯度范数 ${m[7]} | ${m[8]} it/s | 剩余 ${m[9] === '-' ? '—' : duration(m[9])}`],
+  [/^epoch (\d+) finished at step (\d+) \| loss (\S+) \| (\S+)( since resume)?$/, m => `第 ${m[1]} 轮完成（第 ${m[2]} 步）| 本轮平均 Loss ${m[3]} | 用时 ${duration(m[4])}${m[5] ? '（自恢复起）' : ''}`],
   [/^epoch (\d+) finished at step (\d+)$/, m => `第 ${m[1]} 轮完成（第 ${m[2]} 步）`],
   [/^sampling (\d+) previews at step (\d+) \(seed (\d+)\)$/, m => `第 ${m[2]} 步：开始生成 ${m[1]} 张预览图（种子 ${m[3]}）`],
   [/^preview (\d+)\/(\d+) saved: (\S+) \((\d+)x(\d+), seed (\d+), ([\d.]+)s\)$/, m => `预览图 ${m[1]}/${m[2]} 已保存：${m[3]}（${m[4]}×${m[5]}，种子 ${m[6]}，用时 ${seconds(m[7])}）`],
   [/^previews finished in ([\d.]+)s$/, m => `预览图生成完成，用时 ${seconds(m[1])}`],
+  [/^saved (weights|model|file)( \(EMA\))?: (.+?) \| step (\d+)\/(\d+) \| epoch (\S+) \| loss (\S+)$/, m => `已保存${m[2] ? ' EMA ' : ''}${SAVED[m[1]]}：${m[3]} | 第 ${m[4]}/${m[5]} 步 | 第 ${m[6]} 轮 | Loss ${m[7]}`],
+  [/^saved resume point (\S+ \S+) \| step (\d+)\/(\d+) \| epoch (\S+) \| loss (\S+) \| (.+)$/, m => `已保存恢复点：${m[1]} | 第 ${m[2]}/${m[3]} 步 | 第 ${m[4]} 轮 | Loss ${m[5]} | ${m[6]}`],
   [/^saved (weights|training state|model|file)( \(EMA\))?: (.+)$/, m => `已保存${m[2] ? ' EMA ' : ''}${SAVED[m[1]]}：${m[3]}`],
+  [/^(pause|stop) requested at step (\d+)\/(\d+) \(epoch (\S+)\); saving a resume point$/, m => `收到${m[1] === 'pause' ? '暂停' : '停止'}信号：正在保存第 ${m[2]}/${m[3]} 步（第 ${m[4]} 轮）的恢复点，保存后退出`],
+  [/^training (paused|stopped); resume point saved (\S+ \S+) \| step (\d+)\/(\d+) \| epoch (\S+) \| loss (\S+) \| (.+)$/, m => `${m[1] === 'paused' ? '已暂停训练' : '已停止训练'}，恢复点已保存：${m[2]} | 第 ${m[3]}/${m[4]} 步 | 第 ${m[5]} 轮 | Loss ${m[6]} | ${m[7]}`],
 
   // Outcome
   [/^training (finished|paused|stopped|failed) at step (\d+)\/(\d+) after (\S+)$/, m => `训练${OUTCOMES[m[1]]}：第 ${m[2]}/${m[3]} 步，总用时 ${duration(m[4])}`],
@@ -95,6 +103,18 @@ const RULES: Rule[] = [
   // Debug trace
   [/^phase (\w+) -> (\w+) after ([\d.]+)s$/, m => `阶段 ${m[1]} → ${m[2]}，用时 ${seconds(m[3])}`],
 ];
+
+const TONES: Array<[RegExp, 'pause' | 'resume']> = [
+  [/^(pause|stop) requested at step /, 'pause'],
+  [/^training (paused|stopped)\b/, 'pause'],
+  [/^resume requested: /, 'resume'],
+  [/^resumed training /, 'resume'],
+];
+
+/** Pausing reads in yellow and resuming in green, in either language. */
+export function logTone(message: string): 'pause' | 'resume' | null {
+  return TONES.find(([pattern]) => pattern.test(message))?.[1] ?? null;
+}
 
 /** The Chinese reading of a fixed trainer message, or null when the line has none. */
 export function translateLogMessage(message: string): string | null {

@@ -8,6 +8,7 @@ import Switch from '../../components/Switch';
 import { copyText } from '../../utils/clipboard';
 import { formatApiError } from '../../utils/errors';
 import { groupLogLines, logEntryText, logLevelTag, logSource, logTime, translateLogEntries, visibleLogEntries, type LogEntry, type LogFilter } from '../../utils/jobLogs';
+import { logTone } from '../../utils/logTranslations';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import './job-log.css';
 
@@ -42,7 +43,7 @@ function Highlight({ text, query }: { text: string; query: string }) {
 
 function LogRow({ entry, query }: { entry: LogEntry; query: string }) {
   const time = logTime(entry.ts);
-  return <div className="job-log-entry" data-level={entry.level} data-kind={entry.kind}>
+  return <div className="job-log-entry" data-level={entry.level} data-kind={entry.kind} data-tone={entry.level === 'info' ? logTone(entry.msg) ?? undefined : undefined}>
     <time className="job-log-time" dateTime={entry.ts == null ? undefined : new Date(entry.ts * 1000).toISOString()} title={entry.ts == null ? undefined : new Date(entry.ts * 1000).toLocaleString()}>{time && `[${time}]`}</time>
     <span className="job-log-level">{logLevelTag(entry)}</span>
     <span className="job-log-source" title={entry.source || undefined}>{logSource(entry.source)}</span>
