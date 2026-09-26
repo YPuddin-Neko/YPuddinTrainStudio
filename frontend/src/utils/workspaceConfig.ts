@@ -42,9 +42,10 @@ export function changeModelFamily(config: Record<string, any>, family: FamilyInf
   if (!capabilities.has('block_swap')) memory.blocks_to_swap = 0;
   if (!capabilities.has('fp8_base') && String(memory.base_precision).startsWith('fp8')) memory.base_precision = 'auto';
   if (!capabilities.has('compile')) memory.compile = false;
+  const checkpointing = familyParameterOptions(family, 'memory.activation_checkpointing');
   if (!capabilities.has('activation_checkpointing')) memory.activation_checkpointing = 'none';
-  // Block checkpointing is the shared mode; unsloth support is family-specific.
-  else if (memory.activation_checkpointing === 'unsloth') memory.activation_checkpointing = 'block';
+  // Block checkpointing is the shared mode; offloading only where the family implements it.
+  else if (checkpointing?.length ? !checkpointing.includes(memory.activation_checkpointing) : memory.activation_checkpointing === 'unsloth') memory.activation_checkpointing = 'block';
   if (memory.blocks_to_swap > 0 && capabilities.has('activation_checkpointing')) {
     memory.activation_checkpointing = 'block';
     memory.compile = false;

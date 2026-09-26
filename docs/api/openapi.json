@@ -10706,6 +10706,13 @@
             "type": "array",
             "title": "Attention Backends"
           },
+          "checkpointing_modes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Checkpointing Modes"
+          },
           "name": {
             "type": "string",
             "title": "Name"

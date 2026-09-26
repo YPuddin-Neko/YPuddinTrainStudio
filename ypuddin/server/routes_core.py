@@ -175,6 +175,7 @@ def family_info(name: str) -> dict[str, Any]:
         "architecture": spec.architecture,
         "objective": spec.objective,
         "attention_backends": list(spec.attention_backends),
+        "checkpointing_modes": list(spec.checkpointing_modes),
         "sampling_samplers": list(spec.sampling_samplers),
         "sampling_schedulers": list(spec.sampling_schedulers),
         "objective_timestep_sampling": list(spec.objective_timestep_sampling),

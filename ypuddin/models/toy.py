@@ -228,6 +228,7 @@ class ToyFamily(ModelFamily):
         latent=LatentSpec(channels=LATENT_CH, stride=STRIDE, patch=PATCH, fingerprint=ToyLatent.fingerprint),
         text=TextSpec(max_len=MAX_LEN, fingerprint=ToyText.fingerprint, pad_floor=False),
         sampling=SamplingDefaults(steps=8, cfg=2.0, shift=1.0),
+        checkpointing_modes=("none", "block", "unsloth"),
         capabilities=frozenset(
             {"activation_checkpointing", "online_text", "masked_loss", "block_swap", "compile", "fp8_base"}
         ),

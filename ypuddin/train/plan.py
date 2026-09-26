@@ -853,7 +853,20 @@ def plan(
                     )
                 act_by_bucket = []
                 # Peak activations of the largest bucket under each checkpointing mode.
-                act_by_mode = dict.fromkeys(("none", "block", "unsloth"), 0.0)
+                # Only the modes this family implements are estimated or suggested. A mode it lacks
+                # runs as block checkpointing (Krea 2) or is rejected by the family's own checks.
+                supported_modes = (
+                    "none",
+                    *(mode for mode in ("block", "unsloth") if mode in family.spec.checkpointing_modes),
+                )
+                act_by_mode = dict.fromkeys(supported_modes, 0.0)
+                current_mode = (
+                    cfg.memory.activation_checkpointing
+                    if cfg.memory.activation_checkpointing in supported_modes
+                    else "block"
+                    if "block" in supported_modes
+                    else "none"
+                )
                 units = family.spec.activation_units
                 n_blocks = len(layout.blocks) if layout else 1
                 block_units = {
@@ -869,6 +882,7 @@ def plan(
                     hidden = (
                         getattr(backbone, "dim", None)
                         or getattr(backbone, "model_channels", None)
+                        or getattr(backbone, "inner_dim", None)
                         or getattr(getattr(backbone, "config", None), "features", 2048)
                     )
                     activation_bytes = (
@@ -885,9 +899,9 @@ def plan(
                         else ds.batch_size
                     )
                     unit_mb = tokens * hidden * activation_bytes * forward_batch / 2**20
-                    for mode, mode_units in block_units.items():
-                        act_by_mode[mode] = max(act_by_mode[mode], unit_mb * mode_units)
-                    act = unit_mb * block_units[cfg.memory.activation_checkpointing]
+                    for mode in act_by_mode:
+                        act_by_mode[mode] = max(act_by_mode[mode], unit_mb * block_units[mode])
+                    act = unit_mb * block_units[current_mode]
                     act_by_bucket.append({"w": w, "h": h, "mb": round(act)})
                 swapped_mb = 0.0
                 swap_staging_mb = 0.0
@@ -1002,7 +1016,7 @@ def plan(
                     else {
                         mode: round(
                             max(
-                                training_peak - act_by_mode[cfg.memory.activation_checkpointing] + act,
+                                training_peak - act_by_mode[current_mode] + act,
                                 *cache_phases.values(),
                                 initialization_peak or 0,
                             )
@@ -1021,6 +1035,7 @@ def plan(
                         memory["suggestions"].append("set memory.activation_checkpointing = 'block'")
                     elif (
                         cfg.memory.activation_checkpointing == "block"
+                        and "unsloth" in family.spec.checkpointing_modes
                         and act_by_mode["unsloth"] < act_by_mode["block"]
                     ):
                         memory["suggestions"].append("set memory.activation_checkpointing = 'unsloth'")

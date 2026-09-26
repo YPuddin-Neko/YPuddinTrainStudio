@@ -229,6 +229,7 @@ class AnimaFamily(ModelFamily):
         ),
         sampling=SamplingDefaults(steps=25, cfg=4.0, shift=3.0, sampler="euler"),
         activation_units=34.0,
+        checkpointing_modes=("none", "block", "unsloth"),
         capabilities=frozenset(
             {
                 "block_swap",

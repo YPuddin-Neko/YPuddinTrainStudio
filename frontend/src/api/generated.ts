@@ -3452,6 +3452,8 @@ export interface components {
             runtime_backend?: ("cuda" | "hip" | "mps" | "cpu") | null;
             /** Attention Backends */
             attention_backends?: string[];
+            /** Checkpointing Modes */
+            checkpointing_modes?: string[];
             /** Name */
             name: string;
             /** Label */

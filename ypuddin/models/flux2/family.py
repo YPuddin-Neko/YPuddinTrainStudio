@@ -108,6 +108,9 @@ class Flux2Family(ModelFamily):
         text=TextSpec(512, "flux2-variant-hidden-layers-v1", encoder_params=4_000_000_000),
         sampling=SamplingDefaults(steps=50, cfg=4.0, shift=None, sampler="euler"),
         capabilities=frozenset({"activation_checkpointing", "masked_loss", "block_swap"}),
+        # Saved-tensor bytes per token and width with adapter-trained linears: 30.8 for a double-stream
+        # block, 25.1 for a single-stream one; weighted by the Klein 4B/9B block counts.
+        activation_units=26.5,
         architecture="flux2",
         adapter_prefix="lora_transformer",
         weights=(
@@ -310,6 +313,14 @@ class Flux2Family(ModelFamily):
                 "attn-mlp", attn + mlp, description="训练双流和单流模块的注意力及前馈层。"
             ),
         }
+
+    def memory_layout_meta(self, backbone):
+        # Planning counts every double- and single-stream block, as training does.
+        return MemoryLayout(blocks=[*backbone.transformer_blocks, *backbone.single_transformer_blocks])
+
+    def training_tokens_for_plan(self, image_tokens: int) -> int:
+        # Both streams attend over the caption tokens as well; planning budgets the maximum length.
+        return image_tokens + self.spec.text.max_len
 
     def memory_layout(self, loaded):
         return MemoryLayout(

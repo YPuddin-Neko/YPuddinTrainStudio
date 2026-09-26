@@ -44,6 +44,7 @@ export function modelFamilyWeights(family?: FamilyInfo) {
 
 const capabilityFields = {
   'model.attention': 'attention_backends',
+  'memory.activation_checkpointing': 'checkpointing_modes',
   'sampling.sampler': 'sampling_samplers',
   'sampling.scheduler': 'sampling_schedulers',
   'objective.timestep_sampling': 'objective_timestep_sampling',
