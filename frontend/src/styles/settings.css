@@ -4,7 +4,9 @@
 .settings-heading h1{font-size:24px;font-weight:650;line-height:1.3;margin:0 0 18px}
 .settings-tabs{gap:4px;border-bottom:0}
 .settings-index button:focus-visible{outline:2px solid #3b82f6;outline-offset:-2px;border-radius:3px}
-.settings-scroll{min-height:0;flex:1;overflow-y:auto;overscroll-behavior:contain;padding:20px 24px 120px;scroll-padding-top:20px}
+.settings-scroll{min-height:0;flex:1;overflow-y:auto;overscroll-behavior:contain;padding:20px 24px 0;scroll-padding-top:20px}
+/* Room below the last fields, as content: scroller padding would hold the sticky save bar that far above the bottom edge. */
+.settings-scroll>div::after{content:"";display:block;height:120px}
 .settings-columns{display:grid;grid-template-columns:minmax(0,1fr) 154px;align-items:start;gap:24px;min-width:0}
 .settings-main{min-width:0;display:flex;flex-direction:column;gap:18px}
 .settings-index{position:sticky;top:0;border-left:1px solid var(--settings-line);padding-left:15px;display:flex;flex-direction:column;gap:2px}
@@ -64,7 +66,7 @@
 .settings-model-library th{font-size:11px;font-weight:500}
 .settings-model-library td{vertical-align:top}
 @media(max-width:1050px){.settings-columns{grid-template-columns:minmax(0,1fr) 125px;gap:20px}.settings-field{grid-template-columns:130px minmax(0,1fr);gap:14px}.settings-dependency-row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"info actions" "version actions" "state state";gap:6px 12px}.settings-dependency-version,.settings-dependency-state{padding-left:19px}}
-@media(max-width:760px){.settings-heading{padding:18px 18px 0}.settings-scroll{padding:20px 18px 30px}.settings-columns{display:block}.settings-index{display:none}.settings-tabs{gap:0}.settings-tabs>button{padding:10px;font-size:12px}.settings-model-component{grid-template-columns:110px minmax(0,1fr);gap:12px}}
+@media(max-width:760px){.settings-heading{padding:18px 18px 0}.settings-scroll{padding:20px 18px 0}.settings-scroll>div::after{height:30px}.settings-columns{display:block}.settings-index{display:none}.settings-tabs{gap:0}.settings-tabs>button{padding:10px;font-size:12px}.settings-model-component{grid-template-columns:110px minmax(0,1fr);gap:12px}}
 @media(max-width:480px){.settings-field{grid-template-columns:1fr;gap:4px;padding:9px 0}.settings-field>label,.settings-field>.settings-field-label{padding-top:0}.settings-model-component{grid-template-columns:1fr;gap:6px}.settings-model-component h3{margin:0}.settings-facts{grid-template-columns:1fr}.settings-tabs svg{display:none}.settings-section-heading{flex-wrap:wrap}.settings-model-form>label:not(.flex){grid-template-columns:1fr;gap:4px}}
 @container(max-width:850px) { .settings-columns { grid-template-columns:minmax(0,1fr); }.settings-index { display:none; }.settings-dependency-row { grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"info actions" "version actions" "state state"; gap:6px 12px; }.settings-dependency-version,.settings-dependency-state { padding-left:19px; } }
 @container(max-width:560px) { .settings-field { grid-template-columns:1fr; gap:6px; }.settings-field>label,.settings-field>.settings-field-label { padding-top:0; }.settings-tabs { gap:0; }.settings-tabs>button { padding-inline:10px; }.settings-model-component { grid-template-columns:1fr; gap:8px; }.settings-model-form>label:not(.flex) { grid-template-columns:1fr; gap:5px; } }
