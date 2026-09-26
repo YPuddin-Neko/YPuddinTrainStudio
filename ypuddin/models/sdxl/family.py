@@ -42,6 +42,10 @@ class SDXLFamily(ModelFamily):
         text=TextSpec(77, "sdxl-dual-clip-penultimate-pooled-v1", encoder_params=817_000_000),
         sampling=SamplingDefaults(steps=28, cfg=7.0, shift=1.0, sampler="euler"),
         capabilities=frozenset({"activation_checkpointing", "masked_loss"}),
+        # Peak activations of LoRA on the attn-mlp linears, measured on Apple's GPU with flash-style attention
+        # (1-10% above a meta-device count of the saved tensors). Diffusers' checkpointing keeps each ResNet
+        # and transformer block's inputs and recomputes one block at a time.
+        backbone_activation_units=(("none", 222_500.0), ("block", 20_500.0)),
         objective="ddpm",
         t_convention="ddpm_1000",
         architecture="stable-diffusion-xl-v1-base",

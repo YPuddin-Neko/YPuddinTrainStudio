@@ -852,6 +852,7 @@ def plan(
                         }
                     )
                 act_by_bucket = []
+                act_peak = 0.0  # unrounded, so the estimate matches the per-mode estimates exactly
                 # Peak activations of the largest bucket under each checkpointing mode.
                 # Only the modes this family implements are estimated or suggested. A mode it lacks
                 # runs as block checkpointing (Krea 2) or is rejected by the family's own checks.
@@ -869,7 +870,9 @@ def plan(
                 )
                 units = family.spec.activation_units
                 n_blocks = len(layout.blocks) if layout else 1
-                block_units = {
+                # A backbone measured as a whole already counts its width; the others scale by it.
+                whole = dict(family.spec.backbone_activation_units)
+                block_units = whole or {
                     "none": units * n_blocks,
                     # Each block keeps only its input; one block is recomputed at a time.
                     "block": min(units * n_blocks, n_blocks + units + 2),
@@ -898,11 +901,12 @@ def plan(
                         if native
                         else ds.batch_size
                     )
-                    unit_mb = tokens * hidden * activation_bytes * forward_batch / 2**20
+                    unit_mb = tokens * (1 if whole else hidden) * activation_bytes * forward_batch / 2**20
                     for mode in act_by_mode:
                         act_by_mode[mode] = max(act_by_mode[mode], unit_mb * block_units[mode])
                     act = unit_mb * block_units[current_mode]
                     act_by_bucket.append({"w": w, "h": h, "mb": round(act)})
+                    act_peak = max(act_peak, act)
                 swapped_mb = 0.0
                 swap_staging_mb = 0.0
                 if layout and cfg.memory.blocks_to_swap and layout.blocks and device_type in (None, "cuda"):
@@ -958,7 +962,7 @@ def plan(
                     + dequant_mb
                     + communication_mb
                     + optimizer_workspace_mb
-                    + (max(a["mb"] for a in act_by_bucket) if act_by_bucket else 0)
+                    + act_peak
                     + 512
                 )
                 cache_phases = family.cache_memory_estimate(cfg, compute_dtype)

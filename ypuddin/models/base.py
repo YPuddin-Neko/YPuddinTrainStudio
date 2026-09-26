@@ -77,6 +77,9 @@ class ModelSpec:
     # Activations one transformer block keeps for backward, in units of tokens x width x activation bytes,
     # when every block linear carries an adapter. Measured with saved-tensor hooks on the real block.
     activation_units: float = 14.0
+    # A backbone without uniform blocks (the SDXL UNet) gives its whole activation peak instead, per latent token
+    # and activation byte, for each checkpointing mode it implements. Measured on the real architecture.
+    backbone_activation_units: tuple[tuple[str, float], ...] = ()
     # Checkpointing modes the family implements; "unsloth" also moves block inputs to system memory.
     checkpointing_modes: tuple[str, ...] = ("none", "block")
 
