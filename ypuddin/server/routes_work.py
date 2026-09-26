@@ -1917,8 +1917,11 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
     if error := selection_error(body.gpu_devices, cfg.loop.gpu_count, devices):
         raise ApiError(error, code="job.gpu_selection", status=422)
     selected = [gpu for gpu in devices if gpu["device"] in body.gpu_devices]
+    # The shared image index lets an unchanged dataset skip re-reading and hashing every image,
+    # as the parameter check's plan already does.
     preflight = plan(
         cfg,
+        index_db_path=c.service_cache_dir("index") / "index.sqlite",
         gpu_total_mb=min((g["mem_total_mb"] for g in selected), default=None)
         if selected
         else max((g["mem_total_mb"] for g in devices), default=None),
