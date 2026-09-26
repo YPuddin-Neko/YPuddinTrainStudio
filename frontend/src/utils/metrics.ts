@@ -18,7 +18,20 @@ export function appendMetricStep(previous: JobMetrics, event: Record<string, any
     loss_ema: [...previous.loss_ema, event.loss_ema ?? null], grad_norm: [...previous.grad_norm, event.grad_norm ?? null],
     vram_mb: [...previous.vram_mb, event.vram_mb ?? null],
     vram_metric: event.vram_metric ?? previous.vram_metric,
-    it_s: [...previous.it_s, event.it_s ?? null] };
+    it_s: [...previous.it_s, event.it_s ?? null],
+    ...gpuSeries(previous, event) };
+}
+
+const GPU_KEYS = ['gpu_power_w', 'gpu_temp_c', 'gpu_util_pct'] as const;
+
+/** Driver readings start empty; a series appears with the first step that reports it. */
+function gpuSeries(previous: JobMetrics, event: Record<string, any>): Pick<JobMetrics, typeof GPU_KEYS[number]> {
+  return Object.fromEntries(GPU_KEYS.map(key => {
+    const values = previous[key] || [];
+    const value = typeof event[key] === 'number' ? event[key] : null;
+    if (!values.length && value == null) return [key, values];
+    return [key, [...(values.length ? values : Array(previous.steps.length).fill(null)), value]];
+  })) as Pick<JobMetrics, typeof GPU_KEYS[number]>;
 }
 
 export interface NamedSeries {

@@ -10,7 +10,7 @@ export type ProjectPage = S['ProjectPage'];
 export type ProjectCategories = S['ProjectCategories'];
 export type Job = S['Job'];
 export type JobProgress = S['JobProgress'];
-export type JobMetrics = Pick<S['JobMetrics'], 'steps' | 'loss' | 'loss_ema' | 'grad_norm' | 'vram_mb' | 'vram_metric' | 'it_s' | 'validation'> & {
+export type JobMetrics = Pick<S['JobMetrics'], 'steps' | 'loss' | 'loss_ema' | 'grad_norm' | 'vram_mb' | 'vram_metric' | 'it_s' | 'validation' | 'gpu_power_w' | 'gpu_temp_c' | 'gpu_util_pct'> & {
   lr: Record<string, Array<number | null>>;
 };
 export type JobSample = S['JobSample'];

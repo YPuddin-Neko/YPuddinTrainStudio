@@ -1,20 +1,25 @@
-/** Five significant digits keep small learning rates readable without long tails. */
+/** Five significant digits; values below 0.001 always use exponent form so rates of one chart read alike. */
 export function formatMetricValue(value: unknown): string {
   const scalar = Array.isArray(value) ? value.at(-1) : value;
-  return typeof scalar === 'number' && Number.isFinite(scalar) ? String(Number(scalar.toPrecision(5))) : '—';
+  if (typeof scalar !== 'number' || !Number.isFinite(scalar)) return '—';
+  const rounded = Number(scalar.toPrecision(5));
+  return rounded !== 0 && Math.abs(rounded) < 1e-3 ? rounded.toExponential() : String(rounded);
 }
 
 export function metricLabels(chinese: boolean) {
   return {
-    loss: chinese ? '训练损失' : 'Training loss',
-    raw: chinese ? '原始损失' : 'Raw loss',
-    ema: chinese ? '显示 EMA' : 'Display EMA',
+    loss: 'Loss',
+    raw: chinese ? '每步 Loss' : 'Loss per step',
+    ema: chinese ? '平滑曲线 (EMA)' : 'Smoothed (EMA)',
     lr: chinese ? '学习率' : 'Learning rate',
     gradient: chinese ? '梯度范数' : 'Gradient norm',
     speed: chinese ? '训练速度 (it/s)' : 'Training speed (it/s)',
     validation: chinese ? '验证损失' : 'Validation loss',
     mean: chinese ? '验证均值' : 'Validation mean',
     memory: chinese ? '显存 (GB)' : 'VRAM (GB)',
+    power: chinese ? 'GPU 功率 (W)' : 'GPU power (W)',
+    temperature: chinese ? 'GPU 温度 (°C)' : 'GPU temperature (°C)',
+    utilization: chinese ? 'GPU 利用率 (%)' : 'GPU utilization (%)',
     timestep: chinese ? '噪声时间步' : 'Noise timestep',
   };
 }

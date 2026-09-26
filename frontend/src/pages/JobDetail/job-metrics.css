@@ -1,15 +1,18 @@
-.job-metrics { min-width:0; color:var(--studio-text); }
+.job-metrics { container-type:inline-size; min-width:0; color:var(--studio-text); }
 .job-metrics-toolbar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px 18px; margin-bottom:12px; }
 .job-metrics-smoothing { display:flex; align-items:center; flex-wrap:wrap; gap:8px; min-width:0; font-size:11px; color:var(--studio-dim); }
 .job-metrics-smoothing input { width:150px; min-width:80px; max-width:100%; accent-color:var(--studio-accent); }
 .job-metrics-smoothing output { width:4ch; font-variant-numeric:tabular-nums; }
-.job-metrics-chart { min-width:0; padding:12px; border:1px solid var(--studio-line); border-radius:7px; background:var(--studio-panel); }
+.job-metrics-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
+.job-metrics-chart { display:flex; flex-direction:column; min-width:0; padding:12px; border:1px solid var(--studio-line); border-radius:7px; background:var(--studio-panel); }
+.job-metrics-chart.is-wide { grid-column:1 / -1; }
 .job-metrics-chart h2 { font-size:13px; font-weight:600; }
 .job-metrics-chart > p { margin-top:4px; margin-bottom:6px; font-size:11px; line-height:1.6; color:var(--studio-dim); }
-.job-metrics-diagnostics { margin-top:12px; }
-.job-metrics-diagnostics-toggle { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; min-height:36px; padding:7px 0; text-align:left; font-size:12px; color:var(--studio-dim); }
-.job-metrics-diagnostics-toggle:hover { color:var(--studio-text); }
-.job-metrics-diagnostics-toggle svg { transition:transform var(--motion-quick,140ms) var(--motion-ease,ease-out); }
-.job-metrics-diagnostics-toggle[aria-expanded=true] svg { transform:rotate(180deg); }
-#job-metrics-diagnostic-charts { display:grid; gap:12px; padding-top:5px; }
+.job-metrics-chart-empty { flex:1; min-height:200px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:16px; text-align:center; font-size:12px; line-height:1.7; color:var(--studio-dim); }
+.job-metrics-chart-empty svg { color:color-mix(in srgb, var(--studio-dim) 60%, transparent); }
+.job-metrics-chart-empty span { max-width:40ch; }
+.job-metrics-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; padding:56px 16px; text-align:center; color:var(--studio-dim); font-size:12px; }
+.job-metrics-empty svg { margin-bottom:8px; color:color-mix(in srgb, var(--studio-dim) 55%, transparent); }
+.job-metrics-empty p { font-size:14px; font-weight:500; }
+@container (max-width:760px) { .job-metrics-grid { grid-template-columns:minmax(0, 1fr); } .job-metrics-chart.is-wide { grid-column:auto; } }
 @media(max-width:540px) { .job-metrics-toolbar { align-items:flex-start; }.job-metrics-smoothing { flex-basis:100%; }.job-metrics-smoothing input { flex:1; width:auto; }.job-metrics-chart { padding:9px; } }
