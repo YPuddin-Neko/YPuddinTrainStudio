@@ -15,7 +15,11 @@ function RouteDismiss({ close }: { close: () => void }) {
 }
 
 /** Readable within the page viewport, independent of a field's clipping ancestors. */
-export default function ConfigHelp({ label, children }: { label: string; children: string }) {
+/**
+ * `anchor` names an enclosing element (a stat card) that the explanation opens below and starts at, so it does not
+ * cover what that element shows; without it the explanation opens below the button.
+ */
+export default function ConfigHelp({ label, children, anchor: anchorSelector }: { label: string; children: string; anchor?: string }) {
   const id = React.useId();
   const trigger = React.useRef<HTMLButtonElement>(null);
   const panel = React.useRef<HTMLDivElement>(null);
@@ -51,7 +55,7 @@ export default function ConfigHelp({ label, children }: { label: string; childre
         bounds.right = Math.min(bounds.right, parent.clientWidth ? rect.left + parent.clientLeft + parent.clientWidth : rect.right);
         bounds.bottom = Math.min(bounds.bottom, parent.clientHeight ? rect.top + parent.clientTop + parent.clientHeight : rect.bottom);
       }
-      const anchor = button.getBoundingClientRect();
+      const anchor = ((anchorSelector && button.closest(anchorSelector)) || button).getBoundingClientRect();
       if (anchor.bottom < bounds.top || anchor.top > bounds.bottom || anchor.right < bounds.left || anchor.left > bounds.right) {
         close();
         return;
@@ -70,7 +74,7 @@ export default function ConfigHelp({ label, children }: { label: string; childre
       setPosition({
         width,
         maxHeight,
-        left: Math.max(bounds.left + INSET, Math.min(anchor.right - width, bounds.right - INSET - width)),
+        left: Math.max(bounds.left + INSET, Math.min(anchorSelector ? anchor.left : anchor.right - width, bounds.right - INSET - width)),
         top: Math.max(bounds.top + INSET, Math.min(top, bounds.bottom - INSET - height)),
         visibility: 'visible',
       });
@@ -109,7 +113,7 @@ export default function ConfigHelp({ label, children }: { label: string; childre
       window.visualViewport?.removeEventListener('resize', place);
       window.visualViewport?.removeEventListener('scroll', scrolled);
     };
-  }, [open, close, children]);
+  }, [open, close, children, anchorSelector]);
 
   return <>
     {inRouter && <RouteDismiss close={close} />}

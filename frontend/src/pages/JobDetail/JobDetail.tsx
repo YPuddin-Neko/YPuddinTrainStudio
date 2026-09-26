@@ -6,7 +6,7 @@ import { apiClient } from '../../api/client';
 import { Job, JobMetrics, JobSample, JobCheckpoint } from '../../api/types';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
-import { Activity, Layers, History, Image as ImageIcon, Terminal, Code, ArrowLeft } from 'lucide-react';
+import { Activity, Layers, History, Image as ImageIcon, Terminal, Code, ArrowLeft, ArrowDown, ArrowUp, Minus } from 'lucide-react';
 import { mergeValidationPoint, appendMetricStep } from '../../utils/metrics';
 import { formatEta, formatTime } from '../../utils/format';
 import { formatApiError } from '../../utils/errors';
@@ -36,8 +36,37 @@ function mergeSamples(previous: JobSample[], incoming: JobSample[]): JobSample[]
   return [...samples.values()].sort((a, b) => a.step - b.step || a.created_at - b.created_at || a.prompt_index - b.prompt_index);
 }
 
-function StatCard({ label, value, hint }: { label: string; value: React.ReactNode; hint?:string }) {
-  return <div className="job-stat"><div className="job-stat-label">{label}{hint && <ConfigHelp label={`${label} · 说明`}>{hint}</ConfigHelp>}</div><div className="job-stat-value">{value}</div></div>;
+function StatCard({ label, value, hint, detail }: { label: string; value: React.ReactNode; hint?: string; detail?: React.ReactNode }) {
+  return <div className="job-stat"><div className="job-stat-label">{label}{hint && <ConfigHelp label={`${label} · 说明`} anchor=".job-stat">{hint}</ConfigHelp>}</div><div className="job-stat-value">{value}</div>{detail}</div>;
+}
+
+/** How a live value moved since the previous reading: down in green, up in red. */
+function StepChange({ delta, text }: { delta: number | null; text: (zh: string, en: string) => string }) {
+  if (delta == null || !Number.isFinite(delta)) return null;
+  const direction = delta < 0 ? 'down' : delta > 0 ? 'up' : 'flat';
+  const size = Math.abs(delta);
+  const amount = size !== 0 && size < 1e-4 ? size.toExponential(1) : size.toFixed(4);
+  const Icon = direction === 'down' ? ArrowDown : direction === 'up' ? ArrowUp : Minus;
+  const said = direction === 'down' ? text(`比上一次下降 ${amount}`, `Down ${amount} from the previous reading`)
+    : direction === 'up' ? text(`比上一次上升 ${amount}`, `Up ${amount} from the previous reading`) : text('与上一次持平', 'Same as the previous reading');
+  return <div className="job-stat-change" data-direction={direction} title={said}>
+    <Icon size={12} aria-hidden="true"/><span aria-hidden="true">{direction === 'flat' ? '0' : amount}</span><small aria-hidden="true">{text('较上次', 'vs last')}</small><span className="sr-only">{said}</span>
+  </div>;
+}
+
+/** The change of a live value since the step before; `fallback` gives the earlier value before a live step arrives. */
+function useStepChange(step: number | null | undefined, value: number | null | undefined, fallback: number | null): number | null {
+  const last = React.useRef<{ step: number; value: number } | null>(null);
+  const [previous, setPrevious] = React.useState<{ step: number; value: number } | null>(null);
+  React.useEffect(() => {
+    if (step == null || typeof value !== 'number' || !Number.isFinite(value)) return;
+    const seen = last.current;
+    if (seen && seen.step !== step) setPrevious(seen);
+    last.current = { step, value };
+  }, [step, value]);
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  const base = previous && previous.step !== step ? previous.value : fallback;
+  return base == null || !Number.isFinite(base) ? null : value - base;
 }
 
 /** 空态：lucide 图标 + 标题 + 一行提示 */
@@ -246,6 +275,15 @@ export default function JobDetail() {
   const lossNumber = (value: number | null | undefined) => typeof value === 'number' && Number.isFinite(value) ? value.toFixed(4) : '—';
   const recordedLosses = metrics?.loss.filter((value): value is number => typeof value === 'number' && Number.isFinite(value)) || [];
   const meanLoss = job?.latest?.loss_mean ?? (recordedLosses.length ? recordedLosses.reduce((sum,value) => sum + value, 0) / recordedLosses.length : null);
+  // Before a live step arrives, the last loss compares with the reading before it, and the running mean with the
+  // mean before the last step.
+  const currentLoss = job?.latest?.loss;
+  const lastRecorded = recordedLosses.at(-1);
+  const previousLoss = typeof currentLoss === 'number' && recordedLosses.length ? (lastRecorded === currentLoss ? recordedLosses.at(-2) ?? null : lastRecorded ?? null) : null;
+  const lossCount = Number(job?.latest?.loss_count);
+  const previousMean = typeof job?.latest?.loss_mean === 'number' && typeof currentLoss === 'number' && lossCount > 1 ? (job.latest.loss_mean * lossCount - currentLoss) / (lossCount - 1) : null;
+  const lossChange = useStepChange(job?.progress?.step, currentLoss, previousLoss);
+  const meanChange = useStepChange(job?.progress?.step, meanLoss, previousMean);
   const meanScope = job?.latest?.loss_mean != null ? (job.latest.loss_mean_scope === 'since_resume' ? text('从此次恢复训练起，所有已完成训练步的损失平均值。','Mean loss over completed steps since this training was resumed.') : text('所有已完成训练步的损失平均值。','Mean loss over all completed optimizer steps.')) : text('旧任务没有完整累计值，显示已有日志中训练步的平均值。','This legacy run has no complete accumulator; this is the mean of recorded steps.');
   const learningRates = Object.entries(job?.latest?.lr || {}).filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]));
   const epochProgress = stepsPerEpoch && job?.progress?.step != null ? (job.progress.step / stepsPerEpoch).toFixed(2).replace(/\.00$/, '') : job?.progress?.epoch != null ? String(job.progress.epoch + 1) : '—';
@@ -282,8 +320,8 @@ export default function JobDetail() {
         <div className="job-stat-grid" aria-label={text('训练核心指标','Training metrics')}>
           <StatCard label={text('步数','Steps')} value={`${job?.progress?.step ?? '—'} / ${job?.progress?.total_steps ?? '—'}`}/>
           <StatCard label={text('轮次','Epochs')} value={`${epochProgress} / ${totalEpochs ?? '—'}`}/>
-          <StatCard label="Loss" value={lossNumber(job?.latest?.loss)} />
-          <StatCard label={text('平均 Loss','Mean loss')} value={lossNumber(meanLoss)} hint={meanScope}/>
+          <StatCard label="Loss" value={lossNumber(job?.latest?.loss)} detail={<StepChange delta={lossChange} text={text}/>}/>
+          <StatCard label={text('平均 Loss','Mean loss')} value={lossNumber(meanLoss)} hint={meanScope} detail={<StepChange delta={meanChange} text={text}/>}/>
           <StatCard label={text('学习率','Learning rate')} value={learningRates.length ? <div className="job-learning-rates">{learningRates.map(([name, rate]) => <span key={name}>{learningRates.length > 1 && <small>{name}</small>}{rate.toExponential(2)}</span>)}</div> : '—'}/>
           <StatCard label={t('job.speed')} value={job?.progress?.it_s != null ? `${Number(job.progress.it_s).toFixed(2)} it/s` : '—'}/>
           <StatCard label={t('job.eta')} value={job?.status === 'completed' ? '0s' : formatEta(job?.progress?.eta_s)}/>

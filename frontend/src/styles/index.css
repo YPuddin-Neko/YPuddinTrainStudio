@@ -21,10 +21,10 @@
 /* Filled actions keep a readable foreground; the accent also serves as link text. */
 :root { --studio-action:#2563eb; --studio-action-hover:#1d4ed8; --studio-on-action:#fff; }
 /* Rejected values read as errors, not as advisory notes. */
-:root { --studio-danger:#b91c1c; --studio-danger-line:#dc2626; }
+:root { --studio-danger:#b91c1c; --studio-danger-line:#dc2626; --studio-success:#15803d; }
 input[type="checkbox"], input[type="number"] { color-scheme: light; }
 .dark input[type="checkbox"], .dark input[type="number"] { color-scheme: dark; }
-.dark { --studio-canvas:#020617; --studio-panel:#0f172a; --studio-muted:#111c30; --studio-line:#263349; --studio-text:#cbd5e1; --studio-dim:#94a3b8; --studio-accent:#60a5fa; --studio-scrollbar-thumb:#64748b; --studio-scrollbar-hover:#94a3b8; --studio-danger:#fca5a5; --studio-danger-line:#f87171; }
+.dark { --studio-canvas:#020617; --studio-panel:#0f172a; --studio-muted:#111c30; --studio-line:#263349; --studio-text:#cbd5e1; --studio-dim:#94a3b8; --studio-accent:#60a5fa; --studio-scrollbar-thumb:#64748b; --studio-scrollbar-hover:#94a3b8; --studio-danger:#fca5a5; --studio-danger-line:#f87171; --studio-success:#86efac; }
 input::placeholder, textarea::placeholder { color:var(--studio-dim); opacity:1; }
 /* Keep native scrolling in pages, nested lists and portaled dialogs on the same theme. */
 :where(*) { scrollbar-width:thin; scrollbar-color:var(--studio-scrollbar-thumb) transparent; }
