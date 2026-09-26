@@ -118,7 +118,7 @@ export const FIELD_HINTS: Record<string, Copy> = {
   'sampling.prompts_file': ['追加一个 .txt 或 .toml 提示词文件。', 'Append prompts from a .txt or .toml file.'],
   'sampling.width': ['预览图宽度，单条提示词可覆盖。', 'Preview width; prompts can override it.'],
   'sampling.height': ['预览图高度，单条提示词可覆盖。', 'Preview height; prompts can override it.'],
-  'sampling.seed': ['0 表示每次训练随机一个种子并写入日志；其他值固定使用。', '0 picks a random seed per run, shown in the log; other values stay fixed.'],
+  'sampling.seed': ['0 表示每次训练随机一个种子；手动输入种子值会固定训练时使用的种子。', '0 picks a random seed per run; a seed you enter stays fixed for training.'],
   'sampling.sampler': ['生成预览图的采样算法。', 'Algorithm used to generate previews.'],
   'sampling.scheduler': ['采样时噪声逐步减少的方式。', 'How noise is reduced while sampling.'],
   'sampling.steps': ['生成一张预览的步数，越多越慢。', 'Steps per preview; more is slower.'],
