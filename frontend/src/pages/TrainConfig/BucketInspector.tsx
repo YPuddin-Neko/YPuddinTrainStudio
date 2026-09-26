@@ -18,10 +18,16 @@ function groupByBase(buckets: PlanBucket[]) {
   for (const bucket of buckets) groups.set(bucket.base ?? 0, [...(groups.get(bucket.base ?? 0) || []), bucket]);
   return [...groups].sort(([a], [b]) => a - b).map(([base, items]) => ({ base, buckets: items, items: items.reduce((sum, bucket) => sum + bucket.items, 0) }));
 }
-/** Memory fixes the planner can name, each linked to the setting it changes. */
-function memoryFixes(suggestions: string[], native: boolean, text: (zh: string, en: string) => string) {
+/** Memory fixes the planner can name, each linked to the setting it changes and, where known, the peak it leaves. */
+function memoryFixes(memory: Plan['memory'], native: boolean, text: (zh: string, en: string) => string) {
+  const suggestions = memory?.suggestions || [];
+  const estimate = (mode: string) => {
+    const peak = memory?.checkpointing_peak_mb_estimates?.[mode];
+    return peak == null ? '' : text(`（预计 ${formatBytesMB(peak)}）`, ` (about ${formatBytesMB(peak)})`);
+  };
   const known: [RegExp, string, string][] = [
-    [/activation_checkpointing/, 'memory.activation_checkpointing', text('开启梯度检查点', 'Turn on gradient checkpointing')],
+    [/activation_checkpointing = 'block'/, 'memory.activation_checkpointing', text('开启梯度检查点', 'Turn on gradient checkpointing') + estimate('block')],
+    [/activation_checkpointing = 'unsloth'/, 'memory.activation_checkpointing', text('梯度检查点改为“开启并卸载到内存”', 'Offload gradient checkpoints to system memory') + estimate('unsloth')],
     [/blocks_to_swap/, 'memory.blocks_to_swap', text('把部分模型块换出到内存', 'Swap model blocks to system memory')],
     [/adamw8bit/, 'optimizer.type', text('改用 AdamW 8-bit 优化器', 'Use the AdamW 8-bit optimizer')],
     [/text_encoding/, 'dataset.text_encoding', text('训练前缓存文本特征', 'Cache text features before training')],
@@ -187,9 +193,9 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
         {overCapacity && capacity && peak != null && <div className="estimate-alert" role="alert">
           <strong>{memoryBlocked ? text('超过显卡容量，无法开始训练', 'Exceeds GPU memory; training cannot start') : text('超过显卡容量', 'Exceeds GPU memory')}</strong>
           <p>{memoryBlocked
-            ? text(`预计峰值比本机最大显卡的 ${formatBytesMB(capacity)} 多 ${formatBytesMB(peak - capacity * 0.95)}（保留 5% 余量）。减少以下任一项的显存占用后即可开始：`, `The estimate needs ${formatBytesMB(peak - capacity * 0.95)} more than this machine's largest GPU (${formatBytesMB(capacity)}, keeping 5% headroom). Reduce memory with any of these to start:`)
+            ? text(`预计峰值比本机最大显卡的 ${formatBytesMB(capacity)} 多 ${formatBytesMB(peak - capacity * 0.95)}（保留 5% 余量）。可以这样减少显存占用：`, `The estimate needs ${formatBytesMB(peak - capacity * 0.95)} more than this machine's largest GPU (${formatBytesMB(capacity)}, keeping 5% headroom). Reduce memory with:`)
             : text('启动前显存检查已在任务队列的调度设置中关闭，训练可能因显存不足而失败。', 'The pre-launch memory check is off in the queue settings, so training may fail for lack of memory.')}</p>
-          <ul>{memoryFixes(plan?.memory?.suggestions || [], nativeMode, text).map(fix => <li key={fix.path}>{onField ? <button type="button" className="ui-link" onClick={() => onField(fix.path)}>{fix.label}</button> : fix.label}</li>)}</ul>
+          <ul>{memoryFixes(plan?.memory, nativeMode, text).map(fix => <li key={fix.path}>{onField ? <button type="button" className="ui-link" onClick={() => onField(fix.path)}>{fix.label}</button> : fix.label}</li>)}</ul>
         </div>}
         {tightMemory && <p className="estimate-note">{text('显存余量不足 10%，训练中可能因显存不足失败。', 'Less than 10% memory headroom; training may run out of memory.')}</p>}
       </div>

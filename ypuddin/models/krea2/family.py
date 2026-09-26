@@ -250,6 +250,7 @@ class Krea2Family(ModelFamily):
             max_len=512, fingerprint=Krea2Text.fingerprint, pad_floor=False, encoder_params=4_022_000_000
         ),
         sampling=SamplingDefaults(steps=28, cfg=5.5, shift=None, sampler="euler"),
+        activation_units=30.0,
         # no ``online_text``: the 4B conditioner has no business staying resident next to a 12.9B DiT
         capabilities=frozenset(
             {"block_swap", "fp8_base", "activation_checkpointing", "masked_loss", "compile"}

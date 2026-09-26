@@ -74,6 +74,9 @@ class ModelSpec:
         "cosmap",
     )
     objective_weighting: tuple[str, ...] = ("none", "sigma_sqrt", "cosmap", "snr_like", "cosmos")
+    # Activations one transformer block keeps for backward, in units of tokens x width x activation bytes,
+    # when every block linear carries an adapter. Measured with saved-tensor hooks on the real block.
+    activation_units: float = 14.0
 
 
 KNOWN_CAPABILITIES = frozenset(

@@ -15909,6 +15909,20 @@
             ],
             "title": "Peak Mb Estimate"
           },
+          "checkpointing_peak_mb_estimates": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpointing Peak Mb Estimates"
+          },
           "training_peak_mb_estimate": {
             "anyOf": [
               {

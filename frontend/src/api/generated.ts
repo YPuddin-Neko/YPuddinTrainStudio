@@ -5436,6 +5436,10 @@ export interface components {
             activations_mb_by_bucket?: components["schemas"]["PlanActivation"][];
             /** Peak Mb Estimate */
             peak_mb_estimate?: number | null;
+            /** Checkpointing Peak Mb Estimates */
+            checkpointing_peak_mb_estimates?: {
+                [key: string]: number;
+            } | null;
             /** Training Peak Mb Estimate */
             training_peak_mb_estimate?: number | null;
             /** Known Training Residency Mb */

@@ -94,7 +94,7 @@ export const FIELD_HINTS: Record<string, Copy> = {
 
   'memory.base_precision': ['降低冻结底模精度可省显存，可能影响质量。', 'Lower frozen-weight precision saves memory; may cost quality.'],
   'memory.blocks_to_swap': ['暂放到内存的模型块数，省显存但更慢。', 'Blocks parked in system memory; saves VRAM, runs slower.'],
-  'memory.activation_checkpointing': ['重新计算中间结果，省显存但更慢。', 'Recomputes intermediate results; saves memory, runs slower.'],
+  'memory.activation_checkpointing': ['大幅减少显存，训练稍慢；显存不够时优先开启。', 'Much less memory, slightly slower; turn on first when memory is short.'],
 
   'objective.timestep_sampling': ['训练时噪声强度的抽样分布。', 'Distribution of training noise levels.'],
   'objective.logit_mean': ['调高偏向高噪声，调低偏向低噪声。', 'Higher favors noisier steps; lower favors cleaner ones.'],

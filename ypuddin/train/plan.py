@@ -844,6 +844,17 @@ def plan(
                         }
                     )
                 act_by_bucket = []
+                # Peak activations of the largest bucket under each checkpointing mode.
+                act_by_mode = dict.fromkeys(("none", "block", "unsloth"), 0.0)
+                units = family.spec.activation_units
+                n_blocks = len(layout.blocks) if layout else 1
+                block_units = {
+                    "none": units * n_blocks,
+                    # Each block keeps only its input; one block is recomputed at a time.
+                    "block": min(units * n_blocks, n_blocks + units + 2),
+                    # Block inputs wait in system memory, so only the recomputed block stays.
+                    "unsloth": min(units * n_blocks, units + 3),
+                }
                 for (w, h), _n in sorted(counts.items()) or [((r, r), 0) for r in ds.resolutions]:
                     tokens = (w // family.spec.latent.align) * (h // family.spec.latent.align)
                     tokens = family.training_tokens_for_plan(tokens)
@@ -852,8 +863,6 @@ def plan(
                         or getattr(backbone, "model_channels", None)
                         or getattr(getattr(backbone, "config", None), "features", 2048)
                     )
-                    n_blocks = len(layout.blocks) if layout else 1
-                    ckpt = cfg.memory.activation_checkpointing != "none"
                     activation_bytes = (
                         4
                         if device_type in ("cpu", "mps")
@@ -862,13 +871,15 @@ def plan(
                             effective_dtype if cfg.loop.mixed_precision == "no" else cfg.loop.mixed_precision
                         ]
                     )
-                    per_block = tokens * hidden * activation_bytes * (2 if ckpt else 14)
                     forward_batch = (
                         min(ds.batch_size, max(1, ds.native_max_pixels // (w * h)))
                         if native
                         else ds.batch_size
                     )
-                    act = per_block * n_blocks * forward_batch / 2**20
+                    unit_mb = tokens * hidden * activation_bytes * forward_batch / 2**20
+                    for mode, mode_units in block_units.items():
+                        act_by_mode[mode] = max(act_by_mode[mode], unit_mb * mode_units)
+                    act = unit_mb * block_units[cfg.memory.activation_checkpointing]
                     act_by_bucket.append({"w": w, "h": h, "mb": round(act)})
                 swapped_mb = 0.0
                 swap_staging_mb = 0.0
@@ -977,8 +988,22 @@ def plan(
                     },
                     "activations_mb_by_bucket": act_by_bucket,
                     "peak_mb_estimate": None if cfg.training.train_text_encoder else round(peak),
+                    # The same estimate under each checkpointing mode, so a fix can say what it saves.
+                    "checkpointing_peak_mb_estimates": None
+                    if cfg.training.train_text_encoder or "activation_checkpointing" not in caps
+                    else {
+                        mode: round(
+                            max(
+                                training_peak - act_by_mode[cfg.memory.activation_checkpointing] + act,
+                                *cache_phases.values(),
+                                initialization_peak or 0,
+                            )
+                        )
+                        for mode, act in act_by_mode.items()
+                    },
                     "gpu_total_mb": gpu_total_mb,
                     "heuristic": True,
+                    "activation_checkpointing": cfg.memory.activation_checkpointing,
                     "device": str(device) if device is not None else None,
                     "effective_dtype": effective_dtype,
                     "suggestions": [],
@@ -986,6 +1011,11 @@ def plan(
                 if gpu_total_mb and not cfg.training.train_text_encoder and peak > gpu_total_mb * 0.9:
                     if cfg.memory.activation_checkpointing == "none":
                         memory["suggestions"].append("set memory.activation_checkpointing = 'block'")
+                    elif (
+                        cfg.memory.activation_checkpointing == "block"
+                        and act_by_mode["unsloth"] < act_by_mode["block"]
+                    ):
+                        memory["suggestions"].append("set memory.activation_checkpointing = 'unsloth'")
                     if (
                         device_type != "mps"
                         and "block_swap" in family.spec.capabilities

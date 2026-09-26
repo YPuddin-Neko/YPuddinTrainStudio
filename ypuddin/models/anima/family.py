@@ -212,6 +212,7 @@ class AnimaFamily(ModelFamily):
             max_len=512, fingerprint=AnimaText.fingerprint, pad_floor=True, encoder_params=596_049_920
         ),
         sampling=SamplingDefaults(steps=25, cfg=4.0, shift=3.0, sampler="euler"),
+        activation_units=34.0,
         capabilities=frozenset(
             {
                 "block_swap",

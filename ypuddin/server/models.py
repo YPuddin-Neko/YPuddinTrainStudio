@@ -265,6 +265,8 @@ class PlanMemory(_Out):
     heuristic: bool = True
     activations_mb_by_bucket: list[PlanActivation] = Field(default_factory=list)
     peak_mb_estimate: float | None = None
+    # Peak under each activation checkpointing mode ("none", "block", "unsloth").
+    checkpointing_peak_mb_estimates: dict[str, float] | None = None
     training_peak_mb_estimate: float | None = None
     known_training_residency_mb: float | None = None
     unestimated_components: list[str] = Field(default_factory=list)
