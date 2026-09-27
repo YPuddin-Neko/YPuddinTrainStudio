@@ -455,6 +455,10 @@ class FamilyInfo(_Out):
     runtime_backend: Literal["cuda", "hip", "mps", "cpu"] | None = None
     runtime_platform: Literal["windows", "linux", "macos"] | None = None
     attention_backends: list[str] = Field(default_factory=lambda: ["auto", "sdpa", "xformers", "flash_attn"])
+    # Choices whose package this environment lacks, by field and option; the form shows them greyed out.
+    unavailable_options: dict[str, dict[str, Literal["not_installed", "wrong_version"]]] = Field(
+        default_factory=dict
+    )
     # Older services list no modes; the schema then keeps every choice.
     checkpointing_modes: list[str] = Field(default_factory=lambda: ["none", "block", "unsloth"])
     name: str

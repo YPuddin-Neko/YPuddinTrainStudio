@@ -152,6 +152,13 @@ export const FIELD_HINTS: Record<string, Copy> = {
 };
 
 export const FIELD_HELP: Record<string, Copy> = {
+  // What each weight is for; the model's own hint about files follows on the next line.
+  'model.dit_path': ['生成图像的主模型权重，训练针对的就是它。', 'Weights of the model that generates the images; training targets it.'],
+  'model.text_encoder_path': ['把标签文字转换成主模型能理解的特征。', 'Turns caption text into features the main model understands.'],
+  'model.text_encoder_2_path': ['SDXL 的第二个文本编码器，与第一个一起把标签转换成特征。', "SDXL's second text encoder; together with the first it turns captions into features."],
+  'model.vae_path': ['在图片和潜空间之间转换：训练前把图片编码成潜空间，预览时把结果解码回图片。', 'Converts between images and latents: it encodes images before training and decodes previews back into images.'],
+  'model.tokenizer_path': ['把标签切分成文本编码器使用的词元（token）。', 'Splits captions into the tokens the text encoder uses.'],
+  'objective.ip_noise_gamma': ['给加噪后的训练输入再叠加一点额外噪声，训练目标仍使用原来的噪声，用来缓解训练和生成时输入不一致的问题。默认 0 关闭，常用 0.1 左右。', 'Adds a little extra noise to the noisy training input while the target keeps the original noise, which reduces the mismatch between training and generation. 0 (default) disables it; about 0.1 is common.'],
   'dataset.batch_size': ['每批参与一次梯度计算的图片数，等效批次 = 批大小 × 梯度累积 × 显卡数。分桶模式只把相同尺寸的图片组成一批；原生分辨率下，同一批里尺寸不同的图片会分开计算，整批算完后才合并梯度更新参数，所以等效批次不变。不足一批的尾部不会复制图片补齐。', 'Images in one gradient computation; effective batch = batch size × gradient accumulation × GPUs. Bucket mode batches only same-size images. In native resolution, differently sized images in a batch are computed separately and their gradients are combined before the update, so the effective batch is unchanged. A short final batch is not padded with repeated images.'],
   'dataset.caption.shuffle': ['TXT 只打乱未保留的标签；分类 JSON 只打乱可变分组内的标签，固定信息和自然语言不动。使用文本缓存时，从预生成的随机变体中选择。', 'Shuffles unprotected TXT tags or tags within variable JSON groups. Fixed information and natural language stay unchanged. Text caching selects from pre-generated random variants.'],
   'dataset.caption.keep_tokens': ['仅用于 TXT：前 N 个标签不参与打乱或标签丢弃。即使关闭打乱，只要启用了标签丢弃，此设置仍然有效。分类 JSON 按字段分组处理，不使用此计数。', 'For TXT captions, protects the first N tags from shuffling and tag dropout. Still applies with shuffling off when tag dropout is enabled. Structured JSON uses its fixed fields instead of this count.'],
@@ -176,8 +183,8 @@ export const FIELD_HELP: Record<string, Copy> = {
   'adapter.rs_lora': ['按 Alpha ÷ √Rank 缩放更新（普通方式为 Alpha ÷ Rank），Rank 较大时训练更稳定。开启后更新幅度会变化，需要重新调整学习率或 Alpha。', 'Scales updates by alpha ÷ √rank instead of alpha ÷ rank, which is steadier at high ranks. The update size changes, so revisit the learning rate or alpha.'],
   'adapter.init': ['默认：一侧矩阵从零开始，训练开始时输出与底模一致。随机权重＋零值缩放：两侧都随机初始化，再用从 0 开始的可训练缩放控制输出。', 'Default starts one matrix at zero, so the output initially matches the base model. Random weights + zero scale initializes both sides randomly and controls the output with a trainable scale that starts at 0.'],
   'adapter.dropout': ['训练时按此比例随机屏蔽适配器输出，减轻过拟合。0 表示关闭，常用 0～0.1。', 'Randomly masks adapter outputs at this rate to reduce overfitting. 0 disables it; 0–0.1 is common.'],
-  'adapter.rank_dropout': ['训练时按此比例随机屏蔽部分秩通道。0 表示关闭。', 'Randomly masks rank channels at this rate during training. 0 disables it.'],
-  'adapter.module_dropout': ['训练时按此概率跳过整个适配器模块，直接使用底模输出。0 表示关闭；多卡显存分片不支持。', 'Skips whole adapter modules at this rate and uses the base output instead. 0 disables it; memory sharding does not support it.'],
+  'adapter.rank_dropout': ['训练时按此比例随机屏蔽部分秩通道，避免只依赖少数通道，可减轻过拟合。0 表示关闭。', 'Randomly masks this share of rank channels during training so the adapter does not rely on a few of them, which can reduce overfitting. 0 disables it.'],
+  'adapter.module_dropout': ['训练时按此概率跳过整个适配器模块、直接使用底模输出，可减轻过拟合。0 表示关闭；多卡显存分片不支持。', 'Skips whole adapter modules at this rate and uses the base output instead, which can reduce overfitting. 0 disables it; memory sharding does not support it.'],
   'adapter.mode': ['分开计算：底模和适配器各自计算后相加，不改变底模权重精度。合并计算：先把适配器合并进权重再计算，DoRA 需要这种方式。自动：能分开计算时分开计算，否则合并。', 'Separate computes the base model and the adapter independently and adds them, keeping base precision. Merged folds the adapter into the weight first, which DoRA requires. Automatic uses separate computation when possible.'],
   'adapter.param_dtype': ['适配器可训练参数的存储精度。默认 FP32 最稳定；BF16 节省显存，但较小的更新可能被舍入。', 'Storage precision of trainable adapter parameters. FP32 is the stable default; BF16 saves memory but small updates may be rounded away.'],
   'adapter.lr_scale': ['按参数类别设置学习率倍率。例如 LoRA+ 常把 up 设为 16，LoKr 可单独调整 w1。不熟悉时留空。', 'Learning-rate multipliers by parameter type. LoRA+ commonly sets up to 16, and LoKr can adjust w1 separately. Leave empty if unsure.'],

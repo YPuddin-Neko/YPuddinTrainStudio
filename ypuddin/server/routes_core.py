@@ -218,7 +218,46 @@ def family_info(name: str) -> dict[str, Any]:
     return info
 
 
-def runtime_family_info(name: str) -> dict[str, Any]:
+# The package each attention backend needs in the service environment.
+_ATTENTION_PACKAGES = {
+    "xformers": "xformers",
+    "flash_attn": "flash-attn",
+    "sage": "sageattention",
+    "metal_flash": "mtlattn",
+}
+
+
+def unavailable_options() -> dict[str, dict[str, str]]:
+    """Choices this environment cannot run because their package is missing, by field and option."""
+    import importlib.util
+    from importlib import metadata
+
+    from ypuddin.optim.factory import optimizer_packages
+
+    from .metal_attention_catalog import VERSION as METAL_ATTENTION_VERSION
+
+    attention: dict[str, str] = {}
+    for option, package in _ATTENTION_PACKAGES.items():
+        try:
+            version = metadata.version(package)
+        except metadata.PackageNotFoundError:
+            attention[option] = "not_installed"
+            continue
+        if option == "metal_flash" and version != METAL_ATTENTION_VERSION:
+            attention[option] = "wrong_version"
+    optimizers = {
+        key: "not_installed"
+        for key, package in optimizer_packages().items()
+        if importlib.util.find_spec(package) is None
+    }
+    return {
+        field: options
+        for field, options in (("model.attention", attention), ("optimizer.type", optimizers))
+        if options
+    }
+
+
+def runtime_family_info(name: str, unavailable: dict[str, dict[str, str]] | None = None) -> dict[str, Any]:
     from ypuddin.runtime_profiles import current_profile
 
     profile = current_profile()
@@ -256,12 +295,14 @@ def runtime_family_info(name: str) -> dict[str, Any]:
         "runtime_backend": runtime_backend,
         "runtime_platform": runtime_platform,
         "attention_backends": [option for option in info["attention_backends"] if option in allowed],
+        "unavailable_options": unavailable_options() if unavailable is None else unavailable,
     }
 
 
 @router.get("/families", response_model=list[m.FamilyInfo], response_model_exclude_unset=True)
 def list_families() -> list[dict[str, Any]]:
-    return [runtime_family_info(n) for n in available_families()]
+    unavailable = unavailable_options()
+    return [runtime_family_info(n, unavailable) for n in available_families()]
 
 
 @router.get("/families/{name}", response_model=m.FamilyInfo, response_model_exclude_unset=True)

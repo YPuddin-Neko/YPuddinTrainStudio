@@ -60,7 +60,7 @@ class ModelConfig(_Strict):
     )
     attention: Literal["auto", "sdpa", "sage", "xformers", "flash_attn", "metal_flash"] = F(
         "auto",
-        help="默认使用内置 SDPA。xFormers/FlashAttention 需要匹配的 CUDA 或海光扩展；Apple Metal FlashAttention 需要匹配的 mtlattn，仅加速受支持的 FP32 主模型注意力，带 mask 或 dropout 的调用使用 SDPA。文本编码器和 VAE 保持原后端，Sage 仅用于采样。",
+        help="主模型计算注意力的方式，影响训练速度和显存占用，默认使用 PyTorch 内置的 SDPA。Apple Metal FlashAttention 只加速受支持的 FP32 主模型注意力，带 mask 或 dropout 的调用改用 SDPA。文本编码器和 VAE 保持原来的实现，SageAttention 只用于采样。",
         ui_=ui("model", order=60, control="select", advanced=True),
     )
     prediction_type: Literal["epsilon", "v_prediction"] = F(
@@ -327,12 +327,12 @@ class AdapterRule(_Strict):
 class AdapterConfig(_Strict):
     algo: Algo = F(
         "lokr",
-        help="选择目标层的训练方式。LoRA/LoKr/LoHa 学习附加权重；full 直接训练目标预设选中的线性层完整权重，并导出差分。full 不会自动选中整个模型。",
+        help="附加权重的结构：LoRA 最常用；LoKr 参数通常最少；LoHa 表达能力更强。full 直接训练目标层的完整权重并导出差分。",
         ui_=ui("adapter", order=0, control="select"),
     )
     rank: int | Literal["full"] = F(
         16,
-        help="低秩分解的大小，默认 16。LoKr 的 full 表示保留完整的两个 Kronecker 因子 W1/W2，不做低秩拆分，仍是 LoKr 适配器；它不同于算法 full 的目标层完整权重训练。整数秩过大时 LoKr 也会自动保留对应完整因子。",
+        help="低秩分解的大小，默认 16：越大能学到的细节越多，文件也越大。LoKr 的 full 表示保留完整的两个 Kronecker 因子 W1/W2，不做低秩拆分，仍是 LoKr 适配器；整数秩过大时 LoKr 也会自动保留对应完整因子。",
         ui_=ui("adapter", order=10),
     )
     alpha: float = F(
@@ -371,7 +371,7 @@ class AdapterConfig(_Strict):
     )
     preset: str = F(
         "attn-mlp",
-        help="选择哪些线性层参与训练：选项和层数由当前模型族提供。attn-mlp 通常包含注意力和 MLP；full-linear 表示扩大目标层范围，不会把适配器算法改为 full。",
+        help="选择哪些线性层参与训练：选项和层数由当前模型提供。attn-mlp 通常包含注意力和 MLP；full-linear 覆盖主模块中的全部线性层。",
         ui_=ui("adapter", order=110, control="select"),
     )
     rules: list[AdapterRule] = F(
@@ -543,7 +543,7 @@ class OptimizerConfig(_Strict):
 
     type: str = F(
         "adamw",
-        help="默认 AdamW。8-bit 选项需要 CUDA 和 bitsandbytes，扩展优化器需要安装对应依赖。",
+        help="优化器决定每一步怎样用梯度更新参数，默认 AdamW；不同优化器对学习率的要求和显存占用不同。",
         ui_={
             "x-ui": {
                 **ui("optimizer", order=0, control="select")["x-ui"],

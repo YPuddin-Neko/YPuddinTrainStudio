@@ -17,7 +17,7 @@ import { managedValueLabel, normalizeOptimizerConfig, optimizerManagedReason, re
 import NumericControl from './NumericControl';
 import DecimalNumberInput from './DecimalNumberInput';
 import { scientificText } from '../../utils/numberText';
-import StudioSelect from '../../components/StudioSelect';
+import StudioSelect, { type StudioSelectOption } from '../../components/StudioSelect';
 import Switch from '../../components/Switch';
 import ConfigHelp from '../../components/ConfigHelp';
 import CaptionFormatSelect from '../../components/CaptionFormatSelect';
@@ -913,6 +913,15 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const schemaOptions = (ui.options ?? prop.enum)?.map(String);
     const supportedOptions = contextOptions(fullPathKey, fieldContext, familyOptions ?? schemaOptions, fieldValue) ?? familyOptions;
     const offeredOptions = fullPathKey === 'model.attention' ? supportedOptions?.filter(option => option !== 'auto') : supportedOptions;
+    // A choice whose package this environment lacks stays listed, greyed out, so the reason is visible where it is chosen.
+    const unavailableOptions = family?.unavailable_options?.[fullPathKey];
+    const choice = (option: string): StudioSelectOption => {
+      const label = configOptionLabel(fullPathKey, option, english);
+      const reason = unavailableOptions?.[option];
+      if (!reason) return { value: option, label };
+      const note = reason === 'wrong_version' ? (english ? 'wrong version' : '版本不符') : (english ? 'not installed' : '未安装');
+      return { value: option, label: `${label} (${note})`, disabled: true };
+    };
     // A model that offers a single choice (SDXL's preview scheduler) has nothing to pick.
     if (familyOptions && offeredOptions?.length === 1 && !managedReason && [offeredOptions[0], 'auto', undefined, null, ''].includes(fieldValue)) return null;
 
@@ -1081,15 +1090,15 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       const attentionOptions = offeredOptions?.length ? offeredOptions : ['sdpa'];
       control = <StudioSelect aria-label={fieldLabel} value={!fieldValue || fieldValue === 'auto' ? 'sdpa' : String(fieldValue)} fallbackLabel={configOptionLabel(fullPathKey, String(fieldValue), english)}
         onValueChange={next => onChange(setNestedValue(value, path, next))}
-        options={attentionOptions.map(option => ({value:option, label:configOptionLabel(fullPathKey, option, english)}))}/>;
+        options={attentionOptions.map(choice)}/>;
     } else if (supportedOptions) {
       control = <StudioSelect aria-label={fieldLabel} value={fieldValue == null ? '' : String(fieldValue)}
         onValueChange={next => onChange(setNestedValue(value, path, next))}
-        options={supportedOptions.map(option => ({ value: option, label: configOptionLabel(fullPathKey, option, english) }))}/>;
+        options={supportedOptions.map(choice)}/>;
     } else if (ui.options?.length) {
       control = <div className="space-y-2"><StudioSelect aria-label={fieldLabel} value={ui.options.includes(fieldValue) || !ui.allow_custom ? fieldValue || '' : '__custom__'} fallbackLabel={String(fieldValue || '')}
         onValueChange={next => onChange(setNestedValue(value,path,next === '__custom__' ? '' : next))}
-        options={[...ui.options.map(option=>({value:option,label:configOptionLabel(fullPathKey,option,english)})),...(ui.allow_custom ? [{value:'__custom__',label:english?'Custom Python class…':'自定义 Python 类…'}] : [])]}/>
+        options={[...ui.options.map(choice),...(ui.allow_custom ? [{value:'__custom__',label:english?'Custom Python class…':'自定义 Python 类…'}] : [])]}/>
         {ui.allow_custom && !ui.options.includes(fieldValue) && <input aria-label={`${fieldLabel} ${english?'custom class':'自定义类'}`} value={fieldValue || ''} placeholder="package.module.OptimizerClass" onChange={event=>onChange(setNestedValue(value,path,event.target.value))}/>}
       </div>;
     } else if (prop.enum) {
@@ -1106,7 +1115,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
               ? setNestedValue(updated, ['adapter', 'rank'], lastLowRank.current ?? 16)
               : updated);
           }}
-          options={prop.enum.map(option=>({value:String(option),label:configOptionLabel(fullPathKey,String(option),english)}))}/>
+          // Full-weight training of the target layers overlaps full fine-tuning; only configurations that already use it keep it.
+          options={prop.enum.map(String).filter(option => !(fullPathKey === 'adapter.algo' && option === 'full' && fieldValue !== 'full')).map(choice)}/>
 
       );
     } else if (prop.type === 'boolean' || ui.control === 'switch') {
@@ -1212,7 +1222,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       showAdvanced && selectedPreset?.include?.length && `${english ? 'Included layers' : '包含层'}：${selectedPreset.include.join(', ')}`,
       showAdvanced && selectedPreset?.exclude?.length && `${english ? 'Excluded layers' : '排除层'}：${selectedPreset.exclude.join(', ')}`,
     ].filter(Boolean).join('\n\n') : fullPathKey === 'model.tokenizer_path' && family?.name === 'sdxl' ? (english ? 'Optional root containing tokenizer/ and tokenizer_2/. Leave blank to use the model directory’s tokenizers, or the built-in CLIP-L / CLIP-G tokenizers when absent.' : '可选根目录，需同时包含 tokenizer/ 和 tokenizer_2/。留空自动读取模型目录；没有时使用内置 CLIP-L / CLIP-G 双分词器。')
-      : [weightMeta?.hint || contextHelp(fullPathKey, fieldContext, offeredOptions) || configFieldHelp(fullPathKey, prop.description, english, value.optimizer?.type, scheduleFree), dtkReproducibility].filter(Boolean).join('\n\n');
+      : [weightMeta?.hint ? [configFieldHelp(fullPathKey, undefined, english), weightMeta.hint].filter(Boolean).join('\n') : contextHelp(fullPathKey, fieldContext, offeredOptions) || configFieldHelp(fullPathKey, prop.description, english, value.optimizer?.type, scheduleFree), dtkReproducibility].filter(Boolean).join('\n\n');
     // Switches carry no standing description; a status or warning still shows beneath them.
     const statusHint = (fullPathKey === 'model.dit_path' && selectedModel ? [selectedModel.variant?.toUpperCase(), selectedModel.dtype?.toUpperCase()].filter(Boolean).join(' · ') : undefined)
       || (incompatibleFamilyLoss ? (english ? 'This loss option only supports SDXL. Turn it off or set it to zero before using this model.' : '此损失参数仅适用于 SDXL，请关闭或设为 0 后再使用当前模型。') : undefined)

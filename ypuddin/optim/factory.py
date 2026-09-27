@@ -36,6 +36,12 @@ _BUILTIN: dict[str, str] = {
 SCHEDULE_FREE = {"prodigy_plus_sf", "adamw_sf"}
 
 
+def optimizer_packages() -> dict[str, str]:
+    """The top-level package each built-in optimizer imports, for those PyTorch and YPuddin do not ship."""
+    packages = {key: path.split(".", 1)[0] for key, path in _BUILTIN.items()}
+    return {key: package for key, package in packages.items() if package not in {"torch", "ypuddin"}}
+
+
 def _validate_managed_learning_rates(key: str, lr: float, groups: list[dict[str, Any]]) -> None:
     expected = optimizer_policy(key).get("fixed", {}).get("optimizer.lr")
     if expected is None:

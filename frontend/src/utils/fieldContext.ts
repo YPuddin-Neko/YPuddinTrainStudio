@@ -95,17 +95,19 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
   switch (path) {
     case 'model.attention': {
       const sdpa: [string, string] = runtime === 'cuda'
-        ? ['PyTorch 自带，无需安装；在 NVIDIA 显卡上会自动选用内置的 FlashAttention 或省显存内核，一般直接用它。', 'built into PyTorch, nothing to install; on NVIDIA GPUs it picks PyTorch\'s own FlashAttention or memory-efficient kernel. Usually the right choice.']
-        : runtime === 'cpu' ? ['PyTorch 自带；CPU 训练只能用它。', 'built into PyTorch; the only option for CPU training.']
-          : ['PyTorch 自带，无需安装。', 'built into PyTorch, nothing to install.'];
+        ? ['PyTorch 内置的注意力；在 NVIDIA 显卡上会自动选用内置的 FlashAttention 或省显存内核，一般直接用它。', "PyTorch's built-in attention; on NVIDIA GPUs it picks PyTorch's own FlashAttention or memory-efficient kernel, usually the right choice."]
+        : runtime === 'cpu' ? ['PyTorch 内置的注意力；CPU 训练只能用它。', "PyTorch's built-in attention; the only option for CPU training."]
+          : ['PyTorch 内置的注意力，一般直接用它。', "PyTorch's built-in attention, usually the right choice."];
       return join([
+        text('主模型计算注意力的方式，影响训练速度和显存占用。', 'How the main model computes attention; it affects training speed and memory use.'),
         ...optionLines({
           sdpa,
-          xformers: ['需在「设置 → 运行环境」安装与当前 PyTorch、CUDA 匹配的扩展。', 'install an xFormers build matching this PyTorch and CUDA under Settings → Runtime.'],
+          xformers: ['Meta 的注意力加速库，省显存，速度与 SDPA 接近。', "Meta's attention library; saves memory at about the speed of SDPA."],
           flash_attn: runtime === 'hip'
-            ? ['海光 DTK 版扩展，需在「设置 → 运行环境」安装。', 'the DTK build, installed under Settings → Runtime.']
-            : ['需在「设置 → 运行环境」安装与当前 PyTorch、CUDA 匹配的 flash-attn。', 'install a flash-attn build matching this PyTorch and CUDA under Settings → Runtime.'],
-          metal_flash: ['需在「设置 → 运行环境」安装 mtlattn；只加速 FP32 的主模型注意力，其余调用自动改用 SDPA。', 'install mtlattn under Settings → Runtime; it speeds up the main model\'s FP32 attention and uses SDPA for anything else.'],
+            ? ['海光 DTK 版 FlashAttention，速度快、省显存。', 'The DTK build of FlashAttention; fast and memory-saving.']
+            : ['独立的 FlashAttention 2，速度快、省显存，需要 RTX 30 系列（Ampere）及更新的显卡。', 'The standalone FlashAttention 2; fast and memory-saving, needs an RTX 30-series (Ampere) or newer GPU.'],
+          sage: ['把注意力量化后计算，速度更快，精度略低。', 'Computes attention in quantized form; faster, slightly less precise.'],
+          metal_flash: ['Apple 芯片上的 FlashAttention，只加速 FP32 主模型的注意力，其余调用自动改用 SDPA。', "FlashAttention for Apple chips; it speeds up the main model's FP32 attention and uses SDPA for anything else."],
         }),
         text('只影响主模型，文本编码器和 VAE 不受影响。', 'Affects the main model only; the text encoder and VAE are unchanged.'),
       ]);
@@ -147,10 +149,57 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
         listed('fsdp') && text('显存分片（FSDP）：把参数、梯度和优化器状态分到多张卡，适合单卡装不下的主模型；需要至少两张显卡，支持冻结文本编码器的主模型全量微调、LoRA 和 LoKr，以及 AdamW、Adafactor 或 SGD，暂不支持 FP8 底模。', 'Sharded (FSDP): splits parameters, gradients and optimizer state across GPUs, for main models too large for one card. Needs at least two GPUs and supports full fine-tuning of the main model with a frozen text encoder, LoRA and LoKr, with AdamW, Adafactor or SGD; FP8 base weights are not supported yet.'),
         family.runtime_platform === 'windows' && text('Windows 只支持数据并行。', 'Windows supports data parallel only.'),
       ]);
+    case 'adapter.algo':
+      return join([
+        text('附加权重的结构，决定参数量和表达能力：', 'The structure of the added weights; it sets their parameter count and capacity:'),
+        ...optionLines({
+          lora: ['两个低秩矩阵相乘，最常用，兼容性最好。', 'two low-rank matrices multiplied; the most common and most widely supported.'],
+          lokr: ['用 Kronecker 积组合两个小矩阵，参数通常最少，文件最小。', 'two small matrices combined by a Kronecker product; usually the fewest parameters and the smallest file.'],
+          loha: ['两组低秩矩阵逐元素相乘，同样的秩下表达能力更强，参数约为 LoRA 的两倍。', 'two low-rank pairs multiplied element by element; more capacity at the same rank, with about twice the parameters of LoRA.'],
+        }),
+        text('Rank 里的 full 只对 LoKr 生效：保留完整的 Kronecker 因子，仍然是 LoKr。', 'full in Rank applies to LoKr only: it keeps the whole Kronecker factors and is still a LoKr adapter.'),
+      ]);
+    case 'scheduler.type':
+      return join([
+        text('学习率随训练步数变化的曲线：', 'How the learning rate changes over the run:'),
+        ...optionLines({
+          constant: ['始终保持设定的学习率。', 'keeps the set learning rate.'],
+          linear: ['从设定值匀速降到最低学习率比例。', 'falls at a steady rate to the minimum ratio.'],
+          cosine: ['沿余弦曲线降低，开头和结尾变化慢；默认。', 'falls along a cosine curve, slowly at the start and the end; the default.'],
+          cosine_restarts: ['按周期数重复余弦下降，每个周期开始时回到设定值。', 'repeats the cosine fall for the set number of cycles, returning to the set rate at each start.'],
+          polynomial: ['按多项式的幂降低，幂为 1 时与线性相同。', 'falls along a polynomial curve; a power of 1 equals linear.'],
+          warmup_stable_decay: ['预热后保持设定值，最后一段再降低。', 'holds the set rate after warm-up and falls only in the final stretch.'],
+          rex: ['前期降得慢，临近结束时降得快。', 'falls slowly at first and quickly near the end.'],
+        }),
+        text('免调度优化器固定使用恒定。', 'Schedule-free optimizers always use Constant.'),
+      ]);
+    case 'sampling.scheduler':
+      return join([
+        text(`预览时各步噪声强度的取法，只影响预览图；都会按「${configFieldLabel('sampling.shift', '')}」调整：`, 'How the noise levels of the preview steps are chosen; previews only, and every choice applies the sampling shift:'),
+        ...optionLines({
+          uniform: ['在整个噪声范围内均匀取点；默认。', 'evenly spaced over the whole noise range; the default.'],
+          simple: ['从 1000 级离散噪声表中等间隔取点。', 'evenly spaced picks from the 1000-level discrete noise table.'],
+          sgm_uniform: ['从最高噪声到最低一级噪声均匀取点，不含最低一级。', 'evenly spaced from the highest noise towards the lowest discrete level, leaving that level out.'],
+          normal: ['与 SGM 相同，但包含最低一级。', 'as SGM Uniform, but including the lowest discrete level.'],
+        }),
+      ]);
     case 'optimizer.type':
       return join([
-        text('默认 AdamW。扩展优化器需要安装对应依赖。', 'AdamW by default. Extension optimizers need their packages installed.'),
-        onGpu(runtime) && text('8-bit 选项需要 bitsandbytes，可节省优化器状态占用的显存。', '8-bit options need bitsandbytes and save optimizer-state memory.'),
+        text('优化器决定每一步怎样用梯度更新参数，不同优化器对学习率的要求和显存占用不同。', 'The optimizer decides how each step turns gradients into weight updates; optimizers differ in the learning rate they need and the memory they use.'),
+        ...optionLines({
+          adamw: ['默认选择，稳定通用。', 'The default; stable and general-purpose.'],
+          adam: ['经典 Adam，权重衰减的算法与 AdamW 不同，一般选 AdamW。', 'Classic Adam; it applies weight decay differently from AdamW, which is usually preferred.'],
+          sgd: ['最省显存，但对学习率很敏感，训练 LoRA 很少用。', 'Uses the least memory but is very sensitive to the learning rate; rarely used for LoRA.'],
+          adamw8bit: ['AdamW 的 8 位版本，优化器状态的显存约为原来的四分之一，效果接近。', 'AdamW with 8-bit state: about a quarter of the optimizer-state memory, with similar results.'],
+          lion: ['只按梯度方向更新，状态比 AdamW 少一半；学习率通常设为 AdamW 的 1/10 到 1/3。', 'Updates by the sign of the gradient and keeps half the state of AdamW; use about 1/10 to 1/3 of the AdamW learning rate.'],
+          lion8bit: ['Lion 的 8 位版本，更省显存。', 'Lion with 8-bit state; uses less memory.'],
+          prodigy: ['自动估计学习率，学习率保持 1 即可。', 'Estimates the learning rate itself; keep the learning rate at 1.'],
+          prodigy_plus_sf: ['Prodigy 的改进版，自动估计学习率，也不需要学习率调度器。', 'An improved Prodigy that estimates the learning rate and needs no learning-rate schedule.'],
+          adafactor: ['只保存分解后的二阶统计量，显存占用低。', 'Keeps factored second-moment statistics only; low memory use.'],
+          came: ['在 Adafactor 的基础上加入置信度修正，省显存且更稳定。', 'Adafactor with a confidence correction; low memory and more stable.'],
+          adamw_sf: ['不需要学习率调度器的 AdamW。', 'AdamW that needs no learning-rate schedule.'],
+          automagic: ['为每个参数自动调节学习率，显存占用低。', 'Adjusts the learning rate of every parameter automatically; low memory use.'],
+        }),
       ]);
     case 'dataset.num_workers':
       return family.runtime_platform === 'windows'
