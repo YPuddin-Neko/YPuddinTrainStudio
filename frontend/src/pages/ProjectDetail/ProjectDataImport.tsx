@@ -132,7 +132,7 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
 
   const modes: [typeof mode, string][] = [
     ['upload', text('上传文件或文件夹', 'Upload files or folders')],
-    ...(!targetDataset ? [['path', text('从训练电脑导入', 'Import from training computer')] as [typeof mode, string]] : []),
+    ...(!targetDataset ? [['path', text('从服务端电脑导入', 'Import from server computer')] as [typeof mode, string]] : []),
     ...(siteAllowed ? [['site', text('从图站下载', 'Download from image boards')] as [typeof mode, string]] : []),
   ];
   const site = mode === 'site' && siteAllowed;
