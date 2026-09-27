@@ -99,6 +99,13 @@
 .project-editor-field > input:disabled { opacity:.6; }
 .project-editor-field > small,.project-editor-note { color:var(--studio-dim); font-size:11px; line-height:1.5; }
 .project-editor-pair { display:grid; grid-template-columns:1fr 1fr; gap:10px; min-width:0; }
+/* A custom category is typed in the category box itself, sized like the select it replaces; its list button stays at the right edge. */
+.project-category-custom { position:relative; min-width:0; }
+.project-category-custom > input { width:100%; min-width:0; min-height:34px; padding:6px 34px 6px 10px; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-panel); color:var(--studio-text); font-size:12px; line-height:20px; text-overflow:ellipsis; }
+.project-category-custom:has([aria-expanded=true]) > input { border-color:var(--studio-accent); }
+.project-category-toggle.studio-select { position:absolute; top:1px; right:1px; bottom:1px; width:32px; min-height:0; padding:0; justify-content:center; border:0; border-radius:0 5px 5px 0; background:transparent; }
+.project-category-toggle > .studio-select-value { display:none; }
+.project-category-toggle > .studio-select-chevron { margin:0; }
 .project-editor-error { margin:0; color:#dc2626; white-space:pre-line; overflow-wrap:anywhere; font-size:12px; }
 .project-folder-preview { display:block; overflow-wrap:anywhere; background:var(--studio-muted); padding:6px 8px; border-radius:4px; font-size:11px; color:var(--studio-dim); }
 .project-cover-editor { display:flex; align-items:center; gap:13px; min-width:0; }

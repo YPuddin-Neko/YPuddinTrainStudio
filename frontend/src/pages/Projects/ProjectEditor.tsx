@@ -56,6 +56,22 @@ export default function ProjectEditor({ project, categories, onClose, onSaved, o
   }, [file]);
   const idError = !id ? text('请填写项目 ID。', 'Enter a project ID.') : id.length > 64 ? text('项目 ID 最多 64 个字符。', 'Project ID must be at most 64 characters.') : !/^[A-Za-z0-9_]+$/.test(id) ? text('项目 ID 只能包含英文字母、数字和下划线。', 'Use only ASCII letters, digits and underscores in the project ID.') : '';
   const categoryOptions = [...new Set([...PROJECT_CATEGORIES, ...categories, ...(project?.category ? [project.category] : [])])];
+  const categoryChoices = [{ value: '', label: text('未分类', 'Uncategorized') }, ...categoryOptions.map(value => ({ value: `category:${value}`, label: categoryLabel(value, english) })), { value: 'custom', label: text('自定义分类…', 'Custom category…') }];
+  const categoryBox = React.useRef<HTMLDivElement>(null);
+  const focusCategory = React.useRef(false);
+  // A custom category is typed in the same box, so focus follows the box when it changes form.
+  React.useLayoutEffect(() => {
+    if (!focusCategory.current) return;
+    focusCategory.current = false;
+    document.getElementById('project-category')?.focus();
+  }, [customCategory]);
+  const chooseCategory = (value: string) => {
+    const custom = value === 'custom';
+    if (custom !== customCategory) focusCategory.current = true;
+    if (custom && customCategory) return;
+    setCustomCategory(custom);
+    setCategory(value.startsWith('category:') ? value.slice(9) : '');
+  };
   const activeCover = preview || (!removeCover && savedProject?.cover_url ? coverSource(savedProject.cover_url) : null);
   const chooseFile = (selected?: File) => {
     if (!selected) return;
@@ -131,10 +147,11 @@ export default function ProjectEditor({ project, categories, onClose, onSaved, o
           aria-invalid={idTouched && !!idError} aria-describedby="project-id-help" autoComplete="off" spellCheck={false} placeholder="my_project_01" data-testid="project-id-input"/>
           <small id="project-id-help">{text('仅 A–Z、a–z、0–9 和下划线，创建后不可修改。', 'Only A–Z, a–z, 0–9 and underscores; permanent after creation.')}</small>{idTouched && idError && <span role="alert" className="project-editor-error">{idError}</span>}
           <code className="project-folder-preview" aria-label={text('项目目录预览', 'Project folder preview')}>studio_data/project/{id && !idError ? id : '<project_id>'}/v1/</code></div>}
-        <div className="project-editor-pair"><div className="project-editor-field"><label htmlFor="project-category">{text('项目分类', 'Project category')}</label><StudioSelect id="project-category" aria-label={text('项目分类', 'Project category')} disabled={busy} value={customCategory ? 'custom' : category ? `category:${category}` : ''}
-          options={[{ value: '', label: text('未分类', 'Uncategorized') }, ...categoryOptions.map(value => ({ value: `category:${value}`, label: categoryLabel(value, english) })), { value: 'custom', label: text('自定义分类…', 'Custom category…') }]}
-          onValueChange={value => { setCustomCategory(value === 'custom'); setCategory(value.startsWith('category:') ? value.slice(9) : ''); }}/>
-          {customCategory && <input aria-label={text('自定义分类名称', 'Custom category name')} maxLength={64} required value={category} onChange={event => setCategory(event.target.value)} placeholder={text('例如：产品 LoRA', 'For example: Product LoRA')}/>}</div>
+        <div className="project-editor-pair"><div className="project-editor-field"><label htmlFor="project-category">{text('项目分类', 'Project category')}</label>
+          {customCategory ? <div ref={categoryBox} className="project-category-custom">
+            <input id="project-category" maxLength={64} required autoComplete="off" value={category} onChange={event => setCategory(event.target.value)} placeholder={text('自定义，例如：产品 LoRA', 'Custom, e.g. Product LoRA')}/>
+            <StudioSelect className="project-category-toggle" anchorRef={categoryBox} aria-label={text('选择项目分类', 'Choose a project category')} disabled={busy} value="custom" options={categoryChoices} onValueChange={chooseCategory}/>
+          </div> : <StudioSelect id="project-category" aria-label={text('项目分类', 'Project category')} disabled={busy} value={category ? `category:${category}` : ''} options={categoryChoices} onValueChange={chooseCategory}/>}</div>
           {!project && <div className="project-editor-field"><label htmlFor="project-family">{text('初始模型类型', 'Initial model family')}</label><StudioSelect id="project-family" disabled={busy || !!savedProject} aria-label={text('初始模型类型', 'Initial model family')} value={family}
             options={familyOptions} onValueChange={setFamily}/>{familiesError && <p role="alert" className="project-editor-error">{text('无法读取可用模型类型。', 'Could not load model families.')}<button type="button" className="ui-link" onClick={() => void reloadFamilies()}>{text('重试', 'Retry')}</button></p>}</div>}</div>
         <label className="project-editor-field"><span>{text('备注（可选）', 'Notes (optional)')}</span><textarea rows={2} value={note} onChange={event => setNote(event.target.value)}/></label>

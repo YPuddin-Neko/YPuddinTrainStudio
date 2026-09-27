@@ -19,6 +19,8 @@ interface Props {
   placeholder?: string;
   searchable?: boolean;
   optionColumns?: 1 | 3;
+  /** The control the list lines up with when the trigger is only part of it, such as a text box's list button. */
+  anchorRef?: React.RefObject<HTMLElement | null>;
   'aria-invalid'?: React.AriaAttributes['aria-invalid'];
   'aria-label'?: string;
   'aria-labelledby'?: string;
@@ -27,7 +29,7 @@ interface Props {
 }
 
 /** A select-only combobox; focus stays on the trigger while its list is open. */
-export default function StudioSelect({ id, value, options, onValueChange, disabled, className = '', icon, triggerDescription, fallbackLabel, placeholder, searchable = false, optionColumns = 1, ...aria }: Props) {
+export default function StudioSelect({ id, value, options, onValueChange, disabled, className = '', icon, triggerDescription, fallbackLabel, placeholder, searchable = false, optionColumns = 1, anchorRef, ...aria }: Props) {
   const text = useWorkspaceText();
   const columns = searchable ? 1 : optionColumns;
   const generatedId = React.useId();
@@ -65,7 +67,7 @@ export default function StudioSelect({ id, value, options, onValueChange, disabl
   React.useLayoutEffect(() => {
     if (!visible) return;
     const place = () => {
-      const rect = trigger.current?.getBoundingClientRect();
+      const rect = (anchorRef?.current || trigger.current)?.getBoundingClientRect();
       if (!rect) return;
       const width = Math.min(Math.max(rect.width, columns === 3 ? 360 : 160), window.innerWidth - 16);
       const below = window.innerHeight - rect.bottom - 12;
@@ -87,7 +89,7 @@ export default function StudioSelect({ id, value, options, onValueChange, disabl
       window.removeEventListener('scroll', place, true);
       document.removeEventListener('pointerdown', outside);
     };
-  }, [visible, options.length, columns]);
+  }, [visible, options.length, columns, anchorRef]);
   React.useEffect(() => {
     if (visible) document.getElementById(`${listId}-${active}`)?.scrollIntoView?.({ block: 'nearest' });
   }, [active, visible, listId]);
