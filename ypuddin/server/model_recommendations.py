@@ -5,6 +5,8 @@ repo/files API. Provider mappings are explicit; a matching repository name is ne
 assumed by the client. Updated upstream bytes must pass the pinned SHA-256 check.
 Illustrious v0.1 and Krea Raw BF16 ModelScope sources rechecked 2026-09-15.
 Klein Base 4B/9B, Qwen3 4B/8B and FLUX.2 VAE ModelScope sources checked 2026-09-23.
+NoobAI-XL V-Pred 1.0 and 1.1 sources checked 2026-09-27. ModelScope has 1.1 in the official LaxharLAB
+repository; V-Pred 1.0 only in the ModelE mirror, whose file is byte-identical (same SHA-256).
 """
 
 import hashlib
@@ -278,6 +280,58 @@ RECOMMENDATIONS = [
                 filename="Illustrious-XL-v0.1.safetensors",
                 revision="6f7fa36d9cb8aede0e05eeb8790966151a0d21a0",
                 url="https://modelscope.cn/models/OnomaAIResearch/Illustrious-xl-early-release-v0/files",
+            ),
+        ],
+    ),
+    RecommendedModel(
+        id="sdxl-noobai-vpred-10",
+        family="sdxl",
+        kind="dit",
+        name="NoobAI-XL V 预测 1.0 · 完整模型",
+        dtype="bf16",
+        recommended=False,
+        size=7105350110,
+        sha256="ea349eeae87ca8d25ba902c93810f7ca83e5c82f920edf12f273af004ae02819",
+        sources=[
+            RecommendedSource(
+                provider="huggingface",
+                repo_id="Laxhar/noobai-XL-Vpred-1.0",
+                filename="NoobAI-XL-Vpred-v1.0.safetensors",
+                revision="66aa55e3469c27c29a89813cd35dd95fb7485fa1",
+                url="https://huggingface.co/Laxhar/noobai-XL-Vpred-1.0/blob/66aa55e3469c27c29a89813cd35dd95fb7485fa1/NoobAI-XL-Vpred-v1.0.safetensors",
+            ),
+            RecommendedSource(
+                provider="modelscope",
+                repo_id="ModelE/noobai-XL-Vpred-1.0",
+                filename="NoobAI-XL-Vpred-v1.0.safetensors",
+                revision="647714aee089d7977e2e835142852ff8d3c2c6e0",
+                url="https://modelscope.cn/models/ModelE/noobai-XL-Vpred-1.0/files",
+            ),
+        ],
+    ),
+    RecommendedModel(
+        id="sdxl-noobai-eps-11",
+        family="sdxl",
+        kind="dit",
+        name="NoobAI-XL E 预测 1.1 · 完整模型",
+        dtype="bf16",
+        recommended=False,
+        size=7105349958,
+        sha256="6681e8e4b134c81f16533acedb0d406d7e5e366e1624b4105178c64d00b05d51",
+        sources=[
+            RecommendedSource(
+                provider="huggingface",
+                repo_id="Laxhar/noobai-XL-1.1",
+                filename="NoobAI-XL-v1.1.safetensors",
+                revision="814a274af2b8097c0828819d561ec74c7d0c6cea",
+                url="https://huggingface.co/Laxhar/noobai-XL-1.1/blob/814a274af2b8097c0828819d561ec74c7d0c6cea/NoobAI-XL-v1.1.safetensors",
+            ),
+            RecommendedSource(
+                provider="modelscope",
+                repo_id="LaxharLAB/NoobAI-XL",
+                filename="file.safetensors",
+                revision="97675079e70111933c737a2dc1928ef2d4e51977",
+                url="https://modelscope.cn/models/LaxharLAB/NoobAI-XL/files",
             ),
         ],
     ),

@@ -23,6 +23,39 @@ PREFIXES = {
 }
 
 
+def checkpoint_objective(keys) -> dict[str, bool]:
+    """The objective a single-file checkpoint declares with ComfyUI's empty ``v_pred`` / ``ztsnr`` keys.
+
+    NoobAI-XL V-Pred and similar releases carry them; an unmarked file says nothing either way.
+    """
+    present = set(keys)
+    return {"v_prediction": "v_pred" in present, "zero_terminal_snr": "ztsnr" in present}
+
+
+def file_objective(path: str | Path) -> dict[str, bool]:
+    """``checkpoint_objective`` of a single-file checkpoint; a directory or other file declares nothing."""
+    path = Path(path).expanduser()
+    if not path.is_file() or path.suffix.lower() != ".safetensors":
+        return checkpoint_objective(())
+    from safetensors import safe_open
+
+    with safe_open(str(path), framework="pt", device="cpu") as file:
+        return checkpoint_objective(file.keys())
+
+
+def objective_problems(objective: dict[str, bool], cfg) -> list[str]:
+    problems = []
+    if objective["v_prediction"] and cfg.prediction_type != "v_prediction":
+        problems.append(
+            "SDXL checkpoint is marked v-prediction (v_pred key); set model.prediction_type to v_prediction"
+        )
+    if objective["zero_terminal_snr"] and not cfg.zero_terminal_snr:
+        problems.append(
+            "SDXL checkpoint is marked zero terminal SNR (ztsnr key); enable model.zero_terminal_snr"
+        )
+    return problems
+
+
 def component_path(checkpoint: str | Path, component: str, override: str | Path | None = None) -> Path:
     path = Path(override or checkpoint).expanduser()
     if path.is_dir() and (path / component).is_dir():

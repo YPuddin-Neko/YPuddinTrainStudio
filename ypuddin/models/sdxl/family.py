@@ -25,10 +25,12 @@ from ypuddin.models.registry import register
 from .latent import SDXLLatent
 from .loading import (
     check_component_storage,
+    checkpoint_objective,
     component_config,
     component_keys,
     component_path,
     load_diffusers_component,
+    objective_problems,
 )
 from .text import SDXLText, tokenizer_paths
 
@@ -112,7 +114,10 @@ class SDXLFamily(ModelFamily):
 
                     try:
                         with safe_open(str(path), framework="pt", device="cpu") as file:
-                            component_keys(list(file.keys()), component)
+                            keys = list(file.keys())
+                        component_keys(keys, component)
+                        if component == "unet":
+                            problems += objective_problems(checkpoint_objective(keys), cfg)
                     except (OSError, ValueError, SafetensorError) as error:
                         problems.append(str(error))
                 if path.exists():

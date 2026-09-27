@@ -318,6 +318,8 @@ export function presentConfigIssues(errors: Array<{loc?: unknown; msg?: unknown}
       else if (/less than or equal to/i.test(detail)) message = `输入值应小于或等于 ${detail.split(/less than or equal to/i)[1].trim()}`;
       else if (/bucket step (\d+) must be a multiple of align (\d+)/.test(detail)) { const [, step, align] = detail.match(/bucket step (\d+) must be a multiple of align (\d+)/)!; message = `分桶步长 ${step} 不是 ${align} 的倍数；当前模型要求 ${align} 的倍数，如 ${Math.max(Number(align), Math.round(Number(step) / Number(align)) * Number(align))}`; }
       else if (/requires? CUDA/i.test(detail)) message = '此选项需要 CUDA，请选择当前设备支持的配置';
+      else if (/marked v-prediction/i.test(detail)) message = '这个 SDXL 模型是 v 预测模型（文件带 v_pred 标记），请把 SDXL 预测方式改为 v_prediction';
+      else if (/marked zero terminal SNR/i.test(detail)) message = '这个 SDXL 模型按零终点信噪比训练（文件带 ztsnr 标记），请开启零终点信噪比（Zero SNR）';
       else if (/Extra inputs are not permitted/i.test(detail)) message = '当前版本不支持此参数，请检查导入的配置';
       else if (/valid (integer|number)/i.test(detail)) message = '请输入有效数字';
       else if (/no (images|training images)|dataset is empty/i.test(detail)) message = '数据源中没有可用的训练图片';

@@ -335,6 +335,14 @@ class ModelDownloads:
         if variant == "turbo":
             purpose = "inference"
         source, filename = resolve_source(body)
+        if recommendation is not None and recommendation.id:
+            from .model_recommendations import find_recommendation
+
+            entry = find_recommendation(recommendation.id)
+            if entry is not None:
+                # One local name per catalog entry, whichever provider serves it: a mirror may
+                # publish the same bytes under a generic name such as ``file.safetensors``.
+                filename = PurePosixPath(entry.sources[0].filename).name
         root = Path(self.context.settings()["paths"]["models_dir"]).resolve()
         if not self.context.is_allowed(root):
             raise ApiError("model directory is outside allowed storage roots", status=403)

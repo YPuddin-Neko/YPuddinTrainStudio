@@ -190,6 +190,24 @@ def full_checkpoint_model(path: Path, family: str) -> ModelConfig:
     return config.model
 
 
+def adopt_backbone_objective(model: ModelConfig, path: str | Path) -> None:
+    """A marked SDXL sampling backbone uses its own objective, whatever the training run used."""
+    if model.family != "sdxl":
+        return
+    from safetensors import SafetensorError
+
+    from ypuddin.models.sdxl.loading import file_objective
+
+    try:
+        objective = file_objective(path)
+    except (OSError, ValueError, SafetensorError):
+        return  # validate_config reports the unreadable file
+    if objective["v_prediction"]:
+        model.prediction_type = "v_prediction"
+    if objective["zero_terminal_snr"]:
+        model.zero_terminal_snr = True
+
+
 def _source(context, source_id):
     row = context.db.fetchone("SELECT * FROM jobs WHERE id=?", (source_id,))
     if not row or row["type"] != "train":
@@ -392,6 +410,7 @@ def start(context, source_id: str, request: XyzRequest):
         model.dit_path = row["path"]
         if model.family == "krea2" and projected.get("variant"):
             model.krea2_variant = projected["variant"]
+        adopt_backbone_objective(model, row["path"])
     family = get_family(model.family)
     errors = ([family.spec.retired_reason] if family.spec.retired_reason else []) + family.validate_config(
         model
