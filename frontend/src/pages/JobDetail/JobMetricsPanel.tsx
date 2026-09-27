@@ -9,15 +9,16 @@ import type { JobMetrics, Settings } from '../../api/types';
 import { chartTitle, DEFAULT_METRIC_CHARTS, METRICS, type MetricChartSetting, type MetricKey } from '../../utils/metricCharts';
 import { shapeValidationSeries, smoothLoss } from '../../utils/metrics';
 import { useWorkspaceText } from '../../utils/workspaceText';
-import { axisTickLabels, layoutValueAxes, metricChartBase, metricLabels } from './metricPresentation';
+import { axisTickLabels, formatMetricValue, layoutValueAxes, metricChartBase, metricLabels, metricRange } from './metricPresentation';
 import './job-metrics.css';
 
 const EXTRA_COLORS = ['#f59e0b', '#22d3ee', '#fb7185', '#84cc16', '#e879f9', '#a78bfa'];
 const GROUP_NAMES: Record<string, string> = { dora: 'DoRA' };
 const MIN_PLOT_WIDTH = 240;
 
-type Line = { unit: string; name: string; color: string; data: Array<[number, number | null]>; width?: number; symbols?: boolean };
-type Chart = { key: string; title: string; note?: string; option?: Record<string, unknown>; empty?: React.ReactNode };
+type Line = { unit: string; name: string; color: string; data: Array<[number, number | null]>; rangeValues?: Array<number | null>; width?: number; symbols?: boolean };
+type SeriesRange = { name: string; color: string; unit: string; min: number; max: number };
+type Chart = { key: string; title: string; note?: string; option?: Record<string, unknown>; ranges?: SeriesRange[]; empty?: React.ReactNode };
 
 /**
  * The largest ratio between parameter groups at one step. Groups 100× apart (a DoRA or w2 group beside w1)
@@ -70,7 +71,7 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
   const [xAxisMode, setXAxisMode] = React.useState<'step' | 'epoch'>('step');
   const [emaAlpha, setEmaAlpha] = React.useState(0.9);
   const useEpoch = xAxisMode === 'epoch' && !!stepsPerEpoch;
-  const xAxisName = useEpoch ? t('job.epoch') : t('job.step');
+  const xAxisName = useEpoch ? text('训练轮数', 'Epoch') : text('训练步数', 'Training step');
   const xs = React.useMemo(() => useEpoch && stepsPerEpoch ? metrics?.steps.map(step => step / stepsPerEpoch) || [] : metrics?.steps || [], [metrics, useEpoch, stepsPerEpoch]);
   const chartVramMetric = metrics?.vram_metric ?? vramMetric;
   const apple = device === 'mps';
@@ -79,7 +80,7 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
     if (!metrics?.steps.length || !layout) return [];
     const points = (values: Array<number | null | undefined> | undefined, scale = 1) => xs.map((x, index): [number, number | null] => {
       const value = values?.[index];
-      return [x, typeof value === 'number' ? value / scale : null];
+      return [x, typeof value === 'number' && Number.isFinite(value) ? value / scale : null];
     });
     const memoryName = chartVramMetric === 'current_allocated' ? `${t('job.currentTrainingAllocated')} (GB)` : chartVramMetric === 'peak_allocated' ? `${t('job.vramPeak')} (GB)` : labels.memory;
     const plain: Partial<Record<MetricKey, { name: string; values: Array<number | null | undefined> | undefined; scale?: number }>> = {
@@ -106,6 +107,7 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
             unit: 'LR', name: `${labels.lr} · ${GROUP_NAMES[group] || group}`, color: index ? EXTRA_COLORS[(index - 1) % EXTRA_COLORS.length] : item.color,
             // A log axis has no zero: warmup's first steps are left out of the line.
             data: points(logRates ? values.map(value => typeof value === 'number' && value > 0 ? value : null) : values),
+            rangeValues: values,
           }));
         } else if (item.metric === 'validation') {
           if (!metrics.validation?.length) continue;
@@ -174,7 +176,11 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
               : only === 'vram' ? (chartVramMetric === 'current_allocated' ? text('训练进程当前占用的显存。', 'Memory currently allocated by the training process.') : text('训练进程到这一步为止的显存峰值。', 'Peak memory allocated by the training process so far.'))
                 : units.length > 1 ? text('单位不同的指标各用一条纵轴，颜色与图例一致。', 'Metrics with different units each use their own axis, in the legend’s colors.') : undefined;
       const note = [chartNote, appleNote].filter(Boolean).join(' ') || undefined;
-      list.push({ key: chart.id, title, note, option });
+      const ranges = lines.flatMap(line => {
+        const range = metricRange(line.rangeValues ?? line.data.map(([, value]) => value));
+        return range ? [{ ...range, name: line.name, color: line.color, unit: ['Loss', 'LR', 'Norm'].includes(line.unit) ? '' : line.unit }] : [];
+      });
+      list.push({ key: chart.id, title, note, option, ranges });
     }
     return list;
   }, [metrics, xs, xAxisName, labels, emaAlpha, chartVramMetric, apple, useEpoch, stepsPerEpoch, layout, chinese, t, text]);
@@ -182,8 +188,8 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
   return <div className="job-metrics">
     <div className="job-metrics-toolbar">
       <div className="job-metrics-axis ui-segmented ui-segmented-sm" role="group" aria-label={text('横轴单位', 'Horizontal axis')}>
-        <button type="button" aria-pressed={xAxisMode === 'step'} onClick={() => setXAxisMode('step')}>{t('job.step')}</button>
-        <button type="button" aria-pressed={xAxisMode === 'epoch'} onClick={() => setXAxisMode('epoch')} disabled={!stepsPerEpoch} title={!stepsPerEpoch ? t('job.epochUnavailable') : undefined}>{t('job.epoch')}</button><SlidingIndicator className="ui-segmented-thumb"/>
+        <button type="button" aria-pressed={xAxisMode === 'step'} onClick={() => setXAxisMode('step')}>{text('训练步数', 'Training steps')}</button>
+        <button type="button" aria-pressed={xAxisMode === 'epoch'} onClick={() => setXAxisMode('epoch')} disabled={!stepsPerEpoch} title={!stepsPerEpoch ? t('job.epochUnavailable') : undefined}>{text('训练轮数', 'Epochs')}</button><SlidingIndicator className="ui-segmented-thumb"/>
       </div>
       <div className="job-metrics-tools">
         <label className="job-metrics-smoothing">{text('平滑 EMA 系数', 'Smoothing EMA coefficient')}<input aria-label={text('平滑 EMA 系数', 'Smoothing EMA coefficient')} type="range" min="0" max="0.99" step="0.01" value={emaAlpha} onChange={event => setEmaAlpha(Number(event.target.value))}/><output>{emaAlpha.toFixed(2)}</output></label>
@@ -195,6 +201,12 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
       : <div className="job-metrics-grid">{charts.map((chart, index) => <section key={chart.key} className={`job-metrics-chart${index === charts.length - 1 && charts.length % 2 ? ' is-wide' : ''}`} aria-label={chart.title}>
         <h2>{chart.title}</h2>{chart.note && <p>{chart.note}</p>}
         {chart.option ? <EChart option={chart.option} style={{ height: 280 }}/> : <div className="job-metrics-chart-empty"><Thermometer size={22} aria-hidden="true"/><span>{chart.empty}</span></div>}
+        {!!chart.ranges?.length && <ul className="job-metrics-ranges" aria-label={text('已记录指标的最大值和最小值', 'Maximum and minimum of recorded metrics')}>
+          {chart.ranges.map(range => <li key={range.name} aria-label={range.name}>
+            <span className="job-metrics-range-name"><i aria-hidden="true" style={{ backgroundColor: range.color }}/><span>{range.name}</span></span>
+            <dl>{([['max', text('最大值', 'Max')], ['min', text('最小值', 'Min')]] as const).map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{formatMetricValue(range[key])}{range.unit && ` ${range.unit}`}</dd></div>)}</dl>
+          </li>)}
+        </ul>}
       </section>)}</div>}
   </div>;
 }

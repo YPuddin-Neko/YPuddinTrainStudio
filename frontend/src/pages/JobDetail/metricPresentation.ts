@@ -6,6 +6,16 @@ export function formatMetricValue(value: unknown): string {
   return rounded !== 0 && Math.abs(rounded) < 1e-3 ? rounded.toExponential() : String(rounded);
 }
 
+/** Use recorded values before chart downsampling; missing readings are not zero. */
+export function metricRange(values: Iterable<number | null | undefined>): { min: number; max: number } | null {
+  let min = Infinity, max = -Infinity;
+  for (const value of values) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+    min = Math.min(min, value); max = Math.max(max, value);
+  }
+  return min === Infinity ? null : { min, max };
+}
+
 export function metricLabels(chinese: boolean) {
   return {
     loss: 'Loss',
@@ -39,8 +49,8 @@ export function metricChartBase(xAxisName: string, yAxisName: string) {
     },
     legend: { type: 'scroll' as const, top: 4, left: 12, right: 12, textStyle: { fontSize: 11 } },
     // Reserve separate top legend, axes and bottom zoom regions at every width.
-    grid: { left: 12, right: 26, top: 62, bottom: 78, containLabel: true },
-    xAxis: { type: 'value' as const, name: xAxisName, nameLocation: 'middle' as const, nameGap: 30, splitLine: { show: false }, axisLabel: { formatter: formatMetricValue } },
+    grid: { left: 12, right: 26, top: 62, bottom: 52, containLabel: true },
+    xAxis: { type: 'value' as const, splitLine: { show: false }, axisLabel: { formatter: formatMetricValue } },
     yAxis: { type: 'value' as const, name: yAxisName, scale: true, axisLabel: { formatter: formatMetricValue } },
     dataZoom: [{ type: 'slider' as const, bottom: 8, height: 18, showDetail: false, brushSelect: false }],
   };

@@ -9,6 +9,14 @@
 .job-metrics-chart.is-wide { grid-column:1 / -1; }
 .job-metrics-chart h2 { font-size:13px; font-weight:600; }
 .job-metrics-chart > p { margin-top:4px; margin-bottom:6px; font-size:11px; line-height:1.6; color:var(--studio-dim); }
+.job-metrics-ranges { display:flex; flex-wrap:wrap; justify-content:center; gap:10px 24px; list-style:none; margin:6px 0 0; padding:0; }
+.job-metrics-ranges > li { display:flex; align-items:center; gap:12px; min-width:0; max-width:100%; font-size:11px; }
+.job-metrics-range-name { display:flex; align-items:center; gap:7px; min-width:0; max-width:180px; overflow-wrap:anywhere; }
+.job-metrics-range-name i { flex:none; width:7px; height:7px; border-radius:50%; }
+.job-metrics-ranges dl { flex:none; display:grid; gap:3px; margin:0; }
+.job-metrics-ranges dl > div { display:flex; justify-content:space-between; gap:10px; }
+.job-metrics-ranges dt { color:var(--studio-dim); }
+.job-metrics-ranges dd { margin:0; font-variant-numeric:tabular-nums; }
 .job-metrics-skeleton-title { display:block; width:30%; height:14px; border-radius:5px; }
 .job-metrics-skeleton-plot { display:block; height:280px; margin-top:12px; border-radius:6px; }
 .job-metrics-chart-empty { flex:1; min-height:200px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:16px; text-align:center; font-size:12px; line-height:1.7; color:var(--studio-dim); }
