@@ -6808,10 +6808,10 @@ export interface components {
         /** SettingsCache */
         SettingsCache: {
             /**
-             * Thumbnail Max Mb
-             * @default 1024
+             * Thumbnail Max Gb
+             * @default 1
              */
-            thumbnail_max_mb: number;
+            thumbnail_max_gb: number;
         };
         /** SettingsDownloads */
         SettingsDownloads: {

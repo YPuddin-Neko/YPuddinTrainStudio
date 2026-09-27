@@ -159,7 +159,8 @@ class SettingsDownloads(BaseModel):
 
 class SettingsCache(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    thumbnail_max_mb: int = Field(1024, ge=1, le=1048576, strict=True)
+    # 1 GB = 1024**3 bytes, so the former 1024 MiB default is exactly 1 GB.
+    thumbnail_max_gb: float = Field(1.0, ge=0.1, le=1024, strict=True, allow_inf_nan=False)
 
 
 class ThumbnailCacheStatus(_Out):

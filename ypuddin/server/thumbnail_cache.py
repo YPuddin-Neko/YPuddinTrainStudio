@@ -64,7 +64,7 @@ class ThumbnailCache:
         return active
 
     def _limit(self):
-        return self.context.settings()["cache"]["thumbnail_max_mb"] * 1024**2
+        return round(self.context.settings()["cache"]["thumbnail_max_gb"] * 1024**3)
 
     def _forget(self, path):
         item = self._files.pop(path, None)

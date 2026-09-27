@@ -15,6 +15,7 @@ import { SettingsSections } from './SettingsSections';
 import { ServiceInfo } from './ServiceInfo';
 import StudioSelect from '../../components/StudioSelect';
 import Switch from '../../components/Switch';
+import { THUMBNAIL_LIMIT_GB, thumbnailLimitValid } from '../../utils/thumbnailCache';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import StorageDirectoryInput, { type StoragePathPreview } from './StorageDirectoryInput';
 import ThumbnailCacheSettings from './ThumbnailCacheSettings';
@@ -43,8 +44,8 @@ export default function Preferences() {
   const storageQuery = JSON.stringify({output_mode:settings?.paths.output_mode || 'project',output_dir:settings?.paths.output_dir,data_root:settings?.paths.data_root});
   const storageDefaults = storagePreview?.query === storageQuery ? storagePreview.paths : undefined;
   const settingsLoaded = settings !== null;
-  const thumbnailLimit = settings?.cache?.thumbnail_max_mb ?? 1024;
-  const cacheLimitInvalid = !Number.isInteger(thumbnailLimit) || thumbnailLimit < 1 || thumbnailLimit > 1048576;
+  const thumbnailLimit = settings?.cache?.thumbnail_max_gb ?? THUMBNAIL_LIMIT_GB.fallback;
+  const cacheLimitInvalid = !thumbnailLimitValid(thumbnailLimit);
 
   React.useEffect(() => {
     if (!settingsLoaded || downloads || system) return;
@@ -183,7 +184,7 @@ export default function Preferences() {
           {changeNotice('server', 'open_browser', true)}
         </div></div>
       </section>
-      <ThumbnailCacheSettings limit={thumbnailLimit} disabled={saving} refreshKey={serviceRefreshKey} onChange={value => update(s => ({ ...s, cache: { ...s.cache, thumbnail_max_mb: value } }))}/>
+      <ThumbnailCacheSettings limit={thumbnailLimit} disabled={saving} refreshKey={serviceRefreshKey} onChange={value => update(s => ({ ...s, cache: { ...s.cache, thumbnail_max_gb: value } }))}/>
       <section id="preferences-service" data-settings-section tabIndex={-1} className="settings-section">
         <div className="settings-section-heading"><div><h2>{t('settings.server')}</h2></div><span className="settings-service-refresh" ref={setServiceRefreshTarget}/></div>
         <div className="settings-field"><span className="settings-field-label">{t('settings.connectedService', '当前连接')}</span><div className="settings-field-control py-1.5 font-mono break-all">{window.location.origin}</div></div>

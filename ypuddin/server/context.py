@@ -19,7 +19,7 @@ from .models import Settings
 from .supervisor import JobSupervisor
 
 DEFAULT_SETTINGS: dict[str, Any] = {
-    "cache": {"thumbnail_max_mb": 1024},
+    "cache": {"thumbnail_max_gb": 1.0},
     "downloads": {"pypi": "ustc", "pytorch": "mirror", "fallback": True},
     "paths": {
         "bootstrap_env_dir": "",
@@ -40,6 +40,15 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "proxy_password_configured": False,
     },
 }
+
+
+def _cache_settings(section: dict[str, Any]) -> dict[str, Any]:
+    """Earlier releases stored the thumbnail limit in MiB as ``thumbnail_max_mb``."""
+    section = dict(section)
+    mib = section.pop("thumbnail_max_mb", None)
+    if "thumbnail_max_gb" not in section and isinstance(mib, int) and not isinstance(mib, bool):
+        section["thumbnail_max_gb"] = min(1024.0, max(0.1, round(mib / 1024, 2)))
+    return section
 
 
 @dataclass
@@ -109,6 +118,8 @@ class ServiceContext:
         if self.settings_path.exists():
             saved = json.loads(self.settings_path.read_text(encoding="utf-8"))
             for k, v in saved.items():
+                if k == "cache" and isinstance(v, dict):
+                    v = _cache_settings(v)
                 if isinstance(v, dict) and isinstance(base.get(k), dict):
                     base[k].update(v)
                 else:
@@ -158,6 +169,8 @@ class ServiceContext:
         from .network import PASSWORD_REVISION, ProxyCredentials, validate_proxy_settings
 
         patch = dict(patch)
+        if isinstance(patch.get("cache"), dict):
+            patch["cache"] = _cache_settings(patch["cache"])
         if PASSWORD_REVISION in patch:
             raise ValueError("Internal settings revisions cannot be changed through the API")
         password = None

@@ -19887,12 +19887,12 @@
       },
       "SettingsCache": {
         "properties": {
-          "thumbnail_max_mb": {
-            "type": "integer",
-            "maximum": 1048576.0,
-            "minimum": 1.0,
-            "title": "Thumbnail Max Mb",
-            "default": 1024
+          "thumbnail_max_gb": {
+            "type": "number",
+            "maximum": 1024.0,
+            "minimum": 0.1,
+            "title": "Thumbnail Max Gb",
+            "default": 1.0
           }
         },
         "additionalProperties": false,
