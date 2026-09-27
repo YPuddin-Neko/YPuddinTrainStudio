@@ -22,18 +22,6 @@ export function presetEditorSchema(schema: any) {
   return result;
 }
 
-export function presetSummary(config: Record<string, any>, english = false): string {
-  const pieces = [
-    config.training?.mode === 'full' ? (english ? 'Full fine-tuning' : '全量微调') : config.adapter?.algo?.toUpperCase(),
-    config.training?.mode !== 'full' && config.adapter?.rank != null ? `Rank ${config.adapter.rank}` : null,
-    config.optimizer?.lr != null ? `LR ${config.optimizer.lr}` : null,
-    config.dataset?.batch_size != null ? `${english ? 'Batch' : '批大小'} ${config.dataset.batch_size}` : null,
-    config.loop?.epochs != null ? `${config.loop.epochs} ${english ? 'epochs' : '轮'}` : null,
-    config.sampling?.steps != null ? `${english ? 'Preview' : '采样'} ${config.sampling.steps} ${english ? 'steps' : '步'}` : null,
-  ];
-  return pieces.filter(Boolean).join(' · ');
-}
-
 export function presetFamily(config: Record<string, unknown>): string {
   const model = config.model;
   if (!model || typeof model !== 'object' || !('family' in model)) return '';

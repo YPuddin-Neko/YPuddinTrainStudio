@@ -57,8 +57,6 @@
 .presets-page.parameter-workspace > .presets-editor { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; overflow: hidden; }
 .parameter-workspace .presets-form-toolbar { position: static; flex: 0 0 auto; top: auto; margin: 0; padding: 10px var(--parameter-shell-gutter); z-index: 2; }
 .parameter-workspace .presets-page-heading { margin-bottom: 10px; }
-.parameter-workspace .presets-meta { margin-top: 0; }
-.parameter-workspace .presets-context { margin-bottom: 12px; }
 .parameter-workspace .presets-schema .config-field { scroll-margin-top: 16px; }
 @media(max-width:900px) { .parameter-workspace .presets-form-toolbar { padding-block: 8px; } }
 
@@ -75,7 +73,6 @@
   .parameter-workspace .presets-page-heading p { display: none; }
   .parameter-workspace .presets-page-heading > span { display: block; margin-top: 3px; }
   .parameter-workspace .presets-toolbar { min-width: 0; padding: 0; gap: 12px; }
-  .parameter-workspace .presets-switcher { flex: 1 1 220px; width: auto; max-width: 400px; min-width: 150px; }
   .presets-page > .parameter-workspace-header > :not(header):not(.presets-toolbar) { grid-column: 1/-1; }
 }
 

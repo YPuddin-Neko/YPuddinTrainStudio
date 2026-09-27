@@ -11,7 +11,7 @@ import { SchemaForm, type ValidationError } from '../../schema/SchemaForm/Schema
 import { presentConfigIssues, type ConfigTab, type ConfigIssue } from '../../utils/configPresentation';
 import { mergeConfig } from '../../utils/config';
 import { formatApiError } from '../../utils/errors';
-import { presetEditorSchema, presetPayload, presetSummary, presetFamily } from '../../utils/presetEditor';
+import { presetEditorSchema, presetPayload, presetFamily } from '../../utils/presetEditor';
 import { PRESET_MODEL_FIELDS, reusableTrainingPreset } from '../../utils/trainingPresets';
 import { inactiveTrainingReason, trainingFamilyOptions } from '../../utils/trainingFamilies';
 import { useWorkspaceText } from '../../utils/workspaceText';
@@ -171,15 +171,29 @@ export default function Presets() {
     <div className="parameter-workspace-header">
     <header className="presets-page-heading"><div><h1>{text('参数预设', 'Presets')}</h1></div><span>{text(`${userPresets.length} 个预设`, `${userPresets.length} presets`)}</span></header>
     <div className="presets-toolbar" ref={toolbarRef} role="group" aria-label={text('预设操作', 'Preset actions')}>
-      <div className="presets-switcher"><span>{text('当前预设', 'Current preset')}</span><StudioSelect searchable aria-label={text('选择预设', 'Choose preset')} value={draft?.originalName || ''} disabled={busy || !userPresets.length} placeholder={text('新预设', 'New preset')} options={options} onValueChange={name=>{const item=userPresets.find(row=>row.name===name);if(item && name!==draft?.originalName)requestAction(()=>void begin(item));}}/></div>
       <div className="presets-actions">
+        <span role="status" className={`presets-status${draft && dirty ? ' presets-dirty' : ''}`}>{!draft ? notice : dirty ? text('有未保存修改', 'Unsaved changes') : notice || (draft.originalName ? text('已保存', 'Saved') : text('尚未创建', 'Not created yet'))}</span>
         <button type="button" className="ui-btn" disabled={busy || !schema.data || !families.data || list.isPending || list.isError} onClick={() => requestAction(() => void begin())}><Plus size={15}/>{text('新建预设', 'New preset')}</button>
         {draft?.originalName && <><button type="button" className="ui-btn" aria-label={text('复制为新预设', 'Duplicate')} disabled={busy || !!inactiveReason} onClick={() => requestAction(() => void begin({name:draft.name,description:draft.description,config:draft.config,builtin:false,updated_at:null},true))}><Copy size={15}/>{text('复制', 'Duplicate')}</button><button type="button" className="ui-btn ui-btn-danger presets-delete" aria-label={text('删除预设', 'Delete preset')} disabled={busy} onClick={()=>setDeleting(true)}><Trash2 size={15}/>{text('删除', 'Delete')}</button></>}
         <button type="button" className="ui-btn ui-btn-primary" disabled={busy || !!inactiveReason || !dirty || !editorSchema} onClick={()=>void save()}><Save size={15}/>{busy ? text('保存中…', 'Saving…') : text('保存预设', 'Save preset')}</button>
       </div>
     </div>
+    {/* Which preset, and its identity: the switcher first, then the model, name and description it is saved with. */}
+    <div className="presets-identity">
+      <div className="presets-switcher"><span>{text('当前预设', 'Current preset')}</span><StudioSelect searchable aria-label={text('选择预设', 'Choose preset')} value={draft?.originalName || ''} disabled={busy || !userPresets.length} placeholder={text('新预设', 'New preset')} options={options} onValueChange={name=>{const item=userPresets.find(row=>row.name===name);if(item && name!==draft?.originalName)requestAction(()=>void begin(item));}}/></div>
+      {draft && <>
+        <fieldset disabled={busy || !!inactiveReason} className="presets-meta">
+          <label className="presets-family">{text('适用模型', 'Model family')}{inactiveReason ? <span>{draft.config.model.family === 'flux' ? 'FLUX.1' : 'FLUX.2 dev'} · {text('已停用', 'Retired')}</span> : <StudioSelect aria-label={text('适用模型', 'Model family')} disabled={busy || !!draft.originalName} value={draft.config.model.family} onValueChange={target=>{const change=()=>{void begin({name:draft.name,description:draft.description,config:{model:{family:target}},builtin:false,updated_at:null},false,target,true);};if(JSON.stringify(draft.config)!==startingConfig.current)requestAction(change);else change();}} options={trainingFamilyOptions(families.data || [], english, draft.config.model.family)}/>}</label>
+          <label>{text('预设名称', 'Preset name')}<input ref={nameRef} aria-label={text('预设名称', 'Preset name')} placeholder={text('例如：人物_LoKr', 'For example: character_LoKr')} value={draft.name} readOnly={!!draft.originalName} onChange={event=>setDraft({...draft,name:event.target.value})}/></label>
+          <button type="button" className="ui-btn ui-btn-quiet presets-description-toggle" aria-label={text('编辑用途与说明', 'Edit description')} aria-expanded={descriptionOpen} aria-controls="preset-description" onClick={() => {
+            setDescriptionOpen(open => !open);
+            if (!descriptionOpen) requestAnimationFrame(() => descriptionRef.current?.focus());
+          }}>{text('说明', 'Description')}<ChevronDown size={14}/></button>
+        </fieldset>
+        {descriptionOpen && <label id="preset-description" className="presets-description">{text('用途与说明', 'Description')}<input ref={descriptionRef} aria-label={text('用途与说明', 'Description')} disabled={busy || !!inactiveReason} placeholder={text('可选，记录用途或参数取舍', 'Optional: purpose or parameter choices')} value={draft.description} onChange={event=>setDraft({...draft,description:event.target.value})}/></label>}
+      </>}
+    </div>
     {error && !deleting && <div role="alert" className="studio-error presets-validation-error"><p>{error}</p>{issues.length > 0 && <div className="presets-error-links">{issues.map((issue, index) => <button type="button" className="ui-btn ui-btn-sm" key={`${issue.path}-${index}`} onClick={() => goToIssue(issue)}>{text('定位', 'Go to')} {issue.label}<ChevronRight size={14}/></button>)}</div>}</div>}
-    {notice && <p role="status" className="presets-notice">{notice}</p>}
     {inactiveReason && <p role="alert" className="studio-error" data-testid="retired-preset">{inactiveReason}</p>}
     {[list, schema, families].some(query => query.isError) && <div role="alert" className="studio-error"><span>{[list, schema, families].filter(query => query.error).map(query => formatApiError(query.error)).join('\n')}</span><button type="button" className="ui-btn ui-btn-sm" onClick={() => { for (const query of [list, schema, families]) if (query.isError) void query.refetch(); }}>{text('重新加载', 'Reload')}</button></div>}
     {!draft && !error && <LoadingNote block className="presets-loading" label={text('正在读取参数…', 'Loading parameters…')}/>}
@@ -192,16 +206,6 @@ export default function Presets() {
       <div className="parameter-workspace-body">
       <ParameterSections rootRef={parameterScrollRef} tab={tab} onTabChange={tab => {setTab(tab);setSearch('');}} issues={issues} preset hasTrainingMode={!!editorSchema?.properties?.training} fullTraining={draft.config.training?.mode === 'full'} onRevealAdvanced={() => setAdvanced(true)}/>
       <div className="parameter-scroll-region" ref={parameterScrollRef}>
-      <fieldset disabled={busy || !!inactiveReason} className="presets-meta">
-        <label className="presets-family">{text('适用模型', 'Model family')}{inactiveReason ? <span>{draft.config.model.family === 'flux' ? 'FLUX.1' : 'FLUX.2 dev'} · {text('已停用', 'Retired')}</span> : <StudioSelect aria-label={text('适用模型', 'Model family')} disabled={busy || !!draft.originalName} value={draft.config.model.family} onValueChange={target=>{const change=()=>{void begin({name:draft.name,description:draft.description,config:{model:{family:target}},builtin:false,updated_at:null},false,target,true);};if(JSON.stringify(draft.config)!==startingConfig.current)requestAction(change);else change();}} options={trainingFamilyOptions(families.data || [], english, draft.config.model.family)}/>}</label>
-        <label>{text('预设名称', 'Preset name')}<input ref={nameRef} aria-label={text('预设名称', 'Preset name')} placeholder={text('例如：人物_LoKr', 'For example: character_LoKr')} value={draft.name} readOnly={!!draft.originalName} onChange={event=>setDraft({...draft,name:event.target.value})}/></label>
-        <button type="button" className="ui-btn ui-btn-quiet presets-description-toggle" aria-label={text('编辑用途与说明', 'Edit description')} aria-expanded={descriptionOpen} aria-controls="preset-description" onClick={() => {
-          setDescriptionOpen(open => !open);
-          if (!descriptionOpen) requestAnimationFrame(() => descriptionRef.current?.focus());
-        }}>{text('说明', 'Description')}<ChevronDown size={14}/></button>
-        {descriptionOpen && <label id="preset-description" className="presets-description">{text('用途与说明', 'Description')}<input ref={descriptionRef} aria-label={text('用途与说明', 'Description')} placeholder={text('可选，记录用途或参数取舍', 'Optional: purpose or parameter choices')} value={draft.description} onChange={event=>setDraft({...draft,description:event.target.value})}/></label>}
-      </fieldset>
-      <div className="presets-context"><span>{!draft.originalName ? text('填写名称并编辑参数后保存。', 'Name and edit the preset, then save.') : presetSummary(draft.config, english)}</span><span className={dirty ? 'presets-dirty' : ''}>{dirty ? text('有未保存修改', 'Unsaved changes') : draft.originalName ? text('已保存', 'Saved') : text('尚未创建', 'Not created yet')}</span></div>
       {search && <p className="presets-search-context">{text('搜索所有分区，包含高级参数', 'Searching every section, including advanced parameters')}</p>}
       {editorSchema && <div id="preset-parameters" className="presets-schema" role="region" aria-label={search ? text('预设参数搜索结果', 'Preset parameter search results') : text('预设参数内容', 'Preset parameter fields')}><SchemaForm key={revealVersion} preset readOnly={busy || !!inactiveReason} schema={editorSchema} value={draft.config} onChange={config=>{setDraft({...draft,config});setErrors([]);}} compact showAdvanced={advanced || !!search} search={search} onClearSearch={clearSearch} family={family} families={families.data} errors={errors}/></div>}
       </div>
