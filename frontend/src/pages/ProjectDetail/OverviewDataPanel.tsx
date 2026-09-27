@@ -104,8 +104,8 @@ export default function OverviewDataPanel({ datasets, workspaceUrl, projectId, v
     if (entry.images.items[index] && pictures.length < 16) pictures.push({ ...entry.images.items[index], source: entry.dataset_id });
   }
   const charts = [
-    { title: text('原图分辨率', 'Original resolutions'), items: [...resolutions.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8), truncated: resolutions.size > 8 },
-    { title: text('长宽比', 'Aspect ratios'), items: [...ratios.entries()].sort((a, b) => Number(a[0]) - Number(b[0])), truncated: false },
+    { title: text('图片分辨率', 'Image resolutions'), items: [...resolutions.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8), truncated: resolutions.size > 8 },
+    { title: text('图片长宽比', 'Image aspect ratios'), items: [...ratios.entries()].sort((a, b) => Number(a[0]) - Number(b[0])), truncated: false },
   ];
   const sourceUrl = (id: string) => `/datasets/${encodeURIComponent(id)}?${new URLSearchParams({ project: projectId, ...(versionId ? { version: versionId } : {}) })}`;
   const clearSearch = () => { setSearch(''); setQuery(''); setPreview(null); };

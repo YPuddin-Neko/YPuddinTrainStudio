@@ -180,7 +180,7 @@ export default function ProjectOverview({ project, version, versionId, config: s
           : <p className="overview-muted">{text('还没有训练记录。开始训练后，这里会显示每次训练的进度和保存的模型权重。', 'No runs yet. Training progress and saved weights will appear here.')}</p>}
   </section>;
   const outputs = <section className="overview-panel overview-outputs" aria-labelledby="overview-outputs-title">
-    <header className="overview-panel-heading"><div className="overview-panel-title"><h3 id="overview-outputs-title">{text('训练产物', 'Outputs')}</h3>{artifacts.length > 0 && <span className="overview-count">{artifacts.length}</span>}</div>{artifacts.length > 0 && <Link className="ui-link" to={`${resultsUrl}&result_tab=artifacts`}>{text('全部产物', 'All outputs')}<ArrowRight size={13}/></Link>}</header>
+    <header className="overview-panel-heading"><div className="overview-panel-title"><h3 id="overview-outputs-title">{text('最新训练产物', 'Latest outputs')}</h3>{artifacts.length > 0 && <span className="overview-count">{artifacts.length}</span>}</div>{artifacts.length > 0 && <Link className="ui-link" to={`${resultsUrl}&result_tab=artifacts`}>{text('全部产物', 'All outputs')}<ArrowRight size={13}/></Link>}</header>
     {artifactsQuery.isPending ? <p role="status" className="overview-muted"><Loader2 size={14} className="animate-spin"/>{text('正在读取训练产物…', 'Loading outputs…')}</p>
       : artifactsQuery.error ? <div role="alert" className="overview-inline-error"><span>{formatApiError(artifactsQuery.error)}</span><button type="button" className="ui-btn ui-btn-sm" onClick={() => void artifactsQuery.refetch()}>{text('重新读取产物', 'Reload outputs')}</button></div>
         : artifacts.length ? <ul className="overview-output-list">{artifacts.slice(0, 3).map(artifact => <li key={artifact.id}>
@@ -209,7 +209,7 @@ export default function ProjectOverview({ project, version, versionId, config: s
       </section>
       <aside className="overview-aside" aria-label={text('版本信息', 'Version details')}>
         <section className="overview-panel overview-configuration" aria-labelledby="overview-config-title">
-          <header className="overview-panel-heading"><h3 id="overview-config-title">{text('模型与参数', 'Model & parameters')}</h3><Link className="ui-link" to={trainUrl}>{text('训练参数', 'Parameters')}<ArrowRight size={13}/></Link></header>
+          <header className="overview-panel-heading"><h3 id="overview-config-title">{text('关联的训练参数与模型类型', 'Linked parameters and model type')}</h3><Link className="ui-link" to={trainUrl}>{text('训练参数', 'Parameters')}<ArrowRight size={13}/></Link></header>
           <Link to={modelsUrl} className="overview-model" data-missing={!baseModel || !!inactiveReason || undefined}>
             <span>{family ? `${familyLabel}${inactiveReason ? ` · ${text('已停用', 'Retired')}` : ''}` : text('未选择模型类型', 'No model type')}</span>
             <strong title={baseModel || undefined}>{baseModel || text('尚未配置训练底模', 'Base model not configured')}</strong>
