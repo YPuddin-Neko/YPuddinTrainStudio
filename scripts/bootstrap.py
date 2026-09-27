@@ -24,7 +24,7 @@
   --reinstall     只重建选中平台的环境（其他环境及 studio_data/ 不受影响）
   --no-browser    服务起来后不自动打开浏览器
   --no-frontend   跳过前端构建（只要 API）
-  --dtk-wheelhouse=<目录>  Linux DTK 首次安装使用的本地厂商 wheel 集合；不从普通包源安装 Torch
+  --dtk-wheelhouse=<目录>  Linux DTK 首次安装使用的本地厂商 wheel 集合（离线或未核对的 DTK 版本）；不从普通包源安装 Torch
   --host/--port/--data-root 原样传给 ``ypuddin serve``
 """
 
@@ -49,6 +49,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from ypuddin import dtk_builds  # noqa: E402
 from ypuddin.package_sources import (  # noqa: E402
     pypi_sources,
 )
@@ -770,9 +771,16 @@ def dtk_wheelhouse_has_triton(wheelhouse: Path) -> bool:
     return bool(wheels)
 
 
-def create_dtk_venv(base: str, wheelhouse: Path) -> None:
-    """Create only the selected, new DTK venv; never install pip into the host Python."""
+def create_dtk_venv(
+    base: str, wheelhouse: Path | None, *, system_site_packages: bool = False, index_url: str | None = None
+) -> None:
+    """Create only the selected, new DTK venv; never install pip into the host Python.
+
+    ``system_site_packages`` lets the venv see the host's packages (its vendor PyTorch). Without
+    ensurepip, pip comes from the wheel directory, else from ``index_url``.
+    """
     env = _env()
+    share = ["--system-site-packages"] if system_site_packages else []
     try:
         bundled_pip = (
             subprocess.run(
@@ -788,11 +796,12 @@ def create_dtk_venv(base: str, wheelhouse: Path) -> None:
     except (OSError, subprocess.TimeoutExpired):
         bundled_pip = False
     if bundled_pip:
-        run([base, "-m", "venv", str(VENV)], env=env)
+        run([base, "-m", "venv", *share, str(VENV)], env=env)
         return
     # Debian/Ubuntu vendor Python may omit ensurepip even though system pip works.
     # Check every bootstrap prerequisite before creating a partial environment.
-    if not any(wheelhouse.glob("pip-*.whl")):
+    local_pip = wheelhouse is not None and any(wheelhouse.glob("pip-*.whl"))
+    if not local_pip and not index_url:
         die(
             "当前 Python 缺少 ensurepip。请把与本机 Python 匹配的 pip-*.whl 放入 --dtk-wheelhouse 目录后重试，"
             "或改用 uv / 自带 ensurepip 的 Python。"
@@ -815,9 +824,14 @@ def create_dtk_venv(base: str, wheelhouse: Path) -> None:
             "请安装 uv，或改用自带 ensurepip 的 Python。"
         )
     owned = not VENV.exists()
+    source = ["--no-index", "--find-links", str(wheelhouse)] if local_pip else ["--index-url", str(index_url)]
     try:
-        log("[2/5] Python 未提供 ensurepip，使用本地 pip wheel 引导独立 DTK 环境")
-        run([base, "-m", "venv", "--without-pip", str(VENV)], env=env)
+        log(
+            "[2/5] Python 未提供 ensurepip，使用"
+            + ("本地 pip wheel" if local_pip else "包源中的 pip")
+            + "引导独立 DTK 环境"
+        )
+        run([base, "-m", "venv", "--without-pip", *share, str(VENV)], env=env)
         run(
             [
                 base,
@@ -829,11 +843,9 @@ def create_dtk_venv(base: str, wheelhouse: Path) -> None:
                 "install",
                 "--no-cache-dir",
                 "--disable-pip-version-check",
-                "--no-index",
                 "--no-deps",
                 "--only-binary=:all:",
-                "--find-links",
-                str(wheelhouse),
+                *source,
                 "pip",
             ],
             env=env,
@@ -844,7 +856,166 @@ def create_dtk_venv(base: str, wheelhouse: Path) -> None:
         # bootstrap so the next attempt cannot mistake it for a ready environment.
         if owned and VENV.is_dir() and not VENV.is_symlink():
             shutil.rmtree(VENV)
-        die("独立 DTK 环境的 pip 引导失败，请核对本地 pip wheel 与 Python 版本后重试。")
+        die("独立 DTK 环境的 pip 引导失败，请核对 pip 来源与 Python 版本后重试。")
+
+
+# Runs in the Python a DTK environment would be built from. Importing Torch there needs the DTK
+# library paths the launcher exports; "share" says how a new venv can see that PyTorch: through its
+# system site-packages, or, when it lives inside another venv, through a .pth link to that venv.
+DTK_PYTHON_PROBE = r"""
+import json, platform, sys
+from pathlib import Path
+libc, libc_version = platform.libc_ver()
+out = {
+    "python": "cp%d%d" % sys.version_info[:2],
+    "glibc": [int(part) for part in libc_version.split(".")[:2]] if libc == "glibc" and libc_version else None,
+}
+try:
+    import torch, torchvision
+    location = Path(torch.__file__).resolve().parent.parent
+    in_venv = sys.prefix != sys.base_prefix and location.is_relative_to(Path(sys.prefix).resolve())
+    out.update(
+        torch=torch.__version__, torchvision=torchvision.__version__, hip=getattr(torch.version, "hip", None),
+        cuda=torch.version.cuda, location=str(location), share="link" if in_venv else "system",
+    )
+except Exception as exc:
+    out["error"] = (type(exc).__name__ + ": " + str(exc))[-500:]
+print(json.dumps(out))
+"""
+
+
+def probe_dtk_python(python: str) -> dict:
+    """Python tag, glibc and any vendor PyTorch of an interpreter; empty when it cannot be run."""
+    try:
+        with tempfile.TemporaryDirectory(prefix="ypuddin-dtk-probe-") as directory:
+            result = subprocess.run(
+                [python, "-c", DTK_PYTHON_PROBE],
+                cwd=directory,
+                capture_output=True,
+                text=True,
+                timeout=300,
+                env=_env(),
+            )
+        return json.loads(result.stdout.strip().splitlines()[-1])
+    except (OSError, subprocess.TimeoutExpired, ValueError, IndexError):
+        return {}
+
+
+def vendor_stack(python: str, info: dict) -> dict | None:
+    """The Hygon PyTorch a new environment can share from ``python``: a HIP build with TorchVision."""
+    if not info.get("torch") or not info.get("hip") or info.get("cuda") or not info.get("torchvision"):
+        return None
+    return {
+        "python": python,
+        "share": info["share"],
+        "location": info["location"],
+        "torch": info["torch"],
+        "torchvision": info["torchvision"],
+    }
+
+
+def recorded_vendor_stack() -> dict | None:
+    """What the current environment shares, as recorded when it was created."""
+    try:
+        return json.loads((VENV / ".ypuddin-owner.json").read_text(encoding="utf-8")).get("vendor_stack")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def installed_dtk() -> str | None:
+    """DTK release of the runtime directory, e.g. 26.04 for /opt/dtk -> /opt/dtk-26.04."""
+    root = Path(os.environ.get("DTK_ROOT", "/opt/dtk"))
+    try:
+        resolved = str(root.resolve()) if root.is_dir() else ""
+    except OSError:
+        resolved = ""
+    match = re.search(r"dtk[-_](\d{2}\.\d{2}(?:\.\d+)?)$", resolved, re.IGNORECASE)
+    return match[1] if match else None
+
+
+def reviewed_dtk_set(info: dict):
+    """The reviewed vendor PyTorch wheels for this DTK release and Python, if there is a set."""
+    glibc = tuple(info.get("glibc") or ())
+    if host_arch() != "x86_64" or not glibc or glibc < dtk_builds.MIN_GLIBC:
+        return None
+    return dtk_builds.RUNTIME_SETS.get((installed_dtk() or "", str(info.get("python", ""))))
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def download_verified(url: str, target: Path, size: int, digest: str) -> None:
+    """Download to a partial file and keep it only when its size and SHA-256 match the review."""
+    part = target.with_name(target.name + ".part")
+    sha = hashlib.sha256()
+    received, shown = 0, -1
+    log(f"[3/5] 下载 {target.name}（{size / 2**20:.0f} MB）")
+    try:
+        with urllib.request.urlopen(url, timeout=60) as response, part.open("wb") as stream:  # noqa: S310
+            while chunk := response.read(1 << 20):
+                received += len(chunk)
+                if received > size:
+                    break
+                sha.update(chunk)
+                stream.write(chunk)
+                if received * 10 // size != shown:
+                    shown = received * 10 // size
+                    log(f"  {received * 100 // size}%（{received / 2**20:.0f} / {size / 2**20:.0f} MB）")
+    except OSError as exc:
+        part.unlink(missing_ok=True)
+        die(f"下载 {target.name} 失败：{exc}。请检查网络后重试，或用 --dtk-wheelhouse 指定本地 wheel 目录。")
+    if received != size or sha.hexdigest() != digest:
+        part.unlink(missing_ok=True)
+        die(f"下载的 {target.name} 与核对过的官方文件不一致（大小或 SHA-256），已删除；请重试。")
+    os.replace(part, target)
+
+
+def fetch_dtk_wheels(entries, directory: Path) -> list[Path]:
+    """The reviewed vendor wheels, downloaded once; a kept file is used again only if it still matches."""
+    directory.mkdir(parents=True, exist_ok=True)
+    files = []
+    for _, _, path, size, digest in entries:
+        target = directory / path.rsplit("/", 1)[1]
+        if not (target.is_file() and target.stat().st_size == size and file_sha256(target) == digest):
+            download_verified(dtk_builds.file_url(path), target, size, digest)
+        files.append(target)
+    return files
+
+
+def link_vendor_stack(location: str) -> None:
+    """Put another venv's site-packages after ours, so its vendor PyTorch is importable here."""
+    site = venv_json("import json, sysconfig; print(json.dumps(sysconfig.get_path('purelib')))")
+    Path(site, "ypuddin-vendor-stack.pth").write_text(location + "\n", encoding="utf-8")
+
+
+def dtk_base_python() -> str:
+    """The Python a DTK environment is built from: the one a shared environment recorded, else the
+    interpreter behind the current one; never a path inside the environment being rebuilt."""
+    candidates = [(recorded_vendor_stack() or {}).get("python"), sys.executable]
+    candidates += [
+        shutil.which(name) for name in ("python3", "python3.12", "python3.11", "python3.10", "python")
+    ]
+    roots = {VENV.absolute(), VENV.resolve()}
+
+    def inside(path: Path) -> bool:
+        return any(path.is_relative_to(root) for root in roots)
+
+    for candidate in filter(None, candidates):
+        path = Path(candidate).absolute()
+        if inside(path):
+            # The launcher runs an existing environment's own Python; its link leads to the base.
+            path = path.resolve()
+            if inside(path):
+                continue
+        if python_ok(str(path)):
+            return str(path)
+    die("没有找到 Python 3.10 - 3.12；请设置 YPUDDIN_DTK_PYTHON=/path/to/python。")
+    return ""  # unreachable
 
 
 def ensure_venv(
@@ -852,6 +1023,9 @@ def ensure_venv(
 ) -> None:
     wheelhouse = None
     vendor_triton = False
+    base = None
+    shared = None  # the vendor PyTorch of another Python this environment uses
+    downloads = None  # reviewed vendor wheels to download when there is nothing to share
     if dtk_wheelhouse:
         if PROFILE != "linux-dtk":
             die("--dtk-wheelhouse 只能用于 linux-dtk 环境")
@@ -862,7 +1036,18 @@ def ensure_venv(
             die("DTK wheel 目录需要包含匹配的 torch 与 torchvision wheel")
         vendor_triton = dtk_wheelhouse_has_triton(wheelhouse)
     if PROFILE == "linux-dtk" and (reinstall or not venv_python().exists()) and not wheelhouse:
-        die("请用 --dtk-wheelhouse=目录 提供匹配本机 DTK / Python 的厂商 wheel")
+        # Settle where the vendor PyTorch comes from before anything is created or deleted: the
+        # chosen Python's own installation, else the reviewed download for this DTK and Python.
+        base = dtk_base_python()
+        info = probe_dtk_python(base)
+        shared = vendor_stack(base, info)
+        downloads = None if shared else reviewed_dtk_set(info)
+        if not shared and not downloads:
+            die(
+                f"{base} 里没有海光版 PyTorch，也没有与本机 DTK {installed_dtk() or '未知版本'} / "
+                f"Python {info.get('python', '未知版本')} 对应的已核对下载。请设置 YPUDDIN_DTK_PYTHON 指向"
+                "已装好海光版 PyTorch 的 Python，或用 --dtk-wheelhouse=目录 提供匹配的厂商 wheel。"
+            )
     if reinstall and VENV.exists():
         log(f"--reinstall：删除旧的虚拟环境 {VENV}（studio_data/ 不受影响）")
         shutil.rmtree(VENV)
@@ -893,31 +1078,84 @@ def ensure_venv(
         cleanup_build_metadata()
         log("[2/5] 常规依赖已齐全，跳过安装")
         return
-    uv = uv_path()
-    if not venv_python().exists():
+    created = not venv_python().exists()
+    if PROFILE == "linux-dtk" and not created:
+        shared = recorded_vendor_stack()
+    # pip is the installer that leaves packages it can see outside the venv alone, so a shared
+    # environment uses it even when uv is available.
+    uv = None if shared else uv_path()
+    if created:
         VENV.parent.mkdir(parents=True, exist_ok=True)
-        base = find_base_python()
+        base = base or find_base_python()
         log(f"[2/5] 创建虚拟环境（{base}）")
-        if uv:
+        if shared:
+            create_dtk_venv(
+                base,
+                wheelhouse,
+                system_site_packages=shared["share"] == "system",
+                index_url=index_chains(index_mode, torch_tag)[0][0],
+            )
+        elif uv:
             run([uv, "venv", "--quiet", "--python", base, str(VENV)])
         elif PROFILE == "linux-dtk":
-            create_dtk_venv(base, wheelhouse)
+            # An offline wheel directory brings its own pip; otherwise pip may come from the index.
+            create_dtk_venv(
+                base, wheelhouse, index_url=None if wheelhouse else index_chains(index_mode, torch_tag)[0][0]
+            )
         else:
             run([base, "-m", "venv", str(VENV)])
         # Record ownership before package downloads so an interrupted installation
         # can resume without accepting arbitrary pre-existing environments.
         (VENV / ".ypuddin-owner.json").write_text(
-            json.dumps({"profile": PROFILE, "arch": host_arch()}), encoding="utf-8"
+            json.dumps(
+                {"profile": PROFILE, "arch": host_arch(), **({"vendor_stack": shared} if shared else {})}
+            ),
+            encoding="utf-8",
         )
+        if shared and shared["share"] == "link":
+            link_vendor_stack(shared["location"])
     else:
         log(f"[2/5] 虚拟环境 {VENV.name}/ 已存在，更新依赖")
     py = str(venv_python())
     versions = installed_versions()
+    if shared:
+        current = versions.get("torch")
+        if created and current != shared["torch"]:
+            shutil.rmtree(VENV)
+            die(
+                f"新环境里没有读到 {shared['python']} 的海光版 PyTorch {shared['torch']}"
+                f"（读到 {current or '无'}）；请检查该 Python 的安装，或用 --dtk-wheelhouse 提供 wheel。"
+            )
+        if not current:
+            die(f"共用的 {shared['python']} 里已经没有 PyTorch；请恢复它，或用 --reinstall 重建环境。")
+        if created:
+            log(f"[3/5] 使用 {shared['python']} 已装的海光版 PyTorch {current}（{shared['location']}）")
+        elif current != shared["torch"]:
+            log(
+                f"[3/5] {shared['python']} 里的 PyTorch 已从 {shared['torch']} 变为 {current}，按现有版本继续"
+            )
     if PROFILE == "linux-dtk" and "torch" in versions and "numpy" in versions:
         validate_dtk_numpy_bridge(versions)
     preserved = protected_versions(versions)
-    required_native = ["torch", "torchvision"] + (["triton"] if vendor_triton else [])
-    if PROFILE == "linux-dtk" and not all(name in versions for name in required_native):
+    if PROFILE == "linux-dtk" and not wheelhouse and not shared and "torch" not in versions and not downloads:
+        # A first install that stopped before PyTorch continues with the same reviewed download.
+        downloads = reviewed_dtk_set(probe_dtk_python(py))
+    required_native = ["torch", "torchvision"] + (["triton"] if vendor_triton or downloads else [])
+    if PROFILE == "linux-dtk" and downloads and not all(name in versions for name in required_native):
+        files = fetch_dtk_wheels(downloads, VENV.parent / "vendor-wheels")
+        command = [uv, "pip", "install", "--python", py] if uv else [py, "-m", "pip", "install"]
+        # Only these reviewed files: their ordinary dependencies come from the package index together
+        # with the trainer's, which pins these builds.
+        run([*command, "--no-index", "--no-deps", *map(str, files)], env=_env())
+        versions = installed_versions()
+        changed = [name for name, version in preserved.items() if versions.get(name) != version]
+        if changed:
+            die("厂商 wheel 安装意外改变了受保护的原生依赖：" + ", ".join(changed) + "；停止安装")
+        preserved = protected_versions(versions)
+        missing = [name for name in required_native if name not in versions]
+        if missing:
+            die("厂商 wheel 安装后仍缺少 " + " / ".join(missing) + "；停止安装")
+    elif PROFILE == "linux-dtk" and not all(name in versions for name in required_native):
         if not wheelhouse:
             die("DTK 独立环境缺少厂商 torch / torchvision，请用 --dtk-wheelhouse 指定本地 wheel 目录")
         # Native vendor packages and their dependencies must all come from this exact, explicit collection.
@@ -1278,7 +1516,12 @@ def doctor() -> int:
     driver = nvidia_driver_major() if nvidia else None
     gpus = nvidia_gpus() if nvidia else []
     if PROFILE == "linux-dtk":
-        print("DTK        : 使用独立环境中的厂商 HIP PyTorch")
+        shared = recorded_vendor_stack()
+        print(
+            f"DTK        : 共用 {shared['python']} 已装的厂商 HIP PyTorch（{shared['location']}）"
+            if shared
+            else "DTK        : 使用独立环境中的厂商 HIP PyTorch"
+        )
     elif nvidia:
         print(
             f"NVIDIA     : {'驱动 ' + str(driver) if driver else '未找到 nvidia-smi'} -> 自动选择的 PyTorch 类型 {pick_torch_tag('auto')}"

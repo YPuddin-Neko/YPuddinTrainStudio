@@ -29,23 +29,34 @@ Torch、TorchVision、Triton 和其依赖放在同一 wheel 目录。其他版�
 
 ## 首次安装
 
-以下示例使用已安装的 DTK 26.04 和 Python 3.11：
+启动器按以下顺序决定海光版 PyTorch 的来源：
+
+1. **所选 Python 已装好海光版 PyTorch**（官方容器镜像、conda 环境或已有虚拟环境）：新环境直接使用这份安装，不再下载。装在系统 Python 或 conda 环境里的，新环境继承其已装的包；装在另一个虚拟环境里的，新环境链接到该环境的包目录。
+2. **没有预装**：DTK 26.04 + Python 3.11（x86_64，glibc 2.28 及以上）从光合社区下载已核对的 Torch 2.7.1、TorchVision 0.22.0 和 Triton 3.1.0（约 640 MB），大小与 SHA-256 一致才安装。文件保存在环境目录的 `vendor-wheels/`，重建时不重复下载。
+3. **其他 DTK / Python 组合，或服务器不能联网**：用 `--dtk-wheelhouse` 提供本地 wheel 目录。
 
 ```bash
-DTK_ROOT=/opt/dtk \
-YPUDDIN_DTK_PYTHON=/path/to/python3.11 \
-./studio-linux-dtk.sh --dtk-wheelhouse=/data/dtk-wheels --no-browser
+# 官方镜像里，或 Python 已装好海光版 PyTorch
+DTK_ROOT=/opt/dtk ./studio-linux-dtk.sh --no-browser
+
+# 指定 Python
+DTK_ROOT=/opt/dtk YPUDDIN_DTK_PYTHON=/path/to/python3.11 ./studio-linux-dtk.sh --no-browser
+
+# 离线或未核对的组合
+DTK_ROOT=/opt/dtk ./studio-linux-dtk.sh --dtk-wheelhouse=/data/dtk-wheels --no-browser
 ```
+
+使用已装的 PyTorch 时，厂商 Torch、TorchVision、Triton 和 NumPy 的版本保持不变，训练器依赖只装进自己的环境，不修改原环境。原环境里的 PyTorch 之后被替换，启动时会提示；被删除则停止启动。
 
 `--dtk-wheelhouse` 必须包含匹配的 Torch、TorchVision wheel 及其依赖。基础厂商包从本地目录安装，不从普通网络索引寻找替代包；配套 Triton 可在同一步安装。
 
 其他训练依赖从所选 Python 包源获取。启动器保留厂商 Torch、TorchVision、Triton 的版本约束，依赖冲突时停止安装。FlashAttention、xFormers 通过运行环境页安装，不因文件出现在 wheel 目录中而自动启用。
 
-已有环境继续使用原启动入口和同一 DTK 路径。`--reinstall` 会删除并重建当前 DTK 基础环境；准备其他版本时应使用独立环境目录。
+已有环境继续使用原启动入口和同一 DTK 路径。`--reinstall` 会删除并重建当前 DTK 基础环境，使用已装 PyTorch 的环境仍从原来的 Python 重建；准备其他版本时应使用独立环境目录。
 
 ### 缺少 ensurepip
 
-Python 不含 `ensurepip` 时，启动器可使用 `uv`，或借助支持 `--python` 的宿主 pip 引导新环境。后者需要 pip 22.3+，并在 wheel 目录中准备 `pip-*.whl`。
+Python 不含 `ensurepip` 时，启动器可使用 `uv`，或借助支持 `--python` 的宿主 pip 引导新环境。后者需要 pip 22.3+；pip 取自 wheel 目录中的 `pip-*.whl`，没有 wheel 目录时从包源下载。
 
 可在联网机器下载后复制到服务器：
 

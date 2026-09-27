@@ -25,6 +25,8 @@ from packaging.utils import parse_wheel_filename
 from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, Field
 
+from ypuddin import dtk_builds
+
 SOURCE = "https://download.sourcefind.cn:65024"
 SOURCE_PAGE = SOURCE + "/4/main/"
 
@@ -153,11 +155,17 @@ def guidance(runtime: dict) -> DtkGuidance:
         and re.match(r"^3\.11(?:\.|$)", str(runtime.get("python", "")))
     ):
         toolkit = _url("/file/1/DTK-26.04/Ubuntu22.04/DTK-26.04-Ubuntu22.04-x86_64.tar.gz")
+        # The PyTorch set is the one new DTK environments download; FlashAttention is optional.
         bundles = (
-            ("torch", "2.7.1+das.opt1.dtk2604", "pytorch", "torch"),
-            ("torchvision", "0.22.0+das.opt1.dtk2604.torch271", "vision", "torchvision"),
-            ("triton", "3.1.0+das.opt1.dtk2604.torch271", "triton", "triton"),
-            ("flash-attn", "2.8.3+das.opt1.dtk2604.torch271", "flash_attn", "flash_attn"),
+            *(
+                (package, version, path)
+                for package, version, path, _, _ in dtk_builds.RUNTIME_SETS[("26.04", "cp311")]
+            ),
+            (
+                "flash-attn",
+                "2.8.3+das.opt1.dtk2604.torch271",
+                "/file/4/flash_attn/DAS1.8/flash_attn-2.8.3+das.opt1.dtk2604.torch271-cp311-cp311-manylinux_2_28_x86_64.whl",
+            ),
         )
         result.recommendation = DtkRuntimeRecommendation(
             dtk="26.04",
@@ -166,14 +174,8 @@ def guidance(runtime: dict) -> DtkGuidance:
             python_tag="cp311",
             minimum_driver="6.3.30-V1.4.1a",
             wheels=[
-                DtkRuntimePackage(
-                    package=package,
-                    version=version,
-                    url=_url(
-                        f"/file/4/{folder}/DAS1.8/{filename}-{version}-cp311-cp311-manylinux_2_28_x86_64.whl"
-                    ),
-                )
-                for package, version, folder, filename in bundles
+                DtkRuntimePackage(package=package, version=version, url=_url(path))
+                for package, version, path in bundles
             ],
         )
     return result
