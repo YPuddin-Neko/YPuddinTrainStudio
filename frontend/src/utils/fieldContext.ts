@@ -1,5 +1,5 @@
 import type { FamilyInfo } from '../api/types';
-import { configOptionLabel } from './configPresentation';
+import { configFieldLabel, configOptionLabel } from './configPresentation';
 
 /**
  * Settings that depend on the selected model and on the machine the service runs on. A setting neither uses is
@@ -119,12 +119,12 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
     case 'memory.compile':
       return join([
         text('用 torch.compile 编译模型：第一次启动要多等几分钟编译，之后每步更快。', 'Compiles the model with torch.compile: the first start takes a few extra minutes, later steps are faster.'),
-        has(family, 'block_swap') && text('不能与「块换出」同时使用。', 'Cannot be combined with block swapping.'),
+        has(family, 'block_swap') && text(`不能与「${configFieldLabel('memory.blocks_to_swap', '')}」同时使用。`, 'Cannot be combined with block swapping.'),
       ]);
     case 'memory.blocks_to_swap':
       return join([
         text('把多少个模型块的冻结权重先放在内存里，用到时再搬回显存，默认 0 不换出。数值越大越省显存，但搬运越多、训练越慢；超过实际块数时按全部块处理。', 'How many model blocks keep their frozen weights in system memory and move to the GPU only when used. 0 (default) swaps none. Larger values save more GPU memory but move more data and train slower; values above the block count swap every block.'),
-        has(family, 'compile') && onGpu(runtime) && text('不能与「编译模型」同时使用。', 'Cannot be combined with compiling the model.'),
+        has(family, 'compile') && onGpu(runtime) && text(`不能与「${configFieldLabel('memory.compile', '')}」同时使用。`, 'Cannot be combined with compiling the model.'),
       ]);
     case 'memory.base_precision':
       return join([
