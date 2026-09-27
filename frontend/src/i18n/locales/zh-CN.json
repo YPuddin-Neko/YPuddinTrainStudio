@@ -388,7 +388,6 @@
     "fileUrl": "文件下载链接",
     "repositoryFile": "仓库内文件名",
     "downloadDestination": "保存目录",
-    "downloadHelp": "支持 safetensors 单文件；中断后重新下载从头开始。受限仓库需先取得权限，并在设置中保存访问密钥。",
     "defaultAfterDownload": "下载完成后设为该系列的默认组件",
     "startDownload": "开始下载",
     "downloads": "下载列表",

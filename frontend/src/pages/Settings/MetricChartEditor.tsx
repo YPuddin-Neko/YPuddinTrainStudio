@@ -20,7 +20,6 @@ export default function MetricChartEditor({ id, charts, onChange }: { id: string
   return <section id={id} data-settings-section tabIndex={-1} className="settings-section metric-chart-settings" aria-labelledby={`${id}-heading`}>
     <div className="settings-section-heading"><div>
       <h2 id={`${id}-heading`}>{text('指标图表', 'Metric charts')}</h2>
-      <p className="settings-note">{text('选择任务详情“指标图表”页显示哪些图、每张图画哪些指标，以及每个指标的颜色。单位不同的指标放在同一张图时，各自使用一条纵轴。', 'Choose which charts the job page shows, which metrics each chart draws and their colors. Metrics with different units in one chart each get their own axis.')}</p>
     </div></div>
     <ol className="metric-chart-list">
       {charts.map((chart, index) => <li key={chart.id} className="metric-chart-card" aria-label={chartTitle(chart, english)}>

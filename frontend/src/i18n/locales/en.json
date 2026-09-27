@@ -388,7 +388,6 @@
     "fileUrl": "Model file URL",
     "repositoryFile": "File path in repository",
     "downloadDestination": "Download directory",
-    "downloadHelp": "Supports single-file safetensors; interrupted downloads restart from the beginning. For restricted repositories, obtain access and save an access key in Settings.",
     "defaultAfterDownload": "Use as this family’s default component when complete",
     "startDownload": "Start download",
     "downloads": "Downloads",
