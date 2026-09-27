@@ -18286,6 +18286,22 @@
               }
             ],
             "title": "Max Concurrent"
+          },
+          "blocked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked Reason"
+          },
+          "restart_required": {
+            "type": "boolean",
+            "title": "Restart Required",
+            "default": false
           }
         },
         "additionalProperties": true,

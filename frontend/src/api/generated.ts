@@ -6189,6 +6189,13 @@ export interface components {
             devices: components["schemas"]["QueueDevice"][];
             /** Max Concurrent */
             max_concurrent?: number | null;
+            /** Blocked Reason */
+            blocked_reason?: string | null;
+            /**
+             * Restart Required
+             * @default false
+             */
+            restart_required: boolean;
         } & {
             [key: string]: unknown;
         };

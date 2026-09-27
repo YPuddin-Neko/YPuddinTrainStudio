@@ -1,7 +1,7 @@
 import { gpuMemoryDetails, formatGpuMemory } from '../../utils/gpuMemory';
 import React from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { Activity, Archive, ArchiveRestore, Clock3, History, SlidersHorizontal, PauseCircle, Play, Search, RefreshCw, Trash2, Inbox, X } from 'lucide-react';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { Activity, Archive, ArchiveRestore, CircleAlert, Clock3, History, SlidersHorizontal, PauseCircle, Play, Search, RefreshCw, Trash2, Inbox, X } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import type { Job, JobListResponse, Project, QueueSettings } from '../../api/types';
 import StudioSelect from '../../components/StudioSelect';
@@ -38,6 +38,8 @@ function DeviceCell({ job }: { job: Job }) {
 export default function Queue() {
   const text = useWorkspaceText();
   const gpuStatus = useQueueDevices(useTelemetryInterval());
+  const location = useLocation();
+  const blocked = gpuStatus.snapshot?.blocked_reason;
   const [params, setParams] = useSearchParams();
   const group = groups.includes(params.get('view') as Group) ? params.get('view') as Group : 'active';
   const page = Math.max(1, Math.floor(Number(params.get('page')) || 1));
@@ -138,6 +140,8 @@ export default function Queue() {
       </div>
     </header>
     {settings.held && <p className="task-notice" role="status">{text('调度已暂停：正在运行的任务会继续；等待中的任务不会启动。', 'Scheduling is held. Running jobs continue; waiting jobs will not start.')}</p>}
+    {gpuStatus.snapshot?.restart_required ? <p className="task-notice queue-restart-notice" role="status" data-testid="queue-restart-notice"><CircleAlert size={15} aria-hidden="true"/><span>{text('一些环境设置发生了变化，需要重启服务后才能生效，队列将在重启后继续。', 'Some environment settings changed and take effect after the service restarts. The queue continues after the restart.')}</span><Link className="ui-btn ui-btn-sm" to="/settings/preferences?section=interface" state={{ backgroundLocation: location }}>{text('去重启', 'Restart')}</Link></p>
+      : blocked && <p className="task-notice" role="status" data-testid="queue-blocked-notice">{text(`新任务暂不启动：${blocked}`, `New jobs are not starting: ${blocked}`)}</p>}
     {gpuStatus.error && <p className="task-notice" role="status">{text('显卡占用暂时无法读取', 'GPU assignments are temporarily unavailable')}: {gpuStatus.error}</p>}
     {devices.length > 0 && <section className="queue-devices" aria-label={text('显卡状态', 'GPU status')}>{devices.map(device => {
       const used = device.mem_used_mb, totalMemory = device.mem_total_mb;

@@ -30,6 +30,7 @@ from . import models as m
 from .context import ServiceContext
 from .dataset_uploads import UploadBatch, read_upload, staged_upload
 from .db import new_id, now
+from .environment import maintenance_reason
 from .errors import ApiError, NotFound
 from .gpu_selection import GpuSelection, selection_error
 from .hardware import gpu_info
@@ -2407,6 +2408,8 @@ def queue_devices(c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
         return {
             "devices": [gpu | ownership.get(gpu["device"], {}) for gpu in inventory],
             "max_concurrent": queue_settings(c).get("max_concurrent"),
+            "blocked_reason": maintenance_reason(c.db),
+            "restart_required": bool(c.db.get_kv("environment.maintenance", {}).get("restart_required")),
         }
 
 

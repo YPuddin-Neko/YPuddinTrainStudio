@@ -7,6 +7,9 @@
 .task-actions-wrap { display:inline-flex; flex-direction:column; gap:4px; }
 .task-inline-error { max-width:300px; color:#dc2626; font-size:11px; white-space:normal; }
 .task-notice { padding:9px 12px; border:1px solid #d9770640; background:#d9770610; color:var(--studio-text); border-radius:6px; font-size:12px; }
+.queue-restart-notice { display:flex; align-items:center; gap:8px; border-color:var(--studio-danger-line); background:color-mix(in srgb,var(--studio-danger-line) 7%,var(--studio-panel)); color:var(--studio-danger); }
+.queue-restart-notice > span { flex:1; min-width:0; overflow-wrap:anywhere; }
+.queue-restart-notice > svg, .queue-restart-notice > .ui-btn { flex:none; }
 .task-error { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 12px; color:#dc2626; border:1px solid #dc262640; background:#dc26260a; border-radius:6px; font-size:12px; white-space:pre-wrap; }
 .dark .task-error, .dark .task-inline-error { color:#fca5a5; }
 .task-error > .ui-btn { margin-left:auto; flex-shrink:0; }

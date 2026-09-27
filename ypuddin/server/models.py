@@ -949,6 +949,9 @@ class QueueDevice(_Out):
 class QueueDevices(_Out):
     devices: list[QueueDevice]
     max_concurrent: int | None = None
+    # Set while maintenance keeps the queue from starting jobs, e.g. an environment change awaiting a restart.
+    blocked_reason: str | None = None
+    restart_required: bool = False
 
 
 # --------------------------------------------------------------------------- artifacts

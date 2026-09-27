@@ -262,11 +262,24 @@ def environment_attention_default(context) -> str:
     return value if value in ATTENTION else "auto"
 
 
+def maintenance_reason(db: Database) -> str | None:
+    """Why the queue may not start work now, worded for a waiting job; None when it may."""
+    maintenance = db.get_kv("environment.maintenance", {})
+    if maintenance.get("blocked"):
+        if maintenance.get("restart_required"):
+            return "环境已更新，重启服务后开始"
+        if maintenance.get("restarting"):
+            return "服务正在重启"
+        if maintenance.get("torch_operation"):
+            return "等待 PyTorch 环境准备完成"
+        return "等待环境检测完成" if maintenance.get("probing") else "等待环境操作完成"
+    if db.get_kv("regularization.reservation", {}).get("id"):
+        return "等待正则图生成完成"
+    return None
+
+
 def maintenance_blocked(db: Database) -> bool:
-    return bool(
-        db.get_kv("environment.maintenance", {}).get("blocked")
-        or db.get_kv("regularization.reservation", {}).get("id")
-    )
+    return maintenance_reason(db) is not None
 
 
 def installed_versions() -> dict[str, str]:

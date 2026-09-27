@@ -18,7 +18,7 @@ from ypuddin.runtime_profiles import current_profile
 
 from .bus import EventBus
 from .db import Database, new_id, now
-from .environment import maintenance_blocked
+from .environment import maintenance_blocked, maintenance_reason
 from .gpu_selection import selection_error
 from .hardware import gpu_info
 from .job_logs import parse_log_lines
@@ -118,6 +118,8 @@ class JobSupervisor:
         # jobs whose current process already reported its outcome through the event stream; the
         # later process-exit notification must not touch their status (the user may have resumed)
         self._outcome_seen: set[str] = set()
+        # The reason last written on waiting jobs while maintenance blocked the queue.
+        self._blocked_reason: str | None = None
         self._task: asyncio.Task | None = None
         self._event_loop: asyncio.AbstractEventLoop | None = None
         self._stopping = False
@@ -199,7 +201,10 @@ class JobSupervisor:
                 del self._procs[job_id]
                 self._devices.pop(job_id, None)
         settings = self.db.get_kv("queue.settings", {"held": False, "max_concurrent": self.max_concurrent})
-        if maintenance_blocked(self.db):
+        blocked = maintenance_reason(self.db)
+        if blocked or self._blocked_reason:
+            self._mark_blocked(blocked)
+        if blocked:
             return backlog
         # Holding the queue stops ordinary starts; a job the user forced to start still starts.
         held = bool(settings.get("held"))
@@ -332,6 +337,17 @@ class JobSupervisor:
             if requested
             else f"等待 {count} 张空闲且显存充足的显卡"
         )
+
+    def _mark_blocked(self, reason: str | None) -> None:
+        """Name the maintenance that keeps waiting jobs from starting; clear it once it ends."""
+        previous, self._blocked_reason = self._blocked_reason, reason
+        with self.db.lock:
+            for job in self.db.fetchall("SELECT id, progress_json FROM jobs WHERE status='queued'"):
+                current = json.loads(job["progress_json"] or "{}").get("wait_reason")
+                if current == reason or reason is None and current != previous:
+                    continue  # already named, or the scheduler has named another reason since
+                self._merge_progress(job["id"], {"wait_reason": reason or ""})
+                self._publish("job.phase", {"job_id": job["id"], "wait_reason": reason or ""})
 
     def _force_device(self, job: dict[str, Any], slots: int) -> str | tuple[str, ...] | None:
         """Place a run the user forced to start: the memory estimate is skipped, and when no device
@@ -903,6 +919,8 @@ class JobSupervisor:
                 resume_from = resume_from or self._latest_state(state_directory(job))
             if status != "paused" and job["type"] != "cache" and not resume_from:
                 raise ValueError("no checkpoint to resume from")
+            # The last run's phase ("saving", ...) would read as what the waiting job is doing.
+            self._merge_progress(job_id, {"phase": "", "wait_reason": self._blocked_reason or ""})
             self._set_status(
                 job_id, "queued", resume_from=resume_from, error=None, finished_at=None, forced_at=forced_at
             )
