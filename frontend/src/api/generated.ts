@@ -2275,7 +2275,7 @@ export interface components {
              * @default lokr
              * @enum {string}
              */
-            algo: "lora" | "lokr" | "loha" | "full" | "ortho" | "tlora";
+            algo: "lora" | "lokr" | "loha" | "ortho" | "tlora" | "full";
             /**
              * Rank
              * @description 低秩分解的大小，默认 16：越大能学到的细节越多，文件也越大。LoKr 的 full 表示保留完整的两个 Kronecker 因子 W1/W2，不做低秩拆分，仍是 LoKr 适配器；整数秩过大时 LoKr 也会自动保留对应完整因子。
@@ -2403,7 +2403,7 @@ export interface components {
              * Algo
              * @description 覆盖算法；none 表示排除
              */
-            algo?: ("lora" | "lokr" | "loha" | "full" | "ortho" | "tlora" | "none") | null;
+            algo?: ("lora" | "lokr" | "loha" | "ortho" | "tlora" | "full" | "none") | null;
             /** Rank */
             rank?: number | "full" | null;
             /** Alpha */

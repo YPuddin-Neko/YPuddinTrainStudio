@@ -858,6 +858,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     // full target-layer weights take no rank, scale, initialization or dropout.
     if (value.adapter?.algo === 'lokr' && value.adapter?.rank === 'full' && ['adapter.alpha', 'adapter.decompose_both', 'adapter.rs_lora'].includes(fullPathKey)) return null;
     if (value.adapter?.algo === 'full' && ['adapter.rank', 'adapter.alpha', 'adapter.rs_lora', 'adapter.init', 'adapter.dropout', 'adapter.rank_dropout'].includes(fullPathKey)) return null;
+    // T-LoRA masks ranks per sample and LyCORIS Full trains whole weights; neither takes DoRA. A saved
+    // DoRA stays visible so it can be turned off.
+    if (fullPathKey === 'adapter.dora' && ['tlora', 'full'].includes(value.adapter?.algo) && !value.adapter?.dora) return null;
     const ui = { ...(prop['x-ui'] || {}), ...(compact && parentPath[0] === 'training' ? {group:'model'} : {}), ...(compact && fullPathKey === 'dataset.batch_size' ? {group:'loop'} : {}), ...(fullPathKey === 'model.attention' ? {group:'memory',advanced:false} : {}), ...(fullPathKey === 'loop.gpu_count' ? {group:'loop',advanced:false} : {}) };
     if (ui.hidden) return null;
     if (conditionValue.dataset.resolution_mode === 'native' && ['dataset.resolutions', 'dataset.aspect_ratio_limit', 'dataset.area_tolerance', 'dataset.bucket_step', 'dataset.bucket_no_upscale'].includes(fullPathKey)) return null;
@@ -1116,7 +1119,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
               : updated);
           }}
           // Full-weight training of the target layers overlaps full fine-tuning; only configurations that already use it keep it.
-          options={prop.enum.map(String).filter(option => !(fullPathKey === 'adapter.algo' && option === 'full' && fieldValue !== 'full')).map(choice)}/>
+          options={prop.enum.map(String).map(choice)}/>
 
       );
     } else if (prop.type === 'boolean' || ui.control === 'switch') {

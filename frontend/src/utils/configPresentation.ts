@@ -246,7 +246,7 @@ export function configOptionLabel(path: string, option: string, english = false)
     'objective.weighting': { none: ['不加权', 'None'], sigma_sqrt: ['噪声尺度平方根', 'Sigma square root'], cosmap: ['余弦映射', 'CosMap'], snr_like: ['类信噪比加权', 'SNR-like'], cosmos: ['Cosmos', 'Cosmos'], min_snr: ['最小信噪比加权', 'Min-SNR'] },
     'objective.timestep_sampling': { uniform: ['均匀采样', 'Uniform'], logit_normal: ['逻辑正态分布', 'Logit-Normal'], shift: ['偏移采样', 'Shift'], resolution_shift: ['按分辨率偏移', 'Resolution shift'], mode: ['模式分布', 'Mode'], cosmap: ['余弦映射', 'CosMap'] },
     'objective.loss': { mse: ['均方误差', 'MSE'], huber: ['平滑绝对误差', 'Huber'], pseudo_huber: ['伪 Huber 损失', 'Pseudo-Huber'] },
-    'adapter.algo': { lora: ['LoRA', 'LoRA'], lokr: ['LoKr', 'LoKr'], loha: ['LoHa', 'LoHa'], ortho: ['OrthoLoRA', 'OrthoLoRA'], tlora: ['T-LoRA', 'T-LoRA'], full: ['目标层完整权重', 'Full'] },
+    'adapter.algo': { lora: ['LoRA', 'LoRA'], lokr: ['LoKr', 'LoKr'], loha: ['LoHa', 'LoHa'], ortho: ['OrthoLoRA', 'OrthoLoRA'], tlora: ['T-LoRA', 'T-LoRA'], full: ['LyCORIS Full', 'LyCORIS Full'] },
     'adapter.param_dtype': { fp32: ['FP32', 'FP32'], bf16: ['BF16', 'BF16'] },
     'checkpoint.save_dtype': { bf16: ['BF16', 'BF16'], fp16: ['FP16', 'FP16'], fp32: ['FP32', 'FP32'] },
     'scheduler.type': { constant: ['恒定', 'Constant'], linear: ['线性衰减', 'Linear'], cosine: ['余弦衰减', 'Cosine'], cosine_restarts: ['余弦重启', 'Cosine restarts'], polynomial: ['多项式衰减', 'Polynomial'], warmup_stable_decay: ['预热-稳定-衰减', 'WSD'], rex: ['REX', 'REX'] },

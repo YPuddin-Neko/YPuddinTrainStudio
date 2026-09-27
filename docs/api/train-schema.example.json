@@ -10,9 +10,9 @@
             "lora",
             "lokr",
             "loha",
-            "full",
             "ortho",
-            "tlora"
+            "tlora",
+            "full"
           ],
           "title": "Algo",
           "type": "string",
@@ -95,8 +95,7 @@
           "x-ui": {
             "control": "switch",
             "group": "adapter",
-            "order": 60,
-            "show_when": "adapter.algo != 'tlora'"
+            "order": 60
           }
         },
         "init": {
@@ -307,9 +306,9 @@
                 "lora",
                 "lokr",
                 "loha",
-                "full",
                 "ortho",
                 "tlora",
+                "full",
                 "none"
               ],
               "type": "string"

@@ -7646,9 +7646,9 @@
               "lora",
               "lokr",
               "loha",
-              "full",
               "ortho",
-              "tlora"
+              "tlora",
+              "full"
             ],
             "title": "Algo",
             "description": "附加权重的结构：LoRA 最常用；LoKr 参数通常最少；LoHa 表达能力更强；OrthoLoRA 在底模的主方向上做正交旋转；T-LoRA 按噪声强度调整可用的秩。full 直接训练目标层的完整权重并导出差分。",
@@ -7732,8 +7732,7 @@
             "x-ui": {
               "control": "switch",
               "group": "adapter",
-              "order": 60,
-              "show_when": "adapter.algo != 'tlora'"
+              "order": 60
             }
           },
           "init": {
@@ -7943,9 +7942,9 @@
                   "lora",
                   "lokr",
                   "loha",
-                  "full",
                   "ortho",
                   "tlora",
+                  "full",
                   "none"
                 ]
               },

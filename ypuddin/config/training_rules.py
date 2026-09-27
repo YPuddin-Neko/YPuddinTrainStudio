@@ -48,6 +48,8 @@ def training_errors(cfg) -> list[dict[str, str]]:
                 and adapter.tlora_min_rank > adapter.rank
             ):
                 reject("adapter.tlora_min_rank", "最小秩不能大于 Rank")
+        if adapter.algo == "full" and adapter.dora:
+            reject("adapter.dora", "LyCORIS Full 直接训练完整权重，不能与 DoRA 同时使用")
         if orthogonal and adapter.init == "scalar":
             reject("adapter.init", "正交参数从自己的正交方向开始，不能使用「随机权重，零值缩放」")
         if orthogonal and adapter.resume_weights:

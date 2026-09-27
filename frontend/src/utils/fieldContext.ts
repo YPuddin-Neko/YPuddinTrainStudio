@@ -158,8 +158,9 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
           loha: ['两组低秩矩阵逐元素相乘，同样的秩下表达能力更强，参数约为 LoRA 的两倍。', 'two low-rank pairs multiplied element by element; more capacity at the same rank, with about twice the parameters of LoRA.'],
           ortho: ['在底模权重最主要的几个方向上做正交旋转和缩放，可训练参数很少，训练稳定；导出为普通 LoRA。', "rotates and rescales the base weight's main directions; very few trained parameters and steady training, exported as a plain LoRA."],
           tlora: ['LoRA 的变体：噪声越大可用的秩越少，减轻小数据集的过拟合；导出为普通 LoRA。', 'a LoRA whose usable rank shrinks as the noise grows, which curbs overfitting on small datasets; exported as a plain LoRA.'],
+          full: ['LyCORIS 的原生微调：直接训练所选层的完整权重，不做低秩拆分，没有 Rank 和 Alpha。还原训练图最细，但文件最大（与这些层的权重同样大）、显存占用最高，生成结果也最容易贴近训练图；学习率不能沿用 LoRA 的数值，要像全量微调一样单独调低。导出为 LyCORIS 差值文件，可以像 LoRA 一样加载。', "LyCORIS native fine-tuning: trains the whole weights of the chosen layers with no low-rank split, so it has no Rank or Alpha. It reproduces the training images most closely, but gives the largest file (as large as those layers' weights), uses the most memory and most easily sticks to the training images; do not reuse a LoRA learning rate, set a much lower one as for full fine-tuning. Exported as a LyCORIS difference file that loads like a LoRA."],
         }),
-        text('Rank 里的 full 只对 LoKr 生效：保留完整的 Kronecker 因子，仍然是 LoKr。', 'full in Rank applies to LoKr only: it keeps the whole Kronecker factors and is still a LoKr adapter.'),
+        text('LoKr 参数形式里的 Full（完整因子矩阵）只对 LoKr 生效：保留完整的 Kronecker 因子，仍然是 LoKr，与 LyCORIS Full 不同。', 'Full in the LoKr parameter mode applies to LoKr only: it keeps the whole Kronecker factors and is still a LoKr adapter, unlike LyCORIS Full.'),
       ]);
     case 'scheduler.type':
       return join([

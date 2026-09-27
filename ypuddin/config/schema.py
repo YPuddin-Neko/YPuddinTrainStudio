@@ -16,8 +16,8 @@ from .optimizer_rules import (
 )
 from .ui import F, ui
 
-Algo = Literal["lora", "lokr", "loha", "full", "ortho", "tlora"]
-RuleAlgo = Literal["lora", "lokr", "loha", "full", "ortho", "tlora", "none"]
+Algo = Literal["lora", "lokr", "loha", "ortho", "tlora", "full"]
+RuleAlgo = Literal["lora", "lokr", "loha", "ortho", "tlora", "full", "none"]
 DType = Literal["bf16", "fp16", "fp32"]
 
 
@@ -356,12 +356,7 @@ class AdapterConfig(_Strict):
         help="rsLoRA：scale = alpha / sqrt(rank)",
         ui_=ui("adapter", order=50, control="switch", advanced=True),
     )
-    dora: bool = F(
-        False,
-        help="DoRA 权重分解（幅度/方向）",
-        # T-LoRA masks ranks per sample, which DoRA's merged weight cannot do.
-        ui_=ui("adapter", order=60, control="switch", show_when="adapter.algo != 'tlora'"),
-    )
+    dora: bool = F(False, help="DoRA 权重分解（幅度/方向）", ui_=ui("adapter", order=60, control="switch"))
     init: Literal["default", "scalar"] = F(
         "default",
         help="初始化：default（一侧置零）/ scalar（全随机 + 可训练标量从 0 起）",
