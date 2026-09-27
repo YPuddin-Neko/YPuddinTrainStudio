@@ -2308,7 +2308,7 @@ export interface components {
             rs_lora: boolean;
             /**
              * Dora
-             * @description DoRA 权重分解（幅度/方向）
+             * @description DoRA 权重分解（幅度/方向），作用于 LoRA、LoHa、LoKr 和 OrthoLoRA 层；按规则使用 LyCORIS Full 或 T-LoRA 的层不启用。
              * @default false
              */
             dora: boolean;

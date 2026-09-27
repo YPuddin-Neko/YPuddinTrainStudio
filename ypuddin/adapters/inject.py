@@ -234,6 +234,12 @@ class AdapterSet:
         return {"layers": len(self.layers), "trainable_params": self.num_params(), "by_algo": by_algo}
 
 
+# DoRA rescales low-rank updates. A rule that trains a layer with LyCORIS Full or T-LoRA leaves the
+# run's DoRA off there, as LyCORIS does: its Full files carry no dora_scale, T-LoRA cannot merge per
+# sample. Choosing such an algorithm for the whole run together with DoRA is still refused.
+DORA_ALGOS = frozenset({"lora", "loha", "lokr", "ortho"})
+
+
 def _locate(model: nn.Module, name: str) -> tuple[nn.Module, str]:
     parts = name.split(".")
     parent = model
@@ -274,7 +280,12 @@ def inject(
         adapter = build_adapter(t.algo, linear.out_features, linear.in_features, t.params, dtype)
         adapter.to(linear.weight.device)
         layer = AdaptedLinear(
-            frozen, adapter, mode=cfg.mode, dora=cfg.dora, module_dropout=cfg.module_dropout, name=t.name
+            frozen,
+            adapter,
+            mode=cfg.mode,
+            dora=cfg.dora and (t.algo in DORA_ALGOS or t.algo == cfg.algo),
+            module_dropout=cfg.module_dropout,
+            name=t.name,
         )
         setattr(parent, attr, layer)
         layers[t.name] = layer

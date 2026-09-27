@@ -28,7 +28,7 @@
 | T-LoRA | 噪声越大可用的秩越少，减轻小数据集过拟合 | 普通 LoRA；正交初始化时秩为设定值的两倍 |
 | LyCORIS Full | 直接训练所选层的完整权重，不做低秩拆分 | LyCORIS 差值文件 |
 
-T-LoRA 和 LyCORIS Full 不能与 DoRA 同时使用；T-LoRA 只能分开计算，不能合并权重。OrthoLoRA 和正交初始化的 T-LoRA 导出的是普通 LoRA，无法还原训练参数，继续训练需要使用完整恢复点。LyCORIS Full 没有 Rank 和 Alpha，文件与所选层的权重一样大，学习率需要像全量微调一样单独设置。
+T-LoRA 和 LyCORIS Full 不能与 DoRA 同时使用；开启 DoRA 时，训练对象规则里改用这两种算法的层不启用 DoRA，其余 LoRA、LoHa、LoKr、OrthoLoRA 层照常启用。T-LoRA 只能分开计算，不能合并权重。OrthoLoRA 和正交初始化的 T-LoRA 导出的是普通 LoRA，无法还原训练参数，继续训练需要使用完整恢复点。LyCORIS Full 没有 Rank 和 Alpha，文件与所选层的权重一样大，学习率需要像全量微调一样单独设置。
 
 ### LoKr Full
 

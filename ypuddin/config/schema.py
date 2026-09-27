@@ -356,7 +356,11 @@ class AdapterConfig(_Strict):
         help="rsLoRA：scale = alpha / sqrt(rank)",
         ui_=ui("adapter", order=50, control="switch", advanced=True),
     )
-    dora: bool = F(False, help="DoRA 权重分解（幅度/方向）", ui_=ui("adapter", order=60, control="switch"))
+    dora: bool = F(
+        False,
+        help="DoRA 权重分解（幅度/方向），作用于 LoRA、LoHa、LoKr 和 OrthoLoRA 层；按规则使用 LyCORIS Full 或 T-LoRA 的层不启用。",
+        ui_=ui("adapter", order=60, control="switch"),
+    )
     init: Literal["default", "scalar"] = F(
         "default",
         help="初始化：default（一侧置零）/ scalar（全随机 + 可训练标量从 0 起）",
