@@ -16,6 +16,13 @@ export function metricRange(values: Iterable<number | null | undefined>): { min:
   return min === Infinity ? null : { min, max };
 }
 
+const GROUP_NAMES: Record<string, string> = { dora: 'DoRA' };
+
+/** An optimizer parameter group's name, the same in the summary card and the chart legend. */
+export function learningRateGroupName(group: string): string {
+  return GROUP_NAMES[group] || group;
+}
+
 export function metricLabels(chinese: boolean) {
   return {
     loss: 'Loss',

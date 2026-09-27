@@ -9,11 +9,10 @@ import type { JobMetrics, Settings } from '../../api/types';
 import { chartTitle, DEFAULT_METRIC_CHARTS, METRICS, type MetricChartSetting, type MetricKey } from '../../utils/metricCharts';
 import { shapeValidationSeries, smoothLoss } from '../../utils/metrics';
 import { useWorkspaceText } from '../../utils/workspaceText';
-import { axisTickLabels, formatMetricValue, layoutValueAxes, metricChartBase, metricLabels, metricRange } from './metricPresentation';
+import { axisTickLabels, formatMetricValue, layoutValueAxes, learningRateGroupName, metricChartBase, metricLabels, metricRange } from './metricPresentation';
 import './job-metrics.css';
 
 const EXTRA_COLORS = ['#f59e0b', '#22d3ee', '#fb7185', '#84cc16', '#e879f9', '#a78bfa'];
-const GROUP_NAMES: Record<string, string> = { dora: 'DoRA' };
 const MIN_PLOT_WIDTH = 240;
 
 type Line = { unit: string; name: string; color: string; data: Array<[number, number | null]>; rangeValues?: Array<number | null>; width?: number; symbols?: boolean };
@@ -36,6 +35,16 @@ function groupSpread(groups: Array<Array<number | null>>): number {
     if (high > 0) spread = Math.max(spread, high / low);
   }
   return spread;
+}
+
+/** The legend's icon for a line series, drawn as ECharts draws it: a 25×14 line through a hollow circle. */
+function LegendIcon({ color, name }: { color: string; name: string }) {
+  return <span className="job-metrics-range-icon" title={name}>
+    <svg width="25" height="14" viewBox="0 0 25 14" aria-hidden="true" focusable="false">
+      <path d="M0 7H25" stroke={color} strokeWidth="2"/>
+      <circle cx="12.5" cy="7" r="5.6" fill="#fff" stroke={color} strokeWidth="2"/>
+    </svg>
+  </span>;
 }
 
 /**
@@ -104,7 +113,7 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
           const groups = Object.entries(metrics.lr || {});
           logRates = groupSpread(groups.map(([, values]) => values)) >= 100;
           groups.forEach(([group, values], index) => lines.push({
-            unit: 'LR', name: `${labels.lr} · ${GROUP_NAMES[group] || group}`, color: index ? EXTRA_COLORS[(index - 1) % EXTRA_COLORS.length] : item.color,
+            unit: 'LR', name: `${labels.lr} · ${learningRateGroupName(group)}`, color: index ? EXTRA_COLORS[(index - 1) % EXTRA_COLORS.length] : item.color,
             // A log axis has no zero: warmup's first steps are left out of the line.
             data: points(logRates ? values.map(value => typeof value === 'number' && value > 0 ? value : null) : values),
             rangeValues: values,
@@ -204,7 +213,7 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
         {chart.option ? <EChart option={chart.option} style={{ height: 280 }}/> : <div className="job-metrics-chart-empty"><Thermometer size={22} aria-hidden="true"/><span>{chart.empty}</span></div>}
         {!!chart.ranges?.length && <ul className="job-metrics-ranges" aria-label={text('已记录指标的最大值和最小值', 'Maximum and minimum of recorded metrics')}>
           {chart.ranges.map(range => <li key={range.name} aria-label={range.name}>
-            <span className="job-metrics-range-name"><i aria-hidden="true" style={{ backgroundColor: range.color }}/><span>{range.name}</span></span>
+            <LegendIcon color={range.color} name={range.name}/>
             <dl>{([['max', text('最大值', 'Max')], ['min', text('最小值', 'Min')]] as const).map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{formatMetricValue(range[key])}{range.unit && ` ${range.unit}`}</dd></div>)}</dl>
           </li>)}
         </ul>}
