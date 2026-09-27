@@ -34,6 +34,18 @@ xFormers、FlashAttention、SageAttention、bitsandbytes 等扩展需要与新�
 
 扩展更新后需重启服务。具体后端的版本要求和计算限制见 [注意力后端](ATTENTION.md)。
 
+## LoRA 环境
+
+“设置 → 运行环境 → LoRA 环境”显示本机安装的 LyCORIS 版本、官方最新版本及各自的提交号。训练器的 LoRA / LoKr 等算法由本项目实现，LyCORIS 只作为格式参考，不影响训练。
+
+同一区块提供 bitsandbytes 的安装入口，AdamW 8-bit 和 Lion 8-bit 优化器依赖它：
+
+- NVIDIA：从 PyPI 安装，安装前先查看安装计划。
+- 海光：PyPI 的构建不含海光显卡的计算代码，需要上传匹配当前 DTK 的 wheel。
+- Apple Silicon 与 CPU：训练不支持 8-bit 优化器，不显示该项。
+
+安装后会在显卡上实际执行一步 AdamW 8-bit 更新，确认优化器状态为 8 位且权重已更新，才标记为可用。“运行检查”可随时重新检测。
+
 ## 下载源与代理
 
 “软件下载源”控制 Python 依赖和 PyTorch 包的来源。设置保存后供启动器、环境准备和扩展安装使用；命令行显式指定 `--index` 时以命令行为准。自动换源可单独关闭。

@@ -42,16 +42,22 @@
 
 平台专用原生库按后端加载。常规状态读取与显式计算检测分开处理，运行环境页的计算检测使用隔离进程。
 
-## LoRA 与 LoKr
+## 适配器算法
 
-LoRA 以低秩乘积表示权重增量；LoKr 以 Kronecker 因子表示增量：
+各算法以不同结构表示权重增量：
 
 ```text
-LoRA: ΔW = scale × B × A
-LoKr: ΔW = scale × (W1 ⊗ W2)
+LoRA:          ΔW = scale × B × A
+LoKr:          ΔW = scale × (W1 ⊗ W2)
+LoHa:          ΔW = scale × (B1 A1) ⊙ (B2 A2)
+OrthoLoRA:     ΔW = scale × U (C − I) diag(s) Vᵀ
+T-LoRA:        ΔW = scale × B diag(m(t)) A
+LyCORIS Full:  ΔW = W − W0
 ```
 
 LoKr 的因子可以进一步低秩拆分。`rank = "full"` 保留完整因子矩阵，不解冻底模。训练层范围单独控制模块匹配。
+
+OrthoLoRA（[`adapters/ortho.py`](../ypuddin/adapters/ortho.py)）的 U、s、V 取自底模权重的主要奇异方向并保持冻结，C 由正交旋转和两组缩放组成，起步时 ΔW 为零。T-LoRA（[`adapters/tlora.py`](../ypuddin/adapters/tlora.py)）的 m(t) 按每个样本的噪声强度保留前 r(t) 个秩，只在训练时生效，预览与导出使用全部秩；正交初始化时另减去冻结的起点。两者都按普通 LoRA 导出。LyCORIS Full 直接训练层权重，导出为 LyCORIS 差值。
 
 线性层包装器根据计算模式直接应用增量，或重建合并权重。导出负责处理缩放和键名约定，加载时恢复相应参数结构。全量微调沿用独立的模型组件保存流程。
 

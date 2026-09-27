@@ -8,7 +8,7 @@
 | Node.js | 20.19+（20.x）、22.12+（22.x）或更新主版本；仅前端构建需要 |
 | NVIDIA | x86_64 Windows / Linux，安装与 PyTorch CUDA 构建兼容的驱动 |
 | Apple | Apple Silicon macOS，使用 MPS；当前训练路径使用 FP32 |
-| 海光 | x86_64 Linux，匹配的驱动、DTK 运行库和厂商 PyTorch |
+| 海光 | x86_64 Linux，匹配的驱动和 DTK 运行库；海光版 PyTorch 可使用已装好的，或由启动器下载 |
 
 模型权重、编码缓存和完整训练状态分别占用磁盘空间。内存与显存需求取决于模型、分辨率、精度和训练方式。
 
@@ -26,11 +26,11 @@ cd YPuddinTrainStudio
 | macOS Apple Silicon | `./studio-macos.command` |
 | Windows CPU | `.\studio-cpu.bat` |
 | Linux / macOS CPU | `./studio-cpu.sh` |
-| Linux DTK | 按 [DTK 部署](RUNTIME_DTK.md) 准备厂商包后运行 `./studio-linux-dtk.sh` |
+| Linux DTK | `./studio-linux-dtk.sh`，海光版 PyTorch 的来源见 [DTK 部署](RUNTIME_DTK.md) |
 
 脚本自动查找 Python，创建当前平台的虚拟环境，安装依赖并按需构建前端。系统没有适用的 Python、但已安装 `uv` 时，常规启动入口可通过 `uv` 下载 Python 3.12。
 
-默认地址为 `http://127.0.0.1:8123/`。注意力扩展通过“设置 → 运行环境”单独安装。
+默认地址为 `http://127.0.0.1:8123/`。注意力扩展和 8-bit 优化器依赖的 bitsandbytes 通过“设置 → 运行环境”单独安装。
 
 ## 启动参数
 
