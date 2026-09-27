@@ -7006,6 +7006,305 @@
         }
       }
     },
+    "/api/projects/{pid}/versions/{vid}/site-downloads": {
+      "get": {
+        "summary": "Status",
+        "operationId": "status_api_projects__pid__versions__vid__site_downloads_get",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteDownloadStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Start",
+        "operationId": "start_api_projects__pid__versions__vid__site_downloads_post",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SiteDownloadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteDownloadTask"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{pid}/versions/{vid}/site-downloads/estimate": {
+      "post": {
+        "summary": "Estimate",
+        "operationId": "estimate_api_projects__pid__versions__vid__site_downloads_estimate_post",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SiteDownloadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteDownloadEstimate"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/site-downloads/suggestions": {
+      "get": {
+        "summary": "Suggestions",
+        "operationId": "suggestions_api_site_downloads_suggestions_get",
+        "parameters": [
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "danbooru",
+                "gelbooru"
+              ],
+              "type": "string",
+              "default": "danbooru",
+              "title": "Source"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "default": "",
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SiteTagSuggestion"
+                  },
+                  "title": "Response Suggestions Api Site Downloads Suggestions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/site-downloads/{oid}": {
+      "get": {
+        "summary": "Operation",
+        "operationId": "operation_api_site_downloads__oid__get",
+        "parameters": [
+          {
+            "name": "oid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Oid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteDownloadTask"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/site-downloads/{oid}/cancel": {
+      "post": {
+        "summary": "Cancel",
+        "operationId": "cancel_api_site_downloads__oid__cancel_post",
+        "parameters": [
+          {
+            "name": "oid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Oid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteDownloadTask"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/credentials": {
       "get": {
         "summary": "Credential States",
@@ -19633,6 +19932,383 @@
           "theme"
         ],
         "title": "SettingsUi"
+      },
+      "SiteDownloadEstimate": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count"
+          },
+          "terms": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Terms"
+          },
+          "local_exclusions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Local Exclusions"
+          },
+          "tag_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag Limit"
+          },
+          "sorted": {
+            "type": "boolean",
+            "title": "Sorted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "count",
+          "terms",
+          "local_exclusions",
+          "tag_limit",
+          "sorted"
+        ],
+        "title": "SiteDownloadEstimate"
+      },
+      "SiteDownloadRequest": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "danbooru",
+              "gelbooru"
+            ],
+            "title": "Source",
+            "default": "danbooru"
+          },
+          "tags": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Tags",
+            "default": ""
+          },
+          "excluded_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Excluded Tags"
+          },
+          "count": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Count",
+            "default": 100
+          },
+          "ratings": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "general",
+                "sensitive",
+                "questionable",
+                "explicit"
+              ]
+            },
+            "type": "array",
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Ratings"
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "score",
+              "newest"
+            ],
+            "title": "Order",
+            "default": "score"
+          },
+          "min_score": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100000.0,
+                "minimum": -100000.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Score"
+          },
+          "min_side": {
+            "type": "integer",
+            "maximum": 8192.0,
+            "minimum": 0.0,
+            "title": "Min Side",
+            "default": 512
+          },
+          "dataset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Name",
+            "default": ""
+          },
+          "repeats": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": 1.0,
+            "title": "Repeats",
+            "default": 1
+          },
+          "caption_ext": {
+            "type": "string",
+            "maxLength": 32,
+            "title": "Caption Ext",
+            "default": "auto"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SiteDownloadRequest"
+      },
+      "SiteDownloadStatus": {
+        "properties": {
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/SiteDownloadTask"
+            },
+            "type": "array",
+            "title": "Operations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "operations"
+        ],
+        "title": "SiteDownloadStatus"
+      },
+      "SiteDownloadTask": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "version_id": {
+            "type": "string",
+            "title": "Version Id"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "target_dataset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Dataset Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "cancelling",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status"
+          },
+          "phase": {
+            "type": "string",
+            "title": "Phase"
+          },
+          "done": {
+            "type": "integer",
+            "title": "Done"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "logs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Logs"
+          },
+          "dataset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Id"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "images": {
+            "type": "integer",
+            "title": "Images"
+          },
+          "duplicates": {
+            "type": "integer",
+            "title": "Duplicates"
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "can_cancel": {
+            "type": "boolean",
+            "title": "Can Cancel"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "version_id",
+          "source",
+          "query",
+          "target_dataset_id",
+          "status",
+          "phase",
+          "done",
+          "total",
+          "error",
+          "logs",
+          "dataset_id",
+          "path",
+          "images",
+          "duplicates",
+          "created_at",
+          "finished_at",
+          "can_cancel"
+        ],
+        "title": "SiteDownloadTask"
+      },
+      "SiteTagSuggestion": {
+        "properties": {
+          "tag": {
+            "type": "string",
+            "title": "Tag"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "posts": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Posts"
+          },
+          "alias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alias"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tag",
+          "category",
+          "posts",
+          "alias"
+        ],
+        "title": "SiteTagSuggestion"
       },
       "SourceRole": {
         "properties": {

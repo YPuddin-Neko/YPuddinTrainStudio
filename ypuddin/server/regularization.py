@@ -25,9 +25,9 @@ from .booru import (
     MEDIA_EXTS,
     BooruClient,
     Cancelled,
+    Downloads,
     Post,
     Redirect,
-    TooLarge,
     normalize,
     user_agent,
 )
@@ -43,11 +43,6 @@ MAX_FILE_BYTES = 40 * 1024 * 1024
 MAX_BATCH_BYTES = 1024 * 1024 * 1024
 MAX_PIXELS = 16_777_216
 OWNER_FILE = ".regularization-owner"
-
-
-# Media downloads that fail in a row before the batch gives up on the site.
-FAILURE_RUN = 8
-DOWNLOAD_THREADS = 4
 
 
 def image_identity(image: Image.Image) -> str:
@@ -69,25 +64,17 @@ def decoded_image(data: bytes | Path) -> Image.Image:
         return Image.alpha_composite(background, oriented).convert("RGB")
 
 
-class _Batch:
+class _Batch(Downloads):
     """Posts downloaded in parallel into one batch, keeping only new, safe, distinct images."""
 
+    over_limit = ("Regularization download exceeded its byte limit", "regularization.too_large")
+
     def __init__(self, manager, oid, client, output, count, excluded, taken, cancelled):
-        self.manager, self.oid, self.client, self.output = manager, oid, client, output
-        self.count, self.excluded, self.taken, self.cancelled = count, set(excluded), taken, cancelled
-        self.source = client.site.name
-        self.lock = threading.Lock()
-        self.bytes = 0
-        self.done = 0
-        self.seen: set[str] = set()
+        super().__init__(client, count, max_bytes=MAX_BATCH_BYTES, cancelled=cancelled)
+        self.manager, self.oid, self.output = manager, oid, output
+        self.excluded, self.taken = set(excluded), taken
         self.identities: set[str] = set()
         self.manifest: list[dict] = []
-        self.skipped = 0
-        self.failures = 0
-
-    @property
-    def full(self):
-        return self.done >= self.count
 
     def wanted(self, post: Post) -> bool:
         return (
@@ -100,57 +87,13 @@ class _Batch:
             and not self.excluded & post.all_tags
         )
 
-    def _account(self, size):
-        with self.lock:
-            self.bytes += size
-            if self.bytes > MAX_BATCH_BYTES:
-                raise ApiError(
-                    "Regularization download exceeded its byte limit", code="regularization.too_large"
-                )
+    def read(self, data):
+        return decoded_image(data)
 
-    def _fetch(self, post):
-        try:
-            return post, decoded_image(self.client.download(post, progress=self._account))
-        except TooLarge:
-            return post, None
-        except ApiError as error:
-            if error.code == "regularization.too_large":
-                raise  # The whole batch is over its limit.
-            return post, error
-        except Cancelled:
-            raise
-        except Exception:
-            return post, None  # Not an image this batch can use.
+    def progress(self):
+        self.manager._update(self.oid, phase="collecting", done=self.done)
 
-    def take(self, posts, *, query, limit=None):
-        """Download the wanted posts in parallel until the batch is full, or `limit` more are saved.
-        Returns the posts saved."""
-        wanted = [post for post in posts if self.wanted(post)]
-        goal = self.count if limit is None else min(self.count, self.done + limit)
-        saved, index = [], 0
-        with ThreadPoolExecutor(
-            max_workers=DOWNLOAD_THREADS, thread_name_prefix="regularization-media"
-        ) as pool:
-            while index < len(wanted) and self.done < goal:
-                # One spare download covers a file that turns out unusable, without overshooting much.
-                size = min(DOWNLOAD_THREADS, goal - self.done + 1)
-                chunk, index = wanted[index : index + size], index + size
-                for post, result in pool.map(self._fetch, chunk):
-                    self.manager._check(self.cancelled)
-                    self.seen.add(post.id)
-                    if isinstance(result, ApiError):
-                        self.failures += 1
-                        if self.failures >= FAILURE_RUN:
-                            raise result
-                        continue
-                    self.failures = 0
-                    if result is None:
-                        self.skipped += 1
-                    elif self.done < goal and self.save(post, result, query):
-                        saved.append(post)
-        return saved
-
-    def save(self, post, image, query):
+    def keep(self, post, image, query):
         digest = image_identity(image)
         if digest in self.identities:
             self.manager._update(self.oid, duplicates=self.manager._row(self.oid)["duplicates"] + 1)
@@ -174,8 +117,6 @@ class _Batch:
                 "pixel_sha256": digest,
             }
         )
-        self.done += 1
-        self.manager._update(self.oid, phase="collecting", done=self.done)
         return True
 
     def finish(self):

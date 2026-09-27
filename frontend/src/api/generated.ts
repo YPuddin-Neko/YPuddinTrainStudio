@@ -2049,6 +2049,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{pid}/versions/{vid}/site-downloads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_projects__pid__versions__vid__site_downloads_get"];
+        put?: never;
+        /** Start */
+        post: operations["start_api_projects__pid__versions__vid__site_downloads_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{pid}/versions/{vid}/site-downloads/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Estimate */
+        post: operations["estimate_api_projects__pid__versions__vid__site_downloads_estimate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/site-downloads/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Suggestions */
+        get: operations["suggestions_api_site_downloads_suggestions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/site-downloads/{oid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Operation */
+        get: operations["operation_api_site_downloads__oid__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/site-downloads/{oid}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel */
+        post: operations["cancel_api_site_downloads__oid__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/credentials": {
         parameters: {
             query?: never;
@@ -6778,6 +6864,134 @@ export interface components {
             metric_charts?: components["schemas"]["MetricChartSetting"][] | null;
         } & {
             [key: string]: unknown;
+        };
+        /** SiteDownloadEstimate */
+        SiteDownloadEstimate: {
+            /** Source */
+            source: string;
+            /** Count */
+            count: number | null;
+            /** Terms */
+            terms: string[];
+            /** Local Exclusions */
+            local_exclusions: string[];
+            /** Tag Limit */
+            tag_limit: number | null;
+            /** Sorted */
+            sorted: boolean;
+        };
+        /** SiteDownloadRequest */
+        SiteDownloadRequest: {
+            /**
+             * Source
+             * @default danbooru
+             * @enum {string}
+             */
+            source: "danbooru" | "gelbooru";
+            /**
+             * Tags
+             * @default
+             */
+            tags: string;
+            /** Excluded Tags */
+            excluded_tags?: string[];
+            /**
+             * Count
+             * @default 100
+             */
+            count: number;
+            /** Ratings */
+            ratings?: ("general" | "sensitive" | "questionable" | "explicit")[];
+            /**
+             * Order
+             * @default score
+             * @enum {string}
+             */
+            order: "score" | "newest";
+            /** Min Score */
+            min_score?: number | null;
+            /**
+             * Min Side
+             * @default 512
+             */
+            min_side: number;
+            /** Dataset Id */
+            dataset_id?: string | null;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * Repeats
+             * @default 1
+             */
+            repeats: number;
+            /**
+             * Caption Ext
+             * @default auto
+             */
+            caption_ext: string;
+        };
+        /** SiteDownloadStatus */
+        SiteDownloadStatus: {
+            /** Operations */
+            operations: components["schemas"]["SiteDownloadTask"][];
+        };
+        /** SiteDownloadTask */
+        SiteDownloadTask: {
+            /** Id */
+            id: string;
+            /** Project Id */
+            project_id: string;
+            /** Version Id */
+            version_id: string;
+            /** Source */
+            source: string;
+            /** Query */
+            query: string;
+            /** Target Dataset Id */
+            target_dataset_id: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "cancelling" | "completed" | "failed" | "cancelled";
+            /** Phase */
+            phase: string;
+            /** Done */
+            done: number;
+            /** Total */
+            total: number;
+            /** Error */
+            error: string | null;
+            /** Logs */
+            logs: string[];
+            /** Dataset Id */
+            dataset_id: string | null;
+            /** Path */
+            path: string | null;
+            /** Images */
+            images: number;
+            /** Duplicates */
+            duplicates: number;
+            /** Created At */
+            created_at: number;
+            /** Finished At */
+            finished_at: number | null;
+            /** Can Cancel */
+            can_cancel: boolean;
+        };
+        /** SiteTagSuggestion */
+        SiteTagSuggestion: {
+            /** Tag */
+            tag: string;
+            /** Category */
+            category: string;
+            /** Posts */
+            posts: number | null;
+            /** Alias */
+            alias: string | null;
         };
         /** SourceRole */
         SourceRole: {
@@ -12246,6 +12460,204 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RegularizationTask"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    status_api_projects__pid__versions__vid__site_downloads_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+                vid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteDownloadStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_api_projects__pid__versions__vid__site_downloads_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+                vid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SiteDownloadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteDownloadTask"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    estimate_api_projects__pid__versions__vid__site_downloads_estimate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+                vid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SiteDownloadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteDownloadEstimate"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suggestions_api_site_downloads_suggestions_get: {
+        parameters: {
+            query?: {
+                source?: "danbooru" | "gelbooru";
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteTagSuggestion"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    operation_api_site_downloads__oid__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                oid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteDownloadTask"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_api_site_downloads__oid__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                oid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteDownloadTask"];
                 };
             };
             /** @description Validation Error */

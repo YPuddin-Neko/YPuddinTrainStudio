@@ -26,6 +26,7 @@ from . import (
     routes_model_downloads,
     routes_model_recommendations,
     routes_regularization,
+    routes_site_downloads,
     routes_work,
     routes_xyz,
 )
@@ -38,6 +39,7 @@ from .job_layout import migrate_job_files
 from .lifecycle import ServiceLifecycle
 from .model_downloads import ModelDownloads
 from .regularization import RegularizationManager
+from .site_downloads import SiteDownloadManager
 from .supervisor import JobSupervisor
 from .torch_environments import TorchEnvironments
 
@@ -63,6 +65,9 @@ def create_app(
     lifecycle.model_downloads = model_downloads
     dataset_pipeline = DatasetPipeline(context)
     regularization = RegularizationManager(context, credentials=model_downloads.credentials)
+    site_downloads = SiteDownloadManager(
+        context, credentials=model_downloads.credentials, regularization=regularization
+    )
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -79,6 +84,7 @@ def create_app(
             with contextlib.suppress(asyncio.CancelledError):
                 await stats_task
             await supervisor.stop()
+            await asyncio.to_thread(site_downloads.close)
             await asyncio.to_thread(regularization.close)
             await asyncio.to_thread(model_downloads.close)
             await asyncio.to_thread(torch_environments.close)
@@ -101,6 +107,7 @@ def create_app(
     app.state.lifecycle = lifecycle
     app.state.dataset_pipeline = dataset_pipeline
     app.state.regularization = regularization
+    app.state.site_downloads = site_downloads
     errors.install(app)
     app.add_middleware(
         CORSMiddleware,
@@ -121,6 +128,7 @@ def create_app(
     app.include_router(routes_dataset_pipeline.router, prefix="/api")
     app.include_router(routes_environment.router, prefix="/api")
     app.include_router(routes_regularization.router, prefix="/api")
+    app.include_router(routes_site_downloads.router, prefix="/api")
     app.include_router(routes_credentials.router, prefix="/api")
 
     dist = Path(frontend_dist) if frontend_dist else Path(__file__).resolve().parents[2] / "frontend" / "dist"

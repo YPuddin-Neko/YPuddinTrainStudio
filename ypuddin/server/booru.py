@@ -1,8 +1,8 @@
-"""Danbooru and Gelbooru for regularization: paced searches, match counts and media downloads.
+"""Danbooru and Gelbooru: paced searches, match counts, tag suggestions and media downloads.
 
-Every request goes through the service proxy policy (see RegularizationManager._open). API and
-media requests are paced separately and slow down when a site answers HTTP 429; busy or failing
-responses are retried a few times. Credentials go to the site API only, never to media hosts.
+Every request goes through the service proxy policy, read per request. API and media requests are
+paced separately and slow down when a site answers HTTP 429; busy or failing responses are retried
+a few times. Credentials go to the site API only, never to media hosts.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
@@ -27,7 +28,13 @@ from .errors import ApiError
 API_BYTES = 8 * 1024 * 1024
 MEDIA_EXTS = frozenset({"png", "jpg", "jpeg", "webp"})
 SAFE_RATINGS = frozenset({"g", "general", "safe"})
+# Both sites' ratings by name; Danbooru answers with the first letter and older Gelbooru posts say safe.
+RATINGS = ("general", "sensitive", "questionable", "explicit")
+_RATING_NAMES = {"g": "general", "safe": "general", "s": "sensitive", "q": "questionable", "e": "explicit"}
 ATTEMPTS = 4
+# Danbooru tag categories by number, and Gelbooru's names for them.
+CATEGORIES = {0: "general", 1: "artist", 3: "copyright", 4: "character", 5: "meta"}
+_GELBOORU_CATEGORIES = {"tag": "general", "metadata": "meta", "deprecated": "general"}
 # Danbooru meta tags describe the file or its upload, not the picture. Gelbooru does not label tag
 # categories, so its best-known meta tags are recognized by name.
 META_TAG = re.compile(
@@ -48,12 +55,22 @@ class Site:
     base: str
     media_suffix: str
     page_size: int
+    # Highest score first; Danbooru counts it like a tag, Gelbooru has no tag limit.
+    score_order: str
 
 
 SITES = {
-    "danbooru": Site("danbooru", "Danbooru", "https://danbooru.donmai.us", ".donmai.us", 200),
-    "gelbooru": Site("gelbooru", "Gelbooru", "https://gelbooru.com", ".gelbooru.com", 100),
+    "danbooru": Site("danbooru", "Danbooru", "https://danbooru.donmai.us", ".donmai.us", 200, "order:score"),
+    "gelbooru": Site("gelbooru", "Gelbooru", "https://gelbooru.com", ".gelbooru.com", 100, "sort:score"),
 }
+
+
+def rating_terms(ratings) -> list[str]:
+    """Search conditions for the allowed ratings: that rating alone, or the others excluded."""
+    allowed = [rating for rating in RATINGS if rating in ratings]
+    if len(allowed) == 1:
+        return [f"rating:{allowed[0]}"]
+    return [f"-rating:{rating}" for rating in RATINGS if rating not in allowed]
 
 
 def allowed_media(url: str, source: str) -> bool:
@@ -111,10 +128,22 @@ class Post:
     all_tags: frozenset[str]
     page: str
     source: str
+    score: int = 0
+    md5: str = ""
+    # The caption tags that name artists, characters and works; only Danbooru labels them.
+    artists: tuple[str, ...] = ()
+    characters: tuple[str, ...] = ()
+    copyrights: tuple[str, ...] = ()
 
     @property
     def safe(self) -> bool:
         return self.rating in SAFE_RATINGS
+
+    @property
+    def level(self) -> str:
+        """The rating by name: general, sensitive, questionable or explicit; empty when unknown."""
+        rating = self.rating.lower()
+        return rating if rating in RATINGS else _RATING_NAMES.get(rating, "")
 
 
 class Pace:
@@ -143,6 +172,17 @@ class TooLarge(ApiError):
 
     def __init__(self):
         super().__init__("Regularization download exceeded its byte limit", code="regularization.too_large")
+
+
+class OverLimit(ApiError):
+    """A whole batch over its byte limit."""
+
+
+@dataclass(frozen=True)
+class Search:
+    terms: list[str]  # What is sent.
+    local: list[str]  # Exclusions beyond the tag limit, checked on each post instead.
+    sorted: bool  # False when a requested sort order did not fit the tag limit.
 
 
 class TagLimitError(ApiError):
@@ -306,14 +346,56 @@ class BooruClient:
             self._tag_limit = None if level >= 31 else 6 if level == 30 else 2
         return self._tag_limit
 
-    def query(self, tags: list[str], excluded: list[str]) -> tuple[list[str], list[str]]:
-        """The search terms within the account's tag limit, and the exclusions left to check locally."""
+    def fit(
+        self, tags: list[str], excluded: list[str], *, sort: str | None = None, conditions=("rating:general",)
+    ) -> Search:
+        """One search within the account's tag limit. The tags must fit; a sort order, which Danbooru
+        counts like a tag, comes next, then as many exclusions as there is room for. Conditions such
+        as the rating and a minimum score are free on both sites."""
         limit = self.tag_limit()
         if limit is not None and len(tags) > limit:
             raise TagLimitError(self.site, limit)
-        room = len(excluded) if limit is None else max(0, limit - len(tags))
+        order = [sort] if sort and (limit is None or len(tags) < limit) else []
+        room = len(excluded) if limit is None else max(0, limit - len(tags) - len(order))
         negated = [f"-{tag.replace(' ', '_')}" for tag in excluded[:room]]
-        return [*tags, *negated, "rating:general"], excluded[room:]
+        return Search([*tags, *order, *negated, *conditions], excluded[room:], bool(order) or not sort)
+
+    def query(self, tags: list[str], excluded: list[str]) -> tuple[list[str], list[str]]:
+        """The search terms within the account's tag limit, and the exclusions left to check locally."""
+        search = self.fit(tags, excluded)
+        return search.terms, search.local
+
+    def suggest(self, term: str, limit: int = 10) -> list[dict]:
+        """Tags for what has been typed, from the site's own search suggestions, most used first."""
+        if self.site.name == "danbooru":
+            params = {"search[query]": term, "search[type]": "tag_query", "limit": limit}
+            rows = self._json("/autocomplete.json", params, authenticate=False)
+        else:
+            params = {"page": "autocomplete2", "term": term, "type": "tag_query", "limit": limit}
+            rows = self._json("/index.php", params, authenticate=False)
+        found = []
+        for row in rows if isinstance(rows, list) else []:
+            value = row.get("value") if isinstance(row, dict) else None
+            if not isinstance(value, str) or not str(row.get("type", "tag")).startswith("tag"):
+                continue  # Metatags and other kinds of suggestion.
+            category = row.get("category")
+            category = (
+                CATEGORIES.get(category, "general")
+                if isinstance(category, int)
+                else _GELBOORU_CATEGORIES.get(str(category), str(category or "general"))
+            )
+            posts = str(row.get("post_count", ""))
+            antecedent = row.get("antecedent")
+            found.append(
+                {
+                    "tag": value,
+                    "category": category,
+                    "posts": int(posts) if posts.isdigit() else None,
+                    # What was typed when it is another name for the tag.
+                    "alias": antecedent if isinstance(antecedent, str) and antecedent != value else None,
+                }
+            )
+        return found[:limit]
 
     def count(self, terms: list[str]) -> int | None:
         query = " ".join(terms)
@@ -381,6 +463,15 @@ class BooruClient:
             value = next((row.get(key) for key in keys if row.get(key) is not None), 0)
             return int(value) if isinstance(value, (int, str)) and str(value).isdigit() else 0
 
+        def named(key):
+            value = row.get(key) if danbooru else None
+            return tuple(tag for tag in value.split() if tag in caption) if isinstance(value, str) else ()
+
+        try:
+            score = int(row.get("score") or 0)
+        except (TypeError, ValueError):
+            score = 0
+        md5 = str(row.get("md5") or "").lower()
         return Post(
             id=pid,
             rating=str(row.get("rating", "")),
@@ -394,6 +485,11 @@ class BooruClient:
             if danbooru
             else f"{self.site.base}/index.php?page=post&s=view&id={pid}",
             source=str(row.get("source") or ""),
+            score=score,
+            md5=md5 if re.fullmatch(r"[0-9a-f]{32}", md5) else "",
+            artists=named("tag_string_artist"),
+            characters=named("tag_string_character"),
+            copyrights=named("tag_string_copyright"),
         )
 
     def download(self, post: Post, progress: Callable[[int], None] | None = None) -> bytes:
@@ -405,3 +501,89 @@ class BooruClient:
             headers={"Referer": self.site.base + "/"},
             progress=progress,
         )
+
+
+class Downloads:
+    """Wanted posts downloaded a few at a time in parallel, until `count` are kept."""
+
+    THREADS = 4
+    FAILURE_RUN = 8  # Media downloads that fail in a row before the batch gives up on the site.
+    over_limit = ("The download exceeded its byte limit", "site_download.too_large")
+
+    def __init__(self, client: BooruClient, count: int, *, max_bytes: int, cancelled: threading.Event):
+        self.client, self.count, self.max_bytes, self.cancelled = client, count, max_bytes, cancelled
+        self.source = client.site.name
+        self.lock = threading.Lock()
+        self.bytes = 0
+        self.done = 0
+        self.seen: set[str] = set()
+        self.skipped = 0
+        self.failures = 0
+
+    @property
+    def full(self) -> bool:
+        return self.done >= self.count
+
+    def wanted(self, post: Post) -> bool:
+        return post.id not in self.seen
+
+    def more(self) -> bool:
+        """Whether to start further downloads, besides the count."""
+        return True
+
+    def read(self, data: bytes):
+        """What `keep` stores from a downloaded file; raises when the file is not a usable image."""
+        return data
+
+    def keep(self, post: Post, result, query: str) -> bool:
+        raise NotImplementedError
+
+    def progress(self) -> None:
+        pass
+
+    def _account(self, size: int) -> None:
+        with self.lock:
+            self.bytes += size
+            if self.bytes > self.max_bytes:
+                raise OverLimit(self.over_limit[0], code=self.over_limit[1])
+
+    def _fetch(self, post: Post):
+        try:
+            return post, self.read(self.client.download(post, progress=self._account))
+        except (OverLimit, Cancelled):
+            raise
+        except TooLarge:
+            return post, None
+        except ApiError as error:
+            return post, error
+        except Exception:
+            return post, None  # Not an image this batch can use.
+
+    def take(self, posts, *, query: str, limit: int | None = None) -> list[Post]:
+        """Download the wanted posts until the batch is full, or `limit` more are kept. Returns the
+        posts kept."""
+        wanted = [post for post in posts if self.wanted(post)]
+        goal = self.count if limit is None else min(self.count, self.done + limit)
+        kept, index = [], 0
+        with ThreadPoolExecutor(max_workers=self.THREADS, thread_name_prefix=f"{self.source}-media") as pool:
+            while index < len(wanted) and self.done < goal and self.more():
+                # One spare download covers a file that turns out unusable, without overshooting much.
+                size = min(self.THREADS, goal - self.done + 1)
+                chunk, index = wanted[index : index + size], index + size
+                for post, result in pool.map(self._fetch, chunk):
+                    if self.cancelled.is_set():
+                        raise Cancelled()
+                    self.seen.add(post.id)
+                    if isinstance(result, ApiError):
+                        self.failures += 1
+                        if self.failures >= self.FAILURE_RUN:
+                            raise result
+                        continue
+                    self.failures = 0
+                    if result is None:
+                        self.skipped += 1
+                    elif self.done < goal and self.keep(post, result, query):
+                        self.done += 1
+                        kept.append(post)
+                        self.progress()
+        return kept
