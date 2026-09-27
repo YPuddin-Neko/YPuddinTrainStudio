@@ -13,13 +13,24 @@ import { filesFromDrop, filesFromSelection, type DatasetUploadFile } from '../..
 import { formatDatasetImportError } from '../../utils/datasetImportErrors';
 import { useDatasetImportProgress } from '../../utils/useDatasetImportProgress';
 import DatasetImportProgress from '../../components/datasets/DatasetImportProgress';
+import SiteDownloadImport from '../../components/datasets/SiteDownloadImport';
 import './project-data-import.css';
 import { SlidingIndicator } from '../../components/motion';
 
 export default function ProjectDataImport({ projectId, versionId, onImported, defaultIsReg = false, captionFormats, targetDataset, onBusyChange }: { projectId: string; versionId?: string; onImported: () => void; defaultIsReg?: boolean; captionFormats?: readonly string[]; targetDataset?: DatasetInfo; onBusyChange?: (busy:boolean)=>void }) {
   const text = useWorkspaceText();
   const repeatsId = React.useId();
-  const [mode, setMode] = React.useState<'upload' | 'path'>('upload');
+  // Site downloads run on, so coming back to this form within the session shows them again.
+  const modeKey = `project-import-mode:${projectId}:${versionId || ''}:${targetDataset?.source.id || ''}`;
+  const siteAllowed = !!versionId && !defaultIsReg && !targetDataset?.source.is_reg;
+  const [mode, setMode] = React.useState<'upload' | 'path' | 'site'>(() => {
+    try { return siteAllowed && sessionStorage.getItem(modeKey) === 'site' ? 'site' : 'upload'; } catch { return 'upload'; }
+  });
+  const chooseMode = (next: 'upload' | 'path' | 'site') => {
+    setMode(next); setError(''); setCreated([]); resetProgress();
+    try { sessionStorage.setItem(modeKey, next); } catch { /* A remembered mode is only a convenience. */ }
+  };
+  const [siteBusy, setSiteBusy] = React.useState(false);
   const [files, setFiles] = React.useState<DatasetUploadFile[]>([]);
   const [reading, setReading] = React.useState(false);
   const [path, setPath] = React.useState('');
@@ -64,13 +75,13 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
     } finally { if (generation === selectionGeneration.current) setReading(false); }
   };
   const locked = busy || reading;
-  React.useEffect(()=>{onBusyChange?.(locked);return()=>onBusyChange?.(false);},[locked,onBusyChange]);
+  React.useEffect(()=>{onBusyChange?.(locked || siteBusy);return()=>onBusyChange?.(false);},[locked,siteBusy,onBusyChange]);
   const folderName = mode === 'path' ? path.replace(/\\/g,'/').split('/').filter(Boolean).pop() : files[0]?.relativePath.split('/').slice(0,-1)[0];
   const autoName = files.length === 1 && files[0].relativePath.toLowerCase().endsWith('.zip') ? files[0].file.name.replace(/\.zip$/i, '') : folderName || '';
   const detectedRepeats = folderName?.match(/^([1-9]\d{0,5})[_-]/)?.[1];
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (locked || !Number.isInteger(repeats) || repeats < 1 || (mode === 'upload' ? files.length === 0 : !path.trim())) return;
+    if (mode === 'site' || locked || !Number.isInteger(repeats) || repeats < 1 || (mode === 'upload' ? files.length === 0 : !path.trim())) return;
     const generation = ++importGeneration.current;
     const current = () => generation === importGeneration.current;
     setBusy(true); setError(''); setCreated([]);
@@ -119,13 +130,21 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
     finally { if (current()) setBusy(false); }
   };
 
-  return <form onSubmit={submit} className="project-data-import" data-testid="project-data-import" aria-busy={locked} data-completed={!showForm}>
+  const modes: [typeof mode, string][] = [
+    ['upload', text('上传文件或文件夹', 'Upload files or folders')],
+    ...(!targetDataset ? [['path', text('从训练电脑导入', 'Import from training computer')] as [typeof mode, string]] : []),
+    ...(siteAllowed ? [['site', text('从图站下载', 'Download from image boards')] as [typeof mode, string]] : []),
+  ];
+  const site = mode === 'site' && siteAllowed;
+  return <div className="project-data-import" data-testid="project-data-import" aria-busy={locked} data-completed={!site && !showForm}>
     <header className="project-import-heading">
       <h3>{targetDataset ? text('添加到当前数据集', 'Add to this dataset') : defaultIsReg ? text('添加已有正则图', 'Add existing regularization images') : text('添加训练图片', 'Add training images')}</h3>
-      {showForm ? !targetDataset && <div className="project-import-modes ui-segmented" role="group" aria-label={text('数据导入方式', 'Data import method')}>
-        {[['upload', text('上传文件或文件夹', 'Upload files or folders')], ['path', text('从训练电脑导入', 'Import from training computer')]].map(([key, label]) => <button key={key} type="button" disabled={locked} onClick={() => { setMode(key as typeof mode); setError(''); setCreated([]); resetProgress(); }} aria-pressed={mode === key}>{label}</button>)}<SlidingIndicator className="ui-segmented-thumb"/>
+      {site || showForm ? modes.length > 1 && <div className="project-import-modes ui-segmented" role="group" aria-label={text('数据导入方式', 'Data import method')}>
+        {modes.map(([key, label]) => <button key={key} type="button" disabled={locked} onClick={() => chooseMode(key)} aria-pressed={mode === key}>{label}</button>)}<SlidingIndicator className="ui-segmented-thumb"/>
       </div> : <button type="button" className="ui-btn" onClick={() => setShowForm(true)}><Plus size={16}/>{text('继续添加', 'Add more')}</button>}
     </header>
+    {site ? <SiteDownloadImport projectId={projectId} versionId={versionId!} targetDataset={targetDataset} captionFormats={captionFormats} onImported={onImported} onBusyChange={setSiteBusy}/>
+      : <form onSubmit={submit} className="project-import-form">
     {operation && operation.state !== 'completed' && <DatasetImportProgress operation={operation}/>}
     {error && <div role="alert" className="project-import-message project-import-error">{error}</div>}
     {created.length > 0 && <div role="status" className="project-import-message project-import-success"><CheckCircle2 size={20}/><div><strong>{targetDataset ? text('图片已添加到当前数据集。', 'Images added to this dataset.') : text(`已导入当前版本，共 ${created.length} 组图片。`, `Imported ${created.length} image groups into this version.`)}</strong>{!targetDataset && <div className="project-import-result-links">{created.map(dataset => <DatasetLink className="ui-link" key={dataset.source.id} to={`/datasets/${dataset.source.id}`}>{created.length === 1 ? text('查看图片与标签', 'Review images and captions') : dataset.source.path.replace(/\\/g, '/').split('/').pop()}</DatasetLink>)}</div>}</div>{operation && <span className="project-import-elapsed">{text('用时', 'Elapsed')} {operation.elapsed < 1 ? text('不足 1 秒', '<1s') : formatEta(operation.elapsed)}</span>}</div>}
@@ -162,5 +181,6 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
       {created.length > 0 && <button type="button" className="ui-btn ui-btn-quiet" disabled={locked} onClick={() => setShowForm(false)}><ChevronUp size={14}/>{text('收起', 'Collapse')}</button>}
     </div>
     </>}
-  </form>;
+    </form>}
+  </div>;
 }
