@@ -78,6 +78,7 @@
 .overview-parameters > div,.overview-facts > div { min-width:0; }
 .overview-parameters dt,.overview-facts dt { color:var(--studio-dim); font-size:11px; }
 .overview-parameters dd { margin:3px 0 0; font-size:13px; font-weight:600; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.overview-parameter-plain { color:var(--studio-dim); font-weight:400; }
 .overview-run-list { display:grid; margin:-4px -8px; padding:0; list-style:none; }
 .overview-run-list li + li { border-top:1px solid var(--studio-line); }
 .overview-run-list a { display:grid; gap:4px; min-width:0; padding:9px 8px; border-radius:7px; }

@@ -10,6 +10,7 @@ import { useFamilies } from '../../api/hooks/useFamilies';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
 import { formatBytes } from '../../utils/format';
+import { decimalText } from '../../utils/numberText';
 import { formatApiError } from '../../utils/errors';
 import { mergeConfig } from '../../utils/config';
 import { configOptionLabel } from '../../utils/configPresentation';
@@ -149,11 +150,17 @@ export default function ProjectOverview({ project, version, versionId, config: s
   const epochs = number(config.loop?.epochs);
   const maxSteps = number(config.loop?.max_steps);
   const resolutions = Array.isArray(config.dataset?.resolutions) ? config.dataset.resolutions.filter((value: unknown) => typeof value === 'number') : [];
+  // The exponent form matches the job page; the plain decimal follows for reading at a glance.
+  const rate = config.optimizer?.lr;
+  const plainRate = typeof rate === 'number' && Number.isFinite(rate) ? decimalText(rate) : '';
+  const learningRate = plainRate && plainRate !== formatRateValue(rate)
+    ? <>{formatRateValue(rate)}<span className="overview-parameter-plain">{text(`（${plainRate}）`, ` (${plainRate})`)}</span></>
+    : formatRateValue(rate);
   const parameters: [string, React.ReactNode][] = [
     [text('算法', 'Algorithm'), full ? text('全量微调', 'Full fine-tuning') : config.adapter?.algo ? configOptionLabel('adapter.algo', String(config.adapter.algo), english) : '—'],
     full ? [text('训练组件', 'Trained parts'), [config.training?.train_backbone && 'UNet / DiT', config.training?.train_text_encoder && text('文本编码器', 'Text encoder')].filter(Boolean).join(' + ') || '—']
       : ['Rank / Alpha', config.adapter?.rank != null ? `${config.adapter.rank} / ${config.adapter.alpha ?? '—'}` : '—'],
-    [text('学习率', 'Learning rate'), formatRateValue(config.optimizer?.lr)],
+    [text('学习率', 'Learning rate'), learningRate],
     [text('优化器', 'Optimizer'), config.optimizer?.type ? configOptionLabel('optimizer.type', String(config.optimizer.type), true) : '—'],
     [text('批量大小', 'Batch size'), config.dataset?.batch_size != null ? `${config.dataset.batch_size}${number(config.loop?.grad_accum) && config.loop.grad_accum > 1 ? ` × ${config.loop.grad_accum}` : ''}` : '—'],
     [text('训练长度', 'Length'), [epochs !== null && text(`${epochs} 轮`, `${epochs} epochs`), maxSteps !== null && text(`最多 ${maxSteps} 步`, `≤ ${maxSteps} steps`)].filter(Boolean).join(' · ') || (defaultsQuery.isSuccess ? text('未设置', 'Not set') : '—')],
