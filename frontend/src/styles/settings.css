@@ -40,8 +40,12 @@
 .settings-inline-details p{padding:8px 0;overflow-wrap:anywhere}
 .settings-dependencies{border-top:1px solid var(--settings-line)}
 .settings-dependency{border-bottom:1px solid var(--settings-line)}
-.settings-dependency-row{display:grid;grid-template-columns:minmax(160px,1fr) minmax(0,180px) minmax(140px,.75fr) auto;grid-template-areas:"info version state actions";align-items:center;gap:12px;padding:12px 0}
+/* Rows line their columns up: the actions column always fits an install button and a link. */
+.settings-dependency-row{display:grid;grid-template-columns:minmax(160px,1fr) minmax(0,180px) minmax(140px,.75fr) minmax(100px,auto);grid-template-areas:"info version state actions";align-items:center;gap:12px;padding:12px 0}
 .settings-dependency-info{grid-area:info;min-width:0}
+/* A reference row (LyCORIS) has no install state, so its versions use that column too; the name lines up with names that have a disclosure arrow. */
+.settings-dependency-row-reference{grid-template-areas:"info version version actions"}
+.settings-dependency-name-static{padding-left:19px}
 .settings-dependency-version{grid-area:version;min-width:0;overflow-wrap:anywhere;white-space:normal}
 .settings-dependency-version > div{display:flex;flex-wrap:wrap;gap:2px 6px;line-height:1.6}
 .settings-dependency-version dt{color:var(--settings-muted)}

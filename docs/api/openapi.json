@@ -6148,6 +6148,46 @@
         }
       }
     },
+    "/api/environment/lora": {
+      "get": {
+        "summary": "Lora",
+        "operationId": "lora_api_environment_lora_get",
+        "parameters": [
+          {
+            "name": "refresh",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Refresh"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoraEnvironment"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/environment/dtk/wheels": {
       "get": {
         "summary": "Dtk Wheels",
@@ -10902,7 +10942,8 @@
               "mtlattn",
               "nvidia-ml-py",
               "tensorboard",
-              "schedulefree"
+              "schedulefree",
+              "bitsandbytes"
             ],
             "title": "Package"
           },
@@ -14007,6 +14048,127 @@
         "additionalProperties": false,
         "type": "object",
         "title": "LoopConfig"
+      },
+      "LoraEnvironment": {
+        "properties": {
+          "checked_at": {
+            "type": "number",
+            "title": "Checked At"
+          },
+          "local": {
+            "$ref": "#/components/schemas/LoraLocal"
+          },
+          "upstream": {
+            "$ref": "#/components/schemas/LoraUpstream"
+          }
+        },
+        "type": "object",
+        "required": [
+          "checked_at",
+          "local",
+          "upstream"
+        ],
+        "title": "LoraEnvironment"
+      },
+      "LoraLocal": {
+        "properties": {
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit"
+          }
+        },
+        "type": "object",
+        "title": "LoraLocal"
+      },
+      "LoraUpstream": {
+        "properties": {
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit"
+          },
+          "head": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head"
+          },
+          "head_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head Date"
+          },
+          "local_commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Commit"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "title": "LoraUpstream"
       },
       "MaskInfo": {
         "properties": {

@@ -35,6 +35,11 @@ interface EnvironmentStatus {
   sdpa?: { status: 'passed' | 'failed' | 'not_tested'; reason: string | null; error: string | null; detail: string | null; checked_at: number | null; device: string | null; device_name: string | null } | null;
 }
 interface PlanEntry { name: string; from_version: string | null; version: string | null; sha256?: string }
+interface LoraEnvironment {
+  checked_at: number;
+  local: { version?: string | null; commit?: string | null };
+  upstream: { version?: string | null; commit?: string | null; head?: string | null; head_date?: string | null; local_commit?: string | null; error?: string | null };
+}
 interface Operation {
   id: string; package: string; action: string; status: string; created_at: number;
   dismissed_at?: number | null; plan: PlanEntry[]; logs: string[]; error: string | null; restart_required: boolean;
@@ -46,7 +51,7 @@ const button = 'ui-btn ui-btn-sm';
 const input = 'rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900';
 const busyStatus = (op: Operation) => ['planning', 'installing', 'verifying'].includes(op.status);
 const cudaAttentionPackages = new Set(['xformers', 'flash-attn']);
-const managedPackages = new Set([...cudaAttentionPackages, 'mtlattn']);
+const managedPackages = new Set([...cudaAttentionPackages, 'mtlattn', 'bitsandbytes']);
 const metalFlashVersion = '0.4.1';
 
 function runtimeTarget(runtime: EnvironmentStatus['runtime']): 'cpu' | 'mps' | 'cuda' | 'hip' {
@@ -100,6 +105,22 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     finally { if (!controller.signal.aborted) setLatestLoading(false); }
   }, []);
   React.useEffect(() => { void refreshLatest(); return () => latestController.current?.abort(); }, [refreshLatest]);
+  const [lora, setLora] = React.useState<LoraEnvironment | null>(null);
+  const [loraLoading, setLoraLoading] = React.useState(true);
+  const [loraError, setLoraError] = React.useState('');
+  const loraController = React.useRef<AbortController | null>(null);
+  const refreshLora = React.useCallback(async (refresh = false) => {
+    loraController.current?.abort();
+    const controller = new AbortController();
+    loraController.current = controller;
+    setLoraLoading(true); setLoraError('');
+    try {
+      const result = await apiClient.get<LoraEnvironment>('/environment/lora', { params: { refresh }, signal: controller.signal, silent: true });
+      if (!controller.signal.aborted) setLora(result);
+    } catch (err) { if (!controller.signal.aborted) { setLora(null); setLoraError(formatApiError(err)); } }
+    finally { if (!controller.signal.aborted) setLoraLoading(false); }
+  }, []);
+  React.useEffect(() => { void refreshLora(); return () => loraController.current?.abort(); }, [refreshLora]);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState('');
   const errorRef = React.useRef<HTMLDivElement>(null);
@@ -135,7 +156,9 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
   const hipBackend = target === 'hip';
   const showAttentionExtensions = target === 'cuda' || hipBackend;
   const visiblePackages = status?.packages.filter(pkg => target === 'mps' ? pkg.name === 'mtlattn' : showAttentionExtensions && cudaAttentionPackages.has(pkg.name)) || [];
-  const focusAvailable = !!focusPackage && visiblePackages.some(pkg => pkg.name === focusPackage);
+  // The 8-bit optimizers run only on CUDA / DTK GPUs; training refuses them elsewhere.
+  const optimizerPackages = status?.packages.filter(pkg => showAttentionExtensions && pkg.name === 'bitsandbytes') || [];
+  const focusAvailable = !!focusPackage && [...visiblePackages, ...optimizerPackages].some(pkg => pkg.name === focusPackage);
   React.useEffect(() => {
     if (!focusAvailable || !focusPackage) return;
     setSelected(focusPackage);
@@ -200,7 +223,11 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     xformers: copy('训练与采样加速', 'Training and sampling acceleration'),
     'flash-attn': copy('FP16 / BF16 训练与采样加速', 'FP16 / BF16 training and sampling acceleration'),
     mtlattn: copy('Apple GPU 训练与采样加速（可选）', 'Optional Apple GPU training and sampling acceleration'),
+    bitsandbytes: copy('8-bit 优化器：AdamW 8-bit、Lion 8-bit', '8-bit optimizers: AdamW 8-bit, Lion 8-bit'),
   }[name] || '');
+  const checkHint = (name: string) => name === 'bitsandbytes'
+    ? copy('点击“运行检查”，检查 8-bit 优化器能否在当前显卡上运行。', 'Click “Run checks” to check whether the 8-bit optimizers run on the current GPU.')
+    : copy('点击“运行检查”，检查此扩展能否在当前显卡上执行前向与反向计算。', 'Click “Run checks” to check whether this extension can run forward and backward computations on the current GPU.');
   const reason = (pkg: PackageStatus) => {
     if (probing && pkg.version && pkg.supported) return copy('检查中…', 'Checking…');
     if (pkg.name === 'mtlattn') {
@@ -224,7 +251,7 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     if (pkg.reason === 'requires_nvidia') return copy('需要 NVIDIA 显卡', 'Requires an NVIDIA GPU');
     if (!pkg.version) return copy('未安装 · 可选', 'Not installed · optional');
     if (status?.probe_deferred) return copy('任务运行中，检测已延后', 'Probe deferred while a job runs');
-    if (pkg.available) return pkg.backend ? hipBackend ? copy('已通过 DTK / HIP 内核检测', 'DTK / HIP kernel probe passed') : copy('已通过 CUDA 内核检测', 'CUDA kernel probe passed') : copy('可用', 'Available');
+    if (pkg.available) return pkg.kernel_tested ? hipBackend ? copy('已通过 DTK / HIP 内核检测', 'DTK / HIP kernel probe passed') : copy('已通过 CUDA 内核检测', 'CUDA kernel probe passed') : copy('可用', 'Available');
     if (!status?.probed_at && !pkg.error) return copy('已安装 · 待验证运行', 'Installed · runtime check pending');
     return copy('检测失败，展开查看', 'Probe failed; expand for details');
   };
@@ -241,6 +268,48 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     <button type="button" className={button} disabled={locked} onClick={() => wheelInputRef.current?.click()}><Upload size={13}/>{uploading ? copy('上传并校验…', 'Uploading and checking…') : copy('上传 wheel', 'Upload wheel')}</button>
     <input ref={wheelInputRef} type="file" accept=".whl" hidden aria-label={`${packageName} wheel`} disabled={locked} onChange={event => {const file = event.target.files?.[0]; if (file) void upload(file, packageName); event.target.value = '';}}/>
   </>;
+  const packageItem = (pkg: PackageStatus) => <div key={pkg.name} className="settings-dependency">
+    <div id={`environment-package-${pkg.name}`} className="settings-dependency-row" data-testid={`environment-package-${pkg.name}`}>
+      <div className="settings-dependency-info"><button type="button" disabled={uploading || busy} className="settings-dependency-name disabled:opacity-50" aria-expanded={selected === pkg.name} aria-controls={`environment-details-${pkg.name}`} onClick={() => { setSelected(selected === pkg.name ? null : pkg.name); setVersion(''); setWheel(null); setVendorWheel(null); }}>{selected === pkg.name ? <ChevronDown size={13} /> : <ChevronRight size={13} />}{packageLabel(pkg.name)}</button><p className="settings-dependency-purpose">{purpose(pkg.name)}</p></div>
+      <dl className="settings-dependency-version text-xs">
+        <div><dt>{copy('本地服务端版本：', 'Local server version:')}</dt><dd>{pkg.version || copy('未安装', 'Not installed')}</dd></div>
+        <div title={latestError || latest?.packages[pkg.name]?.error || copy('当前环境可用的发布版本', 'Release available for this runtime')}><dt>{pkg.name === 'mtlattn' ? copy('兼容版本：', 'Compatible version:') : copy('云端版本：', 'Online version:')}</dt><dd>{onlineVersion(pkg)}</dd></div>
+      </dl>
+      <span title={pkg.version && pkg.supported && !status?.probed_at && !pkg.available && !pkg.error ? checkHint(pkg.name) : undefined} className={`settings-dependency-state text-xs ${pkg.available ? 'text-emerald-700 dark:text-emerald-400' : pkg.error && pkg.supported ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}`}>{reason(pkg)}</span>
+      <div className="settings-dependency-actions flex flex-wrap gap-1.5 justify-end"><button className={button} disabled={locked || !pkg.supported && !hipBackend} onClick={() => { setSelected(pkg.name); setVersion(''); setWheel(null); setVendorWheel(null); }}>{pkg.version ? copy('管理', 'Manage') : copy('安装', 'Install')}</button><a className={`${button} ui-btn-icon`} href={pkg.docs_url} target="_blank" rel="noreferrer" aria-label={`${pkg.name} ${copy('文档', 'documentation')}`}><ExternalLink size={12} /></a></div>
+    </div>
+    {selected === pkg.name && <div id={`environment-details-${pkg.name}`} className="settings-dependency-detail space-y-3">
+      {pkg.error && <p className="whitespace-pre-wrap break-words text-xs text-red-600 dark:text-red-300">{pkg.error}</p>}
+      {pkg.name === 'mtlattn' ? <>
+        <p className="settings-note">{copy('使用预编译安装包，无需本机编译。', 'Uses a prebuilt package; no local compilation needed.')}</p>
+        {pkg.reason === 'metal_requires_torch_2_13' && <div className="space-y-2"><p className="settings-note">{copy('先在上方“PyTorch 版本”中安装并切换到 2.13.x，再安装此扩展。', 'First install and switch to PyTorch 2.13.x using the version selector above, then install this extension.')}</p><button type="button" className={button} onClick={() => { const section = document.getElementById('environment-torch'); section?.focus(); section?.scrollIntoView?.({ block: 'start' }); }}>{copy('查看 PyTorch 版本', 'View PyTorch versions')}</button></div>}
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className={`${button} ui-btn-primary`} disabled={locked || !pkg.supported} onClick={() => void plan(pkg.name, 'install')}>{copy('检查安装条件', 'Check installation requirements')}</button>
+          {pkg.version && <><button type="button" className={button} disabled={locked || !pkg.supported} onClick={() => void plan(pkg.name, pkg.version === metalFlashVersion ? 'repair' : 'install')}>{copy('重新安装兼容版本', 'Reinstall the compatible version')}</button><button type="button" className={`${button} ui-btn-danger`} disabled={locked} onClick={() => void plan(pkg.name, 'uninstall')}>{copy('卸载', 'Uninstall')}</button></>}
+        </div>
+        <details className="settings-inline-details"><summary>{copy('安装要求', 'Installation requirements')}</summary><p className="settings-note">mtlattn {metalFlashVersion} · Apple Silicon · macOS 15+ · Python 3.11 / 3.12 · PyTorch 2.13.x</p><p className="settings-note">{copy('安装后重启并重新检测；通过检测后，可在训练参数中选择 Metal FlashAttention。', 'Restart and run the check after installation. Once it passes, choose Metal FlashAttention in training settings.')}</p></details>
+      </> : <>
+        {hipBackend && <DtkWheelPicker packageName={pkg.name} selected={vendorWheel && 'dtk' in vendorWheel ? vendorWheel : null} disabled={locked} onSelect={next => {setVendorWheel(next); setWheel(null); setVersion('');}}/>}
+        {!hipBackend && status?.runtime.platform === 'Linux' && pkg.name === 'flash-attn' && <WindowsAttentionWheelPicker selected={vendorWheel && 'cuda' in vendorWheel ? vendorWheel : null} disabled={locked} onSelect={next => {setVendorWheel(next); setWheel(null); setVersion('');}}/>}
+        {!hipBackend && status?.runtime.platform === 'Windows' && pkg.name === 'flash-attn' && <WindowsAttentionWheelPicker selected={vendorWheel && 'cuda' in vendorWheel ? vendorWheel : null} disabled={locked} onSelect={next => {setVendorWheel(next); setWheel(null); setVersion('');}}/>}
+        {pkg.wheel_required && !hipBackend && <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">{copy('上传的 wheel 须匹配当前 Python、PyTorch 和 CUDA 版本。', 'Uploaded wheels must match the current Python, PyTorch and CUDA versions.')}</p>}
+        <div className="flex flex-wrap items-center gap-2">
+          <button className={`${button} ui-btn-primary`} disabled={locked || (hipBackend ? !wheel && !vendorWheel : !pkg.supported || pkg.wheel_required && !wheel && !vendorWheel)} onClick={() => void plan(pkg.name, 'install')}>{vendorWheel ? copy('下载并检查安装包', 'Download and check the package') : copy('检查安装条件', 'Check installation requirements')}</button>
+          {vendorWheel && <a className={button} href={vendorWheel.url} target="_blank" rel="noreferrer"><Download size={13}/>{copy('手动下载此 wheel', 'Download this wheel manually')}</a>}
+          {hipBackend && wheelUpload(pkg.name)}
+          {pkg.version && <><button className={button} disabled={locked || (hipBackend ? !wheel && !vendorWheel : !pkg.supported || pkg.wheel_required && !wheel && !vendorWheel)} onClick={() => void plan(pkg.name, 'repair')}>{copy('重装当前版本', 'Reinstall current version')}</button><button type="button" className={`${button} ui-btn-danger`} disabled={locked} onClick={() => void plan(pkg.name, 'uninstall')}>{copy('卸载', 'Uninstall')}</button></>}
+        </div>
+        {!hipBackend && (pkg.wheel_required ? <div className="flex flex-wrap items-center gap-2" aria-label={copy('上传匹配 wheel', 'Upload matching wheel')}>
+          {wheelUpload(pkg.name)}
+        </div> : <details className="settings-inline-details"><summary>{copy('手动版本与 wheel', 'Manual version and wheel')}</summary>
+          <div className="flex flex-wrap items-center gap-2"><label className="flex items-center gap-2 text-xs">{copy('版本', 'Version')}<input className={`${input} w-40`} aria-label={`${pkg.name} ${copy('版本', 'version')}`} placeholder={copy('自动匹配兼容版本', 'Compatible version')} value={version} onChange={event => setVersion(event.target.value)} disabled={locked || !!wheel}/></label>
+            {wheelUpload(pkg.name)}
+          </div></details>)}
+        {pkg.wheel_required && !wheel && !vendorWheel && <p className="settings-note">{copy('先选择兼容构建或上传 wheel，即可检查安装条件。', 'Choose a compatible build or upload a wheel to review the install plan.')}</p>}
+        {wheel && <p className="flex items-center gap-2 break-all text-xs text-emerald-700 dark:text-emerald-400"><Check size={13} />{wheel.filename}<button type="button" className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon" aria-label={copy('清除 wheel', 'Clear wheel')} onClick={() => { setWheel(null); setVendorWheel(null); setVersion(''); }}><X size={13} /></button></p>}
+      </>}
+    </div>}
+  </div>;
   const computeBackend = cpuProfile ? 'CPU' : target === 'mps' ? status?.runtime.mps_available ? 'Apple MPS' : 'CPU' : status?.runtime.cuda_available
     ? hipBackend ? 'DTK / HIP' : `CUDA ${status.runtime.cuda_runtime || ''}`.trim()
     : status?.runtime.mps_available ? 'Apple MPS' : 'CPU';
@@ -259,12 +328,13 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     { id: 'environment-runtime', label: copy('当前环境', 'Current runtime') },
     { id: 'environment-torch', label: profile === 'linux-dtk' ? copy('DTK 安装指南', 'DTK installation guide') : copy('PyTorch 版本', 'PyTorch version') },
     { id: 'environment-attention', label: copy('注意力加速', 'Attention acceleration') },
+    { id: 'environment-lora', label: copy('LoRA 环境', 'LoRA environment') },
     ...(visibleOperations.length || torchOperationsVisible ? [{ id: 'environment-installation', label: copy('安装日志', 'Installation log') }] : []),
   ]}>
     <section id="environment-runtime" data-settings-section tabIndex={-1} className="settings-section">
     <div className="settings-section-heading">
       <div><h2 className="text-base font-semibold">{copy('环境与计算后端', 'Runtime and compute backends')}</h2></div>
-      <button className={button} disabled={loading || busy} onClick={() => { void refresh(true); void refreshLatest(true); }}><RefreshCw size={14} className={loading ? 'animate-spin' : ''} />{copy('重新检测', 'Refresh probes')}</button>
+      <button className={button} disabled={loading || busy} onClick={() => { void refresh(true); void refreshLatest(true); void refreshLora(true); }}><RefreshCw size={14} className={loading ? 'animate-spin' : ''} />{copy('重新检测', 'Refresh probes')}</button>
     </div>
     {error && <div ref={errorRef} role="alert" className="whitespace-pre-wrap rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
     {loading && !status && <p role="status" className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400"><Loader2 size={16} className="animate-spin" />{copy('检测当前环境与已安装扩展…', 'Checking runtime and installed extensions…')}</p>}
@@ -285,49 +355,24 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
         {hipBackend && status.sdpa?.reason === 'hip_sdpa_flash_library_missing' ? <div className="mt-2 space-y-2"><p className="settings-note">{copy('当前厂商 PyTorch 的这条 SDPA 路径需要 FlashAttention 动态库。请安装匹配当前 DTK / PyTorch 的官方 FlashAttention 包，重启后重新检测。', 'This vendor PyTorch SDPA path needs a FlashAttention library. Install the official build matching DTK / PyTorch, restart, and check again.')}</p><button type="button" className={button} disabled={locked} onClick={() => { setSelected('flash-attn'); setVersion(''); setWheel(null); setVendorWheel(null); document.getElementById('environment-package-flash-attn')?.scrollIntoView?.({ block: 'nearest' }); }}>{copy('查看匹配的 FlashAttention 包', 'View matching FlashAttention builds')}</button></div> : status.sdpa?.error && <p role="alert" className="settings-note whitespace-pre-wrap break-words">{status.sdpa.error}</p>}
         {hipBackend && status.sdpa?.error && status.sdpa.reason === 'hip_sdpa_flash_library_missing' && <details className="settings-inline-details"><summary>{copy('查看检测详情', 'Probe details')}</summary><pre className="whitespace-pre-wrap break-words text-xs">{status.sdpa.detail || status.sdpa.error}</pre></details>}
       </div>}
-      <div className="settings-dependencies">{visiblePackages.map(pkg => <div key={pkg.name} className="settings-dependency">
-        <div id={`environment-package-${pkg.name}`} className="settings-dependency-row" data-testid={`environment-package-${pkg.name}`}>
-          <div className="settings-dependency-info"><button type="button" disabled={uploading || busy} className="settings-dependency-name disabled:opacity-50" aria-expanded={selected === pkg.name} aria-controls={`environment-details-${pkg.name}`} onClick={() => { setSelected(selected === pkg.name ? null : pkg.name); setVersion(''); setWheel(null); setVendorWheel(null); }}>{selected === pkg.name ? <ChevronDown size={13} /> : <ChevronRight size={13} />}{packageLabel(pkg.name)}</button><p className="settings-dependency-purpose">{purpose(pkg.name)}</p></div>
-          <dl className="settings-dependency-version text-xs">
-            <div><dt>{copy('本地服务端版本：', 'Local server version:')}</dt><dd>{pkg.version || copy('未安装', 'Not installed')}</dd></div>
-            <div title={latestError || latest?.packages[pkg.name]?.error || copy('当前环境可用的发布版本', 'Release available for this runtime')}><dt>{pkg.name === 'mtlattn' ? copy('兼容版本：', 'Compatible version:') : copy('云端版本：', 'Online version:')}</dt><dd>{onlineVersion(pkg)}</dd></div>
-          </dl>
-          <span title={pkg.version && pkg.supported && !status.probed_at && !pkg.available && !pkg.error ? copy('点击“运行检查”，检查此扩展能否在当前显卡上执行前向与反向计算。', 'Click “Run checks” to check whether this extension can run forward and backward computations on the current GPU.') : undefined} className={`settings-dependency-state text-xs ${pkg.available ? 'text-emerald-700 dark:text-emerald-400' : pkg.error && pkg.supported ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}`}>{reason(pkg)}</span>
-          <div className="settings-dependency-actions flex flex-wrap gap-1.5 justify-end"><button className={button} disabled={locked || !pkg.supported && !hipBackend} onClick={() => { setSelected(pkg.name); setVersion(''); setWheel(null); setVendorWheel(null); }}>{pkg.version ? copy('管理', 'Manage') : copy('安装', 'Install')}</button><a className={`${button} ui-btn-icon`} href={pkg.docs_url} target="_blank" rel="noreferrer" aria-label={`${pkg.name} ${copy('文档', 'documentation')}`}><ExternalLink size={12} /></a></div>
-        </div>
-        {selected === pkg.name && <div id={`environment-details-${pkg.name}`} className="settings-dependency-detail space-y-3">
-          {pkg.error && <p className="whitespace-pre-wrap break-words text-xs text-red-600 dark:text-red-300">{pkg.error}</p>}
-          {pkg.name === 'mtlattn' ? <>
-            <p className="settings-note">{copy('使用预编译安装包，无需本机编译。', 'Uses a prebuilt package; no local compilation needed.')}</p>
-            {pkg.reason === 'metal_requires_torch_2_13' && <div className="space-y-2"><p className="settings-note">{copy('先在上方“PyTorch 版本”中安装并切换到 2.13.x，再安装此扩展。', 'First install and switch to PyTorch 2.13.x using the version selector above, then install this extension.')}</p><button type="button" className={button} onClick={() => { const section = document.getElementById('environment-torch'); section?.focus(); section?.scrollIntoView?.({ block: 'start' }); }}>{copy('查看 PyTorch 版本', 'View PyTorch versions')}</button></div>}
-            <div className="flex flex-wrap gap-2">
-              <button type="button" className={`${button} ui-btn-primary`} disabled={locked || !pkg.supported} onClick={() => void plan(pkg.name, 'install')}>{copy('检查安装条件', 'Check installation requirements')}</button>
-              {pkg.version && <><button type="button" className={button} disabled={locked || !pkg.supported} onClick={() => void plan(pkg.name, pkg.version === metalFlashVersion ? 'repair' : 'install')}>{copy('重新安装兼容版本', 'Reinstall the compatible version')}</button><button type="button" className={`${button} ui-btn-danger`} disabled={locked} onClick={() => void plan(pkg.name, 'uninstall')}>{copy('卸载', 'Uninstall')}</button></>}
-            </div>
-            <details className="settings-inline-details"><summary>{copy('安装要求', 'Installation requirements')}</summary><p className="settings-note">mtlattn {metalFlashVersion} · Apple Silicon · macOS 15+ · Python 3.11 / 3.12 · PyTorch 2.13.x</p><p className="settings-note">{copy('安装后重启并重新检测；通过检测后，可在训练参数中选择 Metal FlashAttention。', 'Restart and run the check after installation. Once it passes, choose Metal FlashAttention in training settings.')}</p></details>
-          </> : <>
-            {hipBackend && <DtkWheelPicker packageName={pkg.name} selected={vendorWheel && 'dtk' in vendorWheel ? vendorWheel : null} disabled={locked} onSelect={next => {setVendorWheel(next); setWheel(null); setVersion('');}}/>}
-            {!hipBackend && status.runtime.platform === 'Linux' && pkg.name === 'flash-attn' && <WindowsAttentionWheelPicker selected={vendorWheel && 'cuda' in vendorWheel ? vendorWheel : null} disabled={locked} onSelect={next => {setVendorWheel(next); setWheel(null); setVersion('');}}/>}
-            {!hipBackend && status.runtime.platform === 'Windows' && pkg.name === 'flash-attn' && <WindowsAttentionWheelPicker selected={vendorWheel && 'cuda' in vendorWheel ? vendorWheel : null} disabled={locked} onSelect={next => {setVendorWheel(next); setWheel(null); setVersion('');}}/>}
-            {pkg.wheel_required && !hipBackend && <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">{copy('上传的 wheel 须匹配当前 Python、PyTorch 和 CUDA 版本。', 'Uploaded wheels must match the current Python, PyTorch and CUDA versions.')}</p>}
-            <div className="flex flex-wrap items-center gap-2">
-              <button className={`${button} ui-btn-primary`} disabled={locked || (hipBackend ? !wheel && !vendorWheel : !pkg.supported || pkg.wheel_required && !wheel && !vendorWheel)} onClick={() => void plan(pkg.name, 'install')}>{vendorWheel ? copy('下载并检查安装包', 'Download and check the package') : copy('检查安装条件', 'Check installation requirements')}</button>
-              {vendorWheel && <a className={button} href={vendorWheel.url} target="_blank" rel="noreferrer"><Download size={13}/>{copy('手动下载此 wheel', 'Download this wheel manually')}</a>}
-              {hipBackend && wheelUpload(pkg.name)}
-              {pkg.version && <><button className={button} disabled={locked || (hipBackend ? !wheel && !vendorWheel : !pkg.supported || pkg.wheel_required && !wheel && !vendorWheel)} onClick={() => void plan(pkg.name, 'repair')}>{copy('重装当前版本', 'Reinstall current version')}</button><button type="button" className={`${button} ui-btn-danger`} disabled={locked} onClick={() => void plan(pkg.name, 'uninstall')}>{copy('卸载', 'Uninstall')}</button></>}
-            </div>
-            {!hipBackend && (pkg.wheel_required ? <div className="flex flex-wrap items-center gap-2" aria-label={copy('上传匹配 wheel', 'Upload matching wheel')}>
-              {wheelUpload(pkg.name)}
-            </div> : <details className="settings-inline-details"><summary>{copy('手动版本与 wheel', 'Manual version and wheel')}</summary>
-              <div className="flex flex-wrap items-center gap-2"><label className="flex items-center gap-2 text-xs">{copy('版本', 'Version')}<input className={`${input} w-40`} aria-label={`${pkg.name} ${copy('版本', 'version')}`} placeholder={copy('自动匹配兼容版本', 'Compatible version')} value={version} onChange={event => setVersion(event.target.value)} disabled={locked || !!wheel}/></label>
-                {wheelUpload(pkg.name)}
-              </div></details>)}
-            {pkg.wheel_required && !wheel && !vendorWheel && <p className="settings-note">{copy('先选择兼容构建或上传 wheel，即可检查安装条件。', 'Choose a compatible build or upload a wheel to review the install plan.')}</p>}
-            {wheel && <p className="flex items-center gap-2 break-all text-xs text-emerald-700 dark:text-emerald-400"><Check size={13} />{wheel.filename}<button type="button" className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon" aria-label={copy('清除 wheel', 'Clear wheel')} onClick={() => { setWheel(null); setVendorWheel(null); setVersion(''); }}><X size={13} /></button></p>}
-          </>}
-        </div>}
-      </div>)}</div></section>
+      <div className="settings-dependencies">{visiblePackages.map(packageItem)}</div></section>
     </>}
+    <section id="environment-lora" data-settings-section tabIndex={-1} className="settings-section">
+      <div className="settings-section-heading"><h2>{copy('LoRA 环境', 'LoRA environment')}</h2>{status && optimizerPackages.length > 0 && <button type="button" className={button} disabled={loading || locked || status.maintenance} title={status.running_jobs ? copy('任务结束或暂停后可运行检查', 'Run checks after the task finishes or pauses') : undefined} onClick={() => void refresh(true)}><RefreshCw size={14} className={probing ? 'animate-spin' : ''}/>{probing ? copy('检查中…', 'Checking…') : copy('运行检查', 'Run checks')}</button>}</div>
+      <div className="settings-dependencies"><div className="settings-dependency">
+        <div className="settings-dependency-row settings-dependency-row-reference" data-testid="environment-lycoris">
+          <div className="settings-dependency-info"><span className="settings-dependency-name settings-dependency-name-static">LyCORIS</span></div>
+          <dl className="settings-dependency-version text-xs">
+            <div><dt>{copy('本地服务端版本：', 'Local server version:')}</dt><dd>{loraLoading && !lora ? copy('查询中…', 'Checking…') : lora?.local.version
+              ? [lora.local.version, lora.local.commit || lora.upstream.local_commit].filter(Boolean).join(' · ') : copy('未安装', 'Not installed')}</dd></div>
+            <div title={loraError || lora?.upstream.error || undefined}><dt>{copy('云端版本：', 'Online version:')}</dt><dd>{loraLoading ? copy('查询中…', 'Checking…')
+              : loraError || lora?.upstream.error || !lora?.upstream.version ? copy('查询失败', 'Lookup failed') : [lora.upstream.version, lora.upstream.commit].filter(Boolean).join(' · ')}</dd></div>
+            {!!lora?.upstream.head && <div><dt>{copy('主分支：', 'Main branch:')}</dt><dd>{[lora.upstream.head, lora.upstream.head_date].filter(Boolean).join(' · ')}</dd></div>}
+          </dl>
+          <div className="settings-dependency-actions flex justify-end"><a className={`${button} ui-btn-icon`} href="https://github.com/KohakuBlueleaf/LyCORIS" target="_blank" rel="noreferrer" aria-label={`LyCORIS ${copy('代码仓库', 'repository')}`}><ExternalLink size={12} /></a></div>
+        </div>
+      </div>{optimizerPackages.map(packageItem)}</div>
+    </section>
     <section id="environment-installation" data-settings-section tabIndex={-1} hidden={!visibleOperations.length && !torchOperationsVisible} className="settings-section space-y-3" data-testid={visibleOperations.length || torchOperationsVisible ? 'environment-operations' : undefined}>
       {(visibleOperations.length > 0 || torchOperationsVisible) && <div className="settings-section-heading"><h2>{copy('安装日志', 'Installation log')}</h2></div>}
       <div ref={setTorchOperationsTarget} className="space-y-3"/>

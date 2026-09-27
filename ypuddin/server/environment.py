@@ -58,6 +58,8 @@ CATALOG = {
     "nvidia-ml-py": ("pynvml", None, "https://pypi.org/project/nvidia-ml-py/"),
     "tensorboard": ("tensorboard", None, "https://www.tensorflow.org/tensorboard/get_started"),
     "schedulefree": ("schedulefree", None, "https://github.com/facebookresearch/schedule_free"),
+    # The 8-bit optimizers (AdamW 8-bit, Lion 8-bit).
+    "bitsandbytes": ("bitsandbytes", None, "https://github.com/bitsandbytes-foundation/bitsandbytes"),
 }
 ATTENTION = ("auto", "sdpa", "xformers", "flash_attn", "sage", "metal_flash")
 MUTATING = ("installing", "verifying")
@@ -80,6 +82,7 @@ class EnvironmentRequest(BaseModel):
         "nvidia-ml-py",
         "tensorboard",
         "schedulefree",
+        "bitsandbytes",
     ]
     action: Literal["install", "repair", "uninstall"] = "install"
     version: str | None = None
@@ -283,6 +286,12 @@ def protected(name: str) -> bool:
     )
 
 
+def gpu_checked(name: str) -> bool:
+    """Packages that count as available only once they have run on the GPU: attention kernels and
+    the 8-bit optimizers. An import alone does not show that their native code suits the device."""
+    return bool(CATALOG[name][1]) or name == "bitsandbytes"
+
+
 def environment_identity(versions: dict[str, str]) -> str:
     return hashlib.sha256(json.dumps(versions, sort_keys=True).encode()).hexdigest()
 
@@ -357,7 +366,8 @@ def runtime_info() -> dict[str, Any]:
 PROBE = r"""
 import importlib, json, re, torch
 from ypuddin.runtime_profiles import current_profile
-names = {"xformers": "xformers.ops", "flash-attn": "flash_attn", "sageattention": "sageattention", "nvidia-ml-py": "pynvml", "tensorboard": "tensorboard", "schedulefree": "schedulefree"}
+names = {"xformers": "xformers.ops", "flash-attn": "flash_attn", "sageattention": "sageattention", "nvidia-ml-py": "pynvml", "tensorboard": "tensorboard", "schedulefree": "schedulefree", "bitsandbytes": "bitsandbytes"}
+gpu = ("xformers", "flash-attn", "sageattention", "bitsandbytes")
 out = {}
 accelerators_allowed = not current_profile().endswith("-cpu")
 from ypuddin.runtime_attention import probe_sdpa
@@ -366,7 +376,7 @@ try:
 except Exception as exc:
     out["sdpa"] = {"status": "not_tested", "reason": "probe_failed", "error": str(exc)[-1500:]}
 for name, module in names.items():
-    if name in ("xformers", "flash-attn", "sageattention") and (not accelerators_allowed or current_profile() == "macos-mps"):
+    if name in gpu and (not accelerators_allowed or current_profile() == "macos-mps"):
         out[name] = {"importable": False, "kernel_tested": False, "error": None}
         continue
     imported = False
@@ -374,14 +384,30 @@ for name, module in names.items():
         m = importlib.import_module(module)
         imported = True
         tested = False
-        if name in ("xformers", "flash-attn", "sageattention") and accelerators_allowed:
+        if name in gpu and accelerators_allowed:
             if not torch.cuda.is_available():
                 try:
                     torch.cuda.init()
                     cause = ""
                 except Exception as cuda_exc:
                     cause = "\n" + str(cuda_exc)[-500:]
-                raise RuntimeError("检测进程中 PyTorch 无法使用 CUDA，未能运行注意力内核检测。" + cause)
+                check = "未能运行 8-bit 优化器检测。" if name == "bitsandbytes" else "未能运行注意力内核检测。"
+                raise RuntimeError("检测进程中 PyTorch 无法使用 CUDA，" + check + cause)
+            if name == "bitsandbytes":
+                # One AdamW 8-bit step; bitsandbytes keeps 8-bit state from 4096 values up.
+                p = torch.nn.Parameter(torch.randn(64, 128, device="cuda"))
+                p.grad = torch.randn_like(p)
+                before = p.detach().clone()
+                optimizer = importlib.import_module("bitsandbytes.optim").AdamW8bit([p], lr=1e-2)
+                optimizer.step()
+                torch.cuda.synchronize()
+                if optimizer.state[p]["state1"].dtype != torch.uint8:
+                    raise RuntimeError("The optimizer did not keep 8-bit state")
+                if not bool(torch.isfinite(p).all()) or torch.equal(p.detach(), before):
+                    raise RuntimeError("The 8-bit optimizer step did not update the weights")
+                tested = True
+                out[name] = {"importable": True, "kernel_tested": tested, "error": None}
+                continue
             q = torch.randn(1, 32, 2, 64, device="cuda", dtype=torch.float16, requires_grad=name != "sageattention")
             if name == "xformers": y = m.memory_efficient_attention(q, q, q)
             elif name == "flash-attn": y = m.flash_attn_func(q, q, q)
@@ -583,6 +609,7 @@ class EnvironmentManager:
         self._probed_at: float | None = None
         self._probe_versions: dict[str, str] | None = None
         self._latest: tuple[float, Any, dict] | None = None
+        self._lora_latest: tuple[float, Any, float, dict] | None = None
         self._latest_lock = threading.Lock()
         self._windows_catalog = windows_attention_catalog.Catalog()
         self._closed = False
@@ -706,7 +733,7 @@ class EnvironmentManager:
                     reason = metal_attention_catalog.incompatibility(runtime, self.profile) or "supported"
                 elif self.profile == "linux-dtk" and name in ("sageattention", "nvidia-ml-py"):
                     reason = "requires_nvidia"
-                elif backend and not runtime["cuda_available"]:
+                elif gpu_checked(name) and not runtime["cuda_available"]:
                     reason = "requires_cuda"
                 elif (
                     backend in ("flash_attn", "sage")
@@ -734,13 +761,17 @@ class EnvironmentManager:
                         and name in versions
                         and (name != "mtlattn" or versions[name] == metal_attention_catalog.VERSION)
                         and bool(probe.get("importable"))
-                        and (not backend or bool(probe.get("kernel_tested"))),
+                        and (not gpu_checked(name) or bool(probe.get("kernel_tested"))),
                         "wheel_required": bool(
                             (
                                 backend in ("flash_attn", "sage")
                                 and runtime["platform"] in ("Windows", "Linux")
                             )
-                            or (self.profile == "linux-dtk" and name in ("flash-attn", "xformers"))
+                            # PyPI builds carry no kernels for Hygon GPUs.
+                            or (
+                                self.profile == "linux-dtk"
+                                and name in ("flash-attn", "xformers", "bitsandbytes")
+                            )
                         ),
                     }
                 )
@@ -917,8 +948,8 @@ class EnvironmentManager:
         return dtk_catalog.catalog(self.runtime(), self.versions(), self.profile)
 
     def latest_versions(self, refresh=False):
-        """The newest version of each attention extension this runtime can install online: the
-        community builds for FlashAttention 2, PyPI for xFormers, the vendor list on DTK. Kept an hour."""
+        """The newest version of each GPU extension this runtime can install online: the community
+        builds for FlashAttention 2, PyPI for xFormers and bitsandbytes, the vendor list on DTK. Kept an hour."""
         from .network import ProxyPolicy
         from .package_releases import newest_release
 
@@ -946,7 +977,7 @@ class EnvironmentManager:
         packages = {}
         if self.profile == "linux-dtk" or runtime.get("hip_runtime"):
             wheels = dtk_catalog.catalog(runtime, versions, self.profile).wheels
-            for name in ("xformers", "flash-attn"):
+            for name in ("xformers", "flash-attn", "bitsandbytes"):
                 packages[name] = newest(
                     [w.version for w in wheels if w.package == name and w.compatible], "dtk"
                 )
@@ -955,21 +986,43 @@ class EnvironmentManager:
             packages["flash-attn"] = newest(
                 [w.version for w in catalog.wheels if w.compatible], "community", catalog.error
             )
-            try:
-                version = newest_release(
-                    "xformers",
-                    torch=str(runtime.get("torch", "")),
-                    python=str(runtime.get("python", "")),
-                    opener=policy.opener(),
-                )
-                packages["xformers"] = {"version": version, "source": "pypi", "error": None}
-            except Exception as exc:  # noqa: BLE001 - an unreachable index only leaves the version unknown
-                packages["xformers"] = {"version": None, "source": "pypi", "error": policy.redact(exc)[-500:]}
+            for name in ("xformers", "bitsandbytes"):
+                try:
+                    version = newest_release(
+                        name,
+                        torch=str(runtime.get("torch", "")),
+                        python=str(runtime.get("python", "")),
+                        opener=policy.opener(),
+                    )
+                    packages[name] = {"version": version, "source": "pypi", "error": None}
+                except Exception as exc:  # noqa: BLE001 - an unreachable index only leaves the version unknown
+                    packages[name] = {"version": None, "source": "pypi", "error": policy.redact(exc)[-500:]}
         packages["mtlattn"] = {"version": metal_attention_catalog.VERSION, "source": "pinned", "error": None}
         result = {"checked_at": time.time(), "packages": packages}
         with self._latest_lock:
             self._latest = (time.monotonic(), cache_key, result)
         return result
+
+    def lora_environment(self, refresh=False):
+        """LyCORIS on this service and upstream; the upstream lookup is kept an hour."""
+        from .lora_environment import local_lycoris, upstream_lycoris
+        from .network import ProxyPolicy
+
+        local = local_lycoris()
+        policy = ProxyPolicy.from_context(self.context)
+        key = (policy, local["version"], local["commit"])
+        with self._latest_lock:
+            cached = self._lora_latest
+            if not refresh and cached and cached[1] == key and time.monotonic() - cached[0] < 3600:
+                return {"checked_at": cached[2], "local": local, "upstream": cached[3]}
+        try:
+            upstream = upstream_lycoris(policy.opener(), local)
+        except Exception as exc:  # noqa: BLE001 - an unreachable upstream only leaves the versions unknown
+            upstream = {"error": policy.redact(exc)[-500:]}
+        checked = time.time()
+        with self._latest_lock:
+            self._lora_latest = (time.monotonic(), key, checked, upstream)
+        return {"checked_at": checked, "local": local, "upstream": upstream}
 
     def windows_wheels(self, refresh=False):
         from .network import ProxyPolicy
@@ -1027,7 +1080,7 @@ class EnvironmentManager:
                 and self.profile == "linux-dtk"
                 and (
                     request.package in ("nvidia-ml-py", "sageattention")
-                    or (CATALOG[request.package][1] and not (request.vendor_wheel_id or request.wheel_id))
+                    or (gpu_checked(request.package) and not (request.vendor_wheel_id or request.wheel_id))
                 )
             ):
                 raise EnvironmentError(
@@ -1036,12 +1089,15 @@ class EnvironmentManager:
                 )
             if (
                 request.action != "uninstall"
-                and CATALOG[request.package][1]
+                and gpu_checked(request.package)
                 and request.package != "mtlattn"
                 and not runtime["cuda_available"]
             ):
                 raise EnvironmentError(
-                    422, "This attention extension requires a working NVIDIA CUDA PyTorch runtime"
+                    422,
+                    "8-bit optimizers require a working CUDA PyTorch runtime"
+                    if request.package == "bitsandbytes"
+                    else "This attention extension requires a working NVIDIA CUDA PyTorch runtime",
                 )
             if (
                 request.action != "uninstall"
@@ -1466,7 +1522,7 @@ class EnvironmentManager:
                 self._probed_at = time.time()
                 self._probe_versions = dict(self.versions())
                 probe = probes.get(op.package, {})
-                if not probe.get("importable") or CATALOG[op.package][1] and not probe.get("kernel_tested"):
+                if not probe.get("importable") or gpu_checked(op.package) and not probe.get("kernel_tested"):
                     if probe.get("kernel_unavailable"):
                         raise RuntimeError(probe["error"])
                     raise RuntimeError(

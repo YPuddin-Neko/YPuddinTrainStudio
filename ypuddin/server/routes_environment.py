@@ -19,6 +19,7 @@ from .environment import (
     EnvironmentWheel,
 )
 from .lifecycle import RestartRequest, RestartResult, ServiceRuntime
+from .lora_environment import LoraEnvironment
 from .torch_environments import TorchOperation, TorchRequest, TorchSnapshot
 from .windows_attention_catalog import WindowsAttentionCatalog
 
@@ -42,6 +43,11 @@ def settings(body: EnvironmentSettings, service: EnvironmentManager = Depends(en
 @router.get("/environment/latest", response_model=EnvironmentLatest)
 def latest(refresh: bool = False, service: EnvironmentManager = Depends(environment)):
     return service.latest_versions(refresh=refresh)
+
+
+@router.get("/environment/lora", response_model=LoraEnvironment)
+def lora(refresh: bool = False, service: EnvironmentManager = Depends(environment)):
+    return service.lora_environment(refresh=refresh)
 
 
 @router.get("/environment/dtk/wheels", response_model=DtkCatalog)

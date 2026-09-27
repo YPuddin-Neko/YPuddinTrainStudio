@@ -1708,6 +1708,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/environment/lora": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lora */
+        get: operations["lora_api_environment_lora_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/environment/dtk/wheels": {
         parameters: {
             query?: never;
@@ -3493,7 +3510,7 @@ export interface components {
              * Package
              * @enum {string}
              */
-            package: "xformers" | "flash-attn" | "sageattention" | "mtlattn" | "nvidia-ml-py" | "tensorboard" | "schedulefree";
+            package: "xformers" | "flash-attn" | "sageattention" | "mtlattn" | "nvidia-ml-py" | "tensorboard" | "schedulefree" | "bitsandbytes";
             /**
              * Action
              * @default install
@@ -4517,6 +4534,35 @@ export interface components {
              * @default 1
              */
             log_every: number;
+        };
+        /** LoraEnvironment */
+        LoraEnvironment: {
+            /** Checked At */
+            checked_at: number;
+            local: components["schemas"]["LoraLocal"];
+            upstream: components["schemas"]["LoraUpstream"];
+        };
+        /** LoraLocal */
+        LoraLocal: {
+            /** Version */
+            version?: string | null;
+            /** Commit */
+            commit?: string | null;
+        };
+        /** LoraUpstream */
+        LoraUpstream: {
+            /** Version */
+            version?: string | null;
+            /** Commit */
+            commit?: string | null;
+            /** Head */
+            head?: string | null;
+            /** Head Date */
+            head_date?: string | null;
+            /** Local Commit */
+            local_commit?: string | null;
+            /** Error */
+            error?: string | null;
         };
         /** MaskInfo */
         MaskInfo: {
@@ -11915,6 +11961,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvironmentLatest"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lora_api_environment_lora_get: {
+        parameters: {
+            query?: {
+                refresh?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoraEnvironment"];
                 };
             };
             /** @description Validation Error */
