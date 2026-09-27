@@ -142,7 +142,8 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
       }));
       // Stable ids let each update change series and axes in place; the chart removes the ones that are gone.
       const axes = units.map((unit, index) => ({
-        ...base.yAxis, id: unit, name: axisNames[unit] || unit, position: index % 2 ? 'right' as const : 'left' as const, offset: placed.offsets[index],
+        // `show` is set every time so that an axis hidden at a narrow width comes back when the chart widens.
+        ...base.yAxis, id: unit, show: true, name: axisNames[unit] || unit, position: index % 2 ? 'right' as const : 'left' as const, offset: placed.offsets[index],
         splitLine: { show: index === 0 }, ...(unit === 'LR' && logRates ? { type: 'log' as const, logBase: 10, scale: undefined } : {}),
       }));
       const option = {

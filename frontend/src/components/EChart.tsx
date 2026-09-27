@@ -32,6 +32,36 @@ function nearestIndex(data: unknown, x: number): number {
   return low > 0 && Math.abs(at(low - 1) - x) <= Math.abs(at(low) - x) ? low - 1 : low;
 }
 
+type MediaRule = { query?: { maxWidth?: number }; option: Record<string, unknown> };
+const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
+
+/** A rule's settings over the option: arrays entry by entry (one per axis), objects key by key. */
+function mergeRule(base: Record<string, unknown>, rule: Record<string, unknown>): Record<string, unknown> {
+  const merged = { ...base };
+  for (const [key, value] of Object.entries(rule)) {
+    const current = merged[key];
+    merged[key] = Array.isArray(current) && Array.isArray(value) ? current.map((item, index) => ({ ...item, ...value[index] }))
+      : isRecord(current) && isRecord(value) ? { ...current, ...value } : value;
+  }
+  return merged;
+}
+
+/**
+ * ECharts applies `media` rules with the `replaceMerge` of `setOption`, which empties every listed type a rule leaves
+ * out: a narrow chart lost all its series. Apply `maxWidth` rules against the chart's width here instead.
+ */
+function resolveMedia(option: EChartsCoreOption, width: number): { option: EChartsCoreOption; matched: string } {
+  const { media, ...base } = option as EChartsCoreOption & { media?: MediaRule[] };
+  if (!Array.isArray(media)) return { option, matched: '' };
+  let resolved: Record<string, unknown> = base;
+  let matched = '';
+  media.forEach((rule, index) => {
+    const maxWidth = rule.query?.maxWidth;
+    if (maxWidth != null && width <= maxWidth) { resolved = mergeRule(resolved, rule.option); matched += `${index} `; }
+  });
+  return { option: resolved as EChartsCoreOption, matched };
+}
+
 interface EChartProps {
   option: EChartsCoreOption;
   style?: React.CSSProperties;
@@ -44,6 +74,18 @@ export function EChart({ option, style }: EChartProps) {
   const pointer = React.useRef<{ x: number; y: number } | null>(null);
   const restoreTip = React.useRef(false);
   const latest = React.useRef<EChartsCoreOption | null>(null);
+  const matchedMedia = React.useRef<string | null>(null);
+
+  // Series and value axes are replaced, not merged by name: a chart that loses series (a new layout) must not keep
+  // the old ones. Other components merge, so zoom and legend state survive live updates.
+  const apply = React.useCallback((always: boolean) => {
+    const chart = chartRef.current, option = latest.current;
+    if (!chart || !option || !ref.current) return;
+    const resolved = resolveMedia(option, ref.current.clientWidth);
+    if (!always && resolved.matched === matchedMedia.current) return;
+    matchedMedia.current = resolved.matched;
+    chart.setOption(resolved.option, { replaceMerge: ['series', 'yAxis'], lazyUpdate: true });
+  }, []);
 
   React.useEffect(() => {
     const el = ref.current;
@@ -81,7 +123,7 @@ export function EChart({ option, style }: EChartProps) {
     });
     themeObserver.observe(root, {attributes: true, attributeFilter: ['class']});
     // 没有 ResizeObserver 时使用窗口 resize 事件。
-    const onResize = () => chart.resize();
+    const onResize = () => { chart.resize(); apply(false); };
     let observer: ResizeObserver | null = null;
     if (typeof ResizeObserver !== 'undefined') {
       observer = new ResizeObserver(onResize);
@@ -96,15 +138,13 @@ export function EChart({ option, style }: EChartProps) {
       chart.dispose();
       chartRef.current = null;
     };
-  }, []);
+  }, [apply]);
 
   React.useEffect(() => {
-    // Series and value axes are replaced, not merged by name: a chart that loses series (a new layout) must not keep
-    // the old ones. Other components merge, so zoom and legend state survive live updates.
     restoreTip.current = !!pointer.current;
     latest.current = option;
-    chartRef.current?.setOption(option, { replaceMerge: ['series', 'yAxis'], lazyUpdate: true });
-  }, [option]);
+    apply(true);
+  }, [option, apply]);
 
   return <div ref={ref} style={style} />;
 }
