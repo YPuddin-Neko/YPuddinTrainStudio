@@ -195,6 +195,20 @@ class EnvironmentSnapshot(BaseModel):
     running_jobs: bool
     probe_deferred: bool
     sdpa: SdpaProbe | None = None
+    # When the packages were last probed; None until the first probe of this service run.
+    probed_at: float | None = None
+
+
+class EnvironmentLatestPackage(BaseModel):
+    # The newest version this runtime can install from the package's online source.
+    version: str | None
+    source: Literal["community", "pypi", "dtk", "pinned"]
+    error: str | None = None
+
+
+class EnvironmentLatest(BaseModel):
+    checked_at: float
+    packages: dict[str, EnvironmentLatestPackage]
 
 
 class EnvironmentWheel(BaseModel):
@@ -360,7 +374,14 @@ for name, module in names.items():
         m = importlib.import_module(module)
         imported = True
         tested = False
-        if name in ("xformers", "flash-attn", "sageattention") and accelerators_allowed and torch.cuda.is_available():
+        if name in ("xformers", "flash-attn", "sageattention") and accelerators_allowed:
+            if not torch.cuda.is_available():
+                try:
+                    torch.cuda.init()
+                    cause = ""
+                except Exception as cuda_exc:
+                    cause = "\n" + str(cuda_exc)[-500:]
+                raise RuntimeError("检测进程中 PyTorch 无法使用 CUDA，未能运行注意力内核检测。" + cause)
             q = torch.randn(1, 32, 2, 64, device="cuda", dtype=torch.float16, requires_grad=name != "sageattention")
             if name == "xformers": y = m.memory_efficient_attention(q, q, q)
             elif name == "flash-attn": y = m.flash_attn_func(q, q, q)
@@ -559,6 +580,10 @@ class EnvironmentManager:
         self._cancel: dict[str, threading.Event] = {}
         self._probe_cache: dict[str, Any] | None = None
         self._probe_time = 0.0
+        self._probed_at: float | None = None
+        self._probe_versions: dict[str, str] | None = None
+        self._latest: tuple[float, Any, dict] | None = None
+        self._latest_lock = threading.Lock()
         self._windows_catalog = windows_attention_catalog.Catalog()
         self._closed = False
         self.context.db.set_kv("environment.maintenance", {"blocked": False})
@@ -648,6 +673,9 @@ class EnvironmentManager:
         with self.lock:
             runtime = self.runtime()
             versions = self.versions()
+            if self._probe_versions is not None and versions != self._probe_versions:
+                self._probe_cache = None
+                self._probed_at = None
             running = self._running()
             # Avoid taking VRAM for probes while a real job owns the GPU.
             if refresh and not running and not any(op.status in MUTATING for op in self.list()):
@@ -664,6 +692,8 @@ class EnvironmentManager:
                     try:
                         self._probe_cache = self.probe()
                         self._probe_time = time.monotonic()
+                        self._probed_at = time.time()
+                        self._probe_versions = dict(versions)
                     finally:
                         self.context.db.set_kv("environment.maintenance", previous)
             probes = self._probe_cache or {}
@@ -724,6 +754,7 @@ class EnvironmentManager:
                 "running_jobs": running,
                 "probe_deferred": running,
                 "sdpa": probes.get("sdpa"),
+                "probed_at": self._probed_at,
             }
 
     def save_settings(self, settings: EnvironmentSettings):
@@ -884,6 +915,61 @@ class EnvironmentManager:
 
     def vendor_wheels(self):
         return dtk_catalog.catalog(self.runtime(), self.versions(), self.profile)
+
+    def latest_versions(self, refresh=False):
+        """The newest version of each attention extension this runtime can install online: the
+        community builds for FlashAttention 2, PyPI for xFormers, the vendor list on DTK. Kept an hour."""
+        from .network import ProxyPolicy
+        from .package_releases import newest_release
+
+        policy = ProxyPolicy.from_context(self.context)
+        runtime, versions = self.runtime(), self.versions()
+        cache_key = (policy, self.profile, runtime)
+        with self._latest_lock:
+            if (
+                not refresh
+                and self._latest
+                and self._latest[1] == cache_key
+                and time.monotonic() - self._latest[0] < 3600
+            ):
+                return self._latest[2]
+
+        def newest(values, source, error=None):
+            parsed = []
+            for value in values:
+                try:
+                    parsed.append((Version(value), value))
+                except InvalidVersion:
+                    pass
+            return {"version": max(parsed)[1] if parsed else None, "source": source, "error": error}
+
+        packages = {}
+        if self.profile == "linux-dtk" or runtime.get("hip_runtime"):
+            wheels = dtk_catalog.catalog(runtime, versions, self.profile).wheels
+            for name in ("xformers", "flash-attn"):
+                packages[name] = newest(
+                    [w.version for w in wheels if w.package == name and w.compatible], "dtk"
+                )
+        elif runtime.get("platform") in ("Windows", "Linux") and runtime.get("cuda_runtime"):
+            catalog = self.windows_wheels(refresh=refresh)
+            packages["flash-attn"] = newest(
+                [w.version for w in catalog.wheels if w.compatible], "community", catalog.error
+            )
+            try:
+                version = newest_release(
+                    "xformers",
+                    torch=str(runtime.get("torch", "")),
+                    python=str(runtime.get("python", "")),
+                    opener=policy.opener(),
+                )
+                packages["xformers"] = {"version": version, "source": "pypi", "error": None}
+            except Exception as exc:  # noqa: BLE001 - an unreachable index only leaves the version unknown
+                packages["xformers"] = {"version": None, "source": "pypi", "error": policy.redact(exc)[-500:]}
+        packages["mtlattn"] = {"version": metal_attention_catalog.VERSION, "source": "pinned", "error": None}
+        result = {"checked_at": time.time(), "packages": packages}
+        with self._latest_lock:
+            self._latest = (time.monotonic(), cache_key, result)
+        return result
 
     def windows_wheels(self, refresh=False):
         from .network import ProxyPolicy
@@ -1377,6 +1463,8 @@ class EnvironmentManager:
                         raise RuntimeError(f"Installed version does not match reviewed plan: {item['name']}")
                 probes = self.probe()
                 self._probe_cache, self._probe_time = probes, time.monotonic()
+                self._probed_at = time.time()
+                self._probe_versions = dict(self.versions())
                 probe = probes.get(op.package, {})
                 if not probe.get("importable") or CATALOG[op.package][1] and not probe.get("kernel_tested"):
                     if probe.get("kernel_unavailable"):

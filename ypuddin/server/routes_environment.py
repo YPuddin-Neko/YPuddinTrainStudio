@@ -10,6 +10,7 @@ from .dtk_catalog import DtkCatalog
 from .environment import (
     MAX_WHEEL_BYTES,
     EnvironmentError,
+    EnvironmentLatest,
     EnvironmentManager,
     EnvironmentOperation,
     EnvironmentRequest,
@@ -36,6 +37,11 @@ def status(refresh: bool = False, service: EnvironmentManager = Depends(environm
 @router.put("/environment/settings", response_model=EnvironmentSettings)
 def settings(body: EnvironmentSettings, service: EnvironmentManager = Depends(environment)):
     return service.save_settings(body)
+
+
+@router.get("/environment/latest", response_model=EnvironmentLatest)
+def latest(refresh: bool = False, service: EnvironmentManager = Depends(environment)):
+    return service.latest_versions(refresh=refresh)
 
 
 @router.get("/environment/dtk/wheels", response_model=DtkCatalog)

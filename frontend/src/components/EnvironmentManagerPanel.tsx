@@ -31,6 +31,7 @@ interface EnvironmentStatus {
   };
   packages: PackageStatus[]; attention_default: string; restart_required: boolean;
   maintenance: boolean; running_jobs: boolean; probe_deferred: boolean;
+  probed_at?: number | null;
   sdpa?: { status: 'passed' | 'failed' | 'not_tested'; reason: string | null; error: string | null; detail: string | null; checked_at: number | null; device: string | null; device_name: string | null } | null;
 }
 interface PlanEntry { name: string; from_version: string | null; version: string | null; sha256?: string }
@@ -40,6 +41,7 @@ interface Operation {
   phase?: string; downloaded_bytes?: number; total_bytes?: number | null; bytes_per_second?: number | null; eta_seconds?: number | null;
 }
 interface Wheel { wheel_id: string; package: string; filename: string; version: string; sha256: string }
+interface LatestVersions { packages: Record<string, { version: string | null; source: string; error: string | null }> }
 const button = 'ui-btn ui-btn-sm';
 const input = 'rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900';
 const busyStatus = (op: Operation) => ['planning', 'installing', 'verifying'].includes(op.status);
@@ -81,6 +83,23 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
   const [operations, setOperations] = React.useState<Operation[]>([]);
   const operationsRef = React.useRef<Operation[]>([]);
   const [loading, setLoading] = React.useState(false);
+  const [probing, setProbing] = React.useState(false);
+  const [latest, setLatest] = React.useState<LatestVersions | null>(null);
+  const [latestLoading, setLatestLoading] = React.useState(true);
+  const [latestError, setLatestError] = React.useState('');
+  const latestController = React.useRef<AbortController | null>(null);
+  const refreshLatest = React.useCallback(async (refresh = false) => {
+    latestController.current?.abort();
+    const controller = new AbortController();
+    latestController.current = controller;
+    setLatestLoading(true); setLatestError('');
+    try {
+      const result = await apiClient.get<LatestVersions>('/environment/latest', { params: { refresh }, signal: controller.signal, silent: true });
+      if (!controller.signal.aborted) setLatest(result);
+    } catch (err) { if (!controller.signal.aborted) { setLatest(null); setLatestError(formatApiError(err)); } }
+    finally { if (!controller.signal.aborted) setLatestLoading(false); }
+  }, []);
+  React.useEffect(() => { void refreshLatest(); return () => latestController.current?.abort(); }, [refreshLatest]);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState('');
   const errorRef = React.useRef<HTMLDivElement>(null);
@@ -126,6 +145,7 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
 
   const refresh = React.useCallback(async (probe = false) => {
     setLoading(true);
+    if (probe) setProbing(true);
     try {
       const [state, tasks] = await Promise.all([
         apiClient.get<EnvironmentStatus>('/environment', { params: { refresh: probe }, silent: true }),
@@ -133,7 +153,7 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
       ]);
       setStatus(state); setOperations(tasks); operationsRef.current = tasks; setError('');
     } catch (err) { setError(formatApiError(err)); }
-    finally { setLoading(false); }
+    finally { setLoading(false); if (probe) setProbing(false); }
   }, []);
   React.useEffect(() => { void refresh(); }, [refresh]);
   React.useEffect(() => {
@@ -182,6 +202,7 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     mtlattn: copy('Apple GPU 训练与采样加速（可选）', 'Optional Apple GPU training and sampling acceleration'),
   }[name] || '');
   const reason = (pkg: PackageStatus) => {
+    if (probing && pkg.version && pkg.supported) return copy('检查中…', 'Checking…');
     if (pkg.name === 'mtlattn') {
       const requirements: Record<string, [string, string]> = {
         metal_requires_apple_silicon: ['需要 Apple Silicon Mac', 'Requires an Apple Silicon Mac'],
@@ -194,16 +215,24 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
       if (requirements[pkg.reason]) return copy(...requirements[pkg.reason]);
       if (!pkg.version) return copy('未安装 · 可选', 'Not installed · optional');
       if (status?.probe_deferred) return copy('任务运行中，检测已延后', 'Probe deferred while a job runs');
+      if (!status?.probed_at && !pkg.available && !pkg.error) return copy('已安装 · 待验证运行', 'Installed · runtime check pending');
       return pkg.available ? copy('检测通过', 'Check passed') : copy('检测失败，展开查看', 'Check failed; expand for details');
     }
     if (hipBackend && ['requires_cuda', 'requires_dtk_wheel', 'vendor_wheel_required'].includes(pkg.reason)) return copy('需要匹配的 DTK 适配包', 'A compatible DTK build is required');
     if (pkg.reason === 'requires_cuda') return copy('需要可用的 NVIDIA CUDA', 'Requires working NVIDIA CUDA');
     if (pkg.reason === 'requires_ampere') return copy('需要 Ampere 或更新的显卡', 'Requires Ampere or newer GPU');
     if (pkg.reason === 'requires_nvidia') return copy('需要 NVIDIA 显卡', 'Requires an NVIDIA GPU');
-    if (!pkg.version) return copy('未启用 · 可选', 'Not enabled · optional');
+    if (!pkg.version) return copy('未安装 · 可选', 'Not installed · optional');
     if (status?.probe_deferred) return copy('任务运行中，检测已延后', 'Probe deferred while a job runs');
     if (pkg.available) return pkg.backend ? hipBackend ? copy('已通过 DTK / HIP 内核检测', 'DTK / HIP kernel probe passed') : copy('已通过 CUDA 内核检测', 'CUDA kernel probe passed') : copy('可用', 'Available');
+    if (!status?.probed_at && !pkg.error) return copy('已安装 · 待验证运行', 'Installed · runtime check pending');
     return copy('检测失败，展开查看', 'Probe failed; expand for details');
+  };
+  const onlineVersion = (pkg: PackageStatus) => {
+    const release = latest?.packages[pkg.name];
+    if (latestLoading) return copy('查询中…', 'Checking…');
+    if (latestError || release?.error) return copy('查询失败', 'Lookup failed');
+    return release?.version || copy('未找到匹配版本', 'No matching release found');
   };
   const textUnavailable = () => copy(' · 驱动可见，当前 PyTorch 不可用',' · visible to driver, unavailable to current PyTorch');
   const locked = busy || uploading || operations.some(busyStatus) || !!status?.running_jobs;
@@ -235,7 +264,7 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     <section id="environment-runtime" data-settings-section tabIndex={-1} className="settings-section">
     <div className="settings-section-heading">
       <div><h2 className="text-base font-semibold">{copy('环境与计算后端', 'Runtime and compute backends')}</h2></div>
-      <button className={button} disabled={loading || busy} onClick={() => void refresh(true)}><RefreshCw size={14} className={loading ? 'animate-spin' : ''} />{copy('重新检测', 'Refresh probes')}</button>
+      <button className={button} disabled={loading || busy} onClick={() => { void refresh(true); void refreshLatest(true); }}><RefreshCw size={14} className={loading ? 'animate-spin' : ''} />{copy('重新检测', 'Refresh probes')}</button>
     </div>
     {error && <div ref={errorRef} role="alert" className="whitespace-pre-wrap rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
     {loading && !status && <p role="status" className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400"><Loader2 size={16} className="animate-spin" />{copy('检测当前环境与已安装扩展…', 'Checking runtime and installed extensions…')}</p>}
@@ -249,7 +278,7 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     {status && <>
       {profile === 'linux-dtk' ? <DtkRuntimePanel/> : <TorchEnvironmentPanel showAttentionExtensions={showAttentionExtensions} disabled={status.running_jobs || busy || operations.some(busyStatus)} operationsTarget={torchOperationsTarget} onOperationsVisible={setTorchOperationsVisible}/>}
       <section id="environment-attention" data-settings-section tabIndex={-1} className="settings-section">
-        <div className="settings-section-heading"><div><h2>{copy('注意力加速', 'Attention acceleration')}</h2>{target !== 'mps' && <p className="settings-note">{hipBackend ? copy('使用当前 DTK 适配版 PyTorch 的 SDPA；扩展包需要与厂商运行时匹配。', 'Use SDPA from the DTK-compatible PyTorch build. Extension packages must match the vendor runtime.') : showAttentionExtensions ? copy('内置 PyTorch SDPA；可选扩展用于 CUDA 加速。', 'PyTorch SDPA is built in. Optional extensions provide CUDA acceleration.') : copy('CPU 使用 PyTorch 内置 SDPA，无需安装额外注意力扩展。', 'CPU uses built-in PyTorch SDPA; no additional attention extension is needed.')}</p>}</div></div>
+        <div className="settings-section-heading"><div><h2>{copy('注意力加速', 'Attention acceleration')}</h2>{target !== 'mps' && <p className="settings-note">{hipBackend ? copy('使用当前 DTK 适配版 PyTorch 的 SDPA；扩展包需要与厂商运行时匹配。', 'Use SDPA from the DTK-compatible PyTorch build. Extension packages must match the vendor runtime.') : showAttentionExtensions ? copy('内置 PyTorch SDPA；可选扩展用于 CUDA 加速。', 'PyTorch SDPA is built in. Optional extensions provide CUDA acceleration.') : copy('CPU 使用 PyTorch 内置 SDPA，无需安装额外注意力扩展。', 'CPU uses built-in PyTorch SDPA; no additional attention extension is needed.')}</p>}</div>{!cpuProfile && <button type="button" className={button} disabled={loading || locked || status.maintenance} title={status.running_jobs ? copy('任务结束或暂停后可运行检查', 'Run checks after the task finishes or pauses') : undefined} onClick={() => void refresh(true)}><RefreshCw size={14} className={probing ? 'animate-spin' : ''}/>{probing ? copy('检查中…', 'Checking…') : copy('运行检查', 'Run checks')}</button>}</div>
       {(hipBackend || target === 'mps') && <div className="settings-sdpa-status" data-testid="environment-sdpa">
         <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">{target === 'mps' ? copy('Apple GPU 内置加速', 'Built-in Apple GPU acceleration') : 'PyTorch SDPA'}</strong><span className={`text-xs ${status.sdpa?.status === 'passed' ? 'text-emerald-700 dark:text-emerald-400' : status.sdpa?.status === 'failed' ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}`}>{status.sdpa?.status === 'passed' ? copy('检测通过', 'Check passed') : status.sdpa?.status === 'failed' ? target === 'mps' ? copy('检测失败', 'Check failed') : copy('当前计算路径不可用', 'Current compute path unavailable') : status.probe_deferred ? copy('任务运行中，检测已延后', 'Probe deferred while a job runs') : copy('尚未检测', 'Not tested yet')}</span></div>
         {target === 'mps' && <p className="settings-note">{copy('使用 PyTorch 自带的 SDPA，无需额外安装。', 'Uses SDPA included with PyTorch. No extra installation is needed.')}</p>}
@@ -259,8 +288,11 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
       <div className="settings-dependencies">{visiblePackages.map(pkg => <div key={pkg.name} className="settings-dependency">
         <div id={`environment-package-${pkg.name}`} className="settings-dependency-row" data-testid={`environment-package-${pkg.name}`}>
           <div className="settings-dependency-info"><button type="button" disabled={uploading || busy} className="settings-dependency-name disabled:opacity-50" aria-expanded={selected === pkg.name} aria-controls={`environment-details-${pkg.name}`} onClick={() => { setSelected(selected === pkg.name ? null : pkg.name); setVersion(''); setWheel(null); setVendorWheel(null); }}>{selected === pkg.name ? <ChevronDown size={13} /> : <ChevronRight size={13} />}{packageLabel(pkg.name)}</button><p className="settings-dependency-purpose">{purpose(pkg.name)}</p></div>
-          <span className="settings-dependency-version break-all font-mono text-xs">{pkg.version || copy('未安装', 'Not installed')}</span>
-          <span className={`settings-dependency-state text-xs ${pkg.available ? 'text-emerald-700 dark:text-emerald-400' : pkg.error && pkg.supported ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}`}>{reason(pkg)}</span>
+          <dl className="settings-dependency-version text-xs">
+            <div><dt>{copy('本地服务端版本：', 'Local server version:')}</dt><dd>{pkg.version || copy('未安装', 'Not installed')}</dd></div>
+            <div title={latestError || latest?.packages[pkg.name]?.error || copy('当前环境可用的发布版本', 'Release available for this runtime')}><dt>{pkg.name === 'mtlattn' ? copy('兼容版本：', 'Compatible version:') : copy('云端版本：', 'Online version:')}</dt><dd>{onlineVersion(pkg)}</dd></div>
+          </dl>
+          <span title={pkg.version && pkg.supported && !status.probed_at && !pkg.available && !pkg.error ? copy('点击“运行检查”，检查此扩展能否在当前显卡上执行前向与反向计算。', 'Click “Run checks” to check whether this extension can run forward and backward computations on the current GPU.') : undefined} className={`settings-dependency-state text-xs ${pkg.available ? 'text-emerald-700 dark:text-emerald-400' : pkg.error && pkg.supported ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}`}>{reason(pkg)}</span>
           <div className="settings-dependency-actions flex flex-wrap gap-1.5 justify-end"><button className={button} disabled={locked || !pkg.supported && !hipBackend} onClick={() => { setSelected(pkg.name); setVersion(''); setWheel(null); setVendorWheel(null); }}>{pkg.version ? copy('管理', 'Manage') : copy('安装', 'Install')}</button><a className={`${button} ui-btn-icon`} href={pkg.docs_url} target="_blank" rel="noreferrer" aria-label={`${pkg.name} ${copy('文档', 'documentation')}`}><ExternalLink size={12} /></a></div>
         </div>
         {selected === pkg.name && <div id={`environment-details-${pkg.name}`} className="settings-dependency-detail space-y-3">

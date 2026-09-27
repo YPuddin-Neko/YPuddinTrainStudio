@@ -6072,6 +6072,46 @@
         }
       }
     },
+    "/api/environment/latest": {
+      "get": {
+        "summary": "Latest",
+        "operationId": "latest_api_environment_latest_get",
+        "parameters": [
+          {
+            "name": "refresh",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Refresh"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentLatest"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/environment/dtk/wheels": {
       "get": {
         "summary": "Dtk Wheels",
@@ -10460,6 +10500,69 @@
         ],
         "title": "DtkWheel"
       },
+      "EnvironmentLatest": {
+        "properties": {
+          "checked_at": {
+            "type": "number",
+            "title": "Checked At"
+          },
+          "packages": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/EnvironmentLatestPackage"
+            },
+            "type": "object",
+            "title": "Packages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "checked_at",
+          "packages"
+        ],
+        "title": "EnvironmentLatest"
+      },
+      "EnvironmentLatestPackage": {
+        "properties": {
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "community",
+              "pypi",
+              "dtk",
+              "pinned"
+            ],
+            "title": "Source"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "source"
+        ],
+        "title": "EnvironmentLatestPackage"
+      },
       "EnvironmentOperation": {
         "properties": {
           "environment_profile": {
@@ -11120,6 +11223,17 @@
                 "type": "null"
               }
             ]
+          },
+          "probed_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Probed At"
           }
         },
         "type": "object",

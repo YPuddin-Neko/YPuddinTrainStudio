@@ -1673,6 +1673,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/environment/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Latest */
+        get: operations["latest_api_environment_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/environment/dtk/wheels": {
         parameters: {
             query?: never;
@@ -3331,6 +3348,27 @@ export interface components {
             /** Reason */
             reason?: string | null;
         };
+        /** EnvironmentLatest */
+        EnvironmentLatest: {
+            /** Checked At */
+            checked_at: number;
+            /** Packages */
+            packages: {
+                [key: string]: components["schemas"]["EnvironmentLatestPackage"];
+            };
+        };
+        /** EnvironmentLatestPackage */
+        EnvironmentLatestPackage: {
+            /** Version */
+            version: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "community" | "pypi" | "dtk" | "pinned";
+            /** Error */
+            error?: string | null;
+        };
         /** EnvironmentOperation */
         EnvironmentOperation: {
             /**
@@ -3572,6 +3610,8 @@ export interface components {
             /** Probe Deferred */
             probe_deferred: boolean;
             sdpa?: components["schemas"]["SdpaProbe"] | null;
+            /** Probed At */
+            probed_at?: number | null;
         };
         /** EnvironmentWheel */
         EnvironmentWheel: {
@@ -11731,6 +11771,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvironmentSettings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    latest_api_environment_latest_get: {
+        parameters: {
+            query?: {
+                refresh?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentLatest"];
                 };
             };
             /** @description Validation Error */

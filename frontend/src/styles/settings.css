@@ -43,6 +43,9 @@
 .settings-dependency-row{display:grid;grid-template-columns:minmax(160px,1fr) minmax(0,180px) minmax(140px,.75fr) auto;grid-template-areas:"info version state actions";align-items:center;gap:12px;padding:12px 0}
 .settings-dependency-info{grid-area:info;min-width:0}
 .settings-dependency-version{grid-area:version;min-width:0;overflow-wrap:anywhere;white-space:normal}
+.settings-dependency-version > div{display:flex;flex-wrap:wrap;gap:2px 6px;line-height:1.6}
+.settings-dependency-version dt{color:var(--settings-muted)}
+.settings-dependency-version dd{margin:0;font-variant-numeric:tabular-nums}
 .settings-dependency-state{grid-area:state;min-width:0;overflow-wrap:anywhere;white-space:normal}
 .settings-dependency-actions{grid-area:actions}
 .settings-dependency-name{display:flex;gap:6px;align-items:center;font-size:13px;font-weight:600}
