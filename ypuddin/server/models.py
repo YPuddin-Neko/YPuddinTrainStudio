@@ -453,6 +453,7 @@ class FamilyLatent(_Out):
 
 class FamilyInfo(_Out):
     runtime_backend: Literal["cuda", "hip", "mps", "cpu"] | None = None
+    runtime_platform: Literal["windows", "linux", "macos"] | None = None
     attention_backends: list[str] = Field(default_factory=lambda: ["auto", "sdpa", "xformers", "flash_attn"])
     # Older services list no modes; the schema then keeps every choice.
     checkpointing_modes: list[str] = Field(default_factory=lambda: ["none", "block", "unsloth"])

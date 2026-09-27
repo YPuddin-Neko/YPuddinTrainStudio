@@ -222,6 +222,10 @@ def runtime_family_info(name: str) -> dict[str, Any]:
     from ypuddin.runtime_profiles import current_profile
 
     profile = current_profile()
+    system = profile.split("-", 1)[0] if profile != "legacy" else sys.platform
+    runtime_platform = (
+        "windows" if system in {"windows", "win32"} else "macos" if system in {"macos", "darwin"} else "linux"
+    )
     if profile == "legacy":
         import torch
 
@@ -250,6 +254,7 @@ def runtime_family_info(name: str) -> dict[str, Any]:
     return {
         **info,
         "runtime_backend": runtime_backend,
+        "runtime_platform": runtime_platform,
         "attention_backends": [option for option in info["attention_backends"] if option in allowed],
     }
 

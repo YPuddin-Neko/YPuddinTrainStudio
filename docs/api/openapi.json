@@ -11352,6 +11352,22 @@
             ],
             "title": "Runtime Backend"
           },
+          "runtime_platform": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "windows",
+                  "linux",
+                  "macos"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Platform"
+          },
           "attention_backends": {
             "items": {
               "type": "string"

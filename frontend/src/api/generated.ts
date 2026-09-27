@@ -3652,6 +3652,8 @@ export interface components {
         FamilyInfo: {
             /** Runtime Backend */
             runtime_backend?: ("cuda" | "hip" | "mps" | "cpu") | null;
+            /** Runtime Platform */
+            runtime_platform?: ("windows" | "linux" | "macos") | null;
             /** Attention Backends */
             attention_backends?: string[];
             /** Checkpointing Modes */

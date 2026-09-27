@@ -1,5 +1,6 @@
 import { selectTrainingComponents, trainingManagedReason } from '../../utils/trainingSelection';
 import { confirmedTrainingComputePolicy, trainingComputeManagedField, trainingComputePolicyHint } from '../../utils/trainingComputePolicy';
+import { contextHelp, contextOptions, hideUnusedSetting, unusedSettingReason, type FieldContext } from '../../utils/fieldContext';
 import React from 'react';
 import { evaluateShowWhen } from '../showWhen';
 import { useTranslation } from 'react-i18next';
@@ -827,6 +828,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   const groups: Record<string, { order: number; fields: React.ReactNode[] }> = {};
   const conditionValue = { ...value, training: {mode:'adapter', ...value.training}, model: { prediction_type: 'epsilon', ...value.model }, dataset: { resolution_mode: 'bucket', image_fit: 'crop', ...value.dataset } };
   const weights = modelFamilyWeights(family);
+  const fieldContext: FieldContext = { family, config: value, english };
 
   const renderField = (key: string, prop: SchemaProperty, parentPath: string[] = []) => {
     const path = [...parentPath, key];
@@ -835,7 +837,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (['checkpoint.output_dir', 'checkpoint.state_dir', 'sampling.output_dir', 'logging.output_dir', 'logging.events_path', 'dataset.cache_dir'].includes(fullPathKey)) return null;
     const lokrRank = fullPathKey === 'adapter.rank' && value.adapter?.algo === 'lokr';
     const weightMeta = parentPath[0] === 'model' ? weights.find(weight => weight.field === key) : undefined;
-    const supportedOptions = familyParameterOptions(family, fullPathKey);
+    const familyOptions = familyParameterOptions(family, fullPathKey);
     if (parentPath[0] === 'adapter' && value.training?.mode === 'full') return null;
     if (['model.training_guidance', 'sampling.guidance'].includes(fullPathKey)) return null;
     const ddpmModifier = ['objective.scale_v_pred_loss_like_noise_pred', 'objective.v_pred_like_loss', 'objective.debiased_estimation_loss'].includes(fullPathKey);
@@ -843,7 +845,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (ddpmModifier && family?.objective !== 'ddpm' && !incompatibleFamilyLoss) return null;
     if (fullPathKey === 'model.krea2_variant' && selectedModel?.variant && selectedModel.variant === value.model?.krea2_variant) return null;
     if (fullPathKey === 'model.text_encoder_2_path' && value.model?.family !== 'sdxl') return null;
-    if (supportedOptions?.length === 0) return null;
+    if (familyOptions?.length === 0) return null;
     if (family?.objective === 'ddpm' && ['sampling.shift', 'sampling.er_sde_order', 'sampling.er_sde_s_noise', 'objective.shift', 'objective.res_shift_tokens', 'objective.res_shift_mu', 'objective.mode_scale'].includes(fullPathKey)) return null;
     if (parentPath[0] === 'model' && key in MODEL_PATH_FIELDS && weights.length && !weightMeta && !(key === 'tokenizer_path' && family?.name === 'sdxl')) return null;
     if (family?.name === 'sdxl' && weightMeta?.required === false && !showAdvanced) return null;
@@ -905,6 +907,14 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const numericMax = ui.max ?? prop.maximum ?? prop.exclusiveMaximum;
     const managedReason = computeManaged?.reason || trainingManagedReason(value, fullPathKey, english) || optimizerManagedReason(schema, value, fullPathKey, english);
     if (optimizerManagedReason(schema, value, fullPathKey, english) && ['optimizer.kahan', 'optimizer.group_lr', 'adapter.lr_scale', 'scheduler.warmup_steps'].includes(fullPathKey)) return null;
+    // Only what this model and machine use: an unused setting shows only while it is still set, with the reason.
+    const unusedReason = computeManaged ? undefined : unusedSettingReason(fullPathKey, fieldContext);
+    if (unusedReason && hideUnusedSetting(fullPathKey, fieldValue, fieldContext)) return null;
+    const schemaOptions = (ui.options ?? prop.enum)?.map(String);
+    const supportedOptions = contextOptions(fullPathKey, fieldContext, familyOptions ?? schemaOptions, fieldValue) ?? familyOptions;
+    const offeredOptions = fullPathKey === 'model.attention' ? supportedOptions?.filter(option => option !== 'auto') : supportedOptions;
+    // A model that offers a single choice (SDXL's preview scheduler) has nothing to pick.
+    if (familyOptions && offeredOptions?.length === 1 && !managedReason && [offeredOptions[0], 'auto', undefined, null, ''].includes(fieldValue)) return null;
 
     let control = null;
 
@@ -1068,7 +1078,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         onValueChange={next => onChange(setNestedValue(value, path, next))}
         options={['auto', 'bf16', 'fp16', 'fp32'].map(option => ({value:option, label:configOptionLabel(fullPathKey, option, english)}))}/>;
     } else if (fullPathKey === 'model.attention') {
-      const attentionOptions = (supportedOptions || ['sdpa']).filter(option => option !== 'auto');
+      const attentionOptions = offeredOptions?.length ? offeredOptions : ['sdpa'];
       control = <StudioSelect aria-label={fieldLabel} value={!fieldValue || fieldValue === 'auto' ? 'sdpa' : String(fieldValue)} fallbackLabel={configOptionLabel(fullPathKey, String(fieldValue), english)}
         onValueChange={next => onChange(setNestedValue(value, path, next))}
         options={attentionOptions.map(option => ({value:option, label:configOptionLabel(fullPathKey, option, english)}))}/>;
@@ -1202,12 +1212,13 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       showAdvanced && selectedPreset?.include?.length && `${english ? 'Included layers' : '包含层'}：${selectedPreset.include.join(', ')}`,
       showAdvanced && selectedPreset?.exclude?.length && `${english ? 'Excluded layers' : '排除层'}：${selectedPreset.exclude.join(', ')}`,
     ].filter(Boolean).join('\n\n') : fullPathKey === 'model.tokenizer_path' && family?.name === 'sdxl' ? (english ? 'Optional root containing tokenizer/ and tokenizer_2/. Leave blank to use the model directory’s tokenizers, or the built-in CLIP-L / CLIP-G tokenizers when absent.' : '可选根目录，需同时包含 tokenizer/ 和 tokenizer_2/。留空自动读取模型目录；没有时使用内置 CLIP-L / CLIP-G 双分词器。')
-      : [weightMeta?.hint || configFieldHelp(fullPathKey, prop.description, english, value.optimizer?.type, scheduleFree), dtkReproducibility].filter(Boolean).join('\n\n');
+      : [weightMeta?.hint || contextHelp(fullPathKey, fieldContext, offeredOptions) || configFieldHelp(fullPathKey, prop.description, english, value.optimizer?.type, scheduleFree), dtkReproducibility].filter(Boolean).join('\n\n');
     // Switches carry no standing description; a status or warning still shows beneath them.
     const statusHint = (fullPathKey === 'model.dit_path' && selectedModel ? [selectedModel.variant?.toUpperCase(), selectedModel.dtype?.toUpperCase()].filter(Boolean).join(' · ') : undefined)
       || (incompatibleFamilyLoss ? (english ? 'This loss option only supports SDXL. Turn it off or set it to zero before using this model.' : '此损失参数仅适用于 SDXL，请关闭或设为 0 后再使用当前模型。') : undefined)
       || (incompatiblePredictionLoss ? (english ? 'This option is incompatible with the selected prediction type. Turn it off or choose the matching prediction type.' : '此参数与当前预测方式不兼容，请关闭此项或选择对应的预测方式。') : undefined)
       || managedReason
+      || unusedReason
       || (fullPathKey === 'loop.deterministic' ? trainingComputePolicyHint(activeComputePolicy, english) : undefined);
     const recoveryField = fullPathKey === 'checkpoint.save_state_every_steps';
     const describedHint = booleanField || recoveryField ? undefined
