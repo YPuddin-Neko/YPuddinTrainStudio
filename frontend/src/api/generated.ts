@@ -2254,11 +2254,11 @@ export interface components {
         AdapterConfig: {
             /**
              * Algo
-             * @description 附加权重的结构：LoRA 最常用；LoKr 参数通常最少；LoHa 表达能力更强。full 直接训练目标层的完整权重并导出差分。
+             * @description 附加权重的结构：LoRA 最常用；LoKr 参数通常最少；LoHa 表达能力更强；OrthoLoRA 在底模的主方向上做正交旋转；T-LoRA 按噪声强度调整可用的秩。full 直接训练目标层的完整权重并导出差分。
              * @default lokr
              * @enum {string}
              */
-            algo: "lora" | "lokr" | "loha" | "full";
+            algo: "lora" | "lokr" | "loha" | "full" | "ortho" | "tlora";
             /**
              * Rank
              * @description 低秩分解的大小，默认 16：越大能学到的细节越多，文件也越大。LoKr 的 full 表示保留完整的两个 Kronecker 因子 W1/W2，不做低秩拆分，仍是 LoKr 适配器；整数秩过大时 LoKr 也会自动保留对应完整因子。
@@ -2302,6 +2302,23 @@ export interface components {
              * @enum {string}
              */
             init: "default" | "scalar";
+            /**
+             * Tlora Min Rank
+             * @description 噪声最大时仍然使用的秩。噪声越小可用的秩越多，接近干净图时用满 Rank；留空为 Rank 的一半（论文推荐）。
+             */
+            tlora_min_rank?: number | null;
+            /**
+             * Tlora Power
+             * @description 可用的秩随噪声变化的曲线，默认 1 为线性：大于 1 时高噪声段更久只用较少的秩，小于 1 时更早放开。
+             * @default 1
+             */
+            tlora_power: number;
+            /**
+             * Tlora Ortho
+             * @description 用正交初始化开始训练（论文的完整做法）：各秩从互相独立的方向开始，训练开始时不改变底模输出。关闭则与普通 LoRA 的初始化相同。
+             * @default true
+             */
+            tlora_ortho: boolean;
             /**
              * Dropout
              * @description 对适配器输出的 dropout
@@ -2369,7 +2386,7 @@ export interface components {
              * Algo
              * @description 覆盖算法；none 表示排除
              */
-            algo?: ("lora" | "lokr" | "loha" | "full" | "none") | null;
+            algo?: ("lora" | "lokr" | "loha" | "full" | "ortho" | "tlora" | "none") | null;
             /** Rank */
             rank?: number | "full" | null;
             /** Alpha */

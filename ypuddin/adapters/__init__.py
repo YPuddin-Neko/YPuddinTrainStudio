@@ -16,7 +16,9 @@ from .linear import AdaptedLinear
 from .loha import LoHa
 from .lokr import LoKr
 from .lora import LoRA
+from .ortho import OrthoLoRA
 from .rules import ResolvedTarget, TargetPreset, match_name, resolve_targets
+from .tlora import TLoRA
 
 __all__ = [
     "ALGOS",
@@ -29,7 +31,9 @@ __all__ = [
     "LoHa",
     "LoKr",
     "LoRA",
+    "OrthoLoRA",
     "ResolvedTarget",
+    "TLoRA",
     "TargetPreset",
     "build_adapter",
     "build_metadata",

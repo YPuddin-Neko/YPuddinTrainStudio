@@ -1448,6 +1448,10 @@ class Trainer:
             )
         )
         x_t, target, _ = self.objective.prepare(x0, t.to(self.device), generator=gen)
+        # T-LoRA layers keep fewer ranks for noisier samples; t is each sample's noise level (0..1).
+        set_noise_level = getattr(getattr(self, "adapters", None), "set_noise_level", None)
+        if set_noise_level is not None:
+            set_noise_level(t.to(self.device))
         mask = batch.get("mask")
         if mask is not None:
             # Includes mandatory whole-image validity even when user masks are disabled.
@@ -1991,6 +1995,10 @@ class Trainer:
             prompts += _load_prompts_file(scfg.prompts_file)
         if not prompts:
             return []
+        # Previews show what the exported file does: every T-LoRA rank.
+        set_noise_level = getattr(getattr(self, "adapters", None), "set_noise_level", None)
+        if set_noise_level is not None:
+            set_noise_level(None)
         defaults = self.family.sampling_defaults(self.loaded)
         out_dir = (
             Path(self.cfg.sampling.output_dir) if self.cfg.sampling.output_dir else self.run_dir / "samples"

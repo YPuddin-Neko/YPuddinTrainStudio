@@ -156,6 +156,8 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
           lora: ['两个低秩矩阵相乘，最常用，兼容性最好。', 'two low-rank matrices multiplied; the most common and most widely supported.'],
           lokr: ['用 Kronecker 积组合两个小矩阵，参数通常最少，文件最小。', 'two small matrices combined by a Kronecker product; usually the fewest parameters and the smallest file.'],
           loha: ['两组低秩矩阵逐元素相乘，同样的秩下表达能力更强，参数约为 LoRA 的两倍。', 'two low-rank pairs multiplied element by element; more capacity at the same rank, with about twice the parameters of LoRA.'],
+          ortho: ['在底模权重最主要的几个方向上做正交旋转和缩放，可训练参数很少，训练稳定；导出为普通 LoRA。', "rotates and rescales the base weight's main directions; very few trained parameters and steady training, exported as a plain LoRA."],
+          tlora: ['LoRA 的变体：噪声越大可用的秩越少，减轻小数据集的过拟合；导出为普通 LoRA。', 'a LoRA whose usable rank shrinks as the noise grows, which curbs overfitting on small datasets; exported as a plain LoRA.'],
         }),
         text('Rank 里的 full 只对 LoKr 生效：保留完整的 Kronecker 因子，仍然是 LoKr。', 'full in Rank applies to LoKr only: it keeps the whole Kronecker factors and is still a LoKr adapter.'),
       ]);

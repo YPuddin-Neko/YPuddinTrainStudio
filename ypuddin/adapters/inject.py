@@ -18,11 +18,20 @@ from .linear import AdaptedLinear
 from .loha import LoHa
 from .lokr import LoKr
 from .lora import LoRA
+from .ortho import OrthoLoRA
 from .rules import ResolvedTarget, TargetPreset, resolve_targets
+from .tlora import TLoRA, rank_mask
 
 log = logging.getLogger(__name__)
 
-ALGOS: dict[str, type[AdapterModule]] = {"lora": LoRA, "lokr": LoKr, "loha": LoHa, "full": Full}
+ALGOS: dict[str, type[AdapterModule]] = {
+    "lora": LoRA,
+    "lokr": LoKr,
+    "loha": LoHa,
+    "full": Full,
+    "ortho": OrthoLoRA,
+    "tlora": TLoRA,
+}
 PARAM_DTYPES = {"fp32": torch.float32, "bf16": torch.bfloat16}
 
 
@@ -32,6 +41,9 @@ def build_adapter(
     cls = ALGOS[algo]
     kw = dict(params)
     lr = kw.pop("lr", None)  # consumed by param groups, not by the module
+    tlora = {key: kw.pop(f"tlora_{key}", None) for key in ("min_rank", "power", "ortho")}
+    if algo == "tlora":
+        kw.update({key: value for key, value in tlora.items() if value is not None})
     if algo != "lokr":
         kw.pop("factor", None)
         kw.pop("decompose_both", None)
@@ -92,7 +104,8 @@ class AdapterSet:
                     continue
                 kind = kinds.get(pname, pname)
                 scale = self.config.lr_scale.get(kind, 1.0)
-                wd = 0.0 if kind in ("w1", "scalar") else weight_decay
+                # OrthoLoRA's scales start at 1; decaying them would shrink the principal directions.
+                wd = 0.0 if kind in ("w1", "scalar", "scale") else weight_decay
                 buckets.setdefault((lr * scale, wd, kind), []).append(p)
             if layer.dora is not None:
                 buckets.setdefault((lr, 0.0, "dora"), []).append(layer.dora.dora_scale)
@@ -102,6 +115,21 @@ class AdapterSet:
         ]
         groups.sort(key=lambda g: (g["name"], -g["lr"]))
         return groups
+
+    def set_noise_level(self, level: Tensor | None) -> None:
+        """Each sample's noise level (0 clean … 1 pure noise) for T-LoRA layers; ``None`` uses every rank."""
+        masks: dict[tuple[int, int, float], Tensor] = {}
+        for layer in self.layers.values():
+            adapter = layer.adapter
+            if not isinstance(adapter, TLoRA):
+                continue
+            if level is None:
+                adapter.set_mask(None)
+                continue
+            key = (adapter.rank, adapter.min_rank, adapter.power)
+            if key not in masks:
+                masks[key] = rank_mask(level, *key)
+            adapter.set_mask(masks[key])
 
     def set_multiplier(self, m: float) -> None:
         for layer in self.layers.values():

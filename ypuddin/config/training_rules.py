@@ -31,6 +31,27 @@ def training_errors(cfg) -> list[dict[str, str]]:
             reject("training.train_text_encoder", "当前模型族尚未实现文本编码器适配器训练")
         if selection.resume_weights:
             reject("training.resume_weights", "全量模型权重不能作为适配器权重加载")
+        adapter = cfg.adapter
+        # OrthoLoRA and orthogonal T-LoRA start from their own orthonormal factors.
+        orthogonal = adapter.algo == "ortho" or adapter.algo == "tlora" and adapter.tlora_ortho
+        if adapter.algo == "tlora":
+            if adapter.dora:
+                reject("adapter.dora", "T-LoRA 按每张图的噪声强度调整秩，需要分开计算，不能与 DoRA 同时使用")
+            if adapter.mode == "merged":
+                reject(
+                    "adapter.mode",
+                    "T-LoRA 按每张图的噪声强度调整秩，不能合并权重后计算，请选择自动或分开计算",
+                )
+            if (
+                isinstance(adapter.rank, int)
+                and adapter.tlora_min_rank
+                and adapter.tlora_min_rank > adapter.rank
+            ):
+                reject("adapter.tlora_min_rank", "最小秩不能大于 Rank")
+        if orthogonal and adapter.init == "scalar":
+            reject("adapter.init", "正交参数从自己的正交方向开始，不能使用「随机权重，零值缩放」")
+        if orthogonal and adapter.resume_weights:
+            reject("adapter.resume_weights", "导出文件是普通 LoRA，无法还原正交参数；请从完整恢复点继续训练")
     else:
         if cfg.model.family not in FULL_FAMILIES:
             reject("training.mode", "当前模型族尚未实现全量微调")

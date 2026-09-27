@@ -51,7 +51,12 @@ function StatCard({ label, value, hint, detail }: { label: string; value: React.
 function learningRateHelp(groups: string[], algo: unknown, optimizer: unknown, text: (zh: string, en: string) => string): string | undefined {
   const has = (...names: string[]) => names.some(name => groups.includes(name));
   const lines: string[] = [];
-  if (has('down', 'up')) lines.push(text('down、up：LoRA 的两个低秩矩阵。', 'down, up: the two low-rank matrices of LoRA.'));
+  if (has('down', 'up')) lines.push(algo === 'tlora'
+    ? text('down、up：T-LoRA 的两个低秩矩阵。', 'down, up: the two low-rank matrices of T-LoRA.')
+    : text('down、up：LoRA 的两个低秩矩阵。', 'down, up: the two low-rank matrices of LoRA.'));
+  if (has('lambda')) lines.push(text('λ：T-LoRA 正交初始化时每个秩的强度。', 'λ: the strength of each rank in orthogonal T-LoRA.'));
+  if (has('rotation')) lines.push(text('rotation：OrthoLoRA 在主方向之间的旋转。', "rotation: OrthoLoRA's rotation among the main directions."));
+  if (has('scale')) lines.push(text('scale：OrthoLoRA 对各主方向长度的缩放。', "scale: OrthoLoRA's rescaling of each main direction."));
   if (has('w1', 'w2')) lines.push(algo === 'loha'
     ? text('w1、w2：LoHa 的两组低秩矩阵。', 'w1, w2: the two low-rank pairs of LoHa.')
     : text('w1、w2：LoKr 把权重拆成的两个矩阵，w1 较小，w2 较大。', 'w1, w2: the two matrices LoKr splits a weight into; w1 is the smaller one.'));

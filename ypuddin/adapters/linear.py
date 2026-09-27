@@ -9,7 +9,6 @@ from torch import Tensor, nn
 from .base import AdapterModule
 from .dora import DoRA
 from .frozen import FrozenLinear
-from .full import Full
 
 Mode = str  # "bypass" | "merged"
 
@@ -17,6 +16,11 @@ Mode = str  # "bypass" | "merged"
 def resolve_mode(requested: str, adapter: AdapterModule, base: FrozenLinear, dora: bool) -> Mode:
     if requested not in ("auto", "bypass", "merged"):
         raise ValueError(f"unknown adapter mode {requested!r}")
+    if getattr(adapter, "needs_bypass", False) and (dora or requested == "merged"):
+        # T-LoRA masks ranks per sample, which one merged weight cannot express.
+        raise ValueError(
+            f"{adapter.kind} changes its ranks per sample and must run in bypass mode, without DoRA"
+        )
     if dora or not adapter.supports_bypass:
         if requested == "bypass":
             reason = "DoRA needs the merged weight" if dora else f"{adapter.kind} has no bypass form"
@@ -46,8 +50,10 @@ class AdaptedLinear(nn.Module):
         self.multiplier = 1.0
         self.dora = DoRA(base.dequant(torch.float32), dtype=adapter.param_dtype) if dora else None
         self.mode: Mode = resolve_mode(mode, adapter, base, dora)
-        if isinstance(adapter, Full):
-            adapter.bind_base(base.dequant(torch.float32))
+        # Full keeps W₀; OrthoLoRA takes its principal subspace; T-LoRA draws its start on the layer's device.
+        bind = getattr(adapter, "bind_base", None)
+        if callable(bind):
+            bind(base.dequant(torch.float32))
 
     # ----------------------------------------------------------------- nn.Linear-compatible surface
     @property

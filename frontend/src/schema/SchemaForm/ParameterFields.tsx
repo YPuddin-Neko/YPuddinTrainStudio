@@ -31,7 +31,7 @@ const layouts: Record<string, Section[]> = {
     section('monitoring', ['nan_skip_limit', 'log_every'], ['异常处理与记录', 'Failures and logging']),
   ],
   adapter: [
-    section('setup', ['algo', 'preset', 'parameter_mode', 'factor', 'rank', 'alpha', 'dora', 'decompose_both', 'rs_lora', 'rules']),
+    section('setup', ['algo', 'preset', 'parameter_mode', 'factor', 'rank', 'alpha', 'tlora_min_rank', 'tlora_power', 'tlora_ortho', 'dora', 'decompose_both', 'rs_lora', 'rules']),
     section('initialization', ['init', 'resume_weights'], ['初始化与继续训练', 'Initialization and weight loading']),
     section('regularization', ['dropout', 'rank_dropout', 'module_dropout'], ['训练正则', 'Training regularization']),
     section('execution', ['mode', 'param_dtype', 'lr_scale'], ['计算与学习率', 'Computation and learning rate']),

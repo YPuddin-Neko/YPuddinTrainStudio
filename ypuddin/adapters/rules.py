@@ -73,6 +73,9 @@ def resolve_targets(
         "decompose_both": cfg.decompose_both,
         "rs_lora": cfg.rs_lora,
         "init": cfg.init,
+        "tlora_min_rank": cfg.tlora_min_rank,
+        "tlora_power": cfg.tlora_power,
+        "tlora_ortho": cfg.tlora_ortho,
     }
     out: list[ResolvedTarget] = []
     for name in module_names:

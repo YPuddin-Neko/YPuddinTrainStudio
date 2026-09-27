@@ -24,6 +24,7 @@ const labels: Record<string, string> = {
   'dataset.caption.cache_variants': '预缓存标签变体数',
   'sampling.scheduler': '采样调度器', 'sampling.er_sde_order': 'ER-SDE 求解阶数', 'sampling.er_sde_s_noise': 'ER-SDE 随机噪声强度',
   'adapter.algo': '训练算法', 'adapter.rank': 'Rank / 秩', 'adapter.alpha': 'Alpha / 缩放', 'adapter.factor': 'LoKr 分解因子',
+  'adapter.tlora_min_rank': '最小秩', 'adapter.tlora_power': '秩变化曲线', 'adapter.tlora_ortho': '正交初始化',
   'adapter.decompose_both': '双矩阵低秩分解', 'adapter.rs_lora': 'Rank 稳定缩放', 'adapter.dora': '启用 DoRA',
   'adapter.init': '初始化方式', 'adapter.dropout': '输出丢弃率', 'adapter.rank_dropout': '秩丢弃率',
   'adapter.module_dropout': '模块丢弃率', 'adapter.preset': '训练层范围', 'adapter.rules': '逐层覆盖规则',
@@ -84,6 +85,7 @@ export function configFieldLabel(path: string, fallback: string, english = false
   if (english && path === 'sampling.output_dir') return 'Sample image directory';
   if (english && path === 'dataset.crop_anchor') return 'Crop anchor';
   if (english && path === 'adapter.resume_weights') return 'Weights to continue training';
+  if (english && path.startsWith('adapter.tlora_')) return ({ 'adapter.tlora_min_rank': 'Minimum rank', 'adapter.tlora_power': 'Rank curve', 'adapter.tlora_ortho': 'Orthogonal start' } as Record<string, string>)[path] || fallback;
   if (english && path === 'checkpoint.save_training_metadata') return 'Embed training parameters in LoRA';
   if (english && path === 'checkpoint.save_state_every_steps') return 'Recovery save interval';
   if (english && path === 'checkpoint.save_state_every_epochs') return 'Recovery save interval (epochs)';
@@ -244,7 +246,7 @@ export function configOptionLabel(path: string, option: string, english = false)
     'objective.weighting': { none: ['不加权', 'None'], sigma_sqrt: ['噪声尺度平方根', 'Sigma square root'], cosmap: ['余弦映射', 'CosMap'], snr_like: ['类信噪比加权', 'SNR-like'], cosmos: ['Cosmos', 'Cosmos'], min_snr: ['最小信噪比加权', 'Min-SNR'] },
     'objective.timestep_sampling': { uniform: ['均匀采样', 'Uniform'], logit_normal: ['逻辑正态分布', 'Logit-Normal'], shift: ['偏移采样', 'Shift'], resolution_shift: ['按分辨率偏移', 'Resolution shift'], mode: ['模式分布', 'Mode'], cosmap: ['余弦映射', 'CosMap'] },
     'objective.loss': { mse: ['均方误差', 'MSE'], huber: ['平滑绝对误差', 'Huber'], pseudo_huber: ['伪 Huber 损失', 'Pseudo-Huber'] },
-    'adapter.algo': { lora: ['LoRA', 'LoRA'], lokr: ['LoKr', 'LoKr'], loha: ['LoHa', 'LoHa'], full: ['目标层完整权重', 'Full'] },
+    'adapter.algo': { lora: ['LoRA', 'LoRA'], lokr: ['LoKr', 'LoKr'], loha: ['LoHa', 'LoHa'], ortho: ['OrthoLoRA', 'OrthoLoRA'], tlora: ['T-LoRA', 'T-LoRA'], full: ['目标层完整权重', 'Full'] },
     'adapter.param_dtype': { fp32: ['FP32', 'FP32'], bf16: ['BF16', 'BF16'] },
     'checkpoint.save_dtype': { bf16: ['BF16', 'BF16'], fp16: ['FP16', 'FP16'], fp32: ['FP32', 'FP32'] },
     'scheduler.type': { constant: ['恒定', 'Constant'], linear: ['线性衰减', 'Linear'], cosine: ['余弦衰减', 'Cosine'], cosine_restarts: ['余弦重启', 'Cosine restarts'], polynomial: ['多项式衰减', 'Polynomial'], warmup_stable_decay: ['预热-稳定-衰减', 'WSD'], rex: ['REX', 'REX'] },

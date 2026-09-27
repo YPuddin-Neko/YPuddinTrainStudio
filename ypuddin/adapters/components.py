@@ -47,6 +47,12 @@ class ComponentAdapterSet:
             item.model.train(mode)
             item.train(mode)
 
+    def set_noise_level(self, level):
+        # The noise level conditions the image model; text encoder layers always use every rank.
+        backbone = self.components.get("backbone")
+        if backbone is not None:
+            backbone.set_noise_level(level)
+
     def set_multiplier(self, multiplier):
         for item in self.components.values():
             item.set_multiplier(multiplier)

@@ -16,8 +16,8 @@ from .optimizer_rules import (
 )
 from .ui import F, ui
 
-Algo = Literal["lora", "lokr", "loha", "full"]
-RuleAlgo = Literal["lora", "lokr", "loha", "full", "none"]
+Algo = Literal["lora", "lokr", "loha", "full", "ortho", "tlora"]
+RuleAlgo = Literal["lora", "lokr", "loha", "full", "ortho", "tlora", "none"]
 DType = Literal["bf16", "fp16", "fp32"]
 
 
@@ -327,7 +327,7 @@ class AdapterRule(_Strict):
 class AdapterConfig(_Strict):
     algo: Algo = F(
         "lokr",
-        help="附加权重的结构：LoRA 最常用；LoKr 参数通常最少；LoHa 表达能力更强。full 直接训练目标层的完整权重并导出差分。",
+        help="附加权重的结构：LoRA 最常用；LoKr 参数通常最少；LoHa 表达能力更强；OrthoLoRA 在底模的主方向上做正交旋转；T-LoRA 按噪声强度调整可用的秩。full 直接训练目标层的完整权重并导出差分。",
         ui_=ui("adapter", order=0, control="select"),
     )
     rank: int | Literal["full"] = F(
@@ -356,11 +356,34 @@ class AdapterConfig(_Strict):
         help="rsLoRA：scale = alpha / sqrt(rank)",
         ui_=ui("adapter", order=50, control="switch", advanced=True),
     )
-    dora: bool = F(False, help="DoRA 权重分解（幅度/方向）", ui_=ui("adapter", order=60, control="switch"))
+    dora: bool = F(
+        False,
+        help="DoRA 权重分解（幅度/方向）",
+        # T-LoRA masks ranks per sample, which DoRA's merged weight cannot do.
+        ui_=ui("adapter", order=60, control="switch", show_when="adapter.algo != 'tlora'"),
+    )
     init: Literal["default", "scalar"] = F(
         "default",
         help="初始化：default（一侧置零）/ scalar（全随机 + 可训练标量从 0 起）",
         ui_=ui("adapter", order=70, control="select", advanced=True),
+    )
+    tlora_min_rank: int | None = F(
+        None,
+        ge=1,
+        help="噪声最大时仍然使用的秩。噪声越小可用的秩越多，接近干净图时用满 Rank；留空为 Rank 的一半（论文推荐）。",
+        ui_=ui("adapter", order=72, show_when="adapter.algo == 'tlora'"),
+    )
+    tlora_power: float = F(
+        1.0,
+        gt=0,
+        le=8,
+        help="可用的秩随噪声变化的曲线，默认 1 为线性：大于 1 时高噪声段更久只用较少的秩，小于 1 时更早放开。",
+        ui_=ui("adapter", order=74, advanced=True, show_when="adapter.algo == 'tlora'"),
+    )
+    tlora_ortho: bool = F(
+        True,
+        help="用正交初始化开始训练（论文的完整做法）：各秩从互相独立的方向开始，训练开始时不改变底模输出。关闭则与普通 LoRA 的初始化相同。",
+        ui_=ui("adapter", order=76, control="switch", show_when="adapter.algo == 'tlora'"),
     )
     dropout: float = F(
         0.0, ge=0, le=1, help="对适配器输出的 dropout", ui_=ui("adapter", order=80, advanced=True)

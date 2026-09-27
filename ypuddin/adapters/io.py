@@ -73,17 +73,21 @@ def build_metadata(
     """kohya ``ss_*`` + ModelSpec ``modelspec.*`` + our ``ypuddin.*`` keys (all values are strings)."""
     adapter_cfg = {key: value for key, value in adapter_cfg.items() if key != "resume_weights"}
     rank = adapter_cfg.get("rank")
+    alpha = adapter_cfg.get("alpha")
+    algo = adapter_cfg.get("algo")
+    # OrthoLoRA and T-LoRA are exported as plain LoRA; the kohya keys describe that file.
+    if algo == "tlora" and adapter_cfg.get("tlora_ortho") and isinstance(rank, int):
+        rank = alpha = 2 * rank  # trained and frozen terms together, with the scale folded in
+    elif algo == "ortho" and isinstance(rank, int):
+        alpha = rank
+    args = ("algo", "factor", "decompose_both", "rs_lora", "dora", "preset", "init")
+    if algo == "tlora":
+        args += ("tlora_min_rank", "tlora_power", "tlora_ortho")
     meta: dict[str, str] = {
         "ss_network_module": "ypuddin.adapters",
         "ss_network_dim": str(rank),
-        "ss_network_alpha": str(adapter_cfg.get("alpha")),
-        "ss_network_args": json.dumps(
-            {
-                k: adapter_cfg.get(k)
-                for k in ("algo", "factor", "decompose_both", "rs_lora", "dora", "preset", "init")
-            },
-            ensure_ascii=False,
-        ),
+        "ss_network_alpha": str(alpha),
+        "ss_network_args": json.dumps({k: adapter_cfg.get(k) for k in args}, ensure_ascii=False),
         "ss_base_model_version": family,
         "ss_training_finished_at": str(time.time()),
         "modelspec.sai_model_spec": "1.0.1",
