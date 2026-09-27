@@ -20,6 +20,7 @@ import JobDeleteDialog from './JobDeleteDialog';
 import './queue.css';
 import Switch from '../../components/Switch';
 import { SlidingIndicator } from '../../components/motion';
+import PageLocation from '../../components/PageLocation';
 
 type Group = 'active' | 'waiting' | 'history' | 'archive';
 const groups: Group[] = ['active', 'waiting', 'history', 'archive'];
@@ -124,7 +125,7 @@ export default function Queue() {
 
   return <section className="queue-page task-workspace">
     <header className="queue-header">
-      <div className="queue-heading"><h1 data-testid="queue-title">{text('任务队列', 'Job queue')}</h1>{summary && <p>{summary}</p>}</div>
+      <PageLocation trail={[{ label: text('任务队列', 'Job queue') }]}/><div className="queue-heading"><h1 data-testid="queue-title">{text('任务队列', 'Job queue')}</h1>{summary && <p>{summary}</p>}</div>
       <div className="queue-header-actions">
         <button type="button" className="ui-btn ui-btn-icon" disabled={loading} onClick={refresh} aria-label={text('刷新队列', 'Refresh queue')} title={text('刷新队列', 'Refresh queue')}><RefreshCw size={15}/></button>
         <details className="queue-options" data-popover><summary className="ui-btn"><SlidersHorizontal size={14}/>{text('调度设置', 'Scheduling options')}</summary><div>

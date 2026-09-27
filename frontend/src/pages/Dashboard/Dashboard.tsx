@@ -13,6 +13,7 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import { JobContext, JobStatus, type ContextJob } from '../Queue/jobPresentation';
 import '../Queue/queue.css';
 import './dashboard.css';
+import PageLocation from '../../components/PageLocation';
 export default function Dashboard() {
   const text = useWorkspaceText();
   const textRef = React.useRef(text); textRef.current = text;
@@ -60,7 +61,7 @@ export default function Dashboard() {
   useEventStream(EVENT_TYPES.JOB_PHASE, event => setCurrent(job => job ? mergeJobEvent(job, event) : null));
   const last = projects[0];
   return <section className="task-workspace dashboard-overview" data-testid="dashboard-page">
-    <header className="task-page-heading"><div><h1>{text('训练工作台', 'Training workspace')}</h1></div><Link className="ui-btn ui-btn-primary" to="/projects"><Plus size={15}/>{text('新建或打开项目', 'Create or open a project')}</Link></header>
+    <PageLocation trail={[{ label: text('仪表盘', 'Dashboard') }]}/><header className="task-page-heading"><div><h1>{text('训练工作台', 'Training workspace')}</h1></div><Link className="ui-btn ui-btn-primary" to="/projects"><Plus size={15}/>{text('新建或打开项目', 'Create or open a project')}</Link></header>
     {error && <div role="alert" className="task-error">{error}<button type="button" className="ui-btn ui-btn-sm" onClick={() => void fetchOverview()}>{text('重试', 'Retry')}</button></div>}
     <div className="dashboard-summary" aria-label={text('任务总览', 'Job overview')}>{([{ view: 'active', label: text('进行中与暂停', 'Active & paused'), value: counts.active }, { view: 'waiting', label: text('等待调度', 'Waiting'), value: counts.waiting }, { view: 'history', label: text('历史记录', 'History'), value: counts.history }] as const).map(item => <Link className="ui-card-interactive" key={item.view} to={`/queue?view=${item.view}`}><strong>{loading ? '—' : item.value ?? '—'}</strong><span>{item.label}</span><ArrowRight size={14}/></Link>)}</div>
     <div className="dashboard-content-grid"><section className="dashboard-panel"><header><h2><Activity size={16}/>{text('当前任务', 'Current job')}</h2><Link className="ui-link" to="/queue">{text('打开队列', 'Open queue')}<ArrowRight size={12}/></Link></header>{current ? <div className="dashboard-current"><JobStatus status={current.status}/><h3><Link to={`/jobs/${current.id}`}>{current.name}</Link></h3><JobContext job={current}/>{current.progress?.total_steps ? <div className="dashboard-run-progress"><span>{current.progress.step ?? 0} / {current.progress.total_steps} {text('步', 'steps')}</span><progress value={current.progress.step ?? 0} max={current.progress.total_steps}/></div> : null}<Link className="ui-btn" to={`/jobs/${current.id}`}>{text('打开运行监控', 'Open monitoring')}<ArrowRight size={14}/></Link></div> : <div className="task-empty"><Activity size={26}/><strong>{loading ? text('读取任务…', 'Loading jobs…') : !activeAvailable ? text('当前任务暂时无法读取', 'Active jobs are temporarily unavailable') : text('现在没有运行或暂停的任务', 'No active or paused jobs')}</strong>{(!activeAvailable || (counts.waiting ?? 0) > 0) && <span>{!activeAvailable ? text('请重试，或直接打开队列。', 'Retry or open the queue directly.') : text('有任务等待调度，可在队列查看原因。', 'Jobs are waiting. Check the queue for details.')}</span>}</div>}</section>

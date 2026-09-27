@@ -16,6 +16,7 @@ import '../../styles/project-workspace.css';
 import './projects.css';
 import Switch from '../../components/Switch';
 import { SlidingIndicator } from '../../components/motion';
+import PageLocation from '../../components/PageLocation';
 
 const PAGE_SIZE = 24;
 const ACTIVE = ['running', 'pausing', 'cancelling'];
@@ -115,7 +116,7 @@ export default function Projects() {
   return <div className="projects-workspace" data-testid="projects-page">
     <header className="projects-toolbar">
       <div className="projects-heading-row">
-        <div className="projects-page-heading"><h1>{t('projects.title')}</h1>{summary && <p>{summary}</p>}</div>
+        <PageLocation trail={[{ label: text('项目', 'Projects') }]}/><div className="projects-page-heading"><h1>{t('projects.title')}</h1>{summary && <p>{summary}</p>}</div>
         <div className="projects-heading-actions"><button type="button" aria-label={text('刷新项目', 'Refresh projects')} disabled={loading || !!pending} onClick={() => void fetchProjects()} className="ui-btn ui-btn-icon" title={text('刷新项目', 'Refresh projects')}><RefreshCw size={15}/></button><button type="button" onClick={() => setEditor('new')} className="ui-btn ui-btn-primary"><FolderPlus size={15}/><span>{t('projects.newProject')}</span></button></div>
       </div>
       <div className="projects-filter-row">

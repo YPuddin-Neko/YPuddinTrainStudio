@@ -5,6 +5,7 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import { SlidingIndicator } from '../../components/motion';
 import { useEnterAnimation } from '../../utils/motion';
 import '../../styles/settings.css';
+import PageLocation from '../../components/PageLocation';
 
 export default function Settings() {
   const text = useWorkspaceText();
@@ -33,6 +34,8 @@ export default function Settings() {
     navigate(`/settings/${preferences ? 'preferences' : 'environment'}?${next}`, { state: location.state, replace: true });
   };
   return <div className="settings-workspace" data-testid="settings-shell">
+    {/* Only as a page of its own; the settings drawer leaves the top bar to the page underneath. */}
+    <PageLocation trail={[{ label: text('设置', 'Settings') }, ...tabs.filter(tab => tab.id === selected).map(tab => ({ label: tab.label }))]}/>
     <header className="settings-heading">
       <h1>{text('设置', 'Settings')}</h1>
       <div className="settings-tabs ui-tabs" role="tablist" aria-label={text('设置分区', 'Settings sections')}>

@@ -17,9 +17,13 @@ function useNarrowScreen() {
   return narrow;
 }
 
-/** Shows the page's location in the top bar. Phones have no room there, so it stays in the page. */
-export default function TopbarBreadcrumb({ children }: { children: React.ReactElement }) {
+/**
+ * Shows the page's location in the top bar. Phones have no room there, so it stays in the page, unless
+ * `topbarOnly`: a page whose title already says where it is then shows nothing there (nor in the settings drawer).
+ */
+export default function TopbarBreadcrumb({ children, topbarOnly = false }: { children: React.ReactElement; topbarOnly?: boolean }) {
   const slot = React.useContext(TopbarContext);
   const narrow = useNarrowScreen();
-  return slot && !narrow ? createPortal(children, slot) : children;
+  if (slot && !narrow) return createPortal(children, slot);
+  return topbarOnly ? null : children;
 }

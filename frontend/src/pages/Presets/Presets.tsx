@@ -22,6 +22,7 @@ import ParameterModeToggle from '../../components/ParameterModeToggle';
 import ParameterSections from '../../components/ParameterSections';
 import { workflowSchema } from '../../utils/parameterWorkflow';
 import { LoadingNote } from '../../components/Loading';
+import PageLocation from '../../components/PageLocation';
 
 interface Draft { name: string; description: string; config: Record<string, any>; originalName: string | null; builtin: boolean; }
 const KEY = ['standalone-presets'];
@@ -169,7 +170,7 @@ export default function Presets() {
   const options = userPresets.map(item=>({value:item.name,label:`${item.name} · ${familyName(presetFamily(item.config))}`}));
   return <section className="presets-page parameter-workspace">
     <div className="parameter-workspace-header">
-    <header className="presets-page-heading"><div><h1>{text('参数预设', 'Presets')}</h1></div><span>{text(`${userPresets.length} 个预设`, `${userPresets.length} presets`)}</span></header>
+    <PageLocation trail={[{ label: text('参数预设', 'Presets') }]}/><header className="presets-page-heading"><div><h1>{text('参数预设', 'Presets')}</h1></div><span>{text(`${userPresets.length} 个预设`, `${userPresets.length} presets`)}</span></header>
     <div className="presets-toolbar" ref={toolbarRef} role="group" aria-label={text('预设操作', 'Preset actions')}>
       <div className="presets-actions">
         <span role="status" className={`presets-status${draft && dirty ? ' presets-dirty' : ''}`}>{!draft ? notice : dirty ? text('有未保存修改', 'Unsaved changes') : notice || (draft.originalName ? text('已保存', 'Saved') : text('尚未创建', 'Not created yet'))}</span>
