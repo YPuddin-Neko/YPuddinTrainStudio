@@ -1486,19 +1486,14 @@ def _record_by_hash(c: ServiceContext, did: str, h: str, rel_path: str | None = 
 
 
 @router.get("/datasets/{did}/images/{h}/thumb")
-def thumb(did: str, h: str, size: int = 256, c: ServiceContext = Depends(ctx)) -> Response:
-    from PIL import Image
-
+def thumb(
+    did: str, h: str, size: int = Query(256, ge=16, le=2048), c: ServiceContext = Depends(ctx)
+) -> Response:
     r = _record_by_hash(c, did, h)
-    cache = c.service_cache_dir("thumbnails") / f"{h}_{size}.jpg"
-    if not cache.exists():
-        cache.parent.mkdir(parents=True, exist_ok=True)
-        with Image.open(r["path"]) as im:
-            im = im.convert("RGB")
-            im.thumbnail((size, size))
-            im.save(cache, "JPEG", quality=85)
-    return FileResponse(
-        str(cache), media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"}
+    return Response(
+        c.thumbnails.image(r["path"], h, size),
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=86400"},
     )
 
 

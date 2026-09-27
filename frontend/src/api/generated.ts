@@ -107,6 +107,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/cache/thumbnails": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Thumbnail Cache */
+        get: operations["thumbnail_cache_api_cache_thumbnails_get"];
+        put?: never;
+        post?: never;
+        /** Clear Thumbnail Cache */
+        delete: operations["clear_thumbnail_cache_api_cache_thumbnails_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/storage-defaults": {
         parameters: {
             query?: never;
@@ -6783,8 +6801,17 @@ export interface components {
             ui: components["schemas"]["SettingsUi"];
             network?: components["schemas"]["SettingsNetwork"];
             downloads?: components["schemas"]["SettingsDownloads"];
+            cache?: components["schemas"]["SettingsCache"];
         } & {
             [key: string]: unknown;
+        };
+        /** SettingsCache */
+        SettingsCache: {
+            /**
+             * Thumbnail Max Mb
+             * @default 1024
+             */
+            thumbnail_max_mb: number;
         };
         /** SettingsDownloads */
         SettingsDownloads: {
@@ -7132,6 +7159,27 @@ export interface components {
         TagBatchResult: {
             /** Changed */
             changed: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ThumbnailCacheStatus */
+        ThumbnailCacheStatus: {
+            /** Used Bytes */
+            used_bytes: number;
+            /** File Count */
+            file_count: number;
+            /** Max Bytes */
+            max_bytes: number;
+            /**
+             * Cleared Bytes
+             * @default 0
+             */
+            cleared_bytes: number;
+            /**
+             * Failed Files
+             * @default 0
+             */
+            failed_files: number;
         } & {
             [key: string]: unknown;
         };
@@ -7959,6 +8007,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    thumbnail_cache_api_cache_thumbnails_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThumbnailCacheStatus"];
+                };
+            };
+        };
+    };
+    clear_thumbnail_cache_api_cache_thumbnails_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThumbnailCacheStatus"];
                 };
             };
         };

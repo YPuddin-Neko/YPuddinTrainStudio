@@ -279,11 +279,34 @@ def get_settings(c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
 def put_settings(patch: dict[str, Any], c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     try:
         result = c.save_settings(patch)
+        if "cache" in patch or "cache_dir" in patch.get("paths", {}):
+            try:
+                c.thumbnails.manage()
+            except OSError as exc:
+                raise ApiError(
+                    f"设置已保存，但无法整理缩略图缓存：{exc}", code="thumbnails.cleanup_failed"
+                ) from exc
         if pending := c.pending_data_root():
             result["paths"]["data_root"] = pending
         return result
     except (ValueError, TypeError, KeyError) as exc:
         raise ApiError(str(exc), code="settings.invalid") from exc
+
+
+@router.get("/cache/thumbnails", response_model=m.ThumbnailCacheStatus)
+def thumbnail_cache(c: ServiceContext = Depends(ctx)):
+    try:
+        return c.thumbnails.manage()
+    except OSError as exc:
+        raise ApiError(f"无法读取缩略图缓存：{exc}", code="thumbnails.unavailable") from exc
+
+
+@router.delete("/cache/thumbnails", response_model=m.ThumbnailCacheStatus)
+def clear_thumbnail_cache(c: ServiceContext = Depends(ctx)):
+    try:
+        return c.thumbnails.manage(clear=True)
+    except OSError as exc:
+        raise ApiError(f"无法清理缩略图缓存：{exc}", code="thumbnails.cleanup_failed") from exc
 
 
 @router.get("/settings/storage-defaults", response_model=m.StorageDefaults)

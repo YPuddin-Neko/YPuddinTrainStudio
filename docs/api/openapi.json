@@ -176,6 +176,40 @@
         }
       }
     },
+    "/api/cache/thumbnails": {
+      "get": {
+        "summary": "Thumbnail Cache",
+        "operationId": "thumbnail_cache_api_cache_thumbnails_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThumbnailCacheStatus"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Clear Thumbnail Cache",
+        "operationId": "clear_thumbnail_cache_api_cache_thumbnails_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThumbnailCacheStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings/storage-defaults": {
       "get": {
         "summary": "Storage Defaults",
@@ -3190,6 +3224,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 2048,
+              "minimum": 16,
               "default": 256,
               "title": "Size"
             }
@@ -19835,6 +19871,9 @@
           },
           "downloads": {
             "$ref": "#/components/schemas/SettingsDownloads"
+          },
+          "cache": {
+            "$ref": "#/components/schemas/SettingsCache"
           }
         },
         "additionalProperties": true,
@@ -19845,6 +19884,20 @@
           "ui"
         ],
         "title": "Settings"
+      },
+      "SettingsCache": {
+        "properties": {
+          "thumbnail_max_mb": {
+            "type": "integer",
+            "maximum": 1048576.0,
+            "minimum": 1.0,
+            "title": "Thumbnail Max Mb",
+            "default": 1024
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SettingsCache"
       },
       "SettingsDownloads": {
         "properties": {
@@ -20705,6 +20758,40 @@
           "changed"
         ],
         "title": "TagBatchResult"
+      },
+      "ThumbnailCacheStatus": {
+        "properties": {
+          "used_bytes": {
+            "type": "integer",
+            "title": "Used Bytes"
+          },
+          "file_count": {
+            "type": "integer",
+            "title": "File Count"
+          },
+          "max_bytes": {
+            "type": "integer",
+            "title": "Max Bytes"
+          },
+          "cleared_bytes": {
+            "type": "integer",
+            "title": "Cleared Bytes",
+            "default": 0
+          },
+          "failed_files": {
+            "type": "integer",
+            "title": "Failed Files",
+            "default": 0
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "used_bytes",
+          "file_count",
+          "max_bytes"
+        ],
+        "title": "ThumbnailCacheStatus"
       },
       "TorchBuild": {
         "properties": {

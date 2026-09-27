@@ -157,12 +157,26 @@ class SettingsDownloads(BaseModel):
     fallback: bool = True
 
 
+class SettingsCache(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    thumbnail_max_mb: int = Field(1024, ge=1, le=1048576, strict=True)
+
+
+class ThumbnailCacheStatus(_Out):
+    used_bytes: int
+    file_count: int
+    max_bytes: int
+    cleared_bytes: int = 0
+    failed_files: int = 0
+
+
 class Settings(_Out):
     paths: SettingsPaths
     server: SettingsServer
     ui: SettingsUi
     network: SettingsNetwork = Field(default_factory=SettingsNetwork)
     downloads: SettingsDownloads = Field(default_factory=SettingsDownloads)
+    cache: SettingsCache = Field(default_factory=SettingsCache)
 
 
 class FsEntry(_Out):

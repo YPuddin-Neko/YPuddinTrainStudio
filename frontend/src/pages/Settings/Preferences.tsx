@@ -17,6 +17,7 @@ import StudioSelect from '../../components/StudioSelect';
 import Switch from '../../components/Switch';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import StorageDirectoryInput, { type StoragePathPreview } from './StorageDirectoryInput';
+import ThumbnailCacheSettings from './ThumbnailCacheSettings';
 
 const defaultNetworkSettings: NetworkSettings = { proxy_mode: 'system', proxy_url: '', proxy_username: '', proxy_password_configured: false };
 
@@ -42,6 +43,8 @@ export default function Preferences() {
   const storageQuery = JSON.stringify({output_mode:settings?.paths.output_mode || 'project',output_dir:settings?.paths.output_dir,data_root:settings?.paths.data_root});
   const storageDefaults = storagePreview?.query === storageQuery ? storagePreview.paths : undefined;
   const settingsLoaded = settings !== null;
+  const thumbnailLimit = settings?.cache?.thumbnail_max_mb ?? 1024;
+  const cacheLimitInvalid = !Number.isInteger(thumbnailLimit) || thumbnailLimit < 1 || thumbnailLimit > 1048576;
 
   React.useEffect(() => {
     if (!settingsLoaded || downloads || system) return;
@@ -85,7 +88,7 @@ export default function Preferences() {
   };
 
   const handleSave = () => {
-    if (!settings || savingRef.current) return;
+    if (!settings || savingRef.current || cacheLimitInvalid) return;
     savingRef.current = true;
     setSaving(true); setError('');
     apiClient.put<SettingsType>('/settings', { ...settings, ...(proxyPassword !== undefined ? { network: { ...(settings.network ?? defaultNetworkSettings), proxy_password: proxyPassword } } : {}) })
@@ -123,7 +126,7 @@ export default function Preferences() {
   };
   const restartPending = changed('paths', 'data_root').edited || changed('server', 'host').edited || changed('server', 'port').edited;
 
-  return <div data-testid="settings-page"><SettingsSections sections={downloads ? [{ id: 'preferences-downloads', label: text('软件下载源', 'Package sources') }] : system ? [{ id: 'preferences-general', label: text('常规', 'General') }, { id: 'preferences-service', label: t('settings.server') }, { id: 'preferences-network', label: text('网络代理', 'Network proxy') }] : [{ id: 'preferences-storage', label: t('settings.paths') }]}>
+  return <div data-testid="settings-page"><SettingsSections sections={downloads ? [{ id: 'preferences-downloads', label: text('软件下载源', 'Package sources') }] : system ? [{ id: 'preferences-general', label: text('常规', 'General') }, { id: 'preferences-thumbnails', label: text('缩略图缓存', 'Thumbnail cache') }, { id: 'preferences-service', label: t('settings.server') }, { id: 'preferences-network', label: text('网络代理', 'Network proxy') }] : [{ id: 'preferences-storage', label: t('settings.paths') }]}>
     {error && <div role="alert" className="settings-alert">{error}</div>}
     <fieldset disabled={saving} aria-busy={saving} className="contents">
     {downloads ? <DownloadPreferences value={settings.downloads ?? { pypi: 'ustc', pytorch: 'mirror', fallback: true }} onChange={value => update(s => ({ ...s, downloads: value }))} /> : !system ? <section id="preferences-storage" data-settings-section tabIndex={-1} className="settings-section">
@@ -180,6 +183,7 @@ export default function Preferences() {
           {changeNotice('server', 'open_browser', true)}
         </div></div>
       </section>
+      <ThumbnailCacheSettings limit={thumbnailLimit} disabled={saving} refreshKey={serviceRefreshKey} onChange={value => update(s => ({ ...s, cache: { ...s.cache, thumbnail_max_mb: value } }))}/>
       <section id="preferences-service" data-settings-section tabIndex={-1} className="settings-section">
         <div className="settings-section-heading"><div><h2>{t('settings.server')}</h2></div><span className="settings-service-refresh" ref={setServiceRefreshTarget}/></div>
         <div className="settings-field"><span className="settings-field-label">{t('settings.connectedService', '当前连接')}</span><div className="settings-field-control py-1.5 font-mono break-all">{window.location.origin}</div></div>
@@ -194,6 +198,6 @@ export default function Preferences() {
       const active = initialSettings.current, saved = loadedSettings.current;
       if (active && saved) initialSettings.current = {...active, paths:{...active.paths,data_root:saved.paths.data_root},server:{...active.server,host:saved.server.host,port:saved.server.port}};
       setServiceRefreshKey(value => value + 1);
-    }}/>}<span role="status" className="settings-note">{saved && text('已保存', 'Saved')}</span><button type="button" onClick={handleSave} disabled={saving} className="ui-btn ui-btn-primary" data-testid="settings-save-btn">{saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}<span>{saving ? t('settings.saving') : t('settings.save')}</span></button></div>
+    }}/>}<span role="status" className="settings-note">{saved && text('已保存', 'Saved')}</span><button type="button" onClick={handleSave} disabled={saving || cacheLimitInvalid} className="ui-btn ui-btn-primary" data-testid="settings-save-btn">{saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}<span>{saving ? t('settings.saving') : t('settings.save')}</span></button></div>
   </SettingsSections></div>;
 }

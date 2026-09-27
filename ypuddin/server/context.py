@@ -19,6 +19,7 @@ from .models import Settings
 from .supervisor import JobSupervisor
 
 DEFAULT_SETTINGS: dict[str, Any] = {
+    "cache": {"thumbnail_max_mb": 1024},
     "downloads": {"pypi": "ustc", "pytorch": "mirror", "fallback": True},
     "paths": {
         "bootstrap_env_dir": "",
@@ -75,8 +76,10 @@ class ServiceContext:
                 self._active_imports -= 1
 
     def __post_init__(self) -> None:
+        from .thumbnail_cache import ThumbnailCache
         from .versions import VersionManager
 
+        self.thumbnails = ThumbnailCache(self)
         self.versions = VersionManager(self)
 
     @property
