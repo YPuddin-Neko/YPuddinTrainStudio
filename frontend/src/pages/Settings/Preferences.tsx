@@ -126,6 +126,9 @@ export default function Preferences() {
       : state.unsaved ? text('保存后需重启服务生效。', 'Save and restart the service to apply.') : text('已保存，重启服务后生效。', 'Saved; restart the service to apply.')}</p>;
   };
   const restartPending = changed('paths', 'data_root').edited || changed('server', 'host').edited || changed('server', 'port').edited;
+  // Saved values the running service has not applied yet; later unsaved edits do not change that.
+  const restartSaved = ([['paths', 'data_root'], ['server', 'host'], ['server', 'port']] as const).some(([section, key]) =>
+    (loadedSettings.current?.[section] as Record<string, unknown> | undefined)?.[key] !== (initialSettings.current?.[section] as Record<string, unknown> | undefined)?.[key]);
 
   return <div data-testid="settings-page"><SettingsSections sections={downloads ? [{ id: 'preferences-downloads', label: text('软件下载源', 'Package sources') }] : system ? [{ id: 'preferences-general', label: text('常规', 'General') }, { id: 'preferences-thumbnails', label: text('缩略图缓存', 'Thumbnail cache') }, { id: 'preferences-service', label: t('settings.server') }, { id: 'preferences-network', label: text('网络代理', 'Network proxy') }] : [{ id: 'preferences-storage', label: t('settings.paths') }]}>
     {error && <div role="alert" className="settings-alert">{error}</div>}
@@ -195,7 +198,7 @@ export default function Preferences() {
       <NetworkPreferences value={settings.network ?? defaultNetworkSettings} password={proxyPassword} disabled={saving} onChange={network => update(s => ({ ...s, network }))} onPasswordChange={value => { if (!savingRef.current) { setProxyPassword(value); setSaved(false); } }}/>
     </>}
     </fieldset>
-    <div className="settings-save">{(system || !downloads && restartPending) && <ServiceControls secondary applySavedAddress disabled={saving} refreshTarget={serviceRefreshTarget} refreshKey={serviceRefreshKey} onRestarted={() => {
+    <div className="settings-save">{(system || !downloads && restartPending) && <ServiceControls secondary applySavedAddress pending={restartSaved} disabled={saving} refreshTarget={serviceRefreshTarget} refreshKey={serviceRefreshKey} onRestarted={() => {
       const active = initialSettings.current, saved = loadedSettings.current;
       if (active && saved) initialSettings.current = {...active, paths:{...active.paths,data_root:saved.paths.data_root},server:{...active.server,host:saved.server.host,port:saved.server.port}};
       setServiceRefreshKey(value => value + 1);

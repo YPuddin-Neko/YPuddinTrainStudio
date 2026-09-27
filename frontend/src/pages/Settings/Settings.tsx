@@ -1,6 +1,8 @@
 import React from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Cpu, HardDrive, FolderCog, Palette, KeyRound, Download, Settings as SettingsIcon } from 'lucide-react';
+import { Cpu, HardDrive, FolderCog, Palette, KeyRound, Download, Settings as SettingsIcon, CircleAlert } from 'lucide-react';
+import { apiClient } from '../../api/client';
+import { RestartRequiredContext } from '../../components/restartRequiredContext';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { SlidingIndicator } from '../../components/motion';
 import { useEnterAnimation } from '../../utils/motion';
@@ -16,6 +18,17 @@ export default function Settings() {
   const scroll = React.useRef<HTMLDivElement>(null);
   const panel = useEnterAnimation<HTMLDivElement>(selected, { skipFirst: true });
   React.useEffect(() => { if (scroll.current) scroll.current.scrollTop = 0; }, [selected]);
+  const [restartRequired, setRestartRequired] = React.useState(false);
+  const reported = React.useRef(false);
+  const reportRestart = React.useCallback((required: boolean) => { reported.current = true; setRestartRequired(required); }, []);
+  React.useEffect(() => {
+    let active = true;
+    // A page that reads the flag itself reports a newer value than this first look.
+    apiClient.get<{ restart_required?: boolean }>('/service/runtime', { silent: true })
+      .then(runtime => { if (active && !reported.current) setRestartRequired(!!runtime.restart_required); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
   const tabs = [
     { id: 'runtime', label: text('运行环境', 'Runtime'), Icon: Cpu },
     { id: 'models', label: text('模型权重', 'Model weights'), Icon: HardDrive },
@@ -37,7 +50,10 @@ export default function Settings() {
     {/* Only as a page of its own; the settings drawer leaves the top bar to the page underneath. */}
     <PageLocation trail={[{ label: text('设置', 'Settings') }, ...tabs.filter(tab => tab.id === selected).map(tab => ({ label: tab.label }))]}/>
     <header className="settings-heading">
-      <h1>{text('设置', 'Settings')}</h1>
+      <div className="settings-title-row">
+        <h1>{text('设置', 'Settings')}</h1>
+        {restartRequired && <p role="status" className="settings-restart-notice" data-testid="settings-restart-notice"><CircleAlert size={15} aria-hidden="true"/><span>{text('一些环境设置发生了变化，需要重启服务后才能生效，队列将在重启后继续。', 'Some environment settings changed and take effect after the service restarts. The queue continues after the restart.')}</span></p>}
+      </div>
       <div className="settings-tabs ui-tabs" role="tablist" aria-label={text('设置分区', 'Settings sections')}>
         {tabs.map(({ id, label, Icon }, index) => <button key={id} id={`settings-tab-${id}`} type="button" role="tab" aria-selected={selected === id} aria-controls="settings-content" tabIndex={selected === id ? 0 : -1} onClick={() => select(id)} onKeyDown={event => {
           if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -48,6 +64,6 @@ export default function Settings() {
         <SlidingIndicator className="ui-tabs-indicator"/>
       </div>
     </header>
-    <div ref={scroll} id="settings-content" className="settings-scroll" role="tabpanel" aria-labelledby={`settings-tab-${selected}`}><div ref={panel}><Outlet /></div></div>
+    <div ref={scroll} id="settings-content" className="settings-scroll" role="tabpanel" aria-labelledby={`settings-tab-${selected}`}><div ref={panel}><RestartRequiredContext.Provider value={reportRestart}><Outlet /></RestartRequiredContext.Provider></div></div>
   </div>;
 }

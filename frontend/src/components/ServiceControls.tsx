@@ -5,10 +5,11 @@ import { apiClient } from '../api/client';
 import { ApiError } from '../api/types';
 import { useWorkspaceText } from '../utils/workspaceText';
 import { formatApiError } from '../utils/errors';
+import { RestartRequiredContext } from './restartRequiredContext';
 
 export interface ServiceRuntime {
   worker_id: number; instance_id?: string | null; managed: boolean; can_restart: boolean; reason: string | null;
-  current_host: string; current_port: number; saved_host: string; saved_port: number;
+  current_host: string; current_port: number; saved_host: string; saved_port: number; restart_required?: boolean;
   current_python: string; can_restore_original: boolean; selected_environment: string | null;
 }
 const reasons: Record<string, [string,string]> = {
@@ -36,8 +37,9 @@ async function requestWithTimeout<T>(request: (signal: AbortSignal) => Promise<T
   finally { window.clearTimeout(timer); controllers.delete(controller); }
 }
 
-export default function ServiceControls({environmentId, onRestarted, refreshTarget, secondary = false, disabled = false, refreshKey = 0, applySavedAddress = false}: {environmentId?: string; onRestarted?:()=>void; refreshTarget?: HTMLElement | null; secondary?: boolean; disabled?: boolean; refreshKey?: number; applySavedAddress?: boolean}) {
+export default function ServiceControls({environmentId, onRestarted, refreshTarget, secondary = false, disabled = false, refreshKey = 0, applySavedAddress = false, pending = false}: {environmentId?: string; onRestarted?:()=>void; refreshTarget?: HTMLElement | null; secondary?: boolean; disabled?: boolean; refreshKey?: number; applySavedAddress?: boolean; pending?: boolean}) {
   const text = useWorkspaceText();
+  const reportRestart = React.useContext(RestartRequiredContext);
   const [runtime, setRuntime] = React.useState<ServiceRuntime | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState('');
@@ -45,7 +47,7 @@ export default function ServiceControls({environmentId, onRestarted, refreshTarg
   const [nextAddress,setNextAddress] = React.useState('');
   const cancelled=React.useRef(false);
   const controllers=React.useRef(new Set<AbortController>());
-  const refresh=React.useCallback(async(timeoutMs=3000)=> {const value=await requestWithTimeout(signal=>apiClient.get<ServiceRuntime>('/service/runtime',{silent:true,signal}),timeoutMs,controllers.current);if(!cancelled.current)setRuntime(value);return value;},[]);
+  const refresh=React.useCallback(async(timeoutMs=3000)=> {const value=await requestWithTimeout(signal=>apiClient.get<ServiceRuntime>('/service/runtime',{silent:true,signal}),timeoutMs,controllers.current);if(!cancelled.current){setRuntime(value);reportRestart(!!value.restart_required);}return value;},[reportRestart]);
   React.useEffect(()=>{let active=true;const activeControllers=controllers.current;cancelled.current=false;void refresh().catch(e=>{if(active&&!cancelled.current)setError(formatApiError(e));});return()=>{active=false;cancelled.current=true;for(const controller of activeControllers)controller.abort();};},[refresh]);
   React.useEffect(()=>{if(refreshKey)void refresh().catch(e=>setError(formatApiError(e)));},[refreshKey,refresh]);
   const restart=async(options:Record<string,unknown>)=>{
@@ -90,11 +92,15 @@ export default function ServiceControls({environmentId, onRestarted, refreshTarg
       setError(text('暂未重新连接。请查看启动窗口；恢复后可点击刷新状态。','Reconnection timed out. Check the launcher window, then refresh status.'));
     }catch(e){if(!cancelled.current){setNotice('');setError(formatApiError(e));}}finally{if(!cancelled.current)setBusy(false);}
   };
+  // A saved setting or an environment change the running service has not applied yet. The saved and
+  // running addresses are not compared: a launcher --port override would look pending forever.
+  const restartHint = !environmentId && (pending || !!runtime?.restart_required);
   const refreshButton = <button type="button" className="ui-btn service-refresh" disabled={busy || disabled} onClick={()=>void refresh().then(current=>{setError('');if(environmentId&&current.selected_environment===environmentId){setNotice(text('当前正在使用此环境。','This environment is currently active.'));onRestarted?.();}}).catch(e=>setError(formatApiError(e)))}><RefreshCw size={14}/>{text('刷新状态','Refresh status')}</button>;
   return <div className={`service-controls${secondary ? ' service-controls-secondary' : ''}`}>
     <div className="flex flex-wrap items-center gap-2">
       <button type="button" className={secondary ? "ui-btn" : "ui-btn ui-btn-primary"} disabled={busy||disabled||!runtime?.can_restart} onClick={()=>void restart(environmentId?{environment_id:environmentId}:applySavedAddress?{apply_saved_address:true}:{})}>{busy?<Loader2 size={14} className="animate-spin"/>:<RefreshCw size={14}/>} {environmentId?text('重启并切换到此环境','Restart in this environment'):text('重启服务','Restart service')}</button>
       {!environmentId && runtime?.can_restore_original && <button type="button" className="ui-btn" disabled={busy||disabled||!runtime.can_restart} onClick={()=>void restart({restore_original_environment:true})}>{text('恢复原环境并重启','Restore original environment')}</button>}
+      {restartHint && <span className="service-restart-hint">{text('部分设置需要重启才能生效','Some settings take effect after a restart')}</span>}
       {refreshTarget ? createPortal(refreshButton, refreshTarget) : refreshButton}
     </div>
     {runtime?.reason&&<p className="settings-note">{reasons[runtime.reason]?text(...reasons[runtime.reason]):text('当前有操作占用服务，请稍后重试。','The service is busy. Try again later.')}</p>}
