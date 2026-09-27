@@ -19,6 +19,7 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import { LoadingNote } from '../../components/Loading';
 import { inactiveTrainingReason } from '../../utils/trainingFamilies';
 import { JobProgressSummary, JobStatus } from '../Queue/jobPresentation';
+import { formatRateValue } from '../JobDetail/metricPresentation';
 import { ProjectArtwork } from '../Projects/ProjectCardParts';
 import ProjectEditor from '../Projects/ProjectEditor';
 import { categoryLabel, type GalleryProject } from '../Projects/projectGallery';
@@ -44,7 +45,6 @@ const LIVE = ['queued', 'scheduled', 'running', 'pausing', 'cancelling'];
 const number = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 const fileName = (value: unknown) => typeof value === 'string' ? value.trim().replace(/\\/g, '/').split('/').filter(Boolean).pop() || '' : '';
 const FAMILY_NAMES: Record<string, string> = { anima: 'Anima', krea2: 'Krea 2', sdxl: 'SDXL', flux: 'FLUX.1', flux2: 'FLUX.2 Klein', toy: 'Toy' };
-const learningRate = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? (value !== 0 && Math.abs(value) < 0.001 ? value.toExponential() : String(value)) : '—';
 
 /** Missing, failed and in-progress indexes must never look like an empty dataset. */
 function overviewDatasetStats(datasets: OverviewDataset[]) {
@@ -153,7 +153,7 @@ export default function ProjectOverview({ project, version, versionId, config: s
     [text('算法', 'Algorithm'), full ? text('全量微调', 'Full fine-tuning') : config.adapter?.algo ? configOptionLabel('adapter.algo', String(config.adapter.algo), english) : '—'],
     full ? [text('训练组件', 'Trained parts'), [config.training?.train_backbone && 'UNet / DiT', config.training?.train_text_encoder && text('文本编码器', 'Text encoder')].filter(Boolean).join(' + ') || '—']
       : ['Rank / Alpha', config.adapter?.rank != null ? `${config.adapter.rank} / ${config.adapter.alpha ?? '—'}` : '—'],
-    [text('学习率', 'Learning rate'), learningRate(config.optimizer?.lr)],
+    [text('学习率', 'Learning rate'), formatRateValue(config.optimizer?.lr)],
     [text('优化器', 'Optimizer'), config.optimizer?.type ? configOptionLabel('optimizer.type', String(config.optimizer.type), true) : '—'],
     [text('批量大小', 'Batch size'), config.dataset?.batch_size != null ? `${config.dataset.batch_size}${number(config.loop?.grad_accum) && config.loop.grad_accum > 1 ? ` × ${config.loop.grad_accum}` : ''}` : '—'],
     [text('训练长度', 'Length'), [epochs !== null && text(`${epochs} 轮`, `${epochs} epochs`), maxSteps !== null && text(`最多 ${maxSteps} 步`, `≤ ${maxSteps} steps`)].filter(Boolean).join(' · ') || (defaultsQuery.isSuccess ? text('未设置', 'Not set') : '—')],
