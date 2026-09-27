@@ -18,6 +18,8 @@ import '../Queue/queue.css';
 import './job-detail.css';
 import JobLogView from './JobLogView';
 import JobMetricsPanel from './JobMetricsPanel';
+import { learningRateGroupName } from './metricPresentation';
+import StatStrip from './StatStrip';
 import SampleViewer from './SampleViewer';
 import ArtifactGrid from './ArtifactGrid';
 import ResumePointList from './ResumePointList';
@@ -37,7 +39,33 @@ function mergeSamples(previous: JobSample[], incoming: JobSample[]): JobSample[]
 }
 
 function StatCard({ label, value, hint, detail }: { label: string; value: React.ReactNode; hint?: string; detail?: React.ReactNode }) {
-  return <div className="job-stat"><div className="job-stat-label">{label}{hint && <ConfigHelp label={`${label} · 说明`} anchor=".job-stat">{hint}</ConfigHelp>}</div><div className="job-stat-value">{value}</div>{detail}</div>;
+  const text = useWorkspaceText();
+  return <div className={`job-stat${hint ? ' has-help' : ''}`}>
+    <div className="job-stat-label">{label}</div>
+    {hint && <span className="job-stat-help"><ConfigHelp label={text(`${label} · 说明`, `About ${label}`)} anchor=".job-stat">{hint}</ConfigHelp></span>}
+    <div className="job-stat-value">{value}</div>{detail}
+  </div>;
+}
+
+/** What each learning rate in the summary card belongs to, and how an adaptive optimizer sets it. */
+function learningRateHelp(groups: string[], algo: unknown, optimizer: unknown, text: (zh: string, en: string) => string): string | undefined {
+  const has = (...names: string[]) => names.some(name => groups.includes(name));
+  const lines: string[] = [];
+  if (has('down', 'up')) lines.push(text('down、up：LoRA 的两个低秩矩阵。', 'down, up: the two low-rank matrices of LoRA.'));
+  if (has('w1', 'w2')) lines.push(algo === 'loha'
+    ? text('w1、w2：LoHa 的两组低秩矩阵。', 'w1, w2: the two low-rank pairs of LoHa.')
+    : text('w1、w2：LoKr 把权重拆成的两个矩阵，w1 较小，w2 较大。', 'w1, w2: the two matrices LoKr splits a weight into; w1 is the smaller one.'));
+  if (has('scalar')) lines.push(text('scalar：LoKr 的整体缩放系数。', 'scalar: the overall LoKr scale.'));
+  if (has('dora')) lines.push(text('DoRA：单独训练的幅度参数，决定每个输出通道的强度。', 'DoRA: magnitudes trained on their own, the strength of each output channel.'));
+  if (has('weight')) lines.push(text('weight：Full 方式直接训练的权重。', 'weight: the weights Full trains directly.'));
+  if (has('backbone')) lines.push(text('backbone：主模型。', 'backbone: the main model.'));
+  if (has('text_encoder')) lines.push(text('text_encoder：文本编码器。', 'text_encoder: the text encoder.'));
+  if (has('text_encoder_2')) lines.push(text('text_encoder_2：第二个文本编码器。', 'text_encoder_2: the second text encoder.'));
+  const key = typeof optimizer === 'string' ? optimizer.toLowerCase() : '';
+  const adaptive = key.includes('prodigy') ? text('Prodigy 会自动调整学习率，这里是调整后的实际值。', 'Prodigy adjusts these rates itself; these are the rates it uses.')
+    : key.includes('automagic') ? text('Automagic 会逐个参数调整学习率，这里是平均值。', 'Automagic adjusts the rate of each parameter; these are the means.') : '';
+  if (!lines.length && !adaptive) return undefined;
+  return [lines.length ? text('每个参数组当前的学习率：', 'The current learning rate of each parameter group:') : '', ...lines, adaptive].filter(Boolean).join('\n');
 }
 
 const tinyChange = new Intl.NumberFormat('en-US', { maximumSignificantDigits: 2, maximumFractionDigits: 20, useGrouping: false });
@@ -297,6 +325,9 @@ export default function JobDetail() {
   const meanChange = useStepChange(job?.progress?.step, meanLoss, previousMean);
   const meanScope = job?.latest?.loss_mean != null ? (job.latest.loss_mean_scope === 'since_resume' ? text('从此次恢复训练起，所有已完成训练步的损失平均值。','Mean loss over completed steps since this training was resumed.') : text('所有已完成训练步的损失平均值。','Mean loss over all completed optimizer steps.')) : text('旧任务没有完整累计值，显示已有日志中训练步的平均值。','This legacy run has no complete accumulator; this is the mean of recorded steps.');
   const learningRates = Object.entries(job?.latest?.lr || {}).filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]));
+  // Two rows; groups are listed by name, so a DoRA rate sits alone above the w1 / w2 (or down / up) pair.
+  const rateSplit = Math.floor(learningRates.length / 2);
+  const learningRateRows = [learningRates.slice(0, rateSplit), learningRates.slice(rateSplit)];
   const epochProgress = stepsPerEpoch && job?.progress?.step != null ? (job.progress.step / stepsPerEpoch).toFixed(2).replace(/\.00$/, '') : job?.progress?.epoch != null ? String(job.progress.epoch + 1) : '—';
   const totalEpochs = stepsPerEpoch && job?.progress?.total_steps != null ? Math.ceil(job.progress.total_steps / stepsPerEpoch) : configSnapshot?.loop?.epochs;
   const elapsed = job?.started_at != null ? Math.max(0, (job.finished_at ?? (['running','pausing','cancelling'].includes(job.status) ? clock : job.started_at)) - job.started_at) : null;
@@ -330,15 +361,16 @@ export default function JobDetail() {
       {job?.error && <div role="alert" className="job-failure"><div><strong>{job.type === 'train' ? text('训练失败', 'Training failed') : text('任务失败', 'Job failed')}</strong><p>{job.error}</p></div>{activeTab !== 'logs' && <button type="button" className="ui-btn ui-btn-sm" onClick={() => setActiveTab('logs')}><Terminal size={14}/>{text('查看日志', 'Open log')}</button>}</div>}
       {/* 1. 头部指标与阶段时间线 */}
       {job?.type !== 'xyz' && <div className="job-monitor-summary bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 space-y-3">
-        <div className="job-stat-grid" aria-label={text('训练核心指标','Training metrics')}>
+        <StatStrip label={text('训练核心指标','Training metrics')}>
           <StatCard label={text('步数','Steps')} value={`${job?.progress?.step ?? '—'} / ${job?.progress?.total_steps ?? '—'}`}/>
           <StatCard label={text('轮次','Epochs')} value={`${epochProgress} / ${totalEpochs ?? '—'}`}/>
           <StatCard label="Loss" value={lossNumber(job?.latest?.loss)} detail={<StepChange delta={lossChange} text={text}/>}/>
           <StatCard label={text('平均 Loss','Mean loss')} value={lossNumber(meanLoss)} hint={meanScope} detail={<StepChange delta={meanChange} text={text}/>}/>
-          <StatCard label={text('学习率','Learning rate')} value={learningRates.length ? <div className="job-learning-rates">{learningRates.map(([name, rate]) => <span key={name}>{learningRates.length > 1 && <small>{name}</small>}{rate.toExponential(2)}</span>)}</div> : '—'}/>
+          <StatCard label={text('学习率','Learning rate')} hint={learningRates.length ? learningRateHelp(learningRates.map(([name]) => name), configSnapshot?.adapter?.algo, configSnapshot?.optimizer?.type, text) : undefined}
+            value={learningRates.length > 1 ? <span className="job-learning-rates">{learningRateRows.map((row, index) => <span key={index}>{row.map(([name, rate]) => <span key={name}><small>{learningRateGroupName(name)}</small>{rate.toExponential(2)}</span>)}</span>)}</span> : learningRates.length ? learningRates[0][1].toExponential(2) : '—'}/>
           <StatCard label={t('job.speed')} value={job?.progress?.it_s != null ? `${Number(job.progress.it_s).toFixed(2)} it/s` : '—'}/>
           <StatCard label={t('job.eta')} value={job?.status === 'completed' ? '0s' : formatEta(job?.progress?.eta_s)}/>
-        </div>
+        </StatStrip>
 
         {job && <JobStepper status={job.status} phase={job.progress?.phase || ''} progress={job.progress}/>}
 

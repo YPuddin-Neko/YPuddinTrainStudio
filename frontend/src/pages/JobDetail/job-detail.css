@@ -27,24 +27,38 @@
 .dark .job-failure strong { color:#fca5a5; }
 .job-failure > .ui-btn { flex:none; }
 .job-monitor-summary .text-2xl { font-size:20px; }
-.job-stat-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-.job-stat{min-width:0;background:var(--studio-canvas);border-radius:7px;padding:10px 12px}
-.job-stat-label{display:flex;gap:5px;align-items:center;font-size:12px;color:var(--studio-dim)}
-.job-stat-value{font-size:19px;line-height:1.5;font-weight:600;font-variant-numeric:tabular-nums;margin-top:4px;overflow-wrap:anywhere}
+.job-stat-strip{display:flex;align-items:center;gap:6px;min-width:0}
+/* One line: the cards share the width, and once they are at their narrowest the line scrolls (StatStrip adds arrows). */
+.job-stat-grid{flex:1;min-width:0;display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;overscroll-behavior-x:contain;scrollbar-width:none}
+.job-stat-grid::-webkit-scrollbar{display:none}
+.job-stat-strip.has-before{--job-stat-fade-before:16px}
+.job-stat-strip.has-after{--job-stat-fade-after:16px}
+.job-stat-strip.has-before .job-stat-grid,.job-stat-strip.has-after .job-stat-grid{mask-image:linear-gradient(to right,transparent,#000 var(--job-stat-fade-before,0px),#000 calc(100% - var(--job-stat-fade-after,0px)),transparent)}
+.job-stat-page{flex:none;border-radius:999px}
+.job-stat{position:relative;flex:1 0 132px;scroll-snap-align:start;background:var(--studio-canvas);border-radius:7px;padding:10px 12px}
+.job-stat-label{font-size:12px;line-height:18px;color:var(--studio-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.job-stat.has-help .job-stat-label{padding-right:22px}
+/* In the corner and out of the flow, so a card with help starts its value on the same line as the others. */
+.job-stat-help{position:absolute;top:6px;right:6px;display:flex}
+.job-stat-help .config-help-trigger{margin-left:0}
+.job-stat-value{font-size:19px;line-height:1.5;font-weight:600;font-variant-numeric:tabular-nums;margin-top:4px;white-space:nowrap}
 .job-stat-change{display:flex;align-items:center;gap:3px;margin-top:2px;font-size:11.5px;font-weight:600;line-height:1.4;font-variant-numeric:tabular-nums}
 .job-stat-change[data-direction=down]{color:var(--studio-success)}
 .job-stat-change[data-direction=up]{color:var(--studio-danger)}
 .job-stat-change[data-direction=flat]{color:var(--studio-dim)}
-.job-learning-rates{display:flex;gap:3px 12px;flex-wrap:wrap;font-size:15px}.job-learning-rates>span{display:flex;align-items:baseline;gap:5px}.job-learning-rates small{font-size:10px;font-weight:400;color:var(--studio-dim)}
-@container(min-width:1080px){.job-stat-grid{grid-template-columns:repeat(7,minmax(0,1fr))}}
-@media(max-width:650px){.job-run-metadata,.job-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.job-stat-value{font-size:17px}}
+/* An inline box sits on the value line's baseline, so its first row lines up with the other cards' values. */
+.job-learning-rates{display:inline-flex;flex-direction:column;gap:3px;font-size:15px}
+.job-learning-rates>span{display:flex;align-items:baseline;gap:12px}
+.job-learning-rates>span>span{display:flex;align-items:baseline;gap:5px}
+.job-learning-rates small{font-size:10px;font-weight:400;color:var(--studio-dim)}
+@media(max-width:650px){.job-run-metadata{grid-template-columns:repeat(2,minmax(0,1fr))}.job-stat{flex-basis:112px}.job-stat-value{font-size:17px}}
 
 .job-config-snapshot { max-height:65vh; overflow:auto; }
 
 .job-monitor[data-view=xyz] { gap:12px; }
 .job-monitor[data-view=xyz] > .job-run-metadata,.job-monitor[data-view=xyz] > .job-monitor-summary { display:none; }
 .job-monitor[data-view=xyz] > .job-monitor-bar { position:relative; }
-@container(max-width:760px) { .job-run-metadata,.job-stat-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }.job-monitor-bar { position:relative; padding:12px 14px 14px; }.job-monitor-identity .task-actions-wrap { flex-basis:100%; align-items:flex-start; }.job-monitor-title h1 { font-size:19px; }.job-failure { flex-direction:column; gap:10px; } }
+@container(max-width:760px) { .job-run-metadata { grid-template-columns:repeat(2, minmax(0, 1fr)); }.job-monitor-bar { position:relative; padding:12px 14px 14px; }.job-monitor-identity .task-actions-wrap { flex-basis:100%; align-items:flex-start; }.job-monitor-title h1 { font-size:19px; }.job-failure { flex-direction:column; gap:10px; } }
 
 .job-stepper { display:flex; align-items:center; gap:6px; margin:0; padding:10px 0 0; border-top:1px solid var(--studio-line); list-style:none; }
 .job-step { display:flex; flex:none; align-items:center; gap:6px; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:500; line-height:1.4; white-space:nowrap; color:var(--studio-dim); }
