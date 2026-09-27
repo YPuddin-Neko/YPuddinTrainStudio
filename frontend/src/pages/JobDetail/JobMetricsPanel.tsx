@@ -9,14 +9,14 @@ import type { JobMetrics, Settings } from '../../api/types';
 import { chartTitle, DEFAULT_METRIC_CHARTS, METRICS, type MetricChartSetting, type MetricKey } from '../../utils/metricCharts';
 import { shapeValidationSeries, smoothLoss } from '../../utils/metrics';
 import { useWorkspaceText } from '../../utils/workspaceText';
-import { axisTickLabels, formatMetricValue, layoutValueAxes, learningRateGroupName, metricChartBase, metricLabels, metricRange } from './metricPresentation';
+import { axisTickLabels, formatMetricValue, formatRateValue, layoutValueAxes, learningRateGroupName, metricChartBase, metricLabels, metricRange } from './metricPresentation';
 import './job-metrics.css';
 
 const EXTRA_COLORS = ['#f59e0b', '#22d3ee', '#fb7185', '#84cc16', '#e879f9', '#a78bfa'];
 const MIN_PLOT_WIDTH = 240;
 
 type Line = { unit: string; name: string; color: string; data: Array<[number, number | null]>; rangeValues?: Array<number | null>; width?: number; symbols?: boolean };
-type SeriesRange = { name: string; color: string; unit: string; min: number; max: number };
+type SeriesRange = { name: string; color: string; unit: string; min: number; max: number; rate?: boolean };
 type Chart = { key: string; title: string; note?: string; option?: Record<string, unknown>; ranges?: SeriesRange[]; empty?: React.ReactNode };
 
 /**
@@ -139,7 +139,8 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
         continue;
       }
       const units = [...new Set(lines.map(line => line.unit))];
-      const base = metricChartBase(xAxisName, axisNames[units[0]] || units[0]);
+      const rates = new Set(lines.filter(line => line.unit === 'LR').map(line => line.name));
+      const base = metricChartBase(xAxisName, axisNames[units[0]] || units[0], (name, value) => (name && rates.has(name) ? formatRateValue : formatMetricValue)(value));
       // Units alternate left and right; further axes move outward past the labels of the axis inside them.
       const placed = layoutValueAxes(units.map(unit => {
         let low = Infinity, high = -Infinity;
@@ -147,13 +148,14 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
           if (line.unit !== unit) continue;
           for (const [, value] of line.data) if (typeof value === 'number' && Number.isFinite(value)) { low = Math.min(low, value); high = Math.max(high, value); }
         }
-        return { name: axisNames[unit] || unit, labels: axisTickLabels(low, high, unit === 'LR' && logRates) };
+        return { name: axisNames[unit] || unit, labels: axisTickLabels(low, high, unit === 'LR' && logRates, unit === 'LR' ? formatRateValue : formatMetricValue) };
       }));
       // Stable ids let each update change series and axes in place; the chart removes the ones that are gone.
       const axes = units.map((unit, index) => ({
         // `show` is set every time so that an axis hidden at a narrow width comes back when the chart widens.
         ...base.yAxis, id: unit, show: true, name: axisNames[unit] || unit, position: index % 2 ? 'right' as const : 'left' as const, offset: placed.offsets[index],
-        splitLine: { show: index === 0 }, ...(unit === 'LR' && logRates ? { type: 'log' as const, logBase: 10, scale: undefined } : {}),
+        splitLine: { show: index === 0 }, ...(unit === 'LR' ? { axisLabel: { formatter: formatRateValue } } : {}),
+        ...(unit === 'LR' && logRates ? { type: 'log' as const, logBase: 10, scale: undefined } : {}),
       }));
       const option = {
         ...base,
@@ -188,7 +190,7 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
       const note = [chartNote, appleNote].filter(Boolean).join(' ') || undefined;
       const ranges = lines.flatMap(line => {
         const range = metricRange(line.rangeValues ?? line.data.map(([, value]) => value));
-        return range ? [{ ...range, name: line.name, color: line.color, unit: ['Loss', 'LR', 'Norm'].includes(line.unit) ? '' : line.unit }] : [];
+        return range ? [{ ...range, name: line.name, color: line.color, unit: ['Loss', 'LR', 'Norm'].includes(line.unit) ? '' : line.unit, rate: line.unit === 'LR' }] : [];
       });
       list.push({ key: chart.id, title, note, option, ranges });
     }
@@ -214,7 +216,7 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
         {!!chart.ranges?.length && <ul className="job-metrics-ranges" aria-label={text('已记录指标的最大值和最小值', 'Maximum and minimum of recorded metrics')}>
           {chart.ranges.map(range => <li key={range.name} aria-label={range.name}>
             <LegendIcon color={range.color} name={range.name}/>
-            <dl>{([['max', text('最大值', 'Max')], ['min', text('最小值', 'Min')]] as const).map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{formatMetricValue(range[key])}{range.unit && ` ${range.unit}`}</dd></div>)}</dl>
+            <dl>{([['max', text('最大值', 'Max')], ['min', text('最小值', 'Min')]] as const).map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{(range.rate ? formatRateValue : formatMetricValue)(range[key])}{range.unit && ` ${range.unit}`}</dd></div>)}</dl>
           </li>)}
         </ul>}
       </section>)}</div>}

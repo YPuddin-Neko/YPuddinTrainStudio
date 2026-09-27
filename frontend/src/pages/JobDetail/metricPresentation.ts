@@ -6,6 +6,13 @@ export function formatMetricValue(value: unknown): string {
   return rounded !== 0 && Math.abs(rounded) < 1e-3 ? rounded.toExponential() : String(rounded);
 }
 
+/** Learning rates always read in exponent form (0.013965 → 1.3965e-2), so every group of a chart reads alike. */
+export function formatRateValue(value: unknown): string {
+  const scalar = Array.isArray(value) ? value.at(-1) : value;
+  if (typeof scalar !== 'number' || !Number.isFinite(scalar)) return '—';
+  return scalar === 0 ? '0' : Number(scalar.toPrecision(5)).toExponential().replace('e+', 'e');
+}
+
 /** Use recorded values before chart downsampling; missing readings are not zero. */
 export function metricRange(values: Iterable<number | null | undefined>): { min: number; max: number } | null {
   let min = Infinity, max = -Infinity;
@@ -41,7 +48,7 @@ export function metricLabels(chinese: boolean) {
   };
 }
 
-export function metricChartBase(xAxisName: string, yAxisName: string) {
+export function metricChartBase(xAxisName: string, yAxisName: string, formatSeries: (seriesName: string | undefined, value: unknown) => string = (_, value) => formatMetricValue(value)) {
   return {
     // Live steps redraw at once instead of morphing the lines, so the hovered step's markers can be shown again right away.
     animationDurationUpdate: 0,
@@ -51,7 +58,7 @@ export function metricChartBase(xAxisName: string, yAxisName: string) {
       formatter: (input: unknown) => {
         const points = (Array.isArray(input) ? input : [input]).filter((point): point is { axisValue?: unknown; seriesName?: string; value?: unknown } => !!point && typeof point === 'object');
         if (!points.length) return '';
-        return [`${xAxisName}: ${formatMetricValue(points[0].axisValue)}`, ...points.map(point => `${point.seriesName || yAxisName}: ${formatMetricValue(point.value)}`)].join('\n');
+        return [`${xAxisName}: ${formatMetricValue(points[0].axisValue)}`, ...points.map(point => `${point.seriesName || yAxisName}: ${formatSeries(point.seriesName, point.value)}`)].join('\n');
       },
     },
     legend: { type: 'scroll' as const, top: 4, left: 12, right: 12, textStyle: { fontSize: 11 } },
@@ -73,11 +80,11 @@ export function labelTextWidth(text: string): number {
 }
 
 /** The labels a value axis shows for data between min and max: ECharts' nice ticks in the chart's number format. */
-export function axisTickLabels(min: number, max: number, log = false): string[] {
+export function axisTickLabels(min: number, max: number, log = false, format: (value: number) => string = formatMetricValue): string[] {
   if (!Number.isFinite(min) || !Number.isFinite(max) || min > max) return [];
   if (log) {
     const labels: string[] = [];
-    for (let exponent = Math.floor(Math.log10(min)); exponent <= Math.ceil(Math.log10(max)) && labels.length < 40; exponent += 1) labels.push(formatMetricValue(10 ** exponent));
+    for (let exponent = Math.floor(Math.log10(min)); exponent <= Math.ceil(Math.log10(max)) && labels.length < 40; exponent += 1) labels.push(format(10 ** exponent));
     return labels;
   }
   if (min === max) { const pad = Math.abs(min) / 2 || 1; min -= pad; max += pad; }
@@ -88,7 +95,7 @@ export function axisTickLabels(min: number, max: number, log = false): string[] 
   // The extent is rounded out to whole ticks.
   const first = Math.floor(min / interval), last = Math.ceil(max / interval);
   const labels: string[] = [];
-  for (let step = first; step <= last && labels.length < 40; step += 1) labels.push(formatMetricValue(Number((step * interval).toPrecision(10))));
+  for (let step = first; step <= last && labels.length < 40; step += 1) labels.push(format(Number((step * interval).toPrecision(10))));
   return labels;
 }
 
