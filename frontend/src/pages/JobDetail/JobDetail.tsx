@@ -42,7 +42,7 @@ function StatCard({ label, value, hint, detail }: { label: string; value: React.
   const text = useWorkspaceText();
   return <div className={`job-stat${hint ? ' has-help' : ''}`}>
     <div className="job-stat-label">{label}</div>
-    {hint && <span className="job-stat-help"><ConfigHelp label={text(`${label} · 说明`, `About ${label}`)} anchor=".job-stat">{hint}</ConfigHelp></span>}
+    {hint && <span className="job-stat-help"><ConfigHelp label={text(`${label} · 说明`, `About ${label}`)}>{hint}</ConfigHelp></span>}
     <div className="job-stat-value">{value}</div>{detail}
   </div>;
 }

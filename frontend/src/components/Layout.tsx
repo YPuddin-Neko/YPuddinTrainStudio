@@ -235,7 +235,7 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
         </header>
         <ApiErrorNotice />
 
-        <div ref={contentRef} className="app-page-viewport" data-testid="app-page-viewport">
+        <div ref={contentRef} className="app-page-viewport" data-testid="app-page-viewport" data-help-bounds>
           <div ref={pageFrame} className="app-page-frame" data-testid="app-page-frame"><React.Suspense fallback={<div data-testid="app-page-loading"><LoadingNote block label={t('common.loading')}/></div>}><Outlet /></React.Suspense></div>
         </div>
       </main>

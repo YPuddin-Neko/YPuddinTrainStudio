@@ -15,11 +15,7 @@ function RouteDismiss({ close }: { close: () => void }) {
 }
 
 /** Readable within the page viewport, independent of a field's clipping ancestors. */
-/**
- * `anchor` names an enclosing element (a stat card) that the explanation opens below and starts at, so it does not
- * cover what that element shows; without it the explanation opens below the button.
- */
-export default function ConfigHelp({ label, children, anchor: anchorSelector }: { label: string; children: string; anchor?: string }) {
+export default function ConfigHelp({ label, children }: { label: string; children: string }) {
   const id = React.useId();
   const trigger = React.useRef<HTMLButtonElement>(null);
   const panel = React.useRef<HTMLDivElement>(null);
@@ -47,15 +43,18 @@ export default function ConfigHelp({ label, children, anchor: anchorSelector }: 
       // exists so their rounded corners cannot cut off the explanation.
       for (let parent = button.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
         const style = window.getComputedStyle(parent);
-        if (!parent.matches('main, [role="main"]') && !/(auto|scroll)/.test(`${style.overflow} ${style.overflowX} ${style.overflowY}`)) continue;
+        const surface = parent.matches('main, [role="main"], [role="dialog"], [data-help-bounds]');
+        if (!surface && !/(auto|scroll)/.test(`${style.overflow} ${style.overflowX} ${style.overflowY}`)) continue;
+        // A strip that only scrolls sideways (the job summary cards) is part of its page, not a surface of its own.
+        if (!surface && parent.scrollHeight <= parent.clientHeight + 1) continue;
         const rect = parent.getBoundingClientRect();
         if (!rect.width || !rect.height) continue;
         bounds.left = Math.max(bounds.left, rect.left + parent.clientLeft);
-        bounds.top = Math.max(bounds.top, rect.top + parent.clientTop);
         bounds.right = Math.min(bounds.right, parent.clientWidth ? rect.left + parent.clientLeft + parent.clientWidth : rect.right);
+        bounds.top = Math.max(bounds.top, rect.top + parent.clientTop);
         bounds.bottom = Math.min(bounds.bottom, parent.clientHeight ? rect.top + parent.clientTop + parent.clientHeight : rect.bottom);
       }
-      const anchor = ((anchorSelector && button.closest(anchorSelector)) || button).getBoundingClientRect();
+      const anchor = button.getBoundingClientRect();
       if (anchor.bottom < bounds.top || anchor.top > bounds.bottom || anchor.right < bounds.left || anchor.left > bounds.right) {
         close();
         return;
@@ -74,7 +73,7 @@ export default function ConfigHelp({ label, children, anchor: anchorSelector }: 
       setPosition({
         width,
         maxHeight,
-        left: Math.max(bounds.left + INSET, Math.min(anchorSelector ? anchor.left : anchor.right - width, bounds.right - INSET - width)),
+        left: Math.max(bounds.left + INSET, Math.min(anchor.right - width, bounds.right - INSET - width)),
         top: Math.max(bounds.top + INSET, Math.min(top, bounds.bottom - INSET - height)),
         visibility: 'visible',
       });
@@ -113,7 +112,7 @@ export default function ConfigHelp({ label, children, anchor: anchorSelector }: 
       window.visualViewport?.removeEventListener('resize', place);
       window.visualViewport?.removeEventListener('scroll', scrolled);
     };
-  }, [open, close, children, anchorSelector]);
+  }, [open, close, children]);
 
   return <>
     {inRouter && <RouteDismiss close={close} />}
