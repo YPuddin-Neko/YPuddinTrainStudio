@@ -4548,6 +4548,11 @@ export interface components {
         };
         /** LoraLocal */
         LoraLocal: {
+            /**
+             * Builtin
+             * @default true
+             */
+            builtin: boolean;
             /** Version */
             version?: string | null;
             /** Commit */
@@ -4563,8 +4568,6 @@ export interface components {
             head?: string | null;
             /** Head Date */
             head_date?: string | null;
-            /** Local Commit */
-            local_commit?: string | null;
             /** Error */
             error?: string | null;
         };

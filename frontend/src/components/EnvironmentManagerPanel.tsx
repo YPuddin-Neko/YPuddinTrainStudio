@@ -38,8 +38,8 @@ interface EnvironmentStatus {
 interface PlanEntry { name: string; from_version: string | null; version: string | null; sha256?: string }
 interface LoraEnvironment {
   checked_at: number;
-  local: { version?: string | null; commit?: string | null };
-  upstream: { version?: string | null; commit?: string | null; head?: string | null; head_date?: string | null; local_commit?: string | null; error?: string | null };
+  local: { builtin?: boolean; version?: string | null; commit?: string | null };
+  upstream: { version?: string | null; commit?: string | null; head?: string | null; head_date?: string | null; error?: string | null };
 }
 interface Operation {
   id: string; package: string; action: string; status: string; created_at: number;
@@ -368,7 +368,7 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
           <div className="settings-dependency-info"><span className="settings-dependency-name settings-dependency-name-static">LyCORIS</span></div>
           <dl className="settings-dependency-version text-xs">
             <div><dt>{copy('本地服务端版本：', 'Local server version:')}</dt><dd>{loraLoading && !lora ? copy('查询中…', 'Checking…') : lora?.local.version
-              ? [lora.local.version, lora.local.commit || lora.upstream.local_commit].filter(Boolean).join(' · ') : copy('未安装', 'Not installed')}</dd></div>
+              ? copy(`内置实现 · 兼容 ${[lora.local.version, lora.local.commit].filter(Boolean).join(' · ')}`, `Built in · compatible with ${[lora.local.version, lora.local.commit].filter(Boolean).join(' · ')}`) : copy('内置实现', 'Built in')}</dd></div>
             <div title={loraError || lora?.upstream.error || undefined}><dt>{copy('云端版本：', 'Online version:')}</dt><dd>{loraLoading ? copy('查询中…', 'Checking…')
               : loraError || lora?.upstream.error || !lora?.upstream.version ? copy('查询失败', 'Lookup failed') : [lora.upstream.version, lora.upstream.commit].filter(Boolean).join(' · ')}</dd></div>
             {!!lora?.upstream.head && <div><dt>{copy('主分支：', 'Main branch:')}</dt><dd>{[lora.upstream.head, lora.upstream.head_date].filter(Boolean).join(' · ')}</dd></div>}

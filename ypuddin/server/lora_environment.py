@@ -1,16 +1,11 @@
-"""LyCORIS as the service has it and as upstream publishes it, for the runtime settings page.
+"""The LyCORIS release the built-in adapters match, next to what upstream publishes.
 
-YPuddin implements its adapters itself; LyCORIS is the reference their formats follow, so the page
-shows which release and commit the service has next to the newest ones.
+YPuddin implements its adapters itself and does not need the LyCORIS package. The files it saves
+follow LyCORIS's layouts; the page names the release they were checked against beside the newest
+release and the default branch, so a newer upstream shows up there.
 """
 
 from __future__ import annotations
-
-import json
-import subprocess
-from importlib import metadata
-from pathlib import Path
-from urllib.parse import unquote, urlparse
 
 from pydantic import BaseModel
 
@@ -18,11 +13,14 @@ from .package_releases import PYPI, _read
 
 PACKAGE = "lycoris-lora"
 REPOSITORY = "https://api.github.com/repos/KohakuBlueleaf/LyCORIS"
+# Every algorithm and option the trainer saves loads in this release with the same weights.
+COMPATIBLE = {"version": "4.0.0", "commit": "03270a3"}
 
 
 class LoraLocal(BaseModel):
+    # The service's own adapters; version and commit name the LyCORIS release their files match.
+    builtin: bool = True
     version: str | None = None
-    # Short commit of the installed source, when the install records one.
     commit: str | None = None
 
 
@@ -31,8 +29,6 @@ class LoraUpstream(BaseModel):
     commit: str | None = None  # the commit that release was tagged on
     head: str | None = None  # newest commit on the default branch
     head_date: str | None = None
-    # Commit of the installed release, looked up when the install does not record it.
-    local_commit: str | None = None
     error: str | None = None
 
 
@@ -43,38 +39,10 @@ class LoraEnvironment(BaseModel):
 
 
 def local_lycoris() -> dict:
-    try:
-        distribution = metadata.distribution(PACKAGE)
-    except metadata.PackageNotFoundError:
-        return {"version": None, "commit": None}
-    try:
-        origin = json.loads(distribution.read_text("direct_url.json") or "null") or {}
-    except (json.JSONDecodeError, OSError):
-        origin = {}
-    commit = (origin.get("vcs_info") or {}).get("commit_id")
-    url = str(origin.get("url") or "")
-    if not commit and "dir_info" in origin and url.startswith("file://"):
-        # Installed from a local checkout: that checkout knows its commit.
-        commit = _checkout_commit(Path(unquote(urlparse(url).path)))
-    return {"version": distribution.version, "commit": commit[:7] if commit else None}
+    return {"builtin": True, **COMPATIBLE}
 
 
-def _checkout_commit(path: Path) -> str | None:
-    try:
-        done = subprocess.run(
-            ["git", "-C", str(path), "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    value = done.stdout.strip()
-    return value if done.returncode == 0 and len(value) >= 7 else None
-
-
-def upstream_lycoris(opener, local: dict) -> dict:
+def upstream_lycoris(opener) -> dict:
     """Newest release, its commit and the default branch head; raises when upstream cannot be read."""
 
     def commit(ref: str) -> tuple[str, str]:
@@ -85,14 +53,4 @@ def upstream_lycoris(opener, local: dict) -> dict:
     version = str(_read(opener, f"{PYPI}/{PACKAGE}/json")["info"]["version"])
     released, _ = commit(f"v{version}")
     head, head_date = commit("HEAD")
-    local_commit = None
-    if local.get("version") and not local.get("commit"):
-        local_commit = released if local["version"] == version else commit(f"v{local['version']}")[0]
-    return {
-        "version": version,
-        "commit": released,
-        "head": head,
-        "head_date": head_date,
-        "local_commit": local_commit,
-        "error": None,
-    }
+    return {"version": version, "commit": released, "head": head, "head_date": head_date, "error": None}

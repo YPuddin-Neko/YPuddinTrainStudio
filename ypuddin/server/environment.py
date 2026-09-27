@@ -1004,19 +1004,19 @@ class EnvironmentManager:
         return result
 
     def lora_environment(self, refresh=False):
-        """LyCORIS on this service and upstream; the upstream lookup is kept an hour."""
+        """The LyCORIS release the built-in adapters match and upstream's; upstream is kept an hour."""
         from .lora_environment import local_lycoris, upstream_lycoris
         from .network import ProxyPolicy
 
         local = local_lycoris()
         policy = ProxyPolicy.from_context(self.context)
-        key = (policy, local["version"], local["commit"])
+        key = policy
         with self._latest_lock:
             cached = self._lora_latest
             if not refresh and cached and cached[1] == key and time.monotonic() - cached[0] < 3600:
                 return {"checked_at": cached[2], "local": local, "upstream": cached[3]}
         try:
-            upstream = upstream_lycoris(policy.opener(), local)
+            upstream = upstream_lycoris(policy.opener())
         except Exception as exc:  # noqa: BLE001 - an unreachable upstream only leaves the versions unknown
             upstream = {"error": policy.redact(exc)[-500:]}
         checked = time.time()

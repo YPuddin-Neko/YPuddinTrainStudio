@@ -14093,6 +14093,11 @@
       },
       "LoraLocal": {
         "properties": {
+          "builtin": {
+            "type": "boolean",
+            "title": "Builtin",
+            "default": true
+          },
           "version": {
             "anyOf": [
               {
@@ -14164,17 +14169,6 @@
               }
             ],
             "title": "Head Date"
-          },
-          "local_commit": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Local Commit"
           },
           "error": {
             "anyOf": [
