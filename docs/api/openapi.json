@@ -12647,6 +12647,17 @@
             ],
             "title": "Archived At"
           },
+          "forced_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forced At"
+          },
           "progress": {
             "$ref": "#/components/schemas/JobProgress"
           },
@@ -13521,6 +13532,17 @@
               }
             ],
             "title": "Resumed Step"
+          },
+          "preempted_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preempted By"
           }
         },
         "additionalProperties": true,

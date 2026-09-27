@@ -88,6 +88,7 @@ class Database:
                     ("jobs", "samples_dir", "TEXT"),
                     ("jobs", "gpu_devices_json", "TEXT NOT NULL DEFAULT '[]'"),
                     ("jobs", "archived_at", "REAL"),
+                    ("jobs", "forced_at", "REAL"),
                     ("models", "purpose", "TEXT NOT NULL DEFAULT 'training'"),
                     ("models", "variant", "TEXT"),
                 ):

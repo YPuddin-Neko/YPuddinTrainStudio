@@ -4117,6 +4117,8 @@ export interface components {
             samples_dir?: string | null;
             /** Archived At */
             archived_at?: number | null;
+            /** Forced At */
+            forced_at?: number | null;
             progress: components["schemas"]["JobProgress"];
             latest: components["schemas"]["JobLatest"];
             /** Error */
@@ -4333,6 +4335,8 @@ export interface components {
             resumed_at?: number | null;
             /** Resumed Step */
             resumed_step?: number | null;
+            /** Preempted By */
+            preempted_by?: string | null;
         } & {
             [key: string]: unknown;
         };

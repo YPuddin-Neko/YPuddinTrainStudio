@@ -783,6 +783,8 @@ class JobProgress(_Out):
     paused_step: int | None = None
     resumed_at: float | None = None
     resumed_step: int | None = None
+    # Name of the forced run this job paused for; cleared when it runs again.
+    preempted_by: str | None = None
 
 
 class JobLatest(_Out):
@@ -814,6 +816,8 @@ class Job(_Out):
     samples_dir: str | None = None
     # Set when the job was moved to the archive; its files stay until it is deleted there.
     archived_at: float | None = None
+    # Set while a forced start waits for its device; cleared when the job launches.
+    forced_at: float | None = None
     progress: JobProgress
     latest: JobLatest
     error: str | None

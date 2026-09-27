@@ -2165,7 +2165,7 @@ def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends
 
 @router.post("/jobs/{jid}/{command}", response_model=m.Job, response_model_exclude_unset=True)
 def job_command(jid: str, command: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    if command not in ("pause", "resume", "cancel", "save", "retry"):
+    if command not in ("pause", "resume", "cancel", "save", "retry", "force"):
         raise NotFound("unknown command", code="job.bad_command")
     try:
         return _job_row(c.supervisor.request(jid, command))

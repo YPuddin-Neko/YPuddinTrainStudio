@@ -199,23 +199,30 @@ class JobSupervisor:
                 del self._procs[job_id]
                 self._devices.pop(job_id, None)
         settings = self.db.get_kv("queue.settings", {"held": False, "max_concurrent": self.max_concurrent})
-        if settings.get("held") or maintenance_blocked(self.db):
+        if maintenance_blocked(self.db):
             return backlog
-        t = now()
-        self.db.execute(
-            "UPDATE jobs SET status='queued' WHERE status='scheduled' AND scheduled_at IS NOT NULL AND scheduled_at <= ?",
-            (t,),
-        )
+        # Holding the queue stops ordinary starts; a job the user forced to start still starts.
+        held = bool(settings.get("held"))
+        if not held:
+            self.db.execute(
+                "UPDATE jobs SET status='queued' WHERE status='scheduled' AND scheduled_at IS NOT NULL AND scheduled_at <= ?",
+                (now(),),
+            )
         limit = settings.get("max_concurrent", self.max_concurrent)
         slots = max(1, min(64, int(limit))) if limit is not None else max(1, len(gpu_info()))
         for nxt in self.db.fetchall(
-            "SELECT * FROM jobs WHERE status='queued' ORDER BY priority DESC, created_at ASC"
+            "SELECT * FROM jobs WHERE status='queued'"
+            + (" AND forced_at IS NOT NULL" if held else "")
+            + " ORDER BY forced_at IS NULL, forced_at ASC, priority DESC, created_at ASC"
         ):
-            if len(self._procs) >= slots:
-                break
             if nxt["id"] in self._procs:
                 continue
-            device = self._choose_device(nxt, check_memory=settings.get("memory_admission", True))
+            if nxt.get("forced_at") is not None:
+                device = self._force_device(nxt, slots)
+            elif len(self._procs) >= slots:
+                break
+            else:
+                device = self._choose_device(nxt, check_memory=settings.get("memory_admission", True))
             if device is None:
                 continue
             try:
@@ -325,6 +332,105 @@ class JobSupervisor:
             if requested
             else f"等待 {count} 张空闲且显存充足的显卡"
         )
+
+    def _force_device(self, job: dict[str, Any], slots: int) -> str | tuple[str, ...] | None:
+        """Place a run the user forced to start: the memory estimate is skipped, and when no device
+        or slot is free the running jobs that started earliest pause, saving their full state."""
+        count = self._gpu_count(job)
+        requested = json.loads(job.get("gpu_devices_json") or "[]")
+        cpu = current_profile().endswith("-cpu")
+        inventory = [] if cpu else gpu_info()
+        if error := selection_error(requested, count, inventory):
+            self._publish_admission(job, error=error)
+            return None
+        if cpu and count > 1:
+            self._publish_admission(job, error="CPU 环境不能启动多卡训练")
+            return None
+        strategy = (
+            json.loads(job.get("config_json") or "{}").get("loop", {}).get("distributed_strategy", "ddp")
+        )
+        if count > 1 and (error := training_device_error(count, inventory, strategy=strategy)):
+            self._publish_admission(job, error=error)
+            return None
+        slot_free = len(self._procs) < slots
+        if cpu or not inventory:
+            if slot_free:
+                return "cpu"
+            self._make_room(job, set(), 0, True)  # CPU runs share the processor; only the slot limit binds
+            return None
+        owners = {
+            device: owner
+            for owner, allocation in self._devices.items()
+            for device in self._allocation(allocation)
+        }
+        candidates = [
+            gpu["device"]
+            for gpu in sorted(inventory, key=lambda g: g.get("mem_free_mb") or 0, reverse=True)
+            if (not requested or gpu["device"] in requested)
+            and (count == 1 or gpu["device"].startswith("cuda:"))
+        ]
+        free = [device for device in candidates if device not in owners]
+        if slot_free and (all(d not in owners for d in requested) if requested else len(free) >= count):
+            allocation = requested or free[:count]
+            return allocation[0] if count == 1 else tuple(allocation)
+        # Explicit cards must all be released; otherwise enough candidate cards for the run.
+        self._make_room(job, set(requested or candidates), len(requested) or count - len(free), not slot_free)
+        return None
+
+    def _make_room(self, job: dict[str, Any], devices: set[str], missing: int, need_slot: bool) -> None:
+        """Pause the earliest-started holders of ``devices`` until ``missing`` more are free, or every
+        holder of the run's explicit cards; with no device to free, one job gives up its slot."""
+        holders: dict[str, dict[str, Any]] = {}
+        if self._devices:
+            marks = ",".join("?" * len(self._devices))
+            holders = {
+                row["id"]: row
+                for row in self.db.fetchall(
+                    f"SELECT id, name, type, status, started_at FROM jobs WHERE id IN ({marks})",
+                    tuple(self._devices),
+                )
+            }
+        order = sorted(self._devices, key=lambda jid: holders.get(jid, {}).get("started_at") or 0)
+        # A job already pausing, cancelling or past its outcome frees its devices without another
+        # request. Model tests cannot pause; they keep their device until they finish.
+        stopping = {
+            jid
+            for jid in order
+            if jid in self._outcome_seen or holders.get(jid, {}).get("status") != "running"
+        }
+        pausable = {jid for jid in order if holders.get(jid, {}).get("type") in ("train", "cache")}
+        explicit = bool(json.loads(job.get("gpu_devices_json") or "[]"))
+        chosen: list[str] = []
+        for jid in order:
+            held = [device for device in self._allocation(self._devices[jid]) if device in devices]
+            if not held or not explicit and (missing <= 0 or jid not in stopping | pausable):
+                continue
+            chosen.append(jid)
+            missing -= len(held)
+        if not explicit and missing > 0:
+            chosen = []  # pausing now would not free enough cards; wait for the rest instead
+        if not chosen and need_slot:
+            chosen = [jid for jid in order if jid in stopping | pausable][:1]
+        for jid in chosen:
+            if jid in pausable - stopping:
+                self._preempt(jid, job["name"])
+        names = "、".join(f"「{holders[jid]['name']}」" for jid in chosen if jid in holders)
+        if any(jid not in stopping | pausable for jid in chosen):
+            reason = f"强制开始：等待模型测试{names}结束"
+        elif names:
+            reason = f"强制开始：等待{names}{'让出显卡' if devices else '暂停'}"
+        else:
+            reason = "强制开始：等待正在运行的模型测试结束"
+        self._publish_admission(job, progress={"phase": "waiting_for_device", "wait_reason": reason})
+
+    def _preempt(self, job_id: str, forced_by: str) -> None:
+        with self.db.lock:
+            current = self.db.fetchone("SELECT * FROM jobs WHERE id=?", (job_id,))
+            if not current or current["status"] != "running" or job_id in self._outcome_seen:
+                return
+            self._control_file(current, "pause")
+            self._merge_progress(job_id, {"preempted_by": forced_by})
+            self._set_status(job_id, "pausing")
 
     def _publish_admission(
         self, job: dict[str, Any], *, error: str | None = None, progress: dict[str, Any] | None = None
@@ -480,12 +586,19 @@ class JobSupervisor:
                 "gpu_count": count,
                 "phase": phase,
                 "wait_reason": "",
+                "preempted_by": "",
                 **({"legacy_cuda_rng_source": legacy_binding} if legacy_binding is not None else {}),
             },
         )
         self._outcome_seen.discard(job_id)
         self._set_status(
-            job_id, "running", started_at=now(), pid=proc.pid, exit_code=None, resume_from=resume_from
+            job_id,
+            "running",
+            started_at=now(),
+            pid=proc.pid,
+            exit_code=None,
+            resume_from=resume_from,
+            forced_at=None,
         )
         self._publish("job.phase", {"job_id": job_id, "phase": phase})
 
@@ -761,32 +874,41 @@ class JobSupervisor:
         job = self.db.fetchone("SELECT * FROM jobs WHERE id=?", (job_id,))
         if not job:
             raise KeyError(job_id)
-        if job["type"] == "xyz" and command not in {"cancel", "retry"}:
-            raise ValueError("模型测试支持取消和重试，不能执行训练任务的暂停、恢复或保存操作。")
-        if command in {"resume", "retry"}:
+        if job["type"] == "xyz" and command not in {"cancel", "retry", "force"}:
+            raise ValueError("模型测试支持取消、重试和强制开始，不能执行训练任务的暂停、恢复或保存操作。")
+        if command in {"resume", "retry", "force"}:
             self._check_job_version(job)
         status = job["status"]
         if command == "pause":
             if status in ("queued", "scheduled"):
-                self._set_status(job_id, "paused")
+                self._set_status(job_id, "paused", forced_at=None)
             elif status == "running":
                 self._control_file(job, "pause")
+                self._merge_progress(job_id, {"preempted_by": ""})
                 self._set_status(job_id, "pausing")
             else:
                 raise ValueError(f"cannot pause a job in status {status}")
-        elif command == "resume":
-            if status not in ("paused", "failed", "cancelled"):
-                raise ValueError(f"cannot resume a job in status {status}")
+        elif command in ("resume", "force"):
+            # Force starts the job ahead of the queue without the memory estimate; see _force_device.
+            forced_at = now() if command == "force" else None
+            if command == "force" and status in ("queued", "scheduled"):
+                self._set_status(job_id, "queued", forced_at=forced_at)
+                return self.db.fetchone("SELECT * FROM jobs WHERE id=?", (job_id,))
+            allowed = ("paused",) if command == "force" else ("paused", "failed", "cancelled")
+            if status not in allowed:
+                raise ValueError(f"cannot {command} a job in status {status}")
             progress = json.loads(job.get("progress_json") or "{}")
             resume_from = job.get("resume_from")
             if not progress.get("preparing"):
                 resume_from = resume_from or self._latest_state(state_directory(job))
             if status != "paused" and job["type"] != "cache" and not resume_from:
                 raise ValueError("no checkpoint to resume from")
-            self._set_status(job_id, "queued", resume_from=resume_from, error=None, finished_at=None)
+            self._set_status(
+                job_id, "queued", resume_from=resume_from, error=None, finished_at=None, forced_at=forced_at
+            )
         elif command == "cancel":
             if status in ("queued", "scheduled", "paused"):
-                self._set_status(job_id, "cancelled", finished_at=now())
+                self._set_status(job_id, "cancelled", finished_at=now(), forced_at=None)
             elif status in ("running", "pausing"):
                 self._control_file(job, "stop")
                 self._set_status(job_id, "cancelling")
