@@ -35,6 +35,7 @@ def bind_checkpoint(backbone, path: Path, family: str, prefix: str, *, text=None
         TEXT_ADAPTER_PREFIXES,
         text_export_root,
     )
+    from ypuddin.adapters.dora import magnitude_axis
 
     class ScaledAdapter(AdaptedLinear):
         def forward(self, x):
@@ -90,7 +91,8 @@ def bind_checkpoint(backbone, path: Path, family: str, prefix: str, *, text=None
             if (original.in_features, original.out_features) != (adapter.in_features, adapter.out_features):
                 raise ValueError(f"Checkpoint target shape differs from the sampling model: {name}")
             base = original if isinstance(original, FrozenLinear) else FrozenLinear.from_linear(original)
-            wrapper = ScaledAdapter(base, adapter, dora=dora is not None, name=name)
+            axis = "output" if dora is None else magnitude_axis(dora)
+            wrapper = ScaledAdapter(base, adapter, dora=dora is not None, dora_axis=axis, name=name)
             wrapper.component = component
             if dora is not None:
                 wrapper.dora.load_tensor(dora)

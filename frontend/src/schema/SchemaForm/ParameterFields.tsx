@@ -1,7 +1,8 @@
 import React from 'react';
 
-type Section = { key: string; names: string[]; title?: [string, string]; togglesFirst?: boolean; inlineToggles?: boolean; beside?: string };
-const section = (key: string, names: string[], title?: [string, string], options: Pick<Section, 'togglesFirst'|'inlineToggles'|'beside'> = {}): Section => ({ key, names, title, ...options });
+// afterToggles: settings a switch of the section reveals, placed under the switch row.
+type Section = { key: string; names: string[]; title?: [string, string]; togglesFirst?: boolean; inlineToggles?: boolean; beside?: string; afterToggles?: string[] };
+const section = (key: string, names: string[], title?: [string, string], options: Pick<Section, 'togglesFirst'|'inlineToggles'|'beside'|'afterToggles'> = {}): Section => ({ key, names, title, ...options });
 
 /** Every group uses the same grid; these lists only decide grouping and order. */
 const layouts: Record<string, Section[]> = {
@@ -31,7 +32,7 @@ const layouts: Record<string, Section[]> = {
     section('monitoring', ['nan_skip_limit', 'log_every'], ['异常处理与记录', 'Failures and logging']),
   ],
   adapter: [
-    section('setup', ['algo', 'preset', 'parameter_mode', 'factor', 'rank', 'alpha', 'tlora_min_rank', 'tlora_power', 'tlora_ortho', 'dora', 'decompose_both', 'rs_lora', 'rules']),
+    section('setup', ['algo', 'preset', 'parameter_mode', 'factor', 'rank', 'alpha', 'tlora_min_rank', 'tlora_power', 'tlora_ortho', 'dora', 'dora_axis', 'decompose_both', 'rs_lora', 'rules'], undefined, { afterToggles: ['dora_axis'] }),
     section('initialization', ['init', 'resume_weights'], ['初始化与继续训练', 'Initialization and weight loading']),
     section('regularization', ['dropout', 'rank_dropout', 'module_dropout'], ['训练正则', 'Training regularization']),
     section('execution', ['mode', 'param_dtype', 'lr_scale'], ['计算与学习率', 'Computation and learning rate']),
@@ -76,16 +77,17 @@ const isToggle = (node: React.ReactNode) => React.isValidElement(node) && (node.
 const isWide = (node: React.ReactNode) => React.isValidElement(node) && (node.props as any)['data-field-span'] === 'wide';
 
 /** Conditional controls stay below their switches, so enabling them does not move the trigger. */
-export function FieldSection({ fields, title, className = '', togglesFirst = false, inlineToggles = false }: {
-  fields: React.ReactNode[]; title?: string; className?: string; togglesFirst?: boolean; inlineToggles?:boolean;
+export function FieldSection({ fields, title, className = '', togglesFirst = false, inlineToggles = false, after = [] }: {
+  fields: React.ReactNode[]; title?: string; className?: string; togglesFirst?: boolean; inlineToggles?:boolean; after?: React.ReactNode[];
 }) {
   const toggles = fields.filter(isToggle);
   const plain = fields.filter(field => !isToggle(field) && !isWide(field));
   const wide = fields.filter(isWide);
   const toggleRow = toggles.length>0 ? <div className="config-toggle-row">{toggles}</div> : null;
-  return <div className={`config-field-section ${className}`} data-field-count={fields.length} data-only-toggles={toggles.length === fields.length || undefined}>
+  const count = fields.length + after.length;
+  return <div className={`config-field-section ${className}`} data-field-count={count} data-only-toggles={toggles.length === count || undefined}>
     {title && <h3>{title}</h3>}
-    {inlineToggles ? [...plain,...toggles] : togglesFirst ? <>{toggleRow}{plain}</> : <>{plain}{toggleRow}</>}
+    {inlineToggles ? [...plain,...toggles,...after] : togglesFirst ? <>{toggleRow}{after}{plain}</> : <>{plain}{toggleRow}{after}</>}
     {wide}
   </div>;
 }
@@ -117,11 +119,12 @@ export default function ParameterFields({ group, fields, english, renderToggleSe
   // A lone section needs no subtitle: the group heading already names it.
   const titled = visible.length + (remaining.length > 0 ? 1 : 0) > 1;
   const render = ({ item, content }: typeof visible[number]) => {
+    const revealed = new Set((item.afterToggles ?? []).map(fullPath));
     const togglePath=group==='loop' && item.key==='ema' ? 'loop.ema' : group==='caption' && item.key==='ordering' ? 'dataset.caption.shuffle' : undefined;
     return togglePath && renderToggleSection
       ? <div key={item.key} className={`config-field-section config-${group}-${item.key}`}>{renderToggleSection(togglePath,<FieldSection fields={content.filter(field=>path(field)!==togglePath)}/>)}</div>
-      : <FieldSection key={item.key} fields={content} title={titled ? item.title?.[english ? 1 : 0] : undefined}
-        className={`config-${group}-${item.key}`} togglesFirst={item.togglesFirst} inlineToggles={item.inlineToggles}/>;
+      : <FieldSection key={item.key} fields={content.filter(field => !revealed.has(path(field)))} after={content.filter(field => revealed.has(path(field)))}
+        title={titled ? item.title?.[english ? 1 : 0] : undefined} className={`config-${group}-${item.key}`} togglesFirst={item.togglesFirst} inlineToggles={item.inlineToggles}/>;
   };
   const rendered: React.ReactNode[] = [];
   visible.forEach((entry, index) => {

@@ -83,6 +83,8 @@ def build_metadata(
     args = ("algo", "factor", "decompose_both", "rs_lora", "dora", "preset", "init")
     if algo == "tlora":
         args += ("tlora_min_rank", "tlora_power", "tlora_ortho")
+    if adapter_cfg.get("dora"):
+        args += ("dora_axis",)
     meta: dict[str, str] = {
         "ss_network_module": "ypuddin.adapters",
         "ss_network_dim": str(rank),

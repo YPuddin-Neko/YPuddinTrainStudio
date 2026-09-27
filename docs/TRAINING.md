@@ -32,6 +32,8 @@
 
 T-LoRA 和 LyCORIS Full 不能与 DoRA 同时使用；开启 DoRA 时，训练对象规则里改用这两种算法的层不启用 DoRA，其余 LoRA、LoHa、LoKr、OrthoLoRA 层照常启用。T-LoRA 只能分开计算，不能合并权重。OrthoLoRA 和正交初始化的 T-LoRA 导出的是普通 LoRA，无法还原训练参数，继续训练需要使用完整恢复点。LyCORIS Full 没有 Rank 和 Alpha，文件与所选层的权重一样大，学习率需要像全量微调一样单独设置。
 
+开启 DoRA 后可以选择“DoRA 计算方向”。按输出通道（默认）是 LyCORIS 的默认方式，LyCORIS 自带的加载和合并工具可以读取；ComfyUI 和 Forge 计算这种文件时用底模权重的范数代替训练时的范数，出图与训练预览略有差异，A1111 WebUI 计算结果不正确。按输入通道时，ComfyUI、Forge 和 A1111 WebUI 的计算与训练一致，LyCORIS 自带的加载和合并工具无法读取。本程序的训练预览、模型测试、合并和继续训练两种都支持；更改方向需要重新训练，继续训练时要与原文件一致。
+
 ### LoKr Full
 
 “LoKr 参数形式”设为 Full 时，两个 Kronecker 因子使用完整矩阵，不再继续低秩拆分，仍然是 LoKr，与训练算法中的 LyCORIS Full 不同。Rank 和 Alpha 不参与该形式的设置，Factor 仍决定矩阵分解方式。

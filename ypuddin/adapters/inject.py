@@ -298,6 +298,7 @@ def inject(
             adapter,
             mode=cfg.mode,
             dora=cfg.dora and (t.algo in DORA_ALGOS or t.algo == cfg.algo),
+            dora_axis=cfg.dora_axis,
             module_dropout=cfg.module_dropout,
             name=t.name,
         )

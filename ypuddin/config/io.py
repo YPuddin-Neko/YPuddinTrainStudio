@@ -149,6 +149,10 @@ def config_hash(config: TrainConfig | Mapping[str, Any]) -> str:
         data["objective"] = {
             key: value for key, value in objective.items() if key not in inactive or value != inactive[key]
         }
+    # Checkpoints from before the DoRA axis option trained the output axis; without DoRA it does nothing.
+    adapter = data.get("adapter")
+    if isinstance(adapter, Mapping) and (adapter.get("dora_axis") == "output" or not adapter.get("dora")):
+        data["adapter"] = {key: value for key, value in adapter.items() if key != "dora_axis"}
     blob = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
     return hashlib.blake2b(blob, digest_size=8).hexdigest()
 

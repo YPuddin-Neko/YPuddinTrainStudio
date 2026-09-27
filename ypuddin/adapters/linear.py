@@ -37,6 +37,7 @@ class AdaptedLinear(nn.Module):
         *,
         mode: str = "auto",
         dora: bool = False,
+        dora_axis: str = "output",
         module_dropout: float = 0.0,
         name: str = "",
     ) -> None:
@@ -48,7 +49,9 @@ class AdaptedLinear(nn.Module):
         self.name = name
         self.module_dropout_p = float(module_dropout)
         self.multiplier = 1.0
-        self.dora = DoRA(base.dequant(torch.float32), dtype=adapter.param_dtype) if dora else None
+        self.dora = (
+            DoRA(base.dequant(torch.float32), dtype=adapter.param_dtype, axis=dora_axis) if dora else None
+        )
         self.mode: Mode = resolve_mode(mode, adapter, base, dora)
         # Full keeps W₀; OrthoLoRA takes its principal subspace; T-LoRA draws its start on the layer's device.
         bind = getattr(adapter, "bind_base", None)

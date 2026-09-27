@@ -2313,6 +2313,13 @@ export interface components {
              */
             dora: boolean;
             /**
+             * Dora Axis
+             * @description DoRA 幅度按哪一侧的通道计算：output 每个输出通道一个幅度，是 LyCORIS 的默认方式；input 每个输入通道一个幅度，ComfyUI 按训练时的方式计算，LyCORIS 自带的加载和合并工具无法读取。更改后需要重新训练。
+             * @default output
+             * @enum {string}
+             */
+            dora_axis: "output" | "input";
+            /**
              * Init
              * @description 初始化：default（一侧置零）/ scalar（全随机 + 可训练标量从 0 起）
              * @default default

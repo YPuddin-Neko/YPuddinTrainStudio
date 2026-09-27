@@ -7,6 +7,7 @@ from collections.abc import Callable
 from torch import Tensor
 
 from ypuddin.adapters import modules_from_tensors
+from ypuddin.adapters.dora import decompose
 from ypuddin.adapters.frozen import FP8_DTYPES, quantize_fp8
 
 CONTAINER_PREFIXES = ("net.", "model.diffusion_model.", "diffusion_model.", "transformer.")
@@ -66,8 +67,7 @@ def merge_into_state_dict(
         delta = mod.delta_weight().to(w32.device).float()
         new = w32 + strength * delta
         if dora is not None:
-            norm = new.reshape(new.shape[0], -1).norm(dim=1, keepdim=True).clamp(min=1e-12)
-            new = new * (dora.float().reshape(-1, 1) / norm)
+            new = decompose(new, dora)  # along the axis the stored magnitude's shape names
         if w.dtype in FP8_DTYPES.values() or requantize_fp8:
             kind = requantize_fp8 or next(k for k, v in FP8_DTYPES.items() if v == w.dtype)
             q, s = quantize_fp8(new, kind)

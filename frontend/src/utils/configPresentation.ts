@@ -25,7 +25,7 @@ const labels: Record<string, string> = {
   'sampling.scheduler': '采样调度器', 'sampling.er_sde_order': 'ER-SDE 求解阶数', 'sampling.er_sde_s_noise': 'ER-SDE 随机噪声强度',
   'adapter.algo': '训练算法', 'adapter.rank': 'Rank / 秩', 'adapter.alpha': 'Alpha / 缩放', 'adapter.factor': 'LoKr 分解因子',
   'adapter.tlora_min_rank': '最小秩', 'adapter.tlora_power': '秩变化曲线', 'adapter.tlora_ortho': '正交初始化',
-  'adapter.decompose_both': '双矩阵低秩分解', 'adapter.rs_lora': 'Rank 稳定缩放', 'adapter.dora': '启用 DoRA',
+  'adapter.decompose_both': '双矩阵低秩分解', 'adapter.rs_lora': 'Rank 稳定缩放', 'adapter.dora': '启用 DoRA', 'adapter.dora_axis': 'DoRA 计算方向',
   'adapter.init': '初始化方式', 'adapter.dropout': '输出丢弃率', 'adapter.rank_dropout': '秩丢弃率',
   'adapter.module_dropout': '模块丢弃率', 'adapter.preset': '训练层范围', 'adapter.rules': '逐层覆盖规则',
   'adapter.mode': '权重计算方式', 'adapter.param_dtype': '可训练参数精度', 'adapter.lr_scale': '学习率缩放',
@@ -85,6 +85,7 @@ export function configFieldLabel(path: string, fallback: string, english = false
   if (english && path === 'sampling.output_dir') return 'Sample image directory';
   if (english && path === 'dataset.crop_anchor') return 'Crop anchor';
   if (english && path === 'adapter.resume_weights') return 'Weights to continue training';
+  if (english && path === 'adapter.dora_axis') return 'DoRA axis';
   if (english && path.startsWith('adapter.tlora_')) return ({ 'adapter.tlora_min_rank': 'Minimum rank', 'adapter.tlora_power': 'Rank curve', 'adapter.tlora_ortho': 'Orthogonal start' } as Record<string, string>)[path] || fallback;
   if (english && path === 'checkpoint.save_training_metadata') return 'Embed training parameters in LoRA';
   if (english && path === 'checkpoint.save_state_every_steps') return 'Recovery save interval';
@@ -257,6 +258,7 @@ export function configOptionLabel(path: string, option: string, english = false)
     'memory.base_precision': {auto:['沿用加载精度','Auto'],fp32:['32 位','FP32'],bf16:['16 位','BF16'],fp16:['16 位','FP16'],fp8_e4m3:['启动时量化','FP8 E4M3'],fp8_e5m2:['启动时量化','FP8 E5M2']},
     'model.attention': {auto:['默认','PyTorch SDPA'],sdpa:['PyTorch SDPA','PyTorch SDPA'],xformers:['xFormers','xFormers'],flash_attn:['FlashAttention 2','FlashAttention 2'],metal_flash:['Metal FlashAttention · Apple','Metal FlashAttention · Apple'],sage:['仅采样','SageAttention']},
     'adapter.init': {default:['默认初始化','Default'],scalar:['随机权重，零值缩放','Scalar']},
+    'adapter.dora_axis': {output:['按输出通道','Output'],input:['按输入通道','Input']},
     'adapter.mode': {auto:['自动','Automatic'],bypass:['分开计算','Bypass'],merged:['合并权重后计算','Merged']},
     'memory.activation_checkpointing': {none:['关闭','Off'],block:['开启','On'],unsloth:['开启并卸载到内存','On + offload']},
     'model.prediction_type': { epsilon: ['噪声预测', 'Epsilon'], v_prediction: ['速度预测', 'v-prediction'] },

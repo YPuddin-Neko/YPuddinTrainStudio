@@ -98,6 +98,22 @@
             "order": 60
           }
         },
+        "dora_axis": {
+          "default": "output",
+          "description": "DoRA 幅度按哪一侧的通道计算：output 每个输出通道一个幅度，是 LyCORIS 的默认方式；input 每个输入通道一个幅度，ComfyUI 按训练时的方式计算，LyCORIS 自带的加载和合并工具无法读取。更改后需要重新训练。",
+          "enum": [
+            "output",
+            "input"
+          ],
+          "title": "Dora Axis",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "adapter",
+            "order": 61,
+            "show_when": "adapter.dora == true"
+          }
+        },
         "init": {
           "default": "default",
           "description": "初始化：default（一侧置零）/ scalar（全随机 + 可训练标量从 0 起）",
