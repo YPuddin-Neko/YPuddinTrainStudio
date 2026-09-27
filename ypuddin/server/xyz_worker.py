@@ -30,7 +30,11 @@ def bind_checkpoint(backbone, path: Path, family: str, prefix: str, *, text=None
     from torch import nn
 
     from ypuddin.adapters import AdaptedLinear, FrozenLinear, load_adapter_file, modules_from_tensors
-    from ypuddin.adapters.components import TEXT_ADAPTER_PREFIXES
+    from ypuddin.adapters.components import (
+        SINGLE_TEXT_ADAPTER_PREFIX,
+        TEXT_ADAPTER_PREFIXES,
+        text_export_root,
+    )
 
     class ScaledAdapter(AdaptedLinear):
         def forward(self, x):
@@ -48,26 +52,34 @@ def bind_checkpoint(backbone, path: Path, family: str, prefix: str, *, text=None
     if metadata.get("ypuddin.family", family) != family:
         raise ValueError("Adapter model family differs from the selected sampling model")
     keys = {key.partition(".")[0] for key in tensors}
-    component_models = {"backbone": (prefix, backbone)}
+    # (file prefix, module root the file names drop, model) per component
+    component_models = {"backbone": (prefix, "", backbone)}
+    tokens = {name: (token, "") for name, token in TEXT_ADAPTER_PREFIXES.items()}
+    single = any(key.startswith(SINGLE_TEXT_ADAPTER_PREFIX + "_") for key in keys)
     text_components = [
         name
         for name, token in TEXT_ADAPTER_PREFIXES.items()
         if any(key.startswith(token + "_") for key in keys)
     ]
-    if text_components:
+    if single or text_components:
         if text is None:
             raise ValueError("Checkpoint contains text adapters but no text pipeline was supplied")
         encoders = text.trainable_modules()
+        if single:
+            if set(encoders) != {"text_encoder"} or "text_encoder" in text_components:
+                raise ValueError("Checkpoint text adapters do not match the sampling model's text encoder")
+            tokens["text_encoder"] = (SINGLE_TEXT_ADAPTER_PREFIX, text_export_root(encoders["text_encoder"]))
+            text_components.append("text_encoder")
         for name in text_components:
             if name not in encoders:
                 raise ValueError(f"Checkpoint text component is absent from the sampling model: {name}")
-            component_models[name] = (TEXT_ADAPTER_PREFIXES[name], encoders[name])
+            component_models[name] = (*tokens[name], encoders[name])
     plans, matched = [], set()
-    for component, (component_prefix, model) in component_models.items():
+    for component, (component_prefix, root, model) in component_models.items():
         modules = modules_from_tensors(tensors, metadata, prefix=component_prefix)
         matched.update(modules)
         names = {
-            component_prefix + "_" + name.replace(".", "_"): (name, module)
+            component_prefix + "_" + name.removeprefix(root).replace(".", "_"): (name, module)
             for name, module in model.named_modules()
             if isinstance(module, (nn.Linear, FrozenLinear))
         }

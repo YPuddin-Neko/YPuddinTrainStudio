@@ -138,10 +138,10 @@ def cmd_convert(args: argparse.Namespace) -> int:
     from safetensors.torch import save_file
 
     from ypuddin.adapters import load_adapter_file
-    from ypuddin.adapters.convert import comfy_to_kohya, kohya_to_comfy, lycoris_to_kohya
+    from ypuddin.adapters.convert import comfy_to_kohya, kohya_to_comfy, lycoris_to_kohya, modernize_text_keys
     from ypuddin.models import get_family
 
-    tensors, meta = load_adapter_file(args.file)
+    tensors, meta = modernize_text_keys(*load_adapter_file(args.file))
     if args.to == "comfyui":
         fam = get_family(args.family)
         names = fam.linear_module_names() if hasattr(fam, "linear_module_names") else []

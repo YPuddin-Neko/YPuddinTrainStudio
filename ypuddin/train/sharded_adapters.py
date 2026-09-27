@@ -8,7 +8,7 @@ from torch.distributed.tensor import DTensor
 
 from ypuddin.adapters.dora import DoRA
 from ypuddin.adapters.frozen import FrozenLinear
-from ypuddin.adapters.inject import ALGOS, AdapterSet, kohya_key
+from ypuddin.adapters.inject import ALGOS, AdapterSet
 
 
 def shardable_frozen_weights(model):
@@ -49,7 +49,7 @@ def gathered_adapter_export(adapters: AdapterSet):
     """
     tensors = {}
     for name, layer in adapters.layers.items():
-        prefix = kohya_key(name, adapters.prefix)
+        prefix = adapters.export_key(name)
         for kind, module in (("adapter", layer.adapter), ("dora", layer.dora)):
             if module is None:
                 continue

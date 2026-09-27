@@ -2581,10 +2581,11 @@ def _convert_artifact(c: ServiceContext, r: dict, body: ConvertBody) -> dict[str
     from safetensors.torch import save_file
 
     from ypuddin.adapters import load_adapter_file
-    from ypuddin.adapters.convert import comfy_to_kohya, kohya_to_comfy, lycoris_to_kohya
+    from ypuddin.adapters.convert import comfy_to_kohya, kohya_to_comfy, lycoris_to_kohya, modernize_text_keys
     from ypuddin.models import get_family
 
-    tensors, meta = load_adapter_file(r["path"])
+    # Older files also get the text encoder names ComfyUI reads.
+    tensors, meta = modernize_text_keys(*load_adapter_file(r["path"]))
     family = meta.get("ypuddin.family", "anima")
     if body.format == "comfyui":
         fam = get_family(family)

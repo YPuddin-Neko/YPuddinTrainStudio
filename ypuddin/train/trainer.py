@@ -1047,10 +1047,8 @@ class Trainer:
             for name, layer in self.adapters.layers.items()
         }
         if isinstance(self.adapters, ComponentAdapterSet):
-            from ypuddin.adapters.inject import kohya_key
-
             targets = {
-                kohya_key(name, item.prefix): layer.adapter.extra_metadata()
+                item.export_key(name): layer.adapter.extra_metadata()
                 | {"dora": layer.dora is not None, "mode": layer.mode}
                 for item in self.adapters.components.values()
                 for name, layer in item.layers.items()

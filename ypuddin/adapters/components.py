@@ -6,10 +6,13 @@ from collections import Counter
 
 from torch import nn
 
-from .inject import AdapterSet, inject, kohya_key
+from .inject import AdapterSet, inject
 from .rules import TargetPreset
 
 TEXT_ADAPTER_PREFIXES = {"text_encoder": "lora_te1", "text_encoder_2": "lora_te2"}
+# A family with one text encoder (Anima, Krea 2, FLUX.2) names it as kohya and ComfyUI do, below
+# the model root; SDXL's pair keeps te1/te2. Files from before read back with TEXT_ADAPTER_PREFIXES.
+SINGLE_TEXT_ADAPTER_PREFIX = "lora_te"
 TEXT_ADAPTER_PRESET = TargetPreset(
     "text_encoder", ("*",), ("lm_head",), "文本编码器的线性层，不训练词嵌入或语言模型输出头"
 )
@@ -79,7 +82,7 @@ class ComponentAdapterSet:
             if tensors.keys() & values.keys():
                 raise ValueError("duplicate adapter export keys across components")
             tensors.update(values)
-            targets.update({kohya_key(k, item.prefix): v for k, v in metadata.items()})
+            targets.update({item.export_key(k): v for k, v in metadata.items()})
         return tensors, targets
 
     def load_state(self, tensors, *, strict=True):
@@ -109,9 +112,21 @@ class ComponentAdapterSet:
         }
 
 
+def text_export_root(module: nn.Module) -> str:
+    """``model.`` when a causal-LM wrapper nests the encoder layers there (FLUX.2), else empty."""
+    root = getattr(module, "base_model_prefix", "") or ""
+    return f"{root}." if root and isinstance(getattr(module, root, None), nn.Module) else ""
+
+
 def inject_text_adapters(modules: dict[str, nn.Module], cfg):
     if not modules or not modules.keys() <= TEXT_ADAPTER_PREFIXES.keys():
         raise ValueError("text pipeline returned unsupported component names")
+    if len(modules) == 1:
+        ((name, module),) = modules.items()
+        adapters = inject(module, cfg, TEXT_ADAPTER_PRESET, prefix=SINGLE_TEXT_ADAPTER_PREFIX)
+        adapters.export_root = text_export_root(module)
+        adapters.legacy_prefix = TEXT_ADAPTER_PREFIXES[name]
+        return {name: adapters}
     return {
         name: inject(module, cfg, TEXT_ADAPTER_PRESET, prefix=TEXT_ADAPTER_PREFIXES[name])
         for name, module in modules.items()

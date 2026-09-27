@@ -7,6 +7,7 @@ the list of real module names of the target model.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable
 
 from torch import Tensor
@@ -90,3 +91,38 @@ def lycoris_to_kohya(
         else:
             out[key] = t
     return out
+
+
+def modernize_text_keys(
+    tensors: dict[str, Tensor], metadata: dict[str, str]
+) -> tuple[dict[str, Tensor], dict[str, str]]:
+    """Rename a single text encoder's keys the way files from before 2026-09-28 wrote them.
+
+    Those files named it like SDXL's first encoder (``lora_te1_``; FLUX.2 also kept the causal-LM
+    ``model_`` root), which ComfyUI and kohya do not read for one encoder: they expect
+    ``lora_te_`` below the model root. SDXL's two encoders keep ``lora_te1_``/``lora_te2_``.
+    """
+    if metadata.get("ypuddin.family") == "sdxl" or any(key.startswith("lora_te2_") for key in tensors):
+        return dict(tensors), dict(metadata)
+
+    def rename(module: str) -> str:
+        if not module.startswith("lora_te1_"):
+            return module
+        path = module[len("lora_te1_") :]
+        return "lora_te_" + (path[len("model_") :] if path.startswith("model_layers_") else path)
+
+    out = {}
+    for key, value in tensors.items():
+        module, dot, suffix = key.partition(".")
+        out[rename(module) + dot + suffix] = value
+    meta = dict(metadata)
+    try:
+        targets = json.loads(meta.get("ypuddin.targets") or "{}")
+        prefixes = json.loads(meta.get("ypuddin.component_prefixes") or "{}")
+    except json.JSONDecodeError:
+        return out, meta
+    if isinstance(targets, dict) and targets:
+        meta["ypuddin.targets"] = json.dumps({rename(key): value for key, value in targets.items()})
+    if isinstance(prefixes, dict) and prefixes.get("text_encoder") == "lora_te1":
+        meta["ypuddin.component_prefixes"] = json.dumps({**prefixes, "text_encoder": "lora_te"})
+    return out, meta

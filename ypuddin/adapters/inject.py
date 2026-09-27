@@ -70,6 +70,18 @@ class AdapterSet:
     config: AdapterConfig
     prefix: str = "lora_unet"
     _originals: dict[str, nn.Linear] | None = None
+    # File keys name layers below this module path ("model." of a causal-LM text encoder).
+    export_root: str = ""
+    # The prefix files used before, read back with the full module path.
+    legacy_prefix: str | None = None
+
+    def export_key(self, name: str) -> str:
+        return kohya_key(name.removeprefix(self.export_root), self.prefix)
+
+    def file_keys(self, name: str) -> tuple[str, ...]:
+        """Keys a file may carry for a layer: the current name, then the one older files used."""
+        keys = (self.export_key(name),)
+        return keys + (kohya_key(name, self.legacy_prefix),) if self.legacy_prefix else keys
 
     # ----------------------------------------------------------------- training surface
     def parameters(self) -> list[nn.Parameter]:
@@ -178,7 +190,7 @@ class AdapterSet:
         tensors: dict[str, Tensor] = {}
         targets_meta: dict[str, Any] = {}
         for name, layer in self.layers.items():
-            key = kohya_key(name, self.prefix)
+            key = self.export_key(name)
             for suffix, t in layer.adapter.export_tensors().items():
                 tensors[f"{key}.{suffix}"] = t
             if layer.dora is not None:
@@ -193,8 +205,10 @@ class AdapterSet:
         """Load exported tensors into existing layers (same architecture). Returns missing layer names."""
         missing = []
         for name, layer in self.layers.items():
-            key = kohya_key(name, self.prefix)
-            sub = {k[len(key) + 1 :]: v for k, v in tensors.items() if k.startswith(key + ".")}
+            for key in self.file_keys(name):
+                sub = {k[len(key) + 1 :]: v for k, v in tensors.items() if k.startswith(key + ".")}
+                if sub:
+                    break
             if not sub:
                 missing.append(name)
                 continue
