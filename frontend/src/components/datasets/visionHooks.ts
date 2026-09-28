@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
-import type { DatasetInfo, VisionCatalog } from '../../api/types';
+import type { DatasetInfo, VisionCatalog, VlmService, VlmServices } from '../../api/types';
 import { useWorkspaceText } from '../../utils/workspaceText';
 
 export const ACTIVE_DOWNLOAD = ['queued', 'downloading', 'verifying'];
@@ -45,4 +45,33 @@ export function useScopeOptions(projectId: string, versionId: string) {
   ];
   const ids = (scope: string) => scope === 'training' ? training.map(row => row.source.id) : [scope];
   return { options, ids, loading: datasets.isPending, first: options[0]?.value || '' };
+}
+
+/** Vision model services with whether a key is saved for each. */
+export function useVlmServices() {
+  return useQuery({
+    queryKey: ['vlm-services'],
+    queryFn: ({ signal }) => apiClient.get<VlmServices>('/vlm/services', { signal, silent: true }),
+  });
+}
+
+/** The models a service offers, read by the server with the saved key. */
+export function useVlmModels(provider: string, baseUrl: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['vlm-models', provider, baseUrl],
+    queryFn: () => apiClient.post<{ models: string[] }>(`/vlm/services/${provider}/models`, { base_url: baseUrl || null }, { silent: true }),
+    enabled,
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
+}
+
+export type VlmServiceSettings = { provider: string; baseUrls: Record<string, string>; models: Record<string, string> };
+
+/** The address, model and key state a vision-model run uses; null until the services have loaded. */
+export function resolveService(settings: VlmServiceSettings, services?: VlmService[]) {
+  const service = services?.find(item => item.id === settings.provider) || services?.[0];
+  if (!service) return null;
+  const baseUrl = service.editable ? (settings.baseUrls[service.id] ?? service.base_url) : service.base_url;
+  return { service, baseUrl, model: settings.models[service.id] || '' };
 }

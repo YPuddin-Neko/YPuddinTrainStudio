@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ScanFace } from 'lucide-react';
 import type { AutoMaskOptions } from '../../api/types';
 import { formatApiError } from '../../utils/errors';
@@ -12,8 +12,8 @@ import './dataset-vision.css';
 type Settings = Required<Pick<AutoMaskOptions, 'confidence' | 'padding' | 'feather' | 'device'>>;
 const DEFAULTS: Settings = { confidence: 0.413, padding: 0.10, feather: 0.03, device: 'auto' };
 
-export default function AutoMaskPanel({ projectId, versionId, locked, latest, onStart, onUndo }: {
-  projectId: string; versionId: string; locked: boolean; latest?: PipelineOperation;
+export default function AutoMaskPanel({ projectId, versionId, locked, latest, running, onStart, onUndo }: {
+  projectId: string; versionId: string; locked: boolean; latest?: PipelineOperation; running?: ReactNode;
   onStart: (body: Record<string, unknown>) => Promise<void>; onUndo: (id: string) => void;
 }) {
   const text = useWorkspaceText();
@@ -50,11 +50,11 @@ export default function AutoMaskPanel({ projectId, versionId, locked, latest, on
         {cuda && <DeviceField value={settings.device} disabled={locked} onChange={device => update({ device })}/>}
       </div>
     </div>
-    <footer className="vision-panel-actions">
+    <footer className="vision-panel-actions">{running ? <div className="vision-running">{running}</div> : <>
       <button type="button" className="ui-btn ui-btn-primary" disabled={locked || !ready || !chosenScope} onClick={() => void start()}><ScanFace size={15}/>{text('生成遮罩', 'Create masks')}</button>
       {error && <p role="alert" className="vision-error">{error}</p>}
       <OperationResult operation={latest} locked={locked} onUndo={onUndo} undoLabel={text('撤销本次遮罩', 'Undo these masks')}
         done={changed ? text(`已为 ${changed} 张图片写入遮罩。`, `Masks written for ${changed} images.`) : text('没有检测到需要遮罩的头部。', 'No heads needed masking.')}/>
-    </footer>
+    </>}</footer>
   </section>;
 }

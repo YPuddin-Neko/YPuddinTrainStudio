@@ -1,0 +1,201 @@
+import { useState, type ReactNode } from 'react';
+import { Bot, RotateCcw, Save, Trash2 } from 'lucide-react';
+import type { VlmOptions } from '../../api/types';
+import { formatApiError } from '../../utils/errors';
+import { useWorkspaceText } from '../../utils/workspaceText';
+import StudioSelect from '../StudioSelect';
+import VisionModelField, { VisionRuntimeNotice } from './VisionModelField';
+import VlmServiceFields from './VlmServiceFields';
+import { DeviceField, NumberField, OperationResult, RangeField, ScopeField, SelectField } from './VisionPanelParts';
+import { resolveService, useRememberedSettings, useScopeOptions, useVisionModels, useVlmServices, type VlmServiceSettings } from './visionHooks';
+import { BUILTIN_TEMPLATES, defaultTemplate, type PromptTemplate, type VlmMode, type VlmOutput } from './vlmPrompts';
+import type { PipelineOperation } from './DatasetPipelinePanel';
+import './dataset-vision.css';
+
+type Shared = VlmServiceSettings & Required<Pick<VlmOptions, 'temperature' | 'image_size' | 'image_detail' | 'concurrency' | 'interval' | 'timeout' | 'retries'>> & { max_tokens: number | null; trigger: string; exclude: string };
+type ModeSettings = { output: VlmOutput; existing: 'skip' | 'overwrite' | 'refine'; templateId: string; prompt: string };
+type TaggerSettings = { model: string; general_threshold: number; character_threshold: number; device: 'auto' | 'cpu' };
+
+const SHARED: Shared = { provider: 'openai', baseUrls: {}, models: {}, temperature: 0.3, max_tokens: null, image_size: 1024, image_detail: '', concurrency: 2, interval: 0, timeout: 120, retries: 2, trigger: '', exclude: '' };
+const TAGGER: TaggerSettings = { model: 'wd-eva02-large-tagger-v3', general_threshold: 0.35, character_threshold: 0.85, device: 'auto' };
+const modeDefaults = (mode: VlmMode): ModeSettings => {
+  const output: VlmOutput = mode === 'assist' ? 'categories' : 'tags';
+  const template = defaultTemplate(mode, output);
+  return { output, existing: mode === 'assist' ? 'refine' : 'skip', templateId: template.id, prompt: template.prompt };
+};
+
+export default function VlmTagPanel({ mode, projectId, versionId, locked, latest, header, running, onStart, onUndo, onReview }: {
+  mode: VlmMode; projectId: string; versionId: string; locked: boolean; latest?: PipelineOperation; header?: ReactNode; running?: ReactNode;
+  onStart: (body: Record<string, unknown>) => Promise<void>; onUndo: (id: string) => void; onReview: () => void;
+}) {
+  const text = useWorkspaceText();
+  const assisted = mode === 'assist';
+  const services = useVlmServices();
+  const catalog = useVisionModels();
+  const scopes = useScopeOptions(projectId, versionId);
+  const [shared, updateShared] = useRememberedSettings('studio.vlm.service', SHARED);
+  const [settings, update] = useRememberedSettings(`studio.vlm.${mode}`, modeDefaults(mode));
+  const [tagger, updateTagger] = useRememberedSettings('studio.assist.tagger', TAGGER);
+  const [custom, updateCustom] = useRememberedSettings<{ templates: PromptTemplate[] }>('studio.vlm.templates', { templates: [] });
+  const [scope, setScope] = useState('');
+  const [naming, setNaming] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const chosenScope = scopes.options.some(option => option.value === scope) ? scope : scopes.first;
+  const resolved = resolveService(shared, services.data?.services);
+  const cuda = !!catalog.data?.runtime.providers.includes('cuda');
+  const taggerModel = catalog.data?.models.find(item => item.id === tagger.model && item.role === 'tagger') || catalog.data?.models.find(item => item.role === 'tagger');
+  // Refining reuses each image's own caption; the tagger only runs for images without one.
+  const needsTagger = assisted && settings.existing !== 'refine';
+  const taggerReady = !!taggerModel?.ready && !!catalog.data?.runtime.available;
+  const templates = [...BUILTIN_TEMPLATES, ...custom.templates].filter(item => item.mode === mode && item.output === settings.output);
+  const template = templates.find(item => item.id === settings.templateId);
+  const keyMissing = !!resolved && !resolved.service.editable && !resolved.service.key_configured;
+  const ready = !!resolved?.model && !keyMissing && !!settings.prompt.trim() && (!needsTagger || taggerReady);
+  const result = latest?.result;
+  const changed = result?.changed_files ?? 0;
+
+  const chooseOutput = (output: VlmOutput) => {
+    const next = defaultTemplate(mode, output) || BUILTIN_TEMPLATES.find(item => item.mode === mode)!;
+    const edited = template && settings.prompt !== template.prompt;
+    update({ output, templateId: next.id, prompt: edited ? settings.prompt : next.prompt });
+  };
+  const chooseTemplate = (id: string) => {
+    const picked = templates.find(item => item.id === id);
+    if (picked) update({ templateId: picked.id, prompt: picked.prompt });
+  };
+  const saveTemplate = () => {
+    const name = (naming || '').trim();
+    if (!name) return;
+    const existing = custom.templates.find(item => item.mode === mode && item.output === settings.output && item.name === name);
+    const saved: PromptTemplate = { id: existing?.id || `custom-${Date.now()}`, mode, output: settings.output, name, prompt: settings.prompt };
+    updateCustom({ templates: [...custom.templates.filter(item => item.id !== saved.id), saved] });
+    update({ templateId: saved.id });
+    setNaming(null);
+  };
+  const deleteTemplate = () => {
+    if (!template || template.builtin) return;
+    updateCustom({ templates: custom.templates.filter(item => item.id !== template.id) });
+    const fallback = defaultTemplate(mode, settings.output);
+    update({ templateId: fallback.id });
+  };
+  const start = async () => {
+    if (!resolved) return;
+    setError('');
+    try {
+      await onStart({
+        action: assisted ? 'assisttag' : 'vlmtag',
+        dataset_ids: scopes.ids(chosenScope),
+        vlm: {
+          provider: resolved.service.id, base_url: resolved.service.editable ? resolved.baseUrl : null, model: resolved.model,
+          prompt: settings.prompt, output: settings.output, existing: settings.existing,
+          trigger_word: shared.trigger.trim() || null, exclude_tags: shared.exclude.split(',').map(tag => tag.trim()).filter(Boolean),
+          temperature: shared.temperature, max_tokens: shared.max_tokens, image_size: shared.image_size, image_detail: shared.image_detail,
+          concurrency: shared.concurrency, interval: shared.interval, timeout: shared.timeout, retries: shared.retries,
+        },
+        ...(assisted ? { tagging: { model: taggerModel?.id, general_threshold: tagger.general_threshold, character_threshold: tagger.character_threshold, device: cuda ? tagger.device : 'cpu' } } : {}),
+      });
+    } catch (e) { setError(formatApiError(e)); }
+  };
+
+  const outputs: { value: VlmOutput; label: string }[] = [
+    { value: 'tags', label: assisted ? text('修正后的标签', 'Corrected tags') : text('标签', 'Tags') },
+    { value: 'categories', label: assisted ? text('修正标签并分类（JSON）', 'Corrected, grouped tags (JSON)') : text('分类标签与描述（JSON）', 'Grouped tags and description (JSON)') },
+    ...(assisted ? [{ value: 'sort' as const, label: text('只归类，不增删（JSON）', 'Group only, keep every tag (JSON)') }] : []),
+    { value: 'description', label: text('自然语言描述', 'Natural language description') },
+  ];
+  const outputHint = {
+    tags: text('TXT 写入标签；JSON 只改标签，角色等字段保留。', 'TXT gets the tags; JSON changes tags only and keeps fields such as character.'),
+    categories: text('写入 JSON 的数量、外观、标签、环境和描述字段。', 'Fills the JSON count, appearance, tags, environment and description fields.'),
+    sort: text('已有标签重新分组，不会增加或删除。', 'Regroups the existing tags without adding or removing any.'),
+    description: text('TXT 整条换成描述；JSON 只写描述字段。', 'Replaces a TXT caption with the description; JSON gets only its description field.'),
+  }[settings.output];
+  const existingOptions = assisted ? [
+    { value: 'refine', label: text('以已有标签为参考修正', 'Refine the existing captions') },
+    { value: 'skip', label: text('跳过已有标签的图片', 'Skip captioned images') },
+    { value: 'overwrite', label: text('忽略已有标签，重新打标', 'Ignore them and tag again') },
+  ] : [
+    { value: 'skip', label: text('跳过已有标签的图片', 'Skip captioned images') },
+    { value: 'overwrite', label: text('覆盖已有标签', 'Replace existing captions') },
+  ];
+  const done = [
+    result?.stopped ? text(`已停止：写入 ${changed} 个标签文件`, `Stopped: wrote ${changed} caption files`) : text(`已写入 ${changed} 个标签文件`, `Wrote ${changed} caption files`),
+    result?.skipped ? text(`跳过 ${result.skipped} 张`, `skipped ${result.skipped}`) : '',
+    result?.failed_files ? text(`${result.failed_files} 张失败`, `${result.failed_files} failed`) : '',
+  ].filter(Boolean).join(text('，', ', ')) + text('。', '.');
+
+  return <section className="vision-panel" aria-label={assisted ? text('辅助打标', 'Assisted tagging') : text('视觉大模型打标', 'Vision model tagging')} data-testid={assisted ? 'assist-panel' : 'vlm-panel'}>
+    <header className="vision-panel-head">{header ?? <h3><Bot size={16}/>{assisted ? text('辅助打标', 'Assisted tagging') : text('视觉大模型打标', 'Vision model tagging')}</h3>}</header>
+    {needsTagger && <VisionRuntimeNotice catalog={catalog}/>}
+    <div className="vision-panel-body">
+      {assisted && <>
+        <h4 className="vision-section-title">{text('Tagger 模型', 'Tagger model')}</h4>
+        <VisionModelField role="tagger" catalog={catalog} value={taggerModel?.id || ''} disabled={locked} onChange={id => updateTagger({ model: id })}
+          label={text('打标模型', 'Tagger model')} hint={text('先给没有标签的图片打标，结果作为参考交给视觉大模型。', 'Tags images without captions first; the tags go to the vision model as reference.')}/>
+        <div className="vision-row">
+          <RangeField label={text('通用标签阈值', 'General tag threshold')} hint={text('越低标签越多，也越容易出错，常用 0.35。', 'Lower adds more tags and more mistakes; 0.35 is typical.')}
+            value={tagger.general_threshold} min={0.05} max={0.95} step={0.01} disabled={locked} onChange={value => updateTagger({ general_threshold: value })}/>
+          <RangeField label={text('角色标签阈值', 'Character tag threshold')} hint={text('角色名的把握要求，常用 0.85。', 'Confidence needed for character names; 0.85 is typical.')}
+            value={tagger.character_threshold} min={0.05} max={0.95} step={0.01} disabled={locked} onChange={value => updateTagger({ character_threshold: value })}/>
+          {cuda && <DeviceField value={tagger.device} disabled={locked} onChange={device => updateTagger({ device })}/>}
+        </div>
+        <h4 className="vision-section-title">{text('视觉大模型', 'Vision model')}</h4>
+      </>}
+      <VlmServiceFields settings={shared} disabled={locked} onChange={updateShared}/>
+      <div className="vision-row">
+        <ScopeField scopes={scopes} value={chosenScope} onChange={setScope} disabled={locked} label={text('打标范围', 'Images')} hint={text('暂不训练的图片不会打标。', 'Images held out of training are skipped.')}/>
+        <SelectField label={text('写入内容', 'Result')} hint={outputHint} value={settings.output} options={outputs} disabled={locked} onChange={value => chooseOutput(value as VlmOutput)}/>
+        <SelectField label={text('已有标签', 'Existing captions')} value={settings.existing} options={existingOptions} disabled={locked} onChange={value => update({ existing: value as ModeSettings['existing'] })}
+          hint={assisted ? text('没有标签的图片先用 Tagger 打标。', 'Images without captions are tagged by the tagger first.') : text('已有标签的图片是否发送给模型。', 'Whether captioned images are sent to the model.')}/>
+        <label className="vision-field"><span className="vision-field-label">{text('触发词', 'Trigger word')}</span>
+          <input type="text" aria-label={text('触发词', 'Trigger word')} value={shared.trigger} maxLength={200} disabled={locked} placeholder={text('可选，例如 mychar', 'Optional, e.g. mychar')} onChange={event => updateShared({ trigger: event.target.value })}/>
+          <span className="vision-field-hint">{text('TXT 写在最前面，JSON 写入触发词字段。', 'First in TXT; the trigger field in JSON.')}</span></label>
+        <label className="vision-field"><span className="vision-field-label">{text('排除标签', 'Excluded tags')}</span>
+          <input type="text" aria-label={text('排除标签', 'Excluded tags')} value={shared.exclude} disabled={locked} placeholder={text('例如 simple background', 'e.g. simple background')} onChange={event => updateShared({ exclude: event.target.value })}/>
+          <span className="vision-field-hint">{text('这些标签不会写入，用逗号分隔。', 'Never written; separate with commas.')}</span></label>
+      </div>
+      <div className="vision-field vision-prompt">
+        <div className="vision-prompt-head"><span className="vision-field-label">{text('提示词', 'Prompt')}</span>
+          <StudioSelect aria-label={text('提示词模板', 'Prompt template')} value={template?.id || ''} placeholder={text('已修改', 'Edited')} disabled={locked} options={templates.map(item => ({ value: item.id, label: item.builtin ? text(item.name, item.nameEn || item.name) : item.name }))} onValueChange={chooseTemplate}/>
+          {template && settings.prompt !== template.prompt && <button type="button" className="ui-btn ui-btn-sm ui-btn-quiet" disabled={locked} onClick={() => update({ prompt: template.prompt })}><RotateCcw size={13}/>{text('恢复模板', 'Restore template')}</button>}
+          {naming === null
+            ? <button type="button" className="ui-btn ui-btn-sm" disabled={locked || !settings.prompt.trim()} onClick={() => setNaming(template && !template.builtin ? template.name : '')}><Save size={13}/>{text('保存为模板', 'Save as template')}</button>
+            : <form className="vision-template-name" onSubmit={event => { event.preventDefault(); saveTemplate(); }}>
+              <input type="text" autoFocus maxLength={60} aria-label={text('模板名称', 'Template name')} placeholder={text('模板名称', 'Template name')} value={naming} onChange={event => setNaming(event.target.value)}/>
+              <button type="submit" className="ui-btn ui-btn-sm ui-btn-primary" disabled={!naming.trim()}>{text('保存', 'Save')}</button>
+              <button type="button" className="ui-btn ui-btn-sm ui-btn-quiet" onClick={() => setNaming(null)}>{text('取消', 'Cancel')}</button></form>}
+          {template && !template.builtin && naming === null && <button type="button" className="ui-btn ui-btn-sm ui-btn-quiet ui-btn-danger" disabled={locked} onClick={deleteTemplate}><Trash2 size={13}/>{text('删除模板', 'Delete template')}</button>}
+        </div>
+        <textarea aria-label={text('提示词', 'Prompt')} value={settings.prompt} rows={9} maxLength={20000} disabled={locked} spellCheck={false} onChange={event => update({ prompt: event.target.value })}/>
+        <span className="vision-field-hint">{assisted ? text('{tags} 换成参考标签，{trigger} 换成触发词；没有 {tags} 时参考标签附在末尾。', '{tags} becomes the reference tags and {trigger} the trigger word; without {tags} the reference is appended.') : text('{trigger} 换成触发词，没有触发词时含它的行会删去。', '{trigger} becomes the trigger word; lines with it are dropped when there is none.')}</span>
+      </div>
+      <details className="vision-advanced">
+        <summary>{text('请求参数', 'Request settings')}</summary>
+        <div className="vision-row vision-row-quad">
+          <NumberField label={text('温度', 'Temperature')} hint={text('越低越稳定，常用 0.2–0.4。', 'Lower is steadier; 0.2–0.4 is typical.')} value={shared.temperature} min={0} max={2} step={0.1} disabled={locked} onChange={value => updateShared({ temperature: value ?? SHARED.temperature })}/>
+          <NumberField optional label={text('最大输出长度', 'Max output tokens')} hint={text('留空不限制；思考型模型需要留足。', 'Empty for no limit; reasoning models need room.')} placeholder={text('不限制', 'No limit')} value={shared.max_tokens} min={16} max={65536} step={1} disabled={locked} onChange={value => updateShared({ max_tokens: value })}/>
+          <SelectField label={text('图片长边', 'Image size')} hint={text('发送前缩到这个尺寸，越大越费额度。', 'Images are scaled down to this before sending; larger costs more.')} value={String(shared.image_size)} disabled={locked} onChange={value => updateShared({ image_size: Number(value) })}
+            options={[512, 768, 1024, 1536, 2048].map(size => ({ value: String(size), label: `${size} px` }))}/>
+          <SelectField label={text('图像细节', 'Image detail')} hint={text('OpenAI 的 detail 参数，接口不支持时选“不发送”。', 'OpenAI’s detail setting; choose “Not sent” when the API rejects it.')} value={shared.image_detail} disabled={locked} onChange={value => updateShared({ image_detail: value as Shared['image_detail'] })}
+            options={[{ value: '', label: text('Not sent (不发送)', 'Not sent') }, { value: 'auto', label: text('Auto (自动)', 'Auto') }, { value: 'low', label: text('Low (低)', 'Low') }, { value: 'high', label: text('High (高)', 'High') }]}/>
+          <NumberField label={text('并发数', 'Parallel requests')} hint={text('同时发送的请求数，受服务限速约束。', 'Requests in flight at once, within the service’s rate limit.')} value={shared.concurrency} min={1} max={16} step={1} disabled={locked} onChange={value => updateShared({ concurrency: value ?? 1 })}/>
+          <NumberField label={text('请求间隔（秒）', 'Interval (s)')} hint={text('两次请求开始之间的最短间隔。', 'Shortest time between two request starts.')} value={shared.interval} min={0} max={120} step={0.5} disabled={locked} onChange={value => updateShared({ interval: value ?? 0 })}/>
+          <NumberField label={text('超时（秒）', 'Timeout (s)')} hint={text('单次请求的最长等待时间。', 'Longest wait for one reply.')} value={shared.timeout} min={10} max={900} step={10} disabled={locked} onChange={value => updateShared({ timeout: value ?? SHARED.timeout })}/>
+          <NumberField label={text('重试次数', 'Retries')} hint={text('限速、服务错误或超时后重试。', 'Retried after rate limits, server errors or timeouts.')} value={shared.retries} min={0} max={5} step={1} disabled={locked} onChange={value => updateShared({ retries: value ?? 0 })}/>
+        </div>
+      </details>
+    </div>
+    <footer className="vision-panel-actions">{running ? <div className="vision-running">{running}</div> : <>
+      <button type="button" className="ui-btn ui-btn-primary" disabled={locked || !ready || !chosenScope} onClick={() => void start()}><Bot size={15}/>{text('开始打标', 'Start tagging')}</button>
+      {keyMissing && <span className="vision-field-hint">{text('先保存该服务的 API 密钥。', 'Save this service’s API key first.')}</span>}
+      {error && <p role="alert" className="vision-error">{error}</p>}
+      <OperationResult operation={latest} locked={locked} onUndo={onUndo} undoLabel={text('撤销本次打标', 'Undo this run')} done={done}>
+        {!!changed && <button type="button" className="ui-link" onClick={onReview}>{text('查看标签', 'Review captions')}</button>}
+      </OperationResult>
+      {latest?.status === 'completed' && !latest.result.undone_by && !!result?.stopped_reason && <p role="alert" className="vision-error">{result.stopped_reason}</p>}
+      {latest?.status === 'completed' && !latest.result.undone_by && !!result?.failures?.length && <details className="vision-failures">
+        <summary>{text(`查看 ${result.failures.length} 张失败的图片`, `Show ${result.failures.length} failed images`)}</summary>
+        <ul>{result.failures.map(item => <li key={item.rel_path}><strong>{item.rel_path}</strong>{item.error}</li>)}</ul>
+      </details>}
+    </>}</footer>
+  </section>;
+}

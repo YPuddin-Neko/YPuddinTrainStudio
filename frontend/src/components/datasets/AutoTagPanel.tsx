@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Tags } from 'lucide-react';
 import type { TaggingOptions } from '../../api/types';
 import { formatApiError } from '../../utils/errors';
@@ -13,8 +13,8 @@ import './dataset-vision.css';
 type Settings = Required<Pick<TaggingOptions, 'model' | 'general_threshold' | 'character_threshold' | 'existing' | 'device'>> & { exclude: string; trigger: string };
 const DEFAULTS: Settings = { model: 'wd-eva02-large-tagger-v3', general_threshold: 0.35, character_threshold: 0.85, existing: 'skip', device: 'auto', exclude: '', trigger: '' };
 
-export default function AutoTagPanel({ projectId, versionId, locked, latest, onStart, onUndo, onReview }: {
-  projectId: string; versionId: string; locked: boolean; latest?: PipelineOperation;
+export default function AutoTagPanel({ projectId, versionId, locked, latest, header, running, onStart, onUndo, onReview }: {
+  projectId: string; versionId: string; locked: boolean; latest?: PipelineOperation; header?: ReactNode; running?: ReactNode;
   onStart: (body: Record<string, unknown>) => Promise<void>; onUndo: (id: string) => void; onReview: () => void;
 }) {
   const text = useWorkspaceText();
@@ -43,7 +43,7 @@ export default function AutoTagPanel({ projectId, versionId, locked, latest, onS
     } catch (e) { setError(formatApiError(e)); }
   };
   return <section className="vision-panel" aria-label={text('Tagger 模型打标', 'Tagger model')} data-testid="autotag-panel">
-    <header className="vision-panel-head"><h3><Tags size={16}/>{text('Tagger 模型打标', 'Tagger model')}</h3></header>
+    <header className="vision-panel-head">{header ?? <h3><Tags size={16}/>{text('Tagger 模型打标', 'Tagger model')}</h3>}</header>
     <VisionRuntimeNotice catalog={catalog}/>
     <div className="vision-panel-body">
       <VisionModelField role="tagger" catalog={catalog} value={model?.id || ''} disabled={locked} onChange={id => update({ model: id })}
@@ -59,10 +59,10 @@ export default function AutoTagPanel({ projectId, versionId, locked, latest, onS
           ]}/>
           <span className="vision-field-hint">{text('重复的标签只保留一个。', 'A tag already present is not added twice.')}</span></div>
         <label className="vision-field"><span className="vision-field-label">{text('触发词', 'Trigger word')}</span>
-          <input type="text" value={settings.trigger} maxLength={200} disabled={locked} placeholder={text('可选，例如 mychar', 'Optional, e.g. mychar')} onChange={event => update({ trigger: event.target.value })}/>
+          <input type="text" aria-label={text('触发词', 'Trigger word')} value={settings.trigger} maxLength={200} disabled={locked} placeholder={text('可选，例如 mychar', 'Optional, e.g. mychar')} onChange={event => update({ trigger: event.target.value })}/>
           <span className="vision-field-hint">{text('写在每条标签的最前面。', 'Placed first in every caption.')}</span></label>
         <label className="vision-field"><span className="vision-field-label">{text('排除标签', 'Excluded tags')}</span>
-          <input type="text" value={settings.exclude} disabled={locked} placeholder={text('例如 simple background', 'e.g. simple background')} onChange={event => update({ exclude: event.target.value })}/>
+          <input type="text" aria-label={text('排除标签', 'Excluded tags')} value={settings.exclude} disabled={locked} placeholder={text('例如 simple background', 'e.g. simple background')} onChange={event => update({ exclude: event.target.value })}/>
           <span className="vision-field-hint">{text('这些标签不会写入，用逗号分隔。', 'Never written; separate with commas.')}</span></label>
       </div>
       <div className="vision-row">
@@ -73,13 +73,13 @@ export default function AutoTagPanel({ projectId, versionId, locked, latest, onS
         {cuda && <DeviceField value={settings.device} disabled={locked} onChange={device => update({ device })}/>}
       </div>
     </div>
-    <footer className="vision-panel-actions">
+    <footer className="vision-panel-actions">{running ? <div className="vision-running">{running}</div> : <>
       <button type="button" className="ui-btn ui-btn-primary" disabled={locked || !ready || !chosenScope} onClick={() => void start()}><Tags size={15}/>{text('开始打标', 'Start tagging')}</button>
       {error && <p role="alert" className="vision-error">{error}</p>}
       <OperationResult operation={latest} locked={locked} onUndo={onUndo} undoLabel={text('撤销本次打标', 'Undo this run')}
         done={changed ? text(`已写入 ${changed} 个标签文件。`, `Wrote ${changed} caption files.`) : text('没有需要写入的标签。', 'No captions needed writing.')}>
         {!!changed && <button type="button" className="ui-link" onClick={onReview}>{text('查看标签', 'Review captions')}</button>}
       </OperationResult>
-    </footer>
+    </>}</footer>
   </section>;
 }

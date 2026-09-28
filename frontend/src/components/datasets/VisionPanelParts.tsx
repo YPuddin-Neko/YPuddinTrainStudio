@@ -39,3 +39,20 @@ export function OperationResult({ operation, done, undoLabel, locked, onUndo, ch
   return <p role="status" className="vision-result"><span>{done}</span>{children}
     {operation.can_undo && <button type="button" className="ui-btn ui-btn-sm" disabled={locked} onClick={() => onUndo(operation.id)}><Undo2 size={13}/>{undoLabel}</button>}</p>;
 }
+
+/** A plain number box; an empty box means "not set" when ``optional``. */
+export function NumberField({ label, hint, value, min, max, step, disabled, optional = false, placeholder, onChange }: { label: string; hint: string; value: number | null; min: number; max: number; step: number; disabled: boolean; optional?: boolean; placeholder?: string; onChange: (value: number | null) => void }) {
+  return <label className="vision-field"><span className="vision-field-label">{label}</span>
+    <input type="number" aria-label={label} value={value ?? ''} min={min} max={max} step={step} disabled={disabled} placeholder={placeholder} onChange={event => {
+      if (event.target.value === '') { if (optional) onChange(null); return; }
+      const next = Number(event.target.value);
+      if (Number.isFinite(next)) onChange(Math.min(max, Math.max(min, next)));
+    }}/>
+    <span className="vision-field-hint">{hint}</span></label>;
+}
+
+export function SelectField({ label, hint, value, options, disabled, onChange }: { label: string; hint: string; value: string; options: { value: string; label: string }[]; disabled: boolean; onChange: (value: string) => void }) {
+  return <div className="vision-field"><span className="vision-field-label">{label}</span>
+    <StudioSelect aria-label={label} value={value} disabled={disabled} options={options} onValueChange={onChange}/>
+    <span className="vision-field-hint">{hint}</span></div>;
+}
