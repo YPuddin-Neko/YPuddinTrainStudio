@@ -288,25 +288,30 @@ def _worker(kind: str, images: list[str], options: dict, events: Any, working_di
             outputs = session.get_outputs()
             if not outputs:
                 raise ValueError("this tagger has no prediction output")
-            results = []
+            results, characters = [], []
+            names = {
+                name if _EMOTICON.fullmatch(name) else name.replace("_", " ")
+                for name, category in labels
+                if category == CHARACTER_CATEGORY
+            }
             for index, path in enumerate(images):
                 with Image.open(path) as image:
                     image.load()
                     pixels = prepare_image(image)
                 scores = session.run([outputs[0].name], {inputs[0].name: pixels})[0]
-                results.append(
-                    select_tags(
-                        labels,
-                        np.asarray(scores)[0],
-                        options.get("general_threshold", 0.35),
-                        options.get("character_threshold", 0.85),
-                        exclude=tuple(options.get("exclude_tags", ())),
-                    )
+                caption = select_tags(
+                    labels,
+                    np.asarray(scores)[0],
+                    options.get("general_threshold", 0.35),
+                    options.get("character_threshold", 0.85),
+                    exclude=tuple(options.get("exclude_tags", ())),
                 )
+                results.append(caption)
+                characters.append([tag for tag in caption.split(", ") if tag in names])
                 events.put(
                     {"type": "progress", "done": index + 1, "total": len(images), "message": Path(path).name}
                 )
-            events.put({"type": "result", "captions": results})
+            events.put({"type": "result", "captions": results, "characters": characters})
             return
         session = _session(options["model_path"], provider, options.get("device_index", 0))
         inputs = session.get_inputs()
@@ -435,8 +440,12 @@ def tag_images(
     device_index: int = 0,
     progress: Callable[[int, int, str], None] = lambda *_: None,
     cancel: threading.Event | None = None,
-) -> list[str]:
-    """Tag each image; returns one caption per image, in the order given."""
+    characters: bool = False,
+) -> list[str] | list[tuple[str, list[str]]]:
+    """Tag each image; returns one caption per image, in the order given.
+
+    With ``characters``, each entry is ``(caption, character tags in it)``.
+    """
     options = {
         "model_path": str(model_path),
         "tags_path": str(tags_path),
@@ -446,9 +455,10 @@ def tag_images(
         "provider": provider,
         "device_index": device_index,
     }
-    return _run("tagger", [str(p) for p in images], options, progress, cancel or threading.Event())[
-        "captions"
-    ]
+    result = _run("tagger", [str(p) for p in images], options, progress, cancel or threading.Event())
+    if characters:
+        return list(zip(result["captions"], result["characters"], strict=True))
+    return result["captions"]
 
 
 def detect_heads(

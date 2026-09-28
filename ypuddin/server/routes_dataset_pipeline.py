@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field, model_validator
 
 from .dataset_pipeline import DatasetPipeline
+from .model_credentials import VlmProvider
 
 router = APIRouter()
 
@@ -59,9 +60,43 @@ class AutoMaskOptions(BaseModel):
     device: Literal["auto", "cpu"] = "auto"
 
 
+class VlmOptions(BaseModel):
+    provider: VlmProvider
+    base_url: str | None = Field(None, max_length=500)
+    model: str = Field(min_length=1, max_length=200)
+    prompt: str = Field(min_length=1, max_length=20000)
+    # What the reply holds and where it goes: a tag list, schema groups (JSON), the file's own tags
+    # regrouped without adding or removing any (JSON), or prose.
+    output: Literal["tags", "categories", "sort", "description"] = "tags"
+    # "refine" sends each image's own caption as the reference instead of tagger output.
+    existing: Literal["skip", "overwrite", "refine"] = "skip"
+    trigger_word: str | None = Field(None, max_length=200)
+    exclude_tags: list[str] = Field(default_factory=list, max_length=1000)
+    temperature: float = Field(0.3, ge=0, le=2)
+    max_tokens: int | None = Field(None, ge=16, le=65536)
+    image_size: int = Field(1024, ge=256, le=4096)
+    image_detail: Literal["", "auto", "low", "high"] = ""
+    concurrency: int = Field(2, ge=1, le=16)
+    interval: float = Field(0, ge=0, le=120)
+    timeout: int = Field(120, ge=10, le=900)
+    retries: int = Field(2, ge=0, le=5)
+
+
+VISION_ACTIONS = {"autotag", "automask", "vlmtag", "assisttag"}
+
+
 class PipelineRequest(BaseModel):
     action: Literal[
-        "inspect", "exclude", "restore", "preprocess", "captions", "prepare", "autotag", "automask"
+        "inspect",
+        "exclude",
+        "restore",
+        "preprocess",
+        "captions",
+        "prepare",
+        "autotag",
+        "automask",
+        "vlmtag",
+        "assisttag",
     ]
     images: list[PipelineImage] = Field(default_factory=list, max_length=20000)
     # Automatic tagging and masks may name whole datasets instead of images.
@@ -71,17 +106,26 @@ class PipelineRequest(BaseModel):
     captions: CaptionOptions | None = None
     tagging: TaggingOptions | None = None
     automask: AutoMaskOptions | None = None
+    vlm: VlmOptions | None = None
 
     @model_validator(mode="after")
     def validate_action(self) -> PipelineRequest:
         if self.action in {"exclude", "preprocess", "captions"} and not self.images:
             raise ValueError("select at least one image")
-        if self.action in {"autotag", "automask"} and not (self.images or self.dataset_ids):
+        if self.action in VISION_ACTIONS and not (self.images or self.dataset_ids):
             raise ValueError("select at least one image or dataset")
-        if self.dataset_ids and self.action not in {"autotag", "automask"}:
+        if self.dataset_ids and self.action not in VISION_ACTIONS:
             raise ValueError("only automatic tagging and masks accept whole datasets")
-        if self.action == "autotag" and not self.tagging:
+        if self.action in {"autotag", "assisttag"} and not self.tagging:
             raise ValueError("tagging options are required")
+        if self.action in {"vlmtag", "assisttag"} and not self.vlm:
+            raise ValueError("vision model options are required")
+        if (
+            self.action == "vlmtag"
+            and self.vlm
+            and (self.vlm.output == "sort" or self.vlm.existing == "refine")
+        ):
+            raise ValueError("regrouping and refining need reference tags; use assisted tagging")
         if self.action == "automask" and not self.automask:
             raise ValueError("automatic mask options are required")
         if self.action == "preprocess" and not self.preprocess:

@@ -7755,6 +7755,192 @@
           }
         }
       }
+    },
+    "/api/vlm/services": {
+      "get": {
+        "summary": "Services",
+        "operationId": "services_api_vlm_services_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VlmServices"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vlm/services/{provider}/key": {
+      "put": {
+        "summary": "Save Key",
+        "operationId": "save_key_api_vlm_services__provider__key_put",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "openai",
+                "gemini",
+                "openrouter",
+                "siliconflow",
+                "dashscope",
+                "deepseek",
+                "ollama",
+                "lmstudio",
+                "custom"
+              ],
+              "type": "string",
+              "title": "Provider"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VlmKeyUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Clear Key",
+        "operationId": "clear_key_api_vlm_services__provider__key_delete",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "openai",
+                "gemini",
+                "openrouter",
+                "siliconflow",
+                "dashscope",
+                "deepseek",
+                "ollama",
+                "lmstudio",
+                "custom"
+              ],
+              "type": "string",
+              "title": "Provider"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vlm/services/{provider}/models": {
+      "post": {
+        "summary": "Models",
+        "operationId": "models_api_vlm_services__provider__models_post",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "openai",
+                "gemini",
+                "openrouter",
+                "siliconflow",
+                "dashscope",
+                "deepseek",
+                "ollama",
+                "lmstudio",
+                "custom"
+              ],
+              "type": "string",
+              "title": "Provider"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VlmModelQuery"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VlmModelList"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -16879,7 +17065,9 @@
               "captions",
               "prepare",
               "autotag",
-              "automask"
+              "automask",
+              "vlmtag",
+              "assisttag"
             ],
             "title": "Action"
           },
@@ -16944,6 +17132,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/AutoMaskOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "vlm": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VlmOptions"
               },
               {
                 "type": "null"
@@ -22500,6 +22698,269 @@
           "providers"
         ],
         "title": "VisionRuntime"
+      },
+      "VlmKeyUpdate": {
+        "properties": {
+          "api_key": {
+            "type": "string",
+            "format": "password",
+            "title": "Api Key",
+            "writeOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "api_key"
+        ],
+        "title": "VlmKeyUpdate"
+      },
+      "VlmModelList": {
+        "properties": {
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Models"
+          }
+        },
+        "type": "object",
+        "required": [
+          "models"
+        ],
+        "title": "VlmModelList"
+      },
+      "VlmModelQuery": {
+        "properties": {
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "VlmModelQuery"
+      },
+      "VlmOptions": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "openai",
+              "gemini",
+              "openrouter",
+              "siliconflow",
+              "dashscope",
+              "deepseek",
+              "ollama",
+              "lmstudio",
+              "custom"
+            ],
+            "title": "Provider"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Model"
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 20000,
+            "minLength": 1,
+            "title": "Prompt"
+          },
+          "output": {
+            "type": "string",
+            "enum": [
+              "tags",
+              "categories",
+              "sort",
+              "description"
+            ],
+            "title": "Output",
+            "default": "tags"
+          },
+          "existing": {
+            "type": "string",
+            "enum": [
+              "skip",
+              "overwrite",
+              "refine"
+            ],
+            "title": "Existing",
+            "default": "skip"
+          },
+          "trigger_word": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trigger Word"
+          },
+          "exclude_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "title": "Exclude Tags"
+          },
+          "temperature": {
+            "type": "number",
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Temperature",
+            "default": 0.3
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 65536.0,
+                "minimum": 16.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens"
+          },
+          "image_size": {
+            "type": "integer",
+            "maximum": 4096.0,
+            "minimum": 256.0,
+            "title": "Image Size",
+            "default": 1024
+          },
+          "image_detail": {
+            "type": "string",
+            "enum": [
+              "",
+              "auto",
+              "low",
+              "high"
+            ],
+            "title": "Image Detail",
+            "default": ""
+          },
+          "concurrency": {
+            "type": "integer",
+            "maximum": 16.0,
+            "minimum": 1.0,
+            "title": "Concurrency",
+            "default": 2
+          },
+          "interval": {
+            "type": "number",
+            "maximum": 120.0,
+            "minimum": 0.0,
+            "title": "Interval",
+            "default": 0
+          },
+          "timeout": {
+            "type": "integer",
+            "maximum": 900.0,
+            "minimum": 10.0,
+            "title": "Timeout",
+            "default": 120
+          },
+          "retries": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 0.0,
+            "title": "Retries",
+            "default": 2
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "model",
+          "prompt"
+        ],
+        "title": "VlmOptions"
+      },
+      "VlmService": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "openai",
+              "gemini",
+              "openrouter",
+              "siliconflow",
+              "dashscope",
+              "deepseek",
+              "ollama",
+              "lmstudio",
+              "custom"
+            ],
+            "title": "Id"
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url"
+          },
+          "editable": {
+            "type": "boolean",
+            "title": "Editable"
+          },
+          "key_configured": {
+            "type": "boolean",
+            "title": "Key Configured"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "base_url",
+          "editable",
+          "key_configured"
+        ],
+        "title": "VlmService"
+      },
+      "VlmServices": {
+        "properties": {
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/VlmService"
+            },
+            "type": "array",
+            "title": "Services"
+          }
+        },
+        "type": "object",
+        "required": [
+          "services"
+        ],
+        "title": "VlmServices"
       },
       "WandbConfig": {
         "properties": {

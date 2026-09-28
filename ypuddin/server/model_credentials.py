@@ -21,6 +21,9 @@ Provider = Literal["huggingface", "modelscope"]
 PROVIDERS = ("huggingface", "modelscope")
 SiteProvider = Literal["danbooru", "gelbooru"]
 AccessProvider = Literal["huggingface", "modelscope", "danbooru", "gelbooru"]
+VlmProvider = Literal[
+    "openai", "gemini", "openrouter", "siliconflow", "dashscope", "deepseek", "ollama", "lmstudio", "custom"
+]
 
 
 class CredentialState(BaseModel):
@@ -89,7 +92,8 @@ class ModelCredentials:
                 return {}
             value = json.loads(self.path.read_text("utf-8"))
             if not isinstance(value, dict) or any(
-                not isinstance(value.get(group, {}), dict) for group in ("model_sources", "site_sources")
+                not isinstance(value.get(group, {}), dict)
+                for group in ("model_sources", "site_sources", "vlm_services")
             ):
                 raise ValueError()
             return value
@@ -142,6 +146,30 @@ class ModelCredentials:
                 provider: {"configured": bool(self.site(provider)[1])}
                 for provider in ("danbooru", "gelbooru")
             }
+
+    def vlm_key(self, provider: VlmProvider) -> str | None:
+        """Private per-operation snapshot of a vision model service key."""
+        with self.lock:
+            value = self._read().get("vlm_services", {}).get(provider, "")
+            if not isinstance(value, str):
+                raise ApiError("Invalid local credential entry.", code="credentials.read", status=503)
+            return value or None
+
+    def vlm_state(self) -> dict[str, bool]:
+        with self.lock:
+            stored = self._read().get("vlm_services", {})
+            return {provider: bool(key) for provider, key in stored.items() if isinstance(key, str)}
+
+    def save_vlm_key(self, provider: VlmProvider, key: str) -> dict[str, bool]:
+        with self.lock:
+            value = self._read()
+            services = value.setdefault("vlm_services", {})
+            if key:
+                services[provider] = key
+            else:
+                services.pop(provider, None)
+            self._write(value)
+        return {"configured": bool(key)}
 
     def save(self, provider: Provider, token: str) -> dict[str, bool]:
         with self.lock:

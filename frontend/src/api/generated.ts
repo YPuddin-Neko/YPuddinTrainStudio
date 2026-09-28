@@ -2324,6 +2324,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/vlm/services": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Services */
+        get: operations["services_api_vlm_services_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/vlm/services/{provider}/key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save Key */
+        put: operations["save_key_api_vlm_services__provider__key_put"];
+        post?: never;
+        /** Clear Key */
+        delete: operations["clear_key_api_vlm_services__provider__key_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/vlm/services/{provider}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Models */
+        post: operations["models_api_vlm_services__provider__models_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -5671,7 +5723,7 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "inspect" | "exclude" | "restore" | "preprocess" | "captions" | "prepare" | "autotag" | "automask";
+            action: "inspect" | "exclude" | "restore" | "preprocess" | "captions" | "prepare" | "autotag" | "automask" | "vlmtag" | "assisttag";
             /** Images */
             images?: components["schemas"]["PipelineImage"][];
             /** Dataset Ids */
@@ -5682,6 +5734,7 @@ export interface components {
             captions?: components["schemas"]["CaptionOptions"] | null;
             tagging?: components["schemas"]["TaggingOptions"] | null;
             automask?: components["schemas"]["AutoMaskOptions"] | null;
+            vlm?: components["schemas"]["VlmOptions"] | null;
         };
         /** PipelineSnapshot */
         PipelineSnapshot: {
@@ -7843,6 +7896,111 @@ export interface components {
             providers: string[];
             /** Error */
             error?: string | null;
+        };
+        /** VlmKeyUpdate */
+        VlmKeyUpdate: {
+            /**
+             * Api Key
+             * Format: password
+             */
+            api_key: string;
+        };
+        /** VlmModelList */
+        VlmModelList: {
+            /** Models */
+            models: string[];
+        };
+        /** VlmModelQuery */
+        VlmModelQuery: {
+            /** Base Url */
+            base_url?: string | null;
+        };
+        /** VlmOptions */
+        VlmOptions: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "openai" | "gemini" | "openrouter" | "siliconflow" | "dashscope" | "deepseek" | "ollama" | "lmstudio" | "custom";
+            /** Base Url */
+            base_url?: string | null;
+            /** Model */
+            model: string;
+            /** Prompt */
+            prompt: string;
+            /**
+             * Output
+             * @default tags
+             * @enum {string}
+             */
+            output: "tags" | "categories" | "sort" | "description";
+            /**
+             * Existing
+             * @default skip
+             * @enum {string}
+             */
+            existing: "skip" | "overwrite" | "refine";
+            /** Trigger Word */
+            trigger_word?: string | null;
+            /** Exclude Tags */
+            exclude_tags?: string[];
+            /**
+             * Temperature
+             * @default 0.3
+             */
+            temperature: number;
+            /** Max Tokens */
+            max_tokens?: number | null;
+            /**
+             * Image Size
+             * @default 1024
+             */
+            image_size: number;
+            /**
+             * Image Detail
+             * @default
+             * @enum {string}
+             */
+            image_detail: "" | "auto" | "low" | "high";
+            /**
+             * Concurrency
+             * @default 2
+             */
+            concurrency: number;
+            /**
+             * Interval
+             * @default 0
+             */
+            interval: number;
+            /**
+             * Timeout
+             * @default 120
+             */
+            timeout: number;
+            /**
+             * Retries
+             * @default 2
+             */
+            retries: number;
+        };
+        /** VlmService */
+        VlmService: {
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "openai" | "gemini" | "openrouter" | "siliconflow" | "dashscope" | "deepseek" | "ollama" | "lmstudio" | "custom";
+            /** Base Url */
+            base_url: string;
+            /** Editable */
+            editable: boolean;
+            /** Key Configured */
+            key_configured: boolean;
+        };
+        /** VlmServices */
+        VlmServices: {
+            /** Services */
+            services: components["schemas"]["VlmService"][];
         };
         /** WandbConfig */
         WandbConfig: {
@@ -13416,6 +13574,127 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VisionModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    services_api_vlm_services_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VlmServices"];
+                };
+            };
+        };
+    };
+    save_key_api_vlm_services__provider__key_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "openai" | "gemini" | "openrouter" | "siliconflow" | "dashscope" | "deepseek" | "ollama" | "lmstudio" | "custom";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VlmKeyUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CredentialState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_key_api_vlm_services__provider__key_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "openai" | "gemini" | "openrouter" | "siliconflow" | "dashscope" | "deepseek" | "ollama" | "lmstudio" | "custom";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CredentialState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    models_api_vlm_services__provider__models_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "openai" | "gemini" | "openrouter" | "siliconflow" | "dashscope" | "deepseek" | "ollama" | "lmstudio" | "custom";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VlmModelQuery"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VlmModelList"];
                 };
             };
             /** @description Validation Error */

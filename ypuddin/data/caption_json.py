@@ -393,3 +393,109 @@ def edited_content(
             _assign(data, tuple(target["path"]), description.strip())
     parse_caption(data, filename=path.name)
     return json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
+
+
+def category_tokens(path: str | Path) -> dict[str, Any]:
+    """Each schema field's tags, the prose and the file's trigger, read the way training reads them."""
+    path = Path(path)
+    data = _read_document(path)[0]
+    fmt = _format(data)
+    parsed = parse_caption(data, filename=path.name)
+    result: dict[str, Any] = {key: [] for key in (*_FIXED, *_VARIABLE)}
+    if fmt == "legacy_override":
+        result["tags"] = list(parsed.tags)
+    else:
+        if fmt == "nested":
+            fields = data["tags"]
+        elif fmt == "full":
+            fixed = _object(data.get("fixed"), "fixed")
+            ai = _object(data.get("ai_output"), "ai_output")
+            origin = _object(data.get("from_path"), "from_path")
+            fields = {
+                **{key: fixed.get(key) for key in ("quality", "series", "artist")},
+                "count": ai.get("count"),
+                "character": data.get("character"),
+                "environment": ai.get("environment"),
+            }
+            for key in ("appearance", "tags"):
+                fields[key] = list(
+                    unique(
+                        (
+                            *_tokens(ai.get(key), f"ai_output.{key}"),
+                            *_tokens(origin.get(key), f"from_path.{key}"),
+                            *_tokens(origin.get(f"extra_{key}"), f"from_path.extra_{key}"),
+                        )
+                    )
+                )
+        else:
+            fields = data
+        for key in (*_FIXED, *_VARIABLE):
+            result[key] = list(
+                _character(fields.get(key)) if key == "character" else _tokens(fields.get(key), key)
+            )
+    result["nl"] = parsed.nl
+    result["trigger"] = parsed.trigger
+    return result
+
+
+def _set_trigger(data: dict, trigger: str) -> None:
+    meta = data.get("meta")
+    if meta is None:
+        data["meta"] = meta = {}
+    if not isinstance(meta, dict):
+        raise ValueError("meta must be an object to hold the trigger")
+    meta["trigger"] = trigger
+
+
+def with_trigger(content: str, trigger: str, *, filename: str = "caption.json") -> str:
+    """A JSON caption document with ``meta.trigger`` set; everything else unchanged."""
+    data = json.loads(content)
+    _set_trigger(data, trigger.strip())
+    parse_caption(data, filename=filename)
+    return json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
+
+
+def categorized_content(
+    path: str | Path,
+    groups: dict[str, list[str]],
+    *,
+    nl: str | None = None,
+    trigger: str = "",
+    character: list[str] | None = None,
+) -> str:
+    """Write count / appearance / tags / environment groups and prose into the file's own fields.
+
+    Quality, series, artist and unknown metadata stay as they are; ``character`` fills the character
+    field only when the file has none. A new file uses the flat top-level layout.
+    """
+    path = Path(path)
+    data = _read_document(path)[0] if path.exists() else {}
+    fmt = _format(data) if data else "simple"
+    if fmt == "unknown":
+        raise ValueError("Unrecognized JSON caption schema; source document is read only")
+    ordered = ("count", "appearance", "tags", "environment")
+    if fmt == "legacy_override":
+        # The top-level list overrides every classified field; keep one list, in group order.
+        data["tags"] = list(unique(tag for key in ordered for tag in groups.get(key, ())))
+        if nl is not None:
+            data["nl"] = nl.strip()
+    else:
+        prefix = ("tags",) if fmt == "nested" else ("ai_output",) if fmt == "full" else ()
+        for key in ordered:
+            if key not in groups:
+                continue
+            values = list(unique(groups[key]))
+            present, current = _lookup(data, (*prefix, key))
+            as_text = isinstance(current, str) or (key == "count" and (not present or current is None))
+            _assign(data, (*prefix, key), ", ".join(values) if as_text else values)
+        if nl is not None:
+            _assign(data, (*prefix, "nl"), nl.strip())
+        if character:
+            owner = () if fmt == "full" else prefix
+            _, current = _lookup(data, (*owner, "character"))
+            if not (_character(current) if current is not None else ()):
+                _assign(data, (*owner, "character"), ", ".join(unique(character)))
+    if trigger.strip():
+        _set_trigger(data, trigger.strip())
+    parse_caption(data, filename=path.name)
+    return json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False) + "\n"

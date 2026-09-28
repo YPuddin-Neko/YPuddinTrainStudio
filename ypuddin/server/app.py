@@ -28,6 +28,7 @@ from . import (
     routes_regularization,
     routes_site_downloads,
     routes_vision,
+    routes_vlm,
     routes_work,
     routes_xyz,
 )
@@ -68,6 +69,7 @@ def create_app(
     dataset_pipeline = DatasetPipeline(context)
     vision_models = VisionModels(context, credentials=model_downloads.credentials)
     dataset_pipeline.vision = vision_models
+    dataset_pipeline.credentials = model_downloads.credentials
     regularization = RegularizationManager(context, credentials=model_downloads.credentials)
     site_downloads = SiteDownloadManager(
         context, credentials=model_downloads.credentials, regularization=regularization
@@ -137,6 +139,7 @@ def create_app(
     app.include_router(routes_site_downloads.router, prefix="/api")
     app.include_router(routes_credentials.router, prefix="/api")
     app.include_router(routes_vision.router, prefix="/api")
+    app.include_router(routes_vlm.router, prefix="/api")
 
     dist = Path(frontend_dist) if frontend_dist else Path(__file__).resolve().parents[2] / "frontend" / "dist"
     if (dist / "index.html").exists():

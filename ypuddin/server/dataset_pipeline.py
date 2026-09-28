@@ -77,6 +77,21 @@ def merged_caption(previous: str, tags: str, existing: str, trigger: str = "") -
     return ", ".join(result)
 
 
+# Every tag group of a structured caption, in the order training reads them.
+_CAPTION_GROUPS = ("quality", "count", "character", "series", "artist", "appearance", "tags", "environment")
+
+
+def _same_caption(path: Path, content: str) -> bool:
+    """Whether writing ``content`` would leave the caption's meaning unchanged."""
+    try:
+        current = path.read_text(encoding="utf-8-sig")
+        if path.suffix.lower() == ".json":
+            return json.loads(current) == json.loads(content)
+    except (OSError, ValueError):
+        return False
+    return current.strip() == content.strip()
+
+
 class DatasetPipeline:
     def __init__(self, context: Any):
         self.c = context
@@ -84,6 +99,7 @@ class DatasetPipeline:
         self.stopping = threading.Event()
         self.cancel_events: dict[str, threading.Event] = {}
         self.vision = None  # VisionModels, attached by the app
+        self.credentials = None  # ModelCredentials, attached by the app
         self.c.db.execute("""CREATE TABLE IF NOT EXISTS dataset_pipeline_operations (
             id TEXT PRIMARY KEY, project_id TEXT NOT NULL, version_id TEXT NOT NULL,
             action TEXT NOT NULL, status TEXT NOT NULL, phase TEXT NOT NULL,
@@ -541,11 +557,8 @@ class DatasetPipeline:
             if str(path) in seen:
                 continue
             seen.add(str(path))
-            caption = caption_target(
-                path,
-                _validate_caption_extension(sources.get(row["id"], row).get("caption_ext", "auto")),
-                directory_cache=caption_directories,
-            )
+            caption_ext = _validate_caption_extension(sources.get(row["id"], row).get("caption_ext", "auto"))
+            caption = caption_target(path, caption_ext, directory_cache=caption_directories)
             mask = mask_for(path)
             for sidecar in (caption, Path(mask) if mask else None):
                 if sidecar and sidecar.is_symlink():
@@ -558,6 +571,7 @@ class DatasetPipeline:
                     "dataset_id": row["id"],
                     "rel_path": relative.as_posix(),
                     "row": row,
+                    "caption_ext": caption_ext,
                 }
             )
         if not resolved:
@@ -968,7 +982,16 @@ class DatasetPipeline:
         best = max(cards, key=lambda card: card.get("mem_free_mb") or 0)
         return "cuda", int(str(best["device"]).split(":", 1)[1])
 
+    def _vision_call(self, oid: str, call: Any) -> Any:
+        """Run a tagger or detector; its child process stops with RuntimeError when cancelled."""
+        try:
+            return call()
+        except RuntimeError:
+            self._cancelled(oid)
+            raise
+
     def _autotag(self, oid: str, work: Path, images: list[dict], options: dict) -> list[dict]:
+        from ypuddin.data.caption_json import category_tokens, with_trigger
         from ypuddin.data.captions import caption_content, read_editable_caption
 
         from .vision_models import tag_images
@@ -991,28 +1014,39 @@ class DatasetPipeline:
         if not pending:
             return []
         provider, device_index = self._vision_provider(options["device"])
-        captions = tag_images(
-            [str(record["path"]) for record, _ in pending],
-            model_path=files["model.onnx"],
-            tags_path=files["selected_tags.csv"],
-            general=options["general_threshold"],
-            character=options["character_threshold"],
-            exclude=tuple(options["exclude_tags"]),
-            provider=provider,
-            device_index=device_index,
-            progress=lambda done, total, name: self._progress(oid, "tagging", done, total),
-            cancel=self.cancel_events.get(oid),
+        captions = self._vision_call(
+            oid,
+            lambda: tag_images(
+                [str(record["path"]) for record, _ in pending],
+                model_path=files["model.onnx"],
+                tags_path=files["selected_tags.csv"],
+                general=options["general_threshold"],
+                character=options["character_threshold"],
+                exclude=tuple(options["exclude_tags"]),
+                provider=provider,
+                device_index=device_index,
+                progress=lambda done, total, name: self._progress(oid, "tagging", done, total),
+                cancel=self.cancel_events.get(oid),
+            ),
         )
+        trigger = (options.get("trigger_word") or "").strip()
         changes = []
         for index, ((record, previous), tags) in enumerate(zip(pending, captions, strict=True)):
             self._cancelled(oid)
-            text = merged_caption(previous, tags, options["existing"], options.get("trigger_word") or "")
             path = record["caption"]
-            if text == previous.strip() and path.exists():
+            structured = path.suffix.lower() == ".json"
+            # JSON keeps its trigger in meta.trigger, outside the shuffled tag groups; the file's
+            # own trigger stays unless a new one replaces it.
+            first = (category_tokens(path)["trigger"] if path.exists() else "") if structured else trigger
+            text = merged_caption(previous, tags, options["existing"], first)
+            content = caption_content(path, text)
+            if structured and trigger:
+                content = with_trigger(content, trigger, filename=path.name)
+            if path.exists() and _same_caption(path, content):
                 continue
             staged = work / "staged" / f"caption-{index}"
             staged.parent.mkdir(parents=True, exist_ok=True)
-            staged.write_text(caption_content(path, text), encoding="utf-8")
+            staged.write_text(content, encoding="utf-8")
             changes.append(self._change(work, path, staged))
         return changes
 
@@ -1027,16 +1061,19 @@ class DatasetPipeline:
         files = self.vision.files(options["model"])
         provider, device_index = self._vision_provider(options["device"])
         self._progress(oid, "detecting", 0, len(images), f"Detecting heads in {len(images)} images")
-        results = detect_heads(
-            [str(record["path"]) for record in images],
-            model_path=files["model.onnx"],
-            confidence=options["confidence"],
-            padding=options["padding"],
-            feather=options["feather"],
-            provider=provider,
-            device_index=device_index,
-            progress=lambda done, total, name: self._progress(oid, "detecting", done, total),
-            cancel=self.cancel_events.get(oid),
+        results = self._vision_call(
+            oid,
+            lambda: detect_heads(
+                [str(record["path"]) for record in images],
+                model_path=files["model.onnx"],
+                confidence=options["confidence"],
+                padding=options["padding"],
+                feather=options["feather"],
+                provider=provider,
+                device_index=device_index,
+                progress=lambda done, total, name: self._progress(oid, "detecting", done, total),
+                cancel=self.cancel_events.get(oid),
+            ),
         )
         changes = []
         for index, (record, found) in enumerate(zip(images, results, strict=True)):
@@ -1061,6 +1098,287 @@ class DatasetPipeline:
             Image.fromarray(np.round(combined).astype(np.uint8), "L").save(staged, format="PNG")
             changes.append(self._change(work, target, staged))
         return changes
+
+    def _vlmtag(
+        self, oid: str, work: Path, images: list[dict], options: dict, tagging: dict | None = None
+    ) -> tuple[list[dict], dict]:
+        """Caption images with a vision model; stopping keeps every image already answered.
+
+        With ``tagging`` (assisted tagging) each request carries reference tags: the image's own
+        caption when refining, otherwise tagger output.
+        """
+        from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+
+        from ypuddin.data.caption_json import category_tokens, unique
+        from ypuddin.data.captions import read_editable_caption
+
+        from . import vlm
+        from .network import ProxyPolicy
+
+        provider = options["provider"]
+        url = vlm.base_url(provider, options.get("base_url"))
+        key = self.credentials.vlm_key(provider) if self.credentials is not None else None
+        if not vlm.PROVIDERS[provider]["editable"] and not key:
+            raise ApiError("save an API key for this service first", code="vlm.key_missing", status=409)
+        output, existing = options["output"], options["existing"]
+        structured = output in {"categories", "sort"}
+        trigger = (options.get("trigger_word") or "").strip()
+        jobs, skipped, txt_only = [], 0, set()
+        failures: list[dict] = []
+        for record in images:
+            source = record["caption"] if record["caption"].exists() else None
+            target = record["caption"]
+            if structured and target.suffix.lower() != ".json":
+                if record["caption_ext"] != "auto":
+                    txt_only.add(Path(record["row"]["path"]).name)
+                    continue
+                # Auto captions prefer JSON, so the new file takes over and the TXT stays as it was.
+                target = record["path"].with_suffix(".json")
+            as_json = target.suffix.lower() == ".json"
+            try:
+                fields = category_tokens(source) if source and source.suffix == ".json" else None
+                text = read_editable_caption(source) if source else ""
+            except ValueError as error:
+                failures.append({"rel_path": record["rel_path"], "error": str(error)})
+                continue
+            if fields is not None:
+                flat = list(unique(tag for group in _CAPTION_GROUPS for tag in fields[group]))
+                grouped = list(
+                    unique((*fields["count"], *fields["appearance"], *fields["tags"], *fields["environment"]))
+                )
+                done = bool(fields["nl"]) if output == "description" else bool(flat)
+            else:
+                flat = grouped = [tag.strip() for tag in text.split(",") if tag.strip()]
+                done = bool(text.strip())
+            if existing == "skip" and done:
+                skipped += 1
+                continue
+            reference = (
+                (grouped if structured else flat) if tagging is not None and existing == "refine" else []
+            )
+            # The trigger word is written by the app, not judged by the model.
+            reference = [tag for tag in reference if tag.casefold() != trigger.casefold()]
+            jobs.append(
+                {
+                    "record": record,
+                    "target": target,
+                    "json": as_json,
+                    "fields": fields,
+                    "reference": reference,
+                    "tagged": tagging is not None and not reference,
+                    "characters": [],
+                }
+            )
+        if txt_only:
+            raise ApiError(
+                f"grouped captions need JSON; set the caption format of {', '.join(sorted(txt_only))} "
+                "to Auto or JSON",
+                code="vlm.json_required",
+                status=409,
+            )
+        tagged = [job for job in jobs if job["tagged"]]
+        if tagged:
+            from .vision_models import tag_images
+
+            if self.vision is None:
+                raise ApiError("tagging models are unavailable", code="vision.unavailable", status=503)
+            files = self.vision.files(tagging["model"])
+            device, device_index = self._vision_provider(tagging["device"])
+            self._progress(oid, "tagging", 0, len(tagged), f"Tagging {len(tagged)} images for reference")
+            results = self._vision_call(
+                oid,
+                lambda: tag_images(
+                    [str(job["record"]["path"]) for job in tagged],
+                    model_path=files["model.onnx"],
+                    tags_path=files["selected_tags.csv"],
+                    general=tagging["general_threshold"],
+                    character=tagging["character_threshold"],
+                    exclude=tuple(options["exclude_tags"]),
+                    provider=device,
+                    device_index=device_index,
+                    progress=lambda done, total, name: self._progress(oid, "tagging", done, total),
+                    cancel=self.cancel_events.get(oid),
+                    characters=True,
+                ),
+            )
+            for job, (caption, characters) in zip(tagged, results, strict=True):
+                tags = [tag for tag in caption.split(", ") if tag]
+                # Grouped outputs keep character names in their own field; the model sorts the rest.
+                job["characters"] = characters if structured else []
+                job["reference"] = [tag for tag in tags if tag not in characters] if structured else tags
+        total = len(jobs)
+        self._progress(
+            oid, "requesting", 0, total, f"Sending {total} images to {options['model']}; {skipped} skipped"
+        )
+        report = {"skipped": skipped, "stopped": False}
+        if not jobs:
+            return [], report | {"failed_files": len(failures), "failures": failures[:100]}
+        policy = ProxyPolicy.from_context(self.c)
+        pacer = vlm.Pacer(options["interval"])
+        cancel = self.cancel_events.get(oid) or threading.Event()
+        halt = threading.Event()
+
+        def prompt_for(job: dict) -> str:
+            text = options["prompt"]
+            if tagging is not None and "{tags}" not in text:
+                text = text.rstrip() + "\n\nExisting tags: {tags}"
+            if trigger:
+                text = text.replace("{trigger}", trigger)
+            else:
+                # Without a trigger word, drop the instruction that would name one.
+                text = "\n".join(line for line in text.splitlines() if "{trigger}" not in line)
+            return text.replace("{tags}", ", ".join(job["reference"]))
+
+        def request(job: dict) -> str:
+            return vlm.caption(
+                job["record"]["path"],
+                prompt_for(job),
+                provider=provider,
+                url=url,
+                key=key,
+                model=options["model"],
+                policy=policy,
+                temperature=options["temperature"],
+                max_tokens=options.get("max_tokens"),
+                image_size=options["image_size"],
+                detail=options["image_detail"],
+                timeout=options["timeout"],
+                retries=options["retries"],
+                pacer=pacer,
+                cancel=halt,
+            )
+
+        replies: dict[int, str] = {}
+        fatal: ApiError | None = None
+        executor = ThreadPoolExecutor(max_workers=options["concurrency"], thread_name_prefix="vlm")
+        try:
+            futures = {executor.submit(request, job): index for index, job in enumerate(jobs)}
+            remaining, answered = set(futures), 0
+            while remaining:
+                finished, remaining = wait(remaining, timeout=0.5, return_when=FIRST_COMPLETED)
+                if (cancel.is_set() or self.stopping.is_set()) and not halt.is_set():
+                    halt.set()
+                    report["stopped"] = True
+                    self._progress(oid, "requesting", answered, total, "Stopping; finished images are kept")
+                for future in finished:
+                    job = jobs[futures[future]]
+                    answered += 1
+                    try:
+                        replies[futures[future]] = future.result()
+                        message = None
+                    except vlm.VlmStopped:
+                        continue
+                    except vlm.VlmFatal as error:
+                        fatal = fatal or error
+                        halt.set()
+                        continue
+                    except (vlm.VlmError, OSError, ValueError) as error:
+                        failures.append({"rel_path": job["record"]["rel_path"], "error": str(error)})
+                        message = f"{job['record']['rel_path']}: {error}" if len(failures) <= 20 else None
+                    self._progress(oid, "requesting", answered, total, message)
+                    if not replies and len(failures) >= min(3, total) and not halt.is_set():
+                        # The first answers all failed: the service or model is not usable as set up.
+                        fatal = ApiError(
+                            f"the first {len(failures)} requests failed: {failures[0]['error']}",
+                            code="vlm.failed",
+                            status=502,
+                        )
+                        halt.set()
+                if halt.is_set():
+                    for future in remaining:
+                        future.cancel()
+                    remaining = {future for future in remaining if not future.cancelled()}
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+        if self.stopping.is_set():
+            raise PipelineCancelled("Service is stopping; original files were preserved")
+        if fatal is not None and not replies:
+            raise fatal
+        if not replies and failures and not report["stopped"]:
+            raise ApiError(f"no image was captioned: {failures[0]['error']}", code="vlm.failed", status=502)
+        if report["stopped"]:
+            # Stopping ends the requests; what already came back is still written.
+            self.c.db.update("dataset_pipeline_operations", oid, {"cancel_requested": 0, "status": "running"})
+            cancel.clear()
+        if fatal is not None:
+            report["stopped_reason"] = str(fatal)
+        changes = []
+        for index, job in enumerate(jobs):
+            if index not in replies:
+                continue
+            try:
+                content = self._vlm_content(job, replies[index], options, trigger)
+            except (vlm.VlmError, ValueError) as error:
+                failures.append({"rel_path": job["record"]["rel_path"], "error": str(error)})
+                continue
+            if job["target"].exists() and _same_caption(job["target"], content):
+                continue
+            staged = work / "staged" / f"vlm-{index}"
+            staged.parent.mkdir(parents=True, exist_ok=True)
+            staged.write_text(content, encoding="utf-8")
+            changes.append(self._change(work, job["target"], staged))
+        return changes, report | {"failed_files": len(failures), "failures": failures[:100]}
+
+    @staticmethod
+    def _vlm_content(job: dict, reply: str, options: dict, trigger: str) -> str:
+        """The caption file a reply becomes, in the target's own format."""
+        from ypuddin.data.caption_json import categorized_content, unique, with_trigger
+        from ypuddin.data.captions import caption_content
+
+        from . import vlm
+
+        blocked = {vlm.readable(tag).casefold() for tag in options["exclude_tags"] if tag.strip()}
+
+        def allowed(tags: list[str]) -> list[str]:
+            return [
+                tag
+                for tag in unique(tags)
+                if tag.casefold() not in blocked and tag.casefold() != trigger.casefold()
+            ]
+
+        target, as_json, output = job["target"], job["json"], options["output"]
+        if output == "tags":
+            tags = allowed(vlm.tag_list(reply))
+            if not tags:
+                raise vlm.VlmError("the reply held no tags")
+            if not as_json:
+                return caption_content(target, ", ".join(([trigger] if trigger else []) + tags))
+            # The file's trigger, character, series, artist and quality stay whatever the model returned.
+            fields = job["fields"] or {}
+            kept = [fields["trigger"]] if fields.get("trigger") else []
+            kept += [
+                tag for group in ("quality", "character", "series", "artist") for tag in fields.get(group, ())
+            ]
+            content = caption_content(target, ", ".join(unique((*kept, *tags))))
+            return with_trigger(content, trigger, filename=target.name) if trigger else content
+        if output == "description":
+            prose = vlm.description(reply)
+            if not prose:
+                raise vlm.VlmError("the reply held no description")
+            if as_json:
+                content = caption_content(target, None, description=prose)
+                return with_trigger(content, trigger, filename=target.name) if trigger else content
+            if trigger and not prose.casefold().startswith(trigger.casefold()):
+                prose = f"{trigger}, {prose}"
+            return caption_content(target, prose)
+        groups = vlm.markers(reply)
+        tag_groups = {key: allowed(values) for key, values in groups.items() if key in vlm.MARKERS}
+        if not tag_groups and "nl" not in groups:
+            raise vlm.VlmError("the reply did not use the COUNT / APPEARANCE / TAGS / ENVIRONMENT / NL lines")
+        if output == "sort":
+            # Only the grouping comes from the model: every reference tag stays, nothing new is added.
+            placed: dict[str, str] = {}
+            for key in vlm.MARKERS:
+                for tag in tag_groups.get(key, ()):
+                    placed.setdefault(tag.casefold(), key)
+            reference = allowed(job["reference"])
+            tag_groups = {
+                key: [tag for tag in reference if placed.get(tag.casefold(), "tags") == key]
+                for key in vlm.MARKERS
+            }
+        return categorized_content(
+            target, tag_groups, nl=groups.get("nl"), trigger=trigger, character=job["characters"] or None
+        )
 
     def _run(self, oid: str, lease: Any) -> None:
         from ypuddin.train.plan import plan
@@ -1128,6 +1446,15 @@ class DatasetPipeline:
                         changes = self._autotag(oid, work, images, request["tagging"])
                     elif action == "automask":
                         changes = self._automask(oid, work, images, request["automask"])
+                    elif action in {"vlmtag", "assisttag"}:
+                        changes, report = self._vlmtag(
+                            oid,
+                            work,
+                            images,
+                            request["vlm"],
+                            request["tagging"] if action == "assisttag" else None,
+                        )
+                        result.update(report)
                     else:
                         changes = []
                         seen = set()
