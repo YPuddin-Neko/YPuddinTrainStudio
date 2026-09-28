@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Cpu, HardDrive, FolderCog, Palette, KeyRound, Download, Settings as SettingsIcon, CircleAlert } from 'lucide-react';
+import { Cpu, HardDrive, FolderCog, Palette, KeyRound, Download, Tags, Settings as SettingsIcon, CircleAlert } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import { RestartRequiredContext } from '../../components/restartRequiredContext';
 import { useWorkspaceText } from '../../utils/workspaceText';
@@ -14,7 +14,7 @@ export default function Settings() {
   const location = useLocation();
   const navigate = useNavigate();
   const params = new URLSearchParams(location.search);
-  const selected = location.pathname.endsWith('/page') || location.pathname.endsWith('/charts') ? 'page' : location.pathname.endsWith('/preferences') ? params.get('section') === 'downloads' ? 'downloads' : params.get('section') === 'interface' ? 'interface' : 'storage' : params.get('tab') === 'credentials' ? 'credentials' : params.get('tab') === 'models' ? 'models' : 'runtime';
+  const selected = location.pathname.endsWith('/page') || location.pathname.endsWith('/charts') ? 'page' : location.pathname.endsWith('/preferences') ? params.get('section') === 'downloads' ? 'downloads' : params.get('section') === 'interface' ? 'interface' : 'storage' : params.get('tab') === 'credentials' ? 'credentials' : params.get('tab') === 'models' ? 'models' : params.get('tab') === 'tagging' ? 'tagging' : 'runtime';
   const scroll = React.useRef<HTMLDivElement>(null);
   const panel = useEnterAnimation<HTMLDivElement>(selected, { skipFirst: true });
   React.useEffect(() => { if (scroll.current) scroll.current.scrollTop = 0; }, [selected]);
@@ -32,6 +32,7 @@ export default function Settings() {
   const tabs = [
     { id: 'runtime', label: text('运行环境', 'Runtime'), Icon: Cpu },
     { id: 'models', label: text('模型权重', 'Model weights'), Icon: HardDrive },
+    { id: 'tagging', label: text('打标', 'Tagging'), Icon: Tags },
     { id: 'credentials', label: text('访问密钥', 'Access keys'), Icon: KeyRound },
     { id: 'downloads', label: text('软件下载源', 'Package sources'), Icon: Download },
     { id: 'storage', label: text('存储路径', 'Storage'), Icon: FolderCog },

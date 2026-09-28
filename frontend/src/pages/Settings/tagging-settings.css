@@ -1,0 +1,20 @@
+/* 设置 → 打标: the vision model service, its request settings and the tagging / mask models. */
+.tagging-settings{min-width:0}
+.tagging-settings .settings-field-control>.studio-select{max-width:420px}
+.tagging-settings-inline{display:flex;flex-wrap:wrap;align-items:center;gap:8px;max-width:560px}
+.tagging-settings-inline>input,.tagging-settings-inline>.vision-combo,.tagging-settings-inline>.studio-select{flex:1 1 240px;min-width:0;max-width:420px}
+.tagging-settings-inline>.vision-combo>input{width:100%}
+.tagging-settings-saved{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--studio-success)}
+.tagging-settings-number{width:140px}
+.tagging-settings-error{color:var(--studio-danger);font-size:12px;line-height:1.55;overflow-wrap:anywhere}
+.tagging-settings-group{margin:14px 0 2px;font-size:13px !important;font-weight:600;color:var(--settings-muted)}
+.tagging-settings-models{display:flex;flex-direction:column}
+.tagging-settings-model{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,auto);align-items:center;gap:8px 16px;padding:10px 0;border-bottom:1px solid var(--settings-line)}
+.tagging-settings-model:last-child{border-bottom:0}
+.tagging-settings-model-name{display:grid;gap:2px;min-width:0}
+.tagging-settings-model-name>strong{font-size:13px;font-weight:600}
+.tagging-settings-model-name>span{font-size:12px;color:var(--settings-muted);font-variant-numeric:tabular-nums}
+.tagging-settings-model-state{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px 10px;min-width:0}
+.tagging-settings-model-state .vision-model-error{flex-basis:100%;text-align:right}
+@media(max-width:560px){.tagging-settings-model{grid-template-columns:minmax(0,1fr)}.tagging-settings-model-state{justify-content:flex-start}.tagging-settings-model-state .vision-model-error{text-align:left}}
+.tagging-settings .settings-input:disabled{background:var(--settings-subtle);color:var(--settings-muted);cursor:default}

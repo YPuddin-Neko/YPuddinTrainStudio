@@ -1,4 +1,4 @@
-/* Automatic tagging and head masks: model, settings rows and the run bar. */
+/* Automatic tagging and masks: model, settings rows and the run bar. */
 
 .vision-panel { border:1px solid var(--studio-line); border-radius:8px; background:var(--studio-panel); color:var(--studio-text); }
 .vision-panel-head { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:46px; padding:0 16px; border-bottom:1px solid var(--studio-line); }
@@ -25,6 +25,10 @@
 /* Model: the choice and its download state on one line. */
 .vision-model-control { display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; min-height:34px; }
 .vision-model-control > .studio-select { flex:0 1 380px; }
+.vision-model-control > .studio-select.vision-model-series { flex:0 0 132px; }
+/* A mask kind beside the detector that finds it, on the same four columns as the rows below. */
+.vision-row.vision-row-model > .vision-model-field { grid-column:span 3; }
+@media (max-width:1100px) { .vision-row.vision-row-model > .vision-model-field { grid-column:auto; } }
 .vision-model-name { font-size:13px; font-weight:500; }
 .vision-model-state { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--studio-dim); white-space:nowrap; font-variant-numeric:tabular-nums; }
 .vision-model-state.ready { color:var(--studio-success); }
@@ -90,6 +94,9 @@
   .vision-prompt-head > .studio-select { flex:1 1 100%; max-width:none; }
   .vision-panel-body { padding:14px; gap:16px; }
   .vision-model-control > .studio-select { flex-basis:100%; }
+  /* The series and its model stay on one line. */
+  .vision-model-control > .studio-select.vision-model-series { flex:0 0 108px; }
+  .vision-model-control > .vision-model-series + .studio-select { flex:1 1 calc(100% - 122px); min-width:0; }
   .vision-model-bar { width:120px; }
 }
 
@@ -136,3 +143,8 @@
   .head-review-zoom-frame { height:min(58vh, 520px); }
 }
 @media (prefers-reduced-motion:reduce) { .head-box, .head-review-frame { transition:none; } }
+
+/* The vision model service tagging uses, chosen in 设置 → 打标. */
+.vision-service-summary { display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:34px; padding:0 4px 0 11px; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-muted); font-size:12.5px; min-width:0; }
+.vision-service-summary > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.vision-service-summary em { font-style:normal; color:var(--studio-dim); }

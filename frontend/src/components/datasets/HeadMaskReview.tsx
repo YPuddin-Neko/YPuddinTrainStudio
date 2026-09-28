@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, RefreshCw, ScanFace, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RefreshCw, X } from 'lucide-react';
+import MaskIcon from '../icons/MaskIcon';
 import { apiClient, apiUrl } from '../../api/client';
 import type { HeadProposalImage, HeadProposals, HeadSelection } from '../../api/types';
 import { formatApiError } from '../../utils/errors';
@@ -143,7 +144,7 @@ export default function HeadMaskReview({ operation, locked, onWrite, onDetectAga
       </div>}
     </div>
     <footer className="vision-panel-actions">
-      <button type="button" className="ui-btn ui-btn-primary" disabled={disabled || !selections.length} onClick={() => void run(() => onWrite(selections))}><ScanFace size={15}/>{text(`写入遮罩（${selections.length} 张 · ${heads} 个头部）`, `Write masks (${selections.length} images · ${heads} heads)`)}</button>
+      <button type="button" className="ui-btn ui-btn-primary" disabled={disabled || !selections.length} onClick={() => void run(() => onWrite(selections))}><MaskIcon size={15}/>{text(`写入遮罩（${selections.length} 张 · ${heads} 个头部）`, `Write masks (${selections.length} images · ${heads} heads)`)}</button>
       <button type="button" className="ui-btn" disabled={disabled} onClick={() => void run(onDetectAgain)}><RefreshCw size={14}/>{text('重新检测', 'Detect again')}</button>
       <button type="button" className="ui-btn" disabled={disabled} onClick={() => void run(onDismiss)}><X size={14}/>{text('放弃检测结果', 'Discard detection')}</button>
       {error && <p role="alert" className="vision-error">{error}</p>}

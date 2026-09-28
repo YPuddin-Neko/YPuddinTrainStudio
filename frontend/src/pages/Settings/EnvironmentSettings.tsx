@@ -5,11 +5,12 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import { LoadingNote } from '../../components/Loading';
 const Models = React.lazy(() => import('../Models/Models'));
 const AccessKeys = React.lazy(() => import('./AccessKeys'));
+const TaggingSettings = React.lazy(() => import('./TaggingSettings'));
 
 export default function EnvironmentSettings() {
   const text = useWorkspaceText();
   const [params] = useSearchParams();
   return <div data-testid="environment-settings"><React.Suspense fallback={<LoadingNote block label={text('正在加载…', 'Loading…')}/>}>
-    {params.get('tab') === 'credentials' ? <AccessKeys /> : params.get('tab') === 'models' ? <Models embedded /> : <EnvironmentManagerPanel focusPackage={params.get('package') || undefined} />}
+    {params.get('tab') === 'credentials' ? <AccessKeys /> : params.get('tab') === 'models' ? <Models embedded /> : params.get('tab') === 'tagging' ? <TaggingSettings /> : <EnvironmentManagerPanel focusPackage={params.get('package') || undefined} />}
   </React.Suspense></div>;
 }

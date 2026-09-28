@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ScanLine, Loader2, ArrowRight, RefreshCw, X, FolderOpen, ScanSearch, ListChecks, Wand2, Tags, PencilLine, Layers, type LucideIcon } from 'lucide-react';
+import { ScanLine, Loader2, RefreshCw, X, FolderOpen, ScanSearch, ListChecks, Wand2, Tags, PencilLine, Layers, type LucideIcon } from 'lucide-react';
 import { apiClient, apiUrl } from '../../api/client';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatApiError } from '../../utils/errors';
@@ -159,7 +159,6 @@ export default function DatasetPipelinePanel({ projectId, versionId, readOnly = 
     <nav className="dataset-stages" aria-label={text('训练数据处理','Dataset pipeline')}>
       {tabs.map(([id, label, Icon, errors]) => <button key={id} type="button" aria-current={stage === id ? 'step' : undefined} onClick={() => setStage(id)}><Icon size={15} aria-hidden="true"/><span>{label}</span>{errors ? <span className="dataset-stage-badge" aria-label={text(`${errors} 项错误`, `${errors} errors`)}>{errors}</span> : null}</button>)}
     </nav>
-    <div className="pipeline-stage-navigation"><Link className="ui-btn ui-btn-sm" to={projectUrl(projectId,versionId,'train')}>{text('训练参数','Training settings')}<ArrowRight size={14}/></Link></div>
     </div>
     {(error || query.error) && <div role="alert" className="workspace-message error">{error || formatApiError(query.error)}<button type="button" className="ui-btn ui-btn-sm" onClick={() => void query.refetch()}>{text('重新读取','Reload')}</button></div>}
     {snapshot?.stale && (stage === 'inspect' || stage === 'prepare') && <p className="pipeline-note">{text('检查结果已过期，请重新检查数据。','The inspection is out of date. Inspect the data again.')}</p>}
