@@ -9,6 +9,7 @@ import math
 import os
 import random
 import signal
+import threading
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
@@ -95,6 +96,40 @@ class StopRequested(Exception):
         self.kind = kind  # "pause" | "stop"
 
 
+class _ControlWatch:
+    """Logs a pause, stop or save request as soon as the service writes it.
+
+    The loop still acts on the request between steps, where a resume point is exact; a step can take
+    minutes, so the log says right away that the request arrived and when it takes effect.
+    """
+
+    def __init__(self, trainer: Trainer, directory: Path, interval: float = 0.5):
+        self._trainer, self._directory, self._interval = trainer, directory, interval
+        self._closed = threading.Event()
+        self._thread = threading.Thread(target=self._watch, name="control-watch", daemon=True)
+        self._thread.start()
+
+    def close(self) -> None:
+        self._closed.set()
+        self._thread.join(timeout=2)
+
+    def _watch(self) -> None:
+        seen: dict[str, tuple[int, int]] = {}
+        while not self._closed.wait(self._interval):
+            for name in ("stop", "pause", "save"):
+                try:
+                    stat = (self._directory / name).stat()
+                except FileNotFoundError:
+                    seen.pop(name, None)
+                    continue
+                except OSError:
+                    continue
+                key = (stat.st_mtime_ns, stat.st_ino)
+                if seen.get(name) != key:
+                    seen[name] = key
+                    self._trainer._acknowledge_request(name)
+
+
 def evaluation(method):
     @wraps(method)
     def wrapped(self, *args, **kwargs):
@@ -133,6 +168,11 @@ class Trainer:
     _stopping: str | None = None
     _stop_state: Path | None = None
     _epoch_mark: tuple[float, float, int, bool] | None = None
+    # When the current step began and how long the last one took, for request acknowledgments; a
+    # finished step whose previews and saves still run acts on requests before the next step.
+    _hooks_pending = False
+    _step_began: float | None = None
+    _step_seconds: float | None = None
 
     def __init__(
         self, cfg: TrainConfig, *, device: str | torch.device | None = None, emitter: Emitter | None = None
@@ -1477,6 +1517,10 @@ class Trainer:
 
     # ----------------------------------------------------------------- loop
     def run(self) -> str:
+        with self._watching_control():
+            return self._run()
+
+    def _run(self) -> str:
         outcome = "finished"
         try:
             try:
@@ -1495,6 +1539,7 @@ class Trainer:
                     self.sample_images("initial")
                     self.progress.extra["initial_sample_done"] = True
                 self.emit("phase.changed", phase="training")
+                self._step_began = time.monotonic()
                 while self.progress.step < self.progress.total_steps:
                     if cfg.loop.epochs is not None and self.progress.epoch >= cfg.loop.epochs:
                         break
@@ -1603,9 +1648,48 @@ class Trainer:
         """The run's log folder, which keeps its records; the output folder holds only products."""
         return log_directory(self.cfg, self.run_dir)
 
-    def _control_request(self) -> str | None:
+    def _control_dir(self) -> Path:
         # The service asks for pause / stop / save through files in the job's record folder.
-        ctl = Path(os.environ.get("YPUDDIN_CONTROL_DIR") or self.run_dir / "control")
+        return Path(os.environ.get("YPUDDIN_CONTROL_DIR") or self.run_dir / "control")
+
+    @contextmanager
+    def _watching_control(self):
+        """Acknowledge control requests while the run lasts; only the process that reads them watches."""
+        watch = _ControlWatch(self, self._control_dir()) if self.is_primary else None
+        try:
+            yield
+        finally:
+            if watch is not None:
+                watch.close()
+
+    def _acknowledge_request(self, name: str) -> None:
+        if self._stopping:
+            return  # the loop is already acting on a request and logs it
+        if self._preparing:
+            if name in ("pause", "stop"):
+                log.info("%s requested; stopping after the current preparation item", name)
+            return
+        total = self.progress.total_steps
+        step = min(total, self.progress.step if self._hooks_pending else self.progress.step + 1)
+        about = ""
+        if not self._hooks_pending and self._step_seconds and self._step_began is not None:
+            left = self._step_seconds - (time.monotonic() - self._step_began)
+            about = f" (about {_duration(left)})" if left >= 1 else ""
+        if name == "save":
+            log.info("save requested; saving a resume point after step %d/%d%s", step, total, about)
+        else:
+            verb = "pausing" if name == "pause" else "stopping"
+            log.info(
+                "%s requested; %s after step %d/%d and saving a resume point%s",
+                name,
+                verb,
+                step,
+                total,
+                about,
+            )
+
+    def _control_request(self) -> str | None:
+        ctl = self._control_dir()
         for name in ("stop", "pause", "save"):
             f = ctl / name
             if f.exists():
@@ -1803,6 +1887,7 @@ class Trainer:
             self.scheduler.step()
         self.optimizer.zero_grad(set_to_none=True)
         self.progress.step += 1
+        self._hooks_pending, self._step_seconds = True, elapsed
         self._update_ema()
         self._loss_ema = group_loss if self._loss_ema is None else 0.98 * self._loss_ema + 0.02 * group_loss
         step = self.progress.step
@@ -1890,16 +1975,17 @@ class Trainer:
         if req == "save":
             self.save_state("manual")
         elif req in ("pause", "stop"):
+            self._stopping = req
             log.info(
-                "%s requested at step %d/%d (epoch %s); saving a resume point",
-                req,
+                "%s at step %d/%d (epoch %s); saving a resume point",
+                "pausing" if req == "pause" else "stopping",
                 step,
                 self.progress.total_steps,
                 _epoch_text(self._epoch_now()),
             )
-            self._stopping = req
             self._stop_state = self.save_state("paused" if req == "pause" else "stopped")
             raise StopRequested(req)
+        self._hooks_pending, self._step_began = False, time.monotonic()
 
     def _epoch_hooks(self, finished_epochs: int) -> None:
         cfg = self.cfg
@@ -2180,7 +2266,8 @@ def cache(cfg: TrainConfig, *, device: str | None = None, emitter: Emitter | Non
     trainer = Trainer(cfg, device=device, emitter=em)
     failed = False
     try:
-        trainer.prepare_data()
+        with trainer._watching_control():
+            trainer.prepare_data()
         trainer._preparing = False
         trainer.emit("phase.changed", phase="finalizing")
         trainer.emit(
