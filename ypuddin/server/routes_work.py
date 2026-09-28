@@ -2612,6 +2612,8 @@ def _fix_text_keys(c: ServiceContext, r: dict) -> dict[str, Any]:
     staged = path.with_name(f".{path.name}.{new_id('k')}.tmp")
     try:
         save_file({k: v.contiguous() for k, v in renamed.items()}, str(staged), metadata=renamed_meta)
+        # Whoever could read the file before still can, e.g. an inference tool under another account.
+        os.chmod(staged, path.stat().st_mode & 0o7777)
         # The file is replaced in one step, so a reader sees either the old names or the new ones.
         os.replace(staged, path)
     except PermissionError as exc:
