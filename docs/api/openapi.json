@@ -7610,6 +7610,151 @@
           }
         }
       }
+    },
+    "/api/vision/models": {
+      "get": {
+        "summary": "Vision Models",
+        "operationId": "vision_models_api_vision_models_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionCatalog"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vision/models/{model_id}/download": {
+      "post": {
+        "summary": "Download Vision Model",
+        "operationId": "download_vision_model_api_vision_models__model_id__download_post",
+        "parameters": [
+          {
+            "name": "model_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Model Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisionDownloadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionModel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vision/models/{model_id}/cancel": {
+      "post": {
+        "summary": "Cancel Vision Model",
+        "operationId": "cancel_vision_model_api_vision_models__model_id__cancel_post",
+        "parameters": [
+          {
+            "name": "model_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Model Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionModel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vision/models/{model_id}": {
+      "delete": {
+        "summary": "Remove Vision Model",
+        "operationId": "remove_vision_model_api_vision_models__model_id__delete",
+        "parameters": [
+          {
+            "name": "model_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Model Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisionModel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -8217,6 +8362,47 @@
           "count"
         ],
         "title": "AspectCount"
+      },
+      "AutoMaskOptions": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": "anime-head-detector-v2"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 0.99,
+            "minimum": 0.01,
+            "title": "Confidence",
+            "default": 0.413
+          },
+          "padding": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Padding",
+            "default": 0.1
+          },
+          "feather": {
+            "type": "number",
+            "maximum": 0.5,
+            "minimum": 0.0,
+            "title": "Feather",
+            "default": 0.03
+          },
+          "device": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "cpu"
+            ],
+            "title": "Device",
+            "default": "auto"
+          }
+        },
+        "type": "object",
+        "title": "AutoMaskOptions"
       },
       "Body_wheel_api_environment_wheels_post": {
         "properties": {
@@ -10958,7 +11144,9 @@
               "nvidia-ml-py",
               "tensorboard",
               "schedulefree",
-              "bitsandbytes"
+              "bitsandbytes",
+              "onnxruntime",
+              "onnxruntime-gpu"
             ],
             "title": "Package"
           },
@@ -16689,7 +16877,9 @@
               "restore",
               "preprocess",
               "captions",
-              "prepare"
+              "prepare",
+              "autotag",
+              "automask"
             ],
             "title": "Action"
           },
@@ -16700,6 +16890,14 @@
             "type": "array",
             "maxItems": 20000,
             "title": "Images"
+          },
+          "dataset_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Dataset Ids"
           },
           "restore_operation_id": {
             "anyOf": [
@@ -16726,6 +16924,26 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/CaptionOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tagging": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaggingOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "automask": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AutoMaskOptions"
               },
               {
                 "type": "null"
@@ -21047,6 +21265,71 @@
         ],
         "title": "TagBatchResult"
       },
+      "TaggingOptions": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": "wd-eva02-large-tagger-v3"
+          },
+          "general_threshold": {
+            "type": "number",
+            "maximum": 0.99,
+            "minimum": 0.01,
+            "title": "General Threshold",
+            "default": 0.35
+          },
+          "character_threshold": {
+            "type": "number",
+            "maximum": 0.99,
+            "minimum": 0.01,
+            "title": "Character Threshold",
+            "default": 0.85
+          },
+          "exclude_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "title": "Exclude Tags"
+          },
+          "existing": {
+            "type": "string",
+            "enum": [
+              "skip",
+              "overwrite",
+              "append",
+              "prepend"
+            ],
+            "title": "Existing",
+            "default": "skip"
+          },
+          "trigger_word": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trigger Word"
+          },
+          "device": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "cpu"
+            ],
+            "title": "Device",
+            "default": "auto"
+          }
+        },
+        "type": "object",
+        "title": "TaggingOptions"
+      },
       "ThumbnailCacheStatus": {
         "properties": {
           "used_bytes": {
@@ -21969,6 +22252,254 @@
           "artifacts"
         ],
         "title": "VersionStats"
+      },
+      "VisionCatalog": {
+        "properties": {
+          "runtime": {
+            "$ref": "#/components/schemas/VisionRuntime"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/VisionModel"
+            },
+            "type": "array",
+            "title": "Models"
+          }
+        },
+        "type": "object",
+        "required": [
+          "runtime",
+          "models"
+        ],
+        "title": "VisionCatalog"
+      },
+      "VisionDownload": {
+        "properties": {
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "downloaded_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Downloaded Bytes"
+          },
+          "total_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Bytes"
+          },
+          "bytes_per_second": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bytes Per Second"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "title": "VisionDownload"
+      },
+      "VisionDownloadRequest": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "huggingface",
+              "hf-mirror",
+              "modelscope"
+            ],
+            "title": "Source",
+            "default": "huggingface"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "VisionDownloadRequest"
+      },
+      "VisionModel": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "tagger",
+              "head_detector"
+            ],
+            "title": "Role"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "repo": {
+            "type": "string",
+            "title": "Repo"
+          },
+          "revision": {
+            "type": "string",
+            "title": "Revision"
+          },
+          "license": {
+            "type": "string",
+            "title": "License"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "recommended": {
+            "type": "boolean",
+            "title": "Recommended"
+          },
+          "sources": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "huggingface",
+                "hf-mirror",
+                "modelscope"
+              ]
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "ready": {
+            "type": "boolean",
+            "title": "Ready"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "download": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VisionDownload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "label",
+          "repo",
+          "revision",
+          "license",
+          "size",
+          "recommended",
+          "sources",
+          "ready",
+          "path"
+        ],
+        "title": "VisionModel"
+      },
+      "VisionRuntime": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "package": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Package"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "providers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Providers"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "available",
+          "providers"
+        ],
+        "title": "VisionRuntime"
       },
       "WandbConfig": {
         "properties": {

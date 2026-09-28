@@ -60,7 +60,11 @@ CATALOG = {
     "schedulefree": ("schedulefree", None, "https://github.com/facebookresearch/schedule_free"),
     # The 8-bit optimizers (AdamW 8-bit, Lion 8-bit).
     "bitsandbytes": ("bitsandbytes", None, "https://github.com/bitsandbytes-foundation/bitsandbytes"),
+    # Automatic tagging and head masks. Both builds provide the same module; one is installed at a time.
+    "onnxruntime": ("onnxruntime", None, "https://onnxruntime.ai/docs/install/"),
+    "onnxruntime-gpu": ("onnxruntime", None, "https://onnxruntime.ai/docs/install/#python-installs"),
 }
+ONNX_RUNTIMES = ("onnxruntime", "onnxruntime-gpu")
 ATTENTION = ("auto", "sdpa", "xformers", "flash_attn", "sage", "metal_flash")
 MUTATING = ("installing", "verifying")
 BUSY = ("planning", *MUTATING)
@@ -83,6 +87,8 @@ class EnvironmentRequest(BaseModel):
         "tensorboard",
         "schedulefree",
         "bitsandbytes",
+        "onnxruntime",
+        "onnxruntime-gpu",
     ]
     action: Literal["install", "repair", "uninstall"] = "install"
     version: str | None = None
@@ -379,7 +385,7 @@ def runtime_info() -> dict[str, Any]:
 PROBE = r"""
 import importlib, json, re, torch
 from ypuddin.runtime_profiles import current_profile
-names = {"xformers": "xformers.ops", "flash-attn": "flash_attn", "sageattention": "sageattention", "nvidia-ml-py": "pynvml", "tensorboard": "tensorboard", "schedulefree": "schedulefree", "bitsandbytes": "bitsandbytes"}
+names = {"xformers": "xformers.ops", "flash-attn": "flash_attn", "sageattention": "sageattention", "nvidia-ml-py": "pynvml", "tensorboard": "tensorboard", "schedulefree": "schedulefree", "bitsandbytes": "bitsandbytes", "onnxruntime": "onnxruntime", "onnxruntime-gpu": "onnxruntime"}
 gpu = ("xformers", "flash-attn", "sageattention", "bitsandbytes")
 out = {}
 accelerators_allowed = not current_profile().endswith("-cpu")
@@ -757,6 +763,9 @@ class EnvironmentManager:
                     reason = "requires_ampere"
                 elif name == "nvidia-ml-py" and runtime["platform"] == "Darwin":
                     reason = "requires_nvidia"
+                elif name == "onnxruntime-gpu" and not runtime["cuda_available"]:
+                    # The GPU build targets NVIDIA CUDA; DTK and Apple chips run the CPU build.
+                    reason = "requires_cuda"
                 probe = probes.get(name, {})
                 supported = reason == "supported"
                 packages.append(
@@ -1164,6 +1173,11 @@ class EnvironmentManager:
                     ],
                 )
                 return
+            if request.package in ONNX_RUNTIMES:
+                other = next(name for name in ONNX_RUNTIMES if name != request.package)
+                if other in versions:
+                    # Both distributions write the same onnxruntime package; removing one breaks the other.
+                    raise ValueError(f"{other} is installed; uninstall it before installing {request.package}")
             work = self.root / id_
             work.mkdir(exist_ok=True)
             constraints = work / "protected.txt"
@@ -1542,15 +1556,23 @@ class EnvironmentManager:
                         "Package was installed but its runtime probe failed: "
                         + str(probe.get("error") or "Selected device kernel unavailable")
                     )
-            self._update(id_, status="completed", restart_required=True)
-            log("依赖已更新。重启 Studio 后生效并恢复任务队列。")
+            if op.package in ONNX_RUNTIMES:
+                # Only the tagging and head-mask child processes import ONNX Runtime; each job
+                # starts a fresh one, so the running service and its queue need no restart.
+                self._update(id_, status="completed", restart_required=False)
+                log("依赖已更新，下次打标或自动遮罩时生效。")
+            else:
+                self._update(id_, status="completed", restart_required=True)
+                log("依赖已更新。重启 Studio 后生效并恢复任务队列。")
         except Exception as exc:
             self._update(id_, status="failed", error=str(exc), restart_required=mutation_started)
             log(str(exc))
         finally:
             self._probe_time = 0
             previous = self.context.db.get_kv("environment.prior_maintenance." + id_, {})
-            restart = mutation_started or previous.get("restart_required", False)
+            restart = (mutation_started and op.package not in ONNX_RUNTIMES) or previous.get(
+                "restart_required", False
+            )
             self.context.db.set_kv(
                 "environment.maintenance",
                 {"blocked": restart, "operation_id": id_, "restart_required": restart},

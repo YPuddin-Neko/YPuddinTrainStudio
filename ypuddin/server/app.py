@@ -27,6 +27,7 @@ from . import (
     routes_model_recommendations,
     routes_regularization,
     routes_site_downloads,
+    routes_vision,
     routes_work,
     routes_xyz,
 )
@@ -42,6 +43,7 @@ from .regularization import RegularizationManager
 from .site_downloads import SiteDownloadManager
 from .supervisor import JobSupervisor
 from .torch_environments import TorchEnvironments
+from .vision_downloads import VisionModels
 
 log = logging.getLogger(__name__)
 
@@ -64,6 +66,8 @@ def create_app(
     lifecycle = ServiceLifecycle(context, environment, torch_environments)
     lifecycle.model_downloads = model_downloads
     dataset_pipeline = DatasetPipeline(context)
+    vision_models = VisionModels(context, credentials=model_downloads.credentials)
+    dataset_pipeline.vision = vision_models
     regularization = RegularizationManager(context, credentials=model_downloads.credentials)
     site_downloads = SiteDownloadManager(
         context, credentials=model_downloads.credentials, regularization=regularization
@@ -87,6 +91,7 @@ def create_app(
             await asyncio.to_thread(site_downloads.close)
             await asyncio.to_thread(regularization.close)
             await asyncio.to_thread(model_downloads.close)
+            await asyncio.to_thread(vision_models.close)
             await asyncio.to_thread(torch_environments.close)
             await asyncio.to_thread(environment.close)
             await asyncio.to_thread(dataset_pipeline.close)
@@ -106,6 +111,7 @@ def create_app(
     app.state.torch_environments = torch_environments
     app.state.lifecycle = lifecycle
     app.state.dataset_pipeline = dataset_pipeline
+    app.state.vision_models = vision_models
     app.state.regularization = regularization
     app.state.site_downloads = site_downloads
     errors.install(app)
@@ -130,6 +136,7 @@ def create_app(
     app.include_router(routes_regularization.router, prefix="/api")
     app.include_router(routes_site_downloads.router, prefix="/api")
     app.include_router(routes_credentials.router, prefix="/api")
+    app.include_router(routes_vision.router, prefix="/api")
 
     dist = Path(frontend_dist) if frontend_dist else Path(__file__).resolve().parents[2] / "frontend" / "dist"
     if (dist / "index.html").exists():

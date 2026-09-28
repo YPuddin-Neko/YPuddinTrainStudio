@@ -51,12 +51,39 @@ def _digest(path: Path) -> str:
     return hasher.hexdigest()
 
 
+def merged_caption(previous: str, tags: str, existing: str, trigger: str = "") -> str:
+    """The caption an automatic tagging pass writes: new tags replace, follow or lead the old ones,
+    each tag once (case-insensitively, first spelling kept), with the trigger word first."""
+
+    def split(text: str) -> list[str]:
+        return [token.strip() for token in text.split(",") if token.strip()]
+
+    old, new = split(previous), split(tags)
+    seen = {token.casefold() for token in old}
+    fresh = [token for token in new if token.casefold() not in seen]
+    tokens = (
+        new if existing in {"overwrite", "skip"} else old + fresh if existing == "append" else fresh + old
+    )
+    if trigger.strip():
+        tokens = [
+            trigger.strip(),
+            *(token for token in tokens if token.casefold() != trigger.strip().casefold()),
+        ]
+    result, kept = [], set()
+    for token in tokens:
+        if token.casefold() not in kept:
+            kept.add(token.casefold())
+            result.append(token)
+    return ", ".join(result)
+
+
 class DatasetPipeline:
     def __init__(self, context: Any):
         self.c = context
         self.executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="dataset-pipeline")
         self.stopping = threading.Event()
         self.cancel_events: dict[str, threading.Event] = {}
+        self.vision = None  # VisionModels, attached by the app
         self.c.db.execute("""CREATE TABLE IF NOT EXISTS dataset_pipeline_operations (
             id TEXT PRIMARY KEY, project_id TEXT NOT NULL, version_id TEXT NOT NULL,
             action TEXT NOT NULL, status TEXT NOT NULL, phase TEXT NOT NULL,
@@ -440,6 +467,26 @@ class DatasetPipeline:
                 status=409,
             )
         return self.start(row["project_id"], row["version_id"], row["request"])
+
+    def _dataset_refs(self, pid: str, vid: str, dataset_ids: list[str]) -> list[dict]:
+        """Every image of these datasets that training uses, as pipeline image references."""
+        from .routes_dataset_management import included, source_states
+        from .routes_work import _get_dataset, _records
+
+        refs = []
+        for did in dict.fromkeys(dataset_ids):
+            row = _get_dataset(self.c, did)
+            if row["project_id"] != pid or row["version_id"] != vid:
+                raise ApiError(
+                    "dataset belongs to another project version", code="pipeline.version_mismatch", status=409
+                )
+            root = Path(row["path"]).expanduser().resolve()
+            states = [state for state in source_states(self.c, row) if state[0] == root]
+            for record in _records(self.c, did):
+                path = Path(record["path"])
+                if not states or included(record["path"], states):
+                    refs.append({"dataset_id": did, "rel_path": path.resolve().relative_to(root).as_posix()})
+        return refs
 
     def _resolve_images(self, pid: str, vid: str, refs: list[dict]) -> list[dict]:
         from ypuddin.data.index import caption_target
@@ -908,6 +955,113 @@ class DatasetPipeline:
             self._progress(oid, "captions", index + 1, len(images), record["rel_path"])
         return changes
 
+    def _vision_provider(self, device: str) -> tuple[str, int]:
+        """The CUDA card with the most free memory when ONNX Runtime can use one, else the CPU."""
+        from .hardware import gpu_info
+        from .vision_models import runtime_status
+
+        if device == "cpu" or "cuda" not in runtime_status()["providers"]:
+            return "cpu", 0
+        cards = [card for card in gpu_info() if str(card.get("device", "")).startswith("cuda:")]
+        if not cards:
+            return "cpu", 0
+        best = max(cards, key=lambda card: card.get("mem_free_mb") or 0)
+        return "cuda", int(str(best["device"]).split(":", 1)[1])
+
+    def _autotag(self, oid: str, work: Path, images: list[dict], options: dict) -> list[dict]:
+        from ypuddin.data.captions import caption_content, read_editable_caption
+
+        from .vision_models import tag_images
+
+        if self.vision is None:
+            raise ApiError("tagging models are unavailable", code="vision.unavailable", status=503)
+        files = self.vision.files(options["model"])
+        pending, skipped = [], 0
+        for record in images:
+            previous = (
+                read_editable_caption(str(record["caption"]), None) if record["caption"].exists() else ""
+            )
+            if options["existing"] == "skip" and previous.strip():
+                skipped += 1
+                continue
+            pending.append((record, previous))
+        self._progress(
+            oid, "tagging", 0, len(pending), f"Tagging {len(pending)} images; {skipped} already captioned"
+        )
+        if not pending:
+            return []
+        provider, device_index = self._vision_provider(options["device"])
+        captions = tag_images(
+            [str(record["path"]) for record, _ in pending],
+            model_path=files["model.onnx"],
+            tags_path=files["selected_tags.csv"],
+            general=options["general_threshold"],
+            character=options["character_threshold"],
+            exclude=tuple(options["exclude_tags"]),
+            provider=provider,
+            device_index=device_index,
+            progress=lambda done, total, name: self._progress(oid, "tagging", done, total),
+            cancel=self.cancel_events.get(oid),
+        )
+        changes = []
+        for index, ((record, previous), tags) in enumerate(zip(pending, captions, strict=True)):
+            self._cancelled(oid)
+            text = merged_caption(previous, tags, options["existing"], options.get("trigger_word") or "")
+            path = record["caption"]
+            if text == previous.strip() and path.exists():
+                continue
+            staged = work / "staged" / f"caption-{index}"
+            staged.parent.mkdir(parents=True, exist_ok=True)
+            staged.write_text(caption_content(path, text), encoding="utf-8")
+            changes.append(self._change(work, path, staged))
+        return changes
+
+    def _automask(self, oid: str, work: Path, images: list[dict], options: dict) -> list[dict]:
+        import numpy as np
+
+        from .routes_dataset_masks import _load
+        from .vision_models import detect_heads, rasterize_regions
+
+        if self.vision is None:
+            raise ApiError("head detection models are unavailable", code="vision.unavailable", status=503)
+        files = self.vision.files(options["model"])
+        provider, device_index = self._vision_provider(options["device"])
+        self._progress(oid, "detecting", 0, len(images), f"Detecting heads in {len(images)} images")
+        results = detect_heads(
+            [str(record["path"]) for record in images],
+            model_path=files["model.onnx"],
+            confidence=options["confidence"],
+            padding=options["padding"],
+            feather=options["feather"],
+            provider=provider,
+            device_index=device_index,
+            progress=lambda done, total, name: self._progress(oid, "detecting", done, total),
+            cancel=self.cancel_events.get(oid),
+        )
+        changes = []
+        for index, (record, found) in enumerate(zip(images, results, strict=True)):
+            self._cancelled(oid)
+            if not found["regions"]:
+                continue
+            target = record["path"].with_name(record["path"].stem + ".mask.png")
+            try:
+                current, _ = _load(record["path"], target)
+            except ApiError as error:
+                self._progress(oid, "masking", index + 1, len(images), f"{record['rel_path']}: {error}")
+                continue
+            if current.size != tuple(found["size"]):
+                continue
+            base = np.asarray(current, dtype=np.float32)
+            # Heads only ever leave training: a region the user already excluded stays excluded.
+            combined = np.minimum(base, rasterize_regions(found["regions"], current.size))
+            if np.array_equal(combined, base):
+                continue
+            staged = work / "staged" / f"mask-{index}"
+            staged.parent.mkdir(parents=True, exist_ok=True)
+            Image.fromarray(np.round(combined).astype(np.uint8), "L").save(staged, format="PNG")
+            changes.append(self._change(work, target, staged))
+        return changes
+
     def _run(self, oid: str, lease: Any) -> None:
         from ypuddin.train.plan import plan
 
@@ -963,12 +1117,17 @@ class DatasetPipeline:
                         changes.append(self._change(work, target, staged))
                     dataset_ids = original["result"].get("dataset_ids", [])
                 else:
-                    images = self._resolve_images(pid, vid, request["images"])
+                    refs = request["images"] or self._dataset_refs(pid, vid, request.get("dataset_ids") or [])
+                    images = self._resolve_images(pid, vid, refs)
                     dataset_ids = sorted({record["dataset_id"] for record in images})
                     if action == "preprocess":
                         changes = self._preprocess(oid, work, images, request["preprocess"])
                     elif action == "captions":
                         changes = self._captions(oid, work, images, request["captions"])
+                    elif action == "autotag":
+                        changes = self._autotag(oid, work, images, request["tagging"])
+                    elif action == "automask":
+                        changes = self._automask(oid, work, images, request["automask"])
                     else:
                         changes = []
                         seen = set()

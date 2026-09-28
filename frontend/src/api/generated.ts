@@ -2256,6 +2256,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/vision/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Vision Models */
+        get: operations["vision_models_api_vision_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/vision/models/{model_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Download Vision Model */
+        post: operations["download_vision_model_api_vision_models__model_id__download_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/vision/models/{model_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Vision Model */
+        post: operations["cancel_vision_model_api_vision_models__model_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/vision/models/{model_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Vision Model */
+        delete: operations["remove_vision_model_api_vision_models__model_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2474,6 +2542,35 @@ export interface components {
             count: number;
         } & {
             [key: string]: unknown;
+        };
+        /** AutoMaskOptions */
+        AutoMaskOptions: {
+            /**
+             * Model
+             * @default anime-head-detector-v2
+             */
+            model: string;
+            /**
+             * Confidence
+             * @default 0.413
+             */
+            confidence: number;
+            /**
+             * Padding
+             * @default 0.1
+             */
+            padding: number;
+            /**
+             * Feather
+             * @default 0.03
+             */
+            feather: number;
+            /**
+             * Device
+             * @default auto
+             * @enum {string}
+             */
+            device: "auto" | "cpu";
         };
         /** Body_wheel_api_environment_wheels_post */
         Body_wheel_api_environment_wheels_post: {
@@ -3517,7 +3614,7 @@ export interface components {
              * Package
              * @enum {string}
              */
-            package: "xformers" | "flash-attn" | "sageattention" | "mtlattn" | "nvidia-ml-py" | "tensorboard" | "schedulefree" | "bitsandbytes";
+            package: "xformers" | "flash-attn" | "sageattention" | "mtlattn" | "nvidia-ml-py" | "tensorboard" | "schedulefree" | "bitsandbytes" | "onnxruntime" | "onnxruntime-gpu";
             /**
              * Action
              * @default install
@@ -5574,13 +5671,17 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "inspect" | "exclude" | "restore" | "preprocess" | "captions" | "prepare";
+            action: "inspect" | "exclude" | "restore" | "preprocess" | "captions" | "prepare" | "autotag" | "automask";
             /** Images */
             images?: components["schemas"]["PipelineImage"][];
+            /** Dataset Ids */
+            dataset_ids?: string[];
             /** Restore Operation Id */
             restore_operation_id?: string | null;
             preprocess?: components["schemas"]["PreprocessOptions"] | null;
             captions?: components["schemas"]["CaptionOptions"] | null;
+            tagging?: components["schemas"]["TaggingOptions"] | null;
+            automask?: components["schemas"]["AutoMaskOptions"] | null;
         };
         /** PipelineSnapshot */
         PipelineSnapshot: {
@@ -7254,6 +7355,40 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** TaggingOptions */
+        TaggingOptions: {
+            /**
+             * Model
+             * @default wd-eva02-large-tagger-v3
+             */
+            model: string;
+            /**
+             * General Threshold
+             * @default 0.35
+             */
+            general_threshold: number;
+            /**
+             * Character Threshold
+             * @default 0.85
+             */
+            character_threshold: number;
+            /** Exclude Tags */
+            exclude_tags?: string[];
+            /**
+             * Existing
+             * @default skip
+             * @enum {string}
+             */
+            existing: "skip" | "overwrite" | "append" | "prepend";
+            /** Trigger Word */
+            trigger_word?: string | null;
+            /**
+             * Device
+             * @default auto
+             * @enum {string}
+             */
+            device: "auto" | "cpu";
+        };
         /** ThumbnailCacheStatus */
         ThumbnailCacheStatus: {
             /** Used Bytes */
@@ -7636,6 +7771,78 @@ export interface components {
             artifacts: number;
         } & {
             [key: string]: unknown;
+        };
+        /** VisionCatalog */
+        VisionCatalog: {
+            runtime: components["schemas"]["VisionRuntime"];
+            /** Models */
+            models: components["schemas"]["VisionModel"][];
+        };
+        /** VisionDownload */
+        VisionDownload: {
+            /** Status */
+            status?: string | null;
+            /** Source */
+            source?: string | null;
+            /** Downloaded Bytes */
+            downloaded_bytes?: number | null;
+            /** Total Bytes */
+            total_bytes?: number | null;
+            /** Bytes Per Second */
+            bytes_per_second?: number | null;
+            /** Error */
+            error?: string | null;
+        };
+        /** VisionDownloadRequest */
+        VisionDownloadRequest: {
+            /**
+             * Source
+             * @default huggingface
+             * @enum {string}
+             */
+            source: "huggingface" | "hf-mirror" | "modelscope";
+        };
+        /** VisionModel */
+        VisionModel: {
+            /** Id */
+            id: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "tagger" | "head_detector";
+            /** Label */
+            label: string;
+            /** Repo */
+            repo: string;
+            /** Revision */
+            revision: string;
+            /** License */
+            license: string;
+            /** Size */
+            size: number;
+            /** Recommended */
+            recommended: boolean;
+            /** Sources */
+            sources: ("huggingface" | "hf-mirror" | "modelscope")[];
+            /** Ready */
+            ready: boolean;
+            /** Path */
+            path: string;
+            download?: components["schemas"]["VisionDownload"] | null;
+        };
+        /** VisionRuntime */
+        VisionRuntime: {
+            /** Available */
+            available: boolean;
+            /** Package */
+            package?: string | null;
+            /** Version */
+            version?: string | null;
+            /** Providers */
+            providers: string[];
+            /** Error */
+            error?: string | null;
         };
         /** WandbConfig */
         WandbConfig: {
@@ -13092,6 +13299,123 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CredentialState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vision_models_api_vision_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisionCatalog"];
+                };
+            };
+        };
+    };
+    download_vision_model_api_vision_models__model_id__download_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisionDownloadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisionModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_vision_model_api_vision_models__model_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisionModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_vision_model_api_vision_models__model_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisionModel"];
                 };
             };
             /** @description Validation Error */
