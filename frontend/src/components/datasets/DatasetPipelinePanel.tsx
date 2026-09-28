@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ScanLine, Loader2, RotateCcw, ArrowRight, RefreshCw } from 'lucide-react';
+import { ScanLine, Loader2, ArrowRight, RefreshCw, X } from 'lucide-react';
 import { apiClient, apiUrl } from '../../api/client';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatApiError } from '../../utils/errors';
@@ -68,7 +68,7 @@ export default function DatasetPipelinePanel({ projectId, versionId, readOnly = 
   const [limit, setLimit] = useState(60);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [dismissed, setDismissed] = useState('');
   const [clock, setClock] = useState(() => Date.now());
   const query = useQuery({
     queryKey: ['dataset-pipeline', projectId, versionId],
@@ -89,6 +89,8 @@ export default function DatasetPipelinePanel({ projectId, versionId, readOnly = 
     return () => window.clearInterval(timer);
   }, [activeId]);
   const locked = readOnly || !!snapshot?.archived || !!snapshot?.busy || !!active || submitting;
+  // The newest operation, when it failed, is reported once until dismissed or replaced.
+  const failed = snapshot?.operations[0]?.status === 'failed' && snapshot.operations[0].id !== dismissed ? snapshot.operations[0] : undefined;
   const visible = images.filter(image => filter === 'all' || (filter === 'unused' ? image.training_enabled === false : filter === 'training' ? image.training_enabled !== false : filter === 'has_alpha_channel' ? image.has_alpha_channel === true : filter === 'has_alpha' ? image.has_alpha === true : filter === 'transparent_image' ? image.has_transparency === true : filter === 'errors' ? image.issues.some(issue => issue.severity === 'error') : filter === 'missing_caption' ? !image.caption : image.issues.some(issue => issue.code === filter)));
   const selection = visible.filter(image => image.editable && image.dataset_id && selected.has(keyOf(image))).map(image => ({dataset_id: image.dataset_id!, rel_path: image.rel_path}));
   const actionName = (action: string) => ({inspect:text('数据检查','Data inspection'),exclude:text('排除素材','Exclude images'),restore:text('恢复原始文件','Restore originals'),preprocess:text('裁剪 / 缩放','Crop / resize'),captions:text('批量标签','Batch captions'),paint:text('图像涂抹与遮罩','Image painting & masks'),tag:text('历史自动标注','Legacy automatic tagging'),prepare:text('提前生成缓存','Prepare caches')}[action] || action);
@@ -128,6 +130,7 @@ export default function DatasetPipelinePanel({ projectId, versionId, readOnly = 
     </div>
     {(error || query.error) && <div role="alert" className="workspace-message error">{error || formatApiError(query.error)}<button type="button" className="ui-btn ui-btn-sm" onClick={() => void query.refetch()}>{text('重新读取','Reload')}</button></div>}
     {snapshot?.stale && (stage === 'inspect' || stage === 'prepare') && <p className="pipeline-note">{text('检查结果已过期，请重新检查数据。','The inspection is out of date. Inspect the data again.')}</p>}
+    {failed && <div role="alert" className="workspace-message error pipeline-failure"><span>{text(`${actionName(failed.action)}失败`, `${actionName(failed.action)} failed`)}{failed.error ? `：${failed.error}` : ''}{failed.result.rolled_back ? text('。更改已回滚，原文件已恢复。', '. Changes were rolled back and the original files restored.') : ''}</span>{!['tag','captions','paint'].includes(failed.action) && <button type="button" className="ui-btn ui-btn-sm" disabled={locked} onClick={() => void perform({}, `/dataset-pipeline/operations/${failed.id}/retry`)}>{text('重试','Retry')}</button>}<button type="button" className="ui-btn ui-btn-quiet ui-btn-icon ui-btn-sm" aria-label={text('关闭提示','Dismiss')} onClick={() => setDismissed(failed.id)}><X size={14}/></button></div>}
     {active && <DatasetOperationProgress label={actionName(active.action)} phaseText={statusName(active.phase)} done={active.done} total={active.total || null} state="active" elapsed={active.created_at ? Math.max(0, clock / 1000 - active.created_at) : null} detail={active.total > 0 ? text(`当前阶段 ${active.done} / ${active.total} 项`,`Current phase: ${active.done} / ${active.total} items`) : text('正在准备当前阶段…','Preparing this phase…')} actions={<>{active.can_cancel && <button type="button" className="ui-btn ui-btn-sm" disabled={submitting} onClick={() => void perform({}, `/dataset-pipeline/operations/${active.id}/cancel`)}>{text('取消','Cancel')}</button>}{active.job_id && <Link className="ui-link" to={`/jobs/${active.job_id}`}>{text('任务日志','Job log')}</Link>}</>}/>}
     {query.isPending && <p role="status"><Loader2 size={14} className="animate-spin"/>{text('读取数据状态…','Loading dataset status…')}</p>}
     <div className="pipeline-stage-body" ref={stageBody}>
@@ -151,6 +154,5 @@ export default function DatasetPipelinePanel({ projectId, versionId, readOnly = 
     </>}
     </div>
 
-    {!!snapshot?.operations.length && <footer className="pipeline-footer"><details className="pipeline-history" open={historyOpen} onToggle={event => setHistoryOpen(event.currentTarget.open)}><summary>{text('操作记录','Operation history')} <span className="pipeline-history-count">{snapshot.operations.length}</span>{snapshot.operations.some(op => op.status === 'failed') && <span className="pipeline-error-text"> · {text('有失败记录','Failed operation')}</span>}</summary><div className="pipeline-history-list">{snapshot.operations.map(op => <div className="pipeline-history-row" key={op.id}><div className="pipeline-history-title"><strong>{actionName(op.action)}</strong><span>{statusName(op.status)}</span>{op.result.changed_files !== undefined && <small>{op.result.changed_files} {text('个文件','files')}</small>}{op.can_undo && <button type="button" className="ui-btn ui-btn-sm" disabled={locked} onClick={() => void perform({action:'restore',restore_operation_id:op.id})}><RotateCcw size={13}/>{text('恢复此操作前的文件','Restore files before this operation')}</button>}{!['tag','captions','paint'].includes(op.action) && ['failed','cancelled'].includes(op.status) && <button type="button" className="ui-btn ui-btn-sm" disabled={locked} onClick={() => void perform({},`/dataset-pipeline/operations/${op.id}/retry`)}>{text('重试','Retry')}</button>}{op.action === 'paint' && ['failed','cancelled'].includes(op.status) && <button type="button" className="ui-btn ui-btn-sm" disabled={locked} onClick={() => setStage('paint')}>{text('返回涂抹与遮罩','Return to paint & masks')}</button>}{op.job_id && <Link className="ui-link" to={`/jobs/${op.job_id}`}>{text('打开任务','Open job')}</Link>}</div>{op.error && <p role="alert" className="pipeline-error-text">{op.error}</p>}{op.result.rolled_back && <p>{text('本次更改已回滚，原文件已恢复。','Changes from this operation were rolled back and original files restored.')}</p>}{op.result.undone_by && <small>{text('已恢复','Restored')}</small>}{!!op.logs.length && <details><summary>{text('详细日志','Detailed logs')}</summary><pre>{op.logs.map(log => `${new Date(log.time*1000).toLocaleTimeString()} ${log.message}`).join('\n')}</pre></details>}</div>)}</div></details></footer>}
   </div>;
 }
