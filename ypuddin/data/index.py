@@ -15,7 +15,7 @@ from PIL import Image
 
 from ypuddin.config import DatasetSourceConfig
 
-from .image_metadata import has_alpha, has_color_key
+from .image_metadata import has_alpha, has_color_key, has_transparent_pixels
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +34,8 @@ class ImageRecord:
     mask_path: str | None
     has_alpha: bool
     color_key_transparency: bool = False
+    # An alpha channel or transparency key with pixels below full opacity; what masked loss can use.
+    has_transparency: bool = False
 
     @property
     def stem(self) -> str:
@@ -139,16 +141,20 @@ class IndexDB:
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS files_v2 (path TEXT PRIMARY KEY, signature TEXT, hash TEXT, width INTEGER, height INTEGER, has_alpha INTEGER)"
         )
+        # Rows from before carry NULL and are measured on their next scan, without rehashing the file.
+        if "transparent" not in {row[1] for row in self.conn.execute("PRAGMA table_info(files_v2)")}:
+            self.conn.execute("ALTER TABLE files_v2 ADD COLUMN transparent INTEGER")
         self.conn.commit()
 
     def lookup(
         self, path: str, mtime: float, size: int, *, stat_signature: str | None = None
-    ) -> tuple[str, int, int, bool] | None:
+    ) -> tuple[str, int, int, bool, bool | None] | None:
         row = self.conn.execute(
-            "SELECT hash, width, height, has_alpha, signature FROM files_v2 WHERE path=?", (path,)
+            "SELECT hash, width, height, has_alpha, signature, transparent FROM files_v2 WHERE path=?",
+            (path,),
         ).fetchone()
         if row and row[4] == (stat_signature or json.dumps((mtime, size))):
-            return row[0], row[1], row[2], bool(row[3])
+            return row[0], row[1], row[2], bool(row[3]), None if row[5] is None else bool(row[5])
         return None
 
     def store(
@@ -161,18 +167,37 @@ class IndexDB:
         ht: int,
         alpha: bool,
         *,
+        transparent: bool | None = None,
         stat_signature: str | None = None,
     ) -> None:
         self.conn.execute(
-            "INSERT OR REPLACE INTO files_v2 VALUES (?,?,?,?,?,?)",
-            (path, stat_signature or json.dumps((mtime, size)), h, w, ht, int(alpha)),
+            "INSERT OR REPLACE INTO files_v2 (path, signature, hash, width, height, has_alpha, transparent)"
+            " VALUES (?,?,?,?,?,?,?)",
+            (
+                path,
+                stat_signature or json.dumps((mtime, size)),
+                h,
+                w,
+                ht,
+                int(alpha),
+                None if transparent is None else int(transparent),
+            ),
         )
+
+    def store_transparency(self, path: str, transparent: bool) -> None:
+        self.conn.execute("UPDATE files_v2 SET transparent=? WHERE path=?", (int(transparent), path))
 
     def commit(self) -> None:
         self.conn.commit()
 
     def close(self) -> None:
         self.conn.close()
+
+
+def probe_transparency(path: Path) -> bool:
+    """Decode the alpha of an image that has one; opaque channels and keys do not count."""
+    with Image.open(path) as im:
+        return has_alpha(im) and has_transparent_pixels(im)
 
 
 def probe_image(path: Path) -> tuple[int, int, bool]:
@@ -219,10 +244,25 @@ def scan_sources(
                 log.warning("skipping unreadable image %s (%s)", p, e)
                 continue
             digest = content_hash(p)
+            transparent = alpha and probe_transparency(p)
             if index_db:
-                index_db.store(str(p), st.st_mtime, st.st_size, digest, w, h, alpha, stat_signature=signature)
+                index_db.store(
+                    str(p),
+                    st.st_mtime,
+                    st.st_size,
+                    digest,
+                    w,
+                    h,
+                    alpha,
+                    transparent=transparent,
+                    stat_signature=signature,
+                )
         else:
-            digest, w, h, alpha = cached
+            digest, w, h, alpha, transparent = cached
+            if transparent is None:
+                transparent = alpha and probe_transparency(p)
+                if index_db:
+                    index_db.store_transparency(str(p), transparent)
         color_key = False
         if alpha:
             with Image.open(p) as image:
@@ -240,6 +280,7 @@ def scan_sources(
                 mask_path=mask_for(p),
                 has_alpha=alpha,
                 color_key_transparency=color_key,
+                has_transparency=transparent,
             )
         )
         if progress and (i % 50 == 0 or i == total - 1):

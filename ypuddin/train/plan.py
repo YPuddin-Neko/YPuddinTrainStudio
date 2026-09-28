@@ -299,11 +299,12 @@ def _append_data_plan(
             "images": len(records),
             "items": len(items),
             "captioned": sum(1 for r in records if r.caption_path),
-            # Loss masks come from a .mask.png sidecar, else the alpha channel; unused unless masked loss is on.
+            # Loss masks come from a .mask.png sidecar, else transparent pixels; unused unless masked loss is on.
+            # A fully opaque alpha channel weights the whole image, as no mask does.
             "masks": {
                 "enabled": ds.masked_loss,
                 "files": sum(1 for r in records if r.mask_path),
-                "alpha": sum(1 for r in records if not r.mask_path and r.has_alpha),
+                "alpha": sum(1 for r in records if not r.mask_path and r.has_transparency),
             },
             "validation_images": validation_images,
             "buckets": [

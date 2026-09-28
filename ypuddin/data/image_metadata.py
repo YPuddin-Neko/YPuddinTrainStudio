@@ -27,6 +27,12 @@ def has_color_key(image: Image.Image) -> bool:
     )
 
 
+def has_transparent_pixels(image: Image.Image) -> bool:
+    """Whether any pixel is transparent or semi-transparent; a fully opaque alpha channel is not."""
+    alpha = alpha_channel(image)
+    return alpha is not None and alpha.getextrema()[0] < 255
+
+
 def alpha_channel(image: Image.Image) -> Image.Image | None:
     if has_color_key(image) and (image.mode == "I" or image.mode.startswith("I;16")):
         import numpy as np

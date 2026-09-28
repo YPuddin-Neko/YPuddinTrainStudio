@@ -109,13 +109,13 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
       : text(`宽高不是 ${native.alignment} 的倍数时，再裁去少量边缘对齐`, `sizes that are not multiples of ${native.alignment} are then trimmed slightly at the edges`);
     return text(`${scaled}；${aligned}。`, `${scaled}; ${aligned}.`);
   })();
-  // Loss masks: sidecar files first, then the alpha channel; both only count with masked loss on.
+  // Loss masks: sidecar files first, then transparent pixels; both only count with masked loss on.
   const masks = awaitingPlan ? null : plan?.masks;
   const masked = masks ? masks.files + masks.alpha : 0;
-  const maskSources = masks ? [masks.files && text(`${masks.files} 张遮罩文件`, `${masks.files} mask files`), masks.alpha && text(`${masks.alpha} 张透明通道`, `${masks.alpha} alpha channels`)].filter(Boolean).join(text('、', ', ')) : '';
+  const maskSources = masks ? [masks.files && text(`${masks.files} 张遮罩文件`, `${masks.files} mask files`), masks.alpha && text(`${masks.alpha} 张含透明像素的图片`, `${masks.alpha} images with transparent pixels`)].filter(Boolean).join(text('、', ', ')) : '';
   const maskLine = !masks || (!masked && !masks.enabled) ? ''
     : !masks.enabled ? text(`找到 ${maskSources}；遮罩加权训练未开启，训练时不会使用。`, `Found ${maskSources}; masked loss is off, so they are not used.`)
-      : !masked ? text('遮罩加权训练已开启，但没有找到遮罩文件或透明通道，所有图片按整图计算。', 'Masked loss is on, but no mask files or alpha channels were found; every image counts in full.')
+      : !masked ? text('遮罩加权训练已开启，但没有找到遮罩文件或含透明像素的图片，所有图片按整图计算。', 'Masked loss is on, but no mask files or images with transparent pixels were found; every image counts in full.')
         : text(`按遮罩计算损失：${maskSources}；其余 ${Math.max(0, (plan?.images ?? masked) - masked)} 张按整图计算。`, `Loss follows ${maskSources}; the other ${Math.max(0, (plan?.images ?? masked) - masked)} images count in full.`);
   const distributed = plan?.distributed;
   const gpus = distributed?.world_size ?? 1;
