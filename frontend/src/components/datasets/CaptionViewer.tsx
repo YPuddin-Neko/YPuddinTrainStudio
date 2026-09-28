@@ -1,13 +1,14 @@
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useNavigate, UNSAFE_DataRouterContext } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, Folder, Image as ImageIcon, Loader2, RefreshCw, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Folder, Image as ImageIcon, Layers, Loader2, RefreshCw, Search } from 'lucide-react';
 import { apiClient, apiUrl } from '../../api/client';
 import type { DatasetInfo, DatasetImagesPage } from '../../api/types';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatApiError } from '../../utils/errors';
 import StudioSelect from '../StudioSelect';
 import ImageEditor from '../masks/ImageEditor';
+import MaskOverlay from './MaskOverlay';
 import DatasetNavigationGuard from './DatasetNavigationGuard';
 import { projectUrl, versionConfigUrl } from '../../utils/projectVersions';
 import './caption-viewer.css';
@@ -20,6 +21,7 @@ export default function CaptionViewer({projectId,versionId,readOnly=false,editin
   const hasDataRouter=!!useContext(UNSAFE_DataRouterContext);
   const [editor,setEditor]=useState<{datasetId:string;imageId:string;relPath:string}|null>(null);
   const [editError,setEditError]=useState('');
+  const [showMask,setShowMask]=useState(true);
   const allowedDestination=useRef('');
   const gridRef=useRef<HTMLDivElement>(null);
   const displayedPage=useRef('');
@@ -91,8 +93,8 @@ export default function CaptionViewer({projectId,versionId,readOnly=false,editin
       <div className="caption-viewer-columns" aria-busy={query.isFetching}>
         <div className="caption-viewer-grid" ref={gridRef} role="region" aria-label={text('图片缩略图','Image thumbnails')} tabIndex={0}>{items.map(item=><button key={`${item.hash}/${item.rel_path}`} type="button" aria-label={editing ? text(`选择图片: ${item.rel_path}`,`Select image: ${item.rel_path}`) : text(`查看标签: ${item.rel_path}`,`View caption: ${item.rel_path}`)} aria-pressed={item===image} onClick={()=>setSelected(`${item.hash}/${item.rel_path}`)}><img src={apiUrl(`/datasets/${source.source.id}/images/${item.hash}/thumb?size=256`)} alt={item.rel_path} loading="lazy"/><span title={item.rel_path}>{item.rel_path}</span>{!editing && !item.caption && <small>{text('暂无标签','No caption')}</small>}</button>)}</div>
         {image && <div className="caption-viewer-detail" role="region" aria-label={editing ? text('图片详情','Image details') : text('图片与标签详情','Image and caption details')} tabIndex={0}>
-          <div className="caption-viewer-image"><img src={apiUrl(`/datasets/${source.source.id}/images/${image.hash}/file`)} alt={text(`大图: ${image.rel_path}`,`Full image: ${image.rel_path}`)}/></div>
-          <div className="caption-viewer-image-heading"><strong title={image.rel_path}>{image.rel_path}</strong><span>{image.width} × {image.height}</span><div><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('上一张','Previous image')} disabled={selectedIndex===0} onClick={()=>{const previous=items[selectedIndex-1];setSelected(`${previous.hash}/${previous.rel_path}`);}}><ChevronLeft size={14}/></button><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('下一张','Next image')} disabled={selectedIndex===items.length-1} onClick={()=>{const next=items[selectedIndex+1];setSelected(`${next.hash}/${next.rel_path}`);}}><ChevronRight size={14}/></button></div></div>
+          <div className="caption-viewer-image"><img src={apiUrl(`/datasets/${source.source.id}/images/${image.hash}/file`)} alt={text(`大图: ${image.rel_path}`,`Full image: ${image.rel_path}`)}/>{editing&&showMask&&image.has_mask&&<MaskOverlay key={`${imageKey}/${query.dataUpdatedAt}`} src={`${apiUrl(`/datasets/${source.source.id}/images/${image.hash}/mask`)}?rel_path=${encodeURIComponent(image.rel_path)}&v=${query.dataUpdatedAt}`} label={text('遮罩：红色区域不参与训练','Mask: red areas are left out of training')}/>}</div>
+          <div className="caption-viewer-image-heading"><strong title={image.rel_path}>{image.rel_path}</strong><span>{image.width} × {image.height}</span>{editing&&image.has_mask&&<button type="button" className="ui-btn ui-btn-sm" aria-pressed={showMask} title={text('红色区域不参与训练','Red areas are left out of training')} onClick={()=>setShowMask(!showMask)}><Layers size={13}/>{text('显示遮罩','Show mask')}</button>}<div><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('上一张','Previous image')} disabled={selectedIndex===0} onClick={()=>{const previous=items[selectedIndex-1];setSelected(`${previous.hash}/${previous.rel_path}`);}}><ChevronLeft size={14}/></button><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('下一张','Next image')} disabled={selectedIndex===items.length-1} onClick={()=>{const next=items[selectedIndex+1];setSelected(`${next.hash}/${next.rel_path}`);}}><ChevronRight size={14}/></button></div></div>
           {!editing && <div className="caption-viewer-caption"><h4>{text('已有标签','Existing caption')}{image.caption_format && <small> · {image.caption_format.toUpperCase()}</small>}</h4>{image.caption_error && <p role="alert" className="pipeline-error-text">{text('标签解析失败：','Caption parsing failed: ')}{image.caption_error}</p>}{image.caption ? <pre data-testid="existing-caption">{image.caption}</pre> : <p data-testid="existing-caption">{text('此图片暂无标签。','This image has no caption.')}</p>}</div>}
           {editing&&!readOnly&&<button type="button" className="ui-btn ui-btn-primary caption-viewer-editor" disabled={query.isFetching||query.isPlaceholderData} onClick={openEditor}><ImageIcon size={13}/><span>{text('打开涂抹与遮罩编辑器','Open paint and mask editor')}</span></button>}
           {(!editing||readOnly)&&<Link to={`/datasets/${source.source.id}?project=${encodeURIComponent(projectId)}&version=${encodeURIComponent(versionId)}`} className="ui-btn caption-viewer-editor"><ImageIcon size={13}/>{readOnly ? text('查看数据集详情','View dataset details') : text('打开逐图标签 / 遮罩编辑器','Open individual caption / mask editor')}</Link>}

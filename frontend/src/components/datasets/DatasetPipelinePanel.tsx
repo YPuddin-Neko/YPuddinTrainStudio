@@ -1,7 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { ScanLine, Loader2, ArrowRight, RefreshCw, X } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ScanLine, Loader2, ArrowRight, RefreshCw, X, FolderOpen, ScanSearch, ListChecks, Wand2, Tags, PencilLine, Layers, type LucideIcon } from 'lucide-react';
 import { apiClient, apiUrl } from '../../api/client';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatApiError } from '../../utils/errors';
@@ -16,8 +16,9 @@ import RegularizationPanel from './RegularizationPanel';
 import StudioSelect from '../StudioSelect';
 import DatasetOperationProgress from './DatasetOperationProgress';
 import DatasetCurationPanel from './DatasetCurationPanel';
+import AutoTagPanel from './AutoTagPanel';
+import AutoMaskPanel from './AutoMaskPanel';
 import type { WorkspaceDataset } from './ProjectDatasetCards';
-import { SlidingIndicator } from '../motion';
 import { useEnterAnimation } from '../../utils/motion';
 import { useWorkspaceHeight } from '../projects/useWorkspaceHeight';
 
@@ -29,8 +30,9 @@ export type PipelineOperation = { id: string; action: string; status: string; ph
 type Plan = { ok: boolean; errors: { loc?: string; msg: string }[]; warnings: { code?: string; msg: string }[]; images?: number; items?: number; buckets?: { w: number; h: number; items: number; batches: number }[]; native?: { downscaled: number; sizes: number; forward_groups: number; logical_batches: number } };
 export type PipelineSnapshot = { signature: string; inspection: Inspection | null; plan: Plan | null; operations: PipelineOperation[]; busy: boolean; archived: boolean; stale: boolean; ready_to_train: boolean; prepared_job_id: string | null };
 type Props = { projectId: string; versionId: string; config?: Record<string, any>; readOnly?: boolean; datasets?: WorkspaceDataset[]; importPanel: ReactNode; datasetList: ReactNode; onChanged: () => void };
-const STAGES = ['datasets', 'inspect', 'curate', 'paint', 'captions', 'reg'];
-const STAGE_ALIASES: Record<string, string> = { import: 'datasets', preprocess: 'paint' };
+const STAGES = ['datasets', 'inspect', 'curate', 'preprocess', 'tagging', 'captions', 'reg'];
+// Links from before the page was reorganised keep landing on the matching stage.
+const STAGE_ALIASES: Record<string, string> = { import: 'datasets', paint: 'preprocess' };
 const terminal = (status: string) => ['completed', 'failed', 'cancelled'].includes(status);
 const keyOf = (image: { dataset_id: string | null; rel_path: string }) => `${image.dataset_id}/${image.rel_path}`;
 
@@ -49,17 +51,28 @@ export default function DatasetPipelinePanel({ projectId, versionId, readOnly = 
   useEffect(() => { try { sessionStorage.setItem(stageStorage,stage); } catch { /* URL remains authoritative. */ } },[stage,stageStorage]);
   useEffect(() => {
     const revealStage = () => {
-      const list = navigationRef.current?.querySelector<HTMLElement>('.pipeline-stages');
+      const list = navigationRef.current?.querySelector<HTMLElement>('.dataset-stages');
       const current = list?.querySelector<HTMLElement>('[aria-current]');
       if (!list || !current) return;
       const viewport = list.getBoundingClientRect();
       const item = current.getBoundingClientRect();
-      if (item.left < viewport.left) list.scrollLeft -= viewport.left - item.left;
-      else if (item.right > viewport.right) list.scrollLeft += item.right - viewport.right;
+      // Keep the current stage clear of the faded edges.
+      const edge = list.scrollWidth > list.clientWidth ? 28 : 0;
+      if (item.left < viewport.left + edge) list.scrollLeft -= viewport.left + edge - item.left;
+      else if (item.right > viewport.right - edge) list.scrollLeft += item.right - viewport.right + edge;
     };
-    revealStage();
-    window.addEventListener('resize', revealStage);
-    return () => window.removeEventListener('resize', revealStage);
+    // Faded edges show that more stages sit off screen on narrow windows.
+    const list = navigationRef.current?.querySelector<HTMLElement>('.dataset-stages');
+    const markOverflow = () => {
+      if (!list) return;
+      list.dataset.before = String(list.scrollLeft > 1);
+      list.dataset.after = String(list.scrollLeft + list.clientWidth < list.scrollWidth - 1);
+    };
+    const update = () => { revealStage(); markOverflow(); };
+    update();
+    list?.addEventListener('scroll', markOverflow, { passive: true });
+    window.addEventListener('resize', update);
+    return () => { list?.removeEventListener('scroll', markOverflow); window.removeEventListener('resize', update); };
   }, [stage, navigationRef]);
   const setStage = (value:string) => setParams(previous => { const next = new URLSearchParams(previous); next.set('data_step',value); return next; });
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -88,13 +101,23 @@ export default function DatasetPipelinePanel({ projectId, versionId, readOnly = 
     const timer = window.setInterval(() => setClock(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [activeId]);
+  // A finished run changed captions or masks: image lists elsewhere on the page must reload.
+  const client = useQueryClient();
+  const previousActive = useRef(activeId);
+  useEffect(() => {
+    if (previousActive.current && previousActive.current !== activeId) {
+      void client.invalidateQueries({ queryKey: ['caption-images', projectId, versionId] });
+      void client.invalidateQueries({ queryKey: ['caption-datasets', projectId, versionId] });
+    }
+    previousActive.current = activeId;
+  }, [activeId, client, projectId, versionId]);
   const locked = readOnly || !!snapshot?.archived || !!snapshot?.busy || !!active || submitting;
   // The newest operation, when it failed, is reported once until dismissed or replaced.
   const failed = snapshot?.operations[0]?.status === 'failed' && snapshot.operations[0].id !== dismissed ? snapshot.operations[0] : undefined;
   const visible = images.filter(image => filter === 'all' || (filter === 'unused' ? image.training_enabled === false : filter === 'training' ? image.training_enabled !== false : filter === 'has_alpha_channel' ? image.has_alpha_channel === true : filter === 'has_alpha' ? image.has_alpha === true : filter === 'transparent_image' ? image.has_transparency === true : filter === 'errors' ? image.issues.some(issue => issue.severity === 'error') : filter === 'missing_caption' ? !image.caption : image.issues.some(issue => issue.code === filter)));
   const selection = visible.filter(image => image.editable && image.dataset_id && selected.has(keyOf(image))).map(image => ({dataset_id: image.dataset_id!, rel_path: image.rel_path}));
-  const actionName = (action: string) => ({inspect:text('数据检查','Data inspection'),exclude:text('排除素材','Exclude images'),restore:text('恢复原始文件','Restore originals'),preprocess:text('裁剪 / 缩放','Crop / resize'),captions:text('批量标签','Batch captions'),paint:text('图像涂抹与遮罩','Image painting & masks'),tag:text('历史自动标注','Legacy automatic tagging'),prepare:text('提前生成缓存','Prepare caches')}[action] || action);
-  const statusName = (status: string) => ({queued:text('等待','Queued'),running:text('进行中','Running'),cancelling:text('取消中','Cancelling'),completed:text('完成','Completed'),failed:text('失败','Failed'),cancelled:text('已取消','Cancelled'),staging:text('准备绘制文件','Preparing painted files'),inspecting:text('检查图片、标签与遮罩','Checking images, captions and masks'),preprocessing:text('生成处理结果','Processing images'),captions:text('生成标签','Preparing captions'),applying:text('保存文件与备份','Saving files and backups'),planning:text('检查训练配置','Checking training configuration'),cache:text('编码与缓存','Encoding and caching'),excluding:text('备份并排除','Backing up and excluding')}[status] || status);
+  const actionName = (action: string) => ({inspect:text('数据集检查','Inspection'),exclude:text('排除素材','Exclude images'),restore:text('恢复原始文件','Restore originals'),preprocess:text('裁剪 / 缩放','Crop / resize'),captions:text('批量标签','Batch captions'),paint:text('图像涂抹与遮罩','Image painting & masks'),tag:text('历史自动标注','Legacy automatic tagging'),autotag:text('自动打标','Automatic tagging'),automask:text('自动遮罩','Automatic masks'),prepare:text('提前生成缓存','Prepare caches')}[action] || action);
+  const statusName = (status: string) => ({queued:text('等待','Queued'),running:text('进行中','Running'),cancelling:text('取消中','Cancelling'),completed:text('完成','Completed'),failed:text('失败','Failed'),cancelled:text('已取消','Cancelled'),staging:text('准备绘制文件','Preparing painted files'),inspecting:text('检查图片、标签与遮罩','Checking images, captions and masks'),preprocessing:text('生成处理结果','Processing images'),captions:text('生成标签','Preparing captions'),applying:text('保存文件与备份','Saving files and backups'),planning:text('检查训练配置','Checking training configuration'),cache:text('编码与缓存','Encoding and caching'),excluding:text('备份并排除','Backing up and excluding'),tagging:text('打标中','Tagging'),detecting:text('检测头部','Detecting heads'),masking:text('写入遮罩','Writing masks')}[status] || status);
   const issueName = (issue: Issue) => ({anima_artist_prefix:text('画师名前建议加 @','Artist name: consider @ prefix'),anima_tag_spacing:text('普通标签建议用空格','Ordinary tags: consider spaces'),anima_tag_case:text('标签建议用小写','Tags: consider lowercase'),anima_text_shuffle:text('可能含自然语言，请核对洗牌与丢弃设置','Possible prose: review shuffle and dropout'),transparent_image:text('含透明或半透明像素','Transparent or semi-transparent pixels'),small_image:text('短边小于 256px','Short side below 256px'),missing_caption:text('缺少标签','Missing caption'),duplicate:text('相同内容重复图','Exact duplicate'),unreadable_image:text('图片无法完整读取','Cannot decode image'),mask_size:text('遮罩尺寸与图片不同','Mask dimensions differ'),unreadable_mask:text('遮罩无法读取','Cannot read mask'),caption_encoding:text('标签读取或格式错误','Cannot read or parse caption'),caption_json_invalid:text('JSON 标签内容无效','Invalid JSON caption'),caption_format_unsupported:text('此 JSON 标签结构不受支持','Unsupported JSON caption structure'),caption_model_unsupported:text('当前模型不支持此标签格式','Caption format unsupported by this model'),empty_dataset:text('请先导入训练图片','Import training images first'),missing_source:text('素材目录不存在','Source folder is missing')}[issue.code] || issue.message);
   const perform = async (body: Record<string, unknown>, endpoint?: string) => {
     setError(''); setSubmitting(true);
@@ -112,21 +135,27 @@ export default function DatasetPipelinePanel({ projectId, versionId, readOnly = 
       onChanged(); navigate(projectUrl(projectId,created.id,'data'));
     } catch (e) {setError(formatApiError(e));} finally {setSubmitting(false);}
   };
-  const tabs = [
-    ['datasets', text('数据集','Datasets'), null],
-    ['inspect', text('数据检查','Data inspection'), report ? `${images.length}` : null],
-    ['curate', text('训练集筛选','Training set curation'), null],
-    ['paint', text('涂抹与遮罩','Paint & masks'), text('可选','Optional')],
-    ['captions', text('标签编辑','Caption editor'), report ? `${report.captioned}/${images.length}` : null],
-    ['reg', text('正则图','Regularization'), text('可选','Optional')],
+  const tabs: [string, string, LucideIcon, number | null][] = [
+    ['datasets', text('数据集管理','Datasets'), FolderOpen, null],
+    ['inspect', text('数据集检查','Inspection'), ScanSearch, report?.errors || null],
+    ['curate', text('数据集筛选','Curation'), ListChecks, null],
+    ['preprocess', text('数据集预处理','Preprocessing'), Wand2, null],
+    ['tagging', text('图片打标','Tagging'), Tags, null],
+    ['captions', text('标签编辑','Caption editor'), PencilLine, null],
+    ['reg', text('正则数据集','Regularization'), Layers, null],
   ];
+  const latest = (action: string) => snapshot?.operations.find(op => op.action === action);
+  const startOperation = async (body: Record<string, unknown>) => {
+    await apiClient.post<PipelineOperation>(`/projects/${projectId}/versions/${versionId}/pipeline/operations`, body, {silent:true});
+    await query.refetch(); onChanged();
+  };
+  const undo = (id: string) => void perform({action:'restore', restore_operation_id:id});
   return <div className="dataset-pipeline" data-testid="dataset-pipeline">
     <div className="pipeline-navigation" ref={navigationRef}>
-    <nav className="pipeline-stages ui-tabs" aria-label={text('训练数据处理','Dataset pipeline')}>
-      {tabs.map(([id, label, badge]) => <button key={id} type="button" aria-current={stage === id ? 'step' : undefined} title={badge ? `${label} · ${badge}` : undefined} onClick={() => setStage(id!)}>{label}</button>)}
-      <SlidingIndicator className="ui-tabs-indicator"/>
+    <nav className="dataset-stages" aria-label={text('训练数据处理','Dataset pipeline')}>
+      {tabs.map(([id, label, Icon, errors]) => <button key={id} type="button" aria-current={stage === id ? 'step' : undefined} onClick={() => setStage(id)}><Icon size={15} aria-hidden="true"/><span>{label}</span>{errors ? <span className="dataset-stage-badge" aria-label={text(`${errors} 项错误`, `${errors} errors`)}>{errors}</span> : null}</button>)}
     </nav>
-    <div className="pipeline-stage-navigation"><Link className="ui-link" to={projectUrl(projectId,versionId,'train')}>{text('训练参数','Training settings')}<ArrowRight size={14}/></Link></div>
+    <div className="pipeline-stage-navigation"><Link className="ui-btn ui-btn-sm" to={projectUrl(projectId,versionId,'train')}>{text('训练参数','Training settings')}<ArrowRight size={14}/></Link></div>
     </div>
     {(error || query.error) && <div role="alert" className="workspace-message error">{error || formatApiError(query.error)}<button type="button" className="ui-btn ui-btn-sm" onClick={() => void query.refetch()}>{text('重新读取','Reload')}</button></div>}
     {snapshot?.stale && (stage === 'inspect' || stage === 'prepare') && <p className="pipeline-note">{text('检查结果已过期，请重新检查数据。','The inspection is out of date. Inspect the data again.')}</p>}
@@ -134,8 +163,8 @@ export default function DatasetPipelinePanel({ projectId, versionId, readOnly = 
     {active && <DatasetOperationProgress label={actionName(active.action)} phaseText={statusName(active.phase)} done={active.done} total={active.total || null} state="active" elapsed={active.created_at ? Math.max(0, clock / 1000 - active.created_at) : null} detail={active.total > 0 ? text(`当前阶段 ${active.done} / ${active.total} 项`,`Current phase: ${active.done} / ${active.total} items`) : text('正在准备当前阶段…','Preparing this phase…')} actions={<>{active.can_cancel && <button type="button" className="ui-btn ui-btn-sm" disabled={submitting} onClick={() => void perform({}, `/dataset-pipeline/operations/${active.id}/cancel`)}>{text('取消','Cancel')}</button>}{active.job_id && <Link className="ui-link" to={`/jobs/${active.job_id}`}>{text('任务日志','Job log')}</Link>}</>}/>}
     {query.isPending && <p role="status"><Loader2 size={14} className="animate-spin"/>{text('读取数据状态…','Loading dataset status…')}</p>}
     <div className="pipeline-stage-body" ref={stageBody}>
-    {stage === 'datasets' ? <div className={readOnly ? '' : 'version-data-layout'}>{!readOnly && <fieldset disabled={locked}>{importPanel}</fieldset>}{datasetList}</div> : stage === 'curate' ? <DatasetCurationPanel datasets={datasets} readOnly={locked} onChanged={onChanged} onAddImages={() => setStage('datasets')}/> : stage === 'paint' ? <CaptionViewer key={`${projectId}/${versionId}/paint`} projectId={projectId} versionId={versionId} readOnly={readOnly || snapshot?.archived || locked} editing initialDatasetId={params.get('dataset') || ''}/> : stage === 'reg' ? <RegularizationPanel projectId={projectId} versionId={versionId} readOnly={readOnly || snapshot?.archived} onChanged={onChanged}/> : <>
-      {stage !== 'captions' && <div className="pipeline-toolbar"><div><h3 className="sr-only">{tabs.find(tab => tab[0] === stage)?.[1]}</h3><p>{text('检查图片、标签、重复图与遮罩，不修改文件。','Check images, captions, duplicates and masks without changing files.')}</p></div><button type="button" className="ui-btn ui-btn-primary" disabled={locked} onClick={() => void perform({action: 'inspect'})}><ScanLine size={15}/>{text('检查数据','Inspect data')}</button><button type="button" className="ui-btn ui-btn-icon" aria-label={text('刷新数据状态','Refresh pipeline')} title={text('刷新数据状态','Refresh pipeline')} onClick={refresh}><RefreshCw size={15}/></button>{stage !== 'captions' && report && <div className="pipeline-summary"><span>{images.length} {text('个图像文件','image files')} · {images.filter(image => !image.issues.some(issue => issue.code === 'unreadable_image')).length} {text('张可正常读取','decodable images')}</span><span className={report.errors ? 'pipeline-error-text' : ''}>{report.errors} {text('项错误','errors')}</span><span>{report.warnings} {text('项提示','warnings')}</span><span>{report.duplicate_groups.length} {text('组重复图','duplicate groups')}</span><span>{report.masks} {text('张遮罩','masks')}</span>{report.transparent_images !== undefined && <span>{report.transparent_images} {text('张含透明像素','images with transparent pixels')}</span>}</div>}</div>}
+    {stage === 'datasets' ? <div className={readOnly ? '' : 'version-data-layout'}>{!readOnly && <fieldset disabled={locked}>{importPanel}</fieldset>}{datasetList}</div> : stage === 'curate' ? <DatasetCurationPanel datasets={datasets} readOnly={locked} onChanged={onChanged} onAddImages={() => setStage('datasets')}/> : stage === 'preprocess' ? <div className="pipeline-preprocess"><AutoMaskPanel projectId={projectId} versionId={versionId} locked={locked} latest={latest('automask')} onStart={startOperation} onUndo={undo}/><CaptionViewer key={`${projectId}/${versionId}/paint`} projectId={projectId} versionId={versionId} readOnly={readOnly || snapshot?.archived || locked} editing initialDatasetId={params.get('dataset') || ''}/></div> : stage === 'tagging' ? <AutoTagPanel projectId={projectId} versionId={versionId} locked={locked} latest={latest('autotag')} onStart={startOperation} onUndo={undo} onReview={() => setStage('captions')}/> : stage === 'reg' ? <RegularizationPanel projectId={projectId} versionId={versionId} readOnly={readOnly || snapshot?.archived} onChanged={onChanged}/> : <>
+      {stage !== 'captions' && <div className="pipeline-toolbar"><h3 className="sr-only">{tabs.find(tab => tab[0] === stage)?.[1]}</h3><button type="button" className="ui-btn ui-btn-primary" disabled={locked} onClick={() => void perform({action: 'inspect'})}><ScanLine size={15}/>{text('检查数据','Inspect data')}</button><button type="button" className="ui-btn ui-btn-icon" aria-label={text('刷新数据状态','Refresh pipeline')} title={text('刷新数据状态','Refresh pipeline')} onClick={refresh}><RefreshCw size={15}/></button>{stage !== 'captions' && report && <div className="pipeline-summary"><span>{images.length} {text('个图像文件','image files')} · {images.filter(image => !image.issues.some(issue => issue.code === 'unreadable_image')).length} {text('张可正常读取','decodable images')}</span><span className={report.errors ? 'pipeline-error-text' : ''}>{report.errors} {text('项错误','errors')}</span><span>{report.warnings} {text('项提示','warnings')}</span><span>{report.duplicate_groups.length} {text('组重复图','duplicate groups')}</span><span>{report.masks} {text('张遮罩','masks')}</span>{report.transparent_images !== undefined && <span>{report.transparent_images} {text('张含透明像素','images with transparent pixels')}</span>}</div>}</div>}
 
       {stage === 'inspect' && report && report.alpha_images !== undefined && <details className="pipeline-check-scope"><summary>{text('通道与透明信息','Channels and transparency information')}</summary>
         {report.alpha_channel_images !== undefined ? <>

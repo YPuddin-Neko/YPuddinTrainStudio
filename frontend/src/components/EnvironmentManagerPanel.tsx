@@ -3,6 +3,7 @@ import TorchEnvironmentPanel from './TorchEnvironmentPanel';
 import InstallationOperation, { InstallationLog, InstallationProgress } from './InstallationOperation';
 import DtkWheelPicker, { type DtkWheel } from './DtkWheelPicker';
 import DtkRuntimePanel from './DtkRuntimePanel';
+import { LoadingNote } from './Loading';
 import WindowsAttentionWheelPicker, { type WindowsAttentionWheel } from './WindowsAttentionWheelPicker';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
@@ -52,7 +53,7 @@ const button = 'ui-btn ui-btn-sm';
 const input = 'rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900';
 const busyStatus = (op: Operation) => ['planning', 'installing', 'verifying'].includes(op.status);
 const cudaAttentionPackages = new Set(['xformers', 'flash-attn']);
-const managedPackages = new Set([...cudaAttentionPackages, 'mtlattn', 'bitsandbytes']);
+const managedPackages = new Set([...cudaAttentionPackages, 'mtlattn', 'bitsandbytes', 'onnxruntime', 'onnxruntime-gpu']);
 const metalFlashVersion = '0.4.1';
 
 function runtimeTarget(runtime: EnvironmentStatus['runtime']): 'cpu' | 'mps' | 'cuda' | 'hip' {
@@ -162,13 +163,18 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
   const visiblePackages = status?.packages.filter(pkg => target === 'mps' ? pkg.name === 'mtlattn' : showAttentionExtensions && cudaAttentionPackages.has(pkg.name)) || [];
   // The 8-bit optimizers run only on CUDA / DTK GPUs; training refuses them elsewhere.
   const optimizerPackages = status?.packages.filter(pkg => showAttentionExtensions && pkg.name === 'bitsandbytes') || [];
-  const focusAvailable = !!focusPackage && [...visiblePackages, ...optimizerPackages].some(pkg => pkg.name === focusPackage);
+  // Tagging and head masks: the GPU build on NVIDIA; elsewhere the CPU build. A CPU build left on an
+  // NVIDIA machine stays listed so it can be removed before installing the GPU one.
+  const visionPackages = status?.packages.filter(pkg => target === 'cuda' ? pkg.name === 'onnxruntime-gpu' || (pkg.name === 'onnxruntime' && !!pkg.version) : pkg.name === 'onnxruntime') || [];
+  // Tagging pages link to "onnxruntime"; on NVIDIA without a CPU build installed the entry to open is the GPU build.
+  const focusTarget = focusPackage === 'onnxruntime' && !visionPackages.some(pkg => pkg.name === 'onnxruntime') && visionPackages.some(pkg => pkg.name === 'onnxruntime-gpu') ? 'onnxruntime-gpu' : focusPackage;
+  const focusAvailable = !!focusTarget && [...visiblePackages, ...optimizerPackages, ...visionPackages].some(pkg => pkg.name === focusTarget);
   React.useEffect(() => {
-    if (!focusAvailable || !focusPackage) return;
-    setSelected(focusPackage);
+    if (!focusAvailable || !focusTarget) return;
+    setSelected(focusTarget);
     setVersion(''); setWheel(null); setVendorWheel(null);
-    document.getElementById(`environment-package-${focusPackage}`)?.scrollIntoView?.({ block: 'start' });
-  }, [focusAvailable, focusPackage]);
+    document.getElementById(`environment-package-${focusTarget}`)?.scrollIntoView?.({ block: 'start' });
+  }, [focusAvailable, focusTarget]);
 
   const refresh = React.useCallback(async (probe = false) => {
     setLoading(true);
@@ -222,12 +228,14 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     finally { setUploading(false); }
   };
   const statusLabel = (name: string) => ({ planning: copy('检查兼容性', 'Checking compatibility'), ready: copy('等待确认', 'Review required'), installing: copy('下载并安装', 'Downloading and applying'), verifying: copy('验证环境', 'Verifying environment'), completed: copy('已完成', 'Completed'), failed: copy('失败', 'Failed'), cancelled: copy('已取消', 'Cancelled') }[name] || name);
-  const packageLabel = (name: string) => ({ xformers: 'xFormers', 'flash-attn': 'FlashAttention 2', mtlattn: 'Metal FlashAttention' }[name] || name);
+  const packageLabel = (name: string) => ({ xformers: 'xFormers', 'flash-attn': 'FlashAttention 2', mtlattn: 'Metal FlashAttention', onnxruntime: 'ONNX Runtime', 'onnxruntime-gpu': 'ONNX Runtime GPU' }[name] || name);
   const purpose = (name: string) => ({
     xformers: copy('训练与采样加速', 'Training and sampling acceleration'),
     'flash-attn': copy('FP16 / BF16 训练与采样加速', 'FP16 / BF16 training and sampling acceleration'),
     mtlattn: copy('Apple GPU 训练与采样加速（可选）', 'Optional Apple GPU training and sampling acceleration'),
     bitsandbytes: copy('8-bit 优化器：AdamW 8-bit、Lion 8-bit', '8-bit optimizers: AdamW 8-bit, Lion 8-bit'),
+    onnxruntime: copy('自动打标与自动遮罩', 'Automatic tagging and head masks'),
+    'onnxruntime-gpu': copy('自动打标与自动遮罩，使用 NVIDIA 显卡', 'Automatic tagging and head masks on NVIDIA GPUs'),
   }[name] || '');
   const checkHint = (name: string) => name === 'bitsandbytes'
     ? copy('点击“运行检查”，检查 8-bit 优化器能否在当前显卡上运行。', 'Click “Run checks” to check whether the 8-bit optimizers run on the current GPU.')
@@ -333,6 +341,7 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     { id: 'environment-torch', label: profile === 'linux-dtk' ? copy('DTK 安装指南', 'DTK installation guide') : copy('PyTorch 版本', 'PyTorch version') },
     { id: 'environment-attention', label: copy('注意力加速', 'Attention acceleration') },
     { id: 'environment-lora', label: copy('LoRA 环境', 'LoRA environment') },
+    { id: 'environment-vision', label: copy('打标与遮罩', 'Tagging and masks') },
     ...(visibleOperations.length || torchOperationsVisible ? [{ id: 'environment-installation', label: copy('安装日志', 'Installation log') }] : []),
   ]}>
     <section id="environment-runtime" data-settings-section tabIndex={-1} className="settings-section">
@@ -376,6 +385,10 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
           <div className="settings-dependency-actions flex justify-end"><a className={`${button} ui-btn-icon`} href="https://github.com/KohakuBlueleaf/LyCORIS" target="_blank" rel="noreferrer" aria-label={`LyCORIS ${copy('代码仓库', 'repository')}`}><ExternalLink size={12} /></a></div>
         </div>
       </div>{optimizerPackages.map(packageItem)}</div>
+    </section>
+    <section id="environment-vision" data-settings-section tabIndex={-1} className="settings-section">
+      <div className="settings-section-heading"><h2>{copy('打标与遮罩', 'Tagging and masks')}</h2></div>
+      {status ? <div className="settings-dependencies">{visionPackages.map(packageItem)}</div> : <LoadingNote label={copy('检测扩展包…', 'Checking packages…')}/>}
     </section>
     <section id="environment-installation" data-settings-section tabIndex={-1} hidden={!visibleOperations.length && !torchOperationsVisible} className="settings-section space-y-3" data-testid={visibleOperations.length || torchOperationsVisible ? 'environment-operations' : undefined}>
       {(visibleOperations.length > 0 || torchOperationsVisible) && <div className="settings-section-heading"><h2>{copy('安装日志', 'Installation log')}</h2></div>}

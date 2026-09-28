@@ -119,7 +119,7 @@ export default function ProjectOverview({ project, version, versionId, config: s
   const dataWorkspaceUrl = projectUrl(project.id, scopedVersionId, 'data');
   const dataUrl = `${dataWorkspaceUrl}&data_step=datasets#version-datasets`;
   const captionsUrl = `${dataWorkspaceUrl}&data_step=captions`;
-  const masksUrl = `${dataWorkspaceUrl}&data_step=paint`;
+  const masksUrl = `${dataWorkspaceUrl}&data_step=preprocess`;
   const trainUrl = projectUrl(project.id, scopedVersionId, 'train');
   const resultsUrl = projectUrl(project.id, scopedVersionId, 'results');
   const modelsUrl = modelConfigUrl(project.id, scopedVersionId);

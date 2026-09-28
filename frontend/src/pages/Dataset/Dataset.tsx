@@ -306,7 +306,7 @@ export function DatasetWorkspace({id}: {id?:string}) {
           <button type="submit" className="ui-btn ui-btn-primary" aria-label={text('保存目录设置','Save folder settings')} disabled={!canEdit || !!busyAction || addingImages || !folderName.trim() || !Number.isInteger(Number(repeats)) || Number(repeats)<1 || Number(repeats)>1000000 || (folderName === savedFolderName && Number(repeats) === info.source.repeats)}>{busyAction === 'settings' ? text('保存中…','Saving…') : text('保存','Save')}</button>
         </form>}
         <div className="dataset-folder-actions">
-          {curationUrl && <Link className="ui-btn" to={curationUrl}>{text('训练集筛选','Training set curation')}</Link>}
+          {curationUrl && <Link className="ui-btn" to={curationUrl}>{text('数据集筛选','Curation')}</Link>}
           {canEdit && info?.source.can_append && <button type="button" className="ui-btn" aria-expanded={showAddImages} onClick={()=>setShowAddImages(value=>!value)} disabled={addingImages}>{text('添加图片', 'Add images')}</button>}
           <button type="button" className="ui-btn ui-btn-icon" onClick={handleRescan} disabled={!canEdit || !!busyAction || addingImages} title={t('dataset.rescan')} aria-label={t('dataset.rescan')}><RefreshCcw size={15}/></button>
           <button type="button" className="ui-btn ui-btn-icon ui-btn-danger" onClick={handleDelete} disabled={!canEdit || !!busyAction || addingImages} title={t('dataset.remove')} aria-label={t('dataset.remove')}><Trash2 size={15}/></button>

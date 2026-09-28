@@ -18,7 +18,8 @@
 .caption-viewer-grid span { width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:5px 6px; font-size:11px; }
 .caption-viewer-grid small { color:var(--studio-dim); padding:0 6px 6px; font-size:10px; }
 .caption-viewer-detail { display:grid; gap:10px; min-width:0; border:1px solid var(--studio-line); border-radius:7px; padding:10px; background:var(--studio-panel); }
-.caption-viewer-image { background:var(--studio-muted); border-radius:4px; }
+.caption-viewer-image { position:relative; background:var(--studio-muted); border-radius:4px; }
+.caption-viewer-image > .caption-viewer-mask { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; pointer-events:none; }
 .caption-viewer-image img { width:100%; height:230px; object-fit:contain; }
 .caption-viewer-image-heading { display:flex; align-items:center; flex-wrap:wrap; gap:6px; font-size:11px; }
 .caption-viewer-image-heading strong { min-width:0; flex:1; overflow-wrap:anywhere; }
@@ -27,7 +28,8 @@
 .caption-viewer-caption h4 { font-size:12px; font-weight:600; margin-bottom:6px; }
 .caption-viewer-caption pre,.caption-viewer-caption p { font-family:inherit; font-size:12px; line-height:1.7; white-space:pre-wrap; overflow-wrap:anywhere; max-height:320px; overflow:auto; user-select:text; }
 .caption-viewer-caption p { color:var(--studio-dim); }
-.caption-viewer-editor { display:flex; align-items:center; gap:5px; font-size:11px; color:var(--studio-accent); }
+.caption-viewer-editor { display:flex; align-items:center; gap:5px; font-size:11px; }
+.caption-viewer-editor:not(.ui-btn-primary) { color:var(--studio-accent); }
 .caption-viewer-editor svg { flex:none; }
 .caption-viewer-editor > span { min-width:0; line-height:1.5; }
 .caption-viewer-pagination { display:flex; justify-content:center; align-items:center; gap:12px; font-size:12px; }

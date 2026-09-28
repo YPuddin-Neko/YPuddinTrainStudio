@@ -46,6 +46,10 @@ xFormers、FlashAttention、SageAttention、bitsandbytes 等扩展需要与新�
 
 安装后会在显卡上实际执行一步 AdamW 8-bit 更新，确认优化器状态为 8 位且权重已更新，才标记为可用。“运行检查”可随时重新检测。
 
+## 打标与遮罩
+
+“设置 → 运行环境 → 打标与遮罩”安装 ONNX Runtime，自动打标和自动遮罩依赖它。NVIDIA 显卡安装 GPU 版（`onnxruntime-gpu`），其他平台安装 CPU 版（`onnxruntime`）。两个版本不能同时安装，NVIDIA 机器上已有 CPU 版时需先卸载。更新后下次打标或自动遮罩即生效，不需要重启服务。
+
 ## 下载源与代理
 
 “软件下载源”控制 Python 依赖和 PyTorch 包的来源。设置保存后供启动器、环境准备和扩展安装使用；命令行显式指定 `--index` 时以命令行为准。自动换源可单独关闭。

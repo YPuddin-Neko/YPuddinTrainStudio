@@ -42,6 +42,10 @@ export type DatasetInfo = S['DatasetInfo'] & { cache: DatasetCacheInfo };
 
 export type DatasetImage = S['DatasetImage'];
 export type DatasetImagesPage = S['ImagePage'];
+export type VisionCatalog = S['VisionCatalog'];
+export type VisionModel = S['VisionModel'];
+export type TaggingOptions = S['TaggingOptions'];
+export type AutoMaskOptions = S['AutoMaskOptions'];
 export type ValidationPoint = S['ValidationPoint'];
 export type FamilyInfo = S['FamilyInfo'];
 export type FamilyPreset = S['FamilyPreset'];
