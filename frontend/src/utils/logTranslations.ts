@@ -87,12 +87,12 @@ const RULES: Rule[] = [
   [/^saved (weights|model|file)( \(EMA\))?: (.+?) \| step (\d+)\/(\d+) \| epoch (\S+) \| loss (\S+)$/, m => `已保存${m[2] ? ' EMA ' : ''}${SAVED[m[1]]}：${m[3]} | 第 ${m[4]}/${m[5]} 步 | 第 ${m[6]} 轮 | Loss ${m[7]}`],
   [/^saved resume point (\S+ \S+) \| step (\d+)\/(\d+) \| epoch (\S+) \| loss (\S+) \| (.+)$/, m => `已保存恢复点：${m[1]} | 第 ${m[2]}/${m[3]} 步 | 第 ${m[4]} 轮 | Loss ${m[5]} | ${m[6]}`],
   [/^saved (weights|training state|model|file)( \(EMA\))?: (.+)$/, m => `已保存${m[2] ? ' EMA ' : ''}${SAVED[m[1]]}：${m[3]}`],
-  [/^(pause|stop) requested; (?:pausing|stopping) after step (\d+)\/(\d+) and saving a resume point(?: \(about (\S+)\))?$/, m => `收到${m[1] === 'pause' ? '暂停' : '停止'}请求：第 ${m[2]}/${m[3]} 步完成后保存恢复点并${m[1] === 'pause' ? '暂停' : '停止'}${m[4] ? `（约 ${duration(m[4])}）` : ''}`],
+  [/^(pause|stop) requested; (?:pausing|stopping) after step (\d+)\/(\d+) and saving a resume point(?: \(about (\S+)\))?$/, m => `收到${m[1] === 'pause' ? '暂停' : '停止'}请求：第 ${m[2]}/${m[3]} 步完成后保存恢复点并${m[1] === 'pause' ? '暂停' : '停止'}${m[1] === 'stop' && m[4] ? `（约 ${duration(m[4])}）` : ''}`],
   [/^save requested; saving a resume point after step (\d+)\/(\d+)(?: \(about (\S+)\))?$/, m => `收到保存请求：第 ${m[1]}/${m[2]} 步完成后保存恢复点${m[3] ? `（约 ${duration(m[3])}）` : ''}`],
   [/^(pause|stop) requested; stopping after the current preparation item$/, m => `收到${m[1] === 'pause' ? '暂停' : '停止'}请求：当前准备项完成后停止`],
   [/^(pausing|stopping) at step (\d+)\/(\d+) \(epoch (\S+)\); saving a resume point$/, m => `开始${m[1] === 'pausing' ? '暂停' : '停止'}：正在保存第 ${m[2]}/${m[3]} 步（第 ${m[4]} 轮）的恢复点，保存后退出`],
   [/^(pause|stop) requested at step (\d+)\/(\d+) \(epoch (\S+)\); saving a resume point$/, m => `收到${m[1] === 'pause' ? '暂停' : '停止'}信号：正在保存第 ${m[2]}/${m[3]} 步（第 ${m[4]} 轮）的恢复点，保存后退出`],
-  [/^training (paused|stopped); resume point saved (\S+ \S+) \| step (\d+)\/(\d+) \| epoch (\S+) \| loss (\S+) \| (.+)$/, m => `${m[1] === 'paused' ? '已暂停训练' : '已停止训练'}，恢复点已保存：${m[2]} | 第 ${m[3]}/${m[4]} 步 | 第 ${m[5]} 轮 | Loss ${m[6]} | ${m[7]}`],
+  [/^training (paused|stopped); resume point saved (\S+ \S+) \| step (\d+)\/(\d+) \| epoch (\S+) \| loss (\S+) \| (.+?)(?: \| duration (\S+))?$/, m => `${m[1] === 'paused' ? '已暂停训练' : '已停止训练'}，恢复点已保存：${m[2]} | 第 ${m[3]}/${m[4]} 步 | 第 ${m[5]} 轮 | Loss ${m[6]} | ${m[7]}${m[8] ? ` | 耗时：${m[8].replace(/s$/, '')} 秒` : ''}`],
 
   // Outcome
   [/^training (finished|paused|stopped|failed) at step (\d+)\/(\d+) after (\S+)$/, m => `训练${OUTCOMES[m[1]]}：第 ${m[2]}/${m[3]} 步，总用时 ${duration(m[4])}`],
@@ -116,16 +116,17 @@ const RULES: Rule[] = [
   [/^phase (\w+) -> (\w+) after ([\d.]+)s$/, m => `阶段 ${m[1]} → ${m[2]}，用时 ${seconds(m[3])}`],
 ];
 
-const TONES: Array<[RegExp, 'pause' | 'resume']> = [
+const TONES: Array<[RegExp, 'pause' | 'resume' | 'success']> = [
   [/^(pause|stop) requested\b/, 'pause'],
   [/^(pausing|stopping) at step /, 'pause'],
   [/^training (paused|stopped)\b/, 'pause'],
   [/^resume requested: /, 'resume'],
   [/^resumed training /, 'resume'],
+  [/^training finished\b/, 'success'],
 ];
 
-/** Pausing reads in yellow and resuming in green, in either language. */
-export function logTone(message: string): 'pause' | 'resume' | null {
+/** Pause reads in yellow, resume and successful completion in green. */
+export function logTone(message: string): 'pause' | 'resume' | 'success' | null {
   return TONES.find(([pattern]) => pattern.test(message))?.[1] ?? null;
 }
 

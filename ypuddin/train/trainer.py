@@ -167,6 +167,7 @@ class Trainer:
     # The control request that is ending the run, and where the current epoch began.
     _stopping: str | None = None
     _stop_state: Path | None = None
+    _pause_requested_at: float | None = None
     _epoch_mark: tuple[float, float, int, bool] | None = None
     # When the current step began and how long the last one took, for request acknowledgments; a
     # finished step whose previews and saves still run acts on requests before the next step.
@@ -304,7 +305,9 @@ class Trainer:
             saved_at = time.strftime("%Y-%m-%d %H:%M:%S")
             if self._stopping:
                 outcome = "paused" if self._stopping == "pause" else "stopped"
-                log.info("training %s; resume point saved %s | %s | %s", outcome, saved_at, point, path)
+                duration = time.monotonic() - self._pause_requested_at if self._pause_requested_at else None
+                suffix = f" | duration {duration:.3f}s" if outcome == "paused" and duration is not None else ""
+                log.info("training %s; resume point saved %s | %s | %s%s", outcome, saved_at, point, path, suffix)
             else:
                 log.info("saved resume point %s | %s | %s", saved_at, point, path)
             return
@@ -1671,8 +1674,10 @@ class Trainer:
             return
         total = self.progress.total_steps
         step = min(total, self.progress.step if self._hooks_pending else self.progress.step + 1)
+        if name == "pause" and self._pause_requested_at is None:
+            self._pause_requested_at = time.monotonic()
         about = ""
-        if not self._hooks_pending and self._step_seconds and self._step_began is not None:
+        if name != "pause" and not self._hooks_pending and self._step_seconds and self._step_began is not None:
             left = self._step_seconds - (time.monotonic() - self._step_began)
             about = f" (about {_duration(left)})" if left >= 1 else ""
         if name == "save":
@@ -1976,6 +1981,8 @@ class Trainer:
             self.save_state("manual")
         elif req in ("pause", "stop"):
             self._stopping = req
+            if req == "pause" and self._pause_requested_at is None:
+                self._pause_requested_at = time.monotonic()
             log.info(
                 "%s at step %d/%d (epoch %s); saving a resume point",
                 "pausing" if req == "pause" else "stopping",
