@@ -17,6 +17,9 @@
 .artifact-refresh:hover:not(:disabled) { background:var(--studio-muted); }
 .artifact-refresh:disabled { opacity:.45; }
 .artifact-controls > .task-pagination { flex:1 0 100%; }
+.artifact-pagination .studio-select { width:112px; flex:0 0 112px; }
+.artifact-pagination > div { flex-wrap:nowrap; }
+.artifact-pagination > div > span { white-space:nowrap; font-variant-numeric:tabular-nums; }
 .artifact-compact-meta { display:none; }
 .artifact-row-actions { flex-wrap:wrap; }
 .artifact-row-actions > .studio-select { width:110px; flex:0 1 110px; }

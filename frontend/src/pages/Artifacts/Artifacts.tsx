@@ -17,6 +17,8 @@ import { LoadingNote } from '../../components/Loading';
 
 // These are the formats currently implemented by the conversion API.
 const CONVERT_FORMATS = ['comfyui', 'kohya'] as const;
+const PAGE_SIZES = [25, 50, 100];
+const PAGE_SIZE_KEY = 'studio.artifacts.pageSize';
 const CONVERTIBLE_KINDS = new Set(['weights', ...CONVERT_FORMATS]);
 const button = 'ui-btn ui-btn-sm ui-btn-icon';
 
@@ -34,6 +36,13 @@ export default function Artifacts({ embedded = false, projectId: projectScope, v
   const [localQuery, setLocalQuery] = React.useState('');
   const query = scoped ? localQuery : params.get('q') || '';
   const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(() => {
+    try { const saved = Number(localStorage.getItem(PAGE_SIZE_KEY)); return PAGE_SIZES.includes(saved) ? saved : PAGE_SIZES[0]; } catch { return PAGE_SIZES[0]; }
+  });
+  const changePageSize = (value: string) => {
+    setPageSize(Number(value)); setPage(1);
+    try { localStorage.setItem(PAGE_SIZE_KEY, value); } catch { /* The choice lasts for this page only. */ }
+  };
   const [sort, setSort] = React.useState('newest');
   const [artifacts, setArtifacts] = React.useState<VersionedArtifact[]>([]);
   const scopeKey = JSON.stringify([projectId, versionId, jobId]);
@@ -93,7 +102,7 @@ export default function Artifacts({ embedded = false, projectId: projectScope, v
   const sizeLabel = (artifact: Artifact) => artifact.kind === 'model' ? text('模型组件', 'Model components') : t('artifacts.rankAlphaFactor');
   const onlyFullModels = filtered.length > 0 && filtered.every(artifact => artifact.kind === 'model');
   const sorted = [...filtered].sort((a, b) => sort === 'step' ? (b.step ?? 0) - (a.step ?? 0) : b.created_at - a.created_at);
-  const pages = Math.max(1, Math.ceil(filtered.length / 25));
+  const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pages);
 
   return <div className={`artifacts-page${embedded ? ' artifacts-embedded' : ''}`} data-testid="artifacts-page">
@@ -105,13 +114,13 @@ export default function Artifacts({ embedded = false, projectId: projectScope, v
       <button type="button" className="ui-btn artifact-refresh" disabled={loading} onClick={() => void fetchArtifacts()} aria-label={text('刷新产物', 'Refresh outputs')}><RefreshCw size={14} className={loading ? 'animate-spin' : ''}/>{text('刷新', 'Refresh')}</button>
       {(query || !scoped && (projectId || versionId || jobId)) && <button type="button" className="ui-link" onClick={clearFilter}>{text('清除筛选', 'Clear filters')}</button>}
       {projectId && !scoped && <Link className="ui-link" to={projectUrl(projectId, versionId, 'results')}>{text('项目', 'Project')} · {projectId}</Link>}
-    {filtered.length > 25 && <div className="task-pagination"><span>{text('每页 25 个权重文件', '25 weight files per page')}</span><div><button type="button" className="ui-btn" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>{text('上一页产物', 'Previous outputs')}</button><span>{currentPage} / {pages}</span><button type="button" className="ui-btn" disabled={currentPage >= pages} onClick={() => setPage(currentPage + 1)}>{text('下一页产物', 'Next outputs')}</button></div></div>}
+    {filtered.length > PAGE_SIZES[0] && <div className="task-pagination artifact-pagination"><div><StudioSelect aria-label={text('每页产物数', 'Outputs per page')} value={String(pageSize)} options={PAGE_SIZES.map(value => ({ value: String(value), label: text(`${value} 个 / 页`, `${value} / page`) }))} onValueChange={changePageSize}/><button type="button" className="ui-btn" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>{text('上一页', 'Previous')}</button><span>{currentPage} / {pages}</span><button type="button" className="ui-btn" disabled={currentPage >= pages} onClick={() => setPage(currentPage + 1)}>{text('下一页', 'Next')}</button></div></div>}
     </div>
     {error && <div role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300"><p className="whitespace-pre-wrap break-words">{error}</p><button type="button" className="ui-link mt-2" onClick={() => void fetchArtifacts()}>{t('common.retry')}</button></div>}
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
       {loading ? <LoadingNote block label={text('正在读取训练产物…', 'Loading outputs…')}/> : filtered.length === 0 ? <div className="flex flex-col items-center gap-2 p-10 text-center"><PackageOpen className="h-9 w-9 text-slate-400" /><p className="text-sm font-medium text-slate-500">{query || projectId || versionId || jobId ? text('没有匹配的训练产物', 'No matching training outputs') : t('artifacts.empty')}</p><Link to={projectId ? `${projectUrl(projectId, versionId, 'results')}&result_tab=jobs` : '/queue'} className="ui-link mt-2">{text('查看训练任务', 'View training jobs')}</Link></div> : <table className="artifact-table w-full text-left text-sm">
         <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-900/50"><tr><th className="px-3 py-2.5">{t('artifacts.name')}</th><th className="px-3 py-2.5">{t('artifacts.job')}</th><th className="px-3 py-2.5">{t('artifacts.algo')}</th><th className="artifact-secondary px-3 py-2.5">{onlyFullModels ? text('模型组件', 'Model components') : text('参数规模 / 组件', 'Adapter size / components')}</th><th className="px-3 py-2.5">{t('artifacts.size')}</th><th className="artifact-secondary px-3 py-2.5">{t('artifacts.created')}</th><th className="px-3 py-2.5 text-right">{t('artifacts.actions')}</th></tr></thead>
-        <tbody className="divide-y divide-slate-100 dark:divide-slate-700">{sorted.slice((currentPage - 1) * 25, currentPage * 25).map(artifact => <tr key={artifact.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/30" data-testid={`artifact-row-${artifact.id}`}>
+        <tbody className="divide-y divide-slate-100 dark:divide-slate-700">{sorted.slice((currentPage - 1) * pageSize, currentPage * pageSize).map(artifact => <tr key={artifact.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/30" data-testid={`artifact-row-${artifact.id}`}>
           <td className="max-w-60 break-words px-3 py-3 font-mono text-xs font-medium">{artifact.name}<small className="artifact-compact-meta">{sizeLabel(artifact)}: {sizeDetail(artifact)} · {formatTime(artifact.created_at)}</small>{!scoped && artifact.project_id && <Link className="artifact-project-link" to={projectUrl(artifact.project_id, artifact.version_id, 'results')}>{text('项目', 'Project')} {artifact.project_id} · {text('所属版本结果', 'Version results')}</Link>}</td><td className="px-3 py-3 font-mono text-xs text-slate-500">{artifact.job_id ? <Link to={`/jobs/${encodeURIComponent(artifact.job_id)}`} className="ui-link">{artifact.job_id}</Link> : '—'}</td><td className="px-3 py-3 text-xs">{artifact.kind === 'model' ? <>{text('全量模型', 'Full model')}<span className="block text-slate-500">{text('组件目录 · ZIP', 'Component directory · ZIP')}</span></> : <>{artifact.algo || text('适配器', 'Adapter')}{artifact.kind && artifact.kind !== 'weights' && <span className="block text-slate-400">{artifact.kind}</span>}</>}</td><td className="artifact-secondary whitespace-nowrap px-3 py-3 font-mono text-xs">{sizeDetail(artifact)}</td><td className="whitespace-nowrap px-3 py-3 font-mono text-xs">{formatBytes(artifact.size)}</td><td className="artifact-secondary whitespace-nowrap px-3 py-3 text-xs text-slate-500">{formatTime(artifact.created_at)}</td>
           <td className="artifact-action-cell px-3 py-3"><div className="artifact-row-actions flex items-center justify-end gap-1.5"><a href={apiUrl(`/artifacts/${encodeURIComponent(artifact.id)}/download`)} download={artifact.kind === 'model' ? `${artifact.name}.zip` : undefined} className={button} aria-label={`${t('common.download')}: ${artifact.name}`} title={t('common.download')}><Download className="h-4 w-4" /></a><button className={button} aria-label={`${text('查看元数据', 'View metadata')}: ${artifact.name}`} title={text('查看元数据', 'View metadata')} onClick={() => setMetadataFor(artifact)}><FileJson className="h-4 w-4" /></button>{CONVERTIBLE_KINDS.has(artifact.kind) && <StudioSelect aria-label={`${text('转换格式', 'Convert format')}: ${artifact.name}`} disabled={readOnly || !!busy} value="" placeholder={busy === artifact.id ? t('artifacts.converting') : t('artifacts.convert')} options={CONVERT_FORMATS.map(format => ({ value: format, label: format, disabled: artifact.kind === format }))} onValueChange={format => { if (format) void action(artifact.id, () => apiClient.post(`/artifacts/${artifact.id}/convert`, { format }, { silent: true })); }}/>}<button type="button" className={`${button} ui-btn-danger`} aria-label={`${text('移除产物记录', 'Remove output record')}: ${artifact.name}`} disabled={readOnly || !!busy} onClick={() => { if (window.confirm(text(`从产物列表移除 ${artifact.name}？磁盘中的权重文件会保留。`, `Remove ${artifact.name} from the output list? Its weight file will remain on disk.`))) void action(artifact.id, () => apiClient.delete(`/artifacts/${artifact.id}`, { silent: true })); }}><Trash2 className="h-4 w-4" /></button></div></td>
         </tr>)}</tbody>
