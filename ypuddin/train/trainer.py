@@ -50,6 +50,7 @@ from ypuddin.data import (
     cache_latents,
     collate,
 )
+from ypuddin.data.dataset import training_layout_line
 from ypuddin.data.native import NativeBatchSampler, collate_native
 from ypuddin.memory import BlockSwapper
 from ypuddin.models import LoadedModel, ModelFamily, TextCond, get_family
@@ -393,13 +394,13 @@ class Trainer:
         self.emit("data.plan", **self.bundle.plan.to_dict())
         data_plan = self.bundle.plan
         log.info(
-            "dataset: %d images (%d captioned), %d training items in %d buckets%s",
+            "dataset: %d images (%d captioned), %d training items%s",
             data_plan.images,
             data_plan.captioned,
             data_plan.items,
-            len(data_plan.buckets),
             f", {data_plan.validation_images} validation images" if data_plan.validation_images else "",
         )
+        log.info("%s", training_layout_line(cfg.dataset.resolution_mode, data_plan.buckets))
 
         if cfg.dataset.cache_latents:
             self.emit("phase.changed", phase="caching_latents")

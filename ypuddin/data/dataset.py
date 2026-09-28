@@ -162,6 +162,15 @@ class DataPlan:
         }
 
 
+def training_layout_line(resolution_mode: str, buckets: list[dict[str, Any]]) -> str:
+    """How training sizes the images: native layouts or buckets, each size with its item count."""
+    ordered = sorted(buckets, key=lambda bucket: (-bucket["items"], bucket["w"], bucket["h"]))
+    sizes = ", ".join(f"{bucket['w']}x{bucket['h']} ({bucket['items']})" for bucket in ordered)
+    if resolution_mode == "native":
+        return f"training layout: native resolution, {len(ordered)} image layouts: {sizes}"
+    return f"training layout: buckets, {len(ordered)} buckets: {sizes}"
+
+
 def _split_by_hash(records: list[ImageRecord], ratio: float) -> tuple[list[ImageRecord], list[ImageRecord]]:
     if ratio <= 0:
         return records, []

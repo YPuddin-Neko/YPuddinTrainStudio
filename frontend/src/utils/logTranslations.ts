@@ -9,6 +9,11 @@ const FAMILIES: Record<string, string> = { anima: 'Anima', krea2: 'Krea 2', flux
 const SAVED: Record<string, string> = { weights: '权重', 'training state': '训练状态', model: '模型', file: '文件' };
 const OUTCOMES: Record<string, string> = { finished: '完成', paused: '已暂停', stopped: '已停止', failed: '失败' };
 
+/** "1904x2656 (133), 2832x2304 (19)" → "1904×2656（133 个样本）、2832×2304（19 个样本）". */
+function layoutSizes(value: string): string {
+  return value.split(', ').map(size => size.replace(/^(\d+)x(\d+) \((\d+)\)$/, '$1×$2（$3 个样本）')).join('、');
+}
+
 function seconds(value: string): string {
   return `${value} 秒`;
 }
@@ -46,6 +51,9 @@ const RULES: Rule[] = [
 
   // Dataset and caches
   [/^dataset: (\d+) images \((\d+) captioned\), (\d+) training items in (\d+) buckets(?:, (\d+) validation images)?$/, m => `数据集：${m[1]} 张图片（${m[2]} 张有标注），${m[3]} 个训练样本，分为 ${m[4]} 个分桶${m[5] ? `；另有 ${m[5]} 张验证图片` : ''}`],
+  [/^dataset: (\d+) images \((\d+) captioned\), (\d+) training items(?:, (\d+) validation images)?$/, m => `数据集：${m[1]} 张图片（${m[2]} 张有标注），${m[3]} 个训练样本${m[4] ? `；另有 ${m[4]} 张验证图片` : ''}`],
+  [/^training layout: native resolution, (\d+) image layouts: (.+)$/, m => `训练方法：原生分辨率，${m[1]} 个图片布局：${layoutSizes(m[2])}`],
+  [/^training layout: buckets, (\d+) buckets: (.+)$/, m => `训练方法：分桶，${m[1]} 个分桶：${layoutSizes(m[2])}`],
   [/^VAE encoding: (\d+)\/(\d+)$/, m => `VAE 编码中：${m[1]}/${m[2]}`],
   [/^text encoding: (\d+)\/(\d+)$/, m => `文本编码中：${m[1]}/${m[2]}`],
   [/^cached (\d+) latents in ([\d.]+)s$/, m => `VAE 编码完成：新缓存 ${m[1]} 张图片的潜空间，用时 ${seconds(m[2])}`],
