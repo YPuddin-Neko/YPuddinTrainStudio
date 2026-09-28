@@ -20862,6 +20862,9 @@
           },
           "cache": {
             "$ref": "#/components/schemas/SettingsCache"
+          },
+          "tagging": {
+            "$ref": "#/components/schemas/SettingsTagging"
           }
         },
         "additionalProperties": true,
@@ -21038,6 +21041,25 @@
         ],
         "title": "SettingsServer"
       },
+      "SettingsTagging": {
+        "properties": {
+          "model_source": {
+            "type": "string",
+            "enum": [
+              "huggingface",
+              "modelscope"
+            ],
+            "title": "Model Source",
+            "default": "huggingface"
+          },
+          "vlm": {
+            "$ref": "#/components/schemas/SettingsVlm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SettingsTagging"
+      },
       "SettingsUi": {
         "properties": {
           "language": {
@@ -21087,6 +21109,112 @@
           "theme"
         ],
         "title": "SettingsUi"
+      },
+      "SettingsVlm": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "openai",
+              "gemini",
+              "openrouter",
+              "siliconflow",
+              "dashscope",
+              "deepseek",
+              "ollama",
+              "lmstudio",
+              "custom"
+            ],
+            "title": "Provider",
+            "default": "openai"
+          },
+          "base_urls": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "maxProperties": 16,
+            "title": "Base Urls"
+          },
+          "models": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "maxProperties": 16,
+            "title": "Models"
+          },
+          "temperature": {
+            "type": "number",
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Temperature",
+            "default": 0.3
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 65536.0,
+                "minimum": 16.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens"
+          },
+          "image_size": {
+            "type": "integer",
+            "maximum": 4096.0,
+            "minimum": 256.0,
+            "title": "Image Size",
+            "default": 1024
+          },
+          "image_detail": {
+            "type": "string",
+            "enum": [
+              "",
+              "auto",
+              "low",
+              "high"
+            ],
+            "title": "Image Detail",
+            "default": ""
+          },
+          "concurrency": {
+            "type": "integer",
+            "maximum": 16.0,
+            "minimum": 1.0,
+            "title": "Concurrency",
+            "default": 2
+          },
+          "interval": {
+            "type": "number",
+            "maximum": 120.0,
+            "minimum": 0.0,
+            "title": "Interval",
+            "default": 0
+          },
+          "timeout": {
+            "type": "integer",
+            "maximum": 900.0,
+            "minimum": 10.0,
+            "title": "Timeout",
+            "default": 120
+          },
+          "retries": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 0.0,
+            "title": "Retries",
+            "default": 2
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SettingsVlm",
+        "description": "The vision model service tagging uses and how requests are sent to it."
       },
       "SiteDownloadEstimate": {
         "properties": {
@@ -21767,6 +21895,25 @@
             "minimum": 0.01,
             "title": "Character Threshold",
             "default": 0.85
+          },
+          "categories": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "general",
+                "character",
+                "copyright",
+                "artist",
+                "meta",
+                "model",
+                "quality",
+                "rating"
+              ]
+            },
+            "type": "array",
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Categories"
           },
           "exclude_tags": {
             "items": {
@@ -22833,7 +22980,6 @@
             "type": "string",
             "enum": [
               "huggingface",
-              "hf-mirror",
               "modelscope"
             ],
             "title": "Source",
@@ -22857,6 +23003,10 @@
               "head_detector"
             ],
             "title": "Role"
+          },
+          "family": {
+            "type": "string",
+            "title": "Family"
           },
           "label": {
             "type": "string",
@@ -22882,12 +23032,39 @@
             "type": "boolean",
             "title": "Recommended"
           },
+          "categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Categories",
+            "default": []
+          },
+          "thresholds": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VisionThresholds"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "token_required": {
+            "type": "boolean",
+            "title": "Token Required",
+            "default": false
+          },
+          "token_configured": {
+            "type": "boolean",
+            "title": "Token Configured",
+            "default": false
+          },
           "sources": {
             "items": {
               "type": "string",
               "enum": [
                 "huggingface",
-                "hf-mirror",
                 "modelscope"
               ]
             },
@@ -22917,6 +23094,7 @@
         "required": [
           "id",
           "role",
+          "family",
           "label",
           "repo",
           "revision",
@@ -22982,6 +23160,24 @@
           "providers"
         ],
         "title": "VisionRuntime"
+      },
+      "VisionThresholds": {
+        "properties": {
+          "general": {
+            "type": "number",
+            "title": "General"
+          },
+          "character": {
+            "type": "number",
+            "title": "Character"
+          }
+        },
+        "type": "object",
+        "required": [
+          "general",
+          "character"
+        ],
+        "title": "VisionThresholds"
       },
       "VlmKeyUpdate": {
         "properties": {

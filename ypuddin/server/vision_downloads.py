@@ -1,8 +1,10 @@
-"""Downloads of the reviewed tagging and head-detection models (``model_catalog.VISION_MODELS``).
+"""Downloads of the reviewed tagging and mask-detection models (``model_catalog.VISION_MODELS``).
 
-Each model lives in ``<models_dir>/vision/<id>/`` as the files its catalog entry names. A file is
-accepted only at its pinned size and SHA-256, whichever source served it, so a mirror can never
-hand over different bytes. ``.verified.json`` records the hashes checked at download time.
+Each model lives in ``<models_dir>/<folder>/`` (``tagger/<family>/<version>`` or
+``mask/<kind>/<version>``) as the files its catalog entry names. A file is accepted only at its
+pinned size and SHA-256, whichever source served it, so a mirror can never hand over different
+bytes. ``.verified.json`` records the hashes checked at download time. Models downloaded before this
+layout, in ``<models_dir>/vision/<id>/``, move to their folder the first time the catalog is read.
 """
 
 from __future__ import annotations
@@ -26,7 +28,7 @@ from .model_catalog import VISION_MODELS
 
 log = logging.getLogger(__name__)
 
-Source = Literal["huggingface", "hf-mirror", "modelscope"]
+Source = Literal["huggingface", "modelscope"]
 ACTIVE = ("queued", "downloading", "verifying")
 MARKER = ".verified.json"
 
@@ -37,8 +39,7 @@ def file_url(entry: dict, repo_path: str, source: Source) -> str:
             raise ApiError("this model has no ModelScope copy; use Hugging Face", code="vision.source")
         query = urllib.parse.urlencode({"Revision": "master", "FilePath": repo_path})
         return f"https://modelscope.cn/api/v1/models/{entry['modelscope']}/repo?{query}"
-    host = "hf-mirror.com" if source == "hf-mirror" else "huggingface.co"
-    return f"https://{host}/{entry['repo']}/resolve/{entry['revision']}/{urllib.parse.quote(repo_path, safe='/')}"
+    return f"https://huggingface.co/{entry['repo']}/resolve/{entry['revision']}/{urllib.parse.quote(repo_path, safe='/')}"
 
 
 class VisionModels:
@@ -53,12 +54,33 @@ class VisionModels:
 
     # ----------------------------------------------------------------- storage
     def root(self) -> Path:
-        return Path(self.context.settings()["paths"]["models_dir"]).expanduser().resolve() / "vision"
+        return Path(self.context.settings()["paths"]["models_dir"]).expanduser().resolve()
 
     def directory(self, model_id: str) -> Path:
         if model_id not in VISION_MODELS:
             raise NotFound("unknown model", code="vision.model")
-        return self.root() / model_id
+        return self.root() / VISION_MODELS[model_id]["folder"]
+
+    def migrate(self) -> None:
+        """Move models from the former ``vision/<id>`` folders into their own folders."""
+        legacy = self.root() / "vision"
+        if not legacy.is_dir():
+            return
+        with self.lock:
+            for model_id in VISION_MODELS:
+                old, new = legacy / model_id, self.directory(model_id)
+                if old.is_dir() and not new.exists():
+                    new.parent.mkdir(parents=True, exist_ok=True)
+                    try:
+                        old.rename(new)
+                    except OSError as error:
+                        log.warning("could not move %s to %s: %s", old, new, error)
+            for leftover in legacy.glob(".*.partial"):
+                shutil.rmtree(leftover, ignore_errors=True)
+            try:
+                legacy.rmdir()
+            except OSError:
+                pass  # other files remain; leave them to the user
 
     def ready(self, model_id: str) -> bool:
         folder = self.directory(model_id)
@@ -73,7 +95,7 @@ class VisionModels:
         return True
 
     def files(self, model_id: str) -> dict[str, Path]:
-        """Local paths by name (model.onnx, selected_tags.csv); raises when the model is not downloaded."""
+        """Local paths by name (model.onnx and the label table); raises when the model is not downloaded."""
         if not self.ready(model_id):
             label = VISION_MODELS[model_id]["label"]
             raise ApiError(f"{label} is not downloaded", code="vision.model_missing", status=409)
@@ -82,6 +104,8 @@ class VisionModels:
 
     # ----------------------------------------------------------------- catalog
     def catalog(self) -> list[dict[str, Any]]:
+        self.migrate()
+        token = bool(self.credentials and self.credentials.token("huggingface"))
         rows = []
         for model_id, entry in VISION_MODELS.items():
             task = self.tasks.get(model_id) or {}
@@ -89,17 +113,18 @@ class VisionModels:
                 {
                     "id": model_id,
                     "role": entry["role"],
+                    "family": entry["family"],
                     "label": entry["label"],
                     "repo": entry["repo"],
                     "revision": entry["revision"],
                     "license": entry["license"],
                     "size": sum(size for _, size, _ in entry["files"].values()),
                     "recommended": bool(entry.get("recommended")),
-                    "sources": [
-                        "huggingface",
-                        "hf-mirror",
-                        *(["modelscope"] if entry.get("modelscope") else []),
-                    ],
+                    "categories": list(entry.get("categories", ())),
+                    "thresholds": entry.get("thresholds"),
+                    "token_required": bool(entry.get("token_required")),
+                    "token_configured": token,
+                    "sources": ["huggingface", *(["modelscope"] if entry.get("modelscope") else [])],
                     "ready": self.ready(model_id),
                     "path": str(self.directory(model_id)),
                     "download": {
@@ -132,6 +157,14 @@ class VisionModels:
                 raise ApiError("this model is already downloading", code="vision.busy", status=409)
             if self.ready(model_id):
                 raise ApiError("this model is already downloaded", code="vision.ready", status=409)
+            if entry.get("token_required") and not (
+                self.credentials and self.credentials.token("huggingface")
+            ):
+                raise ApiError(
+                    f"{entry['label']} needs a Hugging Face access token; save one under Settings → Access keys",
+                    code="vision.token_required",
+                    status=409,
+                )
             self.tasks[model_id] = {
                 "status": "queued",
                 "source": source,
@@ -175,7 +208,7 @@ class VisionModels:
         task = self.tasks[model_id]
         event = self.cancelled[model_id]
         folder = self.directory(model_id)
-        stage = folder.with_name(f".{model_id}.partial")
+        stage = folder.with_name(f".{folder.name}.partial")
         policy = ProxyPolicy.from_context(self.context)
         done, last, last_bytes, rate = 0, time.monotonic(), 0, 0.0
         try:
@@ -186,11 +219,7 @@ class VisionModels:
             for repo_path, (name, size, sha256) in entry["files"].items():
                 headers = {"User-Agent": "YPuddinTrainStudio", "Accept-Encoding": "identity"}
                 provider = "modelscope" if task["source"] == "modelscope" else "huggingface"
-                token = (
-                    self.credentials.token(provider)
-                    if self.credentials and task["source"] != "hf-mirror"
-                    else None
-                )
+                token = self.credentials.token(provider) if self.credentials else None
                 if token:
                     headers["Cookie" if provider == "modelscope" else "Authorization"] = (
                         f"m_session_id={token}" if provider == "modelscope" else f"Bearer {token}"
@@ -236,7 +265,12 @@ class VisionModels:
         except Exception as error:  # noqa: BLE001 - the task records every failure
             message = policy.redact(error)
             if isinstance(error, urllib.error.HTTPError):
-                message = f"HTTP {error.code}: the file could not be downloaded from this source"
+                message = (
+                    f"HTTP {error.code}: Hugging Face refused the download; accept the model's terms on its page "
+                    "with the account of the saved access token"
+                    if error.code in (401, 403) and entry.get("token_required")
+                    else f"HTTP {error.code}: the file could not be downloaded from this source"
+                )
             log.warning("vision model download %s failed: %s", model_id, message)
             self._update(model_id, status="failed", error=message, bytes_per_second=None, finished_at=now())
         finally:

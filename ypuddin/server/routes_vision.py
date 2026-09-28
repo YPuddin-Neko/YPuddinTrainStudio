@@ -1,4 +1,4 @@
-"""Tagging and head-detection models: the runtime they need, downloads and removal."""
+"""Tagging and mask-detection models: the runtime they need, downloads and removal."""
 
 from __future__ import annotations
 
@@ -34,16 +34,29 @@ class VisionDownload(BaseModel):
     error: str | None = None
 
 
+class VisionThresholds(BaseModel):
+    general: float
+    character: float
+
+
 class VisionModel(BaseModel):
     id: str
     role: Literal["tagger", "head_detector"]
+    # Tagger series (wd, pixai, cl) or the kind of region a mask detector finds.
+    family: str
     label: str
     repo: str
     revision: str
     license: str
     size: int
     recommended: bool
-    sources: list[Literal["huggingface", "hf-mirror", "modelscope"]]
+    # Label categories a tagger can write, and the thresholds its authors recommend.
+    categories: list[str] = []
+    thresholds: VisionThresholds | None = None
+    # Gated on Hugging Face: downloads need a saved access token whose account accepted the terms.
+    token_required: bool = False
+    token_configured: bool = False
+    sources: list[Literal["huggingface", "modelscope"]]
     ready: bool
     path: str
     download: VisionDownload | None = None
@@ -56,7 +69,7 @@ class VisionCatalog(BaseModel):
 
 class VisionDownloadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    source: Literal["huggingface", "hf-mirror", "modelscope"] = "huggingface"
+    source: Literal["huggingface", "modelscope"] = "huggingface"
 
 
 @router.get("/vision/models", response_model=VisionCatalog)

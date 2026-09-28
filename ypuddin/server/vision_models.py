@@ -1,12 +1,26 @@
-"""Local ONNX vision models: WD v3 taggers and the anime head detector.
+"""Local ONNX vision models: image taggers and the anime head detector.
 
 Inference runs in a spawned child process so the service never loads ONNX Runtime itself and every
 job starts from a clean runtime (a CUDA provider that fails falls back to the CPU for the rest of
-the job). Only the ONNX graph and its label table are read; no model repository code is executed.
+the job). Only the ONNX graph, its external weights and its label table are read; no model
+repository code is executed.
 
-Tagger (WD v3): input ``[batch, 448, 448, 3]`` float32 NHWC in BGR 0..255, output ``[batch, tags]``
-probabilities. Labels come from ``selected_tags.csv`` (name, category; 0 general, 4 character,
-9 rating). Rating labels are never written into a caption.
+Taggers (``model_catalog.VISION_MODELS``, role ``tagger``) differ in how they read an image and name
+their labels; the catalog entry says which (``preprocess``, ``input_size``, ``labels``, ``output``):
+
+- ``wd``: WD v3 / MOAT v2. White square, LANCZOS, BGR 0..255, NHWC. Probabilities.
+- ``wd_nchw``: WD EVA02 2026 Canary. White square, BICUBIC, RGB scaled to -1..1, NCHW.
+- ``pixai``: PixAI v0.9. Stretched to the input size (BILINEAR), RGB -1..1, NCHW; the ``prediction``
+  output holds probabilities.
+- ``pixai_v1``: PixAI v1.0. Fitted into 1008 on a black square (BILINEAR), RGB -1..1, NCHW. Logits.
+- ``siglip2``: CL Tagger v2. Stretched to 384 (BICUBIC), RGB -1..1, NCHW. Logits.
+- ``cl``: CL Tagger v1. White square, BICUBIC, BGR -1..1, NCHW. Logits.
+
+Every image is EXIF-oriented and its transparent pixels are composited over white first. Labels are
+read into one category each: general, character, copyright, artist, meta, model, quality, rating.
+General, meta and model tags use the general threshold; character, copyright and artist tags the
+character threshold; rating and quality keep only their best label. A model's own fixed threshold
+for a category (PixAI v1.0) replaces these.
 
 Head detector (``deepghs/anime_head_detection``, YOLOv8): input ``[batch, 3, 640, 640]`` float32
 RGB 0..1, output ``[batch, 5, anchors]`` (box cx/cy/w/h + one class score).
@@ -37,78 +51,242 @@ log = logging.getLogger(__name__)
 TAGGER_INPUT = 448
 DETECTOR_INPUT = 640
 PROVIDERS = {"cpu": "CPUExecutionProvider", "cuda": "CUDAExecutionProvider"}
-# Rating labels (category 9) describe the dataset, not the image content, and never train.
-RATING_CATEGORY = 9
-CHARACTER_CATEGORY = 4
-# Kept as written: these WD labels are emoticons and must not gain spaces.
+CATEGORIES = ("general", "character", "copyright", "artist", "meta", "model", "quality", "rating")
+# The categories a caption gets unless others are chosen.
+DEFAULT_CATEGORIES = ("general", "character")
+_GENERAL_LIKE = {"general", "meta", "model"}
+_SINGLE = {"rating", "quality"}
+# WD CSV category ids.
+_CSV_CATEGORIES = {
+    0: "general",
+    1: "artist",
+    3: "copyright",
+    4: "character",
+    5: "meta",
+    6: "quality",
+    7: "model",
+    9: "rating",
+}
+# PixAI v1.0 calls its artist group "style".
+_CATEGORY_NAMES = {
+    "copyrights": "copyright",
+    "characters": "character",
+    "style": "artist",
+    "artists": "artist",
+}
+# Kept as written: these labels are emoticons and must not gain spaces.
 _EMOTICON = re.compile(r"[0-9oOxXuU=^<>@|+.;()\-_]+")
+MAX_LABEL_BYTES = 64 * 1024 * 1024
 
 
 # --------------------------------------------------------------------------- tagger
-@lru_cache(maxsize=16)
-def _labels_cached(path: str, modified: int, size: int) -> tuple[tuple[str, int], ...]:
-    del modified
-    if size > 20 * 1024 * 1024:
-        raise ValueError("selected_tags.csv exceeds the supported 20 MiB size")
-    labels = []
-    with Path(path).open(encoding="utf-8-sig", newline="") as stream:
-        reader = csv.DictReader(stream)
-        if not reader.fieldnames or not {"name", "category"}.issubset(reader.fieldnames):
-            raise ValueError("selected_tags.csv requires name and category columns")
-        for row in reader:
-            name = row["name"].strip()
-            category = int(row["category"])
-            if not name or len(name) > 1000 or len(labels) >= 100000:
-                raise ValueError("invalid WD14 tag names or too many labels")
-            labels.append((name, category))
-    if not labels or not any(category == 0 for _, category in labels):
-        raise ValueError("selected_tags.csv contains no general tags")
+def _category(value: Any) -> str:
+    name = str(value).strip().lower().replace("-", "_")
+    name = _CATEGORY_NAMES.get(name, name)
+    return name if name in CATEGORIES else "general"
+
+
+def _checked(labels: list[tuple[str, str]], path: Path) -> tuple[tuple[str, str], ...]:
+    if not labels or len(labels) > 500000:
+        raise ValueError(f"{path.name} has no labels or too many")
+    # An empty name is a placeholder slot (PixAI v0.9 has one); it keeps its place but is never written.
+    if any(len(name) > 1000 for name, _ in labels):
+        raise ValueError(f"{path.name} has an invalid tag name")
+    if not any(category == "general" for _, category in labels):
+        raise ValueError(f"{path.name} contains no general tags")
     return tuple(labels)
 
 
-def read_labels(path: str | Path) -> tuple[tuple[str, int], ...]:
+@lru_cache(maxsize=16)
+def _labels_cached(path: str, kind: str, modified: int, size: int) -> tuple[tuple[str, str], ...]:
+    del modified
+    file = Path(path)
+    if size > MAX_LABEL_BYTES:
+        raise ValueError(f"{file.name} exceeds the supported 64 MiB size")
+    labels: list[tuple[str, str]] = []
+    if kind == "csv":
+        with file.open(encoding="utf-8-sig", newline="") as stream:
+            reader = csv.DictReader(stream)
+            if not reader.fieldnames or not {"name", "category"}.issubset(reader.fieldnames):
+                raise ValueError(f"{file.name} requires name and category columns")
+            for row in reader:
+                labels.append((row["name"].strip(), _CSV_CATEGORIES.get(int(row["category"]), "general")))
+        return _checked(labels, file)
+    data = json.loads(file.read_text(encoding="utf-8"))
+    if kind == "pixai_json":
+        # {num_classes, categories: [{name, offset, count, tags: [...]}]}, groups laid out by offset.
+        for group in sorted(data["categories"], key=lambda item: item["offset"]):
+            names = list(group["tags"])
+            if group["offset"] != len(labels) or group["count"] != len(names):
+                raise ValueError(f"{file.name} has overlapping or missing label groups")
+            labels.extend((str(name).strip(), _category(group["name"])) for name in names)
+        if len(labels) != data["num_classes"]:
+            raise ValueError(f"{file.name} does not list num_classes labels")
+    elif kind == "cl_vocabulary":
+        # {idx_to_tag: {"0": tag, ...}, tag_to_category: {tag: "General", ...}}
+        order = data["idx_to_tag"]
+        pairs = enumerate(order) if isinstance(order, list) else sorted((int(k), v) for k, v in order.items())
+        categories = data.get("tag_to_category") or {}
+        for expected, (index, name) in enumerate(pairs):
+            if index != expected:
+                raise ValueError(f"{file.name} skips label {expected}")
+            labels.append((str(name).strip(), _category(categories.get(name, "general"))))
+    elif kind == "cl_mapping":
+        # {"0": {"tag": ..., "category": "General"}, ...}
+        for expected, (index, item) in enumerate(sorted((int(k), v) for k, v in data.items())):
+            if index != expected:
+                raise ValueError(f"{file.name} skips label {expected}")
+            labels.append((str(item["tag"]).strip(), _category(item["category"])))
+    else:
+        raise ValueError(f"unknown label format {kind}")
+    return _checked(labels, file)
+
+
+def read_labels(path: str | Path, kind: str = "csv") -> tuple[tuple[str, str], ...]:
+    """The model's labels in output order, each as (name, category)."""
     file = Path(path).expanduser().resolve()
     stat = file.stat()
-    return _labels_cached(str(file), stat.st_mtime_ns, stat.st_size)
+    return _labels_cached(str(file), kind, stat.st_mtime_ns, stat.st_size)
+
+
+def _flat_rgb(image: Image.Image) -> Image.Image:
+    oriented = ImageOps.exif_transpose(image).convert("RGBA")
+    background = Image.new("RGBA", oriented.size, (255, 255, 255, 255))
+    background.alpha_composite(oriented)
+    return background.convert("RGB")
+
+
+def _white_square(rgb: Image.Image) -> Image.Image:
+    side = max(rgb.size)
+    if rgb.width == rgb.height:
+        return rgb
+    square = Image.new("RGB", (side, side), (255, 255, 255))
+    square.paste(rgb, ((side - rgb.width) // 2, (side - rgb.height) // 2))
+    return square
+
+
+def _signed_chw(image: Image.Image, *, bgr: bool = False) -> np.ndarray:
+    pixels = np.asarray(image, dtype=np.float32) / 255.0
+    chw = pixels.transpose(2, 0, 1)
+    if bgr:
+        chw = chw[::-1]
+    return np.ascontiguousarray(((chw - 0.5) / 0.5)[None])
+
+
+def prepare_tagger_input(image: Image.Image, spec: dict | None = None) -> np.ndarray:
+    """One image as the tagger's input tensor (see the module docstring for each mode)."""
+    spec = spec or {}
+    mode, size = spec.get("preprocess", "wd"), int(spec.get("input_size", TAGGER_INPUT))
+    rgb = _flat_rgb(image)
+    if mode == "wd":
+        square = _white_square(rgb)
+        if square.size != (size, size):
+            square = square.resize((size, size), Image.Resampling.LANCZOS)
+        return np.ascontiguousarray(np.asarray(square, dtype=np.float32)[None, :, :, ::-1])
+    if mode in ("wd_nchw", "cl"):
+        square = _white_square(rgb).resize((size, size), Image.Resampling.BICUBIC)
+        return _signed_chw(square, bgr=mode == "cl")
+    if mode == "pixai":
+        return _signed_chw(rgb.resize((size, size), Image.Resampling.BILINEAR))
+    if mode == "siglip2":
+        return _signed_chw(rgb.resize((size, size), Image.Resampling.BICUBIC))
+    if mode == "pixai_v1":
+        if rgb.size != (size, size):
+            scale = min(size / rgb.height, size / rgb.width)
+            fitted = rgb.resize(
+                (max(1, int(rgb.width * scale)), max(1, int(rgb.height * scale))), Image.Resampling.BILINEAR
+            )
+            rgb = Image.new("RGB", (size, size), (0, 0, 0))
+            rgb.paste(fitted, ((size - fitted.width) // 2, (size - fitted.height) // 2))
+        return _signed_chw(rgb)
+    raise ValueError(f"unknown tagger preprocessing {mode}")
 
 
 def prepare_image(image: Image.Image, size: int = TAGGER_INPUT) -> np.ndarray:
     """WD v3 preprocessing: EXIF first, transparent pixels over white, white square, BGR 0..255."""
-    oriented = ImageOps.exif_transpose(image).convert("RGBA")
-    background = Image.new("RGBA", oriented.size, (255, 255, 255, 255))
-    background.alpha_composite(oriented)
-    rgb = background.convert("RGB")
-    side = max(rgb.size)
-    square = Image.new("RGB", (side, side), (255, 255, 255))
-    square.paste(rgb, ((side - rgb.width) // 2, (side - rgb.height) // 2))
-    if side != size:
-        square = square.resize((size, size), Image.Resampling.LANCZOS)
-    return np.ascontiguousarray(np.asarray(square, dtype=np.float32)[None, :, :, ::-1])
+    return prepare_tagger_input(image, {"preprocess": "wd", "input_size": size})
+
+
+def readable(name: str) -> str:
+    return name if _EMOTICON.fullmatch(name) else name.replace("_", " ")
 
 
 def select_tags(
-    labels: tuple[tuple[str, int], ...],
+    labels: tuple[tuple[str, str], ...],
     scores: np.ndarray,
     general: float,
     character: float,
     *,
     exclude: tuple[str, ...] = (),
-) -> str:
-    """Threshold, order and join the tags of one image; ratings and excluded tags are dropped."""
+    categories: tuple[str, ...] = DEFAULT_CATEGORIES,
+    fixed: dict[str, float] | None = None,
+) -> list[tuple[str, str, float]]:
+    """The tags of one image above their thresholds as (tag, category, score), best first within
+    each category; categories not asked for and excluded tags are dropped."""
     probabilities = np.asarray(scores).reshape(-1)
     if len(probabilities) != len(labels) or not np.isfinite(probabilities).all():
-        raise ValueError("ONNX output does not match selected_tags.csv")
+        raise ValueError("the model output does not match its label table")
     blocked = {name.strip().replace("_", " ").casefold() for name in exclude if name.strip()}
-    selected = []
+    wanted, fixed = set(categories), fixed or {}
+    picked: list[tuple[float, str, str]] = []
+    best: dict[str, tuple[float, str]] = {}
     for (name, category), score in zip(labels, probabilities, strict=True):
-        threshold = general if category == 0 else character if category == CHARACTER_CATEGORY else None
-        if threshold is None or float(score) <= threshold:
+        if category not in wanted or not name:
             continue
-        readable = name if _EMOTICON.fullmatch(name) else name.replace("_", " ")
-        if readable.casefold() in blocked:
+        value = float(score)
+        tag = readable(name)
+        if tag.casefold() in blocked:
             continue
-        selected.append((float(score), readable))
-    return ", ".join(name for _, name in sorted(selected, key=lambda item: (-item[0], item[1])))
+        if category in fixed:
+            if value > fixed[category]:
+                picked.append((value, tag, category))
+        elif category in _SINGLE:
+            if category not in best or value > best[category][0]:
+                best[category] = (value, tag)
+        elif value > (general if category in _GENERAL_LIKE else character):
+            picked.append((value, tag, category))
+    picked.extend((value, tag, category) for category, (value, tag) in best.items())
+    return [
+        (tag, category, value)
+        for value, tag, category in sorted(picked, key=lambda item: (-item[0], item[1]))
+    ]
+
+
+def caption_tags(selected: list[tuple[str, str, float]], *, anima: bool = False) -> list[tuple[str, str]]:
+    """Tags in caption order: people count, characters, works, artists (with Anima's @), the rest by
+    confidence, then meta, model, quality and rating tags."""
+    from .site_downloads import COUNT_TAG
+
+    def rank(item: tuple[str, str, float]) -> int:
+        tag, category, _ = item
+        if category == "general":
+            return 0 if COUNT_TAG.match(tag) else 4
+        return {
+            "character": 1,
+            "copyright": 2,
+            "artist": 3,
+            "meta": 5,
+            "model": 6,
+            "quality": 7,
+            "rating": 8,
+        }[category]
+
+    ordered = sorted(selected, key=rank)  # stable: confidence order stays inside each group
+    return [
+        (("@" + tag if anima and category == "artist" and not tag.startswith("@") else tag), category)
+        for tag, category, _ in ordered
+    ]
+
+
+def _input_matches(shape: list, spec: dict) -> bool:
+    size = int(spec.get("input_size", TAGGER_INPUT))
+    dims = list(shape[1:])
+    if len(dims) != 3:
+        return False
+    fits = lambda value, expected: not isinstance(value, int) or value in (expected, -1, 0)  # noqa: E731
+    if spec.get("preprocess", "wd") == "wd":
+        return fits(dims[0], size) and fits(dims[1], size) and fits(dims[2], 3)
+    return fits(dims[0], 3) and fits(dims[1], size) and fits(dims[2], size)
 
 
 # --------------------------------------------------------------------------- head detector
@@ -280,38 +458,42 @@ def _worker(kind: str, images: list[str], options: dict, events: Any, working_di
             provider = PROVIDERS["cpu"]
         events.put({"type": "progress", "done": 0, "total": len(images), "message": "Loading model"})
         if kind == "tagger":
-            labels = read_labels(options["tags_path"])
+            spec = options["spec"]
+            labels = read_labels(options["tags_path"], spec.get("labels", "csv"))
             session = _session(options["model_path"], provider, options.get("device_index", 0))
             inputs = session.get_inputs()
-            if len(inputs) != 1 or list(inputs[0].shape[1:]) != [TAGGER_INPUT, TAGGER_INPUT, 3]:
-                raise ValueError("this tagger needs the WD v3 NHWC 448×448×3 input")
+            if len(inputs) != 1 or not _input_matches(list(inputs[0].shape), spec):
+                raise ValueError(
+                    f"this tagger's input {inputs[0].shape if inputs else None} does not match its catalog entry"
+                )
             outputs = session.get_outputs()
             if not outputs:
                 raise ValueError("this tagger has no prediction output")
-            results, characters = [], []
-            names = {
-                name if _EMOTICON.fullmatch(name) else name.replace("_", " ")
-                for name, category in labels
-                if category == CHARACTER_CATEGORY
-            }
+            names = [output.name for output in outputs]
+            output = spec.get("output_name") if spec.get("output_name") in names else names[0]
+            logits = spec.get("output") == "logits"
+            results = []
             for index, path in enumerate(images):
                 with Image.open(path) as image:
                     image.load()
-                    pixels = prepare_image(image)
-                scores = session.run([outputs[0].name], {inputs[0].name: pixels})[0]
-                caption = select_tags(
+                    pixels = prepare_tagger_input(image, spec)
+                scores = np.asarray(session.run([output], {inputs[0].name: pixels})[0], dtype=np.float32)[0]
+                if logits:
+                    scores = 1.0 / (1.0 + np.exp(-np.clip(scores, -30, 30)))
+                selected = select_tags(
                     labels,
-                    np.asarray(scores)[0],
+                    scores,
                     options.get("general_threshold", 0.35),
                     options.get("character_threshold", 0.85),
                     exclude=tuple(options.get("exclude_tags", ())),
+                    categories=tuple(options.get("categories") or DEFAULT_CATEGORIES),
+                    fixed=spec.get("fixed_thresholds"),
                 )
-                results.append(caption)
-                characters.append([tag for tag in caption.split(", ") if tag in names])
+                results.append(selected)
                 events.put(
                     {"type": "progress", "done": index + 1, "total": len(images), "message": Path(path).name}
                 )
-            events.put({"type": "result", "captions": results, "characters": characters})
+            events.put({"type": "result", "tags": results})
             return
         session = _session(options["model_path"], provider, options.get("device_index", 0))
         inputs = session.get_inputs()
@@ -385,7 +567,7 @@ def _run(
         tags = Path(options["tags_path"]).expanduser().resolve()
         if not tags.is_file():
             raise ValueError(f"label table is missing: {tags}")
-        read_labels(tags)
+        read_labels(tags, options["spec"].get("labels", "csv"))
         options["tags_path"] = str(tags)
     context = multiprocessing.get_context("spawn")
     workspace = tempfile.TemporaryDirectory(prefix="ypuddin-vision-worker-")
@@ -441,32 +623,43 @@ def tag_images(
     *,
     model_path: str | Path,
     tags_path: str | Path,
+    spec: dict | None = None,
     general: float = 0.35,
     character: float = 0.85,
+    categories: tuple[str, ...] = DEFAULT_CATEGORIES,
     exclude: tuple[str, ...] = (),
+    anima: bool = False,
     provider: str = "cpu",
     device_index: int = 0,
     progress: Callable[[int, int, str], None] = lambda *_: None,
     cancel: threading.Event | None = None,
-    characters: bool = False,
-) -> list[str] | list[tuple[str, list[str]]]:
-    """Tag each image; returns one caption per image, in the order given.
-
-    With ``characters``, each entry is ``(caption, character tags in it)``.
-    """
+) -> list[list[tuple[str, str]]]:
+    """Tag each image; returns, in the order given, each image's tags as (tag, category) in caption
+    order. ``spec`` is the tagger's catalog entry (WD v3 when omitted)."""
+    entry = spec or {}
     options = {
         "model_path": str(model_path),
         "tags_path": str(tags_path),
+        "spec": {
+            key: entry.get(key, default)
+            for key, default in (
+                ("preprocess", "wd"),
+                ("input_size", TAGGER_INPUT),
+                ("labels", "csv"),
+                ("output", "probability"),
+                ("output_name", None),
+                ("fixed_thresholds", {}),
+            )
+        },
         "general_threshold": general,
         "character_threshold": character,
+        "categories": list(categories),
         "exclude_tags": list(exclude),
         "provider": provider,
         "device_index": device_index,
     }
     result = _run("tagger", [str(p) for p in images], options, progress, cancel or threading.Event())
-    if characters:
-        return list(zip(result["captions"], result["characters"], strict=True))
-    return result["captions"]
+    return [caption_tags([tuple(item) for item in tags], anima=anima) for tags in result["tags"]]
 
 
 def detect_heads(

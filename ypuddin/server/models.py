@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class _Out(BaseModel):
@@ -157,6 +157,40 @@ class SettingsDownloads(BaseModel):
     fallback: bool = True
 
 
+class SettingsVlm(BaseModel):
+    """The vision model service tagging uses and how requests are sent to it."""
+
+    model_config = ConfigDict(extra="forbid")
+    provider: Literal[
+        "openai", "gemini", "openrouter", "siliconflow", "dashscope", "deepseek", "ollama", "lmstudio", "custom"
+    ] = "openai"
+    # Per service: the address of a local or custom one, and the chosen model.
+    base_urls: dict[str, str] = Field(default_factory=dict, max_length=16)
+    models: dict[str, str] = Field(default_factory=dict, max_length=16)
+    temperature: float = Field(0.3, ge=0, le=2)
+    max_tokens: int | None = Field(None, ge=16, le=65536)
+    image_size: int = Field(1024, ge=256, le=4096)
+    image_detail: Literal["", "auto", "low", "high"] = ""
+    concurrency: int = Field(2, ge=1, le=16)
+    interval: float = Field(0, ge=0, le=120)
+    timeout: int = Field(120, ge=10, le=900)
+    retries: int = Field(2, ge=0, le=5)
+
+    @field_validator("base_urls", "models")
+    @classmethod
+    def short_values(cls, value: dict[str, str]) -> dict[str, str]:
+        if any(len(key) > 40 or len(item) > 500 for key, item in value.items()):
+            raise ValueError("service addresses and model names must be short")
+        return value
+
+
+class SettingsTagging(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # Where tagging and mask models are downloaded from.
+    model_source: Literal["huggingface", "modelscope"] = "huggingface"
+    vlm: SettingsVlm = Field(default_factory=SettingsVlm)
+
+
 class SettingsCache(BaseModel):
     model_config = ConfigDict(extra="forbid")
     # 1 GB = 1024**3 bytes, so the former 1024 MiB default is exactly 1 GB.
@@ -178,6 +212,7 @@ class Settings(_Out):
     network: SettingsNetwork = Field(default_factory=SettingsNetwork)
     downloads: SettingsDownloads = Field(default_factory=SettingsDownloads)
     cache: SettingsCache = Field(default_factory=SettingsCache)
+    tagging: SettingsTagging = Field(default_factory=SettingsTagging)
 
 
 class FsEntry(_Out):

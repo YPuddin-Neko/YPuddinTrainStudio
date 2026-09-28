@@ -34,7 +34,7 @@ studio_data/
 | `secrets.json`、`network/` | 模型访问密钥与代理凭据 |
 | `project/<项目 ID>/v<N>/` | 当前版本的配置、数据、缓存和训练结果 |
 | `traindata/`、`reg/` | 训练图片与正则图片，以及同名标签、遮罩 |
-| `models/` | 默认模型下载和扫描位置；`models/vision/` 存放打标与头部检测模型 |
+| `models/` | 默认模型下载和扫描位置；`models/tagger/<系列>/<版本>/` 存放打标模型，`models/mask/<类型>/<版本>/` 存放遮罩检测模型 |
 | `runs/` | 未绑定项目的任务输出 |
 | `presets/` | 参数预设 |
 | `cache/`、`thumbs/` | 图片索引、共享编码缓存和缩略图 |

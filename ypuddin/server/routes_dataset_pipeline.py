@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .dataset_pipeline import DatasetPipeline
 from .model_credentials import VlmProvider
@@ -42,14 +42,31 @@ class CaptionOptions(BaseModel):
     text: str = Field(max_length=32000)
 
 
+def _vision_model(model: str, role: str) -> str:
+    from .model_catalog import VISION_MODELS
+
+    if VISION_MODELS.get(model, {}).get("role") != role:
+        raise ValueError(f"{model} is not a {role.replace('_', ' ')} model")
+    return model
+
+
 class TaggingOptions(BaseModel):
     model: str = "wd-eva02-large-tagger-v3"
     general_threshold: float = Field(0.35, ge=0.01, le=0.99)
     character_threshold: float = Field(0.85, ge=0.01, le=0.99)
+    # Label categories written into captions; a model without some of them simply has none.
+    categories: list[
+        Literal["general", "character", "copyright", "artist", "meta", "model", "quality", "rating"]
+    ] = Field(default_factory=lambda: ["general", "character"], min_length=1, max_length=8)
     exclude_tags: list[str] = Field(default_factory=list, max_length=1000)
     existing: Literal["skip", "overwrite", "append", "prepend"] = "skip"
     trigger_word: str | None = Field(None, max_length=200)
     device: Literal["auto", "cpu"] = "auto"
+
+    @field_validator("model")
+    @classmethod
+    def tagger(cls, value: str) -> str:
+        return _vision_model(value, "tagger")
 
 
 class HeadSelection(BaseModel):
@@ -69,6 +86,11 @@ class AutoMaskOptions(BaseModel):
     # Writes the chosen heads of a finished detection instead of detecting again.
     proposal_id: str | None = None
     selections: list[HeadSelection] = Field(default_factory=list, max_length=20000)
+
+    @field_validator("model")
+    @classmethod
+    def detector(cls, value: str) -> str:
+        return _vision_model(value, "head_detector")
 
 
 class VlmOptions(BaseModel):

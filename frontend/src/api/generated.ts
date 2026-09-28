@@ -7154,6 +7154,7 @@ export interface components {
             network?: components["schemas"]["SettingsNetwork"];
             downloads?: components["schemas"]["SettingsDownloads"];
             cache?: components["schemas"]["SettingsCache"];
+            tagging?: components["schemas"]["SettingsTagging"];
         } & {
             [key: string]: unknown;
         };
@@ -7262,6 +7263,16 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** SettingsTagging */
+        SettingsTagging: {
+            /**
+             * Model Source
+             * @default huggingface
+             * @enum {string}
+             */
+            model_source: "huggingface" | "modelscope";
+            vlm?: components["schemas"]["SettingsVlm"];
+        };
         /** SettingsUi */
         SettingsUi: {
             /**
@@ -7283,6 +7294,64 @@ export interface components {
             metric_charts?: components["schemas"]["MetricChartSetting"][] | null;
         } & {
             [key: string]: unknown;
+        };
+        /**
+         * SettingsVlm
+         * @description The vision model service tagging uses and how requests are sent to it.
+         */
+        SettingsVlm: {
+            /**
+             * Provider
+             * @default openai
+             * @enum {string}
+             */
+            provider: "openai" | "gemini" | "openrouter" | "siliconflow" | "dashscope" | "deepseek" | "ollama" | "lmstudio" | "custom";
+            /** Base Urls */
+            base_urls?: {
+                [key: string]: string;
+            };
+            /** Models */
+            models?: {
+                [key: string]: string;
+            };
+            /**
+             * Temperature
+             * @default 0.3
+             */
+            temperature: number;
+            /** Max Tokens */
+            max_tokens?: number | null;
+            /**
+             * Image Size
+             * @default 1024
+             */
+            image_size: number;
+            /**
+             * Image Detail
+             * @default
+             * @enum {string}
+             */
+            image_detail: "" | "auto" | "low" | "high";
+            /**
+             * Concurrency
+             * @default 2
+             */
+            concurrency: number;
+            /**
+             * Interval
+             * @default 0
+             */
+            interval: number;
+            /**
+             * Timeout
+             * @default 120
+             */
+            timeout: number;
+            /**
+             * Retries
+             * @default 2
+             */
+            retries: number;
         };
         /** SiteDownloadEstimate */
         SiteDownloadEstimate: {
@@ -7531,6 +7600,8 @@ export interface components {
              * @default 0.85
              */
             character_threshold: number;
+            /** Categories */
+            categories?: ("general" | "character" | "copyright" | "artist" | "meta" | "model" | "quality" | "rating")[];
             /** Exclude Tags */
             exclude_tags?: string[];
             /**
@@ -7959,7 +8030,7 @@ export interface components {
              * @default huggingface
              * @enum {string}
              */
-            source: "huggingface" | "hf-mirror" | "modelscope";
+            source: "huggingface" | "modelscope";
         };
         /** VisionModel */
         VisionModel: {
@@ -7970,6 +8041,8 @@ export interface components {
              * @enum {string}
              */
             role: "tagger" | "head_detector";
+            /** Family */
+            family: string;
             /** Label */
             label: string;
             /** Repo */
@@ -7982,8 +8055,24 @@ export interface components {
             size: number;
             /** Recommended */
             recommended: boolean;
+            /**
+             * Categories
+             * @default []
+             */
+            categories: string[];
+            thresholds?: components["schemas"]["VisionThresholds"] | null;
+            /**
+             * Token Required
+             * @default false
+             */
+            token_required: boolean;
+            /**
+             * Token Configured
+             * @default false
+             */
+            token_configured: boolean;
             /** Sources */
-            sources: ("huggingface" | "hf-mirror" | "modelscope")[];
+            sources: ("huggingface" | "modelscope")[];
             /** Ready */
             ready: boolean;
             /** Path */
@@ -8002,6 +8091,13 @@ export interface components {
             providers: string[];
             /** Error */
             error?: string | null;
+        };
+        /** VisionThresholds */
+        VisionThresholds: {
+            /** General */
+            general: number;
+            /** Character */
+            character: number;
         };
         /** VlmKeyUpdate */
         VlmKeyUpdate: {

@@ -1002,15 +1002,50 @@ class DatasetPipeline:
             self._cancelled(oid)
             raise
 
-    def _autotag(self, oid: str, work: Path, images: list[dict], options: dict) -> list[dict]:
-        from ypuddin.data.caption_json import category_tokens, with_trigger
-        from ypuddin.data.captions import caption_content, read_editable_caption
+    def _anima(self, pid: str, vid: str) -> bool:
+        """Anima writes artist tags with a leading @."""
+        from .routes_work import get_project_config
 
-        from .vision_models import tag_images
+        return get_project_config(pid, self.c, vid).get("model", {}).get("family") == "anima"
+
+    def _tagger_run(self, oid: str, paths: list[str], options: dict, exclude, *, anima: bool):
+        """Each image's tags as (tag, category) in caption order, from the chosen tagger."""
+        from .model_catalog import LABEL_FILES, VISION_MODELS
+        from .vision_models import DEFAULT_CATEGORIES, tag_images
 
         if self.vision is None:
             raise ApiError("tagging models are unavailable", code="vision.unavailable", status=503)
+        entry = VISION_MODELS[options["model"]]
         files = self.vision.files(options["model"])
+        provider, device_index = self._vision_provider(options["device"])
+        return self._vision_call(
+            oid,
+            lambda: tag_images(
+                paths,
+                model_path=files["model.onnx"],
+                tags_path=files[LABEL_FILES[entry["labels"]]],
+                spec=entry,
+                general=options["general_threshold"],
+                character=options["character_threshold"],
+                categories=tuple(options.get("categories") or DEFAULT_CATEGORIES),
+                exclude=tuple(exclude),
+                anima=anima,
+                provider=provider,
+                device_index=device_index,
+                progress=lambda done, total, name: self._progress(oid, "tagging", done, total),
+                cancel=self.cancel_events.get(oid),
+            ),
+        )
+
+    def _autotag(
+        self, oid: str, work: Path, images: list[dict], options: dict, *, anima: bool = False
+    ) -> list[dict]:
+        from ypuddin.data.caption_json import category_tokens, with_trigger
+        from ypuddin.data.captions import caption_content, read_editable_caption
+
+        if self.vision is None:
+            raise ApiError("tagging models are unavailable", code="vision.unavailable", status=503)
+        self.vision.files(options["model"])
         pending, skipped = [], 0
         for record in images:
             previous = (
@@ -1025,22 +1060,10 @@ class DatasetPipeline:
         )
         if not pending:
             return []
-        provider, device_index = self._vision_provider(options["device"])
-        captions = self._vision_call(
-            oid,
-            lambda: tag_images(
-                [str(record["path"]) for record, _ in pending],
-                model_path=files["model.onnx"],
-                tags_path=files["selected_tags.csv"],
-                general=options["general_threshold"],
-                character=options["character_threshold"],
-                exclude=tuple(options["exclude_tags"]),
-                provider=provider,
-                device_index=device_index,
-                progress=lambda done, total, name: self._progress(oid, "tagging", done, total),
-                cancel=self.cancel_events.get(oid),
-            ),
+        results = self._tagger_run(
+            oid, [str(record["path"]) for record, _ in pending], options, options["exclude_tags"], anima=anima
         )
+        captions = [", ".join(tag for tag, _ in tags) for tags in results]
         trigger = (options.get("trigger_word") or "").strip()
         changes = []
         for index, ((record, previous), tags) in enumerate(zip(pending, captions, strict=True)):
@@ -1252,7 +1275,14 @@ class DatasetPipeline:
         return self.operation(oid)
 
     def _vlmtag(
-        self, oid: str, work: Path, images: list[dict], options: dict, tagging: dict | None = None
+        self,
+        oid: str,
+        work: Path,
+        images: list[dict],
+        options: dict,
+        tagging: dict | None = None,
+        *,
+        anima: bool = False,
     ) -> tuple[list[dict], dict]:
         """Caption images with a vision model; stopping keeps every image already answered.
 
@@ -1330,31 +1360,16 @@ class DatasetPipeline:
             )
         tagged = [job for job in jobs if job["tagged"]]
         if tagged:
-            from .vision_models import tag_images
-
             if self.vision is None:
                 raise ApiError("tagging models are unavailable", code="vision.unavailable", status=503)
-            files = self.vision.files(tagging["model"])
-            device, device_index = self._vision_provider(tagging["device"])
+            self.vision.files(tagging["model"])
             self._progress(oid, "tagging", 0, len(tagged), f"Tagging {len(tagged)} images for reference")
-            results = self._vision_call(
-                oid,
-                lambda: tag_images(
-                    [str(job["record"]["path"]) for job in tagged],
-                    model_path=files["model.onnx"],
-                    tags_path=files["selected_tags.csv"],
-                    general=tagging["general_threshold"],
-                    character=tagging["character_threshold"],
-                    exclude=tuple(options["exclude_tags"]),
-                    provider=device,
-                    device_index=device_index,
-                    progress=lambda done, total, name: self._progress(oid, "tagging", done, total),
-                    cancel=self.cancel_events.get(oid),
-                    characters=True,
-                ),
+            results = self._tagger_run(
+                oid, [str(job["record"]["path"]) for job in tagged], tagging, options["exclude_tags"], anima=anima
             )
-            for job, (caption, characters) in zip(tagged, results, strict=True):
-                tags = [tag for tag in caption.split(", ") if tag]
+            for job, pairs in zip(tagged, results, strict=True):
+                tags = [tag for tag, _ in pairs]
+                characters = [tag for tag, category in pairs if category == "character"]
                 # Grouped outputs keep character names in their own field; the model sorts the rest.
                 job["characters"] = characters if structured else []
                 job["reference"] = [tag for tag in tags if tag not in characters] if structured else tags
@@ -1605,7 +1620,9 @@ class DatasetPipeline:
                     elif action == "captions":
                         changes = self._captions(oid, work, images, request["captions"])
                     elif action == "autotag":
-                        changes = self._autotag(oid, work, images, request["tagging"])
+                        changes = self._autotag(
+                            oid, work, images, request["tagging"], anima=self._anima(pid, vid)
+                        )
                     elif action == "automask":
                         changes, report = self._automask(oid, work, images, request["automask"])
                         result.update(report)
@@ -1616,6 +1633,7 @@ class DatasetPipeline:
                             images,
                             request["vlm"],
                             request["tagging"] if action == "assisttag" else None,
+                            anima=self._anima(pid, vid),
                         )
                         result.update(report)
                     else:

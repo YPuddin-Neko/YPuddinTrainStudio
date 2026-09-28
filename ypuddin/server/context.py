@@ -15,12 +15,13 @@ from typing import Any
 from .bus import EventBus
 from .db import Database
 from .import_progress import ImportProgressStore
-from .models import Settings
+from .models import Settings, SettingsTagging
 from .supervisor import JobSupervisor
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "cache": {"thumbnail_max_gb": 1.0},
     "downloads": {"pypi": "ustc", "pytorch": "mirror", "fallback": True},
+    "tagging": SettingsTagging().model_dump(),
     "paths": {
         "bootstrap_env_dir": "",
         "data_root": "",
