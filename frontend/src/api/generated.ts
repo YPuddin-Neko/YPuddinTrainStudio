@@ -1643,6 +1643,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dataset-pipeline/operations/{oid}/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Head Proposals */
+        get: operations["get_head_proposals_api_dataset_pipeline_operations__oid__proposals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset-pipeline/operations/{oid}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dismiss Head Proposals */
+        post: operations["dismiss_head_proposals_api_dataset_pipeline_operations__oid__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dataset-pipeline/operations/{oid}/retry": {
         parameters: {
             query?: never;
@@ -2628,6 +2662,10 @@ export interface components {
              * @enum {string}
              */
             device: "auto" | "cpu";
+            /** Proposal Id */
+            proposal_id?: string | null;
+            /** Selections */
+            selections?: components["schemas"]["HeadSelection"][];
         };
         /** Body_wheel_api_environment_wheels_post */
         Body_wheel_api_environment_wheels_post: {
@@ -4123,6 +4161,72 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HeadProposalImage */
+        HeadProposalImage: {
+            /** Dataset Id */
+            dataset_id: string;
+            /** Rel Path */
+            rel_path: string;
+            /** Hash */
+            hash?: string | null;
+            /** Width */
+            width?: number | null;
+            /** Height */
+            height?: number | null;
+            /** Regions */
+            regions: components["schemas"]["HeadRegion"][];
+            /** Error */
+            error?: string | null;
+        };
+        /** HeadProposals */
+        HeadProposals: {
+            /** Operation Id */
+            operation_id: string;
+            /** Parameters */
+            parameters: {
+                [key: string]: unknown;
+            };
+            /** Images */
+            images: components["schemas"]["HeadProposalImage"][];
+            /** Applied By */
+            applied_by?: string | null;
+            /**
+             * Dismissed
+             * @default false
+             */
+            dismissed: boolean;
+        };
+        /** HeadRegion */
+        HeadRegion: {
+            /** Index */
+            index: number;
+            /** X1 */
+            x1: number;
+            /** Y1 */
+            y1: number;
+            /** X2 */
+            x2: number;
+            /** Y2 */
+            y2: number;
+            /** Score */
+            score: number;
+            /** Feather X */
+            feather_x: number;
+            /** Feather Y */
+            feather_y: number;
+        };
+        /**
+         * HeadSelection
+         * @description The detected heads of one image to write, by their index in the detection.
+         */
+        HeadSelection: {
+            /** Dataset Id */
+            dataset_id: string;
+            /** Rel Path */
+            rel_path: string;
+            /** Regions */
+            regions: number[];
         };
         /** Health */
         Health: {
@@ -5723,7 +5827,7 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "inspect" | "exclude" | "restore" | "preprocess" | "captions" | "prepare" | "autotag" | "automask" | "vlmtag" | "assisttag";
+            action: "inspect" | "exclude" | "restore" | "preprocess" | "captions" | "prepare" | "autotag" | "automask" | "detectheads" | "vlmtag" | "assisttag";
             /** Images */
             images?: components["schemas"]["PipelineImage"][];
             /** Dataset Ids */
@@ -12200,6 +12304,68 @@ export interface operations {
         };
     };
     cancel_operation_api_dataset_pipeline_operations__oid__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                oid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineOperation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_head_proposals_api_dataset_pipeline_operations__oid__proposals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                oid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeadProposals"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_head_proposals_api_dataset_pipeline_operations__oid__dismiss_post: {
         parameters: {
             query?: never;
             header?: never;

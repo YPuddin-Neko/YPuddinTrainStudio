@@ -322,11 +322,19 @@ def _worker(kind: str, images: list[str], options: dict, events: Any, working_di
             raise ValueError("this head detector has no output")
         results = []
         for index, path in enumerate(images):
-            with Image.open(path) as image:
-                image.load()
-                oriented = ImageOps.exif_transpose(image)
-                pixels, scale, offset = detector_prepare(oriented)
-                size = oriented.size
+            try:
+                with Image.open(path) as image:
+                    image.load()
+                    oriented = ImageOps.exif_transpose(image)
+                    pixels, scale, offset = detector_prepare(oriented)
+                    size = oriented.size
+            except (OSError, ValueError, Image.DecompressionBombError) as exc:
+                # One unreadable file leaves only itself out of the run.
+                results.append({"regions": [], "size": None, "error": f"{type(exc).__name__}: {exc}"})
+                events.put(
+                    {"type": "progress", "done": index + 1, "total": len(images), "message": Path(path).name}
+                )
+                continue
             raw = session.run([outputs[0].name], {inputs[0].name: pixels})[0]
             boxes = detector_restore(
                 decode_detections(raw, options.get("confidence", 0.413), options.get("iou_threshold", 0.7)),

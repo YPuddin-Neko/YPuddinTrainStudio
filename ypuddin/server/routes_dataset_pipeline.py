@@ -52,12 +52,23 @@ class TaggingOptions(BaseModel):
     device: Literal["auto", "cpu"] = "auto"
 
 
+class HeadSelection(BaseModel):
+    """The detected heads of one image to write, by their index in the detection."""
+
+    dataset_id: str
+    rel_path: str = Field(min_length=1)
+    regions: list[int] = Field(min_length=1, max_length=256)
+
+
 class AutoMaskOptions(BaseModel):
     model: str = "anime-head-detector-v2"
     confidence: float = Field(0.413, ge=0.01, le=0.99)
     padding: float = Field(0.10, ge=0, le=1)
     feather: float = Field(0.03, ge=0, le=0.5)
     device: Literal["auto", "cpu"] = "auto"
+    # Writes the chosen heads of a finished detection instead of detecting again.
+    proposal_id: str | None = None
+    selections: list[HeadSelection] = Field(default_factory=list, max_length=20000)
 
 
 class VlmOptions(BaseModel):
@@ -82,7 +93,7 @@ class VlmOptions(BaseModel):
     retries: int = Field(2, ge=0, le=5)
 
 
-VISION_ACTIONS = {"autotag", "automask", "vlmtag", "assisttag"}
+VISION_ACTIONS = {"autotag", "automask", "detectheads", "vlmtag", "assisttag"}
 
 
 class PipelineRequest(BaseModel):
@@ -95,6 +106,7 @@ class PipelineRequest(BaseModel):
         "prepare",
         "autotag",
         "automask",
+        "detectheads",
         "vlmtag",
         "assisttag",
     ]
@@ -112,7 +124,15 @@ class PipelineRequest(BaseModel):
     def validate_action(self) -> PipelineRequest:
         if self.action in {"exclude", "preprocess", "captions"} and not self.images:
             raise ValueError("select at least one image")
-        if self.action in VISION_ACTIONS and not (self.images or self.dataset_ids):
+        reviewed = self.action == "automask" and self.automask is not None and self.automask.proposal_id
+        if reviewed:
+            if self.images or self.dataset_ids:
+                raise ValueError("reviewed heads name their own images")
+            if not self.automask.selections:
+                raise ValueError("choose at least one head to write")
+        elif self.automask is not None and self.automask.selections:
+            raise ValueError("head selections belong to a detection; pass its proposal_id")
+        if self.action in VISION_ACTIONS and not reviewed and not (self.images or self.dataset_ids):
             raise ValueError("select at least one image or dataset")
         if self.dataset_ids and self.action not in VISION_ACTIONS:
             raise ValueError("only automatic tagging and masks accept whole datasets")
@@ -126,7 +146,7 @@ class PipelineRequest(BaseModel):
             and (self.vlm.output == "sort" or self.vlm.existing == "refine")
         ):
             raise ValueError("regrouping and refining need reference tags; use assisted tagging")
-        if self.action == "automask" and not self.automask:
+        if self.action in {"automask", "detectheads"} and not self.automask:
             raise ValueError("automatic mask options are required")
         if self.action == "preprocess" and not self.preprocess:
             raise ValueError("preprocess options are required")
@@ -198,6 +218,45 @@ def get_operation(oid: str, manager: DatasetPipeline = Depends(pipeline)) -> dic
 @router.post("/dataset-pipeline/operations/{oid}/cancel", response_model=PipelineOperation)
 def cancel_operation(oid: str, manager: DatasetPipeline = Depends(pipeline)) -> dict:
     return manager.cancel(oid)
+
+
+class HeadRegion(BaseModel):
+    index: int
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+    score: float
+    feather_x: int
+    feather_y: int
+
+
+class HeadProposalImage(BaseModel):
+    dataset_id: str
+    rel_path: str
+    hash: str | None = None
+    width: int | None = None
+    height: int | None = None
+    regions: list[HeadRegion]
+    error: str | None = None
+
+
+class HeadProposals(BaseModel):
+    operation_id: str
+    parameters: dict[str, Any]
+    images: list[HeadProposalImage]
+    applied_by: str | None = None
+    dismissed: bool = False
+
+
+@router.get("/dataset-pipeline/operations/{oid}/proposals", response_model=HeadProposals)
+def get_head_proposals(oid: str, manager: DatasetPipeline = Depends(pipeline)) -> dict:
+    return manager.proposals(oid)
+
+
+@router.post("/dataset-pipeline/operations/{oid}/dismiss", response_model=PipelineOperation)
+def dismiss_head_proposals(oid: str, manager: DatasetPipeline = Depends(pipeline)) -> dict:
+    return manager.dismiss(oid)
 
 
 @router.post("/dataset-pipeline/operations/{oid}/retry", response_model=PipelineOperation, status_code=202)

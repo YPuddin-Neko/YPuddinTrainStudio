@@ -5982,6 +5982,84 @@
         }
       }
     },
+    "/api/dataset-pipeline/operations/{oid}/proposals": {
+      "get": {
+        "summary": "Get Head Proposals",
+        "operationId": "get_head_proposals_api_dataset_pipeline_operations__oid__proposals_get",
+        "parameters": [
+          {
+            "name": "oid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Oid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadProposals"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset-pipeline/operations/{oid}/dismiss": {
+      "post": {
+        "summary": "Dismiss Head Proposals",
+        "operationId": "dismiss_head_proposals_api_dataset_pipeline_operations__oid__dismiss_post",
+        "parameters": [
+          {
+            "name": "oid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Oid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineOperation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/dataset-pipeline/operations/{oid}/retry": {
       "post": {
         "summary": "Retry Operation",
@@ -8587,6 +8665,25 @@
             ],
             "title": "Device",
             "default": "auto"
+          },
+          "proposal_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Id"
+          },
+          "selections": {
+            "items": {
+              "$ref": "#/components/schemas/HeadSelection"
+            },
+            "type": "array",
+            "maxItems": 20000,
+            "title": "Selections"
           }
         },
         "type": "object",
@@ -12583,6 +12680,197 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "HeadProposalImage": {
+        "properties": {
+          "dataset_id": {
+            "type": "string",
+            "title": "Dataset Id"
+          },
+          "rel_path": {
+            "type": "string",
+            "title": "Rel Path"
+          },
+          "hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hash"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "regions": {
+            "items": {
+              "$ref": "#/components/schemas/HeadRegion"
+            },
+            "type": "array",
+            "title": "Regions"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dataset_id",
+          "rel_path",
+          "regions"
+        ],
+        "title": "HeadProposalImage"
+      },
+      "HeadProposals": {
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "title": "Operation Id"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Parameters"
+          },
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/HeadProposalImage"
+            },
+            "type": "array",
+            "title": "Images"
+          },
+          "applied_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied By"
+          },
+          "dismissed": {
+            "type": "boolean",
+            "title": "Dismissed",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "operation_id",
+          "parameters",
+          "images"
+        ],
+        "title": "HeadProposals"
+      },
+      "HeadRegion": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "x1": {
+            "type": "integer",
+            "title": "X1"
+          },
+          "y1": {
+            "type": "integer",
+            "title": "Y1"
+          },
+          "x2": {
+            "type": "integer",
+            "title": "X2"
+          },
+          "y2": {
+            "type": "integer",
+            "title": "Y2"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "feather_x": {
+            "type": "integer",
+            "title": "Feather X"
+          },
+          "feather_y": {
+            "type": "integer",
+            "title": "Feather Y"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "x1",
+          "y1",
+          "x2",
+          "y2",
+          "score",
+          "feather_x",
+          "feather_y"
+        ],
+        "title": "HeadRegion"
+      },
+      "HeadSelection": {
+        "properties": {
+          "dataset_id": {
+            "type": "string",
+            "title": "Dataset Id"
+          },
+          "rel_path": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Rel Path"
+          },
+          "regions": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "maxItems": 256,
+            "minItems": 1,
+            "title": "Regions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dataset_id",
+          "rel_path",
+          "regions"
+        ],
+        "title": "HeadSelection",
+        "description": "The detected heads of one image to write, by their index in the detection."
       },
       "Health": {
         "properties": {
@@ -17055,6 +17343,7 @@
               "prepare",
               "autotag",
               "automask",
+              "detectheads",
               "vlmtag",
               "assisttag"
             ],

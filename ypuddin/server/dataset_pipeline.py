@@ -25,6 +25,8 @@ from .db import new_id, now
 from .errors import ApiError, NotFound
 
 TERMINAL = {"completed", "failed", "cancelled"}
+# A head detection keeps its results for review in its operation folder.
+PROPOSALS = "proposals.json"
 
 
 class PipelineCancelled(Exception):
@@ -350,7 +352,15 @@ class DatasetPipeline:
             "operations": [
                 {
                     **op,
-                    "request": {key: value for key, value in op["request"].items() if key != "images"},
+                    "request": {
+                        key: (
+                            {k: v for k, v in value.items() if k != "selections"}
+                            if key == "automask" and isinstance(value, dict)
+                            else value
+                        )
+                        for key, value in op["request"].items()
+                        if key != "images"
+                    },
                     "result": {
                         key: value
                         for key, value in op["result"].items()
@@ -425,6 +435,8 @@ class DatasetPipeline:
                         code="pipeline.restore_invalid",
                         status=409,
                     )
+            if request["action"] == "automask" and (request.get("automask") or {}).get("proposal_id"):
+                self._open_detection(request["automask"]["proposal_id"], pid, vid)
             self.c.db.insert(
                 "dataset_pipeline_operations",
                 {
@@ -1050,18 +1062,16 @@ class DatasetPipeline:
             changes.append(self._change(work, path, staged))
         return changes
 
-    def _automask(self, oid: str, work: Path, images: list[dict], options: dict) -> list[dict]:
-        import numpy as np
-
-        from .routes_dataset_masks import _load
-        from .vision_models import detect_heads, rasterize_regions
+    def _detect(self, oid: str, images: list[dict], options: dict) -> list[dict]:
+        """Head regions of each image, in order; an unreadable image comes back with ``error``."""
+        from .vision_models import detect_heads
 
         if self.vision is None:
             raise ApiError("head detection models are unavailable", code="vision.unavailable", status=503)
         files = self.vision.files(options["model"])
         provider, device_index = self._vision_provider(options["device"])
         self._progress(oid, "detecting", 0, len(images), f"Detecting heads in {len(images)} images")
-        results = self._vision_call(
+        return self._vision_call(
             oid,
             lambda: detect_heads(
                 [str(record["path"]) for record in images],
@@ -1075,6 +1085,94 @@ class DatasetPipeline:
                 cancel=self.cancel_events.get(oid),
             ),
         )
+
+    def _detectheads(self, oid: str, work: Path, images: list[dict], options: dict) -> dict:
+        """Detect heads for review; no data file changes until chosen heads are written."""
+        from .routes_work import _records
+
+        results = self._detect(oid, images, options)
+        hashes = {}
+        for did in {record["dataset_id"] for record in images}:
+            for row in _records(self.c, did):
+                hashes[str(Path(row["path"]).resolve())] = row.get("content_hash")
+        entries = []
+        for record, found in zip(images, results, strict=True):
+            stat = record["path"].stat()
+            width, height = found["size"] or (None, None)
+            entries.append(
+                {
+                    "dataset_id": record["dataset_id"],
+                    "rel_path": record["rel_path"],
+                    "hash": hashes.get(str(record["path"].resolve())),
+                    "width": width,
+                    "height": height,
+                    "regions": found["regions"],
+                    # Writing skips an image whose file changed after it was detected.
+                    "signature": [stat.st_mtime_ns, stat.st_size],
+                    **({"error": found["error"]} if found.get("error") else {}),
+                }
+            )
+        proposals = {
+            "parameters": {key: options[key] for key in ("model", "confidence", "padding", "feather")},
+            "images": entries,
+        }
+        staged = work / "proposals.json.tmp"
+        staged.write_text(_dump(proposals), encoding="utf-8")
+        os.replace(staged, work / PROPOSALS)
+        return {
+            "images": len(entries),
+            "with_heads": sum(1 for entry in entries if entry["regions"]),
+            "heads": sum(len(entry["regions"]) for entry in entries),
+            "unreadable": sum(1 for entry in entries if entry.get("error")),
+        }
+
+    def _chosen_heads(self, oid: str, images: list[dict], options: dict) -> tuple[list[dict], int]:
+        """The reviewed heads of each image as detections; images changed since then are left out."""
+        proposal = self._read_proposals(self._get(options["proposal_id"]))
+        entries = {(entry["dataset_id"], entry["rel_path"]): entry for entry in proposal["images"]}
+        chosen = {
+            (pick["dataset_id"], pick["rel_path"]): set(pick["regions"]) for pick in options["selections"]
+        }
+        results, stale = [], 0
+        for record in images:
+            key = (record["dataset_id"], record["rel_path"])
+            entry = entries.get(key)
+            if entry is None or entry.get("error"):
+                raise ApiError(
+                    f"{record['rel_path']} has no detected heads to write",
+                    code="automask.selection",
+                    status=422,
+                )
+            stat = record["path"].stat()
+            if [stat.st_mtime_ns, stat.st_size] != entry["signature"]:
+                stale += 1
+                self._progress(
+                    oid, "masking", 0, len(images), f"{record['rel_path']}: changed after detection"
+                )
+                results.append({"regions": [], "size": None})
+                continue
+            regions = [region for region in entry["regions"] if region["index"] in chosen[key]]
+            if len(regions) != len(chosen[key]):
+                raise ApiError(
+                    f"{record['rel_path']}: unknown head in the selection",
+                    code="automask.selection",
+                    status=422,
+                )
+            results.append({"regions": regions, "size": [entry["width"], entry["height"]]})
+        return results, stale
+
+    def _automask(self, oid: str, work: Path, images: list[dict], options: dict) -> tuple[list[dict], dict]:
+        import numpy as np
+
+        from .routes_dataset_masks import _load
+        from .vision_models import rasterize_regions
+
+        report: dict[str, Any] = {}
+        if options.get("proposal_id"):
+            results, stale = self._chosen_heads(oid, images, options)
+            report = {"proposal_id": options["proposal_id"], "stale_images": stale}
+        else:
+            results = self._detect(oid, images, options)
         changes = []
         for index, (record, found) in enumerate(zip(images, results, strict=True)):
             self._cancelled(oid)
@@ -1097,7 +1195,61 @@ class DatasetPipeline:
             staged.parent.mkdir(parents=True, exist_ok=True)
             Image.fromarray(np.round(combined).astype(np.uint8), "L").save(staged, format="PNG")
             changes.append(self._change(work, target, staged))
-        return changes
+        return changes, report
+
+    def _read_proposals(self, row: dict) -> dict:
+        path = self.root(row["project_id"], row["version_id"]) / row["id"] / PROPOSALS
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ApiError(
+                "the detection results are missing", code="automask.proposals", status=410
+            ) from exc
+
+    def _open_detection(self, oid: str, pid: str | None = None, vid: str | None = None) -> dict:
+        """A finished detection whose heads have been neither written nor dismissed."""
+        row = self._get(oid)
+        result = json.loads(row["result_json"])
+        if row["action"] != "detectheads" or row["status"] != "completed":
+            raise ApiError("that is not a finished head detection", code="automask.proposals", status=409)
+        if pid is not None and (row["project_id"] != pid or row["version_id"] != vid):
+            raise ApiError(
+                "the detection belongs to another project version",
+                code="pipeline.version_mismatch",
+                status=409,
+            )
+        if result.get("applied_by") or result.get("dismissed"):
+            raise ApiError(
+                "these heads were already written or dismissed", code="automask.proposals_closed", status=409
+            )
+        return row
+
+    def proposals(self, oid: str) -> dict:
+        row = self._get(oid)
+        if row["action"] != "detectheads" or row["status"] != "completed":
+            raise ApiError("that is not a finished head detection", code="automask.proposals", status=409)
+        result = json.loads(row["result_json"])
+        proposal = self._read_proposals(row)
+        return {
+            "operation_id": oid,
+            "parameters": proposal["parameters"],
+            "images": [{k: v for k, v in entry.items() if k != "signature"} for entry in proposal["images"]],
+            "applied_by": result.get("applied_by"),
+            "dismissed": bool(result.get("dismissed")),
+        }
+
+    def dismiss(self, oid: str) -> dict:
+        with self.c.db.lock:
+            row = self._open_detection(oid)
+            result = json.loads(row["result_json"]) | {"dismissed": True}
+            self.c.db.update(
+                "dataset_pipeline_operations", oid, {"result_json": _dump(result), "updated_at": now()}
+            )
+        self.c.bus.publish(
+            "dataset.pipeline",
+            {"operation_id": oid, "project_id": row["project_id"], "version_id": row["version_id"]},
+        )
+        return self.operation(oid)
 
     def _vlmtag(
         self, oid: str, work: Path, images: list[dict], options: dict, tagging: dict | None = None
@@ -1398,6 +1550,11 @@ class DatasetPipeline:
             action = request["action"]
             if action in {"inspect", "prepare"}:
                 result["inspection"] = self._inspect(oid, pid, vid)
+            elif action == "detectheads":
+                refs = request["images"] or self._dataset_refs(pid, vid, request.get("dataset_ids") or [])
+                images = self._resolve_images(pid, vid, refs)
+                result.update(self._detectheads(oid, work, images, request["automask"]))
+                self._cancelled(oid)
             else:
                 if action == "restore":
                     original = self.operation(request["restore_operation_id"])
@@ -1436,6 +1593,11 @@ class DatasetPipeline:
                     dataset_ids = original["result"].get("dataset_ids", [])
                 else:
                     refs = request["images"] or self._dataset_refs(pid, vid, request.get("dataset_ids") or [])
+                    if action == "automask" and request["automask"].get("proposal_id"):
+                        refs = [
+                            {"dataset_id": pick["dataset_id"], "rel_path": pick["rel_path"]}
+                            for pick in request["automask"]["selections"]
+                        ]
                     images = self._resolve_images(pid, vid, refs)
                     dataset_ids = sorted({record["dataset_id"] for record in images})
                     if action == "preprocess":
@@ -1445,7 +1607,8 @@ class DatasetPipeline:
                     elif action == "autotag":
                         changes = self._autotag(oid, work, images, request["tagging"])
                     elif action == "automask":
-                        changes = self._automask(oid, work, images, request["automask"])
+                        changes, report = self._automask(oid, work, images, request["automask"])
+                        result.update(report)
                     elif action in {"vlmtag", "assisttag"}:
                         changes, report = self._vlmtag(
                             oid,
@@ -1541,6 +1704,18 @@ class DatasetPipeline:
                             "dataset_pipeline_operations",
                             original["id"],
                             {"result_json": _dump(original["result"] | {"undone_by": oid})},
+                        )
+                    if action == "automask" and request["automask"].get("proposal_id"):
+                        # The reviewed heads are written; that detection is closed.
+                        detection = self._get(request["automask"]["proposal_id"])
+                        self.c.db.update(
+                            "dataset_pipeline_operations",
+                            detection["id"],
+                            {
+                                "result_json": _dump(
+                                    json.loads(detection["result_json"]) | {"applied_by": oid}
+                                )
+                            },
                         )
                     self.c.db.update(
                         "dataset_pipeline_operations",
