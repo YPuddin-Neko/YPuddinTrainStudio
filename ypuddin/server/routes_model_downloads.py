@@ -64,7 +64,7 @@ def clear_credential(provider: Provider, service: ModelDownloads = Depends(downl
 class CatalogDownloadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     provider: Literal["huggingface"] = "huggingface"
-    mirror: Literal["official", "hf-mirror"] = "official"
+    mirror: Literal["official"] = "official"
 
 
 class ModelCatalogEntry(BaseModel):

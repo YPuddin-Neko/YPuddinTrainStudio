@@ -41,7 +41,7 @@ class ModelDownloadRequest(BaseModel):
     family: Literal["anima", "krea2", "sdxl", "flux2"]
     kind: Literal["dit", "text_encoder", "text_encoder_2", "vae"]
     provider: Provider = "huggingface"
-    mirror: Literal["official", "hf-mirror"] = "official"
+    mirror: Literal["official"] = "official"
     url: str | None = None
     repo_id: str | None = None
     filename: str | None = None
@@ -77,6 +77,7 @@ class ModelDownload(BaseModel):
     family: str
     kind: str
     provider: Provider = "huggingface"
+    # Downloads started before the HF mirror was removed keep their record.
     mirror: Literal["official", "hf-mirror"] = "official"
     source_url: str
     filename: str
@@ -108,8 +109,6 @@ def resolve_source(body: ModelDownloadRequest) -> tuple[str, str]:
     """
     repo, filename = body.repo_id, body.filename
     revision = body.revision or ("master" if body.provider == "modelscope" else "main")
-    if body.provider == "modelscope" and body.mirror != "official":
-        raise ValueError("HF-Mirror is only available for Hugging Face")
     if body.url:
         if repo or filename:
             raise ValueError("use a file URL or repo_id + filename, not both")
@@ -117,10 +116,10 @@ def resolve_source(body: ModelDownloadRequest) -> tuple[str, str]:
         hosts = (
             {"modelscope.cn", "www.modelscope.cn"}
             if body.provider == "modelscope"
-            else {"huggingface.co", "hf-mirror.com"}
+            else {"huggingface.co"}
         )
         if parsed.scheme != "https" or parsed.netloc.lower() not in hosts:
-            raise ValueError("file URL must use the selected provider's official HTTPS domain (or HF-Mirror)")
+            raise ValueError("file URL must use the selected provider's official HTTPS domain")
         query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
         parts = urllib.parse.unquote(parsed.path).strip("/").split("/")
         if body.provider == "modelscope":
@@ -147,8 +146,6 @@ def resolve_source(body: ModelDownloadRequest) -> tuple[str, str]:
             if len(parts) < 5 or parts[2] not in {"resolve", "blob"}:
                 raise ValueError("paste a Hugging Face file URL containing /resolve/ or /blob/")
             repo, revision, filename = "/".join(parts[:2]), parts[3], "/".join(parts[4:])
-            if parsed.netloc.lower() == "hf-mirror.com" and body.mirror != "hf-mirror":
-                raise ValueError("select HF-Mirror before using its URL")
     if not repo or not re.fullmatch(r"[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+", repo) or ".." in repo:
         raise ValueError("repo_id must be owner/repository")
     if not revision or not re.fullmatch(r"[A-Za-z0-9_.-]+", revision) or revision in {".", ".."}:
@@ -177,8 +174,7 @@ def resolve_source(body: ModelDownloadRequest) -> tuple[str, str]:
     if body.provider == "modelscope":
         url = f"https://modelscope.cn/api/v1/models/{repo}/repo?{urllib.parse.urlencode({'Revision': revision, 'FilePath': filename})}"
     else:
-        host = "hf-mirror.com" if body.mirror == "hf-mirror" else "huggingface.co"
-        url = f"https://{host}/{repo}/resolve/{revision}/{urllib.parse.quote(filename, safe='/')}"
+        url = f"https://huggingface.co/{repo}/resolve/{revision}/{urllib.parse.quote(filename, safe='/')}"
     return url, path.name
 
 
@@ -472,12 +468,15 @@ class ModelDownloads:
                         code="download.variant",
                     )
             purpose = "inference" if variant == "turbo" else row.get("purpose", "training")
+            url = row["source_url"]
+            if row["mirror"] != "official":
+                # The HF mirror is no longer offered; the same file comes from Hugging Face itself.
+                url = url.replace("https://hf-mirror.com/", "https://huggingface.co/", 1)
             body = ModelDownloadRequest(
                 family=row["family"],
                 kind=row["kind"],
                 provider=row["provider"],
-                mirror=row["mirror"],
-                url=row["source_url"],
+                url=url,
                 dtype=row["dtype"],
                 is_default=row["is_default"],
                 purpose=purpose,

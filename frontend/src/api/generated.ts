@@ -2838,9 +2838,9 @@ export interface components {
             /**
              * Mirror
              * @default official
-             * @enum {string}
+             * @constant
              */
-            mirror: "official" | "hf-mirror";
+            mirror: "official";
         };
         /** CheckpointConfig */
         CheckpointConfig: {
@@ -5230,9 +5230,9 @@ export interface components {
             /**
              * Mirror
              * @default official
-             * @enum {string}
+             * @constant
              */
-            mirror: "official" | "hf-mirror";
+            mirror: "official";
             /** Url */
             url?: string | null;
             /** Repo Id */

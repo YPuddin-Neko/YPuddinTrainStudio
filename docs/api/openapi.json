@@ -9133,10 +9133,7 @@
           },
           "mirror": {
             "type": "string",
-            "enum": [
-              "official",
-              "hf-mirror"
-            ],
+            "const": "official",
             "title": "Mirror",
             "default": "official"
           }
@@ -15911,10 +15908,7 @@
           },
           "mirror": {
             "type": "string",
-            "enum": [
-              "official",
-              "hf-mirror"
-            ],
+            "const": "official",
             "title": "Mirror",
             "default": "official"
           },
