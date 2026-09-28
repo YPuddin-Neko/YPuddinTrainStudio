@@ -166,16 +166,15 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
       // Forge and A1111 are named for SDXL files only.
       const sdxl = family.name === 'sdxl';
       return join([
-        text('DoRA 为每个通道学习一个幅度，这里选择按输出通道还是输入通道计算。各推理工具的计算方式不同，按使用的工具选择：', 'DoRA learns one magnitude per channel; this picks output or input channels. Inference tools compute it differently, so choose by the tool you use:'),
+        sdxl ? text('两种方式在 ComfyUI 等出图工具中的效果不同：', 'The two differ in ComfyUI and other image tools:') : text('两种方式在 ComfyUI 中的效果不同：', 'The two differ in ComfyUI:'),
         ...optionLines({
           output: sdxl
-            ? ['LyCORIS 的默认方式，LyCORIS 自带的加载和合并工具可以读取。ComfyUI 和 Forge 计算时用底模权重的范数代替训练时的范数，出图与训练预览略有差异，训练改动越大差异越明显；A1111 WebUI 只按输入通道计算，读取这种文件时结果不正确。', 'the LyCORIS default, which LyCORIS’s own loaders and merge tool read. ComfyUI and Forge divide by the base weight’s norm instead of the trained one, so images drift slightly from the training previews, more as training changes the weights more. A1111 WebUI only computes input channels and applies these files incorrectly.']
-            : ['LyCORIS 的默认方式，LyCORIS 自带的加载和合并工具可以读取。ComfyUI 计算时用底模权重的范数代替训练时的范数，出图与训练预览略有差异，训练改动越大差异越明显。', 'the LyCORIS default, which LyCORIS’s own loaders and merge tool read. ComfyUI divides by the base weight’s norm instead of the trained one, so images drift slightly from the training previews, more as training changes the weights more.'],
+            ? ['ComfyUI 和 Forge 的算法与训练时不同，出图会偏离训练预览，训练改动越大偏差越明显；A1111 WebUI 中结果不正确。LyCORIS 自带的工具可以读取。', 'ComfyUI and Forge compute it differently from training, so images drift from the training previews, more as training changes the weights more; A1111 WebUI applies it incorrectly. LyCORIS’s own tools read it.']
+            : ['ComfyUI 的算法与训练时不同，出图会偏离训练预览，训练改动越大偏差越明显。LyCORIS 自带的工具可以读取。', 'ComfyUI computes it differently from training, so images drift from the training previews, more as training changes the weights more. LyCORIS’s own tools read it.'],
           input: sdxl
-            ? ['ComfyUI、Forge 和 A1111 WebUI 都按训练时的方式计算，出图与训练预览一致；LyCORIS 自带的加载和合并工具无法读取。', 'ComfyUI, Forge and A1111 WebUI compute it as trained, so images match the previews. LyCORIS’s own loaders and merge tool cannot read it.']
-            : ['ComfyUI 按训练时的方式计算，出图与训练预览一致；LyCORIS 自带的加载和合并工具无法读取。', 'ComfyUI computes it as trained, so images match the previews. LyCORIS’s own loaders and merge tool cannot read it.'],
+            ? ['ComfyUI、Forge 和 A1111 WebUI 的算法与训练时相同，出图与训练预览一致。LyCORIS 自带的工具无法读取。', 'ComfyUI, Forge and A1111 WebUI compute it as in training, so images match the previews. LyCORIS’s own tools cannot read it.']
+            : ['ComfyUI 的算法与训练时相同，出图与训练预览一致。LyCORIS 自带的工具无法读取。', 'ComfyUI computes it as in training, so images match the previews. LyCORIS’s own tools cannot read it.'],
         }),
-        text('本程序的训练预览、模型测试、合并和继续训练两种都支持。更改后需要重新训练；继续训练时要与原文件一致。', 'Training previews, model tests, merging and continued training here support both. Changing it needs a new run; continued training must match the file.'),
       ]);
     }
     case 'scheduler.type':
