@@ -36,7 +36,7 @@
 
 /* Messages and inline content that appears after an action */
 .workspace-message, .studio-error, .api-error-notice, .pipeline-note, .version-run-status { animation: studio-drop-in var(--motion-base) var(--motion-ease); }
-.config-group > .config-fields, .dataset-browser-batch, .pipeline-selection { animation: studio-rise-in var(--motion-base) var(--motion-ease); }
+.config-group > .config-fields, .dataset-browser-batch { animation: studio-rise-in var(--motion-base) var(--motion-ease); }
 
 /* Inline disclosures open and close by height where the browser can animate it. */
 @supports (interpolate-size: allow-keywords) {
