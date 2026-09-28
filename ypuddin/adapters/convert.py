@@ -93,6 +93,14 @@ def lycoris_to_kohya(
     return out
 
 
+def has_legacy_text_keys(keys: Iterable[str], metadata: dict[str, str]) -> bool:
+    """Whether a file names its single text encoder ``lora_te1_``, as files before 2026-09-28 did."""
+    names = list(keys)
+    if metadata.get("ypuddin.family") == "sdxl" or any(key.startswith("lora_te2_") for key in names):
+        return False
+    return any(key.startswith("lora_te1_") for key in names)
+
+
 def modernize_text_keys(
     tensors: dict[str, Tensor], metadata: dict[str, str]
 ) -> tuple[dict[str, Tensor], dict[str, str]]:
@@ -102,7 +110,7 @@ def modernize_text_keys(
     ``model_`` root), which ComfyUI and kohya do not read for one encoder: they expect
     ``lora_te_`` below the model root. SDXL's two encoders keep ``lora_te1_``/``lora_te2_``.
     """
-    if metadata.get("ypuddin.family") == "sdxl" or any(key.startswith("lora_te2_") for key in tensors):
+    if not has_legacy_text_keys(tensors, metadata):
         return dict(tensors), dict(metadata)
 
     def rename(module: str) -> str:

@@ -1212,7 +1212,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/artifacts/{aid}/convert": {
+    "/api/artifacts/{aid}/fix-text-keys": {
         parameters: {
             query?: never;
             header?: never;
@@ -1221,8 +1221,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Convert Artifact */
-        post: operations["convert_artifact_api_artifacts__aid__convert_post"];
+        /**
+         * Fix Artifact Text Keys
+         * @description Rename an older file's text encoder keys to the names ComfyUI reads; weights stay the same.
+         */
+        post: operations["fix_artifact_text_keys_api_artifacts__aid__fix_text_keys_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2579,6 +2582,8 @@ export interface components {
             factor?: number | null;
             /** Family */
             family?: string | null;
+            /** Legacy Text Keys */
+            legacy_text_keys?: boolean | null;
             /** Metadata */
             metadata?: {
                 [key: string]: unknown;
@@ -2966,11 +2971,6 @@ export interface components {
             suggestion?: number | number[] | null;
         } & {
             [key: string]: unknown;
-        };
-        /** ConvertBody */
-        ConvertBody: {
-            /** Format */
-            format: string;
         };
         /** CredentialState */
         CredentialState: {
@@ -11330,7 +11330,7 @@ export interface operations {
             };
         };
     };
-    convert_artifact_api_artifacts__aid__convert_post: {
+    fix_artifact_text_keys_api_artifacts__aid__fix_text_keys_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -11339,11 +11339,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ConvertBody"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

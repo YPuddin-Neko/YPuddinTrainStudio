@@ -4574,10 +4574,11 @@
         }
       }
     },
-    "/api/artifacts/{aid}/convert": {
+    "/api/artifacts/{aid}/fix-text-keys": {
       "post": {
-        "summary": "Convert Artifact",
-        "operationId": "convert_artifact_api_artifacts__aid__convert_post",
+        "summary": "Fix Artifact Text Keys",
+        "description": "Rename an older file's text encoder keys to the names ComfyUI reads; weights stay the same.",
+        "operationId": "fix_artifact_text_keys_api_artifacts__aid__fix_text_keys_post",
         "parameters": [
           {
             "name": "aid",
@@ -4589,16 +4590,6 @@
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ConvertBody"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -8509,6 +8500,17 @@
             ],
             "title": "Family"
           },
+          "legacy_text_keys": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legacy Text Keys"
+          },
           "metadata": {
             "additionalProperties": true,
             "type": "object",
@@ -9520,19 +9522,6 @@
           "msg"
         ],
         "title": "ConfigWarning"
-      },
-      "ConvertBody": {
-        "properties": {
-          "format": {
-            "type": "string",
-            "title": "Format"
-          }
-        },
-        "type": "object",
-        "required": [
-          "format"
-        ],
-        "title": "ConvertBody"
       },
       "CredentialState": {
         "properties": {

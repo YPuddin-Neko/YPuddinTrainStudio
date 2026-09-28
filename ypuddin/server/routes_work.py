@@ -13,6 +13,7 @@ import tempfile
 import unicodedata
 import zipfile
 from contextlib import nullcontext
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
@@ -2423,13 +2424,27 @@ def put_queue_settings(body: m.QueueSettings, c: ServiceContext = Depends(ctx)) 
 
 
 # --------------------------------------------------------------------------- artifacts
+ADAPTER_ARTIFACT_KINDS = {"weights", "comfyui", "kohya"}
+
+
+@lru_cache(maxsize=1024)
+def _adapter_header(path: str, mtime_ns: int, size: int) -> tuple[tuple[str, ...], dict[str, str]]:
+    """Tensor names and metadata of a safetensors file, read from its header alone."""
+    del mtime_ns, size  # they key the cache, so a rewritten file is read again
+    from safetensors import safe_open
+
+    with safe_open(path, framework="pt") as file:
+        return tuple(file.keys()), dict(file.metadata() or {})
+
+
 def _artifact_row(r: dict[str, Any]) -> dict[str, Any]:
     out = dict(r)
     meta = json.loads(r.get("meta_json") or "{}")
     out.pop("meta_json", None)
-    if r["kind"] == "model" and Path(r["path"]).is_dir():
+    path = Path(r["path"])
+    if r["kind"] == "model" and path.is_dir():
         try:
-            manifest = json.loads((Path(r["path"]) / "manifest.json").read_text(encoding="utf-8"))
+            manifest = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
             if manifest.get("format") == "ypuddin-full-model-v1":
                 meta = {
                     "training_mode": "full",
@@ -2439,24 +2454,31 @@ def _artifact_row(r: dict[str, Any]) -> dict[str, Any]:
                 out["family"] = manifest.get("family")
         except (OSError, ValueError):
             pass
-    elif not meta and Path(r["path"]).exists():
-        try:
-            from ypuddin.adapters import load_adapter_file
+    elif path.is_file():
+        from ypuddin.adapters.convert import has_legacy_text_keys
 
-            _, m = load_adapter_file(r["path"])
-            meta = m
-            args = json.loads(m.get("ypuddin.adapter", "{}"))
+        try:
+            stat = path.stat()
+            keys, header = _adapter_header(str(path), stat.st_mtime_ns, stat.st_size)
+        except Exception:  # noqa: BLE001 - an unreadable file still lists; its download shows what it is
+            keys, header = (), None
+        if header is not None and r["kind"] in ADAPTER_ARTIFACT_KINDS:
+            out["legacy_text_keys"] = has_legacy_text_keys(keys, header)
+        if not meta and header is not None:
+            meta = header
+            try:
+                args = json.loads(header.get("ypuddin.adapter", "{}"))
+            except json.JSONDecodeError:
+                args = {}
             out.update(
                 {
                     "algo": args.get("algo"),
                     "rank": args.get("rank"),
                     "alpha": args.get("alpha"),
                     "factor": args.get("factor"),
-                    "family": m.get("ypuddin.family"),
+                    "family": header.get("ypuddin.family"),
                 }
             )
-        except Exception:  # noqa: BLE001
-            pass
     out["metadata"] = {k: v for k, v in meta.items() if k != "ypuddin.targets"}
     return out
 
@@ -2558,63 +2580,48 @@ def download_artifact(aid: str, c: ServiceContext = Depends(ctx)) -> Response:
     return FileResponse(path, filename=path.name)
 
 
-class ConvertBody(BaseModel):
-    format: str
-
-
-@router.post("/artifacts/{aid}/convert", response_model=m.Artifact, response_model_exclude_unset=True)
-def convert_artifact(aid: str, body: ConvertBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+@router.post("/artifacts/{aid}/fix-text-keys", response_model=m.Artifact, response_model_exclude_unset=True)
+def fix_artifact_text_keys(aid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+    """Rename an older file's text encoder keys to the names ComfyUI reads; weights stay the same."""
     r = _get_artifact(c, aid)
     with (
         c.versions.mutation(r["project_id"], r.get("version_id"), data=False)
         if r["project_id"]
         else nullcontext()
     ):
-        return _convert_artifact(c, r, body)
+        return _fix_text_keys(c, r)
 
 
-def _convert_artifact(c: ServiceContext, r: dict, body: ConvertBody) -> dict[str, Any]:
-    if r["kind"] not in {"weights", "comfyui", "kohya"}:
+def _fix_text_keys(c: ServiceContext, r: dict) -> dict[str, Any]:
+    if r["kind"] not in ADAPTER_ARTIFACT_KINDS:
         raise ApiError(
-            "Only adapter weight artifacts support format conversion", code="artifact.kind", status=422
+            "Only adapter weight artifacts have text encoder keys", code="artifact.kind", status=422
         )
     from safetensors.torch import save_file
 
     from ypuddin.adapters import load_adapter_file
-    from ypuddin.adapters.convert import comfy_to_kohya, kohya_to_comfy, lycoris_to_kohya, modernize_text_keys
-    from ypuddin.models import get_family
+    from ypuddin.adapters.convert import modernize_text_keys
 
-    # Older files also get the text encoder names ComfyUI reads.
-    tensors, meta = modernize_text_keys(*load_adapter_file(r["path"]))
-    family = meta.get("ypuddin.family", "anima")
-    if body.format == "comfyui":
-        fam = get_family(family)
-        names = fam.linear_module_names() if hasattr(fam, "linear_module_names") else []
-        out = kohya_to_comfy(tensors, names)
-    elif body.format == "kohya":
-        out = comfy_to_kohya(lycoris_to_kohya(tensors))
-    else:
-        raise ApiError(f"unknown format {body.format}", code="convert.bad_format")
-    dst = Path(r["path"]).with_name(Path(r["path"]).stem + f"-{body.format}.safetensors")
-    save_file({k: v.contiguous() for k, v in out.items()}, str(dst), metadata=meta)
-    nid = new_id("a")
-    c.db.insert(
-        "artifacts",
-        {
-            "id": nid,
-            "project_id": r["project_id"],
-            "version_id": r.get("version_id"),
-            "job_id": r["job_id"],
-            "name": dst.name,
-            "path": str(dst),
-            "size": dst.stat().st_size,
-            "kind": body.format,
-            "step": r["step"],
-            "created_at": now(),
-            "meta_json": "{}",
-        },
-    )
-    return _artifact_row(c.db.fetchone("SELECT * FROM artifacts WHERE id=?", (nid,)))
+    path = Path(r["path"])
+    if not path.is_file():
+        raise NotFound("artifact file is missing", code="artifact.missing")
+    tensors, meta = load_adapter_file(path)
+    renamed, renamed_meta = modernize_text_keys(tensors, meta)
+    if renamed.keys() == tensors.keys() and renamed_meta == meta:
+        return _artifact_row(r)
+    staged = path.with_name(f".{path.name}.{new_id('k')}.tmp")
+    try:
+        save_file({k: v.contiguous() for k, v in renamed.items()}, str(staged), metadata=renamed_meta)
+        # The file is replaced in one step, so a reader sees either the old names or the new ones.
+        os.replace(staged, path)
+    except PermissionError as exc:
+        raise ApiError(
+            "the file is in use; try again when nothing reads it", code="artifact.busy", status=409
+        ) from exc
+    finally:
+        staged.unlink(missing_ok=True)
+    c.db.update("artifacts", r["id"], {"size": path.stat().st_size})
+    return _artifact_row(c.db.fetchone("SELECT * FROM artifacts WHERE id=?", (r["id"],)))
 
 
 _ = io

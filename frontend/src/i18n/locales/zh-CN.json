@@ -339,12 +339,9 @@
     "size": "大小",
     "created": "创建时间",
     "actions": "操作",
-    "convert": "转换",
-    "converting": "转换中…",
     "metadata": "元数据",
     "empty": "还没有产物。",
     "deleteConfirm": "确定删除产物「{name}」吗？不可恢复。",
-    "convertFormat": "转换格式",
     "emptyHint": "训练任务完成后，生成的产物会显示在这里。",
     "viewMetadata": "查看元数据"
   },
