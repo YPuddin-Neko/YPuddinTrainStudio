@@ -3611,7 +3611,9 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "community" | "pypi" | "dtk" | "pinned";
+            source: "community" | "pypi" | "pytorch" | "dtk" | "pinned";
+            /** Index */
+            index?: string | null;
             /** Error */
             error?: string | null;
         };

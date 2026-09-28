@@ -11137,10 +11137,22 @@
             "enum": [
               "community",
               "pypi",
+              "pytorch",
               "dtk",
               "pinned"
             ],
             "title": "Source"
+          },
+          "index": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index"
           },
           "error": {
             "anyOf": [

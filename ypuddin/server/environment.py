@@ -60,7 +60,7 @@ CATALOG = {
     "schedulefree": ("schedulefree", None, "https://github.com/facebookresearch/schedule_free"),
     # The 8-bit optimizers (AdamW 8-bit, Lion 8-bit).
     "bitsandbytes": ("bitsandbytes", None, "https://github.com/bitsandbytes-foundation/bitsandbytes"),
-    # Automatic tagging and head masks. Both builds provide the same module; one is installed at a time.
+    # Automatic tagging and masks. Both builds provide the same module; one is installed at a time.
     "onnxruntime": ("onnxruntime", None, "https://onnxruntime.ai/docs/install/"),
     "onnxruntime-gpu": ("onnxruntime", None, "https://onnxruntime.ai/docs/install/#python-installs"),
 }
@@ -211,7 +211,9 @@ class EnvironmentSnapshot(BaseModel):
 class EnvironmentLatestPackage(BaseModel):
     # The newest version this runtime can install from the package's online source.
     version: str | None
-    source: Literal["community", "pypi", "dtk", "pinned"]
+    source: Literal["community", "pypi", "pytorch", "dtk", "pinned"]
+    # The package index that answered, for sources tried in order.
+    index: str | None = None
     error: str | None = None
 
 
@@ -970,14 +972,19 @@ class EnvironmentManager:
         return dtk_catalog.catalog(self.runtime(), self.versions(), self.profile)
 
     def latest_versions(self, refresh=False):
-        """The newest version of each GPU extension this runtime can install online: the community
-        builds for FlashAttention 2, PyPI for xFormers and bitsandbytes, the vendor list on DTK. Kept an hour."""
+        """The newest version of each optional package this runtime can install online, read from the
+        sources an installation uses: the configured pip source for bitsandbytes and ONNX Runtime, the
+        PyTorch source for xFormers, the community builds for FlashAttention 2 and the vendor list on
+        DTK. Kept an hour."""
+        from . import package_releases
         from .network import ProxyPolicy
-        from .package_releases import newest_release
 
         policy = ProxyPolicy.from_context(self.context)
         runtime, versions = self.runtime(), self.versions()
-        cache_key = (policy, self.profile, runtime)
+        downloads = self.context.settings().get("downloads", {})
+        fallback = downloads.get("fallback", True)
+        pypi = [("index-url", url) for url in pypi_sources(downloads.get("pypi", "ustc"), fallback)]
+        cache_key = (policy, self.profile, runtime, json.dumps(downloads, sort_keys=True))
         with self._latest_lock:
             if (
                 not refresh
@@ -996,29 +1003,42 @@ class EnvironmentManager:
                     pass
             return {"version": max(parsed)[1] if parsed else None, "source": source, "error": error}
 
+        def online(name, kind, sources, *, torch=True):
+            try:
+                release = package_releases.newest_release(
+                    name,
+                    torch=str(runtime.get("torch", "")) if torch else None,
+                    python=str(runtime.get("python", "")),
+                    opener=policy.opener(),
+                    sources=sources,
+                )
+                return {"version": release.version, "source": kind, "index": release.index, "error": None}
+            except Exception as exc:  # noqa: BLE001 - an unreachable index only leaves the version unknown
+                return {"version": None, "source": kind, "error": policy.redact(exc)[-500:]}
+
         packages = {}
-        if self.profile == "linux-dtk" or runtime.get("hip_runtime"):
+        hip = self.profile == "linux-dtk" or bool(runtime.get("hip_runtime"))
+        cuda = not hip and runtime.get("platform") in ("Windows", "Linux") and bool(runtime.get("cuda_runtime"))
+        if hip:
             wheels = dtk_catalog.catalog(runtime, versions, self.profile).wheels
             for name in ("xformers", "flash-attn", "bitsandbytes"):
                 packages[name] = newest(
                     [w.version for w in wheels if w.package == name and w.compatible], "dtk"
                 )
-        elif runtime.get("platform") in ("Windows", "Linux") and runtime.get("cuda_runtime"):
+        elif cuda:
             catalog = self.windows_wheels(refresh=refresh)
             packages["flash-attn"] = newest(
                 [w.version for w in catalog.wheels if w.compatible], "community", catalog.error
             )
-            for name in ("xformers", "bitsandbytes"):
-                try:
-                    version = newest_release(
-                        name,
-                        torch=str(runtime.get("torch", "")),
-                        python=str(runtime.get("python", "")),
-                        opener=policy.opener(),
-                    )
-                    packages[name] = {"version": version, "source": "pypi", "error": None}
-                except Exception as exc:  # noqa: BLE001 - an unreachable index only leaves the version unknown
-                    packages[name] = {"version": None, "source": "pypi", "error": policy.redact(exc)[-500:]}
+            # xFormers installs from the PyTorch source for this CUDA runtime, bitsandbytes from pip's.
+            torch_index = torch_sources(
+                "cu" + str(runtime["cuda_runtime"]).replace(".", ""), downloads.get("pytorch", "mirror"), fallback
+            )
+            packages["xformers"] = online("xformers", "pytorch", torch_index)
+            packages["bitsandbytes"] = online("bitsandbytes", "pypi", pypi)
+        # Tagging and masks: the GPU build on NVIDIA; the CPU build everywhere, DTK and Apple chips included.
+        for name in ("onnxruntime", *(("onnxruntime-gpu",) if cuda else ())):
+            packages[name] = online(name, "pypi", pypi, torch=False)
         packages["mtlattn"] = {"version": metal_attention_catalog.VERSION, "source": "pinned", "error": None}
         result = {"checked_at": time.time(), "packages": packages}
         with self._latest_lock:

@@ -48,7 +48,7 @@ interface Operation {
   phase?: string; downloaded_bytes?: number; total_bytes?: number | null; bytes_per_second?: number | null; eta_seconds?: number | null;
 }
 interface Wheel { wheel_id: string; package: string; filename: string; version: string; sha256: string }
-interface LatestVersions { packages: Record<string, { version: string | null; source: string; error: string | null }> }
+interface LatestVersions { packages: Record<string, { version: string | null; source: string; index?: string | null; error: string | null }> }
 const button = 'ui-btn ui-btn-sm';
 const input = 'rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900';
 const busyStatus = (op: Operation) => ['planning', 'installing', 'verifying'].includes(op.status);
@@ -234,8 +234,8 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     'flash-attn': copy('FP16 / BF16 训练与采样加速', 'FP16 / BF16 training and sampling acceleration'),
     mtlattn: copy('Apple GPU 训练与采样加速（可选）', 'Optional Apple GPU training and sampling acceleration'),
     bitsandbytes: copy('8-bit 优化器：AdamW 8-bit、Lion 8-bit', '8-bit optimizers: AdamW 8-bit, Lion 8-bit'),
-    onnxruntime: copy('自动打标与自动遮罩', 'Automatic tagging and head masks'),
-    'onnxruntime-gpu': copy('自动打标与自动遮罩，使用 NVIDIA 显卡', 'Automatic tagging and head masks on NVIDIA GPUs'),
+    onnxruntime: copy('自动打标与自动遮罩', 'Automatic tagging and masks'),
+    'onnxruntime-gpu': copy('自动打标与自动遮罩，使用 NVIDIA 显卡', 'Automatic tagging and masks on NVIDIA GPUs'),
   }[name] || '');
   const checkHint = (name: string) => name === 'bitsandbytes'
     ? copy('点击“运行检查”，检查 8-bit 优化器能否在当前显卡上运行。', 'Click “Run checks” to check whether the 8-bit optimizers run on the current GPU.')
@@ -273,6 +273,7 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     if (latestError || release?.error) return copy('查询失败', 'Lookup failed');
     return release?.version || copy('未找到匹配版本', 'No matching release found');
   };
+  const sourceHost = (url: string) => { try { return new URL(url).host; } catch { return url; } };
   const textUnavailable = () => copy(' · 驱动可见，当前 PyTorch 不可用',' · visible to driver, unavailable to current PyTorch');
   const locked = busy || uploading || operations.some(busyStatus) || !!status?.running_jobs;
   const profileLabel = ({ 'windows-cuda': 'Windows CUDA', 'linux-cuda': 'Linux CUDA', 'linux-dtk': 'Linux DTK', 'macos-mps': 'macOS MPS', 'windows-cpu': 'Windows CPU', 'linux-cpu': 'Linux CPU', 'macos-cpu': 'macOS CPU', legacy: copy('旧版环境', 'Legacy environment') } as Record<string, string>)[profile] || copy('未知环境', 'Unknown environment');
@@ -285,10 +286,10 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
       <div className="settings-dependency-info"><button type="button" disabled={uploading || busy} className="settings-dependency-name disabled:opacity-50" aria-expanded={selected === pkg.name} aria-controls={`environment-details-${pkg.name}`} onClick={() => { setSelected(selected === pkg.name ? null : pkg.name); setVersion(''); setWheel(null); setVendorWheel(null); }}>{selected === pkg.name ? <ChevronDown size={13} /> : <ChevronRight size={13} />}{packageLabel(pkg.name)}</button><p className="settings-dependency-purpose">{purpose(pkg.name)}</p></div>
       <dl className="settings-dependency-version text-xs">
         <div><dt>{copy('本地服务端版本：', 'Local server version:')}</dt><dd>{pkg.version || copy('未安装', 'Not installed')}</dd></div>
-        <div title={latestError || latest?.packages[pkg.name]?.error || copy('当前环境可用的发布版本', 'Release available for this runtime')}><dt>{pkg.name === 'mtlattn' ? copy('兼容版本：', 'Compatible version:') : copy('云端版本：', 'Online version:')}</dt><dd>{onlineVersion(pkg)}</dd></div>
+        <div title={latestError || latest?.packages[pkg.name]?.error || (latest?.packages[pkg.name]?.index ? copy(`来自 ${sourceHost(latest.packages[pkg.name].index!)}`, `From ${sourceHost(latest.packages[pkg.name].index!)}`) : copy('当前环境可用的发布版本', 'Release available for this runtime'))}><dt>{pkg.name === 'mtlattn' ? copy('兼容版本：', 'Compatible version:') : copy('云端版本：', 'Online version:')}</dt><dd>{onlineVersion(pkg)}</dd></div>
       </dl>
       <span title={pkg.version && pkg.supported && !status?.probed_at && !pkg.available && !pkg.error ? checkHint(pkg.name) : undefined} className={`settings-dependency-state text-xs ${pkg.available ? 'text-emerald-700 dark:text-emerald-400' : pkg.error && pkg.supported ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}`}>{reason(pkg)}</span>
-      <div className="settings-dependency-actions flex flex-wrap gap-1.5 justify-end"><button className={button} disabled={locked || !pkg.supported && !hipBackend} onClick={() => { setSelected(pkg.name); setVersion(''); setWheel(null); setVendorWheel(null); }}>{pkg.version ? copy('管理', 'Manage') : copy('安装', 'Install')}</button><a className={`${button} ui-btn-icon`} href={pkg.docs_url} target="_blank" rel="noreferrer" aria-label={`${pkg.name} ${copy('文档', 'documentation')}`}><ExternalLink size={12} /></a></div>
+      <div className="settings-dependency-actions flex flex-wrap gap-1.5 justify-end"><button className={button} disabled={locked || !pkg.supported && !hipBackend} onClick={() => { setSelected(pkg.name); setVersion(''); setWheel(null); setVendorWheel(null); }}>{copy('管理', 'Manage')}</button><a className={`${button} ui-btn-icon`} href={pkg.docs_url} target="_blank" rel="noreferrer" aria-label={`${pkg.name} ${copy('文档', 'documentation')}`}><ExternalLink size={12} /></a></div>
     </div>
     {selected === pkg.name && <div id={`environment-details-${pkg.name}`} className="settings-dependency-detail space-y-3">
       {pkg.error && <p className="whitespace-pre-wrap break-words text-xs text-red-600 dark:text-red-300">{pkg.error}</p>}

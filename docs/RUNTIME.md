@@ -34,6 +34,8 @@ xFormers、FlashAttention、SageAttention、bitsandbytes 等扩展需要与新�
 
 扩展更新后需重启服务。具体后端的版本要求和计算限制见 [注意力后端](ATTENTION.md)。
 
+每个扩展的“云端版本”是当前 Python（和 PyTorch）能安装的最新正式版本，从安装时使用的来源查询：bitsandbytes 和 ONNX Runtime 查“软件下载源”中的 Python 依赖包来源，xFormers 查与 CUDA 版本对应的 PyTorch 来源，按顺序尝试，前一个来源不可用或没有兼容构建时换下一个。结果保留一小时，更换下载源后重新查询。每个扩展的操作按钮均为“管理”，展开后安装、重装或卸载。
+
 ## LoRA 环境
 
 “设置 → 运行环境 → LoRA 环境”显示内置实现兼容的 LyCORIS 版本、官方最新版本和主分支，以及各自的提交号。训练器的 LoRA / LoKr 等算法由本项目实现，不需要安装 LyCORIS；导出的文件与所示版本的 LyCORIS 格式一致，可用该版本读取。
