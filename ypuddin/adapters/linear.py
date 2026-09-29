@@ -58,7 +58,7 @@ class AdaptedLayer(nn.Module):
         *,
         mode: str = "auto",
         dora: bool = False,
-        dora_axis: str = "output",
+        dora_axis: str = "input",
         module_dropout: float = 0.0,
         name: str = "",
         grouped: bool = False,

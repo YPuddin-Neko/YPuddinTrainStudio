@@ -189,12 +189,12 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
       return join([
         sdxl ? text('两种方式在 ComfyUI 等出图工具中的效果不同：', 'The two differ in ComfyUI and other image tools:') : text('两种方式在 ComfyUI 中的效果不同：', 'The two differ in ComfyUI:'),
         ...optionLines({
-          output: sdxl
-            ? ['ComfyUI 和 Forge 的算法与训练时不同，出图会偏离训练预览，训练改动越大偏差越明显；A1111 WebUI 中结果不正确。LyCORIS 自带的工具可以读取。', 'ComfyUI and Forge compute it differently from training, so images drift from the training previews, more as training changes the weights more; A1111 WebUI applies it incorrectly. LyCORIS’s own tools read it.']
-            : ['ComfyUI 的算法与训练时不同，出图会偏离训练预览，训练改动越大偏差越明显。LyCORIS 自带的工具可以读取。', 'ComfyUI computes it differently from training, so images drift from the training previews, more as training changes the weights more. LyCORIS’s own tools read it.'],
           input: sdxl
             ? ['ComfyUI、Forge 和 A1111 WebUI 的算法与训练时相同，出图与训练预览一致。LyCORIS 自带的工具无法读取。', 'ComfyUI, Forge and A1111 WebUI compute it as in training, so images match the previews. LyCORIS’s own tools cannot read it.']
             : ['ComfyUI 的算法与训练时相同，出图与训练预览一致。LyCORIS 自带的工具无法读取。', 'ComfyUI computes it as in training, so images match the previews. LyCORIS’s own tools cannot read it.'],
+          output: sdxl
+            ? ['ComfyUI 和 Forge 的算法与训练时不同，出图会偏离训练预览，训练改动越大偏差越明显；A1111 WebUI 中结果不正确。LyCORIS 自带的工具可以读取。', 'ComfyUI and Forge compute it differently from training, so images drift from the training previews, more as training changes the weights more; A1111 WebUI applies it incorrectly. LyCORIS’s own tools read it.']
+            : ['ComfyUI 的算法与训练时不同，出图会偏离训练预览，训练改动越大偏差越明显。LyCORIS 自带的工具可以读取。', 'ComfyUI computes it differently from training, so images drift from the training previews, more as training changes the weights more. LyCORIS’s own tools read it.']
         }),
       ]);
     }

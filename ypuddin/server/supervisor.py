@@ -592,6 +592,8 @@ class JobSupervisor:
             # New queue snapshots include the switch. Existing immutable jobs
             # predate it and must resume with their original calculation mode.
             payload.setdefault("loop", {}).setdefault("deterministic", False)
+            # Snapshots from before the DoRA axis option trained output rows, then the default.
+            payload.setdefault("adapter", {}).setdefault("dora_axis", "output")
             if job["type"] == "cache":
                 payload.setdefault("loop", {}).update(gpu_count=1, distributed_strategy="ddp")
             cfg = absolute_paths(TrainConfig.model_validate(payload))

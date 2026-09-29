@@ -370,11 +370,12 @@ class AdapterConfig(_Strict):
         help="DoRA 权重分解（幅度/方向），作用于 LoRA、LoHa、LoKr 和 OrthoLoRA 层；按规则使用 LyCORIS Full 或 T-LoRA 的层不启用。",
         ui_=ui("adapter", order=60, control="switch"),
     )
-    dora_axis: Literal["output", "input"] = F(
-        "output",
+    dora_axis: Literal["input", "output"] = F(
+        "input",
         help=(
-            "DoRA 幅度按哪一侧的通道计算：output 每个输出通道一个幅度，是 LyCORIS 的默认方式；input 每个输入通道一个幅度，"
-            "ComfyUI 按训练时的方式计算，LyCORIS 自带的加载和合并工具无法读取。更改后需要重新训练。"
+            "DoRA 幅度按哪一侧的通道计算：input 每个输入通道一个幅度，ComfyUI、Forge 和 A1111 按训练时的方式计算，"
+            "LyCORIS 自带的加载和合并工具无法读取；output 每个输出通道一个幅度，是 LyCORIS 的默认方式，ComfyUI、Forge 和 "
+            "A1111 出图会偏离训练。更改后需要重新训练。"
         ),
         ui_=ui("adapter", order=61, control="select", show_when="adapter.dora == true"),
     )

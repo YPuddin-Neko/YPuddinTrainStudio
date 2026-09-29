@@ -189,13 +189,12 @@ class AdapterSet:
                 f"checkpoint adapter structure changed: missing={missing[:3]}, extra={extra[:3]}"
             )
         for name, layer in self.layers.items():
-            for kind, module in (("adapter", layer.adapter), ("dora", layer.dora)):
-                if module is None:
-                    continue
-                prefix = f"{name}.{kind}."
-                module.load_state_dict(
-                    {k[len(prefix) :]: v for k, v in state.items() if k.startswith(prefix)}
-                )
+            prefix = f"{name}.adapter."
+            layer.adapter.load_state_dict(
+                {k[len(prefix) :]: v for k, v in state.items() if k.startswith(prefix)}
+            )
+            if layer.dora is not None:
+                layer.dora.load_tensor(state[f"{name}.dora.dora_scale"])
 
     def export_state(self) -> tuple[dict[str, Tensor], dict[str, Any]]:
         tensors: dict[str, Tensor] = {}

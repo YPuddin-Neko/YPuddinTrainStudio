@@ -1,9 +1,9 @@
 """DoRA weight decomposition: ``W' = m · (W₀ + ΔW) / ||W₀ + ΔW||`` with trainable magnitude ``m``.
 
-``output`` keeps one magnitude per output row, stored ``(out, 1)``: LyCORIS's default, which its
-loaders read. ``input`` keeps one per input column, stored ``(1, in)``: ComfyUI, Forge and A1111
-compute it as trained, where for output rows ComfyUI and Forge divide by ``||W₀||`` and A1111 by
-the column norm. The stored shape names the axis. A convolution's magnitude spans its kernel too,
+``input`` (the default) keeps one magnitude per input column, stored ``(1, in)``: ComfyUI, Forge and
+A1111 compute it as trained. ``output`` keeps one per output row, stored ``(out, 1)``: LyCORIS's
+default, which its loaders read, where for output rows ComfyUI and Forge divide by ``||W₀||`` and
+A1111 by the column norm. The stored shape names the axis. A convolution's magnitude spans its kernel too,
 ``(out, 1, 1…)`` or ``(1, in, 1…)``, as LyCORIS and ComfyUI store it.
 """
 
@@ -12,7 +12,7 @@ from __future__ import annotations
 import torch
 from torch import Tensor, nn
 
-AXES = ("output", "input")
+AXES = ("input", "output")
 _AXIS_NAMES = {"output": "输出通道", "input": "输入通道"}
 
 
@@ -37,7 +37,7 @@ def decompose(weight: Tensor, scale: Tensor) -> Tensor:
 
 
 class DoRA(nn.Module):
-    def __init__(self, base_weight: Tensor, dtype: torch.dtype = torch.float32, axis: str = "output"):
+    def __init__(self, base_weight: Tensor, dtype: torch.dtype = torch.float32, axis: str = "input"):
         super().__init__()
         if axis not in AXES:
             raise ValueError(f"unknown DoRA axis {axis!r}")

@@ -60,13 +60,13 @@ OrthoLoRA 和正交 T-LoRA 的通用 LoRA 文件不能还原原始训练参数�
 
 Anima、Krea 2、FLUX.2 的文本编码器使用 `lora_te_` 前缀，SDXL 使用 `lora_te1_` / `lora_te2_`。读取端保留旧键名兼容，旧产物的修复入口只改键名。
 
-DoRA 在合并权重上按输入或输出通道进行幅度归一化。方向会改变训练参数与导出形状；推理端支持范围见[训练配置](TRAINING.md)。不能仅改文件形状来切换方向。
+DoRA 在合并权重上按输入（默认）或输出通道进行幅度归一化。方向会改变训练参数与导出形状；推理端支持范围见[训练配置](TRAINING.md)。不能仅改文件形状来切换方向。强度不为 1 时（模型测试、合并），权重在底模权重与完整 DoRA 权重之间按强度线性过渡，与 ComfyUI、A1111 相同。
 
 ## 与 LyCORIS 的边界
 
 本项目训练线性层和卷积层（见上文“卷积层”），不实现 LyCORIS 的 Tucker 分解（`use_tucker`）和 DyLoRA，也不读取带 `lora_mid`、`lokr_t2`、`hada_t1` 的 Tucker 文件。卷积层的计算由本项目实现，LyCORIS 上游对卷积 bypass、融合内核因子分解、kernel dispatch 和 DyLoRA 梯度路由的修复不对应这里相同的执行路径。
 
-卷积层文件可由 LyCORIS 的 kohya 加载器、合并工具和 ComfyUI 直接读取，包括 LoKr 的各种拆分形式、带偏置的 LyCORIS Full 和按输出通道的 DoRA。
+卷积层文件可由 LyCORIS 的 kohya 加载器、合并工具和 ComfyUI 直接读取，包括 LoKr 的各种拆分形式和带偏置的 LyCORIS Full；按输入通道的 DoRA，LyCORIS 的工具无法读取。
 
 Full 保留底层权重，前向通过合并权重计算，不依赖删除原层权重后再调用其前向。缩放由适配器统一计算，导出编码到 alpha 或因子中；本项目合并工具重建后应用一次增量，不再额外乘一次 alpha/rank。它们与上游历史问题的实现路径不同。
 
