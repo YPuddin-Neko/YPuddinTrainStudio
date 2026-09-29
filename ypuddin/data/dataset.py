@@ -18,7 +18,7 @@ from ypuddin.config.schema import MAX_SIDE
 from ypuddin.models import LatentSpec
 
 from .buckets import BUCKET_POLICY, Bucket, BucketManager, crop_offset, fit_crop, fit_pad
-from .cache import LatentCache, build_latent_cache
+from .cache import CacheKey, LatentCache, build_latent_cache, cache_names
 from .caption_formats import effective_caption_extension, family_caption_formats, require_caption_format
 from .caption_json import StructuredCaption
 from .captions import (
@@ -63,13 +63,15 @@ class Item:
     image_fit: str = "crop"
     no_upscale: bool = False
     crop_anchor: str = "center"
+    # The image's name in the caches: its file name, with a content hash when another image shares it.
+    cache_name: str = ""
 
     @property
     def max_scale(self) -> float | None:
         return self.native_scale if self.native_scale is not None else 1.0 if self.no_upscale else None
 
 
-def item_latent_key(item: Item, fingerprint: str, flip: bool) -> str:
+def item_latent_key(item: Item, fingerprint: str, flip: bool) -> CacheKey:
     if item.record.color_key_transparency:
         # Color-keyed RGB/grayscale PNGs are composited onto white; never reuse
         # latents cached without color-key compositing.
@@ -89,7 +91,10 @@ def item_latent_key(item: Item, fingerprint: str, flip: bool) -> str:
         fingerprint += f"|native-crop-v1:{rw}x{rh}"
     if item.image_fit == "crop" and item.crop_anchor != "center":
         fingerprint += f"|crop-anchor-v1:{item.crop_anchor}"
-    return LatentCache.key(item.record.content_hash, item.bucket.width, item.bucket.height, fingerprint, flip)
+    name = item.cache_name or Path(item.record.path).stem
+    return LatentCache.key(
+        name, item.record.content_hash, item.bucket.width, item.bucket.height, fingerprint, flip
+    )
 
 
 def item_geometry(item: Item) -> dict[str, Any]:
@@ -185,6 +190,7 @@ def expand_items(
     records: list[ImageRecord], sources: list[DatasetSourceConfig], ds: DatasetConfig, bm: BucketManager
 ) -> list[Item]:
     items: list[Item] = []
+    names = cache_names(records)
     for r in records:
         src = sources[r.source_index]
         resolutions = src.resolutions or ds.resolutions
@@ -237,6 +243,7 @@ def expand_items(
                         ds.image_fit,
                         ds.bucket_no_upscale,
                         ds.crop_anchor,
+                        names[r.path],
                     )
                 )
     return items
@@ -275,8 +282,8 @@ class TrainDataset(Dataset):
             item.record.caption_path, item.source.class_prompt, require_known_format=True
         )
 
-    def use_cached_captions(self) -> list[str]:
-        """Restrict every item to a bounded, deterministic set of caption variants and return them all.
+    def use_cached_captions(self) -> list[tuple[str, str]]:
+        """Restrict every item to a bounded, deterministic set of caption variants; return ``(cache name, caption)``.
 
         Needed when text encodings are cached up front: shuffle / tag dropout / wildcards would
         otherwise produce captions that were never encoded. The variant set only depends on the
@@ -297,7 +304,13 @@ class TrainDataset(Dataset):
                     )
                 )
         self.caption_variants = variants
-        return sorted({c for vs in variants for c in vs})
+        return sorted(
+            {
+                (item.cache_name, caption)
+                for item, captions in zip(self.items, variants, strict=True)
+                for caption in captions
+            }
+        )
 
     def _caption(self, index: int, item: Item, rng: random.Random) -> str | None:
         if self.caption_variants is not None:
@@ -322,7 +335,7 @@ class TrainDataset(Dataset):
     def _rng(self, index: int) -> random.Random:
         return random.Random((self.seed * 7_919 + self.epoch) * 1_000_003 + index)
 
-    def cache_key(self, item: Item, flip: bool) -> str:
+    def cache_key(self, item: Item, flip: bool) -> CacheKey:
         return item_latent_key(item, self.latent_spec.fingerprint, flip)
 
     def load_pixels(
@@ -393,14 +406,14 @@ class TrainDataset(Dataset):
             "is_reg": item.is_reg,
             "weight": item.weight,
             "path": item.record.path,
+            "cache_name": item.cache_name,
         }
         cap = self._caption(index, item, rng)
         out["caption"] = "" if cap is None else cap
         out["uncond"] = cap is None
-        key = self.cache_key(item, flip)
-        if self.cache is not None and self.cache.has(key):
-            entry = self.cache.get(key)
-            out["latents"] = entry["latents"]
+        latents = self.cache.load(self.cache_key(item, flip)) if self.cache is not None else None
+        if latents is not None:
+            out["latents"] = latents
             # Ignore masks in pre-v2 cache entries. Sidecars can change independently of the
             # image/VAE key, including being added after an unmasked pre-cache job.
             if self.masked_loss or item.image_fit == "pad":
@@ -428,11 +441,17 @@ def collate(samples: list[dict[str, Any]]) -> dict[str, Any]:
             for key in ("original_size", "crop_top_left", "target_size")
         },
         "paths": [s["path"] for s in samples],
+        "cache_names": [s.get("cache_name", "") for s in samples],
     }
-    if "latents" in samples[0]:
+    cached = ["latents" in s for s in samples]
+    if all(cached):
         batch["latents"] = torch.stack([s["latents"] for s in samples])
-    else:
+    elif not any(cached):
         batch["pixels"] = torch.stack([s["pixels"] for s in samples])
+    else:
+        # A cache file another run rewrote while this one trained: the missing images are encoded again.
+        batch["partial_latents"] = [s.get("latents") for s in samples]
+        batch["pixels"] = {index: s["pixels"] for index, s in enumerate(samples) if "pixels" in s}
     if any("mask" in s for s in samples):
         reference = next(s["mask"] for s in samples if "mask" in s)
         batch["mask"] = torch.stack([s.get("mask", torch.ones_like(reference)) for s in samples])
@@ -659,8 +678,8 @@ def cache_latents(
     assert bundle.latent_cache is not None
     datasets = [bundle.train] + ([bundle.validation] if bundle.validation else [])
 
-    def jobs() -> Iterator[tuple[str, dict[str, Tensor]]]:
-        seen: set[str] = set()
+    def jobs() -> Iterator[tuple[CacheKey, dict[str, Tensor]]]:
+        seen: set[CacheKey] = set()
         for ds in datasets:
             for item in ds.items:
                 for flip in (False, True) if ds.flip else (False,):

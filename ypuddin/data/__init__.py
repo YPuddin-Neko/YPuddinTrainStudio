@@ -1,5 +1,13 @@
 from .buckets import Bucket, BucketManager, fit_crop
-from .cache import LatentCache, TensorCache, TextCache, build_latent_cache, build_text_cache
+from .cache import (
+    CacheKey,
+    LatentCache,
+    TextCache,
+    VariantFiles,
+    build_latent_cache,
+    build_text_cache,
+    cache_names,
+)
 from .captions import caption_variants_for_cache, read_caption, transform_caption
 from .dataset import (
     DataBundle,
@@ -25,7 +33,9 @@ __all__ = [
     "IndexDB",
     "Item",
     "LatentCache",
-    "TensorCache",
+    "VariantFiles",
+    "CacheKey",
+    "cache_names",
     "TextCache",
     "TrainDataset",
     "build_data",

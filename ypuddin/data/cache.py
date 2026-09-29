@@ -1,19 +1,40 @@
-"""Content-addressed caches for latents and text encodings (one safetensors file per entry)."""
+"""Latent and text-encoding caches: one safetensors file per image, named after it.
+
+``latents/<image>_<W>x<H>.safetensors`` holds an image's latents at one bucket size; ``text/<image>.safetensors``
+holds its caption encodings, and ``text/_prompts.safetensors`` those of sample prompts and the empty caption.
+A file keeps each variant under a short tag of what made it (image content, encoder, fit and flip, or the caption),
+so flips, other models and other settings share the file without overwriting each other. Once a file holds its
+limit of variants, the oldest go first.
+"""
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import json
 import logging
 import os
+import re
+import shutil
 import tempfile
-from collections.abc import Callable, Iterable
+import time
+from collections.abc import Callable, Iterable, Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 import torch
-from safetensors.torch import load_file, save_file
+from safetensors import SafetensorError, safe_open
+from safetensors.torch import save_file
 from torch import Tensor
 
 log = logging.getLogger(__name__)
+
+# Entries of the earlier layout: <2 hex>/<24 hex>.safetensors, keyed by a hash alone.
+_LEGACY_FOLDER = re.compile(r"^[0-9a-f]{2}$")
+_LEGACY_ENTRY = re.compile(r"^[0-9a-f]{24}\.safetensors$")
+_LOCK_STALE_SECONDS = 60.0
+# A file that is missing, being replaced or damaged reads as holding nothing; the next write rebuilds it.
+_UNREADABLE = (OSError, ValueError, RuntimeError, SafetensorError)
 
 
 def _key(*parts: object) -> str:
@@ -24,56 +45,193 @@ def _key(*parts: object) -> str:
     return h.hexdigest()
 
 
-class TensorCache:
-    def __init__(self, root: str | Path):
+def cache_names(records: Iterable) -> dict[str, str]:
+    """Each image's cache name by path: its file name without the extension.
+
+    Images that share a name but not their content (``a/001.png`` and ``b/001.png``) get a short content hash
+    after it, as does an image named like a shared file.
+    """
+    groups: dict[str, list] = {}
+    for record in records:
+        groups.setdefault(Path(record.path).stem.casefold(), []).append(record)
+    names = {}
+    for folded, members in groups.items():
+        shared = len({record.content_hash for record in members}) > 1 or folded == TextCache.PROMPTS
+        for record in members:
+            stem = Path(record.path).stem
+            names[record.path] = f"{stem}_{record.content_hash[:8]}" if shared else stem
+    return names
+
+
+@contextlib.contextmanager
+def _locked(path: Path) -> Iterator[None]:
+    """Serializes rewrites of one file across processes; a lock older than a minute was left by a crash."""
+    lock = path.with_name(path.name + ".lock")
+    while True:
+        try:
+            os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            break
+        except FileExistsError:
+            try:
+                if time.time() - lock.stat().st_mtime > _LOCK_STALE_SECONDS:
+                    lock.unlink(missing_ok=True)
+                    continue
+            except FileNotFoundError:
+                continue
+            time.sleep(0.01)
+    try:
+        yield
+    finally:
+        lock.unlink(missing_ok=True)
+
+
+def _replace(source: Path, target: Path) -> None:
+    # Windows refuses to replace a file another process is reading at that moment.
+    for attempt in range(50):
+        try:
+            source.replace(target)
+            return
+        except PermissionError:
+            if attempt == 49:
+                raise
+            time.sleep(0.05)
+
+
+class VariantFiles:
+    """Safetensors files holding variants as ``<tag>.<tensor>``; the metadata lists the tags, oldest first."""
+
+    def __init__(self, root: str | Path, *, limit: int):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
+        self.limit = limit
+        self._drop_legacy_entries()
 
-    def _path(self, key: str) -> Path:
-        return self.root / key[:2] / f"{key}.safetensors"
+    def _drop_legacy_entries(self) -> None:
+        # The earlier layout cannot be read under the new names, so its entries would only take up space.
+        removed = 0
+        for folder in self.root.iterdir():
+            if not folder.is_dir() or not _LEGACY_FOLDER.match(folder.name):
+                continue
+            files = list(folder.iterdir())
+            if files and all(file.is_file() and _LEGACY_ENTRY.match(file.name) for file in files):
+                removed += len(files)
+                shutil.rmtree(folder, ignore_errors=True)
+        if removed:
+            log.info("removed %d cache entries of the earlier layout from %s", removed, self.root)
 
-    def has(self, key: str) -> bool:
-        return self._path(key).exists()
+    def path(self, file: str) -> Path:
+        return self.root / file
 
-    def get(self, key: str) -> dict[str, Tensor]:
-        return load_file(str(self._path(key)))
-
-    def put(self, key: str, tensors: dict[str, Tensor]) -> None:
-        p = self._path(key)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        # Jobs can populate the same content-addressed entry concurrently. Each writer owns a
-        # temporary file; replace exposes only a complete safetensors file to readers.
-        fd, name = tempfile.mkstemp(prefix=f".{p.stem}-", suffix=".tmp", dir=p.parent)
-        os.close(fd)
-        tmp = Path(name)
+    def holds(self, file: str, tag: str) -> bool:
         try:
-            save_file({k: v.detach().cpu().contiguous() for k, v in tensors.items()}, str(tmp))
-            tmp.replace(p)
-        finally:
-            tmp.unlink(missing_ok=True)
+            with safe_open(str(self.path(file)), framework="pt", device="cpu") as handle:
+                return any(key.startswith(tag + ".") for key in handle.keys())
+        except _UNREADABLE:
+            return False
+
+    def read(self, file: str, tag: str) -> dict[str, Tensor] | None:
+        prefix = tag + "."
+        try:
+            with safe_open(str(self.path(file)), framework="pt", device="cpu") as handle:
+                keys = [key for key in handle.keys() if key.startswith(prefix)]
+                return {key[len(prefix) :]: handle.get_tensor(key) for key in keys} if keys else None
+        except _UNREADABLE:
+            return None
+
+    def write(self, file: str, variants: dict[str, dict[str, Tensor]]) -> None:
+        """Add or replace ``variants`` (by tag), keeping the file's other variants up to the limit."""
+        path = self.path(file)
+        with _locked(path):
+            kept: dict[str, dict[str, Tensor]] = {}
+            order: list[str] = []
+            try:
+                with safe_open(str(path), framework="pt", device="cpu") as handle:
+                    order = json.loads((handle.metadata() or {}).get("order", "[]"))
+                    for key in handle.keys():
+                        tag, _, name = key.partition(".")
+                        kept.setdefault(tag, {})[name] = handle.get_tensor(key)
+            except _UNREADABLE:
+                kept, order = {}, []
+            order = [tag for tag in order if tag in kept] + [tag for tag in kept if tag not in order]
+            for tag, tensors in variants.items():
+                kept[tag] = {name: tensor.detach().cpu().contiguous() for name, tensor in tensors.items()}
+                order = [other for other in order if other != tag] + [tag]
+            while len(order) > self.limit:
+                kept.pop(order.pop(0), None)
+            fd, name = tempfile.mkstemp(prefix=f".{path.stem}-", suffix=".tmp", dir=self.root)
+            os.close(fd)
+            temporary = Path(name)
+            try:
+                save_file(
+                    {f"{tag}.{key}": tensor for tag in order for key, tensor in kept[tag].items()},
+                    str(temporary),
+                    metadata={"order": json.dumps(order)},
+                )
+                _replace(temporary, path)
+            finally:
+                temporary.unlink(missing_ok=True)
 
     def count(self) -> int:
-        return sum(1 for _ in self.root.rglob("*.safetensors"))
+        return sum(1 for _ in self.root.glob("*.safetensors"))
 
 
-class LatentCache(TensorCache):
-    """Key = (content hash, bucket w/h, latent fingerprint, flip)."""
+@dataclass(frozen=True)
+class CacheKey:
+    """Where one variant lives: its file and its tag inside."""
+
+    file: str
+    tag: str
+
+
+class LatentCache(VariantFiles):
+    """``<image>_<W>x<H>.safetensors``; a variant per image content, latent encoder and fit, and flip."""
+
+    def __init__(self, root: str | Path):
+        super().__init__(root, limit=8)
 
     @staticmethod
-    def key(content_hash: str, width: int, height: int, fingerprint: str, flip: bool) -> str:
-        return _key("latent", content_hash, width, height, fingerprint, int(flip))
+    def key(name: str, content_hash: str, width: int, height: int, fingerprint: str, flip: bool) -> CacheKey:
+        return CacheKey(
+            f"{name}_{width}x{height}.safetensors", _key("latent", content_hash, fingerprint, int(flip))[:16]
+        )
+
+    def has(self, key: CacheKey) -> bool:
+        return self.holds(key.file, key.tag)
+
+    def load(self, key: CacheKey) -> Tensor | None:
+        entry = self.read(key.file, key.tag)
+        return None if entry is None else entry["latents"]
+
+    def put(self, key: CacheKey, latents: Tensor) -> None:
+        self.write(key.file, {key.tag: {"latents": latents}})
 
 
-class TextCache(TensorCache):
-    """Key = (caption text, text fingerprint). Entries are trimmed to real length."""
+class TextCache(VariantFiles):
+    """``<image>.safetensors`` with a variant per caption and text encoder; prompts share ``_prompts``."""
+
+    PROMPTS = "_prompts"
+
+    def __init__(self, root: str | Path):
+        super().__init__(root, limit=256)
 
     @staticmethod
-    def key(caption: str, fingerprint: str) -> str:
-        return _key("text", caption, fingerprint)
+    def key(name: str, caption: str, fingerprint: str) -> CacheKey:
+        # The empty caption (dropout, unconditional sampling) is the same for every image.
+        file = TextCache.PROMPTS if caption == "" else name
+        return CacheKey(f"{file}.safetensors", _key("text", caption, fingerprint)[:16])
+
+    def has(self, key: CacheKey) -> bool:
+        return self.holds(key.file, key.tag)
+
+    def get(self, key: CacheKey) -> dict[str, Tensor] | None:
+        return self.read(key.file, key.tag)
+
+    def put(self, key: CacheKey, entry: dict[str, Tensor]) -> None:
+        self.write(key.file, {key.tag: entry})
 
 
 def build_latent_cache(
-    jobs: Iterable[tuple[str, dict[str, Tensor]]],
+    jobs: Iterable[tuple[CacheKey, dict[str, Tensor]]],
     cache: LatentCache,
     encode: Callable[[Tensor], Tensor],
     *,
@@ -88,7 +246,7 @@ def build_latent_cache(
     Masks are deliberately not cached with VAE outputs: changing a sidecar or enabling masked
     loss must not require another VAE pass, nor reuse a mask from an earlier training run.
     """
-    pending: dict[tuple[int, int], list[tuple[str, dict[str, Tensor]]]] = {}
+    pending: dict[tuple[int, int], list[tuple[CacheKey, dict[str, Tensor]]]] = {}
     written = 0
     done = 0
 
@@ -106,10 +264,16 @@ def build_latent_cache(
             latents = encode(pixels).to(dtype).cpu()
         if len(latents) != len(items):
             raise ValueError(f"Latent encoder returned {len(latents)} entries for {len(items)} images")
+        # An image's flips and settings at one size share a file, written once per batch.
+        files: dict[str, dict[str, dict[str, Tensor]]] = {}
+        counts: dict[str, int] = {}
         for (key, _extra), lat in zip(items, latents, strict=True):
-            cache.put(key, {"latents": lat})
-            written += 1
-            done += 1
+            files.setdefault(key.file, {})[key.tag] = {"latents": lat}
+            counts[key.file] = counts.get(key.file, 0) + 1
+        for file, variants in files.items():
+            cache.write(file, variants)
+            written += counts[file]
+            done += counts[file]
             report()
 
     report()
@@ -128,7 +292,7 @@ def build_latent_cache(
 
 
 def build_text_cache(
-    captions: Iterable[str],
+    captions: Iterable[tuple[str, str]],
     cache: TextCache,
     encode_for_cache: Callable[[list[str]], list[dict[str, Tensor]]],
     fingerprint: str,
@@ -137,11 +301,15 @@ def build_text_cache(
     progress: Callable[[int, int], None] | None = None,
     total: int | None = None,
 ) -> int:
-    """Encode unique missing captions, reporting input occurrences only once their entry is ready."""
+    """Encode each ``(image name, caption)`` missing from the cache; returns #written.
+
+    A caption several images share is encoded once. Progress counts input pairs, each once its entry is written.
+    """
     written = 0
     done = 0
-    pending: dict[str, int] = {}
-    completed: set[str] = set()
+    # caption -> the keys waiting for it, with how often each was asked for
+    pending: dict[str, dict[CacheKey, int]] = {}
+    completed: set[CacheKey] = set()
 
     def report() -> None:
         if progress and total:
@@ -157,26 +325,28 @@ def build_text_cache(
         # turn a failed batch into a reported 100% completion.
         if len(entries) != len(batch):
             raise ValueError(f"Text encoder returned {len(entries)} entries for {len(batch)} captions")
-        for cap, entry in zip(batch, entries, strict=True):
-            cache.put(TextCache.key(cap, fingerprint), entry)
-            written += 1
-            done += pending.pop(cap)
-            completed.add(cap)
-            report()
+        for caption, entry in zip(batch, entries, strict=True):
+            for key, occurrences in pending.pop(caption).items():
+                cache.put(key, entry)
+                written += 1
+                done += occurrences
+                completed.add(key)
+                report()
 
     report()
-    for cap in captions:
-        if cap in pending:
-            # Repeated captions share one encoding, but none of their occurrences
-            # is complete until that pending entry has actually been written.
-            pending[cap] += 1
+    for name, caption in captions:
+        key = TextCache.key(name, caption, fingerprint)
+        waiting = pending.get(caption, {})
+        if key in waiting:
+            # A repeated pair is complete only once its pending entry has actually been written.
+            waiting[key] += 1
             continue
-        if cap in completed or cache.has(TextCache.key(cap, fingerprint)):
-            completed.add(cap)
+        if key in completed or cache.has(key):
+            completed.add(key)
             done += 1
             report()
             continue
-        pending[cap] = 1
+        pending.setdefault(caption, {})[key] = 1
         if len(pending) >= batch_size:
             flush()
     flush()

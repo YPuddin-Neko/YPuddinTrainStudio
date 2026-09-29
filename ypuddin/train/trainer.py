@@ -893,7 +893,8 @@ class Trainer:
 
     def _build_text_cache(self, cache_root: Path) -> None:
         self.text_cache = TextCache(cache_root / "text")
-        captions = {""}  # unconditional caption: caption dropout, CFG sampling
+        # (image cache name, caption); prompts and the unconditional caption (dropout, CFG sampling) share one file.
+        captions = {(TextCache.PROMPTS, "")}
         for ds in (self.bundle.train, self.bundle.validation):
             if ds is not None:
                 captions.update(ds.use_cached_captions())
@@ -902,7 +903,7 @@ class Trainer:
                 _load_prompts_file(self.cfg.sampling.prompts_file) if self.cfg.sampling.prompts_file else []
             )
             for p in prompts:
-                captions.update((p.prompt, p.negative))
+                captions.update(((TextCache.PROMPTS, p.prompt), (TextCache.PROMPTS, p.negative)))
         ordered = sorted(captions)
         text_log = _ProgressLog("text encoding")
         n = build_text_cache(
@@ -918,7 +919,10 @@ class Trainer:
         )
         if n:
             log.info(
-                "cached %d text encodings (%d distinct captions) in %.1fs", n, len(ordered), text_log.elapsed
+                "cached %d text encodings (%d captions of images and prompts) in %.1fs",
+                n,
+                len(ordered),
+                text_log.elapsed,
             )
         else:
             log.info("all text encodings were already cached")
@@ -1326,7 +1330,8 @@ class Trainer:
             self.adapters.train(mode)
             restore_rng(rng, {"main": self.gen, "loader": self.loader_gen}, device=self.device)
 
-    def _text_cond(self, captions: list[str]) -> TextCond:
+    def _text_cond(self, captions: list[str], names: list[str] | None = None) -> TextCond:
+        """``names`` are the images' cache names; prompts leave them out."""
         if (getattr(self, "compute_policy", None) or {}).get("id") in DTK_TEXT_LORA_ALL_POLICY_IDS:
             # Online text runs before the backbone autocast context. Verify
             # actual encoder/adapter bindings before its first computation.
@@ -1334,13 +1339,13 @@ class Trainer:
             validate_compute_runtime(capture_compute_runtime(self.device), self.compute_runtime)
         if self.text_mode == "cached" and self.text_cache is not None:
             entries = []
-            for c in captions:
-                key = TextCache.key(c, self.loaded.text.fingerprint)
-                if not self.text_cache.has(key):
+            for name, c in zip(names or [TextCache.PROMPTS] * len(captions), captions, strict=True):
+                entry = self.text_cache.get(TextCache.key(name, c, self.loaded.text.fingerprint))
+                if entry is None:
                     raise RuntimeError(
                         f"text encoding missing from cache for caption {c[:80]!r}; the cache was built for a different caption transform"
                     )
-                entries.append(self.text_cache.get(key))
+                entries.append(entry)
             return self.loaded.text.cond_from_cache(entries, self.device)
         if not self.cfg.memory.offload_text_encoder or self.device.type == "cpu":
             return self.loaded.text.encode(captions, self.device)
@@ -1354,6 +1359,17 @@ class Trainer:
         if "latents" in batch:
             return batch["latents"].to(self.device, torch.float32)
         with torch.no_grad():
+            if "partial_latents" in batch:
+                encoded = {
+                    index: self.loaded.latent.encode(pixels[None].to(self.device))[0].float()
+                    for index, pixels in batch["pixels"].items()
+                }
+                return torch.stack(
+                    [
+                        encoded[index] if latents is None else latents.to(self.device, torch.float32)
+                        for index, latents in enumerate(batch["partial_latents"])
+                    ]
+                )
             return self.loaded.latent.encode(batch["pixels"].to(self.device)).float()
 
     def _num_tokens(self, latents: Tensor) -> int:
@@ -1481,7 +1497,7 @@ class Trainer:
         """Returns ``(loss, per_sample_unweighted, t)``."""
         gen = generator or self.gen
         x0 = self._latents(batch)
-        cond = self._text_cond(batch["caption"])
+        cond = self._text_cond(batch["caption"], batch.get("cache_names"))
         t = (
             t_override
             if t_override is not None
