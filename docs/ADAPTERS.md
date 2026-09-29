@@ -4,7 +4,9 @@
 
 ## 计算与参数
 
-`AdaptedLinear` 包装所选的线性层，底模权重保存在 `FrozenLinear`；`AdaptedConv` 包装所选的卷积层（Conv1d / Conv2d / Conv3d），底模仍是原卷积模块。分开计算模式执行 `base(x) + adapter(x)`；合并模式先得到 `W0 + ΔW`（Full 另加 `b0 + Δb`）再做该层自己的线性或卷积运算。DoRA 使用合并模式，T-LoRA 使用分开计算，分组卷积只能合并计算。
+`AdaptedLinear` 包装所选的线性层，底模权重保存在 `FrozenLinear`；`AdaptedConv` 包装所选的卷积层（Conv1d / Conv2d / Conv3d），底模仍是原卷积模块。两者共用 `AdaptedLayer`：分开计算执行 `base(x) + adapter(x)`；合并计算先得到 `W0 + ΔW`（Full 另加 `b0 + Δb`）再做该层自己的线性或卷积运算。DoRA、LoHa、LyCORIS Full 和分组卷积只能合并计算，T-LoRA 只能分开计算；“权重计算方式”手动选择另一种方式会报错。
+
+T-LoRA 和 LyCORIS Full 不使用 DoRA：选择这两种算法时，“启用 DoRA”自动关闭并置灰；“逐层覆盖规则”中使用这两种算法的层不启用 DoRA。海光 DTK 的可复现计算配方不支持 DoRA，开启 DoRA 时“可复现训练”关闭并置灰。
 
 | 算法 | 权重增量 | 实现 |
 | --- | --- | --- |
@@ -17,15 +19,15 @@
 
 普通低秩缩放为 `alpha / rank`，rsLoRA 为 `alpha / sqrt(rank)`。LoKr 的两个因子均为完整矩阵时缩放固定为 1，Rank 和 Alpha 不参与计算。LoKr Full 仍是 Kronecker 结构；LyCORIS Full 保存整层差值，两者不同。
 
-LoKr 分开计算用因子乘法避免生成完整 `ΔW`。LoHa 的自定义反向会重新计算两组低秩乘积，以减少保存的中间张量。这些是现有的 PyTorch 实现，不是 LyCORIS 的融合 GPU 内核。
+LoKr 分开计算用因子乘法避免生成完整 `ΔW`。LoHa 的自定义反向会重新计算两组低秩乘积，以减少保存的中间张量。这些是普通 PyTorch 实现，不使用 LyCORIS 的融合 GPU 内核。
 
 OrthoLoRA 冻结底模权重的主要奇异向量与奇异值，训练 Cayley 旋转及两侧缩放，初始增量为零。T-LoRA 的掩码逐样本广播到序列维度；正交初始化还保存一份冻结起点，并从可训练增量中减去起点。预览与导出使用全部秩。
 
-输出丢弃率、秩丢弃率和模块丢弃率的取值不小于 0 且小于 1：取 1 时全部被丢弃，适配器学不到任何东西。
+输出丢弃率、秩丢弃率和模块丢弃率的取值不小于 0 且小于 1：取 1 时全部被丢弃，适配器学不到任何东西。输出丢弃率只在分开计算时生效，DoRA、LoHa 等合并计算不使用；LoKr 的秩丢弃率仅在 W2 低秩拆分时生效；LyCORIS Full 只使用模块丢弃率。
 
 ## 卷积层
 
-“训练层类型”选择只训练线性层，或同时训练卷积层。目前只有 SDXL 的 UNet 含卷积层，其他模型不显示此项。卷积层只在训练层范围给出卷积范围时加入：
+“训练层类型”选择只训练线性层，或同时训练卷积层。只有 SDXL 的 UNet 含卷积层，其他模型不显示此项。卷积层只在训练层范围给出卷积范围时加入：
 
 | SDXL 训练层范围 | 只训练线性层 | 线性层和卷积层 |
 | --- | --- | --- |
@@ -33,7 +35,7 @@ OrthoLoRA 冻结底模权重的主要奇异向量与奇异值，训练 Cayley �
 | 常规范围（attn-mlp，默认） | 注意力和前馈，700 层 | 另加 ResNet 模块的 `conv1`、`conv2`、`conv_shortcut`、`time_emb_proj` 与上下采样卷积，共 766 层，其中卷积 49 个 |
 | 全部层（all-layers） | UNet 全部 743 个线性层 | 另加全部 51 个卷积层，包括输入、输出卷积 |
 
-卷积部分与 kohya LoCon 的范围相同（ResNet 与上下采样模块）；全部层对应 LyCORIS `full` 预设覆盖的线性层和卷积层，另含尺寸嵌入。归一化层不训练。逐层规则只在所选范围含卷积范围时匹配卷积层。
+卷积部分与 kohya LoCon 的范围相同（ResNet 与上下采样模块）；全部层对应 LyCORIS `full` 预设覆盖的线性层和卷积层，另含尺寸嵌入。归一化层不训练。“逐层覆盖规则”只在所选范围含卷积范围时匹配卷积层。
 
 大于 1×1 的卷积使用“卷积层 Rank / Alpha”，与 kohya、LyCORIS 的 `conv_dim` / `conv_alpha` 相同，留空时沿用 Rank / Alpha；1×1 卷积使用线性层的 Rank 和 Alpha。导出文件的 `ss_network_args` 记录实际使用的 `conv_dim` 和 `conv_alpha`。
 
@@ -64,7 +66,7 @@ DoRA 在合并权重上按输入或输出通道进行幅度归一化。方向会
 
 本项目训练线性层和卷积层（见上文“卷积层”），不实现 LyCORIS 的 Tucker 分解（`use_tucker`）和 DyLoRA，也不读取带 `lora_mid`、`lokr_t2`、`hada_t1` 的 Tucker 文件。卷积层的计算由本项目实现，LyCORIS 上游对卷积 bypass、融合内核因子分解、kernel dispatch 和 DyLoRA 梯度路由的修复不对应这里相同的执行路径。
 
-卷积层文件可由 LyCORIS 的 kohya 加载器、合并工具和 ComfyUI 直接读取，包括 LoKr 的各种拆分形式、带偏置的 LyCORIS Full 和 DoRA。
+卷积层文件可由 LyCORIS 的 kohya 加载器、合并工具和 ComfyUI 直接读取，包括 LoKr 的各种拆分形式、带偏置的 LyCORIS Full 和按输出通道的 DoRA。
 
 Full 保留底层权重，前向通过合并权重计算，不依赖删除原层权重后再调用其前向。缩放由适配器统一计算，导出编码到 alpha 或因子中；本项目合并工具重建后应用一次增量，不再额外乘一次 alpha/rank。它们与上游历史问题的实现路径不同。
 
@@ -87,7 +89,7 @@ Loss 曲线还受数据顺序、噪声与时间步采样、损失加权、有效
 
 LyCORIS 4.x 的实验性加速使用 Triton / TileLang 融合内核，并提供 `torch.compile` 和普通 PyTorch 回退。覆盖 LoRA、LoKr、LoHa、DoRA、Full 等算法的部分路径；具体约束随形状、精度和计算模式变化。[官方后端说明](https://github.com/KohakuBlueleaf/LyCORIS/blob/main/docs/kernels/backends.md)
 
-本项目尚未接入这些内核。`LYCORIS_KERNEL_BACKEND` 不会改变内置适配器的执行方式。接入时可以保留现有参数与导出逻辑，只替换匹配的计算函数；需同时处理混合精度、可训练缩放、dropout、DoRA 方向、检查点重算和多卡分片，不满足条件时仍使用原实现。
+本项目不使用这些内核，`LYCORIS_KERNEL_BACKEND` 不会改变内置适配器的执行方式。
 
 收益应按完整训练步测量，而不是只看某个内核。官方 RTX 4090 / FP16 表中，LoRA 合并路径前向加反向墙钟比值为 1.46，LoKr 分开计算为 1.47，但 LoKr 合并路径为 0.73（小于 1 代表更慢）。这不能直接换算为本训练器的速度。[官方基准](https://github.com/KohakuBlueleaf/LyCORIS/blob/main/docs/kernels/benchmarks.md)
 
