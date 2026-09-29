@@ -62,6 +62,8 @@ class TaggingOptions(BaseModel):
     existing: Literal["skip", "overwrite", "append", "prepend"] = "skip"
     trigger_word: str | None = Field(None, max_length=200)
     device: Literal["auto", "cpu"] = "auto"
+    replace_underscore: bool = True
+    escape_parentheses: bool = False
 
     @field_validator("model")
     @classmethod

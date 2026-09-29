@@ -1,7 +1,7 @@
 .caption-workspace { min-width:0; display:grid; gap:12px; color:var(--studio-text); container-type:inline-size; font-size:13px; }
 .caption-workspace input,.caption-workspace textarea { min-width:0; max-width:100%; padding:7px 10px; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-panel); color:var(--studio-text); font-size:13px; line-height:20px; }
 .caption-workspace textarea { width:100%; resize:vertical; min-height:80px; }
-.caption-workspace :is(input,textarea,.caption-workspace-gallery > button,.caption-workspace-chip button,.caption-workspace-frequencies button):focus-visible { outline:2px solid var(--studio-accent); outline-offset:2px; }
+.caption-workspace :is(input,textarea,.caption-workspace-gallery > button,.caption-workspace-chip button,.caption-workspace-frequencies button):not(.caption-tag-control):focus-visible { outline:2px solid var(--studio-accent); outline-offset:2px; }
 .caption-workspace-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:10px; padding:12px 14px; border:1px solid var(--studio-line); border-radius:8px; background:var(--studio-panel); }
 .caption-workspace-source { display:flex; align-items:center; flex:1 1 260px; max-width:540px; min-width:0; gap:10px; }
 .caption-workspace-source > span { display:inline-flex; align-items:center; gap:6px; flex:none; }
@@ -60,12 +60,6 @@
 .caption-workspace-field { display:grid; gap:5px; min-width:0; }
 .caption-workspace-tags { min-width:0; display:grid; gap:10px; }
 .caption-workspace-tags > div:first-child { display:flex; flex-wrap:wrap; gap:6px; min-width:0; }
-.caption-workspace-chip { display:inline-flex; align-items:center; min-width:0; max-width:100%; border:1px solid var(--studio-line); border-radius:5px; background:var(--studio-muted); overflow:hidden; }
-.caption-workspace-chip button { display:inline-flex; align-items:center; min-width:0; border:0; border-radius:0; background:transparent; color:var(--studio-text); padding:4px 6px; font-size:13px; line-height:20px; text-align:left; overflow-wrap:anywhere; }
-.caption-workspace-chip button:hover { background:var(--studio-panel); }
-.caption-workspace-chip button:last-child { flex:none; color:var(--studio-dim); }
-.caption-workspace-chip button:last-child:hover { color:var(--studio-danger); }
-.caption-workspace-chip input { width:150px; max-width:100%; padding:4px 6px; }
 .caption-workspace-tag-add { display:flex; min-width:0; gap:6px; }
 .caption-workspace-tag-add input { width:0; flex:1; }
 .caption-workspace-save { flex:none; display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:7px; border-top:1px solid var(--studio-line); padding-top:12px; }

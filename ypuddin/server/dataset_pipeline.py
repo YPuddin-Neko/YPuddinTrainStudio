@@ -1029,6 +1029,8 @@ class DatasetPipeline:
                 character=options["character_threshold"],
                 categories=tuple(options.get("categories") or DEFAULT_CATEGORIES),
                 exclude=tuple(exclude),
+                replace_underscore=options.get("replace_underscore", True),
+                escape_parentheses=options.get("escape_parentheses", False),
                 anima=anima,
                 provider=provider,
                 device_index=device_index,
@@ -1494,6 +1496,7 @@ class DatasetPipeline:
 
         from . import vlm
 
+        vlm.reject_refusal(reply)
         blocked = {vlm.readable(tag).casefold() for tag in options["exclude_tags"] if tag.strip()}
 
         def allowed(tags: list[str]) -> list[str]:

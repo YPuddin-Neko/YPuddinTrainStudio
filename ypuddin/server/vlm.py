@@ -205,6 +205,17 @@ def markers(text: str) -> dict[str, Any]:
     return groups
 
 
+def reject_refusal(text: str) -> None:
+    """Inspect prose fields separately so a tag list cannot hide a refusal in NL."""
+    groups = markers(text)
+    parts = [text]
+    if groups.get("nl"):
+        parts.append(groups["nl"])
+    parts.extend(", ".join(groups[key]) for key in MARKERS if key in groups)
+    if any(looks_like_refusal(part) for part in parts):
+        raise VlmError("the model refused this image")
+
+
 class Pacer:
     """Spaces request starts across all workers by ``interval`` seconds."""
 
@@ -365,6 +376,8 @@ def caption(
         raise VlmError("the service returned no answer")
     choice = choices[0]
     message = choice.get("message") or {}
+    if message.get("refusal"):
+        raise VlmError("the model refused this image")
     content = message.get("content")
     if isinstance(content, list):
         content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
@@ -374,6 +387,5 @@ def caption(
     if not text:
         reason = choice.get("finish_reason")
         raise VlmError("the reply was empty" + (f" (finish reason: {reason})" if reason else ""))
-    if looks_like_refusal(text):
-        raise VlmError(f"the model refused this image: {text[:80]}")
+    reject_refusal(text)
     return text

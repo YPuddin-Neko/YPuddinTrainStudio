@@ -9,12 +9,8 @@
 .structured-caption-field > input { width:100%; min-height:32px; border:1px solid var(--studio-line); border-radius:6px; padding:8px 10px; background:var(--studio-panel); color:var(--studio-text); font:inherit; }
 .structured-caption-prose textarea { min-height:120px; }
 .structured-caption-tag-list { display:flex; flex-wrap:wrap; gap:6px; min-width:0; }
-.structured-caption-tag { display:inline-flex; align-items:center; max-width:100%; min-width:0; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-muted); overflow:hidden; }
-.structured-caption-tag input { width:auto; min-width:0; max-width:100%; min-height:32px; border:0; border-radius:0; padding:5px 8px; background:transparent; color:var(--studio-text); font:inherit; }
-.structured-caption-editor .structured-caption-tag button { flex:none; min-height:32px; width:28px; border:0; border-radius:0; padding:5px; background:transparent; color:var(--studio-dim); }
 .structured-caption-editor .structured-caption-add { justify-self:start; }
-.structured-caption-editor .structured-caption-tag button:hover:not(:disabled) { color:var(--studio-accent); border-color:var(--studio-accent); }
-.structured-caption-editor :is(button,input,textarea):focus-visible,.structured-caption-document summary:focus-visible { outline:2px solid var(--studio-accent); outline-offset:2px; }
+.structured-caption-editor :is(button,input,textarea):not(.caption-tag-control):focus-visible,.structured-caption-document summary:focus-visible { outline:2px solid var(--studio-accent); outline-offset:2px; }
 .structured-caption-editor :disabled { opacity:.65; cursor:default; }
 .structured-caption-notice { font-size:13px; line-height:1.6; color:var(--studio-dim); }
 .structured-caption-document { border-top:1px solid var(--studio-line); padding-top:12px; min-width:0; }
@@ -23,5 +19,4 @@
 
 .structured-caption-scalar { grid-template-columns:100px minmax(0,1fr); align-items:center; gap:10px; }
 .structured-caption-scalar h4 { font-weight:500; }
-.structured-caption-editor .structured-caption-tag input { font-size:12px; }
 @container (max-width:320px) { .structured-caption-scalar { grid-template-columns:minmax(0,1fr); gap:6px; } }

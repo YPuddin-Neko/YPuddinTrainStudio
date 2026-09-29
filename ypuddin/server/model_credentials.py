@@ -19,8 +19,9 @@ from .errors import ApiError
 
 Provider = Literal["huggingface", "modelscope"]
 PROVIDERS = ("huggingface", "modelscope")
-SiteProvider = Literal["danbooru", "gelbooru"]
-AccessProvider = Literal["huggingface", "modelscope", "danbooru", "gelbooru"]
+SiteProvider = Literal["danbooru", "gelbooru", "e621", "rule34"]
+SITE_PROVIDERS = ("danbooru", "gelbooru", "e621", "rule34")
+AccessProvider = Literal["huggingface", "modelscope", "danbooru", "gelbooru", "e621", "rule34"]
 VlmProvider = Literal[
     "openai", "gemini", "openrouter", "siliconflow", "dashscope", "deepseek", "ollama", "lmstudio", "custom"
 ]
@@ -38,6 +39,8 @@ class CredentialStates(BaseModel):
 class AccessCredentialStates(CredentialStates):
     danbooru: CredentialState
     gelbooru: CredentialState
+    e621: CredentialState
+    rule34: CredentialState
 
 
 class CredentialUpdate(BaseModel):
@@ -131,7 +134,9 @@ class ModelCredentials:
             if entry == {}:
                 return "", ""
             try:
-                model = DanbooruCredentialUpdate if provider == "danbooru" else GelbooruCredentialUpdate
+                model = (
+                    DanbooruCredentialUpdate if provider in {"danbooru", "e621"} else GelbooruCredentialUpdate
+                )
                 parsed = model.model_validate(entry)
                 account = parsed.username if isinstance(parsed, DanbooruCredentialUpdate) else parsed.user_id
                 return account, parsed.api_key.get_secret_value()
@@ -143,8 +148,7 @@ class ModelCredentials:
     def access_state(self) -> dict[str, dict[str, bool]]:
         with self.lock:
             return self.state() | {
-                provider: {"configured": bool(self.site(provider)[1])}
-                for provider in ("danbooru", "gelbooru")
+                provider: {"configured": bool(self.site(provider)[1])} for provider in SITE_PROVIDERS
             }
 
     def vlm_key(self, provider: VlmProvider) -> str | None:

@@ -12,7 +12,7 @@ from .routes_regularization import SecretSafeRoute
 router = APIRouter(route_class=SecretSafeRoute)
 
 Rating = Literal["general", "sensitive", "questionable", "explicit"]
-SiteName = Literal["danbooru", "gelbooru"]
+SiteName = Literal["danbooru", "gelbooru", "e621", "rule34"]
 
 
 class SiteDownloadRequest(BaseModel):

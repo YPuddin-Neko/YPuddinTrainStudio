@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Undo2 } from 'lucide-react';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import StudioSelect from '../StudioSelect';
+import Switch from '../Switch';
 import type { PipelineOperation } from './DatasetPipelinePanel';
 import type { useScopeOptions } from './visionHooks';
 
@@ -29,6 +30,18 @@ export function DeviceField({ value, onChange, disabled }: { value: 'auto' | 'cp
   return <div className="vision-field"><span className="vision-field-label">{text('运行设备', 'Device')}</span>
     <StudioSelect aria-label={text('运行设备', 'Device')} value={value} disabled={disabled} onValueChange={next => onChange(next as 'auto' | 'cpu')} options={[{ value: 'auto', label: text('显卡（空闲显存最多的一张）', 'GPU (most free memory)') }, { value: 'cpu', label: 'CPU' }]}/>
     <span className="vision-field-hint">{text('训练占满显存时可改用 CPU。', 'Use the CPU while training fills the GPU.')}</span></div>;
+}
+
+export function TagOutputOptions({ replaceUnderscore, escapeParentheses, onChange, disabled }: {
+  replaceUnderscore: boolean; escapeParentheses: boolean;
+  onChange: (patch: { replaceUnderscore?: boolean; escapeParentheses?: boolean }) => void;
+  disabled: boolean;
+}) {
+  const text = useWorkspaceText();
+  return <div className="vision-inline-options" aria-label={text('标签输出格式', 'Tag output formatting')}>
+    <Switch checked={replaceUnderscore} disabled={disabled} onCheckedChange={checked => onChange({ replaceUnderscore: checked })}>{text('下划线转空格', 'Replace underscores with spaces')}</Switch>
+    <Switch checked={escapeParentheses} disabled={disabled} onCheckedChange={checked => onChange({ escapeParentheses: checked })}>{text('括号转义', 'Escape parentheses')}</Switch>
+  </div>;
 }
 
 /** A finished run of this action, with its Undo, beside the button that started it. */

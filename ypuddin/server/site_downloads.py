@@ -27,6 +27,7 @@ from ypuddin.data.index import iter_images
 from .booru import (
     MEDIA_EXTS,
     RATINGS,
+    SITES,
     BooruClient,
     Cancelled,
     Downloads,
@@ -50,6 +51,12 @@ OWNER_FILE = ".site-download-owner"
 MINOR_TAGS = frozenset(
     {
         "loli",
+        "young",
+        "cub",
+        "underage",
+        "young humanoid",
+        "young anthro",
+        "young feral",
         "shota",
         "child",
         "female child",
@@ -143,7 +150,7 @@ def caption_path(image: Path, suffix: str) -> Path:
 def _post_ids(stem: str) -> set[tuple[str | None, str]]:
     if stem.isdigit():
         return {(None, stem)}
-    found = re.fullmatch(r"(danbooru|gelbooru)[_-](\d+)", stem.lower())
+    found = re.fullmatch(r"(danbooru|gelbooru|e621|rule34)[_-](\d+)", stem.lower())
     return {(found.group(1), found.group(2))} if found else set()
 
 
@@ -353,7 +360,7 @@ class SiteDownloadManager:
         return client
 
     def _search(self, client, payload):
-        conditions = rating_terms(payload["ratings"])
+        conditions = rating_terms(payload["ratings"], client.site.name)
         if payload["min_score"] is not None:
             conditions.append(f"score:>={payload['min_score']}")
         sort = client.site.score_order if payload["order"] == "score" else None
@@ -423,9 +430,9 @@ class SiteDownloadManager:
         search_tags(request.tags)
         excluded_tags(request.excluded_tags)
         credentials = self.credentials.site(request.source)
-        if request.source == "gelbooru" and not (credentials[0].isdigit() and credentials[1]):
+        if request.source in {"gelbooru", "rule34"} and not (credentials[0].isdigit() and credentials[1]):
             raise ApiError(
-                "Configure the Gelbooru user ID and API key in Settings → Access keys",
+                f"Configure the {SITES[request.source].label} user ID and API key in Settings → Access keys",
                 status=422,
                 code="site_download.credentials",
             )

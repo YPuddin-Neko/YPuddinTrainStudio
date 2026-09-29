@@ -74,8 +74,6 @@ _CATEGORY_NAMES = {
     "style": "artist",
     "artists": "artist",
 }
-# Kept as written: these labels are emoticons and must not gain spaces.
-_EMOTICON = re.compile(r"[0-9oOxXuU=^<>@|+.;()\-_]+")
 MAX_LABEL_BYTES = 64 * 1024 * 1024
 
 
@@ -207,8 +205,35 @@ def prepare_image(image: Image.Image, size: int = TAGGER_INPUT) -> np.ndarray:
     return prepare_tagger_input(image, {"preprocess": "wd", "input_size": size})
 
 
-def readable(name: str) -> str:
-    return name if _EMOTICON.fullmatch(name) else name.replace("_", " ")
+_KAOMOJI_TAGS = {
+    "0_0",
+    "(o)_(o)",
+    "+_+",
+    "+_-",
+    "._.",
+    "<o>_<o>",
+    "<|>_<|>",
+    "=_=",
+    ">_<",
+    "3_3",
+    "6_9",
+    ">_o",
+    "@_@",
+    "^_^",
+    "o_o",
+    "u_u",
+    "x_x",
+    "|_|",
+    "||_||",
+}
+
+
+def readable(name: str, *, replace_underscore: bool = True, escape_parentheses: bool = False) -> str:
+    if replace_underscore and name not in _KAOMOJI_TAGS:
+        name = name.replace("_", " ")
+    if escape_parentheses:
+        name = re.sub(r"(?<!\\)([()])", lambda match: "\\" + match.group(0), name)
+    return name
 
 
 def select_tags(
@@ -220,13 +245,19 @@ def select_tags(
     exclude: tuple[str, ...] = (),
     categories: tuple[str, ...] = DEFAULT_CATEGORIES,
     fixed: dict[str, float] | None = None,
+    replace_underscore: bool = True,
+    escape_parentheses: bool = False,
 ) -> list[tuple[str, str, float]]:
     """The tags of one image above their thresholds as (tag, category, score), best first within
     each category; categories not asked for and excluded tags are dropped."""
     probabilities = np.asarray(scores).reshape(-1)
     if len(probabilities) != len(labels) or not np.isfinite(probabilities).all():
         raise ValueError("the model output does not match its label table")
-    blocked = {name.strip().replace("_", " ").casefold() for name in exclude if name.strip()}
+    blocked = {
+        name.strip().replace("\\(", "(").replace("\\)", ")").replace("_", " ").casefold()
+        for name in exclude
+        if name.strip()
+    }
     wanted, fixed = set(categories), fixed or {}
     picked: list[tuple[float, str, str]] = []
     best: dict[str, tuple[float, str]] = {}
@@ -234,8 +265,8 @@ def select_tags(
         if category not in wanted or not name:
             continue
         value = float(score)
-        tag = readable(name)
-        if tag.casefold() in blocked:
+        tag = readable(name, replace_underscore=replace_underscore, escape_parentheses=escape_parentheses)
+        if name.replace("\\(", "(").replace("\\)", ")").replace("_", " ").casefold() in blocked:
             continue
         if category in fixed:
             if value > fixed[category]:
@@ -488,6 +519,8 @@ def _worker(kind: str, images: list[str], options: dict, events: Any, working_di
                     exclude=tuple(options.get("exclude_tags", ())),
                     categories=tuple(options.get("categories") or DEFAULT_CATEGORIES),
                     fixed=spec.get("fixed_thresholds"),
+                    replace_underscore=options.get("replace_underscore", True),
+                    escape_parentheses=options.get("escape_parentheses", False),
                 )
                 results.append(selected)
                 events.put(
@@ -631,6 +664,8 @@ def tag_images(
     anima: bool = False,
     provider: str = "cpu",
     device_index: int = 0,
+    replace_underscore: bool = True,
+    escape_parentheses: bool = False,
     progress: Callable[[int, int, str], None] = lambda *_: None,
     cancel: threading.Event | None = None,
 ) -> list[list[tuple[str, str]]]:
@@ -655,6 +690,8 @@ def tag_images(
         "character_threshold": character,
         "categories": list(categories),
         "exclude_tags": list(exclude),
+        "replace_underscore": replace_underscore,
+        "escape_parentheses": escape_parentheses,
         "provider": provider,
         "device_index": device_index,
     }

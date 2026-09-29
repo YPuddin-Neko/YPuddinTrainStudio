@@ -1,4 +1,4 @@
-"""Danbooru and Gelbooru: paced searches, match counts, tag suggestions and media downloads.
+"""Booru sites: paced searches, match counts, tag suggestions and media downloads.
 
 Every request goes through the service proxy policy, read per request. API and media requests are
 paced separately and slow down when a site answers HTTP 429; busy or failing responses are retried
@@ -57,20 +57,35 @@ class Site:
     page_size: int
     # Highest score first; Danbooru counts it like a tag, Gelbooru has no tag limit.
     score_order: str
+    api_base: str = ""
 
 
 SITES = {
     "danbooru": Site("danbooru", "Danbooru", "https://danbooru.donmai.us", ".donmai.us", 200, "order:score"),
     "gelbooru": Site("gelbooru", "Gelbooru", "https://gelbooru.com", ".gelbooru.com", 100, "sort:score"),
+    "e621": Site("e621", "e621", "https://e621.net", ".e621.net", 320, "order:score"),
+    "rule34": Site(
+        "rule34",
+        "Rule34",
+        "https://rule34.xxx",
+        ".rule34.xxx",
+        100,
+        "sort:score:desc",
+        "https://api.rule34.xxx",
+    ),
 }
 
 
-def rating_terms(ratings) -> list[str]:
+def rating_terms(ratings, source: str = "danbooru") -> list[str]:
     """Search conditions for the allowed ratings: that rating alone, or the others excluded."""
-    allowed = [rating for rating in RATINGS if rating in ratings]
+    site_ratings = ("general", "questionable", "explicit") if source in {"e621", "rule34"} else RATINGS
+    allowed = [rating for rating in site_ratings if rating in ratings]
+    if not allowed or any(rating not in site_ratings for rating in ratings):
+        raise ApiError("Unsupported rating for this site", code="site_download.rating", status=422)
+    names = {"general": "safe"} if source in {"e621", "rule34"} else {}
     if len(allowed) == 1:
-        return [f"rating:{allowed[0]}"]
-    return [f"-rating:{rating}" for rating in RATINGS if rating not in allowed]
+        return [f"rating:{names.get(allowed[0], allowed[0])}"]
+    return [f"-rating:{names.get(rating, rating)}" for rating in site_ratings if rating not in allowed]
 
 
 def allowed_media(url: str, source: str) -> bool:
@@ -105,10 +120,14 @@ class Redirect(urllib.request.HTTPRedirectHandler):
         return urllib.request.Request(newurl, headers=kept or {"User-Agent": user_agent()})
 
 
-def user_agent(account: str = "") -> str:
+def user_agent(account: str = "", site: str = "Danbooru") -> str:
     agent = f"YPuddinTrainStudio/{ypuddin.__version__}"
     # Danbooru asks API clients to name themselves and the account they act for.
-    return f"{agent} (by {account} on Danbooru)" if account else agent
+    return (
+        f"{agent} (by {account} on {site})"
+        if account
+        else f"{agent} (https://github.com/YPuddin-Neko/YPuddinTrainStudio)"
+    )
 
 
 def normalize(tag: str) -> str:
@@ -241,6 +260,8 @@ class BooruClient:
         self.notify = notify or (lambda message: None)
         self.max_file_bytes = max_file_bytes
         self.api_pace, self.media_pace = Pace(2), Pace(5)
+        if source in {"e621", "rule34"}:
+            self.api_pace = self.media_pace = Pace(1)
         self._tag_limit: int | None | bool = False  # False: not asked yet; None: unlimited.
 
     @property
@@ -254,11 +275,11 @@ class BooruClient:
     def _fetch(
         self, url: str, *, media: bool, limit: int, headers: dict | None = None, progress=None
     ) -> bytes:
-        account = self.account if self.site.name == "danbooru" else ""
+        account = self.account if self.site.name in {"danbooru", "e621"} else ""
         for attempt in range(1, ATTEMPTS + 1):
             (self.media_pace if media else self.api_pace).wait(self.cancelled)
             request = urllib.request.Request(
-                url, headers={"User-Agent": user_agent(account), **(headers or {})}
+                url, headers={"User-Agent": user_agent(account, self.site.label), **(headers or {})}
             )
             try:
                 with self.opener(request, media) as response:
@@ -269,8 +290,8 @@ class BooruClient:
                     raise self._failure(error) from None
                 if code == 429:
                     # Asked to slow down: halve both paces and wait as long as the site says.
-                    self.api_pace.slow_down()
-                    self.media_pace.slow_down()
+                    for pace in {self.api_pace, self.media_pace}:
+                        pace.slow_down()
                     try:
                         delay = min(120.0, max(1.0, float((error.headers or {}).get("Retry-After") or 60)))
                     except (TypeError, ValueError):
@@ -308,15 +329,21 @@ class BooruClient:
         )
 
     def _json(self, path: str, params: dict, *, authenticate: bool = True):
+        if self.site.name == "rule34" and not self.authenticated:
+            raise ApiError(
+                "Configure the Rule34 user ID and API key in Settings → Access keys",
+                code="site_download.credentials",
+                status=422,
+            )
         headers = {"Accept": "application/json"}
         if self.authenticated and authenticate:
-            if self.site.name == "danbooru":
+            if self.site.name in {"danbooru", "e621"}:
                 token = base64.b64encode(f"{self.account}:{self.api_key}".encode()).decode()
                 headers["Authorization"] = "Basic " + token
             else:
                 params = {**params, "user_id": self.account, "api_key": self.api_key}
         raw = self._fetch(
-            f"{self.site.base}{path}?{urllib.parse.urlencode(params)}",
+            f"{self.site.api_base or self.site.base}{path}?{urllib.parse.urlencode(params)}",
             media=False,
             limit=API_BYTES,
             headers=headers,
@@ -326,6 +353,22 @@ class BooruClient:
         try:
             return json.loads(raw)
         except ValueError:
+            if (
+                self.site.name == "rule34"
+                and raw.lstrip().startswith(b"<")
+                and b"<!DOCTYPE" not in raw.upper()
+            ):
+                from xml.etree import ElementTree
+
+                try:
+                    element = ElementTree.fromstring(raw)
+                    if element.tag in {"posts", "tags"}:
+                        return {
+                            "@attributes": element.attrib,
+                            "post" if element.tag == "posts" else "tag": [node.attrib for node in element],
+                        }
+                except ElementTree.ParseError:
+                    pass
             raise ApiError(
                 f"Could not read {self.site.name}; check connectivity or retry later",
                 code="regularization.provider",
@@ -362,7 +405,7 @@ class BooruClient:
 
     def query(self, tags: list[str], excluded: list[str]) -> tuple[list[str], list[str]]:
         """The search terms within the account's tag limit, and the exclusions left to check locally."""
-        search = self.fit(tags, excluded)
+        search = self.fit(tags, excluded, conditions=rating_terms(["general"], self.site.name))
         return search.terms, search.local
 
     def suggest(self, term: str, limit: int = 10) -> list[dict]:
@@ -370,12 +413,43 @@ class BooruClient:
         if self.site.name == "danbooru":
             params = {"search[query]": term, "search[type]": "tag_query", "limit": limit}
             rows = self._json("/autocomplete.json", params, authenticate=False)
+        elif self.site.name == "e621":
+            rows = self._json(
+                "/tags.json",
+                {"search[name_matches]": f"{term}*", "search[order]": "count", "limit": limit},
+                authenticate=False,
+            )
+        elif self.site.name == "rule34":
+            data = self._json(
+                "/index.php",
+                {
+                    "page": "dapi",
+                    "s": "tag",
+                    "q": "index",
+                    "json": "1",
+                    "name_pattern": term + "*",
+                    "limit": limit,
+                },
+            )
+            rows = data if isinstance(data, list) else data.get("tag", []) if isinstance(data, dict) else []
+            rows = [rows] if isinstance(rows, dict) else rows
+            rows = [
+                {
+                    "value": row.get("name"),
+                    "category": int(row.get("type", 0)) if str(row.get("type", 0)).isdigit() else 0,
+                    "post_count": row.get("count"),
+                }
+                for row in rows
+                if isinstance(row, dict)
+            ]
         else:
             params = {"page": "autocomplete2", "term": term, "type": "tag_query", "limit": limit}
             rows = self._json("/index.php", params, authenticate=False)
         found = []
         for row in rows if isinstance(rows, list) else []:
             value = row.get("value") if isinstance(row, dict) else None
+            if self.site.name == "e621" and isinstance(row, dict):
+                value = row.get("name")
             if not isinstance(value, str) or not str(row.get("type", "tag")).startswith("tag"):
                 continue  # Metatags and other kinds of suggestion.
             category = row.get("category")
@@ -384,6 +458,16 @@ class BooruClient:
                 if isinstance(category, int)
                 else _GELBOORU_CATEGORIES.get(str(category), str(category or "general"))
             )
+            if self.site.name == "e621" and isinstance(row.get("category"), int):
+                category = {
+                    0: "general",
+                    1: "artist",
+                    3: "copyright",
+                    4: "character",
+                    5: "general",
+                    7: "meta",
+                    8: "meta",
+                }.get(row["category"], "general")
             posts = str(row.get("post_count", ""))
             antecedent = row.get("antecedent")
             found.append(
@@ -402,6 +486,9 @@ class BooruClient:
         if self.site.name == "danbooru":
             data = self._json("/counts/posts.json", {"tags": query})
             value = (data.get("counts") or {}).get("posts") if isinstance(data, dict) else None
+        elif self.site.name == "e621":
+            data = self._json("/posts/count.json", {"tags": query})
+            value = data.get("count") if isinstance(data, dict) else None
         else:
             data = self._json(
                 "/index.php",
@@ -415,6 +502,9 @@ class BooruClient:
         query = " ".join(terms)
         if self.site.name == "danbooru":
             rows = self._json("/posts.json", {"tags": query, "page": page, "limit": size})
+        elif self.site.name == "e621":
+            data = self._json("/posts.json", {"tags": query, "page": page, "limit": size})
+            rows = data.get("posts") if isinstance(data, dict) else None
         else:
             data = self._json(
                 "/index.php",
@@ -428,7 +518,9 @@ class BooruClient:
                     "limit": size,
                 },
             )
-            rows = data.get("post", []) if isinstance(data, dict) else []
+            rows = (
+                data if isinstance(data, list) else data.get("post", []) if isinstance(data, dict) else None
+            )
             rows = [rows] if isinstance(rows, dict) else rows
         if not isinstance(rows, list):
             raise ApiError(
@@ -440,41 +532,86 @@ class BooruClient:
     def _post(self, row) -> Post | None:
         if not isinstance(row, dict):
             return None
-        pid, media = str(row.get("id", "")), row.get("file_url")
+        e621 = self.site.name == "e621"
+        if e621 and isinstance(row.get("flags"), dict) and row["flags"].get("deleted"):
+            return None
+        file_data = row.get("file") if isinstance(row.get("file"), dict) else {}
+        pid, media = str(row.get("id", "")), file_data.get("url") if e621 else row.get("file_url")
         if not pid.isdigit() or not isinstance(media, str) or not allowed_media(media, self.site.name):
             return None
         danbooru = self.site.name == "danbooru"
         # Gelbooru leaves out file_ext; the file name says it.
         ext = str(
-            row.get("file_ext") or PurePosixPath(urllib.parse.urlsplit(media).path).suffix.lstrip(".")
+            row.get("file_ext")
+            or file_data.get("ext")
+            or PurePosixPath(urllib.parse.urlsplit(media).path).suffix.lstrip(".")
         ).lower()
-        text = row.get("tag_string" if danbooru else "tags", "")
-        if not isinstance(text, str):
-            return None
-        tags = text.split()
+        if e621:
+            grouped = row.get("tags") if isinstance(row.get("tags"), dict) else {}
+            ordered_groups = ("general", "character", "copyright", "artist", "species", "lore", "meta")
+            tags = [tag for group in ordered_groups for tag in grouped.get(group, []) if isinstance(tag, str)]
+            named_values = {
+                group: tuple(tag for tag in grouped.get(group, []) if isinstance(tag, str))
+                for group in ("artist", "character", "copyright")
+            }
+        else:
+            text = row.get("tag_string" if danbooru else "tags", "")
+            if not isinstance(text, str):
+                return None
+            tags = text.split()
+            named_values = {}
         meta = (
             set(row.get("tag_string_meta", "").split())
             if danbooru and isinstance(row.get("tag_string_meta"), str)
             else set()
         )
-        caption = tuple(tag for tag in tags if tag not in meta and not META_TAG.match(tag))
+        if e621:
+            caption = tuple(
+                tag
+                for tag in tags
+                if tag not in set(grouped.get("meta", ())) and tag not in set(grouped.get("lore", ()))
+            )
+        else:
+            caption = tuple(tag for tag in tags if tag not in meta and not META_TAG.match(tag))
 
         def size(*keys):
-            value = next((row.get(key) for key in keys if row.get(key) is not None), 0)
+            value = (
+                next(
+                    (
+                        file_data.get(key.removeprefix("image_"))
+                        for key in keys
+                        if file_data.get(key.removeprefix("image_")) is not None
+                    ),
+                    0,
+                )
+                if e621
+                else next((row.get(key) for key in keys if row.get(key) is not None), 0)
+            )
             return int(value) if isinstance(value, (int, str)) and str(value).isdigit() else 0
 
         def named(key):
+            if e621:
+                return tuple(
+                    tag for tag in named_values.get(key.removeprefix("tag_string_"), ()) if tag in caption
+                )
             value = row.get(key) if danbooru else None
             return tuple(tag for tag in value.split() if tag in caption) if isinstance(value, str) else ()
 
         try:
-            score = int(row.get("score") or 0)
+            raw_score = (
+                row.get("score", {}).get("total", 0)
+                if isinstance(row.get("score"), dict)
+                else row.get("score")
+            )
+            score = int(raw_score or 0)
         except (TypeError, ValueError):
             score = 0
-        md5 = str(row.get("md5") or "").lower()
+        md5 = str(row.get("md5") or file_data.get("md5") or "").lower()
         return Post(
             id=pid,
-            rating=str(row.get("rating", "")),
+            rating="safe"
+            if self.site.name in {"e621", "rule34"} and row.get("rating") == "s"
+            else str(row.get("rating", "")),
             media=media,
             ext=ext,
             width=size("image_width", "width"),
@@ -482,7 +619,7 @@ class BooruClient:
             tags=caption,
             all_tags=frozenset(normalize(tag) for tag in tags),
             page=f"{self.site.base}/posts/{pid}"
-            if danbooru
+            if danbooru or e621
             else f"{self.site.base}/index.php?page=post&s=view&id={pid}",
             source=str(row.get("source") or ""),
             score=score,

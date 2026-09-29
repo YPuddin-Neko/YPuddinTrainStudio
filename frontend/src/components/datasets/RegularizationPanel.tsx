@@ -11,7 +11,7 @@ import ProjectDataImport from '../../pages/ProjectDetail/ProjectDataImport';
 import type { CredentialStates } from '../../pages/Settings/AccessKeys';
 import './regularization.css';
 
-type Source = 'ai' | 'danbooru' | 'gelbooru';
+type Source = 'ai' | 'danbooru' | 'gelbooru' | 'e621' | 'rule34';
 export type RegularizationTask = {
   id: string; source: Source; status: string; phase: string; done: number; total: number;
   logs: string[]; error: string | null; created_at: number; can_cancel: boolean;
@@ -78,7 +78,7 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
   }, [query.data]);
   const current = query.data?.operations.find(active);
   const locked = readOnly || submitting || !!current;
-  const credentialsBlocked = source !== 'ai' && (credentials.isPending || !!credentials.error || (source === 'gelbooru' && !credentials.data?.gelbooru.configured));
+  const credentialsBlocked = source !== 'ai' && (credentials.isPending || !!credentials.error || (['gelbooru', 'rule34'].includes(source) && !credentials.data?.[source]?.configured));
   const fromTraining = source === 'ai' && promptSource === 'training_tags';
   const matching = source !== 'ai' && siteMode === 'training_tags';
   const manualSite = source !== 'ai' && siteMode === 'manual';
@@ -148,9 +148,9 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
     if (publishing) return text(`正在保存 ${publishing[1]} 组已检查的图片与标签`, message);
     const added = /^Added (\d+) regularization images to this version$/.exec(message);
     if (added) return text(`已将 ${added[1]} 张正则图加入当前版本`, message);
-    const searching = /^Searching (danbooru|gelbooru), page (\d+)$/.exec(message);
+    const searching = /^Searching (danbooru|gelbooru|e621|rule34), page (\d+)$/.exec(message);
     if (searching) return text(`正在检索 ${searching[1]} 第 ${searching[2]} 页`, message);
-    const matched = /^Searching (danbooru|gelbooru) for (.+) \(page (\d+)\)$/.exec(message);
+    const matched = /^Searching (danbooru|gelbooru|e621|rule34) for (.+) \(page (\d+)\)$/.exec(message);
     if (matched) return text(`正在检索 ${matched[1]}：${matched[2]}（第 ${matched[3]} 页）`, message);
     const found = /^Found (\d+) of (\d+) matching images; adding them$/.exec(message);
     if (found) return text(`找到 ${found[1]} 张符合条件的图片（目标 ${found[2]} 张），已全部加入`, message);
@@ -158,9 +158,9 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
     if (skipped) return text(`跳过 ${skipped[1]} 个无法使用的文件`, message);
     const local = /^Checking (\d+) excluded tags locally beyond the site's tag limit$/.exec(message);
     if (local) return text(`有 ${local[1]} 个排除标签超出站点的标签上限，下载时逐张检查`, message);
-    const slow = /^(Danbooru|Gelbooru) asked to slow down; retrying in (\d+) s$/.exec(message);
+    const slow = /^(Danbooru|Gelbooru|e621|Rule34) asked to slow down; retrying in (\d+) s$/.exec(message);
     if (slow) return text(`${slow[1]} 要求放慢请求，${slow[2]} 秒后重试`, message);
-    const busy = /^(Danbooru|Gelbooru) is busy \(HTTP (\d+)\); retrying in (\d+) s$/.exec(message);
+    const busy = /^(Danbooru|Gelbooru|e621|Rule34) is busy \(HTTP (\d+)\); retrying in (\d+) s$/.exec(message);
     if (busy) return text(`${busy[1]} 暂时繁忙（HTTP ${busy[2]}），${busy[3]} 秒后重试`, message);
     if (message === 'Reading the training captions and image sizes') return text('正在读取训练标签和图片尺寸', message);
     return message;
@@ -173,9 +173,9 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
       'Regularization download exceeded its byte limit': '下载量超过本批上限，未添加任何图片。',
     };
     if (fixed[message]) return text(fixed[message], message);
-    const http = /^(danbooru|gelbooru) returned HTTP (\d+); check site credentials or retry later$/.exec(message);
+    const http = /^(danbooru|gelbooru|e621|rule34) returned HTTP (\d+); check site credentials or retry later$/.exec(message);
     if (http) return text(`${http[1]} 返回 HTTP ${http[2]}，请检查访问密钥或稍后重试。`, message);
-    const offline = /^Could not read (danbooru|gelbooru); check connectivity or retry later$/.exec(message);
+    const offline = /^Could not read (danbooru|gelbooru|e621|rule34); check connectivity or retry later$/.exec(message);
     if (offline) return text(`无法连接 ${offline[1]}，请检查网络或代理设置后重试。`, message);
     return message;
   };
@@ -189,7 +189,7 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
       <div className="reg-form-grid">
         <label>{text('图片来源','Image source')}<StudioSelect aria-label={text('图片来源','Image source')} value={source} disabled={locked}
           onValueChange={value=>setSource(value as Source)}
-          options={[{value:'ai',label:text('本地底模生成','Generate with base model')},{value:'danbooru',label:'Danbooru'},{value:'gelbooru',label:'Gelbooru'}]}/></label>
+          options={[{value:'ai',label:text('本地底模生成','Generate with base model')},{value:'danbooru',label:'Danbooru'},{value:'gelbooru',label:'Gelbooru'},{value:'e621',label:'e621'},{value:'rule34',label:'Rule34'}]}/></label>
         <label>{fromTraining?text('本批最多生成','Maximum images this batch'):matching?text('本批最多收集','Maximum images this batch'):text('图片数量','Image count')}<input type="number" min={1} max={200} step={1} value={count} disabled={locked} onChange={event=>setCount(Number(event.target.value))}/></label>
       </div>
       {source === 'ai' ? <label>{text('提示词来源','Prompt source')}<StudioSelect aria-label={text('提示词来源','Prompt source')} value={promptSource} disabled={locked} onValueChange={value=>setPromptSource(value as 'manual'|'training_tags')} options={[{value:'manual',label:text('手动填写类别提示词','Enter class prompts')},{value:'training_tags',label:text('按训练图片标签逐张生成','One prior per training image caption')}]}/></label>
@@ -249,7 +249,7 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
         {source === 'ai' ? <label>{text('负面提示词','Negative prompt')}<input value={negative} disabled={locked} onChange={event=>setNegative(event.target.value)}/></label> : manualSite && <label>{text('排除标签','Excluded tags')}<input value={excluded} disabled={locked} onChange={event=>setExcluded(event.target.value)} placeholder={text('用逗号分隔','Separate with commas')}/></label>}
         <p className="reg-note">{text('正则图不参与自动验证集划分。','Regularization images are excluded from automatic validation splits.')}</p>
       </details>
-      {source !== 'ai' && <div className="reg-options"><p className="reg-note" role="status">{credentials.error ? text('无法读取站点密钥状态。','Could not load site-key status.') : credentials.isPending ? <><Loader2 size={13} className="animate-spin reg-note-spinner" aria-hidden="true"/>{text('读取站点密钥状态…','Loading site-key status…')}</> : credentials.data?.[source]?.configured ? text(`${source} 访问密钥已配置`,`${source} access keys configured`) : source === 'gelbooru' ? text('Gelbooru 需要先配置用户 ID 和 API Key。','Configure the Gelbooru user ID and API key first.') : text('Danbooru 尚未配置密钥，将使用匿名访问。','Danbooru keys are not configured; anonymous access will be used.')}</p><Link className="ui-link" state={{ backgroundLocation: location.state?.backgroundLocation ?? location }} to={`/settings/environment?tab=credentials#credentials-${source}`}>{text('管理访问密钥','Manage access keys')}</Link>{credentials.error && <button type="button" className="ui-link ml-3" onClick={()=>void credentials.refetch()}>{text('重试','Retry')}</button>}</div>}
+      {source !== 'ai' && <div className="reg-options"><p className="reg-note" role="status">{credentials.error ? text('无法读取站点密钥状态。','Could not load site-key status.') : credentials.isPending ? <><Loader2 size={13} className="animate-spin reg-note-spinner" aria-hidden="true"/>{text('读取站点密钥状态…','Loading site-key status…')}</> : credentials.data?.[source]?.configured ? text(`${source} 访问密钥已配置`,`${source} access keys configured`) : ['gelbooru', 'rule34'].includes(source) ? text(`${source === 'rule34' ? 'Rule34' : 'Gelbooru'} 需要先配置用户 ID 和 API Key。`, 'Configure the user ID and API key first.') : text(`${source === 'e621' ? 'e621' : 'Danbooru'} 将使用匿名访问。`, 'Anonymous access will be used.')}</p><Link className="ui-link" state={{ backgroundLocation: location.state?.backgroundLocation ?? location }} to={`/settings/environment?tab=credentials#credentials-${source}`}>{text('管理访问密钥','Manage access keys')}</Link>{credentials.error && <button type="button" className="ui-link ml-3" onClick={()=>void credentials.refetch()}>{text('重试','Retry')}</button>}</div>}
       <div className="reg-actions"><span>{readOnly ? text('当前版本只读','This version is read-only') : text('完成后自动加入正则集。','Added to regularization data when complete.')}</span><button type="submit" className="ui-btn ui-btn-primary" disabled={!ready}>{submitting || current ? <Loader2 size={14} className="animate-spin"/> : <ImagePlus size={14}/>} {source === 'ai' ? text('生成正则图','Generate images') : text('收集正则图','Collect images')}</button></div>
     </form>
     {query.data?.operations.slice(0,3).map(task=><article className="reg-task" key={task.id} aria-label={task.id}>

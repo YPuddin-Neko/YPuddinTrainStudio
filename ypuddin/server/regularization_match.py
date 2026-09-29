@@ -20,7 +20,7 @@ from ypuddin.data.caption_json import StructuredCaption
 from ypuddin.data.captions import read_training_caption
 from ypuddin.data.index import caption_target, iter_images
 
-from .booru import META_TAG, Post, normalize
+from .booru import META_TAG, Post, normalize, rating_terms
 from .regularization_plan import training_sources
 
 # Caption words no booru uses as tags: quality and period words, ratings, and Anima's @artist form.
@@ -88,7 +88,7 @@ def _post_ids(stem: str) -> set[tuple[str | None, str]]:
     """Training images saved under a booru post id, so the batch never downloads them again."""
     if stem.isdigit():
         return {(None, stem)}
-    found = re.fullmatch(r"(danbooru|gelbooru)[_-](\d+)", stem.lower())
+    found = re.fullmatch(r"(danbooru|gelbooru|e621|rule34)[_-](\d+)", stem.lower())
     return {(found.group(1), found.group(2))} if found else set()
 
 
@@ -316,7 +316,7 @@ def collect(profile: Profile, client, batch, count: int, notify) -> None:
             page = pages[key] = pages.get(key, 0) + 1
             terms = [tag.replace(" ", "_") for tag in window]
             notify(f"Searching {client.site.name} for {' '.join(terms)} (page {page})")
-            posts = client.search([*terms, "rating:general"], page, PAGE_SIZE)
+            posts = client.search([*terms, *rating_terms(["general"], client.site.name)], page, PAGE_SIZE)
             if not posts:
                 exhausted.add(key)
             pool = [post for post in posts if usable(post)]

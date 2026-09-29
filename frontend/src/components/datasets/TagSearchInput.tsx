@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
 import { useWorkspaceText } from '../../utils/workspaceText';
 
-export type SiteName = 'danbooru' | 'gelbooru';
+export type SiteName = 'danbooru' | 'gelbooru' | 'e621' | 'rule34';
 type Suggestion = { tag: string; category: string; posts: number | null; alias: string | null };
 
 /** The word the caret is in, and where it starts and ends. */

@@ -1,0 +1,13 @@
+/* TXT and JSON tag editors share one surface and one focus boundary. */
+.caption-tag { position:relative; display:inline-flex; align-items:center; min-width:0; max-width:100%; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-muted); overflow:hidden; color:var(--studio-text); }
+.caption-tag:hover:not(:focus-within):not(:has(:disabled)) { border-color:var(--control-hover-line); }
+.caption-tag:focus-within { border-color:var(--studio-accent); }
+.caption-tag:focus-within::after { content:''; position:absolute; inset:0; z-index:1; border-radius:5px; box-shadow:inset 0 0 0 1px var(--studio-accent); pointer-events:none; }
+.caption-tag > .caption-tag-control { flex:1 1 auto; min-width:0; max-width:100%; min-height:32px; padding:5px 8px; border:0; border-radius:0; background:transparent; color:inherit; font:inherit; font-size:12px; line-height:20px; box-shadow:none; }
+.caption-tag > input.caption-tag-control { width:auto; }
+.caption-tag > .caption-tag-text { display:block; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.caption-tag > .caption-tag-remove { display:inline-flex; justify-content:center; align-items:center; flex:none; width:28px; padding:5px; color:var(--studio-dim); }
+.caption-tag > .caption-tag-control:focus-visible { outline:none; box-shadow:none; }
+.caption-tag > .caption-tag-remove:is(:hover,:focus-visible):not(:disabled) { color:var(--studio-danger); background:var(--control-danger-soft); }
+.caption-tag:has(:disabled) { opacity:.65; }
+.caption-tag > .caption-tag-control:disabled { opacity:1; cursor:default; }

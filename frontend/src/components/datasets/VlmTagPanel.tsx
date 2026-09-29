@@ -4,19 +4,22 @@ import { Bot, RotateCcw, Save, Settings2, Trash2 } from 'lucide-react';
 import { formatApiError } from '../../utils/errors';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import StudioSelect from '../StudioSelect';
+import CheckboxSelect from '../CheckboxSelect';
+import type { TaggingOptions } from '../../api/types';
 import VisionModelField, { VisionRuntimeNotice } from './VisionModelField';
-import { DeviceField, OperationResult, RangeField, ScopeField, SelectField } from './VisionPanelParts';
-import { SERVICE_NAMES, resolveService, useRememberedSettings, useScopeOptions, useTaggingSettings, useVisionModels, useVlmServices } from './visionHooks';
+import { DeviceField, OperationResult, RangeField, ScopeField, SelectField, TagOutputOptions } from './VisionPanelParts';
+import { SERVICE_NAMES, resolveService, useCategoryLabels, useRememberedSettings, useScopeOptions, useTaggingSettings, useVisionModels, useVlmServices } from './visionHooks';
 import { BUILTIN_TEMPLATES, defaultTemplate, type PromptTemplate, type VlmMode, type VlmOutput } from './vlmPrompts';
 import type { PipelineOperation } from './DatasetPipelinePanel';
 import './dataset-vision.css';
 
 type Shared = { trigger: string; exclude: string };
 type ModeSettings = { output: VlmOutput; existing: 'skip' | 'overwrite' | 'refine'; templateId: string; prompt: string };
-type TaggerSettings = { model: string; general_threshold: number; character_threshold: number; device: 'auto' | 'cpu' };
+type Category = NonNullable<TaggingOptions['categories']>[number];
+type TaggerSettings = { categories: Category[]; model: string; general_threshold: number; character_threshold: number; device: 'auto' | 'cpu'; replace_underscore: boolean; escape_parentheses: boolean };
 
 const SHARED: Shared = { trigger: '', exclude: '' };
-const TAGGER: TaggerSettings = { model: 'wd-eva02-large-tagger-v3', general_threshold: 0.35, character_threshold: 0.85, device: 'auto' };
+const TAGGER: TaggerSettings = { categories: ['general', 'character'], model: 'wd-eva02-large-tagger-v3', general_threshold: 0.35, character_threshold: 0.85, device: 'auto', replace_underscore: true, escape_parentheses: false };
 const CUSTOM_TEMPLATE_ID = '__custom__';
 const modeDefaults = (mode: VlmMode): ModeSettings => {
   const output: VlmOutput = mode === 'assist' ? 'categories' : 'tags';
@@ -46,7 +49,10 @@ export default function VlmTagPanel({ mode, projectId, versionId, locked, latest
   const vlm = tagging?.vlm;
   const resolved = resolveService(vlm, services.data?.services);
   const cuda = !!catalog.data?.runtime.providers.includes('cuda');
+  const categoryLabels = useCategoryLabels();
   const taggerModel = catalog.data?.models.find(item => item.id === tagger.model && item.role === 'tagger') || catalog.data?.models.find(item => item.role === 'tagger');
+  const offered = (taggerModel?.categories || ['general', 'character']) as Category[];
+  const categories = tagger.categories.filter(category => offered.includes(category));
   const recommended = taggerModel?.thresholds || { general: 0.35, character: 0.85 };
   const chooseTagger = (id: string) => {
     const next = catalog.data?.models.find(item => item.id === id);
@@ -54,13 +60,13 @@ export default function VlmTagPanel({ mode, projectId, versionId, locked, latest
   };
   // Refining reuses each image's own caption; the tagger only runs for images without one.
   const needsTagger = assisted && settings.existing !== 'refine';
-  const taggerReady = !!taggerModel?.ready && !!catalog.data?.runtime.available;
+  const taggerReady = !!taggerModel?.ready && !!catalog.data?.runtime.available && categories.length > 0;
   const templates = [...BUILTIN_TEMPLATES, ...custom.templates].filter(item => item.mode === mode && item.output === settings.output);
   const fallbackTemplate = defaultTemplate(mode, settings.output);
   const template = templates.find(item => item.id === settings.templateId);
   const selectedTemplate = template || (settings.templateId === fallbackTemplate.id ? fallbackTemplate : undefined);
   const editingCustom = settings.templateId === CUSTOM_TEMPLATE_ID || (!!template && !template.builtin);
-  const effectivePrompt = editingCustom ? settings.prompt : fallbackTemplate.prompt;
+  const effectivePrompt = editingCustom ? settings.prompt : (template || fallbackTemplate).prompt;
   const effectiveTemplateId = settings.templateId === CUSTOM_TEMPLATE_ID || template ? settings.templateId : fallbackTemplate.id;
   const keyMissing = !!resolved && !resolved.service.editable && !resolved.service.key_configured;
   const ready = !!resolved?.model && !keyMissing && !!effectivePrompt.trim() && (!needsTagger || taggerReady);
@@ -79,7 +85,7 @@ export default function VlmTagPanel({ mode, projectId, versionId, locked, latest
     update({ output, templateId: next.id, prompt: next.prompt });
   };
   const chooseTemplate = (id: string) => {
-    if (id === CUSTOM_TEMPLATE_ID) { update({ templateId: CUSTOM_TEMPLATE_ID }); return; }
+    if (id === CUSTOM_TEMPLATE_ID) { update({ templateId: CUSTOM_TEMPLATE_ID, prompt: effectivePrompt }); return; }
     const picked = templates.find(item => item.id === id);
     if (picked) update({ templateId: picked.id, prompt: picked.prompt });
   };
@@ -112,7 +118,7 @@ export default function VlmTagPanel({ mode, projectId, versionId, locked, latest
           temperature: vlm.temperature, max_tokens: vlm.max_tokens ?? null, image_size: vlm.image_size, image_detail: vlm.image_detail,
           concurrency: vlm.concurrency, interval: vlm.interval, timeout: vlm.timeout, retries: vlm.retries,
         },
-        ...(assisted ? { tagging: { model: taggerModel?.id, general_threshold: tagger.general_threshold, character_threshold: tagger.character_threshold, device: cuda ? tagger.device : 'cpu' } } : {}),
+        ...(assisted ? { tagging: { categories, model: taggerModel?.id, general_threshold: tagger.general_threshold, character_threshold: tagger.character_threshold, device: cuda ? tagger.device : 'cpu', replace_underscore: tagger.replace_underscore, escape_parentheses: tagger.escape_parentheses } } : {}),
       });
     } catch (e) { setError(formatApiError(e)); }
   };
@@ -156,8 +162,17 @@ export default function VlmTagPanel({ mode, projectId, versionId, locked, latest
             value={tagger.general_threshold} min={0.05} max={0.95} step={0.01} disabled={locked} onChange={value => updateTagger({ general_threshold: value })}/>
           <RangeField label={text('角色标签阈值', 'Character tag threshold')} hint={text(`角色名的把握要求，此模型推荐 ${recommended.character}。`, `Confidence needed for character names; ${recommended.character} suits this model.`)}
             value={tagger.character_threshold} min={0.05} max={0.95} step={0.01} disabled={locked} onChange={value => updateTagger({ character_threshold: value })}/>
+          <div className="vision-field"><span className="vision-field-label">{text('写入类别', 'Categories')}</span>
+            <CheckboxSelect aria-label={text('写入类别', 'Categories')} values={categories} disabled={locked} placeholder={text('至少选一类', 'Pick at least one')}
+              options={offered.map(category => ({value:category, label:categoryLabels[category]}))} onValuesChange={values => updateTagger({categories:values as Category[]})}/>
+            <span className="vision-field-hint">{text('用这些类别的标签作为参考。', 'Use these tag categories as reference.')}</span></div>
           {cuda && <DeviceField value={tagger.device} disabled={locked} onChange={device => updateTagger({ device })}/>}
         </div>
+        <TagOutputOptions replaceUnderscore={tagger.replace_underscore} escapeParentheses={tagger.escape_parentheses}
+          disabled={locked} onChange={patch => updateTagger({
+            ...(patch.replaceUnderscore === undefined ? {} : { replace_underscore: patch.replaceUnderscore }),
+            ...(patch.escapeParentheses === undefined ? {} : { escape_parentheses: patch.escapeParentheses }),
+          })}/>
         <h4 className="vision-section-title">{text('视觉大模型', 'Vision model')}</h4>
       </>}
       <div className="vision-row vision-row-quad">

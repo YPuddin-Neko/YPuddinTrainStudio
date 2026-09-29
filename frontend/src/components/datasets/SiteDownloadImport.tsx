@@ -19,6 +19,13 @@ type Task = components['schemas']['SiteDownloadTask'];
 type Estimate = components['schemas']['SiteDownloadEstimate'];
 type Rating = 'general' | 'sensitive' | 'questionable' | 'explicit';
 const RATINGS: Rating[] = ['general', 'sensitive', 'questionable', 'explicit'];
+const SITE_RATINGS: Record<SiteName, Rating[]> = {
+  danbooru: RATINGS,
+  gelbooru: RATINGS,
+  e621: ['general', 'questionable', 'explicit'],
+  rule34: ['general', 'questionable', 'explicit'],
+};
+const SITE_LABELS: Record<SiteName, string> = { danbooru: 'Danbooru', gelbooru: 'Gelbooru', e621: 'e621', rule34: 'Rule34' };
 const active = (task: Task) => !['completed', 'failed', 'cancelled'].includes(task.status);
 
 /**
@@ -59,6 +66,13 @@ export default function SiteDownloadImport({ projectId, versionId, targetDataset
     return () => window.removeEventListener('credentials.changed', refresh);
   }, [refreshCredentials]);
   const targetId = targetDataset?.source.id;
+  const availableRatings = SITE_RATINGS[source];
+  React.useEffect(() => {
+    setRatings(previous => {
+      const next = previous.filter(rating => availableRatings.includes(rating));
+      return next.length ? next : ['general'];
+    });
+  }, [availableRatings]);
   const tasks = (snapshot.data?.operations || []).filter(task => (task.target_dataset_id ?? undefined) === targetId);
   const running = snapshot.data?.operations.find(active);
   const current = tasks.find(active);
@@ -79,7 +93,7 @@ export default function SiteDownloadImport({ projectId, versionId, targetDataset
     min_score: minScore.trim() === '' ? null : Number(minScore), min_side: minSide,
     ...(targetId ? { dataset_id: targetId } : { name: name.trim(), caption_ext: captionExt, repeats }),
   };
-  const credentialsBlocked = credentials.isPending || !!credentials.error || (source === 'gelbooru' && !credentials.data?.gelbooru.configured);
+  const credentialsBlocked = credentials.isPending || !!credentials.error || (['gelbooru', 'rule34'].includes(source) && !credentials.data?.[source]?.configured);
   const estimateKey = JSON.stringify({ source, tags: request.tags, excluded_tags: excludedTags, ratings, order, min_score: request.min_score });
   const [asked, setAsked] = React.useState(estimateKey);
   React.useEffect(() => { const timer = setTimeout(() => setAsked(estimateKey), 600); return () => clearTimeout(timer); }, [estimateKey]);
@@ -106,19 +120,21 @@ export default function SiteDownloadImport({ projectId, versionId, targetDataset
     const fixed: Record<string, string> = {
       'No new matching images were found. Change the tags, ratings or filters; nothing was added.': '没有找到新的符合条件的图片，请调整标签、分级或筛选条件；未添加任何图片。',
       'Studio stopped during the download; nothing was added. Start it again.': '下载途中训练服务停止了，未添加任何图片，请重新开始。',
+      'Configure the Rule34 user ID and API key in Settings → Access keys': 'Rule34 需要先在“访问密钥”中配置用户 ID 和 API Key。',
+      'Unsupported rating for this site': '此站点不支持所选分级，请重新选择。',
       'Configure the Gelbooru user ID and API key in Settings → Access keys': 'Gelbooru 需要先在“访问密钥”中配置用户 ID 和 API Key。',
       'A dataset of this version already covers its training folder; add the images to it': '当前版本已有数据集覆盖整个训练目录，请在那个数据集里添加图片。',
       'This model does not read JSON captions; choose TXT': '当前模型不支持 JSON 标签，请选择 TXT。',
     };
     if (fixed[message]) return text(fixed[message], message);
-    const http = /^(danbooru|gelbooru) returned HTTP (\d+); check site credentials or retry later$/.exec(message);
+    const http = /^(danbooru|gelbooru|e621|rule34) returned HTTP (\d+); check site credentials or retry later$/.exec(message);
     if (http) return text(`${http[1]} 返回 HTTP ${http[2]}，请检查访问密钥或稍后重试。`, message);
-    const offline = /^Could not read (danbooru|gelbooru); check connectivity or retry later$/.exec(message);
+    const offline = /^Could not read (danbooru|gelbooru|e621|rule34); check connectivity or retry later$/.exec(message);
     if (offline) return text(`无法连接 ${offline[1]}，请检查网络或代理设置后重试。`, message);
     return message;
   };
   const logText = (message: string) => {
-    const page = /^Searching (danbooru|gelbooru), page (\d+)$/.exec(message);
+    const page = /^Searching (danbooru|gelbooru|e621|rule34), page (\d+)$/.exec(message);
     if (page) return text(`正在检索 ${page[1]} 第 ${page[2]} 页`, message);
     const found = /^Found (\d+) of (\d+) matching images; adding them$/.exec(message);
     if (found) return text(`找到 ${found[1]} 张符合条件的图片（目标 ${found[2]} 张），已全部加入`, message);
@@ -132,9 +148,9 @@ export default function SiteDownloadImport({ projectId, versionId, targetDataset
     if (added) return text(`已把 ${added[1]} 张图片加入 ${added[2]}`, message);
     const limit = /^Stopped at the 3 GiB download limit with (\d+) images$/.exec(message);
     if (limit) return text(`单次下载达到 3 GiB 上限，已下载 ${limit[1]} 张`, message);
-    const slow = /^(Danbooru|Gelbooru) asked to slow down; retrying in (\d+) s$/.exec(message);
+    const slow = /^(Danbooru|Gelbooru|e621|Rule34) asked to slow down; retrying in (\d+) s$/.exec(message);
     if (slow) return text(`${slow[1]} 要求放慢请求，${slow[2]} 秒后重试`, message);
-    const busy = /^(Danbooru|Gelbooru) is busy \(HTTP (\d+)\); retrying in (\d+) s$/.exec(message);
+    const busy = /^(Danbooru|Gelbooru|e621|Rule34) is busy \(HTTP (\d+)\); retrying in (\d+) s$/.exec(message);
     if (busy) return text(`${busy[1]} 暂时繁忙（HTTP ${busy[2]}），${busy[3]} 秒后重试`, message);
     const fixed: Record<string, string> = {
       'Preparing the download': '正在准备下载',
@@ -157,16 +173,16 @@ export default function SiteDownloadImport({ projectId, versionId, targetDataset
     try { await apiClient.post<Task>(`/site-downloads/${id}/cancel`, {}, { silent: true }); await snapshot.refetch(); }
     catch (failure) { setError(errorText(failure)); }
   };
-  const toggleRating = (rating: Rating) => setRatings(previous => previous.includes(rating) ? previous.filter(item => item !== rating) : RATINGS.filter(item => item === rating || previous.includes(item)));
+  const toggleRating = (rating: Rating) => setRatings(previous => previous.includes(rating) ? previous.filter(item => item !== rating) : availableRatings.filter(item => item === rating || previous.includes(item)));
   const locked = submitting || !!running;
   const hintId = `${ids}-hint`;
-  const sourceLabel = source === 'danbooru' ? 'Danbooru' : 'Gelbooru';
+  const sourceLabel = SITE_LABELS[source];
   const defaultName = request.tags.split(' ').slice(0, 3).join('-');
 
   return <form className="site-download" onSubmit={event => void start(event)} aria-busy={locked}>
     <div className="site-download-grid">
       <label>{text('站点', 'Site')}<StudioSelect aria-label={text('站点', 'Site')} value={source} disabled={locked} onValueChange={value => setSource(value as SiteName)}
-        options={[{ value: 'danbooru', label: 'Danbooru' }, { value: 'gelbooru', label: 'Gelbooru' }]}/></label>
+        options={Object.entries(SITE_LABELS).map(([value, label]) => ({ value, label }))}/></label>
       <label>{text('下载数量', 'Images to download')}<input type="number" min={1} max={1000} step={1} value={count} disabled={locked} onChange={event => setCount(Number(event.target.value))}/></label>
     </div>
     <label className="site-download-tags">{text('检索标签', 'Search tags')}
@@ -175,13 +191,13 @@ export default function SiteDownloadImport({ projectId, versionId, targetDataset
     <p id={hintId} className="site-download-hint">{text('填写角色、作品或画师的站点标签，多个标签用空格分隔；输入时会列出站点上的标签。', 'Enter site tags for a character, series or artist, separated by spaces; matching site tags are listed as you type.')}</p>
     <fieldset className="site-download-ratings" disabled={locked}>
       <legend>{text('分级', 'Ratings')}</legend>
-      {RATINGS.map(rating => <label key={rating}><input type="checkbox" checked={ratings.includes(rating)} onChange={() => toggleRating(rating)}/>{text(...ratingLabel[rating])}</label>)}
+      {availableRatings.map(rating => <label key={rating}><input type="checkbox" checked={ratings.includes(rating)} onChange={() => toggleRating(rating)}/>{text(...ratingLabel[rating])}</label>)}
     </fieldset>
     {ratings.some(rating => rating !== 'general') && <p className="site-download-hint">{text('选择全年龄以外的分级时，带有 loli、shota 等未成年相关标签的图片不会下载。', 'With ratings other than General, images tagged loli, shota or other tags for minors are never downloaded.')}</p>}
     {!!request.tags && !credentialsBlocked && <p className="site-download-estimate" role="status" aria-live="polite">{estimatePending ? <><Loader2 size={13} className="animate-spin" aria-hidden="true"/>{text('正在查询站点匹配数…', 'Checking matches on the site…')}</>
       : estimate.error ? <span className="site-download-error">{errorText(estimate.error)}</span>
         : estimate.data && <span title={estimate.data.terms.join(' ')}>
-          {estimate.data.count == null ? text('站点没有给出确切数量，通常是符合条件的图片很多', 'The site gave no exact count, usually because many images match') : text(`站点约有 ${estimate.data.count.toLocaleString()} 张符合条件的图片`, `About ${estimate.data.count.toLocaleString()} matching images on the site`)}
+          {estimate.data.count == null ? text('站点未提供匹配数量', 'The site did not provide a match count') : text(`站点约有 ${estimate.data.count.toLocaleString()} 张符合条件的图片`, `About ${estimate.data.count.toLocaleString()} matching images on the site`)}
           {estimate.data.tag_limit != null && text(`；当前账号每次最多检索 ${estimate.data.tag_limit} 个标签（分级和分数不计入）`, `; this account searches up to ${estimate.data.tag_limit} tags at a time (ratings and score are free)`)}
           {!estimate.data.sorted && text('；标签数不够按高分排序，将按最新排序', '; too few tags left to sort by score, so the newest come first')}
           {!!estimate.data.local_exclusions.length && text(`；${estimate.data.local_exclusions.length} 个排除标签在下载时逐张检查`, `; ${estimate.data.local_exclusions.length} excluded tags are checked on each image`)}
@@ -205,7 +221,7 @@ export default function SiteDownloadImport({ projectId, versionId, targetDataset
     <div className="site-download-access">
       <p role="status">{credentials.error ? text('无法读取站点密钥状态。', 'Could not load site-key status.') : credentials.isPending ? text('读取站点密钥状态…', 'Loading site-key status…')
         : credentials.data?.[source]?.configured ? text(`${sourceLabel} 访问密钥已配置`, `${sourceLabel} access keys configured`)
-          : source === 'gelbooru' ? text('Gelbooru 需要先配置用户 ID 和 API Key。', 'Configure the Gelbooru user ID and API key first.') : text('Danbooru 尚未配置密钥，将匿名访问，每次最多检索 2 个标签。', 'Danbooru keys are not configured; anonymous access searches up to 2 tags at a time.')}</p>
+          : ['gelbooru', 'rule34'].includes(source) ? text(`${sourceLabel} 需要先配置用户 ID 和 API Key。`, `Configure the ${sourceLabel} user ID and API key first.`) : source === 'e621' ? text('e621 将使用匿名访问。', 'e621 uses anonymous access.') : text('Danbooru 尚未配置密钥，将匿名访问，每次最多检索 2 个标签。', 'Danbooru keys are not configured; anonymous access searches up to 2 tags at a time.')}</p>
       <Link className="ui-link" state={{ backgroundLocation: location.state?.backgroundLocation ?? location }} to={`/settings/environment?tab=credentials#credentials-${source}`}>{text('管理访问密钥', 'Manage access keys')}</Link>
       <Link className="ui-link" state={{ backgroundLocation: location.state?.backgroundLocation ?? location }} to="/settings/preferences?section=interface#preferences-network">{text('网络代理', 'Network proxy')}</Link>
     </div>
@@ -216,7 +232,7 @@ export default function SiteDownloadImport({ projectId, versionId, targetDataset
       <button type="submit" className="ui-btn ui-btn-primary" disabled={!ready}>{submitting || current ? <Loader2 size={14} className="animate-spin"/> : <Download size={14}/>}{text('开始下载', 'Start download')}</button>
     </div>
     {tasks.slice(0, 3).map(task => <article key={task.id} className="site-download-task" aria-label={text(`下载任务 ${task.query}`, `Download ${task.query}`)}>
-      <div className="site-download-task-heading"><strong>{task.source === 'danbooru' ? 'Danbooru' : 'Gelbooru'} · {task.query}</strong>
+      <div className="site-download-task-heading"><strong>{SITE_LABELS[task.source as SiteName] || task.source} · {task.query}</strong>
         <span className={task.status === 'failed' ? 'site-download-failed' : ''}>{statusName(task.status)}</span>
         {task.can_cancel && <button type="button" className="ui-btn ui-btn-sm" onClick={() => void cancel(task.id)} aria-label={text(`取消下载 ${task.query}`, `Cancel download ${task.query}`)}><X size={14}/>{text('取消', 'Cancel')}</button>}</div>
       {active(task) && <><progress value={task.done} max={Math.max(task.total, 1)} aria-label={text('下载进度', 'Download progress')}/><p className="site-download-hint">{task.done} / {task.total}</p></>}

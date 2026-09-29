@@ -3,6 +3,7 @@ import { Plus, X } from 'lucide-react';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { captionFieldKey, captionMetadata, type CaptionFieldDraft, type CaptionStructure } from '../../utils/captionStructure';
 import './structured-caption-editor.css';
+import './caption-tag.css';
 
 const LABELS: Record<string, [string, string]> = {
   quality: ['画面质量', 'Quality'], count: ['人物数量', 'Subject count'], character: ['角色', 'Character'],
@@ -32,9 +33,9 @@ export default function StructuredCaptionEditor({ structure, draft, onChange, di
         return <section className={`structured-caption-field${field.role === 'nl' ? ' structured-caption-prose' : Array.isArray(value) ? ' structured-caption-array' : ' structured-caption-scalar'}`} key={id} aria-label={name}>
           <header><h4 title={field.path.join('.')}>{name}</h4>{Array.isArray(value) && <span>{value.length}</span>}</header>
           {Array.isArray(value) ? <><div className="structured-caption-tag-list">
-            {value.map((tag, index) => <div className="structured-caption-tag" key={index}>
-              <input aria-label={text(`${name} · 标签 ${index + 1}`, `${name} · Tag ${index + 1}`)} value={tag} size={Math.min(30, Math.max(6, tag.length + 1))} disabled={locked} onChange={event => update(value.map((item, i) => i === index ? event.target.value : item))}/>
-              {!readOnly && <button type="button" aria-label={text(`删除${name}标签 ${index + 1}`, `Remove ${name} tag ${index + 1}`)} disabled={locked} onClick={() => update(value.filter((_, i) => i !== index))}><X size={14}/></button>}
+            {value.map((tag, index) => <div className="structured-caption-tag caption-tag" key={index}>
+              <input className="caption-tag-control" aria-label={text(`${name} · 标签 ${index + 1}`, `${name} · Tag ${index + 1}`)} value={tag} size={Math.min(30, Math.max(6, tag.length + 1))} disabled={locked} onChange={event => update(value.map((item, i) => i === index ? event.target.value : item))}/>
+              {!readOnly && <button className="caption-tag-control caption-tag-remove" type="button" aria-label={text(`删除${name}标签 ${index + 1}`, `Remove ${name} tag ${index + 1}`)} disabled={locked} onClick={() => update(value.filter((_, i) => i !== index))}><X size={14}/></button>}
             </div>)}
             {!value.length && <span className="structured-caption-empty">{text('暂无标签', 'No tags')}</span>}
           </div>{!readOnly && <button className="ui-btn ui-btn-sm structured-caption-add" type="button" disabled={locked} onClick={() => update([...value, ''])}><Plus size={14}/>{text(`添加${name}标签`, `Add ${name} tag`)}</button>}</>

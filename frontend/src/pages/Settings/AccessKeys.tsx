@@ -6,13 +6,15 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import { SettingsSections } from './SettingsSections';
 import './access-keys.css';
 
-export type CredentialProvider = 'huggingface' | 'modelscope' | 'danbooru' | 'gelbooru';
+export type CredentialProvider = 'huggingface' | 'modelscope' | 'danbooru' | 'gelbooru' | 'e621' | 'rule34';
 export type CredentialStates = Record<CredentialProvider, { configured: boolean }>;
 const providers: { id: CredentialProvider; name: string; url: string; account?: 'username' | 'user_id' }[] = [
   { id: 'huggingface', name: 'Hugging Face', url: 'https://huggingface.co/settings/tokens' },
   { id: 'modelscope', name: 'ModelScope', url: 'https://modelscope.cn/my/myaccesstoken' },
   { id: 'danbooru', name: 'Danbooru', url: 'https://danbooru.donmai.us/profile', account: 'username' },
   { id: 'gelbooru', name: 'Gelbooru', url: 'https://gelbooru.com/index.php?page=account&s=options', account: 'user_id' },
+  { id: 'e621', name: 'e621', url: 'https://e621.net/users/home', account: 'username' },
+  { id: 'rule34', name: 'Rule34', url: 'https://rule34.xxx/index.php?page=account&s=options', account: 'user_id' },
 ];
 const emptyDraft = () => Object.fromEntries(providers.map(p => [p.id, { account: '', secret: '' }])) as Record<CredentialProvider, { account: string; secret: string }>;
 
@@ -78,7 +80,7 @@ export default function AccessKeys() {
   return <div className="access-keys" data-testid="access-keys-settings"><SettingsSections sections={providers.map(p => ({ id: `credentials-${p.id}`, label: p.name }))}>
     {statusError && <div role="alert" className="settings-alert">{statusError}<button type="button" className="ui-link ml-2" disabled={loading || !!busy} onClick={() => void refresh()}>{text('重试读取', 'Retry status')}</button></div>}
     {providers.map(provider => <section key={provider.id} id={`credentials-${provider.id}`} data-settings-section tabIndex={-1} className="settings-section">
-      <div className="settings-section-heading"><div><h2>{provider.name}</h2><p className="settings-note">{provider.account ? text('用于从此站点收集正则图。', 'Used to collect regularization images from this site.') : text('用于官方模型下载；受限仓库需先取得权限。', 'Official model downloads; gated repositories require access approval.')}</p></div><span role="status" className="settings-note access-key-state">{status ? status[provider.id]?.configured ? text('已配置', 'Configured') : text('未配置', 'Not configured') : loading ? text('读取状态中', 'Loading status') : text('状态不可用', 'Status unavailable')}</span></div>
+      <div className="settings-section-heading"><div><h2>{provider.name}</h2><p className="settings-note">{provider.account ? text('用于从此站点下载训练图和正则图。', 'Downloads training and regularization images from this site.') : text('用于官方模型下载；受限仓库需先取得权限。', 'Official model downloads; gated repositories require access approval.')}</p></div><span role="status" className="settings-note access-key-state">{status ? status[provider.id]?.configured ? text('已配置', 'Configured') : text('未配置', 'Not configured') : loading ? text('读取状态中', 'Loading status') : text('状态不可用', 'Status unavailable')}</span></div>
       <form className="access-key-form" onSubmit={event => { event.preventDefault(); void save(provider); }}>
         {provider.account && <div className="settings-field"><label htmlFor={`account-${provider.id}`}>{provider.account === 'user_id' ? text('用户 ID', 'User ID') : text('用户名', 'Username')}</label><div className="settings-field-control"><input id={`account-${provider.id}`} aria-label={`${provider.name} ${provider.account === 'user_id' ? text('用户 ID', 'user ID') : text('用户名', 'username')}`} className="settings-input" autoComplete="off" value={draft[provider.id].account} maxLength={provider.account === 'user_id' ? 20 : 200} pattern={provider.account === 'user_id' ? '[0-9]+' : undefined} required disabled={!!busy} onChange={event => setDraft(old => ({ ...old, [provider.id]: { ...old[provider.id], account: event.target.value } }))} placeholder={text('保存或更换密钥时填写', 'Enter when saving or replacing a key')} /></div></div>}
         <div className="settings-field"><label htmlFor={`token-${provider.id}`}>{provider.account ? 'API Key' : text('访问令牌', 'Access token')}</label><div className="settings-field-control"><input id={`token-${provider.id}`} aria-label={`${provider.name} ${provider.account ? 'API Key' : text('访问令牌', 'access token')}`} className="settings-input" type="password" autoComplete="new-password" spellCheck={false} required maxLength={4096} disabled={!!busy} value={draft[provider.id].secret} onChange={event => setDraft(old => ({ ...old, [provider.id]: { ...old[provider.id], secret: event.target.value } }))} placeholder={text('输入新密钥；已保存值不会回显', 'Enter a new key; stored values are never displayed')} /></div></div>

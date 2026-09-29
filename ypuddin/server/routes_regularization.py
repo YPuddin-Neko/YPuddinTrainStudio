@@ -40,7 +40,7 @@ router = APIRouter(route_class=SecretSafeRoute)
 
 class RegularizationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    source: Literal["ai", "danbooru", "gelbooru"] = "ai"
+    source: Literal["ai", "danbooru", "gelbooru", "e621", "rule34"] = "ai"
     prompt: str = Field("", max_length=8000)
     prompt_source: Literal["manual", "training_tags"] = "manual"
     source_ids: list[str] = Field(default_factory=list, max_length=200)

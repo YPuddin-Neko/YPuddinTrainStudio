@@ -23,6 +23,7 @@ from ypuddin.data.index import iter_images
 
 from .booru import (
     MEDIA_EXTS,
+    SITES,
     BooruClient,
     Cancelled,
     Downloads,
@@ -373,9 +374,9 @@ class RegularizationManager:
                     )
             else:
                 credentials = self.credentials.site(request.source)
-            if request.source == "gelbooru" and not (credentials[0].isdigit() and credentials[1]):
+            if request.source in {"gelbooru", "rule34"} and not (credentials[0].isdigit() and credentials[1]):
                 raise ApiError(
-                    "Configure the Gelbooru user ID and API key in Settings → Access keys",
+                    f"Configure the {SITES[request.source].label} user ID and API key in Settings → Access keys",
                     status=422,
                     code="regularization.credentials",
                 )

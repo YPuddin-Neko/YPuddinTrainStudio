@@ -36,6 +36,16 @@ def save_gelbooru(body: GelbooruCredentialUpdate, store: ModelCredentials = Depe
     return store.save_site("gelbooru", body)
 
 
+@router.put("/credentials/e621", response_model=CredentialState)
+def save_e621(body: DanbooruCredentialUpdate, store: ModelCredentials = Depends(credentials)):
+    return store.save_site("e621", body)
+
+
+@router.put("/credentials/rule34", response_model=CredentialState)
+def save_rule34(body: GelbooruCredentialUpdate, store: ModelCredentials = Depends(credentials)):
+    return store.save_site("rule34", body)
+
+
 @router.put("/credentials/{provider}", response_model=CredentialState)
 def save_model_token(
     provider: Provider, body: CredentialUpdate, store: ModelCredentials = Depends(credentials)

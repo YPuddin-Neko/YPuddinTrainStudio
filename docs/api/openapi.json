@@ -7365,7 +7365,9 @@
             "schema": {
               "enum": [
                 "danbooru",
-                "gelbooru"
+                "gelbooru",
+                "e621",
+                "rule34"
               ],
               "type": "string",
               "default": "danbooru",
@@ -7584,6 +7586,82 @@
         }
       }
     },
+    "/api/credentials/e621": {
+      "put": {
+        "summary": "Save E621",
+        "operationId": "save_e621_api_credentials_e621_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DanbooruCredentialUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/credentials/rule34": {
+      "put": {
+        "summary": "Save Rule34",
+        "operationId": "save_rule34_api_credentials_rule34_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GelbooruCredentialUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/credentials/{provider}": {
       "put": {
         "summary": "Save Model Token",
@@ -7649,7 +7727,9 @@
                 "huggingface",
                 "modelscope",
                 "danbooru",
-                "gelbooru"
+                "gelbooru",
+                "e621",
+                "rule34"
               ],
               "type": "string",
               "title": "Provider"
@@ -8027,6 +8107,12 @@
           },
           "gelbooru": {
             "$ref": "#/components/schemas/CredentialState"
+          },
+          "e621": {
+            "$ref": "#/components/schemas/CredentialState"
+          },
+          "rule34": {
+            "$ref": "#/components/schemas/CredentialState"
           }
         },
         "type": "object",
@@ -8034,7 +8120,9 @@
           "huggingface",
           "modelscope",
           "danbooru",
-          "gelbooru"
+          "gelbooru",
+          "e621",
+          "rule34"
         ],
         "title": "AccessCredentialStates"
       },
@@ -19578,7 +19666,9 @@
             "enum": [
               "ai",
               "danbooru",
-              "gelbooru"
+              "gelbooru",
+              "e621",
+              "rule34"
             ],
             "title": "Source",
             "default": "ai"
@@ -21280,7 +21370,9 @@
             "type": "string",
             "enum": [
               "danbooru",
-              "gelbooru"
+              "gelbooru",
+              "e621",
+              "rule34"
             ],
             "title": "Source",
             "default": "danbooru"
@@ -21954,6 +22046,16 @@
             ],
             "title": "Device",
             "default": "auto"
+          },
+          "replace_underscore": {
+            "type": "boolean",
+            "title": "Replace Underscore",
+            "default": true
+          },
+          "escape_parentheses": {
+            "type": "boolean",
+            "title": "Escape Parentheses",
+            "default": false
           }
         },
         "type": "object",

@@ -2275,6 +2275,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/credentials/e621": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save E621 */
+        put: operations["save_e621_api_credentials_e621_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/credentials/rule34": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save Rule34 */
+        put: operations["save_rule34_api_credentials_rule34_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/credentials/{provider}": {
         parameters: {
             query?: never;
@@ -2423,6 +2457,8 @@ export interface components {
             modelscope: components["schemas"]["CredentialState"];
             danbooru: components["schemas"]["CredentialState"];
             gelbooru: components["schemas"]["CredentialState"];
+            e621: components["schemas"]["CredentialState"];
+            rule34: components["schemas"]["CredentialState"];
         };
         /** AdapterConfig */
         AdapterConfig: {
@@ -6679,7 +6715,7 @@ export interface components {
              * @default ai
              * @enum {string}
              */
-            source: "ai" | "danbooru" | "gelbooru";
+            source: "ai" | "danbooru" | "gelbooru" | "e621" | "rule34";
             /**
              * Prompt
              * @default
@@ -7375,7 +7411,7 @@ export interface components {
              * @default danbooru
              * @enum {string}
              */
-            source: "danbooru" | "gelbooru";
+            source: "danbooru" | "gelbooru" | "e621" | "rule34";
             /**
              * Tags
              * @default
@@ -7618,6 +7654,16 @@ export interface components {
              * @enum {string}
              */
             device: "auto" | "cpu";
+            /**
+             * Replace Underscore
+             * @default true
+             */
+            replace_underscore: boolean;
+            /**
+             * Escape Parentheses
+             * @default false
+             */
+            escape_parentheses: boolean;
         };
         /** ThumbnailCacheStatus */
         ThumbnailCacheStatus: {
@@ -13487,7 +13533,7 @@ export interface operations {
     suggestions_api_site_downloads_suggestions_get: {
         parameters: {
             query?: {
-                source?: "danbooru" | "gelbooru";
+                source?: "danbooru" | "gelbooru" | "e621" | "rule34";
                 q?: string;
             };
             header?: never;
@@ -13664,6 +13710,72 @@ export interface operations {
             };
         };
     };
+    save_e621_api_credentials_e621_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DanbooruCredentialUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CredentialState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_rule34_api_credentials_rule34_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GelbooruCredentialUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CredentialState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     save_model_token_api_credentials__provider__put: {
         parameters: {
             query?: never;
@@ -13704,7 +13816,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                provider: "huggingface" | "modelscope" | "danbooru" | "gelbooru";
+                provider: "huggingface" | "modelscope" | "danbooru" | "gelbooru" | "e621" | "rule34";
             };
             cookie?: never;
         };
