@@ -6,15 +6,16 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import StudioSelect from '../StudioSelect';
 import CheckboxSelect from '../CheckboxSelect';
 import type { TaggingOptions } from '../../api/types';
+import CaptionOutputField, { type CaptionOutputFormat } from './CaptionOutputField';
 import VisionModelField, { VisionRuntimeNotice } from './VisionModelField';
 import { DeviceField, OperationResult, RangeField, ScopeField, SelectField, TagOutputOptions } from './VisionPanelParts';
 import { SERVICE_NAMES, resolveService, useCategoryLabels, useRememberedSettings, useScopeOptions, useTaggingSettings, useVisionModels, useVlmServices } from './visionHooks';
-import { BUILTIN_TEMPLATES, defaultTemplate, type PromptTemplate, type VlmMode, type VlmOutput } from './vlmPrompts';
+import { BUILTIN_TEMPLATES, defaultTemplate, defaultFormatTemplate, templateFormats, type PromptTemplate, type VlmMode, type VlmOutput } from './vlmPrompts';
 import type { PipelineOperation } from './DatasetPipelinePanel';
 import './dataset-vision.css';
 
 type Shared = { trigger: string; exclude: string };
-type ModeSettings = { output: VlmOutput; existing: 'skip' | 'overwrite' | 'refine'; templateId: string; prompt: string };
+type ModeSettings = { outputFormat?: CaptionOutputFormat; output: VlmOutput; existing: 'skip' | 'overwrite' | 'refine'; templateId: string; prompt: string };
 type Category = NonNullable<TaggingOptions['categories']>[number];
 type TaggerSettings = { categories: Category[]; model: string; general_threshold: number; character_threshold: number; device: 'auto' | 'cpu'; replace_underscore: boolean; escape_parentheses: boolean };
 
@@ -22,7 +23,7 @@ const SHARED: Shared = { trigger: '', exclude: '' };
 const TAGGER: TaggerSettings = { categories: ['general', 'character'], model: 'wd-eva02-large-tagger-v3', general_threshold: 0.35, character_threshold: 0.85, device: 'auto', replace_underscore: true, escape_parentheses: false };
 const CUSTOM_TEMPLATE_ID = '__custom__';
 const modeDefaults = (mode: VlmMode): ModeSettings => {
-  const output: VlmOutput = mode === 'assist' ? 'categories' : 'tags';
+  const output: VlmOutput = 'tags';
   const template = defaultTemplate(mode, output);
   return { output, existing: mode === 'assist' ? 'refine' : 'skip', templateId: template.id, prompt: template.prompt };
 };
@@ -61,11 +62,13 @@ export default function VlmTagPanel({ mode, projectId, versionId, locked, latest
   // Refining reuses each image's own caption; the tagger only runs for images without one.
   const needsTagger = assisted && settings.existing !== 'refine';
   const taggerReady = !!taggerModel?.ready && !!catalog.data?.runtime.available && categories.length > 0;
-  const templates = [...BUILTIN_TEMPLATES, ...custom.templates].filter(item => item.mode === mode && item.output === settings.output);
-  const fallbackTemplate = defaultTemplate(mode, settings.output);
+  const outputFormat: CaptionOutputFormat = settings.outputFormat || (['categories', 'sort'].includes(settings.output) || settings.templateId === 'assist-short' ? 'json_simplified' : 'txt');
+  const templates = [...BUILTIN_TEMPLATES, ...custom.templates].filter(item => item.mode === mode && templateFormats(item).includes(outputFormat));
+  const fallbackTemplate = defaultFormatTemplate(mode, outputFormat);
   const template = templates.find(item => item.id === settings.templateId);
   const selectedTemplate = template || (settings.templateId === fallbackTemplate.id ? fallbackTemplate : undefined);
   const editingCustom = settings.templateId === CUSTOM_TEMPLATE_ID || (!!template && !template.builtin);
+  const effectiveOutput = editingCustom ? settings.output : (template || fallbackTemplate).output;
   const effectivePrompt = editingCustom ? settings.prompt : (template || fallbackTemplate).prompt;
   const effectiveTemplateId = settings.templateId === CUSTOM_TEMPLATE_ID || template ? settings.templateId : fallbackTemplate.id;
   const keyMissing = !!resolved && !resolved.service.editable && !resolved.service.key_configured;
@@ -76,24 +79,31 @@ export default function VlmTagPanel({ mode, projectId, versionId, locked, latest
   useEffect(() => {
     if (settings.templateId === CUSTOM_TEMPLATE_ID || template) return;
     if (settings.templateId !== fallbackTemplate.id || settings.prompt !== fallbackTemplate.prompt) {
-      update({ templateId: fallbackTemplate.id, prompt: fallbackTemplate.prompt });
+      update({ templateId: fallbackTemplate.id, prompt: fallbackTemplate.prompt, output: fallbackTemplate.output });
     }
-  }, [fallbackTemplate.id, fallbackTemplate.prompt, settings.prompt, settings.templateId, template, update]);
+  }, [fallbackTemplate.id, fallbackTemplate.output, fallbackTemplate.prompt, settings.prompt, settings.templateId, template, update]);
 
-  const chooseOutput = (output: VlmOutput) => {
-    const next = defaultTemplate(mode, output) || BUILTIN_TEMPLATES.find(item => item.mode === mode)!;
-    update({ output, templateId: next.id, prompt: next.prompt });
+  const chooseFormat = (format: CaptionOutputFormat) => {
+    if (editingCustom && (format !== 'txt' || ['tags', 'description'].includes(effectiveOutput))) {
+      update({outputFormat:format, templateId:CUSTOM_TEMPLATE_ID});
+      setNaming(null);
+      return;
+    }
+    const keep = template && templateFormats(template).includes(format);
+    const next = keep ? template : defaultFormatTemplate(mode, format);
+    update({outputFormat:format, output:next.output, templateId:next.id, prompt:next.prompt});
+    setNaming(null);
   };
   const chooseTemplate = (id: string) => {
-    if (id === CUSTOM_TEMPLATE_ID) { update({ templateId: CUSTOM_TEMPLATE_ID, prompt: effectivePrompt }); return; }
+    if (id === CUSTOM_TEMPLATE_ID) { update({ templateId: CUSTOM_TEMPLATE_ID, prompt: effectivePrompt, output: effectiveOutput }); return; }
     const picked = templates.find(item => item.id === id);
-    if (picked) update({ templateId: picked.id, prompt: picked.prompt });
+    if (picked) { update({ templateId: picked.id, prompt: picked.prompt, output: picked.output }); setNaming(null); }
   };
   const saveTemplate = () => {
     const name = (naming || '').trim();
     if (!name) return;
     const existing = custom.templates.find(item => item.mode === mode && item.output === settings.output && item.name === name);
-    const saved: PromptTemplate = { id: existing?.id || `custom-${Date.now()}`, mode, output: settings.output, name, prompt: settings.prompt };
+    const saved: PromptTemplate = { id: existing?.id || `custom-${Date.now()}`, mode, output: effectiveOutput, name, prompt: settings.prompt, formats: [outputFormat] };
     updateCustom({ templates: [...custom.templates.filter(item => item.id !== saved.id), saved] });
     update({ templateId: saved.id });
     setNaming(null);
@@ -101,8 +111,8 @@ export default function VlmTagPanel({ mode, projectId, versionId, locked, latest
   const deleteTemplate = () => {
     if (!template || template.builtin) return;
     updateCustom({ templates: custom.templates.filter(item => item.id !== template.id) });
-    const fallback = defaultTemplate(mode, settings.output);
-    update({ templateId: fallback.id, prompt: fallback.prompt });
+    const fallback = defaultFormatTemplate(mode, outputFormat);
+    update({ templateId: fallback.id, prompt: fallback.prompt, output: fallback.output });
   };
   const start = async () => {
     if (!resolved || !vlm) return;
@@ -113,7 +123,7 @@ export default function VlmTagPanel({ mode, projectId, versionId, locked, latest
         dataset_ids: scopes.ids(chosenScope),
         vlm: {
           provider: resolved.service.id, base_url: resolved.service.editable ? resolved.baseUrl : null, model: resolved.model,
-          prompt: effectivePrompt, output: settings.output, existing: settings.existing,
+          prompt: effectivePrompt, output: effectiveOutput, output_format: outputFormat, existing: settings.existing,
           trigger_word: shared.trigger.trim() || null, exclude_tags: shared.exclude.split(',').map(tag => tag.trim()).filter(Boolean),
           temperature: vlm.temperature, max_tokens: vlm.max_tokens ?? null, image_size: vlm.image_size, image_detail: vlm.image_detail,
           concurrency: vlm.concurrency, interval: vlm.interval, timeout: vlm.timeout, retries: vlm.retries,
@@ -123,18 +133,6 @@ export default function VlmTagPanel({ mode, projectId, versionId, locked, latest
     } catch (e) { setError(formatApiError(e)); }
   };
 
-  const outputs: { value: VlmOutput; label: string }[] = [
-    { value: 'tags', label: assisted ? text('修正后的标签（TXT）', 'Corrected tags (TXT)') : text('标签（TXT）', 'Tags (TXT)') },
-    { value: 'categories', label: assisted ? text('修正标签并分类（JSON）', 'Corrected, grouped tags (JSON)') : text('分类标签与描述（JSON）', 'Grouped tags and description (JSON)') },
-    ...(assisted ? [{ value: 'sort' as const, label: text('只归类，不增删（JSON）', 'Group only, keep every tag (JSON)') }] : []),
-    { value: 'description', label: text('自然语言描述（TXT / JSON 描述字段）', 'Description (TXT / JSON description field)') },
-  ];
-  const outputHint = {
-    tags: text('写入同名 TXT；已有 JSON 只更新标签字段。', 'Writes the matching TXT; existing JSON updates its tag fields only.'),
-    categories: text('写入同名 JSON 的数量、外观、标签、环境和描述字段。', 'Writes count, appearance, tags, environment and description fields to JSON.'),
-    sort: text('写入 JSON，只重新归类已有标签，不增加或删除。', 'Writes JSON and regroups existing tags without adding or removing any.'),
-    description: text('TXT 写入整段描述；JSON 只写描述字段。', 'Writes the full description to TXT; JSON gets only its description field.'),
-  }[settings.output];
   const existingOptions = assisted ? [
     { value: 'refine', label: text('以已有标签为参考修正', 'Refine the existing captions') },
     { value: 'skip', label: text('跳过已有标签的图片', 'Skip captioned images') },
@@ -183,7 +181,7 @@ export default function VlmTagPanel({ mode, projectId, versionId, locked, latest
             <Link className="ui-btn ui-btn-sm" to="/settings/environment?tab=tagging" state={{ backgroundLocation: location.state?.backgroundLocation ?? location }}><Settings2 size={13}/>{text('修改', 'Change')}</Link></span>
           <span className="vision-field-hint">{keyMissing ? text('先在设置中保存该服务的 API 密钥。', 'Save this service’s API key in Settings first.') : resolved && !resolved.model ? text('先在设置中选择模型。', 'Choose a model in Settings first.') : text('服务、密钥和请求参数在 设置 → 打标 中修改。', 'Change the service, key and requests under Settings → Tagging.')}</span></div>
         <ScopeField scopes={scopes} value={chosenScope} onChange={setScope} disabled={locked} label={text('打标范围', 'Images')} hint={text('暂不训练的图片不会打标。', 'Images held out of training are skipped.')}/>
-        <SelectField label={text('写入内容', 'Result')} hint={outputHint} value={settings.output} options={outputs} disabled={locked} onChange={value => chooseOutput(value as VlmOutput)}/>
+        <CaptionOutputField value={outputFormat} disabled={locked} onChange={chooseFormat}/>
         <SelectField label={text('已有标签', 'Existing captions')} value={settings.existing} options={existingOptions} disabled={locked} onChange={value => update({ existing: value as ModeSettings['existing'] })}
           hint={assisted ? text('没有标签的图片先用 Tagger 打标。', 'Images without captions are tagged by the tagger first.') : text('已有标签的图片是否发送给模型。', 'Whether captioned images are sent to the model.')}/>
         <label className="vision-field"><span className="vision-field-label">{text('触发词', 'Trigger word')}</span>

@@ -1,9 +1,11 @@
+import type { CaptionOutputFormat } from './CaptionOutputField';
+
 /** Built-in prompts for vision-model tagging. `{tags}` becomes each image's reference tags and
  * `{trigger}` the trigger word; lines naming `{trigger}` are dropped when there is none. */
 
 export type VlmOutput = 'tags' | 'categories' | 'sort' | 'description';
 export type VlmMode = 'vlm' | 'assist';
-export type PromptTemplate = { id: string; mode: VlmMode; output: VlmOutput; name: string; nameEn?: string; prompt: string; builtin?: boolean };
+export type PromptTemplate = { id: string; mode: VlmMode; output: VlmOutput; name: string; nameEn?: string; prompt: string; builtin?: boolean; formats?: CaptionOutputFormat[] };
 
 const CATEGORY_GUIDE = `Categories:
 - COUNT: character count only, e.g. 1girl, 2boys, 1girl 1boy, no humans
@@ -192,3 +194,14 @@ export const BUILTIN_TEMPLATES: PromptTemplate[] = [
 
 export const defaultTemplate = (mode: VlmMode, output: VlmOutput) =>
   BUILTIN_TEMPLATES.find(item => item.mode === mode && item.output === output)!;
+
+
+export function templateFormats(template: PromptTemplate): CaptionOutputFormat[] {
+  if (template.formats) return template.formats;
+  if (template.id === 'assist-short' || template.output === 'categories' || template.output === 'sort') return ['json', 'json_simplified'];
+  if (template.id === 'assist-detailed' || template.output === 'tags') return ['txt'];
+  return ['txt', 'json', 'json_simplified'];
+}
+
+export const defaultFormatTemplate = (mode: VlmMode, format: CaptionOutputFormat) =>
+  BUILTIN_TEMPLATES.find(item => item.mode === mode && item.output === (format === 'txt' ? 'tags' : 'categories'))!;

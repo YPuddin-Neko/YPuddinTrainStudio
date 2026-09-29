@@ -8,7 +8,7 @@
 /* Each row fills its width whatever the number of fields in it. */
 .vision-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr)); align-items:start; gap:16px 18px; }
 .vision-field { display:grid; gap:6px; min-width:0; font-size:12px; }
-.vision-field-label { font-size:12px; font-weight:500; line-height:18px; color:var(--studio-text); }
+.vision-field-label { display:flex; align-items:center; min-height:24px; font-size:12px; font-weight:500; line-height:18px; color:var(--studio-text); }
 .vision-field-hint { color:var(--studio-dim); font-size:11.5px; line-height:1.55; }
 .vision-field :is(input[type=text], input[type=number], input[type=password]) { min-width:0; width:100%; height:34px; padding:6px 10px; font-size:12px; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-panel); color:var(--studio-text); }
 .vision-field :is(input[type=text], input[type=number], input[type=password]):hover:not(:disabled):not([readonly]) { border-color:var(--control-hover-line); }
@@ -150,3 +150,9 @@
 .vision-service-summary { display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:34px; padding:0 4px 0 11px; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-muted); font-size:12.5px; min-width:0; }
 .vision-service-summary > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .vision-service-summary em { font-style:normal; color:var(--studio-dim); }
+
+.vision-output-row { display:flex; flex-wrap:wrap; align-items:center; gap:12px 24px; }
+.vision-output-row > .vision-field { width:240px; max-width:100%; }
+.vision-format-label { gap:2px; }
+.vision-format-label .config-help-trigger { margin:0; }
+@media (pointer:coarse) { .vision-field-label { min-height:32px; } }

@@ -7621,6 +7621,8 @@ export interface components {
         };
         /** TaggingOptions */
         TaggingOptions: {
+            /** Output Format */
+            output_format?: ("txt" | "json" | "json_simplified") | null;
             /**
              * Model
              * @default wd-eva02-large-tagger-v3
@@ -8165,6 +8167,8 @@ export interface components {
         };
         /** VlmOptions */
         VlmOptions: {
+            /** Output Format */
+            output_format?: ("txt" | "json" | "json_simplified") | null;
             /**
              * Provider
              * @enum {string}

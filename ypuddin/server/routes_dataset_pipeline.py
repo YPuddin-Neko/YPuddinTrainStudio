@@ -50,7 +50,11 @@ def _vision_model(model: str, role: str) -> str:
     return model
 
 
+CaptionOutputFormat = Literal["txt", "json", "json_simplified"]
+
+
 class TaggingOptions(BaseModel):
+    output_format: CaptionOutputFormat | None = None
     model: str = "wd-eva02-large-tagger-v3"
     general_threshold: float = Field(0.35, ge=0.01, le=0.99)
     character_threshold: float = Field(0.85, ge=0.01, le=0.99)
@@ -96,6 +100,7 @@ class AutoMaskOptions(BaseModel):
 
 
 class VlmOptions(BaseModel):
+    output_format: CaptionOutputFormat | None = None
     provider: VlmProvider
     base_url: str | None = Field(None, max_length=500)
     model: str = Field(min_length=1, max_length=200)
@@ -115,6 +120,12 @@ class VlmOptions(BaseModel):
     interval: float = Field(0, ge=0, le=120)
     timeout: int = Field(120, ge=10, le=900)
     retries: int = Field(2, ge=0, le=5)
+
+    @model_validator(mode="after")
+    def output_matches_format(self):
+        if self.output_format == "txt" and self.output in {"categories", "sort"}:
+            raise ValueError("grouped tags require a JSON output format")
+        return self
 
 
 VISION_ACTIONS = {"autotag", "automask", "detectheads", "vlmtag", "assisttag"}

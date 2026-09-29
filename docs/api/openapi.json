@@ -21969,6 +21969,22 @@
       },
       "TaggingOptions": {
         "properties": {
+          "output_format": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "txt",
+                  "json",
+                  "json_simplified"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Format"
+          },
           "model": {
             "type": "string",
             "title": "Model",
@@ -23334,6 +23350,22 @@
       },
       "VlmOptions": {
         "properties": {
+          "output_format": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "txt",
+                  "json",
+                  "json_simplified"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Format"
+          },
           "provider": {
             "type": "string",
             "enum": [

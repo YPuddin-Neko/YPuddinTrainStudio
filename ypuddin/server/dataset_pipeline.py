@@ -21,6 +21,7 @@ from ypuddin.config import TrainConfig
 from ypuddin.data.image_metadata import alpha_channel, transparency_source
 from ypuddin.data.index import IMAGE_EXTS, content_hash, iter_images, mask_for
 
+from .caption_output import destination, json_layout
 from .db import new_id, now
 from .errors import ApiError, NotFound
 
@@ -1050,13 +1051,13 @@ class DatasetPipeline:
         self.vision.files(options["model"])
         pending, skipped = [], 0
         for record in images:
-            previous = (
-                read_editable_caption(str(record["caption"]), None) if record["caption"].exists() else ""
-            )
-            if options["existing"] == "skip" and previous.strip():
+            target = destination(record, options.get("output_format"))
+            source = target if target.exists() else record["caption"]
+            previous = read_editable_caption(source) if source.exists() else ""
+            if options["existing"] == "skip" and previous.strip() and target.exists():
                 skipped += 1
                 continue
-            pending.append((record, previous))
+            pending.append((record | {"caption": target}, previous))
         self._progress(
             oid, "tagging", 0, len(pending), f"Tagging {len(pending)} images; {skipped} already captioned"
         )
@@ -1079,6 +1080,8 @@ class DatasetPipeline:
             content = caption_content(path, text)
             if structured and trigger:
                 content = with_trigger(content, trigger, filename=path.name)
+            if structured:
+                content = json_layout(content, options.get("output_format"))
             if path.exists() and _same_caption(path, content):
                 continue
             staged = work / "staged" / f"caption-{index}"
@@ -1310,8 +1313,8 @@ class DatasetPipeline:
         jobs, skipped, txt_only = [], 0, set()
         failures: list[dict] = []
         for record in images:
-            source = record["caption"] if record["caption"].exists() else None
-            target = record["caption"]
+            target = destination(record, options.get("output_format"))
+            source = target if target.exists() else record["caption"] if record["caption"].exists() else None
             if structured and target.suffix.lower() != ".json":
                 if record["caption_ext"] != "auto":
                     txt_only.add(Path(record["row"]["path"]).name)
@@ -1334,7 +1337,7 @@ class DatasetPipeline:
             else:
                 flat = grouped = [tag.strip() for tag in text.split(",") if tag.strip()]
                 done = bool(text.strip())
-            if existing == "skip" and done:
+            if existing == "skip" and done and (target.exists() or not options.get("output_format")):
                 skipped += 1
                 continue
             reference = (
@@ -1477,6 +1480,8 @@ class DatasetPipeline:
                 continue
             try:
                 content = self._vlm_content(job, replies[index], options, trigger)
+                if job["json"]:
+                    content = json_layout(content, options.get("output_format"))
             except (vlm.VlmError, ValueError) as error:
                 failures.append({"rel_path": job["record"]["rel_path"], "error": str(error)})
                 continue
@@ -1526,6 +1531,19 @@ class DatasetPipeline:
             if not prose:
                 raise vlm.VlmError("the reply held no description")
             if as_json:
+                if not target.exists() and options.get("output_format"):
+                    # Description-only keeps the reference captions when creating their JSON sidecar.
+                    fields = job["fields"] or {}
+                    groups = {key: fields.get(key, []) for key in vlm.MARKERS}
+                    if not any(groups.values()):
+                        groups["tags"] = job["reference"]
+                    return categorized_content(
+                        target,
+                        groups,
+                        nl=prose,
+                        trigger=trigger,
+                        character=job["characters"] or fields.get("character"),
+                    )
                 content = caption_content(target, None, description=prose)
                 return with_trigger(content, trigger, filename=target.name) if trigger else content
             if trigger and not prose.casefold().startswith(trigger.casefold()):

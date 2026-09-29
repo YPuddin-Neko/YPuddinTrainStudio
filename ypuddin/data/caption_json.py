@@ -399,8 +399,13 @@ def category_tokens(path: str | Path) -> dict[str, Any]:
     """Each schema field's tags, the prose and the file's trigger, read the way training reads them."""
     path = Path(path)
     data = _read_document(path)[0]
+    return document_categories(data, filename=path.name)
+
+
+def document_categories(data: dict, *, filename: str = "caption.json") -> dict[str, Any]:
+    """Read category values from a caption document without a filesystem round trip."""
     fmt = _format(data)
-    parsed = parse_caption(data, filename=path.name)
+    parsed = parse_caption(data, filename=filename)
     result: dict[str, Any] = {key: [] for key in (*_FIXED, *_VARIABLE)}
     if fmt == "legacy_override":
         result["tags"] = list(parsed.tags)

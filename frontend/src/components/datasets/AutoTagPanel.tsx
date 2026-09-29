@@ -5,14 +5,15 @@ import { formatApiError } from '../../utils/errors';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import StudioSelect from '../StudioSelect';
 import CheckboxSelect from '../CheckboxSelect';
+import CaptionOutputField, { type CaptionOutputFormat } from './CaptionOutputField';
 import VisionModelField, { VisionRuntimeNotice } from './VisionModelField';
 import { DeviceField, OperationResult, RangeField, ScopeField, TagOutputOptions } from './VisionPanelParts';
 import { useCategoryLabels, useRememberedSettings, useScopeOptions, useVisionModels } from './visionHooks';
 import type { PipelineOperation } from './DatasetPipelinePanel';
 import './dataset-vision.css';
 
-type Settings = Required<Pick<TaggingOptions, 'model' | 'general_threshold' | 'character_threshold' | 'existing' | 'device' | 'categories' | 'replace_underscore' | 'escape_parentheses'>> & { exclude: string; trigger: string };
-const DEFAULTS: Settings = { model: 'wd-eva02-large-tagger-v3', general_threshold: 0.35, character_threshold: 0.85, categories: ['general', 'character'], existing: 'skip', device: 'auto', replace_underscore: true, escape_parentheses: false, exclude: '', trigger: '' };
+type Settings = Required<Pick<TaggingOptions, 'model' | 'general_threshold' | 'character_threshold' | 'existing' | 'device' | 'categories' | 'replace_underscore' | 'escape_parentheses'>> & { exclude: string; trigger: string; output_format: CaptionOutputFormat };
+const DEFAULTS: Settings = { model: 'wd-eva02-large-tagger-v3', general_threshold: 0.35, character_threshold: 0.85, categories: ['general', 'character'], existing: 'skip', output_format: 'txt', device: 'auto', replace_underscore: true, escape_parentheses: false, exclude: '', trigger: '' };
 type Category = Settings['categories'][number];
 
 export default function AutoTagPanel({ projectId, versionId, locked, latest, header, running, onStart, onUndo, onReview }: {
@@ -49,7 +50,7 @@ export default function AutoTagPanel({ projectId, versionId, locked, latest, hea
           model: model?.id, general_threshold: settings.general_threshold, character_threshold: settings.character_threshold, categories: categories.length ? categories : ['general'],
           existing: settings.existing, device: cuda ? settings.device : 'cpu', trigger_word: settings.trigger.trim() || null,
           exclude_tags: settings.exclude.split(',').map(tag => tag.trim()).filter(Boolean),
-          replace_underscore: settings.replace_underscore, escape_parentheses: settings.escape_parentheses,
+          replace_underscore: settings.replace_underscore, escape_parentheses: settings.escape_parentheses, output_format: settings.output_format,
         },
       });
     } catch (e) { setError(formatApiError(e)); }
@@ -88,13 +89,16 @@ export default function AutoTagPanel({ projectId, versionId, locked, latest, hea
           <CheckboxSelect aria-label={text('写入类别', 'Categories')} values={categories} disabled={locked} placeholder={text('至少选一类', 'Pick at least one')}
             options={offered.map(category => ({ value: category, label: categoryLabels[category] }))} onValuesChange={values => update({ categories: values as Category[] })}/>
           <span className="vision-field-hint">{text('评级和质量只写把握最大的一个。', 'Rating and quality keep only their likeliest label.')}</span></div>
-        {cuda && <DeviceField value={settings.device} disabled={locked} onChange={device => update({ device })}/>}
+        <CaptionOutputField value={settings.output_format} disabled={locked} onChange={output_format=>update({output_format})}/>
       </div>
+      <div className="vision-output-row">
       <TagOutputOptions replaceUnderscore={settings.replace_underscore} escapeParentheses={settings.escape_parentheses}
         disabled={locked} onChange={patch => update({
           ...(patch.replaceUnderscore === undefined ? {} : { replace_underscore: patch.replaceUnderscore }),
           ...(patch.escapeParentheses === undefined ? {} : { escape_parentheses: patch.escapeParentheses }),
         })}/>
+      {cuda && <DeviceField value={settings.device} disabled={locked} onChange={device => update({ device })}/>}
+      </div>
     </div>
     <footer className="vision-panel-actions">{running ? <div className="vision-running">{running}</div> : <>
       <button type="button" className="ui-btn ui-btn-primary" disabled={locked || !ready || !chosenScope || !categories.length} onClick={() => void start()}><Tags size={15}/>{text('开始打标', 'Start tagging')}</button>
