@@ -563,7 +563,7 @@ def resolve_training_compute_config(
         ):
             raise ValueError(
                 "SDXL 长文本 BF16 可复现训练需要关闭“编译模型”，将“换出到 CPU 的层数”设为 0，"
-                "并将“重算中间结果（梯度检查点）”设为“关闭”或“逐块重算”。"
+                "并将“梯度检查点”设为“关闭”或“开启”。"
             )
         effective.memory.allow_tf32 = False
         effective.model.attention = "sdpa"
@@ -592,8 +592,8 @@ def resolve_training_compute_config(
             # gradients. This policy deliberately preserves native no_grad
             # sampling, so those two forward computations would differ.
             raise ValueError(
-                "Anima BF16 可复现训练暂不支持“重算并卸载中间输入”（Unsloth）。"
-                "请将“重算中间结果（梯度检查点）”改为“关闭”或“逐块重算”。"
+                "Anima BF16 可复现训练不支持梯度检查点的“开启并卸载到内存”，"
+                "请将“梯度检查点”改为“关闭”或“开启”。"
             )
         anima_policy: TrainingComputePolicy = {
             "id": DTK_ANIMA_FSDP_BF16_LINEAR_COMPUTE_POLICY_ID
