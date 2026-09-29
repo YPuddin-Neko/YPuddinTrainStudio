@@ -9,6 +9,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
+from ypuddin.config.issues import plain_context
+
 from .errors import ApiError
 
 
@@ -27,6 +29,7 @@ class SecretSafeRoute(APIRoute):
                     details={
                         "errors": [
                             {k: v for k, v in error.items() if k in {"loc", "msg", "type"}}
+                            | ({"ctx": ctx} if (ctx := plain_context(error.get("ctx"))) else {})
                             for error in exc.errors()
                         ]
                     },

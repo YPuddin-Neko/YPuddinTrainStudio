@@ -12,6 +12,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from ypuddin.config.issues import plain_context
+
 trace_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("trace_id", default="")
 
 
@@ -73,10 +75,18 @@ def install(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def _validation(_req: Request, exc: RequestValidationError):
-        errors = exc.errors()
-        if _req.url.path.startswith(("/api/models", "/api/credentials")):
-            # Model credentials and pasted source URLs must never be echoed on validation errors.
-            errors = [{k: v for k, v in error.items() if k in {"loc", "msg", "type"}} for error in errors]
+        # The submitted value is never echoed: it may be a pasted key or a private source URL.
+        sensitive = _req.url.path.startswith(("/api/models", "/api/credentials"))
+        errors = []
+        for error in exc.errors():
+            issue = {
+                "loc": list(error.get("loc", [])),
+                "msg": error.get("msg", ""),
+                "type": error.get("type"),
+            }
+            if not sensitive and (ctx := plain_context(error.get("ctx"))):
+                issue["ctx"] = ctx
+            errors.append(issue)
         if _req.url.path.startswith("/api/credentials"):
             # Even an unexpected JSON property name can be a mistakenly pasted key.
             fields = {"body", "path", "query", "provider", "token", "username", "user_id", "api_key"}
@@ -90,7 +100,7 @@ def install(app: FastAPI) -> None:
             content=envelope(
                 "validation",
                 "request validation failed",
-                {"errors": jsonable_encoder(errors, custom_encoder={ValueError: str})},
+                {"errors": jsonable_encoder(errors)},
             ),
         )
 

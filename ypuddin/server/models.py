@@ -255,6 +255,9 @@ class FsList(_Out):
 class ConfigError(_Out):
     loc: str
     msg: str
+    # Pydantic's error kind and bound ("less_than", {"lt": 1}) when the value itself failed validation.
+    type: str | None = None
+    ctx: dict[str, Any] | None = None
 
 
 class ConfigWarning(_Out):

@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from .io import deep_merge
+from .issues import validation_issues
 from .optimizer_rules import optimizer_key
 from .schema import TrainConfig
 from .show_when import ShowWhenError, evaluate
@@ -93,7 +94,7 @@ def inspect_config(raw: dict[str, Any]) -> dict[str, Any]:
     try:
         validated = TrainConfig.model_validate(cleaned)
     except ValidationError as exc:
-        errors = [{"loc": ".".join(map(str, item["loc"])), "msg": item["msg"]} for item in exc.errors()]
+        errors = validation_issues(exc)
     else:
         from ypuddin.models import get_family
         from ypuddin.train.advice import value_advice

@@ -541,13 +541,15 @@ def _scoped_config(body: ConfigBody, c: ServiceContext) -> dict[str, Any]:
     return body.config
 
 
-def _validate(config: dict[str, Any]) -> tuple[TrainConfig | None, list[dict[str, str]]]:
+def _validate(config: dict[str, Any]) -> tuple[TrainConfig | None, list[dict[str, Any]]]:
     from pydantic import ValidationError
+
+    from ypuddin.config.issues import validation_issues
 
     try:
         return TrainConfig.model_validate(config), []
     except ValidationError as e:
-        return None, [{"loc": ".".join(str(x) for x in err["loc"]), "msg": err["msg"]} for err in e.errors()]
+        return None, validation_issues(e)
 
 
 @router.post("/config/validate", response_model=m.ValidateResult, response_model_exclude_unset=True)

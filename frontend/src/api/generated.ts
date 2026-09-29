@@ -3022,6 +3022,12 @@ export interface components {
             loc: string;
             /** Msg */
             msg: string;
+            /** Type */
+            type?: string | null;
+            /** Ctx */
+            ctx?: {
+                [key: string]: unknown;
+            } | null;
         } & {
             [key: string]: unknown;
         };

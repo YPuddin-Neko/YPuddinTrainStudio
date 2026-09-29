@@ -9576,6 +9576,29 @@
           "msg": {
             "type": "string",
             "title": "Msg"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "ctx": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ctx"
           }
         },
         "additionalProperties": true,

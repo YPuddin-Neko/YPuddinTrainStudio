@@ -1904,17 +1904,15 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
     )
     from pydantic import ValidationError
 
+    from ypuddin.config.issues import validation_issues
+
     try:
         cfg = absolute_paths(TrainConfig.model_validate(config))
     except ValidationError as e:
         raise ApiError(
             "invalid config",
             code="config.invalid",
-            details={
-                "errors": [
-                    {"loc": ".".join(str(x) for x in err["loc"]), "msg": err["msg"]} for err in e.errors()
-                ]
-            },
+            details={"errors": validation_issues(e)},
         ) from e
     from ypuddin.train.plan import plan
 

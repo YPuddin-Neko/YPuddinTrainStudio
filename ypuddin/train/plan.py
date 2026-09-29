@@ -16,6 +16,7 @@ from ypuddin.adapters import inject
 from ypuddin.adapters.frozen import FrozenLinear
 from ypuddin.config import DatasetConfig, LoopConfig, ModelConfig, TrainConfig, ValidationConfig
 from ypuddin.config.compute_policy import resolve_training_compute_config, validate_resume_compute_policy
+from ypuddin.config.issues import validation_issues
 from ypuddin.data import BucketBatchSampler, IndexDB
 from ypuddin.data.dataset import DataConfigError, item_geometry, prepare_data_layout
 from ypuddin.data.native import NativeBatchSampler, microbatch_indices, native_size
@@ -506,8 +507,7 @@ def _preview_invalid_config(
         try:
             fields[name] = schema.model_validate(raw.get(name, {}))
         except ValidationError as error:
-            for entry in error.errors():
-                issue = {"loc": ".".join([name, *(str(part) for part in entry["loc"])]), "msg": entry["msg"]}
+            for issue in validation_issues(error, prefix=[name]):
                 if issue not in out["errors"]:
                     out["errors"].append(issue)
     if len(fields) != 2:
@@ -564,13 +564,7 @@ def plan(
     try:
         cfg = TrainConfig.model_validate(cfg)
     except ValidationError as e:
-        out.update(
-            ok=False,
-            errors=[
-                {"loc": ".".join(str(part) for part in error["loc"]), "msg": error["msg"]}
-                for error in e.errors()
-            ],
-        )
+        out.update(ok=False, errors=validation_issues(e))
         raw = cfg.to_dict() if isinstance(cfg, TrainConfig) else cfg
         if isinstance(raw, dict):
             _preview_invalid_config(raw, out, index_db_path=index_db_path)
