@@ -26,5 +26,6 @@
 
 - [开发指南](DEVELOPMENT.md)
 - [架构](ARCHITECTURE.md)
+- [内置适配器](ADAPTERS.md)：算法、导出、恢复与 LyCORIS 的边界
 - [OpenAPI](api/openapi.json)
 - [训练配置 Schema](api/train-schema.example.json)
