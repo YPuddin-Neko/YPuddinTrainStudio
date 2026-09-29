@@ -1,18 +1,20 @@
 import type { FamilyInfo } from '../api/types';
 import { configOptionLabel } from './configPresentation';
-import { familyHasConvolutions, selectedPreset } from './fieldContext';
+import { familyHasConvolutions, presetHasConvolutions, selectedPreset } from './fieldContext';
 
 /**
- * The layer types a run cannot choose: full fine-tuning trains every parameter, convolutions included,
- * and a scope without convolutions trains linear layers only. Null when the choice is free.
+ * The layer types a run cannot choose: full fine-tuning of the main model trains every parameter,
+ * convolutions included, and a scope without convolutions trains linear layers only.
  */
 export function adapterLayerTypesLock(config: Record<string, any>, family: FamilyInfo | undefined, en: boolean) {
   if (!familyHasConvolutions(family)) return null;
   const lock = (value: 'linear' | 'linear_conv', reason: string) => ({
     value, reason, label: configOptionLabel('adapter.layer_types', value, en), tag: en ? 'Locked' : '已锁定',
   });
-  if (config.training?.mode === 'full') return lock('linear_conv', en ? 'Full fine-tuning trains every parameter of the main model, convolution layers included.' : '全量微调训练主模型的全部参数，卷积层也包含在内。');
-  if ((selectedPreset(family, config)?.conv_layers ?? 0) === 0) return lock('linear', en ? 'The selected scope has no convolution layers.' : '当前训练层范围不含卷积层。');
+  if (config.training?.mode === 'full') {
+    return config.training?.train_backbone === false ? null : lock('linear_conv', en ? 'Full fine-tuning trains every parameter, convolutions included.' : '全量微调训练全部参数，包括卷积层。');
+  }
+  if (!presetHasConvolutions(selectedPreset(family, config))) return lock('linear', en ? 'The selected scope has no convolution layers.' : '当前训练层范围不含卷积层。');
   return null;
 }
 

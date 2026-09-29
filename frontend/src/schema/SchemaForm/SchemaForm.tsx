@@ -1,6 +1,6 @@
 import { adapterLayerTypesLock, selectTrainingComponents, trainingManagedReason } from '../../utils/trainingSelection';
 import { confirmedTrainingComputePolicy, trainingComputeManagedField, trainingComputePolicyHint } from '../../utils/trainingComputePolicy';
-import { contextHelp, contextOptions, familyHasConvolutions, hideUnusedSetting, unusedSettingReason, type FieldContext } from '../../utils/fieldContext';
+import { contextHelp, contextOptions, familyHasConvolutions, hideUnusedSetting, presetHasConvolutions, unusedSettingReason, type FieldContext } from '../../utils/fieldContext';
 import React from 'react';
 import { evaluateShowWhen } from '../showWhen';
 import { useTranslation } from 'react-i18next';
@@ -838,9 +838,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const lokrRank = fullPathKey === 'adapter.rank' && value.adapter?.algo === 'lokr';
     const weightMeta = parentPath[0] === 'model' ? weights.find(weight => weight.field === key) : undefined;
     const familyOptions = familyParameterOptions(family, fullPathKey);
-    // Full fine-tuning trains every parameter; its layer types stay visible, locked, beside the training components.
-    const lockedFullLayers = fullPathKey === 'adapter.layer_types' && familyHasConvolutions(family) && value.training?.train_backbone !== false;
-    if (parentPath[0] === 'adapter' && value.training?.mode === 'full' && !lockedFullLayers) return null;
+    // Full fine-tuning hides the adapter settings but its locked layer types.
+    const layerLock = fullPathKey === 'adapter.layer_types' ? adapterLayerTypesLock(value, family, english) : null;
+    if (parentPath[0] === 'adapter' && value.training?.mode === 'full' && !layerLock) return null;
     if (['model.training_guidance', 'sampling.guidance'].includes(fullPathKey)) return null;
     const ddpmModifier = ['objective.scale_v_pred_loss_like_noise_pred', 'objective.v_pred_like_loss', 'objective.debiased_estimation_loss'].includes(fullPathKey);
     const incompatibleFamilyLoss = ddpmModifier && family?.objective !== 'ddpm' && !!getNestedValue(value, path);
@@ -903,7 +903,6 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     }
 
     const errorItem = errors.find((e) => e.loc === fullPathKey || e.loc?.startsWith(`${fullPathKey}.`) || fullPathKey === 'checkpoint.save_state_every_steps' && e.loc === 'checkpoint.save_state_every_epochs');
-    const layerLock = fullPathKey === 'adapter.layer_types' ? adapterLayerTypesLock(value, family, english) : null;
     const computeManaged: {value: unknown; label?: string; reason: string; tag?: string} | null = layerLock ?? trainingComputeManagedField(activeComputePolicy, fullPathKey, english);
     const fieldValue = computeManaged ? computeManaged.value : getNestedValue(value, path) !== undefined ? getNestedValue(value, path) : prop.default;
     const groupName = ui.group || (parentPath.length > 0 ? parentPath[0] : 'default');
@@ -1228,7 +1227,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       scopeHelp,
       selectedPreset?.description,
       showAdvanced && selectedPreset && `${t('preset.layers', {n: selectedPreset.layers})} · ${selectedPreset.name}`,
-      showAdvanced && selectedPreset && (selectedPreset.conv_layers ?? 0) > 0 && (english
+      showAdvanced && presetHasConvolutions(selectedPreset) && (english
         ? `With convolutions: ${selectedPreset.layers_with_conv} layers, ${selectedPreset.conv_layers} of them convolutions`
         : `同时训练卷积层时：共 ${selectedPreset.layers_with_conv} 层，其中卷积层 ${selectedPreset.conv_layers} 个`),
       showAdvanced && selectedPreset?.include?.length && `${english ? 'Included layers' : '包含层'}：${selectedPreset.include.join(', ')}`,

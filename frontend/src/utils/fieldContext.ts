@@ -1,4 +1,4 @@
-import type { FamilyInfo } from '../api/types';
+import type { FamilyInfo, FamilyPreset } from '../api/types';
 import { configFieldLabel, configOptionLabel } from './configPresentation';
 
 /**
@@ -28,9 +28,14 @@ export function selectedPreset(family: FamilyInfo | undefined, config: Record<st
   return family?.presets?.find(preset => preset.name === (config.adapter?.preset || family.default_preset));
 }
 
+/** Whether a training scope includes convolution layers when they are trained. */
+export function presetHasConvolutions(preset: FamilyPreset | undefined): preset is FamilyPreset {
+  return (preset?.conv_layers ?? 0) > 0;
+}
+
 /** Whether the model has convolution layers adapters can train (SDXL's UNet). */
 export function familyHasConvolutions(family: FamilyInfo | undefined): boolean {
-  return !!family?.presets?.some(preset => (preset.conv_layers ?? 0) > 0);
+  return !!family?.presets?.some(presetHasConvolutions);
 }
 
 /** The noise-level sampling a new configuration of this model starts with. */
@@ -65,7 +70,7 @@ export function unusedSettingReason(path: string, { family, config, english }: F
       return familyHasConvolutions(family) ? undefined : text(`${name} 没有卷积层，只训练线性层。`, `${name} has no convolution layers; only linear layers are trained.`);
     case 'adapter.conv_rank':
     case 'adapter.conv_alpha':
-      return (selectedPreset(family, config)?.conv_layers ?? 0) > 0 ? undefined : text('当前训练层范围不含卷积层，此项不生效。', 'The selected scope has no convolution layers, so this has no effect.');
+      return presetHasConvolutions(selectedPreset(family, config)) ? undefined : text('当前训练层范围不含卷积层，此项不生效。', 'The selected scope has no convolution layers, so this has no effect.');
     default:
       return undefined;
   }
