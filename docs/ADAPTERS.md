@@ -39,6 +39,18 @@ Full 保留底层权重，前向通过合并权重计算，不依赖删除原层
 
 选择范围由[规则解析](../ypuddin/adapters/rules.py)决定：第一条匹配的用户规则优先于模型预设，`algo="none"` 排除该层。这里不使用 LyCORIS 的 kohya 预设解析器。
 
+## 与官方配置对照
+
+同名算法不意味着所有参数取值的行为都相同。比较前应对齐训练层、初始化、有效缩放、DoRA 方向、数值精度和随机策略：
+
+- 默认线性 LoRA、LoKr、LoHa 的增量公式相同。若参数与数值运算完全一致，其梯度更新没有质量上的优劣。
+- 本项目的 rank dropout 在低秩轴采样并按 `1/(1-p)` 补偿。LyCORIS 的部分合并路径在增量的输出行采样，补偿也由额外选项控制。非零 dropout 不能仅按参数同名作等价配置。
+- 本项目 Full 训练选定线性层的权重，保留偏置；官方 Full 在原层有偏置时也训练偏置。
+- 本项目不训练卷积适配器或 DyLoRA。官方的额外训练范围与算法增加了可调能力，也改变了参数量和归纳偏置，不能只按步数对比。
+- 本项目的 OrthoLoRA、T-LoRA 参数化、掩码与通用 LoRA 导出约定独立实现；不能把切换为官方模块视为仅更换加速后端。
+
+Loss 曲线还受数据顺序、噪声与时间步采样、损失加权、有效批次、优化器及预览设置影响。较低或较平滑的训练 Loss 本身不能证明生成质量更高。
+
 ## GPU 内核加速
 
 LyCORIS 4.x 的实验性加速使用 Triton / TileLang 融合内核，并提供 `torch.compile` 和普通 PyTorch 回退。覆盖 LoRA、LoKr、LoHa、DoRA、Full 等算法的部分路径；具体约束随形状、精度和计算模式变化。[官方后端说明](https://github.com/KohakuBlueleaf/LyCORIS/blob/main/docs/kernels/backends.md)
