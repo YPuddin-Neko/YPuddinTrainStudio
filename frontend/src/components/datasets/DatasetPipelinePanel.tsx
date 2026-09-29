@@ -193,14 +193,21 @@ function InspectionSummary({ report, images, filter, onFilter }: InspectionSumma
   const text = useWorkspaceText();
   const readable = images.filter(image => !image.issues.some(issue => issue.code === 'unreadable_image')).length;
   const unreadable = images.filter(image => image.issues.some(issue => issue.code === 'unreadable_image')).length;
-  const smallImages = images.filter(image => image.issues.some(issue => issue.code === 'small_image')).length;
+  // Every kind of warning behind the count, most frequent first.
+  const warningKinds = new Map<string, number>();
+  for (const issue of images.flatMap(image => image.issues)) {
+    if (issue.severity !== 'warning') continue;
+    const kind = issue.code.startsWith('anima_') ? text('标签格式建议', 'Caption format') : ({ small_image: text('尺寸过小', 'Small'), transparent_image: text('透明像素', 'Transparent'), missing_caption: text('缺少标签', 'No caption'), mask_size: text('遮罩尺寸不符', 'Mask size'), duplicate: text('重复图', 'Duplicate') } as Record<string, string>)[issue.code] ?? text('其他', 'Other');
+    warningKinds.set(kind, (warningKinds.get(kind) ?? 0) + 1);
+  }
+  const warningDetail = [...warningKinds].sort((a, b) => b[1] - a[1]).map(([kind, count]) => `${kind} ${count}`).join(' · ') || text('没有提示', 'None');
   const transparentCount = report.transparent_images;
   const duplicateImages = report.duplicate_groups.reduce((total, group) => total + group.length, 0);
   const fullyOpaqueAlpha = images.filter(image => image.has_alpha_channel === true && image.has_transparency === false).length;
   const cards = [
     { key: 'all', icon: ImageIcon, label: text('图像文件', 'Image files'), value: images.length, detail: text(readable + ' 张可正常读取', readable + ' readable'), tone: 'neutral' },
     { key: 'errors', icon: CircleAlert, label: text('错误', 'Errors'), value: report.errors, detail: text(unreadable + ' 张无法读取', unreadable + ' unreadable'), tone: report.errors ? 'danger' : 'neutral' },
-    { key: 'warnings', icon: TriangleAlert, label: text('提示', 'Warnings'), value: report.warnings, detail: text(smallImages + ' 张尺寸过小' + (transparentCount ? ' · ' + transparentCount + ' 张透明像素' : ''), smallImages + ' small' + (transparentCount ? ' · ' + transparentCount + ' transparent' : '')), tone: report.warnings ? 'warning' : 'neutral' },
+    { key: 'warnings', icon: TriangleAlert, label: text('提示', 'Warnings'), value: report.warnings, detail: warningDetail, tone: report.warnings ? 'warning' : 'neutral' },
     { key: 'duplicate', icon: CopyIcon, label: text('重复图', 'Duplicates'), value: report.duplicate_groups.length + text(' 组', ' groups'), detail: text('共 ' + duplicateImages + ' 张相同内容', duplicateImages + ' identical images'), tone: report.duplicate_groups.length ? 'warning' : 'neutral' },
     { key: 'has_mask', icon: Layers, label: text('遮罩', 'Masks'), value: report.masks, detail: text(report.masks + ' 张有独立遮罩', report.masks + ' with masks'), tone: 'neutral' },
     { key: 'transparent_image', icon: ImageIcon, label: text('透明像素', 'Transparent pixels'), value: transparentCount ?? '—', detail: transparentCount === undefined ? text('重新检查后显示', 'Reinspect to calculate') : text(transparentCount + ' 张含透明或半透明像素', transparentCount + ' with transparent pixels'), tone: transparentCount ? 'warning' : 'neutral' },

@@ -80,8 +80,10 @@
 .vision-prompt textarea:focus-visible { outline:2px solid var(--studio-accent); outline-offset:1px; }
 /* Eight request settings: two even rows of four. */
 .vision-row.vision-row-quad { grid-template-columns:repeat(4,minmax(0,1fr)); }
+/* A labelled group of switches takes two columns, so both fit on one line. */
+.vision-row.vision-row-quad > .vision-field-pair { grid-column:span 2; }
 @media (max-width:1100px) { .vision-row.vision-row-quad { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-@media (max-width:520px) { .vision-row.vision-row-quad { grid-template-columns:minmax(0,1fr); } }
+@media (max-width:520px) { .vision-row.vision-row-quad { grid-template-columns:minmax(0,1fr); } .vision-row.vision-row-quad > .vision-field-pair { grid-column:auto; } }
 .vision-advanced > summary { width:fit-content; cursor:pointer; color:var(--studio-accent); font-size:12px; font-weight:500; }
 .vision-advanced[open] > summary { margin-bottom:14px; }
 
@@ -151,8 +153,6 @@
 .vision-service-summary > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .vision-service-summary em { font-style:normal; color:var(--studio-dim); }
 
-.vision-output-row { display:flex; flex-wrap:wrap; align-items:center; gap:12px 24px; }
-.vision-output-row > .vision-field { width:240px; max-width:100%; }
 .vision-format-label { gap:8px; }
 .vision-format-label .config-help-trigger { margin:0 0 0 auto; }
 @media (pointer:coarse) { .vision-field-label { min-height:32px; } }

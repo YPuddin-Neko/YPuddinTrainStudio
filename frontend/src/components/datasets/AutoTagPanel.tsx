@@ -91,13 +91,14 @@ export default function AutoTagPanel({ projectId, versionId, locked, latest, hea
           <span className="vision-field-hint">{text('评级和质量只写把握最大的一个。', 'Rating and quality keep only their likeliest label.')}</span></div>
         <CaptionOutputField value={settings.output_format} disabled={locked} onChange={output_format=>update({output_format})}/>
       </div>
-      <div className="vision-output-row">
-      <TagOutputOptions replaceUnderscore={settings.replace_underscore} escapeParentheses={settings.escape_parentheses}
-        disabled={locked} onChange={patch => update({
-          ...(patch.replaceUnderscore === undefined ? {} : { replace_underscore: patch.replaceUnderscore }),
-          ...(patch.escapeParentheses === undefined ? {} : { escape_parentheses: patch.escapeParentheses }),
-        })}/>
-      {cuda && <DeviceField value={settings.device} disabled={locked} onChange={device => update({ device })}/>}
+      <div className="vision-row vision-row-quad">
+        <div className="vision-field vision-field-pair"><span className="vision-field-label">{text('标签格式', 'Tag formatting')}</span>
+          <TagOutputOptions replaceUnderscore={settings.replace_underscore} escapeParentheses={settings.escape_parentheses}
+            disabled={locked} onChange={patch => update({
+              ...(patch.replaceUnderscore === undefined ? {} : { replace_underscore: patch.replaceUnderscore }),
+              ...(patch.escapeParentheses === undefined ? {} : { escape_parentheses: patch.escapeParentheses }),
+            })}/></div>
+        {cuda && <DeviceField value={settings.device} disabled={locked} onChange={device => update({ device })}/>}
       </div>
     </div>
     <footer className="vision-panel-actions">{running ? <div className="vision-running">{running}</div> : <>
