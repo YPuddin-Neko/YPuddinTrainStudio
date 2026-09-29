@@ -21,3 +21,7 @@
   .sampling-page .xyz-layout { height:100%; }
 }
 .sampling-page-spinner { color:var(--studio-accent); }
+.sampling-page-actions,.sampling-release { display:flex; align-items:center; gap:8px; min-width:0; }
+.sampling-release-note { font-size:12px; color:var(--studio-success); white-space:nowrap; }
+.sampling-release-note[data-tone=error] { color:var(--studio-danger); white-space:normal; max-width:360px; }
+@media(max-width:560px) { .sampling-page .task-page-heading { flex-wrap:wrap; }.sampling-page-actions { flex-wrap:wrap; } }

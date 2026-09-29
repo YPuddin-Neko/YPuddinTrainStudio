@@ -8,6 +8,7 @@ export const EVENT_TYPES = {
   JOB_SAMPLE: 'job.sample',
   JOB_SAMPLE_PROGRESS: 'job.sample_progress',
   JOB_XYZ_PROGRESS: 'job.xyz_progress',
+  XYZ_MODELS: 'xyz.models',
   JOB_CHECKPOINT: 'job.checkpoint',
   JOB_WARNING: 'job.warning',
   JOB_EVENT: 'job.event',

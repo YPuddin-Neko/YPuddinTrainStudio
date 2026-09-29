@@ -1,20 +1,23 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowDown, ArrowRight, ChevronDown, Download, Grid2X2, Layers, Loader2, Play, RefreshCw, Square, X } from 'lucide-react';
+import { ArrowDown, ArrowRight, ChevronDown, Download, Grid2X2, Layers, Loader2, Play, X } from 'lucide-react';
 import { apiClient, apiUrl } from '../../api/client';
+import { EVENT_TYPES } from '../../events/eventTypes';
+import { useEventStream } from '../../events/useEventStream';
 import { formatApiError } from '../../utils/errors';
 import { formatTime } from '../../utils/format';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import StudioSelect from '../StudioSelect';
 import CheckboxSelect from '../CheckboxSelect';
 import GpuDevicePicker from '../GpuDevicePicker';
+import ProgressBar from '../ProgressBar';
 import { gpuDeviceLabel } from '../../utils/gpuDevices';
 import Dialog from '../Dialog';
-import { axisCount, axisNames, checkpointLabel, parseAxis, type AxisKey, type XyzAxis, type XyzCell, type XyzOptions, type XyzRequest, type XyzTask, type SamplingValues } from './xyzTypes';
+import { axisCount, axisNames, checkpointLabel, isActive, isWaiting, parseAxis, taskProgress, useStatusLabel, type AxisKey, type XyzAxis, type XyzCell, type XyzOptions, type XyzRequest, type XyzTask, type SamplingValues } from './xyzTypes';
+import XyzHistory from './XyzHistory';
 import './xyz-sampling.css';
 import { SlidingIndicator } from '../motion';
 
-const activeStatuses = new Set(['queued', 'scheduled', 'running', 'preparing', 'caching', 'cancelling']);
 const imageUrl = (url: string) => url.startsWith('/api/') ? apiUrl(url.slice(4)) : url;
 type AxisDraft = { key: AxisKey; raw: string };
 const INITIAL_WEIGHTS = 12;
@@ -93,7 +96,8 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
   const [revision, setRevision] = React.useState(0);
   const [collapsed, setCollapsed] = React.useState(false);
   const task = history.find(item => item.id === selected);
-  const running = history.find(item => activeStatuses.has(item.status));
+  // The comparison the button stands for while one is drawn or waits: the one being drawn first.
+  const active = history.find(item => isActive(item) && !isWaiting(item)) || history.find(isActive);
   const locked = readOnly || submitting;
   const fullModel = options?.training_mode === 'full';
   const name = (key: AxisKey) => key === 'checkpoint' && fullModel ? text('模型检查点', 'Model checkpoint') : text(...axisNames[key]);
@@ -119,7 +123,8 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
     return () => controller.abort();
   }, [source, revision]);
 
-  const activeIds = history.filter(item => activeStatuses.has(item.status)).map(item => item.id).sort().join(',');
+  const activeIds = history.filter(isActive).map(item => item.id).sort().join(',');
+  const [kick, setKick] = React.useState(0);
   React.useEffect(() => {
     if (!activeIds) return;
     const controller = new AbortController();
@@ -131,9 +136,35 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
       } catch (err) { if (!controller.signal.aborted) setError(formatApiError(err)); }
       if (!controller.signal.aborted) timer = setTimeout(() => void poll(), 2000);
     };
-    timer = setTimeout(() => void poll(), 700);
+    timer = setTimeout(() => void poll(), kick ? 0 : 700);
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [activeIds]);
+  }, [activeIds, kick]);
+  // Progress arrives live; a finished image or a new status also fetches the images and the outcome at once.
+  const patch = (id: string | undefined, fields: Partial<XyzTask>) => {
+    const row = history.find(item => item.id === id);
+    if (!row) return;
+    const defined = Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined && value !== null)) as Partial<XyzTask>;
+    if ((defined.done != null && defined.done > row.done) || (defined.status && defined.status !== row.status)) setKick(value => value + 1);
+    setHistory(previous => previous.map(item => item.id === id ? { ...item, ...defined } : item));
+  };
+  const refresh = (id: string) => void apiClient.get<XyzTask>(`/xyz/${encodeURIComponent(id)}`, { silent: true })
+    .then(update => setHistory(previous => previous.map(row => row.id === update.id ? update : row))).catch(() => { /* the next poll retries */ });
+  useEventStream<{ job_id?: string; phase?: string; done?: number; total?: number; cell_index?: number; sample_step?: number; sample_steps?: number }>(EVENT_TYPES.JOB_XYZ_PROGRESS, data =>
+    patch(data.job_id, { phase: data.phase, done: data.done, total: data.total, cell_index: data.cell_index, sample_step: data.sample_step, sample_steps: data.sample_steps }));
+  useEventStream<{ job_id?: string; phase?: string; wait_reason?: string }>(EVENT_TYPES.JOB_PHASE, data => patch(data.job_id, { phase: data.phase, wait_reason: data.wait_reason }));
+  useEventStream<{ job_id?: string; status?: string }>(EVENT_TYPES.JOB_STATE, data => {
+    const id = data.job_id;
+    if (!id || !data.status) return;
+    if (!history.some(row => row.id === id)) {
+      // A comparison started elsewhere, such as a retry from the queue, joins the history once it is queued.
+      if (isActive({ status: data.status })) void apiClient.get<XyzTask>(`/xyz/${encodeURIComponent(id)}`, { silent: true }).then(added => {
+        if (added.source_job_id === sourceJobId) setHistory(previous => previous.some(row => row.id === added.id) ? previous : [added, ...previous].sort((a, b) => b.created_at - a.created_at));
+      }).catch(() => { /* not a model test */ });
+      return;
+    }
+    if (!isActive({ status: data.status })) refresh(id);
+    else patch(id, { status: data.status });
+  });
 
   const axes = drafts.map(draft => draft ? parseAxis(draft.key, draft.raw) : null);
   const weightAxis = drafts.findIndex(draft => draft?.key === 'checkpoint');
@@ -170,7 +201,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
   const update = <K extends keyof SamplingValues>(key: K, value: SamplingValues[K]) => setValues(previous => previous && { ...previous, [key]: value });
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!values || !axes[0] || axisInvalid || checkpointMissing || overLimit || tooManyPixels || locked || !gpuValid) return;
+    if (!values || !axes[0] || axisInvalid || checkpointMissing || overLimit || tooManyPixels || locked || !gpuValid || active) return;
     setSubmitting(true); setError('');
     try {
       const request: XyzRequest = { ...values, name: text('模型测试', 'Model testing'), gpu_devices: gpuDevices, x: axes[0], y: axes[1], z: axes[2] };
@@ -179,16 +210,20 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
     } catch (err) { setError(formatApiError(err)); }
     finally { setSubmitting(false); }
   };
+  const [cancelling, setCancelling] = React.useState('');
   const cancel = async (item: XyzTask) => {
-    setSubmitting(true); setError('');
+    setCancelling(item.id); setError('');
     try { const updated = await apiClient.post<XyzTask>(`/xyz/${encodeURIComponent(item.id)}/cancel`, {}, { silent: true }); setHistory(previous => previous.map(row => row.id === item.id ? updated : row)); }
-    catch (err) { setError(formatApiError(err)); } finally { setSubmitting(false); }
+    catch (err) { setError(formatApiError(err)); } finally { setCancelling(''); }
   };
-  const stateLabel = (status: string) => ({ completed: text('已完成', 'Complete'), running: text('生成中', 'Generating'), queued: text('等待设备', 'Queued'), cancelled: text('已取消', 'Cancelled'), cancelling: text('正在取消', 'Cancelling'), failed: text('失败', 'Failed') }[status] || status);
+  const statusLabel = useStatusLabel();
   const request = task?.request;
   const xValues = request?.x.values || [];
   const yValues = request?.y?.values || [null];
   const zValues = request?.z?.values || [null];
+  // A single value on X is already in the setup; axis names head the grid only where values differ.
+  const columnHeads = xValues.length > 1;
+  const rowHeads = !!request?.y;
   const cells = new Map((task?.manifest?.cells || []).filter(cell => cell.z === page).map(cell => [`${cell.x}:${cell.y}`, cell]));
   const grid = task?.manifest?.grids.find(item => item.z === page);
   const reuse = () => {
@@ -205,7 +240,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
   if (!options || !values) return <div className="xyz-loading">{loading ? <><Loader2 size={20} className="animate-spin"/>{text('读取采样配置…', 'Loading sampling setup…')}</> : <><p role="alert">{error}</p><button type="button" className="ui-btn ui-btn-sm" onClick={() => setRevision(value => value + 1)}>{text('重试', 'Retry')}</button></>}</div>;
   return <section className="xyz-workspace" aria-label={text('模型测试', 'Model testing')}>
     {error && <div className="results-error" role="alert">{error}<button type="button" className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon" onClick={() => setError('')} aria-label={text('关闭错误提示', 'Dismiss error')}><X size={14}/></button></div>}
-    <div className="xyz-layout">
+    <div className="xyz-layout" data-history={history.length > 0 || undefined}>
       <form className="xyz-form" data-collapsed={collapsed} onSubmit={event => void submit(event)}>
         <header><Grid2X2 size={17}/><h3>{text('对比设置', 'Comparison setup')}</h3><span>{options.family.toUpperCase()}</span><button className="ui-link xyz-settings-toggle" type="button" aria-expanded={!collapsed} onClick={() => setCollapsed(value => !value)}>{collapsed ? text('展开设置', 'Show settings') : text('收起设置', 'Hide settings')}<ChevronDown size={14}/></button></header>
         <div className="xyz-form-body">
@@ -238,20 +273,74 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
             <label className="xyz-span"><span>{text('负面提示词', 'Negative prompt')}</span><textarea rows={2} value={values.negative} onChange={event => update('negative', event.target.value)}/></label>
           </fieldset></details>
         </div>
-        <footer><p className={axisInvalid || checkpointMissing || overLimit || tooManyPixels ? 'xyz-invalid' : ''} aria-live="polite">{checkpointMissing ? (options.checkpoints.length ? text('请选择要测试的模型检查点', 'Choose a model checkpoint to test') : text('当前训练尚未保存模型检查点，保存后才能生成对比图', 'Save a model checkpoint before generating a comparison')) : axisInvalid ? text('请填写有效的轴取值', 'Enter valid axis values') : overLimit ? text(`一次最多 ${options.limits.max_cells} 张，请减少取值`, `Maximum ${options.limits.max_cells} cells per comparison`) : tooManyPixels ? text('网格总像素过多，请减少取值或降低尺寸', 'Too many pixels; reduce values or image dimensions') : text(`${axes[0]?.values.length || 0} 列 × ${axes[1]?.values.length || 1} 行 × ${axes[2]?.values.length || 1} 页，共 ${count} 张`, `${count} images · ${axes[0]?.values.length || 0} columns × ${axes[1]?.values.length || 1} rows × ${axes[2]?.values.length || 1} pages`)}</p><button className="ui-btn ui-btn-primary ui-btn-block" type="submit" disabled={locked || axisInvalid || checkpointMissing || overLimit || tooManyPixels || !gpuValid || !values.prompt.trim()}>{submitting ? <Loader2 size={15} className="animate-spin"/> : <Play size={15}/>} {running ? text('加入测试队列', 'Add to test queue') : text('生成对比图', 'Generate comparison')}</button></footer>
+        <footer><p className={axisInvalid || checkpointMissing || overLimit || tooManyPixels ? 'xyz-invalid' : ''} aria-live="polite">{checkpointMissing ? (options.checkpoints.length ? text('请选择要测试的模型检查点', 'Choose a model checkpoint to test') : text('当前训练尚未保存模型检查点，保存后才能生成对比图', 'Save a model checkpoint before generating a comparison')) : axisInvalid ? text('请填写有效的轴取值', 'Enter valid axis values') : overLimit ? text(`一次最多 ${options.limits.max_cells} 张，请减少取值`, `Maximum ${options.limits.max_cells} cells per comparison`) : tooManyPixels ? text('网格总像素过多，请减少取值或降低尺寸', 'Too many pixels; reduce values or image dimensions') : text(`${axes[0]?.values.length || 0} 列 × ${axes[1]?.values.length || 1} 行 × ${axes[2]?.values.length || 1} 页，共 ${count} 张`, `${count} images · ${axes[0]?.values.length || 0} columns × ${axes[1]?.values.length || 1} rows × ${axes[2]?.values.length || 1} pages`)}</p>
+          {active ? <GenerateBusyButton task={active} cancelling={cancelling === active.id} disabled={readOnly} onCancel={() => void cancel(active)}/>
+            : <button className="ui-btn ui-btn-primary ui-btn-block" type="submit" disabled={locked || axisInvalid || checkpointMissing || overLimit || tooManyPixels || !gpuValid || !values.prompt.trim()}>{submitting ? <><Loader2 size={15} className="animate-spin"/>{text('提交中…', 'Submitting…')}</> : <><Play size={15}/>{text('生成对比图', 'Generate comparison')}</>}</button>}
+        </footer>
       </form>
       <div className="xyz-results">
-        <header className="xyz-result-header"><label><span>{text('对比记录', 'Comparisons')}</span><StudioSelect searchable aria-label={text('对比记录', 'Comparisons')} value={selected} placeholder={text('尚未生成', 'No comparisons yet')} options={history.map(item => ({ value: item.id, label: `${formatTime(item.created_at)} · ${item.total} ${text('张', 'images')} · ${stateLabel(item.status)}` }))} onValueChange={value => { setSelected(value); setPage(0); }}/></label><button type="button" className="ui-btn ui-btn-quiet ui-btn-icon" disabled={loading} onClick={() => setRevision(value => value + 1)} aria-label={text('刷新对比记录', 'Refresh comparisons')} title={text('刷新对比记录', 'Refresh comparisons')}><RefreshCw size={15}/></button></header>
         {task ? <>
-          <div className="xyz-progress" role="status"><div><strong>{stateLabel(task.status)}</strong><span>{task.done} / {task.total}</span>{task.can_cancel && <button type="button" className="ui-btn ui-btn-sm" disabled={submitting || readOnly} onClick={() => void cancel(task)}><Square size={12}/>{text('取消生成', 'Cancel')}</button>}</div><progress max={Math.max(1, task.total)} value={task.done}/>{task.phase && activeStatuses.has(task.status) && <small>{{ loading: text('加载模型', 'Loading model'), encoding_text: text('处理提示词', 'Encoding prompts'), sampling: text('正在出图', 'Sampling'), decoding: text('解码图片', 'Decoding image') }[task.phase] || stateLabel(task.status)}{task.sample_steps ? text(` · 当前图片 ${task.sample_step || 0} / ${task.sample_steps} 步`, ` · Image ${task.sample_step || 0} / ${task.sample_steps} steps`) : ''}</small>}{task.error && <p role="alert" className="xyz-invalid">{task.error}</p>}</div>
-          <div className="xyz-result-context"><span>{request?.gpu_devices?.length ? `${text('申请显卡', 'Requested GPU')}: ${request.gpu_devices.map(gpuDeviceLabel).join(', ')} · ` : ''}{request?.width} × {request?.height} · {text('提示词', 'Prompt')}: {request?.prompt}</span><button type="button" className="ui-btn ui-btn-sm" disabled={locked} onClick={reuse}>{text('复用参数', 'Reuse settings')}</button>{grid && <a className="ui-btn ui-btn-sm" href={imageUrl(grid.url)} download><Download size={14}/>{text('下载本页网格', 'Download grid')}</a>}</div>
+          <header className="xyz-result-header">
+            <div className="xyz-result-title"><span className="task-status" data-status={isActive(task) && !isWaiting(task) ? 'running' : task.status}><span className="task-status-dot" aria-hidden="true"/>{statusLabel(task.status)}</span>
+              <strong>{formatTime(task.created_at)}</strong>
+              <span>{[`${request?.width} × ${request?.height}`, text(`${task.total} 张`, `${task.total} images`), request?.gpu_devices?.length ? request.gpu_devices.map(gpuDeviceLabel).join(', ') : ''].filter(Boolean).join(' · ')}</span></div>
+            <div className="xyz-result-actions"><button type="button" className="ui-btn ui-btn-sm" disabled={locked} onClick={reuse}>{text('复用参数', 'Reuse settings')}</button>{grid && <a className="ui-btn ui-btn-sm" href={imageUrl(grid.url)} download><Download size={14}/>{text('下载本页网格', 'Download grid')}</a>}</div>
+          </header>
+          {isActive(task) && <XyzProgress task={task}/>}
+          {task.error && <p role="alert" className="xyz-task-error">{task.error}</p>}
           {request?.z && <nav className="xyz-pages ui-tabs" aria-label={text('Z 轴分页', 'Z axis pages')}>{zValues.map((value, index) => <button key={index} type="button" aria-current={page === index ? 'page' : undefined} onClick={() => setPage(index)}>{name(request.z!.key)} · {displayValue(request.z, value)}</button>)}<SlidingIndicator className="ui-tabs-indicator"/></nav>}
           <div className="xyz-grid-scroll" tabIndex={0} aria-label={text('对比网格，可横向滚动查看所有列', 'Comparison grid, scroll horizontally for all columns')}>
-            <table className="xyz-grid" style={{ minWidth: 88 + xValues.length * 150 }}><thead><tr><th>{request?.y ? `${name(request.y.key)} ↓` : ''}<br/>{request ? `${name(request.x.key)} →` : ''}</th>{xValues.map((value, x) => <th key={x} title={displayValue(request?.x, value)}>{displayValue(request?.x, value)}</th>)}</tr></thead><tbody>{yValues.map((value, y) => <tr key={y}><th title={displayValue(request?.y, value)}>{displayValue(request?.y, value)}</th>{xValues.map((_, x) => { const cell = cells.get(`${x}:${y}`); return <td key={x}>{cell ? <button type="button" className="xyz-cell" onClick={() => setPreview(cell)} aria-label={text(`查看第 ${x + 1} 列第 ${y + 1} 行`, `View column ${x + 1}, row ${y + 1}`)}><img src={imageUrl(cell.url)} loading="lazy" alt={`${name(request!.x.key)} ${displayValue(request?.x, cell.x_value)}, ${request?.y ? `${name(request.y.key)} ${displayValue(request.y, cell.y_value)}` : ''}`} width={request?.width} height={request?.height}/></button> : <div className="xyz-cell-pending"><Grid2X2 size={19}/><span>{activeStatuses.has(task.status) ? text('等待生成', 'Waiting') : text('未生成', 'Not generated')}</span></div>}</td>; })}</tr>)}</tbody></table>
+            <table className="xyz-grid" data-single={xValues.length * yValues.length === 1 || undefined} style={{ minWidth: (rowHeads ? 88 : 0) + xValues.length * 150 }}>
+              {request && columnHeads !== rowHeads && <caption>{columnHeads ? `${name(request.x.key)} →` : `${name(request.y!.key)} ↓`}</caption>}
+              {request && columnHeads && <thead><tr>{rowHeads && <th className="xyz-corner">{`${name(request.y!.key)} ↓`}<br/>{`${name(request.x.key)} →`}</th>}{xValues.map((value, x) => <th key={x} title={displayValue(request.x, value)}>{displayValue(request.x, value)}</th>)}</tr></thead>}
+              <tbody>{yValues.map((value, y) => <tr key={y}>{rowHeads && <th className="xyz-row-head" title={displayValue(request?.y, value)}>{displayValue(request?.y, value)}</th>}{xValues.map((_, x) => { const cell = cells.get(`${x}:${y}`); return <td key={x}>{cell ? <button type="button" className="xyz-cell" onClick={() => setPreview(cell)} aria-label={text(`查看第 ${x + 1} 列第 ${y + 1} 行`, `View column ${x + 1}, row ${y + 1}`)}><img src={imageUrl(cell.url)} loading="lazy" alt={`${name(request!.x.key)} ${displayValue(request?.x, cell.x_value)}${request?.y ? `, ${name(request.y.key)} ${displayValue(request.y, cell.y_value)}` : ''}`} width={request?.width} height={request?.height}/></button> : <PendingCell task={task} drawing={isActive(task) && !isWaiting(task) && (page * yValues.length + y) * xValues.length + x === task.done}/>}</td>; })}</tr>)}</tbody>
+            </table>
           </div>
-        </> : null}
+        </> : <div className="xyz-empty"><Grid2X2 size={26} aria-hidden="true"/><span>{text('还没有对比图', 'No comparisons yet')}</span></div>}
       </div>
+      {history.length > 0 && <XyzHistory tasks={history} selected={selected} disabled={readOnly || !!cancelling} onSelect={id => { setSelected(id); setPage(0); }} onCancel={item => void cancel(item)}/>}
     </div>
     {preview && <Dialog title={`${text('模型测试图片', 'Model test image')} · ${displayValue(request?.x, preview.x_value)}`} wide onClose={() => setPreview(null)}><img className="xyz-full-image" src={imageUrl(preview.url)} alt={request?.prompt}/><div className="xyz-image-details"><span>Seed {preview.seed} · {preview.steps} {text('步', 'steps')} · CFG {preview.cfg} · {preview.sampler} / {preview.scheduler}{!fullModel && <> · LoRA {preview.adapter_scale}</>}</span><a className="ui-btn ui-btn-sm" href={imageUrl(preview.url)} download><Download size={14}/>{text('下载原图', 'Download image')}</a></div></Dialog>}
   </section>;
+}
+
+/** An image still to come; the one being drawn spins. */
+function PendingCell({ task, drawing }: { task: XyzTask; drawing: boolean }) {
+  const text = useWorkspaceText();
+  return <div className="xyz-cell-pending" data-drawing={drawing || undefined} style={{ aspectRatio: `${task.request.width} / ${task.request.height}` }}>
+    {drawing ? <Loader2 size={19} className="animate-spin" aria-hidden="true"/> : <Grid2X2 size={19} aria-hidden="true"/>}
+    <span>{drawing ? text('生成中', 'Drawing') : isActive(task) ? text('等待生成', 'Waiting') : text('未生成', 'Not generated')}</span>
+  </div>;
+}
+
+function phaseLabel(task: XyzTask, text: ReturnType<typeof useWorkspaceText>) {
+  if (task.status === 'cancelling') return text('正在取消', 'Cancelling');
+  if (isWaiting(task)) return task.wait_reason || text('排队中', 'Queued');
+  return ({ loading: text('加载模型', 'Loading model'), encoding_text: text('处理提示词', 'Encoding prompts'), sampling: text('正在出图', 'Sampling'), decoding: text('解码图片', 'Decoding image') } as Record<string, string>)[task.phase] || text('准备中', 'Preparing');
+}
+
+/** What the comparison is doing, the image and step it is on, and how much is drawn. */
+function XyzProgress({ task }: { task: XyzTask }) {
+  const text = useWorkspaceText();
+  const share = taskProgress(task);
+  const drawing = task.phase === 'sampling' || task.phase === 'decoding';
+  const image = drawing && task.total > 1 ? text(`第 ${Math.min(task.done + 1, task.total)} / ${task.total} 张`, `image ${Math.min(task.done + 1, task.total)} of ${task.total}`) : '';
+  const steps = task.phase === 'sampling' && task.sample_steps ? text(`${task.sample_step || 0} / ${task.sample_steps} 步`, `step ${task.sample_step || 0} of ${task.sample_steps}`) : '';
+  return <div className="xyz-progress">
+    <div className="xyz-progress-line"><span>{[phaseLabel(task, text), image, steps].filter(Boolean).join(' · ')}</span>{share != null && task.status !== 'cancelling' && <strong>{Math.floor(share * 100)}%</strong>}</div>
+    {!isWaiting(task) && <ProgressBar label={text('测试进度', 'Testing progress')} value={share == null ? undefined : share * 100}/>}
+  </div>;
+}
+
+/** Shows that a comparison is drawn or waits; pointing at it turns it into the cancel button it is. */
+function GenerateBusyButton({ task, cancelling, disabled, onCancel }: { task: XyzTask; cancelling: boolean; disabled: boolean; onCancel: () => void }) {
+  const text = useWorkspaceText();
+  const stopping = cancelling || task.status === 'cancelling';
+  const status = stopping ? text('正在取消…', 'Cancelling…') : isWaiting(task) ? text('排队中', 'Queued')
+    : task.total > 1 ? text(`生成中 ${task.done} / ${task.total}`, `Generating ${task.done} / ${task.total}`) : text('生成中', 'Generating');
+  return <button type="button" className="ui-btn ui-btn-block xyz-generate" data-stopping={stopping || undefined} disabled={disabled || stopping}
+    aria-label={stopping ? status : text('取消生成', 'Cancel generation')} title={stopping ? undefined : text('取消生成', 'Cancel generation')} onClick={onCancel}>
+    <span className="xyz-generate-status"><Loader2 size={15} className="animate-spin" aria-hidden="true"/>{status}</span>
+    <span className="xyz-generate-cancel" aria-hidden="true"><X size={15}/>{text('取消生成', 'Cancel generation')}</span>
+  </button>;
 }

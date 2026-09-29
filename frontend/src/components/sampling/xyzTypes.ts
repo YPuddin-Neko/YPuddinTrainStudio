@@ -1,3 +1,5 @@
+import { useWorkspaceText } from '../../utils/workspaceText';
+
 export type AxisKey = 'steps' | 'cfg' | 'seed' | 'sampler' | 'scheduler' | 'shift' | 'adapter_scale' | 'checkpoint';
 export type AxisValue = number | string;
 export interface XyzAxis { key: AxisKey; values: AxisValue[] }
@@ -24,9 +26,37 @@ export interface XyzCell {
 }
 export interface XyzTask {
   id: string; job_id: string; source_job_id: string; status: string; phase: string; done: number; total: number;
-  cell_index?: number | null; sample_step?: number | null; sample_steps?: number | null;
+  cell_index?: number | null; sample_step?: number | null; sample_steps?: number | null; wait_reason?: string | null;
   error: string | null; created_at: number; finished_at: number | null; request: XyzRequest; can_cancel: boolean;
   manifest: { cells: XyzCell[]; grids: { z: number; z_value: AxisValue | null; file: string; url: string }[]; complete: boolean };
+}
+/** A base model a model-test worker keeps loaded for the next comparison. */
+export interface KeptModel { devices: string[]; label: string; busy: boolean; job_id?: string | null }
+
+const ACTIVE = new Set(['queued', 'scheduled', 'running', 'preparing', 'caching', 'cancelling']);
+export const isActive = (task: Pick<XyzTask, 'status'>) => ACTIVE.has(task.status);
+export const isWaiting = (task: Pick<XyzTask, 'status'>) => task.status === 'queued' || task.status === 'scheduled';
+
+export function useStatusLabel() {
+  const text = useWorkspaceText();
+  return (status: string) => ({
+    completed: text('已完成', 'Complete'), running: text('生成中', 'Generating'), preparing: text('生成中', 'Generating'),
+    caching: text('生成中', 'Generating'), queued: text('排队中', 'Queued'), scheduled: text('排队中', 'Queued'),
+    cancelled: text('已取消', 'Cancelled'), cancelling: text('正在取消', 'Cancelling'), failed: text('失败', 'Failed'),
+  }[status] || status);
+}
+
+/**
+ * How much of a comparison is drawn, 0–1, counting the steps of the image in progress. Null while the model loads or
+ * the prompts encode before the first image, when no share of the work is known yet.
+ */
+export function taskProgress(task: XyzTask): number | null {
+  if (!task.total) return null;
+  if (!isActive(task)) return task.status === 'completed' ? 1 : task.done / task.total;
+  if (task.phase !== 'sampling' && task.phase !== 'decoding') return task.done ? task.done / task.total : null;
+  // Decoding takes the last few percent of an image.
+  const current = task.phase === 'decoding' ? 0.96 : task.sample_steps ? 0.92 * Math.min(1, (task.sample_step || 0) / task.sample_steps) : 0;
+  return Math.min(1, (task.done + current) / task.total);
 }
 
 export const axisNames: Record<AxisKey, [string, string]> = {
