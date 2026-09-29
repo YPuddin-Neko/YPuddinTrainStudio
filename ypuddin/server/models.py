@@ -235,6 +235,35 @@ class StorageDefaults(_Out):
     logs_dir: StoragePathPreview
 
 
+class StorageVolume(_Out):
+    id: str
+    path: str  # the mount point or drive
+    total: int
+    used: int
+    free: int
+
+
+class StoragePart(_Out):
+    group: Literal["trainer", "projects", "models", "other"]
+    # trainer: program | environment; other: cache | thumbnails | runs | database | rest
+    key: str
+    name: str = ""  # a project version, model folder or file
+    project_id: str | None = None
+    project_name: str | None = None
+    version_id: str | None = None
+    kind: Literal["products", "resume", "data", "cache", "other", "external"] | None = None
+    bytes: int
+    by_volume: dict[str, int]  # bytes on each volume, by its id
+
+
+class StorageUsage(_Out):
+    """What the studio's parts take on the disks they are on; each file is counted once."""
+
+    scanned_at: float
+    volumes: list[StorageVolume]
+    parts: list[StoragePart]
+
+
 class BrowseRoot(_Out):
     path: str
 

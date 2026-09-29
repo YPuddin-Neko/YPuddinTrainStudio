@@ -357,6 +357,14 @@ def clear_thumbnail_cache(c: ServiceContext = Depends(ctx)):
         raise ApiError(f"无法清理缩略图缓存：{exc}", code="thumbnails.cleanup_failed") from exc
 
 
+@router.get("/storage/usage", response_model=m.StorageUsage)
+def storage_usage(refresh: bool = False, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+    """The last scan of the studio's disk use, or a new one after a few minutes or when asked."""
+    from .storage_usage import storage_usage as usage
+
+    return usage(c, refresh=refresh)
+
+
 @router.get("/settings/storage-defaults", response_model=m.StorageDefaults)
 def storage_defaults(
     output_mode: Literal["project", "custom"] | None = None,

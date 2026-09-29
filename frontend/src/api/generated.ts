@@ -125,6 +125,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/storage/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Storage Usage
+         * @description The last scan of the studio's disk use, or a new one after a few minutes or when asked.
+         */
+        get: operations["storage_usage_api_storage_usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/storage-defaults": {
         parameters: {
             query?: never;
@@ -7640,12 +7660,72 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** StoragePart */
+        StoragePart: {
+            /**
+             * Group
+             * @enum {string}
+             */
+            group: "trainer" | "projects" | "models" | "other";
+            /** Key */
+            key: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /** Project Id */
+            project_id?: string | null;
+            /** Project Name */
+            project_name?: string | null;
+            /** Version Id */
+            version_id?: string | null;
+            /** Kind */
+            kind?: ("products" | "resume" | "data" | "cache" | "other" | "external") | null;
+            /** Bytes */
+            bytes: number;
+            /** By Volume */
+            by_volume: {
+                [key: string]: number;
+            };
+        } & {
+            [key: string]: unknown;
+        };
         /** StoragePathPreview */
         StoragePathPreview: {
             /** Path */
             path: string;
             /** Browse Root */
             browse_root: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * StorageUsage
+         * @description What the studio's parts take on the disks they are on; each file is counted once.
+         */
+        StorageUsage: {
+            /** Scanned At */
+            scanned_at: number;
+            /** Volumes */
+            volumes: components["schemas"]["StorageVolume"][];
+            /** Parts */
+            parts: components["schemas"]["StoragePart"][];
+        } & {
+            [key: string]: unknown;
+        };
+        /** StorageVolume */
+        StorageVolume: {
+            /** Id */
+            id: string;
+            /** Path */
+            path: string;
+            /** Total */
+            total: number;
+            /** Used */
+            used: number;
+            /** Free */
+            free: number;
         } & {
             [key: string]: unknown;
         };
@@ -8847,6 +8927,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThumbnailCacheStatus"];
+                };
+            };
+        };
+    };
+    storage_usage_api_storage_usage_get: {
+        parameters: {
+            query?: {
+                refresh?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageUsage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

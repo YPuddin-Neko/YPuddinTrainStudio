@@ -210,6 +210,47 @@
         }
       }
     },
+    "/api/storage/usage": {
+      "get": {
+        "summary": "Storage Usage",
+        "description": "The last scan of the studio's disk use, or a new one after a few minutes or when asked.",
+        "operationId": "storage_usage_api_storage_usage_get",
+        "parameters": [
+          {
+            "name": "refresh",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Refresh"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageUsage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings/storage-defaults": {
       "get": {
         "summary": "Storage Defaults",
@@ -21968,6 +22009,101 @@
         ],
         "title": "StorageDefaults"
       },
+      "StoragePart": {
+        "properties": {
+          "group": {
+            "type": "string",
+            "enum": [
+              "trainer",
+              "projects",
+              "models",
+              "other"
+            ],
+            "title": "Group"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": ""
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "products",
+                  "resume",
+                  "data",
+                  "cache",
+                  "other",
+                  "external"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "bytes": {
+            "type": "integer",
+            "title": "Bytes"
+          },
+          "by_volume": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Volume"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "group",
+          "key",
+          "bytes",
+          "by_volume"
+        ],
+        "title": "StoragePart"
+      },
       "StoragePathPreview": {
         "properties": {
           "path": {
@@ -21986,6 +22122,71 @@
           "browse_root"
         ],
         "title": "StoragePathPreview"
+      },
+      "StorageUsage": {
+        "properties": {
+          "scanned_at": {
+            "type": "number",
+            "title": "Scanned At"
+          },
+          "volumes": {
+            "items": {
+              "$ref": "#/components/schemas/StorageVolume"
+            },
+            "type": "array",
+            "title": "Volumes"
+          },
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/StoragePart"
+            },
+            "type": "array",
+            "title": "Parts"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "scanned_at",
+          "volumes",
+          "parts"
+        ],
+        "title": "StorageUsage",
+        "description": "What the studio's parts take on the disks they are on; each file is counted once."
+      },
+      "StorageVolume": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "used": {
+            "type": "integer",
+            "title": "Used"
+          },
+          "free": {
+            "type": "integer",
+            "title": "Free"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "total",
+          "used",
+          "free"
+        ],
+        "title": "StorageVolume"
       },
       "SystemInfo": {
         "properties": {
