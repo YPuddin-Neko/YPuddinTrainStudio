@@ -19,6 +19,7 @@ import { THUMBNAIL_LIMIT_GB, thumbnailLimitValid } from '../../utils/thumbnailCa
 import { useWorkspaceText } from '../../utils/workspaceText';
 import StorageDirectoryInput, { type StoragePathPreview } from './StorageDirectoryInput';
 import ThumbnailCacheSettings from './ThumbnailCacheSettings';
+import StorageUsage from './StorageUsage';
 
 const defaultNetworkSettings: NetworkSettings = { proxy_mode: 'system', proxy_url: '', proxy_username: '', proxy_password_configured: false };
 
@@ -130,10 +131,10 @@ export default function Preferences() {
   const restartSaved = ([['paths', 'data_root'], ['server', 'host'], ['server', 'port']] as const).some(([section, key]) =>
     (loadedSettings.current?.[section] as Record<string, unknown> | undefined)?.[key] !== (initialSettings.current?.[section] as Record<string, unknown> | undefined)?.[key]);
 
-  return <div data-testid="settings-page"><SettingsSections sections={downloads ? [{ id: 'preferences-downloads', label: text('软件下载源', 'Package sources') }] : system ? [{ id: 'preferences-general', label: text('常规', 'General') }, { id: 'preferences-thumbnails', label: text('缩略图缓存', 'Thumbnail cache') }, { id: 'preferences-service', label: t('settings.server') }, { id: 'preferences-network', label: text('网络代理', 'Network proxy') }] : [{ id: 'preferences-storage', label: t('settings.paths') }]}>
+  return <div data-testid="settings-page"><SettingsSections sections={downloads ? [{ id: 'preferences-downloads', label: text('软件下载源', 'Package sources') }] : system ? [{ id: 'preferences-general', label: text('常规', 'General') }, { id: 'preferences-thumbnails', label: text('缩略图缓存', 'Thumbnail cache') }, { id: 'preferences-service', label: t('settings.server') }, { id: 'preferences-network', label: text('网络代理', 'Network proxy') }] : [{ id: 'preferences-storage', label: t('settings.paths') }, { id: 'preferences-storage-usage', label: text('空间占用', 'Disk usage') }]}>
     {error && <div role="alert" className="settings-alert">{error}</div>}
     <fieldset disabled={saving} aria-busy={saving} className="contents">
-    {downloads ? <DownloadPreferences value={settings.downloads ?? { pypi: 'ustc', pytorch: 'mirror', fallback: true }} onChange={value => update(s => ({ ...s, downloads: value }))} /> : !system ? <section id="preferences-storage" data-settings-section tabIndex={-1} className="settings-section">
+    {downloads ? <DownloadPreferences value={settings.downloads ?? { pypi: 'ustc', pytorch: 'mirror', fallback: true }} onChange={value => update(s => ({ ...s, downloads: value }))} /> : !system ? <><section id="preferences-storage" data-settings-section tabIndex={-1} className="settings-section">
       <div className="settings-section-heading"><div><h2>{t('settings.paths')}</h2><p className="settings-note">{text('更改路径不会移动已有文件。', 'Changing paths does not move existing files.')}</p></div></div>
       {storageError && <div role="alert" className="settings-alert">{storageError}<button type="button" className="ui-btn" onClick={()=>setStorageReload(value=>value+1)}>{t('common.retry')}</button></div>}
       {([['data_root', t('settings.dataRoot')], ['cache_dir', t('settings.cacheDir')], ['models_dir', t('settings.modelsDir')]] as const).map(([key, label]) => <div className="settings-field" key={key}>
@@ -174,7 +175,7 @@ export default function Preferences() {
         </div>
       </div>)}
 
-    </section> : <>
+    </section><StorageUsage/></> : <>
       <section id="preferences-general" data-settings-section tabIndex={-1} className="settings-section">
         <div className="settings-section-heading"><div><h2>{text('常规', 'General')}</h2><p className="settings-note">{text('语言与主题在“页面设置”中修改。', 'Language and theme are in Pages.')}</p></div></div>
         <div className="settings-field"><label htmlFor="preferences-telemetry">{text('性能监控刷新间隔', 'Hardware refresh interval')}</label><div className="settings-field-control">
