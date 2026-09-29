@@ -153,6 +153,6 @@
 
 .vision-output-row { display:flex; flex-wrap:wrap; align-items:center; gap:12px 24px; }
 .vision-output-row > .vision-field { width:240px; max-width:100%; }
-.vision-format-label { gap:2px; }
-.vision-format-label .config-help-trigger { margin:0; }
+.vision-format-label { gap:8px; }
+.vision-format-label .config-help-trigger { margin:0 0 0 auto; }
 @media (pointer:coarse) { .vision-field-label { min-height:32px; } }
