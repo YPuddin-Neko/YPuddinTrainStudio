@@ -30,7 +30,7 @@ cd YPuddinTrainStudio
 
 脚本自动查找 Python，创建当前平台的虚拟环境，安装依赖并按需构建前端。系统没有适用的 Python、但已安装 `uv` 时，常规启动入口可通过 `uv` 下载 Python 3.12。
 
-默认地址为 `http://127.0.0.1:8123/`。注意力扩展和 8-bit 优化器依赖的 bitsandbytes 通过“设置 → 运行环境”单独安装。
+默认地址为 `http://127.0.0.1:8123/`。注意力扩展、8-bit 优化器依赖的 bitsandbytes 和打标与遮罩所需的 ONNX Runtime 分别在“设置 → 运行环境”的“注意力加速”“LoRA 环境”“打标与遮罩”中单独安装。ONNX Runtime 在 NVIDIA 显卡上使用 GPU 版，装好后不需要重启服务。
 
 ## 启动参数
 
@@ -44,11 +44,12 @@ cd YPuddinTrainStudio
 | --- | --- |
 | `--host <地址>` | 监听地址，默认 `127.0.0.1` |
 | `--port <端口>` | 监听端口，默认 `8123` |
-| `--data-root <目录>` | 数据目录，默认 `studio_data` |
+| `--data-root <目录>` | 数据目录，默认 `studio_data`；在“设置 → 存储路径”保存了新的数据根目录时，下次启动改用该目录 |
 | `--env-root <目录>` | 基础 Python 环境的根目录 |
 | `--no-browser` | 本次启动不打开浏览器 |
 | `--no-frontend` | 跳过前端构建，用于仅运行 API 的部署 |
-| `--index=auto`、`cn`、`official` | 指定依赖包下载源；未指定时读取保存的下载设置 |
+| `--index=auto`、`cn`、`official` | 指定依赖包下载源；未指定时使用“设置 → 软件下载源”中保存的来源 |
+| `--mirror` | 等同于 `--index=cn` |
 | `--torch=auto`、`cu128`、`cu126`、`cu124`、`cu118`、`cpu` | 首次安装或重建环境时使用的 PyTorch 构建 |
 | `--reinstall` | 删除并重建当前入口的基础环境，保留其他环境与数据 |
 | `--profile=legacy` | 使用旧版根目录 `venv/` |
@@ -59,6 +60,7 @@ cd YPuddinTrainStudio
 | --- | --- |
 | `run` | 默认命令，准备环境并启动服务 |
 | `doctor` | 输出 Python、PyTorch、设备、可选依赖和前端构建状态 |
+| `smoke <配置文件>` | 用配置中的真实权重做短程训练自检：默认训练 3 步，生成一张预览，保存并重新读取训练权重，报告写入 `outputs/smoke/` |
 | `build` | 重新构建前端 |
 | `dev` | 启动后端和 Vite 开发服务，前端默认端口为 3000 |
 | `shell` | 输出当前环境的激活命令 |
