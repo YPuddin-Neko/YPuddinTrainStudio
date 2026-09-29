@@ -26,7 +26,7 @@ const sourceRun = (options: XyzOptions) => options.source_job_id ?? options.chec
 const ownCheckpoints = (options: XyzOptions) => options.checkpoints.filter(cp => !cp.job_id || cp.job_id === sourceRun(options));
 const initialAxis = (options: XyzOptions): AxisDraft => ownCheckpoints(options).length > 1
   // The first dozen are ticked to start with; any number can be compared.
-  ? { key: 'checkpoint', raw: ownCheckpoints(options).slice(0, options.limits.max_axis_values ?? INITIAL_WEIGHTS).map(cp => cp.id).join(', ') }
+  ? { key: 'checkpoint', raw: ownCheckpoints(options).slice(0, INITIAL_WEIGHTS).map(cp => cp.id).join(', ') }
   : { key: 'steps', raw: [Math.max(1, options.defaults.steps - 5), options.defaults.steps, options.defaults.steps + 5].join(', ') };
 
 function compatibleValues(values: SamplingValues, options: XyzOptions): SamplingValues {
@@ -69,7 +69,7 @@ function AxisEditor({ position, draft, onChange, options, used, disabled, weight
       // Weights move to this axis from another one; they are chosen once, in the setup above.
       disabled: axis.key === 'checkpoint' ? !options.checkpoints.length : used.includes(axis.key) }))]}/>
     {draft && (draft.key === 'checkpoint' ? <p className="xyz-axis-note">{text(`逐个对比上方“${name('checkpoint')}”中勾选的 ${values.length} 个权重。`, `Compares the ${values.length} weights ticked in “${name('checkpoint')}” above.`)}</p>
-      : choices ? <div className="xyz-axis-values"><span>{text('勾选要对比的取值', 'Tick the values to compare')}</span><CheckboxSelect aria-label={`${title} · ${text('取值', 'Values')}`} disabled={disabled} max={options.limits.max_axis_values}
+      : choices ? <div className="xyz-axis-values"><span>{text('勾选要对比的取值', 'Tick the values to compare')}</span><CheckboxSelect aria-label={`${title} · ${text('取值', 'Values')}`} disabled={disabled}
         values={values} options={choices} onValuesChange={next => onChange({ ...draft, raw: next.join(', ') })}/></div>
       : <label className="xyz-axis-values"><span>{text('按顺序填写，用逗号分隔', 'Enter values in order, separated by commas')}</span><input aria-label={`${title} · ${text('取值', 'Values')}`} value={draft.raw} onChange={event => onChange({ ...draft, raw: event.target.value })}/></label>)}
   </fieldset>;
@@ -194,14 +194,13 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
     return next;
   });
   const count = axisCount(axes);
-  const axisInvalid = !axes[0] || axes.some(axis => axis && (!options?.axes.some(option => option.key === axis.key) || !axis.values.length || (options?.limits.max_axis_values != null && axis.values.length > options.limits.max_axis_values) || axis.values.some(value => typeof value === 'number' && !Number.isFinite(value))));
+  const axisInvalid = !axes[0] || axes.some(axis => axis && (!options?.axes.some(option => option.key === axis.key) || !axis.values.length || axis.values.some(value => typeof value === 'number' && !Number.isFinite(value))));
   const checkpointMissing = fullModel && !options?.checkpoints.some(cp => cp.id === values?.checkpoint_id);
   const overLimit = count > (options?.limits.max_cells || 64);
-  const tooManyPixels = !!values && options?.limits.max_pixels != null && count * values.width * values.height > options.limits.max_pixels;
   const update = <K extends keyof SamplingValues>(key: K, value: SamplingValues[K]) => setValues(previous => previous && { ...previous, [key]: value });
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!values || !axes[0] || axisInvalid || checkpointMissing || overLimit || tooManyPixels || locked || !gpuValid || active) return;
+    if (!values || !axes[0] || axisInvalid || checkpointMissing || overLimit || locked || !gpuValid || active) return;
     setSubmitting(true); setError('');
     try {
       const request: XyzRequest = { ...values, name: text('模型测试', 'Model testing'), gpu_devices: gpuDevices, x: axes[0], y: axes[1], z: axes[2] };
@@ -253,7 +252,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
             }}/></label>
             <Link className="ui-link xyz-model-link" to={`/settings/environment?tab=models&family=${encodeURIComponent(options.family)}`}>{text('管理与下载模型', 'Manage & download models')}<ArrowRight size={12}/></Link></>}
             <div className="xyz-weights"><span id="xyz-weights-label">{fullModel ? text('全量模型检查点', 'Full model checkpoint') : text('训练权重', 'Trained checkpoint')}</span>
-              <CheckboxSelect aria-label={text('对比使用的训练权重', 'Checkpoints for comparison')} aria-describedby="xyz-weights-note" searchable disabled={locked || !options.checkpoints.length} max={options.limits.max_axis_values}
+              <CheckboxSelect aria-label={text('对比使用的训练权重', 'Checkpoints for comparison')} aria-describedby="xyz-weights-note" searchable disabled={locked || !options.checkpoints.length}
                 placeholder={fullModel ? text('请选择检查点', 'Choose a checkpoint') : text('不加载训练权重（只看底模）', 'No trained weights (base model only)')}
                 values={weights} options={weightOptions} groups={runs} onValuesChange={chooseWeights}/>
               <small id="xyz-weights-note">{weights.length > 1 ? (selectedRuns > 1
@@ -273,9 +272,9 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
             <label className="xyz-span"><span>{text('负面提示词', 'Negative prompt')}</span><textarea rows={2} value={values.negative} onChange={event => update('negative', event.target.value)}/></label>
           </fieldset></details>
         </div>
-        <footer><p className={axisInvalid || checkpointMissing || overLimit || tooManyPixels ? 'xyz-invalid' : ''} aria-live="polite">{checkpointMissing ? (options.checkpoints.length ? text('请选择要测试的模型检查点', 'Choose a model checkpoint to test') : text('当前训练尚未保存模型检查点，保存后才能生成对比图', 'Save a model checkpoint before generating a comparison')) : axisInvalid ? text('请填写有效的轴取值', 'Enter valid axis values') : overLimit ? text(`一次最多 ${options.limits.max_cells} 张，请减少取值`, `Maximum ${options.limits.max_cells} cells per comparison`) : tooManyPixels ? text('网格总像素过多，请减少取值或降低尺寸', 'Too many pixels; reduce values or image dimensions') : text(`${axes[0]?.values.length || 0} 列 × ${axes[1]?.values.length || 1} 行 × ${axes[2]?.values.length || 1} 页，共 ${count} 张`, `${count} images · ${axes[0]?.values.length || 0} columns × ${axes[1]?.values.length || 1} rows × ${axes[2]?.values.length || 1} pages`)}</p>
+        <footer><p className={axisInvalid || checkpointMissing || overLimit ? 'xyz-invalid' : ''} aria-live="polite">{checkpointMissing ? (options.checkpoints.length ? text('请选择要测试的模型检查点', 'Choose a model checkpoint to test') : text('当前训练尚未保存模型检查点，保存后才能生成对比图', 'Save a model checkpoint before generating a comparison')) : axisInvalid ? text('请填写有效的轴取值', 'Enter valid axis values') : overLimit ? text(`一次最多 ${options.limits.max_cells} 张，请减少取值`, `Maximum ${options.limits.max_cells} cells per comparison`) : text(`${axes[0]?.values.length || 0} 列 × ${axes[1]?.values.length || 1} 行 × ${axes[2]?.values.length || 1} 页，共 ${count} 张`, `${count} images · ${axes[0]?.values.length || 0} columns × ${axes[1]?.values.length || 1} rows × ${axes[2]?.values.length || 1} pages`)}</p>
           {active ? <GenerateBusyButton task={active} cancelling={cancelling === active.id} disabled={readOnly} onCancel={() => void cancel(active)}/>
-            : <button className="ui-btn ui-btn-primary ui-btn-block" type="submit" disabled={locked || axisInvalid || checkpointMissing || overLimit || tooManyPixels || !gpuValid || !values.prompt.trim()}>{submitting ? <><Loader2 size={15} className="animate-spin"/>{text('提交中…', 'Submitting…')}</> : <><Play size={15}/>{text('生成对比图', 'Generate comparison')}</>}</button>}
+            : <button className="ui-btn ui-btn-primary ui-btn-block" type="submit" disabled={locked || axisInvalid || checkpointMissing || overLimit || !gpuValid || !values.prompt.trim()}>{submitting ? <><Loader2 size={15} className="animate-spin"/>{text('提交中…', 'Submitting…')}</> : <><Play size={15}/>{text('生成对比图', 'Generate comparison')}</>}</button>}
         </footer>
       </form>
       <div className="xyz-results">

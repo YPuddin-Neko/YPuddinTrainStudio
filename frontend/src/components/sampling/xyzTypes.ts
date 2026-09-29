@@ -17,7 +17,7 @@ export interface XyzOptions {
   /** Runs of that version left out, and why. */
   excluded_jobs?: { id: string; name: string; reason: string }[];
   sampling_models: { id: string; name: string; variant?: string }[];
-  limits: { max_cells: number; max_axis_values?: number; max_pixels?: number };
+  limits: { max_cells: number };
 }
 export interface XyzCell {
   index: number; x: number; y: number; z: number; x_value: AxisValue; y_value: AxisValue | null; z_value: AxisValue | null;
