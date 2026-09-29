@@ -910,8 +910,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const compactField = compact || groupName === 'adapter';
     const percentage = PERCENTAGE_FIELDS.includes(fullPathKey);
     const numericMin = ui.min ?? prop.minimum ?? prop.exclusiveMinimum;
-    // An exclusive bound (a dropout below 100%) stops the slider one step short of it.
-    const numericMax = ui.max ?? prop.maximum ?? (prop.exclusiveMaximum != null ? prop.exclusiveMaximum - (ui.step ?? (prop.type === 'integer' ? 1 : 0.01)) : undefined);
+    const numericStep = ui.step ?? (prop.type === 'integer' ? 1 : 0.01);
+    const numericMax = ui.max ?? prop.maximum ?? prop.exclusiveMaximum;
     const managedReason = computeManaged?.reason || trainingManagedReason(value, fullPathKey, english) || optimizerManagedReason(schema, value, fullPathKey, english);
     if (optimizerManagedReason(schema, value, fullPathKey, english) && ['optimizer.kahan', 'optimizer.group_lr', 'adapter.lr_scale', 'scheduler.warmup_steps'].includes(fullPathKey)) return null;
     // Only what this model and machine use: an unused setting shows only while it is still set, with the reason.
@@ -1136,8 +1136,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       );
     } else if (prop.type === 'integer' || prop.type === 'number') {
       if ((percentage || ui.control === 'slider') && numericMin !== undefined && numericMax !== undefined) {
+        // A slider stops one step short of an exclusive bound: a dropout stays below 100%.
         control = <NumericControl id={fieldId} label={fieldLabel} value={fieldValue} percentage={percentage} unit={ui.unit}
-          min={numericMin} max={numericMax} step={ui.step ?? (prop.type === 'integer' ? 1 : 0.01)} invalid={!!errorItem}
+          min={numericMin} max={ui.max ?? prop.maximum ?? numericMax - numericStep} step={numericStep} invalid={!!errorItem}
           sliderLabel={english ? 'slider' : '滑条'} onChange={next => onChange(setNestedValue(value, path, next))}/>;
       } else {
         // sampling.steps / cfg / shift 用族默认做 placeholder（shift=null 时显示"自动（按分辨率）"）
