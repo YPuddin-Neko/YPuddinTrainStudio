@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Bot, RotateCcw, Save, Settings2, Trash2 } from 'lucide-react';
 import { formatApiError } from '../../utils/errors';
@@ -17,6 +17,7 @@ type TaggerSettings = { model: string; general_threshold: number; character_thre
 
 const SHARED: Shared = { trigger: '', exclude: '' };
 const TAGGER: TaggerSettings = { model: 'wd-eva02-large-tagger-v3', general_threshold: 0.35, character_threshold: 0.85, device: 'auto' };
+const CUSTOM_TEMPLATE_ID = '__custom__';
 const modeDefaults = (mode: VlmMode): ModeSettings => {
   const output: VlmOutput = mode === 'assist' ? 'categories' : 'tags';
   const template = defaultTemplate(mode, output);
@@ -55,18 +56,30 @@ export default function VlmTagPanel({ mode, projectId, versionId, locked, latest
   const needsTagger = assisted && settings.existing !== 'refine';
   const taggerReady = !!taggerModel?.ready && !!catalog.data?.runtime.available;
   const templates = [...BUILTIN_TEMPLATES, ...custom.templates].filter(item => item.mode === mode && item.output === settings.output);
+  const fallbackTemplate = defaultTemplate(mode, settings.output);
   const template = templates.find(item => item.id === settings.templateId);
+  const selectedTemplate = template || (settings.templateId === fallbackTemplate.id ? fallbackTemplate : undefined);
+  const editingCustom = settings.templateId === CUSTOM_TEMPLATE_ID || (!!template && !template.builtin);
+  const effectivePrompt = editingCustom ? settings.prompt : fallbackTemplate.prompt;
+  const effectiveTemplateId = settings.templateId === CUSTOM_TEMPLATE_ID || template ? settings.templateId : fallbackTemplate.id;
   const keyMissing = !!resolved && !resolved.service.editable && !resolved.service.key_configured;
-  const ready = !!resolved?.model && !keyMissing && !!settings.prompt.trim() && (!needsTagger || taggerReady);
+  const ready = !!resolved?.model && !keyMissing && !!effectivePrompt.trim() && (!needsTagger || taggerReady);
   const result = latest?.result;
   const changed = result?.changed_files ?? 0;
 
+  useEffect(() => {
+    if (settings.templateId === CUSTOM_TEMPLATE_ID || template) return;
+    if (settings.templateId !== fallbackTemplate.id || settings.prompt !== fallbackTemplate.prompt) {
+      update({ templateId: fallbackTemplate.id, prompt: fallbackTemplate.prompt });
+    }
+  }, [fallbackTemplate.id, fallbackTemplate.prompt, settings.prompt, settings.templateId, template, update]);
+
   const chooseOutput = (output: VlmOutput) => {
     const next = defaultTemplate(mode, output) || BUILTIN_TEMPLATES.find(item => item.mode === mode)!;
-    const edited = template && settings.prompt !== template.prompt;
-    update({ output, templateId: next.id, prompt: edited ? settings.prompt : next.prompt });
+    update({ output, templateId: next.id, prompt: next.prompt });
   };
   const chooseTemplate = (id: string) => {
+    if (id === CUSTOM_TEMPLATE_ID) { update({ templateId: CUSTOM_TEMPLATE_ID }); return; }
     const picked = templates.find(item => item.id === id);
     if (picked) update({ templateId: picked.id, prompt: picked.prompt });
   };
@@ -83,7 +96,7 @@ export default function VlmTagPanel({ mode, projectId, versionId, locked, latest
     if (!template || template.builtin) return;
     updateCustom({ templates: custom.templates.filter(item => item.id !== template.id) });
     const fallback = defaultTemplate(mode, settings.output);
-    update({ templateId: fallback.id });
+    update({ templateId: fallback.id, prompt: fallback.prompt });
   };
   const start = async () => {
     if (!resolved || !vlm) return;
@@ -94,7 +107,7 @@ export default function VlmTagPanel({ mode, projectId, versionId, locked, latest
         dataset_ids: scopes.ids(chosenScope),
         vlm: {
           provider: resolved.service.id, base_url: resolved.service.editable ? resolved.baseUrl : null, model: resolved.model,
-          prompt: settings.prompt, output: settings.output, existing: settings.existing,
+          prompt: effectivePrompt, output: settings.output, existing: settings.existing,
           trigger_word: shared.trigger.trim() || null, exclude_tags: shared.exclude.split(',').map(tag => tag.trim()).filter(Boolean),
           temperature: vlm.temperature, max_tokens: vlm.max_tokens ?? null, image_size: vlm.image_size, image_detail: vlm.image_detail,
           concurrency: vlm.concurrency, interval: vlm.interval, timeout: vlm.timeout, retries: vlm.retries,
@@ -105,16 +118,16 @@ export default function VlmTagPanel({ mode, projectId, versionId, locked, latest
   };
 
   const outputs: { value: VlmOutput; label: string }[] = [
-    { value: 'tags', label: assisted ? text('修正后的标签', 'Corrected tags') : text('标签', 'Tags') },
+    { value: 'tags', label: assisted ? text('修正后的标签（TXT）', 'Corrected tags (TXT)') : text('标签（TXT）', 'Tags (TXT)') },
     { value: 'categories', label: assisted ? text('修正标签并分类（JSON）', 'Corrected, grouped tags (JSON)') : text('分类标签与描述（JSON）', 'Grouped tags and description (JSON)') },
     ...(assisted ? [{ value: 'sort' as const, label: text('只归类，不增删（JSON）', 'Group only, keep every tag (JSON)') }] : []),
-    { value: 'description', label: text('自然语言描述', 'Natural language description') },
+    { value: 'description', label: text('自然语言描述（TXT / JSON 描述字段）', 'Description (TXT / JSON description field)') },
   ];
   const outputHint = {
-    tags: text('TXT 写入标签；JSON 只改标签，角色等字段保留。', 'TXT gets the tags; JSON changes tags only and keeps fields such as character.'),
-    categories: text('写入 JSON 的数量、外观、标签、环境和描述字段。', 'Fills the JSON count, appearance, tags, environment and description fields.'),
-    sort: text('已有标签重新分组，不会增加或删除。', 'Regroups the existing tags without adding or removing any.'),
-    description: text('TXT 整条换成描述；JSON 只写描述字段。', 'Replaces a TXT caption with the description; JSON gets only its description field.'),
+    tags: text('写入同名 TXT；已有 JSON 只更新标签字段。', 'Writes the matching TXT; existing JSON updates its tag fields only.'),
+    categories: text('写入同名 JSON 的数量、外观、标签、环境和描述字段。', 'Writes count, appearance, tags, environment and description fields to JSON.'),
+    sort: text('写入 JSON，只重新归类已有标签，不增加或删除。', 'Writes JSON and regroups existing tags without adding or removing any.'),
+    description: text('TXT 写入整段描述；JSON 只写描述字段。', 'Writes the full description to TXT; JSON gets only its description field.'),
   }[settings.output];
   const existingOptions = assisted ? [
     { value: 'refine', label: text('以已有标签为参考修正', 'Refine the existing captions') },
@@ -167,17 +180,17 @@ export default function VlmTagPanel({ mode, projectId, versionId, locked, latest
       </div>
       <div className="vision-field vision-prompt">
         <div className="vision-prompt-head"><span className="vision-field-label">{text('提示词', 'Prompt')}</span>
-          <StudioSelect aria-label={text('提示词模板', 'Prompt template')} value={template?.id || ''} placeholder={text('已修改', 'Edited')} disabled={locked} options={templates.map(item => ({ value: item.id, label: item.builtin ? text(item.name, item.nameEn || item.name) : item.name }))} onValueChange={chooseTemplate}/>
-          {template && settings.prompt !== template.prompt && <button type="button" className="ui-btn ui-btn-sm ui-btn-quiet" disabled={locked} onClick={() => update({ prompt: template.prompt })}><RotateCcw size={13}/>{text('恢复模板', 'Restore template')}</button>}
+          <StudioSelect aria-label={text('提示词模板', 'Prompt template')} value={effectiveTemplateId} placeholder={text('已修改', 'Edited')} disabled={locked} options={[{ value: CUSTOM_TEMPLATE_ID, label: text('自定义', 'Custom') }, ...templates.map(item => ({ value: item.id, label: item.builtin ? text(item.name, item.nameEn || item.name) : item.name }))]} onValueChange={chooseTemplate}/>
+          {selectedTemplate && settings.prompt !== selectedTemplate.prompt && <button type="button" className="ui-btn ui-btn-sm ui-btn-quiet" disabled={locked} onClick={() => update({ prompt: selectedTemplate.prompt })}><RotateCcw size={13}/>{text('恢复模板', 'Restore template')}</button>}
           {naming === null
-            ? <button type="button" className="ui-btn ui-btn-sm" disabled={locked || !settings.prompt.trim()} onClick={() => setNaming(template && !template.builtin ? template.name : '')}><Save size={13}/>{text('保存为模板', 'Save as template')}</button>
+            ? <button type="button" className="ui-btn ui-btn-sm" disabled={locked || !editingCustom || !settings.prompt.trim()} onClick={() => setNaming(template && !template.builtin ? template.name : '')}><Save size={13}/>{text('保存为模板', 'Save as template')}</button>
             : <form className="vision-template-name" onSubmit={event => { event.preventDefault(); saveTemplate(); }}>
               <input type="text" autoFocus maxLength={60} aria-label={text('模板名称', 'Template name')} placeholder={text('模板名称', 'Template name')} value={naming} onChange={event => setNaming(event.target.value)}/>
               <button type="submit" className="ui-btn ui-btn-sm ui-btn-primary" disabled={!naming.trim()}>{text('保存', 'Save')}</button>
               <button type="button" className="ui-btn ui-btn-sm ui-btn-quiet" onClick={() => setNaming(null)}>{text('取消', 'Cancel')}</button></form>}
           {template && !template.builtin && naming === null && <button type="button" className="ui-btn ui-btn-sm ui-btn-quiet ui-btn-danger" disabled={locked} onClick={deleteTemplate}><Trash2 size={13}/>{text('删除模板', 'Delete template')}</button>}
         </div>
-        <textarea aria-label={text('提示词', 'Prompt')} value={settings.prompt} rows={9} maxLength={20000} disabled={locked} spellCheck={false} onChange={event => update({ prompt: event.target.value })}/>
+        <textarea aria-label={text('提示词', 'Prompt')} value={effectivePrompt} rows={9} maxLength={20000} disabled={locked || !editingCustom} spellCheck={false} onChange={event => update({ prompt: event.target.value })}/>
         <span className="vision-field-hint">{assisted ? text('{tags} 换成参考标签，{trigger} 换成触发词；没有 {tags} 时参考标签附在末尾。', '{tags} becomes the reference tags and {trigger} the trigger word; without {tags} the reference is appended.') : text('{trigger} 换成触发词，没有触发词时含它的行会删去。', '{trigger} becomes the trigger word; lines with it are dropped when there is none.')}</span>
       </div>
     </div>

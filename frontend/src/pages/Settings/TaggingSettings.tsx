@@ -25,7 +25,7 @@ const MODEL_DESCRIPTIONS: Record<string, [string, string]> = {
   'wd-v1-4-moat-tagger-v2': ['MOAT v2，通用动漫标签识别。', 'MOAT v2 for general anime tagging.'],
   'pixai-tagger-v1.0': ['PixAI v1.0，支持通用、角色、作品和画师等分类。', 'PixAI v1.0 with general, character, copyright and artist categories.'],
   'pixai-tagger-v0.9': ['PixAI v0.9，支持通用和角色标签。', 'PixAI v0.9 for general and character tags.'],
-  'cl-tagger-v2-01a': ['CL Tagger v2.01a，按类别输出标签，需要 Hugging Face 许可。', 'CL Tagger v2.01a with categorized output; requires Hugging Face access.'],
+  'cl-tagger-v2-01a': ['CL Tagger v2.01a，按类别输出标签。', 'CL Tagger v2.01a with categorized output.'],
   'cl-tagger-1-02': ['CL Tagger v1.02，按类别输出标签。', 'CL Tagger v1.02 with categorized output.'],
 };
 function Field({ id, label, hint, children }: { id?: string; label: string; hint?: React.ReactNode; children: React.ReactNode }) {
