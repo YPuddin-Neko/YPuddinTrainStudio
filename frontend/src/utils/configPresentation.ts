@@ -1,4 +1,5 @@
 import { FIELD_HELP, FIELD_HINTS } from './fieldCopy';
+import { describeValidation, type ValidationIssue } from './validationMessages';
 
 
 const labels: Record<string, string> = {
@@ -307,10 +308,14 @@ export function configTabForPath(path: string): ConfigTab {
  */
 export const PERCENTAGE_FIELDS = ['adapter.dropout', 'adapter.rank_dropout', 'adapter.module_dropout', 'dataset.area_tolerance', 'dataset.caption.tag_dropout', 'dataset.caption.caption_dropout', 'scheduler.min_lr_ratio', 'validation.split_ratio'];
 
-export type ConfigIssue = { path: string; label: string; message: string; detail: string; tab: ConfigTab };
+export type ConfigIssue = { path: string; label: string; message: string; detail: string; tab: ConfigTab; type?: string; ctx?: Record<string, unknown> };
 /** Stands in for a reason Studio cannot phrase in Chinese; only usable where the raw detail can be expanded. */
 export const OPAQUE_CONFIG_ISSUE = '此配置未通过检查，展开详情查看具体原因';
-export function presentConfigIssues(errors: Array<{loc?: unknown; msg?: unknown}>, english = false): ConfigIssue[] {
+/**
+ * Field, label and message for each failed setting. A value that failed validation is phrased from its kind and bound,
+ * in the field's unit; a validator's own reason is translated from its wording.
+ */
+export function presentConfigIssues(errors: ValidationIssue[], english = false): ConfigIssue[] {
   const issues = errors.map(error => {
     const detail = String(error.msg || '').replace(/^Value error, /, '');
     const memory = detail.match(/^estimated peak memory ([\d.]+ GB) exceeds (.+) capacity ([\d.]+ GB)$/);
@@ -318,35 +323,26 @@ export function presentConfigIssues(errors: Array<{loc?: unknown; msg?: unknown}
     const embedded = detail.match(/\b(model\.[a-z_]+)\b/)?.[1];
     const path = embedded && (!location || location === 'model') ? embedded : location;
     const label = configFieldLabel(path, path || (english ? 'Configuration' : '配置'), english);
-    let message = detail;
-    // A field shown as a percentage states its bound as one too: below 1 reads below 100%.
-    const bound = (pattern: RegExp) => {
-      const value = detail.split(pattern)[1].trim();
-      return PERCENTAGE_FIELDS.includes(path) && /^\d+(\.\d+)?$/.test(value) ? `${Number((Number(value) * 100).toFixed(4))}%` : value;
-    };
+    const type = typeof error.type === 'string' ? error.type : undefined;
+    const ctx = error.ctx && typeof error.ctx === 'object' ? error.ctx as Record<string, unknown> : undefined;
+    let message = describeValidation(error, { label, percent: PERCENTAGE_FIELDS.includes(path), english }) ?? detail;
     if (memory) message = english
       ? `Estimated peak memory ${memory[1]} exceeds ${memory[2]} (${memory[3]}), so training cannot start. Turn on gradient checkpointing, reduce the batch size or lower the training size.`
       : `预计显存峰值 ${memory[1]}，超过 ${memory[2]} 的 ${memory[3]} 容量，无法开始训练。开启梯度检查点、减小批大小或降低训练尺寸都能减少显存占用。`;
-    else if (!english) {
-      if (/is required for|field required/i.test(detail)) message = `请填写或选择${label}`;
+    else if (message === detail && !english) {
+      if (/is required for/i.test(detail)) message = `请填写或选择${label}`;
       else if (/at least one training dataset source is required/i.test(detail)) message = '请先添加训练图片或导入已有数据集';
       else if (/not found|does not exist|file is missing/i.test(detail)) message = '找不到指定文件，请检查训练机上的路径';
       else if (/outside allowed/i.test(detail)) message = '该路径不在允许使用的目录内';
-      else if (/greater than or equal to/i.test(detail)) message = `输入值应大于或等于 ${bound(/greater than or equal to/i)}`;
-      else if (/greater than/i.test(detail)) message = `输入值应大于 ${bound(/greater than/i)}`;
-      else if (/less than or equal to/i.test(detail)) message = `输入值应小于或等于 ${bound(/less than or equal to/i)}`;
-      else if (/less than/i.test(detail)) message = `输入值应小于 ${bound(/less than/i)}`;
       else if (/bucket step (\d+) must be a multiple of align (\d+)/.test(detail)) { const [, step, align] = detail.match(/bucket step (\d+) must be a multiple of align (\d+)/)!; message = `分桶步长 ${step} 不是 ${align} 的倍数；当前模型要求 ${align} 的倍数，如 ${Math.max(Number(align), Math.round(Number(step) / Number(align)) * Number(align))}`; }
       else if (/requires? CUDA/i.test(detail)) message = '此选项需要 CUDA，请选择当前设备支持的配置';
       else if (/marked v-prediction/i.test(detail)) message = '这个 SDXL 模型是 v 预测模型（文件带 v_pred 标记），请把 SDXL 预测方式改为 v_prediction';
       else if (/marked zero terminal SNR/i.test(detail)) message = '这个 SDXL 模型按零终点信噪比训练（文件带 ztsnr 标记），请开启零终点信噪比（Zero SNR）';
-      else if (/Extra inputs are not permitted/i.test(detail)) message = '当前版本不支持此参数，请检查导入的配置';
-      else if (/valid (integer|number)/i.test(detail)) message = '请输入有效数字';
       else if (/no (images|training images)|dataset is empty/i.test(detail)) message = '数据源中没有可用的训练图片';
       else if (/unknown preset/i.test(detail)) message = '当前模型不支持这个训练范围，请重新选择';
       else if (Array.from(detail).every(character => character.charCodeAt(0) < 128)) message = OPAQUE_CONFIG_ISSUE;
     }
-    return {path, label, message, detail, tab: configTabForPath(path)};
+    return { path, label, message, detail, tab: configTabForPath(path), type, ctx };
   });
   return issues.filter((issue, index) => issues.findIndex(item => item.path === issue.path && item.detail === issue.detail) === index);
 }

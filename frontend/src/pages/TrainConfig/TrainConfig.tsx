@@ -542,7 +542,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       if (job.id) navigate(`/jobs/${job.id}`);
     } catch (err: any) {
       setError(formatApiError(err));
-      if (Array.isArray(err.details?.errors)) setValidationErrors(presentConfigIssues(err.details.errors, english).filter(issue => Object.values(CONFIG_TAB_GROUPS).flat().includes(issue.path.split('.')[0])).map(issue => ({loc:issue.path,msg:issue.detail})));
+      if (Array.isArray(err.details?.errors)) setValidationErrors(presentConfigIssues(err.details.errors, english).filter(issue => Object.values(CONFIG_TAB_GROUPS).flat().includes(issue.path.split('.')[0])).map(issue => ({ loc: issue.path, msg: issue.detail, type: issue.type, ctx: issue.ctx })));
     } finally { setIsEnqueuing(false); }
   };
 

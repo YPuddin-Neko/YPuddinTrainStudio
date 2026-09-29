@@ -1,4 +1,5 @@
 import i18n from '../i18n';
+import { describeValidation, type ValidationIssue } from './validationMessages';
 
 /** Keep server validation details, while giving connection failures an actionable message. */
 export function formatApiError(error: unknown): string {
@@ -10,12 +11,16 @@ export function formatApiError(error: unknown): string {
   }
   const errors = payload.details?.errors;
   if (!Array.isArray(errors)) return message;
+  const english = i18n.language?.startsWith('en');
   const details = errors.flatMap((item: unknown) => {
     if (!item || typeof item !== 'object') return [];
-    const { loc, msg } = item as { loc?: unknown; msg?: unknown };
+    const { loc, msg } = item as ValidationIssue;
     if (typeof msg !== 'string') return [];
-    const path = Array.isArray(loc) ? loc.join('.') : typeof loc === 'string' ? loc : '';
-    return [path ? `${path}: ${msg}` : msg];
+    // Where FastAPI found the value (body, query) is not part of the field's name.
+    const parts = Array.isArray(loc) ? loc.filter((part, index) => index > 0 || !['body', 'query', 'path'].includes(String(part))) : [];
+    const path = parts.length ? parts.join('.') : typeof loc === 'string' ? loc : '';
+    const text = describeValidation(item as ValidationIssue, { english }) ?? msg;
+    return [path ? `${path}: ${text}` : text];
   });
   return [...new Set([message, ...details])].filter(Boolean).join('\n');
 }

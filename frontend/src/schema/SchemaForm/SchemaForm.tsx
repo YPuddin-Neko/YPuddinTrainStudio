@@ -64,6 +64,9 @@ interface SchemaProperty {
 export interface ValidationError {
   loc?: string;
   msg: string;
+  /** Pydantic's error kind and bound, when the value itself failed validation. */
+  type?: string;
+  ctx?: Record<string, unknown>;
 }
 
 /** A value the trainer accepts but rounds; `fix` replaces it with one that is used as written. */
