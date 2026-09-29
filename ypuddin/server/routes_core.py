@@ -150,15 +150,23 @@ def family_info(name: str) -> dict[str, Any]:
     fam = get_family(name)
     spec = fam.spec
     names: list[str] = []
+    kernels: dict[str, tuple[int, ...]] = {}
     if hasattr(fam, "linear_module_names"):
         try:
             names = fam.linear_module_names()
+            kernels = fam.conv_module_kernels() if hasattr(fam, "conv_module_kernels") else {}
         except Exception:  # noqa: BLE001
-            names = []
+            names, kernels = [], {}
     probe = AdapterConfig(algo="lora", rank=4, alpha=4)
+    probe_conv = AdapterConfig(algo="lora", rank=4, alpha=4, layer_types="linear_conv")
     presets = []
     for pname, preset in fam.presets().items():
         layers = len(resolve_targets(names, probe, preset)) if names else 0
+        with_conv = (
+            resolve_targets([*names, *kernels], probe_conv, preset, conv_kernels=kernels)
+            if names and kernels and preset.conv
+            else []
+        )
         presets.append(
             {
                 "name": pname,
@@ -166,6 +174,10 @@ def family_info(name: str) -> dict[str, Any]:
                 "include": list(preset.include),
                 "exclude": list(preset.exclude),
                 "layers": layers,
+                # With convolutions trained too: all adapted layers, and how many of them are convolutions.
+                "conv": list(preset.conv),
+                "layers_with_conv": len(with_conv),
+                "conv_layers": sum(target.name in kernels for target in with_conv),
             }
         )
     text_modes = ["auto", "cached"] + (["online"] if "online_text" in spec.capabilities else [])

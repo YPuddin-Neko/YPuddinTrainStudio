@@ -8150,7 +8150,8 @@
           "rank": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 1.0
               },
               {
                 "type": "string",
@@ -8301,7 +8302,7 @@
           },
           "dropout": {
             "type": "number",
-            "maximum": 1.0,
+            "exclusiveMaximum": 1.0,
             "minimum": 0.0,
             "title": "Dropout",
             "description": "对适配器输出的 dropout",
@@ -8314,7 +8315,7 @@
           },
           "rank_dropout": {
             "type": "number",
-            "maximum": 1.0,
+            "exclusiveMaximum": 1.0,
             "minimum": 0.0,
             "title": "Rank Dropout",
             "description": "秩轴 dropout",
@@ -8327,7 +8328,7 @@
           },
           "module_dropout": {
             "type": "number",
-            "maximum": 1.0,
+            "exclusiveMaximum": 1.0,
             "minimum": 0.0,
             "title": "Module Dropout",
             "description": "整模块跳过概率",
@@ -8341,12 +8342,63 @@
           "preset": {
             "type": "string",
             "title": "Preset",
-            "description": "选择哪些线性层参与训练：选项和层数由当前模型提供。attn-mlp 通常包含注意力和 MLP；full-linear 覆盖主模块中的全部线性层。",
+            "description": "选择哪些层参与训练：选项和层数由当前模型提供。attn-mlp 通常包含注意力和 MLP；full-linear 覆盖主模块中的全部线性层。",
             "default": "attn-mlp",
             "x-ui": {
               "control": "select",
               "group": "adapter",
               "order": 110
+            }
+          },
+          "layer_types": {
+            "type": "string",
+            "enum": [
+              "linear",
+              "linear_conv"
+            ],
+            "title": "Layer Types",
+            "description": "训练层范围内哪些类型的层添加适配器：linear 只训练线性层；linear_conv 同时训练卷积层，目前只有 SDXL 的 UNet 含卷积层。卷积层的 Rank 和 Alpha 可以单独设置。",
+            "default": "linear",
+            "x-ui": {
+              "control": "select",
+              "group": "adapter",
+              "order": 112
+            }
+          },
+          "conv_rank": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conv Rank",
+            "description": "大于 1×1 的卷积层使用的 Rank，与 kohya、LyCORIS 的 conv_dim 相同；留空与 Rank 相同。1×1 卷积按 Rank 训练。",
+            "x-ui": {
+              "group": "adapter",
+              "order": 114,
+              "show_when": "adapter.layer_types == 'linear_conv'"
+            }
+          },
+          "conv_alpha": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conv Alpha",
+            "description": "大于 1×1 的卷积层使用的 Alpha，与 kohya、LyCORIS 的 conv_alpha 相同；留空与 Alpha 相同。",
+            "x-ui": {
+              "group": "adapter",
+              "order": 116,
+              "show_when": "adapter.layer_types == 'linear_conv'"
             }
           },
           "rules": {
@@ -8462,7 +8514,8 @@
           "rank": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 1.0
               },
               {
                 "type": "string",
@@ -8477,7 +8530,8 @@
           "alpha": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "number",
+                "exclusiveMinimum": 0.0
               },
               {
                 "type": "null"
@@ -8499,7 +8553,8 @@
           "lr": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "number",
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -8511,7 +8566,9 @@
           "dropout": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "number",
+                "exclusiveMaximum": 1.0,
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -8522,7 +8579,9 @@
           "rank_dropout": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "number",
+                "exclusiveMaximum": 1.0,
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -12271,6 +12330,24 @@
           "layers": {
             "type": "integer",
             "title": "Layers"
+          },
+          "conv": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Conv",
+            "default": []
+          },
+          "layers_with_conv": {
+            "type": "integer",
+            "title": "Layers With Conv",
+            "default": 0
+          },
+          "conv_layers": {
+            "type": "integer",
+            "title": "Conv Layers",
+            "default": 0
           }
         },
         "additionalProperties": true,

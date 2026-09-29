@@ -72,24 +72,40 @@ def build_metadata(
 ) -> dict[str, str]:
     """kohya ``ss_*`` + ModelSpec ``modelspec.*`` + our ``ypuddin.*`` keys (all values are strings)."""
     adapter_cfg = {key: value for key, value in adapter_cfg.items() if key != "resume_weights"}
-    rank = adapter_cfg.get("rank")
-    alpha = adapter_cfg.get("alpha")
     algo = adapter_cfg.get("algo")
-    # OrthoLoRA and T-LoRA are exported as plain LoRA; the kohya keys describe that file.
-    if algo == "tlora" and adapter_cfg.get("tlora_ortho") and isinstance(rank, int):
-        rank = alpha = 2 * rank  # trained and frozen terms together, with the scale folded in
-    elif algo == "ortho" and isinstance(rank, int):
-        alpha = rank
+
+    def exported(rank: Any, alpha: Any) -> tuple[Any, Any]:
+        # OrthoLoRA and T-LoRA are exported as plain LoRA; the kohya keys describe that file.
+        if algo == "tlora" and adapter_cfg.get("tlora_ortho") and isinstance(rank, int):
+            return 2 * rank, 2 * rank  # trained and frozen terms together, with the scale folded in
+        if algo == "ortho" and isinstance(rank, int):
+            return rank, rank
+        return rank, alpha
+
+    rank, alpha = exported(adapter_cfg.get("rank"), adapter_cfg.get("alpha"))
     args = ("algo", "factor", "decompose_both", "rs_lora", "dora", "preset", "init")
     if algo == "tlora":
         args += ("tlora_min_rank", "tlora_power", "tlora_ortho")
     if adapter_cfg.get("dora"):
         args += ("dora_axis",)
+    network_args = {k: adapter_cfg.get(k) for k in args}
+    # kohya and LyCORIS name the rank and alpha of kernels larger than 1×1 conv_dim / conv_alpha;
+    # LyCORIS Full layers have neither.
+    if any(
+        layer.get("algo") != "full" and any(size != 1 for size in layer.get("kernel") or ())
+        for layer in targets.values()
+        if isinstance(layer, dict)
+    ):
+        conv_rank, conv_alpha = adapter_cfg.get("conv_rank"), adapter_cfg.get("conv_alpha")
+        network_args["conv_dim"], network_args["conv_alpha"] = exported(
+            adapter_cfg.get("rank") if conv_rank is None else conv_rank,
+            adapter_cfg.get("alpha") if conv_alpha is None else conv_alpha,
+        )
     meta: dict[str, str] = {
         "ss_network_module": "ypuddin.adapters",
         "ss_network_dim": str(rank),
         "ss_network_alpha": str(alpha),
-        "ss_network_args": json.dumps({k: adapter_cfg.get(k) for k in args}, ensure_ascii=False),
+        "ss_network_args": json.dumps(network_args, ensure_ascii=False),
         "ss_base_model_version": family,
         "ss_training_finished_at": str(time.time()),
         "modelspec.sai_model_spec": "1.0.1",
@@ -167,8 +183,13 @@ def modules_from_tensors(
     *,
     prefix: str = "lora_unet",
     dtype: torch.dtype = torch.float32,
+    kernels: dict[str, tuple[int, ...]] | None = None,
 ) -> dict[str, tuple[AdapterModule, Tensor | None]]:
-    """Rebuild standalone adapter modules keyed by canonical-ish name (underscored kohya name)."""
+    """Rebuild standalone adapter modules keyed by canonical-ish name (underscored kohya name).
+
+    ``kernels`` names each target layer's kernel (``()`` for a linear layer) where the caller knows
+    the model: files keep a low-rank convolution's kernel only inside flattened factors.
+    """
     targets_meta = parse_targets_metadata(metadata or {})
     by_underscored = {k.replace(".", "_"): v for k, v in targets_meta.items()}
     out: dict[str, tuple[AdapterModule, Tensor | None]] = {}
@@ -183,5 +204,6 @@ def modules_from_tensors(
             sub["lora_down.weight"] = sub.pop("lora_A.weight")
             sub["lora_up.weight"] = sub.pop("lora_B.weight")
         meta = targets_meta.get(module_key) or by_underscored.get(module_key[len(prefix) + 1 :])
-        out[module_key] = (ALGO_CLASSES[algo].from_tensors(sub, meta, dtype=dtype), dora)
+        extra = {"kernel": kernels[module_key]} if kernels and module_key in kernels else {}
+        out[module_key] = (ALGO_CLASSES[algo].from_tensors(sub, meta, dtype=dtype, **extra), dora)
     return out

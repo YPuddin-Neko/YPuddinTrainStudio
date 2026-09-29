@@ -29,14 +29,23 @@ def bind_checkpoint(backbone, path: Path, family: str, prefix: str, *, text=None
     import torch.nn.functional as F
     from torch import nn
 
-    from ypuddin.adapters import AdaptedLinear, FrozenLinear, load_adapter_file, modules_from_tensors
+    from ypuddin.adapters import (
+        AdaptedConv,
+        AdaptedLinear,
+        FrozenLinear,
+        load_adapter_file,
+        modules_from_tensors,
+    )
     from ypuddin.adapters.components import (
         SINGLE_TEXT_ADAPTER_PREFIX,
         TEXT_ADAPTER_PREFIXES,
         text_export_root,
     )
+    from ypuddin.adapters.conv import CONV_TYPES
     from ypuddin.adapters.dora import magnitude_axis
+    from ypuddin.adapters.linear import merged_bias
 
+    # DoRA's rescale is not linear in ΔW, so a strength below 1 blends the adapted and base outputs.
     class ScaledAdapter(AdaptedLinear):
         def forward(self, x):
             if self.dora is None:
@@ -45,8 +54,19 @@ def bind_checkpoint(backbone, path: Path, family: str, prefix: str, *, text=None
             if self.multiplier == 0:
                 return base
             weight = self.dora.rescale(self.base.dequant(torch.float32) + self.adapter.delta_weight().float())
-            bias = None if self.base.bias is None else self.base.bias.to(x.dtype)
-            adapted = F.linear(x, weight.to(x.dtype), bias)
+            adapted = F.linear(x, weight.to(x.dtype), merged_bias(self.base.bias, self.adapter, 1.0, x.dtype))
+            return base + self.multiplier * (adapted - base)
+
+    class ScaledConvAdapter(AdaptedConv):
+        def forward(self, x):
+            if self.dora is None:
+                return super().forward(x)
+            base = self.base(x)
+            if self.multiplier == 0:
+                return base
+            weight = self.dora.rescale(self.base.weight.float() + self.adapter.delta_weight().float())
+            bias = merged_bias(self.base.bias, self.adapter, 1.0, x.dtype)
+            adapted = self.base._conv_forward(x, weight.to(x.dtype), bias)
             return base + self.multiplier * (adapted - base)
 
     tensors, metadata = load_adapter_file(path)
@@ -77,22 +97,36 @@ def bind_checkpoint(backbone, path: Path, family: str, prefix: str, *, text=None
             component_models[name] = (*tokens[name], encoders[name])
     plans, matched = [], set()
     for component, (component_prefix, root, model) in component_models.items():
-        modules = modules_from_tensors(tensors, metadata, prefix=component_prefix)
-        matched.update(modules)
         names = {
             component_prefix + "_" + name.removeprefix(root).replace(".", "_"): (name, module)
             for name, module in model.named_modules()
-            if isinstance(module, (nn.Linear, FrozenLinear))
+            if isinstance(module, (nn.Linear, FrozenLinear, *CONV_TYPES))
         }
+        # Files keep a low-rank convolution's kernel only inside flattened factors; the model names it.
+        kernels = {
+            key: tuple(module.kernel_size) if isinstance(module, CONV_TYPES) else ()
+            for key, (_, module) in names.items()
+        }
+        modules = modules_from_tensors(tensors, metadata, prefix=component_prefix, kernels=kernels)
+        matched.update(modules)
         for key, (adapter, dora) in modules.items():
             if key not in names:
                 raise ValueError(f"Checkpoint target is absent from the sampling model: {key}")
             name, original = names[key]
-            if (original.in_features, original.out_features) != (adapter.in_features, adapter.out_features):
-                raise ValueError(f"Checkpoint target shape differs from the sampling model: {name}")
-            base = original if isinstance(original, FrozenLinear) else FrozenLinear.from_linear(original)
             axis = "output" if dora is None else magnitude_axis(dora)
-            wrapper = ScaledAdapter(base, adapter, dora=dora is not None, dora_axis=axis, name=name)
+            if isinstance(original, CONV_TYPES):
+                if tuple(original.weight.shape) != adapter.weight_shape:
+                    raise ValueError(f"Checkpoint target shape differs from the sampling model: {name}")
+                base = original
+                wrapper = ScaledConvAdapter(base, adapter, dora=dora is not None, dora_axis=axis, name=name)
+            else:
+                if (original.in_features, original.out_features) != (
+                    adapter.in_features,
+                    adapter.out_features,
+                ):
+                    raise ValueError(f"Checkpoint target shape differs from the sampling model: {name}")
+                base = original if isinstance(original, FrozenLinear) else FrozenLinear.from_linear(original)
+                wrapper = ScaledAdapter(base, adapter, dora=dora is not None, dora_axis=axis, name=name)
             wrapper.component = component
             if dora is not None:
                 wrapper.dora.load_tensor(dora)

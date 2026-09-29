@@ -271,9 +271,28 @@ class SDXLFamily(ModelFamily):
     def presets(self) -> dict[str, TargetPreset]:
         attn = ("*.attn1.{to_q,to_k,to_v,to_out.0}", "*.attn2.{to_q,to_k,to_v,to_out.0}")
         mlp = ("*.ff.net.0.proj", "*.ff.net.2")
+        # kohya's LoCon scope: every layer of the ResNet and resampling blocks, time_emb_proj included.
+        resnet = (
+            "*.resnets.*.{conv1,conv2,conv_shortcut,time_emb_proj}",
+            "*.{downsamplers,upsamplers}.*.conv",
+        )
         return {
             "attn-only": TargetPreset("attn-only", attn, description="仅训练图像模型的注意力投影，训练参数更少。"),
-            "attn-mlp": TargetPreset("attn-mlp", attn + mlp, description="训练图像模型的注意力和前馈层。"),
+            "attn-mlp": TargetPreset(
+                "attn-mlp",
+                attn + mlp,
+                description="训练图像模型的注意力和前馈层；同时训练卷积层时，还训练 ResNet 模块和上下采样层。",
+                conv=resnet,
+            ),
+            "all-layers": TargetPreset(
+                "all-layers",
+                ("*",),
+                description=(
+                    "训练 UNet 的全部线性层，包括 Transformer 投影和时间、尺寸嵌入层；同时训练卷积层时，"
+                    "也训练全部卷积层，包括输入和输出卷积。归一化层不训练。"
+                ),
+                conv=("*",),
+            ),
         }
 
     def memory_layout(self, loaded: LoadedModel) -> MemoryLayout:
@@ -299,6 +318,16 @@ class SDXLFamily(ModelFamily):
         with torch.device("meta"):
             model = self.meta_backbone(ModelConfig(family="sdxl"))
         return [name for name, module in model.named_modules() if isinstance(module, nn.Linear)]
+
+    def conv_module_kernels(self) -> dict[str, tuple[int, ...]]:
+        """Kernel size of every convolution the UNet trains adapters on."""
+        with torch.device("meta"):
+            model = self.meta_backbone(ModelConfig(family="sdxl"))
+        return {
+            name: tuple(module.kernel_size)
+            for name, module in model.named_modules()
+            if isinstance(module, nn.Conv2d)
+        }
 
 
 register("sdxl", SDXLFamily)

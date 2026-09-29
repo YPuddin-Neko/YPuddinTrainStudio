@@ -2,17 +2,19 @@
 
 The Hadamard structure does not factor through the input, so LoHa always runs on the merged
 path. A custom autograd function recomputes the two products in backward instead of caching
-both (LyCORIS trick) to halve activation memory for large layers.
+both (LyCORIS trick) to halve activation memory for large layers. A convolution's ``w*_b`` span
+``in·k…``, the layout LyCORIS exports without Tucker decomposition.
 """
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import torch
 from torch import Tensor, nn
 
-from .base import AdapterModule, compute_scale
+from .base import TUCKER_UNSUPPORTED, AdapterModule, compute_scale, resolve_kernel
 
 
 class _HadaWeight(torch.autograd.Function):
@@ -43,22 +45,31 @@ class LoHa(AdapterModule):
         rank: int = 16,
         alpha: float = 16.0,
         rs_lora: bool = False,
+        kernel: tuple[int, ...] = (),
         dropout: float = 0.0,
         rank_dropout: float = 0.0,
         init: str = "default",
         dtype: torch.dtype = torch.float32,
     ) -> None:
         super().__init__(
-            out_features, in_features, dropout=dropout, rank_dropout=rank_dropout, init=init, dtype=dtype
+            out_features,
+            in_features,
+            kernel=kernel,
+            dropout=dropout,
+            rank_dropout=rank_dropout,
+            init=init,
+            dtype=dtype,
         )
         self.rank = int(rank)
+        if self.rank <= 0:
+            raise ValueError("rank must be positive")
         self.alpha = float(alpha)
         self.rs_lora = bool(rs_lora)
         self.scale = compute_scale(self.alpha, self.rank, self.rs_lora)
         self.w1_a = nn.Parameter(torch.empty(out_features, self.rank, dtype=dtype))
-        self.w1_b = nn.Parameter(torch.empty(self.rank, in_features, dtype=dtype))
+        self.w1_b = nn.Parameter(torch.empty(self.rank, self.fan_in, dtype=dtype))
         self.w2_a = nn.Parameter(torch.empty(out_features, self.rank, dtype=dtype))
-        self.w2_b = nn.Parameter(torch.empty(self.rank, in_features, dtype=dtype))
+        self.w2_b = nn.Parameter(torch.empty(self.rank, self.fan_in, dtype=dtype))
         self.reset_parameters()
 
     @torch.no_grad()
@@ -77,7 +88,7 @@ class LoHa(AdapterModule):
         mask = self._rank_mask(self.rank, self.w1_a.device, self.w1_a.dtype)
         w1_a = self.w1_a if mask is None else self.w1_a * mask
         w = _HadaWeight.apply(w1_a, self.w1_b, self.w2_a, self.w2_b)
-        return w * (self.scale * self.effective_scalar)
+        return self._as_weight(w * (self.scale * self.effective_scalar))
 
     def delta_apply(self, x: Tensor) -> Tensor:
         return self._output_dropout(super().delta_apply(x))
@@ -99,24 +110,28 @@ class LoHa(AdapterModule):
             "rank": self.rank,
             "alpha": self.alpha,
             "rs_lora": self.rs_lora,
-            "out_features": self.out_features,
-            "in_features": self.in_features,
+            **self._shape_metadata(),
         }
 
     @classmethod
     def from_tensors(
         cls, tensors: dict[str, Tensor], meta: dict[str, Any] | None = None, **kwargs: Any
     ) -> LoHa:
+        if "hada_t1" in tensors or "hada_t2" in tensors:
+            raise ValueError(TUCKER_UNSUPPORTED)
         w1_a, w1_b = tensors["hada_w1_a"], tensors["hada_w1_b"]
+        # w1_b flattens a convolution's kernel, so the metadata or the caller names it.
+        kernel = resolve_kernel(meta, kwargs)
         rank = int(w1_a.shape[1])
         alpha_file = float(tensors["alpha"].item()) if "alpha" in tensors else float(rank)
         dtype = kwargs.pop("dtype", torch.float32)
         mod = cls(
             int(w1_a.shape[0]),
-            int(w1_b.shape[1]),
+            int(w1_b.shape[1]) // math.prod(kernel),
             rank=rank,
             alpha=alpha_file,
             rs_lora=False,
+            kernel=kernel,
             dtype=dtype,
             **kwargs,
         )

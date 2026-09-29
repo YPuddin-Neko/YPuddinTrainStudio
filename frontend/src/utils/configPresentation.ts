@@ -28,6 +28,7 @@ const labels: Record<string, string> = {
   'adapter.decompose_both': '双矩阵低秩分解', 'adapter.rs_lora': 'Rank 稳定缩放', 'adapter.dora': '启用 DoRA', 'adapter.dora_axis': 'DoRA 计算方向',
   'adapter.init': '初始化方式', 'adapter.dropout': '输出丢弃率', 'adapter.rank_dropout': '秩丢弃率',
   'adapter.module_dropout': '模块丢弃率', 'adapter.preset': '训练层范围', 'adapter.rules': '逐层覆盖规则',
+  'adapter.layer_types': '训练层类型', 'adapter.conv_rank': '卷积层 Rank', 'adapter.conv_alpha': '卷积层 Alpha',
   'adapter.mode': '权重计算方式', 'adapter.param_dtype': '可训练参数精度', 'adapter.lr_scale': '学习率缩放',
   'adapter.resume_weights': '继续训练的权重', 'objective.timestep_sampling': '时间步采样',
   'objective.logit_mean': 'Logit 均值', 'objective.logit_std': 'Logit 标准差', 'objective.res_shift_tokens': '分辨率偏移基准',
@@ -86,6 +87,9 @@ export function configFieldLabel(path: string, fallback: string, english = false
   if (english && path === 'dataset.crop_anchor') return 'Crop anchor';
   if (english && path === 'adapter.resume_weights') return 'Weights to continue training';
   if (english && path === 'adapter.dora_axis') return 'DoRA axis';
+  if (english && path === 'adapter.layer_types') return 'Layer types';
+  if (english && path === 'adapter.conv_rank') return 'Convolution rank';
+  if (english && path === 'adapter.conv_alpha') return 'Convolution alpha';
   if (english && path.startsWith('adapter.tlora_')) return ({ 'adapter.tlora_min_rank': 'Minimum rank', 'adapter.tlora_power': 'Rank curve', 'adapter.tlora_ortho': 'Orthogonal start' } as Record<string, string>)[path] || fallback;
   if (english && path === 'checkpoint.save_training_metadata') return 'Embed training parameters in LoRA';
   if (english && path === 'checkpoint.save_state_every_steps') return 'Recovery save interval';
@@ -231,8 +235,9 @@ export function configPresetLabel(name: string, description: string, defaultPres
   const names: Record<string, [string, string]> = {
     'attn-mlp': ['常规范围', 'Standard scope'],
     'attn-only': ['精简范围', 'Reduced scope'],
-    'full-linear': ['全部线性层', 'All linear layers'],
+    'full-linear': ['主模块全部线性层', 'All block linear layers'],
     'all-linear': ['全部线性层', 'All linear layers'],
+    'all-layers': ['全部层', 'All layers'],
     'with-adapter': ['常规范围＋文字适配层', 'Standard scope + text adapter'],
     'attn-mlp-text': ['常规范围＋文字融合层', 'Standard scope + text fusion'],
     'adapter-only': ['仅文字适配层', 'Text adapter only'],
@@ -259,6 +264,7 @@ export function configOptionLabel(path: string, option: string, english = false)
     'model.attention': {auto:['默认','PyTorch SDPA'],sdpa:['PyTorch SDPA','PyTorch SDPA'],xformers:['xFormers','xFormers'],flash_attn:['FlashAttention 2','FlashAttention 2'],metal_flash:['Metal FlashAttention · Apple','Metal FlashAttention · Apple'],sage:['仅采样','SageAttention']},
     'adapter.init': {default:['默认初始化','Default'],scalar:['随机权重，零值缩放','Scalar']},
     'adapter.dora_axis': {output:['按输出通道','Output'],input:['按输入通道','Input']},
+    'adapter.layer_types': {linear:['只训练线性层','Linear only'],linear_conv:['线性层和卷积层','Linear + convolution']},
     'adapter.mode': {auto:['自动','Automatic'],bypass:['分开计算','Bypass'],merged:['合并权重后计算','Merged']},
     'memory.activation_checkpointing': {none:['关闭','Off'],block:['开启','On'],unsloth:['开启并卸载到内存','On + offload']},
     'model.prediction_type': { epsilon: ['噪声预测', 'Epsilon'], v_prediction: ['速度预测', 'v-prediction'] },
@@ -295,6 +301,12 @@ export function configTabForPath(path: string): ConfigTab {
   return (Object.keys(CONFIG_TAB_GROUPS) as ConfigTab[]).find(tab => CONFIG_TAB_GROUPS[tab].includes(group)) || 'advanced';
 }
 
+/**
+ * Probabilities and fractions the parameter form shows as percentages, unlike EMA decay, timesteps and
+ * warmup's mixed steps-or-ratio contract, which keep their native units.
+ */
+export const PERCENTAGE_FIELDS = ['adapter.dropout', 'adapter.rank_dropout', 'adapter.module_dropout', 'dataset.area_tolerance', 'dataset.caption.tag_dropout', 'dataset.caption.caption_dropout', 'scheduler.min_lr_ratio', 'validation.split_ratio'];
+
 export type ConfigIssue = { path: string; label: string; message: string; detail: string; tab: ConfigTab };
 /** Stands in for a reason Studio cannot phrase in Chinese; only usable where the raw detail can be expanded. */
 export const OPAQUE_CONFIG_ISSUE = '此配置未通过检查，展开详情查看具体原因';
@@ -307,6 +319,11 @@ export function presentConfigIssues(errors: Array<{loc?: unknown; msg?: unknown}
     const path = embedded && (!location || location === 'model') ? embedded : location;
     const label = configFieldLabel(path, path || (english ? 'Configuration' : '配置'), english);
     let message = detail;
+    // A field shown as a percentage states its bound as one too: below 1 reads below 100%.
+    const bound = (pattern: RegExp) => {
+      const value = detail.split(pattern)[1].trim();
+      return PERCENTAGE_FIELDS.includes(path) && /^\d+(\.\d+)?$/.test(value) ? `${Number((Number(value) * 100).toFixed(4))}%` : value;
+    };
     if (memory) message = english
       ? `Estimated peak memory ${memory[1]} exceeds ${memory[2]} (${memory[3]}), so training cannot start. Turn on gradient checkpointing, reduce the batch size or lower the training size.`
       : `预计显存峰值 ${memory[1]}，超过 ${memory[2]} 的 ${memory[3]} 容量，无法开始训练。开启梯度检查点、减小批大小或降低训练尺寸都能减少显存占用。`;
@@ -315,9 +332,10 @@ export function presentConfigIssues(errors: Array<{loc?: unknown; msg?: unknown}
       else if (/at least one training dataset source is required/i.test(detail)) message = '请先添加训练图片或导入已有数据集';
       else if (/not found|does not exist|file is missing/i.test(detail)) message = '找不到指定文件，请检查训练机上的路径';
       else if (/outside allowed/i.test(detail)) message = '该路径不在允许使用的目录内';
-      else if (/greater than or equal to/i.test(detail)) message = `输入值应大于或等于 ${detail.split(/greater than or equal to/i)[1].trim()}`;
-      else if (/greater than/i.test(detail)) message = `输入值应大于 ${detail.split(/greater than/i)[1].trim()}`;
-      else if (/less than or equal to/i.test(detail)) message = `输入值应小于或等于 ${detail.split(/less than or equal to/i)[1].trim()}`;
+      else if (/greater than or equal to/i.test(detail)) message = `输入值应大于或等于 ${bound(/greater than or equal to/i)}`;
+      else if (/greater than/i.test(detail)) message = `输入值应大于 ${bound(/greater than/i)}`;
+      else if (/less than or equal to/i.test(detail)) message = `输入值应小于或等于 ${bound(/less than or equal to/i)}`;
+      else if (/less than/i.test(detail)) message = `输入值应小于 ${bound(/less than/i)}`;
       else if (/bucket step (\d+) must be a multiple of align (\d+)/.test(detail)) { const [, step, align] = detail.match(/bucket step (\d+) must be a multiple of align (\d+)/)!; message = `分桶步长 ${step} 不是 ${align} 的倍数；当前模型要求 ${align} 的倍数，如 ${Math.max(Number(align), Math.round(Number(step) / Number(align)) * Number(align))}`; }
       else if (/requires? CUDA/i.test(detail)) message = '此选项需要 CUDA，请选择当前设备支持的配置';
       else if (/marked v-prediction/i.test(detail)) message = '这个 SDXL 模型是 v 预测模型（文件带 v_pred 标记），请把 SDXL 预测方式改为 v_prediction';

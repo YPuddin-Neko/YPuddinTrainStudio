@@ -23,6 +23,16 @@ export function effectiveTextEncoding(family: FamilyInfo | undefined, config: Re
   return config.training?.train_text_encoder || mode === 'online' || (mode === 'auto' && has(family, 'online_text')) ? 'online' : 'cached';
 }
 
+/** The selected training scope, as the model describes it. */
+export function selectedPreset(family: FamilyInfo | undefined, config: Record<string, any>) {
+  return family?.presets?.find(preset => preset.name === (config.adapter?.preset || family.default_preset));
+}
+
+/** Whether the model has convolution layers adapters can train (SDXL's UNet). */
+export function familyHasConvolutions(family: FamilyInfo | undefined): boolean {
+  return !!family?.presets?.some(preset => (preset.conv_layers ?? 0) > 0);
+}
+
 /** The noise-level sampling a new configuration of this model starts with. */
 export function defaultTimestepSampling(family: FamilyInfo): string {
   return family.objective === 'ddpm' ? 'uniform' : family.sampling?.shift == null ? 'resolution_shift' : 'shift';
@@ -51,6 +61,11 @@ export function unusedSettingReason(path: string, { family, config, english }: F
       return effectiveTextEncoding(family, config) === 'cached' ? text('标签在训练前已编码，训练时不加载文本编码器。', 'Captions are encoded before training, so the text encoder is not loaded while training.') : undefined;
     case 'loop.mixed_precision':
       return runtime === 'mps' ? text('Apple 芯片训练统一使用 FP32，不使用混合精度。', 'Apple chips train in FP32 without mixed precision.') : undefined;
+    case 'adapter.layer_types':
+      return familyHasConvolutions(family) ? undefined : text(`${name} 没有卷积层，只训练线性层。`, `${name} has no convolution layers; only linear layers are trained.`);
+    case 'adapter.conv_rank':
+    case 'adapter.conv_alpha':
+      return (selectedPreset(family, config)?.conv_layers ?? 0) > 0 ? undefined : text('当前训练层范围不含卷积层，此项不生效。', 'The selected scope has no convolution layers, so this has no effect.');
     default:
       return undefined;
   }
@@ -59,6 +74,7 @@ export function unusedSettingReason(path: string, { family, config, english }: F
 /** An unused setting is hidden unless it is still switched on or set (or would stop training), so it can be reset. */
 export function hideUnusedSetting(path: string, value: unknown, { config }: FieldContext): boolean {
   if (path === 'memory.offload_text_encoder') return !(value && config.training?.train_text_encoder);
+  if (path === 'adapter.layer_types') return value !== 'linear_conv';
   if (path === 'memory.allow_tf32' || path === 'loop.mixed_precision') return true;
   return !value;
 }

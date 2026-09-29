@@ -394,6 +394,12 @@ def resolve_training_compute_config(
         # Keep an explicit Apple backend intact so device validation can reject
         # it on CUDA/DTK rather than silently rewriting it as an SDPA policy.
         return effective, None
+    if profile == "linux-dtk" and device_type == "cuda":
+        from .training_rules import trains_conv_adapters
+
+        if trains_conv_adapters(cfg):
+            # The versioned DTK recipes cover linear adapters only; convolution adapters run natively.
+            return effective, None
     if (
         profile == "linux-dtk"
         and device_type == "cuda"

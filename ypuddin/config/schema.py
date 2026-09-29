@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import math
 from pathlib import PureWindowsPath
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 from .optimizer_rules import (
     optimizer_capabilities,
@@ -19,6 +19,7 @@ from .ui import F, ui
 Algo = Literal["lora", "lokr", "loha", "ortho", "tlora", "full"]
 RuleAlgo = Literal["lora", "lokr", "loha", "ortho", "tlora", "full", "none"]
 DType = Literal["bf16", "fp16", "fp32"]
+PositiveRank = Annotated[int, Field(ge=1)]
 
 
 class _Strict(BaseModel):
@@ -313,15 +314,23 @@ class DatasetConfig(_Strict):
 
 
 # --------------------------------------------------------------------------- adapter
+def _check_factor(value: int | None) -> int | None:
+    if value is not None and value != -1 and value < 1:
+        raise ValueError("factor must be -1 or a positive integer")
+    return value
+
+
 class AdapterRule(_Strict):
     match: str = F(..., help="模块名匹配：glob，或 're:' 前缀正则")
     algo: RuleAlgo | None = F(None, help="覆盖算法；none 表示排除")
-    rank: int | Literal["full"] | None = None
-    alpha: float | None = None
+    rank: PositiveRank | Literal["full"] | None = None
+    alpha: float | None = F(None, gt=0)
     factor: int | None = None
-    lr: float | None = F(None, help="该组参数的学习率（覆盖 optimizer.lr）")
-    dropout: float | None = None
-    rank_dropout: float | None = None
+    lr: float | None = F(None, ge=0, help="该组参数的学习率（覆盖 optimizer.lr）")
+    dropout: float | None = F(None, ge=0, lt=1)
+    rank_dropout: float | None = F(None, ge=0, lt=1)
+
+    _factor = field_validator("factor")(_check_factor)
 
 
 class AdapterConfig(_Strict):
@@ -330,7 +339,7 @@ class AdapterConfig(_Strict):
         help="附加权重的结构：LoRA 最常用；LoKr 参数通常最少；LoHa 表达能力更强；OrthoLoRA 在底模的主方向上做正交旋转；T-LoRA 按噪声强度调整可用的秩。full 直接训练目标层的完整权重并导出差分。",
         ui_=ui("adapter", order=0, control="select"),
     )
-    rank: int | Literal["full"] = F(
+    rank: PositiveRank | Literal["full"] = F(
         16,
         help="低秩分解的大小，默认 16：越大能学到的细节越多，文件也越大。LoKr 的 full 表示保留完整的两个 Kronecker 因子 W1/W2，不做低秩拆分，仍是 LoKr 适配器；整数秩过大时 LoKr 也会自动保留对应完整因子。",
         ui_=ui("adapter", order=10),
@@ -393,16 +402,36 @@ class AdapterConfig(_Strict):
         ui_=ui("adapter", order=76, control="switch", show_when="adapter.algo == 'tlora'"),
     )
     dropout: float = F(
-        0.0, ge=0, le=1, help="对适配器输出的 dropout", ui_=ui("adapter", order=80, advanced=True)
+        0.0, ge=0, lt=1, help="对适配器输出的 dropout", ui_=ui("adapter", order=80, advanced=True)
     )
-    rank_dropout: float = F(0.0, ge=0, le=1, help="秩轴 dropout", ui_=ui("adapter", order=90, advanced=True))
+    rank_dropout: float = F(0.0, ge=0, lt=1, help="秩轴 dropout", ui_=ui("adapter", order=90, advanced=True))
     module_dropout: float = F(
-        0.0, ge=0, le=1, help="整模块跳过概率", ui_=ui("adapter", order=100, advanced=True)
+        0.0, ge=0, lt=1, help="整模块跳过概率", ui_=ui("adapter", order=100, advanced=True)
     )
     preset: str = F(
         "attn-mlp",
-        help="选择哪些线性层参与训练：选项和层数由当前模型提供。attn-mlp 通常包含注意力和 MLP；full-linear 覆盖主模块中的全部线性层。",
+        help="选择哪些层参与训练：选项和层数由当前模型提供。attn-mlp 通常包含注意力和 MLP；full-linear 覆盖主模块中的全部线性层。",
         ui_=ui("adapter", order=110, control="select"),
+    )
+    layer_types: Literal["linear", "linear_conv"] = F(
+        "linear",
+        help=(
+            "训练层范围内哪些类型的层添加适配器：linear 只训练线性层；linear_conv 同时训练卷积层，"
+            "目前只有 SDXL 的 UNet 含卷积层。卷积层的 Rank 和 Alpha 可以单独设置。"
+        ),
+        ui_=ui("adapter", order=112, control="select"),
+    )
+    conv_rank: int | None = F(
+        None,
+        ge=1,
+        help="大于 1×1 的卷积层使用的 Rank，与 kohya、LyCORIS 的 conv_dim 相同；留空与 Rank 相同。1×1 卷积按 Rank 训练。",
+        ui_=ui("adapter", order=114, show_when="adapter.layer_types == 'linear_conv'"),
+    )
+    conv_alpha: float | None = F(
+        None,
+        gt=0,
+        help="大于 1×1 的卷积层使用的 Alpha，与 kohya、LyCORIS 的 conv_alpha 相同；留空与 Alpha 相同。",
+        ui_=ui("adapter", order=116, show_when="adapter.layer_types == 'linear_conv'"),
     )
     rules: list[AdapterRule] = F(
         default_factory=list, help="按序匹配的覆盖规则", ui_=ui("adapter", order=120, control="rules")
@@ -423,6 +452,8 @@ class AdapterConfig(_Strict):
     resume_weights: str | None = F(
         None, help="从已有适配器权重热启动", ui_=ui("adapter", order=160, control="path", advanced=True)
     )
+
+    _factor = field_validator("factor")(_check_factor)
 
 
 # --------------------------------------------------------------------------- objective

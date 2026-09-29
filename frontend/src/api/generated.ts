@@ -2556,10 +2556,27 @@ export interface components {
             module_dropout: number;
             /**
              * Preset
-             * @description 选择哪些线性层参与训练：选项和层数由当前模型提供。attn-mlp 通常包含注意力和 MLP；full-linear 覆盖主模块中的全部线性层。
+             * @description 选择哪些层参与训练：选项和层数由当前模型提供。attn-mlp 通常包含注意力和 MLP；full-linear 覆盖主模块中的全部线性层。
              * @default attn-mlp
              */
             preset: string;
+            /**
+             * Layer Types
+             * @description 训练层范围内哪些类型的层添加适配器：linear 只训练线性层；linear_conv 同时训练卷积层，目前只有 SDXL 的 UNet 含卷积层。卷积层的 Rank 和 Alpha 可以单独设置。
+             * @default linear
+             * @enum {string}
+             */
+            layer_types: "linear" | "linear_conv";
+            /**
+             * Conv Rank
+             * @description 大于 1×1 的卷积层使用的 Rank，与 kohya、LyCORIS 的 conv_dim 相同；留空与 Rank 相同。1×1 卷积按 Rank 训练。
+             */
+            conv_rank?: number | null;
+            /**
+             * Conv Alpha
+             * @description 大于 1×1 的卷积层使用的 Alpha，与 kohya、LyCORIS 的 conv_alpha 相同；留空与 Alpha 相同。
+             */
+            conv_alpha?: number | null;
             /**
              * Rules
              * @description 按序匹配的覆盖规则
@@ -4035,6 +4052,21 @@ export interface components {
             exclude: string[];
             /** Layers */
             layers: number;
+            /**
+             * Conv
+             * @default []
+             */
+            conv: string[];
+            /**
+             * Layers With Conv
+             * @default 0
+             */
+            layers_with_conv: number;
+            /**
+             * Conv Layers
+             * @default 0
+             */
+            conv_layers: number;
         } & {
             [key: string]: unknown;
         };

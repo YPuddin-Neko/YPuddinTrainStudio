@@ -150,9 +150,16 @@ def config_hash(config: TrainConfig | Mapping[str, Any]) -> str:
             key: value for key, value in objective.items() if key not in inactive or value != inactive[key]
         }
     # Checkpoints from before the DoRA axis option trained the output axis; without DoRA it does nothing.
+    # Checkpoints from before convolution training trained linear layers only, with no separate conv rank.
     adapter = data.get("adapter")
-    if isinstance(adapter, Mapping) and (adapter.get("dora_axis") == "output" or not adapter.get("dora")):
-        data["adapter"] = {key: value for key, value in adapter.items() if key != "dora_axis"}
+    if isinstance(adapter, Mapping):
+        inactive = {"layer_types": "linear", "conv_rank": None, "conv_alpha": None}
+        data["adapter"] = {
+            key: value
+            for key, value in adapter.items()
+            if not (key == "dora_axis" and (value == "output" or not adapter.get("dora")))
+            and not (key in inactive and value == inactive[key])
+        }
     blob = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
     return hashlib.blake2b(blob, digest_size=8).hexdigest()
 

@@ -25,6 +25,7 @@
         "rank": {
           "anyOf": [
             {
+              "minimum": 1,
               "type": "integer"
             },
             {
@@ -178,7 +179,7 @@
         "dropout": {
           "default": 0.0,
           "description": "对适配器输出的 dropout",
-          "maximum": 1,
+          "exclusiveMaximum": 1,
           "minimum": 0,
           "title": "Dropout",
           "type": "number",
@@ -191,7 +192,7 @@
         "rank_dropout": {
           "default": 0.0,
           "description": "秩轴 dropout",
-          "maximum": 1,
+          "exclusiveMaximum": 1,
           "minimum": 0,
           "title": "Rank Dropout",
           "type": "number",
@@ -204,7 +205,7 @@
         "module_dropout": {
           "default": 0.0,
           "description": "整模块跳过概率",
-          "maximum": 1,
+          "exclusiveMaximum": 1,
           "minimum": 0,
           "title": "Module Dropout",
           "type": "number",
@@ -216,13 +217,66 @@
         },
         "preset": {
           "default": "attn-mlp",
-          "description": "选择哪些线性层参与训练：选项和层数由当前模型提供。attn-mlp 通常包含注意力和 MLP；full-linear 覆盖主模块中的全部线性层。",
+          "description": "选择哪些层参与训练：选项和层数由当前模型提供。attn-mlp 通常包含注意力和 MLP；full-linear 覆盖主模块中的全部线性层。",
           "title": "Preset",
           "type": "string",
           "x-ui": {
             "control": "select",
             "group": "adapter",
             "order": 110
+          }
+        },
+        "layer_types": {
+          "default": "linear",
+          "description": "训练层范围内哪些类型的层添加适配器：linear 只训练线性层；linear_conv 同时训练卷积层，目前只有 SDXL 的 UNet 含卷积层。卷积层的 Rank 和 Alpha 可以单独设置。",
+          "enum": [
+            "linear",
+            "linear_conv"
+          ],
+          "title": "Layer Types",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "adapter",
+            "order": 112
+          }
+        },
+        "conv_rank": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "大于 1×1 的卷积层使用的 Rank，与 kohya、LyCORIS 的 conv_dim 相同；留空与 Rank 相同。1×1 卷积按 Rank 训练。",
+          "title": "Conv Rank",
+          "x-ui": {
+            "group": "adapter",
+            "order": 114,
+            "show_when": "adapter.layer_types == 'linear_conv'"
+          }
+        },
+        "conv_alpha": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "大于 1×1 的卷积层使用的 Alpha，与 kohya、LyCORIS 的 conv_alpha 相同；留空与 Alpha 相同。",
+          "title": "Conv Alpha",
+          "x-ui": {
+            "group": "adapter",
+            "order": 116,
+            "show_when": "adapter.layer_types == 'linear_conv'"
           }
         },
         "rules": {
@@ -340,6 +394,7 @@
         "rank": {
           "anyOf": [
             {
+              "minimum": 1,
               "type": "integer"
             },
             {
@@ -356,6 +411,7 @@
         "alpha": {
           "anyOf": [
             {
+              "exclusiveMinimum": 0,
               "type": "number"
             },
             {
@@ -380,6 +436,7 @@
         "lr": {
           "anyOf": [
             {
+              "minimum": 0,
               "type": "number"
             },
             {
@@ -393,6 +450,8 @@
         "dropout": {
           "anyOf": [
             {
+              "exclusiveMaximum": 1,
+              "minimum": 0,
               "type": "number"
             },
             {
@@ -405,6 +464,8 @@
         "rank_dropout": {
           "anyOf": [
             {
+              "exclusiveMaximum": 1,
+              "minimum": 0,
               "type": "number"
             },
             {

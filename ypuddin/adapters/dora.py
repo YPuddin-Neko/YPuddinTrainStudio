@@ -3,7 +3,8 @@
 ``output`` keeps one magnitude per output row, stored ``(out, 1)``: LyCORIS's default, which its
 loaders read. ``input`` keeps one per input column, stored ``(1, in)``: ComfyUI, Forge and A1111
 compute it as trained, where for output rows ComfyUI and Forge divide by ``||W₀||`` and A1111 by
-the column norm. The stored shape names the axis.
+the column norm. The stored shape names the axis. A convolution's magnitude spans its kernel too,
+``(out, 1, 1…)`` or ``(1, in, 1…)``, as LyCORIS and ComfyUI store it.
 """
 
 from __future__ import annotations
@@ -16,13 +17,16 @@ _AXIS_NAMES = {"output": "输出通道", "input": "输入通道"}
 
 
 def magnitude_axis(scale: Tensor) -> str:
-    """``input`` for a ``(1, in)`` magnitude, ``output`` for ``(out, 1)`` or a flat one."""
-    return "input" if scale.dim() == 2 and scale.shape[0] == 1 and scale.shape[1] > 1 else "output"
+    """``input`` for a ``(1, in…)`` magnitude, ``output`` for ``(out, 1…)`` or a flat one."""
+    return "input" if scale.dim() >= 2 and scale.shape[0] == 1 and scale.shape[1] > 1 else "output"
 
 
 def weight_norm(weight: Tensor, axis: str) -> Tensor:
-    """Row norms ``(out, 1)`` or column norms ``(1, in)`` of a linear weight."""
-    return weight.norm(dim=1 if axis == "output" else 0, keepdim=True)
+    """Norms per output channel ``(out, 1…)`` or per input channel ``(1, in, 1…)``."""
+    if weight.dim() == 2:
+        return weight.norm(dim=1 if axis == "output" else 0, keepdim=True)
+    kept = 0 if axis == "output" else 1
+    return torch.linalg.vector_norm(weight, dim=[d for d in range(weight.dim()) if d != kept], keepdim=True)
 
 
 def decompose(weight: Tensor, scale: Tensor) -> Tensor:
@@ -53,12 +57,12 @@ class DoRA(nn.Module):
     @torch.no_grad()
     def load_tensor(self, t: Tensor) -> None:
         # A square layer's (n, 1) and (1, n) hold as many values; never reshape one axis into the other.
-        if t.dim() == 2 and t.shape != self.dora_scale.shape:
-            if magnitude_axis(t) != self.axis:
-                raise ValueError(
-                    f"权重文件中的 DoRA 按{_AXIS_NAMES[magnitude_axis(t)]}计算，当前为{_AXIS_NAMES[self.axis]}；"
-                    "请把“DoRA 计算方向”改为与文件一致"
-                )
+        if t.dim() >= 2 and t.shape != self.dora_scale.shape and magnitude_axis(t) != self.axis:
+            raise ValueError(
+                f"权重文件中的 DoRA 按{_AXIS_NAMES[magnitude_axis(t)]}计算，当前为{_AXIS_NAMES[self.axis]}；"
+                "请把“DoRA 计算方向”改为与文件一致"
+            )
+        if t.numel() != self.dora_scale.numel():
             raise ValueError(
                 f"DoRA magnitude {tuple(t.shape)} does not fit the layer's {tuple(self.dora_scale.shape)}"
             )

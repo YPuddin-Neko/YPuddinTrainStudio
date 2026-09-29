@@ -7,7 +7,8 @@ const section = (key: string, names: string[], title?: [string, string], options
 /** Every group uses the same grid; these lists only decide grouping and order. */
 const layouts: Record<string, Section[]> = {
   model: [
-    section('setup', ['model.family', 'training.mode', 'training.train_backbone', 'training.train_text_encoder']),
+    // Full fine-tuning shows its locked layer types here, beside what it trains.
+    section('setup', ['model.family', 'training.mode', 'training.train_backbone', 'training.train_text_encoder', 'adapter.layer_types']),
     // A variant describes the main model file, so it sits beside that file.
     section('files', ['model.dit_path', 'model.prediction_type', 'model.zero_terminal_snr', 'model.flux2_variant', 'model.krea2_variant', 'model.text_encoder_path', 'model.text_encoder_2_path', 'model.vae_path', 'model.tokenizer_path', 'model.sdxl_max_token_length', 'training.resume_weights', 'model.dtype'], ['模型文件', 'Model files']),
   ],
@@ -32,7 +33,7 @@ const layouts: Record<string, Section[]> = {
     section('monitoring', ['nan_skip_limit', 'log_every'], ['异常处理与记录', 'Failures and logging']),
   ],
   adapter: [
-    section('setup', ['algo', 'preset', 'parameter_mode', 'factor', 'rank', 'alpha', 'tlora_min_rank', 'tlora_power', 'tlora_ortho', 'dora', 'dora_axis', 'decompose_both', 'rs_lora', 'rules'], undefined, { afterToggles: ['dora_axis'] }),
+    section('setup', ['algo', 'preset', 'layer_types', 'parameter_mode', 'factor', 'rank', 'alpha', 'conv_rank', 'conv_alpha', 'tlora_min_rank', 'tlora_power', 'tlora_ortho', 'dora', 'dora_axis', 'decompose_both', 'rs_lora', 'rules'], undefined, { afterToggles: ['dora_axis'] }),
     section('initialization', ['init', 'resume_weights'], ['初始化与继续训练', 'Initialization and weight loading']),
     section('regularization', ['dropout', 'rank_dropout', 'module_dropout'], ['训练正则', 'Training regularization']),
     section('execution', ['mode', 'param_dtype', 'lr_scale'], ['计算与学习率', 'Computation and learning rate']),

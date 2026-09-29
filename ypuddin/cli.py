@@ -145,6 +145,7 @@ def cmd_convert(args: argparse.Namespace) -> int:
     if args.to == "comfyui":
         fam = get_family(args.family)
         names = fam.linear_module_names() if hasattr(fam, "linear_module_names") else []
+        names += list(fam.conv_module_kernels()) if hasattr(fam, "conv_module_kernels") else []
         out = kohya_to_comfy(tensors, names)
     elif args.to == "kohya":
         out = comfy_to_kohya(lycoris_to_kohya(tensors))
@@ -220,6 +221,8 @@ def cmd_merge(args: argparse.Namespace) -> int:
 
         fam = get_family(args.family)
         names = fam.linear_module_names() if hasattr(fam, "linear_module_names") else None
+        if names is not None and hasattr(fam, "conv_module_kernels"):
+            names += list(fam.conv_module_kernels())
     merged, unmatched = merge_into_state_dict(
         base,
         tensors,

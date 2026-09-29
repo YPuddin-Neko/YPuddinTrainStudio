@@ -14,7 +14,7 @@
 
 ## 功能介绍
 
-- **训练算法**：LoRA、LoKr、LoHa、OrthoLoRA、T-LoRA 和 LyCORIS Full，可选 DoRA、rsLoRA；也支持主模型或文本编码器的全量微调。
+- **训练算法**：LoRA、LoKr、LoHa、OrthoLoRA、T-LoRA 和 LyCORIS Full，可选 DoRA、rsLoRA，SDXL 可同时训练卷积层；也支持主模型或文本编码器的全量微调。
 - **数据集**：图片导入与训练集筛选，TXT / JSON 标签编辑，裁剪、遮罩与图像编辑，从图站下载训练图和正则图。
 - **训练**：分桶与原生分辨率、图像和文本缓存、梯度累积与梯度检查点、显存估算，DDP / FSDP 多卡训练。
 - **任务**：任务队列与显卡分配、实时日志和指标曲线、训练预览、按完整状态暂停与恢复、任务归档。

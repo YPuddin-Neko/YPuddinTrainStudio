@@ -2,6 +2,11 @@
 
 ## 未发布
 
+- 适配器支持卷积层：新增“训练层类型”（只训练线性层 / 线性层和卷积层），SDXL 可训练 ResNet、上下采样和输入输出卷积；新增“卷积层 Rank / Alpha”（kohya 的 `conv_dim` / `conv_alpha`），全量微调与不含卷积层的范围锁定该选项。LoRA、LoKr、LoHa、OrthoLoRA、T-LoRA、LyCORIS Full 和 DoRA 均支持卷积层，导出为 LyCORIS / kohya 布局；模型测试、合并工具和继续训练可读取这些文件。
+- SDXL 新增“全部层”训练范围；Anima 的 `full-linear` 显示为“主模块全部线性层”。
+- LyCORIS Full 同时训练所选层原有的偏置，导出 `diff_b`；此前的 Full 恢复点不能严格续训，可从导出权重继续训练。
+- 修复秩丢弃率设为 1 时训练出现 NaN：输出、秩和整模块丢弃率都必须小于 1，逐层规则的 Rank、Alpha、Factor、丢弃率也会校验取值。
+
 - 三个打标入口新增独立的 TXT / JSON 完整格式 / JSON 简化格式选择，辅助打标模板随格式切换；移除含糊的“写入内容”选项，保留旧标签和撤销功能。
 
 - 新增内置适配器文档，说明算法、导出、恢复及与 LyCORIS 的实现区别。

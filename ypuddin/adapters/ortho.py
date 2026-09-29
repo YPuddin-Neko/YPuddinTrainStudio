@@ -5,7 +5,7 @@ learns ``C = diag(a) · R · diag(b)``, where ``R = (I + A)⁻¹(I - A)`` is the
 skew-symmetric ``A``, and adds ``ΔW = scale · U (C - I) diag(s) Vᵀ``. At the start ``A = 0`` and
 ``a = b = 1``, so ``ΔW = 0`` while every parameter already has a gradient. The rotation keeps the angles
 between the principal directions and ``a``, ``b`` let their lengths change. ``ΔW`` has rank ``r`` and is
-exported exactly as a plain LoRA.
+exported exactly as a plain LoRA. A convolution's weight is taken as the matrix ``(out, in·k…)``.
 """
 
 from __future__ import annotations
@@ -42,13 +42,20 @@ class OrthoLoRA(AdapterModule):
         rank: int = 16,
         alpha: float = 16.0,
         rs_lora: bool = False,
+        kernel: tuple[int, ...] = (),
         dropout: float = 0.0,
         rank_dropout: float = 0.0,
         init: str = "default",
         dtype: torch.dtype = torch.float32,
     ) -> None:
         super().__init__(
-            out_features, in_features, dropout=dropout, rank_dropout=rank_dropout, init=init, dtype=dtype
+            out_features,
+            in_features,
+            kernel=kernel,
+            dropout=dropout,
+            rank_dropout=rank_dropout,
+            init=init,
+            dtype=dtype,
         )
         if init == "scalar":
             raise ValueError(
@@ -56,8 +63,8 @@ class OrthoLoRA(AdapterModule):
             )
         if int(rank) <= 0:
             raise ValueError("rank must be positive")
-        # A layer has at most min(out, in) principal directions.
-        self.rank = min(int(rank), int(out_features), int(in_features))
+        # A layer has at most min(out, in·k…) principal directions.
+        self.rank = min(int(rank), int(out_features), self.fan_in)
         self.alpha = float(alpha)
         self.rs_lora = bool(rs_lora)
         self.scale = compute_scale(self.alpha, self.rank, self.rs_lora)
@@ -66,17 +73,18 @@ class OrthoLoRA(AdapterModule):
         self.in_scale = nn.Parameter(torch.ones(self.rank, dtype=dtype))
         self.register_buffer("basis_out", torch.zeros(out_features, self.rank, dtype=dtype))
         self.register_buffer("singular", torch.zeros(self.rank, dtype=dtype))
-        self.register_buffer("basis_in", torch.zeros(self.rank, in_features, dtype=dtype))
+        self.register_buffer("basis_in", torch.zeros(self.rank, self.fan_in, dtype=dtype))
         self._ready = False
 
     # ----------------------------------------------------------------- init
     @torch.no_grad()
-    def bind_base(self, base_weight: Tensor) -> None:
+    def bind_base(self, base_weight: Tensor, bias: Tensor | None = None) -> None:
         """Take the principal subspace of the frozen weight; meta layers (planning) stay unset."""
         if self._ready or base_weight.device.type == "meta" or self.rotation.device.type == "meta":
             return
         where = base_weight.device if base_weight.device.type == "cuda" else torch.device("cpu")
-        u, s, v = principal_subspace(base_weight.detach().to(device=where, dtype=torch.float32), self.rank)
+        matrix = base_weight.detach().to(device=where, dtype=torch.float32).reshape(self.out_features, -1)
+        u, s, v = principal_subspace(matrix, self.rank)
         device = self.basis_out.device
         self.basis_out.copy_(u.to(device=device, dtype=self.basis_out.dtype))
         self.singular.copy_(s.to(device=device, dtype=self.singular.dtype))
@@ -106,10 +114,12 @@ class OrthoLoRA(AdapterModule):
         dt = self.basis_out.dtype
         keep = self._rank_mask(self.rank, self.basis_out.device, dt)
         left = self.basis_out if keep is None else self.basis_out * keep
-        return ((left @ self._core().to(dt)) * self.singular) @ self.basis_in * self.scale
+        return self._as_weight(((left @ self._core().to(dt)) * self.singular) @ self.basis_in * self.scale)
 
     def delta_apply(self, x: Tensor) -> Tensor:
         self._ensure_ready()
+        if self.kernel:
+            return self._conv_apply(x)
         dt = x.dtype
         h = (x @ self.basis_in.to(dt).transpose(0, 1)) * self.singular.to(dt)
         h = h @ self._core().to(dt).transpose(0, 1)
@@ -118,6 +128,17 @@ class OrthoLoRA(AdapterModule):
             h = h * keep
         return self._output_dropout((h @ self.basis_out.to(dt).transpose(0, 1)) * self.scale)
 
+    def _conv_apply(self, x: Tensor) -> Tensor:
+        dt = x.dtype
+        geometry = self._geometry()
+        basis_in = self.basis_in.to(dt).view(self.rank, self.in_features, *self.kernel)
+        h = geometry.conv(x, basis_in) * geometry.channels(self.singular.to(dt))
+        h = geometry.pointwise(h, self._core().to(dt))
+        keep = self._rank_mask(self.rank, x.device, dt)
+        if keep is not None:
+            h = h * geometry.channels(keep)
+        return self._output_dropout(geometry.pointwise(h, self.basis_out.to(dt)) * self.scale)
+
     # ----------------------------------------------------------------- io
     @torch.no_grad()
     def export_tensors(self) -> dict[str, Tensor]:
@@ -125,8 +146,12 @@ class OrthoLoRA(AdapterModule):
         self._ensure_ready()
         root = self.singular.float().abs().sqrt()
         up = (self.basis_out.float() @ self._core()) * root[None, :] * self.scale
+        down = root[:, None] * self.basis_in.float()
+        if self.kernel:
+            down = down.view(self.rank, self.in_features, *self.kernel)
+            up = up.view(self.out_features, self.rank, *(1,) * len(self.kernel))
         return {
-            "lora_down.weight": root[:, None] * self.basis_in.float(),
+            "lora_down.weight": down,
             "lora_up.weight": up,
             "alpha": torch.tensor(float(self.rank), dtype=torch.float32),
         }
@@ -138,8 +163,7 @@ class OrthoLoRA(AdapterModule):
             "rank": self.rank,
             "alpha": float(self.rank),
             "rs_lora": False,
-            "out_features": self.out_features,
-            "in_features": self.in_features,
+            **self._shape_metadata(),
             "trained_as": "ortho",
         }
 

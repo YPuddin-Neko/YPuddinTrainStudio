@@ -1,4 +1,5 @@
-from .base import AdapterModule
+from .base import AdapterModule, ConvGeometry
+from .conv import AdaptedConv
 from .dora import DoRA
 from .factorize import factorization
 from .frozen import FrozenLinear, quantize_fp8
@@ -22,9 +23,11 @@ from .tlora import TLoRA
 
 __all__ = [
     "ALGOS",
+    "AdaptedConv",
     "AdaptedLinear",
     "AdapterModule",
     "AdapterSet",
+    "ConvGeometry",
     "DoRA",
     "FrozenLinear",
     "Full",

@@ -5,17 +5,22 @@ Shapes for ``Linear(in -> out)`` with ``(a, b) = factorization(out)`` and ``(c, 
     w1: (a, c)   or   w1_a: (a, r), w1_b: (r, c)      (decompose_both)
     w2: (b, d)   or   w2_a: (b, r), w2_b: (r, d)      (rank < max(b, d) / 2)
 
-The bypass path uses ``(W1 ⊗ W2) vec(X) = vec(W1 · X · W2ᵀ)`` and never materializes ``ΔW``.
+A convolution factors its channels the same way and keeps the kernel in ``W2``, as LyCORIS does:
+``w2: (b, d, *k)`` or ``w2_b: (r, d·k…)``, and ``ΔW = W1[..., None…] ⊗ W2``.
+
+The bypass path uses ``(W1 ⊗ W2) vec(X) = vec(W1 · X · W2ᵀ)`` and never materializes ``ΔW``; a
+convolution runs ``W2`` over each of the ``c`` input channel groups and mixes the groups with ``W1``.
 """
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import torch
 from torch import Tensor, nn
 
-from .base import AdapterModule, compute_scale, kaiming_uniform_
+from .base import TUCKER_UNSUPPORTED, AdapterModule, compute_scale, kaiming_uniform_, resolve_kernel
 from .factorize import factorization
 
 
@@ -36,13 +41,20 @@ class LoKr(AdapterModule):
         shape: tuple[tuple[int, int], tuple[int, int]] | None = None,
         w1_lowrank: bool | None = None,
         w2_lowrank: bool | None = None,
+        kernel: tuple[int, ...] = (),
         dropout: float = 0.0,
         rank_dropout: float = 0.0,
         init: str = "default",
         dtype: torch.dtype = torch.float32,
     ) -> None:
         super().__init__(
-            out_features, in_features, dropout=dropout, rank_dropout=rank_dropout, init=init, dtype=dtype
+            out_features,
+            in_features,
+            kernel=kernel,
+            dropout=dropout,
+            rank_dropout=rank_dropout,
+            init=init,
+            dtype=dtype,
         )
         if shape is None:
             (a, b) = factorization(out_features, factor)
@@ -77,9 +89,9 @@ class LoKr(AdapterModule):
             self.w1 = nn.Parameter(torch.empty(a, c, dtype=dtype))
         if self.w2_lowrank:
             self.w2_a = nn.Parameter(torch.empty(b, r, dtype=dtype))
-            self.w2_b = nn.Parameter(torch.empty(r, d, dtype=dtype))
+            self.w2_b = nn.Parameter(torch.empty(r, d * math.prod(self.kernel), dtype=dtype))
         else:
-            self.w2 = nn.Parameter(torch.empty(b, d, dtype=dtype))
+            self.w2 = nn.Parameter(torch.empty(b, d, *self.kernel, dtype=dtype))
         self.reset_parameters()
 
     # ----------------------------------------------------------------- init
@@ -120,9 +132,15 @@ class LoKr(AdapterModule):
 
     def delta_weight(self) -> Tensor:
         mask = self._rank_mask(self.rank, self.w2_a.device, self.w2_a.dtype) if self.w2_lowrank else None
-        return torch.kron(self._w1(), self._w2(mask)) * self._gain()
+        if not self.kernel:
+            return torch.kron(self._w1(), self._w2(mask)) * self._gain()
+        w1 = self._w1().view(self.a, self.c, *(1,) * len(self.kernel))
+        w2 = self._w2(mask).view(self.b, self.d, *self.kernel)
+        return torch.kron(w1, w2) * self._gain()
 
     def delta_apply(self, x: Tensor) -> Tensor:
+        if self.kernel:
+            return self._conv_apply(x)
         lead = x.shape[:-1]
         dt = x.dtype
         X = x.reshape(*lead, self.c, self.d)
@@ -142,6 +160,27 @@ class LoKr(AdapterModule):
         if isinstance(gain, Tensor):
             gain = gain.to(dt)
         return self._output_dropout(Y * gain)
+
+    def _conv_apply(self, x: Tensor) -> Tensor:
+        """Input channel ``k·d + l`` meets ``W2`` in group ``k``; ``W1`` then mixes the ``c`` groups."""
+        dt = x.dtype
+        geometry = self._geometry()
+        n = x.shape[0]
+        groups = x.reshape(n * self.c, self.d, *x.shape[2:])
+        if self.w2_lowrank:
+            mask = self._rank_mask(self.rank, x.device, dt)
+            w2_a = self.w2_a if mask is None else self.w2_a * mask
+            h = geometry.conv(groups, self.w2_b.to(dt).view(self.rank, self.d, *self.kernel))
+            h = geometry.pointwise(h, w2_a.to(dt))
+        else:
+            h = geometry.conv(groups, self.w2.to(dt))
+        spatial = h.shape[2:]
+        y = torch.einsum("ik,nkm->nim", self._w1().to(dt), h.reshape(n, self.c, -1))
+        y = y.reshape(n, self.out_features, *spatial)
+        gain = self._gain()
+        if isinstance(gain, Tensor):
+            gain = gain.to(dt)
+        return self._output_dropout(y * gain)
 
     # ----------------------------------------------------------------- io
     @torch.no_grad()
@@ -177,24 +216,31 @@ class LoKr(AdapterModule):
             "rs_lora": self.rs_lora,
             "w1_lowrank": self.w1_lowrank,
             "w2_lowrank": self.w2_lowrank,
-            "out_features": self.out_features,
-            "in_features": self.in_features,
+            **self._shape_metadata(),
         }
 
     @classmethod
     def from_tensors(
         cls, tensors: dict[str, Tensor], meta: dict[str, Any] | None = None, **kwargs: Any
     ) -> LoKr:
+        if "lokr_t2" in tensors:
+            raise ValueError(TUCKER_UNSUPPORTED)
         w1_lowrank = "lokr_w1_a" in tensors
         w2_lowrank = "lokr_w2_a" in tensors
+        # A full w2 carries the kernel; a low-rank w2_b flattens it, so the metadata or the caller names it.
+        kernel = resolve_kernel(meta, kwargs, () if w2_lowrank else tuple(tensors["lokr_w2"].shape[2:]))
         if meta and "shape" in meta:
             (a, b), (c, d) = meta["shape"]
         else:
-            # Infer from factor shapes: w1 (a, c), w2 (b, d) (or their low-rank parts).
+            # Infer from factor shapes: w1 (a, c), w2 (b, d, *k) (or their low-rank parts).
             a = tensors["lokr_w1_a"].shape[0] if w1_lowrank else tensors["lokr_w1"].shape[0]
             c = tensors["lokr_w1_b"].shape[1] if w1_lowrank else tensors["lokr_w1"].shape[1]
             b = tensors["lokr_w2_a"].shape[0] if w2_lowrank else tensors["lokr_w2"].shape[0]
-            d = tensors["lokr_w2_b"].shape[1] if w2_lowrank else tensors["lokr_w2"].shape[1]
+            d = (
+                tensors["lokr_w2_b"].shape[1] // math.prod(kernel)
+                if w2_lowrank
+                else tensors["lokr_w2"].shape[1]
+            )
         out_features, in_features = a * b, c * d
         rank: int | None = None
         if w2_lowrank:
@@ -215,6 +261,7 @@ class LoKr(AdapterModule):
             w1_lowrank=w1_lowrank,
             w2_lowrank=w2_lowrank,
             rs_lora=False,
+            kernel=kernel,
             dtype=dtype,
             **kwargs,
         )
@@ -222,7 +269,8 @@ class LoKr(AdapterModule):
             for name in ("w1", "w1_a", "w1_b", "w2", "w2_a", "w2_b"):
                 key = f"lokr_{name}"
                 if key in tensors:
-                    getattr(mod, name).copy_(tensors[key].to(dtype))
+                    param = getattr(mod, name)
+                    param.copy_(tensors[key].reshape(param.shape).to(dtype))
         return mod
 
     def param_kinds(self) -> dict[str, str]:

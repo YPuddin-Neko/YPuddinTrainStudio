@@ -13,12 +13,19 @@ from ypuddin.config import AdapterConfig, AdapterRule
 
 @dataclass(frozen=True)
 class TargetPreset:
-    """A named set of module-name patterns provided by a model family."""
+    """A named set of module-name patterns provided by a model family.
+
+    ``include`` selects linear layers. ``conv`` names what training convolutions as well adds:
+    convolution layers, and linear layers that belong to the same convolution blocks (SDXL's
+    ``time_emb_proj``), as kohya's LoCon scope does. It applies only when the configuration chooses
+    linear and convolution layers; convolutions are never selected otherwise.
+    """
 
     name: str
     include: tuple[str, ...]
     exclude: tuple[str, ...] = ()
     description: str = ""
+    conv: tuple[str, ...] = ()
 
 
 @dataclass
@@ -52,18 +59,30 @@ def _rule_params(rule: AdapterRule) -> dict[str, Any]:
     return {k: v for k, v in rule.model_dump().items() if k not in ("match", "algo") and v is not None}
 
 
+def trains_convolutions(cfg: AdapterConfig, preset: TargetPreset) -> bool:
+    """Whether this configuration adds adapters to the preset's convolution scope."""
+    return cfg.layer_types == "linear_conv" and bool(preset.conv)
+
+
 def resolve_targets(
     module_names: list[str],
     cfg: AdapterConfig,
     preset: TargetPreset,
     *,
     extra_exclude: tuple[str, ...] = (),
+    conv_kernels: dict[str, tuple[int, ...]] | None = None,
 ) -> list[ResolvedTarget]:
-    """Decide, for every candidate linear module, whether and how it is adapted.
+    """Decide, for every candidate module, whether and how it is adapted.
 
-    Order of precedence per module: first matching user rule (if any) > preset. A rule may
-    include a module the preset would not have selected; ``algo="none"`` excludes it.
+    ``module_names`` lists linear layers and, with ``conv_kernels`` naming their kernels, convolution
+    layers. Order of precedence per module: first matching user rule (if any) > preset. A rule may
+    include a module the preset would not have selected; ``algo="none"`` excludes it. Convolutions are
+    candidates only when the configuration trains them and the preset has a convolution scope; a
+    convolution with a kernel larger than 1×1 takes ``conv_rank``/``conv_alpha``, as kohya and LyCORIS
+    use ``conv_dim``/``conv_alpha``, while 1×1 convolutions take the linear rank.
     """
+    conv_kernels = conv_kernels or {}
+    conv = trains_convolutions(cfg, preset)
     defaults: dict[str, Any] = {
         "rank": cfg.rank,
         "alpha": cfg.alpha,
@@ -77,21 +96,32 @@ def resolve_targets(
         "tlora_power": cfg.tlora_power,
         "tlora_ortho": cfg.tlora_ortho,
     }
+    kernel_defaults = defaults | {
+        "rank": cfg.rank if cfg.conv_rank is None else cfg.conv_rank,
+        "alpha": cfg.alpha if cfg.conv_alpha is None else cfg.conv_alpha,
+    }
+    linear_patterns = preset.include + (preset.conv if conv else ())
+    excluded = (*preset.exclude, *extra_exclude)
     out: list[ResolvedTarget] = []
     for name in module_names:
+        kernel = conv_kernels.get(name)
+        if kernel is not None and not conv:
+            continue
         rule = next((r for r in cfg.rules if match_name(r.match, name)), None)
-        in_preset = any(match_name(p, name) for p in preset.include) and not any(
-            match_name(p, name) for p in (*preset.exclude, *extra_exclude)
+        patterns = linear_patterns if kernel is None else preset.conv
+        in_preset = any(match_name(p, name) for p in patterns) and not any(
+            match_name(p, name) for p in excluded
         )
+        base = kernel_defaults if kernel is not None and any(size != 1 for size in kernel) else defaults
         if rule is None:
             if not in_preset:
                 continue
-            out.append(ResolvedTarget(name, cfg.algo, dict(defaults)))
+            out.append(ResolvedTarget(name, cfg.algo, dict(base)))
             continue
         algo = rule.algo or cfg.algo
         if algo == "none":
             continue
-        params = dict(defaults)
+        params = dict(base)
         params.update(_rule_params(rule))
         out.append(ResolvedTarget(name, algo, params))
     return out

@@ -1,20 +1,27 @@
 """Common contract for adapter algorithms.
 
-Every algorithm produces a weight delta ``ΔW`` of shape ``(out, in)`` and may provide a
-structured fast path ``delta_apply(x) == F.linear(x, ΔW)``. ``scale``, ``scalar`` and
-dropout are applied in exactly one place per path so that bypass, merged and exported
-weights always agree.
+Every algorithm produces a weight delta ``ΔW`` shaped like the layer's weight: ``(out, in)`` for a
+linear layer, ``(out, in, *kernel)`` for a convolution, and may provide a structured fast path
+``delta_apply(x)`` equal to applying the layer's operation with ``ΔW``. ``scale``, ``scalar`` and
+dropout are applied in exactly one place per path so that bypass, merged and exported weights always
+agree.
+
+A convolution's low-rank factors see its weight as the matrix ``(out, in·k₁·k₂…)``, the layout
+LyCORIS and kohya export; LoKr instead keeps the kernel in its second factor, as LyCORIS does.
 """
 
 from __future__ import annotations
 
 import math
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any
 
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
+
+_CONV = {1: F.conv1d, 2: F.conv2d, 3: F.conv3d}
 
 
 def kaiming_uniform_(t: Tensor) -> Tensor:
@@ -28,6 +35,53 @@ def compute_scale(alpha: float, rank: int | None, rs_lora: bool) -> float:
     return float(alpha) / (math.sqrt(rank) if rs_lora else rank)
 
 
+def probability(name: str, value: float) -> float:
+    """A dropout probability in ``[0, 1)``: at 1 nothing would be left to train."""
+    value = float(value)
+    if not 0.0 <= value < 1.0:
+        raise ValueError(f"{name} must be at least 0 and below 1, got {value}")
+    return value
+
+
+@dataclass(frozen=True)
+class ConvGeometry:
+    """How the adapted layer convolves (stride, padding, dilation, padding mode); ``groups`` is 1."""
+
+    dims: int
+    stride: tuple[int, ...]
+    padding: tuple[int, ...] | str
+    dilation: tuple[int, ...]
+    padding_mode: str = "zeros"
+    reversed_padding: tuple[int, ...] = ()
+
+    @classmethod
+    def of(cls, conv: nn.Module) -> ConvGeometry:
+        return cls(
+            dims=len(conv.kernel_size),
+            stride=tuple(conv.stride),
+            padding=conv.padding if isinstance(conv.padding, str) else tuple(conv.padding),
+            dilation=tuple(conv.dilation),
+            padding_mode=conv.padding_mode,
+            reversed_padding=tuple(getattr(conv, "_reversed_padding_repeated_twice", ())),
+        )
+
+    def conv(self, x: Tensor, weight: Tensor) -> Tensor:
+        """The layer's own convolution, with ``weight`` in place of its kernel and no bias."""
+        op = _CONV[self.dims]
+        if self.padding_mode != "zeros":
+            x = F.pad(x, self.reversed_padding, mode=self.padding_mode)
+            return op(x, weight, None, self.stride, 0, self.dilation)
+        return op(x, weight, None, self.stride, self.padding, self.dilation)
+
+    def pointwise(self, h: Tensor, weight: Tensor) -> Tensor:
+        """Mix channels with a ``(out, in)`` matrix, as a 1×1 convolution."""
+        return _CONV[self.dims](h, weight.reshape(*weight.shape, *(1,) * self.dims))
+
+    def channels(self, values: Tensor) -> Tensor:
+        """A per-channel vector ``(c,)`` (or ``(batch, c)``) shaped to broadcast over a feature map."""
+        return values.reshape(*values.shape[:-1] or (1,), values.shape[-1], *(1,) * self.dims)
+
+
 class AdapterModule(nn.Module, ABC):
     kind: str = "base"
     supports_bypass: bool = False
@@ -37,6 +91,7 @@ class AdapterModule(nn.Module, ABC):
         out_features: int,
         in_features: int,
         *,
+        kernel: tuple[int, ...] = (),
         dropout: float = 0.0,
         rank_dropout: float = 0.0,
         init: str = "default",
@@ -45,10 +100,14 @@ class AdapterModule(nn.Module, ABC):
         super().__init__()
         self.out_features = int(out_features)
         self.in_features = int(in_features)
-        self.dropout_p = float(dropout)
-        self.rank_dropout_p = float(rank_dropout)
+        self.kernel = tuple(int(size) for size in kernel)
+        if any(size <= 0 for size in self.kernel):
+            raise ValueError(f"kernel sizes must be positive, got {self.kernel}")
+        self.dropout_p = probability("dropout", dropout)
+        self.rank_dropout_p = probability("rank_dropout", rank_dropout)
         self.init_mode = init
         self.param_dtype = dtype
+        self.geometry: ConvGeometry | None = None
         if init == "scalar":
             self.scalar: nn.Parameter | None = nn.Parameter(torch.zeros((), dtype=dtype))
         else:
@@ -57,6 +116,30 @@ class AdapterModule(nn.Module, ABC):
     def forward(self, x: Tensor | None = None) -> Tensor:
         """Keep computations inside Module hooks for distributed parameter residency."""
         return self.delta_weight() if x is None else self.delta_apply(x)
+
+    # ----------------------------------------------------------------- shape
+    @property
+    def fan_in(self) -> int:
+        """Inputs per output: ``in`` for a linear layer, ``in·k₁·k₂…`` for a convolution."""
+        return self.in_features * math.prod(self.kernel)
+
+    @property
+    def weight_shape(self) -> tuple[int, ...]:
+        return (self.out_features, self.in_features, *self.kernel)
+
+    def bind_geometry(self, geometry: ConvGeometry) -> None:
+        self.geometry = geometry
+
+    def _geometry(self) -> ConvGeometry:
+        if self.geometry is None:
+            raise RuntimeError(
+                f"{self.kind} convolution adapter has no layer geometry; wrap it in AdaptedConv"
+            )
+        return self.geometry
+
+    def _as_weight(self, flat: Tensor) -> Tensor:
+        """``(out, in·k…)`` as the layer's weight shape; linear layers keep their matrix."""
+        return flat.view(self.weight_shape) if self.kernel else flat
 
     # ----------------------------------------------------------------- scaling
     @property
@@ -78,11 +161,12 @@ class AdapterModule(nn.Module, ABC):
     # ----------------------------------------------------------------- contract
     @abstractmethod
     def delta_weight(self) -> Tensor:
-        """Full ``ΔW`` of shape ``(out, in)`` including scale and scalar (never multiplier)."""
+        """Full ``ΔW`` shaped like the layer weight, including scale and scalar (never multiplier)."""
 
     def delta_apply(self, x: Tensor) -> Tensor:
-        """``F.linear(x, ΔW)``; subclasses override with a structured fast path."""
-        return F.linear(x, self.delta_weight().to(x.dtype))
+        """The layer's operation with ``ΔW``; subclasses override with a structured fast path."""
+        weight = self.delta_weight().to(x.dtype)
+        return self._geometry().conv(x, weight) if self.kernel else F.linear(x, weight)
 
     @abstractmethod
     def export_tensors(self) -> dict[str, Tensor]:
@@ -92,12 +176,22 @@ class AdapterModule(nn.Module, ABC):
     def extra_metadata(self) -> dict[str, Any]:
         """Explicit structural metadata (shapes, rank, factorization) stored alongside weights."""
 
+    def _shape_metadata(self) -> dict[str, Any]:
+        meta: dict[str, Any] = {"out_features": self.out_features, "in_features": self.in_features}
+        if self.kernel:
+            meta["kernel"] = list(self.kernel)
+        return meta
+
     @classmethod
     @abstractmethod
     def from_tensors(
         cls, tensors: dict[str, Tensor], meta: dict[str, Any] | None = None, **kwargs: Any
     ) -> AdapterModule:
-        """Rebuild a module from exported tensors (+ optional explicit metadata)."""
+        """Rebuild a module from exported tensors (+ optional explicit metadata).
+
+        ``kernel`` names the target layer's kernel when the caller knows it (``()`` for a linear
+        layer); otherwise it comes from the metadata or from the tensors themselves.
+        """
 
     def param_kinds(self) -> dict[str, str]:
         """Parameter name -> kind label used by ``lr_scale`` / weight-decay rules (e.g. ``w1``, ``up``)."""
@@ -105,3 +199,16 @@ class AdapterModule(nn.Module, ABC):
 
     def num_params(self) -> int:
         return sum(p.numel() for p in self.parameters())
+
+
+TUCKER_UNSUPPORTED = "文件使用 Tucker 分解（lora_mid / lokr_t2 / hada_t1），当前不支持读取"
+
+
+def resolve_kernel(
+    meta: dict[str, Any] | None, kwargs: dict[str, Any], fallback: tuple[int, ...] = ()
+) -> tuple[int, ...]:
+    """The target kernel: the caller's (popped from ``kwargs``), the file metadata's, else ``fallback``."""
+    kernel = kwargs.pop("kernel", None)
+    if kernel is None and meta and meta.get("kernel") is not None:
+        kernel = meta["kernel"]
+    return tuple(int(size) for size in (fallback if kernel is None else kernel))

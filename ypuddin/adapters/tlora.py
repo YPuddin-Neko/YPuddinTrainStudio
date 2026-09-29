@@ -8,17 +8,19 @@ and exported files use every rank.
 With ``ortho`` the factors start orthonormal with small singular values, as the last singular
 components of a random matrix in the paper's full method, and a frozen copy of that start is
 subtracted, so the ranks start independent and ``ΔW`` starts at zero whatever the mask. The export
-carries both terms exactly, as a plain LoRA of rank ``2R``.
+carries both terms exactly, as a plain LoRA of rank ``2R``. A convolution's factors see its weight as
+the matrix ``(out, in·k…)``, as LoRA's do.
 """
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import torch
 from torch import Tensor, nn
 
-from .base import AdapterModule, compute_scale, kaiming_uniform_
+from .base import TUCKER_UNSUPPORTED, AdapterModule, compute_scale, kaiming_uniform_, resolve_kernel
 
 
 def active_ranks(level: Tensor, rank: int, min_rank: int, power: float) -> Tensor:
@@ -75,13 +77,20 @@ class TLoRA(AdapterModule):
         min_rank: int | None = None,
         power: float = 1.0,
         ortho: bool = True,
+        kernel: tuple[int, ...] = (),
         dropout: float = 0.0,
         rank_dropout: float = 0.0,
         init: str = "default",
         dtype: torch.dtype = torch.float32,
     ) -> None:
         super().__init__(
-            out_features, in_features, dropout=dropout, rank_dropout=rank_dropout, init=init, dtype=dtype
+            out_features,
+            in_features,
+            kernel=kernel,
+            dropout=dropout,
+            rank_dropout=rank_dropout,
+            init=init,
+            dtype=dtype,
         )
         self.rank = int(rank)
         if self.rank <= 0:
@@ -97,11 +106,11 @@ class TLoRA(AdapterModule):
         if not self.power > 0:
             raise ValueError("power must be positive")
         self.ortho = bool(ortho)
-        self.down = nn.Parameter(torch.empty(self.rank, in_features, dtype=dtype))
+        self.down = nn.Parameter(torch.empty(self.rank, self.fan_in, dtype=dtype))
         self.up = nn.Parameter(torch.empty(out_features, self.rank, dtype=dtype))
         if self.ortho:
             self.lam = nn.Parameter(torch.zeros(self.rank, dtype=dtype))
-            self.register_buffer("down0", torch.zeros(self.rank, in_features, dtype=dtype))
+            self.register_buffer("down0", torch.zeros(self.rank, self.fan_in, dtype=dtype))
             self.register_buffer("up0", torch.zeros(out_features, self.rank, dtype=dtype))
             self.register_buffer("lam0", torch.zeros(self.rank, dtype=dtype))
         self._mask: Tensor | None = None
@@ -124,18 +133,18 @@ class TLoRA(AdapterModule):
             self.scalar.zero_()
 
     @torch.no_grad()
-    def bind_base(self, base_weight: Tensor) -> None:
+    def bind_base(self, base_weight: Tensor, bias: Tensor | None = None) -> None:
         """Draw the orthonormal start on the layer's device; meta layers (planning) stay unset."""
         if not self.ortho or self._ortho_ready or self.down.device.type == "meta":
             return
         device = self.down.device
         up = _orthonormal(self.out_features, self.rank, device) if self.out_features >= self.rank else None
-        down = _orthonormal(self.in_features, self.rank, device) if self.in_features >= self.rank else None
+        down = _orthonormal(self.fan_in, self.rank, device) if self.fan_in >= self.rank else None
         if up is None or down is None:
             raise ValueError(
                 "orthogonal T-LoRA needs a rank no larger than the layer's input and output size"
             )
-        lam = _smallest_singular_values(self.out_features, self.in_features, self.rank, device)
+        lam = _smallest_singular_values(self.out_features, self.fan_in, self.rank, device)
         for trained, frozen, value in (
             (self.up, self.up0, up),
             (self.down, self.down0, down.t()),
@@ -180,12 +189,14 @@ class TLoRA(AdapterModule):
         keep = self._rank_mask(self.rank, self.up.device, self.up.dtype)
         up = self.up if keep is None else self.up * keep
         if not self.ortho:
-            return (up @ self.down) * self._gain()
+            return self._as_weight((up @ self.down) * self._gain())
         up0 = self.up0 if keep is None else self.up0 * keep
-        return ((up * self.lam) @ self.down - (up0 * self.lam0) @ self.down0) * self._gain()
+        return self._as_weight(((up * self.lam) @ self.down - (up0 * self.lam0) @ self.down0) * self._gain())
 
     def delta_apply(self, x: Tensor) -> Tensor:
         self._ensure_ready()
+        if self.kernel:
+            return self._conv_apply(x)
         dt = x.dtype
         weight = self._sample_mask(x)
         keep = self._rank_mask(self.rank, x.device, dt)
@@ -208,6 +219,34 @@ class TLoRA(AdapterModule):
             gain = gain.to(dt)
         return self._output_dropout(y * gain)
 
+    def _conv_apply(self, x: Tensor) -> Tensor:
+        """The linear pass with ``down`` convolving like the layer and the ranks as channels."""
+        dt = x.dtype
+        geometry = self._geometry()
+        weight = self._sample_mask(x)
+        if weight is not None:  # (batch, 1…, rank) -> (batch, rank, 1…)
+            weight = geometry.channels(weight.reshape(weight.shape[0], self.rank))
+        keep = self._rank_mask(self.rank, x.device, dt)
+        if keep is not None:
+            keep = geometry.channels(keep)
+            weight = keep if weight is None else weight * keep
+        shape = (self.in_features, *self.kernel)
+        if not self.ortho:
+            h = geometry.conv(x, self.down.to(dt).view(self.rank, *shape))
+            if weight is not None:
+                h = h * weight
+            y = geometry.pointwise(h, self.up.to(dt))
+        else:
+            down = torch.cat((self.down, self.down0)).to(dt).view(2 * self.rank, *shape)
+            h = geometry.conv(x, down)
+            gains = geometry.channels(torch.cat((self.lam, -self.lam0)).to(dt))
+            h = h * (gains if weight is None else gains * torch.cat((weight, weight), dim=1))
+            y = geometry.pointwise(h, torch.cat((self.up, self.up0), dim=1).to(dt))
+        gain = self._gain()
+        if isinstance(gain, Tensor):
+            gain = gain.to(dt)
+        return self._output_dropout(y * gain)
+
     # ----------------------------------------------------------------- io
     @torch.no_grad()
     def export_tensors(self) -> dict[str, Tensor]:
@@ -215,21 +254,33 @@ class TLoRA(AdapterModule):
         self._ensure_ready()
         if not self.ortho:
             scalar = float(self.effective_scalar) if isinstance(self.effective_scalar, Tensor) else 1.0
-            return {
-                "lora_down.weight": self.down.detach().clone(),
-                "lora_up.weight": (self.up * scalar).detach().clone(),
-                "alpha": torch.tensor(self.scale * self.rank, dtype=torch.float32),
-            }
+            return self._kernel_layout(
+                {
+                    "lora_down.weight": self.down.detach().clone(),
+                    "lora_up.weight": (self.up * scalar).detach().clone(),
+                    "alpha": torch.tensor(self.scale * self.rank, dtype=torch.float32),
+                }
+            )
         root = self.scale**0.5
         lam, lam0 = self.lam.float(), self.lam0.float()
         size, size0 = lam.abs().sqrt(), lam0.abs().sqrt()
         up = torch.cat((self.up.float() * (torch.sign(lam) * size), -self.up0.float() * size0), dim=1) * root
         down = torch.cat((self.down.float() * size[:, None], self.down0.float() * size0[:, None])) * root
-        return {
-            "lora_down.weight": down,
-            "lora_up.weight": up,
-            "alpha": torch.tensor(float(down.shape[0]), dtype=torch.float32),
-        }
+        return self._kernel_layout(
+            {
+                "lora_down.weight": down,
+                "lora_up.weight": up,
+                "alpha": torch.tensor(float(down.shape[0]), dtype=torch.float32),
+            }
+        )
+
+    def _kernel_layout(self, tensors: dict[str, Tensor]) -> dict[str, Tensor]:
+        """A convolution exports ``down`` as its kernel and ``up`` as a 1×1 kernel (LoCon layout)."""
+        if self.kernel:
+            down, up = tensors["lora_down.weight"], tensors["lora_up.weight"]
+            tensors["lora_down.weight"] = down.reshape(down.shape[0], self.in_features, *self.kernel)
+            tensors["lora_up.weight"] = up.reshape(*up.shape, *(1,) * len(self.kernel))
+        return tensors
 
     def extra_metadata(self) -> dict[str, Any]:
         """Describes the exported layer, a plain LoRA, so any LoRA reader rebuilds it."""
@@ -239,8 +290,7 @@ class TLoRA(AdapterModule):
             "rank": rank,
             "alpha": float(rank) if self.ortho else self.alpha,
             "rs_lora": self.rs_lora and not self.ortho,
-            "out_features": self.out_features,
-            "in_features": self.in_features,
+            **self._shape_metadata(),
             "trained_as": "tlora",
             "tlora_min_rank": self.min_rank,
             "tlora_power": self.power,
@@ -256,27 +306,29 @@ class TLoRA(AdapterModule):
             raise ValueError(
                 "orthogonal T-LoRA cannot continue from an exported LoRA; resume from a recovery point"
             )
+        if "lora_mid.weight" in tensors:
+            raise ValueError(TUCKER_UNSUPPORTED)
         down, up = tensors["lora_down.weight"], tensors["lora_up.weight"]
-        if down.dim() > 2:
-            down, up = down.flatten(1), up.flatten(1)
+        kernel = resolve_kernel(meta, kwargs, tuple(down.shape[2:]))
         rank = int(down.shape[0])
         alpha = float(tensors["alpha"].item()) if "alpha" in tensors else float(rank)
         dtype = kwargs.pop("dtype", torch.float32)
         meta = meta or {}
         mod = cls(
             int(up.shape[0]),
-            int(down.shape[1]),
+            down[0].numel() // math.prod(kernel),
             rank=rank,
             alpha=alpha,
             min_rank=meta.get("tlora_min_rank"),
             power=float(meta.get("tlora_power", 1.0)),
             ortho=False,
+            kernel=kernel,
             dtype=dtype,
             **kwargs,
         )
         with torch.no_grad():
-            mod.down.copy_(down.to(dtype))
-            mod.up.copy_(up.to(dtype))
+            mod.down.copy_(down.reshape(mod.down.shape).to(dtype))
+            mod.up.copy_(up.reshape(mod.up.shape).to(dtype))
         return mod
 
     def param_kinds(self) -> dict[str, str]:

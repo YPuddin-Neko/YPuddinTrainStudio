@@ -1,6 +1,6 @@
-import { selectTrainingComponents, trainingManagedReason } from '../../utils/trainingSelection';
+import { adapterLayerTypesLock, selectTrainingComponents, trainingManagedReason } from '../../utils/trainingSelection';
 import { confirmedTrainingComputePolicy, trainingComputeManagedField, trainingComputePolicyHint } from '../../utils/trainingComputePolicy';
-import { contextHelp, contextOptions, hideUnusedSetting, unusedSettingReason, type FieldContext } from '../../utils/fieldContext';
+import { contextHelp, contextOptions, familyHasConvolutions, hideUnusedSetting, unusedSettingReason, type FieldContext } from '../../utils/fieldContext';
 import React from 'react';
 import { evaluateShowWhen } from '../showWhen';
 import { useTranslation } from 'react-i18next';
@@ -8,7 +8,7 @@ import { AlertCircle, ChevronDown, ChevronRight, Plus, Trash2, ArrowUp, ArrowDow
 import { PathInput, PathPickerModal } from '../../components/PathBrowser';
 import { apiClient } from '../../api/client';
 import { FamilyInfo, ModelAsset } from '../../api/types';
-import { configFieldHelp, configFieldHint, configFieldLabel, configOptionLabel, configPresetLabel } from '../../utils/configPresentation';
+import { configFieldHelp, configFieldHint, configFieldLabel, configOptionLabel, configPresetLabel, PERCENTAGE_FIELDS } from '../../utils/configPresentation';
 import { modelPathHint } from '../../utils/fieldCopy';
 import { parameterGroupLabel } from '../../utils/parameterWorkflow';
 import { MODEL_PATH_FIELDS } from '../../utils/workspaceConfig';
@@ -838,7 +838,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const lokrRank = fullPathKey === 'adapter.rank' && value.adapter?.algo === 'lokr';
     const weightMeta = parentPath[0] === 'model' ? weights.find(weight => weight.field === key) : undefined;
     const familyOptions = familyParameterOptions(family, fullPathKey);
-    if (parentPath[0] === 'adapter' && value.training?.mode === 'full') return null;
+    // Full fine-tuning trains every parameter; its layer types stay visible, locked, beside the training components.
+    const lockedFullLayers = fullPathKey === 'adapter.layer_types' && familyHasConvolutions(family) && value.training?.train_backbone !== false;
+    if (parentPath[0] === 'adapter' && value.training?.mode === 'full' && !lockedFullLayers) return null;
     if (['model.training_guidance', 'sampling.guidance'].includes(fullPathKey)) return null;
     const ddpmModifier = ['objective.scale_v_pred_loss_like_noise_pred', 'objective.v_pred_like_loss', 'objective.debiased_estimation_loss'].includes(fullPathKey);
     const incompatibleFamilyLoss = ddpmModifier && family?.objective !== 'ddpm' && !!getNestedValue(value, path);
@@ -857,11 +859,13 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     // Settings the selected adapter form ignores: full LoKr factors fix the scale, and
     // full target-layer weights take no rank, scale, initialization or dropout.
     if (value.adapter?.algo === 'lokr' && value.adapter?.rank === 'full' && ['adapter.alpha', 'adapter.decompose_both', 'adapter.rs_lora'].includes(fullPathKey)) return null;
-    if (value.adapter?.algo === 'full' && ['adapter.rank', 'adapter.alpha', 'adapter.rs_lora', 'adapter.init', 'adapter.dropout', 'adapter.rank_dropout'].includes(fullPathKey)) return null;
+    if (value.adapter?.algo === 'full' && ['adapter.rank', 'adapter.alpha', 'adapter.rs_lora', 'adapter.init', 'adapter.dropout', 'adapter.rank_dropout', 'adapter.conv_rank', 'adapter.conv_alpha'].includes(fullPathKey)) return null;
+    // Convolutions that follow a full LoKr rank take its fixed scale too.
+    if (fullPathKey === 'adapter.conv_alpha' && value.adapter?.algo === 'lokr' && value.adapter?.rank === 'full' && value.adapter?.conv_rank == null) return null;
     // T-LoRA masks ranks per sample and LyCORIS Full trains whole weights; neither takes DoRA. A saved
     // DoRA stays visible so it can be turned off.
     if (fullPathKey === 'adapter.dora' && ['tlora', 'full'].includes(value.adapter?.algo) && !value.adapter?.dora) return null;
-    const ui = { ...(prop['x-ui'] || {}), ...(compact && parentPath[0] === 'training' ? {group:'model'} : {}), ...(compact && fullPathKey === 'dataset.batch_size' ? {group:'loop'} : {}), ...(fullPathKey === 'model.attention' ? {group:'memory',advanced:false} : {}), ...(fullPathKey === 'loop.gpu_count' ? {group:'loop',advanced:false} : {}) };
+    const ui = { ...(prop['x-ui'] || {}), ...(compact && parentPath[0] === 'training' ? {group:'model'} : {}), ...(compact && fullPathKey === 'dataset.batch_size' ? {group:'loop'} : {}), ...(fullPathKey === 'model.attention' ? {group:'memory',advanced:false} : {}), ...(fullPathKey === 'loop.gpu_count' ? {group:'loop',advanced:false} : {}), ...(fullPathKey === 'adapter.layer_types' && value.training?.mode === 'full' ? {group: compact ? 'model' : 'training'} : {}) };
     if (ui.hidden) return null;
     if (conditionValue.dataset.resolution_mode === 'native' && ['dataset.resolutions', 'dataset.aspect_ratio_limit', 'dataset.area_tolerance', 'dataset.bucket_step', 'dataset.bucket_no_upscale'].includes(fullPathKey)) return null;
     if (compact && !showAdvanced && fullPathKey === 'adapter.rules' && !value.adapter?.rules?.length) return null;
@@ -899,15 +903,15 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     }
 
     const errorItem = errors.find((e) => e.loc === fullPathKey || e.loc?.startsWith(`${fullPathKey}.`) || fullPathKey === 'checkpoint.save_state_every_steps' && e.loc === 'checkpoint.save_state_every_epochs');
-    const computeManaged = trainingComputeManagedField(activeComputePolicy, fullPathKey, english);
+    const layerLock = fullPathKey === 'adapter.layer_types' ? adapterLayerTypesLock(value, family, english) : null;
+    const computeManaged: {value: unknown; label?: string; reason: string; tag?: string} | null = layerLock ?? trainingComputeManagedField(activeComputePolicy, fullPathKey, english);
     const fieldValue = computeManaged ? computeManaged.value : getNestedValue(value, path) !== undefined ? getNestedValue(value, path) : prop.default;
     const groupName = ui.group || (parentPath.length > 0 ? parentPath[0] : 'default');
     const compactField = compact || groupName === 'adapter';
-    // These fields are probabilities/fractions, unlike EMA decay, timesteps, and
-    // warmup's mixed steps-or-ratio contract, which retain their native units.
-    const percentage = ['adapter.dropout', 'adapter.rank_dropout', 'adapter.module_dropout', 'dataset.area_tolerance', 'dataset.caption.tag_dropout', 'dataset.caption.caption_dropout', 'scheduler.min_lr_ratio', 'validation.split_ratio'].includes(fullPathKey);
+    const percentage = PERCENTAGE_FIELDS.includes(fullPathKey);
     const numericMin = ui.min ?? prop.minimum ?? prop.exclusiveMinimum;
-    const numericMax = ui.max ?? prop.maximum ?? prop.exclusiveMaximum;
+    // An exclusive bound (a dropout below 100%) stops the slider one step short of it.
+    const numericMax = ui.max ?? prop.maximum ?? (prop.exclusiveMaximum != null ? prop.exclusiveMaximum - (ui.step ?? (prop.type === 'integer' ? 1 : 0.01)) : undefined);
     const managedReason = computeManaged?.reason || trainingManagedReason(value, fullPathKey, english) || optimizerManagedReason(schema, value, fullPathKey, english);
     if (optimizerManagedReason(schema, value, fullPathKey, english) && ['optimizer.kahan', 'optimizer.group_lr', 'adapter.lr_scale', 'scheduler.warmup_steps'].includes(fullPathKey)) return null;
     // Only what this model and machine use: an unused setting shows only while it is still set, with the reason.
@@ -937,7 +941,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       </div>;
     } else if (managedReason) {
       const display = computeManaged?.label ?? (prop.enum ? configOptionLabel(fullPathKey, String(fieldValue), english) : managedValueLabel(fieldValue, english));
-      control = <div className="config-managed-value"><output id={fieldId} aria-label={fieldLabel} aria-describedby={`${fieldId}-managed-reason`}>{display}</output><span>{english ? 'Automatic' : '自动管理'}</span></div>;
+      control = <div className="config-managed-value"><output id={fieldId} aria-label={fieldLabel} aria-describedby={`${fieldId}-managed-reason`}>{display}</output><span>{computeManaged?.tag ?? (english ? 'Automatic' : '自动管理')}</span></div>;
     } else if (fullPathKey === 'checkpoint.save_state_every_steps') {
       control = <RecoveryInterval id={fieldId} label={fieldLabel} english={english} invalid={!!errorItem}
         value={{save_state_every_steps:fieldValue ?? null,save_state_every_epochs:value.checkpoint?.save_state_every_epochs ?? null}}
@@ -1202,9 +1206,10 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     }
     // Small values also read in scientific form beside the label, e.g. 0.0001 = 1e-4.
     const scientific = !managedReason && (prop.type === 'number' || prop.anyOf?.some((variant: SchemaProperty) => variant.type === 'number')) && ui.control !== 'slider' && !percentage ? scientificText(fieldValue) : '';
-    const scopeHelp = fullPathKey === 'adapter.preset' ? (english
-      ? 'Selects which layers receive adapters. All linear layers widens this scope; LoKr Full controls how each adapter is parameterized. The two choices are independent and neither unfreezes the base model.'
-      : '选择哪些层添加适配器。“全部线性层”扩大作用范围；LoKr 的 Full 决定每个适配器使用完整因子矩阵，两者可同时选择，都不会解冻底模。') : null;
+    const scopeHelp = fullPathKey === 'adapter.preset' ? [english
+      ? 'Selects which layers receive adapters; a wider scope trains more layers. LoKr Full controls how each adapter is parameterized. The two choices are independent and neither unfreezes the base model.'
+      : '选择哪些层添加适配器，范围越大训练的层越多；LoKr 的 Full 决定每个适配器使用完整因子矩阵，两者可同时选择，都不会解冻底模。',
+    familyHasConvolutions(family) && (english ? 'Whether convolution layers train too is chosen under Layer types.' : '是否同时训练卷积层，在“训练层类型”中选择。')].filter(Boolean).join('') || null : null;
     const selectedPreset = fullPathKey === 'adapter.preset' ? family?.presets?.find(preset => preset.name === (fieldValue || family.default_preset)) : undefined;
     const modelPrecisionHint = family?.runtime_backend === 'mps'
       ? (english ? 'The current Apple GPU uses FP32 for model loading and computation.' : '当前 Apple GPU 使用 FP32 加载和计算。')
@@ -1222,6 +1227,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       scopeHelp,
       selectedPreset?.description,
       showAdvanced && selectedPreset && `${t('preset.layers', {n: selectedPreset.layers})} · ${selectedPreset.name}`,
+      showAdvanced && selectedPreset && (selectedPreset.conv_layers ?? 0) > 0 && (english
+        ? `With convolutions: ${selectedPreset.layers_with_conv} layers, ${selectedPreset.conv_layers} of them convolutions`
+        : `同时训练卷积层时：共 ${selectedPreset.layers_with_conv} 层，其中卷积层 ${selectedPreset.conv_layers} 个`),
       showAdvanced && selectedPreset?.include?.length && `${english ? 'Included layers' : '包含层'}：${selectedPreset.include.join(', ')}`,
       showAdvanced && selectedPreset?.exclude?.length && `${english ? 'Excluded layers' : '排除层'}：${selectedPreset.exclude.join(', ')}`,
     ].filter(Boolean).join('\n\n') : fullPathKey === 'model.tokenizer_path' && family?.name === 'sdxl' ? (english ? 'Optional root containing tokenizer/ and tokenizer_2/. Leave blank to use the model directory’s tokenizers, or the built-in CLIP-L / CLIP-G tokenizers when absent.' : '可选根目录，需同时包含 tokenizer/ 和 tokenizer_2/。留空自动读取模型目录；没有时使用内置 CLIP-L / CLIP-G 双分词器。')

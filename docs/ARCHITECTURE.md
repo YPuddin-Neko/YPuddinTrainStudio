@@ -54,14 +54,14 @@ LoKr:          ΔW = scale × (W1 ⊗ W2)
 LoHa:          ΔW = scale × (B1 A1) ⊙ (B2 A2)
 OrthoLoRA:     ΔW = scale × U (C − I) diag(s) Vᵀ
 T-LoRA:        ΔW = scale × B diag(m(t)) A
-LyCORIS Full:  ΔW = W − W0
+LyCORIS Full:  ΔW = W − W0,  Δb = b − b0
 ```
 
 LoKr 的因子可以进一步低秩拆分。`rank = "full"` 保留完整因子矩阵，不解冻底模。训练层范围单独控制模块匹配。
 
-OrthoLoRA（[`adapters/ortho.py`](../ypuddin/adapters/ortho.py)）的 U、s、V 取自底模权重的主要奇异方向并保持冻结，C 由正交旋转和两组缩放组成，起步时 ΔW 为零。T-LoRA（[`adapters/tlora.py`](../ypuddin/adapters/tlora.py)）的 m(t) 按每个样本的噪声强度保留前 r(t) 个秩，只在训练时生效，预览与导出使用全部秩；正交初始化时另减去冻结的起点。两者都按普通 LoRA 导出。LyCORIS Full 直接训练层权重，导出为 LyCORIS 差值。
+OrthoLoRA（[`adapters/ortho.py`](../ypuddin/adapters/ortho.py)）的 U、s、V 取自底模权重的主要奇异方向并保持冻结，C 由正交旋转和两组缩放组成，起步时 ΔW 为零。T-LoRA（[`adapters/tlora.py`](../ypuddin/adapters/tlora.py)）的 m(t) 按每个样本的噪声强度保留前 r(t) 个秩，只在训练时生效，预览与导出使用全部秩；正交初始化时另减去冻结的起点。两者都按普通 LoRA 导出。LyCORIS Full 直接训练层权重和原有偏置，导出为 LyCORIS 差值。
 
-线性层包装器根据计算模式直接应用增量，或重建合并权重。导出负责处理缩放和键名约定，加载时恢复相应参数结构。全量微调沿用独立的模型组件保存流程。
+线性层和卷积层包装器（[`adapters/linear.py`](../ypuddin/adapters/linear.py)、[`adapters/conv.py`](../ypuddin/adapters/conv.py)）根据计算模式直接应用增量，或重建合并权重；卷积层把权重视为 `(out, in·k…)` 矩阵，分开计算时沿用原卷积的步长、填充和膨胀。导出负责处理缩放和键名约定，加载时恢复相应参数结构。全量微调沿用独立的模型组件保存流程。
 
 ## 状态与产物
 
