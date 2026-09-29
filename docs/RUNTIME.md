@@ -38,7 +38,7 @@ xFormers、FlashAttention、SageAttention、bitsandbytes 等扩展需要与新�
 
 ## LoRA 环境
 
-“设置 → 运行环境 → LoRA 环境”显示内置实现兼容的 LyCORIS 版本、官方最新版本和主分支，以及各自的提交号。训练器的 LoRA / LoKr 等算法由本项目实现，不需要安装 LyCORIS；导出的文件与所示版本的 LyCORIS 格式一致，可用该版本读取。
+“设置 → 运行环境 → LoRA 环境”显示本项目内置实现所参考的 LyCORIS 版本、官方最新版本和主分支，以及各自的提交号。训练器的 LoRA / LoKr 等算法由本项目自行实现，不需要安装 LyCORIS；导出的文件采用对应的格式布局，可用该版本读取。
 
 同一区块提供 bitsandbytes 的安装入口，AdamW 8-bit 和 Lion 8-bit 优化器依赖它：
 

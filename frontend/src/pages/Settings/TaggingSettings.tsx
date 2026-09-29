@@ -15,6 +15,19 @@ import './tagging-settings.css';
 
 const CUSTOM = '__custom';
 const ADDRESS = /^https?:\/\/[^\s/]+(\/\S*)?$/i;
+const MODEL_DESCRIPTIONS: Record<string, [string, string]> = {
+  'wd-eva02-tagger-2026-canary': ['EVA02 架构的新版实验模型，适合尝试更细的标签识别。', 'New EVA02 experimental model for detailed tag recognition.'],
+  'wd-eva02-large-tagger-v3': ['EVA02-Large v3，通用动漫标签识别，当前推荐。', 'EVA02-Large v3 for general anime tagging; recommended.'],
+  'wd-vit-large-tagger-v3': ['ViT-Large v3，通用动漫标签识别。', 'ViT-Large v3 for general anime tagging.'],
+  'wd-swinv2-tagger-v3': ['SwinV2 v3，通用动漫标签识别。', 'SwinV2 v3 for general anime tagging.'],
+  'wd-convnext-tagger-v3': ['ConvNeXt v3，通用动漫标签识别。', 'ConvNeXt v3 for general anime tagging.'],
+  'wd-vit-tagger-v3': ['ViT v3，体积较小的通用动漫标签模型。', 'ViT v3, a smaller general anime tagger.'],
+  'wd-v1-4-moat-tagger-v2': ['MOAT v2，通用动漫标签识别。', 'MOAT v2 for general anime tagging.'],
+  'pixai-tagger-v1.0': ['PixAI v1.0，支持通用、角色、作品和画师等分类。', 'PixAI v1.0 with general, character, copyright and artist categories.'],
+  'pixai-tagger-v0.9': ['PixAI v0.9，支持通用和角色标签。', 'PixAI v0.9 for general and character tags.'],
+  'cl-tagger-v2-01a': ['CL Tagger v2.01a，按类别输出标签，需要 Hugging Face 许可。', 'CL Tagger v2.01a with categorized output; requires Hugging Face access.'],
+  'cl-tagger-1-02': ['CL Tagger v1.02，按类别输出标签。', 'CL Tagger v1.02 with categorized output.'],
+};
 function Field({ id, label, hint, children }: { id?: string; label: string; hint?: React.ReactNode; children: React.ReactNode }) {
   return <div className="settings-field">{id ? <label htmlFor={id}>{label}</label> : <span className="settings-field-label">{label}</span>}
     <div className="settings-field-control">{children}{hint && <p className="settings-note">{hint}</p>}</div></div>;
@@ -89,6 +102,7 @@ export default function TaggingSettings() {
   const services = useVlmServices();
   const catalog = useVisionModels();
   const [draft, setDraft] = React.useState<Tagging | null>(null);
+  const [taggerFamily, setTaggerFamily] = React.useState('wd');
   const [saving, setSaving] = React.useState(false);
   const [notice, setNotice] = React.useState<{ error?: string; saved?: boolean }>({});
   const current = draft ?? tagging;
@@ -114,6 +128,7 @@ export default function TaggingSettings() {
   const detectors = models.filter(model => model.role !== 'tagger');
   const modelRow = (model: typeof models[number], series: string) => <div key={model.id} className="tagging-settings-model" data-testid={`tagging-model-${model.id}`}>
     <div className="tagging-settings-model-name"><strong>{series ? `${series} · ${modelName(model)}` : model.label}</strong>
+      {MODEL_DESCRIPTIONS[model.id] && <p>{text(MODEL_DESCRIPTIONS[model.id][0], MODEL_DESCRIPTIONS[model.id][1])}</p>}
       <span>{model.license === 'unspecified' ? text('未声明许可', 'No licence stated') : model.license}{model.token_required ? text(' · 需要 Hugging Face 令牌', ' · Hugging Face token needed') : ''}</span></div>
     <div className="tagging-settings-model-state"><VisionModelState model={model}/></div>
   </div>;
@@ -151,7 +166,10 @@ export default function TaggingSettings() {
       </Field>
       {catalog.isPending ? <LoadingNote label={text('读取模型列表…', 'Loading models…')}/> : catalog.error ? <p role="alert" className="settings-alert">{formatApiError(catalog.error)}</p> : <>
         <h3 className="tagging-settings-group">{text('Tagger 模型', 'Tagger models')}</h3>
-        <div className="tagging-settings-models">{taggers.map(model => modelRow(model, TAGGER_SERIES[model.family] || model.family))}</div>
+        <div className="tagging-settings-tabs" role="tablist" aria-label={text('Tagger 模型系列', 'Tagger model series')}>
+          {['wd', 'cl', 'pixai'].filter(family => taggers.some(model => model.family === family)).map(family => <button key={family} type="button" role="tab" aria-selected={taggerFamily === family} onClick={() => setTaggerFamily(family)}>{TAGGER_SERIES[family] || family}</button>)}
+        </div>
+        <div className="tagging-settings-models">{taggers.filter(model => model.family === taggerFamily).map(model => modelRow(model, TAGGER_SERIES[model.family] || model.family))}</div>
         <h3 className="tagging-settings-group">{text('遮罩检测模型', 'Mask detectors')}</h3>
         <div className="tagging-settings-models">{detectors.map(model => modelRow(model, ''))}</div>
       </>}

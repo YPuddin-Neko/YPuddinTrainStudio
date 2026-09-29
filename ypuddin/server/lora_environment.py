@@ -1,4 +1,4 @@
-"""The LyCORIS release the built-in adapters match, next to what upstream publishes.
+"""The LyCORIS release used as a format reference, next to what upstream publishes.
 
 YPuddin implements its adapters itself and does not need the LyCORIS package. The files it saves
 follow LyCORIS's layouts; the page names the release they were checked against beside the newest
@@ -13,12 +13,12 @@ from .package_releases import PYPI, _read
 
 PACKAGE = "lycoris-lora"
 REPOSITORY = "https://api.github.com/repos/KohakuBlueleaf/LyCORIS"
-# Every algorithm and option the trainer saves loads in this release with the same weights.
+# The release used for format and loader checks; the adapter implementations are local.
 COMPATIBLE = {"version": "4.0.0", "commit": "03270a3"}
 
 
 class LoraLocal(BaseModel):
-    # The service's own adapters; version and commit name the LyCORIS release their files match.
+    # The service's own adapters; version and commit name the format reference release.
     builtin: bool = True
     version: str | None = None
     commit: str | None = None
