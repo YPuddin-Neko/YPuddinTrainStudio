@@ -1,4 +1,4 @@
-import { adapterLayerTypesLock, selectTrainingComponents, trainingManagedReason } from '../../utils/trainingSelection';
+import { adapterLayerTypesLock, applySwitchLocks, selectTrainingComponents, switchLock, trainingManagedReason } from '../../utils/trainingSelection';
 import { confirmedTrainingComputePolicy, trainingComputeManagedField, trainingComputePolicyHint } from '../../utils/trainingComputePolicy';
 import { contextHelp, contextOptions, familyHasConvolutions, hideUnusedSetting, presetHasConvolutions, unusedSettingReason, type FieldContext } from '../../utils/fieldContext';
 import React from 'react';
@@ -793,6 +793,12 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       onValueChange({...sourceValue, model:{...sourceValue.model, krea2_variant:selectedModel.variant}});
     }
   }, [readOnly, selectedModel?.variant, sourceValue, value.model, onValueChange]);
+  // A saved switch the other settings rule out (DoRA under T-LoRA) turns off by itself.
+  React.useEffect(() => {
+    if (readOnly) return;
+    const locked = applySwitchLocks(sourceValue, family);
+    if (locked !== sourceValue) onValueChange(locked);
+  }, [readOnly, sourceValue, family, onValueChange]);
 
   const scheduleFree = value.optimizer?.type === 'adamw_sf' || (value.optimizer?.type === 'prodigy_plus_sf' && value.optimizer?.use_schedulefree !== false);
   const [editCaptionOverrides, setEditCaptionOverrides] = React.useState(false);
@@ -813,7 +819,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   const hasCaptionOverrides = captionOverrideKeys.some(key => !!value.dataset?.caption?.[key]);
   const onChange = (next: Record<string, any>) => {
     if (readOnly) return;
-    next = selectTrainingComponents(next, value);
+    next = applySwitchLocks(selectTrainingComponents(next, value), family);
     const type = next.optimizer?.type;
     if (type !== undefined && type !== value.optimizer?.type) {
       optimizerEdits.current.set(value.optimizer?.type ?? 'adamw', value);
@@ -862,9 +868,6 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (value.adapter?.algo === 'full' && ['adapter.rank', 'adapter.alpha', 'adapter.rs_lora', 'adapter.init', 'adapter.dropout', 'adapter.rank_dropout', 'adapter.conv_rank', 'adapter.conv_alpha'].includes(fullPathKey)) return null;
     // Convolutions that follow a full LoKr rank take its fixed scale too.
     if (fullPathKey === 'adapter.conv_alpha' && value.adapter?.algo === 'lokr' && value.adapter?.rank === 'full' && value.adapter?.conv_rank == null) return null;
-    // T-LoRA masks ranks per sample and LyCORIS Full trains whole weights; neither takes DoRA. A saved
-    // DoRA stays visible so it can be turned off.
-    if (fullPathKey === 'adapter.dora' && ['tlora', 'full'].includes(value.adapter?.algo) && !value.adapter?.dora) return null;
     const ui = { ...(prop['x-ui'] || {}), ...(compact && parentPath[0] === 'training' ? {group:'model'} : {}), ...(compact && fullPathKey === 'dataset.batch_size' ? {group:'loop'} : {}), ...(fullPathKey === 'model.attention' ? {group:'memory',advanced:false} : {}), ...(fullPathKey === 'loop.gpu_count' ? {group:'loop',advanced:false} : {}), ...(fullPathKey === 'adapter.layer_types' && value.training?.mode === 'full' ? {group: compact ? 'model' : 'training'} : {}) };
     if (ui.hidden) return null;
     if (conditionValue.dataset.resolution_mode === 'native' && ['dataset.resolutions', 'dataset.aspect_ratio_limit', 'dataset.area_tolerance', 'dataset.bucket_step', 'dataset.bucket_no_upscale'].includes(fullPathKey)) return null;
@@ -903,7 +906,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     }
 
     const errorItem = errors.find((e) => e.loc === fullPathKey || e.loc?.startsWith(`${fullPathKey}.`) || fullPathKey === 'checkpoint.save_state_every_steps' && e.loc === 'checkpoint.save_state_every_epochs');
-    const computeManaged: {value: unknown; label?: string; reason: string; tag?: string} | null = layerLock ?? trainingComputeManagedField(activeComputePolicy, fullPathKey, english);
+    const lockedSwitch = switchLock(fullPathKey, value, family, english);
+    const computeManaged: {value: unknown; label?: string; reason: string; tag?: string} | null = layerLock ?? lockedSwitch ?? trainingComputeManagedField(activeComputePolicy, fullPathKey, english);
     const fieldValue = computeManaged ? computeManaged.value : getNestedValue(value, path) !== undefined ? getNestedValue(value, path) : prop.default;
     const groupName = ui.group || (parentPath.length > 0 ? parentPath[0] : 'default');
     const compactField = compact || groupName === 'adapter';
@@ -934,7 +938,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     let control = null;
 
     // 1. 递归对象渲染
-    if (managedReason && ['training.train_backbone', 'training.train_text_encoder'].includes(fullPathKey)) {
+    if (managedReason && (lockedSwitch || ['training.train_backbone', 'training.train_text_encoder'].includes(fullPathKey))) {
       control = <div className="config-toggle-control" data-state={fieldValue ? 'on' : 'off'}>
         <Switch id={fieldId} aria-label={fieldLabel} aria-describedby={`${fieldId}-managed-reason`} checked={!!fieldValue} disabled></Switch>
       </div>;

@@ -18,6 +18,33 @@ export function adapterLayerTypesLock(config: Record<string, any>, family: Famil
   return null;
 }
 
+/**
+ * A switch the other settings rule out: it shows off and greyed, with the reason. T-LoRA and LyCORIS Full
+ * take no DoRA, and DTK's reproducible compute recipes all run without DoRA.
+ */
+export function switchLock(path: string, config: Record<string, any>, family: FamilyInfo | undefined, en: boolean) {
+  const lock = (reason: string) => ({ value: false, reason });
+  if (path === 'adapter.dora') {
+    if (config.adapter?.algo === 'tlora') return lock(en ? 'T-LoRA changes its ranks per sample, so it cannot use DoRA.' : 'T-LoRA 按每张图的噪声强度调整秩，不能使用 DoRA。');
+    if (config.adapter?.algo === 'full') return lock(en ? 'LyCORIS Full trains whole weights and does not use DoRA.' : 'LyCORIS Full 直接训练完整权重，不使用 DoRA。');
+  }
+  if (path === 'loop.deterministic' && family?.runtime_backend === 'hip' && config.training?.mode !== 'full' && config.adapter?.dora) {
+    return lock(en ? 'DTK reproducible compute recipes do not support DoRA.' : '海光 DTK 的可复现计算配方不支持 DoRA。');
+  }
+  return null;
+}
+
+/** Turns off every switch the other settings rule out. */
+export function applySwitchLocks(config: Record<string, any>, family: FamilyInfo | undefined) {
+  let result = config;
+  for (const [section, key] of [['adapter', 'dora'], ['loop', 'deterministic']] as const) {
+    if (result[section]?.[key] && switchLock(`${section}.${key}`, result, family, false)) {
+      result = { ...result, [section]: { ...result[section], [key]: false } };
+    }
+  }
+  return result;
+}
+
 /** Apply only the dependent values required by an explicit component selection. */
 export function selectTrainingComponents(next: Record<string, any>, previous: Record<string, any>) {
   if (JSON.stringify(next.training) === JSON.stringify(previous.training)) return next;
